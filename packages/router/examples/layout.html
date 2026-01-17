@@ -1,0 +1,17 @@
+
+<section>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/about">About</a>
+    <a href="/contact">Contact</a>
+  </nav>
+  <main>
+    <slot name="header"></slot>
+    <section>
+      <h1>Welcome to the Layout Example</h1>
+      <p>This is the main content area.</p>
+      <slot></slot>
+    </section>
+    <slot name="footer"></slot>
+  </main>
+</section>

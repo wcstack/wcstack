@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>wc-router Example</title>
+  <script type="module" src="./comp.js"></script>
+  <script type="module" src="../dist/auto.js"></script>
+</head>
+<body>
+  <template id="main-layout">
+    <section>
+      <nav>
+        <wc-link to="/">Home</wc-link>
+        <wc-link to="/about">About</wc-link>
+        <wc-link to="/contact">Contact</wc-link>
+        <wc-link to="/admin">Admin</wc-link>
+        <wc-link to="/admin/users/123">User 123</wc-link>
+        <wc-link to="/admin/users/456">User 456</wc-link>
+      </nav>
+    </section>
+    <section>
+      <h1>Main Layout</h1>
+      <slot name="header"></slot>
+      <slot></slot>
+    </section>
+  </template>
+
+  <wc-router basename="/packages/core/examples">
+    <template>
+      <wc-route path="/">
+        <wc-layout layout="main-layout">
+          <div slot="header">
+            <h2>Header Content</h2>
+          </div>
+          <p>Welcome to the home page!</p>
+          <wc-route path="about">
+            <div>About Page</div>
+            <!-- comment for about page -->
+          </wc-route>
+          <wc-route path="contact">
+            <div>Contact Page</div>
+            <!-- comment for contact page -->
+          </wc-route>
+        </wc-layout>
+      </wc-route>
+      <wc-route path="/admin">
+        <div>Admin Page</div>
+        <wc-route path="users/:value">
+          <div>Users Page</div>
+          <input type="text" data-bind="" />
+        </wc-route>
+      </wc-route>
+    </template>
+  </wc-router>
+
+</body>
+</html>
