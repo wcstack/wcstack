@@ -24,3 +24,11 @@ Web Componentsの標準技術を活かしつつ、日常の開発で「書きや
 ## 期待できること
 - ルーティングやレイアウトなど、アプリ開発で必要な基盤が揃う
 - 迷いにくい命名と構成で、チームでも使いやすい
+
+## オートローダー
+
+[オートローダー](packages/autoloader/README.ja.md)
+
+## SPAルーター
+
+[SPAルーター](packages/router/README.ja.md)
