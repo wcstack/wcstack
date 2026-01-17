@@ -18,6 +18,14 @@ export default [
     },
     rules: {
       "no-undef": "off",
+      "no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_"
+        }
+      ],
     },
   },
   {
@@ -35,6 +43,14 @@ export default [
     rules: {
       ...tseslint.configs.recommended.rules,
       "no-undef": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        }
+      ],
       "@typescript-eslint/no-this-alias": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "getter-return": "off",
