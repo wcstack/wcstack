@@ -520,6 +520,70 @@ describe('lazyLoad', () => {
     );
   });
 
+  it('should observe when root is a ShadowRoot', async () => {
+    const originalMutationObserver = globalThis.MutationObserver;
+    const observeSpy = vi.fn();
+
+    class TestMutationObserver {
+      constructor(_callback: MutationCallback) {}
+      observe = observeSpy;
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    }
+
+    (globalThis as any).MutationObserver = TestMutationObserver;
+
+    const config = {
+      loaders: {},
+      observable: true,
+      scanImportmap: false,
+    };
+    const prefixMap = {
+      'ui': {
+        key: '@components/ui/',
+        prefix: 'ui',
+        loaderKey: null,
+        isNameSpaced: true,
+      },
+    };
+
+    const treeWalkerSpy = vi.spyOn(document, 'createTreeWalker').mockReturnValue({
+      nextNode: () => false,
+      currentNode: null,
+    } as unknown as TreeWalker);
+
+    const originalHasInstance = (Document as any)[Symbol.hasInstance];
+    Object.defineProperty(Document, Symbol.hasInstance, {
+      value: (instance: unknown) => {
+        if (instance === document) {
+          return false;
+        }
+        return typeof originalHasInstance === 'function'
+          ? originalHasInstance.call(Document, instance)
+          : false;
+      },
+      configurable: true,
+    });
+
+    await handlerForLazyLoad(document, config, prefixMap);
+
+    expect(observeSpy).toHaveBeenCalledWith(document, { childList: true, subtree: true });
+
+    if (originalHasInstance) {
+      Object.defineProperty(Document, Symbol.hasInstance, {
+        value: originalHasInstance,
+        configurable: true,
+      });
+    } else {
+      delete (Document as any)[Symbol.hasInstance];
+    }
+    treeWalkerSpy.mockRestore();
+
+    (globalThis as any).MutationObserver = originalMutationObserver;
+  });
+
   describe('getCustomTagInfo', () => {
     it('should throw if element has no dash and no is attribute', () => {
       const el = document.createElement('div');

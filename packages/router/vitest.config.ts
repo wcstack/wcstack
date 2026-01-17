@@ -18,7 +18,6 @@ export default defineConfig({
         'src/webc.ts',
         'src/types.ts',
       ],
-      ignoreEmptyLines: true,
       thresholds: {
         statements: 100,
         branches: 97,

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { registerComponents } from '../src/registerComponents';
 import { Router } from '../src/components/Router';
 import { Route } from '../src/components/Route';
@@ -10,10 +10,28 @@ import { config } from '../src/config';
 // Don't import setup.ts to test fresh registration
 
 describe('registerComponents', () => {
+  const originalCustomElements = globalThis.customElements;
+
   beforeEach(() => {
+    const RegistryCtor = (originalCustomElements as any).constructor as {
+      new (window: Window): CustomElementRegistry;
+    };
+    const freshRegistry = new RegistryCtor(window);
+    (globalThis as any).customElements = freshRegistry;
+    if (globalThis.window) {
+      (globalThis.window as any).customElements = freshRegistry;
+    }
+
     // Clear the document
     document.body.innerHTML = '';
     (Router as any)._instance = null;
+  });
+
+  afterEach(() => {
+    (globalThis as any).customElements = originalCustomElements;
+    if (globalThis.window) {
+      (globalThis.window as any).customElements = originalCustomElements;
+    }
   });
 
   it('registerComponents関数が存在すること', () => {
@@ -35,6 +53,7 @@ describe('registerComponents', () => {
   });
 
   it('登録されたカスタム要素が正しいクラスであること', () => {
+    registerComponents();
     expect(customElements.get(config.tagNames.router)).toBe(Router);
     expect(customElements.get(config.tagNames.route)).toBe(Route);
     expect(customElements.get(config.tagNames.outlet)).toBe(Outlet);
@@ -45,12 +64,14 @@ describe('registerComponents', () => {
 
   it('registerComponents関数を複数回呼び出してもエラーが発生しないこと', () => {
     // Should not throw when called multiple times (elements already registered)
+    registerComponents();
     expect(() => registerComponents()).not.toThrow();
     expect(() => registerComponents()).not.toThrow();
     expect(() => registerComponents()).not.toThrow();
   });
 
   it('登録後に一部のカスタム要素をDOM内で使用できること', () => {
+    registerComponents();
     // Create elements that don't require parent nodes
     const router = document.createElement('wc-router');
     const outlet = document.createElement('wc-outlet');
@@ -64,6 +85,7 @@ describe('registerComponents', () => {
   });
 
   it('config.tagNamesで定義された名前でカスタム要素が登録されていること', () => {
+    registerComponents();
     // Verify that the tag names from config are used
     expect(config.tagNames.router).toBe('wc-router');
     expect(config.tagNames.route).toBe('wc-route');
@@ -82,6 +104,7 @@ describe('registerComponents', () => {
   });
 
   it('registerComponentsの内部ロジックをテストすること', () => {
+    registerComponents();
     // Test that all conditional checks work correctly
     // Since elements are already registered, verify the function handles this gracefully
     
