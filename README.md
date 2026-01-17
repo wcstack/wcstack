@@ -10,6 +10,7 @@ Web Components Stack provides a set of tools for developing applications using W
 - Low learning curve
 - High predictability
 - Minimize dependencies as much as possible
+- Buildless
 
 ## Concept
 We aim for "easy to write, easy to read, and hard to break" in daily development while leveraging standard Web Components technologies.
