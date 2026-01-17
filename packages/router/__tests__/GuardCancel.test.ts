@@ -7,13 +7,13 @@ describe('GuardCancel', () => {
     expect(typeof GuardCancel).toBe('function');
   });
 
-  it('Errorクラスを継承してぁE��こと', () => {
+  it('Errorクラスを継承していること', () => {
     const guardCancel = new GuardCancel('Access denied', '/login');
     expect(guardCancel).toBeInstanceOf(Error);
     expect(guardCancel).toBeInstanceOf(GuardCancel);
   });
 
-  it('メチE��ージとfallbackPathを持つインスタンスを作�Eできること', () => {
+  it('メッセージとfallbackPathを持つインスタンスを作成できること', () => {
     const message = 'Access denied';
     const fallbackPath = '/login';
     const guardCancel = new GuardCancel(message, fallbackPath);

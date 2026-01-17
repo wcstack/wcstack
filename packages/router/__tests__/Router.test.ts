@@ -22,11 +22,11 @@ describe('Router', () => {
     expect(typeof Router).toBe('function');
   });
 
-  it('HTMLElementを継承してぁE��こと', () => {
+  it('HTMLElementを継承していること', () => {
     expect(Object.getPrototypeOf(Router.prototype)).toBe(HTMLElement.prototype);
   });
 
-  it('インスタンスを作�Eできること', () => {
+  it('インスタンスを作成できること', () => {
     const router = document.createElement('wcs-router') as Router;
     expect(router).toBeInstanceOf(Router);
     expect(router).toBeInstanceOf(HTMLElement);
@@ -56,7 +56,7 @@ describe('Router', () => {
     expect(typeof router.basename).toBe('string');
   });
 
-  it('navigate静的メソチE��を持つこと', () => {
+  it('navigate静的メソッドを持つこと', () => {
     expect(typeof Router.navigate).toBe('function');
   });
 
@@ -104,7 +104,7 @@ describe('Router', () => {
       expect(basename).toBe('/app/');
     });
 
-    it('_getBasenameがルート�E場合�E空斁E��を返すこと', () => {
+    it('_getBasenameがルートの場合、空文字列を返すこと', () => {
       const router = document.createElement('wcs-router') as Router;
       const base = document.createElement('base');
       base.setAttribute('href', 'http://localhost/');
@@ -114,7 +114,7 @@ describe('Router', () => {
       expect(basename).toBe('');
     });
 
-    it('_getBasenameがpathname空斁E���E場合�E空斁E��を返すこと', () => {
+    it('_getBasenameがpathname空文字列の場合、空文字列を返すこと', () => {
       const router = document.createElement('wcs-router') as Router;
       const originalURL = (globalThis as any).URL;
       class MockURL {
@@ -129,7 +129,7 @@ describe('Router', () => {
       (globalThis as any).URL = originalURL;
     });
 
-    it('_getOutletが既存�EOutletを返すこと', () => {
+    it('_getOutletが既存のOutletを返すこと', () => {
       const router = document.createElement('wcs-router') as Router;
       const outlet = createOutlet();
       document.body.appendChild(outlet);
@@ -145,19 +145,19 @@ describe('Router', () => {
       expect(document.body.contains(found)).toBe(true);
     });
 
-    it('outlet未設定�E場合�Eエラーになること', () => {
+    it('outlet未設定の場合、エラーになること', () => {
       const router = document.createElement('wcs-router') as Router;
       expect(() => router.outlet).toThrow('[@wcstack/router] wcs-router has no outlet.');
     });
 
-    it('template未設定�E場合�Eエラーになること', () => {
+    it('template未設定の場合、エラーになること', () => {
       const router = document.createElement('wcs-router') as Router;
       expect(() => router.template).toThrow('[@wcstack/router] wcs-router has no template.');
     });
   });
 
   describe('navigate', () => {
-    it('navigation APIがある場合�Enavigation.navigateを呼ぶこと', async () => {
+    it('navigation APIがある場合、navigation.navigateを呼ぶこと', async () => {
       const router = document.createElement('wcs-router') as Router;
       (router as any)._basename = '/base';
       const navigation = {
@@ -172,7 +172,7 @@ describe('Router', () => {
       expect(navigation.navigate).toHaveBeenCalledWith('/base/path');
     });
 
-    it('navigation APIがなぁE��合�EapplyRouteを呼ぶこと', async () => {
+    it('navigation APIがない場合、applyRouteを呼ぶこと', async () => {
       const router = document.createElement('wcs-router') as Router;
       (router as any)._basename = '/base';
       (router as any)._outlet = createOutlet();
@@ -190,7 +190,7 @@ describe('Router', () => {
   });
 
   describe('_onNavigateFunc', () => {
-    it('canInterceptがfalseの場合�E何もしなぁE��と', () => {
+    it('canInterceptがfalseの場合、何もしないこと', () => {
       const router = document.createElement('wcs-router') as Router;
       const navEvent = {
         canIntercept: false,
@@ -203,7 +203,7 @@ describe('Router', () => {
       expect(navEvent.intercept).not.toHaveBeenCalled();
     });
 
-    it('interceptハンドラー冁E��applyRouteを呼ぶこと', async () => {
+    it('interceptハンドラー内部でapplyRouteを呼ぶこと', async () => {
       const router = document.createElement('wcs-router') as Router;
       (router as any)._outlet = createOutlet();
       (router as any)._outlet.routesNode = router;
@@ -231,7 +231,7 @@ describe('Router', () => {
   });
 
   describe('_initialize', () => {
-    it('basenameが空でbaseタグがなくパスぁE以外�E場合�Eエラーになること', async () => {
+    it('basenameが空でbaseタグがなくパスが"/"以外の場合、エラーになること', async () => {
       const router = document.createElement('wcs-router') as Router;
       router.setAttribute('basename', '');
 
@@ -277,7 +277,7 @@ describe('Router', () => {
       expect(applySpy).toHaveBeenCalled();
     });
 
-    it('templateがなぁE��合にエラーになること', async () => {
+    it('templateがない場合にエラーになること', async () => {
       const router = document.createElement('wcs-router') as Router;
       router.setAttribute('basename', '/app');
 
@@ -306,7 +306,7 @@ describe('Router', () => {
       expect(navigation.addEventListener).toHaveBeenCalledWith('navigate', (router as any)._onNavigate);
     });
 
-    it('初期化済みの場合�E初期化を再実行しなぁE��と', async () => {
+    it('初期化済みの場合、初期化を再実行しないこと', async () => {
       const router = document.createElement('wcs-router') as Router;
       (router as any)._initialized = true;
       (router as any)._initialize = vi.fn().mockResolvedValue(undefined);

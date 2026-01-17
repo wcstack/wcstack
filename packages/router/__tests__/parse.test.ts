@@ -18,7 +18,7 @@ describe('parse', () => {
     expect(typeof parse).toBe('function');
   });
 
-  it('空のチE��プレートをパ�Eスできること', async () => {
+  it('空のテンプレートをパースできること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -29,7 +29,7 @@ describe('parse', () => {
     expect(result).toBeInstanceOf(DocumentFragment);
   });
 
-  it('通常のHTMLノ�Eドをパ�Eスできること', async () => {
+  it('通常のHTMLノードをパースできること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -42,7 +42,7 @@ describe('parse', () => {
     expect(result.querySelector('div')?.textContent).toBe('Hello World');
   });
 
-  it('チE��ストノードをパ�Eスできること', async () => {
+  it('テキストノードをパースできること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -66,12 +66,12 @@ describe('parse', () => {
     const result = await parse(router);
     expect(result).toBeInstanceOf(DocumentFragment);
     
-    // wcs-layout-outletが作�EされてぁE��ことを確誁E
+    // wcs-layout-outletが作成されていることを確認
     const layoutOutlet = result.querySelector('wcs-layout-outlet');
     expect(layoutOutlet).not.toBeNull();
   });
 
-  it('wcs-layoutの子要素を正しく処琁E��ること', async () => {
+  it('wcs-layoutの子要素を正しく処理すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -91,7 +91,7 @@ describe('parse', () => {
     expect(layoutOutlet).not.toBeNull();
   });
 
-  it('褁E��のwcs-layoutを同時にパ�Eスできること', async () => {
+  it('複数のwcs-layoutを同時にパースできること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -114,7 +114,7 @@ describe('parse', () => {
     expect(layoutOutlets.length).toBe(2);
   });
 
-  it('通常の要素とwcs-layoutが混在する場合に正しくパ�Eスすること', async () => {
+  it('通常の要素とwcs-layoutが混在する場合に正しくパースすること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -165,7 +165,7 @@ describe('parse', () => {
     expect(layoutOutlets.length).toBeGreaterThan(0);
   });
 
-  it('コメントノード以外�E非要素ノ�Eドを保持すること', async () => {
+  it('コメントノード以外の非要素ノードを保持すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -179,7 +179,7 @@ describe('parse', () => {
     expect(result.textContent).toContain('Text after');
   });
 
-  it('褁E��の異なるノードタイプを含むチE��プレートをパ�Eスできること', async () => {
+  it('複数の異なるノードタイプを含むテンプレートをパースできること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     

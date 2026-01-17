@@ -2,17 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { getNavigation } from '../src/Navigation';
 
 describe('getNavigation', () => {
-  it('window.navigationがなぁE��合�Enullを返すこと', () => {
+  it('window.navigationがない場合、nullを返すこと', () => {
     delete (window as any).navigation;
     expect(getNavigation()).toBeNull();
   });
 
-  it('addEventListener/removeEventListenerがなぁE��合�Enullを返すこと', () => {
+  it('addEventListener/removeEventListenerがない場合、nullを返すこと', () => {
     (window as any).navigation = { navigate: () => {} };
     expect(getNavigation()).toBeNull();
   });
 
-  it('忁E��なメソチE��が揃ってぁE��場合�Enavigationを返すこと', () => {
+  it('必要なメソッドが揃っている場合、navigationを返すこと', () => {
     const navigation = {
       navigate: () => {},
       addEventListener: () => {},

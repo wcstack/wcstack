@@ -8,7 +8,7 @@ describe('raiseError', () => {
     }).toThrow('[@wcstack/router] test error');
   });
 
-  it('カスタムメチE��ージを含むエラーをthrowすること', () => {
+  it('カスタムメッセージを含むエラーをthrowすること', () => {
     expect(() => {
       raiseError('custom message');
     }).toThrow('[@wcstack/router] custom message');

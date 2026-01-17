@@ -62,7 +62,7 @@ describe('registerComponents', () => {
     expect(customElements.get(config.tagNames.layoutOutlet)).toBe(LayoutOutlet);
   });
 
-  it('registerComponents関数を褁E��回呼び出してもエラーが発生しなぁE��と', () => {
+  it('registerComponents関数を複数回呼び出してもエラーが発生しないこと', () => {
     // Should not throw when called multiple times (elements already registered)
     registerComponents();
     expect(() => registerComponents()).not.toThrow();
@@ -70,7 +70,7 @@ describe('registerComponents', () => {
     expect(() => registerComponents()).not.toThrow();
   });
 
-  it('登録後に一部のカスタム要素をDOM冁E��使用できること', () => {
+  it('登録後に一部のカスタム要素をDOM上で使用できること', () => {
     registerComponents();
     // Create elements that don't require parent nodes
     const router = document.createElement('wcs-router');
@@ -84,7 +84,7 @@ describe('registerComponents', () => {
     expect(layoutOutlet).toBeInstanceOf(LayoutOutlet);
   });
 
-  it('config.tagNamesで定義された名前でカスタム要素が登録されてぁE��こと', () => {
+  it('config.tagNamesで定義された名前でカスタム要素が登録されていること', () => {
     registerComponents();
     // Verify that the tag names from config are used
     expect(config.tagNames.router).toBe('wcs-router');
@@ -103,7 +103,7 @@ describe('registerComponents', () => {
     expect(customElements.get('wcs-layout-outlet')).toBe(LayoutOutlet);
   });
 
-  it('registerComponentsの冁E��ロジチE��をテストすること', () => {
+  it('registerComponentsの内部ロジックをテストすること', () => {
     registerComponents();
     // Test that all conditional checks work correctly
     // Since elements are already registered, verify the function handles this gracefully

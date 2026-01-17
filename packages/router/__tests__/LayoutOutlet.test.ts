@@ -15,25 +15,25 @@ describe('LayoutOutlet', () => {
     expect(typeof LayoutOutlet).toBe('function');
   });
 
-  it('HTMLElementを継承してぁE��こと', () => {
+  it('HTMLElementを継承していること', () => {
     expect(Object.getPrototypeOf(LayoutOutlet.prototype)).toBe(HTMLElement.prototype);
   });
 
-  it('インスタンスを作�Eできること', () => {
+  it('インスタンスを作成できること', () => {
     const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
     expect(layoutOutlet).toBeInstanceOf(LayoutOutlet);
     expect(layoutOutlet).toBeInstanceOf(HTMLElement);
   });
 
   describe('createLayoutOutlet', () => {
-    it('createLayoutOutlet関数でインスタンスを作�Eできること', () => {
+    it('createLayoutOutlet関数でインスタンスを作成できること', () => {
       const layoutOutlet = createLayoutOutlet();
       expect(layoutOutlet).toBeInstanceOf(LayoutOutlet);
     });
   });
 
   describe('layout プロパティ', () => {
-    it('layoutが設定されてぁE��ぁE��合にエラーを投げること', () => {
+    it('layoutが設定されていない場合にエラーを投げること', () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       expect(() => layoutOutlet.layout).toThrow();
     });
@@ -67,7 +67,7 @@ describe('LayoutOutlet', () => {
   });
 
   describe('connectedCallback と _initialize', () => {
-    it('shadowRootが有効な場合にshadowRootを作�Eすること', async () => {
+    it('shadowRootが有効な場合にshadowRootを作成すること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<div>Shadow Content</div>';
@@ -89,7 +89,7 @@ describe('LayoutOutlet', () => {
       expect(layoutOutlet.shadowRoot?.innerHTML).toContain('Shadow Content');
     });
 
-    it('shadowRootが無効な場合�E通常のDOMとして追加されること', async () => {
+    it('shadowRootが無効な場合、通常のDOMとして追加されること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<div>Normal Content</div>';
@@ -138,7 +138,7 @@ describe('LayoutOutlet', () => {
       expect(layoutOutlet.contains(child2)).toBe(true);
     });
 
-    it('名前付きslotを正しく処琁E��ること', async () => {
+    it('名前付きslotを正しく処理すること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<div><slot name="header"></slot><slot></slot></div>';
@@ -168,7 +168,7 @@ describe('LayoutOutlet', () => {
       expect(content).toContain('Default Content');
     });
 
-    it('名前付きslotの最初�E割り当てでfragmentを作�Eすること', async () => {
+    it('名前付きslotの最初の割り当てでfragmentを作成すること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<div><slot name="header"></slot><slot></slot></div>';
@@ -193,7 +193,7 @@ describe('LayoutOutlet', () => {
       expect(layoutOutlet.innerHTML).toContain('Header First');
     });
 
-    it('同じslot名�E褁E��要素めEつのfragmentに追加すること', async () => {
+    it('同じslot名の複数要素を一つのfragmentに追加すること', async () => {
       const layout = document.createElement('wcs-layout') as Layout;
       layout.setAttribute('name', 'multi-header');
 
@@ -225,7 +225,7 @@ describe('LayoutOutlet', () => {
       expect(content).toContain('Header B');
     });
 
-    it('チE��ォルチElotに要素を�E置すること', async () => {
+    it('デフォルトslotに要素を配置すること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<div><slot></slot></div>';
@@ -249,7 +249,7 @@ describe('LayoutOutlet', () => {
       expect(layoutOutlet.innerHTML).toContain('Paragraph');
     });
 
-    it('重褁E��るslot名に対して警告を出すこと', async () => {
+    it('重複するslot名に対して警告を出すこと', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<slot name="test"></slot><slot name="test"></slot>';
@@ -275,7 +275,7 @@ describe('LayoutOutlet', () => {
       warnSpy.mockRestore();
     });
 
-    it('slot属性がなぁE��素はチE��ォルチElotに配置されること', async () => {
+    it('slot属性がない要素はデフォルトslotに配置されること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<div><slot name="header"></slot><slot></slot></div>';
@@ -304,7 +304,7 @@ describe('LayoutOutlet', () => {
       expect(layoutOutlet.innerHTML).toContain('Empty slot attr');
     });
 
-    it('非Element childNodeも�E琁E��きること', async () => {
+    it('非Element childNodeも処理できること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<slot></slot>';
@@ -346,13 +346,13 @@ describe('LayoutOutlet', () => {
 
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      // 再度appendChild�E�EonnectedCallbackが�E実行される�E�E
+      // 再度appendChildでconnectedCallbackが再実行される想定
       document.body.removeChild(layoutOutlet);
       document.body.appendChild(layoutOutlet);
 
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      // loadTemplateは一度だけ呼ばれるはぁE
+      // loadTemplateは一度だけ呼ばれる
       expect(loadTemplateMock).toHaveBeenCalledTimes(1);
     });
   });
@@ -412,7 +412,7 @@ describe('LayoutOutlet', () => {
       expect(grandchild.getAttribute('title')).toBe('New Title');
     });
 
-    it('非Element childNodeに対してはassignParamsをスキチE�Eすること', async () => {
+    it('非Element childNodeに対してはassignParamsをスキップすること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       const template = document.createElement('template');
       template.innerHTML = '<slot></slot>';

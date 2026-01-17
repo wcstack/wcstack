@@ -12,7 +12,7 @@ describe('config', () => {
     expect(typeof config.tagNames).toBe('object');
   });
 
-  it('すべてのタグ名が定義されてぁE��こと', () => {
+  it('すべてのタグ名が定義されていること', () => {
     expect(config.tagNames.route).toBe('wcs-route');
     expect(config.tagNames.router).toBe('wcs-router');
     expect(config.tagNames.outlet).toBe('wcs-outlet');

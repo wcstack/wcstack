@@ -20,25 +20,25 @@ describe('Outlet', () => {
     expect(typeof Outlet).toBe('function');
   });
 
-  it('HTMLElementを継承してぁE��こと', () => {
+  it('HTMLElementを継承していること', () => {
     expect(Object.getPrototypeOf(Outlet.prototype)).toBe(HTMLElement.prototype);
   });
 
-  it('インスタンスを作�Eできること', () => {
+  it('インスタンスを作成できること', () => {
     const outlet = document.createElement('wcs-outlet') as Outlet;
     expect(outlet).toBeInstanceOf(Outlet);
     expect(outlet).toBeInstanceOf(HTMLElement);
   });
 
   describe('constructor', () => {
-    it('enableShadowRootがtrueの場合、shadowRootを作�Eすること', () => {
+    it('enableShadowRootがtrueの場合、shadowRootを作成すること', () => {
       config.enableShadowRoot = true;
       const outlet = document.createElement('wcs-outlet') as Outlet;
       document.body.appendChild(outlet);
       expect(outlet.shadowRoot).not.toBeNull();
     });
 
-    it('enableShadowRootがfalseの場合、shadowRootを作�EしなぁE��と', () => {
+    it('enableShadowRootがfalseの場合、shadowRootを作成しないこと', () => {
       config.enableShadowRoot = false;
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(outlet.shadowRoot).toBeNull();
@@ -46,7 +46,7 @@ describe('Outlet', () => {
   });
 
   describe('routesNode', () => {
-    it('routesNodeが設定されてぁE��ぁE��合、getterでエラーを投げること', () => {
+    it('routesNodeが設定されていない場合、getterでエラーを投げること', () => {
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(() => outlet.routesNode).toThrow('[@wcstack/router] wcs-outlet has no routesNode.');
     });
@@ -69,7 +69,7 @@ describe('Outlet', () => {
       expect(outlet.rootNode).not.toBe(outlet);
     });
 
-    it('shadowRootがなぁE��合、�E身を返すこと', () => {
+    it('shadowRootがない場合、自身を返すこと', () => {
       config.enableShadowRoot = false;
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(outlet.rootNode).toBe(outlet);
@@ -77,7 +77,7 @@ describe('Outlet', () => {
   });
 
   describe('lastRoutes', () => {
-    it('初期状態では空配�Eを返すこと', () => {
+    it('初期状態では空配列を返すこと', () => {
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(outlet.lastRoutes).toEqual([]);
     });
@@ -91,20 +91,20 @@ describe('Outlet', () => {
       
       outlet.lastRoutes = routes;
       expect(outlet.lastRoutes).toEqual(routes);
-      // 配�Eのコピ�Eが作�Eされることを確誁E
+      // 配列のコピーが作成されることを確認
       expect(outlet.lastRoutes).not.toBe(routes);
     });
   });
 
   describe('connectedCallback', () => {
-    it('connectedCallbackが呼ばれてもエラーにならなぁE��と', () => {
+    it('connectedCallbackが呼ばれてもエラーにならないこと', () => {
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(() => {
         document.body.appendChild(outlet);
       }).not.toThrow();
     });
 
-    it('初期化済みの場合�E_ initializeを実行しなぁE��と', () => {
+    it('初期化済みの場合、_initializeを実行しないこと', () => {
       config.enableShadowRoot = true;
       const outlet = document.createElement('wcs-outlet') as Outlet;
       (outlet as any)._initialized = true;
@@ -116,7 +116,7 @@ describe('Outlet', () => {
   });
 
   describe('createOutlet', () => {
-    it('Outletのインスタンスを作�Eできること', () => {
+    it('Outletのインスタンスを作成できること', () => {
       const outlet = createOutlet();
       expect(outlet).toBeInstanceOf(Outlet);
       expect(outlet).toBeInstanceOf(HTMLElement);

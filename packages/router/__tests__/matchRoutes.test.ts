@@ -19,15 +19,15 @@ describe('matchRoutes', () => {
     expect(typeof matchRoutes).toBe('function');
   });
 
-  it('ルートが存在しなぁE��合、nullを返すこと', () => {
+  it('ルートが存在しない場合、nullを返すこと', () => {
     const router = document.createElement('wcs-router') as Router;
     const result = matchRoutes(router, '/test');
     expect(result).toBeNull();
   });
 
-  it('マッチするルートがなぁE��合、nullを返すこと', () => {
+  it('マッチするルートがない場合、nullを返すこと', () => {
     const router = document.createElement('wcs-router') as Router;
-    // routeChildNodesはチE��ォルトで空配�E
+    // routeChildNodesはデフォルトで空配列
     
     const result = matchRoutes(router, '/nonexistent');
     expect(result).toBeNull();
@@ -55,7 +55,7 @@ describe('matchRoutes', () => {
     expect(mockRoute.testPath).toHaveBeenCalledWith('/home');
   });
 
-  it('褁E��のルートから正しいルートを選択すること', () => {
+  it('複数のルートから正しいルートを選択すること', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -148,7 +148,7 @@ describe('matchRoutes', () => {
     expect(result?.routes[0]).toBe(staticRoute);
   });
 
-  it('褁E��のマッチ候補から最適なも�Eを選択すること', () => {
+  it('複数のマッチ候補から最適なものを選択すること', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
@@ -212,7 +212,7 @@ describe('matchRoutes', () => {
     
     const result = matchRoutes(router, '/test');
     expect(result).not.toBeNull();
-    // 同じ重みの場合、childIndexが小さぁE��が優先される
+    // 同じ重みの場合、childIndexが小さい方が優先される
     expect(result?.routes[0].childIndex).toBe(0);
   });
 });
