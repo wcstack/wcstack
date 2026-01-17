@@ -396,7 +396,7 @@ async function handlerForLazyLoad(root, config, prefixMap) {
             console.error("Failed to lazy load components: " + e);
         }
     });
-    mo.observe(root instanceof Document ? root.documentElement : root, { childList: true, subtree: true });
+    mo.observe(root, { childList: true, subtree: true });
 }
 
 async function registerHandler() {
