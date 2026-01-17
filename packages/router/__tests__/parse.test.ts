@@ -226,7 +226,7 @@ describe('parse', () => {
     const template = document.createElement('template');
     template.innerHTML = `
       <wcs-route path="/parent">
-        <wcs-route path="/child"><span>Child</span></wcs-route>
+        <wcs-route path="child"><span>Child</span></wcs-route>
       </wcs-route>
     `;
     (router as any)._template = template;

@@ -59,31 +59,43 @@ describe('Route', () => {
 
   describe('constructor', () => {
     it('path属性を持つRouteを作成できること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
       const route = createRoute('/test');
       document.body.appendChild(route);
-      route.initialize();
+      route.initialize(router, null);
       expect(route.path).toBe('/test');
     });
 
     it('index属性を持つRouteを作成できること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/parent');
+      parentRoute.initialize(router, null);
+
       const route = createIndexRoute();
       document.body.appendChild(route);
-      route.initialize();
+      route.initialize(router, parentRoute);
       expect(route.path).toBe('');
     });
 
     it('パラメータを含むpathを解析すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
       const route = createRoute('/users/:id/posts/:postId');
       document.body.appendChild(route);
-      route.initialize();
+      route.initialize(router, null);
       expect(route.patternText).toBe('\\/users\\/([^\\/]+)\\/posts\\/([^\\/]+)');
       expect(route.weight).toBe(7);
     });
 
     it('guard属性を持つRouteを作成できること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
       const route = createRouteWithGuard('/protected', '/login');
       document.body.appendChild(route);
-      route.initialize();
+      route.initialize(router, null);
       expect((route as any)._hasGuard).toBe(true);
       expect((route as any)._guardFallbackPath).toBe('/login');
     });
@@ -99,12 +111,8 @@ describe('Route', () => {
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
 
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
-      childRoute.routerNode = router;
-      childRoute.initialize();
-
-      childRoute.routeParentNode = parentRoute;
+      parentRoute.initialize(router, null);
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.routeParentNode).toBe(parentRoute);
       expect(parentRoute.routeChildNodes).toContain(childRoute);
@@ -117,9 +125,7 @@ describe('Route', () => {
 
         const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
-      route.routeParentNode = null;
+      route.initialize(router, null);
 
       expect(router.routeChildNodes).toContain(route);
     });
@@ -132,14 +138,13 @@ describe('Route', () => {
       expect(() => route.routerNode).toThrow('[@wcstack/router] wcs-route has no routerNode.');
     });
 
-    it('routerNodeをsetterで設定し、getterで取得できること', () => {
+    it('initializeでrouterNodeを設定し、getterで取得できること', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       expect(route.routerNode).toBe(router);
     });
@@ -147,18 +152,27 @@ describe('Route', () => {
 
   describe('isRelative', () => {
     it('絶対パス（/で始まり）の場合、falseを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/absolute');
       document.body.appendChild(route);
-      route.initialize();
+      route.initialize(router, null);
       expect(route.isRelative).toBe(false);
     });
 
     it('相対パス（/なし）の場合、trueを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/parent');
+      parentRoute.initialize(router, null);
+
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', 'relative');
       document.body.appendChild(route);
-      route.initialize();
+      route.initialize(router, parentRoute);
       expect(route.isRelative).toBe(true);
     });
   });
@@ -171,11 +185,9 @@ describe('Route', () => {
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', 'relative');
       document.body.appendChild(route);
-      route.routerNode = router;
-      route.initialize();
 
       expect(() => {
-        const _ = route.absolutePath;
+        route.initialize(router, null);
       }).toThrow('[@wcstack/router] wcs-route is relative but has no parent route.');
     });
 
@@ -186,18 +198,14 @@ describe('Route', () => {
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
       document.body.appendChild(parentRoute);
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', '/absolute');
       document.body.appendChild(childRoute);
-      childRoute.routerNode = router;
-      childRoute.initialize();
-      childRoute.routeParentNode = parentRoute;
 
       expect(() => {
-        const _ = childRoute.absolutePath;
+        childRoute.initialize(router, parentRoute);
       }).toThrow('[@wcstack/router] wcs-route is absolute but has a parent route.');
     });
   });
@@ -209,8 +217,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       expect(route.absolutePath).toBe('/test');
     });
@@ -221,14 +228,11 @@ describe('Route', () => {
 
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
-      childRoute.routerNode = router;
-      childRoute.initialize();
-      childRoute.routeParentNode = parentRoute;
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.absolutePath).toBe('/parent/child');
     });
@@ -239,40 +243,33 @@ describe('Route', () => {
 
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent/');
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
-      childRoute.routerNode = router;
-      childRoute.initialize();
-      childRoute.routeParentNode = parentRoute;
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.absolutePath).toBe('/parent/child');
     });
   });
 
   describe('placeHolder', () => {
-    it('placeHolderが設定されていない場合、getterでエラーを投げること', () => {
+    it('placeHolderが初期化時に自動作成されること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      
-      let errorThrown = false;
-      try {
-        const _ = route.placeHolder;
-      } catch (error) {
-        errorThrown = true;
-        expect((error as Error).message).toBe('[@wcstack/router] wcs-route placeHolder is not set.');
-      }
-      expect(errorThrown).toBe(true);
+      route.initialize(router, null);
+      expect(route.placeHolder).toBeInstanceOf(Comment);
     });
 
-    it('placeHolderをsetterで設定し、getterで取得できること', () => {
+    it('placeHolderからuuidを含むコメントを取得できること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      const comment = document.createComment('placeholder');
-      route.placeHolder = comment;
-      expect(route.placeHolder).toBe(comment);
+      route.initialize(router, null);
+      expect(route.placeHolder.textContent).toContain('@@route:');
     });
   });
 
@@ -315,8 +312,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const result = route.testPath('/users/123');
       expect(result).not.toBeNull();
@@ -330,8 +326,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const first = route.testPath('/users/111');
       const second = route.testPath('/users/222');
@@ -346,8 +341,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const result = route.testPath('/posts/123');
       expect(result).toBeNull();
@@ -359,8 +353,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:userId/posts/:postId');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const result = route.testPath('/users/123/posts/456');
       expect(result?.params).toEqual({ userId: '123', postId: '456' });
@@ -374,8 +367,7 @@ describe('Route', () => {
 
         const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       expect(route.routes).toEqual([route]);
     });
@@ -386,14 +378,11 @@ describe('Route', () => {
 
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
-      childRoute.routerNode = router;
-      childRoute.initialize();
-      childRoute.routeParentNode = parentRoute;
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.routes).toEqual([parentRoute, childRoute]);
     });
@@ -406,8 +395,7 @@ describe('Route', () => {
 
         const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       expect(route.absolutePatternText).toBe('\\/users\\/([^\\/]+)');
     });
@@ -418,14 +406,11 @@ describe('Route', () => {
 
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child/:id');
-      childRoute.routerNode = router;
-      childRoute.initialize();
-      childRoute.routeParentNode = parentRoute;
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.absolutePatternText).toBe('\\/parent\\/child\\/([^\\/]+)');
     });
@@ -436,14 +421,11 @@ describe('Route', () => {
 
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent/');
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
-      childRoute.routerNode = router;
-      childRoute.initialize();
-      childRoute.routeParentNode = parentRoute;
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.absolutePatternText).toBe('\\/parent\\/child');
     });
@@ -456,8 +438,7 @@ describe('Route', () => {
 
         const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       expect(route.absoluteParamNames).toEqual(['id']);
     });
@@ -468,14 +449,11 @@ describe('Route', () => {
 
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/users/:userId');
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'posts/:postId');
-      childRoute.routerNode = router;
-      childRoute.initialize();
-      childRoute.routeParentNode = parentRoute;
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.absoluteParamNames).toEqual(['userId', 'postId']);
     });
@@ -483,9 +461,11 @@ describe('Route', () => {
 
   describe('weight', () => {
     it('パスのweightを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.initialize();
+      route.initialize(router, null);
       // 初期値-1 + / (+2) + 静的セグメント"users"(+2) + パラメータ":id"(+1) = 4
       expect(route.weight).toBe(4);
     });
@@ -498,8 +478,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       expect(route.absoluteWeight).toBe(4);
     });
@@ -510,14 +489,11 @@ describe('Route', () => {
 
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
-      parentRoute.routerNode = router;
-      parentRoute.initialize();
+      parentRoute.initialize(router, null);
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
-      childRoute.routerNode = router;
-      childRoute.routeParentNode = parentRoute;
-      childRoute.initialize();
+      childRoute.initialize(router, parentRoute);
 
       expect(childRoute.absoluteWeight).toBe(4);
     });
@@ -528,8 +504,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const weight1 = route.absoluteWeight;
       const weight2 = route.absoluteWeight;
@@ -542,6 +517,31 @@ describe('Route', () => {
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       expect(route.name).toBe('');
+    });
+
+    it('name属性を設定するとinitialize後に取得できること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/test');
+      route.setAttribute('name', 'test-route');
+      route.initialize(router, null);
+
+      expect(route.name).toBe('test-route');
+    });
+  });
+
+  describe('fullpath', () => {
+    it('initialize時にfullpath属性が設定されること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/test');
+      route.initialize(router, null);
+
+      expect(route.fullpath).toBe('/test');
+      expect(route.getAttribute('fullpath')).toBe('/test');
     });
   });
 
@@ -580,10 +580,12 @@ describe('Route', () => {
     });
 
     it('GuardCancelに正しいfallbackPathが含まれること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/protected');
       route.setAttribute('guard', '/custom-login');
-      route.initialize();
+      route.initialize(router, null);
 
       const guardHandler = vi.fn().mockResolvedValue(false);
       route.guardHandler = guardHandler;
@@ -604,16 +606,13 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const span = document.createElement('span');
       route.appendChild(span);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       const result = route.show({ id: '123' });
 
@@ -628,8 +627,7 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const div = document.createElement('div');
       const span = document.createElement('span');
@@ -637,10 +635,8 @@ describe('Route', () => {
       div.appendChild(span);
       route.appendChild(div);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       route.show({ id: '123' });
 
@@ -653,18 +649,15 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const span = document.createElement('span');
       route.appendChild(span);
 
-      const placeholder = document.createComment('placeholder');
       const nextElement = document.createElement('div');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
+      container.appendChild(route.placeHolder);
       container.appendChild(nextElement);
-      route.placeHolder = placeholder;
 
       route.show({});
 
@@ -677,16 +670,13 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const span = document.createElement('span');
       route.appendChild(span);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       route.show({});
 
@@ -701,16 +691,13 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const span = document.createElement('span');
       route.appendChild(span);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       route.show({ id: '123' });
       expect(container.contains(span)).toBe(true);
@@ -728,13 +715,10 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       route.show({ id: '123' });
 
@@ -747,13 +731,10 @@ describe('Route', () => {
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       route.show({ id: '123' });
 
@@ -782,15 +763,14 @@ describe('Route', () => {
 
   describe('initialize', () => {
     it('path属性もindex属性もない場合、エラーを投げること', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
       
         const route = document.createElement('wcs-route') as Route;
-      route.routerNode = router;
       
       let errorThrown = false;
       try {
-        route.initialize();
+        route.initialize(router, null);
       } catch (error) {
         errorThrown = true;
         expect((error as Error).message).toBe('[@wcstack/router] wcs-route should have a "path" or "index" attribute.');
@@ -802,11 +782,14 @@ describe('Route', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/');
+      parentRoute.initialize(router, null);
+
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('fallback', '');
 
-      route.initialize();
-      route.routerNode = router;
+      route.initialize(router, parentRoute);
 
       expect(route.path).toBe('');
       expect(router.fallbackRoute).toBe(route);
@@ -816,60 +799,63 @@ describe('Route', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/');
+      parentRoute.initialize(router, null);
+
       const first = document.createElement('wcs-route') as Route;
       first.setAttribute('fallback', '');
-      first.initialize();
-      first.routerNode = router;
+      first.initialize(router, parentRoute);
 
       const second = document.createElement('wcs-route') as Route;
       second.setAttribute('fallback', '');
-      second.initialize();
 
       expect(() => {
-        second.routerNode = router;
+        second.initialize(router, parentRoute);
       }).toThrow('[@wcstack/router] wcs-router can have only one fallback route.');
     });
 
     it('path属性が空の場合、空文字列を設定すること', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
+
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/');
+      parentRoute.initialize(router, null);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '');
-      route.routerNode = router;
 
-      route.initialize();
+      route.initialize(router, parentRoute);
 
       expect(route.path).toBe('');
     });
 
     it('guard属性が空の場合、フォールバックを"/"にすること', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.setAttribute('guard', '');
-      route.routerNode = router;
 
-      route.initialize();
+      route.initialize(router, null);
 
       expect((route as any)._guardFallbackPath).toBe('/');
     });
 
     it('初期化済みの場合、何もしないこと', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/before');
-      route.routerNode = router;
 
-      route.initialize();
+      route.initialize(router, null);
       route.setAttribute('path', '/after');
 
-      (route as any)._initialized = true;
-      route.initialize();
+      // 再度initializeを呼んでも何も変わらない
+      route.initialize(router, null);
 
       expect(route.path).toBe('/before');
     });
@@ -877,22 +863,19 @@ describe('Route', () => {
 
   describe('show - 追加カバレッジ', () => {
     it('ルート要素自体がdata-bind属性を持つ場合にパラメータを割り当てること', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const div = document.createElement('div');
       div.setAttribute('data-bind', ''); // 空文字列は有効なbindType
       route.appendChild(div);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       route.show({ id: '123' });
 
@@ -900,23 +883,20 @@ describe('Route', () => {
     });
 
     it('layoutOutlet要素を含む場合にassignParamsを呼び出すこと', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const container = document.createElement('div');
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       container.appendChild(layoutOutlet);
       route.appendChild(container);
 
-      const placeholder = document.createComment('placeholder');
       const placeholderContainer = document.createElement('div');
-      placeholderContainer.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      placeholderContainer.appendChild(route.placeHolder);
 
       const assignParamsSpy = vi.spyOn(layoutOutlet, 'assignParams');
 
@@ -926,21 +906,18 @@ describe('Route', () => {
     });
 
     it('ルート要素自体がlayoutOutletの場合にassignParamsを呼び出すこと', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test/:id');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       route.appendChild(layoutOutlet);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       const assignParamsSpy = vi.spyOn(layoutOutlet, 'assignParams');
 
@@ -950,18 +927,15 @@ describe('Route', () => {
     });
 
     it('非Element childNodeでも表示処理できること', () => {
-      const router = document.createElement('wcs-router') as any;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      route.routerNode = router;
-      route.initialize();
+      route.initialize(router, null);
 
-      const placeholder = document.createComment('placeholder');
       const container = document.createElement('div');
-      container.appendChild(placeholder);
-      route.placeHolder = placeholder;
+      container.appendChild(route.placeHolder);
 
       (route as any)._childNodeArray = [document.createTextNode('text')];
       (route as any)._isMadeArray = true;

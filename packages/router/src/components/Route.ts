@@ -13,7 +13,7 @@ export class Route extends HTMLElement implements IRoute {
   private _routeChildNodes: IRoute[] = [];
   private _routerNode: IRouter | null = null;
   private _uuid: string = getUUID();
-  private _placeHolder: Comment | null = null;
+  private _placeHolder: Comment = document.createComment(`@@route:${this._uuid}`);
   private _childNodeArray: Node[] = [];
   private _isMadeArray: boolean = false;
   private _paramNames: string[] = [];
@@ -38,17 +38,6 @@ export class Route extends HTMLElement implements IRoute {
   get routeParentNode(): IRoute | null {
     return this._routeParentNode;
   }
-  set routeParentNode(value: IRoute | null) {
-    this._routeParentNode = value;
-    if (value) {
-      value.routeChildNodes.push(this);
-      this._childIndex = value.routeChildNodes.length - 1;
-    } else {
-      // Top-level route
-      this.routerNode.routeChildNodes.push(this);
-      this._childIndex = this.routerNode.routeChildNodes.length - 1;
-    }
-  }
 
   get routeChildNodes(): IRoute[] {
     return this._routeChildNodes;
@@ -59,15 +48,6 @@ export class Route extends HTMLElement implements IRoute {
       raiseError(`${config.tagNames.route} has no routerNode.`);
     }
     return this._routerNode;
-  }
-  set routerNode(value: IRouter) {
-    this._routerNode = value;
-    if (this._isFallbackRoute) {
-      if (this._routerNode.fallbackRoute) {
-        raiseError(`${config.tagNames.router} can have only one fallback route.`);
-      }
-      this.routerNode.fallbackRoute = this;
-    }
   }
 
   get path(): string {
@@ -113,14 +93,7 @@ export class Route extends HTMLElement implements IRoute {
   }
 
   get placeHolder(): Comment {
-    if (!this._placeHolder) {
-      raiseError(`${config.tagNames.route} placeHolder is not set.`);
-    }
     return this._placeHolder;
-  }
-
-  set placeHolder(value: Comment) {
-    this._placeHolder = value;
   }
 
   get rootElement(): ShadowRoot | HTMLElement {
@@ -287,10 +260,13 @@ export class Route extends HTMLElement implements IRoute {
     this._guardHandler = value;
   }
 
-  initialize() {
+  initialize(routerNode: IRouter, routeParentNode: IRoute | null): void {
     if (this._initialized) {
       return;
     }
+    this._initialized = true;
+
+    // 単独で影響のないものから設定していく
     if (this.hasAttribute('path')) {
       this._path = this.getAttribute('path') || '';
     } else if (this.hasAttribute('index')) {
@@ -301,6 +277,26 @@ export class Route extends HTMLElement implements IRoute {
     } else {
       raiseError(`${config.tagNames.route} should have a "path" or "index" attribute.`);
     }
+    this._name = this.getAttribute('name') || '';
+
+    this._routerNode = routerNode;
+    this._routeParentNode = routeParentNode;
+    if (routeParentNode) {
+      routeParentNode.routeChildNodes.push(this);
+      this._childIndex = routeParentNode.routeChildNodes.length - 1;
+    } else {
+      // Top-level route
+      routerNode.routeChildNodes.push(this);
+      this._childIndex = routerNode.routeChildNodes.length - 1;
+    }
+
+    if (this._isFallbackRoute) {
+      if (routerNode.fallbackRoute) {
+        raiseError(`${config.tagNames.router} can have only one fallback route.`);
+      }
+      routerNode.fallbackRoute = this;
+    }
+
     const segments = this._path.split('/');
     const patternSegments = [];
     for (const segment of segments) {
@@ -321,6 +317,11 @@ export class Route extends HTMLElement implements IRoute {
         this._resolveSetGuardHandler = resolve;
       });
     }
-    this._initialized = true;
+
+    this.setAttribute('fullpath', this.absolutePath);
+  }
+
+  get fullpath(): string {
+    return this.absolutePath;
   }
 }

@@ -25,17 +25,14 @@ export declare class Route extends HTMLElement implements IRoute {
     private _isFallbackRoute;
     constructor();
     get routeParentNode(): IRoute | null;
-    set routeParentNode(value: IRoute | null);
     get routeChildNodes(): IRoute[];
     get routerNode(): IRouter;
-    set routerNode(value: IRouter);
     get path(): string;
     get isRelative(): boolean;
     private _checkParentNode;
     get absolutePath(): string;
     get uuid(): string;
     get placeHolder(): Comment;
-    set placeHolder(value: Comment);
     get rootElement(): ShadowRoot | HTMLElement;
     get childNodeArray(): Node[];
     testPath(path: string): IRouteMatchResult | null;
@@ -54,6 +51,7 @@ export declare class Route extends HTMLElement implements IRoute {
     shouldChange(newParams: Record<string, string>): boolean;
     get guardHandler(): GuardHandler;
     set guardHandler(value: GuardHandler);
-    initialize(): void;
+    initialize(routerNode: IRouter, routeParentNode: IRoute | null): void;
+    get fullpath(): string;
 }
 //# sourceMappingURL=Route.d.ts.map

@@ -5,7 +5,7 @@ import { Route } from "./components/Route.js";
 import { config } from "./config.js";
 
 async function _parseNode(
-  routesNode: IRouter, 
+  routerNode: IRouter, 
   node: Node, 
   routes: IRoute[], 
   map: Map<string, IRoute | ILayout>
@@ -28,10 +28,7 @@ async function _parseNode(
         customElements.upgrade(cloneElement);
         cloneElement.appendChild(childFragment);
         const route = cloneElement;
-        route.initialize();
-        route.routerNode = routesNode;
-        route.routeParentNode = routeParentNode;
-        route.placeHolder = document.createComment(`@@route:${route.uuid}`);
+        route.initialize(routerNode, routeParentNode);
         routes.push(route);
         map.set(route.uuid, route);
         appendNode = route.placeHolder;
@@ -51,7 +48,7 @@ async function _parseNode(
         appendNode = layoutOutlet;
         element = cloneElement;
       }
-      const children = await _parseNode(routesNode, element, routes, map);
+      const children = await _parseNode(routerNode, element, routes, map);
       element.innerHTML = "";
       element.appendChild(children);
       fragment.appendChild(appendNode);
@@ -62,8 +59,8 @@ async function _parseNode(
   return fragment;
 }
 
-export async function parse(routesNode: IRouter): Promise<DocumentFragment> {
+export async function parse(routerNode: IRouter): Promise<DocumentFragment> {
   const map: Map<string, IRoute | ILayout> = new Map();
-  const fr = await _parseNode(routesNode, routesNode.template.content, [], map);
+  const fr = await _parseNode(routerNode, routerNode.template.content, [], map);
   return fr;
 }

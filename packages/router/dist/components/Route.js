@@ -10,7 +10,7 @@ export class Route extends HTMLElement {
     _routeChildNodes = [];
     _routerNode = null;
     _uuid = getUUID();
-    _placeHolder = null;
+    _placeHolder = document.createComment(`@@route:${this._uuid}`);
     _childNodeArray = [];
     _isMadeArray = false;
     _paramNames = [];
@@ -33,18 +33,6 @@ export class Route extends HTMLElement {
     get routeParentNode() {
         return this._routeParentNode;
     }
-    set routeParentNode(value) {
-        this._routeParentNode = value;
-        if (value) {
-            value.routeChildNodes.push(this);
-            this._childIndex = value.routeChildNodes.length - 1;
-        }
-        else {
-            // Top-level route
-            this.routerNode.routeChildNodes.push(this);
-            this._childIndex = this.routerNode.routeChildNodes.length - 1;
-        }
-    }
     get routeChildNodes() {
         return this._routeChildNodes;
     }
@@ -53,15 +41,6 @@ export class Route extends HTMLElement {
             raiseError(`${config.tagNames.route} has no routerNode.`);
         }
         return this._routerNode;
-    }
-    set routerNode(value) {
-        this._routerNode = value;
-        if (this._isFallbackRoute) {
-            if (this._routerNode.fallbackRoute) {
-                raiseError(`${config.tagNames.router} can have only one fallback route.`);
-            }
-            this.routerNode.fallbackRoute = this;
-        }
     }
     get path() {
         return this._path;
@@ -97,13 +76,7 @@ export class Route extends HTMLElement {
         return this._uuid;
     }
     get placeHolder() {
-        if (!this._placeHolder) {
-            raiseError(`${config.tagNames.route} placeHolder is not set.`);
-        }
         return this._placeHolder;
-    }
-    set placeHolder(value) {
-        this._placeHolder = value;
     }
     get rootElement() {
         return this.shadowRoot ?? this;
@@ -254,10 +227,12 @@ export class Route extends HTMLElement {
         this._resolveSetGuardHandler?.();
         this._guardHandler = value;
     }
-    initialize() {
+    initialize(routerNode, routeParentNode) {
         if (this._initialized) {
             return;
         }
+        this._initialized = true;
+        // 単独で影響のないものから設定していく
         if (this.hasAttribute('path')) {
             this._path = this.getAttribute('path') || '';
         }
@@ -270,6 +245,24 @@ export class Route extends HTMLElement {
         }
         else {
             raiseError(`${config.tagNames.route} should have a "path" or "index" attribute.`);
+        }
+        this._name = this.getAttribute('name') || '';
+        this._routerNode = routerNode;
+        this._routeParentNode = routeParentNode;
+        if (routeParentNode) {
+            routeParentNode.routeChildNodes.push(this);
+            this._childIndex = routeParentNode.routeChildNodes.length - 1;
+        }
+        else {
+            // Top-level route
+            routerNode.routeChildNodes.push(this);
+            this._childIndex = routerNode.routeChildNodes.length - 1;
+        }
+        if (this._isFallbackRoute) {
+            if (routerNode.fallbackRoute) {
+                raiseError(`${config.tagNames.router} can have only one fallback route.`);
+            }
+            routerNode.fallbackRoute = this;
         }
         const segments = this._path.split('/');
         const patternSegments = [];
@@ -292,7 +285,10 @@ export class Route extends HTMLElement {
                 this._resolveSetGuardHandler = resolve;
             });
         }
-        this._initialized = true;
+        this.setAttribute('fullpath', this.absolutePath);
+    }
+    get fullpath() {
+        return this.absolutePath;
     }
 }
 //# sourceMappingURL=Route.js.map

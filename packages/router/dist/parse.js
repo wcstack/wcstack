@@ -1,6 +1,6 @@
 import { createLayoutOutlet } from "./components/LayoutOutlet.js";
 import { config } from "./config.js";
-async function _parseNode(routesNode, node, routes, map) {
+async function _parseNode(routerNode, node, routes, map) {
     const routeParentNode = routes.length > 0 ? routes[routes.length - 1] : null;
     const fragment = document.createDocumentFragment();
     const childNodes = Array.from(node.childNodes);
@@ -19,10 +19,7 @@ async function _parseNode(routesNode, node, routes, map) {
                 customElements.upgrade(cloneElement);
                 cloneElement.appendChild(childFragment);
                 const route = cloneElement;
-                route.initialize();
-                route.routerNode = routesNode;
-                route.routeParentNode = routeParentNode;
-                route.placeHolder = document.createComment(`@@route:${route.uuid}`);
+                route.initialize(routerNode, routeParentNode);
                 routes.push(route);
                 map.set(route.uuid, route);
                 appendNode = route.placeHolder;
@@ -43,7 +40,7 @@ async function _parseNode(routesNode, node, routes, map) {
                 appendNode = layoutOutlet;
                 element = cloneElement;
             }
-            const children = await _parseNode(routesNode, element, routes, map);
+            const children = await _parseNode(routerNode, element, routes, map);
             element.innerHTML = "";
             element.appendChild(children);
             fragment.appendChild(appendNode);
@@ -54,9 +51,9 @@ async function _parseNode(routesNode, node, routes, map) {
     }
     return fragment;
 }
-export async function parse(routesNode) {
+export async function parse(routerNode) {
     const map = new Map();
-    const fr = await _parseNode(routesNode, routesNode.template.content, [], map);
+    const fr = await _parseNode(routerNode, routerNode.template.content, [], map);
     return fr;
 }
 //# sourceMappingURL=parse.js.map

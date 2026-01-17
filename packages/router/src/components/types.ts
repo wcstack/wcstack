@@ -17,17 +17,16 @@ export interface _ILayout {
 export type ILayout = _ILayout & Pick<Element,'childNodes'>;
 
 export interface IRoute {
-  routeParentNode: IRoute | null;
+  readonly routeParentNode: IRoute | null;
   readonly routeChildNodes: IRoute[];
-  routerNode: IRouter;
+  readonly routerNode: IRouter;
   readonly path: string;
   readonly isRelative: boolean;
   readonly absolutePath: string;
   readonly uuid: string;
-  placeHolder: Comment;
+  readonly placeHolder: Comment;
   readonly rootElement: ShadowRoot | HTMLElement;
   readonly childNodeArray: Node[];
-  testPath(path: string): IRouteMatchResult | null;
   readonly routes: IRoute[];
   readonly patternText: string;
   readonly absolutePatternText: string;
@@ -36,12 +35,15 @@ export interface IRoute {
   readonly weight: number;
   readonly absoluteWeight: number;
   readonly childIndex: number;
+  readonly name: string;
+  readonly fullpath: string;
+  testPath(path: string): IRouteMatchResult | null;
   guardHandler: GuardHandler;
   show(params: Record<string, string>): boolean;
   hide(): void;
   shouldChange(newParams: Record<string, string>): boolean;
   guardCheck(matchResult: IRouteMatchResult): Promise<void>;
-  initialize(): void;
+  initialize(routerNode: IRouter, parentRouteNode: IRoute | null): void;
 }
 
 export interface IRouter {
