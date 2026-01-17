@@ -18,28 +18,43 @@
 ```html
 <wcs-router>
   <template>
+    <!-- pathが"/"の場合 -->
     <wcs-route path="/">
+      <!-- "main-layout"レイアウトを適用 -->
       <wcs-layout layout="main-layout">
         <main-header slot="header"></main-header>
         <main-body>
+          <!-- pathが"/"の場合 -->
           <wcs-route index>
             <main-dashboard></main-dashboard>
           </wcs-route>
+
+          <!-- pathが"/products"の場合 -->
           <wcs-route path="products">
             <product-list></product-list>
           </wcs-route>
+
+          <!-- pathが"/products/:productId"の場合 -->
           <wcs-route path="products/:productId">
+            <!-- productItem.props.productId = productId -->
             <product-item data-bind="props"></product-item>
           </wcs-route>
         </main-body>
       </wcs-layout>
     </wcs-route>
 
+    <!-- pathが"/admin"の場合 -->
     <wcs-route path="/admin">
+      <!-- "admin-layout"レイアウトを適用 -->
       <wcs-layout layout="admin-layout">
         <admin-header slot="header"></admin-header>
         <admin-body></admin-body>
       </wcs-layout>
+    </wcs-route>
+
+    <!-- pathが一致しない場合 -->
+    <wcs-route fallback>
+      <error-404></error-404>
     </wcs-route>
   </template>
 </wcs-router>
@@ -48,6 +63,7 @@
   <!-- ルートパス・レイアウトに従ったDOMツリーを作成し、ここに表示 -->
 </wcs-outlet>
 
+<!-- "main-layout"レイアウト -->
 <template id="main-layout">
   <section>
     <h1> Main </h1>
@@ -58,6 +74,7 @@
   </section>
 </template>
 
+<!-- "admin-layout"レイアウト -->
 <template id="admin-layout">
   <section>
     <h1> Admin Main </h1>
@@ -70,6 +87,6 @@
 
 ```
 
-※<main-header/><main-body/><main-dashboard/><product-list/><product-item/><admin-header/><admin-body/>はアプリ側のカスタムコンポーネント
+※<main-header/><main-body/><main-dashboard/><product-list/><product-item/><admin-header/><admin-body/><error-404/>はアプリ側のカスタムコンポーネント
 ※上記カスタム要素は、オートローダーやコードによる定義が別途必要
 

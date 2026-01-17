@@ -18,36 +18,52 @@ Provides SPA routing with declarative definitions using custom elements.
 ```html
 <wcs-router>
 	<template>
+		<!-- When path is "/" -->
 		<wcs-route path="/">
+			<!-- Apply the "main-layout" layout -->
 			<wcs-layout layout="main-layout">
 				<main-header slot="header"></main-header>
 				<main-body>
+					<!-- When path is "/" -->
 					<wcs-route index>
 						<main-dashboard></main-dashboard>
 					</wcs-route>
+
+					<!-- When path is "/products" -->
 					<wcs-route path="products">
 						<product-list></product-list>
 					</wcs-route>
+
+					<!-- When path is "/products/:productId" -->
 					<wcs-route path="products/:productId">
+						<!-- productItem.props.productId = productId -->
 						<product-item data-bind="props"></product-item>
 					</wcs-route>
 				</main-body>
 			</wcs-layout>
 		</wcs-route>
 
+		<!-- When path is "/admin" -->
 		<wcs-route path="/admin">
+			<!-- Apply the "admin-layout" layout -->
 			<wcs-layout layout="admin-layout">
 				<admin-header slot="header"></admin-header>
 				<admin-body></admin-body>
 			</wcs-layout>
 		</wcs-route>
+
+		<!-- When no path matches -->
+		<wcs-route fallback>
+			<error-404></error-404>
+		</wcs-route>
 	</template>
 </wcs-router>
 
-<wsc-outlet>
+<wcs-outlet>
 	<!-- Build a DOM tree according to the route path and layout and render it here -->
 </wcs-outlet>
 
+<!-- "main-layout" layout -->
 <template id="main-layout">
 	<section>
 		<h1> Main </h1>
@@ -58,6 +74,7 @@ Provides SPA routing with declarative definitions using custom elements.
 	</section>
 </template>
 
+<!-- "admin-layout" layout -->
 <template id="admin-layout">
 	<section>
 		<h1> Admin Main </h1>
@@ -70,5 +87,5 @@ Provides SPA routing with declarative definitions using custom elements.
 
 ```
 
-* <main-header/><main-body/><main-dashboard/><product-list/><product-item/><admin-header/><admin-body/> are custom components in your app.
+* <main-header/><main-body/><main-dashboard/><product-list/><product-item/><admin-header/><admin-body/><error-404/> are custom components in your app.
 * The custom elements above must be defined separately (via an autoloader or manual registration).
