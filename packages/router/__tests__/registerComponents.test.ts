@@ -62,7 +62,7 @@ describe('registerComponents', () => {
     expect(customElements.get(config.tagNames.layoutOutlet)).toBe(LayoutOutlet);
   });
 
-  it('registerComponents関数を複数回呼び出してもエラーが発生しないこと', () => {
+  it('registerComponents関数を褁E��回呼び出してもエラーが発生しなぁE��と', () => {
     // Should not throw when called multiple times (elements already registered)
     registerComponents();
     expect(() => registerComponents()).not.toThrow();
@@ -70,13 +70,13 @@ describe('registerComponents', () => {
     expect(() => registerComponents()).not.toThrow();
   });
 
-  it('登録後に一部のカスタム要素をDOM内で使用できること', () => {
+  it('登録後に一部のカスタム要素をDOM冁E��使用できること', () => {
     registerComponents();
     // Create elements that don't require parent nodes
-    const router = document.createElement('wc-router');
-    const outlet = document.createElement('wc-outlet');
-    const layout = document.createElement('wc-layout');
-    const layoutOutlet = document.createElement('wc-layout-outlet');
+    const router = document.createElement('wcs-router');
+    const outlet = document.createElement('wcs-outlet');
+    const layout = document.createElement('wcs-layout');
+    const layoutOutlet = document.createElement('wcs-layout-outlet');
 
     expect(router).toBeInstanceOf(Router);
     expect(outlet).toBeInstanceOf(Outlet);
@@ -84,26 +84,26 @@ describe('registerComponents', () => {
     expect(layoutOutlet).toBeInstanceOf(LayoutOutlet);
   });
 
-  it('config.tagNamesで定義された名前でカスタム要素が登録されていること', () => {
+  it('config.tagNamesで定義された名前でカスタム要素が登録されてぁE��こと', () => {
     registerComponents();
     // Verify that the tag names from config are used
-    expect(config.tagNames.router).toBe('wc-router');
-    expect(config.tagNames.route).toBe('wc-route');
-    expect(config.tagNames.outlet).toBe('wc-outlet');
-    expect(config.tagNames.link).toBe('wc-link');
-    expect(config.tagNames.layout).toBe('wc-layout');
-    expect(config.tagNames.layoutOutlet).toBe('wc-layout-outlet');
+    expect(config.tagNames.router).toBe('wcs-router');
+    expect(config.tagNames.route).toBe('wcs-route');
+    expect(config.tagNames.outlet).toBe('wcs-outlet');
+    expect(config.tagNames.link).toBe('wcs-link');
+    expect(config.tagNames.layout).toBe('wcs-layout');
+    expect(config.tagNames.layoutOutlet).toBe('wcs-layout-outlet');
 
     // Verify elements are registered with these names
-    expect(customElements.get('wc-router')).toBe(Router);
-    expect(customElements.get('wc-route')).toBe(Route);
-    expect(customElements.get('wc-outlet')).toBe(Outlet);
-    expect(customElements.get('wc-link')).toBe(Link);
-    expect(customElements.get('wc-layout')).toBe(Layout);
-    expect(customElements.get('wc-layout-outlet')).toBe(LayoutOutlet);
+    expect(customElements.get('wcs-router')).toBe(Router);
+    expect(customElements.get('wcs-route')).toBe(Route);
+    expect(customElements.get('wcs-outlet')).toBe(Outlet);
+    expect(customElements.get('wcs-link')).toBe(Link);
+    expect(customElements.get('wcs-layout')).toBe(Layout);
+    expect(customElements.get('wcs-layout-outlet')).toBe(LayoutOutlet);
   });
 
-  it('registerComponentsの内部ロジックをテストすること', () => {
+  it('registerComponentsの冁E��ロジチE��をテストすること', () => {
     registerComponents();
     // Test that all conditional checks work correctly
     // Since elements are already registered, verify the function handles this gracefully

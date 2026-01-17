@@ -9,7 +9,7 @@ import './setup';
 function createRoute(path: string): Route {
   const div = document.createElement('div');
   document.body.appendChild(div);
-  div.innerHTML = `<wc-route path="${path}"></wc-route>`;
+  div.innerHTML = `<wcs-route path="${path}"></wcs-route>`;
   const route = div.firstElementChild as Route;
   div.remove();
   return route;
@@ -19,7 +19,7 @@ function createRoute(path: string): Route {
 function createIndexRoute(): Route {
   const div = document.createElement('div');
   document.body.appendChild(div);
-  div.innerHTML = `<wc-route index></wc-route>`;
+  div.innerHTML = `<wcs-route index></wcs-route>`;
   const route = div.firstElementChild as Route;
   div.remove();
   return route;
@@ -29,7 +29,7 @@ function createIndexRoute(): Route {
 function createRouteWithGuard(path: string, guardFallback: string): Route {
   const div = document.createElement('div');
   document.body.appendChild(div);
-  div.innerHTML = `<wc-route path="${path}" guard="${guardFallback}"></wc-route>`;
+  div.innerHTML = `<wcs-route path="${path}" guard="${guardFallback}"></wcs-route>`;
   const route = div.firstElementChild as Route;
   div.remove();
   return route;
@@ -50,7 +50,7 @@ describe('Route', () => {
   });
 
   it('uuidを取得できること', () => {
-    const route = document.createElement('wc-route') as Route;
+    const route = document.createElement('wcs-route') as Route;
     route.setAttribute('path', '/test');
     const uuid = route.uuid;
     expect(typeof uuid).toBe('string');
@@ -91,12 +91,12 @@ describe('Route', () => {
 
   describe('routeParentNode', () => {
     it('親ノードを設定し取得できること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+        const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
 
       parentRoute.routerNode = router;
@@ -112,10 +112,10 @@ describe('Route', () => {
     });
 
     it('親ノードがnullの場合、routerのrouteChildNodesに追加されること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+        const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();
@@ -127,16 +127,16 @@ describe('Route', () => {
 
   describe('routerNode', () => {
     it('routerNodeが設定されていない場合、getterでエラーを投げること', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      expect(() => route.routerNode).toThrow('[wc-router] wc-route has no routerNode.');
+      expect(() => route.routerNode).toThrow('[@wcstack/router] wcs-route has no routerNode.');
     });
 
     it('routerNodeをsetterで設定し、getterで取得できること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();
@@ -146,8 +146,8 @@ describe('Route', () => {
   });
 
   describe('isRelative', () => {
-    it('絶対パス（/始まり）の場合、falseを返すこと', () => {
-      const route = document.createElement('wc-route') as Route;
+    it('絶対パス（/で始まり）の場合、falseを返すこと', () => {
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/absolute');
       document.body.appendChild(route);
       route.initialize();
@@ -155,7 +155,7 @@ describe('Route', () => {
     });
 
     it('相対パス（/なし）の場合、trueを返すこと', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', 'relative');
       document.body.appendChild(route);
       route.initialize();
@@ -165,10 +165,10 @@ describe('Route', () => {
 
   describe('_checkParentNode', () => {
     it('相対パスで親がない場合、エラーを投げること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', 'relative');
       document.body.appendChild(route);
       route.routerNode = router;
@@ -176,20 +176,20 @@ describe('Route', () => {
 
       expect(() => {
         const _ = route.absolutePath;
-      }).toThrow('[wc-router] wc-route is relative but has no parent route.');
+      }).toThrow('[@wcstack/router] wcs-route is relative but has no parent route.');
     });
 
     it('絶対パスで親がある場合、エラーを投げること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
       document.body.appendChild(parentRoute);
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', '/absolute');
       document.body.appendChild(childRoute);
       childRoute.routerNode = router;
@@ -198,16 +198,16 @@ describe('Route', () => {
 
       expect(() => {
         const _ = childRoute.absolutePath;
-      }).toThrow('[wc-router] wc-route is absolute but has a parent route.');
+      }).toThrow('[@wcstack/router] wcs-route is absolute but has a parent route.');
     });
   });
 
   describe('absolutePath', () => {
     it('絶対パスの場合、そのまま返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();
@@ -216,15 +216,15 @@ describe('Route', () => {
     });
 
     it('相対パスで親がある場合、親のパスと結合すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
       childRoute.routerNode = router;
       childRoute.initialize();
@@ -234,15 +234,15 @@ describe('Route', () => {
     });
 
     it('親のパスが/で終わる場合、/を追加しないこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent/');
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
       childRoute.routerNode = router;
       childRoute.initialize();
@@ -254,7 +254,7 @@ describe('Route', () => {
 
   describe('placeHolder', () => {
     it('placeHolderが設定されていない場合、getterでエラーを投げること', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       
       let errorThrown = false;
@@ -262,13 +262,13 @@ describe('Route', () => {
         const _ = route.placeHolder;
       } catch (error) {
         errorThrown = true;
-        expect((error as Error).message).toBe('[wc-router] wc-route placeHolder is not set.');
+        expect((error as Error).message).toBe('[@wcstack/router] wcs-route placeHolder is not set.');
       }
       expect(errorThrown).toBe(true);
     });
 
     it('placeHolderをsetterで設定し、getterで取得できること', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       const comment = document.createComment('placeholder');
       route.placeHolder = comment;
@@ -278,7 +278,7 @@ describe('Route', () => {
 
   describe('rootElement', () => {
     it('shadowRootがない場合、自身を返すこと', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       expect(route.rootElement).toBe(route);
     });
@@ -286,7 +286,7 @@ describe('Route', () => {
 
   describe('childNodeArray', () => {
     it('子ノードの配列を返すこと', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       const span = document.createElement('span');
       route.appendChild(span);
@@ -297,7 +297,7 @@ describe('Route', () => {
     });
 
     it('2回目の呼び出しで同じ配列を返すこと（キャッシュ）', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       const span = document.createElement('span');
       route.appendChild(span);
@@ -310,10 +310,10 @@ describe('Route', () => {
 
   describe('testPath', () => {
     it('パスが一致する場合、マッチ結果を返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -325,10 +325,10 @@ describe('Route', () => {
     });
 
     it('キャッシュされた正規表現を利用してマッチできること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -341,10 +341,10 @@ describe('Route', () => {
     });
 
     it('パスが一致しない場合、nullを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -354,10 +354,10 @@ describe('Route', () => {
     });
 
     it('複数のパラメータを含むパスをテストできること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:userId/posts/:postId');
       route.routerNode = router;
       route.initialize();
@@ -369,10 +369,10 @@ describe('Route', () => {
 
   describe('routes', () => {
     it('親がない場合、自身のみの配列を返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+        const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();
@@ -381,15 +381,15 @@ describe('Route', () => {
     });
 
     it('親がある場合、親のroutesと自身を結合した配列を返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
       childRoute.routerNode = router;
       childRoute.initialize();
@@ -401,10 +401,10 @@ describe('Route', () => {
 
   describe('absolutePatternText', () => {
     it('絶対パスの場合、patternTextをそのまま返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+        const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -413,15 +413,15 @@ describe('Route', () => {
     });
 
     it('相対パスで親がある場合、親のパターンと結合すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child/:id');
       childRoute.routerNode = router;
       childRoute.initialize();
@@ -431,15 +431,15 @@ describe('Route', () => {
     });
 
     it('親のパターンが\\/で終わる場合、\\/を追加しないこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent/');
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
       childRoute.routerNode = router;
       childRoute.initialize();
@@ -451,10 +451,10 @@ describe('Route', () => {
 
   describe('absoluteParamNames', () => {
     it('絶対パスの場合、自身のparamNamesを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+        const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -463,15 +463,15 @@ describe('Route', () => {
     });
 
     it('相対パスで親がある場合、親と自身のparamNamesを結合すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/users/:userId');
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'posts/:postId');
       childRoute.routerNode = router;
       childRoute.initialize();
@@ -483,7 +483,7 @@ describe('Route', () => {
 
   describe('weight', () => {
     it('パスのweightを返すこと', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.initialize();
       // 初期値-1 + / (+2) + 静的セグメント"users"(+2) + パラメータ":id"(+1) = 4
@@ -493,10 +493,10 @@ describe('Route', () => {
 
   describe('absoluteWeight', () => {
     it('絶対パスの場合、weightを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -505,15 +505,15 @@ describe('Route', () => {
     });
 
     it('相対パスで親がある場合、親のabsoluteWeightと自身のweightを合計すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wc-route') as Route;
+      const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
       parentRoute.routerNode = router;
       parentRoute.initialize();
 
-      const childRoute = document.createElement('wc-route') as Route;
+      const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
       childRoute.routerNode = router;
       childRoute.routeParentNode = parentRoute;
@@ -523,10 +523,10 @@ describe('Route', () => {
     });
 
     it('キャッシュされたabsoluteWeightを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();
@@ -539,7 +539,7 @@ describe('Route', () => {
 
   describe('name', () => {
     it('nameを返すこと', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       expect(route.name).toBe('');
     });
@@ -547,18 +547,18 @@ describe('Route', () => {
 
   describe('guardCheck', () => {
     it('guardがない場合、何もせずにresolveすること', async () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
 
       await expect(route.guardCheck({ path: '/test', routes: [], params: {}, lastPath: '' })).resolves.toBeUndefined();
     });
 
-    it('guardがある場合、guardHandlerを待ってからチェックすること', async () => {
-      const route = document.createElement('wc-route') as Route;
+    it('guardがある場合、guardHandlerを呼び出してからチェックすること', async () => {
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/protected');
       route.setAttribute('guard', '/login');
 
-      const guardHandler = vi.fn().mockResolvedValue(true);
+        const guardHandler = vi.fn().mockResolvedValue(true);
       route.guardHandler = guardHandler;
 
       await route.guardCheck({ path: '/protected', routes: [], params: {}, lastPath: '/' });
@@ -567,7 +567,7 @@ describe('Route', () => {
     });
 
     it('guardHandlerがfalseを返す場合、GuardCancelをthrowすること', async () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/protected');
       route.setAttribute('guard', '/login');
 
@@ -580,7 +580,7 @@ describe('Route', () => {
     });
 
     it('GuardCancelに正しいfallbackPathが含まれること', async () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/protected');
       route.setAttribute('guard', '/custom-login');
       route.initialize();
@@ -599,10 +599,10 @@ describe('Route', () => {
 
   describe('show', () => {
     it('ノードを表示し、paramsを設定すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -623,10 +623,10 @@ describe('Route', () => {
     });
 
     it('data-bind属性を持つ要素にparamsを適用すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -648,10 +648,10 @@ describe('Route', () => {
     });
 
     it('nextSiblingがある場合、insertBeforeを使用すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();
@@ -672,10 +672,10 @@ describe('Route', () => {
     });
 
     it('nextSiblingがない場合、appendChildを使用すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();
@@ -696,10 +696,10 @@ describe('Route', () => {
 
   describe('hide', () => {
     it('ノードを非表示にし、paramsをクリアすること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -723,10 +723,10 @@ describe('Route', () => {
 
   describe('shouldChange', () => {
     it('paramsが変更された場合、trueを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -742,10 +742,10 @@ describe('Route', () => {
     });
 
     it('paramsが同じ場合、falseを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.routerNode = router;
       route.initialize();
@@ -763,13 +763,13 @@ describe('Route', () => {
 
   describe('guardHandler', () => {
     it('guardHandlerが設定されていない場合、getterでエラーを投げること', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
-      expect(() => route.guardHandler).toThrow('[wc-router] wc-route has no guardHandler.');
+      expect(() => route.guardHandler).toThrow('[@wcstack/router] wcs-route has no guardHandler.');
     });
 
     it('guardHandlerをsetterで設定し、getterで取得できること', () => {
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.setAttribute('guard', '/login');
 
@@ -782,10 +782,10 @@ describe('Route', () => {
 
   describe('initialize', () => {
     it('path属性もindex属性もない場合、エラーを投げること', () => {
-      const router = document.createElement('wc-router') as any;
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
       
-      const route = document.createElement('wc-route') as Route;
+        const route = document.createElement('wcs-route') as Route;
       route.routerNode = router;
       
       let errorThrown = false;
@@ -793,16 +793,16 @@ describe('Route', () => {
         route.initialize();
       } catch (error) {
         errorThrown = true;
-        expect((error as Error).message).toBe('[wc-router] wc-route should have a "path" or "index" attribute.');
+        expect((error as Error).message).toBe('[@wcstack/router] wcs-route should have a "path" or "index" attribute.');
       }
       expect(errorThrown).toBe(true);
     });
 
     it('fallback属性がある場合、fallbackRouteとして登録されること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('fallback', '');
 
       route.initialize();
@@ -812,29 +812,29 @@ describe('Route', () => {
       expect(router.fallbackRoute).toBe(route);
     });
 
-    it('fallbackRouteが既に設定されている場合はエラーを投げること', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('fallbackRouteが既に設定されている場合、エラーを投げること', () => {
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const first = document.createElement('wc-route') as Route;
+      const first = document.createElement('wcs-route') as Route;
       first.setAttribute('fallback', '');
       first.initialize();
       first.routerNode = router;
 
-      const second = document.createElement('wc-route') as Route;
+      const second = document.createElement('wcs-route') as Route;
       second.setAttribute('fallback', '');
       second.initialize();
 
       expect(() => {
         second.routerNode = router;
-      }).toThrow('[wc-router] wc-router can have only one fallback route.');
+      }).toThrow('[@wcstack/router] wcs-router can have only one fallback route.');
     });
 
-    it('path属性が空の場合は空文字を設定すること', () => {
-      const router = document.createElement('wc-router') as any;
+    it('path属性が空の場合、空文字列を設定すること', () => {
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '');
       route.routerNode = router;
 
@@ -843,11 +843,11 @@ describe('Route', () => {
       expect(route.path).toBe('');
     });
 
-    it('guard属性が空の場合はフォールバックを"/"にすること', () => {
-      const router = document.createElement('wc-router') as any;
+    it('guard属性が空の場合、フォールバックを"/"にすること', () => {
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.setAttribute('guard', '');
       route.routerNode = router;
@@ -857,11 +857,11 @@ describe('Route', () => {
       expect((route as any)._guardFallbackPath).toBe('/');
     });
 
-    it('初期化済みの場合は何もしないこと', () => {
-      const router = document.createElement('wc-router') as any;
+    it('初期化済みの場合、何もしないこと', () => {
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/before');
       route.routerNode = router;
 
@@ -877,10 +877,10 @@ describe('Route', () => {
 
   describe('show - 追加カバレッジ', () => {
     it('ルート要素自体がdata-bind属性を持つ場合にパラメータを割り当てること', () => {
-      const router = document.createElement('wc-router') as any;
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test/:id');
       route.routerNode = router;
       route.initialize();
@@ -900,16 +900,16 @@ describe('Route', () => {
     });
 
     it('layoutOutlet要素を含む場合にassignParamsを呼び出すこと', () => {
-      const router = document.createElement('wc-router') as any;
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test/:id');
       route.routerNode = router;
       route.initialize();
 
       const container = document.createElement('div');
-      const layoutOutlet = document.createElement('wc-layout-outlet') as LayoutOutlet;
+      const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       container.appendChild(layoutOutlet);
       route.appendChild(container);
 
@@ -926,15 +926,15 @@ describe('Route', () => {
     });
 
     it('ルート要素自体がlayoutOutletの場合にassignParamsを呼び出すこと', () => {
-      const router = document.createElement('wc-router') as any;
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test/:id');
       route.routerNode = router;
       route.initialize();
 
-      const layoutOutlet = document.createElement('wc-layout-outlet') as LayoutOutlet;
+      const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
       route.appendChild(layoutOutlet);
 
       const placeholder = document.createComment('placeholder');
@@ -950,10 +950,10 @@ describe('Route', () => {
     });
 
     it('非Element childNodeでも表示処理できること', () => {
-      const router = document.createElement('wc-router') as any;
+      const router = document.createElement('wcs-router') as any;
       document.body.appendChild(router);
 
-      const route = document.createElement('wc-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
       route.routerNode = router;
       route.initialize();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>wc-router Example</title>
+  <title>wcs-router Example</title>
   <script type="module" src="./comp.js"></script>
   <script type="module" src="../dist/auto.js"></script>
 </head>
@@ -11,12 +11,12 @@
   <template id="main-layout">
     <section>
       <nav>
-        <wc-link to="/">Home</wc-link>
-        <wc-link to="/about">About</wc-link>
-        <wc-link to="/contact">Contact</wc-link>
-        <wc-link to="/admin">Admin</wc-link>
-        <wc-link to="/admin/users/123">User 123</wc-link>
-        <wc-link to="/admin/users/456">User 456</wc-link>
+        <wcs-link to="/">Home</wcs-link>
+        <wcs-link to="/about">About</wcs-link>
+        <wcs-link to="/contact">Contact</wcs-link>
+        <wcs-link to="/admin">Admin</wcs-link>
+        <wcs-link to="/admin/users/123">User 123</wcs-link>
+        <wcs-link to="/admin/users/456">User 456</wcs-link>
       </nav>
     </section>
     <section>
@@ -26,33 +26,33 @@
     </section>
   </template>
 
-  <wc-router basename="/packages/core/examples">
+  <wcs-router basename="/packages/core/examples">
     <template>
-      <wc-route path="/">
-        <wc-layout layout="main-layout">
+      <wcs-route path="/">
+        <wcs-layout layout="main-layout">
           <div slot="header">
             <h2>Header Content</h2>
           </div>
           <p>Welcome to the home page!</p>
-          <wc-route path="about">
+          <wcs-route path="about">
             <div>About Page</div>
             <!-- comment for about page -->
-          </wc-route>
-          <wc-route path="contact">
+          </wcs-route>
+          <wcs-route path="contact">
             <div>Contact Page</div>
             <!-- comment for contact page -->
-          </wc-route>
-        </wc-layout>
-      </wc-route>
-      <wc-route path="/admin">
+          </wcs-route>
+        </wcs-layout>
+      </wcs-route>
+      <wcs-route path="/admin">
         <div>Admin Page</div>
-        <wc-route path="users/:value">
+        <wcs-route path="users/:value">
           <div>Users Page</div>
           <input type="text" data-bind="" />
-        </wc-route>
-      </wc-route>
+        </wcs-route>
+      </wcs-route>
     </template>
-  </wc-router>
+  </wcs-router>
 
 </body>
 </html>

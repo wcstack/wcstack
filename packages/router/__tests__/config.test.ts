@@ -12,13 +12,13 @@ describe('config', () => {
     expect(typeof config.tagNames).toBe('object');
   });
 
-  it('すべてのタグ名が定義されていること', () => {
-    expect(config.tagNames.route).toBe('wc-route');
-    expect(config.tagNames.router).toBe('wc-router');
-    expect(config.tagNames.outlet).toBe('wc-outlet');
-    expect(config.tagNames.layout).toBe('wc-layout');
-    expect(config.tagNames.layoutOutlet).toBe('wc-layout-outlet');
-    expect(config.tagNames.link).toBe('wc-link');
+  it('すべてのタグ名が定義されてぁE��こと', () => {
+    expect(config.tagNames.route).toBe('wcs-route');
+    expect(config.tagNames.router).toBe('wcs-router');
+    expect(config.tagNames.outlet).toBe('wcs-outlet');
+    expect(config.tagNames.layout).toBe('wcs-layout');
+    expect(config.tagNames.layoutOutlet).toBe('wcs-layout-outlet');
+    expect(config.tagNames.link).toBe('wcs-link');
   });
 
   it('enableShadowRoot設定が存在すること', () => {

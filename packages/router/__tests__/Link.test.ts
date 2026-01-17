@@ -22,6 +22,7 @@ describe('Link', () => {
     
     // navigation APIをクリーンアップ
     delete (window as any).navigation;
+
   });
 
   afterEach(() => {
@@ -35,6 +36,7 @@ describe('Link', () => {
     
     // navigation APIをクリーンアップ
     delete (window as any).navigation;
+
   });
 
   it('Linkクラスが存在すること', () => {
@@ -46,10 +48,10 @@ describe('Link', () => {
   });
 
   it('to属性に有効な値を設定してインスタンス化できること', () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const link = document.createElement('wc-link') as Link;
+    const link = document.createElement('wcs-link') as Link;
     link.setAttribute('to', '/test');
     
     expect(() => {
@@ -64,10 +66,10 @@ describe('Link', () => {
 
   describe('プロパティ', () => {
     it('uuidプロパティを持つこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       document.body.appendChild(link);
 
@@ -76,10 +78,10 @@ describe('Link', () => {
     });
 
     it('commentNodeプロパティを持つこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       document.body.appendChild(link);
 
@@ -88,10 +90,10 @@ describe('Link', () => {
     });
 
     it('routerプロパティでRouterを取得できること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       document.body.appendChild(link);
 
@@ -99,23 +101,23 @@ describe('Link', () => {
     });
 
     it('routerが見つからない場合にエラーを投げること', () => {
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       
       // routerがない状態でappendChildするとconnectedCallbackでエラーが発生するため、
       // appendChild自体がエラーを投げることを期待
       expect(() => {
         document.body.appendChild(link);
-      }).toThrow('[wc-router] wc-link is not connected to a router.');
+      }).toThrow('[@wcstack/router] wcs-link is not connected to a router.');
     });
   });
 
   describe('connectedCallback', () => {
     it('アンカー要素を作成してDOMに追加すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
       document.body.appendChild(link);
@@ -126,12 +128,12 @@ describe('Link', () => {
     });
 
     it('絶対パスの場合にbasename付きhrefを設定すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
-      // basenameはconnectedCallback後に設定される必要があるため、attributeを設定
+      // basenameはconnectedCallback後に設定される可能性があるため、attributeを設定
       router.setAttribute('basename', '/app');
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
       document.body.appendChild(link);
@@ -141,11 +143,11 @@ describe('Link', () => {
       expect(anchor.getAttribute('href')).toContain('/test');
     });
 
-    it('相対URL（絶対URL）の場合にそのままhrefを設定すること', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('相対URL/絶対URL以外の場合にそのままhrefを設定すること', () => {
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', 'https://example.com');
       link.textContent = 'Link';
       document.body.appendChild(link);
@@ -155,15 +157,15 @@ describe('Link', () => {
     });
 
     it('子ノードをアンカー要素に移動すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       // innerHTMLを使用して子ノードを含むLinkを作成
       const div = document.createElement('div');
       document.body.appendChild(div);
-      div.innerHTML = '<wc-link to="/test"><span>Link Text</span></wc-link>';
+      div.innerHTML = '<wcs-link to="/test"><span>Link Text</span></wcs-link>';
 
-      const link = div.querySelector('wc-link') as Link;
+      const link = div.querySelector('wcs-link') as Link;
       expect(link).toBeDefined();
       if (!link) return;
       
@@ -174,13 +176,13 @@ describe('Link', () => {
     });
 
     it('commentNodeの後にアンカーを挿入すること（nextSiblingがある場合）', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       const container = document.createElement('div');
       document.body.appendChild(container);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
       
@@ -201,10 +203,10 @@ describe('Link', () => {
     });
 
     it('commentNodeの親がない場合にエラーを投げること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       
       // 初期化済みフラグを手動で設定して、_initializeをスキップさせる
@@ -217,24 +219,24 @@ describe('Link', () => {
       // connectedCallbackを呼び出すとcommentNodeの親チェックでエラー
       expect(() => {
         link.connectedCallback();
-      }).toThrow('[wc-router] wc-link comment node has no parent');
+      }).toThrow('[@wcstack/router] wcs-link comment node has no parent');
     });
 
     it('コンストラクタで親ノードがない場合、replaceWithを呼ばないこと', () => {
       // createElementで作成した直後は親ノードがないため、replaceWithは呼ばれない
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       
-      // commentNodeは作成されているが、replaceWithは呼ばれていないはず
+      // commentNodeは作成されるが、replaceWithは呼ばれない
       expect(link.commentNode).toBeDefined();
       expect(link.commentNode.parentNode).toBeNull();
     });
 
-    it('相対URL以外の絶対URL（http://）の場合、そのままhrefを設定すること', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('相対URL以外（http://の絶対URL）の場合、そのままhrefを設定すること', () => {
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', 'http://example.com/page');
       link.textContent = 'External Link';
       document.body.appendChild(link);
@@ -244,10 +246,10 @@ describe('Link', () => {
     });
 
     it('httpsで始まる絶対URLの場合、そのままhrefを設定すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       const url = 'https://secure.example.com/page';
       link.setAttribute('to', url);
       link.textContent = 'Secure Link';
@@ -269,10 +271,10 @@ describe('Link', () => {
       (window as any).navigation = mockNavigation;
 
       try {
-        const router = document.createElement('wc-router') as Router;
+        const router = document.createElement('wcs-router') as Router;
         document.body.appendChild(router);
 
-        const link = document.createElement('wc-link') as Link;
+        const link = document.createElement('wcs-link') as Link;
         link.setAttribute('to', '/test');
         link.textContent = 'Link';
         document.body.appendChild(link);
@@ -294,10 +296,10 @@ describe('Link', () => {
         value: 'http://localhost/test',
       });
 
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
       document.body.appendChild(link);
@@ -312,10 +314,10 @@ describe('Link', () => {
     });
 
     it('現在のパスと一致しない場合にactiveクラスを追加しないこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
       document.body.appendChild(link);
@@ -325,14 +327,14 @@ describe('Link', () => {
     });
 
     it('commentNodeの次にnextSiblingがない場合、親にappendChildすること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
       // commentNodeの後ろに何もない状態を作る
       const div = document.createElement('div');
       document.body.appendChild(div);
       
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link Text';
       
@@ -348,14 +350,14 @@ describe('Link', () => {
       expect(anchor).toBeDefined();
       expect(anchor.tagName).toBe('A');
       expect(anchor.parentNode).toBe(div);
-      // 子ノードはappendChildされているが、テキストが移動するためlink要素からはなくなる
+      // 子ノードがappendChildされているが、テキストが移動するためlink要素からはなくなる
     });
 
-    it('to属性がない場合は空文字のパスを設定すること', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('to属性がない場合、空文字列パスを設定すること', () => {
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       const container = document.createElement('div');
       container.appendChild(link);
 
@@ -374,10 +376,10 @@ describe('Link', () => {
       (window as any).navigation = mockNavigation;
 
       try {
-        const router = document.createElement('wc-router') as Router;
+        const router = document.createElement('wcs-router') as Router;
         document.body.appendChild(router);
 
-        const link = document.createElement('wc-link') as Link;
+        const link = document.createElement('wcs-link') as Link;
         link.setAttribute('to', '/test');
         link.textContent = 'Link';
         document.body.appendChild(link);
@@ -389,7 +391,7 @@ describe('Link', () => {
         // _anchorElementが設定されていることを確認
         expect((link as any)._anchorElement).toBe(anchor);
 
-        // disconnectedCallbackを呼び出し
+        // disconnectedCallbackを呼び出す
         link.remove();
 
         // disconnectedCallbackが呼ばれたことを確認するため、
@@ -407,10 +409,10 @@ describe('Link', () => {
       };
       (window as any).navigation = mockNavigation;
 
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
       document.body.appendChild(link);
@@ -433,14 +435,14 @@ describe('Link', () => {
       (window as any).navigation = mockNavigation;
 
       try {
-        const router = document.createElement('wc-router') as Router;
+        const router = document.createElement('wcs-router') as Router;
         document.body.appendChild(router);
 
         const div = document.createElement('div');
         document.body.appendChild(div);
-        div.innerHTML = '<wc-link to="/test"><span>Text</span></wc-link>';
+        div.innerHTML = '<wcs-link to="/test"><span>Text</span></wcs-link>';
 
-        const link = div.querySelector('wc-link') as Link;
+        const link = div.querySelector('wcs-link') as Link;
         expect(link).toBeDefined();
         if (!link) return;
         
@@ -457,7 +459,7 @@ describe('Link', () => {
       }
     });
 
-    it('子ノードの親がない場合は削除をスキップすること', () => {
+    it('子ノードの親がない場合、削除をスキップすること', () => {
       const mockNavigation = {
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -465,10 +467,10 @@ describe('Link', () => {
       (window as any).navigation = mockNavigation;
 
       try {
-        const router = document.createElement('wc-router') as Router;
+        const router = document.createElement('wcs-router') as Router;
         document.body.appendChild(router);
 
-        const link = document.createElement('wc-link') as Link;
+        const link = document.createElement('wcs-link') as Link;
         link.setAttribute('to', '/test');
         
         // 子ノードを追加
@@ -491,7 +493,7 @@ describe('Link', () => {
             link.remove();
           }).not.toThrow();
         } else {
-          // childSpanがnullの場合もテストはパスさせる
+          // childSpanがnullの場合もテストを通す
           expect(childSpan).toBeNull();
         }
       } finally {
@@ -500,10 +502,10 @@ describe('Link', () => {
     });
 
     it('anchorと子ノードを削除すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
 
       const span = document.createElement('span');
@@ -525,17 +527,17 @@ describe('Link', () => {
 
   describe('_updateActiveState', () => {
     it('パスが一致する場合にactiveクラスを追加すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
       document.body.appendChild(link);
 
       const anchor = link.commentNode.nextSibling as HTMLAnchorElement;
 
-      // 初期状態はactiveではない（window.locationが'/'なので）
+      // 初期状態はactiveではない（window.locationが'/'）
       expect(anchor.classList.contains('active')).toBe(false);
 
       // window.locationをモック
@@ -556,10 +558,10 @@ describe('Link', () => {
     });
 
     it('パスが一致しなくなった場合にactiveクラスを削除すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       link.textContent = 'Link';
 
@@ -592,11 +594,11 @@ describe('Link', () => {
       }
     });
 
-    it('アンカー未作成の場合は何もしないこと', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('アンカー未作成の場合、何もしないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const link = document.createElement('wc-link') as Link;
+      const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
 
       expect(() => {

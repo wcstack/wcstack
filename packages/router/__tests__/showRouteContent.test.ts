@@ -18,8 +18,8 @@ describe('showRouteContent', () => {
     expect(typeof showRouteContent).toBe('function');
   });
 
-  it('前のルートを非表示にすること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('前�Eルートを非表示にすること', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     // Create mock route objects instead of actual elements
@@ -50,8 +50,8 @@ describe('showRouteContent', () => {
     expect(route2.hide).not.toHaveBeenCalled();
   });
 
-  it('すべてのルートに対してガードチェックを実行すること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('すべてのルートに対してガードチェチE��を実行すること', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const route1: IRoute = {
@@ -80,7 +80,7 @@ describe('showRouteContent', () => {
   });
 
   it('ガードキャンセル時にフォールバックパスへナビゲートすること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const guardCancel = new GuardCancel('Guard rejected', '/fallback');
@@ -114,8 +114,8 @@ describe('showRouteContent', () => {
     consoleWarnSpy.mockRestore();
   });
 
-  it('ガード以外のエラーは再スローすること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('ガード以外�Eエラーは再スローすること', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const normalError = new Error('Some other error');
@@ -138,7 +138,7 @@ describe('showRouteContent', () => {
   });
 
   it('新しいルートを表示すること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const route1: IRoute = {
@@ -159,7 +159,7 @@ describe('showRouteContent', () => {
   });
 
   it('shouldChangeがtrueの場合にルートを表示すること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const route1: IRoute = {
@@ -181,8 +181,8 @@ describe('showRouteContent', () => {
     expect(route1.show).toHaveBeenCalled();
   });
 
-  it('shouldChangeがfalseでforce=falseの場合はshowを呼ばないこと', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('shouldChangeがfalseでforce=falseの場合�Eshowを呼ばなぁE��と', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const route1: IRoute = {
@@ -204,8 +204,8 @@ describe('showRouteContent', () => {
     expect(route1.show).not.toHaveBeenCalled();
   });
 
-  it('showがtrueを返した場合に後続のルートを強制的に表示すること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('showがtrueを返した場合に後続�Eルートを強制皁E��表示すること', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const route1: IRoute = {
@@ -233,8 +233,8 @@ describe('showRouteContent', () => {
     expect(route2.show).toHaveBeenCalled(); // Forced due to route1.show returning true
   });
 
-  it('複数のルートで前のルートセットを正しく処理すること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('褁E��のルートで前�EルートセチE��を正しく処琁E��ること', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const route1: IRoute = {
@@ -271,8 +271,8 @@ describe('showRouteContent', () => {
     expect(route3.hide).not.toHaveBeenCalled();
   });
 
-  it('空のルート配列を処理できること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('空のルート�E列を処琁E��きること', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const matchResult: IRouteMatchResult = {
@@ -285,8 +285,8 @@ describe('showRouteContent', () => {
     ).resolves.not.toThrow();
   });
 
-  it('前のルートがないケースを処理できること', async () => {
-    const router = document.createElement('wc-router') as IRouter;
+  it('前�EルートがなぁE��ースを�E琁E��きること', async () => {
+    const router = document.createElement('wcs-router') as IRouter;
     document.body.appendChild(router);
 
     const route1: IRoute = {

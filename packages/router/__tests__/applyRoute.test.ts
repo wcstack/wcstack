@@ -15,13 +15,13 @@ describe('applyRoute', () => {
   });
 
   it('basenameを持つパスを正しく処理すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     // basenameはコンストラクタで読み込まれるため、プロパティを直接設定
     (router as any)._basename = '/app';
     document.body.appendChild(router);
     
     const mockRoute = {} as Route;
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     
     const matchResult = {
       path: '/app/test',
@@ -40,11 +40,11 @@ describe('applyRoute', () => {
   });
 
   it('basenameなしのパスを正しく処理すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const mockRoute = {} as Route;
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     
     const matchResult = {
       path: '/home',
@@ -63,10 +63,10 @@ describe('applyRoute', () => {
   });
 
   it('マッチするルートがない場合にエラーをthrowすること', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
     
@@ -75,14 +75,14 @@ describe('applyRoute', () => {
     }).rejects.toThrow('No route matched for path');
   });
 
-  it('マッチするルートがない場合はfallbackRouteを使用すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('マッチするルートがない場合、fallbackRouteを使用すること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const fallbackRoute = document.createElement('wc-route') as Route;
+    const fallbackRoute = document.createElement('wcs-route') as Route;
     router.fallbackRoute = fallbackRoute;
 
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
     const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
@@ -95,11 +95,11 @@ describe('applyRoute', () => {
   });
 
   it('showRouteContent成功後にrouterとoutletの状態を更新すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const mockRoute = {} as Route;
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     
     const matchResult = {
       path: '/page',
@@ -118,12 +118,12 @@ describe('applyRoute', () => {
     expect(matchResult.lastPath).toBe('/previous');
   });
 
-  it('showRouteContentがエラーをthrowしても例外処理すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('showRouteContentがエラーをthrowしても例外処理されること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const mockRoute = {} as Route;
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     
     const matchResult = {
       path: '/error',
@@ -141,11 +141,11 @@ describe('applyRoute', () => {
   });
 
   it('lastPathを正しく設定すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const mockRoute = {} as Route;
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     
     const matchResult = {
       path: '/current',
@@ -164,12 +164,12 @@ describe('applyRoute', () => {
   });
 
   it('outlet.lastRoutesを使用してshowRouteContentを呼び出すこと', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const mockRoute = {} as Route;
     const mockPreviousRoute = {} as Route;
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     outlet.lastRoutes = [mockPreviousRoute];
     
     const matchResult = {
@@ -188,11 +188,11 @@ describe('applyRoute', () => {
   });
 
   it('basenameで始まらないパスをそのまま使用すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     (router as any)._basename = '/admin';
     
     const mockRoute = {} as Route;
-    const outlet = document.createElement('wc-outlet') as Outlet;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
     
     const matchResult = {
       path: '/user/profile',
@@ -204,7 +204,7 @@ describe('applyRoute', () => {
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
     vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
     
-    // basenameが'/admin'だが、パスは'/user'で始まらない
+    // basenameは'/admin'だが、パスは'/user'で始まらない
     await applyRoute(router, outlet, '/user/profile', '');
     
     // パスはそのまま渡される

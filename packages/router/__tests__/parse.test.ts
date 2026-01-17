@@ -18,8 +18,8 @@ describe('parse', () => {
     expect(typeof parse).toBe('function');
   });
 
-  it('空のテンプレートをパースできること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('空のチE��プレートをパ�Eスできること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
@@ -29,8 +29,8 @@ describe('parse', () => {
     expect(result).toBeInstanceOf(DocumentFragment);
   });
 
-  it('通常のHTMLノードをパースできること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('通常のHTMLノ�Eドをパ�Eスできること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
@@ -42,8 +42,8 @@ describe('parse', () => {
     expect(result.querySelector('div')?.textContent).toBe('Hello World');
   });
 
-  it('テキストノードをパースできること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('チE��ストノードをパ�Eスできること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
@@ -55,54 +55,54 @@ describe('parse', () => {
     expect(result.textContent).toBe('Plain text content');
   });
 
-  it('wc-layoutをパースしてlayout-outletに置き換えること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('wcs-layoutをパースしてlayout-outletに置き換えること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
-    template.innerHTML = '<wc-layout>Layout content</wc-layout>';
+    template.innerHTML = '<wcs-layout>Layout content</wcs-layout>';
     (router as any)._template = template;
     
     const result = await parse(router);
     expect(result).toBeInstanceOf(DocumentFragment);
     
-    // wc-layout-outletが作成されていることを確認
-    const layoutOutlet = result.querySelector('wc-layout-outlet');
+    // wcs-layout-outletが作�EされてぁE��ことを確誁E
+    const layoutOutlet = result.querySelector('wcs-layout-outlet');
     expect(layoutOutlet).not.toBeNull();
   });
 
-  it('wc-layoutの子要素を正しく処理すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('wcs-layoutの子要素を正しく処琁E��ること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
     template.innerHTML = `
-      <wc-layout>
+      <wcs-layout>
         <header>Header</header>
         <main>Main</main>
-      </wc-layout>
+      </wcs-layout>
     `;
     (router as any)._template = template;
     
     const result = await parse(router);
     expect(result).toBeInstanceOf(DocumentFragment);
     
-    const layoutOutlet = result.querySelector('wc-layout-outlet');
+    const layoutOutlet = result.querySelector('wcs-layout-outlet');
     expect(layoutOutlet).not.toBeNull();
   });
 
-  it('複数のwc-layoutを同時にパースできること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('褁E��のwcs-layoutを同時にパ�Eスできること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
     template.innerHTML = `
-      <wc-layout>
+      <wcs-layout>
         <header>Header 1</header>
-      </wc-layout>
-      <wc-layout>
+      </wcs-layout>
+      <wcs-layout>
         <header>Header 2</header>
-      </wc-layout>
+      </wcs-layout>
     `;
     
     (router as any)._template = template;
@@ -110,18 +110,18 @@ describe('parse', () => {
     const result = await parse(router);
     expect(result).toBeInstanceOf(DocumentFragment);
     
-    const layoutOutlets = result.querySelectorAll('wc-layout-outlet');
+    const layoutOutlets = result.querySelectorAll('wcs-layout-outlet');
     expect(layoutOutlets.length).toBe(2);
   });
 
-  it('通常の要素とwc-layoutが混在する場合に正しくパースすること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('通常の要素とwcs-layoutが混在する場合に正しくパ�Eスすること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
     template.innerHTML = `
       <div class="container">
-        <wc-layout>Layout content</wc-layout>
+        <wcs-layout>Layout content</wcs-layout>
         <footer>Footer</footer>
       </div>
     `;
@@ -133,24 +133,24 @@ describe('parse', () => {
     const resultContainer = result.querySelector('.container');
     expect(resultContainer).not.toBeNull();
     expect(resultContainer?.querySelector('footer')?.textContent).toBe('Footer');
-    expect(resultContainer?.querySelector('wc-layout-outlet')).not.toBeNull();
+    expect(resultContainer?.querySelector('wcs-layout-outlet')).not.toBeNull();
   });
 
   it('深くネストされた構造をパースできること', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
     template.innerHTML = `
       <div>
         <section>
-          <wc-layout>
+          <wcs-layout>
             <div>
-              <wc-layout>
+              <wcs-layout>
                 <span>Deep content</span>
-              </wc-layout>
+              </wcs-layout>
             </div>
-          </wc-layout>
+          </wcs-layout>
         </section>
       </div>
     `;
@@ -161,12 +161,12 @@ describe('parse', () => {
     expect(result).toBeInstanceOf(DocumentFragment);
     
     // Nested layout-outlets should exist
-    const layoutOutlets = result.querySelectorAll('wc-layout-outlet');
+    const layoutOutlets = result.querySelectorAll('wcs-layout-outlet');
     expect(layoutOutlets.length).toBeGreaterThan(0);
   });
 
-  it('コメントノード以外の非要素ノードを保持すること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('コメントノード以外�E非要素ノ�Eドを保持すること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
@@ -179,15 +179,15 @@ describe('parse', () => {
     expect(result.textContent).toContain('Text after');
   });
 
-  it('複数の異なるノードタイプを含むテンプレートをパースできること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('褁E��の異なるノードタイプを含むチE��プレートをパ�Eスできること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
     const template = document.createElement('template');
     template.innerHTML = `
       Text node
       <div>HTML Element</div>
-      <wc-layout><header>Layout Header</header></wc-layout>
+      <wcs-layout><header>Layout Header</header></wcs-layout>
       More text
     `;
     (router as any)._template = template;
@@ -195,17 +195,17 @@ describe('parse', () => {
     const result = await parse(router);
     expect(result).toBeInstanceOf(DocumentFragment);
     expect(result.querySelector('div')).not.toBeNull();
-    expect(result.querySelector('wc-layout-outlet')).not.toBeNull();
+    expect(result.querySelector('wcs-layout-outlet')).not.toBeNull();
     expect(result.textContent).toContain('Text node');
     expect(result.textContent).toContain('More text');
   });
 
-  it('wc-routeをパースしてプレースホルダーに置き換えること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('wcs-routeをパースしてプレースホルダーに置き換えること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
     const template = document.createElement('template');
-    template.innerHTML = '<wc-route path="/test"><span>Child</span></wc-route>';
+    template.innerHTML = '<wcs-route path="/test"><span>Child</span></wcs-route>';
     (router as any)._template = template;
 
     const result = await parse(router);
@@ -219,15 +219,15 @@ describe('parse', () => {
     expect(commentNodes[0].data).toContain('@@route:');
   });
 
-  it('ネストされたwc-routeをパースできること', async () => {
-    const router = document.createElement('wc-router') as Router;
+  it('ネストされたwcs-routeをパースできること', async () => {
+    const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
     const template = document.createElement('template');
     template.innerHTML = `
-      <wc-route path="/parent">
-        <wc-route path="/child"><span>Child</span></wc-route>
-      </wc-route>
+      <wcs-route path="/parent">
+        <wcs-route path="/child"><span>Child</span></wcs-route>
+      </wcs-route>
     `;
     (router as any)._template = template;
 

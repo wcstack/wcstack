@@ -1,11 +1,11 @@
 const config = {
     tagNames: {
-        route: "wc-route",
-        router: "wc-router",
-        outlet: "wc-outlet",
-        layout: "wc-layout",
-        layoutOutlet: "wc-layout-outlet",
-        link: "wc-link"
+        route: "wcs-route",
+        router: "wcs-router",
+        outlet: "wcs-outlet",
+        layout: "wcs-layout",
+        layoutOutlet: "wcs-layout-outlet",
+        link: "wcs-link"
     },
     enableShadowRoot: false
 };
@@ -22,7 +22,7 @@ function getUUID() {
 }
 
 function raiseError(message) {
-    throw new Error(`[wc-router] ${message}`);
+    throw new Error(`[@wcstack/router] ${message}`);
 }
 
 const bindTypeSet = new Set(["props", "states", "attr", ""]);
@@ -755,7 +755,7 @@ function getNavigation() {
 }
 
 /**
- * AppRoutes - Root component for wc-router
+ * AppRoutes - Root component for @wcstack/router
  *
  * Container element that manages route definitions and navigation.
  */

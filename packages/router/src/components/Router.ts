@@ -7,7 +7,7 @@ import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
 
 /**
- * AppRoutes - Root component for wc-router
+ * AppRoutes - Root component for @wcstack/router
  * 
  * Container element that manages route definitions and navigation.
  */

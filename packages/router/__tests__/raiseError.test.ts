@@ -5,12 +5,12 @@ describe('raiseError', () => {
   it('エラーをthrowすること', () => {
     expect(() => {
       raiseError('test error');
-    }).toThrow('[wc-router] test error');
+    }).toThrow('[@wcstack/router] test error');
   });
 
-  it('カスタムメッセージを含むエラーをthrowすること', () => {
+  it('カスタムメチE��ージを含むエラーをthrowすること', () => {
     expect(() => {
       raiseError('custom message');
-    }).toThrow('[wc-router] custom message');
+    }).toThrow('[@wcstack/router] custom message');
   });
 });

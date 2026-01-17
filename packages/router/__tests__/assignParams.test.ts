@@ -38,10 +38,10 @@ describe('assignParams', () => {
     element.setAttribute('data-bind', 'states');
     element.states = { count: 0 };
     
-    assignParams(element, { count: 5, active: true });
+    assignParams(element, { count: '5', active: 'true' });
     
-    expect(element.states.count).toBe(5);
-    expect(element.states.active).toBe(true);
+    expect(element.states.count).toBe('5');
+    expect(element.states.active).toBe('true');
   });
 
   it('data-bind属性がない場合、エラーをthrowすること', () => {

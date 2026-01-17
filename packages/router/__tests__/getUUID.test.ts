@@ -19,7 +19,7 @@ describe('getUUID', () => {
     expect(uuid1).not.toBe(uuid3);
   });
 
-  it('crypto.randomUUIDがある場合はそれを使用すること', () => {
+  it('crypto.randomUUIDがある場合�Eそれを使用すること', () => {
     const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,
@@ -36,7 +36,7 @@ describe('getUUID', () => {
     }
   });
 
-  it('crypto.randomUUIDがない場合はフォールバックでUUIDを生成すること', () => {
+  it('crypto.randomUUIDがなぁE��合�EフォールバックでUUIDを生成すること', () => {
     const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,

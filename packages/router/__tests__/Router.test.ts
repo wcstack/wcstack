@@ -22,25 +22,25 @@ describe('Router', () => {
     expect(typeof Router).toBe('function');
   });
 
-  it('HTMLElementを継承していること', () => {
+  it('HTMLElementを継承してぁE��こと', () => {
     expect(Object.getPrototypeOf(Router.prototype)).toBe(HTMLElement.prototype);
   });
 
-  it('インスタンスを作成できること', () => {
-    const router = document.createElement('wc-router') as Router;
+  it('インスタンスを作�Eできること', () => {
+    const router = document.createElement('wcs-router') as Router;
     expect(router).toBeInstanceOf(Router);
     expect(router).toBeInstanceOf(HTMLElement);
   });
 
   it('シングルトンパターンであること', () => {
-    const router1 = document.createElement('wc-router') as Router;
+    const router1 = document.createElement('wcs-router') as Router;
     expect(() => {
-      document.createElement('wc-router');
+      document.createElement('wcs-router');
     }).toThrow();
   });
 
   it('静的なinstanceプロパティでインスタンスにアクセスできること', () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     expect(Router.instance).toBe(router);
   });
 
@@ -51,17 +51,17 @@ describe('Router', () => {
   });
 
   it('basenameプロパティを持つこと', () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     expect(router.basename).toBeDefined();
     expect(typeof router.basename).toBe('string');
   });
 
-  it('navigate静的メソッドを持つこと', () => {
+  it('navigate静的メソチE��を持つこと', () => {
     expect(typeof Router.navigate).toBe('function');
   });
 
   it('静的navigateがインスタンスのnavigateを呼ぶこと', async () => {
-    const router = document.createElement('wc-router') as Router;
+    const router = document.createElement('wcs-router') as Router;
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
 
     Router.navigate('/static');
@@ -71,14 +71,14 @@ describe('Router', () => {
 
   describe('properties', () => {
     it('routeChildNodesを取得できること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       const list = router.routeChildNodes;
       expect(Array.isArray(list)).toBe(true);
       expect(list).toBe((router as any)._routeChildNodes);
     });
 
     it('pathのgetter/setterが動作すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       router.path = '/current';
       expect(router.path).toBe('/current');
     });
@@ -86,7 +86,7 @@ describe('Router', () => {
 
   describe('private helpers', () => {
     it('_normalizePathがパスを正規化すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       const normalized = (router as any)._normalizePath('foo/bar');
       expect(normalized).toBe('/foo/');
 
@@ -95,7 +95,7 @@ describe('Router', () => {
     });
 
     it('_getBasenameがbaseタグのパスを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       const base = document.createElement('base');
       base.setAttribute('href', 'http://localhost/app/');
       document.head.appendChild(base);
@@ -104,8 +104,8 @@ describe('Router', () => {
       expect(basename).toBe('/app/');
     });
 
-    it('_getBasenameがルートの場合は空文字を返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('_getBasenameがルート�E場合�E空斁E��を返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
       const base = document.createElement('base');
       base.setAttribute('href', 'http://localhost/');
       document.head.appendChild(base);
@@ -114,8 +114,8 @@ describe('Router', () => {
       expect(basename).toBe('');
     });
 
-    it('_getBasenameがpathname空文字の場合は空文字を返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('_getBasenameがpathname空斁E���E場合�E空斁E��を返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
       const originalURL = (globalThis as any).URL;
       class MockURL {
         pathname = '';
@@ -129,8 +129,8 @@ describe('Router', () => {
       (globalThis as any).URL = originalURL;
     });
 
-    it('_getOutletが既存のOutletを返すこと', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('_getOutletが既存�EOutletを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
       const outlet = createOutlet();
       document.body.appendChild(outlet);
 
@@ -139,26 +139,26 @@ describe('Router', () => {
     });
 
     it('_getOutletがOutletを生成して追加すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       const found = (router as any)._getOutlet();
-      expect(found.tagName.toLowerCase()).toBe('wc-outlet');
+      expect(found.tagName.toLowerCase()).toBe('wcs-outlet');
       expect(document.body.contains(found)).toBe(true);
     });
 
-    it('outlet未設定の場合はエラーになること', () => {
-      const router = document.createElement('wc-router') as Router;
-      expect(() => router.outlet).toThrow('[wc-router] wc-router has no outlet.');
+    it('outlet未設定�E場合�Eエラーになること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      expect(() => router.outlet).toThrow('[@wcstack/router] wcs-router has no outlet.');
     });
 
-    it('template未設定の場合はエラーになること', () => {
-      const router = document.createElement('wc-router') as Router;
-      expect(() => router.template).toThrow('[wc-router] wc-router has no template.');
+    it('template未設定�E場合�Eエラーになること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      expect(() => router.template).toThrow('[@wcstack/router] wcs-router has no template.');
     });
   });
 
   describe('navigate', () => {
-    it('navigation APIがある場合はnavigation.navigateを呼ぶこと', async () => {
-      const router = document.createElement('wc-router') as Router;
+    it('navigation APIがある場合�Enavigation.navigateを呼ぶこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
       (router as any)._basename = '/base';
       const navigation = {
         navigate: vi.fn(),
@@ -172,8 +172,8 @@ describe('Router', () => {
       expect(navigation.navigate).toHaveBeenCalledWith('/base/path');
     });
 
-    it('navigation APIがない場合はapplyRouteを呼ぶこと', async () => {
-      const router = document.createElement('wc-router') as Router;
+    it('navigation APIがなぁE��合�EapplyRouteを呼ぶこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
       (router as any)._basename = '/base';
       (router as any)._outlet = createOutlet();
       (router as any)._outlet.routesNode = router;
@@ -190,8 +190,8 @@ describe('Router', () => {
   });
 
   describe('_onNavigateFunc', () => {
-    it('canInterceptがfalseの場合は何もしないこと', () => {
-      const router = document.createElement('wc-router') as Router;
+    it('canInterceptがfalseの場合�E何もしなぁE��と', () => {
+      const router = document.createElement('wcs-router') as Router;
       const navEvent = {
         canIntercept: false,
         hashChange: false,
@@ -203,8 +203,8 @@ describe('Router', () => {
       expect(navEvent.intercept).not.toHaveBeenCalled();
     });
 
-    it('interceptハンドラー内でapplyRouteを呼ぶこと', async () => {
-      const router = document.createElement('wc-router') as Router;
+    it('interceptハンドラー冁E��applyRouteを呼ぶこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
       (router as any)._outlet = createOutlet();
       (router as any)._outlet.routesNode = router;
       (router as any)._path = '/prev';
@@ -231,8 +231,8 @@ describe('Router', () => {
   });
 
   describe('_initialize', () => {
-    it('basenameが空でbaseタグがなくパスが/以外の場合はエラーになること', async () => {
-      const router = document.createElement('wc-router') as Router;
+    it('basenameが空でbaseタグがなくパスぁE以外�E場合�Eエラーになること', async () => {
+      const router = document.createElement('wcs-router') as Router;
       router.setAttribute('basename', '');
 
       (router as any)._getBasename = vi.fn(() => '');
@@ -249,7 +249,7 @@ describe('Router', () => {
         await (router as any)._initialize();
       } catch (error) {
         errorThrown = true;
-        expect((error as Error).message).toBe('[wc-router] wc-router basename is empty, but current path is not "/".');
+        expect((error as Error).message).toBe('[@wcstack/router] wcs-router basename is empty, but current path is not "/".');
       }
       expect(errorThrown).toBe(true);
 
@@ -257,7 +257,7 @@ describe('Router', () => {
     });
 
     it('templateとoutletを設定し初期化できること', async () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       router.setAttribute('basename', '/app');
 
       const template = document.createElement('template');
@@ -277,8 +277,8 @@ describe('Router', () => {
       expect(applySpy).toHaveBeenCalled();
     });
 
-    it('templateがない場合にエラーになること', async () => {
-      const router = document.createElement('wc-router') as Router;
+    it('templateがなぁE��合にエラーになること', async () => {
+      const router = document.createElement('wcs-router') as Router;
       router.setAttribute('basename', '/app');
 
       let errorThrown = false;
@@ -286,7 +286,7 @@ describe('Router', () => {
         await (router as any)._initialize();
       } catch (error) {
         errorThrown = true;
-        expect((error as Error).message).toBe('[wc-router] wc-router should have a <template> child element.');
+        expect((error as Error).message).toBe('[@wcstack/router] wcs-router should have a <template> child element.');
       }
       expect(errorThrown).toBe(true);
     });
@@ -294,7 +294,7 @@ describe('Router', () => {
 
   describe('connected/disconnected', () => {
     it('connectedCallbackで初期化しnavigateイベントを登録すること', async () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       (router as any)._initialize = vi.fn().mockResolvedValue(undefined);
 
       const navigation = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
@@ -306,8 +306,8 @@ describe('Router', () => {
       expect(navigation.addEventListener).toHaveBeenCalledWith('navigate', (router as any)._onNavigate);
     });
 
-    it('初期化済みの場合は初期化を再実行しないこと', async () => {
-      const router = document.createElement('wc-router') as Router;
+    it('初期化済みの場合�E初期化を再実行しなぁE��と', async () => {
+      const router = document.createElement('wcs-router') as Router;
       (router as any)._initialized = true;
       (router as any)._initialize = vi.fn().mockResolvedValue(undefined);
 
@@ -321,7 +321,7 @@ describe('Router', () => {
     });
 
     it('disconnectedCallbackでnavigateイベントを解除すること', () => {
-      const router = document.createElement('wc-router') as Router;
+      const router = document.createElement('wcs-router') as Router;
       const navigation = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
       (window as any).navigation = navigation;
 
