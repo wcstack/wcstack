@@ -29,15 +29,17 @@ Provides SPA routing with declarative definitions using custom elements.
 						<main-dashboard></main-dashboard>
 					</wcs-route>
 
-					<!-- When path is "/products" -->
+					<!-- When path is "/products" (relative paths below top-level) -->
 					<wcs-route path="products">
-						<product-list></product-list>
-					</wcs-route>
-
-					<!-- When path is "/products/:productId" -->
-					<wcs-route path="products/:productId">
-						<!-- productItem.props.productId = productId -->
-						<product-item data-bind="props"></product-item>
+						<!-- When path is "/products" -->
+						<wcs-route index>
+							<product-list></product-list>
+						</wcs-route>
+						<!-- When path is "/products/:productId" -->
+						<wcs-route path=":productId">
+							<!-- productItem.props.productId = productId -->
+							<product-item data-bind="props"></product-item>
+						</wcs-route>
 					</wcs-route>
 				</main-body>
 			</wcs-layout>

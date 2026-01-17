@@ -29,15 +29,17 @@
             <main-dashboard></main-dashboard>
           </wcs-route>
 
-          <!-- pathが"/products"の場合 -->
+          <!-- pathが"/products"の場合、トップレベル以外は相対パス -->
           <wcs-route path="products">
-            <product-list></product-list>
-          </wcs-route>
-
-          <!-- pathが"/products/:productId"の場合 -->
-          <wcs-route path="products/:productId">
-            <!-- productItem.props.productId = productId -->
-            <product-item data-bind="props"></product-item>
+            <!-- pathが"/products"の場合 -->
+            <wcs-route index>
+              <product-list></product-list>
+            </wcs-route>
+            <!-- pathが"/products/:productId"の場合 -->
+            <wcs-route path=":productId">
+              <!-- productItem.props.productId = productId -->
+              <product-item data-bind="props"></product-item>
+            </wcs-route>
           </wcs-route>
         </main-body>
       </wcs-layout>
@@ -59,7 +61,7 @@
   </template>
 </wcs-router>
 
-<wsc-outlet>
+<wcs-outlet>
   <!-- ルートパス・レイアウトに従ったDOMツリーを作成し、ここに表示 -->
 </wcs-outlet>
 
