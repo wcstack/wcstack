@@ -30,6 +30,7 @@ export class Route extends HTMLElement implements IRoute {
   private _guardFallbackPath: string = '';
   private _initialized: boolean = false;
   private _isFallbackRoute: boolean = false;
+  private _segmentCount: number = 0;
 
   constructor() {
     super();
@@ -309,6 +310,7 @@ export class Route extends HTMLElement implements IRoute {
         this._weight += 2;
       }
     }
+    this._segmentCount = this._path === "" ? 0 : segments.length; 
     this._patternText = patternSegments.join('\\/');
     this._hasGuard = this.hasAttribute('guard');
     if (this._hasGuard) {
@@ -323,5 +325,17 @@ export class Route extends HTMLElement implements IRoute {
 
   get fullpath(): string {
     return this.absolutePath;
+  }
+
+  get segmentCount(): number {
+    return this._segmentCount;
+  }
+
+  get absoluteSegmentCount(): number {
+    return this._checkParentNode<number>((routeParentNode) => {
+      return routeParentNode.absoluteSegmentCount + this._segmentCount;
+    }, () => {
+      return this._segmentCount;
+    });
   }
 }

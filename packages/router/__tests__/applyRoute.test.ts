@@ -18,7 +18,6 @@ describe('applyRoute', () => {
     const router = document.createElement('wcs-router') as Router;
     // basenameはコンストラクタで読み込まれるため、プロパティを直接設定
     (router as any)._basename = '/app';
-    document.body.appendChild(router);
     
     const mockRoute = {} as Route;
     const outlet = document.createElement('wcs-outlet') as Outlet;
@@ -35,7 +34,7 @@ describe('applyRoute', () => {
     
     await applyRoute(router, outlet, '/app/test', '');
     
-    expect(matchRoutesModule.matchRoutes).toHaveBeenCalledWith(router, '/app/test');
+    expect(matchRoutesModule.matchRoutes).toHaveBeenCalledWith(router, '/test');
     expect(showRouteContentModule.showRouteContent).toHaveBeenCalled();
   });
 
@@ -232,5 +231,27 @@ describe('applyRoute', () => {
     
     // パスはそのまま渡される
     expect(matchRoutesModule.matchRoutes).toHaveBeenCalledWith(router, '/user/profile');
+  });
+
+  it('basename境界が一致しない場合はスライスしないこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    (router as any)._basename = '/app';
+
+    const mockRoute = {} as Route;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
+
+    const matchResult = {
+      path: '/appX/products',
+      routes: [mockRoute],
+      params: {},
+      lastPath: ''
+    };
+
+    vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+
+    await applyRoute(router, outlet, '/appX/products', '');
+
+    expect(matchRoutesModule.matchRoutes).toHaveBeenCalledWith(router, '/appX/products');
   });
 });

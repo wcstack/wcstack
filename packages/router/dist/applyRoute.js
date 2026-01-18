@@ -4,9 +4,15 @@ import { raiseError } from "./raiseError";
 import { showRouteContent } from "./showRouteContent";
 export async function applyRoute(routerNode, outlet, fullPath, lastPath) {
     const basename = routerNode.basename;
-    const sliced = fullPath.startsWith(basename)
-        ? fullPath.slice(basename.length)
-        : fullPath;
+    let sliced = fullPath;
+    if (basename !== "") {
+        if (fullPath === basename) {
+            sliced = "";
+        }
+        else if (fullPath.startsWith(basename + "/")) {
+            sliced = fullPath.slice(basename.length);
+        }
+    }
     // when fullPath === basename (e.g. "/app"), treat it as root "/"
     const path = sliced === "" ? "/" : sliced;
     let matchResult = matchRoutes(routerNode, path);

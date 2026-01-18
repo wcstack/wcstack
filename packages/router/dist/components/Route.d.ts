@@ -23,6 +23,7 @@ export declare class Route extends HTMLElement implements IRoute {
     private _guardFallbackPath;
     private _initialized;
     private _isFallbackRoute;
+    private _segmentCount;
     constructor();
     get routeParentNode(): IRoute | null;
     get routeChildNodes(): IRoute[];
@@ -53,5 +54,7 @@ export declare class Route extends HTMLElement implements IRoute {
     set guardHandler(value: GuardHandler);
     initialize(routerNode: IRouter, routeParentNode: IRoute | null): void;
     get fullpath(): string;
+    get segmentCount(): number;
+    get absoluteSegmentCount(): number;
 }
 //# sourceMappingURL=Route.d.ts.map

@@ -27,6 +27,7 @@ export class Route extends HTMLElement {
     _guardFallbackPath = '';
     _initialized = false;
     _isFallbackRoute = false;
+    _segmentCount = 0;
     constructor() {
         super();
     }
@@ -277,6 +278,7 @@ export class Route extends HTMLElement {
                 this._weight += 2;
             }
         }
+        this._segmentCount = this._path === "" ? 0 : segments.length;
         this._patternText = patternSegments.join('\\/');
         this._hasGuard = this.hasAttribute('guard');
         if (this._hasGuard) {
@@ -289,6 +291,16 @@ export class Route extends HTMLElement {
     }
     get fullpath() {
         return this.absolutePath;
+    }
+    get segmentCount() {
+        return this._segmentCount;
+    }
+    get absoluteSegmentCount() {
+        return this._checkParentNode((routeParentNode) => {
+            return routeParentNode.absoluteSegmentCount + this._segmentCount;
+        }, () => {
+            return this._segmentCount;
+        });
     }
 }
 //# sourceMappingURL=Route.js.map

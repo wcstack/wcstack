@@ -101,6 +101,26 @@ describe('Route', () => {
     });
   });
 
+  describe('segmentCount', () => {
+    it('segmentCountとabsoluteSegmentCountを取得できること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const parentRoute = createRoute('/products');
+      document.body.appendChild(parentRoute);
+      parentRoute.initialize(router, null);
+
+      const childRoute = createRoute(':id');
+      document.body.appendChild(childRoute);
+      childRoute.initialize(router, parentRoute);
+
+      expect(parentRoute.segmentCount).toBe(2);
+      expect(parentRoute.absoluteSegmentCount).toBe(2);
+      expect(childRoute.segmentCount).toBe(1);
+      expect(childRoute.absoluteSegmentCount).toBe(3);
+    });
+  });
+
   describe('routeParentNode', () => {
     it('親ノードを設定し取得できること', () => {
       const router = document.createElement('wcs-router') as Router;

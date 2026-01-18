@@ -91,6 +91,7 @@ class Route extends HTMLElement {
     _guardFallbackPath = '';
     _initialized = false;
     _isFallbackRoute = false;
+    _segmentCount = 0;
     constructor() {
         super();
     }
@@ -341,6 +342,7 @@ class Route extends HTMLElement {
                 this._weight += 2;
             }
         }
+        this._segmentCount = this._path === "" ? 0 : segments.length;
         this._patternText = patternSegments.join('\\/');
         this._hasGuard = this.hasAttribute('guard');
         if (this._hasGuard) {
@@ -353,6 +355,16 @@ class Route extends HTMLElement {
     }
     get fullpath() {
         return this.absolutePath;
+    }
+    get segmentCount() {
+        return this._segmentCount;
+    }
+    get absoluteSegmentCount() {
+        return this._checkParentNode((routeParentNode) => {
+            return routeParentNode.absoluteSegmentCount + this._segmentCount;
+        }, () => {
+            return this._segmentCount;
+        });
     }
 }
 
@@ -659,6 +671,10 @@ function matchRoutes(routerNode, path) {
     results.sort((a, b) => {
         const lastRouteA = a.routes.at(-1);
         const lastRouteB = b.routes.at(-1);
+        const diffSegmentCount = lastRouteA.absoluteSegmentCount - lastRouteB.absoluteSegmentCount;
+        if (diffSegmentCount !== 0) {
+            return -diffSegmentCount;
+        }
         const diffWeight = lastRouteA.absoluteWeight - lastRouteB.absoluteWeight;
         if (diffWeight !== 0) {
             return -diffWeight;
@@ -710,9 +726,15 @@ async function showRouteContent(routerNode, matchResult, lastRoutes) {
 
 async function applyRoute(routerNode, outlet, fullPath, lastPath) {
     const basename = routerNode.basename;
-    const sliced = fullPath.startsWith(basename)
-        ? fullPath.slice(basename.length)
-        : fullPath;
+    let sliced = fullPath;
+    if (basename !== "") {
+        if (fullPath === basename) {
+            sliced = "";
+        }
+        else if (fullPath.startsWith(basename + "/")) {
+            sliced = fullPath.slice(basename.length);
+        }
+    }
     // when fullPath === basename (e.g. "/app"), treat it as root "/"
     const path = sliced === "" ? "/" : sliced;
     let matchResult = matchRoutes(routerNode, path);

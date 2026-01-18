@@ -119,6 +119,7 @@ describe('matchRoutes', () => {
     document.body.appendChild(router);
     
     const staticRoute = {
+      absoluteSegmentCount: 2,
       absoluteWeight: 100,
       childIndex: 0
     } as any;
@@ -130,6 +131,7 @@ describe('matchRoutes', () => {
     staticRoute.routeChildNodes = [];
     
     const dynamicRoute = {
+      absoluteSegmentCount: 2,
       absoluteWeight: 50,
       childIndex: 1
     } as any;
@@ -153,6 +155,7 @@ describe('matchRoutes', () => {
     document.body.appendChild(router);
     
     const route1 = {
+      absoluteSegmentCount: 2,
       absoluteWeight: 80,
       childIndex: 0
     } as any;
@@ -164,6 +167,7 @@ describe('matchRoutes', () => {
     route1.routeChildNodes = [];
     
     const route2 = {
+      absoluteSegmentCount: 3,
       absoluteWeight: 90,
       childIndex: 1
     } as any;
@@ -178,7 +182,7 @@ describe('matchRoutes', () => {
     
     const result = matchRoutes(router, '/products/123/edit');
     expect(result).not.toBeNull();
-    // より高い重みのルートが選択される
+    // セグメント数が多いルートが優先される
     expect(result?.routes[0]).toBe(route2);
   });
 
@@ -188,22 +192,24 @@ describe('matchRoutes', () => {
     
     const route1 = {
       testPath: vi.fn().mockReturnValue({
-        routes: [{ absoluteWeight: 50, childIndex: 0 }],
+        routes: [{ absoluteSegmentCount: 2, absoluteWeight: 50, childIndex: 0 }],
         params: {},
         lastPath: ''
       }),
       routeChildNodes: [],
+      absoluteSegmentCount: 2,
       absoluteWeight: 50,
       childIndex: 0
     } as any;
     
     const route2 = {
       testPath: vi.fn().mockReturnValue({
-        routes: [{ absoluteWeight: 50, childIndex: 1 }],
+        routes: [{ absoluteSegmentCount: 2, absoluteWeight: 50, childIndex: 1 }],
         params: {},
         lastPath: ''
       }),
       routeChildNodes: [],
+      absoluteSegmentCount: 2,
       absoluteWeight: 50,
       childIndex: 1
     } as any;

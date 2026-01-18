@@ -154,3 +154,144 @@ function (toPath: string, fromPath: string): boolean | Promise<boolean>
 |------|------|
 | `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basenameが付与される）。それ以外は外部URLとして扱われる |
 
+## パス仕様案（Router / Route / Link 共通）
+
+### 用語
+
+* **URL Pathname**: `location.pathname`（例: `/app/products/42`）
+* **basename**: アプリの“マウント先”のパス（例: `/app`）
+* **internalPath**: basename を除いたアプリ内ルーティング用パス（例: `/products/42`）
+
+---
+
+## 1) basename の仕様
+
+### 1.1 basename の決定順
+
+1. `<wcs-router basename="/app">` の `basename` 属性
+2. `<base href="/app/">` がある場合は `new URL(document.baseURI).pathname` から導出
+3. どちらも無い場合は **空文字** `""`（= ルート直下で動く想定）
+
+### 1.2 basename の正規化（重要）
+
+basename は **必ず次に正規化**する：
+
+* 先頭 `/` を付ける（空はそのまま）
+* 連続スラッシュを 1つに畳む
+* 末尾の `/` は削除（ただし `/` そのものは空 `""` と等価扱い）
+* `.../index.html` や `.../*.html` はファイルとみなし削除
+* 結果が `/` になったら basename は `""` とする
+
+例：
+
+* `"/"` → `""`
+* `"/app/"` → `"/app"`
+* `"/app/index.html"` → `"/app"`
+
+### 1.3 basename と直リンクの整合性
+
+* basename が `""` で `<base>` も無いのに、初期表示の `pathname !== "/"` の場合は **エラー**（現行思想を踏襲）
+* basename が `"/app"` の場合：
+
+  * `"/app"` と `"/app/"` は **同じ意味**（アプリの root）
+
+---
+
+## 2) internalPath の仕様
+
+### 2.1 internalPath の正規化
+
+internalPath は常に **絶対パス形式**で扱う。
+
+* 先頭 `/` を付ける
+* 連続スラッシュを畳む
+* 末尾 `/` は削除（ただし root `/` は保持）
+* 空になったら `/`
+
+例：
+
+* `""` → `/`
+* `"products"` → `/products`
+* `"/products/"` → `/products`
+* `"///a//b/"` → `/a/b`
+
+### 2.2 URLから internalPath を得る
+
+`URL Pathname` を `basename` と突き合わせて得る。
+
+* `pathname` が `basename` で始まるなら `internalPath = pathname.slice(basename.length)`
+* slice 結果が `""` なら `internalPath = "/"`
+
+例：basename=`/app`
+
+* pathname=`/app` → internalPath=`/`
+* pathname=`/app/` → internalPath=`/`
+* pathname=`/app/products/42` → internalPath=`/products/42`
+
+---
+
+## 3) `<wcs-route path="...">` の仕様
+
+### 3.1 path の書き方
+
+`<wcs-route path="...">` の `path` は **internalPath のルールに従う**。
+
+* ルート（トップ）は `"/"`
+* 子routeは **相対**を許可する（推奨は相対）
+
+  * 例: 親が `/products`、子が `":id"` → `/products/:id`
+
+> ただし実装側では、解析時に「絶対化」して持つ方が事故が少ないです（相対のまま保持しない）。
+
+### 3.2 マッチング規則
+
+* **完全一致**（セグメント単位）
+* パラメータ `:id` は1セグメントにマッチ
+
+### 3.3 優先順位（最長マッチの定義）
+
+候補が複数ある場合、次の順で高いものを採用：
+
+1. **セグメント数が多い**
+2. 同セグメント数なら **静的セグメントが多い**（`"users"` > `":id"`）
+3. それでも同じなら **定義順**
+
+例：
+
+* `/admin/users/:id`（静的2 + param1）
+* `/admin/users/profile`（静的3）
+  → 後者が勝つ
+
+### 3.4 トレーリングスラッシュ
+
+* マッチングは **内部正規化後**に行うため、
+
+  * `/products` と `/products/` は同一扱い（URL表現はどちらでもOK）
+
+---
+
+## 4) `<wcs-link to="...">` の仕様
+
+### 4.1 to が `/` で始まる場合
+
+`to` は **internalPath** とみなす。
+
+* 実際の `href` は `basename + internalPath` を join して生成
+* join は `"/app" + "/products"` → `"/app/products"`（`//`を作らない）
+
+### 4.2 to が `/` で始まらない場合
+
+外部リンクとして扱う（`new URL(to)` が成立する想定）。
+
+* 例: `https://example.com/`
+
+---
+
+## 5) “HTMLファイルを落とす” ルールは限定的に
+
+`.html` を落とすのは **pathname の末尾が本当にファイルっぽい場合だけ**。
+
+* `"/app/index.html"` → `"/app"`（OK）
+* `"/products"` を `"/"` にするのは **NG**（セグメントを落とさない）
+
+

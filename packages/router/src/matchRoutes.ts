@@ -28,6 +28,10 @@ export function matchRoutes(routerNode: IRouter, path: string): IRouteMatchResul
   results.sort((a, b) => {
     const lastRouteA = a.routes.at(-1)!;
     const lastRouteB = b.routes.at(-1)!;
+    const diffSegmentCount = lastRouteA.absoluteSegmentCount - lastRouteB.absoluteSegmentCount;
+    if (diffSegmentCount !== 0) {
+      return -diffSegmentCount;
+    }
     const diffWeight = lastRouteA.absoluteWeight - lastRouteB.absoluteWeight;
     if (diffWeight !== 0) {
       return -diffWeight;

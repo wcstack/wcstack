@@ -37,6 +37,8 @@ export interface IRoute {
   readonly childIndex: number;
   readonly name: string;
   readonly fullpath: string;
+  readonly segmentCount: number;
+  readonly absoluteSegmentCount: number;
   testPath(path: string): IRouteMatchResult | null;
   guardHandler: GuardHandler;
   show(params: Record<string, string>): boolean;
