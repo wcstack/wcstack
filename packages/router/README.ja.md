@@ -194,6 +194,7 @@ basename は **必ず次に正規化**する：
 * basename が `"/app"` の場合：
 
   * `"/app"` と `"/app/"` は **同じ意味**（アプリの root）
+  * `"/app"` は `"/app"` または `"/app/..."` にのみ一致（`"/appX"` には一致しない）
 
 ---
 
@@ -207,6 +208,7 @@ internalPath は常に **絶対パス形式**で扱う。
 * 連続スラッシュを畳む
 * 末尾 `/` は削除（ただし root `/` は保持）
 * 空になったら `/`
+* Router が扱う internalPath の正規化では末尾が `*.html` の場合は削除
 
 例：
 
@@ -219,7 +221,9 @@ internalPath は常に **絶対パス形式**で扱う。
 
 `URL Pathname` を `basename` と突き合わせて得る。
 
-* `pathname` が `basename` で始まるなら `internalPath = pathname.slice(basename.length)`
+* `pathname === basename` なら `internalPath = "/"`
+* `pathname` が `basename + "/"` で始まるなら `internalPath = pathname.slice(basename.length)`
+* それ以外は `internalPath = pathname`
 * slice 結果が `""` なら `internalPath = "/"`
 
 例：basename=`/app`

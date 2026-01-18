@@ -153,3 +153,147 @@ Link. Converted to an `<a>`, and the route path in the `to` attribute is convert
 | Attribute | Description |
 |------|------|
 | `to` | Destination absolute route path. |
+
+## Path Specification (Router / Route / Link)
+
+### Terminology
+
+* **URL Pathname**: `location.pathname` (e.g. `/app/products/42`)
+* **basename**: The app mount path (e.g. `/app`)
+* **internalPath**: The routing path inside the app after removing basename (e.g. `/products/42`)
+
+---
+
+## 1) basename specification
+
+### 1.1 basename resolution order
+
+1. The `basename` attribute on `<wcs-router basename="/app">`
+2. If `<base href="/app/">` exists, derive from `new URL(document.baseURI).pathname`
+3. If neither exists, use **empty string** `""` (assumes running at root)
+
+### 1.2 basename normalization (important)
+
+basename is always normalized as follows:
+
+* Add leading `/` (except empty string)
+* Collapse multiple slashes into one
+* Remove trailing `/` (except `/` itself, which is treated as empty)
+* Treat `.../index.html` or `.../*.html` as files and remove them
+* If the result is `/`, basename becomes `""`
+
+Examples:
+
+* `"/"` → `""`
+* `"/app/"` → `"/app"`
+* `"/app/index.html"` → `"/app"`
+
+### 1.3 basename and direct links
+
+* If basename is `""`, no `<base>` exists, and the initial `pathname !== "/"`, it is **an error**
+* If basename is `"/app"`:
+
+	* `"/app"` and `"/app/"` are **the same** (app root)
+	* `"/app"` matches only `"/app"` or `"/app/..."` (does not match `"/appX"`)
+
+---
+
+## 2) internalPath specification
+
+### 2.1 internalPath normalization
+
+internalPath is always treated as an **absolute path**.
+
+* Add leading `/`
+* Collapse multiple slashes
+* Remove trailing `/` (except root `/`)
+* If empty, become `/`
+* In Router normalization, remove trailing `*.html` when present
+
+Examples:
+
+* `""` → `/`
+* `"products"` → `/products`
+* `"/products/"` → `/products`
+* `"///a//b/"` → `/a/b`
+
+### 2.2 Get internalPath from URL
+
+Obtain `internalPath` by matching `URL Pathname` with `basename`.
+
+* If `pathname === basename`, then `internalPath = "/"`
+* If `pathname` starts with `basename + "/"`, then `internalPath = pathname.slice(basename.length)`
+* Otherwise `internalPath = pathname`
+* If the slice result is `""`, then `internalPath = "/"`
+
+Examples (basename=`/app`):
+
+* pathname=`/app` → internalPath=`/`
+* pathname=`/app/` → internalPath=`/`
+* pathname=`/app/products/42` → internalPath=`/products/42`
+
+---
+
+## 3) `<wcs-route path="...">` specification
+
+### 3.1 path notation
+
+`path` follows **internalPath rules**.
+
+* Root (top-level) is `"/"`
+* Child routes allow **relative** paths (recommended)
+
+	* Example: parent `/products`, child `":id"` → `/products/:id`
+
+> In implementation, paths are converted to absolute during parsing.
+
+### 3.2 Matching rules
+
+* **Exact match** by segment
+* Parameter `:id` matches a single segment
+
+### 3.3 Priority (longest match definition)
+
+If multiple candidates exist, pick the higher priority:
+
+1. **More segments**
+2. If same, **more static segments** (`"users"` > `":id"`)
+3. If still same, **definition order**
+
+Example:
+
+* `/admin/users/:id` (static2 + param1)
+* `/admin/users/profile` (static3)
+	→ latter wins
+
+### 3.4 Trailing slash
+
+* Matching is done after internal normalization, so
+
+	* `/products` and `/products/` are treated the same (either URL is OK)
+
+---
+
+## 4) `<wcs-link to="...">` specification
+
+### 4.1 When `to` starts with `/`
+
+`to` is treated as **internalPath**.
+
+* The actual `href` is created by joining `basename + internalPath`
+* Join: `"/app" + "/products"` → `"/app/products"` (no `//`)
+
+### 4.2 When `to` does not start with `/`
+
+Treated as an external URL (`new URL(to)` is expected to succeed).
+
+* Example: `https://example.com/`
+
+---
+
+## 5) “Drop HTML files” is limited
+
+Dropping `.html` only applies when the pathname **actually looks like a file**.
+
+* `"/app/index.html"` → `"/app"` (OK)
+* `"/products"` → `"/"` is **NG** (do not drop segments)
