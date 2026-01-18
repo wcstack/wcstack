@@ -13,6 +13,7 @@ export class Link extends HTMLElement implements ILink {
   private _router: Router | null = null;
   private _anchorElement: HTMLAnchorElement | null = null;
   private _initialized: boolean = false;
+  private _onClick?: (e: MouseEvent) => void;
 
   constructor() {
     super();
@@ -42,6 +43,23 @@ export class Link extends HTMLElement implements ILink {
     this._initialized = true;
   }
 
+  private _normalizePathname(path: string): string {
+    let p = path || "/";
+    if (!p.startsWith("/")) p = "/" + p;
+    p = p.replace(/\/{2,}/g, "/");
+    if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
+    return p;
+  }
+
+  private _joinInternalPath(basename: string, to: string): string {
+    const base = (basename || "").replace(/\/{2,}/g, "/").replace(/\/$/, "");
+    const internal = to.startsWith("/") ? to : "/" + to;
+    const path = this._normalizePathname(internal);
+    if (!base) return path;
+    if (path === "/") return base + "/";
+    return base + path;
+  }
+
   connectedCallback() {
     if (!this._initialized) {
       this._initialize();
@@ -53,7 +71,7 @@ export class Link extends HTMLElement implements ILink {
     const nextSibling = this._commentNode.nextSibling;
     const link = document.createElement('a');
     if (this._path.startsWith('/')) {
-      link.href = this.router.basename + this._path;
+      link.href = this._joinInternalPath(this.router.basename, this._path);
     } else {
       link.href = new URL(this._path).toString();
     }
@@ -69,12 +87,34 @@ export class Link extends HTMLElement implements ILink {
 
     // ロケーション変更を監視
     getNavigation()?.addEventListener('currententrychange', this._updateActiveState);
+    window.addEventListener('wcs:navigate', this._updateActiveState as EventListener);
+    window.addEventListener('popstate', this._updateActiveState as EventListener);
+
+    // Navigation API が無い場合は、クリックで router.navigate にフォールバック
+    if (this._path.startsWith('/') && !getNavigation()?.navigate) {
+      this._onClick = async (e: MouseEvent) => {
+        // only left-click without modifiers
+        if (e.defaultPrevented) return;
+        if (e.button !== 0) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        await this.router.navigate(this._path);
+        this._updateActiveState();
+      };
+      link.addEventListener('click', this._onClick);
+    }
     this._updateActiveState();    
   }
 
   disconnectedCallback() {
     getNavigation()?.removeEventListener('currententrychange', this._updateActiveState);
+    window.removeEventListener('wcs:navigate', this._updateActiveState as EventListener);
+    window.removeEventListener('popstate', this._updateActiveState as EventListener);
     if (this._anchorElement) {
+      if (this._onClick) {
+        this._anchorElement.removeEventListener('click', this._onClick);
+        this._onClick = undefined;
+      }
       this._anchorElement.remove();
     }
     for(const childNode of this._childNodeArray) {
@@ -83,8 +123,10 @@ export class Link extends HTMLElement implements ILink {
   }
 
   private _updateActiveState = () => {
-    const currentPath = new URL(window.location.href).pathname;
-    const linkPath = this.router.basename + this._path;
+    const currentPath = this._normalizePathname(new URL(window.location.href).pathname);
+    const linkPath = this._normalizePathname(
+      this._path.startsWith('/') ? this._joinInternalPath(this.router.basename, this._path) : this._path
+    );
     
     if (this._anchorElement) {
       if (currentPath === linkPath) {

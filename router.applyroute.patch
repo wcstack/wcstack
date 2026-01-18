@@ -1,0 +1,25 @@
+diff --git a/packages/router/src/applyRoute.ts b/packages/router/src/applyRoute.ts
+index 8b43d3e..23d7c16 100644
+--- a/packages/router/src/applyRoute.ts
++++ b/packages/router/src/applyRoute.ts
+@@ -10,13 +10,16 @@ export async function applyRoute(
+   fullPath: string,
+   lastPath: string
+ ): Promise<void> {
+   const basename = routerNode.basename;
+-  const path = fullPath.startsWith(basename)
++  const sliced = fullPath.startsWith(basename)
+     ? fullPath.slice(basename.length)
+     : fullPath;
++  // when fullPath === basename (e.g. "/app"), treat it as root "/"
++  const path = sliced === "" ? "/" : sliced;
++
+   let matchResult = matchRoutes(routerNode, path);
+   if (!matchResult) {
+     if (routerNode.fallbackRoute) {
+       matchResult = {
+         routes: [routerNode.fallbackRoute],
+         params: {},
+         path: path,
+         lastPath: lastPath
+       };

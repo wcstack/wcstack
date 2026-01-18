@@ -271,7 +271,7 @@ function getCustomTagInfo(e) {
     }
     return { name, extends: extendsName };
 }
-const observedCustomElements = new Set();
+const observedCustomElements = new WeakSet();
 async function observeShadowRoot(element, config, prefixMap) {
     observedCustomElements.add(element);
     await handlerForLazyLoad(element.shadowRoot, config, prefixMap);

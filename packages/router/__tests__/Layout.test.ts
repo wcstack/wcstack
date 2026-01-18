@@ -40,10 +40,10 @@ describe('Layout', () => {
     const layout = document.createElement('wcs-layout') as Layout;
     layout.setAttribute('name', 'connected-test');
     
-    // DOMに接続される前はnameが空
-    expect(layout.name).toBe('');
+    // nameはgetAttribute('name')を直接返すため、DOM接続前でも取得可能
+    expect(layout.name).toBe('connected-test');
     
-    // DOMに接続されるとconnectedCallbackが呼ばれて初期化される
+    // DOMに接続されてもnameは同じ値を返す
     document.body.appendChild(layout);
     expect(layout.name).toBe('connected-test');
   });
@@ -61,8 +61,8 @@ describe('Layout', () => {
     layout.setAttribute('name', 'changed-name');
     document.body.appendChild(layout);
     
-    // 初期化は一度だけなので、名前は変わらない
-    expect(layout.name).toBe('init-once');
+    // nameはgetAttribute('name')を直接返すため、属性変更が反映される
+    expect(layout.name).toBe('changed-name');
   });
 
   it('uuid プロパティを持つこと', () => {

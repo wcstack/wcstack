@@ -359,7 +359,6 @@ class Route extends HTMLElement {
 const cache = new Map();
 class Layout extends HTMLElement {
     _uuid = getUUID();
-    _name = '';
     _initialized = false;
     constructor() {
         super();
@@ -427,10 +426,10 @@ class Layout extends HTMLElement {
         return config.enableShadowRoot;
     }
     get name() {
-        return this._name;
+        // Layout 要素が DOM に挿入されないケース（parseで置換）でも name を取れるようにする
+        return this.getAttribute('name') || '';
     }
     _initialize() {
-        this._name = this.getAttribute('name') || '';
         this._initialized = true;
     }
     connectedCallback() {
@@ -711,9 +710,11 @@ async function showRouteContent(routerNode, matchResult, lastRoutes) {
 
 async function applyRoute(routerNode, outlet, fullPath, lastPath) {
     const basename = routerNode.basename;
-    const path = fullPath.startsWith(basename)
+    const sliced = fullPath.startsWith(basename)
         ? fullPath.slice(basename.length)
         : fullPath;
+    // when fullPath === basename (e.g. "/app"), treat it as root "/"
+    const path = sliced === "" ? "/" : sliced;
     let matchResult = matchRoutes(routerNode, path);
     if (!matchResult) {
         if (routerNode.fallbackRoute) {
@@ -761,6 +762,7 @@ class Router extends HTMLElement {
     _path = '';
     _initialized = false;
     _fallbackRoute = null;
+    _listeningPopState = false;
     constructor() {
         super();
         if (Router._instance) {
@@ -768,16 +770,61 @@ class Router extends HTMLElement {
         }
         Router._instance = this;
     }
-    _normalizePath(_path) {
-        let path = _path;
-        if (!path.endsWith("/")) {
-            path = path.replace(/\/[^/]*$/, "/"); // ファイル名(or末尾セグメント)を落として / で終わらせる
-        }
-        // 念のため先頭 / と、連続スラッシュの正規化
+    /**
+     * Normalize a URL pathname to a route path.
+     * - ensure leading slash
+     * - collapse multiple slashes
+     * - treat trailing "/index.html" (or "*.html") as directory root
+     * - remove trailing slash except root "/"
+     */
+    _normalizePathname(_path) {
+        let path = _path || "/";
         if (!path.startsWith("/"))
             path = "/" + path;
         path = path.replace(/\/{2,}/g, "/");
+        // e.g. "/app/index.html" -> "/app"
+        path = path.replace(/\/[^/]+\.html$/i, "");
+        if (path === "")
+            path = "/";
+        if (path.length > 1 && path.endsWith("/"))
+            path = path.slice(0, -1);
         return path;
+    }
+    /**
+     * Normalize basename.
+     * - "" or "/" -> ""
+     * - "/app/" -> "/app"
+     * - "/app/index.html" -> "/app"
+     */
+    _normalizeBasename(_path) {
+        let path = _path || "";
+        if (!path)
+            return "";
+        if (!path.startsWith("/"))
+            path = "/" + path;
+        path = path.replace(/\/{2,}/g, "/");
+        path = path.replace(/\/[^/]+\.html$/i, "");
+        if (path.length > 1 && path.endsWith("/"))
+            path = path.slice(0, -1);
+        if (path === "/")
+            return "";
+        return path;
+    }
+    _joinInternalPath(basename, to) {
+        const base = this._normalizeBasename(basename);
+        // accept "about" as "/about"
+        let path = to.startsWith("/") ? to : "/" + to;
+        path = this._normalizePathname(path);
+        if (!base)
+            return path;
+        // keep "/app/" for root
+        if (path === "/")
+            return base + "/";
+        return base + path;
+    }
+    _notifyLocationChange() {
+        // For environments without Navigation API (and for Link active-state updates)
+        window.dispatchEvent(new CustomEvent("wcs:navigate"));
     }
     _getBasename() {
         const base = new URL(document.baseURI);
@@ -785,7 +832,7 @@ class Router extends HTMLElement {
         if (path === "/") {
             return "";
         }
-        return this._normalizePath(path);
+        return this._normalizeBasename(path);
     }
     static get instance() {
         if (!Router._instance) {
@@ -845,7 +892,7 @@ class Router extends HTMLElement {
         this._fallbackRoute = value;
     }
     async navigate(path) {
-        const fullPath = this._basename + path;
+        const fullPath = this._joinInternalPath(this._basename, path);
         const navigation = getNavigation();
         if (navigation?.navigate) {
             navigation.navigate(fullPath);
@@ -853,6 +900,7 @@ class Router extends HTMLElement {
         else {
             history.pushState(null, '', fullPath);
             await applyRoute(this, this.outlet, fullPath, this._path);
+            this._notifyLocationChange();
         }
     }
     _onNavigateFunc(navEvent) {
@@ -863,18 +911,23 @@ class Router extends HTMLElement {
         }
         const routesNode = this;
         navEvent.intercept({
-            async handler() {
+            handler: async () => {
                 const url = new URL(navEvent.destination.url);
-                await applyRoute(routesNode, routesNode.outlet, url.pathname, this._path);
-            }
+                const fullPath = routesNode._normalizePathname(url.pathname);
+                await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
+            },
         });
     }
     _onNavigate = this._onNavigateFunc.bind(this);
+    _onPopState = async () => {
+        // back/forward for environments without Navigation API
+        const fullPath = this._normalizePathname(window.location.pathname);
+        await applyRoute(this, this.outlet, fullPath, this._path);
+        this._notifyLocationChange();
+    };
     async _initialize() {
         this._initialized = true;
-        this._basename = this.getAttribute('basename')
-            || this._getBasename()
-            || '';
+        this._basename = this._normalizeBasename(this.getAttribute("basename") || this._getBasename() || "");
         const hasBaseTag = document.querySelector('base[href]') !== null;
         const url = new URL(window.location.href);
         if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
@@ -888,17 +941,27 @@ class Router extends HTMLElement {
         }
         const fragment = await parse(this);
         this._outlet.rootNode.appendChild(fragment);
-        const path = this._normalizePath(window.location.pathname);
-        await applyRoute(this, this.outlet, path, this._path);
+        const fullPath = this._normalizePathname(window.location.pathname);
+        await applyRoute(this, this.outlet, fullPath, this._path);
+        this._notifyLocationChange();
     }
     async connectedCallback() {
         if (!this._initialized) {
             await this._initialize();
         }
         getNavigation()?.addEventListener("navigate", this._onNavigate);
+        // Fallback for browsers without Navigation API
+        if (!getNavigation()?.addEventListener && !this._listeningPopState) {
+            window.addEventListener("popstate", this._onPopState);
+            this._listeningPopState = true;
+        }
     }
     disconnectedCallback() {
         getNavigation()?.removeEventListener("navigate", this._onNavigate);
+        if (this._listeningPopState) {
+            window.removeEventListener("popstate", this._onPopState);
+            this._listeningPopState = false;
+        }
     }
 }
 
@@ -910,6 +973,7 @@ class Link extends HTMLElement {
     _router = null;
     _anchorElement = null;
     _initialized = false;
+    _onClick;
     constructor() {
         super();
     }
@@ -935,6 +999,25 @@ class Link extends HTMLElement {
         this._path = this.getAttribute('to') || '';
         this._initialized = true;
     }
+    _normalizePathname(path) {
+        let p = path || "/";
+        if (!p.startsWith("/"))
+            p = "/" + p;
+        p = p.replace(/\/{2,}/g, "/");
+        if (p.length > 1 && p.endsWith("/"))
+            p = p.slice(0, -1);
+        return p;
+    }
+    _joinInternalPath(basename, to) {
+        const base = (basename || "").replace(/\/{2,}/g, "/").replace(/\/$/, "");
+        const internal = to.startsWith("/") ? to : "/" + to;
+        const path = this._normalizePathname(internal);
+        if (!base)
+            return path;
+        if (path === "/")
+            return base + "/";
+        return base + path;
+    }
     connectedCallback() {
         if (!this._initialized) {
             this._initialize();
@@ -946,7 +1029,7 @@ class Link extends HTMLElement {
         const nextSibling = this._commentNode.nextSibling;
         const link = document.createElement('a');
         if (this._path.startsWith('/')) {
-            link.href = this.router.basename + this._path;
+            link.href = this._joinInternalPath(this.router.basename, this._path);
         }
         else {
             link.href = new URL(this._path).toString();
@@ -963,11 +1046,35 @@ class Link extends HTMLElement {
         this._anchorElement = link;
         // ロケーション変更を監視
         getNavigation()?.addEventListener('currententrychange', this._updateActiveState);
+        window.addEventListener('wcs:navigate', this._updateActiveState);
+        window.addEventListener('popstate', this._updateActiveState);
+        // Navigation API が無い場合は、クリックで router.navigate にフォールバック
+        if (this._path.startsWith('/') && !getNavigation()?.navigate) {
+            this._onClick = async (e) => {
+                // only left-click without modifiers
+                if (e.defaultPrevented)
+                    return;
+                if (e.button !== 0)
+                    return;
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+                    return;
+                e.preventDefault();
+                await this.router.navigate(this._path);
+                this._updateActiveState();
+            };
+            link.addEventListener('click', this._onClick);
+        }
         this._updateActiveState();
     }
     disconnectedCallback() {
         getNavigation()?.removeEventListener('currententrychange', this._updateActiveState);
+        window.removeEventListener('wcs:navigate', this._updateActiveState);
+        window.removeEventListener('popstate', this._updateActiveState);
         if (this._anchorElement) {
+            if (this._onClick) {
+                this._anchorElement.removeEventListener('click', this._onClick);
+                this._onClick = undefined;
+            }
             this._anchorElement.remove();
         }
         for (const childNode of this._childNodeArray) {
@@ -975,8 +1082,8 @@ class Link extends HTMLElement {
         }
     }
     _updateActiveState = () => {
-        const currentPath = new URL(window.location.href).pathname;
-        const linkPath = this.router.basename + this._path;
+        const currentPath = this._normalizePathname(new URL(window.location.href).pathname);
+        const linkPath = this._normalizePathname(this._path.startsWith('/') ? this._joinInternalPath(this.router.basename, this._path) : this._path);
         if (this._anchorElement) {
             if (currentPath === linkPath) {
                 this._anchorElement.classList.add('active');

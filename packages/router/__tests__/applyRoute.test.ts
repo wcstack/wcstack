@@ -39,6 +39,29 @@ describe('applyRoute', () => {
     expect(showRouteContentModule.showRouteContent).toHaveBeenCalled();
   });
 
+  it('fullPathがbasenameと一致する場合は"/"として扱うこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    (router as any)._basename = '/app';
+
+    const mockRoute = {} as Route;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
+
+    const matchResult = {
+      path: '/',
+      routes: [mockRoute],
+      params: {},
+      lastPath: ''
+    };
+
+    vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+
+    await applyRoute(router, outlet, '/app', '/prev');
+
+    expect(matchRoutesModule.matchRoutes).toHaveBeenCalledWith(router, '/');
+    expect(router.path).toBe('/');
+  });
+
   it('basenameなしのパスを正しく処理すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);

@@ -27,7 +27,7 @@ export function getCustomTagInfo(e: Element): ITagInfo {
   return { name, extends: extendsName };
 }
 
-const observedCustomElements: WeakSet<Element> = new Set();
+const observedCustomElements: WeakSet<Element> = new WeakSet<Element>();
 
 async function observeShadowRoot(element: Element, config: IConfig, prefixMap: IPrefixMap) {
   observedCustomElements.add(element);

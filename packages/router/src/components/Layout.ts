@@ -7,7 +7,6 @@ const cache = new Map<string, string>();
 
 export class Layout extends HTMLElement implements ILayout {
   private _uuid: string = getUUID();
-  private _name: string = '';
   private _initialized: boolean = false;
   constructor() {
     super();
@@ -76,11 +75,11 @@ export class Layout extends HTMLElement implements ILayout {
   }
 
   get name(): string {
-    return this._name;
+    // Layout 要素が DOM に挿入されないケース（parseで置換）でも name を取れるようにする
+    return this.getAttribute('name') || '';
   }
 
   private _initialize() {
-    this._name = this.getAttribute('name') || '';
     this._initialized = true;
   }
 

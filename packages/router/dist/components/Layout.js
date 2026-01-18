@@ -4,7 +4,6 @@ import { raiseError } from "../raiseError.js";
 const cache = new Map();
 export class Layout extends HTMLElement {
     _uuid = getUUID();
-    _name = '';
     _initialized = false;
     constructor() {
         super();
@@ -72,10 +71,10 @@ export class Layout extends HTMLElement {
         return config.enableShadowRoot;
     }
     get name() {
-        return this._name;
+        // Layout 要素が DOM に挿入されないケース（parseで置換）でも name を取れるようにする
+        return this.getAttribute('name') || '';
     }
     _initialize() {
-        this._name = this.getAttribute('name') || '';
         this._initialized = true;
     }
     connectedCallback() {

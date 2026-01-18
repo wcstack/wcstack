@@ -365,6 +365,102 @@ describe('Link', () => {
 
       expect((link as any)._path).toBe('');
     });
+
+    it('Navigation APIがない場合はクリックでnavigateにフォールバックすること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const navigateSpy = vi.fn().mockResolvedValue(undefined);
+      (router as any).navigate = navigateSpy;
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const onClick = (link as any)._onClick as (e: MouseEvent) => void;
+      expect(onClick).toBeDefined();
+
+      // defaultPrevented の場合は何もしない
+      onClick({
+        defaultPrevented: true,
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault: vi.fn(),
+      } as any);
+      expect(navigateSpy).not.toHaveBeenCalled();
+
+      // 右クリックは無視
+      onClick({
+        defaultPrevented: false,
+        button: 1,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault: vi.fn(),
+      } as any);
+      expect(navigateSpy).not.toHaveBeenCalled();
+
+      // 修飾キーありは無視
+      onClick({
+        defaultPrevented: false,
+        button: 0,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault: vi.fn(),
+      } as any);
+      expect(navigateSpy).not.toHaveBeenCalled();
+
+      // 通常クリックはnavigateを呼ぶ
+      const preventDefault = vi.fn();
+      await onClick({
+        defaultPrevented: false,
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault,
+      } as any);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(navigateSpy).toHaveBeenCalledWith('/test');
+    });
+  });
+
+  describe('private helpers', () => {
+    it('_normalizePathnameが先頭スラッシュと末尾スラッシュを正規化すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      document.body.appendChild(link);
+
+      expect((link as any)._normalizePathname('foo/bar')).toBe('/foo/bar');
+      expect((link as any)._normalizePathname('')).toBe('/');
+      expect((link as any)._normalizePathname(undefined)).toBe('/');
+      expect((link as any)._normalizePathname('/foo/')).toBe('/foo');
+      expect((link as any)._normalizePathname('//foo//bar')).toBe('/foo/bar');
+    });
+
+    it('_joinInternalPathがベースとルートを正しく結合すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/');
+      document.body.appendChild(link);
+
+      expect((link as any)._joinInternalPath('/app/', '/')).toBe('/app/');
+      expect((link as any)._joinInternalPath('/app', 'about')).toBe('/app/about');
+      expect((link as any)._joinInternalPath('', '/about')).toBe('/about');
+    });
   });
 
   describe('disconnectedCallback', () => {
@@ -522,6 +618,73 @@ describe('Link', () => {
 
       expect(anchor.isConnected).toBe(false);
       expect(childSpan.parentNode).toBeNull();
+    });
+
+    it('フォールバッククリックが設定されている場合にリスナーを解除すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const anchor = link.commentNode.nextSibling as HTMLAnchorElement;
+      const removeSpy = vi.spyOn(anchor, 'removeEventListener');
+
+      // Navigation API が無いので _onClick が設定される
+      expect((link as any)._onClick).toBeDefined();
+
+      link.disconnectedCallback();
+
+      expect(removeSpy).toHaveBeenCalledWith('click', expect.any(Function));
+      expect((link as any)._onClick).toBeUndefined();
+    });
+
+    it('anchorとonClickが設定されている場合にクリックリスナーを解除すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      document.body.appendChild(link);
+
+      const anchor = link.commentNode.nextSibling as HTMLAnchorElement;
+      const removeSpy = vi.spyOn(anchor, 'removeEventListener');
+      (link as any)._anchorElement = anchor;
+      (link as any)._onClick = vi.fn();
+
+      link.disconnectedCallback();
+
+      expect(removeSpy).toHaveBeenCalledWith('click', expect.any(Function));
+      expect((link as any)._onClick).toBeUndefined();
+    });
+
+    it('onClickが設定されている場合に分岐が実行されること', () => {
+      const link = document.createElement('wcs-link') as Link;
+      const anchor = document.createElement('a');
+      const removeSpy = vi.spyOn(anchor, 'removeEventListener');
+
+      (link as any)._anchorElement = anchor;
+      (link as any)._onClick = vi.fn();
+
+      link.disconnectedCallback();
+
+      expect(removeSpy).toHaveBeenCalledWith('click', expect.any(Function));
+      expect((link as any)._onClick).toBeUndefined();
+    });
+
+    it('onClickが未設定の場合はクリックリスナー解除をスキップすること', () => {
+      const link = document.createElement('wcs-link') as Link;
+      const anchor = document.createElement('a');
+      const removeSpy = vi.spyOn(anchor, 'removeEventListener');
+
+      (link as any)._anchorElement = anchor;
+      (link as any)._onClick = undefined;
+
+      link.disconnectedCallback();
+
+      expect(removeSpy).not.toHaveBeenCalled();
     });
   });
 

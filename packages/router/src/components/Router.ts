@@ -20,6 +20,7 @@ export class Router extends HTMLElement implements IRouter {
   private _path: string = '';
   private _initialized: boolean = false;
   private _fallbackRoute: IRoute | null = null;
+  private _listeningPopState: boolean = false;
 
   constructor() {
     super();
@@ -29,17 +30,55 @@ export class Router extends HTMLElement implements IRouter {
     Router._instance = this;
   }
 
-  private _normalizePath(_path: string): string {
-    let path = _path;
-    if (!path.endsWith("/")) {
-      path = path.replace(/\/[^/]*$/, "/"); // ファイル名(or末尾セグメント)を落として / で終わらせる
-    }
-
-    // 念のため先頭 / と、連続スラッシュの正規化
+  /**
+   * Normalize a URL pathname to a route path.
+   * - ensure leading slash
+   * - collapse multiple slashes
+   * - treat trailing "/index.html" (or "*.html") as directory root
+   * - remove trailing slash except root "/"
+   */
+  private _normalizePathname(_path: string): string {
+    let path = _path || "/";
     if (!path.startsWith("/")) path = "/" + path;
     path = path.replace(/\/{2,}/g, "/");
-
+    // e.g. "/app/index.html" -> "/app"
+    path = path.replace(/\/[^/]+\.html$/i, "");
+    if (path === "") path = "/";
+    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
     return path;
+  }
+
+  /**
+   * Normalize basename.
+   * - "" or "/" -> ""
+   * - "/app/" -> "/app"
+   * - "/app/index.html" -> "/app"
+   */
+  private _normalizeBasename(_path: string): string {
+    let path = _path || "";
+    if (!path) return "";
+    if (!path.startsWith("/")) path = "/" + path;
+    path = path.replace(/\/{2,}/g, "/");
+    path = path.replace(/\/[^/]+\.html$/i, "");
+    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+    if (path === "/") return "";
+    return path;
+  }
+
+  private _joinInternalPath(basename: string, to: string): string {
+    const base = this._normalizeBasename(basename);
+    // accept "about" as "/about"
+    let path = to.startsWith("/") ? to : "/" + to;
+    path = this._normalizePathname(path);
+    if (!base) return path;
+    // keep "/app/" for root
+    if (path === "/") return base + "/";
+    return base + path;
+  }
+
+  private _notifyLocationChange(): void {
+    // For environments without Navigation API (and for Link active-state updates)
+    window.dispatchEvent(new CustomEvent("wcs:navigate"));
   }
 
   private _getBasename(): string {
@@ -48,7 +87,7 @@ export class Router extends HTMLElement implements IRouter {
     if (path === "/") {
       return "";
     }
-    return this._normalizePath(path);
+    return this._normalizeBasename(path);
   }
 
   static get instance(): IRouter {
@@ -119,13 +158,14 @@ export class Router extends HTMLElement implements IRouter {
   }
 
   async navigate(path: string): Promise<void> {
-    const fullPath = this._basename + path;
+    const fullPath = this._joinInternalPath(this._basename, path);
     const navigation = getNavigation();
     if (navigation?.navigate) {
       navigation.navigate(fullPath);
     } else {
       history.pushState(null, '', fullPath);
       await applyRoute(this, this.outlet, fullPath, this._path);
+      this._notifyLocationChange();
     }
   }
 
@@ -139,20 +179,28 @@ export class Router extends HTMLElement implements IRouter {
     }
     const routesNode = this;
     navEvent.intercept({
-      async handler() {
+      handler: async () => {
         const url = new URL(navEvent.destination.url);
-        await applyRoute(routesNode, routesNode.outlet, url.pathname, this._path);
-      }
+        const fullPath = routesNode._normalizePathname(url.pathname);
+        await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
+      },
     });
   }
 
   private _onNavigate = this._onNavigateFunc.bind(this);
 
+  private _onPopState = async () => {
+    // back/forward for environments without Navigation API
+    const fullPath = this._normalizePathname(window.location.pathname);
+    await applyRoute(this, this.outlet, fullPath, this._path);
+    this._notifyLocationChange();
+  };
+
   private async _initialize(): Promise<void> {
     this._initialized = true;
-    this._basename = this.getAttribute('basename') 
-      || this._getBasename() 
-      || '';
+    this._basename = this._normalizeBasename(
+      this.getAttribute("basename") || this._getBasename() || ""
+    );
     const hasBaseTag = document.querySelector('base[href]') !== null;
     const url = new URL(window.location.href);
     if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
@@ -168,8 +216,9 @@ export class Router extends HTMLElement implements IRouter {
     const fragment = await parse(this);
     this._outlet.rootNode.appendChild(fragment);
 
-    const path = this._normalizePath(window.location.pathname);
-    await applyRoute(this, this.outlet, path, this._path);
+    const fullPath = this._normalizePathname(window.location.pathname);
+    await applyRoute(this, this.outlet, fullPath, this._path);
+    this._notifyLocationChange();
 
   }
 
@@ -178,9 +227,18 @@ export class Router extends HTMLElement implements IRouter {
       await this._initialize();
     }
     getNavigation()?.addEventListener("navigate", this._onNavigate);
+    // Fallback for browsers without Navigation API
+    if (!getNavigation()?.addEventListener && !this._listeningPopState) {
+      window.addEventListener("popstate", this._onPopState);
+      this._listeningPopState = true;
+    }
   }
 
   disconnectedCallback() {
     getNavigation()?.removeEventListener("navigate", this._onNavigate);
+    if (this._listeningPopState) {
+      window.removeEventListener("popstate", this._onPopState);
+      this._listeningPopState = false;
+    }
   }
 }

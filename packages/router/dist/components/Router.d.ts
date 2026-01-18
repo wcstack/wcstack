@@ -13,8 +13,25 @@ export declare class Router extends HTMLElement implements IRouter {
     private _path;
     private _initialized;
     private _fallbackRoute;
+    private _listeningPopState;
     constructor();
-    private _normalizePath;
+    /**
+     * Normalize a URL pathname to a route path.
+     * - ensure leading slash
+     * - collapse multiple slashes
+     * - treat trailing "/index.html" (or "*.html") as directory root
+     * - remove trailing slash except root "/"
+     */
+    private _normalizePathname;
+    /**
+     * Normalize basename.
+     * - "" or "/" -> ""
+     * - "/app/" -> "/app"
+     * - "/app/index.html" -> "/app"
+     */
+    private _normalizeBasename;
+    private _joinInternalPath;
+    private _notifyLocationChange;
     private _getBasename;
     static get instance(): IRouter;
     static navigate(path: string): void;
@@ -37,6 +54,7 @@ export declare class Router extends HTMLElement implements IRouter {
     navigate(path: string): Promise<void>;
     private _onNavigateFunc;
     private _onNavigate;
+    private _onPopState;
     private _initialize;
     connectedCallback(): Promise<void>;
     disconnectedCallback(): void;

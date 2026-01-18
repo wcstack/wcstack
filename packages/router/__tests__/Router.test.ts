@@ -85,13 +85,22 @@ describe('Router', () => {
   });
 
   describe('private helpers', () => {
-    it('_normalizePathがパスを正規化すること', () => {
+    it('_normalizePathnameがパスを正規化すること', () => {
       const router = document.createElement('wcs-router') as Router;
-      const normalized = (router as any)._normalizePath('foo/bar');
-      expect(normalized).toBe('/foo/');
+      // 先頭スラッシュ付与、連続スラッシュ削除、末尾スラッシュ削除
+      const normalized = (router as any)._normalizePathname('foo/bar');
+      expect(normalized).toBe('/foo/bar');
 
-      const normalizedWithSlashes = (router as any)._normalizePath('//foo//bar');
-      expect(normalizedWithSlashes).toBe('/foo/');
+      const normalizedWithSlashes = (router as any)._normalizePathname('//foo//bar');
+      expect(normalizedWithSlashes).toBe('/foo/bar');
+
+      // ルートパスは "/" のまま
+      const rootPath = (router as any)._normalizePathname('/');
+      expect(rootPath).toBe('/');
+
+      // 末尾の .html は削除
+      const htmlPath = (router as any)._normalizePathname('/app/index.html');
+      expect(htmlPath).toBe('/app');
     });
 
     it('_getBasenameがbaseタグのパスを返すこと', () => {
@@ -100,8 +109,9 @@ describe('Router', () => {
       base.setAttribute('href', 'http://localhost/app/');
       document.head.appendChild(base);
 
+      // _normalizeBasenameにより末尾スラッシュは削除される
       const basename = (router as any)._getBasename();
-      expect(basename).toBe('/app/');
+      expect(basename).toBe('/app');
     });
 
     it('_getBasenameがルートの場合、空文字列を返すこと', () => {
@@ -127,6 +137,37 @@ describe('Router', () => {
       expect(basename).toBe('');
 
       (globalThis as any).URL = originalURL;
+    });
+
+    it('_normalizePathnameが空文字列やhtmlを正規化すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const normalize = (router as any)._normalizePathname.bind(router);
+
+      expect(normalize('')).toBe('/');
+      expect(normalize('foo/bar')).toBe('/foo/bar');
+      expect(normalize('/index.html')).toBe('/');
+      expect(normalize('/app/index.html')).toBe('/app');
+      expect(normalize('/foo/')).toBe('/foo');
+    });
+
+    it('_normalizeBasenameが正規化されること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const normalize = (router as any)._normalizeBasename.bind(router);
+
+      expect(normalize('')).toBe('');
+      expect(normalize('/')).toBe('');
+      expect(normalize('app')).toBe('/app');
+      expect(normalize('/app/')).toBe('/app');
+      expect(normalize('/app/index.html')).toBe('/app');
+    });
+
+    it('_joinInternalPathがベースとパスを結合すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const join = (router as any)._joinInternalPath.bind(router);
+
+      expect(join('', '/about')).toBe('/about');
+      expect(join('/app', '/')).toBe('/app/');
+      expect(join('/app', 'about')).toBe('/app/about');
     });
 
     it('_getOutletが既存のOutletを返すこと', () => {
@@ -328,6 +369,57 @@ describe('Router', () => {
       router.disconnectedCallback();
 
       expect(navigation.removeEventListener).toHaveBeenCalledWith('navigate', (router as any)._onNavigate);
+    });
+
+    it('Navigation APIがない場合にpopstateを登録すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._initialized = true;
+
+      const addSpy = vi.spyOn(window, 'addEventListener');
+      delete (window as any).navigation;
+
+      await router.connectedCallback();
+
+      expect(addSpy).toHaveBeenCalledWith('popstate', (router as any)._onPopState);
+      expect((router as any)._listeningPopState).toBe(true);
+    });
+
+    it('popstateリスナー登録済みの場合に解除すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._listeningPopState = true;
+
+      const removeSpy = vi.spyOn(window, 'removeEventListener');
+
+      router.disconnectedCallback();
+
+      expect(removeSpy).toHaveBeenCalledWith('popstate', (router as any)._onPopState);
+      expect((router as any)._listeningPopState).toBe(false);
+    });
+  });
+
+  describe('_onPopState', () => {
+    it('popstateでapplyRouteと通知を実行すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+      (router as any)._path = '/prev';
+
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+      const originalLocation = window.location;
+      delete (window as any).location;
+      (window as any).location = {
+        pathname: '/next',
+        href: 'http://localhost/next',
+      };
+
+      await (router as any)._onPopState();
+
+      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/next', '/prev');
+      expect(dispatchSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+
+      (window as any).location = originalLocation;
     });
   });
 });
