@@ -99,6 +99,28 @@ describe('Route', () => {
       expect((route as any)._hasGuard).toBe(true);
       expect((route as any)._guardFallbackPath).toBe('/login');
     });
+
+    it('catch-all(*)を含むpathを解析すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const route = createRoute('/admin/*');
+      document.body.appendChild(route);
+      route.initialize(router, null);
+      expect(route.patternText).toBe('\\/admin\\/(.*)');
+      expect(route.weight).toBe(3); // initial(-1) + ""(2) + admin(2) + *(0) = 3
+      expect(route.segmentCount).toBe(2); // /admin counts, * doesn't
+    });
+
+    it('catch-all(*)以降のセグメントは無視されること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const route = createRoute('/files/*/ignored');
+      document.body.appendChild(route);
+      route.initialize(router, null);
+      // * 以降は無視される
+      expect(route.patternText).toBe('\\/files\\/(.*)');
+      expect(route.segmentCount).toBe(2); // /files のみカウント
+    });
   });
 
   describe('segmentCount', () => {

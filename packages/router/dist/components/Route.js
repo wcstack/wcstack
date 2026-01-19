@@ -267,18 +267,28 @@ export class Route extends HTMLElement {
         }
         const segments = this._path.split('/');
         const patternSegments = [];
+        let segmentCount = 0;
         for (const segment of segments) {
-            if (segment.startsWith(':')) {
+            if (segment === '*') {
+                // Catch-all: matches remaining path segments
+                this._paramNames.push('*');
+                patternSegments.push('(.*)');
+                this._weight += 0; // Lowest priority
+                break; // Ignore subsequent segments
+            }
+            else if (segment.startsWith(':')) {
                 this._paramNames.push(segment.substring(1));
                 patternSegments.push('([^\\/]+)');
                 this._weight += 1;
+                segmentCount++;
             }
             else {
                 patternSegments.push(segment);
                 this._weight += 2;
+                segmentCount++;
             }
         }
-        this._segmentCount = this._path === "" ? 0 : segments.length;
+        this._segmentCount = this._path === "" ? 0 : segmentCount;
         this._patternText = patternSegments.join('\\/');
         this._hasGuard = this.hasAttribute('guard');
         if (this._hasGuard) {

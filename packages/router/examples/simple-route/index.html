@@ -3,16 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>route and no layout, no outlet</title>
+  <title>simple route </title>
   <script type="module" src="../../dist/auto.min.js"></script>
 </head>
 <body>
-  <wcs-router basename="/packages/router/examples/route_no-layout_no-outlet">
+  <wcs-router basename="/packages/router/examples/simple-route">
     <template>
       <wcs-route path="/">
-        route and no layout, no outlet example
+        simple route example
       </wcs-route>
     </template>
   </wcs-router>
+
+  <wcs-outlet></wcs-outlet>
 </body>
 </html>

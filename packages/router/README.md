@@ -108,7 +108,7 @@ Displays children when the route path matches. Match priority is static paths ov
 
 | Attribute | Description |
 |------|------|
-| `path` | For top-level routes, specify an absolute path starting with `/`. Otherwise, specify a relative path. For parameters, use `:paramName`. Top-level routes cannot use relative paths. |
+| `path` | For top-level routes, specify an absolute path starting with `/`. Otherwise, specify a relative path. For parameters, use `:paramName`. For catch-all, use `*`. Top-level routes cannot use relative paths. |
 | `index` | Inherits the upper path. |
 | `fallback` | Displayed when no route matches the path. |
 | `fullpath` | Path including parent routes (read-only). |
@@ -251,14 +251,17 @@ Examples (basename=`/app`):
 
 * **Exact match** by segment
 * Parameter `:id` matches a single segment
+* Catch-all `*` matches the remaining path (accessible via `params['*']`)
 
 ### 3.3 Priority (longest match definition)
 
 If multiple candidates exist, pick the higher priority:
 
 1. **More segments**
-2. If same, **more static segments** (`"users"` > `":id"`)
+2. If same, **more static segments** (`"users"` > `":id"` > `"*"`)
 3. If still same, **definition order**
+
+> Catch-all `*` has the lowest priority, so more specific routes always take precedence.
 
 Example:
 
@@ -271,6 +274,25 @@ Example:
 * Matching is done after internal normalization, so
 
 	* `/products` and `/products/` are treated the same (either URL is OK)
+
+### 3.5 Catch-all (`*`)
+
+Specify `*` at the end of a path to match the entire remaining path.
+
+```html
+<wcs-route path="/admin/profile"></wcs-route>  <!-- Priority -->
+<wcs-route path="/admin/*"></wcs-route>        <!-- Fallback for /admin/xxx -->
+<wcs-route path="/*"></wcs-route>              <!-- Last resort -->
+```
+
+| Path | Match | Reason |
+|------|-------|--------|
+| `/admin/profile` | `/admin/profile` | More segments |
+| `/admin/setting` | `/admin/*` | `*` matches `setting` |
+| `/admin/a/b/c` | `/admin/*` | `*` matches `a/b/c` |
+| `/other` | `/*` | Top-level catch-all |
+
+The matched remaining path is accessible via `params['*']`.
 
 ---
 

@@ -221,4 +221,63 @@ describe('matchRoutes', () => {
     // 同じ重みの場合、childIndexが小さい方が優先される
     expect(result?.routes[0].childIndex).toBe(0);
   });
+
+  it('catch-all(*)ルートより静的ルートを優先すること', () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const staticRoute = {
+      absoluteSegmentCount: 3,
+      absoluteWeight: 6,
+      childIndex: 0
+    } as any;
+    staticRoute.testPath = vi.fn().mockReturnValue({
+      routes: [staticRoute],
+      params: {},
+      lastPath: ''
+    });
+    staticRoute.routeChildNodes = [];
+
+    const catchAllRoute = {
+      absoluteSegmentCount: 2,
+      absoluteWeight: 4, // /admin(4) + *(0)
+      childIndex: 1
+    } as any;
+    catchAllRoute.testPath = vi.fn().mockReturnValue({
+      routes: [catchAllRoute],
+      params: { '*': 'profile' },
+      lastPath: ''
+    });
+    catchAllRoute.routeChildNodes = [];
+
+    (router as any)._routeChildNodes = [staticRoute, catchAllRoute];
+
+    const result = matchRoutes(router, '/admin/profile');
+    expect(result).not.toBeNull();
+    // セグメント数が多い静的ルートが優先
+    expect(result?.routes[0]).toBe(staticRoute);
+  });
+
+  it('catch-all(*)ルートがマッチすること', () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const catchAllRoute = {
+      absoluteSegmentCount: 2,
+      absoluteWeight: 4,
+      childIndex: 0
+    } as any;
+    catchAllRoute.testPath = vi.fn().mockReturnValue({
+      routes: [catchAllRoute],
+      params: { '*': 'unknown/path' },
+      lastPath: ''
+    });
+    catchAllRoute.routeChildNodes = [];
+
+    (router as any)._routeChildNodes = [catchAllRoute];
+
+    const result = matchRoutes(router, '/admin/unknown/path');
+    expect(result).not.toBeNull();
+    expect(result?.params['*']).toBe('unknown/path');
+  });
 });
