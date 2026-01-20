@@ -9,7 +9,7 @@ interface ITagNames {
 interface IConfig {
     readonly tagNames: ITagNames;
     readonly enableShadowRoot: boolean;
-    readonly basenameFileExtensions: readonly string[];
+    readonly basenameFileExtensions: ReadonlyArray<string>;
 }
 
 declare const config: IConfig;

@@ -19,10 +19,14 @@ function deepFreeze(obj) {
     }
     return obj;
 }
+let frozenConfig = null;
 // 後方互換のため config もエクスポート（読み取り専用として使用）
 export const config = _config;
 export function getConfig() {
-    return deepFreeze(_config);
+    if (!frozenConfig) {
+        frozenConfig = deepFreeze(_config);
+    }
+    return frozenConfig;
 }
 export function setConfig(partialConfig) {
     if (partialConfig.tagNames) {
@@ -34,5 +38,6 @@ export function setConfig(partialConfig) {
     if (Array.isArray(partialConfig.basenameFileExtensions)) {
         _config.basenameFileExtensions = partialConfig.basenameFileExtensions;
     }
+    frozenConfig = null;
 }
 //# sourceMappingURL=config.js.map

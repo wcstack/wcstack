@@ -11,7 +11,7 @@ export interface ITagNames {
 export interface IConfig {
   readonly tagNames: ITagNames;
   readonly enableShadowRoot: boolean;
-  readonly basenameFileExtensions: readonly string[];
+  readonly basenameFileExtensions: ReadonlyArray<string>;
 }
 
 export interface IGuardCancel {

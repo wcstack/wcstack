@@ -35,11 +35,16 @@ function deepFreeze<T>(obj: T): T {
   return obj;
 }
 
+let frozenConfig: IConfig | null = null;
+
 // 後方互換のため config もエクスポート（読み取り専用として使用）
 export const config: IConfig = _config as IConfig;
 
 export function getConfig(): IConfig {
-  return deepFreeze(_config);
+  if (!frozenConfig) {
+    frozenConfig = deepFreeze(_config);
+  }
+  return frozenConfig;
 }
 
 export function setConfig(partialConfig: Partial<IConfig>): void {
@@ -52,4 +57,5 @@ export function setConfig(partialConfig: Partial<IConfig>): void {
   if (Array.isArray(partialConfig.basenameFileExtensions)) {
     _config.basenameFileExtensions = partialConfig.basenameFileExtensions;
   }
+  frozenConfig = null;
 }
