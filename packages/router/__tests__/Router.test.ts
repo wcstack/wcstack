@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Router } from '../src/components/Router';
 import { createOutlet } from '../src/components/Outlet';
-import { config } from '../src/config';
+import { config, setConfig } from '../src/config';
 import * as applyRouteModule from '../src/applyRoute';
 import * as parseModule from '../src/parse';
 import './setup';
@@ -154,38 +154,38 @@ describe('Router', () => {
     it('_normalizePathnameがconfig.basenameFileExtensionsに従うこと', () => {
       const router = document.createElement('wcs-router') as Router;
       const normalize = (router as any)._normalizePathname.bind(router);
-      const originalExts = config.basenameFileExtensions;
+      const originalExts = [...config.basenameFileExtensions];
 
       // .php を追加
-      config.basenameFileExtensions = ['.html', '.php'];
+      setConfig({ basenameFileExtensions: ['.html', '.php'] });
       expect(normalize('/app/index.php')).toBe('/app');
       expect(normalize('/app/page.PHP')).toBe('/app'); // 大文字小文字を区別しない
 
       // .html のみ
-      config.basenameFileExtensions = ['.html'];
+      setConfig({ basenameFileExtensions: ['.html'] });
       expect(normalize('/app/index.php')).toBe('/app/index.php'); // .php は削除されない
 
       // 空配列の場合、何も削除しない
-      config.basenameFileExtensions = [];
+      setConfig({ basenameFileExtensions: [] });
       expect(normalize('/app/index.html')).toBe('/app/index.html');
 
-      config.basenameFileExtensions = originalExts;
+      setConfig({ basenameFileExtensions: originalExts });
     });
 
     it('_normalizeBasenameがconfig.basenameFileExtensionsに従うこと', () => {
       const router = document.createElement('wcs-router') as Router;
       const normalize = (router as any)._normalizeBasename.bind(router);
-      const originalExts = config.basenameFileExtensions;
+      const originalExts = [...config.basenameFileExtensions];
 
       // .php を追加
-      config.basenameFileExtensions = ['.html', '.php'];
+      setConfig({ basenameFileExtensions: ['.html', '.php'] });
       expect(normalize('/app/index.php')).toBe('/app');
 
       // 空配列の場合、何も削除しない
-      config.basenameFileExtensions = [];
+      setConfig({ basenameFileExtensions: [] });
       expect(normalize('/app/index.html')).toBe('/app/index.html');
 
-      config.basenameFileExtensions = originalExts;
+      setConfig({ basenameFileExtensions: originalExts });
     });
 
     it('_normalizeBasenameが正規化されること', () => {

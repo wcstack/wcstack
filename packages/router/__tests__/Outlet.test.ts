@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Outlet, createOutlet } from '../src/components/Outlet';
-import { config } from '../src/config';
+import { config, setConfig } from '../src/config';
 import { Router } from '../src/components/Router';
 import './setup';
 
@@ -12,7 +12,7 @@ describe('Outlet', () => {
   });
 
   afterEach(() => {
-    config.enableShadowRoot = originalEnableShadowRoot;
+    setConfig({ enableShadowRoot: originalEnableShadowRoot });
   });
 
   it('Outletクラスが存在すること', () => {
@@ -32,14 +32,14 @@ describe('Outlet', () => {
 
   describe('constructor', () => {
     it('enableShadowRootがtrueの場合、shadowRootを作成すること', () => {
-      config.enableShadowRoot = true;
+      setConfig({ enableShadowRoot: true });
       const outlet = document.createElement('wcs-outlet') as Outlet;
       document.body.appendChild(outlet);
       expect(outlet.shadowRoot).not.toBeNull();
     });
 
     it('enableShadowRootがfalseの場合、shadowRootを作成しないこと', () => {
-      config.enableShadowRoot = false;
+      setConfig({ enableShadowRoot: false });
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(outlet.shadowRoot).toBeNull();
     });
@@ -62,7 +62,7 @@ describe('Outlet', () => {
 
   describe('rootNode', () => {
     it('shadowRootがある場合、shadowRootを返すこと', () => {
-      config.enableShadowRoot = true;
+      setConfig({ enableShadowRoot: true });
       const outlet = document.createElement('wcs-outlet') as Outlet;
       document.body.appendChild(outlet);
       expect(outlet.rootNode).toBe(outlet.shadowRoot);
@@ -70,7 +70,7 @@ describe('Outlet', () => {
     });
 
     it('shadowRootがない場合、自身を返すこと', () => {
-      config.enableShadowRoot = false;
+      setConfig({ enableShadowRoot: false });
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(outlet.rootNode).toBe(outlet);
     });
@@ -105,7 +105,7 @@ describe('Outlet', () => {
     });
 
     it('初期化済みの場合、_initializeを実行しないこと', () => {
-      config.enableShadowRoot = true;
+      setConfig({ enableShadowRoot: true });
       const outlet = document.createElement('wcs-outlet') as Outlet;
       (outlet as any)._initialized = true;
 

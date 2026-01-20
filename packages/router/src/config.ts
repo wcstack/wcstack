@@ -1,6 +1,6 @@
-import { IConfig } from "./types";
+import { IConfig, IWritableConfig } from "./types";
 
-interface IWritableConfig {
+interface IInternalConfig {
   tagNames: {
     route: string;
     router: string;
@@ -13,7 +13,7 @@ interface IWritableConfig {
   basenameFileExtensions: string[];
 }
 
-const _config: IWritableConfig = {
+const _config: IInternalConfig = {
   tagNames: {
     route: "wcs-route",
     router: "wcs-router",
@@ -47,7 +47,7 @@ export function getConfig(): IConfig {
   return frozenConfig;
 }
 
-export function setConfig(partialConfig: Partial<IConfig>): void {
+export function setConfig(partialConfig: IWritableConfig): void {
   if (partialConfig.tagNames) {
     Object.assign(_config.tagNames, partialConfig.tagNames);
   }
