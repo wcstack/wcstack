@@ -76,4 +76,8 @@ export interface ILink {
   readonly router: IRouter;
 }
 
+export interface IHead {
+  readonly childElementArray: Element[];
+}
+
 export type BindType = "props" | "states" | "attr" | "";

@@ -5,6 +5,7 @@ export interface ITagNames {
     readonly layout: string;
     readonly layoutOutlet: string;
     readonly link: string;
+    readonly head: string;
 }
 export interface IWritableTagNames {
     route?: string;
@@ -13,6 +14,7 @@ export interface IWritableTagNames {
     layout?: string;
     layoutOutlet?: string;
     link?: string;
+    head?: string;
 }
 export interface IConfig {
     readonly tagNames: ITagNames;

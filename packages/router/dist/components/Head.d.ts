@@ -1,23 +1,4 @@
-interface ITagNames {
-    readonly route: string;
-    readonly router: string;
-    readonly outlet: string;
-    readonly layout: string;
-    readonly layoutOutlet: string;
-    readonly link: string;
-    readonly head: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-    readonly enableShadowRoot: boolean;
-    readonly basenameFileExtensions: ReadonlyArray<string>;
-}
-
-declare const config: IConfig;
-
-declare function registerComponents(): void;
-
-declare class Head extends HTMLElement {
+export declare class Head extends HTMLElement {
     private _initialized;
     private _childElementArray;
     constructor();
@@ -43,5 +24,5 @@ declare class Head extends HTMLElement {
      */
     private _reapplyHead;
 }
-
-export { Head, config, registerComponents };
+export declare function _resetHeadStack(): void;
+//# sourceMappingURL=Head.d.ts.map

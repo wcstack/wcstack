@@ -4,6 +4,7 @@ import { Outlet } from '../src/components/Outlet';
 import { Link } from '../src/components/Link';
 import { Layout } from '../src/components/Layout';
 import { LayoutOutlet } from '../src/components/LayoutOutlet';
+import { Head } from '../src/components/Head';
 
 // カスタム要素を一度だけ登録
 if (!customElements.get('wcs-router')) {
@@ -23,4 +24,7 @@ if (!customElements.get('wcs-layout')) {
 }
 if (!customElements.get('wcs-layout-outlet')) {
   customElements.define('wcs-layout-outlet', LayoutOutlet);
+}
+if (!customElements.get('wcs-head')) {
+  customElements.define('wcs-head', Head);
 }

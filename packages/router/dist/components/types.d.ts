@@ -67,5 +67,8 @@ export interface ILink {
     readonly commentNode: Comment;
     readonly router: IRouter;
 }
+export interface IHead {
+    readonly childElementArray: Element[];
+}
 export type BindType = "props" | "states" | "attr" | "";
 //# sourceMappingURL=types.d.ts.map

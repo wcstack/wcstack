@@ -5,7 +5,8 @@ const _config = {
         outlet: "wcs-outlet",
         layout: "wcs-layout",
         layoutOutlet: "wcs-layout-outlet",
-        link: "wcs-link"
+        link: "wcs-link",
+        head: "wcs-head"
     },
     enableShadowRoot: false,
     basenameFileExtensions: [".html"]

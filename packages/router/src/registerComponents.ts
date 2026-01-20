@@ -4,6 +4,7 @@ import { Outlet } from './components/Outlet';
 import { Router } from './components/Router';
 import { LayoutOutlet } from './components/LayoutOutlet';
 import { Link } from './components/Link';
+import { Head } from './components/Head';
 import { config } from './config';
 
 export function registerComponents() {
@@ -25,5 +26,8 @@ export function registerComponents() {
   }
   if (!customElements.get(config.tagNames.link)) {
     customElements.define(config.tagNames.link, Link);
+  }
+  if (!customElements.get(config.tagNames.head)) {
+    customElements.define(config.tagNames.head, Head);
   }
 }
