@@ -25,4 +25,13 @@ describe('config', () => {
     expect(config.enableShadowRoot).toBeDefined();
     expect(typeof config.enableShadowRoot).toBe('boolean');
   });
+
+  it('basenameFileExtensions設定が存在すること', () => {
+    expect(config.basenameFileExtensions).toBeDefined();
+    expect(Array.isArray(config.basenameFileExtensions)).toBe(true);
+  });
+
+  it('basenameFileExtensionsのデフォルト値が[".html"]であること', () => {
+    expect(config.basenameFileExtensions).toEqual(['.html']);
+  });
 });

@@ -7,7 +7,8 @@ const config = {
         layoutOutlet: "wcs-layout-outlet",
         link: "wcs-link"
     },
-    enableShadowRoot: false
+    enableShadowRoot: false,
+    basenameFileExtensions: [".html"]
 };
 
 function getUUID() {
@@ -806,7 +807,7 @@ class Router extends HTMLElement {
      * Normalize a URL pathname to a route path.
      * - ensure leading slash
      * - collapse multiple slashes
-     * - treat trailing "/index.html" (or "*.html") as directory root
+     * - treat trailing file extensions (e.g. .html) as directory root
      * - remove trailing slash except root "/"
      */
     _normalizePathname(_path) {
@@ -815,7 +816,11 @@ class Router extends HTMLElement {
             path = "/" + path;
         path = path.replace(/\/{2,}/g, "/");
         // e.g. "/app/index.html" -> "/app"
-        path = path.replace(/\/[^/]+\.html$/i, "");
+        const exts = config.basenameFileExtensions;
+        if (exts.length > 0) {
+            const extPattern = new RegExp(`\\/[^/]+(?:${exts.map(e => e.replace(/\./g, '\\.')).join('|')})$`, 'i');
+            path = path.replace(extPattern, "");
+        }
         if (path === "")
             path = "/";
         if (path.length > 1 && path.endsWith("/"))
@@ -835,7 +840,11 @@ class Router extends HTMLElement {
         if (!path.startsWith("/"))
             path = "/" + path;
         path = path.replace(/\/{2,}/g, "/");
-        path = path.replace(/\/[^/]+\.html$/i, "");
+        const exts = config.basenameFileExtensions;
+        if (exts.length > 0) {
+            const extPattern = new RegExp(`\\/[^/]+(?:${exts.map(e => e.replace(/\./g, '\\.')).join('|')})$`, 'i');
+            path = path.replace(extPattern, "");
+        }
         if (path.length > 1 && path.endsWith("/"))
             path = path.slice(0, -1);
         if (path === "/")

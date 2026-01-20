@@ -7,6 +7,7 @@ export const config = {
         layoutOutlet: "wcs-layout-outlet",
         link: "wcs-link"
     },
-    enableShadowRoot: false
+    enableShadowRoot: false,
+    basenameFileExtensions: [".html"]
 };
 //# sourceMappingURL=config.js.map

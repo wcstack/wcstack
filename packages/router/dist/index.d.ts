@@ -9,6 +9,7 @@ interface ITagNames {
 interface IConfig {
     tagNames: ITagNames;
     enableShadowRoot: boolean;
+    basenameFileExtensions: string[];
 }
 
 declare const config: IConfig;

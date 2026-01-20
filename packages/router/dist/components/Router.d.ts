@@ -19,7 +19,7 @@ export declare class Router extends HTMLElement implements IRouter {
      * Normalize a URL pathname to a route path.
      * - ensure leading slash
      * - collapse multiple slashes
-     * - treat trailing "/index.html" (or "*.html") as directory root
+     * - treat trailing file extensions (e.g. .html) as directory root
      * - remove trailing slash except root "/"
      */
     private _normalizePathname;

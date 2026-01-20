@@ -9,5 +9,6 @@ export const config: IConfig = {
     layoutOutlet: "wcs-layout-outlet",
     link: "wcs-link"
   },
-  enableShadowRoot: false
+  enableShadowRoot: false,
+  basenameFileExtensions: [".html"]
 };

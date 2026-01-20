@@ -9,6 +9,7 @@ export interface ITagNames {
 export interface IConfig {
     tagNames: ITagNames;
     enableShadowRoot: boolean;
+    basenameFileExtensions: string[];
 }
 export interface IGuardCancel {
     fallbackPath: string;
