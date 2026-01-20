@@ -1,4 +1,4 @@
-const config = {
+const _config = {
     tagNames: {
         route: "wcs-route",
         router: "wcs-router",
@@ -10,6 +10,8 @@ const config = {
     enableShadowRoot: false,
     basenameFileExtensions: [".html"]
 };
+// 後方互換のため config もエクスポート（読み取り専用として使用）
+const config = _config;
 
 function getUUID() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {

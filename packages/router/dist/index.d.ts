@@ -1,15 +1,15 @@
 interface ITagNames {
-    route: string;
-    router: string;
-    outlet: string;
-    layout: string;
-    layoutOutlet: string;
-    link: string;
+    readonly route: string;
+    readonly router: string;
+    readonly outlet: string;
+    readonly layout: string;
+    readonly layoutOutlet: string;
+    readonly link: string;
 }
 interface IConfig {
-    tagNames: ITagNames;
-    enableShadowRoot: boolean;
-    basenameFileExtensions: string[];
+    readonly tagNames: ITagNames;
+    readonly enableShadowRoot: boolean;
+    readonly basenameFileExtensions: readonly string[];
 }
 
 declare const config: IConfig;
