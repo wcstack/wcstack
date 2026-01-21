@@ -254,5 +254,8 @@ export class Router extends HTMLElement implements IRouter {
       window.removeEventListener("popstate", this._onPopState);
       this._listeningPopState = false;
     }
+    if (Router._instance === this) {
+      Router._instance = null;
+    }
   }
 }

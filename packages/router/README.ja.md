@@ -26,11 +26,17 @@
         <main-body>
           <!-- pathが"/"の場合 -->
           <wcs-route index>
+            <wcs-head>
+              <title>Main Page</title>
+            </wcs-head>
             <main-dashboard></main-dashboard>
           </wcs-route>
 
           <!-- pathが"/products"の場合、トップレベル以外は相対パス -->
           <wcs-route path="products">
+            <wcs-head>
+              <title>Product Page</title>
+            </wcs-head>
             <!-- pathが"/products"の場合 -->
             <wcs-route index>
               <product-list></product-list>
@@ -49,6 +55,9 @@
     <wcs-route path="/admin">
       <!-- "admin-layout"レイアウトを適用 -->
       <wcs-layout layout="admin-layout">
+        <wcs-head>
+          <title>Admin Page</title>
+        </wcs-head>
         <admin-header slot="header"></admin-header>
         <admin-body></admin-body>
       </wcs-layout>
@@ -145,6 +154,29 @@ function (toPath: string, fromPath: string): boolean | Promise<boolean>
 | 属性 | 説明 |
 |------|------|
 | `name` | `<wcs-layout>`の名前属性。スタイリングの設定時、name属性で識別する。 |
+
+#### Light DOMの制限事項
+
+`disable-shadow-root`（Light DOM）の場合、スロット置換は`<wcs-layout>`の**直接の子要素のみ**が対象です。`<wcs-route>`の中にある`slot`属性付き要素はスロットに配置されません。
+
+```html
+<!-- NG: <div slot="header">はwcs-layoutの直接の子ではないため、スロットに入らない -->
+<wcs-layout layout="main" disable-shadow-root>
+  <wcs-route path="/page">
+    <div slot="header">Header Content</div>
+  </wcs-route>
+</wcs-layout>
+
+<!-- OK: slot属性付き要素をwcs-layoutの直接の子にする -->
+<wcs-layout layout="main" disable-shadow-root>
+  <div slot="header">Header Content</div>
+  <wcs-route path="/page">
+    <!-- ページ本体 -->
+  </wcs-route>
+</wcs-layout>
+```
+
+`enable-shadow-root`（Shadow DOM）の場合は、ネイティブの`<slot>`機能が使われるため、この制限はありません。
 
 ### Link(wcs-link)
 

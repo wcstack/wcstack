@@ -476,4 +476,130 @@ describe('Head', () => {
       expect(document.title).toBe('Original');
     });
   });
+
+  describe('内部分岐のカバレッジ', () => {
+    it('初期化を複数回呼んでも重複しないこと', () => {
+      const titleEl = document.createElement('title');
+      titleEl.textContent = 'Original';
+      document.head.appendChild(titleEl);
+      document.title = 'Original';
+
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<title>Once</title>';
+
+      container.appendChild(head);
+      (head as any)._initialize();
+
+      expect(document.title).toBe('Once');
+      expect(head.childElementArray.length).toBe(1);
+
+      container.removeChild(head);
+      expect(document.title).toBe('Original');
+    });
+
+    it('初期に存在しない要素はdisconnectedで削除されること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<meta name="temp-meta" content="temp">';
+
+      head.connectedCallback();
+      expect(document.head.querySelector('meta[name="temp-meta"]')).not.toBeNull();
+
+      head.disconnectedCallback();
+      expect(document.head.querySelector('meta[name="temp-meta"]')).toBeNull();
+    });
+
+    it('link/base/scriptのキー判定が適用されること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = `
+        <link rel="canonical" href="https://example.com/">
+        <base href="https://example.com/">
+        <script>console.log('test');</script>
+      `;
+
+      head.connectedCallback();
+
+      expect(document.head.querySelector('link[rel="canonical"]')).not.toBeNull();
+      expect(document.head.querySelector('base')).not.toBeNull();
+      expect(document.head.querySelector('script')).not.toBeNull();
+
+      head.disconnectedCallback();
+      expect(document.head.querySelector('script')).toBeNull();
+    });
+
+    it('未接続のHeadを切断してもエラーにならないこと', () => {
+      const head = document.createElement('wcs-head') as Head;
+      head.disconnectedCallback();
+      expect(true).toBe(true);
+    });
+
+    it('内部ヘルパーの分岐が通ること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<title>Init</title><link rel="canonical" href="https://example.com/">';
+
+      (head as any)._initialize();
+      (head as any)._captureInitialHead();
+      (head as any)._captureInitialHead();
+
+      const linkEl = document.createElement('link');
+      linkEl.setAttribute('rel', 'canonical');
+      linkEl.setAttribute('href', 'https://example.com/');
+      expect((head as any)._getKey(linkEl)).toContain('link:canonical');
+
+      head.connectedCallback();
+      (head as any)._reapplyHead();
+      head.disconnectedCallback();
+    });
+
+    it('既存head内のlinkでもキー判定が通ること', () => {
+      const existingLink = document.createElement('link');
+      existingLink.setAttribute('rel', 'canonical');
+      existingLink.setAttribute('href', 'https://example.com/');
+      document.head.appendChild(existingLink);
+
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<link rel="canonical" href="https://example.com/">';
+      head.connectedCallback();
+
+      expect(document.head.querySelector('link[rel="canonical"]')).not.toBeNull();
+
+      head.disconnectedCallback();
+    });
+
+    it('同一キーで先頭のHeadが優先される経路が通ること', () => {
+      const head1 = document.createElement('wcs-head') as Head;
+      head1.innerHTML = '<title>First</title>';
+      head1.connectedCallback();
+
+      const head2 = document.createElement('wcs-head') as Head;
+      head2.innerHTML = '<title>Second</title>';
+      head2.connectedCallback();
+
+      (head2 as any)._reapplyHead();
+      expect(document.title).toBe('Second');
+
+      head2.disconnectedCallback();
+      head1.disconnectedCallback();
+    });
+
+    it('linkのrelが未指定でもキー判定が通ること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      const linkEl = document.createElement('link');
+      expect((head as any)._getKey(linkEl)).toContain('link:');
+    });
+
+    it('キーがHeadに存在しない場合の分岐が通ること', () => {
+      const headWithTitle = document.createElement('wcs-head') as Head;
+      headWithTitle.innerHTML = '<title>Init</title>';
+      headWithTitle.connectedCallback();
+      headWithTitle.disconnectedCallback();
+
+      const headWithMeta = document.createElement('wcs-head') as Head;
+      headWithMeta.innerHTML = '<meta name="only-meta" content="v">';
+      headWithMeta.connectedCallback();
+
+      expect(document.head.querySelector('meta[name="only-meta"]')).not.toBeNull();
+
+      headWithMeta.disconnectedCallback();
+    });
+  });
 });
