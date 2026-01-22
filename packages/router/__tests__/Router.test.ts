@@ -16,6 +16,7 @@ describe('Router', () => {
     (Router as any)._instance = null;
     delete (window as any).navigation;
     document.head.querySelectorAll('base').forEach((base) => base.remove());
+    vi.restoreAllMocks();
   });
 
   it('Routerクラスが存在すること', () => {
@@ -345,7 +346,11 @@ describe('Router', () => {
 
       const fragment = document.createDocumentFragment();
       fragment.appendChild(document.createElement('div'));
-      const parseSpy = vi.spyOn(parseModule, 'parse').mockResolvedValue(fragment);
+      const parseSpy = vi.spyOn(parseModule, 'parse').mockImplementation(async (r) => {
+        // mock side effect: add a dummy route so it passes limit check
+        (r as any).routeChildNodes.push({ path: '/' }); 
+        return fragment;
+      });
       const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
 
       await (router as any)._initialize();
@@ -458,6 +463,18 @@ describe('Router', () => {
       expect(dispatchSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
 
       (window as any).location = originalLocation;
+    });
+  });
+
+  describe('error handling', () => {
+    it('ルート定義が1つもない場合、詳細なエラーを投げること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      const template = document.createElement('template');
+      template.innerHTML = `<div>No routes here</div>`;
+      router.appendChild(template);
+
+      // parse自体は実際のDOMパースを行うため、template内にwcs-routeがなければrouteChildNodesは空になる
+      await expect(router.connectedCallback()).rejects.toThrow('[@wcstack/router] wcs-router has no route definitions.');
     });
   });
 });

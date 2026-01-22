@@ -205,6 +205,9 @@ export class Router extends HTMLElement {
         }
         const fragment = await parse(this);
         this._outlet.rootNode.appendChild(fragment);
+        if (this.routeChildNodes.length === 0) {
+            raiseError(`${config.tagNames.router} has no route definitions.`);
+        }
         const fullPath = this._normalizePathname(window.location.pathname);
         await applyRoute(this, this.outlet, fullPath, this._path);
         this._notifyLocationChange();
