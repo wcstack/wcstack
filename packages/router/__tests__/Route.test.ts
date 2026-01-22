@@ -86,8 +86,10 @@ describe('Route', () => {
       const route = createRoute('/users/:id/posts/:postId');
       document.body.appendChild(route);
       route.initialize(router, null);
-      expect(route.patternText).toBe('\\/users\\/([^\\/]+)\\/posts\\/([^\\/]+)');
-      expect(route.weight).toBe(7);
+      // セグメントベースのマッチングに移行したため、segmentInfosで確認
+      expect(route.segmentInfos.length).toBe(5); // '', 'users', ':id', 'posts', ':postId'
+      expect(route.segmentInfos.map(s => s.type)).toEqual(['static', 'static', 'param', 'static', 'param']);
+      expect(route.weight).toBe(8); // '' + users + posts = 6, :id + :postId = 2 → 8
     });
 
     it('guard属性を持つRouteを作成できること', () => {
@@ -106,9 +108,11 @@ describe('Route', () => {
       const route = createRoute('/admin/*');
       document.body.appendChild(route);
       route.initialize(router, null);
-      expect(route.patternText).toBe('\\/admin\\/(.*)');
-      expect(route.weight).toBe(3); // initial(-1) + ""(2) + admin(2) + *(0) = 3
-      expect(route.segmentCount).toBe(2); // /admin counts, * doesn't
+      // セグメントベースのマッチングに移行したため、segmentInfosで確認
+      expect(route.segmentInfos.length).toBe(3); // '', 'admin', '*'
+      expect(route.segmentInfos.map(s => s.type)).toEqual(['static', 'static', 'catch-all']);
+      expect(route.weight).toBe(4); // '' + admin = 4, * = 0
+      expect(route.segmentCount).toBe(2); // catch-all is not counted
     });
 
     it('catch-all(*)以降のセグメントは無視されること', () => {
@@ -118,7 +122,8 @@ describe('Route', () => {
       document.body.appendChild(route);
       route.initialize(router, null);
       // * 以降は無視される
-      expect(route.patternText).toBe('\\/files\\/(.*)');
+      expect(route.segmentInfos.length).toBe(3); // '', 'files', '*'
+      expect(route.segmentInfos.map(s => s.type)).toEqual(['static', 'static', 'catch-all']);
       expect(route.segmentCount).toBe(2); // /files のみカウント
     });
   });
@@ -140,6 +145,22 @@ describe('Route', () => {
       expect(parentRoute.absoluteSegmentCount).toBe(2);
       expect(childRoute.segmentCount).toBe(1);
       expect(childRoute.absoluteSegmentCount).toBe(3);
+    });
+
+    it('indexパスのsegmentCountが0になること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/');
+      parentRoute.initialize(router, null);
+
+      const indexRoute = document.createElement('wcs-route') as Route;
+      indexRoute.setAttribute('index', '');
+      indexRoute.initialize(router, parentRoute);
+
+      expect(indexRoute.segmentCount).toBe(0);
+      expect(indexRoute.absoluteSegmentCount).toBe(1);
     });
   });
 
@@ -356,7 +377,7 @@ describe('Route', () => {
       route.setAttribute('path', '/users/:id');
       route.initialize(router, null);
 
-      const result = route.testPath('/users/123');
+      const result = route.testPath('/users/123', ['users', '123']);
       expect(result).not.toBeNull();
       expect(result?.params).toEqual({ id: '123' });
       expect(result?.path).toBe('/users/123');
@@ -370,8 +391,8 @@ describe('Route', () => {
       route.setAttribute('path', '/users/:id');
       route.initialize(router, null);
 
-      const first = route.testPath('/users/111');
-      const second = route.testPath('/users/222');
+      const first = route.testPath('/users/111', ['users', '111']);
+      const second = route.testPath('/users/222', ['users', '222']);
 
       expect(first?.params).toEqual({ id: '111' });
       expect(second?.params).toEqual({ id: '222' });
@@ -385,7 +406,7 @@ describe('Route', () => {
       route.setAttribute('path', '/users/:id');
       route.initialize(router, null);
 
-      const result = route.testPath('/posts/123');
+      const result = route.testPath('/posts/123', ['posts', '123']);
       expect(result).toBeNull();
     });
 
@@ -397,8 +418,54 @@ describe('Route', () => {
       route.setAttribute('path', '/users/:userId/posts/:postId');
       route.initialize(router, null);
 
-      const result = route.testPath('/users/123/posts/456');
+      const result = route.testPath('/users/123/posts/456', ['users', '123', 'posts', '456']);
       expect(result?.params).toEqual({ userId: '123', postId: '456' });
+    });
+
+    it('catch-all(*)パスをテストできること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/files/*');
+      route.initialize(router, null);
+
+      const result = route.testPath('/files/path/to/file.txt', ['files', 'path', 'to', 'file.txt']);
+      expect(result).not.toBeNull();
+      // catch-all は 'files' 以降のセグメントをキャプチャ（*の位置から）
+      expect(result?.params).toEqual({ '*': 'path/to/file.txt' });
+    });
+
+    it('末尾スラッシュのあるパスをテストできること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/users');
+      route.initialize(router, null);
+
+      // 末尾スラッシュ対応: segments配列の最後が空文字列の場合
+      const result = route.testPath('/users/', ['users', '']);
+      expect(result).not.toBeNull();
+      expect(result?.path).toBe('/users/');
+    });
+
+    it('index属性を持つルートをテストできること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/users');
+      parentRoute.initialize(router, null);
+
+      const indexRoute = document.createElement('wcs-route') as Route;
+      indexRoute.setAttribute('index', '');
+      indexRoute.initialize(router, parentRoute);
+
+      // index ルートは '/users' パスにマッチ（セグメントを消費しない）
+      const result = indexRoute.testPath('/users', ['users']);
+      expect(result).not.toBeNull();
+      expect(result?.path).toBe('/users');
     });
   });
 
@@ -430,19 +497,20 @@ describe('Route', () => {
     });
   });
 
-  describe('absolutePatternText', () => {
-    it('絶対パスの場合、patternTextをそのまま返すこと', () => {
+  describe('absoluteSegmentInfos', () => {
+    it('絶対パスの場合、segmentInfosをそのまま返すこと', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-        const route = document.createElement('wcs-route') as Route;
+      const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.initialize(router, null);
 
-      expect(route.absolutePatternText).toBe('\\/users\\/([^\\/]+)');
+      expect(route.absoluteSegmentInfos.length).toBe(3); // '', 'users', ':id'
+      expect(route.absoluteSegmentInfos.map(s => s.type)).toEqual(['static', 'static', 'param']);
     });
 
-    it('相対パスで親がある場合、親のパターンと結合すること', () => {
+    it('相対パスで親がある場合、親のセグメントと結合すること', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
@@ -454,10 +522,12 @@ describe('Route', () => {
       childRoute.setAttribute('path', 'child/:id');
       childRoute.initialize(router, parentRoute);
 
-      expect(childRoute.absolutePatternText).toBe('\\/parent\\/child\\/([^\\/]+)');
+      // parent: ['', 'parent'], child: ['child', ':id'] → ['', 'parent', 'child', ':id']
+      expect(childRoute.absoluteSegmentInfos.length).toBe(4);
+      expect(childRoute.absoluteSegmentInfos.map(s => s.segmentText)).toEqual(['', 'parent', 'child', ':id']);
     });
 
-    it('親のパターンが\\/で終わる場合、\\/を追加しないこと', () => {
+    it('親のパスが/で終わる場合、末尾の空セグメントはスキップされること', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
@@ -469,7 +539,36 @@ describe('Route', () => {
       childRoute.setAttribute('path', 'child');
       childRoute.initialize(router, parentRoute);
 
-      expect(childRoute.absolutePatternText).toBe('\\/parent\\/child');
+      // parent: ['', 'parent'] (末尾の '' はスキップ), child: ['child'] → ['', 'parent', 'child']
+      expect(childRoute.absoluteSegmentInfos.length).toBe(3);
+      expect(childRoute.absoluteSegmentInfos.map(s => s.segmentText)).toEqual(['', 'parent', 'child']);
+    });
+  });
+
+  describe('paramNames', () => {
+    it('パラメータがない場合は空配列を返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/static/path');
+      route.initialize(router, null);
+
+      expect(route.paramNames).toEqual([]);
+    });
+
+    it('キャッシュされたparamNamesを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/users/:id');
+      route.initialize(router, null);
+
+      const first = route.paramNames;
+      const second = route.paramNames;
+      expect(first).toBe(second);
+      expect(first).toEqual(['id']);
     });
   });
 
@@ -499,6 +598,31 @@ describe('Route', () => {
 
       expect(childRoute.absoluteParamNames).toEqual(['userId', 'postId']);
     });
+
+    it('パラメータがない場合は空配列を返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/static/path');
+      route.initialize(router, null);
+
+      expect(route.absoluteParamNames).toEqual([]);
+    });
+
+    it('キャッシュされたabsoluteParamNamesを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/users/:id');
+      route.initialize(router, null);
+
+      const first = route.absoluteParamNames;
+      const second = route.absoluteParamNames;
+      expect(first).toBe(second);
+      expect(first).toEqual(['id']);
+    });
   });
 
   describe('weight', () => {
@@ -508,8 +632,70 @@ describe('Route', () => {
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/users/:id');
       route.initialize(router, null);
-      // 初期値-1 + / (+2) + 静的セグメント"users"(+2) + パラメータ":id"(+1) = 4
+      // 静的セグメント""(+2) + 静的セグメント"users"(+2) + パラメータ":id"(+1) = 5
+      expect(route.weight).toBe(5);
+    });
+
+    it('catch-allを含むパスのweightを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/files/*');
+      route.initialize(router, null);
+
+      // 静的セグメント""(+2) + 静的セグメント"files"(+2) + catch-all(+0) = 4
       expect(route.weight).toBe(4);
+    });
+
+    it('相対パスのcatch-allのweightを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/files');
+      parentRoute.initialize(router, null);
+
+      const childRoute = document.createElement('wcs-route') as Route;
+      childRoute.setAttribute('path', '*');
+      childRoute.initialize(router, parentRoute);
+
+      // catch-allのみなので重みは0
+      expect(childRoute.weight).toBe(0);
+    });
+
+    it('catch-allのみのsegmentInfosでweightを計算できること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/dummy');
+      route.initialize(router, null);
+
+      (route as any)._segmentInfos = [
+        {
+          type: 'catch-all',
+          segmentText: '*',
+          paramName: '*',
+          pattern: /^(.*)$/
+        }
+      ];
+      (route as any)._weight = undefined;
+
+      expect(route.weight).toBe(0);
+    });
+
+    it('キャッシュされたweightを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/users/:id');
+      route.initialize(router, null);
+
+      const first = route.weight;
+      const second = route.weight;
+      expect(first).toBe(second);
     });
   });
 
@@ -522,7 +708,7 @@ describe('Route', () => {
       route.setAttribute('path', '/users/:id');
       route.initialize(router, null);
 
-      expect(route.absoluteWeight).toBe(4);
+      expect(route.absoluteWeight).toBe(5);
     });
 
     it('相対パスで親がある場合、親のabsoluteWeightと自身のweightを合計すること', () => {
@@ -532,12 +718,15 @@ describe('Route', () => {
       const parentRoute = document.createElement('wcs-route') as Route;
       parentRoute.setAttribute('path', '/parent');
       parentRoute.initialize(router, null);
+      // parent: '' + 'parent' = 2 + 2 = 4
 
       const childRoute = document.createElement('wcs-route') as Route;
       childRoute.setAttribute('path', 'child');
       childRoute.initialize(router, parentRoute);
+      // child: 'child' = 2
+      // total: 4 + 2 = 6
 
-      expect(childRoute.absoluteWeight).toBe(4);
+      expect(childRoute.absoluteWeight).toBe(6);
     });
 
     it('キャッシュされたabsoluteWeightを返すこと', () => {

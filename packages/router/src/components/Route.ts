@@ -1,10 +1,19 @@
 import { getUUID } from "../getUUID.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
-import { IRouteMatchResult, IRoute, IRouter, GuardHandler } from "./types.js";
+import { IRouteMatchResult, IRoute, IRouter, GuardHandler, SegmentType, ISegmentInfo } from "./types.js";
 import { assignParams } from "../assignParams.js";
 import { LayoutOutlet } from "./LayoutOutlet.js";
 import { GuardCancel } from "../GuardCancel.js";
+
+
+const weights: Record<SegmentType, number> = {
+  'static': 2,
+  'param': 1,
+  'catch-all': 0
+};
+
+
 
 export class Route extends HTMLElement implements IRoute {
   private _name: string = '';
@@ -16,12 +25,11 @@ export class Route extends HTMLElement implements IRoute {
   private _placeHolder: Comment = document.createComment(`@@route:${this._uuid}`);
   private _childNodeArray: Node[] = [];
   private _isMadeArray: boolean = false;
-  private _paramNames: string[] = [];
-  private _patternText: string = '';
+  private _paramNames: string[] | undefined;
+  private _absoluteParamNames: string[] | undefined;
   private _params: Record<string, string> = {};
-  private _absolutePattern: RegExp | null = null;
-  private _weight: number = -1;
-  private _absoluteWeight: number = 0;
+  private _weight: number | undefined;
+  private _absoluteWeight: number | undefined;
   private _childIndex: number = 0;
   private _hasGuard: boolean = false;
   private _guardHandler: GuardHandler | null = null;
@@ -30,7 +38,9 @@ export class Route extends HTMLElement implements IRoute {
   private _guardFallbackPath: string = '';
   private _initialized: boolean = false;
   private _isFallbackRoute: boolean = false;
-  private _segmentCount: number = 0;
+  private _segmentCount: number | undefined;
+  private _segmentInfos: ISegmentInfo[] = [];
+  private _absoluteSegmentInfos: ISegmentInfo[] | undefined;
 
   constructor() {
     super();
@@ -109,14 +119,63 @@ export class Route extends HTMLElement implements IRoute {
     return this._childNodeArray;
   }
 
-  testPath(path: string): IRouteMatchResult | null {
+  testPath(path: string, segments: string[]): IRouteMatchResult | null {
     const params: Record<string, string> = {};
-    const testResult = this._absolutePattern?.exec(path) ?? 
-      (this._absolutePattern = new RegExp(`^${this.absolutePatternText}$`)).exec(path);
+    let testResult = true;
+    let catchAllFound = false;
+    let i = 0, segIndex = 0;
+    while (i < this.absoluteSegmentInfos.length) {
+      const segmentInfo = this.absoluteSegmentInfos[i];
+      // index属性のルートはセグメントを消費しないのでスキップ
+      if (segmentInfo.isIndex) {
+        i++;
+        continue;
+      }
+      // 先頭の空セグメント（絶対パスの /）はsegmentsから除外されているのでスキップ
+      if (i === 0 && segmentInfo.segmentText === '' && segmentInfo.type === 'static') {
+        i++;
+        continue;
+      }
+      const segment = segments[segIndex];
+      if (segment === undefined) {
+        // セグメントが足りない
+        testResult = false;
+        break;
+      }
+      const match = segmentInfo.pattern.exec(segment);
+      if (match) {
+        if (segmentInfo.type === 'param' && segmentInfo.paramName) {
+          params[segmentInfo.paramName] = match[1];
+        }
+        if (segmentInfo.type === 'catch-all') {
+          // Catch-all: match remaining segments
+          const remainingSegments = segments.slice(segIndex).join('/');
+          params['*'] = remainingSegments;
+          catchAllFound = true;
+          break; // No more segments to process
+        }
+      } else {
+        testResult = false;
+        break; 
+      }
+      i++;
+      segIndex++;
+    }
+    let finalResult = false;
     if (testResult) {
-      this.absoluteParamNames.forEach((paramName, index) => {
-        params[paramName] = testResult[index + 1];
-      });
+      if (catchAllFound) {
+        // catch-all は残り全部マッチ済み
+        finalResult = true;
+      } else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length) {
+        // 全セグメントが消費された
+        finalResult = true;
+      } else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length - 1 && segments.at(-1) === '') {
+        // 末尾スラッシュ対応: /users/ -> ['', 'users', '']
+        finalResult = true;
+      }
+    }
+    
+    if (finalResult) {
       return {
         path: path,
         routes: this.routes,
@@ -135,49 +194,76 @@ export class Route extends HTMLElement implements IRoute {
     }
   }
 
-  get patternText(): string {
-    return this._patternText;
+  get segmentInfos(): ISegmentInfo[] {
+    return this._segmentInfos;
   }
 
-  get absolutePatternText(): string {
-    return this._checkParentNode<string>((routeParentNode) => {
-      const parentPattern = routeParentNode.absolutePatternText;
-      return parentPattern.endsWith('\\/')
-        ? parentPattern + this._patternText
-        : parentPattern + '\\/' + this._patternText;
-    }, () => {
-      return this._patternText;
-    });
+  // indexの場合、{ type: 'static', segmentText: '' }となる、indexが複数連続する場合もある
+  get absoluteSegmentInfos(): ISegmentInfo[] {
+    if (typeof this._absoluteSegmentInfos === 'undefined') {
+      this._absoluteSegmentInfos = this._checkParentNode<ISegmentInfo[]>((routeParentNode) => {
+        return [
+          ...routeParentNode.absoluteSegmentInfos,
+          ...this._segmentInfos
+        ];
+      }, () => {
+        return [ ...this._segmentInfos ];
+      });
+    }
+    return this._absoluteSegmentInfos;
   }
 
   get params(): Record<string, string> {
     return this._params;
   }
 
+  get paramNames(): string[] {
+    if (typeof this._paramNames === 'undefined') {
+      const names: string[] = [];
+      for (const info of this._segmentInfos) {
+        if (info.paramName) {
+          names.push(info.paramName);
+        }
+      }
+      this._paramNames = names;
+    }
+    return this._paramNames;
+  }
+
   get absoluteParamNames(): string[] {
-    return this._checkParentNode<string[]>((routeParentNode) => {
-      return [
-        ...routeParentNode.absoluteParamNames,
-        ...this._paramNames
-      ];
-    }, () => {
-      return [ ...this._paramNames ];
-    });
+    if (typeof this._absoluteParamNames === 'undefined') {
+      this._absoluteParamNames = this._checkParentNode<string[]>((routeParentNode) => {
+        return [
+          ...routeParentNode.absoluteParamNames,
+          ...this.paramNames
+        ];
+      }, () => {
+        return [ ...this.paramNames ];
+      });
+    }
+    return this._absoluteParamNames;
   }
 
   get weight(): number {
+    if (typeof this._weight === 'undefined') {
+      let weight = 0;
+      for (const info of this._segmentInfos) {
+        weight += weights[info.type];
+      }
+      this._weight = weight;
+    }
     return this._weight;
   }
 
   get absoluteWeight(): number {
-    if (this._absoluteWeight > 0) {
-      return this._absoluteWeight
+    if (typeof this._absoluteWeight === 'undefined') {
+      this._absoluteWeight = this._checkParentNode<number>((routeParentNode) => {
+        return routeParentNode.absoluteWeight + this.weight;
+      }, () => {
+        return this.weight;
+      });
     }
-    return (this._absoluteWeight = this._checkParentNode<number>((routeParentNode) => {
-      return routeParentNode.absoluteWeight + this._weight;
-    }, () => {
-      return this._weight;
-    }));
+    return this._absoluteWeight
   }
 
   get childIndex(): number {
@@ -204,7 +290,7 @@ export class Route extends HTMLElement implements IRoute {
 
   show(params: Record<string, string>): boolean {
     this._params = {};
-    for(const key of this._paramNames) {
+    for(const key of this.paramNames) {
       this._params[key] = params[key];
     }
     const parentNode = this.placeHolder.parentNode;
@@ -242,7 +328,7 @@ export class Route extends HTMLElement implements IRoute {
   }
 
   shouldChange(newParams: Record<string, string>): boolean {
-    for(const key of this._paramNames) {
+    for(const key of this.paramNames) {
       if (this._params[key] !== newParams[key]) {
         return true;
       }
@@ -298,29 +384,50 @@ export class Route extends HTMLElement implements IRoute {
       routerNode.fallbackRoute = this;
     }
 
+    // index属性の場合は特別扱い（セグメントを消費しない）
+    if (this.hasAttribute('index')) {
+      this._segmentInfos.push({
+        type: 'static',
+        segmentText: '',
+        paramName: null,
+        pattern: /^$/,
+        isIndex: true
+      });
+    }
+
     const segments = this._path.split('/');
-    const patternSegments = [];
-    let segmentCount = 0;
-    for (const segment of segments) {
+    for (let idx = 0; idx < segments.length; idx++) {
+      const segment = segments[idx];
+      // 末尾の空セグメントはスキップ（/parent/ のような場合）
+      if (segment === '' && idx === segments.length - 1 && idx > 0) {
+        continue;
+      }
       if (segment === '*') {
+        this._segmentInfos.push({
+          type: 'catch-all',
+          segmentText: segment,
+          paramName: '*',
+          pattern: new RegExp('^(.*)$')
+        });
         // Catch-all: matches remaining path segments
-        this._paramNames.push('*');
-        patternSegments.push('(.*)');
-        this._weight += 0; // Lowest priority
         break; // Ignore subsequent segments
       } else if (segment.startsWith(':')) {
-        this._paramNames.push(segment.substring(1));
-        patternSegments.push('([^\\/]+)');
-        this._weight += 1;
-        segmentCount++;
-      } else {
-        patternSegments.push(segment);
-        this._weight += 2;
-        segmentCount++;
+        this._segmentInfos.push({
+          type: 'param',
+          segmentText: segment,
+          paramName: segment.substring(1),
+          pattern: new RegExp('^([^\\/]+)$')
+        });
+      } else if (segment !== '' || !this.hasAttribute('index')) {
+        // 空セグメントはindex以外の場合のみ追加（絶対パスの先頭 '' など）
+        this._segmentInfos.push({
+          type: 'static',
+          segmentText: segment,
+          paramName: null,
+          pattern: new RegExp(`^${segment}$`)
+        });
       }
     }
-    this._segmentCount = this._path === "" ? 0 : segmentCount; 
-    this._patternText = patternSegments.join('\\/');
     this._hasGuard = this.hasAttribute('guard');
     if (this._hasGuard) {
       this._guardFallbackPath = this.getAttribute('guard') || '/';
@@ -337,14 +444,23 @@ export class Route extends HTMLElement implements IRoute {
   }
 
   get segmentCount(): number {
+    if (typeof this._segmentCount === 'undefined') {
+      let count = 0;
+      for (const info of this._segmentInfos) {
+        if (info.type !== 'catch-all') {
+          count++;
+        }
+      }
+      this._segmentCount = this._path === "" ? 0 : count;
+    }
     return this._segmentCount;
   }
 
   get absoluteSegmentCount(): number {
     return this._checkParentNode<number>((routeParentNode) => {
-      return routeParentNode.absoluteSegmentCount + this._segmentCount;
+      return routeParentNode.absoluteSegmentCount + this.segmentCount;
     }, () => {
-      return this._segmentCount;
+      return this.segmentCount;
     });
   }
 

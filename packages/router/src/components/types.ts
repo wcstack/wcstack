@@ -16,6 +16,16 @@ export interface _ILayout {
 }
 export type ILayout = _ILayout & Pick<Element,'childNodes'>;
 
+export type SegmentType = 'static' | 'param' | 'catch-all';
+
+export interface ISegmentInfo {
+  type: SegmentType;
+  segmentText: string;
+  paramName: string | null;
+  pattern: RegExp;
+  isIndex?: boolean;
+}
+
 export interface IRoute {
   readonly routeParentNode: IRoute | null;
   readonly routeChildNodes: IRoute[];
@@ -28,9 +38,8 @@ export interface IRoute {
   readonly rootElement: ShadowRoot | HTMLElement;
   readonly childNodeArray: Node[];
   readonly routes: IRoute[];
-  readonly patternText: string;
-  readonly absolutePatternText: string;
   readonly params: Record<string, string>;
+  readonly paramNames: string[];
   readonly absoluteParamNames: string[];
   readonly weight: number;
   readonly absoluteWeight: number;
@@ -39,7 +48,9 @@ export interface IRoute {
   readonly fullpath: string;
   readonly segmentCount: number;
   readonly absoluteSegmentCount: number;
-  testPath(path: string): IRouteMatchResult | null;
+  readonly segmentInfos: ISegmentInfo[];
+  readonly absoluteSegmentInfos: ISegmentInfo[];
+  testPath(path: string, segments: string[]): IRouteMatchResult | null;
   guardHandler: GuardHandler;
   show(params: Record<string, string>): boolean;
   hide(): void;

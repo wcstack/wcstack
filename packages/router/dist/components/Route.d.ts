@@ -1,4 +1,4 @@
-import { IRouteMatchResult, IRoute, IRouter, GuardHandler } from "./types.js";
+import { IRouteMatchResult, IRoute, IRouter, GuardHandler, ISegmentInfo } from "./types.js";
 export declare class Route extends HTMLElement implements IRoute {
     private _name;
     private _path;
@@ -10,9 +10,8 @@ export declare class Route extends HTMLElement implements IRoute {
     private _childNodeArray;
     private _isMadeArray;
     private _paramNames;
-    private _patternText;
+    private _absoluteParamNames;
     private _params;
-    private _absolutePattern;
     private _weight;
     private _absoluteWeight;
     private _childIndex;
@@ -24,6 +23,8 @@ export declare class Route extends HTMLElement implements IRoute {
     private _initialized;
     private _isFallbackRoute;
     private _segmentCount;
+    private _segmentInfos;
+    private _absoluteSegmentInfos;
     constructor();
     get routeParentNode(): IRoute | null;
     get routeChildNodes(): IRoute[];
@@ -36,11 +37,12 @@ export declare class Route extends HTMLElement implements IRoute {
     get placeHolder(): Comment;
     get rootElement(): ShadowRoot | HTMLElement;
     get childNodeArray(): Node[];
-    testPath(path: string): IRouteMatchResult | null;
+    testPath(path: string, segments: string[]): IRouteMatchResult | null;
     get routes(): IRoute[];
-    get patternText(): string;
-    get absolutePatternText(): string;
+    get segmentInfos(): ISegmentInfo[];
+    get absoluteSegmentInfos(): ISegmentInfo[];
     get params(): Record<string, string>;
+    get paramNames(): string[];
     get absoluteParamNames(): string[];
     get weight(): number;
     get absoluteWeight(): number;

@@ -71,6 +71,11 @@ class GuardCancel extends Error {
     }
 }
 
+const weights = {
+    'static': 2,
+    'param': 1,
+    'catch-all': 0
+};
 class Route extends HTMLElement {
     _name = '';
     _path = '';
@@ -81,12 +86,11 @@ class Route extends HTMLElement {
     _placeHolder = document.createComment(`@@route:${this._uuid}`);
     _childNodeArray = [];
     _isMadeArray = false;
-    _paramNames = [];
-    _patternText = '';
+    _paramNames;
+    _absoluteParamNames;
     _params = {};
-    _absolutePattern = null;
-    _weight = -1;
-    _absoluteWeight = 0;
+    _weight;
+    _absoluteWeight;
     _childIndex = 0;
     _hasGuard = false;
     _guardHandler = null;
@@ -95,7 +99,9 @@ class Route extends HTMLElement {
     _guardFallbackPath = '';
     _initialized = false;
     _isFallbackRoute = false;
-    _segmentCount = 0;
+    _segmentCount;
+    _segmentInfos = [];
+    _absoluteSegmentInfos;
     constructor() {
         super();
     }
@@ -157,14 +163,65 @@ class Route extends HTMLElement {
         }
         return this._childNodeArray;
     }
-    testPath(path) {
+    testPath(path, segments) {
         const params = {};
-        const testResult = this._absolutePattern?.exec(path) ??
-            (this._absolutePattern = new RegExp(`^${this.absolutePatternText}$`)).exec(path);
+        let testResult = true;
+        let catchAllFound = false;
+        let i = 0, segIndex = 0;
+        while (i < this.absoluteSegmentInfos.length) {
+            const segmentInfo = this.absoluteSegmentInfos[i];
+            // index属性のルートはセグメントを消費しないのでスキップ
+            if (segmentInfo.isIndex) {
+                i++;
+                continue;
+            }
+            // 先頭の空セグメント（絶対パスの /）はsegmentsから除外されているのでスキップ
+            if (i === 0 && segmentInfo.segmentText === '' && segmentInfo.type === 'static') {
+                i++;
+                continue;
+            }
+            const segment = segments[segIndex];
+            if (segment === undefined) {
+                // セグメントが足りない
+                testResult = false;
+                break;
+            }
+            const match = segmentInfo.pattern.exec(segment);
+            if (match) {
+                if (segmentInfo.type === 'param' && segmentInfo.paramName) {
+                    params[segmentInfo.paramName] = match[1];
+                }
+                if (segmentInfo.type === 'catch-all') {
+                    // Catch-all: match remaining segments
+                    const remainingSegments = segments.slice(segIndex).join('/');
+                    params['*'] = remainingSegments;
+                    catchAllFound = true;
+                    break; // No more segments to process
+                }
+            }
+            else {
+                testResult = false;
+                break;
+            }
+            i++;
+            segIndex++;
+        }
+        let finalResult = false;
         if (testResult) {
-            this.absoluteParamNames.forEach((paramName, index) => {
-                params[paramName] = testResult[index + 1];
-            });
+            if (catchAllFound) {
+                // catch-all は残り全部マッチ済み
+                finalResult = true;
+            }
+            else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length) {
+                // 全セグメントが消費された
+                finalResult = true;
+            }
+            else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length - 1 && segments.at(-1) === '') {
+                // 末尾スラッシュ対応: /users/ -> ['', 'users', '']
+                finalResult = true;
+            }
+        }
+        if (finalResult) {
             return {
                 path: path,
                 routes: this.routes,
@@ -182,44 +239,70 @@ class Route extends HTMLElement {
             return [this];
         }
     }
-    get patternText() {
-        return this._patternText;
+    get segmentInfos() {
+        return this._segmentInfos;
     }
-    get absolutePatternText() {
-        return this._checkParentNode((routeParentNode) => {
-            const parentPattern = routeParentNode.absolutePatternText;
-            return parentPattern.endsWith('\\/')
-                ? parentPattern + this._patternText
-                : parentPattern + '\\/' + this._patternText;
-        }, () => {
-            return this._patternText;
-        });
+    // indexの場合、{ type: 'static', segmentText: '' }となる、indexが複数連続する場合もある
+    get absoluteSegmentInfos() {
+        if (typeof this._absoluteSegmentInfos === 'undefined') {
+            this._absoluteSegmentInfos = this._checkParentNode((routeParentNode) => {
+                return [
+                    ...routeParentNode.absoluteSegmentInfos,
+                    ...this._segmentInfos
+                ];
+            }, () => {
+                return [...this._segmentInfos];
+            });
+        }
+        return this._absoluteSegmentInfos;
     }
     get params() {
         return this._params;
     }
+    get paramNames() {
+        if (typeof this._paramNames === 'undefined') {
+            const names = [];
+            for (const info of this._segmentInfos) {
+                if (info.paramName) {
+                    names.push(info.paramName);
+                }
+            }
+            this._paramNames = names;
+        }
+        return this._paramNames;
+    }
     get absoluteParamNames() {
-        return this._checkParentNode((routeParentNode) => {
-            return [
-                ...routeParentNode.absoluteParamNames,
-                ...this._paramNames
-            ];
-        }, () => {
-            return [...this._paramNames];
-        });
+        if (typeof this._absoluteParamNames === 'undefined') {
+            this._absoluteParamNames = this._checkParentNode((routeParentNode) => {
+                return [
+                    ...routeParentNode.absoluteParamNames,
+                    ...this.paramNames
+                ];
+            }, () => {
+                return [...this.paramNames];
+            });
+        }
+        return this._absoluteParamNames;
     }
     get weight() {
+        if (typeof this._weight === 'undefined') {
+            let weight = 0;
+            for (const info of this._segmentInfos) {
+                weight += weights[info.type];
+            }
+            this._weight = weight;
+        }
         return this._weight;
     }
     get absoluteWeight() {
-        if (this._absoluteWeight > 0) {
-            return this._absoluteWeight;
+        if (typeof this._absoluteWeight === 'undefined') {
+            this._absoluteWeight = this._checkParentNode((routeParentNode) => {
+                return routeParentNode.absoluteWeight + this.weight;
+            }, () => {
+                return this.weight;
+            });
         }
-        return (this._absoluteWeight = this._checkParentNode((routeParentNode) => {
-            return routeParentNode.absoluteWeight + this._weight;
-        }, () => {
-            return this._weight;
-        }));
+        return this._absoluteWeight;
     }
     get childIndex() {
         return this._childIndex;
@@ -242,7 +325,7 @@ class Route extends HTMLElement {
     }
     show(params) {
         this._params = {};
-        for (const key of this._paramNames) {
+        for (const key of this.paramNames) {
             this._params[key] = params[key];
         }
         const parentNode = this.placeHolder.parentNode;
@@ -279,7 +362,7 @@ class Route extends HTMLElement {
         }
     }
     shouldChange(newParams) {
-        for (const key of this._paramNames) {
+        for (const key of this.paramNames) {
             if (this._params[key] !== newParams[key]) {
                 return true;
             }
@@ -333,31 +416,51 @@ class Route extends HTMLElement {
             }
             routerNode.fallbackRoute = this;
         }
+        // index属性の場合は特別扱い（セグメントを消費しない）
+        if (this.hasAttribute('index')) {
+            this._segmentInfos.push({
+                type: 'static',
+                segmentText: '',
+                paramName: null,
+                pattern: /^$/,
+                isIndex: true
+            });
+        }
         const segments = this._path.split('/');
-        const patternSegments = [];
-        let segmentCount = 0;
-        for (const segment of segments) {
+        for (let idx = 0; idx < segments.length; idx++) {
+            const segment = segments[idx];
+            // 末尾の空セグメントはスキップ（/parent/ のような場合）
+            if (segment === '' && idx === segments.length - 1 && idx > 0) {
+                continue;
+            }
             if (segment === '*') {
+                this._segmentInfos.push({
+                    type: 'catch-all',
+                    segmentText: segment,
+                    paramName: '*',
+                    pattern: new RegExp('^(.*)$')
+                });
                 // Catch-all: matches remaining path segments
-                this._paramNames.push('*');
-                patternSegments.push('(.*)');
-                this._weight += 0; // Lowest priority
                 break; // Ignore subsequent segments
             }
             else if (segment.startsWith(':')) {
-                this._paramNames.push(segment.substring(1));
-                patternSegments.push('([^\\/]+)');
-                this._weight += 1;
-                segmentCount++;
+                this._segmentInfos.push({
+                    type: 'param',
+                    segmentText: segment,
+                    paramName: segment.substring(1),
+                    pattern: new RegExp('^([^\\/]+)$')
+                });
             }
-            else {
-                patternSegments.push(segment);
-                this._weight += 2;
-                segmentCount++;
+            else if (segment !== '' || !this.hasAttribute('index')) {
+                // 空セグメントはindex以外の場合のみ追加（絶対パスの先頭 '' など）
+                this._segmentInfos.push({
+                    type: 'static',
+                    segmentText: segment,
+                    paramName: null,
+                    pattern: new RegExp(`^${segment}$`)
+                });
             }
         }
-        this._segmentCount = this._path === "" ? 0 : segmentCount;
-        this._patternText = patternSegments.join('\\/');
         this._hasGuard = this.hasAttribute('guard');
         if (this._hasGuard) {
             this._guardFallbackPath = this.getAttribute('guard') || '/';
@@ -371,13 +474,22 @@ class Route extends HTMLElement {
         return this.absolutePath;
     }
     get segmentCount() {
+        if (typeof this._segmentCount === 'undefined') {
+            let count = 0;
+            for (const info of this._segmentInfos) {
+                if (info.type !== 'catch-all') {
+                    count++;
+                }
+            }
+            this._segmentCount = this._path === "" ? 0 : count;
+        }
         return this._segmentCount;
     }
     get absoluteSegmentCount() {
         return this._checkParentNode((routeParentNode) => {
-            return routeParentNode.absoluteSegmentCount + this._segmentCount;
+            return routeParentNode.absoluteSegmentCount + this.segmentCount;
         }, () => {
-            return this._segmentCount;
+            return this.segmentCount;
         });
     }
     testAncestorNode(ancestorNode) {
@@ -692,23 +804,37 @@ async function parse(routerNode) {
     return fr;
 }
 
-function _matchRoutes(routerNode, routeNode, routes, path, results) {
+function _matchRoutes(routerNode, routeNode, routes, normalizedPath, segments, results) {
     const nextRoutes = routes.concat(routeNode);
-    const matchResult = routeNode.testPath(path);
+    const matchResult = routeNode.testPath(normalizedPath, segments);
     if (matchResult) {
         results.push(matchResult);
         return; // Stop searching deeper routes once a match is found
     }
     for (const childRoute of routeNode.routeChildNodes) {
-        _matchRoutes(routerNode, childRoute, nextRoutes, path, results);
+        _matchRoutes(routerNode, childRoute, nextRoutes, normalizedPath, segments, results);
     }
 }
-function matchRoutes(routerNode, path) {
+function matchRoutes(routerNode, normalizedPath) {
     const routes = [];
     const topLevelRoutes = routerNode.routeChildNodes;
     const results = [];
+    // セグメント配列を作成（先頭の/は除去せずにそのまま分割）
+    // '/' => ['', ''] → filter → ['']
+    // '/home' => ['', 'home']  → filter → ['home']
+    // '/home/about' => ['', 'home', 'about'] → filter → ['home', 'about']
+    // '' => ['']
+    const rawSegments = normalizedPath.split('/');
+    // 先頭の空セグメント（絶対パスの/）と末尾の空セグメント（/で終わるパス）を除去
+    const segments = rawSegments.filter((s, i) => {
+        if (i === 0 && s === '')
+            return false; // 先頭の空セグメントをスキップ
+        if (i === rawSegments.length - 1 && s === '' && rawSegments.length > 1)
+            return false; // 末尾の空セグメントをスキップ
+        return true;
+    });
     for (const route of topLevelRoutes) {
-        _matchRoutes(routerNode, route, routes, path, results);
+        _matchRoutes(routerNode, route, routes, normalizedPath, segments, results);
     }
     results.sort((a, b) => {
         const lastRouteA = a.routes.at(-1);

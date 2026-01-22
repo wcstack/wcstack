@@ -52,7 +52,7 @@ describe('matchRoutes', () => {
     
     const result = matchRoutes(router, '/home');
     expect(result).not.toBeNull();
-    expect(mockRoute.testPath).toHaveBeenCalledWith('/home');
+    expect(mockRoute.testPath).toHaveBeenCalledWith('/home', ['home']);
   });
 
   it('複数のルートから正しいルートを選択すること', () => {
@@ -82,7 +82,7 @@ describe('matchRoutes', () => {
     
     const result = matchRoutes(router, '/about');
     expect(result).not.toBeNull();
-    expect(mockRoute2.testPath).toHaveBeenCalledWith('/about');
+    expect(mockRoute2.testPath).toHaveBeenCalledWith('/about', ['about']);
   });
 
   it('ネストされたルートをマッチできること', () => {
@@ -111,7 +111,7 @@ describe('matchRoutes', () => {
     
     const result = matchRoutes(router, '/users/123');
     expect(result).not.toBeNull();
-    expect(childRoute.testPath).toHaveBeenCalledWith('/users/123');
+    expect(childRoute.testPath).toHaveBeenCalledWith('/users/123', ['users', '123']);
   });
 
   it('重み付けによってルートを選択すること', () => {
