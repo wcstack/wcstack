@@ -988,4 +988,128 @@ describe('Route', () => {
       expect(container.textContent).toContain('text');
     });
   });
+
+  describe('rootElement - 追加カバレッジ', () => {
+    it('shadowRootがある場合、shadowRootを返すこと', () => {
+      const route = document.createElement('wcs-route') as Route;
+      const shadow = route.attachShadow({ mode: 'open' });
+      expect(route.rootElement).toBe(shadow);
+    });
+  });
+
+  describe('testAncestorNode', () => {
+    it('祖先ノードである場合、trueを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const grandpa = document.createElement('wcs-route') as Route;
+      grandpa.setAttribute('path', '/grandpa');
+      grandpa.initialize(router, null);
+
+      const parent = document.createElement('wcs-route') as Route;
+      parent.setAttribute('path', 'parent');
+      parent.initialize(router, grandpa);
+
+      const me = document.createElement('wcs-route') as Route;
+      me.setAttribute('path', 'me');
+      me.initialize(router, parent);
+
+      expect(me.testAncestorNode(parent)).toBe(true);
+      expect(me.testAncestorNode(grandpa)).toBe(true);
+    });
+
+    it('祖先ノードでない場合、falseを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const parent = document.createElement('wcs-route') as Route;
+      parent.setAttribute('path', '/parent');
+      parent.initialize(router, null);
+
+      const other = document.createElement('wcs-route') as Route;
+      other.setAttribute('path', '/other');
+      other.initialize(router, null);
+
+      const me = document.createElement('wcs-route') as Route;
+      me.setAttribute('path', 'me');
+      me.initialize(router, parent);
+
+      expect(me.testAncestorNode(other)).toBe(false);
+      expect(me.testAncestorNode(me)).toBe(false); // 自分自身は祖先ではない
+    });
+
+    it('親がいない場合、falseを返すこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const me = document.createElement('wcs-route') as Route;
+      me.setAttribute('path', '/me');
+      me.initialize(router, null);
+
+      const other = document.createElement('wcs-route') as Route;
+      other.setAttribute('path', '/other');
+      other.initialize(router, null);
+
+      expect(me.testAncestorNode(other)).toBe(false);
+    });
+  });
+
+  describe('guardCheck - 追加カバレッジ', () => {
+    it('guardHandlerが設定されるまで待機すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/protected');
+      route.setAttribute('guard', '/login');
+      // initialize 時に promise が作られる
+      route.initialize(router, null);
+
+      let checked = false;
+      const guardCheckPromise = route.guardCheck({ 
+        path: '/protected', routes: [], params: {}, lastPath: '/' 
+      }).then(() => {
+        checked = true;
+      });
+
+      // まだ待機中のはず
+      await new Promise(r => setTimeout(r, 10));
+      expect(checked).toBe(false);
+
+      // guardHandlerを設定するとPromiseが解決される
+      const handler = vi.fn().mockResolvedValue(true);
+      route.guardHandler = handler;
+
+      await guardCheckPromise;
+      expect(checked).toBe(true);
+      expect(handler).toHaveBeenCalled();
+    });
+  });
+
+  describe('hide - 追加カバレッジ', () => {
+    it('子ノードが既に親から外れている場合、エラーにならずスキップすること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/test');
+      route.initialize(router, null);
+
+      const span = document.createElement('span');
+      route.appendChild(span);
+
+      const container = document.createElement('div');
+      container.appendChild(route.placeHolder);
+
+      // show() で container に span が移動する
+      route.show({});
+      expect(container.contains(span)).toBe(true);
+
+      // 手動で削除しておく
+      span.remove(); 
+
+      // hide() を呼ぶ。node.parentNode?.removeChild(node) で parentNode は null なのでスキップされるはず
+      expect(() => route.hide()).not.toThrow();
+    });
+  });
 });

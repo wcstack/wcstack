@@ -56,5 +56,6 @@ export declare class Route extends HTMLElement implements IRoute {
     get fullpath(): string;
     get segmentCount(): number;
     get absoluteSegmentCount(): number;
+    testAncestorNode(ancestorNode: IRoute): boolean;
 }
 //# sourceMappingURL=Route.d.ts.map

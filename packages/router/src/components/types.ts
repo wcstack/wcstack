@@ -46,6 +46,7 @@ export interface IRoute {
   shouldChange(newParams: Record<string, string>): boolean;
   guardCheck(matchResult: IRouteMatchResult): Promise<void>;
   initialize(routerNode: IRouter, parentRouteNode: IRoute | null): void;
+  testAncestorNode(ancestorNode: IRoute): boolean;
 }
 
 export interface IRouter {

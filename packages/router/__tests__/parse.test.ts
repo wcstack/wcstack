@@ -241,4 +241,95 @@ describe('parse', () => {
     expect(commentNodes.length).toBe(1);
     expect(commentNodes[0].data).toContain('@@route:');
   });
+
+  it('重複するルートパスが定義された場合に警告が出力されること', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    
+    // 兄弟要素で同じパスを持つルートを定義（/users が重複）
+    const template = document.createElement('template');
+    template.innerHTML = `
+      <wcs-route path="/users"></wcs-route>
+      <wcs-route path="/users"></wcs-route>
+    `;
+    (router as any)._template = template;
+    
+    await parse(router);
+    
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/Duplicate route path detected.*\/users/)
+    );
+    
+    consoleSpy.mockRestore();
+  });
+
+  it('親子関係で同じパスになる場合（indexなど）は警告が出力されないこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    
+    // 親子のルート関係で、子がindex属性を持つ場合などは絶対パスが同じになるが
+    // これは正当な構成なので警告を出さない
+    const template = document.createElement('template');
+    template.innerHTML = `
+      <wcs-route path="/users">
+        <wcs-route index></wcs-route>
+      </wcs-route>
+    `;
+    (router as any)._template = template;
+    
+    await parse(router);
+    
+    expect(consoleSpy).not.toHaveBeenCalled();
+    
+    consoleSpy.mockRestore();
+  });
+
+  it('3階層のネストで全て同じパス（index等）の場合、正しく処理され警告が出ないこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // A -> B -> C. All path="/users" (conceptually)
+    const template = document.createElement('template');
+    template.innerHTML = `
+      <wcs-route path="/users">
+        <wcs-route index>
+          <wcs-route index></wcs-route>
+        </wcs-route>
+      </wcs-route>
+    `;
+    (router as any)._template = template;
+    
+    await parse(router);
+    
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('3つの重複ルートがある場合、それぞれに対して警告が出ること', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // A, B, C same level same path
+    const template = document.createElement('template');
+    template.innerHTML = `
+      <wcs-route path="/items"></wcs-route>
+      <wcs-route path="/items"></wcs-route>
+      <wcs-route path="/items"></wcs-route>
+    `;
+    (router as any)._template = template;
+    
+    await parse(router);
+    
+    // Should warn for the 2nd and 3rd route
+    expect(consoleSpy).toHaveBeenCalledTimes(2);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringMatching(/Duplicate route path detected/));
+    
+    consoleSpy.mockRestore();
+  });
 });

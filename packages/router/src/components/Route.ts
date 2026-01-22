@@ -347,4 +347,15 @@ export class Route extends HTMLElement implements IRoute {
       return this._segmentCount;
     });
   }
+
+  testAncestorNode(ancestorNode: IRoute): boolean {
+    let currentNode: IRoute | null = this._routeParentNode;
+    while(currentNode) {
+      if (currentNode === ancestorNode) {
+        return true;
+      }
+      currentNode = currentNode.routeParentNode;
+    }
+    return false;
+  }
 }

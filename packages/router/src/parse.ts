@@ -4,11 +4,30 @@ import { createLayoutOutlet } from "./components/LayoutOutlet.js";
 import { Route } from "./components/Route.js";
 import { config } from "./config.js";
 
+
+function _duplicateCheck(routesByPath: Map<string, IRoute[]>, route: IRoute): void {
+  let routes = routesByPath.get(route.absolutePath);
+  if (!routes) {
+    routes = [];
+  }
+  for(const existingRoute of routes) {
+    if (!route.testAncestorNode(existingRoute)) {
+      console.warn(`Duplicate route path detected: '${route.absolutePath}' (defined as '${route.path}')`);
+      break;
+    }
+  }
+  routes.push(route);
+  if (routes.length === 1) {
+    routesByPath.set(route.absolutePath, routes);
+  }
+}
+
 async function _parseNode(
   routerNode: IRouter, 
   node: Node, 
   routes: IRoute[], 
-  map: Map<string, IRoute | ILayout>
+  map: Map<string, IRoute | ILayout>,
+  routesByPath: Map<string, IRoute[]>
 ): Promise<DocumentFragment> {
   const routeParentNode: IRoute | null = routes.length > 0 ? routes[routes.length - 1] : null;
   const fragment = document.createDocumentFragment();
@@ -29,6 +48,7 @@ async function _parseNode(
         cloneElement.appendChild(childFragment);
         const route = cloneElement;
         route.initialize(routerNode, routeParentNode);
+        _duplicateCheck(routesByPath, route);
         routes.push(route);
         map.set(route.uuid, route);
         appendNode = route.placeHolder;
@@ -48,7 +68,7 @@ async function _parseNode(
         appendNode = layoutOutlet;
         element = cloneElement;
       }
-      const children = await _parseNode(routerNode, element, routes, map);
+      const children = await _parseNode(routerNode, element, routes, map, routesByPath);
       element.innerHTML = "";
       element.appendChild(children);
       fragment.appendChild(appendNode);
@@ -61,6 +81,7 @@ async function _parseNode(
 
 export async function parse(routerNode: IRouter): Promise<DocumentFragment> {
   const map: Map<string, IRoute | ILayout> = new Map();
-  const fr = await _parseNode(routerNode, routerNode.template.content, [], map);
+  const routesByPath: Map<string, IRoute[]> = new Map();
+  const fr = await _parseNode(routerNode, routerNode.template.content, [], map, routesByPath);
   return fr;
 }

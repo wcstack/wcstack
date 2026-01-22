@@ -312,5 +312,15 @@ export class Route extends HTMLElement {
             return this._segmentCount;
         });
     }
+    testAncestorNode(ancestorNode) {
+        let currentNode = this._routeParentNode;
+        while (currentNode) {
+            if (currentNode === ancestorNode) {
+                return true;
+            }
+            currentNode = currentNode.routeParentNode;
+        }
+        return false;
+    }
 }
 //# sourceMappingURL=Route.js.map

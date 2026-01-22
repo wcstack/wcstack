@@ -380,6 +380,16 @@ class Route extends HTMLElement {
             return this._segmentCount;
         });
     }
+    testAncestorNode(ancestorNode) {
+        let currentNode = this._routeParentNode;
+        while (currentNode) {
+            if (currentNode === ancestorNode) {
+                return true;
+            }
+            currentNode = currentNode.routeParentNode;
+        }
+        return false;
+    }
 }
 
 const cache = new Map();
@@ -607,7 +617,23 @@ function createLayoutOutlet() {
     return document.createElement(config.tagNames.layoutOutlet);
 }
 
-async function _parseNode(routerNode, node, routes, map) {
+function _duplicateCheck(routesByPath, route) {
+    let routes = routesByPath.get(route.absolutePath);
+    if (!routes) {
+        routes = [];
+    }
+    for (const existingRoute of routes) {
+        if (!route.testAncestorNode(existingRoute)) {
+            console.warn(`Duplicate route path detected: '${route.absolutePath}' (defined as '${route.path}')`);
+            break;
+        }
+    }
+    routes.push(route);
+    if (routes.length === 1) {
+        routesByPath.set(route.absolutePath, routes);
+    }
+}
+async function _parseNode(routerNode, node, routes, map, routesByPath) {
     const routeParentNode = routes.length > 0 ? routes[routes.length - 1] : null;
     const fragment = document.createDocumentFragment();
     const childNodes = Array.from(node.childNodes);
@@ -627,6 +653,7 @@ async function _parseNode(routerNode, node, routes, map) {
                 cloneElement.appendChild(childFragment);
                 const route = cloneElement;
                 route.initialize(routerNode, routeParentNode);
+                _duplicateCheck(routesByPath, route);
                 routes.push(route);
                 map.set(route.uuid, route);
                 appendNode = route.placeHolder;
@@ -647,7 +674,7 @@ async function _parseNode(routerNode, node, routes, map) {
                 appendNode = layoutOutlet;
                 element = cloneElement;
             }
-            const children = await _parseNode(routerNode, element, routes, map);
+            const children = await _parseNode(routerNode, element, routes, map, routesByPath);
             element.innerHTML = "";
             element.appendChild(children);
             fragment.appendChild(appendNode);
@@ -660,7 +687,8 @@ async function _parseNode(routerNode, node, routes, map) {
 }
 async function parse(routerNode) {
     const map = new Map();
-    const fr = await _parseNode(routerNode, routerNode.template.content, [], map);
+    const routesByPath = new Map();
+    const fr = await _parseNode(routerNode, routerNode.template.content, [], map, routesByPath);
     return fr;
 }
 
