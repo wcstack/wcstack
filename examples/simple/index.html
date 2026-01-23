@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>simple</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "@components/app/": "./components/app/"
+        }
+      }
+    </script>
+    <script type="module" src="../../packages/autoloader/dist/auto.min.js"></script>
+    <script type="module" src="../../packages/router/dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-router basename="/examples/simple/">
+      <template>
+        <wcs-layout layout="main">
+
+          <app-header slot="header"></app-header>
+
+          <wcs-route path="/">
+            <wcs-head>
+              <title>Home Page</title>
+            </wcs-head>
+            <app-main></app-main>
+          </wcs-route>
+
+          <wcs-route path="/about">
+            <wcs-head>
+              <title>About Page</title>
+            </wcs-head>
+            <app-about></app-about>
+          </wcs-route>
+
+          <wcs-route fallback>
+            <wcs-head>
+              <title>404 Not Found</title>
+            </wcs-head>
+            <h1>404 Not Found</h1>
+            <p>The page you are looking for does not exist.</p>
+          </wcs-route>
+          
+        </wcs-layout>
+      </template>
+    </wcs-router>
+
+    <template id="main">
+      <section>
+        <slot name="header"></slot>
+      </section>
+      <section>
+        <slot></slot>
+      </section>
+    </template>
+  </body>
+</html>
