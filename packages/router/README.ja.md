@@ -126,10 +126,60 @@
 
 | プロパティ | 説明 |
 |------|------|
-|guardHandler|ガード判定関数を設定|
+| `params` | マッチしたパラメータ（文字列）を取得 |
+| `typedParams` | マッチしたパラメータ（型変換済み）を取得 |
+| `guardHandler` | ガード判定関数を設定 |
 
 ガード判定関数の型：
 function (toPath: string, fromPath: string): boolean | Promise<boolean>
+
+#### 型付きパラメータ
+
+パスパラメータに型を指定することで、値の検証と自動変換が行えます。
+
+**構文**: `:パラメータ名(型名)`
+
+```html
+<!-- 数値型パラメータ -->
+<wcs-route path="/users/:userId(int)">
+  <user-detail></user-detail>
+</wcs-route>
+
+<!-- 複合型パラメータ -->
+<wcs-route path="/posts/:date(isoDate)/:slug(slug)">
+  <post-detail></post-detail>
+</wcs-route>
+```
+
+**ビルトイン型**:
+
+| 型名 | 説明 | 例 | 変換後の型 |
+|------|------|------|------|
+| `int` | 整数 | `123`, `-45` | `number` |
+| `float` | 浮動小数点数 | `3.14`, `-2.5` | `number` |
+| `bool` | 真偽値 | `true`, `false`, `0`, `1` | `boolean` |
+| `uuid` | UUID v1-5 | `550e8400-e29b-41d4-a716-446655440000` | `string` |
+| `slug` | スラッグ（小文字英数字とハイフン） | `my-post-title` | `string` |
+| `isoDate` | ISO 8601 日付 | `2024-01-23` | `Date` |
+| `any` | 任意の文字列（デフォルト） | 任意 | `string` |
+
+**値の取得**:
+
+```javascript
+// ルート要素から取得
+const route = document.querySelector('wcs-route[path="/users/:userId(int)"]');
+
+// 文字列として取得
+console.log(route.params.userId);       // "123"
+
+// 型変換済みの値として取得
+console.log(route.typedParams.userId);  // 123 (number)
+```
+
+**動作仕様**:
+- 型に一致しない値の場合、そのルートはマッチしません（エラーにはなりません）
+- 型を指定しない場合は `any` として扱われます（従来の動作と同じ）
+- 未知の型名を指定した場合も `any` にフォールバックします
 
 ### Layout(wcs-layout)
 
