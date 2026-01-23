@@ -6,7 +6,8 @@
     <script type="importmap">
       {
         "imports": {
-          "@components/app/": "./components/app/"
+          "@components/app/": "./components/app/",
+          "@components/app-main": "./components/app/main.js"
         }
       }
     </script>
@@ -16,34 +17,36 @@
   <body>
     <wcs-router basename="/examples/simple/">
       <template>
-        <wcs-layout layout="main">
+        <wcs-route path="/">
+          <wcs-layout layout="main">
 
-          <app-header slot="header"></app-header>
+            <app-header slot="header"></app-header>
 
-          <wcs-route path="/">
-            <wcs-head>
-              <title>Home Page</title>
-            </wcs-head>
-            <app-main></app-main>
-          </wcs-route>
+            <wcs-route index>
+              <wcs-head>
+                <title>Home Page</title>
+              </wcs-head>
+              <app-main></app-main>
+            </wcs-route>
 
-          <wcs-route path="/about">
-            <wcs-head>
-              <title>About Page</title>
-            </wcs-head>
-            <app-about></app-about>
-          </wcs-route>
+            <wcs-route path="about">
+              <wcs-head>
+                <title>About Page</title>
+              </wcs-head>
+              <app-about></app-about>
+            </wcs-route>
 
-          <wcs-route fallback>
-            <wcs-head>
-              <title>404 Not Found</title>
-            </wcs-head>
-            <h1>404 Not Found</h1>
-            <p>The page you are looking for does not exist.</p>
-            <a href="/">return to home</a>
-          </wcs-route>
-          
-        </wcs-layout>
+          </wcs-layout>
+        </wcs-route>
+
+        <wcs-route fallback>
+          <wcs-head>
+            <title>404 Not Found</title>
+          </wcs-head>
+          <h1>404 Not Found</h1>
+          <p>The page you are looking for does not exist.</p>
+          <wcs-link to="/">return to home</wcs-link>
+        </wcs-route>
       </template>
     </wcs-router>
 

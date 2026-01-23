@@ -76,11 +76,19 @@ function resolveExtends(componentConstructor) {
 }
 async function eagerLoadItem(info, tagName, loader) {
     try {
+        if (customElements.get(tagName)) {
+            // すでに定義済み
+            return;
+        }
         const componentConstructor = await loader.loader(info.key);
         if (componentConstructor !== null) {
             let extendsName = info.extends;
             if (extendsName === null) {
                 extendsName = resolveExtends(componentConstructor);
+            }
+            if (customElements.get(tagName)) {
+                // すでに定義済み
+                return;
             }
             if (extendsName === null) {
                 customElements.define(tagName, componentConstructor);

@@ -90,9 +90,9 @@ describe('eagerLoad', () => {
     };
     const loaders = { [DEFAULT_KEY]: mockLoader };
     const loadMap = {
-      'my-element': {
-        key: '@components/my-element',
-        tagName: 'my-element',
+      'fail-element': {
+        key: '@components/fail-element',
+        tagName: 'fail-element',
         loaderKey: null,
         extends: null,
         isNameSpaced: false
@@ -183,9 +183,9 @@ describe('eagerLoad', () => {
     };
     const loaders = { [DEFAULT_KEY]: mockLoader };
     const loadMap = {
-      'my-element': {
-        key: '@components/my-element',
-        tagName: 'my-element',
+      'retry-element': {
+        key: '@components/retry-element',
+        tagName: 'retry-element',
         loaderKey: null,
         extends: null,
         isNameSpaced: false
@@ -252,9 +252,9 @@ describe('eagerLoad', () => {
     };
     const loaders = { [DEFAULT_KEY]: mockLoader };
     const loadMap = {
-      'my-element': {
-        key: '@components/my-element',
-        tagName: 'my-element',
+      'null-element': {
+        key: '@components/null-element',
+        tagName: 'null-element',
         loaderKey: null,
         extends: null,
         isNameSpaced: false
@@ -263,7 +263,66 @@ describe('eagerLoad', () => {
 
     await eagerLoad(loadMap, loaders);
 
-    expect(mockLoader.loader).toHaveBeenCalledWith('@components/my-element');
+    expect(mockLoader.loader).toHaveBeenCalledWith('@components/null-element');
     expect(customElements.define).not.toHaveBeenCalled();
+  });
+
+  it('should skip already defined elements before loader call', async () => {
+    const mockConstructor = class extends HTMLElement {};
+    // 事前にカスタムエレメントを定義
+    customElements.define('pre-defined-element', mockConstructor);
+    
+    const mockLoader: ILoader = {
+      postfix: '.js',
+      loader: vi.fn().mockResolvedValue(mockConstructor)
+    };
+    const loaders = { [DEFAULT_KEY]: mockLoader };
+    const loadMap = {
+      'pre-defined-element': {
+        key: '@components/pre-defined-element',
+        tagName: 'pre-defined-element',
+        loaderKey: null,
+        extends: null,
+        isNameSpaced: false
+      }
+    };
+
+    await eagerLoad(loadMap, loaders);
+
+    // loaderは呼ばれない（定義済みなので早期リターン）
+    expect(mockLoader.loader).not.toHaveBeenCalled();
+    expect(customElements.define).toHaveBeenCalledTimes(1); // 事前定義のみ
+  });
+
+  it('should skip element if defined during loader execution', async () => {
+    const mockConstructor = class extends HTMLElement {};
+    
+    const mockLoader: ILoader = {
+      postfix: '.js',
+      loader: vi.fn().mockImplementation(async () => {
+        // loader実行中に別の処理が同じ要素を定義した状況をシミュレート
+        if (!customElements.get('race-element')) {
+          customElements.define('race-element', mockConstructor);
+        }
+        return class extends HTMLElement {};
+      })
+    };
+    const loaders = { [DEFAULT_KEY]: mockLoader };
+    const loadMap = {
+      'race-element': {
+        key: '@components/race-element',
+        tagName: 'race-element',
+        loaderKey: null,
+        extends: null,
+        isNameSpaced: false
+      }
+    };
+
+    await eagerLoad(loadMap, loaders);
+
+    // loaderは呼ばれるが、define後のチェックで早期リターン
+    expect(mockLoader.loader).toHaveBeenCalled();
+    // defineはloader内で1回のみ（race condition対策で2回目は呼ばれない）
+    expect(customElements.define).toHaveBeenCalledTimes(1);
   });
 });

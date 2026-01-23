@@ -82,6 +82,10 @@ function resolveExtends(componentConstructor: CustomElementConstructor): string 
 
 async function eagerLoadItem(info: IEagerLoadInfo, tagName:string, loader: ILoader): Promise<void> {
   try {
+    if (customElements.get(tagName)) {
+      // すでに定義済み
+      return;
+    }
     const componentConstructor = await loader.loader(info.key);
     if (componentConstructor !== null) {
       let extendsName = info.extends;
@@ -89,6 +93,10 @@ async function eagerLoadItem(info: IEagerLoadInfo, tagName:string, loader: ILoad
         extendsName = resolveExtends(componentConstructor);
       }
 
+      if (customElements.get(tagName)) {
+        // すでに定義済み
+        return;
+      }
       if (extendsName === null) {
         customElements.define(tagName, componentConstructor);
       } else {

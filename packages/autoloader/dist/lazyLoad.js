@@ -49,6 +49,10 @@ async function tagLoad(tagInfo, config, prefixMap) {
     if (info === null) {
         throw new Error("No matching namespace found for lazy loaded component: " + tagInfo.name);
     }
+    if (loadingTags.has(tagInfo.name)) {
+        await customElements.whenDefined(tagInfo.name);
+        return;
+    }
     loadingTags.add(tagInfo.name);
     try {
         let loader;
@@ -63,8 +67,16 @@ async function tagLoad(tagInfo, config, prefixMap) {
             throw new Error("Invalid component name for lazy loaded component: " + tagInfo.name);
         }
         const path = info.key + file + loader.postfix;
+        if (customElements.get(tagInfo.name)) {
+            // すでに定義済み
+            return;
+        }
         const componentConstructor = await loader.loader(path);
         if (componentConstructor !== null) {
+            if (customElements.get(tagInfo.name)) {
+                // すでに定義済み
+                return;
+            }
             if (tagInfo.extends === null) {
                 customElements.define(tagInfo.name, componentConstructor);
             }

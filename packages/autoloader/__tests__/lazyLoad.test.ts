@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handlerForLazyLoad, getCustomTagInfo } from '../src/lazyLoad.js';
-import { resetState } from '../src/tags.js';
+import { loadingTags, resetState } from '../src/tags.js';
 import { DEFAULT_KEY } from '../src/config.js';
 import { ILoader } from '../src/types.js';
 
@@ -310,6 +310,120 @@ describe('lazyLoad', () => {
       expect.stringContaining("Failed to lazy load component 'ui-null'"),
       expect.any(Error)
     );
+  });
+
+  it('should wait when tag is already loading', async () => {
+    const mockConstructor = class extends HTMLElement {};
+    const mockLoader: ILoader = {
+      postfix: '.js',
+      loader: vi.fn().mockResolvedValue(mockConstructor)
+    };
+    const config = {
+      loaders: { [DEFAULT_KEY]: mockLoader },
+      observable: false,
+      scanImportmap: false
+    };
+    const prefixMap = {
+      'ui': {
+        key: '@components/ui/',
+        prefix: 'ui',
+        loaderKey: null,
+        isNameSpaced: true
+      }
+    };
+
+    loadingTags.add('ui-loading');
+    const whenDefinedSpy = vi.mocked(customElements.whenDefined);
+    whenDefinedSpy.mockImplementation((name: string) => {
+      registry.set(name, mockConstructor);
+      return Promise.resolve(mockConstructor);
+    });
+    document.body.innerHTML = '<ui-loading></ui-loading>';
+
+    await handlerForLazyLoad(document, config, prefixMap);
+
+    expect(customElements.whenDefined).toHaveBeenCalledWith('ui-loading');
+    expect(mockLoader.loader).not.toHaveBeenCalled();
+  });
+
+  it('should skip loading when element is defined before loader runs', async () => {
+    const mockConstructor = class extends HTMLElement {};
+    const mockLoader: ILoader = {
+      postfix: '.js',
+      loader: vi.fn()
+    };
+    const config = {
+      loaders: { [DEFAULT_KEY]: mockLoader },
+      observable: false,
+      scanImportmap: false
+    };
+    const prefixMap = {
+      'ui': {
+        key: '@components/ui/',
+        prefix: 'ui',
+        loaderKey: null,
+        isNameSpaced: true
+      }
+    };
+
+    let firstCall = true;
+    const getSpy = vi.mocked(customElements.get);
+    getSpy.mockImplementation((name: string) => {
+      if (name === 'ui-predefined') {
+        if (firstCall) {
+          firstCall = false;
+          return undefined;
+        }
+        return mockConstructor;
+      }
+      return registry.get(name);
+    });
+
+    document.body.innerHTML = '<ui-predefined></ui-predefined>';
+
+    await handlerForLazyLoad(document, config, prefixMap);
+
+    expect(mockLoader.loader).not.toHaveBeenCalled();
+  });
+
+  it('should skip define when element is defined during loader', async () => {
+    const mockConstructor = class extends HTMLElement {};
+    let definedAfterLoad = false;
+    const mockLoader: ILoader = {
+      postfix: '.js',
+      loader: vi.fn().mockImplementation(async () => {
+        definedAfterLoad = true;
+        return mockConstructor;
+      })
+    };
+    const config = {
+      loaders: { [DEFAULT_KEY]: mockLoader },
+      observable: false,
+      scanImportmap: false
+    };
+    const prefixMap = {
+      'ui': {
+        key: '@components/ui/',
+        prefix: 'ui',
+        loaderKey: null,
+        isNameSpaced: true
+      }
+    };
+
+    const getSpy = vi.mocked(customElements.get);
+    getSpy.mockImplementation((name: string) => {
+      if (name === 'ui-race') {
+        return definedAfterLoad ? mockConstructor : undefined;
+      }
+      return registry.get(name);
+    });
+
+    document.body.innerHTML = '<ui-race></ui-race>';
+
+    await handlerForLazyLoad(document, config, prefixMap);
+
+    expect(mockLoader.loader).toHaveBeenCalledWith('@components/ui/race.js');
+    expect(customElements.define).not.toHaveBeenCalled();
   });
 
   it('should handle error in handlerForLazyLoad initial call', async () => {
