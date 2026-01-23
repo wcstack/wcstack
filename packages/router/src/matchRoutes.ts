@@ -12,7 +12,6 @@ function _matchRoutes(
   const matchResult = routeNode.testPath(normalizedPath, segments);
   if (matchResult) {
     results.push(matchResult);
-    return; // Stop searching deeper routes once a match is found
   }
   for(const childRoute of routeNode.routeChildNodes) {
     _matchRoutes(routerNode, childRoute, nextRoutes, normalizedPath, segments, results);
