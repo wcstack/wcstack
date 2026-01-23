@@ -20,12 +20,21 @@ function deepFreeze(obj) {
     }
     return obj;
 }
+function deepClone(obj) {
+    if (obj === null || typeof obj !== "object")
+        return obj;
+    const clone = {};
+    for (const key of Object.keys(obj)) {
+        clone[key] = deepClone(obj[key]);
+    }
+    return clone;
+}
 let frozenConfig = null;
 // 後方互換のため config もエクスポート（読み取り専用として使用）
 export const config = _config;
 export function getConfig() {
     if (!frozenConfig) {
-        frozenConfig = deepFreeze(_config);
+        frozenConfig = deepFreeze(deepClone(_config));
     }
     return frozenConfig;
 }

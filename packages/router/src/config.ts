@@ -37,6 +37,15 @@ function deepFreeze<T>(obj: T): T {
   return obj;
 }
 
+function deepClone<T>(obj: T): T {
+  if (obj === null || typeof obj !== "object") return obj;
+  const clone: Record<string, unknown> = {};
+  for (const key of Object.keys(obj)) {
+    clone[key] = deepClone((obj as Record<string, unknown>)[key]);
+  }
+  return clone as T;
+}
+
 let frozenConfig: IConfig | null = null;
 
 // 後方互換のため config もエクスポート（読み取り専用として使用）
@@ -44,7 +53,7 @@ export const config: IConfig = _config as IConfig;
 
 export function getConfig(): IConfig {
   if (!frozenConfig) {
-    frozenConfig = deepFreeze(_config);
+    frozenConfig = deepFreeze(deepClone(_config));
   }
   return frozenConfig;
 }

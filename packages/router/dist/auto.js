@@ -1,3 +1,3 @@
-import { registerComponents } from "./index.esm.js";
+import { bootstrapRouter } from "./index.esm.js";
 
-await registerComponents();
+await bootstrapRouter();
