@@ -14,6 +14,7 @@ const createMatchResult = (
 ): IRouteMatchResult => ({
   routes,
   params,
+  typedParams: params,
   path,
   lastPath,
 });
@@ -152,7 +153,7 @@ describe('showRouteContent', () => {
 
     await showRouteContent(router, matchResult, []);
 
-    expect(route1.show).toHaveBeenCalledWith({ id: '123' });
+    expect(route1.show).toHaveBeenCalledWith(matchResult);
   });
 
   it('shouldChangeがtrueの場合にルートを表示すること', async () => {

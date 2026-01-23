@@ -5,6 +5,8 @@ import { IRouteMatchResult, IRoute, IRouter, GuardHandler, SegmentType, ISegment
 import { assignParams } from "../assignParams.js";
 import { LayoutOutlet } from "./LayoutOutlet.js";
 import { GuardCancel } from "../GuardCancel.js";
+import { builtinParamTypes } from "../builtinParamTypes.js";
+import { BuiltinParamTypes } from "../types.js";
 
 
 const weights: Record<SegmentType, number> = {
@@ -12,8 +14,6 @@ const weights: Record<SegmentType, number> = {
   'param': 1,
   'catch-all': 0
 };
-
-
 
 export class Route extends HTMLElement implements IRoute {
   private _name: string = '';
@@ -28,6 +28,7 @@ export class Route extends HTMLElement implements IRoute {
   private _paramNames: string[] | undefined;
   private _absoluteParamNames: string[] | undefined;
   private _params: Record<string, string> = {};
+  private _typedParams: Record<string, any> = {};
   private _weight: number | undefined;
   private _absoluteWeight: number | undefined;
   private _childIndex: number = 0;
@@ -121,6 +122,7 @@ export class Route extends HTMLElement implements IRoute {
 
   testPath(path: string, segments: string[]): IRouteMatchResult | null {
     const params: Record<string, string> = {};
+    const typedParams: Record<string, any> = {};
     let testResult = true;
     let catchAllFound = false;
     let i = 0, segIndex = 0;
@@ -142,15 +144,27 @@ export class Route extends HTMLElement implements IRoute {
         testResult = false;
         break;
       }
-      const match = segmentInfo.pattern.exec(segment);
-      if (match) {
-        if (segmentInfo.type === 'param' && segmentInfo.paramName) {
-          params[segmentInfo.paramName] = match[1];
+      let match: boolean = false;
+      if (segmentInfo.type === "param") {
+        const paramType = segmentInfo.paramType || 'any';
+        const builtinParamType = builtinParamTypes[paramType];
+        const value = builtinParamType.parse(segment);
+        if (typeof value !== 'undefined') {
+          if (segmentInfo.paramName) {
+            params[segmentInfo.paramName] = segment;
+            typedParams[segmentInfo.paramName] = value;
+          }
+          match = true;
         }
+      } else {
+        match = segmentInfo.pattern.exec(segment) !== null;
+      }
+      if (match) {
         if (segmentInfo.type === 'catch-all') {
           // Catch-all: match remaining segments
           const remainingSegments = segments.slice(segIndex).join('/');
           params['*'] = remainingSegments;
+          typedParams['*'] = remainingSegments;
           catchAllFound = true;
           break; // No more segments to process
         }
@@ -180,6 +194,7 @@ export class Route extends HTMLElement implements IRoute {
         path: path,
         routes: this.routes,
         params: params,
+        typedParams: typedParams,
         lastPath: ""
       };
     }
@@ -215,6 +230,10 @@ export class Route extends HTMLElement implements IRoute {
 
   get params(): Record<string, string> {
     return this._params;
+  }
+
+  get typedParams(): Record<string, any> {
+    return this._typedParams;
   }
 
   get paramNames(): string[] {
@@ -288,10 +307,11 @@ export class Route extends HTMLElement implements IRoute {
     }
   }
 
-  show(params: Record<string, string>): boolean {
+  show(matchResult: IRouteMatchResult): boolean {
     this._params = {};
     for(const key of this.paramNames) {
-      this._params[key] = params[key];
+      this._params[key] = matchResult.params[key];
+      this._typedParams[key] = matchResult.typedParams[key];
     }
     const parentNode = this.placeHolder.parentNode;
     const nextSibling = this.placeHolder.nextSibling;
@@ -322,6 +342,7 @@ export class Route extends HTMLElement implements IRoute {
 
   hide() {
     this._params = {};
+    this._typedParams = {};
     for(const node of this.childNodeArray) {
       node.parentNode?.removeChild(node);
     }
@@ -412,11 +433,24 @@ export class Route extends HTMLElement implements IRoute {
         // Catch-all: matches remaining path segments
         break; // Ignore subsequent segments
       } else if (segment.startsWith(':')) {
+        const matchType = segment.match(/^:([^()]+)(\(([^)]+)\))?$/);
+        let paramName: string;
+        let typeName: BuiltinParamTypes = 'any';
+        if (matchType) {
+          paramName = matchType[1];
+          if (matchType[3] && Object.keys(builtinParamTypes).includes(matchType[3])) {
+            typeName = matchType[3] as BuiltinParamTypes;
+          }
+        } else {
+          paramName = segment.substring(1);
+        }
+          
         this._segmentInfos.push({
           type: 'param',
           segmentText: segment,
-          paramName: segment.substring(1),
-          pattern: new RegExp('^([^\\/]+)$')
+          paramName: paramName,
+          pattern: new RegExp('^([^\\/]+)$'),
+          paramType: typeName
         });
       } else if (segment !== '' || !this.hasAttribute('index')) {
         // 空セグメントはindex以外の場合のみ追加（絶対パスの先頭 '' など）

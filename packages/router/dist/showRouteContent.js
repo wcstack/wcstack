@@ -29,7 +29,7 @@ export async function showRouteContent(routerNode, matchResult, lastRoutes) {
     let force = false;
     for (const route of matchResult.routes) {
         if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
-            force = route.show(matchResult.params);
+            force = route.show(matchResult);
         }
     }
 }

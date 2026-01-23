@@ -1,6 +1,8 @@
+import { BuiltinParamTypes } from "../types";
 export interface IRouteMatchResult {
     routes: IRoute[];
     params: Record<string, string>;
+    typedParams: Record<string, any>;
     path: string;
     lastPath: string;
 }
@@ -19,6 +21,7 @@ export interface ISegmentInfo {
     paramName: string | null;
     pattern: RegExp;
     isIndex?: boolean;
+    paramType?: BuiltinParamTypes;
 }
 export interface IRoute {
     readonly routeParentNode: IRoute | null;
@@ -33,6 +36,7 @@ export interface IRoute {
     readonly childNodeArray: Node[];
     readonly routes: IRoute[];
     readonly params: Record<string, string>;
+    readonly typedParams: Record<string, any>;
     readonly paramNames: string[];
     readonly absoluteParamNames: string[];
     readonly weight: number;
@@ -46,7 +50,7 @@ export interface IRoute {
     readonly absoluteSegmentInfos: ISegmentInfo[];
     testPath(path: string, segments: string[]): IRouteMatchResult | null;
     guardHandler: GuardHandler;
-    show(params: Record<string, string>): boolean;
+    show(matchResult: IRouteMatchResult): boolean;
     hide(): void;
     shouldChange(newParams: Record<string, string>): boolean;
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;

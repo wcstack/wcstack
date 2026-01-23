@@ -26,6 +26,7 @@ describe('applyRoute', () => {
       path: '/app/test',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
     
@@ -49,6 +50,7 @@ describe('applyRoute', () => {
       path: '/',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
 
@@ -72,6 +74,7 @@ describe('applyRoute', () => {
       path: '/home',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
     
@@ -127,6 +130,7 @@ describe('applyRoute', () => {
       path: '/page',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: '/previous'
     };
     
@@ -151,6 +155,7 @@ describe('applyRoute', () => {
       path: '/error',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
     
@@ -173,6 +178,7 @@ describe('applyRoute', () => {
       path: '/current',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
     
@@ -198,6 +204,7 @@ describe('applyRoute', () => {
       path: '/test',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
     
@@ -220,6 +227,7 @@ describe('applyRoute', () => {
       path: '/user/profile',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
     
@@ -244,6 +252,7 @@ describe('applyRoute', () => {
       path: '/appX/products',
       routes: [mockRoute],
       params: {},
+      typedParams: {},
       lastPath: ''
     };
 

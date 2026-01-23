@@ -28,6 +28,7 @@ export async function applyRoute(
       matchResult = {
         routes: [routerNode.fallbackRoute],
         params: {},
+        typedParams: {},
         path: path,
         lastPath: lastPath
       };

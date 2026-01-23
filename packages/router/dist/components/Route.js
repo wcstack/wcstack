@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { assignParams } from "../assignParams.js";
 import { GuardCancel } from "../GuardCancel.js";
+import { builtinParamTypes } from "../builtinParamTypes.js";
 const weights = {
     'static': 2,
     'param': 1,
@@ -21,6 +22,7 @@ export class Route extends HTMLElement {
     _paramNames;
     _absoluteParamNames;
     _params = {};
+    _typedParams = {};
     _weight;
     _absoluteWeight;
     _childIndex = 0;
@@ -97,6 +99,7 @@ export class Route extends HTMLElement {
     }
     testPath(path, segments) {
         const params = {};
+        const typedParams = {};
         let testResult = true;
         let catchAllFound = false;
         let i = 0, segIndex = 0;
@@ -118,15 +121,28 @@ export class Route extends HTMLElement {
                 testResult = false;
                 break;
             }
-            const match = segmentInfo.pattern.exec(segment);
-            if (match) {
-                if (segmentInfo.type === 'param' && segmentInfo.paramName) {
-                    params[segmentInfo.paramName] = match[1];
+            let match = false;
+            if (segmentInfo.type === "param") {
+                const paramType = segmentInfo.paramType || 'any';
+                const builtinParamType = builtinParamTypes[paramType];
+                const value = builtinParamType.parse(segment);
+                if (typeof value !== 'undefined') {
+                    if (segmentInfo.paramName) {
+                        params[segmentInfo.paramName] = segment;
+                        typedParams[segmentInfo.paramName] = value;
+                    }
+                    match = true;
                 }
+            }
+            else {
+                match = segmentInfo.pattern.exec(segment) !== null;
+            }
+            if (match) {
                 if (segmentInfo.type === 'catch-all') {
                     // Catch-all: match remaining segments
                     const remainingSegments = segments.slice(segIndex).join('/');
                     params['*'] = remainingSegments;
+                    typedParams['*'] = remainingSegments;
                     catchAllFound = true;
                     break; // No more segments to process
                 }
@@ -158,6 +174,7 @@ export class Route extends HTMLElement {
                 path: path,
                 routes: this.routes,
                 params: params,
+                typedParams: typedParams,
                 lastPath: ""
             };
         }
@@ -190,6 +207,9 @@ export class Route extends HTMLElement {
     }
     get params() {
         return this._params;
+    }
+    get typedParams() {
+        return this._typedParams;
     }
     get paramNames() {
         if (typeof this._paramNames === 'undefined') {
@@ -255,10 +275,11 @@ export class Route extends HTMLElement {
             }
         }
     }
-    show(params) {
+    show(matchResult) {
         this._params = {};
         for (const key of this.paramNames) {
-            this._params[key] = params[key];
+            this._params[key] = matchResult.params[key];
+            this._typedParams[key] = matchResult.typedParams[key];
         }
         const parentNode = this.placeHolder.parentNode;
         const nextSibling = this.placeHolder.nextSibling;
@@ -289,6 +310,7 @@ export class Route extends HTMLElement {
     }
     hide() {
         this._params = {};
+        this._typedParams = {};
         for (const node of this.childNodeArray) {
             node.parentNode?.removeChild(node);
         }
@@ -376,11 +398,24 @@ export class Route extends HTMLElement {
                 break; // Ignore subsequent segments
             }
             else if (segment.startsWith(':')) {
+                const matchType = segment.match(/^:([^()]+)(\(([^)]+)\))?$/);
+                let paramName;
+                let typeName = 'any';
+                if (matchType) {
+                    paramName = matchType[1];
+                    if (matchType[3] && Object.keys(builtinParamTypes).includes(matchType[3])) {
+                        typeName = matchType[3];
+                    }
+                }
+                else {
+                    paramName = segment.substring(1);
+                }
                 this._segmentInfos.push({
                     type: 'param',
                     segmentText: segment,
-                    paramName: segment.substring(1),
-                    pattern: new RegExp('^([^\\/]+)$')
+                    paramName: paramName,
+                    pattern: new RegExp('^([^\\/]+)$'),
+                    paramType: typeName
                 });
             }
             else if (segment !== '' || !this.hasAttribute('index')) {

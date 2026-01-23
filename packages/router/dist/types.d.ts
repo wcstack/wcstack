@@ -29,4 +29,10 @@ export interface IWritableConfig {
 export interface IGuardCancel {
     fallbackPath: string;
 }
+export type BuiltinParamTypes = "int" | "float" | "bool" | "uuid" | "slug" | "isoDate" | "any";
+export interface IParamTypeInfo<T> {
+    readonly typeName: string;
+    readonly pattern: RegExp;
+    parse(value: string): T | undefined;
+}
 //# sourceMappingURL=types.d.ts.map

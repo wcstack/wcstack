@@ -5,6 +5,16 @@ import { LayoutOutlet } from '../src/components/LayoutOutlet';
 import { GuardCancel } from '../src/GuardCancel';
 import './setup';
 
+function mockMatch(route: Route, params: Record<string, string> = {}) {
+  return { 
+    params, 
+    typedParams: params, 
+    path: '', 
+    lastPath: '', 
+    routes: [route] 
+  } as any;
+}
+
 // ヘルパー関数: path属性を持つRouteを作成
 function createRoute(path: string): Route {
   const div = document.createElement('div');
@@ -211,6 +221,11 @@ describe('Route', () => {
 
       expect(route.routerNode).toBe(router);
     });
+
+    it('typedParamsを返すこと', () => {
+      const route = document.createElement('wcs-route') as Route;
+      expect(route.typedParams).toEqual({});
+    });
   });
 
   describe('isRelative', () => {
@@ -383,6 +398,26 @@ describe('Route', () => {
       expect(result?.path).toBe('/users/123');
     });
 
+    it('paramTypeが未設定でもanyとしてマッチすること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('path', '/:id');
+      route.initialize(router, null);
+
+      // paramTypeを未設定にしてフォールバック分岐を通す
+      for (const info of (route as any)._segmentInfos) {
+        if (info.type === 'param') {
+          info.paramType = undefined;
+        }
+      }
+
+      const result = route.testPath('/123', ['123']);
+      expect(result).not.toBeNull();
+      expect(result?.typedParams).toEqual({ id: '123' });
+    });
+
     it('キャッシュされた正規表現を利用してマッチできること', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
@@ -543,6 +578,93 @@ describe('Route', () => {
       expect(childRoute.absoluteSegmentInfos.length).toBe(3);
       expect(childRoute.absoluteSegmentInfos.map(s => s.segmentText)).toEqual(['', 'parent', 'child']);
     });
+    it('指定された型でパラメータをパースできること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = createRoute('/:id(int)');
+      route.initialize(router, null);
+      const match = route.testPath('/123', ['123']);
+      expect(match).not.toBeNull();
+      expect(match?.params['id']).toBe('123');
+      expect(match?.typedParams['id']).toBe(123);
+    });
+
+    it('int以外の型も正常に取り込めること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const cases = [
+        { path: '/:id(float)', segment: '1.5', key: 'id', expected: 1.5 },
+        { path: '/:flag(bool)', segment: '1', key: 'flag', expected: true },
+        { path: '/:uuid(uuid)', segment: '123e4567-e89b-12d3-a456-426614174000', key: 'uuid', expected: '123e4567-e89b-12d3-a456-426614174000' },
+        { path: '/:slug(slug)', segment: 'hello-world', key: 'slug', expected: 'hello-world' },
+        { path: '/:any(any)', segment: 'anything', key: 'any', expected: 'anything' },
+      ];
+
+      for (const c of cases) {
+        const route = createRoute(c.path);
+        route.initialize(router, null);
+        const match = route.testPath(`/${c.segment}`, [c.segment]);
+        expect(match).not.toBeNull();
+        expect(match?.typedParams[c.key]).toBe(c.expected);
+      }
+
+      const isoRoute = createRoute('/:date(isoDate)');
+      isoRoute.initialize(router, null);
+      const isoMatch = isoRoute.testPath('/2024-01-23', ['2024-01-23']);
+      expect(isoMatch).not.toBeNull();
+      const date = isoMatch?.typedParams['date'] as Date;
+      expect(date).toBeInstanceOf(Date);
+      expect(date.getFullYear()).toBe(2024);
+      expect(date.getMonth()).toBe(0);
+      expect(date.getDate()).toBe(23);
+    });
+
+    it('不正な型指定の場合はデフォルト(any)として扱われること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = createRoute('/:id(invalid)');
+      route.initialize(router, null);
+      const match = route.testPath('/val', ['val']);
+      expect(match).not.toBeNull();
+      expect(match?.params['id']).toBe('val');
+    });
+
+    it('型指定の構文が不正な場合はパラメータ名のみとして扱われること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = createRoute('/:id(');
+      route.initialize(router, null);
+      const match = route.testPath('/val', ['val']);
+      expect(match).not.toBeNull();
+      expect(match?.params['id(']).toBe('val');
+    });
+
+    it('パラメータ名が空の場合はparamsに追加しないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = createRoute('/:');
+      route.initialize(router, null);
+      const match = route.testPath('/val', ['val']);
+      expect(match).not.toBeNull();
+      expect(match?.params).toEqual({});
+      expect(match?.typedParams).toEqual({});
+    });
+
+    it('パースエラーの場合はマッチしないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = createRoute('/:id(int)');
+      route.initialize(router, null);
+      const match = route.testPath('/abc', ['abc']);
+      expect(match).toBeNull();
+    });
+
   });
 
   describe('paramNames', () => {
@@ -781,7 +903,7 @@ describe('Route', () => {
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('path', '/test');
 
-      await expect(route.guardCheck({ path: '/test', routes: [], params: {}, lastPath: '' })).resolves.toBeUndefined();
+      await expect(route.guardCheck({ path: '/test', routes: [], params: {}, typedParams: {}, lastPath: '' })).resolves.toBeUndefined();
     });
 
     it('guardがある場合、guardHandlerを呼び出してからチェックすること', async () => {
@@ -792,7 +914,7 @@ describe('Route', () => {
         const guardHandler = vi.fn().mockResolvedValue(true);
       route.guardHandler = guardHandler;
 
-      await route.guardCheck({ path: '/protected', routes: [], params: {}, lastPath: '/' });
+      await route.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' });
 
       expect(guardHandler).toHaveBeenCalledWith('/protected', '/');
     });
@@ -806,7 +928,7 @@ describe('Route', () => {
       route.guardHandler = guardHandler;
 
       await expect(
-        route.guardCheck({ path: '/protected', routes: [], params: {}, lastPath: '/' })
+        route.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' })
       ).rejects.toThrow(GuardCancel);
     });
 
@@ -822,7 +944,7 @@ describe('Route', () => {
       route.guardHandler = guardHandler;
 
       try {
-        await route.guardCheck({ path: '/protected', routes: [], params: {}, lastPath: '/' });
+        await route.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' });
       } catch (error) {
         expect(error).toBeInstanceOf(GuardCancel);
         expect((error as GuardCancel).fallbackPath).toBe('/custom-login');
@@ -845,7 +967,7 @@ describe('Route', () => {
       const container = document.createElement('div');
       container.appendChild(route.placeHolder);
 
-      const result = route.show({ id: '123' });
+      const result = route.show(mockMatch(route, { id: '123' }));
 
       expect(result).toBe(true);
       expect(route.params).toEqual({ id: '123' });
@@ -869,7 +991,7 @@ describe('Route', () => {
       const container = document.createElement('div');
       container.appendChild(route.placeHolder);
 
-      route.show({ id: '123' });
+      route.show(mockMatch(route, { id: '123' }));
 
       expect((span as any).id).toBe('123');
     });
@@ -890,7 +1012,7 @@ describe('Route', () => {
       container.appendChild(route.placeHolder);
       container.appendChild(nextElement);
 
-      route.show({});
+      route.show(mockMatch(route, {}));
 
       expect(span.nextSibling).toBe(nextElement);
     });
@@ -909,7 +1031,7 @@ describe('Route', () => {
       const container = document.createElement('div');
       container.appendChild(route.placeHolder);
 
-      route.show({});
+      route.show(mockMatch(route, {}));
 
       expect(container.lastChild).toBe(span);
     });
@@ -930,7 +1052,7 @@ describe('Route', () => {
       const container = document.createElement('div');
       container.appendChild(route.placeHolder);
 
-      route.show({ id: '123' });
+      route.show(mockMatch(route, { id: '123' }));
       expect(container.contains(span)).toBe(true);
 
       route.hide();
@@ -951,7 +1073,7 @@ describe('Route', () => {
       const container = document.createElement('div');
       container.appendChild(route.placeHolder);
 
-      route.show({ id: '123' });
+      route.show(mockMatch(route, { id: '123' }));
 
       expect(route.shouldChange({ id: '456' })).toBe(true);
     });
@@ -967,7 +1089,7 @@ describe('Route', () => {
       const container = document.createElement('div');
       container.appendChild(route.placeHolder);
 
-      route.show({ id: '123' });
+      route.show(mockMatch(route, { id: '123' }));
 
       expect(route.shouldChange({ id: '123' })).toBe(false);
     });
@@ -1108,7 +1230,7 @@ describe('Route', () => {
       const container = document.createElement('div');
       container.appendChild(route.placeHolder);
 
-      route.show({ id: '123' });
+      route.show(mockMatch(route, { id: '123' }));
 
       expect((div as any).id).toBe('123');
     });
@@ -1131,7 +1253,7 @@ describe('Route', () => {
 
       const assignParamsSpy = vi.spyOn(layoutOutlet, 'assignParams');
 
-      route.show({ id: '123' });
+      route.show(mockMatch(route, { id: '123' }));
 
       expect(assignParamsSpy).toHaveBeenCalledWith({ id: '123' });
     });
@@ -1152,7 +1274,7 @@ describe('Route', () => {
 
       const assignParamsSpy = vi.spyOn(layoutOutlet, 'assignParams');
 
-      route.show({ id: '123' });
+      route.show(mockMatch(route, { id: '123' }));
 
       expect(assignParamsSpy).toHaveBeenCalledWith({ id: '123' });
     });
@@ -1171,7 +1293,7 @@ describe('Route', () => {
       (route as any)._childNodeArray = [document.createTextNode('text')];
       (route as any)._isMadeArray = true;
 
-      const result = route.show({});
+      const result = route.show(mockMatch(route, {}));
 
       expect(result).toBe(true);
       expect(container.textContent).toContain('text');
@@ -1256,7 +1378,7 @@ describe('Route', () => {
 
       let checked = false;
       const guardCheckPromise = route.guardCheck({ 
-        path: '/protected', routes: [], params: {}, lastPath: '/' 
+        path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' 
       }).then(() => {
         checked = true;
       });
@@ -1291,7 +1413,7 @@ describe('Route', () => {
       container.appendChild(route.placeHolder);
 
       // show() で container に span が移動する
-      route.show({});
+      route.show(mockMatch(route, {}));
       expect(container.contains(span)).toBe(true);
 
       // 手動で削除しておく

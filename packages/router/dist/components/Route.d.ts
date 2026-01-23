@@ -12,6 +12,7 @@ export declare class Route extends HTMLElement implements IRoute {
     private _paramNames;
     private _absoluteParamNames;
     private _params;
+    private _typedParams;
     private _weight;
     private _absoluteWeight;
     private _childIndex;
@@ -42,6 +43,7 @@ export declare class Route extends HTMLElement implements IRoute {
     get segmentInfos(): ISegmentInfo[];
     get absoluteSegmentInfos(): ISegmentInfo[];
     get params(): Record<string, string>;
+    get typedParams(): Record<string, any>;
     get paramNames(): string[];
     get absoluteParamNames(): string[];
     get weight(): number;
@@ -49,7 +51,7 @@ export declare class Route extends HTMLElement implements IRoute {
     get childIndex(): number;
     get name(): string;
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;
-    show(params: Record<string, string>): boolean;
+    show(matchResult: IRouteMatchResult): boolean;
     hide(): void;
     shouldChange(newParams: Record<string, string>): boolean;
     get guardHandler(): GuardHandler;

@@ -71,6 +71,85 @@ class GuardCancel extends Error {
     }
 }
 
+const builtinParamTypes = {
+    "int": {
+        typeName: "int",
+        pattern: /^-?\d+$/,
+        parse(value) {
+            if (!this.pattern.test(value)) {
+                return undefined;
+            }
+            return parseInt(value, 10);
+        }
+    },
+    "float": {
+        typeName: "float",
+        pattern: /^-?\d+(?:\.\d+)?$/,
+        parse(value) {
+            if (!this.pattern.test(value)) {
+                return undefined;
+            }
+            return parseFloat(value);
+        }
+    },
+    "bool": {
+        typeName: "bool",
+        pattern: /^(true|false|0|1)$/,
+        parse(value) {
+            if (!this.pattern.test(value)) {
+                return undefined;
+            }
+            return value === "true" || value === "1";
+        }
+    },
+    "uuid": {
+        typeName: "uuid",
+        pattern: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        parse(value) {
+            if (!this.pattern.test(value)) {
+                return undefined;
+            }
+            return value;
+        }
+    },
+    "slug": {
+        typeName: "slug",
+        pattern: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+        parse(value) {
+            if (!this.pattern.test(value)) {
+                return undefined;
+            }
+            return value;
+        }
+    },
+    "isoDate": {
+        typeName: "isoDate",
+        pattern: /^\d{4}-\d{2}-\d{2}$/,
+        parse(value) {
+            if (!this.pattern.test(value)) {
+                return undefined;
+            }
+            const [year, month, day] = value.split("-").map(Number);
+            const date = new Date(year, month - 1, day);
+            // 元の値と一致するか確認（補正されていないか）
+            if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+                return undefined;
+            }
+            return date;
+        }
+    },
+    "any": {
+        typeName: "any",
+        pattern: /^.+$/,
+        parse(value) {
+            if (!this.pattern.test(value)) {
+                return undefined;
+            }
+            return value;
+        }
+    },
+};
+
 const weights = {
     'static': 2,
     'param': 1,
@@ -89,6 +168,7 @@ class Route extends HTMLElement {
     _paramNames;
     _absoluteParamNames;
     _params = {};
+    _typedParams = {};
     _weight;
     _absoluteWeight;
     _childIndex = 0;
@@ -165,6 +245,7 @@ class Route extends HTMLElement {
     }
     testPath(path, segments) {
         const params = {};
+        const typedParams = {};
         let testResult = true;
         let catchAllFound = false;
         let i = 0, segIndex = 0;
@@ -186,15 +267,28 @@ class Route extends HTMLElement {
                 testResult = false;
                 break;
             }
-            const match = segmentInfo.pattern.exec(segment);
-            if (match) {
-                if (segmentInfo.type === 'param' && segmentInfo.paramName) {
-                    params[segmentInfo.paramName] = match[1];
+            let match = false;
+            if (segmentInfo.type === "param") {
+                const paramType = segmentInfo.paramType || 'any';
+                const builtinParamType = builtinParamTypes[paramType];
+                const value = builtinParamType.parse(segment);
+                if (typeof value !== 'undefined') {
+                    if (segmentInfo.paramName) {
+                        params[segmentInfo.paramName] = segment;
+                        typedParams[segmentInfo.paramName] = value;
+                    }
+                    match = true;
                 }
+            }
+            else {
+                match = segmentInfo.pattern.exec(segment) !== null;
+            }
+            if (match) {
                 if (segmentInfo.type === 'catch-all') {
                     // Catch-all: match remaining segments
                     const remainingSegments = segments.slice(segIndex).join('/');
                     params['*'] = remainingSegments;
+                    typedParams['*'] = remainingSegments;
                     catchAllFound = true;
                     break; // No more segments to process
                 }
@@ -226,6 +320,7 @@ class Route extends HTMLElement {
                 path: path,
                 routes: this.routes,
                 params: params,
+                typedParams: typedParams,
                 lastPath: ""
             };
         }
@@ -258,6 +353,9 @@ class Route extends HTMLElement {
     }
     get params() {
         return this._params;
+    }
+    get typedParams() {
+        return this._typedParams;
     }
     get paramNames() {
         if (typeof this._paramNames === 'undefined') {
@@ -323,10 +421,11 @@ class Route extends HTMLElement {
             }
         }
     }
-    show(params) {
+    show(matchResult) {
         this._params = {};
         for (const key of this.paramNames) {
-            this._params[key] = params[key];
+            this._params[key] = matchResult.params[key];
+            this._typedParams[key] = matchResult.typedParams[key];
         }
         const parentNode = this.placeHolder.parentNode;
         const nextSibling = this.placeHolder.nextSibling;
@@ -357,6 +456,7 @@ class Route extends HTMLElement {
     }
     hide() {
         this._params = {};
+        this._typedParams = {};
         for (const node of this.childNodeArray) {
             node.parentNode?.removeChild(node);
         }
@@ -444,11 +544,24 @@ class Route extends HTMLElement {
                 break; // Ignore subsequent segments
             }
             else if (segment.startsWith(':')) {
+                const matchType = segment.match(/^:([^()]+)(\(([^)]+)\))?$/);
+                let paramName;
+                let typeName = 'any';
+                if (matchType) {
+                    paramName = matchType[1];
+                    if (matchType[3] && Object.keys(builtinParamTypes).includes(matchType[3])) {
+                        typeName = matchType[3];
+                    }
+                }
+                else {
+                    paramName = segment.substring(1);
+                }
                 this._segmentInfos.push({
                     type: 'param',
                     segmentText: segment,
-                    paramName: segment.substring(1),
-                    pattern: new RegExp('^([^\\/]+)$')
+                    paramName: paramName,
+                    pattern: new RegExp('^([^\\/]+)$'),
+                    paramType: typeName
                 });
             }
             else if (segment !== '' || !this.hasAttribute('index')) {
@@ -887,7 +1000,7 @@ async function showRouteContent(routerNode, matchResult, lastRoutes) {
     let force = false;
     for (const route of matchResult.routes) {
         if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
-            force = route.show(matchResult.params);
+            force = route.show(matchResult);
         }
     }
 }
@@ -911,6 +1024,7 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath) {
             matchResult = {
                 routes: [routerNode.fallbackRoute],
                 params: {},
+                typedParams: {},
                 path: path,
                 lastPath: lastPath
             };
