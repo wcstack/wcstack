@@ -1,3 +1,36 @@
+async function load(path) {
+    const module = await import(`${path}`);
+    return module.default;
+}
+
+const DEFAULT_KEY = "*";
+const VANILLA_KEY = "vanilla";
+const VANILLA_LOADER = {
+    postfix: ".js",
+    loader: load
+};
+const _config = {
+    scanImportmap: true,
+    loaders: {
+        [VANILLA_KEY]: VANILLA_LOADER,
+        [DEFAULT_KEY]: VANILLA_KEY
+    },
+    observable: true
+};
+// 後方互換のため config もエクスポート（読み取り専用として使用）
+const config = _config;
+function setConfig(partialConfig) {
+    if (typeof partialConfig.scanImportmap === "boolean") {
+        _config.scanImportmap = partialConfig.scanImportmap;
+    }
+    if (partialConfig.loaders) {
+        Object.assign(_config.loaders, partialConfig.loaders);
+    }
+    if (typeof partialConfig.observable === "boolean") {
+        _config.observable = partialConfig.observable;
+    }
+}
+
 const COMPONENT_KEYWORD = "@components/";
 function loadImportmap() {
     const importmap = { imports: {} };
@@ -66,27 +99,6 @@ function buildMap(importmap) {
     }
     return { prefixMap, loadMap };
 }
-
-async function load(path) {
-    const module = await import(path);
-    return module.default;
-}
-
-const DEFAULT_KEY = "*";
-const VANILLA_KEY = "vanilla";
-const VANILLA_LOADER = {
-    postfix: ".js",
-    loader: load
-};
-const DEFAULT_CONFIG = {
-    scanImportmap: true,
-    loaders: {
-        [VANILLA_KEY]: VANILLA_LOADER,
-        [DEFAULT_KEY]: VANILLA_KEY
-    },
-    observable: true
-};
-const config = DEFAULT_CONFIG;
 
 function resolveLoader(path, loaderKey, loaders) {
     let loader;
@@ -437,9 +449,12 @@ async function registerHandler() {
     }
 }
 
-function addLoader(key, loader) {
-    config.loaders[key] = loader;
+async function bootstrapAutoloader(config) {
+    if (config) {
+        setConfig(config);
+    }
+    await registerHandler();
 }
 
-export { DEFAULT_KEY, VANILLA_KEY, VANILLA_LOADER, addLoader, config, registerHandler };
+export { bootstrapAutoloader };
 //# sourceMappingURL=index.esm.js.map

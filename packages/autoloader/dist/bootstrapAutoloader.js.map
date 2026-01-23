@@ -1,0 +1,1 @@
+{"version":3,"file":"bootstrapAutoloader.js","sourceRoot":"","sources":["../src/bootstrapAutoloader.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,SAAS,EAAE,MAAM,aAAa,CAAC;AACxC,OAAO,EAAE,eAAe,EAAE,MAAM,sBAAsB,CAAC;AAGvD,MAAM,CAAC,KAAK,UAAU,mBAAmB,CAAC,MAAiC;IACzE,IAAI,MAAM,EAAE,CAAC;QACX,SAAS,CAAC,MAAM,CAAC,CAAC;IACpB,CAAC;IACD,MAAM,eAAe,EAAE,CAAC;AAC1B,CAAC"}

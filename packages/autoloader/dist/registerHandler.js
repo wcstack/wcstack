@@ -19,4 +19,4 @@ export async function registerHandler() {
         throw new Error("Failed to eager load components: " + e);
     }
 }
-//# sourceMappingURL=handler.js.map
+//# sourceMappingURL=registerHandler.js.map

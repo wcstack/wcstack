@@ -1,3 +1,3 @@
-import { registerHandler } from "./index.esm.js";
+import { bootstrapAutoloader } from "./index.esm.js";
 
-await registerHandler();
+await bootstrapAutoloader();

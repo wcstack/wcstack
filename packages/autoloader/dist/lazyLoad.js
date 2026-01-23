@@ -1,5 +1,5 @@
-import { resolveLoader } from "./resolveLoader";
-import { failedTags, loadingTags } from "./tags";
+import { resolveLoader } from "./resolveLoader.js";
+import { failedTags, loadingTags } from "./tags.js";
 const isCustomElement = (node) => {
     return (node instanceof Element && (node.tagName.includes("-") || node.getAttribute("is")?.includes("-"))) ?? false;
 };

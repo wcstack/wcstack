@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { registerHandler } from '../src/handler.js';
+import { registerHandler } from '../src/registerHandler.js';
 import * as importmapModule from '../src/importmap.js';
 import * as eagerLoadModule from '../src/eagerload.js';
 import * as lazyLoadModule from '../src/lazyLoad.js';

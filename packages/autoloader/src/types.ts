@@ -2,14 +2,20 @@
 export type LoaderFunction = (path: string) => Promise<CustomElementConstructor | null>;
 
 export interface ILoader {
-  postfix: string;
-  loader: LoaderFunction;
+  readonly postfix: string;
+  readonly loader: LoaderFunction;
 }
 
 export interface IConfig {
-  scanImportmap: boolean;
-  loaders: Record<string, ILoader | string>;
-  observable: boolean;
+  readonly scanImportmap: boolean;
+  readonly loaders: Record<string, ILoader | string>;
+  readonly observable: boolean;
+}
+
+export interface IWritableConfig {
+  scanImportmap?: boolean;
+  loaders?: Record<string, ILoader | string>;
+  observable?: boolean;
 }
 
 export interface IImportMap { 

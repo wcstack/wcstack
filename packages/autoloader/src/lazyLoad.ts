@@ -1,6 +1,6 @@
-import { resolveLoader } from "./resolveLoader";
-import { failedTags, loadingTags } from "./tags";
-import { IConfig, ILoader, INameSpaceInfo, IPrefixMap, ITagInfo } from "./types";
+import { resolveLoader } from "./resolveLoader.js";
+import { failedTags, loadingTags } from "./tags.js";
+import { IConfig, ILoader, INameSpaceInfo, IPrefixMap, ITagInfo } from "./types.js";
 
 const isCustomElement = (node: Node): boolean => {
   return (node instanceof Element && (node.tagName.includes("-") || node.getAttribute("is")?.includes("-"))) ?? false;
