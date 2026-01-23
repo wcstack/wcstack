@@ -8,7 +8,6 @@ export declare class Route extends HTMLElement implements IRoute {
     private _uuid;
     private _placeHolder;
     private _childNodeArray;
-    private _isMadeArray;
     private _paramNames;
     private _absoluteParamNames;
     private _params;
@@ -36,9 +35,7 @@ export declare class Route extends HTMLElement implements IRoute {
     get absolutePath(): string;
     get uuid(): string;
     get placeHolder(): Comment;
-    get rootElement(): ShadowRoot | HTMLElement;
     get childNodeArray(): Node[];
-    testPath(path: string, segments: string[]): IRouteMatchResult | null;
     get routes(): IRoute[];
     get segmentInfos(): ISegmentInfo[];
     get absoluteSegmentInfos(): ISegmentInfo[];
@@ -51,8 +48,6 @@ export declare class Route extends HTMLElement implements IRoute {
     get childIndex(): number;
     get name(): string;
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;
-    show(matchResult: IRouteMatchResult): boolean;
-    hide(): void;
     shouldChange(newParams: Record<string, string>): boolean;
     get guardHandler(): GuardHandler;
     set guardHandler(value: GuardHandler);
@@ -61,5 +56,6 @@ export declare class Route extends HTMLElement implements IRoute {
     get segmentCount(): number;
     get absoluteSegmentCount(): number;
     testAncestorNode(ancestorNode: IRoute): boolean;
+    clearParams(): void;
 }
 //# sourceMappingURL=Route.d.ts.map

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { matchRoutes } from '../src/matchRoutes';
 import { Router } from '../src/components/Router';
 import { Route } from '../src/components/Route';
@@ -27,7 +27,11 @@ describe('matchRoutes', () => {
 
   it('マッチするルートがない場合、nullを返すこと', () => {
     const router = document.createElement('wcs-router') as Router;
-    // routeChildNodesはデフォルトで空配列
+    document.body.appendChild(router);
+
+    const route = document.createElement('wcs-route') as Route;
+    route.setAttribute('path', '/home');
+    route.initialize(router, null);
     
     const result = matchRoutes(router, '/nonexistent');
     expect(result).toBeNull();
@@ -37,116 +41,69 @@ describe('matchRoutes', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
-    const mockRoute = {
-      testPath: vi.fn().mockReturnValue({
-        routes: [],
-        params: {},
-        lastPath: ''
-      }),
-      routeChildNodes: [],
-      absoluteWeight: 100,
-      childIndex: 0
-    } as any;
-    
-    (router as any)._routeChildNodes = [mockRoute];
+    const route = document.createElement('wcs-route') as Route;
+    route.setAttribute('path', '/home');
+    route.initialize(router, null);
     
     const result = matchRoutes(router, '/home');
     expect(result).not.toBeNull();
-    expect(mockRoute.testPath).toHaveBeenCalledWith('/home', ['home']);
+    expect(result?.routes[0]).toBe(route);
   });
 
   it('複数のルートから正しいルートを選択すること', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
-    const mockRoute1 = {
-      testPath: vi.fn().mockReturnValue(null),
-      routeChildNodes: [],
-      absoluteWeight: 100,
-      childIndex: 0
-    } as any;
+    const route1 = document.createElement('wcs-route') as Route;
+    route1.setAttribute('path', '/home');
+    route1.initialize(router, null);
     
-    const mockRoute2 = {
-      absoluteWeight: 100,
-      childIndex: 1
-    } as any;
-    
-    mockRoute2.testPath = vi.fn().mockReturnValue({
-      routes: [mockRoute2],
-      params: {},
-      lastPath: ''
-    });
-    mockRoute2.routeChildNodes = [];
-    
-    (router as any)._routeChildNodes = [mockRoute1, mockRoute2];
+    const route2 = document.createElement('wcs-route') as Route;
+    route2.setAttribute('path', '/about');
+    route2.initialize(router, null);
     
     const result = matchRoutes(router, '/about');
     expect(result).not.toBeNull();
-    expect(mockRoute2.testPath).toHaveBeenCalledWith('/about', ['about']);
+    expect(result?.routes[0]).toBe(route2);
   });
 
   it('ネストされたルートをマッチできること', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
-    const childRoute = {
-      testPath: vi.fn().mockReturnValue({
-        routes: [],
-        params: { id: '123' },
-        lastPath: ''
-      }),
-      routeChildNodes: [],
-      absoluteWeight: 90,
-      childIndex: 0
-    } as any;
+    const parentRoute = document.createElement('wcs-route') as Route;
+    parentRoute.setAttribute('path', '/users');
+    parentRoute.initialize(router, null);
     
-    const parentRoute = {
-      testPath: vi.fn().mockReturnValue(null),
-      routeChildNodes: [childRoute],
-      absoluteWeight: 100,
-      childIndex: 0
-    } as any;
-    
-    (router as any)._routeChildNodes = [parentRoute];
+    const childRoute = document.createElement('wcs-route') as Route;
+    childRoute.setAttribute('path', ':id');
+    childRoute.initialize(router, parentRoute);
     
     const result = matchRoutes(router, '/users/123');
     expect(result).not.toBeNull();
-    expect(childRoute.testPath).toHaveBeenCalledWith('/users/123', ['users', '123']);
+    expect(result?.routes).toHaveLength(2);
+    expect(result?.routes[0]).toBe(parentRoute);
+    expect(result?.routes[1]).toBe(childRoute);
+    expect(result?.params.id).toBe('123');
   });
 
   it('重み付けによってルートを選択すること', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
-    const staticRoute = {
-      absoluteSegmentCount: 2,
-      absoluteWeight: 100,
-      childIndex: 0
-    } as any;
-    staticRoute.testPath = vi.fn().mockReturnValue({
-      routes: [staticRoute],
-      params: {},
-      lastPath: ''
-    });
-    staticRoute.routeChildNodes = [];
+    // 静的ルート（重み高）
+    const staticRoute = document.createElement('wcs-route') as Route;
+    staticRoute.setAttribute('path', '/users/new');
+    staticRoute.initialize(router, null);
     
-    const dynamicRoute = {
-      absoluteSegmentCount: 2,
-      absoluteWeight: 50,
-      childIndex: 1
-    } as any;
-    dynamicRoute.testPath = vi.fn().mockReturnValue({
-      routes: [dynamicRoute],
-      params: { id: 'new' },
-      lastPath: ''
-    });
-    dynamicRoute.routeChildNodes = [];
-    
-    (router as any)._routeChildNodes = [staticRoute, dynamicRoute];
+    // 動的ルート（重み低）
+    const dynamicRoute = document.createElement('wcs-route') as Route;
+    dynamicRoute.setAttribute('path', '/users/:id');
+    dynamicRoute.initialize(router, null);
     
     const result = matchRoutes(router, '/users/new');
     expect(result).not.toBeNull();
-    // 重みが大きい方が優先される
+    // 重みが大きい静的ルートが優先される
     expect(result?.routes[0]).toBe(staticRoute);
   });
 
@@ -154,71 +111,44 @@ describe('matchRoutes', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
-    const route1 = {
-      absoluteSegmentCount: 2,
-      absoluteWeight: 80,
-      childIndex: 0
-    } as any;
-    route1.testPath = vi.fn().mockReturnValue({
-      routes: [route1],
-      params: {},
-      lastPath: ''
-    });
-    route1.routeChildNodes = [];
+    // セグメント数が少ないルート
+    const route1 = document.createElement('wcs-route') as Route;
+    route1.setAttribute('path', '/products/:id');
+    route1.initialize(router, null);
     
-    const route2 = {
-      absoluteSegmentCount: 3,
-      absoluteWeight: 90,
-      childIndex: 1
-    } as any;
-    route2.testPath = vi.fn().mockReturnValue({
-      routes: [route2],
-      params: {},
-      lastPath: ''
-    });
-    route2.routeChildNodes = [];
+    // セグメント数が多いルート
+    const route2Parent = document.createElement('wcs-route') as Route;
+    route2Parent.setAttribute('path', '/products/:id');
+    route2Parent.initialize(router, null);
     
-    (router as any)._routeChildNodes = [route1, route2];
+    const route2Child = document.createElement('wcs-route') as Route;
+    route2Child.setAttribute('path', 'edit');
+    route2Child.initialize(router, route2Parent);
     
     const result = matchRoutes(router, '/products/123/edit');
     expect(result).not.toBeNull();
     // セグメント数が多いルートが優先される
-    expect(result?.routes[0]).toBe(route2);
+    expect(result?.routes).toHaveLength(2);
+    expect(result?.routes[1]).toBe(route2Child);
   });
 
   it('childIndexでルートをソートすること', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     
-    const route1 = {
-      testPath: vi.fn().mockReturnValue({
-        routes: [{ absoluteSegmentCount: 2, absoluteWeight: 50, childIndex: 0 }],
-        params: {},
-        lastPath: ''
-      }),
-      routeChildNodes: [],
-      absoluteSegmentCount: 2,
-      absoluteWeight: 50,
-      childIndex: 0
-    } as any;
+    // 同じパスパターンのルートを複数作成
+    const route1 = document.createElement('wcs-route') as Route;
+    route1.setAttribute('path', '/:id');
+    route1.initialize(router, null);
     
-    const route2 = {
-      testPath: vi.fn().mockReturnValue({
-        routes: [{ absoluteSegmentCount: 2, absoluteWeight: 50, childIndex: 1 }],
-        params: {},
-        lastPath: ''
-      }),
-      routeChildNodes: [],
-      absoluteSegmentCount: 2,
-      absoluteWeight: 50,
-      childIndex: 1
-    } as any;
-    
-    (router as any)._routeChildNodes = [route1, route2];
+    const route2 = document.createElement('wcs-route') as Route;
+    route2.setAttribute('path', '/:name');
+    route2.initialize(router, null);
     
     const result = matchRoutes(router, '/test');
     expect(result).not.toBeNull();
     // 同じ重みの場合、childIndexが小さい方が優先される
+    expect(result?.routes[0]).toBe(route1);
     expect(result?.routes[0].childIndex).toBe(0);
   });
 
@@ -226,35 +156,23 @@ describe('matchRoutes', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const staticRoute = {
-      absoluteSegmentCount: 3,
-      absoluteWeight: 6,
-      childIndex: 0
-    } as any;
-    staticRoute.testPath = vi.fn().mockReturnValue({
-      routes: [staticRoute],
-      params: {},
-      lastPath: ''
-    });
-    staticRoute.routeChildNodes = [];
+    // 静的ルート
+    const staticRoute = document.createElement('wcs-route') as Route;
+    staticRoute.setAttribute('path', '/admin/profile');
+    staticRoute.initialize(router, null);
 
-    const catchAllRoute = {
-      absoluteSegmentCount: 2,
-      absoluteWeight: 4, // /admin(4) + *(0)
-      childIndex: 1
-    } as any;
-    catchAllRoute.testPath = vi.fn().mockReturnValue({
-      routes: [catchAllRoute],
-      params: { '*': 'profile' },
-      lastPath: ''
-    });
-    catchAllRoute.routeChildNodes = [];
-
-    (router as any)._routeChildNodes = [staticRoute, catchAllRoute];
+    // catch-allルート
+    const adminRoute = document.createElement('wcs-route') as Route;
+    adminRoute.setAttribute('path', '/admin');
+    adminRoute.initialize(router, null);
+    
+    const catchAllRoute = document.createElement('wcs-route') as Route;
+    catchAllRoute.setAttribute('path', '*');
+    catchAllRoute.initialize(router, adminRoute);
 
     const result = matchRoutes(router, '/admin/profile');
     expect(result).not.toBeNull();
-    // セグメント数が多い静的ルートが優先
+    // 静的ルートが優先
     expect(result?.routes[0]).toBe(staticRoute);
   });
 
@@ -262,19 +180,13 @@ describe('matchRoutes', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const catchAllRoute = {
-      absoluteSegmentCount: 2,
-      absoluteWeight: 4,
-      childIndex: 0
-    } as any;
-    catchAllRoute.testPath = vi.fn().mockReturnValue({
-      routes: [catchAllRoute],
-      params: { '*': 'unknown/path' },
-      lastPath: ''
-    });
-    catchAllRoute.routeChildNodes = [];
-
-    (router as any)._routeChildNodes = [catchAllRoute];
+    const adminRoute = document.createElement('wcs-route') as Route;
+    adminRoute.setAttribute('path', '/admin');
+    adminRoute.initialize(router, null);
+    
+    const catchAllRoute = document.createElement('wcs-route') as Route;
+    catchAllRoute.setAttribute('path', '*');
+    catchAllRoute.initialize(router, adminRoute);
 
     const result = matchRoutes(router, '/admin/unknown/path');
     expect(result).not.toBeNull();

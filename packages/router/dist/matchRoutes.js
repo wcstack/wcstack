@@ -1,6 +1,7 @@
+import { testPath } from "./testPath.js";
 function _matchRoutes(routerNode, routeNode, routes, normalizedPath, segments, results) {
     const nextRoutes = routes.concat(routeNode);
-    const matchResult = routeNode.testPath(normalizedPath, segments);
+    const matchResult = testPath(routeNode, normalizedPath, segments);
     if (matchResult) {
         results.push(matchResult);
     }

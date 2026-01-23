@@ -1,4 +1,6 @@
 import { IRoute, IRouteMatchResult, IRouter } from "./components/types";
+import { hideRoute } from "./hideRoute";
+import { showRoute } from "./showRoute";
 import { IGuardCancel } from "./types";
 
 export async function showRouteContent(
@@ -10,7 +12,7 @@ export async function showRouteContent(
   const routesSet = new Set<IRoute>(matchResult.routes);
   for (const route of lastRoutes) {
     if (!routesSet.has(route)) {
-      route.hide();
+      hideRoute(route);
     }
   }
   try {
@@ -34,7 +36,7 @@ export async function showRouteContent(
   let force = false;
   for (const route of matchResult.routes) {
     if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
-      force = route.show(matchResult);
+      force = showRoute(route, matchResult);
     }
   }
 }

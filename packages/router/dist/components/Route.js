@@ -1,7 +1,6 @@
 import { getUUID } from "../getUUID.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
-import { assignParams } from "../assignParams.js";
 import { GuardCancel } from "../GuardCancel.js";
 import { builtinParamTypes } from "../builtinParamTypes.js";
 const weights = {
@@ -17,8 +16,7 @@ export class Route extends HTMLElement {
     _routerNode = null;
     _uuid = getUUID();
     _placeHolder = document.createComment(`@@route:${this._uuid}`);
-    _childNodeArray = [];
-    _isMadeArray = false;
+    _childNodeArray;
     _paramNames;
     _absoluteParamNames;
     _params = {};
@@ -90,98 +88,11 @@ export class Route extends HTMLElement {
     get placeHolder() {
         return this._placeHolder;
     }
-    get rootElement() {
-        return this.shadowRoot ?? this;
-    }
     get childNodeArray() {
-        if (!this._isMadeArray) {
-            this._childNodeArray = Array.from(this.rootElement.childNodes);
-            this._isMadeArray = true;
+        if (typeof this._childNodeArray === 'undefined') {
+            this._childNodeArray = Array.from(this.childNodes);
         }
         return this._childNodeArray;
-    }
-    testPath(path, segments) {
-        const params = {};
-        const typedParams = {};
-        let testResult = true;
-        let catchAllFound = false;
-        let i = 0, segIndex = 0;
-        while (i < this.absoluteSegmentInfos.length) {
-            const segmentInfo = this.absoluteSegmentInfos[i];
-            // index属性のルートはセグメントを消費しないのでスキップ
-            if (segmentInfo.isIndex) {
-                i++;
-                continue;
-            }
-            // 先頭の空セグメント（絶対パスの /）はsegmentsから除外されているのでスキップ
-            if (i === 0 && segmentInfo.segmentText === '' && segmentInfo.type === 'static') {
-                i++;
-                continue;
-            }
-            const segment = segments[segIndex];
-            if (segment === undefined) {
-                // セグメントが足りない
-                testResult = false;
-                break;
-            }
-            let match = false;
-            if (segmentInfo.type === "param") {
-                const paramType = segmentInfo.paramType || 'any';
-                const builtinParamType = builtinParamTypes[paramType];
-                const value = builtinParamType.parse(segment);
-                if (typeof value !== 'undefined') {
-                    if (segmentInfo.paramName) {
-                        params[segmentInfo.paramName] = segment;
-                        typedParams[segmentInfo.paramName] = value;
-                    }
-                    match = true;
-                }
-            }
-            else {
-                match = segmentInfo.pattern.exec(segment) !== null;
-            }
-            if (match) {
-                if (segmentInfo.type === 'catch-all') {
-                    // Catch-all: match remaining segments
-                    const remainingSegments = segments.slice(segIndex).join('/');
-                    params['*'] = remainingSegments;
-                    typedParams['*'] = remainingSegments;
-                    catchAllFound = true;
-                    break; // No more segments to process
-                }
-            }
-            else {
-                testResult = false;
-                break;
-            }
-            i++;
-            segIndex++;
-        }
-        let finalResult = false;
-        if (testResult) {
-            if (catchAllFound) {
-                // catch-all は残り全部マッチ済み
-                finalResult = true;
-            }
-            else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length) {
-                // 全セグメントが消費された
-                finalResult = true;
-            }
-            else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length - 1 && segments.at(-1) === '') {
-                // 末尾スラッシュ対応: /users/ -> ['', 'users', '']
-                finalResult = true;
-            }
-        }
-        if (finalResult) {
-            return {
-                path: path,
-                routes: this.routes,
-                params: params,
-                typedParams: typedParams,
-                lastPath: ""
-            };
-        }
-        return null;
     }
     get routes() {
         if (this.routeParentNode) {
@@ -278,49 +189,9 @@ export class Route extends HTMLElement {
             }
         }
     }
-    show(matchResult) {
-        this._params = {};
-        for (const key of this.paramNames) {
-            this._params[key] = matchResult.params[key];
-            this._typedParams[key] = matchResult.typedParams[key];
-        }
-        const parentNode = this.placeHolder.parentNode;
-        const nextSibling = this.placeHolder.nextSibling;
-        for (const node of this.childNodeArray) {
-            if (nextSibling) {
-                parentNode?.insertBefore(node, nextSibling);
-            }
-            else {
-                parentNode?.appendChild(node);
-            }
-            if (node.nodeType === Node.ELEMENT_NODE) {
-                const element = node;
-                element.querySelectorAll('[data-bind]').forEach((e) => {
-                    assignParams(e, this._typedParams);
-                });
-                if (element.hasAttribute('data-bind')) {
-                    assignParams(element, this._typedParams);
-                }
-                element.querySelectorAll(config.tagNames.layoutOutlet).forEach((layoutOutlet) => {
-                    layoutOutlet.assignParams(this._typedParams);
-                });
-                if (element.tagName.toLowerCase() === config.tagNames.layoutOutlet) {
-                    element.assignParams(this._typedParams);
-                }
-            }
-        }
-        return true;
-    }
-    hide() {
-        this._params = {};
-        this._typedParams = {};
-        for (const node of this.childNodeArray) {
-            node.parentNode?.removeChild(node);
-        }
-    }
     shouldChange(newParams) {
         for (const key of this.paramNames) {
-            if (this._params[key] !== newParams[key]) {
+            if (this.params[key] !== newParams[key]) {
                 return true;
             }
         }
@@ -358,15 +229,9 @@ export class Route extends HTMLElement {
         this._name = this.getAttribute('name') || '';
         this._routerNode = routerNode;
         this._routeParentNode = routeParentNode;
-        if (routeParentNode) {
-            routeParentNode.routeChildNodes.push(this);
-            this._childIndex = routeParentNode.routeChildNodes.length - 1;
-        }
-        else {
-            // Top-level route
-            routerNode.routeChildNodes.push(this);
-            this._childIndex = routerNode.routeChildNodes.length - 1;
-        }
+        const routeChildContainer = routeParentNode || routerNode;
+        routeChildContainer.routeChildNodes.push(this);
+        this._childIndex = routeChildContainer.routeChildNodes.length - 1;
         if (this._isFallbackRoute) {
             if (routeParentNode) {
                 raiseError(`${config.tagNames.route} with fallback attribute must be a direct child of ${config.tagNames.router}.`);
@@ -474,6 +339,10 @@ export class Route extends HTMLElement {
             currentNode = currentNode.routeParentNode;
         }
         return false;
+    }
+    clearParams() {
+        this._params = {};
+        this._typedParams = {};
     }
 }
 //# sourceMappingURL=Route.js.map

@@ -1,9 +1,11 @@
+import { hideRoute } from "./hideRoute";
+import { showRoute } from "./showRoute";
 export async function showRouteContent(routerNode, matchResult, lastRoutes) {
     // Hide previous routes
     const routesSet = new Set(matchResult.routes);
     for (const route of lastRoutes) {
         if (!routesSet.has(route)) {
-            route.hide();
+            hideRoute(route);
         }
     }
     try {
@@ -29,7 +31,7 @@ export async function showRouteContent(routerNode, matchResult, lastRoutes) {
     let force = false;
     for (const route of matchResult.routes) {
         if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
-            force = route.show(matchResult);
+            force = showRoute(route, matchResult);
         }
     }
 }

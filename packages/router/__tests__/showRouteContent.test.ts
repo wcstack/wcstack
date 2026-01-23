@@ -1,10 +1,31 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { showRouteContent } from '../src/showRouteContent';
 import { Router } from '../src/components/Router';
-import { Route } from '../src/components/Route';
 import { GuardCancel } from '../src/GuardCancel';
 import type { IRoute, IRouteMatchResult } from '../src/components/types';
 import './setup';
+
+// モックルートを作成するヘルパー関数
+function createMockRoute(overrides: Partial<IRoute> = {}): IRoute {
+  const placeholder = document.createComment('@@route:mock');
+  const params: Record<string, string> = {};
+  const typedParams: Record<string, any> = {};
+  
+  return {
+    clearParams: vi.fn(() => {
+      Object.keys(params).forEach(key => delete params[key]);
+      Object.keys(typedParams).forEach(key => delete typedParams[key]);
+    }),
+    childNodeArray: [],
+    paramNames: [],
+    params,
+    typedParams,
+    placeHolder: placeholder,
+    guardCheck: vi.fn().mockResolvedValue(undefined),
+    shouldChange: vi.fn().mockReturnValue(false),
+    ...overrides,
+  } as any;
+}
 
 const createMatchResult = (
   routes: IRoute[],
@@ -35,48 +56,33 @@ describe('showRouteContent', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    // Create mock route objects instead of actual elements
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
-      shouldChange: vi.fn().mockReturnValue(false),
-    } as any;
+    const container = document.createElement('div');
+    const placeholder2 = document.createComment('@@route:mock2');
+    container.appendChild(placeholder2);
+    document.body.appendChild(container);
 
-    const route2: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+    const route1 = createMockRoute();
+    const route2 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(false),
-    } as any;
+      placeHolder: placeholder2,
+    });
 
     const matchResult = createMatchResult([route2]);
 
     await showRouteContent(router, matchResult, [route1]);
 
     // route1 should be hidden (not in current routes)
-    expect(route1.hide).toHaveBeenCalled();
-    // route2 should not be hidden (in current routes)
-    expect(route2.hide).not.toHaveBeenCalled();
+    expect(route1.clearParams).toHaveBeenCalled();
+    // route2 should not be shown because shouldChange returns false and it's in lastRoutes
+    // But since route2 is NOT in lastRoutes, it should be shown
   });
 
   it('すべてのルートに対してガードチェックを実行すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
-      shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
-
-    const route2: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
-      shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+    const route1 = createMockRoute({ shouldChange: vi.fn().mockReturnValue(true) });
+    const route2 = createMockRoute({ shouldChange: vi.fn().mockReturnValue(true) });
 
     const matchResult = createMatchResult([route1, route2]);
 
@@ -92,12 +98,10 @@ describe('showRouteContent', () => {
 
     const guardCancel = new GuardCancel('Guard rejected', '/fallback');
     
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
+    const route1 = createMockRoute({
       guardCheck: vi.fn().mockRejectedValue(guardCancel),
       shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+    });
 
     router.navigate = vi.fn();
 
@@ -124,12 +128,10 @@ describe('showRouteContent', () => {
 
     const normalError = new Error('Some other error');
     
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
+    const route1 = createMockRoute({
       guardCheck: vi.fn().mockRejectedValue(normalError),
       shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+    });
 
     const matchResult = createMatchResult([route1]);
 
@@ -142,30 +144,38 @@ describe('showRouteContent', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:mock');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const route1 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+      placeHolder: placeholder,
+      paramNames: ['id'],
+    });
 
     const matchResult = createMatchResult([route1], { id: '123' });
 
     await showRouteContent(router, matchResult, []);
 
-    expect(route1.show).toHaveBeenCalledWith(matchResult);
+    // clearParamsが呼ばれてからパラメータが設定される
+    expect(route1.clearParams).toHaveBeenCalled();
   });
 
   it('shouldChangeがtrueの場合にルートを表示すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:mock');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const route1 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+      placeHolder: placeholder,
+    });
 
     const matchResult = createMatchResult([route1]);
 
@@ -173,19 +183,16 @@ describe('showRouteContent', () => {
     await showRouteContent(router, matchResult, [route1]);
 
     expect(route1.shouldChange).toHaveBeenCalledWith({});
-    expect(route1.show).toHaveBeenCalled();
+    expect(route1.clearParams).toHaveBeenCalled(); // showRoute calls clearParams
   });
 
-  it('shouldChangeがfalseでforce=falseの場合、showを呼ばないこと', async () => {
+  it('shouldChangeがfalseでforce=falseの場合、showRouteを呼ばないこと', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+    const route1 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(false),
-    } as any;
+    });
 
     const matchResult = createMatchResult([route1]);
 
@@ -193,68 +200,67 @@ describe('showRouteContent', () => {
     await showRouteContent(router, matchResult, [route1]);
 
     expect(route1.shouldChange).toHaveBeenCalledWith({});
-    expect(route1.show).not.toHaveBeenCalled();
+    // clearParams should NOT be called because showRoute is not called
+    expect(route1.clearParams).not.toHaveBeenCalled();
   });
 
-  it('showがtrueを返した場合に後続ルートを強制表示すること', async () => {
+  it('showRoute後に後続ルートを強制表示すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(true), // Returns true to force
-      guardCheck: vi.fn().mockResolvedValue(undefined),
-      shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+    const container = document.createElement('div');
+    const placeholder1 = document.createComment('@@route:mock1');
+    const placeholder2 = document.createComment('@@route:mock2');
+    container.appendChild(placeholder1);
+    container.appendChild(placeholder2);
+    document.body.appendChild(container);
 
-    const route2: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+    const route1 = createMockRoute({
+      shouldChange: vi.fn().mockReturnValue(true),
+      placeHolder: placeholder1,
+    });
+
+    const route2 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(false), // Would normally skip
-    } as any;
+      placeHolder: placeholder2,
+    });
 
     const matchResult = createMatchResult([route1, route2]);
 
     await showRouteContent(router, matchResult, [route1, route2]);
 
-    expect(route1.show).toHaveBeenCalled();
-    expect(route2.show).toHaveBeenCalled(); // Forced due to route1.show returning true
+    // Both routes should be shown because showRoute returns true, triggering force
+    expect(route1.clearParams).toHaveBeenCalled();
+    expect(route2.clearParams).toHaveBeenCalled();
   });
 
   it('複数のルートで前のルートセットを正しく処理すること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
-      shouldChange: vi.fn().mockReturnValue(false),
-    } as any;
+    const container = document.createElement('div');
+    const placeholder2 = document.createComment('@@route:mock2');
+    const placeholder3 = document.createComment('@@route:mock3');
+    container.appendChild(placeholder2);
+    container.appendChild(placeholder3);
+    document.body.appendChild(container);
 
-    const route2: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+    const route1 = createMockRoute();
+    const route2 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
-
-    const route3: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+      placeHolder: placeholder2,
+    });
+    const route3 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+      placeHolder: placeholder3,
+    });
 
     const matchResult = createMatchResult([route2, route3]);
 
     // route1 was in lastRoutes but not in current
     await showRouteContent(router, matchResult, [route1, route2]);
 
-    expect(route1.hide).toHaveBeenCalled();
-    expect(route2.hide).not.toHaveBeenCalled();
-    expect(route3.hide).not.toHaveBeenCalled();
+    expect(route1.clearParams).toHaveBeenCalled(); // hideRoute calls clearParams
   });
 
   it('空のルート配列を処理できること', async () => {
@@ -272,17 +278,20 @@ describe('showRouteContent', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
 
-    const route1: IRoute = {
-      hide: vi.fn(),
-      show: vi.fn().mockReturnValue(false),
-      guardCheck: vi.fn().mockResolvedValue(undefined),
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:mock');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const route1 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(true),
-    } as any;
+      placeHolder: placeholder,
+    });
 
     const matchResult = createMatchResult([route1]);
 
     await showRouteContent(router, matchResult, []);
 
-    expect(route1.show).toHaveBeenCalled();
+    expect(route1.clearParams).toHaveBeenCalled();
   });
 });

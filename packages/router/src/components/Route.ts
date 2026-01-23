@@ -2,12 +2,9 @@ import { getUUID } from "../getUUID.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { IRouteMatchResult, IRoute, IRouter, GuardHandler, SegmentType, ISegmentInfo } from "./types.js";
-import { assignParams } from "../assignParams.js";
-import { LayoutOutlet } from "./LayoutOutlet.js";
 import { GuardCancel } from "../GuardCancel.js";
 import { builtinParamTypes } from "../builtinParamTypes.js";
 import { BuiltinParamTypes } from "../types.js";
-
 
 const weights: Record<SegmentType, number> = {
   'static': 2,
@@ -23,8 +20,7 @@ export class Route extends HTMLElement implements IRoute {
   private _routerNode: IRouter | null = null;
   private _uuid: string = getUUID();
   private _placeHolder: Comment = document.createComment(`@@route:${this._uuid}`);
-  private _childNodeArray: Node[] = [];
-  private _isMadeArray: boolean = false;
+  private _childNodeArray: Node[] | undefined;
   private _paramNames: string[] | undefined;
   private _absoluteParamNames: string[] | undefined;
   private _params: Record<string, string> = {};
@@ -111,97 +107,11 @@ export class Route extends HTMLElement implements IRoute {
     return this._placeHolder;
   }
 
-  get rootElement(): ShadowRoot | HTMLElement {
-    return this.shadowRoot ?? this;
-  }
-
   get childNodeArray(): Node[] {
-    if (!this._isMadeArray) {
-      this._childNodeArray = Array.from(this.rootElement.childNodes);
-      this._isMadeArray = true;
+    if (typeof this._childNodeArray === 'undefined') {
+      this._childNodeArray = Array.from(this.childNodes);
     }
     return this._childNodeArray;
-  }
-
-  testPath(path: string, segments: string[]): IRouteMatchResult | null {
-    const params: Record<string, string> = {};
-    const typedParams: Record<string, any> = {};
-    let testResult = true;
-    let catchAllFound = false;
-    let i = 0, segIndex = 0;
-    while (i < this.absoluteSegmentInfos.length) {
-      const segmentInfo = this.absoluteSegmentInfos[i];
-      // index属性のルートはセグメントを消費しないのでスキップ
-      if (segmentInfo.isIndex) {
-        i++;
-        continue;
-      }
-      // 先頭の空セグメント（絶対パスの /）はsegmentsから除外されているのでスキップ
-      if (i === 0 && segmentInfo.segmentText === '' && segmentInfo.type === 'static') {
-        i++;
-        continue;
-      }
-      const segment = segments[segIndex];
-      if (segment === undefined) {
-        // セグメントが足りない
-        testResult = false;
-        break;
-      }
-      let match: boolean = false;
-      if (segmentInfo.type === "param") {
-        const paramType = segmentInfo.paramType || 'any';
-        const builtinParamType = builtinParamTypes[paramType];
-        const value = builtinParamType.parse(segment);
-        if (typeof value !== 'undefined') {
-          if (segmentInfo.paramName) {
-            params[segmentInfo.paramName] = segment;
-            typedParams[segmentInfo.paramName] = value;
-          }
-          match = true;
-        }
-      } else {
-        match = segmentInfo.pattern.exec(segment) !== null;
-      }
-      if (match) {
-        if (segmentInfo.type === 'catch-all') {
-          // Catch-all: match remaining segments
-          const remainingSegments = segments.slice(segIndex).join('/');
-          params['*'] = remainingSegments;
-          typedParams['*'] = remainingSegments;
-          catchAllFound = true;
-          break; // No more segments to process
-        }
-      } else {
-        testResult = false;
-        break; 
-      }
-      i++;
-      segIndex++;
-    }
-    let finalResult = false;
-    if (testResult) {
-      if (catchAllFound) {
-        // catch-all は残り全部マッチ済み
-        finalResult = true;
-      } else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length) {
-        // 全セグメントが消費された
-        finalResult = true;
-      } else if (i === this.absoluteSegmentInfos.length && segIndex === segments.length - 1 && segments.at(-1) === '') {
-        // 末尾スラッシュ対応: /users/ -> ['', 'users', '']
-        finalResult = true;
-      }
-    }
-    
-    if (finalResult) {
-      return {
-        path: path,
-        routes: this.routes,
-        params: params,
-        typedParams: typedParams,
-        lastPath: ""
-      };
-    }
-    return null;
   }
 
   get routes(): IRoute[] {
@@ -310,50 +220,9 @@ export class Route extends HTMLElement implements IRoute {
     }
   }
 
-  show(matchResult: IRouteMatchResult): boolean {
-    this._params = {};
-    for(const key of this.paramNames) {
-      this._params[key] = matchResult.params[key];
-      this._typedParams[key] = matchResult.typedParams[key];
-    }
-    const parentNode = this.placeHolder.parentNode;
-    const nextSibling = this.placeHolder.nextSibling;
-    for (const node of this.childNodeArray) {
-      if (nextSibling) {
-        parentNode?.insertBefore(node, nextSibling);
-      } else {
-        parentNode?.appendChild(node);
-      }
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const element = node as Element;
-        element.querySelectorAll('[data-bind]').forEach((e) => {
-          assignParams(e, this._typedParams);
-        });
-        if (element.hasAttribute('data-bind')) {
-          assignParams(element, this._typedParams);
-        }
-        element.querySelectorAll<LayoutOutlet>(config.tagNames.layoutOutlet).forEach((layoutOutlet) => {
-          layoutOutlet.assignParams(this._typedParams);
-        });
-        if (element.tagName.toLowerCase() === config.tagNames.layoutOutlet) {
-          (element as LayoutOutlet).assignParams(this._typedParams);
-        }
-      }
-    }
-    return true;
-  }
-
-  hide() {
-    this._params = {};
-    this._typedParams = {};
-    for(const node of this.childNodeArray) {
-      node.parentNode?.removeChild(node);
-    }
-  }
-
   shouldChange(newParams: Record<string, string>): boolean {
     for(const key of this.paramNames) {
-      if (this._params[key] !== newParams[key]) {
+      if (this.params[key] !== newParams[key]) {
         return true;
       }
     }
@@ -392,14 +261,9 @@ export class Route extends HTMLElement implements IRoute {
 
     this._routerNode = routerNode;
     this._routeParentNode = routeParentNode;
-    if (routeParentNode) {
-      routeParentNode.routeChildNodes.push(this);
-      this._childIndex = routeParentNode.routeChildNodes.length - 1;
-    } else {
-      // Top-level route
-      routerNode.routeChildNodes.push(this);
-      this._childIndex = routerNode.routeChildNodes.length - 1;
-    }
+    const routeChildContainer = routeParentNode || routerNode;
+    routeChildContainer.routeChildNodes.push(this);
+    this._childIndex = routeChildContainer.routeChildNodes.length - 1;
 
     if (this._isFallbackRoute) {
       if (routeParentNode) {
@@ -513,5 +377,10 @@ export class Route extends HTMLElement implements IRoute {
       currentNode = currentNode.routeParentNode;
     }
     return false;
+  }
+
+  clearParams(): void {
+    this._params = {};
+    this._typedParams = {};
   }
 }

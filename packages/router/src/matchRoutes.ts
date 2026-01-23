@@ -1,4 +1,5 @@
 import { IRoute, IRouteMatchResult, IRouter } from "./components/types.js";
+import { testPath } from "./testPath.js";
 
 function _matchRoutes(
   routerNode: IRouter, 
@@ -9,7 +10,7 @@ function _matchRoutes(
   results: IRouteMatchResult[]
 ): void {
   const nextRoutes = routes.concat(routeNode);
-  const matchResult = routeNode.testPath(normalizedPath, segments);
+  const matchResult = testPath(routeNode, normalizedPath, segments);
   if (matchResult) {
     results.push(matchResult);
   }

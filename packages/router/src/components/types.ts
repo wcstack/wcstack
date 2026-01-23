@@ -29,20 +29,22 @@ export interface ISegmentInfo {
   paramType?: BuiltinParamTypes;
 }
 
-export interface IRoute {
-  readonly routeParentNode: IRoute | null;
+export interface IRouteChildContainer {
   readonly routeChildNodes: IRoute[];
+}
+
+export interface IRoute extends IRouteChildContainer {
+  readonly routeParentNode: IRoute | null;
   readonly routerNode: IRouter;
   readonly path: string;
   readonly isRelative: boolean;
   readonly absolutePath: string;
   readonly uuid: string;
   readonly placeHolder: Comment;
-  readonly rootElement: ShadowRoot | HTMLElement;
   readonly childNodeArray: Node[];
   readonly routes: IRoute[];
-  readonly params: Record<string, string>;
-  readonly typedParams: Record<string, any>;
+  params: Record<string, string>;
+  typedParams: Record<string, any>;
   readonly paramNames: string[];
   readonly absoluteParamNames: string[];
   readonly weight: number;
@@ -54,21 +56,18 @@ export interface IRoute {
   readonly absoluteSegmentCount: number;
   readonly segmentInfos: ISegmentInfo[];
   readonly absoluteSegmentInfos: ISegmentInfo[];
-  testPath(path: string, segments: string[]): IRouteMatchResult | null;
   guardHandler: GuardHandler;
-  show(matchResult: IRouteMatchResult): boolean;
-  hide(): void;
   shouldChange(newParams: Record<string, string>): boolean;
   guardCheck(matchResult: IRouteMatchResult): Promise<void>;
   initialize(routerNode: IRouter, parentRouteNode: IRoute | null): void;
   testAncestorNode(ancestorNode: IRoute): boolean;
+  clearParams(): void;
 }
 
-export interface IRouter {
+export interface IRouter extends IRouteChildContainer {
   readonly basename: string;
   readonly outlet: IOutlet;
   readonly template: HTMLTemplateElement;
-  readonly routeChildNodes: IRoute[];
   fallbackRoute: IRoute | null;
   path: string;
   navigate(path: string): Promise<void>;
