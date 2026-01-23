@@ -13,6 +13,17 @@ const _config = {
 };
 // 後方互換のため config もエクスポート（読み取り専用として使用）
 const config = _config;
+function setConfig(partialConfig) {
+    if (partialConfig.tagNames) {
+        Object.assign(_config.tagNames, partialConfig.tagNames);
+    }
+    if (typeof partialConfig.enableShadowRoot === "boolean") {
+        _config.enableShadowRoot = partialConfig.enableShadowRoot;
+    }
+    if (Array.isArray(partialConfig.basenameFileExtensions)) {
+        _config.basenameFileExtensions = partialConfig.basenameFileExtensions;
+    }
+}
 
 function getUUID() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -1604,5 +1615,17 @@ function registerComponents() {
     }
 }
 
-export { Head, config, registerComponents };
+/**
+ * Initialize the router with optional configuration.
+ * This is the main entry point for setting up the router.
+ * @param config - Optional partial configuration to override defaults
+ */
+function bootstrapRouter(config) {
+    if (config) {
+        setConfig(config);
+    }
+    registerComponents();
+}
+
+export { bootstrapRouter };
 //# sourceMappingURL=index.esm.js.map

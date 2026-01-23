@@ -1,48 +1,23 @@
-interface ITagNames {
-    readonly route: string;
-    readonly router: string;
-    readonly outlet: string;
-    readonly layout: string;
-    readonly layoutOutlet: string;
-    readonly link: string;
-    readonly head: string;
+interface IWritableTagNames {
+    route?: string;
+    router?: string;
+    outlet?: string;
+    layout?: string;
+    layoutOutlet?: string;
+    link?: string;
+    head?: string;
 }
-interface IConfig {
-    readonly tagNames: ITagNames;
-    readonly enableShadowRoot: boolean;
-    readonly basenameFileExtensions: ReadonlyArray<string>;
-}
-
-declare const config: IConfig;
-
-declare function registerComponents(): void;
-
-declare class Head extends HTMLElement {
-    private _initialized;
-    private _childElementArray;
-    constructor();
-    private _initialize;
-    connectedCallback(): void;
-    disconnectedCallback(): void;
-    get childElementArray(): Element[];
-    /**
-     * 要素の一意キーを生成
-     */
-    private _getKey;
-    /**
-     * head内で指定のキーに一致する要素を検索
-     */
-    private _findInHead;
-    /**
-     * 初期の<head>状態をキャプチャ
-     * document.head内の全ての要素をスキャンして保存する
-     */
-    private _captureInitialHead;
-    /**
-     * スタック全体からheadを再構築
-     * 後のHeadが優先される（上書き）
-     */
-    private _reapplyHead;
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+    enableShadowRoot?: boolean;
+    basenameFileExtensions?: string[];
 }
 
-export { Head, config, registerComponents };
+/**
+ * Initialize the router with optional configuration.
+ * This is the main entry point for setting up the router.
+ * @param config - Optional partial configuration to override defaults
+ */
+declare function bootstrapRouter(config?: Partial<IWritableConfig>): void;
+
+export { bootstrapRouter };

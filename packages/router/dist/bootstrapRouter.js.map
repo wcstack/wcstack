@@ -1,0 +1,1 @@
+{"version":3,"file":"bootstrapRouter.js","sourceRoot":"","sources":["../src/bootstrapRouter.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,SAAS,EAAE,MAAM,UAAU,CAAC;AACrC,OAAO,EAAE,kBAAkB,EAAE,MAAM,sBAAsB,CAAC;AAE1D;;;;GAIG;AACH,MAAM,UAAU,eAAe,CAAC,MAAiC;IAC/D,IAAI,MAAM,EAAE,CAAC;QACX,SAAS,CAAC,MAAM,CAAC,CAAC;IACpB,CAAC;IACD,kBAAkB,EAAE,CAAC;AACvB,CAAC"}
