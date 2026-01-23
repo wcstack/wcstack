@@ -83,7 +83,7 @@ export interface IOutlet {
 export interface ILayoutOutlet {
   layout: ILayout;
   readonly name: string;
-  assignParams(params: Record<string, string>): void;
+  assignParams(params: Record<string, any>): void;
 }
 
 export interface ILink {

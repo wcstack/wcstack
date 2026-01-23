@@ -16,6 +16,7 @@ export declare class Head extends HTMLElement {
     private _findInHead;
     /**
      * 初期の<head>状態をキャプチャ
+     * document.head内の全ての要素をスキャンして保存する
      */
     private _captureInitialHead;
     /**

@@ -95,18 +95,14 @@ export class Head extends HTMLElement {
     }
     /**
      * 初期の<head>状態をキャプチャ
+     * document.head内の全ての要素をスキャンして保存する
      */
     _captureInitialHead() {
-        // 自身のキーを収集
-        const allKeys = new Set();
-        for (const child of this._childElementArray) {
-            allKeys.add(this._getKey(child));
-        }
-        // 各キーの初期値を保存
-        for (const key of allKeys) {
+        const head = document.head;
+        for (const child of Array.from(head.children)) {
+            const key = this._getKey(child);
             if (!initialHeadValues.has(key)) {
-                const existing = this._findInHead(key);
-                initialHeadValues.set(key, existing ? existing.cloneNode(true) : null);
+                initialHeadValues.set(key, child.cloneNode(true));
             }
         }
     }
@@ -126,6 +122,10 @@ export class Head extends HTMLElement {
         for (const key of initialHeadValues.keys()) {
             allKeys.add(key);
         }
+        // 現在のheadにある要素のキーも追加（管理下から外れたものを削除するため）
+        for (const child of Array.from(document.head.children)) {
+            allKeys.add(this._getKey(child));
+        }
         // 各キーについて、最も優先度の高い値を決定
         for (const key of allKeys) {
             // スタックを逆順に見て、最初に見つかった値を使用
@@ -144,7 +144,8 @@ export class Head extends HTMLElement {
             // スタックに該当がなければ初期値を使用
             if (!targetElement && initialHeadValues.has(key)) {
                 const initial = initialHeadValues.get(key);
-                targetElement = initial ? initial.cloneNode(true) : null;
+                // initialHeadValuesにはnullを保存しないため、has(key)がtrueならinitialは必ず存在しElementである
+                targetElement = initial.cloneNode(true);
             }
             // headを更新
             const current = this._findInHead(key);

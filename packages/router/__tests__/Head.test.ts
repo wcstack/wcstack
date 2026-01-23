@@ -601,5 +601,24 @@ describe('Head', () => {
 
       headWithMeta.disconnectedCallback();
     });
+
+    it('初期Headに重複キーがある場合、重複チェックの分岐が通ること', () => {
+      const meta1 = document.createElement('meta');
+      meta1.setAttribute('name', 'dup-test');
+      meta1.setAttribute('content', '1');
+      document.head.appendChild(meta1);
+
+      const meta2 = document.createElement('meta');
+      meta2.setAttribute('name', 'dup-test');
+      meta2.setAttribute('content', '2');
+      document.head.appendChild(meta2);
+
+      const head = document.createElement('wcs-head') as Head;
+      head.connectedCallback();
+      head.disconnectedCallback();
+      
+      meta1.remove();
+      meta2.remove();
+    });
   });
 });

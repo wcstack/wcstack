@@ -9,7 +9,7 @@ export declare class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
     get name(): string;
     private _initialize;
     connectedCallback(): Promise<void>;
-    assignParams(params: Record<string, string>): void;
+    assignParams(params: Record<string, any>): void;
 }
 export declare function createLayoutOutlet(): LayoutOutlet;
 //# sourceMappingURL=LayoutOutlet.d.ts.map

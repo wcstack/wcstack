@@ -87,7 +87,7 @@ export class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
     }
   }
 
-  assignParams(params: Record<string, string>): void {
+  assignParams(params: Record<string, any>): void {
     for(const childNode of this._layoutChildNodes) {
       if (childNode instanceof Element) {
         childNode.querySelectorAll('[data-bind]').forEach((e) => {

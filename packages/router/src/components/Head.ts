@@ -167,7 +167,8 @@ export class Head extends HTMLElement {
       // スタックに該当がなければ初期値を使用
       if (!targetElement && initialHeadValues.has(key)) {
         const initial = initialHeadValues.get(key);
-        targetElement = initial ? initial.cloneNode(true) as Element : null;
+        // initialHeadValuesにはnullを保存しないため、has(key)がtrueならinitialは必ず存在しElementである
+        targetElement = (initial as Element).cloneNode(true) as Element;
       }
 
       // headを更新

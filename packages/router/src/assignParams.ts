@@ -3,7 +3,7 @@ import { raiseError } from "./raiseError";
 
 const bindTypeSet: Set<BindType> = new Set([ "props", "states", "attr", "" ]);
 
-export function assignParams(element: Element, params: Record<string, string>) {
+export function assignParams(element: Element, params: Record<string, any>) {
   if (!element.hasAttribute('data-bind')) {
     raiseError(`${element.tagName} has no 'data-bind' attribute.`);
   }

@@ -324,16 +324,16 @@ export class Route extends HTMLElement implements IRoute {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node as Element;
         element.querySelectorAll('[data-bind]').forEach((e) => {
-          assignParams(e, this._params);
+          assignParams(e, this._typedParams);
         });
         if (element.hasAttribute('data-bind')) {
-          assignParams(element, this._params);
+          assignParams(element, this._typedParams);
         }
         element.querySelectorAll<LayoutOutlet>(config.tagNames.layoutOutlet).forEach((layoutOutlet) => {
-          layoutOutlet.assignParams(this._params);
+          layoutOutlet.assignParams(this._typedParams);
         });
         if (element.tagName.toLowerCase() === config.tagNames.layoutOutlet) {
-          (element as LayoutOutlet).assignParams(this._params);
+          (element as LayoutOutlet).assignParams(this._typedParams);
         }
       }
     }
