@@ -204,11 +204,13 @@ class Route extends HTMLElement {
         return !this._path.startsWith('/');
     }
     _checkParentNode(hasParentCallback, noParentCallback) {
-        if (this.isRelative && !this._routeParentNode) {
-            raiseError(`${config.tagNames.route} is relative but has no parent route.`);
-        }
-        if (!this.isRelative && this._routeParentNode) {
-            raiseError(`${config.tagNames.route} is absolute but has a parent route.`);
+        if (!this._isFallbackRoute) {
+            if (this.isRelative && !this._routeParentNode) {
+                raiseError(`${config.tagNames.route} is relative but has no parent route.`);
+            }
+            if (!this.isRelative && this._routeParentNode) {
+                raiseError(`${config.tagNames.route} is absolute but has a parent route.`);
+            }
         }
         if (this.isRelative && this._routeParentNode) {
             return hasParentCallback(this._routeParentNode);

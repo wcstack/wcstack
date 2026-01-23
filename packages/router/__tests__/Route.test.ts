@@ -1212,6 +1212,21 @@ describe('Route', () => {
 
       expect(route.path).toBe('/before');
     });
+
+    it('ルートレベルでfallback属性がある場合、相対パスエラーにならないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const route = document.createElement('wcs-route') as Route;
+      route.setAttribute('fallback', '');
+
+      expect(() => {
+        route.initialize(router, null);
+      }).not.toThrow();
+      
+      expect(router.fallbackRoute).toBe(route);
+      expect(route.isRelative).toBe(true);
+    });
   });
 
   describe('show - 追加カバレッジ', () => {
