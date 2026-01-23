@@ -74,6 +74,7 @@ export class Route extends HTMLElement implements IRoute {
     hasParentCallback: (routeParentNode: IRoute) => T, 
     noParentCallback: () => T
   ): T {
+    // fallbackはルーター直下のみ許可されるため、相対パスチェックはスキップ
     if (!this._isFallbackRoute) {
       if (this.isRelative && !this._routeParentNode) {
         raiseError(`${config.tagNames.route} is relative but has no parent route.`);
@@ -401,6 +402,9 @@ export class Route extends HTMLElement implements IRoute {
     }
 
     if (this._isFallbackRoute) {
+      if (routeParentNode) {
+        raiseError(`${config.tagNames.route} with fallback attribute must be a direct child of ${config.tagNames.router}.`);
+      }
       if (routerNode.fallbackRoute) {
         raiseError(`${config.tagNames.router} can have only one fallback route.`);
       }

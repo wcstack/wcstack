@@ -204,6 +204,7 @@ class Route extends HTMLElement {
         return !this._path.startsWith('/');
     }
     _checkParentNode(hasParentCallback, noParentCallback) {
+        // fallbackはルーター直下のみ許可されるため、相対パスチェックはスキップ
         if (!this._isFallbackRoute) {
             if (this.isRelative && !this._routeParentNode) {
                 raiseError(`${config.tagNames.route} is relative but has no parent route.`);
@@ -513,6 +514,9 @@ class Route extends HTMLElement {
             this._childIndex = routerNode.routeChildNodes.length - 1;
         }
         if (this._isFallbackRoute) {
+            if (routeParentNode) {
+                raiseError(`${config.tagNames.route} with fallback attribute must be a direct child of ${config.tagNames.router}.`);
+            }
             if (routerNode.fallbackRoute) {
                 raiseError(`${config.tagNames.router} can have only one fallback route.`);
             }

@@ -1135,14 +1135,10 @@ describe('Route', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wcs-route') as Route;
-      parentRoute.setAttribute('path', '/');
-      parentRoute.initialize(router, null);
-
       const route = document.createElement('wcs-route') as Route;
       route.setAttribute('fallback', '');
 
-      route.initialize(router, parentRoute);
+      route.initialize(router, null);
 
       expect(route.path).toBe('');
       expect(router.fallbackRoute).toBe(route);
@@ -1152,19 +1148,15 @@ describe('Route', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
-      const parentRoute = document.createElement('wcs-route') as Route;
-      parentRoute.setAttribute('path', '/');
-      parentRoute.initialize(router, null);
-
       const first = document.createElement('wcs-route') as Route;
       first.setAttribute('fallback', '');
-      first.initialize(router, parentRoute);
+      first.initialize(router, null);
 
       const second = document.createElement('wcs-route') as Route;
       second.setAttribute('fallback', '');
 
       expect(() => {
-        second.initialize(router, parentRoute);
+        second.initialize(router, null);
       }).toThrow('[@wcstack/router] wcs-router can have only one fallback route.');
     });
 
@@ -1213,7 +1205,7 @@ describe('Route', () => {
       expect(route.path).toBe('/before');
     });
 
-    it('ルートレベルでfallback属性がある場合、相対パスエラーにならないこと', () => {
+    it('fallback属性がルーター直下の場合、正常に登録されること', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);
 
@@ -1225,7 +1217,22 @@ describe('Route', () => {
       }).not.toThrow();
       
       expect(router.fallbackRoute).toBe(route);
-      expect(route.isRelative).toBe(true);
+    });
+
+    it('fallback属性が親ルートを持つ場合、エラーを投げること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const parentRoute = document.createElement('wcs-route') as Route;
+      parentRoute.setAttribute('path', '/parent');
+      parentRoute.initialize(router, null);
+
+      const fallbackRoute = document.createElement('wcs-route') as Route;
+      fallbackRoute.setAttribute('fallback', '');
+
+      expect(() => {
+        fallbackRoute.initialize(router, parentRoute);
+      }).toThrow('[@wcstack/router] wcs-route with fallback attribute must be a direct child of wcs-router.');
     });
   });
 
