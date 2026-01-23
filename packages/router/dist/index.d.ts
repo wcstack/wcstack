@@ -21,3 +21,4 @@ interface IWritableConfig {
 declare function bootstrapRouter(config?: Partial<IWritableConfig>): void;
 
 export { bootstrapRouter };
+export type { IWritableConfig, IWritableTagNames };
