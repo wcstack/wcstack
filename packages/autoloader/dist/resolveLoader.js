@@ -42,4 +42,4 @@ export function resolveLoader(path, loaderKey, loaders) {
     }
     return loader;
 }
-//# sourceMappingURL=resoleveLoader.js.map
+//# sourceMappingURL=resolveLoader.js.map

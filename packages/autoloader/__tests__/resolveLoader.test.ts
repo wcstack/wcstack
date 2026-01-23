@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveLoader } from '../src/resoleveLoader.js'; // Note: filename typo in source
+import { resolveLoader } from '../src/resolveLoader.js'; // Note: filename typo in source
 import { DEFAULT_KEY } from '../src/config.js';
 import { ILoader } from '../src/types.js';
 

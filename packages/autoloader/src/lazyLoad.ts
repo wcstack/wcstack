@@ -1,4 +1,4 @@
-import { resolveLoader } from "./resoleveLoader";
+import { resolveLoader } from "./resolveLoader";
 import { failedTags, loadingTags } from "./tags";
 import { IConfig, ILoader, INameSpaceInfo, IPrefixMap, ITagInfo } from "./types";
 

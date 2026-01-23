@@ -115,19 +115,14 @@ export class Head extends HTMLElement {
 
   /**
    * 初期の<head>状態をキャプチャ
+   * document.head内の全ての要素をスキャンして保存する
    */
   private _captureInitialHead(): void {
-    // 自身のキーを収集
-    const allKeys = new Set<string>();
-    for (const child of this._childElementArray) {
-      allKeys.add(this._getKey(child));
-    }
-    
-    // 各キーの初期値を保存
-    for (const key of allKeys) {
+    const head = document.head;
+    for (const child of Array.from(head.children)) {
+      const key = this._getKey(child);
       if (!initialHeadValues.has(key)) {
-        const existing = this._findInHead(key);
-        initialHeadValues.set(key, existing ? existing.cloneNode(true) as Element : null);
+        initialHeadValues.set(key, child.cloneNode(true) as Element);
       }
     }
   }
@@ -147,6 +142,11 @@ export class Head extends HTMLElement {
     // 初期値にあるキーも追加
     for (const key of initialHeadValues.keys()) {
       allKeys.add(key);
+    }
+    
+    // 現在のheadにある要素のキーも追加（管理下から外れたものを削除するため）
+    for (const child of Array.from(document.head.children)) {
+      allKeys.add(this._getKey(child));
     }
 
     // 各キーについて、最も優先度の高い値を決定

@@ -1,5 +1,5 @@
 import { DEFAULT_KEY } from "./config.js";
-import { ILoader } from "./types";
+import { ILoader } from "./types.js";
 
 export function resolveLoader(
   path: string,

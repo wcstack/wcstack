@@ -1,4 +1,4 @@
-import { resolveLoader } from "./resoleveLoader.js";
+import { resolveLoader } from "./resolveLoader.js";
 import { failedTags } from "./tags.js";
 import { IEagerLoadInfo, ILoader } from "./types.js";
 

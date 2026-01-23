@@ -1,4 +1,4 @@
-import { resolveLoader } from "./resoleveLoader.js";
+import { resolveLoader } from "./resolveLoader.js";
 import { failedTags } from "./tags.js";
 const EXTENDS_MAP = new Map();
 if (typeof window !== "undefined") {
