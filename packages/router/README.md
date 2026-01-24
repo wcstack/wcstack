@@ -117,10 +117,60 @@ Displays children when the route path matches. Match priority is static paths ov
 
 | Property | Description |
 |------|------|
+| `params` | Matched parameters (strings). |
+| `typedParams` | Matched parameters (converted types). |
 | `guardHandler` | Sets the guard decision function. |
 
 Guard decision function type:
 function (toPath: string, fromPath: string): boolean | Promise<boolean>
+
+#### Typed Parameters
+
+By specifying types for path parameters, you can perform value validation and automatic conversion.
+
+**Syntax**: `:paramName(typeName)`
+
+```html
+<!-- Integer parameter -->
+<wcs-route path="/users/:userId(int)">
+  <user-detail></user-detail>
+</wcs-route>
+
+<!-- Complex parameters -->
+<wcs-route path="/posts/:date(isoDate)/:slug(slug)">
+  <post-detail></post-detail>
+</wcs-route>
+```
+
+**Built-in Types**:
+
+| Type Name | Description | Example | Converted Type |
+|------|------|------|------|
+| `int` | Integer | `123`, `-45` | `number` |
+| `float` | Floating point number | `3.14`, `-2.5` | `number` |
+| `bool` | Boolean | `true`, `false`, `0`, `1` | `boolean` |
+| `uuid` | UUID v1-5 | `550e8400-e29b-41d4-a716-446655440000` | `string` |
+| `slug` | Slug (lowercase alphanumeric and hyphens) | `my-post-title` | `string` |
+| `isoDate` | ISO 8601 Date | `2024-01-23` | `Date` |
+| `any` | Any string (default) | Any | `string` |
+
+**Retrieving Values**:
+
+```javascript
+// Get from the route element
+const route = document.querySelector('wcs-route[path="/users/:userId(int)"]');
+
+// Get as string
+console.log(route.params.userId);       // "123"
+
+// Get as typed value
+console.log(route.typedParams.userId);  // 123 (number)
+```
+
+**Behavior**:
+- If the value does not match the type, the route will not match (it does not result in an error).
+- If no type is specified, it is treated as `any` (same as previous behavior).
+- Specifying an unknown type name also falls back to `any`.
 
 ### Layout (wcs-layout)
 
@@ -145,6 +195,29 @@ Displays a DOM tree into `<wcs-outlet>` according to the layout (`<wcs-layout>`)
 | Attribute | Description |
 |------|------|
 | `name` | The name attribute of `<wcs-layout>`. Use it to identify styling targets. |
+
+#### Light DOM Limitations
+
+When utilizing `disable-shadow-root` (Light DOM), slot replacement targets **only direct children** of `<wcs-layout>`. Elements with `slot` attributes inside `<wcs-route>` will not be placed in the slot.
+
+```html
+<!-- NG: <div slot="header"> is not a direct child of wcs-layout, so it doesn't go into the slot -->
+<wcs-layout layout="main" disable-shadow-root>
+  <wcs-route path="/page">
+    <div slot="header">Header Content</div>
+  </wcs-route>
+</wcs-layout>
+
+<!-- OK: Make the element with slot attribute a direct child of wcs-layout -->
+<wcs-layout layout="main" disable-shadow-root>
+  <div slot="header">Header Content</div>
+  <wcs-route path="/page">
+    <!-- Page content -->
+  </wcs-route>
+</wcs-layout>
+```
+
+In the case of `enable-shadow-root` (Shadow DOM), this limitation does not apply because the native `<slot>` function is used.
 
 ### Link (wcs-link)
 

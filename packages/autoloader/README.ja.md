@@ -35,12 +35,12 @@
 
 ### 2. ハンドラーの登録
 
-メインスクリプトで`registerHandler`をインポートして呼び出します。
+メインスクリプトで`bootstrapAutoloader`をインポートして呼び出します。
 
 ```html
 <script type="module">
-  import { registerHandler } from "@wcstack/autoloader";
-  registerHandler();
+  import { bootstrapAutoloader } from "@wcstack/autoloader";
+  bootstrapAutoloader();
 </script>
 ```
 
@@ -130,15 +130,19 @@ export default class UiButton extends HTMLElement {
 
 ## 設定
 
-`config`オブジェクトを変更することでローダーを設定できます。
+`bootstrapAutoloader`に設定オブジェクトを渡すことでローダーを設定できます。
 
 ```javascript
-import { registerHandler, config } from "@wcstack/autoloader";
+import { bootstrapAutoloader } from "@wcstack/autoloader";
 
 // 例: デフォルトのpostfixを変更
-config.loaders.vanilla.postfix = ".vanilla.js";
-
-registerHandler();
+bootstrapAutoloader({
+  loaders: {
+    vanilla: {
+      postfix: ".vanilla.js"
+    }
+  }
+});
 ```
 
 ## ライセンス

@@ -35,12 +35,12 @@ Define your component paths in an import map using the `@components/` prefix.
 
 ### 2. Register the Handler
 
-Import and call `registerHandler` in your main script.
+Import and call `bootstrapAutoloader` in your main script.
 
 ```html
 <script type="module">
-  import { registerHandler } from "@wcstack/autoloader";
-  registerHandler();
+  import { bootstrapAutoloader } from "@wcstack/autoloader";
+  bootstrapAutoloader();
 </script>
 ```
 
@@ -130,15 +130,19 @@ export default class UiButton extends HTMLElement {
 
 ## Configuration
 
-You can configure loaders by modifying the `config` object.
+You can configure loaders by passing a configuration object to `bootstrapAutoloader`.
 
 ```javascript
-import { registerHandler, config } from "@wcstack/autoloader";
+import { bootstrapAutoloader } from "@wcstack/autoloader";
 
 // Example: Change default postfix
-config.loaders.vanilla.postfix = ".vanilla.js";
-
-registerHandler();
+bootstrapAutoloader({
+  loaders: {
+    vanilla: {
+      postfix: ".vanilla.js"
+    }
+  }
+});
 ```
 
 ## License
