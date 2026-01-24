@@ -3,9 +3,11 @@ import { getUUID } from "../getUUID";
 import { raiseError } from "../raiseError";
 import { getNavigation } from "../Navigation";
 export class Link extends HTMLElement {
+    static get observedAttributes() {
+        return ['to'];
+    }
     _childNodeArray = [];
     _uuid = getUUID();
-    _commentNode = document.createComment(`@@link:${this._uuid}`);
     _path = "";
     _router = null;
     _anchorElement = null;
@@ -16,9 +18,6 @@ export class Link extends HTMLElement {
     }
     get uuid() {
         return this._uuid;
-    }
-    get commentNode() {
-        return this._commentNode;
     }
     get router() {
         if (this._router) {
@@ -31,7 +30,7 @@ export class Link extends HTMLElement {
         raiseError(`${config.tagNames.link} is not connected to a router.`);
     }
     _initialize() {
-        this.replaceWith(this._commentNode); // Link 要素自体は DOM から取り除く
+        this.style.display = "none";
         this._childNodeArray = Array.from(this.childNodes);
         this._path = this.getAttribute('to') || '';
         this._initialized = true;
@@ -55,22 +54,31 @@ export class Link extends HTMLElement {
             return base + "/";
         return base + path;
     }
+    _setAnchorHref(anchor, path) {
+        if (path.startsWith('/')) {
+            anchor.href = this._joinInternalPath(this.router.basename, path);
+        }
+        else {
+            try {
+                anchor.href = new URL(path).toString();
+            }
+            catch {
+                raiseError(`[${config.tagNames.link}] Invalid URL in 'to' attribute: ${path}`);
+            }
+        }
+    }
     connectedCallback() {
         if (!this._initialized) {
             this._initialize();
         }
-        const parentNode = this._commentNode.parentNode;
+        const parentNode = this.parentNode;
         if (!parentNode) {
-            raiseError(`${config.tagNames.link} comment node has no parent`);
+            // should not happen if connected
+            return;
         }
-        const nextSibling = this._commentNode.nextSibling;
+        const nextSibling = this.nextSibling;
         const link = document.createElement('a');
-        if (this._path.startsWith('/')) {
-            link.href = this._joinInternalPath(this.router.basename, this._path);
-        }
-        else {
-            link.href = new URL(this._path).toString();
-        }
+        this._setAnchorHref(link, this._path);
         for (const childNode of this._childNodeArray) {
             link.appendChild(childNode);
         }
@@ -113,9 +121,19 @@ export class Link extends HTMLElement {
                 this._onClick = undefined;
             }
             this._anchorElement.remove();
+            this._anchorElement = null;
         }
         for (const childNode of this._childNodeArray) {
             childNode.parentNode?.removeChild(childNode);
+        }
+    }
+    attributeChangedCallback(name, oldValue, newValue) {
+        if (name === 'to' && oldValue !== newValue) {
+            this._path = newValue || '';
+            if (this._anchorElement) {
+                this._setAnchorHref(this._anchorElement, this._path);
+                this._updateActiveState();
+            }
         }
     }
     _updateActiveState = () => {
@@ -130,5 +148,8 @@ export class Link extends HTMLElement {
             }
         }
     };
+    get anchorElement() {
+        return this._anchorElement;
+    }
 }
 //# sourceMappingURL=Link.js.map

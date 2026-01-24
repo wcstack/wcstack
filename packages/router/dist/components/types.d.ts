@@ -76,8 +76,8 @@ export interface ILayoutOutlet {
 }
 export interface ILink {
     readonly uuid: string;
-    readonly commentNode: Comment;
     readonly router: IRouter;
+    readonly anchorElement: HTMLAnchorElement | null;
 }
 export interface IHead {
     readonly childElementArray: Element[];
