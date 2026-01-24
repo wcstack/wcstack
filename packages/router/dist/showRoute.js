@@ -9,12 +9,8 @@ export function showRoute(route, matchResult) {
     const parentNode = route.placeHolder.parentNode;
     const nextSibling = route.placeHolder.nextSibling;
     for (const node of route.childNodeArray) {
-        if (nextSibling) {
-            parentNode?.insertBefore(node, nextSibling);
-        }
-        else {
-            parentNode?.appendChild(node);
-        }
+        // connectedCallbackが呼ばれる前に、プロパティにパラメータを割り当てる
+        // connectedCallbackを実行するときにパラメータはすでに設定されている必要があるため
         if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node;
             element.querySelectorAll('[data-bind]').forEach((e) => {
@@ -29,6 +25,12 @@ export function showRoute(route, matchResult) {
             if (element.tagName.toLowerCase() === config.tagNames.layoutOutlet) {
                 element.assignParams(route.typedParams);
             }
+        }
+        if (nextSibling) {
+            parentNode?.insertBefore(node, nextSibling);
+        }
+        else {
+            parentNode?.appendChild(node);
         }
     }
     return true;
