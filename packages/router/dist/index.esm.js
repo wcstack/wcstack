@@ -597,16 +597,20 @@ function createOutlet() {
     return document.createElement(config.tagNames.outlet);
 }
 
+function getCustomTagName(element) {
+    const tagName = element.tagName.toLowerCase();
+    if (tagName.includes("-")) {
+        return tagName;
+    }
+    const isAttr = element.getAttribute("is");
+    if (isAttr && isAttr.includes("-")) {
+        return isAttr;
+    }
+    return null;
+}
+
 const bindTypeSet = new Set(["props", "states", "attr", ""]);
-function assignParams(element, params) {
-    if (!element.hasAttribute('data-bind')) {
-        raiseError(`${element.tagName} has no 'data-bind' attribute.`);
-    }
-    const bindTypeText = element.getAttribute('data-bind') || '';
-    if (!bindTypeSet.has(bindTypeText)) {
-        raiseError(`${element.tagName} has invalid 'data-bind' attribute: ${bindTypeText}`);
-    }
-    const bindType = bindTypeText;
+function _assignParams(element, params, bindType) {
     for (const [key, value] of Object.entries(params)) {
         switch (bindType) {
             case "props":
@@ -628,6 +632,30 @@ function assignParams(element, params) {
                 element[key] = value;
                 break;
         }
+    }
+}
+function assignParams(element, params) {
+    if (!element.hasAttribute('data-bind')) {
+        raiseError(`${element.tagName} has no 'data-bind' attribute.`);
+    }
+    const bindTypeText = element.getAttribute('data-bind') || '';
+    if (!bindTypeSet.has(bindTypeText)) {
+        raiseError(`${element.tagName} has invalid 'data-bind' attribute: ${bindTypeText}`);
+    }
+    const bindType = bindTypeText;
+    const customTagName = getCustomTagName(element);
+    if (customTagName && customElements.get(customTagName) === undefined) {
+        customElements.whenDefined(customTagName).then(() => {
+            if (element.isConnected) {
+                // 要素が削除されていない場合のみ割り当てを行う
+                _assignParams(element, params, bindType);
+            }
+        }).catch(() => {
+            raiseError(`Failed to define custom element: ${customTagName}`);
+        });
+    }
+    else {
+        _assignParams(element, params, bindType);
     }
 }
 
