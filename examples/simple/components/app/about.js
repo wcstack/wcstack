@@ -4,8 +4,8 @@ export default class extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `
-      <h1>About Page</h1>
-      <p>This is the about page of the simple web component example.</p>
+      <h1>About wcstack</h1>
+      <p>wcstack is a minimal Web Components stack designed for composition-first UI development, featuring an autoloader and a lightweight router.</p>
     `;
   }
 }

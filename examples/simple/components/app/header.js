@@ -8,6 +8,7 @@ export default class extends HTMLElement {
       <nav>
         <wcs-link to="/">Home</wcs-link>
         <wcs-link to="/about">About</wcs-link>
+        <wcs-link to="/products">Products</wcs-link>
         <wcs-link to="/fail">Link fail</wcs-link>
       </nav>
     </section>

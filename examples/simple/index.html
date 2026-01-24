@@ -3,18 +3,27 @@
   <head>
     <meta charset="utf-8"/>
     <title>simple</title>
+    <!--
+      Import map to define component paths
+      "@components/app/" means is lazy load, <app-xxx> will load ./components/app/xxx.js on demand
+      "@components/app-main" means is eager load, ./components/app/main.js will be loaded immediately
+      "@components/app-header" means is eager load, ./components/app/header.js will be loaded immediately
+    -->
     <script type="importmap">
       {
         "imports": {
           "@components/app/": "./components/app/",
-          "@components/app-main": "./components/app/main.js"
+          "@components/app-main": "./components/app/main.js",
+          "@components/app-header": "./components/app/header.js"
         }
       }
     </script>
+    <!-- autoloader, router exec bootstrap -->
     <script type="module" src="../../packages/autoloader/dist/auto.min.js"></script>
     <script type="module" src="../../packages/router/dist/auto.min.js"></script>
   </head>
   <body>
+    <!-- basename is subdirectory for router -->
     <wcs-router basename="/examples/simple/">
       <template>
         <wcs-route path="/">
@@ -34,6 +43,18 @@
                 <title>About Page</title>
               </wcs-head>
               <app-about></app-about>
+            </wcs-route>
+
+            <wcs-route path="products">
+              <wcs-head>
+                <title>Products Page</title>
+              </wcs-head>
+              <wcs-route index>
+                <app-products></app-products>
+              </wcs-route>
+              <wcs-route path=":productId(int)">
+                <app-product data-bind=""></app-product>
+              </wcs-route>
             </wcs-route>
 
           </wcs-layout>
