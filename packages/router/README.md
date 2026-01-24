@@ -3,15 +3,21 @@
 Provides SPA routing with declarative definitions using custom elements.
 
 ## Features
-* Declarative routing definitions with custom elements
-* Layout definitions can be mixed into routing definitions
-* Layout definitions can use slot assignment with Light DOM
-* Supports the Navigation API
-* Simple parameter binding support
-* Global fallback support
-* Zero config
-* Zero dependencies
-* Buildless
+
+### Basic Features
+* **Declarative Routing**: Simply list `<wcs-route>` tags within an HTML `<template>`. No JS configuration object required.
+* **Nested Route Definitions**: Intuitively express nested structures like `/products/:id`.
+* **Parameter Support**: Supports path parameters (`:id`).
+* **Fallback (404)**: Handle undefined paths with `<wcs-route fallback>`.
+* **Navigation API Based**: Built on the modern standard Navigation API, offering high affinity with native browser behavior.
+* **Zero Config / Buildless**: Works directly in the browser without bundling.
+
+### Unique Features
+* **Light DOM Layout System**: Defines layout templates in normal DOM (Light DOM) without forcing Shadow DOM. Makes global CSS application and `<slot>` insertion easy.
+* **Typed Parameters**: Specify type constraints like `:id(int)`. Automatically converts values to `number` type.
+* **Mixed Layouts & Routes**: Freely nest `<wcs-layout>` within the routing tree, managing layout switching per area purely through HTML structure.
+* **Auto-Binding**: Automatically injects URL parameters into component properties using `data-bind="props"`.
+* **Declarative `<head>` Management**: Declaratively switch `title` and `meta` tags for each page using `<wcs-head>`.
 
 ## Usage
 

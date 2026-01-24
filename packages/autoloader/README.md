@@ -3,16 +3,19 @@
 Automatically loads custom elements (requires Web Components support) just by writing the tags in HTML.
 
 ## Features
-- Define rules in importmap
-- Supports eager/lazy loading
-- Lazy loading auto-resolves load file names by namespace prefix
-- Dynamically loads by detecting undefined tags
-- Supports built-in custom elements via the is attribute
-- Supports dynamically added elements via MutationObserver
-- Switchable loaders allow changing frameworks (requires Web Components support)
-- Zero config
-- Zero dependencies
-- Buildless
+
+### Basic Features
+- **Auto Detection & Loading**: Detects undefined custom element tags and automatically `import()`s them.
+- **Dynamic Content Support**: Instantly detects elements added later via `innerHTML` or `appendChild`.
+- **Zero Config / Buildless**: Works with browser standard features only; no bundler configuration required.
+- **Zero Dependencies**: Lightweight with no external dependencies.
+
+### Unique Features
+- **Import Map Extension**: A standards-compliant approach that defines `@components/` rules within standard Import Maps.
+- **Namespace Prefix Auto-Resolution**: No need to register components one by one. Just define a prefix like `@components/ui/`, and it auto-resolves `<ui-button>` to `button.js`.
+- **Inline Loader Specification**: Specify loaders in Import Map keys like `@components/ui|lit/`. Easily mix multiple frameworks.
+- **Advanced `is` Attribute Support**: Automatically loads extended built-in elements. Infers `extends` from class definitions and calls `define` appropriately.
+- **Abstracted Loaders**: The file loading logic itself is pluggable, allowing customization of extensions and processing systems.
 
 ## Usage
 
