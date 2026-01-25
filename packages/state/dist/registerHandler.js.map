@@ -1,0 +1,1 @@
+{"version":3,"file":"registerHandler.js","sourceRoot":"","sources":["../src/registerHandler.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,kBAAkB,EAAE,MAAM,sBAAsB,CAAC;AAE1D,MAAM,UAAU,eAAe;IAC7B,QAAQ,CAAC,gBAAgB,CAAC,kBAAkB,EAAE,KAAK,IAAI,EAAE;QACvD,MAAM,kBAAkB,CAAC,QAAQ,CAAC,IAAI,EAAE,IAAI,CAAC,CAAC;IAChD,CAAC,CAAC,CAAC;AACL,CAAC"}

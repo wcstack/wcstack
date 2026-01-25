@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>simple state</title>
+  <script type="module" src="../../dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  count: 0,
+  user: { id: 1, name: "Alice" },
+  users: [
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Bob" },
+    { id: 3, name: "Charlie" }
+  ],
+  countUp() {
+    this.count += 1;
+  },
+  toggle: false,
+  toggleName() {
+    if (this.toggle === false) {
+      this["user.name"] = this["user.name"].toUpperCase();
+    } else {
+      this["user.name"] = this["user.name"].toLowerCase();
+    }
+    this.toggle = !this.toggle;
+  },
+  isActive: true
+};
+    </script>
+  </wcs-state>
+
+  <div data-bind-state="textContent: count"></div>
+  <button name="increment" data-bind-state="onclick: countUp">Increment</button>
+  <br>
+
+  <input type="text" name="userName" data-bind-state="value: user.name">
+  <div data-bind-state="textContent: user.name"></div>
+  <!--{{ bind-state:user.name }}-->
+  <br>
+  <button name="toggleName" data-bind-state="onclick: toggleName">Toggle Name</button>
+  <br>
+  <!--{{ bind-state:isActive }}-->
+  <input type="checkbox" name="toggle" data-bind-state="checked: isActive">
+  <div>
+  </div>
+  <wcs-loop data-bind-state="users">
+    <template>
+      <div>
+        <span data-bind-state="textContent: users.*.id"></span>:
+        <span data-bind-state="textContent: users.*.name"></span>
+      </div>
+    </template>
+  </wcs-loop>
+  <div>
+  </div>
+
+</body>
+</html>

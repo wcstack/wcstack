@@ -1,0 +1,20 @@
+<html>
+  <body>
+    <wsc-state>
+      <script type="module">
+export default {
+  "count": 0,
+  "users": [
+    { "id": 1, "name": "Alice" },
+    { "id": 2, "name": "Bob" },
+    { "id": 3, "name": "Charlie" }
+  ],
+  get "users.*.displayName"() {
+    return this["users.*.name"] + ' (ID: ' + this["users.*.id"] + ')';
+  }
+};
+      </script>
+    </wsc-state>
+
+  </body>
+</html>

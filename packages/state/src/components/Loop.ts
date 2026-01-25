@@ -1,0 +1,148 @@
+import { applyChangeToNode } from "../applyChangeToNode";
+import { config } from "../config";
+import { findStateElement } from "../findStateElement";
+import { getUUID } from "../getUUID";
+import { createLoopContent } from "../LoopContent";
+import { getPathInfo } from "../address/PathInfo";
+import { raiseError } from "../raiseError";
+import { IBindingInfo, ILoopContent } from "../types";
+import { State } from "./State";
+import { ILoopElement, IStateElement } from "./types";
+import { IListIndex } from "../list/types";
+import { getListIndexesByList } from "../list/listIndexesByList";
+import { initializeBindings } from "../initializeBindings";
+
+export class Loop extends HTMLElement implements ILoopElement {
+  private _uuid: string = getUUID();
+  private _path: string = '';
+  private _stateElement: IStateElement | null = null;
+  private _placeHolder: Comment = document.createComment(`@@loop:${this._uuid}`);
+  private _initializePromise: Promise<void>;
+  private _resolveInitialize: (() => void) | null = null;
+  private _initialized: boolean = false;
+  private _loopContent: DocumentFragment | null = null;
+  private _loopContents: ILoopContent[] = [];
+  private _loopValue: any = null;
+  private _bindingInfo: IBindingInfo | null = null;
+  constructor() {
+    super();
+    this._initializePromise = new Promise<void>((resolve) => {
+      this._resolveInitialize = resolve;
+    });
+  }
+
+  get uuid(): string {
+    return this._uuid;
+  }
+
+  get path(): string {
+    return this._path;
+  }
+
+  get stateElement(): IStateElement {
+    if (this._stateElement === null) {
+      raiseError(`Loop stateElement is not set.`);
+    }
+    return this._stateElement;
+  }
+
+  get loopContent(): DocumentFragment {
+    if (this._loopContent === null) {
+      raiseError(`Loop content is not initialized.`);
+    }
+    return this._loopContent;
+  }
+
+  get bindingInfo(): IBindingInfo {
+    if (this._bindingInfo === null) {
+      raiseError(`Loop bindingInfo is not set.`);
+    }
+    return this._bindingInfo;
+  }
+
+  get initializePromise(): Promise<void> {
+    return this._initializePromise;
+  }
+
+  initialize(): void {
+    const template = this.querySelector<HTMLTemplateElement>('template');
+    if (!template) {
+      raiseError(`${config.tagNames.loop} requires a <template> child element.`);
+    }
+    this._loopContent = template.content;
+
+    const bindText = this.getAttribute(config.bindAttributeName) || '';
+    const [ statePathName, stateTempName ] = bindText.split('@').map(s => s.trim());
+    if (statePathName === '') {
+      raiseError(`Invalid loop binding syntax: "${bindText}".`);
+    }
+    const stateName = stateTempName ?? 'default';
+    const statePathInfo = getPathInfo(statePathName);
+    const stateElement = findStateElement(document, stateName);
+    if (stateElement === null) {
+      raiseError(`State element with name "${stateName}" not found for loop binding "${bindText}".`);
+    }
+    this._bindingInfo = {
+      propName: 'loopValue',
+      propSegments: ['loopValue'],
+      propModifiers: [],
+      statePathName,
+      statePathInfo,
+      stateName,
+      stateElement,
+      filterTexts: [],
+      node: this,
+    };
+    stateElement.listPaths.add(statePathName);
+  }
+
+  async connectedCallback(): Promise<void> {
+    this.replaceWith(this._placeHolder);
+    if (!this._initialized) {
+      this.initialize();
+      this._resolveInitialize?.();
+      this._initialized = true;
+    }
+  }
+
+  get loopValue(): any {
+    return this._loopValue;
+  }
+  set loopValue(value: any) {
+    this.render(value, this._loopValue);
+    this._loopValue = value;
+  }
+
+  render(newValue: any, oldValue: any): void {
+    if (!Array.isArray(newValue)) {
+      for(let content of this._loopContents) {
+        content.unmount();
+      }
+    } else {
+      const parentNode = this._placeHolder.parentNode;
+      if (parentNode === null) {
+        raiseError(`Loop placeholder has no parent node.`);
+      }
+      // Remove old contents
+      for(let content of this._loopContents) {
+        content.unmount();
+      }
+      this._loopContents = [];
+      const listIndexes = getListIndexesByList(newValue);
+      if (listIndexes === null) {
+        raiseError(`List indexes not found for loop value.`);
+      }
+      // Create new contents
+      let lastNode: Node = this._placeHolder;
+      for(let i = 0; i < newValue.length; i++) {
+        const listIndex = listIndexes[i];
+        const content = document.importNode(this.loopContent, true);
+        initializeBindings(content, listIndex)
+        const loopContent = createLoopContent(content);
+        loopContent.mountAfter(lastNode);
+        this._loopContents.push(loopContent);
+        lastNode = loopContent.lastNode || lastNode;
+      }
+    }
+  }
+}
