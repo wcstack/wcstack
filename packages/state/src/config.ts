@@ -1,10 +1,10 @@
+import { IConfig } from "./types.js";
 
-export const config = {
+export const config: IConfig = {
 
   bindAttributeName: 'data-bind-state',
+  commentPrefix: 'wcs',
   tagNames: {
     state: 'wcs-state',
-    cond: 'wcs-cond',
-    loop: 'wcs-loop',
   },
 };

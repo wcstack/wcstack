@@ -1,7 +1,4 @@
-import { applyChangeToNode } from "../applyChangeToNode";
 import { config } from "../config";
-import { getBindingInfos } from "../getBindingInfos";
-import { getSubscriberNodes } from "../getSubscriberNodes";
 import { getUUID } from "../getUUID";
 import { loadFromInnerScript } from "../stateLoader/loadFromInnerScript";
 import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
@@ -24,8 +21,10 @@ export class State extends HTMLElement implements IStateElement {
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
+  private _isLoadingState: boolean = false;
+  private _isLoadedState: boolean = false;
 
-  static get observedAttributes() { return [ 'name' ]; }
+  static get observedAttributes() { return [ 'name', 'src', 'state' ]; }
 
   constructor() {
     super();
@@ -53,40 +52,71 @@ export class State extends HTMLElement implements IStateElement {
     return this._name;
   }
 
-  private async _getState(name: string): Promise<IState> {
-    const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
-    if (script) {
-      return await loadFromInnerScript(script, `state#${name}`);
-    }
-    const src = this.getAttribute('src');
-    if (src && src.endsWith('.json')) {
-      return await loadFromJsonFile(src);
-    }
-    if (src && src.endsWith('.js')) {
-      return await loadFromScriptFile(src);
-    }
-    if (src) {
-      raiseError(`Unsupported src file type: ${src}`);
-    }
-    const jsonKey = this.getAttribute('state');
-    if (jsonKey) {
-      return loadFromScriptJson(jsonKey);
-    }
-    return {};
-  }
-
   attributeChangedCallback(name: string, oldValue: string, newValue: string): void {
     if (name === 'name' && oldValue !== newValue) {
+      setStateElementByName(this._name, null);
       this._name = newValue;
       setStateElementByName(this._name, this);
+    }
+    if (name === 'state' && oldValue !== newValue) {
+      if (this._isLoadedState) {
+        raiseError(`The state has already been loaded. The 'state' attribute cannot be changed multiple times.`);
+      }
+      if (this._isLoadingState) {
+        raiseError(`The state is currently loading. The 'state' attribute cannot be changed during loading.`);
+      }
+      this._state = loadFromScriptJson(newValue);
+      this._isLoadedState = true;
+    }
+    if (name === 'src' && oldValue !== newValue) {
+      if (this._isLoadedState) {
+        raiseError(`The state has already been loaded. The 'src' attribute cannot be changed multiple times.`);
+      }
+      if (this._isLoadingState) {
+        raiseError(`The state is currently loading. The 'src' attribute cannot be changed during loading.`);
+      }
+      if (newValue && newValue.endsWith('.json')) {
+        this._isLoadingState = true;
+        loadFromJsonFile(newValue).then((state) => {
+          this._isLoadedState = true;
+          this._state = state;
+        }).finally(() => {
+          this._isLoadingState = false;
+        });
+      } else if (newValue && newValue.endsWith('.js')) {
+        this._isLoadingState = true;
+        loadFromScriptFile(newValue).then((state) => {
+          this._isLoadedState = true;
+          this._state = state;
+        }).finally(() => {
+          this._isLoadingState = false;
+        });
+      } else {
+        raiseError(`Unsupported src file type: ${newValue}`);
+      }
     }
   }
 
   private async _initialize() {
-    if (!this.hasAttribute('name')) {
-      this.setAttribute('name', 'default');
+    if (!this._isLoadedState && !this._isLoadingState) {
+      this._isLoadingState = true;
+      try {
+        const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
+        if (script) {
+          this._state = await loadFromInnerScript(script, `state#${this._name}`);
+          this._isLoadedState = true;
+        }
+      } catch(e) {
+        raiseError(`Failed to load state from inner script: ${(e as Error).message}`);
+
+      } finally {
+        this._isLoadingState = false;
+
+      }
     }
-    this._state = await this._getState(this._name);
+    if (typeof this._state === "undefined") {
+      this._state = {};
+    }
   }
 
   async connectedCallback() {
@@ -95,6 +125,10 @@ export class State extends HTMLElement implements IStateElement {
       this._initialized = true;
       this._resolveInitialize?.();
     }
+  }
+
+  disconnectedCallback() {
+    setStateElementByName(this._name, null);
   }
 
   get bindingInfosByPath(): Map<string, IBindingInfo[]> {

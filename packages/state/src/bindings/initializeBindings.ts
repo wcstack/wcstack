@@ -1,12 +1,17 @@
-import { applyChangeToNode } from "./applyChangeToNode";
-import { IStateElement } from "./components/types";
+import { applyChangeToNode } from "../applyChangeToNode";
+import { IStateElement } from "../components/types";
 import { getBindingInfos } from "./getBindingInfos";
 import { getSubscriberNodes } from "./getSubscriberNodes";
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
-import { setListIndexByNode } from "./list/listIndexByNode";
-import { IListIndex } from "./list/types";
-import { getStateElementByName } from "./stateElementByName";
-import { IBindingInfo } from "./types";
+import { setListIndexByNode } from "../list/listIndexByNode";
+import { IListIndex } from "../list/types";
+import { IBindingInfo } from "../types";
+import { getStateElementByName } from "../stateElementByName";
+import { raiseError } from "../raiseError";
+import { replaceToComment } from "./replaceToComment";
+import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define";
+import { getContentByNode, setContentByNode } from "../structural/contentByNode";
+import { createContent } from "../structural/createContent";
 
 const registeredNodeSet = new WeakSet<Node>();
 
@@ -29,11 +34,25 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
   const applyInfoList: IApplyInfo[] = [];
   const cacheValueByPathByStateElement = new Map<IStateElement, Map<string, any>>();
   for(const bindingInfo of allBindings) {
-      const stateElement = getStateElementByName(bindingInfo.stateName);
-      if (stateElement === null) {
-        console.warn(`[@wcstack/state] State element with name "${bindingInfo.stateName}" not found for event binding.`);
-        return;
+    const stateElement = getStateElementByName(bindingInfo.stateName);
+    if (stateElement === null) {
+      raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
+    }
+
+    // replace to comment node
+    replaceToComment(bindingInfo);
+
+    // structural content
+    if (STRUCTURAL_BINDING_TYPE_SET.has(bindingInfo.bindingType)) {
+      if (!(bindingInfo.rawNode instanceof HTMLTemplateElement)) {
+        raiseError(`The element with special binding property "${bindingInfo.propName}" must be a <template> element.`);
       }
+      if (getContentByNode(bindingInfo.node) === null) {
+        const template: HTMLTemplateElement = bindingInfo.rawNode;
+        const content = createContent(template.content);
+        setContentByNode(bindingInfo.node, content);
+      }
+    }
 
     // event
     if (bindingInfo.propName.startsWith("on")) {
@@ -57,7 +76,7 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
         }
       }
       (bindingInfo.node as Element).addEventListener(eventName, (event: Event) => {
-        const target = event.target as any;
+        const target = event.target as Element;
         if (typeof target === "undefined") {
           console.warn(`[@wcstack/state] event.target is undefined.`);
           return;
@@ -66,7 +85,7 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
           console.warn(`[@wcstack/state] Property "${bindingInfo.propName}" does not exist on target element.`);
           return;
         }
-        const newValue = target[bindingInfo.propName];
+        const newValue = (target as any)[bindingInfo.propName];
         stateElement.state[bindingInfo.statePathName] = newValue;
       });
     }
