@@ -11,6 +11,8 @@ import { createStateProxy } from "../Proxy";
 import { raiseError } from "../raiseError";
 import { IBindingInfo, IState } from "../types";
 import { IStateElement } from "./types";
+import { setElementByUUID } from "../elementByUUID";
+import { setStateElementByName } from "../stateElementByName";
 
 export class State extends HTMLElement implements IStateElement {
   private _uuid: string = getUUID();
@@ -22,8 +24,12 @@ export class State extends HTMLElement implements IStateElement {
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
+
+  static get observedAttributes() { return [ 'name' ]; }
+
   constructor() {
     super();
+    setElementByUUID(this._uuid, this);
     this._initializePromise = new Promise<void>((resolve) => {
       this._resolveInitialize = resolve;
     });
@@ -69,13 +75,16 @@ export class State extends HTMLElement implements IStateElement {
     return {};
   }
 
+  attributeChangedCallback(name: string, oldValue: string, newValue: string): void {
+    if (name === 'name' && oldValue !== newValue) {
+      this._name = newValue;
+      setStateElementByName(this._name, this);
+    }
+  }
+
   private async _initialize() {
-    const name = this.getAttribute('name');
-    if (name === null) {
-      this._name = 'default';
-      this.setAttribute('name', this._name);
-    } else {
-      this._name = name;
+    if (!this.hasAttribute('name')) {
+      this.setAttribute('name', 'default');
     }
     this._state = await this._getState(this._name);
   }

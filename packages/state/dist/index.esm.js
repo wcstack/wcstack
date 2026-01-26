@@ -6,11 +6,6 @@ const config = {
     },
 };
 
-function findStateElement(rootElement, stateName) {
-    const retElement = rootElement.querySelector(`${config.tagNames.state}[name="${stateName}"]`);
-    return retElement;
-}
-
 function getUUID() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -89,8 +84,8 @@ class PathInfo {
             .filter(index => index !== -1);
         this.wildcardPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos + 1).join(DELIMITER));
         this.wildcardParentPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos).join(DELIMITER));
-        this.wildcardPathInfos = this.wildcardPaths.map(p => getPathInfo(p));
-        this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => getPathInfo(p));
+        this.wildcardPathInfos = this.wildcardPaths.map(p => p === path ? this : getPathInfo(p));
+        this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => p === path ? this : getPathInfo(p));
     }
     get parentPathInfo() {
         if (typeof this._parentPathInfo !== "undefined") {
@@ -160,10 +155,53 @@ function applyChangeToNode(node, propSegments, newValue) {
     }
 }
 
+const stateElementByName = new Map();
+function getStateElementByName(name) {
+    return stateElementByName.get(name) || null;
+}
+function setStateElementByName(name, element) {
+    if (element === null) {
+        stateElementByName.delete(name);
+    }
+    else {
+        stateElementByName.set(name, element);
+    }
+}
+
+const elementByUUID = new Map();
+function getElementByUUID(uuid) {
+    return elementByUUID.get(uuid) || null;
+}
+function setElementByUUID(uuid, element) {
+    if (element === null) {
+        elementByUUID.delete(uuid);
+    }
+    else {
+        elementByUUID.set(uuid, element);
+    }
+}
+
+function isLoopComment(node) {
+    if (node.nodeType !== Node.COMMENT_NODE) {
+        return null;
+    }
+    const commentNode = node;
+    const text = commentNode.data.trim();
+    const match = /^@@loop:(.+)$/.exec(text);
+    if (match === null) {
+        return null;
+    }
+    const uuid = match[1];
+    const element = getElementByUUID(uuid);
+    if (element === null) {
+        return null;
+    }
+    return element;
+}
+
 const commentKey = `${config.bindAttributeName.replace(/^data-/, '')}:`;
 function getBindingInfos(node) {
     const bindingInfos = [];
-    const cacheState = new Map();
     const removeComments = [];
     if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node;
@@ -185,14 +223,7 @@ function getBindingInfos(node) {
                 const statePathName = statePathNameParts[0] || '';
                 const stateName = statePathNameParts[1] || 'default';
                 const statePathInfo = getPathInfo(statePathName);
-                let stateElement = cacheState.get(stateName) ?? null;
-                if (stateElement === null) {
-                    stateElement = findStateElement(document, stateName);
-                    if (stateElement !== null) {
-                        cacheState.set(stateName, stateElement);
-                    }
-                }
-                if (stateElement === null) {
+                if (getStateElementByName(stateName) === null) {
                     raiseError(`State element with name "${stateName}" not found for binding "${bindText}".`);
                 }
                 if (propName === '' || statePathName === '') {
@@ -205,7 +236,6 @@ function getBindingInfos(node) {
                     statePathName: statePathName,
                     statePathInfo: statePathInfo,
                     stateName: stateName,
-                    stateElement,
                     filterTexts: filterTexts,
                     node: element,
                 };
@@ -214,53 +244,52 @@ function getBindingInfos(node) {
         }
     }
     else if (node.nodeType === Node.COMMENT_NODE) {
-        const commentNode = node;
-        const text = commentNode.data.trim();
-        const match = RegExp(`^{{\\s*${commentKey}\\s*(.+?)\\s*}}$`).exec(text);
-        if (match !== null) {
-            const stateText = match[1];
-            const [statePathNameAndStateName, ...filterTexts] = (stateText ?? '').split('|').map(s => s.trim());
-            const statePathNameParts = statePathNameAndStateName.split('@').map(s => s.trim());
-            const statePathName = statePathNameParts[0] || '';
-            const stateName = statePathNameParts[1] || 'default';
-            const statePathInfo = getPathInfo(statePathName);
-            let stateElement = cacheState.get(stateName) ?? null;
-            if (stateElement === null) {
-                stateElement = findStateElement(document, stateName);
-                if (stateElement !== null) {
-                    cacheState.set(stateName, stateElement);
-                }
-            }
-            if (stateElement === null) {
-                raiseError(`State element with name "${stateName}" not found for binding "${stateText}".`);
-            }
-            if (statePathName === '') {
-                raiseError(`Invalid binding syntax: "${stateText}".`);
-            }
-            const textNode = document.createTextNode('');
-            const parentNode = commentNode.parentNode;
-            const nextSibling = commentNode.nextSibling;
-            if (parentNode === null) {
-                raiseError(`Comment node has no parent node.`);
-            }
-            parentNode.insertBefore(textNode, nextSibling);
-            removeComments.push(commentNode);
-            const bindingInfo = {
-                propName: 'textContent',
-                propSegments: ['textContent'],
-                propModifiers: [],
-                statePathName: statePathName,
-                statePathInfo: statePathInfo,
-                stateName: stateName,
-                stateElement,
-                filterTexts: filterTexts,
-                node: textNode,
-            };
-            bindingInfos.push(bindingInfo);
+        const loopComment = isLoopComment(node);
+        if (loopComment) {
+            const loopElement = loopComment;
+            bindingInfos.push(loopElement.bindingInfo);
         }
-    }
-    for (const commentNode of removeComments) {
-        commentNode.remove();
+        else {
+            const commentNode = node;
+            const text = commentNode.data.trim();
+            const match = RegExp(`^{{\\s*${commentKey}\\s*(.+?)\\s*}}$`).exec(text);
+            if (match !== null) {
+                const stateText = match[1];
+                const [statePathNameAndStateName, ...filterTexts] = (stateText ?? '').split('|').map(s => s.trim());
+                const statePathNameParts = statePathNameAndStateName.split('@').map(s => s.trim());
+                const statePathName = statePathNameParts[0] || '';
+                const stateName = statePathNameParts[1] || 'default';
+                const statePathInfo = getPathInfo(statePathName);
+                if (getStateElementByName(stateName) === null) {
+                    raiseError(`State element with name "${stateName}" not found for binding "${stateText}".`);
+                }
+                if (statePathName === '') {
+                    raiseError(`Invalid binding syntax: "${stateText}".`);
+                }
+                const textNode = document.createTextNode('');
+                const parentNode = commentNode.parentNode;
+                const nextSibling = commentNode.nextSibling;
+                if (parentNode === null) {
+                    raiseError(`Comment node has no parent node.`);
+                }
+                parentNode.insertBefore(textNode, nextSibling);
+                removeComments.push(commentNode);
+                const bindingInfo = {
+                    propName: 'textContent',
+                    propSegments: ['textContent'],
+                    propModifiers: [],
+                    statePathName: statePathName,
+                    statePathInfo: statePathInfo,
+                    stateName: stateName,
+                    filterTexts: filterTexts,
+                    node: textNode,
+                };
+                bindingInfos.push(bindingInfo);
+            }
+        }
+        for (const commentNode of removeComments) {
+            commentNode.remove();
+        }
     }
     return bindingInfos;
 }
@@ -283,9 +312,7 @@ function isEmbeddedNode(node) {
 
 function getSubscriberNodes(root) {
     const subscriberNodes = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ALL, 
-    //    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT |, 
-    {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT, {
         acceptNode(node) {
             console.log('node:', node);
             if (node.nodeType === Node.ELEMENT_NODE) {
@@ -297,7 +324,7 @@ function getSubscriberNodes(root) {
             }
             else {
                 // Comment node
-                return isEmbeddedNode(node)
+                return isEmbeddedNode(node) || isLoopComment(node)
                     ? NodeFilter.FILTER_ACCEPT
                     : NodeFilter.FILTER_SKIP;
             }
@@ -362,7 +389,11 @@ async function initializeBindings(root, parentListIndex) {
     const applyInfoList = [];
     const cacheValueByPathByStateElement = new Map();
     for (const bindingInfo of allBindings) {
-        const stateElement = bindingInfo.stateElement;
+        const stateElement = getStateElementByName(bindingInfo.stateName);
+        if (stateElement === null) {
+            console.warn(`[@wcstack/state] State element with name "${bindingInfo.stateName}" not found for event binding.`);
+            return;
+        }
         // event
         if (bindingInfo.propName.startsWith("on")) {
             const eventName = bindingInfo.propName.slice(2);
@@ -394,7 +425,7 @@ async function initializeBindings(root, parentListIndex) {
                     return;
                 }
                 const newValue = target[bindingInfo.propName];
-                bindingInfo.stateElement.state[bindingInfo.statePathName] = newValue;
+                stateElement.state[bindingInfo.statePathName] = newValue;
             });
         }
         // register binding
@@ -436,8 +467,10 @@ class Loop extends HTMLElement {
     _loopContents = [];
     _loopValue = null;
     _bindingInfo = null;
+    static get observedAttributes() { return [config.bindAttributeName]; }
     constructor() {
         super();
+        setElementByUUID(this._uuid, this);
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
         });
@@ -469,35 +502,38 @@ class Loop extends HTMLElement {
     get initializePromise() {
         return this._initializePromise;
     }
+    attributeChangedCallback(name, oldValue, newValue) {
+        if (name === config.bindAttributeName && oldValue !== newValue) {
+            const bindText = newValue || '';
+            const [statePathName, stateTempName] = bindText.split('@').map(s => s.trim());
+            if (statePathName === '') {
+                raiseError(`Invalid loop binding syntax: "${bindText}".`);
+            }
+            const stateName = stateTempName ?? 'default';
+            const statePathInfo = getPathInfo(statePathName);
+            const stateElement = getStateElementByName(stateName);
+            if (stateElement === null) {
+                raiseError(`State element with name "${stateName}" not found for loop binding "${bindText}".`);
+            }
+            this._bindingInfo = {
+                propName: 'loopValue',
+                propSegments: ['loopValue'],
+                propModifiers: [],
+                statePathName,
+                statePathInfo,
+                stateName,
+                filterTexts: [],
+                node: this,
+            };
+            stateElement.listPaths.add(this.bindingInfo.statePathName);
+        }
+    }
     initialize() {
         const template = this.querySelector('template');
         if (!template) {
             raiseError(`${config.tagNames.loop} requires a <template> child element.`);
         }
         this._loopContent = template.content;
-        const bindText = this.getAttribute(config.bindAttributeName) || '';
-        const [statePathName, stateTempName] = bindText.split('@').map(s => s.trim());
-        if (statePathName === '') {
-            raiseError(`Invalid loop binding syntax: "${bindText}".`);
-        }
-        const stateName = stateTempName ?? 'default';
-        const statePathInfo = getPathInfo(statePathName);
-        const stateElement = findStateElement(document, stateName);
-        if (stateElement === null) {
-            raiseError(`State element with name "${stateName}" not found for loop binding "${bindText}".`);
-        }
-        this._bindingInfo = {
-            propName: 'loopValue',
-            propSegments: ['loopValue'],
-            propModifiers: [],
-            statePathName,
-            statePathInfo,
-            stateName,
-            stateElement,
-            filterTexts: [],
-            node: this,
-        };
-        stateElement.listPaths.add(statePathName);
     }
     async connectedCallback() {
         this.replaceWith(this._placeHolder);
@@ -859,8 +895,10 @@ class State extends HTMLElement {
     _initializePromise;
     _resolveInitialize = null;
     _listPaths = new Set();
+    static get observedAttributes() { return ['name']; }
     constructor() {
         super();
+        setElementByUUID(this._uuid, this);
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
         });
@@ -901,14 +939,15 @@ class State extends HTMLElement {
         }
         return {};
     }
-    async _initialize() {
-        const name = this.getAttribute('name');
-        if (name === null) {
-            this._name = 'default';
-            this.setAttribute('name', this._name);
+    attributeChangedCallback(name, oldValue, newValue) {
+        if (name === 'name' && oldValue !== newValue) {
+            this._name = newValue;
+            setStateElementByName(this._name, this);
         }
-        else {
-            this._name = name;
+    }
+    async _initialize() {
+        if (!this.hasAttribute('name')) {
+            this.setAttribute('name', 'default');
         }
         this._state = await this._getState(this._name);
     }

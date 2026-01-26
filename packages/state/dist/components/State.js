@@ -6,6 +6,8 @@ import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
 import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { createStateProxy } from "../Proxy";
 import { raiseError } from "../raiseError";
+import { setElementByUUID } from "../elementByUUID";
+import { setStateElementByName } from "../stateElementByName";
 export class State extends HTMLElement {
     _uuid = getUUID();
     _state;
@@ -16,8 +18,10 @@ export class State extends HTMLElement {
     _initializePromise;
     _resolveInitialize = null;
     _listPaths = new Set();
+    static get observedAttributes() { return ['name']; }
     constructor() {
         super();
+        setElementByUUID(this._uuid, this);
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
         });
@@ -58,14 +62,15 @@ export class State extends HTMLElement {
         }
         return {};
     }
-    async _initialize() {
-        const name = this.getAttribute('name');
-        if (name === null) {
-            this._name = 'default';
-            this.setAttribute('name', this._name);
+    attributeChangedCallback(name, oldValue, newValue) {
+        if (name === 'name' && oldValue !== newValue) {
+            this._name = newValue;
+            setStateElementByName(this._name, this);
         }
-        else {
-            this._name = name;
+    }
+    async _initialize() {
+        if (!this.hasAttribute('name')) {
+            this.setAttribute('name', 'default');
         }
         this._state = await this._getState(this._name);
     }

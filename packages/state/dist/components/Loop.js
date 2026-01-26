@@ -1,11 +1,12 @@
 import { config } from "../config";
-import { findStateElement } from "../findStateElement";
 import { getUUID } from "../getUUID";
 import { createLoopContent } from "../LoopContent";
 import { getPathInfo } from "../address/PathInfo";
 import { raiseError } from "../raiseError";
 import { getListIndexesByList } from "../list/listIndexesByList";
 import { initializeBindings } from "../initializeBindings";
+import { setElementByUUID } from "../elementByUUID";
+import { getStateElementByName } from "../stateElementByName";
 export class Loop extends HTMLElement {
     _uuid = getUUID();
     _path = '';
@@ -18,8 +19,10 @@ export class Loop extends HTMLElement {
     _loopContents = [];
     _loopValue = null;
     _bindingInfo = null;
+    static get observedAttributes() { return [config.bindAttributeName]; }
     constructor() {
         super();
+        setElementByUUID(this._uuid, this);
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
         });
@@ -51,35 +54,38 @@ export class Loop extends HTMLElement {
     get initializePromise() {
         return this._initializePromise;
     }
+    attributeChangedCallback(name, oldValue, newValue) {
+        if (name === config.bindAttributeName && oldValue !== newValue) {
+            const bindText = newValue || '';
+            const [statePathName, stateTempName] = bindText.split('@').map(s => s.trim());
+            if (statePathName === '') {
+                raiseError(`Invalid loop binding syntax: "${bindText}".`);
+            }
+            const stateName = stateTempName ?? 'default';
+            const statePathInfo = getPathInfo(statePathName);
+            const stateElement = getStateElementByName(stateName);
+            if (stateElement === null) {
+                raiseError(`State element with name "${stateName}" not found for loop binding "${bindText}".`);
+            }
+            this._bindingInfo = {
+                propName: 'loopValue',
+                propSegments: ['loopValue'],
+                propModifiers: [],
+                statePathName,
+                statePathInfo,
+                stateName,
+                filterTexts: [],
+                node: this,
+            };
+            stateElement.listPaths.add(this.bindingInfo.statePathName);
+        }
+    }
     initialize() {
         const template = this.querySelector('template');
         if (!template) {
             raiseError(`${config.tagNames.loop} requires a <template> child element.`);
         }
         this._loopContent = template.content;
-        const bindText = this.getAttribute(config.bindAttributeName) || '';
-        const [statePathName, stateTempName] = bindText.split('@').map(s => s.trim());
-        if (statePathName === '') {
-            raiseError(`Invalid loop binding syntax: "${bindText}".`);
-        }
-        const stateName = stateTempName ?? 'default';
-        const statePathInfo = getPathInfo(statePathName);
-        const stateElement = findStateElement(document, stateName);
-        if (stateElement === null) {
-            raiseError(`State element with name "${stateName}" not found for loop binding "${bindText}".`);
-        }
-        this._bindingInfo = {
-            propName: 'loopValue',
-            propSegments: ['loopValue'],
-            propModifiers: [],
-            statePathName,
-            statePathInfo,
-            stateName,
-            stateElement,
-            filterTexts: [],
-            node: this,
-        };
-        stateElement.listPaths.add(statePathName);
     }
     async connectedCallback() {
         this.replaceWith(this._placeHolder);

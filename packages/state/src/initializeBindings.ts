@@ -5,6 +5,7 @@ import { getSubscriberNodes } from "./getSubscriberNodes";
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
 import { setListIndexByNode } from "./list/listIndexByNode";
 import { IListIndex } from "./list/types";
+import { getStateElementByName } from "./stateElementByName";
 import { IBindingInfo } from "./types";
 
 const registeredNodeSet = new WeakSet<Node>();
@@ -28,7 +29,11 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
   const applyInfoList: IApplyInfo[] = [];
   const cacheValueByPathByStateElement = new Map<IStateElement, Map<string, any>>();
   for(const bindingInfo of allBindings) {
-    const stateElement = bindingInfo.stateElement;
+      const stateElement = getStateElementByName(bindingInfo.stateName);
+      if (stateElement === null) {
+        console.warn(`[@wcstack/state] State element with name "${bindingInfo.stateName}" not found for event binding.`);
+        return;
+      }
 
     // event
     if (bindingInfo.propName.startsWith("on")) {
@@ -62,7 +67,7 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
           return;
         }
         const newValue = target[bindingInfo.propName];
-        bindingInfo.stateElement.state[bindingInfo.statePathName] = newValue;
+        stateElement.state[bindingInfo.statePathName] = newValue;
       });
     }
 

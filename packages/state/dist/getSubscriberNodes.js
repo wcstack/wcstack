@@ -1,11 +1,10 @@
 import { config } from "./config";
 import { isEmbeddedNode } from "./isEmbeddedNode";
+import { isLoopComment } from "./isLoopComment";
 const NOTARGET_TAGS = new Set([config.tagNames.loop, config.tagNames.cond]);
 export function getSubscriberNodes(root) {
     const subscriberNodes = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ALL, 
-    //    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT |, 
-    {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT, {
         acceptNode(node) {
             console.log('node:', node);
             if (node.nodeType === Node.ELEMENT_NODE) {
@@ -17,7 +16,7 @@ export function getSubscriberNodes(root) {
             }
             else {
                 // Comment node
-                return isEmbeddedNode(node)
+                return isEmbeddedNode(node) || isLoopComment(node)
                     ? NodeFilter.FILTER_ACCEPT
                     : NodeFilter.FILTER_SKIP;
             }

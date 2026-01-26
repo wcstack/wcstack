@@ -29,8 +29,8 @@ class PathInfo implements IPathInfo {
       .filter(index => index !== -1);
     this.wildcardPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos + 1).join(DELIMITER));
     this.wildcardParentPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos).join(DELIMITER));
-    this.wildcardPathInfos = this.wildcardPaths.map(p => getPathInfo(p));
-    this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => getPathInfo(p));
+    this.wildcardPathInfos = this.wildcardPaths.map(p => p === path ? this : getPathInfo(p));
+    this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => p === path ? this : getPathInfo(p));
   }
 
   get parentPathInfo(): IPathInfo | null {

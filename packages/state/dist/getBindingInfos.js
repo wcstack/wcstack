@@ -1,11 +1,11 @@
 import { config } from "./config";
-import { findStateElement } from "./findStateElement";
 import { getPathInfo } from "./address/PathInfo";
 import { raiseError } from "./raiseError";
+import { getStateElementByName } from "./stateElementByName";
+import { isLoopComment } from "./isLoopComment";
 const commentKey = `${config.bindAttributeName.replace(/^data-/, '')}:`;
 export function getBindingInfos(node) {
     const bindingInfos = [];
-    const cacheState = new Map();
     const removeComments = [];
     if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node;
@@ -27,14 +27,7 @@ export function getBindingInfos(node) {
                 const statePathName = statePathNameParts[0] || '';
                 const stateName = statePathNameParts[1] || 'default';
                 const statePathInfo = getPathInfo(statePathName);
-                let stateElement = cacheState.get(stateName) ?? null;
-                if (stateElement === null) {
-                    stateElement = findStateElement(document, stateName);
-                    if (stateElement !== null) {
-                        cacheState.set(stateName, stateElement);
-                    }
-                }
-                if (stateElement === null) {
+                if (getStateElementByName(stateName) === null) {
                     raiseError(`State element with name "${stateName}" not found for binding "${bindText}".`);
                 }
                 if (propName === '' || statePathName === '') {
@@ -47,7 +40,6 @@ export function getBindingInfos(node) {
                     statePathName: statePathName,
                     statePathInfo: statePathInfo,
                     stateName: stateName,
-                    stateElement,
                     filterTexts: filterTexts,
                     node: element,
                 };
@@ -56,53 +48,52 @@ export function getBindingInfos(node) {
         }
     }
     else if (node.nodeType === Node.COMMENT_NODE) {
-        const commentNode = node;
-        const text = commentNode.data.trim();
-        const match = RegExp(`^{{\\s*${commentKey}\\s*(.+?)\\s*}}$`).exec(text);
-        if (match !== null) {
-            const stateText = match[1];
-            const [statePathNameAndStateName, ...filterTexts] = (stateText ?? '').split('|').map(s => s.trim());
-            const statePathNameParts = statePathNameAndStateName.split('@').map(s => s.trim());
-            const statePathName = statePathNameParts[0] || '';
-            const stateName = statePathNameParts[1] || 'default';
-            const statePathInfo = getPathInfo(statePathName);
-            let stateElement = cacheState.get(stateName) ?? null;
-            if (stateElement === null) {
-                stateElement = findStateElement(document, stateName);
-                if (stateElement !== null) {
-                    cacheState.set(stateName, stateElement);
-                }
-            }
-            if (stateElement === null) {
-                raiseError(`State element with name "${stateName}" not found for binding "${stateText}".`);
-            }
-            if (statePathName === '') {
-                raiseError(`Invalid binding syntax: "${stateText}".`);
-            }
-            const textNode = document.createTextNode('');
-            const parentNode = commentNode.parentNode;
-            const nextSibling = commentNode.nextSibling;
-            if (parentNode === null) {
-                raiseError(`Comment node has no parent node.`);
-            }
-            parentNode.insertBefore(textNode, nextSibling);
-            removeComments.push(commentNode);
-            const bindingInfo = {
-                propName: 'textContent',
-                propSegments: ['textContent'],
-                propModifiers: [],
-                statePathName: statePathName,
-                statePathInfo: statePathInfo,
-                stateName: stateName,
-                stateElement,
-                filterTexts: filterTexts,
-                node: textNode,
-            };
-            bindingInfos.push(bindingInfo);
+        const loopComment = isLoopComment(node);
+        if (loopComment) {
+            const loopElement = loopComment;
+            bindingInfos.push(loopElement.bindingInfo);
         }
-    }
-    for (const commentNode of removeComments) {
-        commentNode.remove();
+        else {
+            const commentNode = node;
+            const text = commentNode.data.trim();
+            const match = RegExp(`^{{\\s*${commentKey}\\s*(.+?)\\s*}}$`).exec(text);
+            if (match !== null) {
+                const stateText = match[1];
+                const [statePathNameAndStateName, ...filterTexts] = (stateText ?? '').split('|').map(s => s.trim());
+                const statePathNameParts = statePathNameAndStateName.split('@').map(s => s.trim());
+                const statePathName = statePathNameParts[0] || '';
+                const stateName = statePathNameParts[1] || 'default';
+                const statePathInfo = getPathInfo(statePathName);
+                if (getStateElementByName(stateName) === null) {
+                    raiseError(`State element with name "${stateName}" not found for binding "${stateText}".`);
+                }
+                if (statePathName === '') {
+                    raiseError(`Invalid binding syntax: "${stateText}".`);
+                }
+                const textNode = document.createTextNode('');
+                const parentNode = commentNode.parentNode;
+                const nextSibling = commentNode.nextSibling;
+                if (parentNode === null) {
+                    raiseError(`Comment node has no parent node.`);
+                }
+                parentNode.insertBefore(textNode, nextSibling);
+                removeComments.push(commentNode);
+                const bindingInfo = {
+                    propName: 'textContent',
+                    propSegments: ['textContent'],
+                    propModifiers: [],
+                    statePathName: statePathName,
+                    statePathInfo: statePathInfo,
+                    stateName: stateName,
+                    filterTexts: filterTexts,
+                    node: textNode,
+                };
+                bindingInfos.push(bindingInfo);
+            }
+        }
+        for (const commentNode of removeComments) {
+            commentNode.remove();
+        }
     }
     return bindingInfos;
 }

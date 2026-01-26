@@ -3,6 +3,7 @@ import { getBindingInfos } from "./getBindingInfos";
 import { getSubscriberNodes } from "./getSubscriberNodes";
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
 import { setListIndexByNode } from "./list/listIndexByNode";
+import { getStateElementByName } from "./stateElementByName";
 const registeredNodeSet = new WeakSet();
 export async function initializeBindings(root, parentListIndex) {
     const subscriberNodes = getSubscriberNodes(root);
@@ -18,7 +19,11 @@ export async function initializeBindings(root, parentListIndex) {
     const applyInfoList = [];
     const cacheValueByPathByStateElement = new Map();
     for (const bindingInfo of allBindings) {
-        const stateElement = bindingInfo.stateElement;
+        const stateElement = getStateElementByName(bindingInfo.stateName);
+        if (stateElement === null) {
+            console.warn(`[@wcstack/state] State element with name "${bindingInfo.stateName}" not found for event binding.`);
+            return;
+        }
         // event
         if (bindingInfo.propName.startsWith("on")) {
             const eventName = bindingInfo.propName.slice(2);
@@ -50,7 +55,7 @@ export async function initializeBindings(root, parentListIndex) {
                     return;
                 }
                 const newValue = target[bindingInfo.propName];
-                bindingInfo.stateElement.state[bindingInfo.statePathName] = newValue;
+                stateElement.state[bindingInfo.statePathName] = newValue;
             });
         }
         // register binding

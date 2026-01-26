@@ -12,6 +12,7 @@ export declare class Loop extends HTMLElement implements ILoopElement {
     private _loopContents;
     private _loopValue;
     private _bindingInfo;
+    static get observedAttributes(): string[];
     constructor();
     get uuid(): string;
     get path(): string;
@@ -19,6 +20,7 @@ export declare class Loop extends HTMLElement implements ILoopElement {
     get loopContent(): DocumentFragment;
     get bindingInfo(): IBindingInfo;
     get initializePromise(): Promise<void>;
+    attributeChangedCallback(name: string, oldValue: string, newValue: string): void;
     initialize(): void;
     connectedCallback(): Promise<void>;
     get loopValue(): any;

@@ -23,7 +23,6 @@ export interface IBindingInfo {
   readonly statePathName: string;
   readonly statePathInfo: IPathInfo;
   readonly stateName: string;
-  readonly stateElement: IStateElement;
   readonly filterTexts: string[];
   readonly node: Node;
 }

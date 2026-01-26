@@ -1,5 +1,4 @@
 import { IPathInfo } from "./address/types";
-import { IStateElement } from "./components/types";
 export interface IState {
     [key: string]: any;
 }
@@ -19,7 +18,6 @@ export interface IBindingInfo {
     readonly statePathName: string;
     readonly statePathInfo: IPathInfo;
     readonly stateName: string;
-    readonly stateElement: IStateElement;
     readonly filterTexts: string[];
     readonly node: Node;
 }

@@ -1,5 +1,6 @@
 import { config } from "./config";
 import { isEmbeddedNode } from "./isEmbeddedNode";
+import { isLoopComment } from "./isLoopComment";
 
 const NOTARGET_TAGS = new Set([config.tagNames.loop, config.tagNames.cond]);
 
@@ -19,7 +20,7 @@ export function getSubscriberNodes(root: Document | Element | DocumentFragment):
             : NodeFilter.FILTER_SKIP;
         } else {
           // Comment node
-          return isEmbeddedNode(node) 
+          return isEmbeddedNode(node) || isLoopComment(node)
             ? NodeFilter.FILTER_ACCEPT 
             : NodeFilter.FILTER_SKIP;
         }
