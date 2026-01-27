@@ -1,14 +1,14 @@
 import { IBindingInfo } from "../types.js";
 
 export function replaceToComment(bindingInfo: IBindingInfo): void {
-  const rawNode = bindingInfo.rawNode;
-  const targetNode = bindingInfo.node;
-  if (rawNode === targetNode) {
+  const node = bindingInfo.node;
+  const placeHolderNode = bindingInfo.placeHolderNode;
+  if (node === placeHolderNode) {
     return;
   }
-  if (rawNode.parentNode === null) {
+  if (node.parentNode === null) {
     // already replaced
     return;
   }
-  rawNode.parentNode.replaceChild(targetNode, rawNode);
+  node.parentNode.replaceChild(placeHolderNode, node);
 }

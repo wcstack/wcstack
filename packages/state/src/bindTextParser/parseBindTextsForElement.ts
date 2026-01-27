@@ -1,6 +1,5 @@
 import { raiseError } from "../raiseError.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
-import { IBindingInfo } from "../types.js";
 import { parsePropPart } from "./parsePropPart.js";
 import { parseStatePart } from "./parseStatePart.js";
 import { ParseBindTextResult } from "./types.js";

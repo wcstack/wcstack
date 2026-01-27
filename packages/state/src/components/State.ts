@@ -151,5 +151,8 @@ export class State extends HTMLElement implements IStateElement {
     } else {
       bindingInfos.push(bindingInfo);
     }
+    if (bindingInfo.bindingType === "for") {
+      this._listPaths.add(path);
+    }
   }
 }

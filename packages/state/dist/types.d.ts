@@ -4,22 +4,29 @@ export interface IState {
 }
 export interface ITagNames {
     state: string;
-    cond: string;
-    loop: string;
 }
 export interface IConfig {
     bindAttributeName: string;
+    commentTextPrefix: string;
+    commentForPrefix: string;
+    commentIfPrefix: string;
+    commentElseIfPrefix: string;
+    commentElsePrefix: string;
     tagNames: ITagNames;
 }
+export type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else';
 export interface IBindingInfo {
     readonly propName: string;
     readonly propSegments: string[];
     readonly propModifiers: string[];
     readonly statePathName: string;
-    readonly statePathInfo: IPathInfo;
+    readonly statePathInfo: IPathInfo | null;
     readonly stateName: string;
     readonly filterTexts: string[];
     readonly node: Node;
+    readonly placeHolderNode: Node;
+    readonly bindingType: BindingType;
+    readonly uuid: string | null;
 }
 export interface ILoopContent {
     readonly firstNode: Node | null;

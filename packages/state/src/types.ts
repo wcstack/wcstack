@@ -11,7 +11,11 @@ export interface ITagNames {
 
 export interface IConfig {
   bindAttributeName: string;
-  commentPrefix: string;
+  commentTextPrefix: string;
+  commentForPrefix: string;
+  commentIfPrefix: string;
+  commentElseIfPrefix: string;
+  commentElsePrefix: string;
   tagNames: ITagNames;
 }
 
@@ -25,9 +29,10 @@ export interface IBindingInfo {
   readonly statePathInfo: IPathInfo | null;
   readonly stateName: string;
   readonly filterTexts: string[];
-  readonly rawNode: Node; // before replaced node
-  readonly node: Node; // replaced node or rawNode
+  readonly node: Node; // raw node
+  readonly placeHolderNode: Node; // replaced node or raw node
   readonly bindingType: BindingType;
+  readonly uuid: string | null; // for 'for', 'if', 'elseif', 'else' bindings
 }
 
 export interface ILoopContent {

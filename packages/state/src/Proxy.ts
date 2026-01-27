@@ -4,6 +4,7 @@ import { IBindingInfo, IState } from "./types";
 import { IPathInfo } from "./address/types";
 import { getListIndexesByList, setListIndexesByList } from "./list/listIndexesByList";
 import { createListIndexes } from "./list/createListIndexes";
+import { applyChange } from "./apply/applyChange";
 
 class StateHandler implements ProxyHandler<IState> {
   private _bindingInfosByPath: Map<string, IBindingInfo[]>;
@@ -25,7 +26,7 @@ class StateHandler implements ProxyHandler<IState> {
     const parent = this._getNestValue(target, parentPathInfo, receiver);
     const lastSegment = curPathInfo.segments[curPathInfo.segments.length - 1];
     if (lastSegment in parent) {
-      return Reflect.get(parent, lastSegment, receiver);
+      return Reflect.get(parent, lastSegment);
     } else {
       console.warn(`[@wcstack/state] Property "${pathInfo.path}" does not exist on state.`);
       return undefined;
@@ -70,14 +71,14 @@ class StateHandler implements ProxyHandler<IState> {
         }
         const parent = this._getNestValue(target, pathInfo.parentPathInfo, receiver);
         const lastSegment = pathInfo.segments[pathInfo.segments.length - 1];
-        result = Reflect.set(parent, lastSegment, value, receiver);
+        result = Reflect.set(parent, lastSegment, value);
       } else {
         result = Reflect.set(target, prop, value, receiver);
       }
       if (this._bindingInfosByPath.has(String(prop))) {
         const bindingInfos = this._bindingInfosByPath.get(String(prop)) || [];
         for(const bindingInfo of bindingInfos) {
-          applyChangeToNode(bindingInfo.node, bindingInfo.propSegments, value);
+          applyChange(bindingInfo, value);
         }
       }
     } else {

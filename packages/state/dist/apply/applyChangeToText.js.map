@@ -1,0 +1,1 @@
+{"version":3,"file":"applyChangeToText.js","sourceRoot":"","sources":["../../src/apply/applyChangeToText.ts"],"names":[],"mappings":"AACA,MAAM,UAAU,iBAAiB,CAAC,IAAU,EAAE,QAAgB;IAC5D,IAAI,IAAI,CAAC,SAAS,KAAK,QAAQ,EAAE,CAAC;QAChC,IAAI,CAAC,SAAS,GAAG,QAAQ,CAAC;IAC5B,CAAC;AACH,CAAC"}

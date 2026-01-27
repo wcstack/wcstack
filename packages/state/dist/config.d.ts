@@ -1,9 +1,3 @@
-export declare const config: {
-    bindAttributeName: string;
-    tagNames: {
-        state: string;
-        cond: string;
-        loop: string;
-    };
-};
+import { IConfig } from "./types.js";
+export declare const config: IConfig;
 //# sourceMappingURL=config.d.ts.map

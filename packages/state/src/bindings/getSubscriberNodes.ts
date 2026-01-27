@@ -1,5 +1,5 @@
 import { config } from "../config";
-import { isEmbeddedNode } from "./isEmbeddedNode";
+import { isCommentNode } from "./isCommentNode";
 
 /**
  * data-bind-state 属性または埋め込みノード<!--{{}}-->を持つノードをすべて取得する
@@ -22,7 +22,7 @@ export function getSubscriberNodes(root: Document | Element | DocumentFragment):
             : NodeFilter.FILTER_SKIP;
         } else {
           // Comment node
-          return isEmbeddedNode(node) 
+          return isCommentNode(node) 
             ? NodeFilter.FILTER_ACCEPT 
             : NodeFilter.FILTER_SKIP;
         }

@@ -40,22 +40,20 @@ export default {
 
   <input type="text" name="userName" data-bind-state="value: user.name">
   <div data-bind-state="textContent: user.name"></div>
-  <!--{{ bind-state:user.name }}-->
+  <!--@@wcs-text:user.name-->
   <br>
   <button name="toggleName" data-bind-state="onclick: toggleName">Toggle Name</button>
   <br>
-  <!--{{ bind-state:isActive }}-->
+  <!--@@wcs-text:isActive-->
   <input type="checkbox" name="toggle" data-bind-state="checked: isActive">
   <div>
   </div>
-  <wcs-loop data-bind-state="users">
-    <template>
-      <div>
-        <span data-bind-state="textContent: users.*.id"></span>:
-        <span data-bind-state="textContent: users.*.name"></span>
-      </div>
-    </template>
-  </wcs-loop>
+  <template data-bind-state="for: users">
+    <div>
+      <span data-bind-state="textContent: users.*.id"></span>:
+      <span data-bind-state="textContent: users.*.name"></span>
+    </div>
+  </template>
   <div>
   </div>
 

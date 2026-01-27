@@ -1,0 +1,1 @@
+{"version":3,"file":"applyChangeToProperty.js","sourceRoot":"","sources":["../../src/apply/applyChangeToProperty.ts"],"names":[],"mappings":"AACA,MAAM,UAAU,qBAAqB,CAAC,OAAgB,EAAE,QAAgB,EAAE,QAAa;IACrF,MAAM,YAAY,GAAI,OAAe,CAAC,QAAQ,CAAC,CAAC;IAChD,IAAI,YAAY,KAAK,QAAQ,EAAE,CAAC;QAC7B,OAAe,CAAC,QAAQ,CAAC,GAAG,QAAQ,CAAC;IACxC,CAAC;AACH,CAAC"}

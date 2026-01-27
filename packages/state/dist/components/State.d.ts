@@ -10,15 +10,17 @@ export declare class State extends HTMLElement implements IStateElement {
     private _initializePromise;
     private _resolveInitialize;
     private _listPaths;
+    private _isLoadingState;
+    private _isLoadedState;
     static get observedAttributes(): string[];
     constructor();
     get uuid(): string;
     get state(): IState;
     get name(): string;
-    private _getState;
     attributeChangedCallback(name: string, oldValue: string, newValue: string): void;
     private _initialize;
     connectedCallback(): Promise<void>;
+    disconnectedCallback(): void;
     get bindingInfosByPath(): Map<string, IBindingInfo[]>;
     get initializePromise(): Promise<void>;
     get listPaths(): Set<string>;

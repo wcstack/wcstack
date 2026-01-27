@@ -1,0 +1,1 @@
+{"version":3,"file":"applyChangeToStyle.js","sourceRoot":"","sources":["../../src/apply/applyChangeToStyle.ts"],"names":[],"mappings":"AAAA,MAAM,UAAU,kBAAkB,CAAC,IAAa,EAAE,SAAiB,EAAE,QAAa;IAChF,MAAM,KAAK,GAAI,IAAoB,CAAC,KAAK,CAAC;IAC1C,MAAM,YAAY,GAAI,KAAa,CAAC,SAAS,CAAC,CAAC;IAC/C,IAAI,YAAY,KAAK,QAAQ,EAAE,CAAC;QAC7B,KAAa,CAAC,SAAS,CAAC,GAAG,QAAQ,CAAC;IACvC,CAAC;AACH,CAAC"}

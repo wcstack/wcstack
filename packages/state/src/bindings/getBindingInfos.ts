@@ -2,15 +2,9 @@ import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
-import { getUUID } from "../getUUID";
-import { getEmbeddedNodeBindText } from "./isEmbeddedNode";
+import { getCommentNodeBindText } from "./isCommentNode";
 import { parseBindTextForEmbeddedNode } from "../bindTextParser/parseBindTextForEmbeddedNode";
-import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define";
-
-function createPlaceHolderCommentNode(propName: string): Comment {
-  const uuid = getUUID();
-  return document.createComment(`@@${propName}:${uuid}`);
-}
+import { getParseBindTextResultByUUID } from "../bindTextParser/parseBindTextResultByUUID";
 
 export function getBindingInfos(node: Node): IBindingInfo[] {
   const bindingInfos: IBindingInfo[] = [];
@@ -19,32 +13,36 @@ export function getBindingInfos(node: Node): IBindingInfo[] {
     const bindText = element.getAttribute(config.bindAttributeName) || '';
     const bindingInfosFromElement = parseBindTextsForElement(bindText);
     for (const bindingInfo of bindingInfosFromElement) {
-      let targetNode: Node = element;
-      if (STRUCTURAL_BINDING_TYPE_SET.has(bindingInfo.bindingType)) {
-        if (element.tagName.toLowerCase() !== 'template') {
-          raiseError(`[@wcstack/state] The element with special binding property "${bindingInfo.propName}" must be a <template> element.`);
-        }
-        targetNode = createPlaceHolderCommentNode(bindingInfo.bindingType);
-      } else {
-        targetNode = element;
-      }
       bindingInfos.push({
         ...bindingInfo,
-        rawNode: node,
-        node: targetNode,
+        node: node,
+        placeHolderNode: element,
+        uuid: null,
       });
     }
   } else if (node.nodeType === Node.COMMENT_NODE) {
-    const bindText = getEmbeddedNodeBindText(node);
-    if (bindText === null) {
+    const bindTextOrUUID = getCommentNodeBindText(node);
+    if (bindTextOrUUID === null) {
       raiseError(`Comment node binding text not found.`);
     }
-    const bindingInfo = parseBindTextForEmbeddedNode(bindText);
-    const targetNode = createPlaceHolderCommentNode(bindingInfo.bindingType);
+    let parseBindingTextResult = getParseBindTextResultByUUID(bindTextOrUUID);
+    let uuid: string | null = null;
+    if (parseBindingTextResult === null) {
+      // It is not a structural fragment UUID, so treat it as bindText
+      parseBindingTextResult = parseBindTextForEmbeddedNode(bindTextOrUUID);
+      uuid = null;
+    } else {
+      uuid = bindTextOrUUID;
+    }
+    let placeHolderNode: Node = node;
+    if (parseBindingTextResult.bindingType === "text") {
+      placeHolderNode = document.createTextNode('');
+    }
     bindingInfos.push({
-      ...bindingInfo,
-      rawNode: node,
-      node: targetNode,
+      ...parseBindingTextResult,
+      node: node,
+      placeHolderNode: placeHolderNode,
+      uuid: uuid,
     });
   }
   return bindingInfos;

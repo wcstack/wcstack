@@ -1,4 +1,3 @@
-import { applyChangeToNode } from "../applyChangeToNode";
 import { IStateElement } from "../components/types";
 import { getBindingInfos } from "./getBindingInfos";
 import { getSubscriberNodes } from "./getSubscriberNodes";
@@ -9,9 +8,7 @@ import { IBindingInfo } from "../types";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToComment } from "./replaceToComment";
-import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define";
-import { getContentByNode, setContentByNode } from "../structural/contentByNode";
-import { createContent } from "../structural/createContent";
+import { applyChange } from "../apply/applyChange";
 
 const registeredNodeSet = new WeakSet<Node>();
 
@@ -41,18 +38,6 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
 
     // replace to comment node
     replaceToComment(bindingInfo);
-
-    // structural content
-    if (STRUCTURAL_BINDING_TYPE_SET.has(bindingInfo.bindingType)) {
-      if (!(bindingInfo.rawNode instanceof HTMLTemplateElement)) {
-        raiseError(`The element with special binding property "${bindingInfo.propName}" must be a <template> element.`);
-      }
-      if (getContentByNode(bindingInfo.node) === null) {
-        const template: HTMLTemplateElement = bindingInfo.rawNode;
-        const content = createContent(template.content);
-        setContentByNode(bindingInfo.node, content);
-      }
-    }
 
     // event
     if (bindingInfo.propName.startsWith("on")) {
@@ -117,6 +102,6 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
 
   // apply all at once
   for(const applyInfo of applyInfoList) {
-    applyChangeToNode(applyInfo.bindingInfo.node, applyInfo.bindingInfo.propSegments, applyInfo.value);
+    applyChange(applyInfo.bindingInfo, applyInfo.value);
   }
 }
