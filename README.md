@@ -7,6 +7,12 @@ Web Components Stack provides a set of tools for building applications with Web 
 We leverage Web Components standards to make everyday development easy to write, easy to read, and hard to break.
 The design minimizes setup and dependencies so it can be adopted with minimal effort.
 
+## Why wcstack exists
+- **Longevity through standards**: Reduce framework lock-in and rely on browser-native primitives.
+- **Declarative structure**: Keep UI structure and behavior readable and reviewable in HTML.
+- **Minimal but complete foundation**: Provide routing and autoloading without heavy runtime costs.
+- **Low operational overhead**: Minimize build/config complexity to ease onboarding and migration.
+
 ## Recommended for
 - Developers who want to use Web Components in production quickly
 - Teams who prioritize developer experience over configuration
