@@ -8,6 +8,7 @@ export interface IStateElement {
   readonly initializePromise: Promise<void>;
   readonly listPaths: Set<string>;
   addBindingInfo(bindingInfo: IBindingInfo): void;
+  deleteBindingInfo(bindingInfo: IBindingInfo): void;
 }
 
 export interface ILoopElement {

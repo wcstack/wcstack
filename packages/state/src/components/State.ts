@@ -147,4 +147,15 @@ export class State extends HTMLElement implements IStateElement {
       this._listPaths.add(path);
     }
   }
+
+  deleteBindingInfo(bindingInfo: IBindingInfo): void {
+    const path = bindingInfo.statePathName;
+    const bindingInfos = this._bindingInfosByPath.get(path);
+    if (typeof bindingInfos !== "undefined") {
+      const index = bindingInfos.indexOf(bindingInfo);
+      if (index !== -1) {
+        bindingInfos.splice(index, 1);
+      }
+    }
+  }
 }

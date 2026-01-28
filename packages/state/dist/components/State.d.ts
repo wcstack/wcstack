@@ -23,5 +23,6 @@ export declare class State extends HTMLElement implements IStateElement {
     get initializePromise(): Promise<void>;
     get listPaths(): Set<string>;
     addBindingInfo(bindingInfo: IBindingInfo): void;
+    deleteBindingInfo(bindingInfo: IBindingInfo): void;
 }
 //# sourceMappingURL=State.d.ts.map

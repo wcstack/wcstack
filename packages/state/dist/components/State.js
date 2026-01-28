@@ -135,5 +135,15 @@ export class State extends HTMLElement {
             this._listPaths.add(path);
         }
     }
+    deleteBindingInfo(bindingInfo) {
+        const path = bindingInfo.statePathName;
+        const bindingInfos = this._bindingInfosByPath.get(path);
+        if (typeof bindingInfos !== "undefined") {
+            const index = bindingInfos.indexOf(bindingInfo);
+            if (index !== -1) {
+                bindingInfos.splice(index, 1);
+            }
+        }
+    }
 }
 //# sourceMappingURL=State.js.map

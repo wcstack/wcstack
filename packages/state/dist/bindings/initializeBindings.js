@@ -1,10 +1,11 @@
-import { isPossibleTwoWay } from "./isPossibleTwoWay";
-import { getListIndexByNode, setListIndexByNode } from "../list/listIndexByNode";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToComment } from "./replaceToComment";
 import { applyChange } from "../apply/applyChange";
 import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
+import { attachEventHandler } from "../event/handler";
+import { attachTwowayEventHandler } from "../event/twowayHandler";
+import { getListIndexByNode, setListIndexByNode } from "../list/listIndexByNode";
 async function _initializeBindings(allBindings) {
     const applyInfoList = [];
     const cacheValueByPathByStateElement = new Map();
@@ -16,43 +17,11 @@ async function _initializeBindings(allBindings) {
         // replace to comment node
         replaceToComment(bindingInfo);
         // event
-        if (bindingInfo.propName.startsWith("on")) {
-            const eventName = bindingInfo.propName.slice(2);
-            bindingInfo.node.addEventListener(eventName, (event) => {
-                const handler = stateElement.state[bindingInfo.statePathName];
-                if (typeof handler === "function") {
-                    handler.call(stateElement.state, event);
-                }
-            });
+        if (attachEventHandler(bindingInfo)) {
             continue;
         }
         // two-way binding
-        if (isPossibleTwoWay(bindingInfo.node, bindingInfo.propName) && bindingInfo.propModifiers.indexOf('ro') === -1) {
-            const tagName = bindingInfo.node.tagName.toLowerCase();
-            let eventName = (tagName === 'select') ? 'change' : 'input';
-            for (const modifier of bindingInfo.propModifiers) {
-                if (modifier.startsWith('on')) {
-                    eventName = modifier.slice(2);
-                }
-            }
-            bindingInfo.node.addEventListener(eventName, (event) => {
-                const target = event.target;
-                if (typeof target === "undefined") {
-                    console.warn(`[@wcstack/state] event.target is undefined.`);
-                    return;
-                }
-                if (!(bindingInfo.propName in target)) {
-                    console.warn(`[@wcstack/state] Property "${bindingInfo.propName}" does not exist on target element.`);
-                    return;
-                }
-                const newValue = target[bindingInfo.propName];
-                const state = stateElement.state;
-                const listIndex = getListIndexByNode(bindingInfo.node);
-                state.$stack(listIndex, () => {
-                    stateElement.state[bindingInfo.statePathName] = newValue;
-                });
-            });
-        }
+        attachTwowayEventHandler(bindingInfo);
         // register binding
         stateElement.addBindingInfo(bindingInfo);
         // get cache value

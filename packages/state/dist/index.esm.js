@@ -358,47 +358,6 @@ function applyChangeToElement(element, propSegment, newValue) {
     // const remainingSegments = propSegment.slice(1);
 }
 
-const CHECK_TYPES = new Set(['radio', 'checkbox']);
-const DEFAULT_VALUE_PROP_NAMES = new Set(['value', 'valueAsNumber', 'valueAsDate']);
-function isPossibleTwoWay(node, propName) {
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-        return false;
-    }
-    const element = node;
-    const tagName = element.tagName.toLowerCase();
-    if (tagName === 'input') {
-        const inputType = (element.getAttribute('type') || 'text').toLowerCase();
-        if (inputType === 'button') {
-            return false;
-        }
-        if (CHECK_TYPES.has(inputType) && propName === 'checked') {
-            return true;
-        }
-        if (DEFAULT_VALUE_PROP_NAMES.has(propName)) {
-            return true;
-        }
-    }
-    if (tagName === 'select' && propName === 'value') {
-        return true;
-    }
-    if (tagName === 'textarea' && propName === 'value') {
-        return true;
-    }
-    return false;
-}
-
-const listIndexByNode = new WeakMap();
-function getListIndexByNode(node) {
-    return listIndexByNode.get(node) || null;
-}
-function setListIndexByNode(node, listIndex) {
-    if (listIndex === null) {
-        listIndexByNode.delete(node);
-        return;
-    }
-    listIndexByNode.set(node, listIndex);
-}
-
 const stateElementByName = new Map();
 function getStateElementByName(name) {
     const result = stateElementByName.get(name) || null;
@@ -734,6 +693,145 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
     return [nodes, allBindings];
 }
 
+const handlerByHandlerKey$1 = new Map();
+const bindingInfoSetByHandlerKey$1 = new Map();
+function getHandlerKey$1(bindingInfo) {
+    return `${bindingInfo.stateName}::${bindingInfo.statePathName}`;
+}
+const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
+    const stateElement = getStateElementByName(stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for event handler.`);
+    }
+    const handler = stateElement.state[handlerName];
+    if (typeof handler !== "function") {
+        raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
+    }
+    return handler.call(stateElement.state, event);
+};
+function attachEventHandler(bindingInfo) {
+    if (!bindingInfo.propName.startsWith("on")) {
+        return false;
+    }
+    const key = getHandlerKey$1(bindingInfo);
+    let stateEventHandler = handlerByHandlerKey$1.get(key);
+    if (typeof stateEventHandler === "undefined") {
+        stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName);
+        handlerByHandlerKey$1.set(key, stateEventHandler);
+    }
+    const eventName = bindingInfo.propName.slice(2);
+    bindingInfo.node.addEventListener(eventName, stateEventHandler);
+    let bindingInfoSet = bindingInfoSetByHandlerKey$1.get(key);
+    if (typeof bindingInfoSet === "undefined") {
+        bindingInfoSet = new Set([bindingInfo]);
+        bindingInfoSetByHandlerKey$1.set(key, bindingInfoSet);
+    }
+    else {
+        bindingInfoSet.add(bindingInfo);
+    }
+    return true;
+}
+
+const CHECK_TYPES = new Set(['radio', 'checkbox']);
+const DEFAULT_VALUE_PROP_NAMES = new Set(['value', 'valueAsNumber', 'valueAsDate']);
+function isPossibleTwoWay(node, propName) {
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+        return false;
+    }
+    const element = node;
+    const tagName = element.tagName.toLowerCase();
+    if (tagName === 'input') {
+        const inputType = (element.getAttribute('type') || 'text').toLowerCase();
+        if (inputType === 'button') {
+            return false;
+        }
+        if (CHECK_TYPES.has(inputType) && propName === 'checked') {
+            return true;
+        }
+        if (DEFAULT_VALUE_PROP_NAMES.has(propName)) {
+            return true;
+        }
+    }
+    if (tagName === 'select' && propName === 'value') {
+        return true;
+    }
+    if (tagName === 'textarea' && propName === 'value') {
+        return true;
+    }
+    return false;
+}
+
+const listIndexByNode = new WeakMap();
+function getListIndexByNode(node) {
+    return listIndexByNode.get(node) || null;
+}
+function setListIndexByNode(node, listIndex) {
+    if (listIndex === null) {
+        listIndexByNode.delete(node);
+        return;
+    }
+    listIndexByNode.set(node, listIndex);
+}
+
+const handlerByHandlerKey = new Map();
+const bindingInfoSetByHandlerKey = new Map();
+function getHandlerKey(bindingInfo, eventName) {
+    return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}`;
+}
+function getEventName(bindingInfo) {
+    const tagName = bindingInfo.node.tagName.toLowerCase();
+    let eventName = (tagName === 'select') ? 'change' : 'input';
+    for (const modifier of bindingInfo.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+const twowayEventHandlerFunction = (stateName, propName, statePathName) => (event) => {
+    const node = event.target;
+    if (typeof node === "undefined") {
+        console.warn(`[@wcstack/state] event.target is undefined.`);
+        return;
+    }
+    if (!(propName in node)) {
+        console.warn(`[@wcstack/state] Property "${propName}" does not exist on target element.`);
+        return;
+    }
+    const newValue = node[propName];
+    const stateElement = getStateElementByName(stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const state = stateElement.state;
+    const listIndex = getListIndexByNode(node);
+    state.$stack(listIndex, () => {
+        state[statePathName] = newValue;
+    });
+};
+function attachTwowayEventHandler(bindingInfo) {
+    if (isPossibleTwoWay(bindingInfo.node, bindingInfo.propName) && bindingInfo.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName(bindingInfo);
+        const key = getHandlerKey(bindingInfo, eventName);
+        let twowayEventHandler = handlerByHandlerKey.get(key);
+        if (typeof twowayEventHandler === "undefined") {
+            twowayEventHandler = twowayEventHandlerFunction(bindingInfo.stateName, bindingInfo.propName, bindingInfo.statePathName);
+            handlerByHandlerKey.set(key, twowayEventHandler);
+        }
+        bindingInfo.node.addEventListener(eventName, twowayEventHandler);
+        let bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
+        if (typeof bindingInfoSet === "undefined") {
+            bindingInfoSet = new Set([bindingInfo]);
+            bindingInfoSetByHandlerKey.set(key, bindingInfoSet);
+        }
+        else {
+            bindingInfoSet.add(bindingInfo);
+        }
+        return true;
+    }
+    return false;
+}
+
 async function _initializeBindings(allBindings) {
     const applyInfoList = [];
     const cacheValueByPathByStateElement = new Map();
@@ -745,43 +843,11 @@ async function _initializeBindings(allBindings) {
         // replace to comment node
         replaceToComment(bindingInfo);
         // event
-        if (bindingInfo.propName.startsWith("on")) {
-            const eventName = bindingInfo.propName.slice(2);
-            bindingInfo.node.addEventListener(eventName, (event) => {
-                const handler = stateElement.state[bindingInfo.statePathName];
-                if (typeof handler === "function") {
-                    handler.call(stateElement.state, event);
-                }
-            });
+        if (attachEventHandler(bindingInfo)) {
             continue;
         }
         // two-way binding
-        if (isPossibleTwoWay(bindingInfo.node, bindingInfo.propName) && bindingInfo.propModifiers.indexOf('ro') === -1) {
-            const tagName = bindingInfo.node.tagName.toLowerCase();
-            let eventName = (tagName === 'select') ? 'change' : 'input';
-            for (const modifier of bindingInfo.propModifiers) {
-                if (modifier.startsWith('on')) {
-                    eventName = modifier.slice(2);
-                }
-            }
-            bindingInfo.node.addEventListener(eventName, (event) => {
-                const target = event.target;
-                if (typeof target === "undefined") {
-                    console.warn(`[@wcstack/state] event.target is undefined.`);
-                    return;
-                }
-                if (!(bindingInfo.propName in target)) {
-                    console.warn(`[@wcstack/state] Property "${bindingInfo.propName}" does not exist on target element.`);
-                    return;
-                }
-                const newValue = target[bindingInfo.propName];
-                const state = stateElement.state;
-                const listIndex = getListIndexByNode(bindingInfo.node);
-                state.$stack(listIndex, () => {
-                    stateElement.state[bindingInfo.statePathName] = newValue;
-                });
-            });
-        }
+        attachTwowayEventHandler(bindingInfo);
         // register binding
         stateElement.addBindingInfo(bindingInfo);
         // get cache value
@@ -1176,6 +1242,16 @@ class State extends HTMLElement {
         }
         if (bindingInfo.bindingType === "for") {
             this._listPaths.add(path);
+        }
+    }
+    deleteBindingInfo(bindingInfo) {
+        const path = bindingInfo.statePathName;
+        const bindingInfos = this._bindingInfosByPath.get(path);
+        if (typeof bindingInfos !== "undefined") {
+            const index = bindingInfos.indexOf(bindingInfo);
+            if (index !== -1) {
+                bindingInfos.splice(index, 1);
+            }
         }
     }
 }

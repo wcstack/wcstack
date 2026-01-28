@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isPossibleTwoWay } from '../src/bindings/isPossibleTwoWay';
+import { isPossibleTwoWay } from '../src/event/isPossibleTwoWay';
 
 describe('isPossibleTwoWay', () => {
   it('input:text の value はtrue', () => {

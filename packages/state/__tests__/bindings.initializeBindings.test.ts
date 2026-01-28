@@ -22,6 +22,16 @@ function createMockStateElement(): IStateElement {
       const list = bindingInfosByPath.get(bindingInfo.statePathName) || [];
       list.push(bindingInfo);
       bindingInfosByPath.set(bindingInfo.statePathName, list);
+    },
+    deleteBindingInfo(bindingInfo: IBindingInfo) {
+      const list = bindingInfosByPath.get(bindingInfo.statePathName) || [];
+      const index = list.indexOf(bindingInfo);
+      if (index !== -1) {
+        list.splice(index, 1);
+      }
+      if (list.length === 0) {
+        bindingInfosByPath.delete(bindingInfo.statePathName);
+      }
     }
   };
 }
