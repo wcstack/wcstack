@@ -1,17 +1,14 @@
 import { IStateElement } from "../components/types";
-import { getBindingInfos } from "./getBindingInfos";
-import { getSubscriberNodes } from "./getSubscriberNodes";
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
-import { setListIndexByNode } from "../list/listIndexByNode";
+import { getListIndexByNode, setListIndexByNode } from "../list/listIndexByNode";
 import { IListIndex } from "../list/types";
 import { IBindingInfo } from "../types";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToComment } from "./replaceToComment";
 import { applyChange } from "../apply/applyChange";
-import { getParseBindTextResults } from "./getParseBindTextResults";
 import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
-import { IFragmentInfo, IFragmentNodeInfo } from "../structural/types";
+import { IFragmentNodeInfo } from "../structural/types";
 
 interface IApplyInfo {
   bindingInfo: IBindingInfo;
@@ -64,7 +61,12 @@ async function _initializeBindings(
           return;
         }
         const newValue = (target as any)[bindingInfo.propName];
-        stateElement.state[bindingInfo.statePathName] = newValue;
+        const state = stateElement.state;
+
+        const listIndex = getListIndexByNode(bindingInfo.node);
+        state.$stack(listIndex, () => {
+          stateElement.state[bindingInfo.statePathName] = newValue;
+        });
       });
     }
 
@@ -86,7 +88,11 @@ async function _initializeBindings(
 
     // apply initial value
     await stateElement.initializePromise;
-    const value = stateElement.state[bindingInfo.statePathName];
+    const listIndex = getListIndexByNode(bindingInfo.node);
+    const state = stateElement.state;
+    const value = state.$stack(listIndex, () => {
+      return state[bindingInfo.statePathName];
+    });
     applyInfoList.push({ bindingInfo, value });
 
     // set cache value

@@ -388,6 +388,9 @@ function isPossibleTwoWay(node, propName) {
 }
 
 const listIndexByNode = new WeakMap();
+function getListIndexByNode(node) {
+    return listIndexByNode.get(node) || null;
+}
 function setListIndexByNode(node, listIndex) {
     if (listIndex === null) {
         listIndexByNode.delete(node);
@@ -772,7 +775,11 @@ async function _initializeBindings(allBindings) {
                     return;
                 }
                 const newValue = target[bindingInfo.propName];
-                stateElement.state[bindingInfo.statePathName] = newValue;
+                const state = stateElement.state;
+                const listIndex = getListIndexByNode(bindingInfo.node);
+                state.$stack(listIndex, () => {
+                    stateElement.state[bindingInfo.statePathName] = newValue;
+                });
             });
         }
         // register binding
@@ -791,7 +798,11 @@ async function _initializeBindings(allBindings) {
         }
         // apply initial value
         await stateElement.initializePromise;
-        const value = stateElement.state[bindingInfo.statePathName];
+        const listIndex = getListIndexByNode(bindingInfo.node);
+        const state = stateElement.state;
+        const value = state.$stack(listIndex, () => {
+            return state[bindingInfo.statePathName];
+        });
         applyInfoList.push({ bindingInfo, value });
         // set cache value
         cacheValueByPath.set(bindingInfo.statePathName, value);
@@ -907,6 +918,7 @@ function applyChange(bindingInfo, newValue) {
 class StateHandler {
     _bindingInfosByPath;
     _listPaths;
+    _stackListIndex = [];
     constructor(bindingInfosByPath, listPaths) {
         this._bindingInfosByPath = bindingInfosByPath;
         this._listPaths = listPaths;
@@ -921,8 +933,25 @@ class StateHandler {
             return undefined;
         }
         const parent = this._getNestValue(target, parentPathInfo, receiver);
+        if (parent == null) {
+            console.warn(`[@wcstack/state] Cannot access property "${pathInfo.path}" - parent is null or undefined.`);
+            return undefined;
+        }
         const lastSegment = curPathInfo.segments[curPathInfo.segments.length - 1];
-        if (lastSegment in parent) {
+        if (lastSegment === '*') {
+            const wildcardCount = curPathInfo.wildcardPositions.length;
+            if (wildcardCount === 0 || wildcardCount > this._stackListIndex.length) {
+                console.warn(`[@wcstack/state] Cannot get value for path "${pathInfo.path}" - invalid wildcard depth.`);
+                return undefined;
+            }
+            const listIndex = this._stackListIndex[wildcardCount - 1];
+            if (listIndex === null) {
+                console.warn(`[@wcstack/state] Cannot get value for path "${pathInfo.path}" because list index is null.`);
+                return undefined;
+            }
+            return Reflect.get(parent, listIndex.index);
+        }
+        else if (lastSegment in parent) {
             return Reflect.get(parent, lastSegment);
         }
         else {
@@ -930,10 +959,24 @@ class StateHandler {
             return undefined;
         }
     }
+    $stack(listIndex, callback, receiver) {
+        this._stackListIndex.push(listIndex);
+        try {
+            return Reflect.apply(callback, receiver, []);
+        }
+        finally {
+            this._stackListIndex.pop();
+        }
+    }
     get(target, prop, receiver) {
         let value;
         try {
             if (typeof prop === "string") {
+                if (prop === "$stack") {
+                    return (listIndex, callback) => {
+                        return this.$stack(listIndex, callback, receiver);
+                    };
+                }
                 const pathInfo = getPathInfo(prop);
                 if (pathInfo.segments.length > 1) {
                     return (value = this._getNestValue(target, pathInfo, receiver));
@@ -949,10 +992,12 @@ class StateHandler {
         }
         finally {
             if (typeof prop === "string") {
-                if (this._listPaths.has(prop)) {
+                if (this._listPaths.has(prop) && value != null) {
                     if (getListIndexesByList(value) === null) {
-                        // ToDo: parentListIndexをスタックから取得するように修正する
-                        const listIndexes = createListIndexes(value ?? [], null);
+                        const parentListIndex = this._stackListIndex.length > 0
+                            ? this._stackListIndex[this._stackListIndex.length - 1]
+                            : null;
+                        const listIndexes = createListIndexes(value, parentListIndex);
                         setListIndexesByList(value, listIndexes);
                     }
                 }
@@ -968,6 +1013,10 @@ class StateHandler {
                     return false;
                 }
                 const parent = this._getNestValue(target, pathInfo.parentPathInfo, receiver);
+                if (parent == null) {
+                    console.warn(`[@wcstack/state] Cannot set property "${pathInfo.path}" - parent is null or undefined.`);
+                    return false;
+                }
                 const lastSegment = pathInfo.segments[pathInfo.segments.length - 1];
                 result = Reflect.set(parent, lastSegment, value);
             }
@@ -985,9 +1034,11 @@ class StateHandler {
             result = Reflect.set(target, prop, value, receiver);
         }
         if (typeof prop === "string") {
-            if (this._listPaths.has(prop)) {
-                // ToDo: parentListIndexをスタックから取得するように修正する
-                const listIndexes = createListIndexes(value ?? [], null);
+            if (this._listPaths.has(prop) && value != null) {
+                const parentListIndex = this._stackListIndex.length > 0
+                    ? this._stackListIndex[this._stackListIndex.length - 1]
+                    : null;
+                const listIndexes = createListIndexes(value, parentListIndex);
                 setListIndexesByList(value, listIndexes);
             }
         }

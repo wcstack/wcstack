@@ -3,7 +3,7 @@ import { loadFromInnerScript } from "../stateLoader/loadFromInnerScript";
 import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
 import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
 import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
-import { createStateProxy } from "../Proxy";
+import { createStateProxy } from "../proxy/Proxy";
 import { raiseError } from "../raiseError";
 import { IBindingInfo, IState } from "../types";
 import { IStateElement } from "./types";

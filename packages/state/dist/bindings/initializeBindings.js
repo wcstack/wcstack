@@ -1,5 +1,5 @@
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
-import { setListIndexByNode } from "../list/listIndexByNode";
+import { getListIndexByNode, setListIndexByNode } from "../list/listIndexByNode";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToComment } from "./replaceToComment";
@@ -46,7 +46,11 @@ async function _initializeBindings(allBindings) {
                     return;
                 }
                 const newValue = target[bindingInfo.propName];
-                stateElement.state[bindingInfo.statePathName] = newValue;
+                const state = stateElement.state;
+                const listIndex = getListIndexByNode(bindingInfo.node);
+                state.$stack(listIndex, () => {
+                    stateElement.state[bindingInfo.statePathName] = newValue;
+                });
             });
         }
         // register binding
@@ -65,7 +69,11 @@ async function _initializeBindings(allBindings) {
         }
         // apply initial value
         await stateElement.initializePromise;
-        const value = stateElement.state[bindingInfo.statePathName];
+        const listIndex = getListIndexByNode(bindingInfo.node);
+        const state = stateElement.state;
+        const value = state.$stack(listIndex, () => {
+            return state[bindingInfo.statePathName];
+        });
         applyInfoList.push({ bindingInfo, value });
         // set cache value
         cacheValueByPath.set(bindingInfo.statePathName, value);
