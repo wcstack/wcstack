@@ -1,6 +1,5 @@
 import { IBindingInfo, IState } from "../types";
 export interface IStateElement {
-    readonly uuid: string;
     readonly name: string;
     readonly state: IState;
     readonly bindingInfosByPath: Map<string, IBindingInfo[]>;

@@ -1,5 +1,4 @@
 import { config } from "../config";
-import { getUUID } from "../getUUID";
 import { loadFromInnerScript } from "../stateLoader/loadFromInnerScript";
 import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
 import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
@@ -8,11 +7,9 @@ import { createStateProxy } from "../Proxy";
 import { raiseError } from "../raiseError";
 import { IBindingInfo, IState } from "../types";
 import { IStateElement } from "./types";
-import { setElementByUUID } from "../elementByUUID";
 import { setStateElementByName } from "../stateElementByName";
 
 export class State extends HTMLElement implements IStateElement {
-  private _uuid: string = getUUID();
   private _state: IState | undefined;
   private _proxyState: IState | undefined;
   private _name: string = 'default';
@@ -28,14 +25,9 @@ export class State extends HTMLElement implements IStateElement {
 
   constructor() {
     super();
-    setElementByUUID(this._uuid, this);
     this._initializePromise = new Promise<void>((resolve) => {
       this._resolveInitialize = resolve;
     });
-  }
-
-  get uuid(): string {
-    return this._uuid;
   }
 
   get state(): IState {

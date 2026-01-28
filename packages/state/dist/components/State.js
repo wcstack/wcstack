@@ -1,15 +1,12 @@
 import { config } from "../config";
-import { getUUID } from "../getUUID";
 import { loadFromInnerScript } from "../stateLoader/loadFromInnerScript";
 import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
 import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
 import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { createStateProxy } from "../Proxy";
 import { raiseError } from "../raiseError";
-import { setElementByUUID } from "../elementByUUID";
 import { setStateElementByName } from "../stateElementByName";
 export class State extends HTMLElement {
-    _uuid = getUUID();
     _state;
     _proxyState;
     _name = 'default';
@@ -23,13 +20,9 @@ export class State extends HTMLElement {
     static get observedAttributes() { return ['name', 'src', 'state']; }
     constructor() {
         super();
-        setElementByUUID(this._uuid, this);
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
         });
-    }
-    get uuid() {
-        return this._uuid;
     }
     get state() {
         if (typeof this._state === "undefined") {

@@ -1,7 +1,6 @@
 import { IBindingInfo, IState } from "../types";
 import { IStateElement } from "./types";
 export declare class State extends HTMLElement implements IStateElement {
-    private _uuid;
     private _state;
     private _proxyState;
     private _name;
@@ -14,7 +13,6 @@ export declare class State extends HTMLElement implements IStateElement {
     private _isLoadedState;
     static get observedAttributes(): string[];
     constructor();
-    get uuid(): string;
     get state(): IState;
     get name(): string;
     attributeChangedCallback(name: string, oldValue: string, newValue: string): void;

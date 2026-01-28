@@ -24,6 +24,7 @@ DOMContentLoaded時に以下の2フェーズで初期化を実行
 
 ## フェーズ2: バインディングの初期化
 目的: バインド対象要素を収集し、state要素と接続
+if/forなどのIContentに対しても実体化時にも実行する
 
 ### 処理対象
 - コメントノード: `<!--wcs-text:path-->`, `<!--wcs-if:UUID-->`, `<!--wcs-for:UUID-->`, `<!--wcs-elseif:UUID-->`, `<!--wcs-else:UUID-->`

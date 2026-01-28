@@ -1,8 +1,8 @@
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
 import { config } from "../config";
 import { getUUID } from "../getUUID";
-import { setFragmentByUUID } from "./fragmentByUUID";
-import { setParseBindTextResultByUUID } from "../bindTextParser/parseBindTextResultByUUID";
+import { setFragmentInfoByUUID } from "./fragmentInfoByUUID";
+import { getFragmentNodeInfos } from "./getFragmentNodeInfos";
 const keywordByBindingType = new Map([
     ["for", config.commentForPrefix],
     ["if", config.commentIfPrefix],
@@ -27,17 +27,21 @@ export function collectStructuralFragments(root) {
         const bindText = template.getAttribute(config.bindAttributeName) || '';
         const parseBindTextResults = parseBindTextsForElement(bindText);
         const parseBindTextResult = parseBindTextResults[0];
-        const fragment = template.content;
-        const uuid = getUUID();
-        setFragmentByUUID(uuid, fragment);
-        setParseBindTextResultByUUID(uuid, parseBindTextResult);
         const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
         if (typeof keyword === 'undefined') {
             continue;
         }
+        const fragment = template.content;
+        const uuid = getUUID();
         const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
         template.replaceWith(placeHolder);
         collectStructuralFragments(fragment);
+        // after replacing and collect node infos on child fragment
+        setFragmentInfoByUUID(uuid, {
+            fragment: fragment,
+            parseBindTextResult: parseBindTextResult,
+            nodeInfos: getFragmentNodeInfos(fragment),
+        });
     }
 }
 //# sourceMappingURL=collectStructuralFragments.js.map

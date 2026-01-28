@@ -1,16 +1,16 @@
-import { initializeBindings } from "../bindings/initializeBindings";
+import { initializeBindings, initializeBindingsByFragment } from "../bindings/initializeBindings";
 import { getListIndexesByList } from "../list/listIndexesByList";
 import { raiseError } from "../raiseError";
 import { createContent } from "../structural/createContent";
-import { getFragmentByUUID } from "../structural/fragmentByUUID";
+import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
 import { IContent } from "../structural/types";
 
 const lastValueByNode = new WeakMap<Node, any>();
 const lastContentsByNode = new WeakMap<Node, IContent[]>();
 
 export function applyChangeToFor(node: Node, uuid: string, _newValue: any): void {
-  const fragment = getFragmentByUUID(uuid);
-  if (!fragment) {
+  const fragmentInfo = getFragmentInfoByUUID(uuid);
+  if (!fragmentInfo) {
     raiseError(`Fragment with UUID "${uuid}" not found.`);
   }
   const lastValue = lastValueByNode.get(node) ?? [];
@@ -24,11 +24,12 @@ export function applyChangeToFor(node: Node, uuid: string, _newValue: any): void
   const newContents: IContent[] = [];
   let lastNode = node;
   for(const index of listIndexes) {
-    const cloneFragment = document.importNode(fragment, true);
-    initializeBindings(cloneFragment, index);
+    const cloneFragment = document.importNode(fragmentInfo.fragment, true);
+    initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, index);
     const content = createContent(cloneFragment);
     content.mountAfter(lastNode);
     lastNode = content.lastNode || lastNode;
+    newContents.push(content);
   }
   lastContentsByNode.set(node, newContents);
   lastValueByNode.set(node, newValue);

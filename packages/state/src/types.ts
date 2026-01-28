@@ -32,7 +32,7 @@ export interface IBindingInfo {
   readonly node: Node; // raw node
   readonly placeHolderNode: Node; // replaced node or raw node
   readonly bindingType: BindingType;
-  readonly uuid: string | null; // for 'for', 'if', 'elseif', 'else' bindings
+  readonly uuid?: string | null; // for 'for', 'if', 'elseif', 'else' bindings
 }
 
 export interface ILoopContent {

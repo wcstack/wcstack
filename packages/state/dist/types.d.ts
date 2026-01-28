@@ -26,7 +26,7 @@ export interface IBindingInfo {
     readonly node: Node;
     readonly placeHolderNode: Node;
     readonly bindingType: BindingType;
-    readonly uuid: string | null;
+    readonly uuid?: string | null;
 }
 export interface ILoopContent {
     readonly firstNode: Node | null;

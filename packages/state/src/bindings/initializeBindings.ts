@@ -9,25 +9,18 @@ import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToComment } from "./replaceToComment";
 import { applyChange } from "../apply/applyChange";
-
-const registeredNodeSet = new WeakSet<Node>();
+import { getParseBindTextResults } from "./getParseBindTextResults";
+import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
+import { IFragmentInfo, IFragmentNodeInfo } from "../structural/types";
 
 interface IApplyInfo {
   bindingInfo: IBindingInfo;
   value: any;
 }
 
-export async function initializeBindings(root: Document | Element | DocumentFragment, parentListIndex: IListIndex | null): Promise<void> {
-  const subscriberNodes = getSubscriberNodes(root);
-  const allBindings: IBindingInfo[] = [];
-  subscriberNodes.forEach(node => {
-    if (!registeredNodeSet.has(node)) {
-      registeredNodeSet.add(node);
-      setListIndexByNode(node, parentListIndex);
-      const bindings = getBindingInfos(node);
-      allBindings.push(...bindings);
-    }
-  });
+async function _initializeBindings(
+  allBindings: IBindingInfo[]
+): Promise<void> {
   const applyInfoList: IApplyInfo[] = [];
   const cacheValueByPathByStateElement = new Map<IStateElement, Map<string, any>>();
   for(const bindingInfo of allBindings) {
@@ -104,4 +97,28 @@ export async function initializeBindings(root: Document | Element | DocumentFrag
   for(const applyInfo of applyInfoList) {
     applyChange(applyInfo.bindingInfo, applyInfo.value);
   }
+}
+
+export async function initializeBindings(root: Document | Element, parentListIndex: IListIndex | null): Promise<void> {
+  const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
+  for(const node of subscriberNodes) {
+    if (parentListIndex !== null) {
+      setListIndexByNode(node, parentListIndex);
+    }
+  }
+  await _initializeBindings(allBindings);
+}
+
+export async function initializeBindingsByFragment(
+  root: DocumentFragment,
+  nodeInfos: IFragmentNodeInfo[], 
+  parentListIndex: IListIndex | null
+): Promise<void> {
+  const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
+  for(const node of subscriberNodes) {
+    if (parentListIndex !== null) {
+      setListIndexByNode(node, parentListIndex);
+    }
+  }
+  await _initializeBindings(allBindings);
 }
