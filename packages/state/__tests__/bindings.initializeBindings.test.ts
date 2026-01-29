@@ -3,6 +3,7 @@ import { initializeBindings } from '../src/bindings/initializeBindings';
 import { setStateElementByName } from '../src/stateElementByName';
 import type { IStateElement } from '../src/components/types';
 import type { IBindingInfo } from '../src/types';
+import { createLoopContextStack } from '../src/list/loopContext';
 
 function createMockStateElement(): IStateElement {
   const bindingInfosByPath = new Map<string, IBindingInfo[]>();
@@ -18,6 +19,7 @@ function createMockStateElement(): IStateElement {
     bindingInfosByPath,
     initializePromise: Promise.resolve(),
     listPaths,
+    loopContextStack: createLoopContextStack(),
     addBindingInfo(bindingInfo: IBindingInfo) {
       const list = bindingInfosByPath.get(bindingInfo.statePathName) || [];
       list.push(bindingInfo);

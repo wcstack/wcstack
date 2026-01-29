@@ -6,6 +6,7 @@ import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { createStateProxy } from "../proxy/Proxy";
 import { raiseError } from "../raiseError";
 import { setStateElementByName } from "../stateElementByName";
+import { createLoopContextStack } from "../list/loopContext";
 export class State extends HTMLElement {
     _state;
     _proxyState;
@@ -17,6 +18,7 @@ export class State extends HTMLElement {
     _listPaths = new Set();
     _isLoadingState = false;
     _isLoadedState = false;
+    _loopContextStack = createLoopContextStack();
     static get observedAttributes() { return ['name', 'src', 'state']; }
     constructor() {
         super();
@@ -121,6 +123,9 @@ export class State extends HTMLElement {
     }
     get listPaths() {
         return this._listPaths;
+    }
+    get loopContextStack() {
+        return this._loopContextStack;
     }
     addBindingInfo(bindingInfo) {
         const path = bindingInfo.statePathName;

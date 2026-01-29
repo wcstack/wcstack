@@ -15,11 +15,16 @@ export function getPathInfo(path: string): IPathInfo {
 class PathInfo implements IPathInfo {
   path: string = "";
   segments: string[] = [];
-  wildcardPositions: number[] = [];
-  wildcardPaths: string[] = [];
-  wildcardParentPaths: string[] = [];
-  wildcardPathInfos: IPathInfo[] = [];
-  wildcardParentPathInfos: IPathInfo[] = [];
+  wildcardCount: number;
+  wildcardPositions: number[];
+  wildcardPaths: string[];
+  wildcardPathSet: Set<string>;
+  wildcardParentPaths: string[];
+  wildcardParentPathSet: Set<string>;
+  wildcardPathInfos: IPathInfo[];
+  wildcardPathInfoSet: Set<IPathInfo>;
+  wildcardParentPathInfos: IPathInfo[];
+  wildcardParentPathInfoSet: Set<IPathInfo>;
   private _parentPathInfo: IPathInfo | null | undefined = undefined;
   constructor(path: string) {
     this.path = path;
@@ -27,10 +32,15 @@ class PathInfo implements IPathInfo {
     this.wildcardPositions = this.segments
       .map((seg, index) => (seg === WILDCARD ? index : -1))
       .filter(index => index !== -1);
+    this.wildcardCount = this.wildcardPositions.length;
     this.wildcardPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos + 1).join(DELIMITER));
+    this.wildcardPathSet = new Set(this.wildcardPaths);
     this.wildcardParentPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos).join(DELIMITER));
-    this.wildcardPathInfos = this.wildcardPaths.map(p => p === path ? this : getPathInfo(p));
-    this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => p === path ? this : getPathInfo(p));
+    this.wildcardParentPathSet = new Set(this.wildcardParentPaths);
+    this.wildcardPathInfos = this.wildcardPaths.map(p => getPathInfo(p));
+    this.wildcardPathInfoSet = new Set(this.wildcardPathInfos);
+    this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => getPathInfo(p));
+    this.wildcardParentPathInfoSet = new Set(this.wildcardParentPathInfos);
   }
 
   get parentPathInfo(): IPathInfo | null {

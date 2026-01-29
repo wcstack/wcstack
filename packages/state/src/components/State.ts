@@ -8,6 +8,8 @@ import { raiseError } from "../raiseError";
 import { IBindingInfo, IState } from "../types";
 import { IStateElement } from "./types";
 import { setStateElementByName } from "../stateElementByName";
+import { ILoopContextStack } from "../list/types";
+import { createLoopContextStack } from "../list/loopContext";
 
 export class State extends HTMLElement implements IStateElement {
   private _state: IState | undefined;
@@ -20,6 +22,7 @@ export class State extends HTMLElement implements IStateElement {
   private _listPaths: Set<string> = new Set<string>();
   private _isLoadingState: boolean = false;
   private _isLoadedState: boolean = false;
+  private _loopContextStack: ILoopContextStack = createLoopContextStack();
 
   static get observedAttributes() { return [ 'name', 'src', 'state' ]; }
 
@@ -133,6 +136,10 @@ export class State extends HTMLElement implements IStateElement {
 
   get listPaths(): Set<string> {
     return this._listPaths;
+  }
+
+  get loopContextStack(): ILoopContextStack {
+    return this._loopContextStack;
   }
 
   addBindingInfo(bindingInfo: IBindingInfo): void {

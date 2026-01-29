@@ -92,11 +92,16 @@ function getPathInfo(path) {
 class PathInfo {
     path = "";
     segments = [];
-    wildcardPositions = [];
-    wildcardPaths = [];
-    wildcardParentPaths = [];
-    wildcardPathInfos = [];
-    wildcardParentPathInfos = [];
+    wildcardCount;
+    wildcardPositions;
+    wildcardPaths;
+    wildcardPathSet;
+    wildcardParentPaths;
+    wildcardParentPathSet;
+    wildcardPathInfos;
+    wildcardPathInfoSet;
+    wildcardParentPathInfos;
+    wildcardParentPathInfoSet;
     _parentPathInfo = undefined;
     constructor(path) {
         this.path = path;
@@ -104,10 +109,15 @@ class PathInfo {
         this.wildcardPositions = this.segments
             .map((seg, index) => (seg === WILDCARD ? index : -1))
             .filter(index => index !== -1);
+        this.wildcardCount = this.wildcardPositions.length;
         this.wildcardPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos + 1).join(DELIMITER));
+        this.wildcardPathSet = new Set(this.wildcardPaths);
         this.wildcardParentPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos).join(DELIMITER));
-        this.wildcardPathInfos = this.wildcardPaths.map(p => p === path ? this : getPathInfo(p));
-        this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => p === path ? this : getPathInfo(p));
+        this.wildcardParentPathSet = new Set(this.wildcardParentPaths);
+        this.wildcardPathInfos = this.wildcardPaths.map(p => getPathInfo(p));
+        this.wildcardPathInfoSet = new Set(this.wildcardPathInfos);
+        this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => getPathInfo(p));
+        this.wildcardParentPathInfoSet = new Set(this.wildcardParentPathInfos);
     }
     get parentPathInfo() {
         if (typeof this._parentPathInfo !== "undefined") {
@@ -948,13 +958,25 @@ function applyChangeToFor(node, uuid, _newValue) {
     }
     const newContents = [];
     let lastNode = node;
+    const listPathInfo = fragmentInfo.parseBindTextResult.statePathInfo;
+    if (!listPathInfo) {
+        raiseError(`List path info not found in fragment bind text result.`);
+    }
+    const stateName = fragmentInfo.parseBindTextResult.stateName;
+    const stateElement = getStateElementByName(stateName);
+    if (!stateElement) {
+        raiseError(`State element with name "${stateName}" not found.`);
+    }
+    const loopContextStack = stateElement.loopContextStack;
     for (const index of listIndexes) {
-        const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-        initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, index);
-        const content = createContent(cloneFragment);
-        content.mountAfter(lastNode);
-        lastNode = content.lastNode || lastNode;
-        newContents.push(content);
+        loopContextStack.createLoopContext(listPathInfo, index, (_loopContext) => {
+            const cloneFragment = document.importNode(fragmentInfo.fragment, true);
+            initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, index);
+            const content = createContent(cloneFragment);
+            content.mountAfter(lastNode);
+            lastNode = content.lastNode || lastNode;
+            newContents.push(content);
+        });
     }
     lastContentsByNode.set(node, newContents);
     lastValueByNode.set(node, newValue);
@@ -1115,6 +1137,47 @@ function createStateProxy(state, bindingInfosByPath, listPaths) {
     return new Proxy(state, new StateHandler(bindingInfosByPath, listPaths));
 }
 
+class LoopContextStack {
+    _loopContextStack = [];
+    createLoopContext(listPathInfo, listIndex, callback) {
+        const lastLoopContext = this._loopContextStack[this._loopContextStack.length - 1];
+        if (typeof lastLoopContext !== "undefined") {
+            if (lastLoopContext.listPathInfo.wildcardCount + 1 !== listPathInfo.wildcardCount) {
+                raiseError(`Cannot push loop context for a list whose wildcard count is not exactly one more than the current active loop context.`);
+            }
+            const lastWildcardParentPathInfo = listPathInfo.wildcardParentPathInfos[listPathInfo.wildcardParentPathInfos.length - 1];
+            if (lastLoopContext.listPathInfo !== lastWildcardParentPathInfo) {
+                raiseError(`Cannot push loop context for a list whose parent wildcard path info does not match the current active loop context.`);
+            }
+        }
+        else {
+            if (listPathInfo.wildcardPositions.length > 0) {
+                raiseError(`Cannot push loop context for a list with wildcard positions when there is no active loop context.`);
+            }
+        }
+        const loopContext = { listPathInfo, listIndex };
+        this._loopContextStack.push(loopContext);
+        let retValue = void 0;
+        try {
+            retValue = callback(loopContext);
+        }
+        finally {
+            if (retValue instanceof Promise) {
+                return retValue.finally(() => {
+                    this._loopContextStack.pop();
+                });
+            }
+            else {
+                this._loopContextStack.pop();
+            }
+        }
+        return retValue;
+    }
+}
+function createLoopContextStack() {
+    return new LoopContextStack();
+}
+
 class State extends HTMLElement {
     _state;
     _proxyState;
@@ -1126,6 +1189,7 @@ class State extends HTMLElement {
     _listPaths = new Set();
     _isLoadingState = false;
     _isLoadedState = false;
+    _loopContextStack = createLoopContextStack();
     static get observedAttributes() { return ['name', 'src', 'state']; }
     constructor() {
         super();
@@ -1230,6 +1294,9 @@ class State extends HTMLElement {
     }
     get listPaths() {
         return this._listPaths;
+    }
+    get loopContextStack() {
+        return this._loopContextStack;
     }
     addBindingInfo(bindingInfo) {
         const path = bindingInfo.statePathName;

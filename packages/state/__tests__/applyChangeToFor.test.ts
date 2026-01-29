@@ -4,8 +4,46 @@ import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import { createListIndexes } from '../src/list/createListIndexes';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
+import { setStateElementByName } from '../src/stateElementByName';
+import { getPathInfo } from '../src/address/PathInfo';
+import { createLoopContextStack } from '../src/list/loopContext';
+import type { IStateElement } from '../src/components/types';
+import type { IBindingInfo } from '../src/types';
 
 const uuid = 'test-uuid';
+
+function createMockStateElement(): IStateElement {
+  const bindingInfosByPath = new Map<string, IBindingInfo[]>();
+  const listPaths = new Set<string>();
+  const state: any = {
+    items: [],
+    $stack: (_listIndex: any, callback: () => any) => callback(),
+  };
+
+  return {
+    name: 'default',
+    state,
+    bindingInfosByPath,
+    initializePromise: Promise.resolve(),
+    listPaths,
+    loopContextStack: createLoopContextStack(),
+    addBindingInfo(bindingInfo: IBindingInfo) {
+      const list = bindingInfosByPath.get(bindingInfo.statePathName) || [];
+      list.push(bindingInfo);
+      bindingInfosByPath.set(bindingInfo.statePathName, list);
+    },
+    deleteBindingInfo(bindingInfo: IBindingInfo) {
+      const list = bindingInfosByPath.get(bindingInfo.statePathName) || [];
+      const index = list.indexOf(bindingInfo);
+      if (index !== -1) {
+        list.splice(index, 1);
+      }
+      if (list.length === 0) {
+        bindingInfosByPath.delete(bindingInfo.statePathName);
+      }
+    }
+  };
+}
 
 function createFragmentInfo() {
   const fragment = document.createDocumentFragment();
@@ -18,7 +56,7 @@ function createFragmentInfo() {
     propSegments: [],
     propModifiers: [],
     statePathName: 'items',
-    statePathInfo: null,
+    statePathInfo: getPathInfo('items'),
     stateName: 'default',
     filterTexts: [],
     bindingType: 'for',
@@ -34,15 +72,29 @@ function createFragmentInfo() {
 
 afterEach(() => {
   setFragmentInfoByUUID(uuid, null);
+  setStateElementByName('default', null);
 });
 
 describe('applyChangeToFor', () => {
   it('fragmentInfoが存在しない場合はエラーになること', () => {
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
     const placeholder = document.createComment('for');
     expect(() => applyChangeToFor(placeholder, uuid, [])).toThrow(/Fragment with UUID/);
   });
 
+  it('stateElementが存在しない場合はエラーになること', () => {
+    const placeholder = document.createComment('for');
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+
+    expect(() => applyChangeToFor(placeholder, uuid, [])).toThrow(/State element with name/);
+  });
+
   it('リストに応じてコンテンツを生成すること', () => {
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
@@ -65,6 +117,9 @@ describe('applyChangeToFor', () => {
   });
 
   it('再適用時に以前のコンテンツをアンマウントすること', () => {
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);

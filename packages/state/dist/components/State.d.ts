@@ -1,5 +1,6 @@
 import { IBindingInfo, IState } from "../types";
 import { IStateElement } from "./types";
+import { ILoopContextStack } from "../list/types";
 export declare class State extends HTMLElement implements IStateElement {
     private _state;
     private _proxyState;
@@ -11,6 +12,7 @@ export declare class State extends HTMLElement implements IStateElement {
     private _listPaths;
     private _isLoadingState;
     private _isLoadedState;
+    private _loopContextStack;
     static get observedAttributes(): string[];
     constructor();
     get state(): IState;
@@ -22,6 +24,7 @@ export declare class State extends HTMLElement implements IStateElement {
     get bindingInfosByPath(): Map<string, IBindingInfo[]>;
     get initializePromise(): Promise<void>;
     get listPaths(): Set<string>;
+    get loopContextStack(): ILoopContextStack;
     addBindingInfo(bindingInfo: IBindingInfo): void;
     deleteBindingInfo(bindingInfo: IBindingInfo): void;
 }
