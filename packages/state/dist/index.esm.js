@@ -1416,7 +1416,8 @@ const bindingTypeKeywordSet = new Set([
     config.commentElseIfPrefix,
     config.commentElsePrefix,
 ]);
-const EMBEDDED_REGEX = new RegExp(`^\\s*@@\\s*(.+?)\\s*:\\s*(.+?)\\s*$`);
+// format: <!--@@:path-->は<!--@@wcs-text:path-->と同義にする
+const EMBEDDED_REGEX = new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
 function isCommentNode(node) {
     if (node.nodeType !== Node.COMMENT_NODE) {
         return false;
@@ -1427,7 +1428,9 @@ function isCommentNode(node) {
     if (match === null) {
         return false;
     }
-    if (!bindingTypeKeywordSet.has(match[1])) {
+    // 空の場合は wcs-text として扱う
+    const keyword = match[1] || config.commentTextPrefix;
+    if (!bindingTypeKeywordSet.has(keyword)) {
         return false;
     }
     bindTextByNode.set(node, match[2]);
