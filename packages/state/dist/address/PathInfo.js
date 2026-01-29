@@ -33,9 +33,11 @@ class PathInfo {
         this.wildcardPathSet = new Set(this.wildcardPaths);
         this.wildcardParentPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos).join(DELIMITER));
         this.wildcardParentPathSet = new Set(this.wildcardParentPaths);
-        this.wildcardPathInfos = this.wildcardPaths.map(p => getPathInfo(p));
+        // infinite loop prevention
+        this.wildcardPathInfos = this.wildcardPaths.map(p => p === this.path ? this : getPathInfo(p));
         this.wildcardPathInfoSet = new Set(this.wildcardPathInfos);
-        this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => getPathInfo(p));
+        // infinite loop prevention
+        this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => p === this.path ? this : getPathInfo(p));
         this.wildcardParentPathInfoSet = new Set(this.wildcardParentPathInfos);
     }
     get parentPathInfo() {

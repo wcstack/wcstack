@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>simple state</title>
   <script type="module" src="../../dist/auto.min.js"></script>
+  <style>
+    .over {
+      color: red;
+    }
+  </style>
 </head>
 <body>
   <wcs-state>
@@ -34,17 +39,17 @@ export default {
     </script>
   </wcs-state>
 
-  <div data-bind-state="textContent: count"></div>
+  <div data-bind-state="textContent: count; class.over: count|gt(10)"></div>
   <button name="increment" data-bind-state="onclick: countUp">Increment</button>
   <br>
 
   <input type="text" name="userName" data-bind-state="value: user.name">
   <div data-bind-state="textContent: user.name"></div>
-  <!--@@wcs-text:user.name-->
+  <!--@@:user.name-->
   <br>
   <button name="toggleName" data-bind-state="onclick: toggleName">Toggle Name</button>
   <br>
-  <!--@@wcs-text:isActive-->
+  <!--@@:isActive-->
   <input type="checkbox" name="toggle" data-bind-state="checked: isActive">
   <div>
   </div>
