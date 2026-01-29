@@ -7,7 +7,7 @@ describe('parseStatePart', () => {
     expect(result.stateName).toBe('default');
     expect(result.statePathName).toBe('user.name');
     expect(result.statePathInfo.path).toBe('user.name');
-    expect(result.filterTexts).toEqual([]);
+    expect(result.filters).toEqual([]);
   });
 
   it('stateNameをパースできること', () => {
@@ -17,16 +17,21 @@ describe('parseStatePart', () => {
   });
 
   it('フィルタをパースできること', () => {
-    const result = parseStatePart('count@cart|gt,0|currency,JPY');
+    const result = parseStatePart('count@cart|gt(0)|uc');
     expect(result.stateName).toBe('cart');
     expect(result.statePathName).toBe('count');
-    expect(result.filterTexts).toEqual(['gt,0', 'currency,JPY']);
+    expect(result.filters.length).toBe(2);
+    expect(result.filters[0].filterName).toBe('gt');
+    expect(result.filters[0].args).toEqual(['0']);
+    expect(result.filters[1].filterName).toBe('uc');
+    expect(result.filters[1].args).toEqual([]);
   });
 
   it('トリムが効くこと', () => {
-    const result = parseStatePart('  count  @  cart  |  gt,0  ');
+    const result = parseStatePart('  count  @  cart  |  gt(0)  ');
     expect(result.stateName).toBe('cart');
     expect(result.statePathName).toBe('count');
-    expect(result.filterTexts).toEqual(['gt,0']);
+    expect(result.filters.length).toBe(1);
+    expect(result.filters[0].filterName).toBe('gt');
   });
 });

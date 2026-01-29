@@ -27,7 +27,7 @@ export function parseBindTextsForElement(bindText) {
                 statePathName: '',
                 statePathInfo: null,
                 stateName: '',
-                filterTexts: [],
+                filters: [],
                 bindingType: 'else',
             };
         }

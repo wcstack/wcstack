@@ -7,7 +7,7 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'p
     statePathName: 'value',
     statePathInfo: null,
     stateName: 'default',
-    filterTexts: [],
+    filters: [],
     propModifiers: [],
     uuid: null,
     node: document.createTextNode(''),

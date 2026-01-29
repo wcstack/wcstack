@@ -8,5 +8,6 @@ export const config = {
     tagNames: {
         state: 'wcs-state',
     },
+    locale: 'en',
 };
 //# sourceMappingURL=config.js.map

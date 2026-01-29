@@ -7,7 +7,7 @@ export type ParseBindTextResult = Pick<IBindingInfo,
   | 'statePathName'
   | 'statePathInfo'
   | 'stateName'
-  | 'filterTexts'
+  | 'filters'
   | 'bindingType'
   | 'uuid'
 >;

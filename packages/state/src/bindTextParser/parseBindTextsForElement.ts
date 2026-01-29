@@ -30,7 +30,7 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         statePathName: '',
         statePathInfo: null,
         stateName: '',
-        filterTexts: [],
+        filters: [],
         bindingType: 'else',
       };
     } else if (propPart === 'if' || propPart === 'elseif' || propPart === 'for') {

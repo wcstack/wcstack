@@ -11,4 +11,5 @@ export const config: IConfig = {
   tagNames: {
     state: 'wcs-state',
   },
+  locale: 'en',
 };
