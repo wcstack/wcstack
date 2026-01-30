@@ -1,0 +1,146 @@
+/**
+ * getByRef.ts
+ *
+ * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
+ * 状態オブジェクト（target）から値を取得するための関数（getByRef）の実装です。
+ *
+ * 主な役割:
+ * - 指定されたパス・インデックスに対応するState値を取得（多重ループやワイルドカードにも対応）
+ * - 依存関係の自動登録（trackedGetters対応時はsetTrackingでラップ）
+ * - キャッシュ機構（handler.cacheable時はrefKeyで値をキャッシュ）
+ * - getter経由で値取得時はSetStatePropertyRefSymbolでスコープを一時設定
+ * - 存在しない場合は親infoやlistIndexを辿って再帰的に値を取得
+ *
+ * 設計ポイント:
+ * - handler.engine.trackedGettersに含まれる場合はsetTrackingで依存追跡を有効化
+ * - キャッシュ有効時はrefKeyで値をキャッシュし、取得・再利用を最適化
+ * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
+ * - finallyでキャッシュへの格納を保証
+ */
+
+import { IStateAddress } from "../../address/types";
+import { ICacheEntry } from "../../cache/types";
+import { IStateElement } from "../../components/types";
+import { createListIndexes } from "../../list/createListIndexes";
+import { setListIndexesByList } from "../../list/listIndexesByList";
+import { raiseError } from "../../raiseError";
+import { IStateHandler } from "../types";
+
+function _getByAddress(
+  target   : Object, 
+  address  : IStateAddress,
+  receiver : any,
+  handler  : IStateHandler
+): any {
+  let value: any;
+  // 親子関係のあるgetterが存在する場合は、外部依存から取得
+/*
+  if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.getters.intersection(ref.info.cumulativePathSet).size === 0) {
+    return handler.engine.stateOutput.get(ref);
+  }
+*/
+  // パターンがtargetに存在する場合はgetter経由で取得
+  if (address.pathInfo.path in target) {
+    handler.pushAddress(address);
+    try {
+      return value = Reflect.get(target, address.pathInfo.path, receiver);
+    } finally {
+      handler.popAddress();
+    }
+  } else {
+    const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined`);
+    const parentValue = getByAddress(target, parentAddress, receiver, handler);
+    const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
+    if (lastSegment === "*") {
+      const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined`);
+      return value = Reflect.get(parentValue, index);
+    } else {
+      return value = Reflect.get(parentValue, lastSegment);
+    }
+  }
+}
+
+function _getByAddressWithCache(
+  target   : Object, 
+  address  : IStateAddress,
+  receiver : any,
+  handler  : IStateHandler,
+  stateElement: IStateElement,
+  listable: boolean,
+): any {
+  let value: any;
+  let lastCacheEntry = stateElement.cache.get(address) ?? null;
+  const versionRevision: {
+    version: number;
+    revision: number;
+  } | undefined = undefined; // Updateで変更が必要な可能性があるパスのバージョン情報
+//    const versionRevision = handler.engine.versionRevisionByPath.get(ref.info.pattern);
+  if (lastCacheEntry !== null) {
+    if (typeof versionRevision === "undefined") {
+      // 更新なし
+      return lastCacheEntry.value;
+    } else {
+      if (lastCacheEntry.version > handler.updater.version) {
+        // これは非同期更新が発生した場合にありえる
+        return lastCacheEntry.value;
+      }
+      if (lastCacheEntry.version < versionRevision.version || lastCacheEntry.revision < versionRevision.revision) {
+        // 更新あり
+      } else {
+        return lastCacheEntry.value;
+      }
+    }
+  }
+  try {
+    return value = _getByAddress(target, address, receiver, handler);
+  } finally {
+    let newListIndexes = null;
+    if (listable) {
+      // リストインデックスを計算する必要がある
+      newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, lastCacheEntry?.listIndexes ?? []);
+      setListIndexesByList(value, newListIndexes);
+    }
+    const cacheEntry: ICacheEntry = Object.assign(lastCacheEntry ?? {}, {
+      value: value,
+      listIndexes: newListIndexes,
+      version: handler.updater.version,
+      revision: handler.updater.revision,
+    });
+    stateElement.cache.set(address, cacheEntry);
+  }
+}
+
+/**
+ * 構造化パス情報(info, listIndex)をもとに、状態オブジェクト(target)から値を取得する。
+ * 
+ * - 依存関係の自動登録（trackedGetters対応時はsetTrackingでラップ）
+ * - キャッシュ機構（handler.cacheable時はrefKeyでキャッシュ）
+ * - ネスト・ワイルドカード対応（親infoやlistIndexを辿って再帰的に値を取得）
+ * - getter経由で値取得時はSetStatePropertyRefSymbolでスコープを一時設定
+ * 
+ * @param target    状態オブジェクト
+ * @param info      構造化パス情報
+ * @param listIndex リストインデックス（多重ループ対応）
+ * @param receiver  プロキシ
+ * @param handler   状態ハンドラ
+ * @returns         対象プロパティの値
+ */
+export function getByAddress(
+  target   : Object, 
+  address  : IStateAddress,
+  receiver : any,
+  handler  : IStateHandler
+): any {
+  //checkDependency(handler, address);
+  const stateElement = handler.stateElement;
+  const listable = stateElement.listPaths.has(address.pathInfo.path);
+  const cacheable = address.pathInfo.wildcardCount > 0 || 
+                    stateElement.getterPaths.has(address.pathInfo.path);
+  if (cacheable || listable) {
+    return _getByAddressWithCache(
+      target, address, receiver, handler, stateElement, listable
+    );
+  } else {
+    return _getByAddress(target, address, receiver, handler);
+  }
+}

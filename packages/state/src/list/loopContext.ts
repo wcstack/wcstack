@@ -2,8 +2,6 @@ import { IPathInfo } from "../address/types";
 import { raiseError } from "../raiseError";
 import { IListIndex, ILoopContext, ILoopContextStack } from "./types";
 
-
-
 type LoopContextCallback<T> = (loopContext: ILoopContext) => T | Promise<T>;
 
 class LoopContextStack {

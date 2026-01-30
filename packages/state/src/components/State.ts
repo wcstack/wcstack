@@ -10,6 +10,8 @@ import { IStateElement } from "./types";
 import { setStateElementByName } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
+import { IStateAddress } from "../address/types";
+import { ICacheEntry } from "../cache/types";
 
 export class State extends HTMLElement implements IStateElement {
   private _state: IState | undefined;
@@ -20,9 +22,12 @@ export class State extends HTMLElement implements IStateElement {
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
+  private _elementPaths: Set<string> = new Set<string>();
+  private _getterPaths: Set<string> = new Set<string>();
   private _isLoadingState: boolean = false;
   private _isLoadedState: boolean = false;
   private _loopContextStack: ILoopContextStack = createLoopContextStack();
+  private _cache: Map<IStateAddress, ICacheEntry> = new Map<IStateAddress, ICacheEntry>();
 
   static get observedAttributes() { return [ 'name', 'src', 'state' ]; }
 
@@ -138,8 +143,20 @@ export class State extends HTMLElement implements IStateElement {
     return this._listPaths;
   }
 
+  get elementPaths(): Set<string> {
+    return this._elementPaths;
+  }
+
+  get getterPaths(): Set<string> {
+    return this._getterPaths;
+  }
+
   get loopContextStack(): ILoopContextStack {
     return this._loopContextStack;
+  }
+
+  get cache(): Map<IStateAddress, ICacheEntry> {
+    return this._cache;
   }
 
   addBindingInfo(bindingInfo: IBindingInfo): void {

@@ -86,7 +86,7 @@ class StateHandler implements ProxyHandler<IState> {
             const parentListIndex = this._stackListIndex.length > 0 
               ? this._stackListIndex[this._stackListIndex.length - 1] 
               : null;
-            const listIndexes = createListIndexes(value, parentListIndex);
+            const listIndexes = createListIndexes(parentListIndex, null, value, []);
             setListIndexesByList(value, listIndexes);
           }
         }
@@ -123,10 +123,12 @@ class StateHandler implements ProxyHandler<IState> {
     }
     if (typeof prop === "string") {
       if (this._listPaths.has(prop) && value != null) {
+        const oldValue = receiver[prop];
+        const oldListIndexes = getListIndexesByList(oldValue);
         const parentListIndex = this._stackListIndex.length > 0 
           ? this._stackListIndex[this._stackListIndex.length - 1] 
           : null;
-        const listIndexes = createListIndexes(value, parentListIndex);
+        const listIndexes = createListIndexes(parentListIndex, oldValue, value, oldListIndexes || []);
         setListIndexesByList(value, listIndexes);
       }
     }

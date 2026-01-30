@@ -36,3 +36,9 @@ export interface ILoopContextStack {
     callback: (loopContext: ILoopContext) => void | Promise<void>
   ): void | Promise<void>;
 }
+
+export interface IListDiff {
+  added: Array<any>;
+  removed: Array<any>;
+  moved: Array<{ item: any; from: number; to: number }>;
+}

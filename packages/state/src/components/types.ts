@@ -1,3 +1,5 @@
+import { IStateAddress } from "../address/types";
+import { ICacheEntry } from "../cache/types";
 import { IListIndex, IListManager, ILoopContextStack } from "../list/types";
 import { IBindingInfo, IState } from "../types";
 
@@ -7,7 +9,10 @@ export interface IStateElement {
   readonly bindingInfosByPath: Map<string, IBindingInfo[]>;
   readonly initializePromise: Promise<void>;
   readonly listPaths: Set<string>;
+  readonly elementPaths: Set<string>;
+  readonly getterPaths: Set<string>;
   readonly loopContextStack: ILoopContextStack;
+  readonly cache: Map<IStateAddress, ICacheEntry>;
   addBindingInfo(bindingInfo: IBindingInfo): void;
   deleteBindingInfo(bindingInfo: IBindingInfo): void;
 }
