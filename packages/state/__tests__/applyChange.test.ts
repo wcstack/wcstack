@@ -71,6 +71,34 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' binding must have a UUID/);
+    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID/);
+  });
+
+  it('elseバインディングでuuidがない場合はエラーになること', () => {
+    const placeholder = document.createComment('else');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'else',
+      node: placeholder,
+      replaceNode: placeholder,
+      propName: 'else',
+      propSegments: []
+    } as IBindingInfo;
+
+    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID/);
+  });
+
+  it('elseifバインディングでuuidがない場合はエラーになること', () => {
+    const placeholder = document.createComment('elseif');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'elseif',
+      node: placeholder,
+      replaceNode: placeholder,
+      propName: 'elseif',
+      propSegments: []
+    } as IBindingInfo;
+
+    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID/);
   });
 });

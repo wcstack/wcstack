@@ -118,6 +118,42 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToIfMock).toHaveBeenCalledWith(placeholder, 'test-if-uuid', true);
   });
 
+  it('elseバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
+    const placeholder = document.createComment('else');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'else',
+      node: placeholder,
+      replaceNode: placeholder,
+      propName: 'else',
+      propSegments: [],
+      uuid: 'test-else-uuid'
+    } as IBindingInfo;
+
+    applyChange(bindingInfo, false);
+
+    expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(placeholder, 'test-else-uuid', false);
+  });
+
+  it('elseifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
+    const placeholder = document.createComment('elseif');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'elseif',
+      node: placeholder,
+      replaceNode: placeholder,
+      propName: 'elseif',
+      propSegments: [],
+      uuid: 'test-elseif-uuid'
+    } as IBindingInfo;
+
+    applyChange(bindingInfo, true);
+
+    expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(placeholder, 'test-elseif-uuid', true);
+  });
+
   it('対象外のbindingTypeは何も呼ばれないこと', () => {
     const node = document.createElement('button');
     const bindingInfo: IBindingInfo = {

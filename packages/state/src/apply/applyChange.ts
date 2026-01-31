@@ -18,9 +18,12 @@ export function applyChange(bindingInfo: IBindingInfo, newValue: any): void {
       throw new Error(`BindingInfo for 'for' binding must have a UUID.`);
     }
     applyChangeToFor(bindingInfo.node, bindingInfo.uuid, filteredValue);
-  } else if (bindingInfo.bindingType === "if") {
+  } else if (bindingInfo.bindingType === "if"
+     || bindingInfo.bindingType === "else"
+     || bindingInfo.bindingType === "elseif"
+  ) {
     if (!bindingInfo.uuid) {
-      throw new Error(`BindingInfo for 'if' binding must have a UUID.`);
+      throw new Error(`BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID.`);
     }
     applyChangeToIf(bindingInfo.node, bindingInfo.uuid, filteredValue);
   }

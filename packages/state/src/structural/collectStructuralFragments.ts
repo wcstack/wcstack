@@ -1,9 +1,15 @@
+import { getParseBindTextResults } from "../bindings/getParseBindTextResults";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
+import { ParseBindTextResult } from "../bindTextParser/types";
 import { config } from "../config";
 import { getUUID } from "../getUUID";
+import { raiseError } from "../raiseError";
 import { BindingType } from "../types";
+import { createNotFilter } from "./createNotFilter";
 import { setFragmentInfoByUUID } from "./fragmentInfoByUUID";
 import { getFragmentNodeInfos } from "./getFragmentNodeInfos";
+import { getNodePath } from "./getNodePath";
+import { IFragmentInfo } from "./types";
 
 const keywordByBindingType: Map<BindingType, string> = new Map<BindingType, string>([
   ["for",  config.commentForPrefix],
@@ -12,7 +18,37 @@ const keywordByBindingType: Map<BindingType, string> = new Map<BindingType, stri
   ["else", config.commentElsePrefix],
 ]);
 
+const notFilter = createNotFilter();
+
+function cloneNotParseBindTextResult(
+  bindingType: BindingType,
+  parseBindTextResult: ParseBindTextResult
+): ParseBindTextResult {
+  const filters = parseBindTextResult.filters;
+  return {
+    ...parseBindTextResult,
+    filters: [...filters, notFilter],
+    bindingType: bindingType,
+  };
+}
+
+function _getFragmentInfo(
+  fragment: DocumentFragment, 
+  parseBindingTextResult: ParseBindTextResult
+): IFragmentInfo {
+  collectStructuralFragments(fragment);
+  // after replacing and collect node infos on child fragment
+  const fragmentInfo = {
+    fragment: fragment,
+    parseBindTextResult: parseBindingTextResult,
+    nodeInfos: getFragmentNodeInfos(fragment),
+  }
+  return fragmentInfo;
+}
+
+
 export function collectStructuralFragments(root: Document | Element | DocumentFragment): void {
+  const elseKeyword = config.commentElsePrefix;
   const walker = document.createTreeWalker(
     root, 
     NodeFilter.SHOW_ELEMENT, 
@@ -29,29 +65,108 @@ export function collectStructuralFragments(root: Document | Element | DocumentFr
       }
     }
   );
+  let lastIfFragmentInfo: IFragmentInfo | null = null; // for elseif chaining
+  const elseFragmentInfos: IFragmentInfo[] = []; // for elseif chaining
   while (walker.nextNode()) {
     const template = walker.currentNode as HTMLTemplateElement;
     const bindText = template.getAttribute(config.bindAttributeName) || '';
     const parseBindTextResults = parseBindTextsForElement(bindText);
-    const parseBindTextResult = parseBindTextResults[0];
+    let parseBindTextResult = parseBindTextResults[0];
     const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
     if (typeof keyword === 'undefined') {
       continue;
     }
 
+    const bindingType = parseBindTextResult.bindingType;
     const fragment = template.content;
     const uuid = getUUID();
+    let fragmentInfo: IFragmentInfo | null = null;
 
-    const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
-    template.replaceWith(placeHolder);
-    collectStructuralFragments(fragment);
+    if (bindingType === "else") {
+      // check last 'if' or 'elseif' fragment info
+      if (lastIfFragmentInfo === null) {
+        raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
+      }
+      const lastBindingType = lastIfFragmentInfo.parseBindTextResult.bindingType;
+      if (lastBindingType !== "if" && lastBindingType !== "elseif") {
+        raiseError(`'else' binding must follow 'if' or 'elseif' binding.`);
+      }
+      // else condition
+      parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
+      fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+      setFragmentInfoByUUID(uuid, fragmentInfo);
 
-    // after replacing and collect node infos on child fragment
-    setFragmentInfoByUUID(uuid, {
-      fragment: fragment,
-      parseBindTextResult: parseBindTextResult,
-      nodeInfos: getFragmentNodeInfos(fragment),
-    });
+      const lastElseFragmentInfo = elseFragmentInfos.at(-1);
+      const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+      if (typeof lastElseFragmentInfo !== "undefined") {
+        template.remove();
+        lastElseFragmentInfo.fragment.appendChild(placeHolder);
+        lastElseFragmentInfo.nodeInfos.push({
+          nodePath: getNodePath(placeHolder),
+          parseBindTextResults: getParseBindTextResults(placeHolder),
+        });
+      } else {
+        template.replaceWith(placeHolder);
+      }
+    } else if (bindingType === "elseif") {
+      // check last 'if' or 'elseif' fragment info
+      if (lastIfFragmentInfo === null) {
+        raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
+      }
+      const lastBindingType = lastIfFragmentInfo.parseBindTextResult.bindingType;
+      if (lastBindingType !== "if" && lastBindingType !== "elseif") {
+        raiseError(`'elseif' binding must follow 'if' or 'elseif' binding.`);
+      }
 
+      fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+      setFragmentInfoByUUID(uuid, fragmentInfo);
+      const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+
+      // create else fragment
+      const elseUUID = getUUID();
+      const elseFragmentInfo: IFragmentInfo = {
+        fragment: document.createDocumentFragment(),
+        parseBindTextResult: cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult),
+        nodeInfos: [],
+      };
+      elseFragmentInfo.fragment.appendChild(placeHolder);
+      elseFragmentInfo.nodeInfos.push({
+        nodePath: getNodePath(placeHolder),
+        parseBindTextResults: getParseBindTextResults(placeHolder),
+      });
+      setFragmentInfoByUUID(elseUUID, elseFragmentInfo);
+      const lastElseFragmentInfo = elseFragmentInfos.at(-1);
+      elseFragmentInfos.push(elseFragmentInfo);
+      const elsePlaceHolder = document.createComment(`@@${elseKeyword}:${elseUUID}`);
+
+      if (typeof lastElseFragmentInfo !== "undefined") {
+        template.remove();
+        lastElseFragmentInfo.fragment.appendChild(elsePlaceHolder);
+        lastElseFragmentInfo.nodeInfos.push({
+          nodePath: getNodePath(elsePlaceHolder),
+          parseBindTextResults: getParseBindTextResults(elsePlaceHolder),
+        });
+      } else {
+        template.replaceWith(elsePlaceHolder);
+      }
+
+    } else {
+      fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+      setFragmentInfoByUUID(uuid, fragmentInfo);
+      const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+      template.replaceWith(placeHolder);
+    }
+
+    if (fragmentInfo !== null) {
+      if (bindingType === "if") {
+        elseFragmentInfos.length = 0; // start new if chain
+        lastIfFragmentInfo = fragmentInfo;
+      } else if (bindingType === "elseif") {
+        lastIfFragmentInfo = fragmentInfo;
+      } else if (bindingType === "else") {
+        lastIfFragmentInfo = null;
+        elseFragmentInfos.length = 0; // end if chain
+      }
+    }
   }
 }

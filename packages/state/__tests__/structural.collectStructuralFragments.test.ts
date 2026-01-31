@@ -3,13 +3,18 @@ import { collectStructuralFragments } from '../src/structural/collectStructuralF
 import { getFragmentInfoByUUID, setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { config } from '../src/config';
 
+let uuidCounter = 0;
 vi.mock('../src/getUUID', () => ({
-  getUUID: () => 'uuid-collect'
+  getUUID: () => `uuid-collect-${uuidCounter++}`
 }));
 
 describe('collectStructuralFragments', () => {
   afterEach(() => {
-    setFragmentInfoByUUID('uuid-collect', null);
+    // Clean up all UUIDs
+    for (let i = 0; i < uuidCounter; i++) {
+      setFragmentInfoByUUID(`uuid-collect-${i}`, null);
+    }
+    uuidCounter = 0;
     document.body.innerHTML = '';
   });
 
@@ -28,9 +33,9 @@ describe('collectStructuralFragments', () => {
 
     const first = root.firstChild as Comment;
     expect(first.nodeType).toBe(Node.COMMENT_NODE);
-    expect(first.data).toBe(`@@${config.commentForPrefix}:uuid-collect`);
+    expect(first.data).toBe(`@@${config.commentForPrefix}:uuid-collect-0`);
 
-    const info = getFragmentInfoByUUID('uuid-collect');
+    const info = getFragmentInfoByUUID('uuid-collect-0');
     expect(info).not.toBeNull();
     expect(info?.parseBindTextResult.bindingType).toBe('for');
     expect(info?.nodeInfos.length).toBe(1);
@@ -45,7 +50,7 @@ describe('collectStructuralFragments', () => {
     collectStructuralFragments(root);
 
     expect(root.firstChild).toBe(template);
-    expect(getFragmentInfoByUUID('uuid-collect')).toBeNull();
+    expect(getFragmentInfoByUUID('uuid-collect-0')).toBeNull();
   });
 
   it('templateのバインドが空または非template要素はスキップされること', () => {
@@ -63,7 +68,7 @@ describe('collectStructuralFragments', () => {
 
     expect(root.childNodes[0]).toBe(nonTemplate);
     expect(root.childNodes[1]).toBe(emptyTemplate);
-    expect(getFragmentInfoByUUID('uuid-collect')).toBeNull();
+    expect(getFragmentInfoByUUID('uuid-collect-0')).toBeNull();
   });
 
   it('非template要素をスキップしつつtemplateを処理できること', () => {
@@ -83,7 +88,7 @@ describe('collectStructuralFragments', () => {
     const second = root.childNodes[1] as Comment;
     expect(first).toBe(nonTemplate);
     expect(second.nodeType).toBe(Node.COMMENT_NODE);
-    expect(second.data).toBe(`@@${config.commentIfPrefix}:uuid-collect`);
+    expect(second.data).toBe(`@@${config.commentIfPrefix}:uuid-collect-0`);
   });
 
   it('acceptNodeのFILTER_SKIPが実行されること', () => {
@@ -171,5 +176,90 @@ describe('collectStructuralFragments', () => {
     expect(calls).toBeGreaterThanOrEqual(2);
 
     vi.doUnmock('../src/bindTextParser/parseBindTextsForElement');
+  });
+
+  it('if-else構造が正しく処理されること', () => {
+    const root = document.createElement('div');
+    
+    const ifTemplate = document.createElement('template');
+    ifTemplate.setAttribute(config.bindAttributeName, 'if: condition');
+    ifTemplate.content.appendChild(document.createTextNode('if content'));
+    
+    const elseTemplate = document.createElement('template');
+    elseTemplate.setAttribute(config.bindAttributeName, 'else:');
+    elseTemplate.content.appendChild(document.createTextNode('else content'));
+    
+    root.appendChild(ifTemplate);
+    root.appendChild(elseTemplate);
+
+    collectStructuralFragments(root);
+
+    // if コメントノードが生成されている
+    const ifComment = root.childNodes[0] as Comment;
+    expect(ifComment.nodeType).toBe(Node.COMMENT_NODE);
+    expect(ifComment.data).toContain(config.commentIfPrefix);
+
+    // if の fragmentInfo を取得
+    const ifUuid = ifComment.data.split(':')[1];
+    const ifInfo = getFragmentInfoByUUID(ifUuid);
+    expect(ifInfo).not.toBeNull();
+    expect(ifInfo?.parseBindTextResult.bindingType).toBe('if');
+  });
+
+  it('if-elseif-else構造が正しく処理されること', () => {
+    const root = document.createElement('div');
+    
+    const ifTemplate = document.createElement('template');
+    ifTemplate.setAttribute(config.bindAttributeName, 'if: cond1');
+    ifTemplate.content.appendChild(document.createTextNode('if content'));
+    
+    const elseifTemplate = document.createElement('template');
+    elseifTemplate.setAttribute(config.bindAttributeName, 'elseif: cond2');
+    elseifTemplate.content.appendChild(document.createTextNode('elseif content'));
+    
+    const elseTemplate = document.createElement('template');
+    elseTemplate.setAttribute(config.bindAttributeName, 'else:');
+    elseTemplate.content.appendChild(document.createTextNode('else content'));
+    
+    root.appendChild(ifTemplate);
+    root.appendChild(elseifTemplate);
+    root.appendChild(elseTemplate);
+
+    collectStructuralFragments(root);
+
+    // if コメントが生成されている
+    const ifComment = root.childNodes[0] as Comment;
+    expect(ifComment.nodeType).toBe(Node.COMMENT_NODE);
+    expect(ifComment.data).toContain(config.commentIfPrefix);
+    
+    // if の fragmentInfo を取得
+    const ifUuid = ifComment.data.split(':')[1];
+    const ifInfo = getFragmentInfoByUUID(ifUuid);
+    expect(ifInfo).not.toBeNull();
+    expect(ifInfo?.parseBindTextResult.bindingType).toBe('if');
+  });
+
+  it('elseが先行するifなしで使われた場合はエラーになること', () => {
+    const root = document.createElement('div');
+    
+    const elseTemplate = document.createElement('template');
+    elseTemplate.setAttribute(config.bindAttributeName, 'else:');
+    elseTemplate.content.appendChild(document.createTextNode('else content'));
+    
+    root.appendChild(elseTemplate);
+
+    expect(() => collectStructuralFragments(root)).toThrow(/else.*without preceding/);
+  });
+
+  it('elseifが先行するifなしで使われた場合はエラーになること', () => {
+    const root = document.createElement('div');
+    
+    const elseifTemplate = document.createElement('template');
+    elseifTemplate.setAttribute(config.bindAttributeName, 'elseif: cond2');
+    elseifTemplate.content.appendChild(document.createTextNode('elseif content'));
+    
+    root.appendChild(elseifTemplate);
+
+    expect(() => collectStructuralFragments(root)).toThrow(/elseif.*without preceding/);
   });
 });
