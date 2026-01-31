@@ -22,4 +22,17 @@ describe('getSubscriberNodes', () => {
     expect(nodes).toContain(boundEl);
     expect(nodes).toContain(comment);
   });
+
+  it('バインドがない要素やコメントは除外されること', () => {
+    const fragment = document.createDocumentFragment();
+
+    const normalEl = document.createElement('span');
+    const invalidComment = document.createComment('not a binding');
+
+    fragment.appendChild(normalEl);
+    fragment.appendChild(invalidComment);
+
+    const nodes = getSubscriberNodes(fragment);
+    expect(nodes).toHaveLength(0);
+  });
 });

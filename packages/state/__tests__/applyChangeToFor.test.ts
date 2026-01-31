@@ -9,39 +9,53 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { createLoopContextStack } from '../src/list/loopContext';
 import type { IStateElement } from '../src/components/types';
 import type { IBindingInfo } from '../src/types';
+import type { IStateAddress } from '../src/address/types';
+import type { ICacheEntry } from '../src/cache/types';
+import type { IVersionInfo } from '../src/version/types';
 
 const uuid = 'test-uuid';
 
 function createMockStateElement(): IStateElement {
-  const bindingInfosByPath = new Map<string, IBindingInfo[]>();
+  const bindingInfosByAddress = new Map<IStateAddress, IBindingInfo[]>();
   const listPaths = new Set<string>();
-  const state: any = {
+  const elementPaths = new Set<string>();
+  const getterPaths = new Set<string>();
+  const cache = new Map<IStateAddress, ICacheEntry>();
+  const mightChangeByPath = new Map<string, IVersionInfo>();
+  const dynamicDependency = new Map<string, string[]>();
+  const staticDependency = new Map<string, string[]>();
+  let version = 0;
+  const stateProxy: any = {
     items: [],
-    $stack: (_listIndex: any, callback: () => any) => callback(),
+    $$setLoopContext: async (_loopContext: any, callback: () => any) => callback(),
   };
 
   return {
     name: 'default',
-    state,
-    bindingInfosByPath,
+    bindingInfosByAddress,
     initializePromise: Promise.resolve(),
     listPaths,
+    elementPaths,
+    getterPaths,
     loopContextStack: createLoopContextStack(),
-    addBindingInfo(bindingInfo: IBindingInfo) {
-      const list = bindingInfosByPath.get(bindingInfo.statePathName) || [];
-      list.push(bindingInfo);
-      bindingInfosByPath.set(bindingInfo.statePathName, list);
+    cache,
+    mightChangeByPath,
+    dynamicDependency,
+    staticDependency,
+    get version() {
+      return version;
     },
-    deleteBindingInfo(bindingInfo: IBindingInfo) {
-      const list = bindingInfosByPath.get(bindingInfo.statePathName) || [];
-      const index = list.indexOf(bindingInfo);
-      if (index !== -1) {
-        list.splice(index, 1);
-      }
-      if (list.length === 0) {
-        bindingInfosByPath.delete(bindingInfo.statePathName);
-      }
-    }
+    addBindingInfo() {},
+    deleteBindingInfo() {},
+    addStaticDependency() {},
+    addDynamicDependency() {},
+    async createState(callback) {
+      return callback(stateProxy);
+    },
+    nextVersion() {
+      version += 1;
+      return version;
+    },
   };
 }
 
@@ -50,6 +64,28 @@ function createFragmentInfo() {
   const span = document.createElement('span');
   span.textContent = 'item';
   fragment.appendChild(span);
+
+  const parseBindTextResult: ParseBindTextResult = {
+    propName: 'for',
+    propSegments: [],
+    propModifiers: [],
+    statePathName: 'items',
+    statePathInfo: getPathInfo('items'),
+    stateName: 'default',
+    filterTexts: [],
+    bindingType: 'for',
+    uuid
+  };
+
+  return {
+    fragment,
+    parseBindTextResult,
+    nodeInfos: []
+  };
+}
+
+function createEmptyFragmentInfo() {
+  const fragment = document.createDocumentFragment();
 
   const parseBindTextResult: ParseBindTextResult = {
     propName: 'for',
@@ -91,6 +127,54 @@ describe('applyChangeToFor', () => {
     expect(() => applyChangeToFor(placeholder, uuid, [])).toThrow(/State element with name/);
   });
 
+  it('listPathInfoがない場合はエラーになること', () => {
+    const placeholder = document.createComment('for');
+    const fragmentInfo = createFragmentInfo();
+    fragmentInfo.parseBindTextResult.statePathInfo = null as any;
+    setFragmentInfoByUUID(uuid, fragmentInfo);
+
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
+    expect(() => applyChangeToFor(placeholder, uuid, [])).toThrow(/List path info not found/);
+  });
+
+  it('配列以外の値は空配列として扱われること', () => {
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+
+    applyChangeToFor(placeholder, uuid, { not: 'array' });
+
+    expect(container.childNodes.length).toBe(1);
+  });
+
+  it('空のフラグメントでもエラーにならないこと', () => {
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createEmptyFragmentInfo());
+
+    const list = [1];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+
+    applyChangeToFor(placeholder, uuid, list);
+
+    expect(container.childNodes.length).toBe(1);
+
+    setListIndexesByList(list, null);
+  });
+
   it('リストに応じてコンテンツを生成すること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
@@ -102,7 +186,7 @@ describe('applyChangeToFor', () => {
     setFragmentInfoByUUID(uuid, createFragmentInfo());
 
     const list = [1, 2];
-    const listIndexes = createListIndexes(list, null);
+    const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
     applyChangeToFor(placeholder, uuid, list);
@@ -127,7 +211,7 @@ describe('applyChangeToFor', () => {
     setFragmentInfoByUUID(uuid, createFragmentInfo());
 
     const list = [1, 2];
-    const listIndexes = createListIndexes(list, null);
+    const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
     applyChangeToFor(placeholder, uuid, list);

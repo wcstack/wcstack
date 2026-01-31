@@ -74,3 +74,8 @@ export function detachEventHandler(bindingInfo: IBindingInfo): boolean {
   return true;
 }
 
+export const __private__ = {
+  handlerByHandlerKey,
+  bindingInfoSetByHandlerKey,
+};
+

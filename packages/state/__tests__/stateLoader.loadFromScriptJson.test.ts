@@ -22,6 +22,28 @@ describe('loadFromScriptJson', () => {
     expect(state).toEqual({});
   });
 
+  it('typeがapplication/json以外の場合は空オブジェクトを返すこと', () => {
+    const script = document.createElement('script');
+    script.id = 'state-text';
+    script.type = 'text/plain';
+    script.textContent = JSON.stringify({ count: 2 });
+    document.body.appendChild(script);
+
+    const state = loadFromScriptJson('state-text');
+    expect(state).toEqual({});
+  });
+
+  it('textContentが空の場合は空オブジェクトを返すこと', () => {
+    const script = document.createElement('script');
+    script.id = 'state-empty';
+    script.type = 'application/json';
+    script.textContent = '';
+    document.body.appendChild(script);
+
+    const state = loadFromScriptJson('state-empty');
+    expect(state).toEqual({});
+  });
+
   it('不正なJSONの場合はエラーになること', () => {
     const script = document.createElement('script');
     script.id = 'state-bad';

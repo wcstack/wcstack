@@ -39,11 +39,25 @@ describe('parseBindTextsForElement', () => {
     expect(result[0].statePathName).toBe('items');
   });
 
+  it('elseifバインディングをパースできること', () => {
+    const result = parseBindTextsForElement('elseif: flag');
+    expect(result).toHaveLength(1);
+    expect(result[0].bindingType).toBe('elseif');
+    expect(result[0].statePathName).toBe('flag');
+  });
+
   it('区切り文字がない場合はエラーになること', () => {
     expect(() => parseBindTextsForElement('textContent message')).toThrow(/Missing ':' separator/);
   });
 
   it('構造バインディングが複数ある場合はエラーになること', () => {
     expect(() => parseBindTextsForElement('if: a; textContent: b')).toThrow(/must be single binding/);
+  });
+
+  it('構造バインディングが含まれない複数指定は許可されること', () => {
+    const result = parseBindTextsForElement('value: name; class.active: isActive');
+    expect(result).toHaveLength(2);
+    expect(result[0].bindingType).toBe('prop');
+    expect(result[1].bindingType).toBe('prop');
   });
 });

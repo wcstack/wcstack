@@ -34,4 +34,10 @@ describe('parseStatePart', () => {
     expect(result.filters.length).toBe(1);
     expect(result.filters[0].filterName).toBe('gt');
   });
+
+  it('同じフィルタ文字列はキャッシュされること', () => {
+    const first = parseStatePart('value|uc');
+    const second = parseStatePart('value|uc');
+    expect(first.filters).toBe(second.filters);
+  });
 });

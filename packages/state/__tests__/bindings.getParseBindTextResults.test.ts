@@ -22,6 +22,13 @@ describe('getParseBindTextResults', () => {
     expect(results[0].statePathName).toBe('message');
   });
 
+  it('バインド属性がない要素ノードでは空配列を返すこと', () => {
+    const el = document.createElement('span');
+    // data-bind-state属性を設定しない (getAttributeがnullを返す)
+    const results = getParseBindTextResults(el);
+    expect(results).toHaveLength(0);
+  });
+
   it('コメントノードの埋め込みバインドをパースできること', () => {
     const comment = document.createComment('@@wcs-text: message');
     expect(isCommentNode(comment)).toBe(true);

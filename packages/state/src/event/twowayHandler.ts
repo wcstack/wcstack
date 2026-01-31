@@ -99,3 +99,11 @@ export function detachTwowayEventHandler(bindingInfo: IBindingInfo): boolean {
   }
   return false;
 }
+
+export const __private__ = {
+  handlerByHandlerKey,
+  bindingInfoSetByHandlerKey,
+  getHandlerKey,
+  getEventName,
+  twowayEventHandlerFunction,
+};

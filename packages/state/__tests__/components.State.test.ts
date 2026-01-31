@@ -12,7 +12,7 @@ vi.mock('../src/stateLoader/loadFromScriptFile', () => ({
 vi.mock('../src/stateLoader/loadFromScriptJson', () => ({
   loadFromScriptJson: vi.fn().mockReturnValue({ fromScriptJson: true })
 }));
-vi.mock('../src/proxy/Proxy', () => ({
+vi.mock('../src/proxy/StateHandler', () => ({
   createStateProxy: vi.fn((state: any) => state)
 }));
 
@@ -22,7 +22,9 @@ import { loadFromInnerScript } from '../src/stateLoader/loadFromInnerScript';
 import { loadFromJsonFile } from '../src/stateLoader/loadFromJsonFile';
 import { loadFromScriptFile } from '../src/stateLoader/loadFromScriptFile';
 import { loadFromScriptJson } from '../src/stateLoader/loadFromScriptJson';
-import { createStateProxy } from '../src/proxy/Proxy';
+import { createStateProxy } from '../src/proxy/StateHandler';
+import { getPathInfo } from '../src/address/PathInfo';
+import { createStateAddress } from '../src/address/StateAddress';
 import type { IBindingInfo } from '../src/types';
 
 const loadFromInnerScriptMock = vi.mocked(loadFromInnerScript);
@@ -37,6 +39,29 @@ if (!customElements.get(STATE_TAG)) {
 }
 
 const createStateElement = (): State => document.createElement(STATE_TAG) as State;
+
+const getStateValue = async (stateEl: State): Promise<any> => {
+  let value: any;
+  await stateEl.createState(async (state) => {
+    value = state;
+  });
+  return value;
+};
+
+const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => ({
+  propName: 'value',
+  propSegments: ['value'],
+  propModifiers: [],
+  statePathName: 'count',
+  statePathInfo: getPathInfo('count'),
+  stateName: 'default',
+  filterTexts: [],
+  bindingType: 'prop',
+  uuid: null,
+  node: document.createElement('input'),
+  placeHolderNode: document.createElement('input'),
+  ...overrides,
+} as IBindingInfo);
 
 describe('State component', () => {
   beforeEach(() => {
@@ -54,16 +79,24 @@ describe('State component', () => {
     vi.clearAllMocks();
   });
 
-  it('初期状態でstate getterはエラーになること', () => {
+  it('初期状態でcreateStateがエラーになること', async () => {
     const stateEl = createStateElement();
-    expect(() => stateEl.state).toThrow(/_state is not initialized yet/);
+    await expect(stateEl.createState(async () => {})).rejects.toThrow(/_state is not initialized yet/);
   });
 
   it('connectedCallbackで初期化されること（スクリプトなし）', async () => {
     const stateEl = createStateElement();
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
-    expect(stateEl.state).toEqual({});
+    const value = await getStateValue(stateEl);
+    expect(value).toEqual({});
+  });
+
+  it('connectedCallbackは2回目以降何もしないこと', async () => {
+    const stateEl = createStateElement();
+    await stateEl.connectedCallback();
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
   });
 
   it('connectedCallbackで内包スクリプトを読み込めること', async () => {
@@ -77,7 +110,8 @@ describe('State component', () => {
     await stateEl.initializePromise;
 
     expect(loadFromInnerScriptMock).toHaveBeenCalledTimes(1);
-    expect(stateEl.state).toEqual({ fromInner: true });
+    const value = await getStateValue(stateEl);
+    expect(value).toEqual({ fromInner: true });
   });
 
   it('name属性変更で登録が更新されること', () => {
@@ -88,12 +122,26 @@ describe('State component', () => {
     expect(getStateElementByName('default')).toBeNull();
   });
 
+  it('name getterで現在の名前を取得できること', () => {
+    const stateEl = createStateElement();
+    expect(stateEl.name).toBe('default');
+  });
+
   it('state属性でスクリプトJSONを読み込めること', () => {
     const stateEl = createStateElement();
     stateEl.attributeChangedCallback('state', '', 'state-data');
 
     expect(loadFromScriptJsonMock).toHaveBeenCalledWith('state-data');
-    expect(stateEl.state).toEqual({ fromScriptJson: true });
+    return expect(getStateValue(stateEl)).resolves.toEqual({ fromScriptJson: true });
+  });
+
+  it('state属性が設定済みの場合はinitializeで読み込みをスキップすること', async () => {
+    const stateEl = createStateElement();
+    stateEl.attributeChangedCallback('state', '', 'state-data');
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+
+    expect(loadFromInnerScriptMock).not.toHaveBeenCalled();
   });
 
   it('state属性は2回目の変更でエラーになること', () => {
@@ -102,13 +150,20 @@ describe('State component', () => {
     expect(() => stateEl.attributeChangedCallback('state', 'state-a', 'state-b')).toThrow(/already been loaded/);
   });
 
+  it('src属性はロード済みの場合エラーになること', () => {
+    const stateEl = createStateElement();
+    stateEl.attributeChangedCallback('state', '', 'state-a');
+    expect(() => stateEl.attributeChangedCallback('src', '', 'data.json')).toThrow(/already been loaded/);
+  });
+
   it('src属性でjsonを読み込めること', async () => {
     const stateEl = createStateElement();
     stateEl.attributeChangedCallback('src', '', 'data.json');
     await new Promise((r) => setTimeout(r, 0));
 
     expect(loadFromJsonFileMock).toHaveBeenCalledWith('data.json');
-    expect(stateEl.state).toEqual({ fromJson: true });
+    const value = await getStateValue(stateEl);
+    expect(value).toEqual({ fromJson: true });
   });
 
   it('src属性でjsを読み込めること', async () => {
@@ -117,7 +172,8 @@ describe('State component', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(loadFromScriptFileMock).toHaveBeenCalledWith('data.js');
-    expect(stateEl.state).toEqual({ fromScript: true });
+    const value = await getStateValue(stateEl);
+    expect(value).toEqual({ fromScript: true });
   });
 
   it('src属性の拡張子が不正な場合はエラーになること', () => {
@@ -132,13 +188,49 @@ describe('State component', () => {
     expect(() => stateEl.attributeChangedCallback('src', 'data.json', 'data2.json')).toThrow(/currently loading/);
   });
 
-  it('state getterでproxyが一度だけ作成されること', async () => {
+  it('state属性はロード中に変更できないこと', () => {
+    const stateEl = createStateElement();
+    loadFromJsonFileMock.mockImplementation(() => new Promise(() => {}));
+    stateEl.attributeChangedCallback('src', '', 'data.json');
+    expect(() => stateEl.attributeChangedCallback('state', '', 'state-data')).toThrow(/currently loading/);
+  });
+
+  it('createState呼び出しごとにproxyが作成されること', async () => {
     const stateEl = createStateElement();
     await stateEl.connectedCallback();
-    const state1 = stateEl.state;
-    const state2 = stateEl.state;
-    expect(createStateProxyMock).toHaveBeenCalledTimes(1);
+    const state1 = await getStateValue(stateEl);
+    const state2 = await getStateValue(stateEl);
+    expect(createStateProxyMock).toHaveBeenCalledTimes(2);
     expect(state1).toBe(state2);
+  });
+
+  it('getterを持つstateはgetterPathsに追加されること', () => {
+    const stateEl = createStateElement();
+    loadFromScriptJsonMock.mockReturnValue({
+      get computed() {
+        return 1;
+      }
+    });
+
+    stateEl.attributeChangedCallback('state', '', 'state-data');
+    expect(stateEl.getterPaths.has('computed')).toBe(true);
+  });
+
+  it('各種getterが取得できること', async () => {
+    const stateEl = createStateElement();
+    await stateEl.connectedCallback();
+
+    expect(stateEl.bindingInfosByAddress).toBeInstanceOf(Map);
+    expect(stateEl.initializePromise).toBeInstanceOf(Promise);
+    expect(stateEl.listPaths).toBeInstanceOf(Set);
+    expect(stateEl.elementPaths).toBeInstanceOf(Set);
+    expect(stateEl.getterPaths).toBeInstanceOf(Set);
+    expect(stateEl.loopContextStack).toBeDefined();
+    expect(stateEl.cache).toBeInstanceOf(Map);
+    expect(stateEl.mightChangeByPath).toBeInstanceOf(Map);
+    expect(stateEl.dynamicDependency).toBeInstanceOf(Map);
+    expect(stateEl.staticDependency).toBeInstanceOf(Map);
+    expect(stateEl.version).toBe(0);
   });
 
   it('addBindingInfoで登録とlistPathsが更新されること', () => {
@@ -148,7 +240,7 @@ describe('State component', () => {
       propSegments: ['for'],
       propModifiers: [],
       statePathName: 'items',
-      statePathInfo: null,
+      statePathInfo: getPathInfo('items'),
       stateName: 'default',
       filterTexts: [],
       bindingType: 'for',
@@ -159,8 +251,94 @@ describe('State component', () => {
 
     stateEl.addBindingInfo(bindingInfo);
 
-    const list = stateEl.bindingInfosByPath.get('items') || [];
+    const address = createStateAddress(bindingInfo.statePathInfo!, null);
+    const list = stateEl.bindingInfosByAddress.get(address) || [];
     expect(list.length).toBe(1);
     expect(stateEl.listPaths.has('items')).toBe(true);
+    expect(stateEl.elementPaths.has('items.*')).toBe(true);
+  });
+
+  it('addBindingInfoの再登録で配列に追加されること', () => {
+    const stateEl = createStateElement();
+    const bindingInfo = createBindingInfo();
+
+    stateEl.addBindingInfo(bindingInfo);
+    stateEl.addBindingInfo(bindingInfo);
+
+    const address = createStateAddress(bindingInfo.statePathInfo!, null);
+    const list = stateEl.bindingInfosByAddress.get(address) || [];
+    expect(list.length).toBe(2);
+  });
+
+  it('addBindingInfoで親パスの静的依存が登録されること', () => {
+    const stateEl = createStateElement();
+    const bindingInfo = createBindingInfo({
+      statePathName: 'user.name',
+      statePathInfo: getPathInfo('user.name'),
+    });
+
+    stateEl.addBindingInfo(bindingInfo);
+
+    const deps = stateEl.staticDependency.get('user') || [];
+    expect(deps).toContain('user.name');
+  });
+
+  it('addStaticDependencyとaddDynamicDependencyが重複を防ぐこと', () => {
+    const stateEl = createStateElement();
+    stateEl.addStaticDependency('parent', 'child');
+    stateEl.addStaticDependency('parent', 'child');
+    stateEl.addStaticDependency('parent', 'child2');
+
+    const staticDeps = stateEl.staticDependency.get('parent') || [];
+    expect(staticDeps).toEqual(['child', 'child2']);
+
+    stateEl.addDynamicDependency('getter', 'dep');
+    stateEl.addDynamicDependency('getter', 'dep');
+    stateEl.addDynamicDependency('getter', 'dep2');
+
+    const dynamicDeps = stateEl.dynamicDependency.get('getter') || [];
+    expect(dynamicDeps).toEqual(['dep', 'dep2']);
+  });
+
+  it('deleteBindingInfoで登録が削除されること', () => {
+    const stateEl = createStateElement();
+    const bindingInfo = createBindingInfo();
+
+    stateEl.addBindingInfo(bindingInfo);
+    const address = createStateAddress(bindingInfo.statePathInfo!, null);
+    expect(stateEl.bindingInfosByAddress.get(address)).toHaveLength(1);
+
+    stateEl.deleteBindingInfo(bindingInfo);
+    expect(stateEl.bindingInfosByAddress.get(address)).toHaveLength(0);
+
+    const missingBindingInfo = createBindingInfo({ statePathName: 'missing', statePathInfo: getPathInfo('missing') });
+    stateEl.deleteBindingInfo(missingBindingInfo);
+
+    const sameAddressOtherBinding = createBindingInfo();
+    stateEl.deleteBindingInfo(sameAddressOtherBinding);
+  });
+
+  it('nextVersionでバージョンがインクリメントされること', () => {
+    const stateEl = createStateElement();
+    expect(stateEl.nextVersion()).toBe(1);
+    expect(stateEl.nextVersion()).toBe(2);
+  });
+
+  it('disconnectedCallbackで登録が解除されること', () => {
+    const stateEl = createStateElement();
+    setStateElementByName('default', stateEl);
+    stateEl.disconnectedCallback();
+    expect(getStateElementByName('default')).toBeNull();
+  });
+
+  it('内包スクリプト読み込み失敗時はエラーになること', async () => {
+    const stateEl = createStateElement();
+    const script = document.createElement('script');
+    script.type = 'module';
+    script.textContent = 'export default { value: 1 };';
+    stateEl.appendChild(script);
+
+    loadFromInnerScriptMock.mockRejectedValueOnce(new Error('load failed'));
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/Failed to load state from inner script/);
   });
 });

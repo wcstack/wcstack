@@ -12,4 +12,11 @@ describe('loadFromScriptFile', () => {
   it('存在しないURLの場合はエラーになること', async () => {
     await expect(loadFromScriptFile('file:///not-found-module.js')).rejects.toThrow(/Failed to load script file/);
   });
+
+  it('default が falsy の場合は空オブジェクトを返すこと', async () => {
+    const code = 'export default 0';
+    const url = `data:text/javascript,${encodeURIComponent(code)}`;
+    const data = await loadFromScriptFile(url);
+    expect(data).toEqual({});
+  });
 });

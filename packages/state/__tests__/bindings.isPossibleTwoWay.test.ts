@@ -14,10 +14,34 @@ describe('isPossibleTwoWay', () => {
     expect(isPossibleTwoWay(input, 'checked')).toBe(true);
   });
 
+  it('input:radio の checked はtrue', () => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'radio');
+    expect(isPossibleTwoWay(input, 'checked')).toBe(true);
+  });
+
   it('input:button はfalse', () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'button');
     expect(isPossibleTwoWay(input, 'value')).toBe(false);
+  });
+
+  it('inputでtype指定がない場合はtext扱いになること', () => {
+    const input = document.createElement('input');
+    expect(isPossibleTwoWay(input, 'value')).toBe(true);
+  });
+
+  it('inputのvalueAsNumber/valueAsDateはtrue', () => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'text');
+    expect(isPossibleTwoWay(input, 'valueAsNumber')).toBe(true);
+    expect(isPossibleTwoWay(input, 'valueAsDate')).toBe(true);
+  });
+
+  it('inputでも対象外のpropはfalse', () => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'text');
+    expect(isPossibleTwoWay(input, 'checked')).toBe(false);
   });
 
   it('select の value はtrue', () => {

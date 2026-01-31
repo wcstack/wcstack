@@ -5,7 +5,7 @@ import { createListIndexes } from '../src/list/createListIndexes';
 describe('listIndexesByList', () => {
   it('set/get できること', () => {
     const list = [1, 2, 3];
-    const listIndexes = createListIndexes(list, null);
+    const listIndexes = createListIndexes(null, [], list, []);
 
     setListIndexesByList(list, listIndexes);
     expect(getListIndexesByList(list)).toBe(listIndexes);
@@ -13,7 +13,7 @@ describe('listIndexesByList', () => {
 
   it('nullで削除できること', () => {
     const list = [1];
-    const listIndexes = createListIndexes(list, null);
+    const listIndexes = createListIndexes(null, [], list, []);
 
     setListIndexesByList(list, listIndexes);
     setListIndexesByList(list, null);

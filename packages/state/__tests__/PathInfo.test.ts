@@ -25,9 +25,8 @@ describe('PathInfo', () => {
       expect(pathInfo.wildcardPositions).toEqual([]);
       expect(pathInfo.wildcardPaths).toEqual([]);
       expect(pathInfo.wildcardParentPaths).toEqual([]);
-      // 単一セグメントの場合、親は空文字列のPathInfoになる
-      expect(pathInfo.parentPathInfo).not.toBeNull();
-      expect(pathInfo.parentPathInfo?.path).toBe('');
+      // 単一セグメントの場合、親は存在しない
+      expect(pathInfo.parentPathInfo).toBeNull();
     });
 
     it('複数セグメントのパスを正しくパースすること', () => {
@@ -49,7 +48,7 @@ describe('PathInfo', () => {
     it('空のパスを正しく処理すること', () => {
       const pathInfo = getPathInfo('');
       expect(pathInfo.path).toBe('');
-      expect(pathInfo.segments).toEqual([]);
+      expect(pathInfo.segments).toEqual(['']);
       expect(pathInfo.wildcardPositions).toEqual([]);
       expect(pathInfo.parentPathInfo).toBeNull();
     });
@@ -57,13 +56,13 @@ describe('PathInfo', () => {
     it('先頭にドットがあるパスを正しく処理すること', () => {
       const pathInfo = getPathInfo('.users');
       expect(pathInfo.path).toBe('.users');
-      expect(pathInfo.segments).toEqual(['users']);
+      expect(pathInfo.segments).toEqual(['', 'users']);
     });
 
     it('末尾にドットがあるパスを正しく処理すること', () => {
       const pathInfo = getPathInfo('users.');
       expect(pathInfo.path).toBe('users.');
-      expect(pathInfo.segments).toEqual(['users']);
+      expect(pathInfo.segments).toEqual(['users', '']);
     });
   });
 
@@ -154,12 +153,12 @@ describe('PathInfo', () => {
       expect(parent2?.path).toBe('users');
       
       const parent3 = parent2?.parentPathInfo;
-      // 単一セグメントの親は空のPathInfoになる
-      expect(parent3?.path).toBe('');
+      // 単一セグメントの親は存在しない
+      expect(parent3).toBeNull();
       
       const parent4 = parent3?.parentPathInfo;
-      // 空のPathInfoの親はnull
-      expect(parent4).toBeNull();
+      // 親がないためundefined
+      expect(parent4).toBeUndefined();
     });
 
     it('ワイルドカードを含むパスの親を正しく取得すること', () => {
@@ -249,7 +248,7 @@ describe('PathInfo', () => {
     it('連続するドットを正しく処理すること', () => {
       const pathInfo = getPathInfo('users..name');
       expect(pathInfo.path).toBe('users..name');
-      expect(pathInfo.segments).toEqual(['users', 'name']);
+      expect(pathInfo.segments).toEqual(['users', '', 'name']);
     });
 
     it('非常に長いパスを処理できること', () => {

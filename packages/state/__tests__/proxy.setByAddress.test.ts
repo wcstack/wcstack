@@ -1,0 +1,328 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setByAddress } from '../src/proxy/methods/setByAddress';
+import { createStateAddress } from '../src/address/StateAddress';
+import { getPathInfo } from '../src/address/PathInfo';
+import { createListIndex } from '../src/list/createListIndex';
+import { createListIndexes } from '../src/list/createListIndexes';
+import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
+import { getSwapInfoByAddress, setSwapInfoByAddress } from '../src/proxy/methods/swapInfo';
+
+vi.mock('../src/proxy/methods/getByAddress', () => ({
+  getByAddress: vi.fn(),
+}));
+
+import { getByAddress } from '../src/proxy/methods/getByAddress';
+
+function createStateElement(overrides?: Partial<any>) {
+  return {
+    elementPaths: new Set<string>(),
+    listPaths: new Set<string>(),
+    getterPaths: new Set<string>(),
+    cache: new Map(),
+    ...overrides,
+  };
+}
+
+function createHandler(stateElement: any, overrides?: Partial<any>) {
+  return {
+    stateElement,
+    pushAddress: vi.fn(),
+    popAddress: vi.fn(),
+    updater: {
+      versionInfo: { version: 1, revision: 0 },
+      enqueueUpdateAddress: vi.fn(),
+    },
+    ...overrides,
+  };
+}
+
+describe('setByAddress', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('既存プロパティはpush/popしつつ更新し、キャッシュを作成すること', () => {
+    const target = { count: 1 };
+    const address = createStateAddress(getPathInfo('count'), null);
+    const stateElement = createStateElement({ getterPaths: new Set(['count']) });
+    const handler = createHandler(stateElement);
+
+    const result = setByAddress(target, address, 5, target, handler as any);
+    expect(result).toBe(true);
+    expect(target.count).toBe(5);
+    expect(handler.pushAddress).toHaveBeenCalledWith(address);
+    expect(handler.popAddress).toHaveBeenCalled();
+    expect(handler.updater.enqueueUpdateAddress).toHaveBeenCalledWith(address);
+
+    const cacheEntry = stateElement.cache.get(address);
+    expect(cacheEntry.value).toBe(5);
+    expect(cacheEntry.versionInfo.version).toBe(1);
+  });
+
+  it('既存キャッシュは更新されること', () => {
+    const target = { count: 1 };
+    const address = createStateAddress(getPathInfo('count'), null);
+    const stateElement = createStateElement({ getterPaths: new Set(['count']) });
+    stateElement.cache.set(address, { value: 1, versionInfo: { version: 0, revision: 0 } });
+    const handler = createHandler(stateElement, { updater: { versionInfo: { version: 2, revision: 3 }, enqueueUpdateAddress: vi.fn() } });
+
+    setByAddress(target, address, 9, target, handler as any);
+
+    const cacheEntry = stateElement.cache.get(address);
+    expect(cacheEntry.value).toBe(9);
+    expect(cacheEntry.versionInfo.version).toBe(2);
+    expect(cacheEntry.versionInfo.revision).toBe(3);
+  });
+
+  it('親経由で非ワイルドカードの値を設定できること', () => {
+    const target = { user: { name: 'A' } };
+    const address = createStateAddress(getPathInfo('user.name'), null);
+    const stateElement = createStateElement();
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'user') {
+        return target.user;
+      }
+      return null;
+    });
+
+    setByAddress(target, address, 'B', target, handler as any);
+    expect(target.user.name).toBe('B');
+  });
+
+  it('ワイルドカードでlistIndexが無い場合はエラーになること', () => {
+    const target = { items: ['a'] };
+    const address = createStateAddress(getPathInfo('items.*'), null);
+    const stateElement = createStateElement();
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return null;
+    });
+
+    expect(() => setByAddress(target, address, 'b', target, handler as any)).toThrow(/listIndex/);
+    expect(handler.updater.enqueueUpdateAddress).toHaveBeenCalledWith(address);
+  });
+
+  it('elementsのswapで重複が無ければswapInfoが削除されること', () => {
+    const target = { items: ['a', 'b'] };
+    const parentListIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(parentListIndex, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const parentAddress = address.parentAddress!;
+
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return null;
+    });
+
+    setByAddress(target, address, 'a', target, handler as any);
+
+    expect(getSwapInfoByAddress(parentAddress)).toBeNull();
+    const currentIndexes = getListIndexesByList(target.items)!;
+    expect(currentIndexes[0].index).toBe(0);
+
+    setListIndexesByList(target.items, null);
+  });
+
+  it('elementsのswapで重複がある場合はswapInfoが残ること', () => {
+    const target = { items: ['a', 'a'] };
+    const parentListIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(parentListIndex, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const parentAddress = address.parentAddress!;
+
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return null;
+    });
+
+    setByAddress(target, address, 'a', target, handler as any);
+
+    expect(getSwapInfoByAddress(parentAddress)).not.toBeNull();
+
+    setListIndexesByList(target.items, null);
+  });
+
+  it('swap対象が存在しない場合は新規ListIndexを作ること', () => {
+    const target = { items: ['a', 'b'] };
+    const parentListIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(parentListIndex, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const parentAddress = address.parentAddress!;
+
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return null;
+    });
+
+    setByAddress(target, address, 'c', target, handler as any);
+
+    const currentIndexes = getListIndexesByList(target.items)!;
+    expect(currentIndexes[0]).toBeDefined();
+
+    // swapInfo should be cleared after successful swap
+    expect(getSwapInfoByAddress(parentAddress)).toBeNull();
+
+    setListIndexesByList(target.items, null);
+  });
+
+  it('parentAddressがnullの場合はエラーになること（_setByAddress）', () => {
+    // 単一セグメントで target にプロパティがない場合、parentAddress は null
+    const target = {};
+    const address = createStateAddress(getPathInfo('foo'), null);
+    // getPathInfo('foo') の parentPathInfo は null なので parentAddress も null
+    const stateElement = createStateElement();
+    const handler = createHandler(stateElement);
+
+    expect(() => setByAddress(target, address, 'bar', target, handler as any)).toThrow(/parentAddress/);
+  });
+
+  it('parentAddressがnullの場合はエラーになること（_setByAddressWithSwap）', () => {
+    // トップレベルの * パスでテスト（parentPathInfo が null になるケース）
+    const target = {};
+    const listIndex = createListIndex(null, 0);
+    const address = createStateAddress(getPathInfo('*'), listIndex);
+    // getPathInfo('*') の parentPathInfo は null なので parentAddress も null
+    const stateElement = createStateElement({ elementPaths: new Set(['*']) });
+    const handler = createHandler(stateElement);
+
+    expect(() => setByAddress(target, address, 'value', target, handler as any)).toThrow(/parentAddress/);
+  });
+
+  it('swapInfoが既に存在する場合は再利用されること', () => {
+    const target = { items: ['a', 'b'] };
+    const parentListIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(parentListIndex, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const parentAddress = address.parentAddress!;
+
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+
+    // 事前にswapInfoをセットしておく
+    const existingSwapInfo = {
+      value: ['a', 'b'],
+      listIndexes: [...indexes]
+    };
+    setSwapInfoByAddress(parentAddress, existingSwapInfo);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return null;
+    });
+
+    setByAddress(target, address, 'a', target, handler as any);
+
+    // swapが完了したのでnullになる
+    expect(getSwapInfoByAddress(parentAddress)).toBeNull();
+
+    setListIndexesByList(target.items, null);
+  });
+
+  it('getByAddressがnullを返す場合でもswapInfoの ?? [] フォールバックが動作すること', () => {
+    // このテストでは swapInfo 作成時の getByAddress が null を返すケースを確認
+    const parentListIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(parentListIndex, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const parentAddress = address.parentAddress!;
+
+    // swapInfoがまだ存在しない状態でテスト
+    setSwapInfoByAddress(parentAddress, null);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    const target = { items: ['a'] };
+    
+    // getByAddressの初回呼び出し（swapInfo作成時）でnullを返す
+    // その後は items を返す
+    let callCount = 0;
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      callCount++;
+      if (callCount === 1) {
+        // swapInfo作成時はnullを返す（?? [] がトリガーされる）
+        return null;
+      }
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return target.items;
+    });
+
+    setByAddress(target, address, 'b', target, handler as any);
+
+    // クリーンアップ
+    setSwapInfoByAddress(parentAddress, null);
+  });
+
+  it('finallyブロック内でgetByAddressがnullを返す場合も空配列にフォールバックすること', () => {
+    // 88行目の ?? [] をカバーするテスト
+    const parentListIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(parentListIndex, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const parentAddress = address.parentAddress!;
+
+    // swapInfoがまだ存在しない状態でテスト
+    setSwapInfoByAddress(parentAddress, null);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    const target = { items: ['a'] };
+    
+    // 1回目: swapInfo作成時 → items を返す
+    // 2回目: _setByAddress内 → items を返す
+    // 3回目: finallyブロック内 → null を返す (88行目の ?? [] がトリガーされる)
+    let callCount = 0;
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      callCount++;
+      if (callCount === 3) {
+        // finallyブロック内でnullを返す
+        return null;
+      }
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return target.items;
+    });
+
+    setByAddress(target, address, 'b', target, handler as any);
+
+    // クリーンアップ
+    setSwapInfoByAddress(parentAddress, null);
+  });
+});

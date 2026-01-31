@@ -25,6 +25,9 @@ export default {
   countUp() {
     this.count += 1;
   },
+  clearCount() {
+    this.count = 0;
+  },
   toggle: false,
   toggleName() {
     if (this.toggle === false) {
@@ -41,6 +44,7 @@ export default {
 
   <div data-bind-state="textContent: count; class.over: count|gt(10)"></div>
   <button name="increment" data-bind-state="onclick: countUp">Increment</button>
+  <button name="clear" data-bind-state="onclick: clearCount">clear</button>
   <br>
 
   <input type="text" name="userName" data-bind-state="value: user.name">

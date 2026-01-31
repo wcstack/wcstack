@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { IListIndex } from '../src/list/types';
+import { createListIndex } from '../src/list/createListIndex';
 
 describe('StateAddress', () => {
   describe('createStateAddress', () => {
@@ -179,7 +180,7 @@ describe('StateAddress', () => {
       const stateAddress = createStateAddress(pathInfo, null);
       
       expect(stateAddress.pathInfo.path).toBe('');
-      expect(stateAddress.pathInfo.segments).toEqual([]);
+      expect(stateAddress.pathInfo.segments).toEqual(['']);
     });
 
     it('同じPathInfoで複数のStateAddressを作成できること', () => {
@@ -187,9 +188,19 @@ describe('StateAddress', () => {
       const stateAddress1 = createStateAddress(pathInfo, null);
       const stateAddress2 = createStateAddress(pathInfo, null);
       
-      // 同じPathInfoを参照しているが、異なるインスタンス
+      // 同じPathInfo・同じlistIndexはキャッシュで同一インスタンス
       expect(stateAddress1.pathInfo).toBe(stateAddress2.pathInfo);
-      expect(stateAddress1).not.toBe(stateAddress2);
+      expect(stateAddress1).toBe(stateAddress2);
+    });
+
+    it('同じlistIndexとPathInfoでキャッシュが効くこと', () => {
+      const pathInfo = getPathInfo('items.*');
+      const listIndex = createListIndex(null, 0);
+      const stateAddress1 = createStateAddress(pathInfo, listIndex);
+      const stateAddress2 = createStateAddress(pathInfo, listIndex);
+
+      expect(stateAddress1).toBe(stateAddress2);
+      expect(stateAddress1.listIndex).toBe(listIndex);
     });
 
     it('異なるlistIndexで同じPathInfoのStateAddressを作成できること', () => {
@@ -214,6 +225,31 @@ describe('StateAddress', () => {
       expect(stateAddress1.listIndex).not.toBe(stateAddress2.listIndex);
       expect(stateAddress1.listIndex?.index).toBe(0);
       expect(stateAddress2.listIndex?.index).toBe(1);
+    });
+  });
+
+  describe('parentAddress', () => {
+    it('非ワイルドカードの親は同じlistIndexを引き継ぐこと', () => {
+      const pathInfo = getPathInfo('users.name');
+      const listIndex = createListIndex(null, 2);
+      const stateAddress = createStateAddress(pathInfo, listIndex);
+      const parent = stateAddress.parentAddress;
+
+      expect(parent?.pathInfo.path).toBe('users');
+      expect(parent?.listIndex).toBe(listIndex);
+      // キャッシュされること
+      expect(stateAddress.parentAddress).toBe(parent);
+    });
+
+    it('ワイルドカードの親はparentListIndexを使うこと', () => {
+      const pathInfo = getPathInfo('users.*.posts.*');
+      const rootIndex = createListIndex(null, 1);
+      const childIndex = createListIndex(rootIndex, 3);
+      const stateAddress = createStateAddress(pathInfo, childIndex);
+      const parent = stateAddress.parentAddress;
+
+      expect(parent?.pathInfo.path).toBe('users.*.posts');
+      expect(parent?.listIndex).toBe(rootIndex);
     });
   });
 });

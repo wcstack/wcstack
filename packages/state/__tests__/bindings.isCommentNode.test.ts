@@ -4,6 +4,12 @@ import { isCommentNode, getCommentNodeBindText } from '../src/bindings/isComment
 const makeComment = (text: string) => document.createComment(text);
 
 describe('isCommentNode', () => {
+  it('コメント以外のノードはfalseになること', () => {
+    const el = document.createElement('div');
+    expect(isCommentNode(el)).toBe(false);
+    expect(getCommentNodeBindText(el)).toBeNull();
+  });
+
   it('埋め込みバインドのコメントを判定できること', () => {
     const comment = makeComment('@@wcs-text: message');
     expect(isCommentNode(comment)).toBe(true);

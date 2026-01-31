@@ -46,4 +46,29 @@ describe('createListIndex', () => {
     expect(grand.at(-1)).toBe(grand);
     expect(grand.at(-2)).toBe(child);
   });
+
+  it('listIndexesの初期化とキャッシュが機能すること', () => {
+    const root = createListIndex(null, 0);
+    const child = createListIndex(root, 1);
+
+    const rootList = root.listIndexes;
+    expect(rootList.length).toBe(1);
+    expect(rootList[0]?.deref()).toBe(root);
+
+    const childList = child.listIndexes;
+    expect(childList.length).toBe(2);
+    expect(childList[0]?.deref()).toBe(root);
+    expect(childList[1]?.deref()).toBe(child);
+
+    // cache reuse
+    expect(child.listIndexes).toBe(childList);
+  });
+
+  it('atで範囲外を指定した場合はnullになること', () => {
+    const root = createListIndex(null, 0);
+    const child = createListIndex(root, 1);
+
+    expect(child.at(5)).toBeNull();
+    expect(child.at(-3)).toBeNull();
+  });
 });

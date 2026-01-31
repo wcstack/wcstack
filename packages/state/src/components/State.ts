@@ -166,7 +166,7 @@ export class State extends HTMLElement implements IStateElement {
 
       }
     }
-    if (typeof this._state === "undefined") {
+    if (typeof this.__state === "undefined") {
       this._state = {};
     }
   }

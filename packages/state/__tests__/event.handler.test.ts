@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { attachEventHandler, detachEventHandler } from '../src/event/handler';
+import { attachEventHandler, detachEventHandler, __private__ } from '../src/event/handler';
 import type { IBindingInfo } from '../src/types';
+import { setStateElementByName } from '../src/stateElementByName';
 
 function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IBindingInfo {
   return {
@@ -61,5 +62,106 @@ describe('event/handler', () => {
     expect(removeSpy).toHaveBeenCalledWith('click', handler);
     // 2回目は対象が無いのでfalse
     expect(detachEventHandler(binding)).toBe(false);
+  });
+
+  it('detachEventHandlerはon*以外でfalseを返すこと', () => {
+    const el = document.createElement('button');
+    const bindingInfo = createBindingInfo(el, {
+      propName: 'value',
+      propSegments: ['value'],
+      statePathName: 'handleClick-none-detach'
+    });
+    expect(detachEventHandler(bindingInfo)).toBe(false);
+  });
+
+  it('bindingInfoSetが存在しない場合はfalseを返すこと', () => {
+    const el = document.createElement('button');
+    const binding = createBindingInfo(el, { statePathName: 'handleClick-no-set' });
+
+    attachEventHandler(binding);
+
+    const key = `${binding.stateName}::${binding.statePathName}`;
+    __private__.bindingInfoSetByHandlerKey.delete(key);
+
+    expect(detachEventHandler(binding)).toBe(false);
+
+    __private__.handlerByHandlerKey.delete(key);
+    __private__.bindingInfoSetByHandlerKey.delete(key);
+  });
+
+  it('複数バインディング時に1つ解除してもハンドラが残ること', () => {
+    const el1 = document.createElement('button');
+    const el2 = document.createElement('button');
+
+    const binding1 = createBindingInfo(el1, { statePathName: 'handleClick-multi' });
+    const binding2 = createBindingInfo(el2, { statePathName: 'handleClick-multi' });
+
+    attachEventHandler(binding1);
+    attachEventHandler(binding2);
+
+    const key = `${binding1.stateName}::${binding1.statePathName}`;
+    expect(detachEventHandler(binding1)).toBe(true);
+    expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
+
+    detachEventHandler(binding2);
+  });
+
+  it('stateElementが存在しない場合はハンドラでエラーになること', () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, { statePathName: 'handleClick-missing' });
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+
+    setStateElementByName('default', null);
+    expect(() => handler(new Event('click'))).toThrow(/State element with name "default" not found/);
+  });
+
+  it('stateのハンドラが関数でない場合はエラーになること', () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, { statePathName: 'handleClick-not-fn' });
+
+    const state = { 'handleClick-not-fn': 123 } as any;
+    let lastPromise: Promise<any> | null = null;
+    setStateElementByName('default', {
+      createState: (callback: (s: any) => Promise<void>) => {
+        lastPromise = callback(state);
+        return lastPromise as Promise<void>;
+      }
+    } as any);
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+    handler(new Event('click'));
+    expect(lastPromise).not.toBeNull();
+    return expect(lastPromise!).rejects.toThrow(/is not a function/);
+  });
+
+  it('stateのハンドラが呼び出されること', async () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, { statePathName: 'handleClick-ok' });
+
+    const state: any = {
+      'handleClick-ok': vi.fn(function (this: any) {
+        expect(this).toBe(state);
+      })
+    };
+    let lastPromise: Promise<any> | null = null;
+    setStateElementByName('default', {
+      createState: (callback: (s: any) => Promise<void>) => {
+        lastPromise = callback(state);
+        return lastPromise as Promise<void>;
+      }
+    } as any);
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+    handler(new Event('click'));
+
+    await lastPromise;
+    expect(state['handleClick-ok']).toHaveBeenCalledTimes(1);
   });
 });

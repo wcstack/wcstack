@@ -1,23 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { getListIndexByNode, setListIndexByNode } from '../src/list/listIndexByNode';
+import { getLoopContextByNode, setLoopContextByNode } from '../src/list/loopContextByNode';
 import { createListIndex } from '../src/list/createListIndex';
+import { getPathInfo } from '../src/address/PathInfo';
+import type { ILoopContext } from '../src/list/types';
 
-describe('listIndexByNode', () => {
+describe('loopContextByNode', () => {
   it('set/get できること', () => {
     const node = document.createElement('div');
-    const listIndex = createListIndex(null, 0);
+    const loopContext: ILoopContext = {
+      elementPathInfo: getPathInfo('users.*'),
+      listIndex: createListIndex(null, 0)
+    };
 
-    setListIndexByNode(node, listIndex);
-    expect(getListIndexByNode(node)).toBe(listIndex);
+    setLoopContextByNode(node, loopContext);
+    expect(getLoopContextByNode(node)).toBe(loopContext);
   });
 
   it('nullで削除できること', () => {
     const node = document.createElement('div');
-    const listIndex = createListIndex(null, 1);
+    const loopContext: ILoopContext = {
+      elementPathInfo: getPathInfo('users.*'),
+      listIndex: createListIndex(null, 1)
+    };
 
-    setListIndexByNode(node, listIndex);
-    setListIndexByNode(node, null);
+    setLoopContextByNode(node, loopContext);
+    setLoopContextByNode(node, null);
 
-    expect(getListIndexByNode(node)).toBeNull();
+    expect(getLoopContextByNode(node)).toBeNull();
   });
 });

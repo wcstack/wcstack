@@ -1,0 +1,65 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { setLoopContext } from '../src/proxy/methods/setLoopContext';
+import { createListIndex } from '../src/list/createListIndex';
+import { getPathInfo } from '../src/address/PathInfo';
+
+describe('proxy/methods/setLoopContext', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('既に loopContext が設定済みならエラーになること', async () => {
+    const handler = {
+      loopContext: null,
+      setLoopContext: vi.fn(),
+      clearLoopContext: vi.fn(),
+      pushAddress: vi.fn(),
+      popAddress: vi.fn()
+    } as any;
+
+    await expect(setLoopContext(handler, null, async () => {})).rejects.toThrow('already in loop context');
+    expect(handler.setLoopContext).not.toHaveBeenCalled();
+  });
+
+  it('loopContext ありの場合に push/pop されること', async () => {
+    const handler = {
+      loopContext: undefined,
+      setLoopContext: vi.fn(),
+      clearLoopContext: vi.fn(),
+      pushAddress: vi.fn(),
+      popAddress: vi.fn()
+    } as any;
+
+    const loopContext = {
+      elementPathInfo: getPathInfo('users.*'),
+      listIndex: createListIndex(null, 1)
+    } as any;
+
+    const result = await setLoopContext(handler, loopContext, async () => 'ok');
+
+    expect(handler.setLoopContext).toHaveBeenCalledWith(loopContext);
+    expect(handler.pushAddress).toHaveBeenCalledTimes(1);
+    expect(handler.popAddress).toHaveBeenCalledTimes(1);
+    expect(handler.clearLoopContext).toHaveBeenCalledTimes(1);
+    expect(result).toBe('ok');
+  });
+
+  it('loopContext が null の場合でも clearLoopContext が呼ばれること', async () => {
+    const handler = {
+      loopContext: undefined,
+      setLoopContext: vi.fn(),
+      clearLoopContext: vi.fn(),
+      pushAddress: vi.fn(),
+      popAddress: vi.fn()
+    } as any;
+
+    await expect(setLoopContext(handler, null, async () => {
+      throw new Error('fail');
+    })).rejects.toThrow('fail');
+
+    expect(handler.setLoopContext).toHaveBeenCalledWith(null);
+    expect(handler.pushAddress).not.toHaveBeenCalled();
+    expect(handler.popAddress).not.toHaveBeenCalled();
+    expect(handler.clearLoopContext).toHaveBeenCalledTimes(1);
+  });
+});
