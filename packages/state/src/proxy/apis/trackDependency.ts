@@ -14,8 +14,9 @@
  * - getter同士の再帰（自己依存）は登録しない
  * - 動的依存はpathManagerに集約し、キャッシュの無効化に利用する
  */
-import { raiseError } from "../../utils";
-import { IStateHandler, IStateProxy } from "../_types";
+
+import { raiseError } from "../../raiseError";
+import { IStateHandler } from "../types";
 
 /**
  * 現在解決中のgetterから、指定されたパスへの動的依存を登録する関数を返します。
@@ -33,19 +34,16 @@ import { IStateHandler, IStateProxy } from "../_types";
 export function trackDependency(
   target: Object, 
   prop: PropertyKey, 
-  receiver: IStateProxy,
+  receiver: any,
   handler: IStateHandler
 ): Function {
   return (path: string): void => {
-    const lastInfo = handler.lastRefStack?.info ?? raiseError({
-      code: 'STATE-202',
-      message: 'Internal error: lastRefStack is null',
-      context: { where: 'trackDependency', path },
-      docsUrl: '/docs/error-codes.md#state',
-    });
-    if (handler.engine.pathManager.getters.has(lastInfo.pattern) &&
-      lastInfo.pattern !== path) {
-      handler.engine.pathManager.addDynamicDependency(lastInfo.pattern, path);
+    const lastInfo = handler.lastAddressStack?.pathInfo ?? 
+      raiseError('Internal error: lastAddressStack is null');
+    const stateElement = handler.stateElement;
+    if (handler.stateElement.getterPaths.has(lastInfo.path) &&
+      lastInfo.path !== path) {
+      stateElement.addDynamicDependency(path, lastInfo.path);
     }
   };
 }

@@ -22,10 +22,19 @@ export interface IListManager {
     getListIndexes(path: string): IListIndex[] | null;
 }
 export interface ILoopContext {
-    listPathInfo: IPathInfo;
+    elementPathInfo: IPathInfo;
     listIndex: IListIndex;
 }
 export interface ILoopContextStack {
-    createLoopContext(listPathInfo: IPathInfo, listIndex: IListIndex, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
+    createLoopContext(elementPathInfo: IPathInfo, listIndex: IListIndex, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
+}
+export interface IListDiff {
+    added: Array<any>;
+    removed: Array<any>;
+    moved: Array<{
+        item: any;
+        from: number;
+        to: number;
+    }>;
 }
 //# sourceMappingURL=types.d.ts.map

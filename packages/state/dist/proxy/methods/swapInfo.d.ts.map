@@ -1,0 +1,1 @@
+{"version":3,"file":"swapInfo.d.ts","sourceRoot":"","sources":["../../../src/proxy/methods/swapInfo.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,aAAa,EAAE,MAAM,qBAAqB,CAAC;AACpD,OAAO,EAAE,SAAS,EAAE,MAAM,SAAS,CAAC;AAIpC,wBAAgB,oBAAoB,CAAC,OAAO,EAAE,aAAa,GAAG,SAAS,GAAG,IAAI,CAE7E;AAED,wBAAgB,oBAAoB,CAAC,OAAO,EAAE,aAAa,EAAE,QAAQ,EAAE,SAAS,GAAG,IAAI,GAAG,IAAI,CAM7F"}

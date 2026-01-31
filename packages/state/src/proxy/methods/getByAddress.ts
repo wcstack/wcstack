@@ -22,15 +22,17 @@ import { IStateAddress } from "../../address/types";
 import { ICacheEntry } from "../../cache/types";
 import { IStateElement } from "../../components/types";
 import { createListIndexes } from "../../list/createListIndexes";
-import { setListIndexesByList } from "../../list/listIndexesByList";
+import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
+import { checkDependency } from "./checkDependency";
 
 function _getByAddress(
   target   : Object, 
   address  : IStateAddress,
   receiver : any,
-  handler  : IStateHandler
+  handler  : IStateHandler,
+  stateElement: IStateElement,
 ): any {
   let value: any;
   // 親子関係のあるgetterが存在する場合は、外部依存から取得
@@ -41,11 +43,15 @@ function _getByAddress(
 */
   // パターンがtargetに存在する場合はgetter経由で取得
   if (address.pathInfo.path in target) {
-    handler.pushAddress(address);
-    try {
-      return value = Reflect.get(target, address.pathInfo.path, receiver);
-    } finally {
-      handler.popAddress();
+    if (stateElement.getterPaths.has(address.pathInfo.path)) {
+      handler.pushAddress(address);
+      try {
+        return value = Reflect.get(target, address.pathInfo.path, receiver);
+      } finally {
+        handler.popAddress();
+      }
+    } else {
+      return value = Reflect.get(target, address.pathInfo.path);
     }
   } else {
     const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined`);
@@ -70,21 +76,20 @@ function _getByAddressWithCache(
 ): any {
   let value: any;
   let lastCacheEntry = stateElement.cache.get(address) ?? null;
-  const versionRevision: {
-    version: number;
-    revision: number;
-  } | undefined = undefined; // Updateで変更が必要な可能性があるパスのバージョン情報
-//    const versionRevision = handler.engine.versionRevisionByPath.get(ref.info.pattern);
+  // Updateで変更が必要な可能性があるパスのバージョン情報
+  const mightChangeByPath = handler.stateElement.mightChangeByPath;
+  const versionRevision = mightChangeByPath.get(address.pathInfo.path);
   if (lastCacheEntry !== null) {
+    const lastVersionInfo = lastCacheEntry.versionInfo;
     if (typeof versionRevision === "undefined") {
       // 更新なし
       return lastCacheEntry.value;
     } else {
-      if (lastCacheEntry.version > handler.updater.version) {
+      if (lastVersionInfo.version > handler.updater.versionInfo.version) {
         // これは非同期更新が発生した場合にありえる
         return lastCacheEntry.value;
       }
-      if (lastCacheEntry.version < versionRevision.version || lastCacheEntry.revision < versionRevision.revision) {
+      if (lastVersionInfo.version < versionRevision.version || lastVersionInfo.revision < versionRevision.revision) {
         // 更新あり
       } else {
         return lastCacheEntry.value;
@@ -92,19 +97,18 @@ function _getByAddressWithCache(
     }
   }
   try {
-    return value = _getByAddress(target, address, receiver, handler);
+    return value = _getByAddress(target, address, receiver, handler, stateElement);
   } finally {
     let newListIndexes = null;
     if (listable) {
       // リストインデックスを計算する必要がある
-      newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, lastCacheEntry?.listIndexes ?? []);
+      const oldListIndexes = getListIndexesByList(lastCacheEntry?.value as any[]) ?? [];
+      newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
       setListIndexesByList(value, newListIndexes);
     }
     const cacheEntry: ICacheEntry = Object.assign(lastCacheEntry ?? {}, {
       value: value,
-      listIndexes: newListIndexes,
-      version: handler.updater.version,
-      revision: handler.updater.revision,
+      versionInfo: { ...handler.updater.versionInfo },
     });
     stateElement.cache.set(address, cacheEntry);
   }
@@ -131,16 +135,17 @@ export function getByAddress(
   receiver : any,
   handler  : IStateHandler
 ): any {
-  //checkDependency(handler, address);
+  checkDependency(handler, address);
   const stateElement = handler.stateElement;
   const listable = stateElement.listPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
+  let value: any;
   if (cacheable || listable) {
-    return _getByAddressWithCache(
+    return value = _getByAddressWithCache(
       target, address, receiver, handler, stateElement, listable
     );
   } else {
-    return _getByAddress(target, address, receiver, handler);
+    return value = _getByAddress(target, address, receiver, handler, stateElement);
   }
 }

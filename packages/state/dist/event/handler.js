@@ -10,11 +10,13 @@ const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }
-    const handler = stateElement.state[handlerName];
-    if (typeof handler !== "function") {
-        raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
-    }
-    return handler.call(stateElement.state, event);
+    stateElement.createState(async (state) => {
+        const handler = state[handlerName];
+        if (typeof handler !== "function") {
+            raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
+        }
+        return handler.call(state, event);
+    });
 };
 export function attachEventHandler(bindingInfo) {
     if (!bindingInfo.propName.startsWith("on")) {

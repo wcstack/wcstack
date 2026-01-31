@@ -3,22 +3,55 @@ import { loadFromInnerScript } from "../stateLoader/loadFromInnerScript";
 import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
 import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
 import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
-import { createStateProxy } from "../proxy/Proxy";
 import { raiseError } from "../raiseError";
 import { setStateElementByName } from "../stateElementByName";
 import { createLoopContextStack } from "../list/loopContext";
+import { WILDCARD } from "../define";
+import { getPathInfo } from "../address/PathInfo";
+import { createStateProxy } from "../proxy/StateHandler";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { createStateAddress } from "../address/StateAddress";
+function getAllPropertyDescriptors(obj) {
+    let descriptors = {};
+    let proto = obj;
+    while (proto && proto !== Object.prototype) {
+        Object.assign(descriptors, Object.getOwnPropertyDescriptors(proto));
+        proto = Object.getPrototypeOf(proto);
+    }
+    return descriptors;
+}
+function getStateInfo(state) {
+    const getterPaths = new Set();
+    const descriptors = getAllPropertyDescriptors(state);
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+        if (typeof descriptor.get === "function") {
+            getterPaths.add(key);
+        }
+    }
+    return {
+        getterPaths,
+    };
+}
 export class State extends HTMLElement {
-    _state;
+    __state;
     _proxyState;
     _name = 'default';
     _initialized = false;
-    _bindingInfosByPath = new Map();
+    _bindingInfosByAddress = new Map();
     _initializePromise;
     _resolveInitialize = null;
     _listPaths = new Set();
+    _elementPaths = new Set();
+    _getterPaths = new Set();
     _isLoadingState = false;
     _isLoadedState = false;
     _loopContextStack = createLoopContextStack();
+    _cache = new Map();
+    _mightChangeByPath = new Map();
+    _dynamicDependency = new Map();
+    _staticDependency = new Map();
+    _pathSet = new Set();
+    _version = 0;
     static get observedAttributes() { return ['name', 'src', 'state']; }
     constructor() {
         super();
@@ -26,14 +59,23 @@ export class State extends HTMLElement {
             this._resolveInitialize = resolve;
         });
     }
-    get state() {
-        if (typeof this._state === "undefined") {
+    get _state() {
+        if (typeof this.__state === "undefined") {
             raiseError(`${config.tagNames.state} _state is not initialized yet.`);
         }
-        if (typeof this._proxyState === "undefined") {
-            this._proxyState = createStateProxy(this._state, this._bindingInfosByPath, this._listPaths);
+        return this.__state;
+    }
+    set _state(value) {
+        this.__state = value;
+        this._listPaths.clear();
+        this._elementPaths.clear();
+        this._getterPaths.clear();
+        this._pathSet.clear();
+        this._proxyState = undefined;
+        const stateInfo = getStateInfo(value);
+        for (const path of stateInfo.getterPaths) {
+            this._getterPaths.add(path);
         }
-        return this._proxyState;
     }
     get name() {
         return this._name;
@@ -115,8 +157,8 @@ export class State extends HTMLElement {
     disconnectedCallback() {
         setStateElementByName(this._name, null);
     }
-    get bindingInfosByPath() {
-        return this._bindingInfosByPath;
+    get bindingInfosByAddress() {
+        return this._bindingInfosByAddress;
     }
     get initializePromise() {
         return this._initializePromise;
@@ -124,31 +166,93 @@ export class State extends HTMLElement {
     get listPaths() {
         return this._listPaths;
     }
+    get elementPaths() {
+        return this._elementPaths;
+    }
+    get getterPaths() {
+        return this._getterPaths;
+    }
     get loopContextStack() {
         return this._loopContextStack;
     }
+    get cache() {
+        return this._cache;
+    }
+    get mightChangeByPath() {
+        return this._mightChangeByPath;
+    }
+    get dynamicDependency() {
+        return this._dynamicDependency;
+    }
+    get staticDependency() {
+        return this._staticDependency;
+    }
+    get version() {
+        return this._version;
+    }
+    addDynamicDependency(fromPath, toPath) {
+        const deps = this._dynamicDependency.get(fromPath);
+        if (typeof deps === "undefined") {
+            this._dynamicDependency.set(fromPath, [toPath]);
+        }
+        else {
+            if (!deps.includes(toPath)) {
+                deps.push(toPath);
+            }
+        }
+    }
+    addStaticDependency(fromPath, toPath) {
+        const deps = this._staticDependency.get(fromPath);
+        if (typeof deps === "undefined") {
+            this._staticDependency.set(fromPath, [toPath]);
+        }
+        else {
+            if (!deps.includes(toPath)) {
+                deps.push(toPath);
+            }
+        }
+    }
     addBindingInfo(bindingInfo) {
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        const address = createStateAddress(bindingInfo.statePathInfo, listIndex);
         const path = bindingInfo.statePathName;
-        const bindingInfos = this._bindingInfosByPath.get(path);
+        const bindingInfos = this._bindingInfosByAddress.get(address);
         if (typeof bindingInfos === "undefined") {
-            this._bindingInfosByPath.set(path, [bindingInfo]);
+            this._bindingInfosByAddress.set(address, [bindingInfo]);
         }
         else {
             bindingInfos.push(bindingInfo);
         }
         if (bindingInfo.bindingType === "for") {
             this._listPaths.add(path);
+            this._elementPaths.add(path + '.' + WILDCARD);
+        }
+        if (!this._pathSet.has(path)) {
+            const pathInfo = getPathInfo(path);
+            this._pathSet.add(path);
+            if (pathInfo.parentPath !== null) {
+                this.addStaticDependency(pathInfo.parentPath, path);
+            }
         }
     }
     deleteBindingInfo(bindingInfo) {
-        const path = bindingInfo.statePathName;
-        const bindingInfos = this._bindingInfosByPath.get(path);
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        const address = createStateAddress(bindingInfo.statePathInfo, listIndex);
+        const bindingInfos = this._bindingInfosByAddress.get(address);
         if (typeof bindingInfos !== "undefined") {
             const index = bindingInfos.indexOf(bindingInfo);
             if (index !== -1) {
                 bindingInfos.splice(index, 1);
             }
         }
+    }
+    async createState(callback) {
+        const stateProxy = createStateProxy(this._state, this._name);
+        return callback(stateProxy);
+    }
+    nextVersion() {
+        this._version++;
+        return this._version;
     }
 }
 //# sourceMappingURL=State.js.map

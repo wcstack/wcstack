@@ -1,4 +1,6 @@
+import { getPathInfo } from "../address/PathInfo";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings";
+import { WILDCARD } from "../define";
 import { getListIndexesByList } from "../list/listIndexesByList";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
@@ -24,6 +26,7 @@ export function applyChangeToFor(node, uuid, _newValue) {
     if (!listPathInfo) {
         raiseError(`List path info not found in fragment bind text result.`);
     }
+    const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
     const stateName = fragmentInfo.parseBindTextResult.stateName;
     const stateElement = getStateElementByName(stateName);
     if (!stateElement) {
@@ -31,9 +34,9 @@ export function applyChangeToFor(node, uuid, _newValue) {
     }
     const loopContextStack = stateElement.loopContextStack;
     for (const index of listIndexes) {
-        loopContextStack.createLoopContext(listPathInfo, index, (_loopContext) => {
+        loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
             const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-            initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, index);
+            initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
             const content = createContent(cloneFragment);
             content.mountAfter(lastNode);
             lastNode = content.lastNode || lastNode;

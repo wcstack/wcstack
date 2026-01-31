@@ -25,8 +25,8 @@ import { IStateHandler } from "../types";
 export async function setLoopContext(
   handler: IStateHandler,
   loopContext: ILoopContext | null,
-  callback: () => Promise<void>
-): Promise<void> {
+  callback: () => Promise<any>
+): Promise<any> {
   if (typeof handler.loopContext !== "undefined") {
     raiseError('already in loop context');
   }
@@ -34,17 +34,17 @@ export async function setLoopContext(
   try {
     if (loopContext) {
       const stateAddress = createStateAddress(
-        loopContext.listPathInfo,
+        loopContext.elementPathInfo,
         loopContext.listIndex
       );
       handler.pushAddress(stateAddress);
       try {
-        await callback();
+        return await callback();
       } finally {
         handler.popAddress();
       }
     } else {
-      await callback();
+      return await callback();
     }
   } finally {
     handler.clearLoopContext();

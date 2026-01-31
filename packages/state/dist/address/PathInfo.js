@@ -1,4 +1,4 @@
-import { DELIMITER, WILDCARD } from "../define.js";
+import { WILDCARD } from "../define.js";
 const _cache = {};
 export function getPathInfo(path) {
     if (_cache[path]) {
@@ -9,48 +9,93 @@ export function getPathInfo(path) {
     return pathInfo;
 }
 class PathInfo {
-    path = "";
-    segments = [];
-    wildcardCount;
-    wildcardPositions;
+    path;
+    segments;
+    lastSegment;
+    cumulativePaths;
+    cumulativePathSet;
+    cumulativePathInfos;
+    cumulativePathInfoSet;
+    parentPath;
     wildcardPaths;
     wildcardPathSet;
-    wildcardParentPaths;
-    wildcardParentPathSet;
+    indexByWildcardPath;
     wildcardPathInfos;
     wildcardPathInfoSet;
+    wildcardParentPaths;
+    wildcardParentPathSet;
     wildcardParentPathInfos;
     wildcardParentPathInfoSet;
-    _parentPathInfo = undefined;
+    wildcardPositions;
+    lastWildcardPath;
+    lastWildcardInfo;
+    wildcardCount;
+    parentPathInfo;
     constructor(path) {
+        // Helper to get or create StructuredPathInfo instances, avoiding redundant creation for self-reference
+        const getPattern = (_path) => {
+            return (path === _path) ? this : getPathInfo(_path);
+        };
+        // Split the pattern into individual path segments (e.g., "items.*.name" → ["items", "*", "name"])
+        const segments = path.split(".");
+        // Arrays to track all cumulative paths from root to each segment
+        const cumulativePaths = [];
+        const cumulativePathInfos = [];
+        // Arrays to track wildcard-specific information
+        const wildcardPaths = [];
+        const indexByWildcardPath = {}; // Maps wildcard path to its index position
+        const wildcardPathInfos = [];
+        const wildcardParentPaths = []; // Paths of parent segments for each wildcard
+        const wildcardParentPathInfos = [];
+        const wildcardPositions = [];
+        let currentPatternPath = "", prevPatternPath = "";
+        let wildcardCount = 0;
+        // Iterate through each segment to build cumulative paths and identify wildcards
+        for (let i = 0; i < segments.length; i++) {
+            currentPatternPath += segments[i];
+            // If this segment is a wildcard, track it with all wildcard-specific metadata
+            if (segments[i] === WILDCARD) {
+                wildcardPaths.push(currentPatternPath);
+                indexByWildcardPath[currentPatternPath] = wildcardCount; // Store wildcard's ordinal position
+                wildcardPathInfos.push(getPattern(currentPatternPath));
+                wildcardParentPaths.push(prevPatternPath); // Parent path is the previous cumulative path
+                wildcardParentPathInfos.push(getPattern(prevPatternPath));
+                wildcardPositions.push(i);
+                wildcardCount++;
+            }
+            // Track all cumulative paths for hierarchical navigation (e.g., "items", "items.*", "items.*.name")
+            cumulativePaths.push(currentPatternPath);
+            cumulativePathInfos.push(getPattern(currentPatternPath));
+            // Save current path as previous for next iteration, then add separator
+            prevPatternPath = currentPatternPath;
+            currentPatternPath += ".";
+        }
+        // Determine the deepest (last) wildcard path and the parent path of the entire pattern
+        const lastWildcardPath = wildcardPaths.length > 0 ? wildcardPaths[wildcardPaths.length - 1] : null;
+        const parentPath = cumulativePaths.length > 1 ? cumulativePaths[cumulativePaths.length - 2] : null;
+        // Assign all analyzed data to readonly properties
         this.path = path;
-        this.segments = path.split(DELIMITER).filter(seg => seg.length > 0);
-        this.wildcardPositions = this.segments
-            .map((seg, index) => (seg === WILDCARD ? index : -1))
-            .filter(index => index !== -1);
-        this.wildcardCount = this.wildcardPositions.length;
-        this.wildcardPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos + 1).join(DELIMITER));
-        this.wildcardPathSet = new Set(this.wildcardPaths);
-        this.wildcardParentPaths = this.wildcardPositions.map(pos => this.segments.slice(0, pos).join(DELIMITER));
-        this.wildcardParentPathSet = new Set(this.wildcardParentPaths);
-        // infinite loop prevention
-        this.wildcardPathInfos = this.wildcardPaths.map(p => p === this.path ? this : getPathInfo(p));
-        this.wildcardPathInfoSet = new Set(this.wildcardPathInfos);
-        // infinite loop prevention
-        this.wildcardParentPathInfos = this.wildcardParentPaths.map(p => p === this.path ? this : getPathInfo(p));
-        this.wildcardParentPathInfoSet = new Set(this.wildcardParentPathInfos);
-    }
-    get parentPathInfo() {
-        if (typeof this._parentPathInfo !== "undefined") {
-            return this._parentPathInfo;
-        }
-        if (this.segments.length === 0) {
-            return null;
-        }
-        const parentSegments = this.segments.slice(0, -1);
-        const parentPath = parentSegments.join(DELIMITER);
-        this._parentPathInfo = getPathInfo(parentPath);
-        return this._parentPathInfo;
+        this.segments = segments;
+        this.lastSegment = segments[segments.length - 1];
+        this.cumulativePaths = cumulativePaths;
+        this.cumulativePathSet = new Set(cumulativePaths); // Set for fast lookup
+        this.cumulativePathInfos = cumulativePathInfos;
+        this.cumulativePathInfoSet = new Set(cumulativePathInfos);
+        this.wildcardPaths = wildcardPaths;
+        this.wildcardPathSet = new Set(wildcardPaths);
+        this.indexByWildcardPath = indexByWildcardPath;
+        this.wildcardPathInfos = wildcardPathInfos;
+        this.wildcardPathInfoSet = new Set(wildcardPathInfos);
+        this.wildcardParentPaths = wildcardParentPaths;
+        this.wildcardParentPathSet = new Set(wildcardParentPaths);
+        this.wildcardParentPathInfos = wildcardParentPathInfos;
+        this.wildcardParentPathInfoSet = new Set(wildcardParentPathInfos);
+        this.wildcardPositions = wildcardPositions;
+        this.lastWildcardPath = lastWildcardPath;
+        this.lastWildcardInfo = lastWildcardPath ? getPattern(lastWildcardPath) : null;
+        this.parentPath = parentPath;
+        this.parentPathInfo = parentPath ? getPattern(parentPath) : null;
+        this.wildcardCount = wildcardCount;
     }
 }
 //# sourceMappingURL=PathInfo.js.map

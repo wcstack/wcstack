@@ -112,10 +112,34 @@ export function setByAddress(
     receiver : any,
     handler  : IStateHandler
 ): any {
-  const isElements = handler.stateElement.elementPaths.has(address.pathInfo.path);
-  if (isElements) {
-    return _setByAddressWithSwap(target, address, value, receiver, handler);
-  } else {
-    return _setByAddress(target, address, value, receiver, handler);
+  const stateElement = handler.stateElement;
+  const isElements = stateElement.elementPaths.has(address.pathInfo.path);
+  const listable = stateElement.listPaths.has(address.pathInfo.path);
+  const cacheable = address.pathInfo.wildcardCount > 0 || 
+                    stateElement.getterPaths.has(address.pathInfo.path);
+  try {
+    if (isElements) {
+      return _setByAddressWithSwap(target, address, value, receiver, handler);
+    } else {
+      return _setByAddress(target, address, value, receiver, handler);
+    }
+  } finally {
+    if (cacheable || listable) {
+      let cacheEntry = stateElement.cache.get(address) ?? null;
+      if (cacheEntry === null) {
+        cacheEntry = {
+          value: value,
+          versionInfo: {
+            version: handler.updater.versionInfo.version,
+            revision: handler.updater.versionInfo.revision,
+          },
+        };
+        stateElement.cache.set(address, cacheEntry);
+      } else {
+        cacheEntry.value = value;
+        cacheEntry.versionInfo.version = handler.updater.versionInfo.version;
+        cacheEntry.versionInfo.revision = handler.updater.versionInfo.revision;
+      }
+    }
   }
 }

@@ -15,88 +15,58 @@
  * - getByRef/setByRefで値の取得・設定を一元的に処理
  * - 柔軟なバインディングやAPI経由での利用が可能
  */
-import { getStructuredPathInfo } from "../../StateProperty/getStructuredPathInfo.js";
-import { raiseError } from "../../utils.js";
-import { IStateHandler, IStateProxy } from "../_types.js";
-import { IListIndex } from "../../ListIndex/types.js";
-import { getStatePropertyRef } from "../../StatePropertyRef/StatepropertyRef.js";
-import { GetListIndexesByRefSymbol, SetByRefSymbol } from "../_symbols.js";
-import { setByRef } from "../methods/setByAddress.js";
-import { getByRef } from "../methods/getByAddress.js";
+
+import { getPathInfo } from "../../address/PathInfo";
+import { createStateAddress } from "../../address/StateAddress";
+import { getListIndexesByList } from "../../list/listIndexesByList";
+import { IListIndex } from "../../list/types";
+import { raiseError } from "../../raiseError";
+import { getByAddress } from "../methods/getByAddress";
+import { setByAddress } from "../methods/setByAddress";
+import { IStateHandler } from "../types";
 
 export function resolve(
   target: Object, 
   prop: PropertyKey, 
-  receiver: IStateProxy,
+  receiver: any,
   handler: IStateHandler
 ): Function {
   return (path: string, indexes: number[], value?: any): any => {
-    const info = getStructuredPathInfo(path);
-    const lastInfo = handler.lastRefStack?.info ?? null;
-    if (lastInfo !== null && lastInfo.pattern !== info.pattern) {
+    const pathInfo = getPathInfo(path);
+    const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+    const stateElement = handler.stateElement;
+    if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
       // gettersに含まれる場合は依存関係を登録
-      if (handler.engine.pathManager.onlyGetters.has(lastInfo.pattern)) {
-        handler.engine.pathManager.addDynamicDependency(lastInfo.pattern, info.pattern);
+      if (stateElement.getterPaths.has(lastInfo.path)) {
+        stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
       }
     }
 
-    if (info.wildcardParentInfos.length > indexes.length) {
-      raiseError({
-        code: 'STATE-202',
-        message: `indexes length is insufficient: ${path}`,
-        context: { path, expected: info.wildcardParentInfos.length, received: indexes.length },
-        docsUrl: '/docs/error-codes.md#state',
-        severity: 'error',
-      });
+    if (pathInfo.wildcardParentPathInfos.length > indexes.length) {
+      raiseError(`indexes length is insufficient: ${path}`);
     }
     // ワイルドカード階層ごとにListIndexを解決していく
     let listIndex: IListIndex | null = null;
-    for(let i = 0; i < info.wildcardParentInfos.length; i++) {
-      const wildcardParentPattern = info.wildcardParentInfos[i];
-      const wildcardRef = getStatePropertyRef(wildcardParentPattern, listIndex);
-      const tmpValue = getByRef(target, wildcardRef, receiver, handler);
-      const listIndexes = receiver[GetListIndexesByRefSymbol](wildcardRef);
+    for(let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
+      const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
+      const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
+      const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
+      const listIndexes = getListIndexesByList(tmpValue);
       if (listIndexes == null) {
-        raiseError({
-          code: 'LIST-201',
-          message: `ListIndexes not found: ${wildcardParentPattern.pattern}`,
-          context: { pattern: wildcardParentPattern.pattern },
-          docsUrl: '/docs/error-codes.md#list',
-          severity: 'error',
-        });
+        raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
       }
       const index = indexes[i];
-      listIndex = listIndexes[index] ?? raiseError({
-        code: 'LIST-201',
-        message: `ListIndex not found: ${wildcardParentPattern.pattern}`,
-        context: { pattern: wildcardParentPattern.pattern, index },
-        docsUrl: '/docs/error-codes.md#list',
-        severity: 'error',
-      });
+      listIndex = listIndexes[index] ?? 
+        raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
     }
 
-    // WritableかReadonlyかを判定して適切なメソッドを呼び出す
-    const ref = getStatePropertyRef(info, listIndex);
+    // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す
+    const address = createStateAddress(pathInfo, listIndex);
     const hasSetValue = typeof value !== "undefined";
-    if (SetByRefSymbol in receiver) {
-      if (!hasSetValue) {
-        return getByRef(target, ref, receiver, handler);
-      } else {
-        setByRef(target, ref, value, receiver, handler);
-      }
+    if (!hasSetValue) {
+      return getByAddress(target, address, receiver, handler);
     } else {
-      if (!hasSetValue) {
-        return getByRef(target, ref, receiver, handler);
-      } else {
-        // readonlyなので、setはできない
-        raiseError({
-          code: 'STATE-202',
-          message: `Cannot set value on a readonly proxy: ${path}`,
-          context: { path },
-          docsUrl: '/docs/error-codes.md#state',
-          severity: 'error',
-        });
-      }
+      setByAddress(target, address, value, receiver, handler);
     }
   };
 } 

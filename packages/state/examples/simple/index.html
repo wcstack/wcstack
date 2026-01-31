@@ -56,6 +56,7 @@ export default {
   <template data-bind-state="for: users">
     <div>
       <span data-bind-state="textContent: users.*.id"></span>:
+      <input type="text" data-bind-state="value: users.*.name">
       <span data-bind-state="textContent: users.*.name"></span>
     </div>
   </template>

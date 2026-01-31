@@ -1,5 +1,5 @@
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
-import { getListIndexByNode } from "../list/listIndexByNode";
+import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 const handlerByHandlerKey = new Map();
@@ -32,10 +32,11 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for two-way binding.`);
     }
-    const state = stateElement.state;
-    const listIndex = getListIndexByNode(node);
-    state.$stack(listIndex, () => {
-        state[statePathName] = newValue;
+    const loopContext = getLoopContextByNode(node);
+    stateElement.createState(async (state) => {
+        state.$$setLoopContext(loopContext, async () => {
+            state[statePathName] = newValue;
+        });
     });
 };
 export function attachTwowayEventHandler(bindingInfo) {

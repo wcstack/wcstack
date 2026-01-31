@@ -4,44 +4,41 @@
  * ワイルドカードを含む State パスから、対象となる全要素を配列で取得する。
  * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）
  */
-import { getStructuredPathInfo } from "../../StateProperty/getStructuredPathInfo.js";
-import { IStructuredPathInfo } from "../../StateProperty/types";
-import { raiseError } from "../../utils.js";
-import { IStateProxy, IStateHandler } from "../_types.js";
+
+import { getPathInfo } from "../../address/PathInfo";
+import { createStateAddress } from "../../address/StateAddress";
+import { IPathInfo, IStateAddress } from "../../address/types";
+import { getListIndexesByList } from "../../list/listIndexesByList";
+import { IListIndex } from "../../list/types";
+import { raiseError } from "../../raiseError";
+import { getByAddress } from "../methods/getByAddress";
 import { getContextListIndex } from "../methods/getContextListIndex";
-import { IListIndex } from "../../ListIndex/types.js";
-import { getStatePropertyRef } from "../../StatePropertyRef/StatepropertyRef.js";
-import { resolve } from "./resolve.js";
-import { getByRef } from "../methods/getByAddress.js";
-import { GetListIndexesByRefSymbol } from "../_symbols.js";
+import { IStateHandler } from "../types";
+import { resolve } from "./resolve";
 
 export function getAll(
   target: Object, 
   prop: PropertyKey, 
-  receiver: IStateProxy,
+  receiver: any,
   handler: IStateHandler
 ):Function {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path: string, indexes?: number[]): any[] => {
-      const info = getStructuredPathInfo(path);
-      const lastInfo = handler.lastRefStack?.info ?? null;
-      if (lastInfo !== null && lastInfo.pattern !== info.pattern) {
+      const pathInfo = getPathInfo(path);
+      const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+      const stateElement = handler.stateElement;
+      if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
         // gettersに含まれる場合は依存関係を登録
-        if (handler.engine.pathManager.onlyGetters.has(lastInfo.pattern)) {
-          handler.engine.pathManager.addDynamicDependency(lastInfo.pattern, info.pattern);
+        if (stateElement.getterPaths.has(lastInfo.path)) {
+          stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
         }
       }
   
       if (typeof indexes === "undefined") {
-        for(let i = 0; i < info.wildcardInfos.length; i++) {
-          const wildcardPattern = info.wildcardInfos[i] ?? raiseError({
-            code: 'BIND-201',
-            message: 'wildcardPattern is null',
-            context: { index: i, infoPattern: info.pattern },
-            docsUrl: '/docs/error-codes.md#bind',
-            severity: 'error',
-          });
-          const listIndex = getContextListIndex(handler, wildcardPattern.pattern);
+        for(let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
+          const wildcardPattern = pathInfo.wildcardParentPathInfos[i] ?? 
+            raiseError('wildcardPattern is null');
+          const listIndex = getContextListIndex(handler, wildcardPattern.path);
           if (listIndex) {
             indexes = listIndex.indexes;
             break;
@@ -52,7 +49,7 @@ export function getAll(
         }
       }
       const walkWildcardPattern = (
-        wildcardParentInfos: IStructuredPathInfo[],
+        wildcardParentPathInfos: IPathInfo[],
         wildardIndexPos: number,
         listIndex: IListIndex | null,
         indexes: number[],
@@ -60,29 +57,23 @@ export function getAll(
         parentIndexes: number[],
         results: number[][]
       ) => {
-        const wildcardParentPattern = wildcardParentInfos[wildardIndexPos] ?? null;
-        if (wildcardParentPattern === null) {
+        const wildcardParentPathInfo = wildcardParentPathInfos[wildardIndexPos] ?? null;
+        if (wildcardParentPathInfo === null) {
           results.push(parentIndexes);
           return;
         }
-        const wildcardRef = getStatePropertyRef(wildcardParentPattern, listIndex);
-        const tmpValue = getByRef(target, wildcardRef, receiver, handler);
-        const listIndexes = receiver[GetListIndexesByRefSymbol](wildcardRef);
+        const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
+        const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
+        const listIndexes = getListIndexesByList(tmpValue);
         if (listIndexes === null) {
-          raiseError({
-            code: 'LIST-201',
-            message: `ListIndex not found: ${wildcardParentPattern.pattern}`,
-            context: { pattern: wildcardParentPattern.pattern },
-            docsUrl: '/docs/error-codes.md#list',
-            severity: 'error',
-          });
+          raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
         }
         const index = indexes[indexPos] ?? null;
         if (index === null) {
           for(let i = 0; i < listIndexes.length; i++) {
             const listIndex = listIndexes[i];
             walkWildcardPattern(
-              wildcardParentInfos, 
+              wildcardParentPathInfos, 
               wildardIndexPos + 1, 
               listIndex, 
               indexes, 
@@ -91,16 +82,11 @@ export function getAll(
               results);
           }
         } else {
-          const listIndex = listIndexes[index] ?? raiseError({
-            code: 'LIST-201',
-            message: `ListIndex not found: ${wildcardParentPattern.pattern}`,
-            context: { pattern: wildcardParentPattern.pattern, index },
-            docsUrl: '/docs/error-codes.md#list',
-            severity: 'error',
-          });
-          if ((wildardIndexPos + 1) < wildcardParentInfos.length) {
+          const listIndex = listIndexes[index] ?? 
+            raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+          if ((wildardIndexPos + 1) < wildcardParentPathInfos.length) {
             walkWildcardPattern(
-              wildcardParentInfos, 
+              wildcardParentPathInfos, 
               wildardIndexPos + 1, 
               listIndex, 
               indexes, 
@@ -116,7 +102,7 @@ export function getAll(
       }
       const resultIndexes: number[][] = [];
       walkWildcardPattern(
-        info.wildcardParentInfos, 
+        pathInfo.wildcardParentPathInfos, 
         0, 
         null, 
         indexes, 
@@ -127,10 +113,11 @@ export function getAll(
       const resultValues: any[] = [];
       for(let i = 0; i < resultIndexes.length; i++) {
         resultValues.push(resolveFn(
-          info.pattern,
+          pathInfo.path,
           resultIndexes[i]
         ));
       }
       return resultValues;
     }
   }
+

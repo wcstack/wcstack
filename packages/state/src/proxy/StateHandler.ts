@@ -3,10 +3,12 @@ import { IStateElement } from "../components/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IUpdater } from "../updater/types";
-import { IStateHandler } from "./types";
+import { IStateHandler, IStateProxy } from "./types";
 import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
 import { ILoopContext } from "../list/types";
+import { IState } from "../types";
+import { createUpdater } from "../updater/updater";
 
 class StateHandler implements IStateHandler {
   private _stateElement: IStateElement;
@@ -14,13 +16,12 @@ class StateHandler implements IStateHandler {
   private _addressStack: (IStateAddress | null)[] = [];
   private _addressStackIndex: number = -1;
 
-  private _updater: IUpdater;
+  private _updater: IUpdater | undefined;
 
   private _loopContext: ILoopContext | null | undefined;
 
   constructor(
-    stateName: string,
-    updater: IUpdater
+    stateName: string
   ) {
     this._stateName = stateName;
     const stateElement = getStateElementByName(this._stateName);
@@ -28,7 +29,6 @@ class StateHandler implements IStateHandler {
       raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
     }
     this._stateElement = stateElement;
-    this._updater = updater;
   }
 
   get stateName(): string {
@@ -56,13 +56,16 @@ class StateHandler implements IStateHandler {
   }
 
   get updater(): IUpdater {
+    if (typeof this._updater === "undefined") {
+      raiseError(`StateHandler: updater is not set yet.`);
+    }
     return this._updater;
   }
+  set updater(value: IUpdater) {
+    this._updater = value;
+  }
 
-  get loopContext(): ILoopContext | null {
-    if (typeof this._loopContext === "undefined") {
-      raiseError(`StateHandler: loopContext is not set yet.`);
-    }
+  get loopContext(): ILoopContext | null | undefined {
     return this._loopContext;
   }
 
@@ -117,4 +120,14 @@ class StateHandler implements IStateHandler {
 //    return Reflect.has(target, prop) || this.symbols.has(prop) || this.apis.has(prop);
   }
 
+}
+
+export function createStateProxy(
+  state: IState,
+  stateName: string
+): IStateProxy {
+  const handler = new StateHandler(stateName);
+  const stateProxy = new Proxy<IStateProxy>(state as IStateProxy, handler);
+  handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
+  return stateProxy;
 }

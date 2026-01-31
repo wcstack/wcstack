@@ -1,7 +1,7 @@
 import { IStateAddress } from "../address/types";
+import { IVersionInfo } from "../version/types";
 
 export interface IUpdater {
-  readonly version: number;
-  readonly revision: number;
+  readonly versionInfo: IVersionInfo;
   enqueueUpdateAddress(address: IStateAddress): void;
 }

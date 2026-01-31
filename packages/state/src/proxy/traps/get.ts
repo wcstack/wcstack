@@ -19,12 +19,14 @@
 
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
+import { IStateAddress } from "../../address/types";
 import { raiseError } from "../../raiseError";
+import { IState } from "../../types";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
+import { setLoopContext } from "../methods/setLoopContext";
 import { IStateHandler } from "../types";
 import { indexByIndexName } from "./indexByIndexName";
-
 
 export function get(
   target  : Object, 
@@ -38,6 +40,21 @@ export function get(
     return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {
+    if (prop === "$$setLoopContext") {
+      return (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
+        return setLoopContext(handler, loopContext, callback);
+      };
+    }
+    if (prop === "$$getByAddress") {
+      return (address: IStateAddress): any => {
+        return getByAddress(
+          target, 
+          address,
+          receiver,
+          handler
+        );
+      }
+    }
     const resolvedAddress = getResolvedAddress(prop);
     const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
     const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);

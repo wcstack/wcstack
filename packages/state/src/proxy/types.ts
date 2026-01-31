@@ -8,16 +8,21 @@ export interface IStateHandler extends ProxyHandler<IState> {
   readonly stateName: string;
   readonly stateElement: IStateElement;
 
-  readonly updater: IUpdater;
+  updater: IUpdater;
 
   readonly addressStack: (IStateAddress | null)[];
   readonly addressStackIndex: number;
   readonly lastAddressStack: IStateAddress | null;
 
-  readonly loopContext: ILoopContext | null;
+  readonly loopContext: ILoopContext | null | undefined;
 
   pushAddress(address: IStateAddress | null): void;
   popAddress(): IStateAddress | null;
   setLoopContext(loopContext: ILoopContext | null): void;
   clearLoopContext(): void;
+}
+
+export interface IStateProxy extends IState {
+  $$setLoopContext(loopContext: ILoopContext | null, callback: () => Promise<void>): Promise<void>;
+  $$getByAddress(address: IStateAddress): any;
 }

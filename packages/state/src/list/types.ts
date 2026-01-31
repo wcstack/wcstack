@@ -25,13 +25,13 @@ export interface IListManager {
 }
 
 export interface ILoopContext {
-  listPathInfo: IPathInfo;
+  elementPathInfo: IPathInfo; // ex. getPathInfo("users.*")
   listIndex: IListIndex;
 }
 
 export interface ILoopContextStack {
   createLoopContext(
-    listPathInfo: IPathInfo, 
+    elementPathInfo: IPathInfo, 
     listIndex: IListIndex, 
     callback: (loopContext: ILoopContext) => void | Promise<void>
   ): void | Promise<void>;

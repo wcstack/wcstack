@@ -1,17 +1,18 @@
-import { IStatePropertyRef } from "../../StatePropertyRef/types";
-import { IStateHandler } from "../_types";
+import { IStateAddress } from "../../address/types";
+import { IStateHandler } from "../types";
 
 export function checkDependency(
   handler: IStateHandler,
-  ref: IStatePropertyRef,
+  address: IStateAddress,
 ): void {
   // 動的依存関係の登録
-  if (handler.refIndex >= 0) {
-    const lastInfo = handler.lastRefStack?.info ?? null;
+  if (handler.addressStackIndex >= 0) {
+    const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+    const stateElement = handler.stateElement;
     if (lastInfo !== null) {
-      if (handler.engine.pathManager.onlyGetters.has(lastInfo.pattern) &&
-        lastInfo.pattern !== ref.info.pattern) {
-        handler.engine.pathManager.addDynamicDependency(lastInfo.pattern, ref.info.pattern);
+      if (stateElement.getterPaths.has(lastInfo.path) &&
+        lastInfo.path !== address.pathInfo.path) {
+        stateElement.addDynamicDependency(lastInfo.path, address.pathInfo.path);
       }
     }
   }

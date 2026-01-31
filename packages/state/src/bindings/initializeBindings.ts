@@ -1,5 +1,5 @@
 import { IStateElement } from "../components/types";
-import { IListIndex } from "../list/types";
+import { IListIndex, ILoopContext } from "../list/types";
 import { IBindingInfo } from "../types";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
@@ -9,7 +9,8 @@ import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } fr
 import { IFragmentNodeInfo } from "../structural/types";
 import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
-import { getListIndexByNode, setListIndexByNode } from "../list/listIndexByNode";
+import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
+import { createStateAddress } from "../address/StateAddress";
 
 interface IApplyInfo {
   bindingInfo: IBindingInfo;
@@ -17,15 +18,16 @@ interface IApplyInfo {
 }
 
 async function _initializeBindings(
-  allBindings: IBindingInfo[]
+  allBindings: IBindingInfo[],
 ): Promise<void> {
   const applyInfoList: IApplyInfo[] = [];
-  const cacheValueByPathByStateElement = new Map<IStateElement, Map<string, any>>();
+  const bindingsByStateElement = new Map<IStateElement, IBindingInfo[]>();
   for(const bindingInfo of allBindings) {
     const stateElement = getStateElementByName(bindingInfo.stateName);
     if (stateElement === null) {
       raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
     }
+    await stateElement.initializePromise;
 
     // replace to comment node
     replaceToComment(bindingInfo);
@@ -41,30 +43,31 @@ async function _initializeBindings(
     // register binding
     stateElement.addBindingInfo(bindingInfo);
 
-    // get cache value
-    let cacheValueByPath = cacheValueByPathByStateElement.get(stateElement);
-    if (typeof cacheValueByPath === "undefined") {
-      cacheValueByPath = new Map<string, any>();
-      cacheValueByPathByStateElement.set(stateElement, cacheValueByPath);
+    // group by state element
+    let bindings = bindingsByStateElement.get(stateElement);
+    if (typeof bindings === "undefined") {
+      bindingsByStateElement.set(stateElement, [ bindingInfo ]);
+    } else {
+      bindings.push(bindingInfo);
     }
-    const cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
-    if (typeof cacheValue !== "undefined") {
-      // apply cached value
-      applyInfoList.push({ bindingInfo, value: cacheValue });
-      continue;
-    }
+  }
 
-    // apply initial value
-    await stateElement.initializePromise;
-    const listIndex = getListIndexByNode(bindingInfo.node);
-    const state = stateElement.state;
-    const value = state.$stack(listIndex, () => {
-      return state[bindingInfo.statePathName];
+  // get apply values from cache and state
+  for(const [stateElement, bindings] of bindingsByStateElement.entries()) {
+    const cacheValueByPath = new Map<string, any>();
+    await stateElement.createState( async (state) => {
+      for(const bindingInfo of bindings) {
+        let cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
+        if (typeof cacheValue === "undefined") {
+          const loopContext = getLoopContextByNode(bindingInfo.node);
+          cacheValue = await state.$$setLoopContext(loopContext, () => {
+            return state[bindingInfo.statePathName];
+          });
+          cacheValueByPath.set(bindingInfo.statePathName, cacheValue);
+        }
+        applyInfoList.push({ bindingInfo, value: cacheValue });
+      }
     });
-    applyInfoList.push({ bindingInfo, value });
-
-    // set cache value
-    cacheValueByPath.set(bindingInfo.statePathName, value);
   }
 
   // apply all at once
@@ -73,12 +76,10 @@ async function _initializeBindings(
   }
 }
 
-export async function initializeBindings(root: Document | Element, parentListIndex: IListIndex | null): Promise<void> {
+export async function initializeBindings(root: Document | Element, parentLoopContext: ILoopContext | null): Promise<void> {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
   for(const node of subscriberNodes) {
-    if (parentListIndex !== null) {
-      setListIndexByNode(node, parentListIndex);
-    }
+    setLoopContextByNode(node, parentLoopContext);
   }
   await _initializeBindings(allBindings);
 }
@@ -86,13 +87,11 @@ export async function initializeBindings(root: Document | Element, parentListInd
 export async function initializeBindingsByFragment(
   root: DocumentFragment,
   nodeInfos: IFragmentNodeInfo[], 
-  parentListIndex: IListIndex | null
+  parentLoopContext: ILoopContext | null
 ): Promise<void> {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
   for(const node of subscriberNodes) {
-    if (parentListIndex !== null) {
-      setListIndexByNode(node, parentListIndex);
-    }
+    setLoopContextByNode(node, parentLoopContext);
   }
   await _initializeBindings(allBindings);
 }
