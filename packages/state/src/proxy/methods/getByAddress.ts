@@ -1,19 +1,19 @@
 /**
- * getByRef.ts
+ * getByAddress.ts
  *
  * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
- * 状態オブジェクト（target）から値を取得するための関数（getByRef）の実装です。
+ * 状態オブジェクト（target）から値を取得するための関数（getByAddress）の実装です。
  *
  * 主な役割:
  * - 指定されたパス・インデックスに対応するState値を取得（多重ループやワイルドカードにも対応）
- * - 依存関係の自動登録（trackedGetters対応時はsetTrackingでラップ）
- * - キャッシュ機構（handler.cacheable時はrefKeyで値をキャッシュ）
- * - getter経由で値取得時はSetStatePropertyRefSymbolでスコープを一時設定
- * - 存在しない場合は親infoやlistIndexを辿って再帰的に値を取得
+ * - 依存関係の自動登録（checkDependencyで登録）
+ * - キャッシュ機構（リストもキャッシュ対象）
+ * - getter経由で値取得時はpushAddressでスコープを一時設定
+ * - 存在しない場合は親pathAddressやlistIndexを辿って再帰的に値を取得
  *
  * 設計ポイント:
- * - handler.engine.trackedGettersに含まれる場合はsetTrackingで依存追跡を有効化
- * - キャッシュ有効時はrefKeyで値をキャッシュし、取得・再利用を最適化
+ * - checkDependencyで依存追跡を実行  
+ * - キャッシュ有効時はstateAddressで値をキャッシュし、取得・再利用を最適化
  * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
  * - finallyでキャッシュへの格納を保証
  */
@@ -21,6 +21,7 @@
 import { IStateAddress } from "../../address/types";
 import { ICacheEntry } from "../../cache/types";
 import { IStateElement } from "../../components/types";
+import { WILDCARD } from "../../define";
 import { createListIndexes } from "../../list/createListIndexes";
 import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
@@ -34,34 +35,33 @@ function _getByAddress(
   handler  : IStateHandler,
   stateElement: IStateElement,
 ): any {
-  let value: any;
-  // 親子関係のあるgetterが存在する場合は、外部依存から取得
+  // ToDo:親子関係のあるgetterが存在する場合は、外部依存から取得
 /*
   if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.getters.intersection(ref.info.cumulativePathSet).size === 0) {
     return handler.engine.stateOutput.get(ref);
   }
 */
-  // パターンがtargetに存在する場合はgetter経由で取得
   if (address.pathInfo.path in target) {
+    // getterの中で参照の可能性があるので、addressをプッシュする
     if (stateElement.getterPaths.has(address.pathInfo.path)) {
       handler.pushAddress(address);
       try {
-        return value = Reflect.get(target, address.pathInfo.path, receiver);
+        return Reflect.get(target, address.pathInfo.path, receiver);
       } finally {
         handler.popAddress();
       }
     } else {
-      return value = Reflect.get(target, address.pathInfo.path);
+      return Reflect.get(target, address.pathInfo.path);
     }
   } else {
-    const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined`);
+    const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
     const parentValue = getByAddress(target, parentAddress, receiver, handler);
     const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
-    if (lastSegment === "*") {
-      const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined`);
-      return value = Reflect.get(parentValue, index);
+    if (lastSegment === WILDCARD) {
+      const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+      return Reflect.get(parentValue, index);
     } else {
-      return value = Reflect.get(parentValue, lastSegment);
+      return Reflect.get(parentValue, lastSegment);
     }
   }
 }
@@ -101,34 +101,21 @@ function _getByAddressWithCache(
   } finally {
     let newListIndexes = null;
     if (listable) {
-      // リストインデックスを計算する必要がある
-      const oldListIndexes = getListIndexesByList(lastCacheEntry?.value as any[]) ?? [];
+      // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
+      const oldList = lastCacheEntry?.value;
+      const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
       newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
       setListIndexesByList(value, newListIndexes);
     }
-    const cacheEntry: ICacheEntry = Object.assign(lastCacheEntry ?? {}, {
+    const cacheEntry: ICacheEntry = {
+      ...(lastCacheEntry ?? {}),
       value: value,
       versionInfo: { ...handler.updater.versionInfo },
-    });
+    };
     stateElement.cache.set(address, cacheEntry);
   }
 }
 
-/**
- * 構造化パス情報(info, listIndex)をもとに、状態オブジェクト(target)から値を取得する。
- * 
- * - 依存関係の自動登録（trackedGetters対応時はsetTrackingでラップ）
- * - キャッシュ機構（handler.cacheable時はrefKeyでキャッシュ）
- * - ネスト・ワイルドカード対応（親infoやlistIndexを辿って再帰的に値を取得）
- * - getter経由で値取得時はSetStatePropertyRefSymbolでスコープを一時設定
- * 
- * @param target    状態オブジェクト
- * @param info      構造化パス情報
- * @param listIndex リストインデックス（多重ループ対応）
- * @param receiver  プロキシ
- * @param handler   状態ハンドラ
- * @returns         対象プロパティの値
- */
 export function getByAddress(
   target   : Object, 
   address  : IStateAddress,
@@ -137,15 +124,15 @@ export function getByAddress(
 ): any {
   checkDependency(handler, address);
   const stateElement = handler.stateElement;
+  // リストはキャッシュ対象とする。前回の値をもとにListIndexesの差分更新を行うため
   const listable = stateElement.listPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
-  let value: any;
   if (cacheable || listable) {
-    return value = _getByAddressWithCache(
+    return _getByAddressWithCache(
       target, address, receiver, handler, stateElement, listable
     );
   } else {
-    return value = _getByAddress(target, address, receiver, handler, stateElement);
+    return _getByAddress(target, address, receiver, handler, stateElement);
   }
 }

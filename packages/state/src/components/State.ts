@@ -37,17 +37,22 @@ function getAllPropertyDescriptors(obj: Object): Descriptors {
 function getStateInfo(
   state: IState
 ): { 
-  getterPaths: Set<string> 
+  getterPaths: Set<string>,
+  setterPaths: Set<string>,
 } {
   const getterPaths: Set<string> = new Set<string>();
+  const setterPaths: Set<string> = new Set<string>();
   const descriptors = getAllPropertyDescriptors(state);
   for(const [ key, descriptor ] of Object.entries(descriptors)) {
     if (typeof descriptor.get === "function") {
       getterPaths.add(key);
     }
+    if (typeof descriptor.set === "function") {
+      setterPaths.add(key);
+    }
   }
   return {
-    getterPaths,
+    getterPaths, setterPaths
   };
 }
 
@@ -62,6 +67,7 @@ export class State extends HTMLElement implements IStateElement {
   private _listPaths: Set<string> = new Set<string>();
   private _elementPaths: Set<string> = new Set<string>();
   private _getterPaths: Set<string> = new Set<string>();
+  private _setterPaths: Set<string> = new Set<string>();
   private _isLoadingState: boolean = false;
   private _isLoadedState: boolean = false;
   private _loopContextStack: ILoopContextStack = createLoopContextStack();
@@ -97,6 +103,9 @@ export class State extends HTMLElement implements IStateElement {
     const stateInfo = getStateInfo(value);
     for(const path of stateInfo.getterPaths) {
       this._getterPaths.add(path);
+    }
+    for(const path of stateInfo.setterPaths) {
+      this._setterPaths.add(path);
     }
   }
 
@@ -163,7 +172,6 @@ export class State extends HTMLElement implements IStateElement {
 
       } finally {
         this._isLoadingState = false;
-
       }
     }
     if (typeof this.__state === "undefined") {
@@ -203,6 +211,10 @@ export class State extends HTMLElement implements IStateElement {
     return this._getterPaths;
   }
 
+  get setterPaths(): Set<string> {
+    return this._setterPaths;
+  }
+
   get loopContextStack(): ILoopContextStack {
     return this._loopContextStack;
   }
@@ -227,26 +239,25 @@ export class State extends HTMLElement implements IStateElement {
     return this._version;
   }
 
-  addDynamicDependency(fromPath: string, toPath: string): void {
-    const deps = this._dynamicDependency.get(fromPath);
-    if (typeof deps === "undefined") {
-      this._dynamicDependency.set(fromPath, [ toPath ]);
-    } else {
-      if (!deps.includes(toPath)) {
-        deps.push(toPath);
-      }
+  private _addDependency(
+    map: Map<string, string[]>, 
+    fromPath: string, 
+    toPath: string
+  ): void {
+    const deps = map.get(fromPath);
+    if (deps === undefined) {
+      map.set(fromPath, [toPath]);
+    } else if (!deps.includes(toPath)) {
+      deps.push(toPath);
     }
+  }  
+
+  addDynamicDependency(fromPath: string, toPath: string): void {
+    this._addDependency(this._dynamicDependency, fromPath, toPath);
   }
 
   addStaticDependency(fromPath: string, toPath: string): void {
-    const deps = this._staticDependency.get(fromPath);
-    if (typeof deps === "undefined") {
-      this._staticDependency.set(fromPath, [ toPath ]);
-    } else {
-      if (!deps.includes(toPath)) {
-        deps.push(toPath);
-      }
-    }
+    this._addDependency(this._staticDependency, fromPath, toPath);
   }
 
   addBindingInfo(bindingInfo: IBindingInfo): void {
@@ -284,9 +295,21 @@ export class State extends HTMLElement implements IStateElement {
     }
   }
 
-  async createState(callback: (state: IStateProxy) => Promise<void>): Promise<void> {
-    const stateProxy = createStateProxy(this._state, this._name);
-    return callback(stateProxy);
+  private _createState<T>(callback: (state: IStateProxy) => T): T {
+    try {
+      const stateProxy = createStateProxy(this._state, this._name);
+      return callback(stateProxy);
+    } finally {
+      // cleanup if needed
+    }
+  }
+
+  async createStateAsync(callback: (state: IStateProxy) => Promise<void>): Promise<void> {
+    return await this._createState(callback);
+  }
+
+  createState(callback: (state: IStateProxy) => void): void {
+    this._createState(callback);
   }
 
   nextVersion(): number {

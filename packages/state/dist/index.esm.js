@@ -655,57 +655,56 @@ function checkDependency(handler, address) {
 }
 
 /**
- * getByRef.ts
+ * getByAddress.ts
  *
  * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
- * 状態オブジェクト（target）から値を取得するための関数（getByRef）の実装です。
+ * 状態オブジェクト（target）から値を取得するための関数（getByAddress）の実装です。
  *
  * 主な役割:
  * - 指定されたパス・インデックスに対応するState値を取得（多重ループやワイルドカードにも対応）
- * - 依存関係の自動登録（trackedGetters対応時はsetTrackingでラップ）
- * - キャッシュ機構（handler.cacheable時はrefKeyで値をキャッシュ）
- * - getter経由で値取得時はSetStatePropertyRefSymbolでスコープを一時設定
- * - 存在しない場合は親infoやlistIndexを辿って再帰的に値を取得
+ * - 依存関係の自動登録（checkDependencyで登録）
+ * - キャッシュ機構（リストもキャッシュ対象）
+ * - getter経由で値取得時はpushAddressでスコープを一時設定
+ * - 存在しない場合は親pathAddressやlistIndexを辿って再帰的に値を取得
  *
  * 設計ポイント:
- * - handler.engine.trackedGettersに含まれる場合はsetTrackingで依存追跡を有効化
- * - キャッシュ有効時はrefKeyで値をキャッシュし、取得・再利用を最適化
+ * - checkDependencyで依存追跡を実行
+ * - キャッシュ有効時はstateAddressで値をキャッシュし、取得・再利用を最適化
  * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
  * - finallyでキャッシュへの格納を保証
  */
 function _getByAddress(target, address, receiver, handler, stateElement) {
-    let value;
-    // 親子関係のあるgetterが存在する場合は、外部依存から取得
+    // ToDo:親子関係のあるgetterが存在する場合は、外部依存から取得
     /*
       if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.getters.intersection(ref.info.cumulativePathSet).size === 0) {
         return handler.engine.stateOutput.get(ref);
       }
     */
-    // パターンがtargetに存在する場合はgetter経由で取得
     if (address.pathInfo.path in target) {
+        // getterの中で参照の可能性があるので、addressをプッシュする
         if (stateElement.getterPaths.has(address.pathInfo.path)) {
             handler.pushAddress(address);
             try {
-                return value = Reflect.get(target, address.pathInfo.path, receiver);
+                return Reflect.get(target, address.pathInfo.path, receiver);
             }
             finally {
                 handler.popAddress();
             }
         }
         else {
-            return value = Reflect.get(target, address.pathInfo.path);
+            return Reflect.get(target, address.pathInfo.path);
         }
     }
     else {
-        const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined`);
+        const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
         const parentValue = getByAddress(target, parentAddress, receiver, handler);
         const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
-        if (lastSegment === "*") {
-            const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined`);
-            return value = Reflect.get(parentValue, index);
+        if (lastSegment === WILDCARD) {
+            const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+            return Reflect.get(parentValue, index);
         }
         else {
-            return value = Reflect.get(parentValue, lastSegment);
+            return Reflect.get(parentValue, lastSegment);
         }
     }
 }
@@ -738,36 +737,24 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
     finally {
         let newListIndexes = null;
         if (listable) {
-            // リストインデックスを計算する必要がある
-            const oldListIndexes = getListIndexesByList(lastCacheEntry?.value) ?? [];
+            // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
+            const oldList = lastCacheEntry?.value;
+            const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
             newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
             setListIndexesByList(value, newListIndexes);
         }
-        const cacheEntry = Object.assign(lastCacheEntry ?? {}, {
+        const cacheEntry = {
+            ...(lastCacheEntry ?? {}),
             value: value,
             versionInfo: { ...handler.updater.versionInfo },
-        });
+        };
         stateElement.cache.set(address, cacheEntry);
     }
 }
-/**
- * 構造化パス情報(info, listIndex)をもとに、状態オブジェクト(target)から値を取得する。
- *
- * - 依存関係の自動登録（trackedGetters対応時はsetTrackingでラップ）
- * - キャッシュ機構（handler.cacheable時はrefKeyでキャッシュ）
- * - ネスト・ワイルドカード対応（親infoやlistIndexを辿って再帰的に値を取得）
- * - getter経由で値取得時はSetStatePropertyRefSymbolでスコープを一時設定
- *
- * @param target    状態オブジェクト
- * @param info      構造化パス情報
- * @param listIndex リストインデックス（多重ループ対応）
- * @param receiver  プロキシ
- * @param handler   状態ハンドラ
- * @returns         対象プロパティの値
- */
 function getByAddress(target, address, receiver, handler) {
     checkDependency(handler, address);
     const stateElement = handler.stateElement;
+    // リストはキャッシュ対象とする。前回の値をもとにListIndexesの差分更新を行うため
     const listable = stateElement.listPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
@@ -782,42 +769,36 @@ function getByAddress(target, address, receiver, handler) {
 /**
  * getContextListIndex.ts
  *
- * StateClassの内部APIとして、現在のプロパティ参照スコープにおける
+ * Stateの内部APIとして、現在のプロパティ参照スコープにおける
  * 指定したstructuredPath（ワイルドカード付きプロパティパス）に対応する
  * リストインデックス（IListIndex）を取得する関数です。
  *
  * 主な役割:
- * - handlerの最後にアクセスされたStatePropertyRefから、指定パスに対応するリストインデックスを取得
+ * - handlerの最後にアクセスされたAddressから、指定パスに対応するリストインデックスを取得
  * - ワイルドカード階層に対応し、多重ループやネストした配列バインディングにも利用可能
  *
  * 設計ポイント:
  * - 直近のプロパティ参照情報を取得
- * - info.wildcardPathsからstructuredPathのインデックスを特定
+ * - info.indexByWildcardPathからstructuredPathのインデックスを特定
  * - listIndex.at(index)で該当階層のリストインデックスを取得
  * - パスが一致しない場合や参照が存在しない場合はnullを返す
  */
 function getContextListIndex(handler, structuredPath) {
     const address = handler.lastAddressStack;
-    if (address == null) {
-        return null;
-    }
-    if (address.pathInfo == null) {
-        return null;
-    }
-    if (address.listIndex == null) {
+    if (address === null || typeof address === "undefined") {
         return null;
     }
     const index = address.pathInfo.indexByWildcardPath[structuredPath];
-    if (typeof index !== "undefined") {
-        return address.listIndex.at(index);
+    if (typeof index === "undefined") {
+        return null;
     }
-    return null;
+    return address.listIndex?.at(index) ?? null;
 }
 
 /**
  * getListIndex.ts
  *
- * StateClassの内部APIとして、パス情報（IResolvedPathInfo）から
+ * StateClassの内部APIとして、パス情報（IResolvedAddress）から
  * 対応するリストインデックス（IListIndex）を取得する関数です。
  *
  * 主な役割:
@@ -828,36 +809,39 @@ function getContextListIndex(handler, structuredPath) {
  *
  * 設計ポイント:
  * - ワイルドカードや多重ループ、ネストした配列バインディングに柔軟に対応
- * - handler.engine.getListIndexesSetで各階層のリストインデックス集合を取得
- * - エラー時はraiseErrorで詳細な例外を投げる
+ * - getListIndexesByListで各階層のリストインデックス集合を取得
+ * - エラー時はraiseErrorで例外を投げる
  */
 function getListIndex(target, resolvedAddress, receiver, handler) {
     const pathInfo = resolvedAddress.pathInfo;
     switch (resolvedAddress.wildcardType) {
         case "none":
             return null;
-        case "context":
+        case "context": {
             const lastWildcardPath = pathInfo.wildcardPaths.at(-1) ??
-                raiseError(`lastWildcardPath is null`);
+                raiseError(`lastWildcardPath is null: ${resolvedAddress.pathInfo.path}`);
             return getContextListIndex(handler, lastWildcardPath) ??
                 raiseError(`ListIndex not found: ${resolvedAddress.pathInfo.path}`);
-        case "all":
+        }
+        case "all": {
             let parentListIndex = null;
             for (let i = 0; i < resolvedAddress.pathInfo.wildcardCount; i++) {
                 const wildcardParentPathInfo = resolvedAddress.pathInfo.wildcardParentPathInfos[i] ??
-                    raiseError('wildcardParentPathInfo is null');
+                    raiseError(`wildcardParentPathInfo is null: ${resolvedAddress.pathInfo.path}`);
                 const wildcardParentAddress = createStateAddress(wildcardParentPathInfo, parentListIndex);
                 const wildcardParentValue = getByAddress(target, wildcardParentAddress, receiver, handler);
                 const wildcardParentListIndexes = getListIndexesByList(wildcardParentValue) ??
                     raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
                 const wildcardIndex = resolvedAddress.wildcardIndexes[i] ??
-                    raiseError('wildcardIndex is null');
+                    raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);
                 parentListIndex = wildcardParentListIndexes[wildcardIndex] ??
                     raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
             }
             return parentListIndex;
-        case "partial":
+        }
+        case "partial": {
             raiseError(`Partial wildcard type is not supported yet: ${resolvedAddress.pathInfo.path}`);
+        }
     }
 }
 
@@ -865,7 +849,7 @@ function getListIndex(target, resolvedAddress, receiver, handler) {
  * setLoopContext.ts
  *
  * StateClassの内部APIとして、ループコンテキスト（ILoopContext）を一時的に設定し、
- * 指定した非同期コールバックをそのスコープ内で実行するための関数です。
+ * 指定した同期/非同期コールバックをそのスコープ内で実行するための関数です。
  *
  * 主な役割:
  * - handler.loopContextにループコンテキストを一時的に設定
@@ -879,7 +863,7 @@ function getListIndex(target, resolvedAddress, receiver, handler) {
  * - finallyで状態復元を保証し、例外発生時も安全
  * - 非同期処理にも対応
  */
-async function setLoopContext(handler, loopContext, callback) {
+function _setLoopContext(handler, loopContext, callback) {
     if (typeof handler.loopContext !== "undefined") {
         raiseError('already in loop context');
     }
@@ -889,19 +873,25 @@ async function setLoopContext(handler, loopContext, callback) {
             const stateAddress = createStateAddress(loopContext.elementPathInfo, loopContext.listIndex);
             handler.pushAddress(stateAddress);
             try {
-                return await callback();
+                return callback();
             }
             finally {
                 handler.popAddress();
             }
         }
         else {
-            return await callback();
+            return callback();
         }
     }
     finally {
         handler.clearLoopContext();
     }
+}
+function setLoopContext(handler, loopContext, callback) {
+    return _setLoopContext(handler, loopContext, callback);
+}
+async function setLoopContextAsync(handler, loopContext, callback) {
+    return await _setLoopContext(handler, loopContext, callback);
 }
 
 /**
@@ -943,8 +933,13 @@ function get(target, prop, receiver, handler) {
         return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
     }
     if (typeof prop === "string") {
-        if (prop === "$$setLoopContext") {
+        if (prop === "$$setLoopContextAsync") {
             return (loopContext, callback = async () => { }) => {
+                return setLoopContextAsync(handler, loopContext, callback);
+            };
+        }
+        if (prop === "$$setLoopContext") {
+            return (loopContext, callback = () => { }) => {
                 return setLoopContext(handler, loopContext, callback);
             };
         }
@@ -1002,16 +997,16 @@ function setSwapInfoByAddress(address, swapInfo) {
 }
 
 /**
- * setByRef.ts
+ * setByAddress.ts
  *
- * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
- * 状態オブジェクト（target）に値を設定するための関数（setByRef）の実装です。
+ * Stateの内部APIとして、アドレス情報（IStateAddress）を指定して
+ * 状態オブジェクト（target）に値を設定するための関数（setByAddress）の実装です。
  *
  * 主な役割:
  * - 指定されたパス・インデックスに対応するState値を設定（多重ループやワイルドカードにも対応）
- * - getter/setter経由で値設定時はSetStatePropertyRefSymbolでスコープを一時設定
- * - 存在しない場合は親infoやlistIndexを辿って再帰的に値を設定
- * - 設定後はengine.updater.addUpdatedStatePropertyRefValueで更新情報を登録
+ * - getter/setter経由で値設定時はpushAddressでスコープを一時設定
+ * - 存在しない場合は親pathInfoやlistIndexを辿って再帰的に値を設定
+ * - 設定後はupdater.enqueueUpdateAddressで更新情報を登録
  *
  * 設計ポイント:
  * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値設定を実現
@@ -1020,28 +1015,33 @@ function setSwapInfoByAddress(address, swapInfo) {
  */
 function _setByAddress(target, address, value, receiver, handler) {
     try {
-        // 親子関係のあるgetterが存在する場合は、外部依存を通じて値を設定
+        // ToDo:親子関係のあるgetterが存在する場合は、外部依存を通じて値を設定
         /*
             if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.setters.intersection(ref.info.cumulativePathSet).size === 0) {
               return handler.engine.stateOutput.set(ref, value);
             }
         */
         if (address.pathInfo.path in target) {
-            // getterの中で参照の可能性があるので、addressをプッシュする
-            handler.pushAddress(address);
-            try {
-                return Reflect.set(target, address.pathInfo.path, value, receiver);
+            if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
+                // setterの中で参照の可能性があるので、addressをプッシュする
+                handler.pushAddress(address);
+                try {
+                    return Reflect.set(target, address.pathInfo.path, value, receiver);
+                }
+                finally {
+                    handler.popAddress();
+                }
             }
-            finally {
-                handler.popAddress();
+            else {
+                return Reflect.set(target, address.pathInfo.path, value);
             }
         }
         else {
-            const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined`);
+            const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
             const parentValue = getByAddress(target, parentAddress, receiver, handler);
             const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
-            if (lastSegment === "*") {
-                const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined`);
+            if (lastSegment === WILDCARD) {
+                const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
                 return Reflect.set(parentValue, index, value);
             }
             else {
@@ -1055,13 +1055,13 @@ function _setByAddress(target, address, value, receiver, handler) {
 }
 function _setByAddressWithSwap(target, address, value, receiver, handler) {
     // elementsの場合はswapInfoを準備
-    let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined`);
+    let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
     let swapInfo = getSwapInfoByAddress(parentAddress);
     if (swapInfo === null) {
-        const value = getByAddress(target, parentAddress, receiver, handler) ?? [];
-        const listIndexes = getListIndexesByList(value) ?? [];
+        const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
+        const listIndexes = getListIndexesByList(parentValue) ?? [];
         swapInfo = {
-            value: [...value], listIndexes: [...listIndexes]
+            value: [...parentValue], listIndexes: [...listIndexes]
         };
         setSwapInfoByAddress(parentAddress, swapInfo);
     }
@@ -1071,7 +1071,7 @@ function _setByAddressWithSwap(target, address, value, receiver, handler) {
     finally {
         const index = swapInfo.value.indexOf(value);
         const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-        const currentListIndexes = getListIndexesByList(currentParentValue) ?? [];
+        const currentListIndexes = Array.isArray(currentParentValue) ? (getListIndexesByList(currentParentValue) ?? []) : [];
         const curIndex = address.listIndex.index;
         const listIndex = (index !== -1) ?
             swapInfo.listIndexes[index] :
@@ -1092,6 +1092,7 @@ function _setByAddressWithSwap(target, address, value, receiver, handler) {
 function setByAddress(target, address, value, receiver, handler) {
     const stateElement = handler.stateElement;
     const isElements = stateElement.elementPaths.has(address.pathInfo.path);
+    // リストはキャッシュ対象
     const listable = stateElement.listPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
@@ -1107,16 +1108,16 @@ function setByAddress(target, address, value, receiver, handler) {
         if (cacheable || listable) {
             let cacheEntry = stateElement.cache.get(address) ?? null;
             if (cacheEntry === null) {
-                cacheEntry = {
+                stateElement.cache.set(address, {
                     value: value,
                     versionInfo: {
                         version: handler.updater.versionInfo.version,
                         revision: handler.updater.versionInfo.revision,
                     },
-                };
-                stateElement.cache.set(address, cacheEntry);
+                });
             }
             else {
+                // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
                 cacheEntry.value = value;
                 cacheEntry.versionInfo.version = handler.updater.versionInfo.version;
                 cacheEntry.versionInfo.revision = handler.updater.versionInfo.revision;
@@ -2397,7 +2398,7 @@ const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }
-    stateElement.createState(async (state) => {
+    stateElement.createStateAsync(async (state) => {
         const handler = state[handlerName];
         if (typeof handler !== "function") {
             raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
@@ -2500,8 +2501,8 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
         raiseError(`State element with name "${stateName}" not found for two-way binding.`);
     }
     const loopContext = getLoopContextByNode(node);
-    stateElement.createState(async (state) => {
-        state.$$setLoopContext(loopContext, async () => {
+    stateElement.createState((state) => {
+        state.$$setLoopContext(loopContext, () => {
             state[statePathName] = newValue;
         });
     });
@@ -2560,12 +2561,12 @@ async function _initializeBindings(allBindings) {
     // get apply values from cache and state
     for (const [stateElement, bindings] of bindingsByStateElement.entries()) {
         const cacheValueByPath = new Map();
-        await stateElement.createState(async (state) => {
+        stateElement.createState((state) => {
             for (const bindingInfo of bindings) {
                 let cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
                 if (typeof cacheValue === "undefined") {
                     const loopContext = getLoopContextByNode(bindingInfo.node);
-                    cacheValue = await state.$$setLoopContext(loopContext, () => {
+                    cacheValue = state.$$setLoopContext(loopContext, () => {
                         return state[bindingInfo.statePathName];
                     });
                     cacheValueByPath.set(bindingInfo.statePathName, cacheValue);
@@ -2904,14 +2905,18 @@ function getAllPropertyDescriptors(obj) {
 }
 function getStateInfo(state) {
     const getterPaths = new Set();
+    const setterPaths = new Set();
     const descriptors = getAllPropertyDescriptors(state);
     for (const [key, descriptor] of Object.entries(descriptors)) {
         if (typeof descriptor.get === "function") {
             getterPaths.add(key);
         }
+        if (typeof descriptor.set === "function") {
+            setterPaths.add(key);
+        }
     }
     return {
-        getterPaths,
+        getterPaths, setterPaths
     };
 }
 class State extends HTMLElement {
@@ -2925,6 +2930,7 @@ class State extends HTMLElement {
     _listPaths = new Set();
     _elementPaths = new Set();
     _getterPaths = new Set();
+    _setterPaths = new Set();
     _isLoadingState = false;
     _isLoadedState = false;
     _loopContextStack = createLoopContextStack();
@@ -2957,6 +2963,9 @@ class State extends HTMLElement {
         const stateInfo = getStateInfo(value);
         for (const path of stateInfo.getterPaths) {
             this._getterPaths.add(path);
+        }
+        for (const path of stateInfo.setterPaths) {
+            this._setterPaths.add(path);
         }
     }
     get name() {
@@ -3025,7 +3034,7 @@ class State extends HTMLElement {
                 this._isLoadingState = false;
             }
         }
-        if (typeof this._state === "undefined") {
+        if (typeof this.__state === "undefined") {
             this._state = {};
         }
     }
@@ -3054,6 +3063,9 @@ class State extends HTMLElement {
     get getterPaths() {
         return this._getterPaths;
     }
+    get setterPaths() {
+        return this._setterPaths;
+    }
     get loopContextStack() {
         return this._loopContextStack;
     }
@@ -3072,27 +3084,20 @@ class State extends HTMLElement {
     get version() {
         return this._version;
     }
-    addDynamicDependency(fromPath, toPath) {
-        const deps = this._dynamicDependency.get(fromPath);
-        if (typeof deps === "undefined") {
-            this._dynamicDependency.set(fromPath, [toPath]);
+    _addDependency(map, fromPath, toPath) {
+        const deps = map.get(fromPath);
+        if (deps === undefined) {
+            map.set(fromPath, [toPath]);
         }
-        else {
-            if (!deps.includes(toPath)) {
-                deps.push(toPath);
-            }
+        else if (!deps.includes(toPath)) {
+            deps.push(toPath);
         }
     }
+    addDynamicDependency(fromPath, toPath) {
+        this._addDependency(this._dynamicDependency, fromPath, toPath);
+    }
     addStaticDependency(fromPath, toPath) {
-        const deps = this._staticDependency.get(fromPath);
-        if (typeof deps === "undefined") {
-            this._staticDependency.set(fromPath, [toPath]);
-        }
-        else {
-            if (!deps.includes(toPath)) {
-                deps.push(toPath);
-            }
-        }
+        this._addDependency(this._staticDependency, fromPath, toPath);
     }
     addBindingInfo(bindingInfo) {
         const listIndex = getListIndexByBindingInfo(bindingInfo);
@@ -3128,9 +3133,20 @@ class State extends HTMLElement {
             }
         }
     }
-    async createState(callback) {
-        const stateProxy = createStateProxy(this._state, this._name);
-        return callback(stateProxy);
+    _createState(callback) {
+        try {
+            const stateProxy = createStateProxy(this._state, this._name);
+            return callback(stateProxy);
+        }
+        finally {
+            // cleanup if needed
+        }
+    }
+    async createStateAsync(callback) {
+        return await this._createState(callback);
+    }
+    createState(callback) {
+        this._createState(callback);
     }
     nextVersion() {
         this._version++;

@@ -16,6 +16,7 @@ export declare class State extends HTMLElement implements IStateElement {
     private _listPaths;
     private _elementPaths;
     private _getterPaths;
+    private _setterPaths;
     private _isLoadingState;
     private _isLoadedState;
     private _loopContextStack;
@@ -39,17 +40,21 @@ export declare class State extends HTMLElement implements IStateElement {
     get listPaths(): Set<string>;
     get elementPaths(): Set<string>;
     get getterPaths(): Set<string>;
+    get setterPaths(): Set<string>;
     get loopContextStack(): ILoopContextStack;
     get cache(): Map<IStateAddress, ICacheEntry>;
     get mightChangeByPath(): Map<string, IVersionInfo>;
     get dynamicDependency(): Map<string, string[]>;
     get staticDependency(): Map<string, string[]>;
     get version(): number;
+    private _addDependency;
     addDynamicDependency(fromPath: string, toPath: string): void;
     addStaticDependency(fromPath: string, toPath: string): void;
     addBindingInfo(bindingInfo: IBindingInfo): void;
     deleteBindingInfo(bindingInfo: IBindingInfo): void;
-    createState(callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    private _createState;
+    createStateAsync(callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createState(callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
 }
 //# sourceMappingURL=State.d.ts.map

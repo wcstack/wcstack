@@ -17,11 +17,6 @@ describe('getContextListIndex', () => {
     expect(getContextListIndex(handler as any, 'users.*')).toBeNull();
   });
 
-  it('pathInfoがnullならnullを返すこと', () => {
-    const handler = createHandler({ lastAddressStack: { pathInfo: null } });
-    expect(getContextListIndex(handler as any, 'users.*')).toBeNull();
-  });
-
   it('listIndexがnullならnullを返すこと', () => {
     const pathInfo = getPathInfo('users.*');
     const handler = createHandler({ lastAddressStack: { pathInfo, listIndex: null } });

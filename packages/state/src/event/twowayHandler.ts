@@ -43,8 +43,8 @@ const twowayEventHandlerFunction = (
   }
 
   const loopContext = getLoopContextByNode(node);
-  stateElement.createState( async (state) => {
-    state.$$setLoopContext(loopContext, async () => {
+  stateElement.createState( (state) => {
+    state.$$setLoopContext(loopContext, () => {
       state[statePathName] = newValue;
     });
   });

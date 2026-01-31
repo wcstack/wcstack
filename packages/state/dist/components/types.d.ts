@@ -11,6 +11,7 @@ export interface IStateElement {
     readonly listPaths: Set<string>;
     readonly elementPaths: Set<string>;
     readonly getterPaths: Set<string>;
+    readonly setterPaths: Set<string>;
     readonly loopContextStack: ILoopContextStack;
     readonly cache: Map<IStateAddress, ICacheEntry>;
     readonly mightChangeByPath: Map<string, IVersionInfo>;
@@ -21,7 +22,8 @@ export interface IStateElement {
     deleteBindingInfo(bindingInfo: IBindingInfo): void;
     addStaticDependency(parentPath: string, childPath: string): void;
     addDynamicDependency(fromPath: string, toPath: string): void;
-    createState(callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createStateAsync(callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createState(callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
 }
 //# sourceMappingURL=types.d.ts.map

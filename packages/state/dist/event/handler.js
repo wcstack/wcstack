@@ -10,7 +10,7 @@ const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }
-    stateElement.createState(async (state) => {
+    stateElement.createStateAsync(async (state) => {
         const handler = state[handlerName];
         if (typeof handler !== "function") {
             raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
@@ -62,4 +62,8 @@ export function detachEventHandler(bindingInfo) {
     }
     return true;
 }
+export const __private__ = {
+    handlerByHandlerKey,
+    bindingInfoSetByHandlerKey,
+};
 //# sourceMappingURL=handler.js.map

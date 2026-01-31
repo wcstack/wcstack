@@ -30,7 +30,7 @@ function createMockStateElement(): IStateElement {
   let version = 0;
   const stateProxy: any = {
     message: 'hello',
-    $$setLoopContext: async (_loopContext: any, callback: () => any) => callback(),
+    $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
   };
 
   return {
@@ -40,6 +40,7 @@ function createMockStateElement(): IStateElement {
     listPaths,
     elementPaths,
     getterPaths,
+    setterPaths: new Set<string>(),
     loopContextStack: createLoopContextStack(),
     cache,
     mightChangeByPath,
@@ -69,7 +70,10 @@ function createMockStateElement(): IStateElement {
     },
     addStaticDependency() {},
     addDynamicDependency() {},
-    async createState(callback) {
+    createState(callback) {
+      return callback(stateProxy);
+    },
+    async createStateAsync(callback) {
       return callback(stateProxy);
     },
     nextVersion() {

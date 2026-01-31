@@ -37,12 +37,12 @@ async function _initializeBindings(allBindings) {
     // get apply values from cache and state
     for (const [stateElement, bindings] of bindingsByStateElement.entries()) {
         const cacheValueByPath = new Map();
-        await stateElement.createState(async (state) => {
+        stateElement.createState((state) => {
             for (const bindingInfo of bindings) {
                 let cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
                 if (typeof cacheValue === "undefined") {
                     const loopContext = getLoopContextByNode(bindingInfo.node);
-                    cacheValue = await state.$$setLoopContext(loopContext, () => {
+                    cacheValue = state.$$setLoopContext(loopContext, () => {
                         return state[bindingInfo.statePathName];
                     });
                     cacheValueByPath.set(bindingInfo.statePathName, cacheValue);

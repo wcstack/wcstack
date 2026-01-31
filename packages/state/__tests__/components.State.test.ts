@@ -79,9 +79,9 @@ describe('State component', () => {
     vi.clearAllMocks();
   });
 
-  it('初期状態でcreateStateがエラーになること', async () => {
+  it('初期状態でcreateStateがエラーになること', () => {
     const stateEl = createStateElement();
-    await expect(stateEl.createState(async () => {})).rejects.toThrow(/_state is not initialized yet/);
+    expect(() => stateEl.createState(() => {})).toThrow(/_state is not initialized yet/);
   });
 
   it('connectedCallbackで初期化されること（スクリプトなし）', async () => {
@@ -216,6 +216,36 @@ describe('State component', () => {
     expect(stateEl.getterPaths.has('computed')).toBe(true);
   });
 
+  it('setterを持つstateはsetterPathsに追加されること', () => {
+    const stateEl = createStateElement();
+    let _value = 0;
+    loadFromScriptJsonMock.mockReturnValue({
+      get value() {
+        return _value;
+      },
+      set value(v: number) {
+        _value = v;
+      }
+    });
+
+    stateEl.attributeChangedCallback('state', '', 'state-data');
+    expect(stateEl.setterPaths.has('value')).toBe(true);
+  });
+
+  it('createStateAsyncで非同期コールバックを実行できること', async () => {
+    const stateEl = createStateElement();
+    await stateEl.connectedCallback();
+    
+    let callbackExecuted = false;
+    await stateEl.createStateAsync(async (state) => {
+      await Promise.resolve();
+      callbackExecuted = true;
+    });
+    
+    expect(callbackExecuted).toBe(true);
+    expect(createStateProxyMock).toHaveBeenCalled();
+  });
+
   it('各種getterが取得できること', async () => {
     const stateEl = createStateElement();
     await stateEl.connectedCallback();
@@ -225,6 +255,7 @@ describe('State component', () => {
     expect(stateEl.listPaths).toBeInstanceOf(Set);
     expect(stateEl.elementPaths).toBeInstanceOf(Set);
     expect(stateEl.getterPaths).toBeInstanceOf(Set);
+    expect(stateEl.setterPaths).toBeInstanceOf(Set);
     expect(stateEl.loopContextStack).toBeDefined();
     expect(stateEl.cache).toBeInstanceOf(Map);
     expect(stateEl.mightChangeByPath).toBeInstanceOf(Map);

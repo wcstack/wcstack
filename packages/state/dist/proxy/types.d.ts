@@ -17,7 +17,8 @@ export interface IStateHandler extends ProxyHandler<IState> {
     clearLoopContext(): void;
 }
 export interface IStateProxy extends IState {
-    $$setLoopContext(loopContext: ILoopContext | null, callback: () => Promise<void>): Promise<void>;
+    $$setLoopContextAsync(loopContext: ILoopContext | null, callback: () => Promise<any>): Promise<any>;
+    $$setLoopContext(loopContext: ILoopContext | null, callback: () => any): any;
     $$getByAddress(address: IStateAddress): any;
 }
 //# sourceMappingURL=types.d.ts.map

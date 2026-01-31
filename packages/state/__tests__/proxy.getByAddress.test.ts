@@ -9,6 +9,7 @@ function createStateElement(overrides?: Partial<any>) {
   return {
     listPaths: new Set<string>(),
     getterPaths: new Set<string>(),
+    setterPaths: new Set<string>(),
     cache: new Map(),
     mightChangeByPath: new Map(),
     addDynamicDependency: vi.fn(),

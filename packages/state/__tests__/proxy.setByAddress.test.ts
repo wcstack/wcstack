@@ -18,6 +18,7 @@ function createStateElement(overrides?: Partial<any>) {
     elementPaths: new Set<string>(),
     listPaths: new Set<string>(),
     getterPaths: new Set<string>(),
+    setterPaths: new Set<string>(),
     cache: new Map(),
     ...overrides,
   };
@@ -41,10 +42,10 @@ describe('setByAddress', () => {
     vi.clearAllMocks();
   });
 
-  it('既存プロパティはpush/popしつつ更新し、キャッシュを作成すること', () => {
+  it('既存プロパティはsetterがあればpush/popしつつ更新し、キャッシュを作成すること', () => {
     const target = { count: 1 };
     const address = createStateAddress(getPathInfo('count'), null);
-    const stateElement = createStateElement({ getterPaths: new Set(['count']) });
+    const stateElement = createStateElement({ setterPaths: new Set(['count']), getterPaths: new Set(['count']) });
     const handler = createHandler(stateElement);
 
     const result = setByAddress(target, address, 5, target, handler as any);
@@ -62,7 +63,7 @@ describe('setByAddress', () => {
   it('既存キャッシュは更新されること', () => {
     const target = { count: 1 };
     const address = createStateAddress(getPathInfo('count'), null);
-    const stateElement = createStateElement({ getterPaths: new Set(['count']) });
+    const stateElement = createStateElement({ setterPaths: new Set(['count']), getterPaths: new Set(['count']) });
     stateElement.cache.set(address, { value: 1, versionInfo: { version: 0, revision: 0 } });
     const handler = createHandler(stateElement, { updater: { versionInfo: { version: 2, revision: 3 }, enqueueUpdateAddress: vi.fn() } });
 
@@ -313,6 +314,43 @@ describe('setByAddress', () => {
       if (callCount === 3) {
         // finallyブロック内でnullを返す
         return null;
+      }
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return target.items;
+    });
+
+    setByAddress(target, address, 'b', target, handler as any);
+
+    // クリーンアップ
+    setSwapInfoByAddress(parentAddress, null);
+  });
+
+  it('finallyブロック内でgetByAddressが配列ではない値を返す場合は空配列にフォールバックすること', () => {
+    // 94行目の Array.isArray チェックをカバーするテスト
+    const parentListIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(parentListIndex, 0);
+    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const parentAddress = address.parentAddress!;
+
+    setSwapInfoByAddress(parentAddress, null);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    const target = { items: ['a'] };
+    
+    // 1回目: swapInfo作成時 → items を返す
+    // 2回目: _setByAddress内 → items を返す
+    // 3回目: finallyブロック内 → 配列ではないがイテラブルな値を返す (94行目がトリガーされる)
+    let callCount = 0;
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      callCount++;
+      if (callCount === 3) {
+        // finallyブロック内で配列ではないがイテラブルな文字列を返す
+        // Array.isArray('ab') は false なので、94行目の else ブランチが実行される
+        return 'ab';
       }
       if (addr.pathInfo.path === 'items') {
         return target.items;

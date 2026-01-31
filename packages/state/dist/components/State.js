@@ -22,14 +22,18 @@ function getAllPropertyDescriptors(obj) {
 }
 function getStateInfo(state) {
     const getterPaths = new Set();
+    const setterPaths = new Set();
     const descriptors = getAllPropertyDescriptors(state);
     for (const [key, descriptor] of Object.entries(descriptors)) {
         if (typeof descriptor.get === "function") {
             getterPaths.add(key);
         }
+        if (typeof descriptor.set === "function") {
+            setterPaths.add(key);
+        }
     }
     return {
-        getterPaths,
+        getterPaths, setterPaths
     };
 }
 export class State extends HTMLElement {
@@ -43,6 +47,7 @@ export class State extends HTMLElement {
     _listPaths = new Set();
     _elementPaths = new Set();
     _getterPaths = new Set();
+    _setterPaths = new Set();
     _isLoadingState = false;
     _isLoadedState = false;
     _loopContextStack = createLoopContextStack();
@@ -75,6 +80,9 @@ export class State extends HTMLElement {
         const stateInfo = getStateInfo(value);
         for (const path of stateInfo.getterPaths) {
             this._getterPaths.add(path);
+        }
+        for (const path of stateInfo.setterPaths) {
+            this._setterPaths.add(path);
         }
     }
     get name() {
@@ -143,7 +151,7 @@ export class State extends HTMLElement {
                 this._isLoadingState = false;
             }
         }
-        if (typeof this._state === "undefined") {
+        if (typeof this.__state === "undefined") {
             this._state = {};
         }
     }
@@ -172,6 +180,9 @@ export class State extends HTMLElement {
     get getterPaths() {
         return this._getterPaths;
     }
+    get setterPaths() {
+        return this._setterPaths;
+    }
     get loopContextStack() {
         return this._loopContextStack;
     }
@@ -190,27 +201,20 @@ export class State extends HTMLElement {
     get version() {
         return this._version;
     }
-    addDynamicDependency(fromPath, toPath) {
-        const deps = this._dynamicDependency.get(fromPath);
-        if (typeof deps === "undefined") {
-            this._dynamicDependency.set(fromPath, [toPath]);
+    _addDependency(map, fromPath, toPath) {
+        const deps = map.get(fromPath);
+        if (deps === undefined) {
+            map.set(fromPath, [toPath]);
         }
-        else {
-            if (!deps.includes(toPath)) {
-                deps.push(toPath);
-            }
+        else if (!deps.includes(toPath)) {
+            deps.push(toPath);
         }
     }
+    addDynamicDependency(fromPath, toPath) {
+        this._addDependency(this._dynamicDependency, fromPath, toPath);
+    }
     addStaticDependency(fromPath, toPath) {
-        const deps = this._staticDependency.get(fromPath);
-        if (typeof deps === "undefined") {
-            this._staticDependency.set(fromPath, [toPath]);
-        }
-        else {
-            if (!deps.includes(toPath)) {
-                deps.push(toPath);
-            }
-        }
+        this._addDependency(this._staticDependency, fromPath, toPath);
     }
     addBindingInfo(bindingInfo) {
         const listIndex = getListIndexByBindingInfo(bindingInfo);
@@ -246,9 +250,20 @@ export class State extends HTMLElement {
             }
         }
     }
-    async createState(callback) {
-        const stateProxy = createStateProxy(this._state, this._name);
-        return callback(stateProxy);
+    _createState(callback) {
+        try {
+            const stateProxy = createStateProxy(this._state, this._name);
+            return callback(stateProxy);
+        }
+        finally {
+            // cleanup if needed
+        }
+    }
+    async createStateAsync(callback) {
+        return await this._createState(callback);
+    }
+    createState(callback) {
+        this._createState(callback);
     }
     nextVersion() {
         this._version++;

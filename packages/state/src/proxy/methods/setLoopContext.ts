@@ -2,7 +2,7 @@
  * setLoopContext.ts
  *
  * StateClassの内部APIとして、ループコンテキスト（ILoopContext）を一時的に設定し、
- * 指定した非同期コールバックをそのスコープ内で実行するための関数です。
+ * 指定した同期/非同期コールバックをそのスコープ内で実行するための関数です。
  *
  * 主な役割:
  * - handler.loopContextにループコンテキストを一時的に設定
@@ -22,11 +22,11 @@ import { ILoopContext } from "../../list/types";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
 
-export async function setLoopContext(
+function _setLoopContext<T>(
   handler: IStateHandler,
   loopContext: ILoopContext | null,
-  callback: () => Promise<any>
-): Promise<any> {
+  callback: () => T
+): T {
   if (typeof handler.loopContext !== "undefined") {
     raiseError('already in loop context');
   }
@@ -39,14 +39,30 @@ export async function setLoopContext(
       );
       handler.pushAddress(stateAddress);
       try {
-        return await callback();
+        return callback();
       } finally {
         handler.popAddress();
       }
     } else {
-      return await callback();
+      return callback();
     }
   } finally {
     handler.clearLoopContext();
   }
+}
+
+export function setLoopContext(
+  handler: IStateHandler,
+  loopContext: ILoopContext | null,
+  callback: () => any
+): any {
+  return _setLoopContext(handler, loopContext, callback);
+}
+
+export async function setLoopContextAsync(
+  handler: IStateHandler,
+  loopContext: ILoopContext | null,
+  callback: () => Promise<any>
+): Promise<any> {
+  return await _setLoopContext(handler, loopContext, callback);
 }

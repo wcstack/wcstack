@@ -90,4 +90,7 @@ export function createStateProxy(state, stateName) {
     handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
     return stateProxy;
 }
+export const __private__ = {
+    StateHandler,
+};
 //# sourceMappingURL=StateHandler.js.map

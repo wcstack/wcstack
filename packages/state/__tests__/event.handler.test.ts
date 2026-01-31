@@ -126,7 +126,7 @@ describe('event/handler', () => {
     const state = { 'handleClick-not-fn': 123 } as any;
     let lastPromise: Promise<any> | null = null;
     setStateElementByName('default', {
-      createState: (callback: (s: any) => Promise<void>) => {
+      createStateAsync: (callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
       }
@@ -151,7 +151,7 @@ describe('event/handler', () => {
     };
     let lastPromise: Promise<any> | null = null;
     setStateElementByName('default', {
-      createState: (callback: (s: any) => Promise<void>) => {
+      createStateAsync: (callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
       }

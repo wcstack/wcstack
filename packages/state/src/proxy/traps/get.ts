@@ -24,7 +24,7 @@ import { raiseError } from "../../raiseError";
 import { IState } from "../../types";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
-import { setLoopContext } from "../methods/setLoopContext";
+import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
 import { IStateHandler } from "../types";
 import { indexByIndexName } from "./indexByIndexName";
 
@@ -40,8 +40,13 @@ export function get(
     return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {
-    if (prop === "$$setLoopContext") {
+    if (prop === "$$setLoopContextAsync") {
       return (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
+        return setLoopContextAsync(handler, loopContext, callback);
+      };
+    }
+    if (prop === "$$setLoopContext") {
+      return (loopContext: any, callback = (): any => {}): any => {
         return setLoopContext(handler, loopContext, callback);
       };
     }

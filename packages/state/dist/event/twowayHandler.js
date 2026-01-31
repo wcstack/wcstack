@@ -33,8 +33,8 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
         raiseError(`State element with name "${stateName}" not found for two-way binding.`);
     }
     const loopContext = getLoopContextByNode(node);
-    stateElement.createState(async (state) => {
-        state.$$setLoopContext(loopContext, async () => {
+    stateElement.createState((state) => {
+        state.$$setLoopContext(loopContext, () => {
             state[statePathName] = newValue;
         });
     });
@@ -83,4 +83,11 @@ export function detachTwowayEventHandler(bindingInfo) {
     }
     return false;
 }
+export const __private__ = {
+    handlerByHandlerKey,
+    bindingInfoSetByHandlerKey,
+    getHandlerKey,
+    getEventName,
+    twowayEventHandlerFunction,
+};
 //# sourceMappingURL=twowayHandler.js.map

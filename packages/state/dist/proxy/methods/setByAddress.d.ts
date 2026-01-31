@@ -1,14 +1,14 @@
 /**
- * setByRef.ts
+ * setByAddress.ts
  *
- * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
- * 状態オブジェクト（target）に値を設定するための関数（setByRef）の実装です。
+ * Stateの内部APIとして、アドレス情報（IStateAddress）を指定して
+ * 状態オブジェクト（target）に値を設定するための関数（setByAddress）の実装です。
  *
  * 主な役割:
  * - 指定されたパス・インデックスに対応するState値を設定（多重ループやワイルドカードにも対応）
- * - getter/setter経由で値設定時はSetStatePropertyRefSymbolでスコープを一時設定
- * - 存在しない場合は親infoやlistIndexを辿って再帰的に値を設定
- * - 設定後はengine.updater.addUpdatedStatePropertyRefValueで更新情報を登録
+ * - getter/setter経由で値設定時はpushAddressでスコープを一時設定
+ * - 存在しない場合は親pathInfoやlistIndexを辿って再帰的に値を設定
+ * - 設定後はupdater.enqueueUpdateAddressで更新情報を登録
  *
  * 設計ポイント:
  * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値設定を実現

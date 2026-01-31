@@ -21,7 +21,7 @@ import { createStateAddress } from "../../address/StateAddress";
 import { raiseError } from "../../raiseError";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
-import { setLoopContext } from "../methods/setLoopContext";
+import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
 import { indexByIndexName } from "./indexByIndexName";
 export function get(target, prop, receiver, handler) {
     const index = indexByIndexName[prop];
@@ -30,8 +30,13 @@ export function get(target, prop, receiver, handler) {
         return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
     }
     if (typeof prop === "string") {
-        if (prop === "$$setLoopContext") {
+        if (prop === "$$setLoopContextAsync") {
             return (loopContext, callback = async () => { }) => {
+                return setLoopContextAsync(handler, loopContext, callback);
+            };
+        }
+        if (prop === "$$setLoopContext") {
+            return (loopContext, callback = () => { }) => {
                 return setLoopContext(handler, loopContext, callback);
             };
         }

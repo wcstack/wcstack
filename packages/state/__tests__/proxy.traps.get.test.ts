@@ -5,7 +5,8 @@ import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 
 vi.mock('../src/proxy/methods/setLoopContext', () => ({
-  setLoopContext: vi.fn()
+  setLoopContext: vi.fn(),
+  setLoopContextAsync: vi.fn()
 }));
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
@@ -16,11 +17,12 @@ vi.mock('../src/proxy/methods/getListIndex', () => ({
   getListIndex: vi.fn()
 }));
 
-import { setLoopContext } from '../src/proxy/methods/setLoopContext';
+import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
 
 const setLoopContextMock = vi.mocked(setLoopContext);
+const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
 const getByAddressMock = vi.mocked(getByAddress);
 const getListIndexMock = vi.mocked(getListIndex);
 
@@ -44,15 +46,30 @@ describe('proxy/traps/get', () => {
     expect(() => get({}, '$1', {}, handler)).toThrow('ListIndex not found: $1');
   });
 
-  it('$$setLoopContext が setLoopContext を呼び出すこと', async () => {
-    setLoopContextMock.mockImplementationOnce(async (_handler, _loopContext, callback) => {
+  it('$$setLoopContextAsync が setLoopContextAsync を呼び出すこと', async () => {
+    setLoopContextAsyncMock.mockImplementationOnce(async (_handler, _loopContext, callback) => {
       return callback();
     });
     const handler = {} as any;
     const loopContext = { name: 'loop' };
 
-    const fn = get({}, '$$setLoopContext', {}, handler) as (loopContext: any) => Promise<any>;
+    const fn = get({}, '$$setLoopContextAsync', {}, handler) as (loopContext: any) => Promise<any>;
     const result = await fn(loopContext);
+
+    expect(setLoopContextAsyncMock).toHaveBeenCalledTimes(1);
+    expect(setLoopContextAsyncMock).toHaveBeenCalledWith(handler, loopContext, expect.any(Function));
+    expect(result).toBeUndefined();
+  });
+
+  it('$$setLoopContext が setLoopContext を呼び出すこと', () => {
+    setLoopContextMock.mockImplementationOnce((_handler, _loopContext, callback) => {
+      return callback();
+    });
+    const handler = {} as any;
+    const loopContext = { name: 'loop' };
+
+    const fn = get({}, '$$setLoopContext', {}, handler) as (loopContext: any) => any;
+    const result = fn(loopContext);
 
     expect(setLoopContextMock).toHaveBeenCalledTimes(1);
     expect(setLoopContextMock).toHaveBeenCalledWith(handler, loopContext, expect.any(Function));

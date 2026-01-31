@@ -8,6 +8,7 @@ function createHandler(overrides?: Partial<any>) {
     lastAddressStack: null,
     stateElement: {
       getterPaths: new Set<string>(),
+      setterPaths: new Set<string>(),
       addDynamicDependency: vi.fn(),
     },
     ...overrides,

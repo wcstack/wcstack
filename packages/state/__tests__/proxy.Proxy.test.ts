@@ -23,12 +23,14 @@ function createMockStateElement(options?: {
   listPaths?: Set<string>;
   elementPaths?: Set<string>;
   getterPaths?: Set<string>;
+  setterPaths?: Set<string>;
   bindingInfosByAddress?: Map<IStateAddress, IBindingInfo[]>;
 }): IStateElement {
   const bindingInfosByAddress = options?.bindingInfosByAddress ?? new Map<IStateAddress, IBindingInfo[]>();
   const listPaths = options?.listPaths ?? new Set<string>();
   const elementPaths = options?.elementPaths ?? new Set<string>();
   const getterPaths = options?.getterPaths ?? new Set<string>();
+  const setterPaths = options?.setterPaths ?? new Set<string>();
   const cache = new Map<IStateAddress, ICacheEntry>();
   const mightChangeByPath = new Map<string, IVersionInfo>();
   const dynamicDependency = new Map<string, string[]>();
@@ -41,6 +43,7 @@ function createMockStateElement(options?: {
     listPaths,
     elementPaths,
     getterPaths,
+    setterPaths,
     loopContextStack: {
       createLoopContext: (_elementPathInfo, _listIndex, callback) => {
         return callback({ elementPathInfo: _elementPathInfo, listIndex: _listIndex } as any);
@@ -57,7 +60,10 @@ function createMockStateElement(options?: {
     deleteBindingInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
-    async createState(callback) {
+    createState(callback) {
+      return callback({} as any);
+    },
+    async createStateAsync(callback) {
       return callback({} as any);
     },
     nextVersion() {
@@ -91,7 +97,7 @@ describe('proxy/StateHandler', () => {
     expect((proxy as any)['user.name']).toBe('Alice');
   });
 
-  it('$$setLoopContextでワイルドカードパスを解決できること', async () => {
+  it('$$setLoopContextでワイルドカードパスを解決できること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
     const state = { users: [{ name: 'Bob' }, { name: 'Carol' }] };
@@ -102,7 +108,7 @@ describe('proxy/StateHandler', () => {
       listIndex
     };
 
-    const result = await (proxy as any).$$setLoopContext(loopContext, async () => (proxy as any)['users.*.name']);
+    const result = (proxy as any).$$setLoopContext(loopContext, () => (proxy as any)['users.*.name']);
     expect(result).toBe('Carol');
   });
 
