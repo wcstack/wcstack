@@ -59,7 +59,7 @@ const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => (
   bindingType: 'prop',
   uuid: null,
   node: document.createElement('input'),
-  placeHolderNode: document.createElement('input'),
+  replaceNode: document.createElement('input'),
   ...overrides,
 } as IBindingInfo);
 
@@ -277,7 +277,7 @@ describe('State component', () => {
       bindingType: 'for',
       uuid: 'uuid',
       node: document.createElement('div'),
-      placeHolderNode: document.createComment('for')
+      replaceNode: document.createComment('for')
     } as IBindingInfo;
 
     stateEl.addBindingInfo(bindingInfo);

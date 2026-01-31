@@ -38,7 +38,7 @@ export interface IBindingInfo {
   readonly stateName: string;
   readonly filters: IFilterInfo[];
   readonly node: Node; // raw node
-  readonly placeHolderNode: Node; // replaced node or raw node
+  readonly replaceNode: Node; // replaced node or raw node
   readonly bindingType: BindingType;
   readonly uuid?: string | null; // for 'for', 'if', 'elseif', 'else' bindings
 }

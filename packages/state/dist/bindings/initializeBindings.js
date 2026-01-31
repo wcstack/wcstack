@@ -1,6 +1,6 @@
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
-import { replaceToComment } from "./replaceToComment";
+import { replaceToReplaceNode } from "./replaceToReplaceNode";
 import { applyChange } from "../apply/applyChange";
 import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
 import { attachEventHandler } from "../event/handler";
@@ -15,8 +15,8 @@ async function _initializeBindings(allBindings) {
             raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
         }
         await stateElement.initializePromise;
-        // replace to comment node
-        replaceToComment(bindingInfo);
+        // replace node
+        replaceToReplaceNode(bindingInfo);
         // event
         if (attachEventHandler(bindingInfo)) {
             continue;

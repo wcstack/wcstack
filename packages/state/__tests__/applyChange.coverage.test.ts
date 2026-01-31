@@ -10,17 +10,22 @@ vi.mock('../src/apply/applyChangeToText', () => ({
 vi.mock('../src/apply/applyChangeToFor', () => ({
   applyChangeToFor: vi.fn()
 }));
+vi.mock('../src/apply/applyChangeToIf', () => ({
+  applyChangeToIf: vi.fn()
+}));
 
 import { applyChange } from '../src/apply/applyChange';
 import { applyChangeToElement } from '../src/apply/applyChangeToElement';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
 import { applyChangeToFor } from '../src/apply/applyChangeToFor';
+import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 
 const applyChangeToElementMock = vi.mocked(applyChangeToElement);
 const applyChangeToTextMock = vi.mocked(applyChangeToText);
 const applyChangeToForMock = vi.mocked(applyChangeToFor);
+const applyChangeToIfMock = vi.mocked(applyChangeToIf);
 
-function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'placeHolderNode' | 'propSegments' | 'propName'> {
+function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   return {
     statePathName: 'value',
     statePathInfo: null,
@@ -29,7 +34,7 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'p
     propModifiers: [],
     uuid: null,
     node: document.createTextNode(''),
-    placeHolderNode: document.createTextNode('')
+    replaceNode: document.createTextNode('')
   } as IBindingInfo;
 }
 
@@ -48,7 +53,7 @@ describe('applyChange (coverage)', () => {
       ...createBaseBindingInfo(),
       bindingType: 'prop',
       node: input,
-      placeHolderNode: input,
+      replaceNode: input,
       propName: 'value',
       propSegments: ['value'],
       filters
@@ -66,7 +71,7 @@ describe('applyChange (coverage)', () => {
       ...createBaseBindingInfo(),
       bindingType: 'text',
       node: textNode,
-      placeHolderNode: textNode,
+      replaceNode: textNode,
       propName: 'text',
       propSegments: []
     } as IBindingInfo;
@@ -83,7 +88,7 @@ describe('applyChange (coverage)', () => {
       ...createBaseBindingInfo(),
       bindingType: 'for',
       node: placeholder,
-      placeHolderNode: placeholder,
+      replaceNode: placeholder,
       propName: 'for',
       propSegments: [],
       uuid: 'test-uuid'
@@ -95,13 +100,31 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToForMock).toHaveBeenCalledWith(placeholder, 'test-uuid', [1, 2]);
   });
 
+  it('ifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
+    const placeholder = document.createComment('if');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'if',
+      node: placeholder,
+      replaceNode: placeholder,
+      propName: 'if',
+      propSegments: [],
+      uuid: 'test-if-uuid'
+    } as IBindingInfo;
+
+    applyChange(bindingInfo, true);
+
+    expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(placeholder, 'test-if-uuid', true);
+  });
+
   it('対象外のbindingTypeは何も呼ばれないこと', () => {
     const node = document.createElement('button');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'event',
       node,
-      placeHolderNode: node,
+      replaceNode: node,
       propName: 'onclick',
       propSegments: ['onclick']
     } as IBindingInfo;
@@ -111,5 +134,6 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToTextMock).not.toHaveBeenCalled();
     expect(applyChangeToElementMock).not.toHaveBeenCalled();
     expect(applyChangeToForMock).not.toHaveBeenCalled();
+    expect(applyChangeToIfMock).not.toHaveBeenCalled();
   });
 });

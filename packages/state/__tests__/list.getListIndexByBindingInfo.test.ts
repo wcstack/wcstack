@@ -18,7 +18,7 @@ function createBindingInfo(node: Node, overrides?: Partial<IBindingInfo>): IBind
     bindingType: 'prop',
     uuid: null,
     node,
-    placeHolderNode: node,
+    replaceNode: node,
     ...overrides,
   } as IBindingInfo;
 }

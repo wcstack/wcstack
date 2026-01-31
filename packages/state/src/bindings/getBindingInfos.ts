@@ -8,14 +8,14 @@ export function getBindingInfos(node: Node, parseBindingTextResults: ParseBindTe
       bindingInfos.push({
         ...parseBindingTextResult,
         node: node,
-        placeHolderNode: node as Element,
+        replaceNode: node,
       });
     } else {
-      const placeHolderNode = document.createTextNode('');
+      const replaceNode = document.createTextNode('');
       bindingInfos.push({
         ...parseBindingTextResult,
         node: node,
-        placeHolderNode: placeHolderNode,
+        replaceNode: replaceNode,
       });
     }
   }

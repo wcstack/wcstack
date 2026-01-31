@@ -5,15 +5,15 @@ export function getBindingInfos(node, parseBindingTextResults) {
             bindingInfos.push({
                 ...parseBindingTextResult,
                 node: node,
-                placeHolderNode: node,
+                replaceNode: node,
             });
         }
         else {
-            const placeHolderNode = document.createTextNode('');
+            const replaceNode = document.createTextNode('');
             bindingInfos.push({
                 ...parseBindingTextResult,
                 node: node,
-                placeHolderNode: placeHolderNode,
+                replaceNode: replaceNode,
             });
         }
     }

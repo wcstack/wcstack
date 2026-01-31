@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { applyChange } from '../src/apply/applyChange';
 import type { IBindingInfo } from '../src/types';
 
-function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'placeHolderNode' | 'propSegments' | 'propName'> {
+function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   return {
     statePathName: 'value',
     statePathInfo: null,
@@ -11,7 +11,7 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'p
     propModifiers: [],
     uuid: null,
     node: document.createTextNode(''),
-    placeHolderNode: document.createTextNode('')
+    replaceNode: document.createTextNode('')
   } as any;
 }
 
@@ -22,7 +22,7 @@ describe('applyChange', () => {
       ...createBaseBindingInfo(),
       bindingType: 'text',
       node: textNode,
-      placeHolderNode: textNode,
+      replaceNode: textNode,
       propName: 'text',
       propSegments: []
     } as IBindingInfo;
@@ -37,7 +37,7 @@ describe('applyChange', () => {
       ...createBaseBindingInfo(),
       bindingType: 'prop',
       node: input,
-      placeHolderNode: input,
+      replaceNode: input,
       propName: 'value',
       propSegments: ['value']
     } as IBindingInfo;
@@ -52,11 +52,25 @@ describe('applyChange', () => {
       ...createBaseBindingInfo(),
       bindingType: 'for',
       node: placeholder,
-      placeHolderNode: placeholder,
+      replaceNode: placeholder,
       propName: 'for',
       propSegments: []
     } as IBindingInfo;
 
     expect(() => applyChange(bindingInfo, [])).toThrow(/BindingInfo for 'for' binding must have a UUID/);
+  });
+
+  it('ifバインディングでuuidがない場合はエラーになること', () => {
+    const placeholder = document.createComment('if');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'if',
+      node: placeholder,
+      replaceNode: placeholder,
+      propName: 'if',
+      propSegments: []
+    } as IBindingInfo;
+
+    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' binding must have a UUID/);
   });
 });

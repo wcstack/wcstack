@@ -15,7 +15,7 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     bindingType: 'event',
     uuid: null,
     node,
-    placeHolderNode: node,
+    replaceNode: node,
     ...overrides,
   } as IBindingInfo;
 }

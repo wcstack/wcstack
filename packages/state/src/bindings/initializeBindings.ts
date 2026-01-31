@@ -1,16 +1,15 @@
 import { IStateElement } from "../components/types";
-import { IListIndex, ILoopContext } from "../list/types";
+import { ILoopContext } from "../list/types";
 import { IBindingInfo } from "../types";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
-import { replaceToComment } from "./replaceToComment";
+import { replaceToReplaceNode } from "./replaceToReplaceNode";
 import { applyChange } from "../apply/applyChange";
 import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
 import { IFragmentNodeInfo } from "../structural/types";
 import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
-import { createStateAddress } from "../address/StateAddress";
 
 interface IApplyInfo {
   bindingInfo: IBindingInfo;
@@ -29,8 +28,8 @@ async function _initializeBindings(
     }
     await stateElement.initializePromise;
 
-    // replace to comment node
-    replaceToComment(bindingInfo);
+    // replace node
+    replaceToReplaceNode(bindingInfo);
 
     // event
     if (attachEventHandler(bindingInfo)) {

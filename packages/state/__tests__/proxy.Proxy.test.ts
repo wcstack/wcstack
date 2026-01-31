@@ -152,7 +152,7 @@ describe('proxy/StateHandler', () => {
       bindingType: 'prop',
       uuid: null,
       node: document.createElement('input'),
-      placeHolderNode: document.createElement('input')
+      replaceNode: document.createElement('input')
     } as IBindingInfo;
 
     const address = createStateAddress(bindingInfo.statePathInfo!, null);

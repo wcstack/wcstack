@@ -31,7 +31,7 @@ export interface IBindingInfo {
     readonly stateName: string;
     readonly filters: IFilterInfo[];
     readonly node: Node;
-    readonly placeHolderNode: Node;
+    readonly replaceNode: Node;
     readonly bindingType: BindingType;
     readonly uuid?: string | null;
 }

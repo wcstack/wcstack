@@ -5,7 +5,7 @@ import { parseBindTextsForElement } from '../src/bindTextParser/parseBindTextsFo
 
 
 describe('getBindingInfos', () => {
-  it('textバインディングの場合はプレースホルダーがTextになること', () => {
+  it('textバインディングの場合はreplaceNodeがTextになること', () => {
     const comment = document.createComment('@@wcs-text: message');
     const parseResult = parseBindTextForEmbeddedNode('message');
     const bindingInfos = getBindingInfos(comment, [parseResult]);
@@ -13,11 +13,11 @@ describe('getBindingInfos', () => {
     expect(bindingInfos).toHaveLength(1);
     expect(bindingInfos[0].bindingType).toBe('text');
     expect(bindingInfos[0].node).toBe(comment);
-    expect(bindingInfos[0].placeHolderNode).not.toBe(comment);
-    expect(bindingInfos[0].placeHolderNode.nodeType).toBe(Node.TEXT_NODE);
+    expect(bindingInfos[0].replaceNode).not.toBe(comment);
+    expect(bindingInfos[0].replaceNode.nodeType).toBe(Node.TEXT_NODE);
   });
 
-  it('propバインディングの場合はplaceHolderNodeが要素になること', () => {
+  it('propバインディングの場合はreplaceNodeが要素になること', () => {
     const el = document.createElement('span');
     const parseResult = parseBindTextsForElement('textContent: message')[0];
     const bindingInfos = getBindingInfos(el, [parseResult]);
@@ -25,6 +25,6 @@ describe('getBindingInfos', () => {
     expect(bindingInfos).toHaveLength(1);
     expect(bindingInfos[0].bindingType).toBe('prop');
     expect(bindingInfos[0].node).toBe(el);
-    expect(bindingInfos[0].placeHolderNode).toBe(el);
+    expect(bindingInfos[0].replaceNode).toBe(el);
   });
 });

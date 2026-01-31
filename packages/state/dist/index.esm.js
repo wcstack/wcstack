@@ -1222,17 +1222,17 @@ function applyChangeToElement(element, propSegment, newValue) {
     // const remainingSegments = propSegment.slice(1);
 }
 
-function replaceToComment(bindingInfo) {
+function replaceToReplaceNode(bindingInfo) {
     const node = bindingInfo.node;
-    const placeHolderNode = bindingInfo.placeHolderNode;
-    if (node === placeHolderNode) {
+    const replaceNode = bindingInfo.replaceNode;
+    if (node === replaceNode) {
         return;
     }
     if (node.parentNode === null) {
         // already replaced
         return;
     }
-    node.parentNode.replaceChild(placeHolderNode, node);
+    node.parentNode.replaceChild(replaceNode, node);
 }
 
 function resolveNodePath(root, path) {
@@ -1255,15 +1255,15 @@ function getBindingInfos(node, parseBindingTextResults) {
             bindingInfos.push({
                 ...parseBindingTextResult,
                 node: node,
-                placeHolderNode: node,
+                replaceNode: node,
             });
         }
         else {
-            const placeHolderNode = document.createTextNode('');
+            const replaceNode = document.createTextNode('');
             bindingInfos.push({
                 ...parseBindingTextResult,
                 node: node,
-                placeHolderNode: placeHolderNode,
+                replaceNode: replaceNode,
             });
         }
     }
@@ -2539,8 +2539,8 @@ async function _initializeBindings(allBindings) {
             raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
         }
         await stateElement.initializePromise;
-        // replace to comment node
-        replaceToComment(bindingInfo);
+        // replace node
+        replaceToReplaceNode(bindingInfo);
         // event
         if (attachEventHandler(bindingInfo)) {
             continue;
@@ -2633,14 +2633,14 @@ function createContent(content) {
     return new Content(content);
 }
 
-const lastValueByNode = new WeakMap();
+const lastValueByNode$1 = new WeakMap();
 const lastContentsByNode = new WeakMap();
 function applyChangeToFor(node, uuid, _newValue) {
     const fragmentInfo = getFragmentInfoByUUID(uuid);
     if (!fragmentInfo) {
         raiseError(`Fragment with UUID "${uuid}" not found.`);
     }
-    lastValueByNode.get(node) ?? [];
+    lastValueByNode$1.get(node) ?? [];
     const newValue = Array.isArray(_newValue) ? _newValue : [];
     const listIndexes = getListIndexesByList(newValue) || [];
     const lastContents = lastContentsByNode.get(node) || [];
@@ -2671,6 +2671,35 @@ function applyChangeToFor(node, uuid, _newValue) {
         });
     }
     lastContentsByNode.set(node, newContents);
+    lastValueByNode$1.set(node, newValue);
+}
+
+const lastValueByNode = new WeakMap();
+const contentByNode = new WeakMap();
+function applyChangeToIf(node, uuid, _newValue) {
+    const fragmentInfo = getFragmentInfoByUUID(uuid);
+    if (!fragmentInfo) {
+        raiseError(`Fragment with UUID "${uuid}" not found.`);
+    }
+    const oldValue = lastValueByNode.get(node) ?? false;
+    const newValue = Boolean(_newValue);
+    let content = contentByNode.get(node);
+    if (typeof content === "undefined") {
+        const loopContext = getLoopContextByNode(node);
+        const cloneFragment = document.importNode(fragmentInfo.fragment, true);
+        initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+        content = createContent(cloneFragment);
+        contentByNode.set(node, content);
+    }
+    if (oldValue === newValue) {
+        return;
+    }
+    if (oldValue) {
+        content.unmount();
+    }
+    if (newValue) {
+        content.mountAfter(node);
+    }
     lastValueByNode.set(node, newValue);
 }
 
@@ -2686,7 +2715,7 @@ function applyChange(bindingInfo, newValue) {
         filteredValue = filter.filterFn(filteredValue);
     }
     if (bindingInfo.bindingType === "text") {
-        applyChangeToText(bindingInfo.placeHolderNode, filteredValue);
+        applyChangeToText(bindingInfo.replaceNode, filteredValue);
     }
     else if (bindingInfo.bindingType === "prop") {
         applyChangeToElement(bindingInfo.node, bindingInfo.propSegments, filteredValue);
@@ -2696,6 +2725,12 @@ function applyChange(bindingInfo, newValue) {
             throw new Error(`BindingInfo for 'for' binding must have a UUID.`);
         }
         applyChangeToFor(bindingInfo.node, bindingInfo.uuid, filteredValue);
+    }
+    else if (bindingInfo.bindingType === "if") {
+        if (!bindingInfo.uuid) {
+            throw new Error(`BindingInfo for 'if' binding must have a UUID.`);
+        }
+        applyChangeToIf(bindingInfo.node, bindingInfo.uuid, filteredValue);
     }
 }
 
