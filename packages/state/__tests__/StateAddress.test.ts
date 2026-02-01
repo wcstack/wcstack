@@ -22,12 +22,10 @@ describe('StateAddress', () => {
 
     it('PathInfoとlistIndexでStateAddressを作成できること', () => {
       const pathInfo = getPathInfo('users.*.name');
-      const listIndex: IListIndex = {
+      const listIndex = {
         index: 0,
-        value: { id: 1, name: 'Alice' },
-        parent: null,
-        pathInfo: getPathInfo('users.*')
-      };
+        parentListIndex: null,
+      } as unknown as IListIndex;
       
       const stateAddress = createStateAddress(pathInfo, listIndex);
       
@@ -56,25 +54,21 @@ describe('StateAddress', () => {
 
     it('ワイルドカードを含むパスのStateAddressを作成できること', () => {
       const pathInfo = getPathInfo('users.*.posts.*');
-      const parentListIndex: IListIndex = {
+      const parentListIndex = {
         index: 1,
-        value: { id: 2, name: 'Bob' },
-        parent: null,
-        pathInfo: getPathInfo('users.*')
-      };
-      const listIndex: IListIndex = {
+        parentListIndex: null,
+      } as unknown as IListIndex;
+      const listIndex = {
         index: 0,
-        value: { id: 101, title: 'First Post' },
-        parent: parentListIndex,
-        pathInfo: getPathInfo('users.*.posts.*')
-      };
+        parentListIndex: parentListIndex,
+      } as unknown as IListIndex;
       
       const stateAddress = createStateAddress(pathInfo, listIndex);
       
       expect(stateAddress.pathInfo.path).toBe('users.*.posts.*');
       expect(stateAddress.pathInfo.wildcardPositions).toEqual([1, 3]);
       expect(stateAddress.listIndex?.index).toBe(0);
-      expect(stateAddress.listIndex?.parent?.index).toBe(1);
+      expect(stateAddress.listIndex?.parentListIndex?.index).toBe(1);
     });
 
     it('作成されたStateAddressのプロパティが正しく設定されていること', () => {
@@ -93,70 +87,58 @@ describe('StateAddress', () => {
   describe('listIndexの階層構造', () => {
     it('親のないlistIndexを持つStateAddressを作成できること', () => {
       const pathInfo = getPathInfo('items.*');
-      const listIndex: IListIndex = {
+      const listIndex = {
         index: 2,
-        value: { name: 'Item 3' },
-        parent: null,
-        pathInfo: getPathInfo('items.*')
-      };
+        parentListIndex: null,
+      } as unknown as IListIndex;
       
       const stateAddress = createStateAddress(pathInfo, listIndex);
       
-      expect(stateAddress.listIndex?.parent).toBeNull();
+      expect(stateAddress.listIndex?.parentListIndex).toBeNull();
     });
 
     it('2階層のlistIndexを持つStateAddressを作成できること', () => {
-      const parentListIndex: IListIndex = {
+      const parentListIndex = {
         index: 0,
-        value: { id: 1, items: [] },
-        parent: null,
-        pathInfo: getPathInfo('categories.*')
-      };
+        parentListIndex: null,
+      } as unknown as IListIndex;
       
-      const listIndex: IListIndex = {
+      const listIndex = {
         index: 1,
-        value: { name: 'Item 2' },
-        parent: parentListIndex,
-        pathInfo: getPathInfo('categories.*.items.*')
-      };
+        parentListIndex: parentListIndex,
+      } as unknown as IListIndex;
       
       const pathInfo = getPathInfo('categories.*.items.*');
       const stateAddress = createStateAddress(pathInfo, listIndex);
       
       expect(stateAddress.listIndex?.index).toBe(1);
-      expect(stateAddress.listIndex?.parent?.index).toBe(0);
-      expect(stateAddress.listIndex?.parent?.parent).toBeNull();
+      expect(stateAddress.listIndex?.parentListIndex?.index).toBe(0);
+      expect(stateAddress.listIndex?.parentListIndex?.parentListIndex).toBeNull();
     });
 
     it('3階層のlistIndexを持つStateAddressを作成できること', () => {
-      const rootListIndex: IListIndex = {
+      const rootListIndex = {
         index: 0,
-        value: { id: 1 },
-        parent: null,
-        pathInfo: getPathInfo('users.*')
-      };
+        parentListIndex: null,
+      } as unknown as IListIndex;
       
-      const middleListIndex: IListIndex = {
+      const middleListIndex = {
         index: 1,
-        value: { id: 10 },
-        parent: rootListIndex,
-        pathInfo: getPathInfo('users.*.posts.*')
-      };
+        parentListIndex: rootListIndex,
+      } as unknown as IListIndex;
       
-      const leafListIndex: IListIndex = {
+      const leafListIndex = {
         index: 2,
-        value: { id: 100 },
-        parent: middleListIndex,
-        pathInfo: getPathInfo('users.*.posts.*.comments.*')
-      };
+        parentListIndex: middleListIndex,
+      } as unknown as IListIndex;
       
       const pathInfo = getPathInfo('users.*.posts.*.comments.*');
       const stateAddress = createStateAddress(pathInfo, leafListIndex);
       
       expect(stateAddress.listIndex?.index).toBe(2);
-      expect(stateAddress.listIndex?.parent?.index).toBe(1);
-      expect(stateAddress.listIndex?.parent?.parent?.index).toBe(0);
-      expect(stateAddress.listIndex?.parent?.parent?.parent).toBeNull();
+      expect(stateAddress.listIndex?.parentListIndex?.index).toBe(1);
+      expect(stateAddress.listIndex?.parentListIndex?.parentListIndex?.index).toBe(0);
+      expect(stateAddress.listIndex?.parentListIndex?.parentListIndex?.parentListIndex).toBeNull();
     });
   });
 
@@ -205,18 +187,14 @@ describe('StateAddress', () => {
 
     it('異なるlistIndexで同じPathInfoのStateAddressを作成できること', () => {
       const pathInfo = getPathInfo('users.*');
-      const listIndex1: IListIndex = {
+      const listIndex1 = {
         index: 0,
-        value: { name: 'Alice' },
-        parent: null,
-        pathInfo: pathInfo
-      };
-      const listIndex2: IListIndex = {
+        parentListIndex: null,
+      } as unknown as IListIndex;
+      const listIndex2 = {
         index: 1,
-        value: { name: 'Bob' },
-        parent: null,
-        pathInfo: pathInfo
-      };
+        parentListIndex: null,
+      } as unknown as IListIndex;
       
       const stateAddress1 = createStateAddress(pathInfo, listIndex1);
       const stateAddress2 = createStateAddress(pathInfo, listIndex2);

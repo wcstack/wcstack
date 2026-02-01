@@ -8,6 +8,7 @@ function createContent(): IContent {
   return {
     firstNode: null,
     lastNode: null,
+    mounted: false,
     mountAfter: () => {},
     unmount: () => {}
   };

@@ -26,7 +26,7 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     statePathName: 'users.*.name',
     statePathInfo: null,
     stateName: 'default',
-    filterTexts: [],
+    filters: [],
     bindingType: 'prop',
     uuid: null,
     node,
@@ -159,7 +159,7 @@ describe('event/twowayHandler', () => {
     attachTwowayEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
 
-    await handler({ target: input } as Event);
+    await handler({ target: input } as unknown as Event);
 
     expect(getLoopContextByNode).toHaveBeenCalledWith(input);
     expect(state.$$setLoopContext).toHaveBeenCalledWith(loopContext, expect.any(Function));
@@ -194,7 +194,7 @@ describe('event/twowayHandler', () => {
     const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
 
     const div = document.createElement('div');
-    handler({ target: div } as Event);
+    handler({ target: div } as unknown as Event);
     expect(warnSpy).toHaveBeenCalledWith(
       '[@wcstack/state] Property "value" does not exist on target element.'
     );
@@ -215,7 +215,7 @@ describe('event/twowayHandler', () => {
     attachTwowayEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
 
-    expect(() => handler({ target: input } as Event)).toThrow('state element not found');
+    expect(() => handler({ target: input } as unknown as Event)).toThrow('state element not found');
     expect(raiseError).toHaveBeenCalledWith(
       'State element with name "default" not found for two-way binding.'
     );

@@ -98,7 +98,7 @@ describe('collectStructuralFragments', () => {
     document.createTreeWalker = ((
       _root: Node,
       _whatToShow: number,
-      filter: NodeFilter
+      filter: any
     ) => {
       const nonTemplate = document.createElement('span');
       const emptyTemplate = document.createElement('template');

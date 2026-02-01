@@ -44,7 +44,7 @@ describe('updater/updater', () => {
     const updater = createUpdater('default', state, 3);
 
     updater.enqueueUpdateAddress(address);
-    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
     expect(applyChangeMock).toHaveBeenCalledTimes(1);
     expect(applyChangeMock).toHaveBeenCalledWith(bindingInfo, 5);
@@ -64,7 +64,7 @@ describe('updater/updater', () => {
 
     updater.enqueueUpdateAddress(address);
     updater.enqueueUpdateAddress(address);
-    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
     expect(applyChangeMock).toHaveBeenCalledTimes(1);
     expect(updater.versionInfo.revision).toBe(2);
@@ -80,7 +80,7 @@ describe('updater/updater', () => {
     const updater = createUpdater('default', state, 2);
 
     updater.enqueueUpdateAddress(address);
-    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
     expect(state.$$getByAddress).toHaveBeenCalledWith(address);
     expect(applyChangeMock).not.toHaveBeenCalled();

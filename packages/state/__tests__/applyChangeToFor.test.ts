@@ -67,10 +67,10 @@ function createMockStateElement(): IStateElement {
     deleteBindingInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
-    createState(callback) {
+    createState(_mutability, callback) {
       return callback(stateProxy);
     },
-    async createStateAsync(callback) {
+    async createStateAsync(_mutability, callback) {
       return callback(stateProxy);
     },
     nextVersion() {
@@ -93,7 +93,7 @@ function createFragmentInfo() {
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
     stateName: 'default',
-    filterTexts: [],
+    filters: [],
     bindingType: 'for',
     uuid
   };
@@ -115,7 +115,7 @@ function createEmptyFragmentInfo() {
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
     stateName: 'default',
-    filterTexts: [],
+    filters: [],
     bindingType: 'for',
     uuid
   };

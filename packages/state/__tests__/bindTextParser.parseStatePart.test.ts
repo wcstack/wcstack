@@ -6,7 +6,7 @@ describe('parseStatePart', () => {
     const result = parseStatePart('user.name');
     expect(result.stateName).toBe('default');
     expect(result.statePathName).toBe('user.name');
-    expect(result.statePathInfo.path).toBe('user.name');
+    expect(result.statePathInfo?.path).toBe('user.name');
     expect(result.filters).toEqual([]);
   });
 

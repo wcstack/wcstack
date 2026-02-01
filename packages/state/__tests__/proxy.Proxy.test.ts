@@ -60,10 +60,10 @@ function createMockStateElement(options?: {
     deleteBindingInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
-    createState(callback) {
+    createState(mutability, callback) {
       return callback({} as any);
     },
-    async createStateAsync(callback) {
+    async createStateAsync(mutability, callback) {
       return callback({} as any);
     },
     nextVersion() {
@@ -86,14 +86,14 @@ describe('proxy/StateHandler', () => {
   it('存在しないプロパティはエラーになること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
-    const proxy = createStateProxy({}, 'default');
+    const proxy = createStateProxy({}, 'default', 'readonly');
     expect(() => (proxy as any).unknown).toThrow();
   });
 
   it('ネストしたパスを取得できること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
-    const proxy = createStateProxy({ user: { name: 'Alice' } }, 'default');
+    const proxy = createStateProxy({ user: { name: 'Alice' } }, 'default', 'readonly');
     expect((proxy as any)['user.name']).toBe('Alice');
   });
 
@@ -101,7 +101,7 @@ describe('proxy/StateHandler', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
     const state = { users: [{ name: 'Bob' }, { name: 'Carol' }] };
-    const proxy = createStateProxy(state, 'default');
+    const proxy = createStateProxy(state, 'default', 'readonly');
     const listIndex = createListIndex(null, 1);
     const loopContext = {
       elementPathInfo: getPathInfo('users.*'),
@@ -117,7 +117,7 @@ describe('proxy/StateHandler', () => {
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
     setStateElementByName('default', stateElement);
-    const proxy = createStateProxy({ items: list }, 'default');
+    const proxy = createStateProxy({ items: list }, 'default', 'readonly');
 
     expect(getListIndexesByList(list)).toBeNull();
     const value = (proxy as any).items;
@@ -131,7 +131,7 @@ describe('proxy/StateHandler', () => {
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
     setStateElementByName('default', stateElement);
-    const proxy = createStateProxy({ items: [] }, 'default');
+    const proxy = createStateProxy({ items: [] }, 'default', 'writable');
 
     const list = [10, 20];
     (proxy as any).items = list;
@@ -148,7 +148,7 @@ describe('proxy/StateHandler', () => {
       statePathName: 'count',
       statePathInfo: getPathInfo('count'),
       stateName: 'default',
-      filterTexts: [],
+      filters: [],
       bindingType: 'prop',
       uuid: null,
       node: document.createElement('input'),
@@ -159,10 +159,10 @@ describe('proxy/StateHandler', () => {
     const bindingInfosByAddress = new Map<IStateAddress, IBindingInfo[]>([[address, [bindingInfo]]]);
     const stateElement = createMockStateElement({ bindingInfosByAddress });
     setStateElementByName('default', stateElement);
-    const proxy = createStateProxy({ count: 0 }, 'default');
+    const proxy = createStateProxy({ count: 0 }, 'default', 'writable');
 
     (proxy as any).count = 2;
-    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(applyChangeMock).toHaveBeenCalledTimes(1);
     expect(applyChangeMock).toHaveBeenCalledWith(bindingInfo, 2);
   });

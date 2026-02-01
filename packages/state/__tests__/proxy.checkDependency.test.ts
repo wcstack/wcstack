@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { checkDependency } from '../src/proxy/methods/checkDependency';
 import { getPathInfo } from '../src/address/PathInfo';
 
-function createHandler(overrides?: Partial<any>) {
+function createHandler(overrides?: Partial<any>): any {
   return {
     addressStackIndex: -1,
     lastAddressStack: null,

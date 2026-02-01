@@ -55,7 +55,7 @@ const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => (
   statePathName: 'count',
   statePathInfo: getPathInfo('count'),
   stateName: 'default',
-  filterTexts: [],
+  filters: [],
   bindingType: 'prop',
   uuid: null,
   node: document.createElement('input'),
@@ -81,7 +81,7 @@ describe('State component', () => {
 
   it('初期状態でcreateStateがエラーになること', () => {
     const stateEl = createStateElement();
-    expect(() => stateEl.createState(() => {})).toThrow(/_state is not initialized yet/);
+    expect(() => stateEl.createState('readonly', () => {})).toThrow(/_state is not initialized yet/);
   });
 
   it('connectedCallbackで初期化されること（スクリプトなし）', async () => {
@@ -273,7 +273,7 @@ describe('State component', () => {
       statePathName: 'items',
       statePathInfo: getPathInfo('items'),
       stateName: 'default',
-      filterTexts: [],
+      filters: [],
       bindingType: 'for',
       uuid: 'uuid',
       node: document.createElement('div'),

@@ -29,7 +29,7 @@ describe('bindings.getParseBindTextResults.fragment', () => {
 			statePathName: 'items',
 			statePathInfo: getPathInfo('items'),
 			stateName: 'default',
-			filterTexts: [],
+			filters: [],
 			bindingType: 'for',
 			uuid: null,
 		};

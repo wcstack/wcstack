@@ -35,7 +35,7 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
     uuid: null,
     node: document.createTextNode(''),
     replaceNode: document.createTextNode('')
-  } as IBindingInfo;
+  } as unknown as IBindingInfo;
 }
 
 describe('applyChange (coverage)', () => {
@@ -45,8 +45,8 @@ describe('applyChange (coverage)', () => {
 
   it('filtersが順に適用されること', () => {
     const filters: IFilterInfo[] = [
-      { filterName: 'add1', args: [], filterFn: (v: number) => v + 1 },
-      { filterName: 'mul2', args: [], filterFn: (v: number) => v * 2 }
+      { filterName: 'add1', args: [], filterFn: (v: any) => v + 1 },
+      { filterName: 'mul2', args: [], filterFn: (v: any) => v * 2 }
     ];
     const input = document.createElement('input');
     const bindingInfo: IBindingInfo = {

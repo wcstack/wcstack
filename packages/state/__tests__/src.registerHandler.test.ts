@@ -17,9 +17,9 @@ const initMock = vi.mocked(initializeBindings);
 describe('registerHandler', () => {
   it('DOMContentLoadedで初期化処理を呼ぶこと', async () => {
     const addListenerSpy = vi.spyOn(document, 'addEventListener');
-    let callback: (() => void) | null = null;
+    let callback: any = null;
 
-    addListenerSpy.mockImplementation((type, cb) => {
+    addListenerSpy.mockImplementation((type: any, cb: any) => {
       if (type === 'DOMContentLoaded') {
         callback = cb as () => void;
       }
