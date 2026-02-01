@@ -37,8 +37,12 @@ export interface ILoopContextStack {
   ): void | Promise<void>;
 }
 
+
 export interface IListDiff {
-  added: Array<any>;
-  removed: Array<any>;
-  moved: Array<{ item: any; from: number; to: number }>;
+  oldIndexes: IListIndex[];
+  newIndexes: IListIndex[];
+  changeIndexSet: Set<IListIndex>;
+  deleteIndexSet: Set<IListIndex>;
+  addIndexSet: Set<IListIndex>;
 }
+

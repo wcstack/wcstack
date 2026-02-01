@@ -62,17 +62,34 @@ describe('createListIndexes', () => {
     expect(indexes[2].index).toBe(2);
   });
 
-  it('重複値は最後のインデックスを再利用すること', () => {
+  it('重複値は順序通りに再利用すること', () => {
     const oldList = ['x', 'y', 'x'];
     const oldIndexes = createListIndexes(null, [], oldList, []);
 
     const indexes = createListIndexes(null, oldList, ['x'], oldIndexes);
-    expect(indexes[0]).toBe(oldIndexes[2]);
+    expect(indexes[0]).toBe(oldIndexes[0]);
     expect(indexes[0].index).toBe(0);
   });
 
   it('配列以外の入力は空配列として扱うこと', () => {
     const indexes = createListIndexes(null, { a: 1 }, null, []);
     expect(indexes).toEqual([]);
+  });
+
+  it('一度計算したリストの差分をキャッシュから利用すること', () => {
+    const oldList = ['old1'];
+    const newList = ['new1'];
+    // Initial call to setup empty->oldList cache (not strictly needed for this test but mimics flow)
+    const oldIndexes = createListIndexes(null, [], oldList, []);
+
+    // First diff calculation
+    const indexes1 = createListIndexes(null, oldList, newList, oldIndexes);
+
+    // Second diff calculation with SAME Array references
+    const indexes2 = createListIndexes(null, oldList, newList, oldIndexes);
+
+    // Result should be exactly the same object (reference equality)
+    // because it comes from the cache
+    expect(indexes2).toBe(indexes1);
   });
 });

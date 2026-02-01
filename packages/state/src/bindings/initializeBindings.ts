@@ -88,11 +88,11 @@ export  function initializeBindings(
 export function initializeBindingsByFragment(
   root: DocumentFragment,
   nodeInfos: IFragmentNodeInfo[], 
-  parentLoopContext: ILoopContext | null
+  loopContext: ILoopContext | null
 ): IBindingInfo[] {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
   for(const node of subscriberNodes) {
-    setLoopContextByNode(node, parentLoopContext);
+    setLoopContextByNode(node, loopContext);
   }
   _initializeBindings(allBindings);
   return allBindings;

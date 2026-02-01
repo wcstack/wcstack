@@ -153,7 +153,9 @@ describe('applyChangeToFor', () => {
     const placeholder = document.createComment('for');
     const bindingInfo = createBindingInfo(placeholder);
 
-    expect(() => applyChangeToFor(bindingInfo, [1])).toThrow(/State element with name/);
+    const list = [1];
+    createListIndexes(null, [], list, []);
+    expect(() => applyChangeToFor(bindingInfo, list)).toThrow(/State element with name/);
   });
 
   it('listPathInfoがない場合はエラーになること', () => {
@@ -163,7 +165,9 @@ describe('applyChangeToFor', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
-    expect(() => applyChangeToFor(bindingInfo, [])).toThrow(/List path info not found/);
+    const list: any[] = [];
+    createListIndexes(null, [], list, []);
+    expect(() => applyChangeToFor(bindingInfo, list)).toThrow(/List path info not found/);
   });
 
   it('配列以外の値は空配列として扱われること', () => {
@@ -178,7 +182,9 @@ describe('applyChangeToFor', () => {
 
     const bindingInfo = createBindingInfo(placeholder);
 
-    applyChangeToFor(bindingInfo, { not: 'array' });
+    const notList = { not: 'array' };
+    createListIndexes(null, [], notList, []);
+    applyChangeToFor(bindingInfo, notList);
 
     expect(container.childNodes.length).toBe(1);
   });
@@ -250,7 +256,9 @@ describe('applyChangeToFor', () => {
     expect(container.childNodes.length).toBe(3);
 
     // 次の更新は空配列
-    applyChangeToFor(bindingInfo, []);
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    applyChangeToFor(bindingInfo, emptyList);
     expect(container.childNodes.length).toBe(1);
 
     // 後片付け
