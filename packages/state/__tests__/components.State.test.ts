@@ -42,7 +42,7 @@ const createStateElement = (): State => document.createElement(STATE_TAG) as Sta
 
 const getStateValue = async (stateEl: State): Promise<any> => {
   let value: any;
-  await stateEl.createState(async (state) => {
+  await stateEl.createState('readonly', (state) => {
     value = state;
   });
   return value;
@@ -237,7 +237,7 @@ describe('State component', () => {
     await stateEl.connectedCallback();
     
     let callbackExecuted = false;
-    await stateEl.createStateAsync(async (state) => {
+    await stateEl.createStateAsync('readonly', async (state) => {
       await Promise.resolve();
       callbackExecuted = true;
     });

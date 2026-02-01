@@ -6,7 +6,7 @@ import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } fr
 import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
-async function _initializeBindings(allBindings) {
+function _initializeBindings(allBindings) {
     const applyInfoList = [];
     const bindingsByStateElement = new Map();
     for (const bindingInfo of allBindings) {
@@ -14,7 +14,6 @@ async function _initializeBindings(allBindings) {
         if (stateElement === null) {
             raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
         }
-        await stateElement.initializePromise;
         // replace node
         replaceToReplaceNode(bindingInfo);
         // event
@@ -37,7 +36,7 @@ async function _initializeBindings(allBindings) {
     // get apply values from cache and state
     for (const [stateElement, bindings] of bindingsByStateElement.entries()) {
         const cacheValueByPath = new Map();
-        stateElement.createState((state) => {
+        stateElement.createState("readonly", (state) => {
             for (const bindingInfo of bindings) {
                 let cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
                 if (typeof cacheValue === "undefined") {
@@ -56,18 +55,20 @@ async function _initializeBindings(allBindings) {
         applyChange(applyInfo.bindingInfo, applyInfo.value);
     }
 }
-export async function initializeBindings(root, parentLoopContext) {
+export function initializeBindings(root, parentLoopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
     for (const node of subscriberNodes) {
         setLoopContextByNode(node, parentLoopContext);
     }
-    await _initializeBindings(allBindings);
+    _initializeBindings(allBindings);
+    return allBindings;
 }
-export async function initializeBindingsByFragment(root, nodeInfos, parentLoopContext) {
+export function initializeBindingsByFragment(root, nodeInfos, parentLoopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
     for (const node of subscriberNodes) {
         setLoopContextByNode(node, parentLoopContext);
     }
-    await _initializeBindings(allBindings);
+    _initializeBindings(allBindings);
+    return allBindings;
 }
 //# sourceMappingURL=initializeBindings.js.map

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { getParseBindTextResults } from '../src/bindings/getParseBindTextResults';
-import { isCommentNode } from '../src/bindings/isCommentNode';
+import { parseCommentNode } from '../src/bindings/parseCommentNode';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
@@ -14,7 +14,7 @@ afterEach(() => {
 describe('bindings.getParseBindTextResults.fragment', () => {
 	it('構造フラグメントUUIDが見つからない場合は埋め込みとして処理されること', () => {
 		const comment = document.createComment('@@wcs-text: message');
-		expect(isCommentNode(comment)).toBe(true);
+		expect(parseCommentNode(comment)).toBe('message');
 		const results = getParseBindTextResults(comment);
 		expect(results).toHaveLength(1);
 		expect(results[0].bindingType).toBe('text');
@@ -41,7 +41,7 @@ describe('bindings.getParseBindTextResults.fragment', () => {
 		});
 
 		const comment = document.createComment(`@@wcs-for: ${uuid}`);
-		expect(isCommentNode(comment)).toBe(true);
+		expect(parseCommentNode(comment)).toBe(uuid);
 		const results = getParseBindTextResults(comment);
 		expect(results).toHaveLength(1);
 		expect(results[0].bindingType).toBe('for');

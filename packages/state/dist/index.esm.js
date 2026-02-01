@@ -1222,6 +1222,14 @@ function applyChangeToElement(element, propSegment, newValue) {
     // const remainingSegments = propSegment.slice(1);
 }
 
+const bindingsByContent = new WeakMap();
+function getBindingsByContent(content) {
+    return bindingsByContent.get(content) ?? [];
+}
+function setBindingsByContent(content, bindings) {
+    bindingsByContent.set(content, bindings);
+}
+
 function replaceToReplaceNode(bindingInfo) {
     const node = bindingInfo.node;
     const replaceNode = bindingInfo.replaceNode;
@@ -2250,26 +2258,27 @@ const bindingTypeKeywordSet = new Set([
 ]);
 // format: <!--@@:path-->は<!--@@wcs-text:path-->と同義にする
 const EMBEDDED_REGEX = new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
-function isCommentNode(node) {
+function parseCommentNode(node) {
+    const savedText = bindTextByNode.get(node);
+    if (typeof savedText === "string") {
+        return savedText;
+    }
     if (node.nodeType !== Node.COMMENT_NODE) {
-        return false;
+        return null;
     }
     const commentNode = node;
     const text = commentNode.data.trim();
     const match = EMBEDDED_REGEX.exec(text);
     if (match === null) {
-        return false;
+        return null;
     }
     // 空の場合は wcs-text として扱う
     const keyword = match[1] || config.commentTextPrefix;
     if (!bindingTypeKeywordSet.has(keyword)) {
-        return false;
+        return null;
     }
     bindTextByNode.set(node, match[2]);
-    return true;
-}
-function getCommentNodeBindText(node) {
-    return bindTextByNode.get(node) || null;
+    return match[2];
 }
 
 function parseBindTextForEmbeddedNode(bindText) {
@@ -2303,7 +2312,7 @@ function getParseBindTextResults(node) {
         return parseBindTextsForElement(bindText);
     }
     else if (node.nodeType === Node.COMMENT_NODE) {
-        const bindTextOrUUID = getCommentNodeBindText(node);
+        const bindTextOrUUID = parseCommentNode(node);
         if (bindTextOrUUID === null) {
             raiseError(`Comment node binding text not found.`);
         }
@@ -2344,7 +2353,7 @@ function getSubscriberNodes(root) {
             }
             else {
                 // Comment node
-                return isCommentNode(node)
+                return parseCommentNode(node) !== null
                     ? NodeFilter.FILTER_ACCEPT
                     : NodeFilter.FILTER_SKIP;
             }
@@ -2398,7 +2407,7 @@ const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }
-    stateElement.createStateAsync(async (state) => {
+    stateElement.createStateAsync("writable", async (state) => {
         const handler = state[handlerName];
         if (typeof handler !== "function") {
             raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
@@ -2501,7 +2510,7 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
         raiseError(`State element with name "${stateName}" not found for two-way binding.`);
     }
     const loopContext = getLoopContextByNode(node);
-    stateElement.createState((state) => {
+    stateElement.createState("writable", (state) => {
         state.$$setLoopContext(loopContext, () => {
             state[statePathName] = newValue;
         });
@@ -2530,7 +2539,7 @@ function attachTwowayEventHandler(bindingInfo) {
     return false;
 }
 
-async function _initializeBindings(allBindings) {
+function _initializeBindings(allBindings) {
     const applyInfoList = [];
     const bindingsByStateElement = new Map();
     for (const bindingInfo of allBindings) {
@@ -2538,7 +2547,6 @@ async function _initializeBindings(allBindings) {
         if (stateElement === null) {
             raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
         }
-        await stateElement.initializePromise;
         // replace node
         replaceToReplaceNode(bindingInfo);
         // event
@@ -2561,7 +2569,7 @@ async function _initializeBindings(allBindings) {
     // get apply values from cache and state
     for (const [stateElement, bindings] of bindingsByStateElement.entries()) {
         const cacheValueByPath = new Map();
-        stateElement.createState((state) => {
+        stateElement.createState("readonly", (state) => {
             for (const bindingInfo of bindings) {
                 let cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
                 if (typeof cacheValue === "undefined") {
@@ -2580,19 +2588,21 @@ async function _initializeBindings(allBindings) {
         applyChange(applyInfo.bindingInfo, applyInfo.value);
     }
 }
-async function initializeBindings(root, parentLoopContext) {
+function initializeBindings(root, parentLoopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
     for (const node of subscriberNodes) {
         setLoopContextByNode(node, parentLoopContext);
     }
-    await _initializeBindings(allBindings);
+    _initializeBindings(allBindings);
+    return allBindings;
 }
-async function initializeBindingsByFragment(root, nodeInfos, parentLoopContext) {
+function initializeBindingsByFragment(root, nodeInfos, parentLoopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
     for (const node of subscriberNodes) {
         setLoopContextByNode(node, parentLoopContext);
     }
-    await _initializeBindings(allBindings);
+    _initializeBindings(allBindings);
+    return allBindings;
 }
 
 class Content {
@@ -2663,8 +2673,9 @@ function applyChangeToFor(node, uuid, _newValue) {
     for (const index of listIndexes) {
         loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
             const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-            initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+            const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
             const content = createContent(cloneFragment);
+            setBindingsByContent(content, bindings);
             content.mountAfter(lastNode);
             lastNode = content.lastNode || lastNode;
             newContents.push(content);
@@ -2672,6 +2683,22 @@ function applyChangeToFor(node, uuid, _newValue) {
     }
     lastContentsByNode.set(node, newContents);
     lastValueByNode$1.set(node, newValue);
+}
+
+function applyChangeFromBindings(bindingInfos) {
+    for (const bindingInfo of bindingInfos) {
+        const stateElement = getStateElementByName(bindingInfo.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
+        }
+        stateElement.createState("readonly", (state) => {
+            const loopContext = getLoopContextByNode(bindingInfo.node);
+            const newValue = state.$$setLoopContext(loopContext, () => {
+                return state[bindingInfo.statePathName];
+            });
+            applyChange(bindingInfo, newValue);
+        });
+    }
 }
 
 const lastValueByNode = new WeakMap();
@@ -2684,12 +2711,15 @@ function applyChangeToIf(node, uuid, _newValue) {
     const oldValue = lastValueByNode.get(node) ?? false;
     const newValue = Boolean(_newValue);
     let content = contentByNode.get(node);
+    let initiaized = false;
     if (typeof content === "undefined") {
         const loopContext = getLoopContextByNode(node);
         const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-        initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+        const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
         content = createContent(cloneFragment);
+        setBindingsByContent(content, bindings);
         contentByNode.set(node, content);
+        initiaized = true;
     }
     if (oldValue === newValue) {
         return;
@@ -2699,6 +2729,10 @@ function applyChangeToIf(node, uuid, _newValue) {
     }
     if (newValue) {
         content.mountAfter(node);
+        if (!initiaized) {
+            const bindings = getBindingsByContent(content);
+            applyChangeFromBindings(bindings);
+        }
     }
     lastValueByNode.set(node, newValue);
 }
@@ -2814,13 +2848,15 @@ class StateHandler {
     _addressStackIndex = -1;
     _updater;
     _loopContext;
-    constructor(stateName) {
+    _mutability;
+    constructor(stateName, mutability) {
         this._stateName = stateName;
         const stateElement = getStateElementByName(this._stateName);
         if (stateElement === null) {
             raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
         }
         this._stateElement = stateElement;
+        this._mutability = mutability;
     }
     get stateName() {
         return this._stateName;
@@ -2881,6 +2917,9 @@ class StateHandler {
         return get(target, prop, receiver, this);
     }
     set(target, prop, value, receiver) {
+        if (this._mutability === "readonly") {
+            raiseError(`State "${this._stateName}" is readonly.`);
+        }
         return set(target, prop, value, receiver, this);
     }
     has(target, prop) {
@@ -2888,8 +2927,8 @@ class StateHandler {
         //    return Reflect.has(target, prop) || this.symbols.has(prop) || this.apis.has(prop);
     }
 }
-function createStateProxy(state, stateName) {
-    const handler = new StateHandler(stateName);
+function createStateProxy(state, stateName, mutability) {
+    const handler = new StateHandler(stateName, mutability);
     const stateProxy = new Proxy(state, handler);
     handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
     return stateProxy;
@@ -3170,20 +3209,20 @@ class State extends HTMLElement {
             }
         }
     }
-    _createState(callback) {
+    _createState(mutability, callback) {
         try {
-            const stateProxy = createStateProxy(this._state, this._name);
+            const stateProxy = createStateProxy(this._state, this._name, mutability);
             return callback(stateProxy);
         }
         finally {
             // cleanup if needed
         }
     }
-    async createStateAsync(callback) {
-        return await this._createState(callback);
+    async createStateAsync(mutability, callback) {
+        return await this._createState(mutability, callback);
     }
-    createState(callback) {
-        this._createState(callback);
+    createState(mutability, callback) {
+        this._createState(mutability, callback);
     }
     nextVersion() {
         this._version++;
@@ -3280,8 +3319,12 @@ function collectStructuralFragments(root) {
     });
     let lastIfFragmentInfo = null; // for elseif chaining
     const elseFragmentInfos = []; // for elseif chaining
+    const templates = [];
     while (walker.nextNode()) {
         const template = walker.currentNode;
+        templates.push(template);
+    }
+    for (const template of templates) {
         const bindText = template.getAttribute(config.bindAttributeName) || '';
         const parseBindTextResults = parseBindTextsForElement(bindText);
         let parseBindTextResult = parseBindTextResults[0];
@@ -3382,10 +3425,21 @@ function collectStructuralFragments(root) {
     }
 }
 
+async function waitForStateInitialize() {
+    const elements = document.querySelectorAll(config.tagNames.state);
+    const promises = [];
+    for (const element of elements) {
+        const stateElement = element;
+        promises.push(stateElement.initializePromise);
+    }
+    await Promise.all(promises);
+}
+
 function registerHandler() {
     document.addEventListener("DOMContentLoaded", async () => {
+        await waitForStateInitialize();
         collectStructuralFragments(document);
-        await initializeBindings(document.body, null);
+        initializeBindings(document.body, null);
     });
 }
 

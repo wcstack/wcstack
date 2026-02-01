@@ -43,7 +43,7 @@ const twowayEventHandlerFunction = (
   }
 
   const loopContext = getLoopContextByNode(node);
-  stateElement.createState( (state) => {
+  stateElement.createState("writable", (state) => {
     state.$$setLoopContext(loopContext, () => {
       state[statePathName] = newValue;
     });

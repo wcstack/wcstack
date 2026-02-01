@@ -10,13 +10,15 @@ class StateHandler {
     _addressStackIndex = -1;
     _updater;
     _loopContext;
-    constructor(stateName) {
+    _mutability;
+    constructor(stateName, mutability) {
         this._stateName = stateName;
         const stateElement = getStateElementByName(this._stateName);
         if (stateElement === null) {
             raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
         }
         this._stateElement = stateElement;
+        this._mutability = mutability;
     }
     get stateName() {
         return this._stateName;
@@ -77,6 +79,9 @@ class StateHandler {
         return trapGet(target, prop, receiver, this);
     }
     set(target, prop, value, receiver) {
+        if (this._mutability === "readonly") {
+            raiseError(`State "${this._stateName}" is readonly.`);
+        }
         return trapSet(target, prop, value, receiver, this);
     }
     has(target, prop) {
@@ -84,8 +89,8 @@ class StateHandler {
         //    return Reflect.has(target, prop) || this.symbols.has(prop) || this.apis.has(prop);
     }
 }
-export function createStateProxy(state, stateName) {
-    const handler = new StateHandler(stateName);
+export function createStateProxy(state, stateName, mutability) {
+    const handler = new StateHandler(stateName, mutability);
     const stateProxy = new Proxy(state, handler);
     handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
     return stateProxy;

@@ -250,20 +250,20 @@ export class State extends HTMLElement {
             }
         }
     }
-    _createState(callback) {
+    _createState(mutability, callback) {
         try {
-            const stateProxy = createStateProxy(this._state, this._name);
+            const stateProxy = createStateProxy(this._state, this._name, mutability);
             return callback(stateProxy);
         }
         finally {
             // cleanup if needed
         }
     }
-    async createStateAsync(callback) {
-        return await this._createState(callback);
+    async createStateAsync(mutability, callback) {
+        return await this._createState(mutability, callback);
     }
-    createState(callback) {
-        this._createState(callback);
+    createState(mutability, callback) {
+        this._createState(mutability, callback);
     }
     nextVersion() {
         this._version++;

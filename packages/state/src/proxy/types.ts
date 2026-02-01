@@ -27,3 +27,5 @@ export interface IStateProxy extends IState {
   $$setLoopContext(loopContext: ILoopContext | null, callback: () => any): any;
   $$getByAddress(address: IStateAddress): any;
 }
+
+export type Mutability = "readonly" | "writable";

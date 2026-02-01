@@ -48,8 +48,12 @@ export function collectStructuralFragments(root) {
     });
     let lastIfFragmentInfo = null; // for elseif chaining
     const elseFragmentInfos = []; // for elseif chaining
+    const templates = [];
     while (walker.nextNode()) {
         const template = walker.currentNode;
+        templates.push(template);
+    }
+    for (const template of templates) {
         const bindText = template.getAttribute(config.bindAttributeName) || '';
         const parseBindTextResults = parseBindTextsForElement(bindText);
         let parseBindTextResult = parseBindTextResults[0];

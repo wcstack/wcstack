@@ -1,9 +1,11 @@
 import { initializeBindings } from "./bindings/initializeBindings.js";
 import { collectStructuralFragments } from "./structural/collectStructuralFragments.js";
+import { waitForStateInitialize } from "./waitForStateInitialize.js";
 
 export function registerHandler() {
   document.addEventListener("DOMContentLoaded", async () => {
+    await waitForStateInitialize();
     collectStructuralFragments(document);
-    await initializeBindings(document.body, null);
+    initializeBindings(document.body, null);
   });
 }

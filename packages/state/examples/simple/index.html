@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>simple state</title>
-  <script type="module" src="../../dist/auto.min.js"></script>
+  <script type="module" src="../../dist/auto.js"></script>
   <style>
     .over {
       color: red;
@@ -57,6 +57,17 @@ export default {
   <input type="checkbox" name="toggle" data-bind-state="checked: isActive">
   <div>
   </div>
+  <div>
+    <template data-bind-state="if: toggle">
+      toggle on
+    </template>
+    <template data-bind-state="elseif: isActive">
+      toggle off / isActive on
+    </template>
+    <template data-bind-state="else:">
+      toggle off / isActive off
+    </template>
+  </div>
   <template data-bind-state="for: users">
     <div>
       <span data-bind-state="textContent: users.*.id"></span>:
@@ -64,6 +75,7 @@ export default {
       <span data-bind-state="textContent: users.*.name"></span>
     </div>
   </template>
+
   <div>
   </div>
 

@@ -67,8 +67,13 @@ export function collectStructuralFragments(root: Document | Element | DocumentFr
   );
   let lastIfFragmentInfo: IFragmentInfo | null = null; // for elseif chaining
   const elseFragmentInfos: IFragmentInfo[] = []; // for elseif chaining
+  const templates: HTMLTemplateElement[] = [];
   while (walker.nextNode()) {
     const template = walker.currentNode as HTMLTemplateElement;
+    templates.push(template);
+  }
+
+  for(const template of templates) {
     const bindText = template.getAttribute(config.bindAttributeName) || '';
     const parseBindTextResults = parseBindTextsForElement(bindText);
     let parseBindTextResult = parseBindTextResults[0];

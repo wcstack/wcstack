@@ -1,4 +1,5 @@
 import { getPathInfo } from "../address/PathInfo";
+import { setBindingsByContent } from "../bindings/bindingsByContent";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings";
 import { WILDCARD } from "../define";
 import { getListIndexesByList } from "../list/listIndexesByList";
@@ -36,8 +37,9 @@ export function applyChangeToFor(node, uuid, _newValue) {
     for (const index of listIndexes) {
         loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
             const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-            initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+            const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
             const content = createContent(cloneFragment);
+            setBindingsByContent(content, bindings);
             content.mountAfter(lastNode);
             lastNode = content.lastNode || lastNode;
             newContents.push(content);

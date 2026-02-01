@@ -152,7 +152,7 @@ describe('event/twowayHandler', () => {
     const state: any = {
       $$setLoopContext: vi.fn((ctx, fn) => fn()),
     };
-    const createState = vi.fn((fn) => fn(state));
+    const createState = vi.fn((mutability, fn) => fn(state));
     vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
 
     const binding = createBindingInfo(input, { statePathName: 'users.*.name-set' });

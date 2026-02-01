@@ -1,7 +1,7 @@
 import { IStateAddress } from "../address/types";
 import { ICacheEntry } from "../cache/types";
 import { ILoopContextStack } from "../list/types";
-import { IStateProxy } from "../proxy/types";
+import { IStateProxy, Mutability } from "../proxy/types";
 import { IBindingInfo } from "../types";
 import { IVersionInfo } from "../version/types";
 export interface IStateElement {
@@ -22,8 +22,8 @@ export interface IStateElement {
     deleteBindingInfo(bindingInfo: IBindingInfo): void;
     addStaticDependency(parentPath: string, childPath: string): void;
     addDynamicDependency(fromPath: string, toPath: string): void;
-    createStateAsync(callback: (state: IStateProxy) => Promise<void>): Promise<void>;
-    createState(callback: (state: IStateProxy) => void): void;
+    createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
 }
 //# sourceMappingURL=types.d.ts.map

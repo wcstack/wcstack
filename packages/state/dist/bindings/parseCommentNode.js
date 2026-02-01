@@ -19,25 +19,29 @@ const bindingTypeKeywordSet = new Set([
 ]);
 // format: <!--@@:path-->は<!--@@wcs-text:path-->と同義にする
 const EMBEDDED_REGEX = new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
-export function isCommentNode(node) {
+export function parseCommentNode(node) {
+    const savedText = bindTextByNode.get(node);
+    if (typeof savedText === "string") {
+        return savedText;
+    }
     if (node.nodeType !== Node.COMMENT_NODE) {
-        return false;
+        return null;
     }
     const commentNode = node;
     const text = commentNode.data.trim();
     const match = EMBEDDED_REGEX.exec(text);
     if (match === null) {
-        return false;
+        return null;
     }
     // 空の場合は wcs-text として扱う
     const keyword = match[1] || config.commentTextPrefix;
     if (!bindingTypeKeywordSet.has(keyword)) {
-        return false;
+        return null;
     }
     bindTextByNode.set(node, match[2]);
-    return true;
+    return match[2];
 }
 export function getCommentNodeBindText(node) {
     return bindTextByNode.get(node) || null;
 }
-//# sourceMappingURL=isCommentNode.js.map
+//# sourceMappingURL=parseCommentNode.js.map

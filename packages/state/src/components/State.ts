@@ -15,7 +15,7 @@ import { IVersionInfo } from "../version/types";
 import { WILDCARD } from "../define";
 import { get } from "../proxy/traps/get";
 import { getPathInfo } from "../address/PathInfo";
-import { IStateProxy } from "../proxy/types";
+import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { IUpdater } from "../updater/types";
 import { createUpdater } from "../updater/updater";
@@ -295,21 +295,21 @@ export class State extends HTMLElement implements IStateElement {
     }
   }
 
-  private _createState<T>(callback: (state: IStateProxy) => T): T {
+  private _createState<T>(mutability: Mutability, callback: (state: IStateProxy) => T): T {
     try {
-      const stateProxy = createStateProxy(this._state, this._name);
+      const stateProxy = createStateProxy(this._state, this._name, mutability);
       return callback(stateProxy);
     } finally {
       // cleanup if needed
     }
   }
 
-  async createStateAsync(callback: (state: IStateProxy) => Promise<void>): Promise<void> {
-    return await this._createState(callback);
+  async createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void> {
+    return await this._createState(mutability, callback);
   }
 
-  createState(callback: (state: IStateProxy) => void): void {
-    this._createState(callback);
+  createState(mutability: Mutability, callback: (state: IStateProxy) => void): void {
+    this._createState(mutability, callback);
   }
 
   nextVersion(): number {

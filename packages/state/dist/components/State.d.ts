@@ -4,7 +4,7 @@ import { ILoopContextStack } from "../list/types";
 import { IStateAddress } from "../address/types";
 import { ICacheEntry } from "../cache/types";
 import { IVersionInfo } from "../version/types";
-import { IStateProxy } from "../proxy/types";
+import { IStateProxy, Mutability } from "../proxy/types";
 export declare class State extends HTMLElement implements IStateElement {
     private __state;
     private _proxyState;
@@ -53,8 +53,8 @@ export declare class State extends HTMLElement implements IStateElement {
     addBindingInfo(bindingInfo: IBindingInfo): void;
     deleteBindingInfo(bindingInfo: IBindingInfo): void;
     private _createState;
-    createStateAsync(callback: (state: IStateProxy) => Promise<void>): Promise<void>;
-    createState(callback: (state: IStateProxy) => void): void;
+    createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
 }
 //# sourceMappingURL=State.d.ts.map

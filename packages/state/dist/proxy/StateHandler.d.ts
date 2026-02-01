@@ -1,7 +1,7 @@
 import { IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { IUpdater } from "../updater/types";
-import { IStateHandler, IStateProxy } from "./types";
+import { IStateHandler, IStateProxy, Mutability } from "./types";
 import { ILoopContext } from "../list/types";
 import { IState } from "../types";
 declare class StateHandler implements IStateHandler {
@@ -11,7 +11,8 @@ declare class StateHandler implements IStateHandler {
     private _addressStackIndex;
     private _updater;
     private _loopContext;
-    constructor(stateName: string);
+    private _mutability;
+    constructor(stateName: string, mutability: Mutability);
     get stateName(): string;
     get stateElement(): IStateElement;
     get lastAddressStack(): IStateAddress | null;
@@ -28,7 +29,7 @@ declare class StateHandler implements IStateHandler {
     set(target: Object, prop: PropertyKey, value: any, receiver: any): boolean;
     has(target: Object, prop: PropertyKey): boolean;
 }
-export declare function createStateProxy(state: IState, stateName: string): IStateProxy;
+export declare function createStateProxy(state: IState, stateName: string, mutability: Mutability): IStateProxy;
 export declare const __private__: {
     StateHandler: typeof StateHandler;
 };

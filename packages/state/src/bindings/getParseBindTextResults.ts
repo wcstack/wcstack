@@ -1,7 +1,7 @@
 import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
-import { getCommentNodeBindText } from "./isCommentNode";
+import { parseCommentNode } from "./parseCommentNode";
 import { parseBindTextForEmbeddedNode } from "../bindTextParser/parseBindTextForEmbeddedNode";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
@@ -12,7 +12,7 @@ export function getParseBindTextResults(node: Node): ParseBindTextResult[] {
     const bindText = element.getAttribute(config.bindAttributeName) || '';
     return parseBindTextsForElement(bindText);
   } else if (node.nodeType === Node.COMMENT_NODE) {
-    const bindTextOrUUID = getCommentNodeBindText(node);
+    const bindTextOrUUID = parseCommentNode(node);
     if (bindTextOrUUID === null) {
       raiseError(`Comment node binding text not found.`);
     }

@@ -1,5 +1,5 @@
 import { config } from "../config";
-import { isCommentNode } from "./isCommentNode";
+import { parseCommentNode } from "./parseCommentNode";
 
 /**
  * data-bind-state 属性または埋め込みノード<!--{{}}-->を持つノードをすべて取得する
@@ -22,7 +22,7 @@ export function getSubscriberNodes(root: Document | Element | DocumentFragment):
             : NodeFilter.FILTER_SKIP;
         } else {
           // Comment node
-          return isCommentNode(node) 
+          return parseCommentNode(node) !== null
             ? NodeFilter.FILTER_ACCEPT 
             : NodeFilter.FILTER_SKIP;
         }

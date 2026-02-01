@@ -70,10 +70,10 @@ function createMockStateElement(): IStateElement {
     },
     addStaticDependency() {},
     addDynamicDependency() {},
-    createState(callback) {
+    createState(mutability, callback) {
       return callback(stateProxy);
     },
-    async createStateAsync(callback) {
+    async createStateAsync(mutability, callback) {
       return callback(stateProxy);
     },
     nextVersion() {
@@ -88,7 +88,7 @@ describe('initializeBindings', () => {
     setStateElementByName('default', null);
   });
 
-  it('コメントノードのtextバインディングを初期化できること', async () => {
+  it('コメントノードのtextバインディングを初期化できること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
@@ -96,7 +96,7 @@ describe('initializeBindings', () => {
     const comment = document.createComment('@@wcs-text: message');
     container.appendChild(comment);
 
-    await initializeBindings(container, null);
+    initializeBindings(container, null);
 
     expect(container.childNodes.length).toBe(1);
     expect(container.childNodes[0].nodeType).toBe(Node.TEXT_NODE);
@@ -108,16 +108,16 @@ describe('initializeBindings', () => {
     expect(stateElement.bindingInfosByAddress.get(address)).toBeDefined();
   });
 
-  it('stateElementが存在しない場合はエラーになること', async () => {
+  it('stateElementが存在しない場合はエラーになること', () => {
     const container = document.createElement('div');
     const el = document.createElement('span');
     el.setAttribute('data-bind-state', 'textContent: message@missing');
     container.appendChild(el);
 
-    await expect(initializeBindings(container, null)).rejects.toThrow(/State element with name "missing" not found/);
+    expect(() => initializeBindings(container, null)).toThrow(/State element with name "missing" not found/);
   });
 
-  it('eventバインディングは登録処理をスキップすること', async () => {
+  it('eventバインディングは登録処理をスキップすること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
@@ -128,12 +128,12 @@ describe('initializeBindings', () => {
     el.setAttribute('data-bind-state', 'onclick: handleClick');
     container.appendChild(el);
 
-    await initializeBindings(container, null);
+    initializeBindings(container, null);
 
     expect(addBindingSpy).not.toHaveBeenCalled();
   });
 
-  it('同じstateElementに複数バインディングがある場合も処理されること', async () => {
+  it('同じstateElementに複数バインディングがある場合も処理されること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
@@ -145,13 +145,13 @@ describe('initializeBindings', () => {
     container.appendChild(el1);
     container.appendChild(el2);
 
-    await initializeBindings(container, null);
+    initializeBindings(container, null);
 
     const bindingInfos = Array.from(stateElement.bindingInfosByAddress.values()).flat();
     expect(bindingInfos).toHaveLength(2);
   });
 
-  it('fragment初期化でループコンテキストが設定されること', async () => {
+  it('fragment初期化でループコンテキストが設定されること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
@@ -166,7 +166,7 @@ describe('initializeBindings', () => {
       listIndex: createListIndex(null, 0)
     };
 
-    await initializeBindingsByFragment(fragment, nodeInfos, loopContext);
+    initializeBindingsByFragment(fragment, nodeInfos, loopContext);
 
     const [node] = Array.from(fragment.childNodes);
     expect(getLoopContextByNode(node)).toBe(loopContext);

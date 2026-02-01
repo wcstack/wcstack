@@ -1,4 +1,5 @@
 import { getPathInfo } from "../address/PathInfo";
+import { setBindingsByContent } from "../bindings/bindingsByContent";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings";
 import { WILDCARD } from "../define";
 import { getListIndexesByList } from "../list/listIndexesByList";
@@ -7,6 +8,7 @@ import { getStateElementByName } from "../stateElementByName";
 import { createContent } from "../structural/createContent";
 import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
 import { IContent } from "../structural/types";
+import { IBindingInfo } from "../types";
 
 const lastValueByNode = new WeakMap<Node, any>();
 const lastContentsByNode = new WeakMap<Node, IContent[]>();
@@ -40,8 +42,9 @@ export function applyChangeToFor(node: Node, uuid: string, _newValue: any): void
   for(const index of listIndexes) {
     loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
       const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-      initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+      const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
       const content = createContent(cloneFragment);
+      setBindingsByContent(content, bindings);
       content.mountAfter(lastNode);
       lastNode = content.lastNode || lastNode;
       newContents.push(content);

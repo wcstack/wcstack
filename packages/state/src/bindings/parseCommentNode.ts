@@ -1,5 +1,4 @@
 import { config } from "../config";
-import { BindingType } from "../types";
 
 const bindTextByNode = new WeakMap<Node, string>();
 
@@ -24,23 +23,27 @@ const bindingTypeKeywordSet: Set<string> = new Set<string>([
 // format: <!--@@:path-->は<!--@@wcs-text:path-->と同義にする
 const EMBEDDED_REGEX = new RegExp(`^\\s*@@\\s*(.*?)\\s*:\\s*(.+?)\\s*$`);
 
-export function isCommentNode(node: Node): boolean {
+export function parseCommentNode(node: Node): string | null {
+  const savedText = bindTextByNode.get(node);
+  if (typeof savedText === "string") {
+    return savedText;
+  }
   if (node.nodeType !== Node.COMMENT_NODE) {
-    return false;
+    return null;
   }
   const commentNode = node as Comment;
   const text = commentNode.data.trim();
   const match = EMBEDDED_REGEX.exec(text);
   if (match === null) {
-    return false;
+    return null;
   }
   // 空の場合は wcs-text として扱う
   const keyword = match[1] || config.commentTextPrefix;
   if (!bindingTypeKeywordSet.has(keyword)) {
-    return false;
+    return null;
   }
   bindTextByNode.set(node, match[2]);
-  return true;
+  return match[2];
 }
 
 export function getCommentNodeBindText(node: Node): string | null {

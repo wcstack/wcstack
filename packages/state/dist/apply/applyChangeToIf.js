@@ -1,8 +1,10 @@
+import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { createContent } from "../structural/createContent";
 import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
+import { applyChangeFromBindings } from "./applyChangeFromBindings";
 const lastValueByNode = new WeakMap();
 const contentByNode = new WeakMap();
 export function applyChangeToIf(node, uuid, _newValue) {
@@ -13,12 +15,15 @@ export function applyChangeToIf(node, uuid, _newValue) {
     const oldValue = lastValueByNode.get(node) ?? false;
     const newValue = Boolean(_newValue);
     let content = contentByNode.get(node);
+    let initiaized = false;
     if (typeof content === "undefined") {
         const loopContext = getLoopContextByNode(node);
         const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-        initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+        const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
         content = createContent(cloneFragment);
+        setBindingsByContent(content, bindings);
         contentByNode.set(node, content);
+        initiaized = true;
     }
     if (oldValue === newValue) {
         return;
@@ -28,6 +33,10 @@ export function applyChangeToIf(node, uuid, _newValue) {
     }
     if (newValue) {
         content.mountAfter(node);
+        if (!initiaized) {
+            const bindings = getBindingsByContent(content);
+            applyChangeFromBindings(bindings);
+        }
     }
     lastValueByNode.set(node, newValue);
 }

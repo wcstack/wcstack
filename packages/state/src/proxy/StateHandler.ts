@@ -3,7 +3,7 @@ import { IStateElement } from "../components/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IUpdater } from "../updater/types";
-import { IStateHandler, IStateProxy } from "./types";
+import { IStateHandler, IStateProxy, Mutability } from "./types";
 import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
 import { ILoopContext } from "../list/types";
@@ -20,8 +20,11 @@ class StateHandler implements IStateHandler {
 
   private _loopContext: ILoopContext | null | undefined;
 
+  private _mutability: Mutability;
+
   constructor(
-    stateName: string
+    stateName: string,
+    mutability: Mutability
   ) {
     this._stateName = stateName;
     const stateElement = getStateElementByName(this._stateName);
@@ -29,6 +32,7 @@ class StateHandler implements IStateHandler {
       raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
     }
     this._stateElement = stateElement;
+    this._mutability = mutability;
   }
 
   get stateName(): string {
@@ -109,6 +113,9 @@ class StateHandler implements IStateHandler {
     value   : any, 
     receiver: any
   ): boolean {
+    if (this._mutability === "readonly") {
+      raiseError(`State "${this._stateName}" is readonly.`);
+    }
     return trapSet(target, prop, value, receiver, this);
   }
 
@@ -124,9 +131,10 @@ class StateHandler implements IStateHandler {
 
 export function createStateProxy(
   state: IState,
-  stateName: string
+  stateName: string,
+  mutability: Mutability
 ): IStateProxy {
-  const handler = new StateHandler(stateName);
+  const handler = new StateHandler(stateName, mutability);
   const stateProxy = new Proxy<IStateProxy>(state as IStateProxy, handler);
   handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
   return stateProxy;
