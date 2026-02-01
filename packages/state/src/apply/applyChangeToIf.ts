@@ -1,4 +1,4 @@
-import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent";
+import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { getContentByNode } from "../structural/contentByNode";
 import { createContent } from "../structural/createContent";

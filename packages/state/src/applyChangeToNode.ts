@@ -1,4 +1,3 @@
-import { IState } from "./types";
 
 export function applyChangeToNode(node: Node, propSegments: string[], newValue: any): void {
   if (node.nodeType === Node.ELEMENT_NODE) {

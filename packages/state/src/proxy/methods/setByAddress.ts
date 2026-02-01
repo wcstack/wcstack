@@ -26,7 +26,7 @@ import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 
 function _setByAddress(
-  target   : Object, 
+  target   : object, 
   address  : IStateAddress,
   value    : any, 
   receiver : any,
@@ -69,7 +69,7 @@ function _setByAddress(
 }
 
 function _setByAddressWithSwap(
-  target   : Object, 
+  target   : object, 
   address  : IStateAddress,
   value    : any, 
   receiver : any,
@@ -111,7 +111,7 @@ function _setByAddressWithSwap(
 }
 
 export function setByAddress(
-    target   : Object, 
+    target   : object, 
     address  : IStateAddress,
     value    : any, 
     receiver : any,

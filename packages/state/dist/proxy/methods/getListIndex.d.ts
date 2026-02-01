@@ -18,5 +18,5 @@
 import { IResolvedAddress } from "../../address/types";
 import { IListIndex } from "../../list/types";
 import { IStateHandler } from "../types";
-export declare function getListIndex(target: Object, resolvedAddress: IResolvedAddress, receiver: any, handler: IStateHandler): IListIndex | null;
+export declare function getListIndex(target: object, resolvedAddress: IResolvedAddress, receiver: any, handler: IStateHandler): IListIndex | null;
 //# sourceMappingURL=getListIndex.d.ts.map

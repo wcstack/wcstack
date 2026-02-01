@@ -17,5 +17,5 @@
  * - シンボルAPIやReflect.getで拡張性・互換性も確保
  */
 import { IStateHandler } from "../types";
-export declare function get(target: Object, prop: PropertyKey, receiver: any, handler: IStateHandler): any;
+export declare function get(target: object, prop: PropertyKey, receiver: any, handler: IStateHandler): any;
 //# sourceMappingURL=get.d.ts.map

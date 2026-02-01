@@ -25,9 +25,9 @@ declare class StateHandler implements IStateHandler {
     popAddress(): IStateAddress | null;
     setLoopContext(loopContext: ILoopContext | null): void;
     clearLoopContext(): void;
-    get(target: Object, prop: PropertyKey, receiver: any): any;
-    set(target: Object, prop: PropertyKey, value: any, receiver: any): boolean;
-    has(target: Object, prop: PropertyKey): boolean;
+    get(target: object, prop: PropertyKey, receiver: any): any;
+    set(target: object, prop: PropertyKey, value: any, receiver: any): boolean;
+    has(target: object, prop: PropertyKey): boolean;
 }
 export declare function createStateProxy(state: IState, stateName: string, mutability: Mutability): IStateProxy;
 export declare const __private__: {

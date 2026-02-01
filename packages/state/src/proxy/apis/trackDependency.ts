@@ -31,12 +31,15 @@ import { IStateHandler } from "../types";
  * @param handler  StateClassハンドラ
  * @returns        引数pathで指定されたパターンへの依存を登録する無名関数
  */
+
+type TrackDependencyFunction = (path: string) => void;
+
 export function trackDependency(
-  target: Object, 
-  prop: PropertyKey, 
-  receiver: any,
+  _target: object, 
+  _prop: PropertyKey, 
+  _receiver: any,
   handler: IStateHandler
-): Function {
+): TrackDependencyFunction {
   return (path: string): void => {
     const lastInfo = handler.lastAddressStack?.pathInfo ?? 
       raiseError('Internal error: lastAddressStack is null');

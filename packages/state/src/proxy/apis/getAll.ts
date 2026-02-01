@@ -7,7 +7,7 @@
 
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
-import { IPathInfo, IStateAddress } from "../../address/types";
+import { IPathInfo } from "../../address/types";
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
@@ -16,12 +16,14 @@ import { getContextListIndex } from "../methods/getContextListIndex";
 import { IStateHandler } from "../types";
 import { resolve } from "./resolve";
 
+type GetAllFunction = (path: string, indexes?: number[]) => any[];
+
 export function getAll(
-  target: Object, 
+  target: object, 
   prop: PropertyKey, 
   receiver: any,
   handler: IStateHandler
-):Function {
+): GetAllFunction {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path: string, indexes?: number[]): any[] => {
       const pathInfo = getPathInfo(path);

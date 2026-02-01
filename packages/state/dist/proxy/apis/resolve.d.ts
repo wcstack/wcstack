@@ -16,5 +16,7 @@
  * - 柔軟なバインディングやAPI経由での利用が可能
  */
 import { IStateHandler } from "../types";
-export declare function resolve(target: Object, prop: PropertyKey, receiver: any, handler: IStateHandler): Function;
+type ResolveFunction = (path: string, indexes: number[], value?: any) => any;
+export declare function resolve(target: object, _prop: PropertyKey, receiver: any, handler: IStateHandler): ResolveFunction;
+export {};
 //# sourceMappingURL=resolve.d.ts.map

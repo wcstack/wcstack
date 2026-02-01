@@ -21,7 +21,6 @@ import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
 import { raiseError } from "../../raiseError";
-import { IState } from "../../types";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
@@ -29,7 +28,7 @@ import { IStateHandler } from "../types";
 import { indexByIndexName } from "./indexByIndexName";
 
 export function get(
-  target  : Object, 
+  target  : object, 
   prop    : PropertyKey, 
   receiver: any,
   handler : IStateHandler

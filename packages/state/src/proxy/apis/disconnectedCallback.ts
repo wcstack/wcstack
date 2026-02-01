@@ -19,10 +19,10 @@ import { IStateHandler } from "../types";
 const DISCONNECTED_CALLBACK = "$disconnectedCallback";
 
 export async function disconnectedCallback(
-  target: Object, 
-  prop: PropertyKey, 
+  target: object, 
+  _prop: PropertyKey, 
   receiver: any,
-  handler: IStateHandler
+  _handler: IStateHandler
 ):Promise<void> {
   const callback = Reflect.get(target, DISCONNECTED_CALLBACK);
   if (typeof callback === "function") {

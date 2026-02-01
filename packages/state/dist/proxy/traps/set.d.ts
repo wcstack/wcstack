@@ -14,5 +14,5 @@
  * - Reflect.setで標準的なプロパティ設定の互換性も確保
  */
 import { IStateHandler } from "../types";
-export declare function set(target: Object, prop: PropertyKey, value: any, receiver: any, handler: IStateHandler): boolean;
+export declare function set(target: object, prop: PropertyKey, value: any, receiver: any, handler: IStateHandler): boolean;
 //# sourceMappingURL=set.d.ts.map

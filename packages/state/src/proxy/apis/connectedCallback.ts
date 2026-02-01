@@ -19,10 +19,10 @@ import { IStateHandler } from "../types";
 const CONNECTED_CALLBACK = "$connectedCallback";
 
 export async function connectedCallback(
-  target: Object, 
-  prop: PropertyKey, 
+  target: object, 
+  _prop: PropertyKey, 
   receiver: any,
-  handler: IStateHandler
+  _handler: IStateHandler
 ):Promise<void> {
   const callback = Reflect.get(target, CONNECTED_CALLBACK);
   if (typeof callback === "function") {

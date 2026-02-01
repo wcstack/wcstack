@@ -7,7 +7,7 @@ import { createContent } from "../structural/createContent";
 const lastValueByNode = new WeakMap();
 const lastContentsByNode = new WeakMap();
 export function applyChangeToFor(bindingInfo, _newValue) {
-    const lastValue = lastValueByNode.get(bindingInfo.node) ?? [];
+    const _lastValue = lastValueByNode.get(bindingInfo.node) ?? [];
     const newValue = Array.isArray(_newValue) ? _newValue : [];
     const listIndexes = getListIndexesByList(newValue) || [];
     const lastContents = lastContentsByNode.get(bindingInfo.node) || [];

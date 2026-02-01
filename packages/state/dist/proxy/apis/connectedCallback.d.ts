@@ -14,5 +14,5 @@
  * - ライフサイクル管理やカスタム初期化処理に利用
  */
 import { IStateHandler } from "../types";
-export declare function connectedCallback(target: Object, prop: PropertyKey, receiver: any, handler: IStateHandler): Promise<void>;
+export declare function connectedCallback(target: object, _prop: PropertyKey, receiver: any, _handler: IStateHandler): Promise<void>;
 //# sourceMappingURL=connectedCallback.d.ts.map

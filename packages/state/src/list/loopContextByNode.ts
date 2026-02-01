@@ -1,4 +1,4 @@
-import { IListIndex, ILoopContext } from "./types";
+import { ILoopContext } from "./types";
 
 const loopContextByNode = new WeakMap<Node, ILoopContext>();
 

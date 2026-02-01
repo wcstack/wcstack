@@ -14,7 +14,7 @@
  * - ライフサイクル管理やカスタム初期化処理に利用
  */
 const CONNECTED_CALLBACK = "$connectedCallback";
-export async function connectedCallback(target, prop, receiver, handler) {
+export async function connectedCallback(target, _prop, receiver, _handler) {
     const callback = Reflect.get(target, CONNECTED_CALLBACK);
     if (typeof callback === "function") {
         await callback.call(receiver);

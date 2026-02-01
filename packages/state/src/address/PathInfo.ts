@@ -1,4 +1,4 @@
-import { DELIMITER, WILDCARD } from "../define.js";
+import { WILDCARD } from "../define.js";
 import { IPathInfo } from "./types.js";
 
 const _cache: { [key: string]: PathInfo } = {};

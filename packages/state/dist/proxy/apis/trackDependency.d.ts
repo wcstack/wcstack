@@ -28,5 +28,7 @@ import { IStateHandler } from "../types";
  * @param handler  StateClassハンドラ
  * @returns        引数pathで指定されたパターンへの依存を登録する無名関数
  */
-export declare function trackDependency(target: Object, prop: PropertyKey, receiver: any, handler: IStateHandler): Function;
+type TrackDependencyFunction = (path: string) => void;
+export declare function trackDependency(_target: object, _prop: PropertyKey, _receiver: any, handler: IStateHandler): TrackDependencyFunction;
+export {};
 //# sourceMappingURL=trackDependency.d.ts.map

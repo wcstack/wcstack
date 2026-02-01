@@ -21,7 +21,7 @@ import { getListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { getByAddress } from "../methods/getByAddress";
 import { setByAddress } from "../methods/setByAddress";
-export function resolve(target, prop, receiver, handler) {
+export function resolve(target, _prop, receiver, handler) {
     return (path, indexes, value) => {
         const pathInfo = getPathInfo(path);
         const lastInfo = handler.lastAddressStack?.pathInfo ?? null;

@@ -19,5 +19,5 @@
  */
 import { IStateAddress } from "../../address/types";
 import { IStateHandler } from "../types";
-export declare function getByAddress(target: Object, address: IStateAddress, receiver: any, handler: IStateHandler): any;
+export declare function getByAddress(target: object, address: IStateAddress, receiver: any, handler: IStateHandler): any;
 //# sourceMappingURL=getByAddress.d.ts.map

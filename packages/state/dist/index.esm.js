@@ -125,7 +125,7 @@ class LoopContextStack {
         }
         finally {
             if (retValue instanceof Promise) {
-                return retValue.finally(() => {
+                retValue.finally(() => {
                     this._loopContextStack.pop();
                 });
             }
@@ -2756,11 +2756,11 @@ function applyChangeFromBindings(bindingInfos) {
                         const nextLoopContext = getLoopContextByNode(nextBindingInfo.node);
                         if (nextLoopContext !== loopContext)
                             return true; // loopContext が変わった
-                    } while (true);
+                    } while (true); // eslint-disable-line no-constant-condition
                 });
                 if (!continueWithNewLoopContext)
                     break;
-            } while (true);
+            } while (true); // eslint-disable-line no-constant-condition
         });
     }
 }

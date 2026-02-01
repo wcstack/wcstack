@@ -14,5 +14,5 @@
  * - ライフサイクル管理やクリーンアップ処理に利用
  */
 import { IStateHandler } from "../types";
-export declare function disconnectedCallback(target: Object, prop: PropertyKey, receiver: any, handler: IStateHandler): Promise<void>;
+export declare function disconnectedCallback(target: object, _prop: PropertyKey, receiver: any, _handler: IStateHandler): Promise<void>;
 //# sourceMappingURL=disconnectedCallback.d.ts.map

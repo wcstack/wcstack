@@ -33,7 +33,7 @@ class LoopContextStack {
       retValue = callback(loopContext);
     } finally {
       if (retValue instanceof Promise) {
-        return retValue.finally(() => {
+        retValue.finally(() => {
           this._loopContextStack.pop();
         });
       } else {

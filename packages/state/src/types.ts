@@ -1,5 +1,4 @@
 import { IPathInfo } from "./address/types";
-import { IStateElement } from "./components/types";
 import { FilterFn } from "./filters/types";
 
 export interface IState {

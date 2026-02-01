@@ -13,18 +13,15 @@ import { IStateAddress } from "../address/types";
 import { ICacheEntry } from "../cache/types";
 import { IVersionInfo } from "../version/types";
 import { WILDCARD } from "../define";
-import { get } from "../proxy/traps/get";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
-import { IUpdater } from "../updater/types";
-import { createUpdater } from "../updater/updater";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { createStateAddress } from "../address/StateAddress";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
-function getAllPropertyDescriptors(obj: Object): Descriptors {
+function getAllPropertyDescriptors(obj: object): Descriptors {
   let descriptors: Descriptors = {};
   let proto = obj;
   while (proto && proto !== Object.prototype) {

@@ -1,8 +1,8 @@
 import { IStateAddress } from "../address/types";
 import { ICacheEntry } from "../cache/types";
-import { IListIndex, IListManager, ILoopContextStack } from "../list/types";
+import { ILoopContextStack } from "../list/types";
 import { IStateProxy, Mutability } from "../proxy/types";
-import { IBindingInfo, IState } from "../types";
+import { IBindingInfo } from "../types";
 import { IVersionInfo } from "../version/types";
 
 export interface IStateElement {

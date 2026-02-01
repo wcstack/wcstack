@@ -11,7 +11,7 @@ const lastValueByNode = new WeakMap<Node, any>();
 const lastContentsByNode = new WeakMap<Node, IContent[]>();
 
 export function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any): void {
-  const lastValue = lastValueByNode.get(bindingInfo.node) ?? [];
+  const _lastValue = lastValueByNode.get(bindingInfo.node) ?? [];
   const newValue = Array.isArray(_newValue) ? _newValue : [];
   const listIndexes = getListIndexesByList(newValue) || [];
 

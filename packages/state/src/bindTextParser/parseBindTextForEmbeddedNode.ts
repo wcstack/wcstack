@@ -1,4 +1,3 @@
-import { IBindingInfo } from "../types.js";
 import { parseStatePart } from "./parseStatePart.js";
 import { ParseBindTextResult } from "./types.js";
 

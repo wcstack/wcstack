@@ -29,7 +29,7 @@ import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
 
 function _getByAddress(
-  target   : Object, 
+  target   : object, 
   address  : IStateAddress,
   receiver : any,
   handler  : IStateHandler,
@@ -67,7 +67,7 @@ function _getByAddress(
 }
 
 function _getByAddressWithCache(
-  target   : Object, 
+  target   : object, 
   address  : IStateAddress,
   receiver : any,
   handler  : IStateHandler,
@@ -117,7 +117,7 @@ function _getByAddressWithCache(
 }
 
 export function getByAddress(
-  target   : Object, 
+  target   : object, 
   address  : IStateAddress,
   receiver : any,
   handler  : IStateHandler

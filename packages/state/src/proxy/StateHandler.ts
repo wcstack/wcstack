@@ -100,7 +100,7 @@ class StateHandler implements IStateHandler {
   }
 
   get(
-    target  : Object, 
+    target  : object, 
     prop    : PropertyKey, 
     receiver: any
   ): any {
@@ -108,7 +108,7 @@ class StateHandler implements IStateHandler {
   }
 
   set(
-    target  : Object, 
+    target  : object, 
     prop    : PropertyKey, 
     value   : any, 
     receiver: any
@@ -120,7 +120,7 @@ class StateHandler implements IStateHandler {
   }
 
   has(
-    target: Object, 
+    target: object, 
     prop  : PropertyKey
   ): boolean {
     return Reflect.has(target, prop);

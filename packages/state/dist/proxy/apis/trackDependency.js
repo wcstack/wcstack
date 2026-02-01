@@ -15,20 +15,7 @@
  * - 動的依存はpathManagerに集約し、キャッシュの無効化に利用する
  */
 import { raiseError } from "../../raiseError";
-/**
- * 現在解決中のgetterから、指定されたパスへの動的依存を登録する関数を返します。
- *
- * - pathManager.gettersに登録されているgetterのみ依存追跡を行う
- * - 自己参照は除外し、異なるパターン間の依存だけを記録
- * - 動的依存はpathManager.addDynamicDependencyで集中管理される
- *
- * @param target   プロキシ対象オブジェクト
- * @param prop     アクセスされたプロパティキー
- * @param receiver プロキシレシーバ
- * @param handler  StateClassハンドラ
- * @returns        引数pathで指定されたパターンへの依存を登録する無名関数
- */
-export function trackDependency(target, prop, receiver, handler) {
+export function trackDependency(_target, _prop, _receiver, handler) {
     return (path) => {
         const lastInfo = handler.lastAddressStack?.pathInfo ??
             raiseError('Internal error: lastAddressStack is null');

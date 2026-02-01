@@ -25,7 +25,7 @@ class LoopContextStack {
         }
         finally {
             if (retValue instanceof Promise) {
-                return retValue.finally(() => {
+                retValue.finally(() => {
                     this._loopContextStack.pop();
                 });
             }

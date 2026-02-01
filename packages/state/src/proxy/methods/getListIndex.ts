@@ -26,7 +26,7 @@ import { getByAddress } from "./getByAddress";
 import { getContextListIndex } from "./getContextListIndex";
 
 export function getListIndex(
-  target   : Object, 
+  target   : object, 
   resolvedAddress: IResolvedAddress, 
   receiver: any,
   handler: IStateHandler

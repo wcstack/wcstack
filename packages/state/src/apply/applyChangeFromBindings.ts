@@ -44,11 +44,11 @@ export function applyChangeFromBindings(bindingInfos: IBindingInfo[]): void {
             bindingInfo = nextBindingInfo;
             const nextLoopContext = getLoopContextByNode(nextBindingInfo.node);
             if (nextLoopContext !== loopContext) return true; // loopContext が変わった
-          } while(true);
+          } while(true); // eslint-disable-line no-constant-condition
         });
 
         if (!continueWithNewLoopContext) break;
-      } while(true);
+      } while(true); // eslint-disable-line no-constant-condition
     });
   }
 }

@@ -25,12 +25,14 @@ import { getByAddress } from "../methods/getByAddress";
 import { setByAddress } from "../methods/setByAddress";
 import { IStateHandler } from "../types";
 
+type ResolveFunction = (path: string, indexes: number[], value?: any) => any;
+
 export function resolve(
-  target: Object, 
-  prop: PropertyKey, 
+  target: object, 
+  _prop: PropertyKey, 
   receiver: any,
   handler: IStateHandler
-): Function {
+): ResolveFunction {
   return (path: string, indexes: number[], value?: any): any => {
     const pathInfo = getPathInfo(path);
     const lastInfo = handler.lastAddressStack?.pathInfo ?? null;

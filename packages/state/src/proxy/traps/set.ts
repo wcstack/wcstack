@@ -21,7 +21,7 @@ import { createStateAddress } from "../../address/StateAddress";
 import { setByAddress } from "../methods/setByAddress";
 
 export function set(
-  target  : Object, 
+  target  : object, 
   prop    : PropertyKey, 
   value   : any, 
   receiver: any,

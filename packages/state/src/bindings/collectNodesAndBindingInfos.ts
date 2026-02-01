@@ -1,4 +1,3 @@
-import { ParseBindTextResult } from "../bindTextParser/types";
 import { raiseError } from "../raiseError";
 import { resolveNodePath } from "../structural/resolveNodePath";
 import { IFragmentNodeInfo } from "../structural/types";

@@ -1,7 +1,6 @@
 import { IStateAddress } from "../address/types";
 import { applyChange } from "../apply/applyChange";
 import { IStateElement } from "../components/types";
-import { get } from "../proxy/traps/get";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
