@@ -57,7 +57,7 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, [])).toThrow(/BindingInfo for 'for' binding must have a UUID/);
+    expect(() => applyChange(bindingInfo, [])).toThrow(/List path info not found/);
   });
 
   it('ifバインディングでuuidがない場合はエラーになること', () => {
@@ -71,7 +71,7 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID/);
+    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo.uuid is null/);
   });
 
   it('elseバインディングでuuidがない場合はエラーになること', () => {
@@ -85,7 +85,7 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID/);
+    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo.uuid is null/);
   });
 
   it('elseifバインディングでuuidがない場合はエラーになること', () => {
@@ -99,6 +99,6 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID/);
+    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo.uuid is null/);
   });
 });

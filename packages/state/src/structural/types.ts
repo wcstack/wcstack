@@ -3,6 +3,7 @@ import { ParseBindTextResult } from "../bindTextParser/types";
 export interface IContent {
   readonly firstNode: Node | null;
   readonly lastNode: Node | null;
+  readonly mounted: boolean;
   mountAfter(targetNode: Node): void;
   unmount(): void;
 }

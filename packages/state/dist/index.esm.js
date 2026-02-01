@@ -2605,11 +2605,25 @@ function initializeBindingsByFragment(root, nodeInfos, parentLoopContext) {
     return allBindings;
 }
 
+const contentByNode = new WeakMap();
+function setContentByNode(node, content) {
+    if (content === null) {
+        contentByNode.delete(node);
+    }
+    else {
+        contentByNode.set(node, content);
+    }
+}
+function getContentByNode(node) {
+    return contentByNode.get(node) || null;
+}
+
 class Content {
     _content;
     _childNodeArray = [];
     _firstNode = null;
     _lastNode = null;
+    _mounted = false;
     constructor(content) {
         this._content = content;
         this._childNodeArray = Array.from(this._content.childNodes);
@@ -2622,6 +2636,9 @@ class Content {
     get lastNode() {
         return this._lastNode;
     }
+    get mounted() {
+        return this._mounted;
+    }
     mountAfter(targetNode) {
         const parentNode = targetNode.parentNode;
         const nextSibling = targetNode.nextSibling;
@@ -2630,6 +2647,7 @@ class Content {
                 parentNode.insertBefore(node, nextSibling);
             });
         }
+        this._mounted = true;
     }
     unmount() {
         this._childNodeArray.forEach((node) => {
@@ -2637,34 +2655,52 @@ class Content {
                 node.parentNode.removeChild(node);
             }
         });
+        const bindings = getBindingsByContent(this);
+        for (const binding of bindings) {
+            if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
+                const content = getContentByNode(binding.node);
+                if (content !== null) {
+                    content.unmount();
+                }
+            }
+        }
+        this._mounted = false;
     }
 }
-function createContent(content) {
-    return new Content(content);
+function createContent(bindingInfo, loopContext) {
+    if (typeof bindingInfo.uuid === 'undefined' || bindingInfo.uuid === null) {
+        raiseError(`BindingInfo.uuid is null.`);
+    }
+    const fragmentInfo = getFragmentInfoByUUID(bindingInfo.uuid);
+    if (!fragmentInfo) {
+        raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
+    }
+    const cloneFragment = document.importNode(fragmentInfo.fragment, true);
+    const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+    const content = new Content(cloneFragment);
+    setBindingsByContent(content, bindings);
+    setContentByNode(bindingInfo.node, content);
+    return content;
 }
 
 const lastValueByNode$1 = new WeakMap();
 const lastContentsByNode = new WeakMap();
-function applyChangeToFor(node, uuid, _newValue) {
-    const fragmentInfo = getFragmentInfoByUUID(uuid);
-    if (!fragmentInfo) {
-        raiseError(`Fragment with UUID "${uuid}" not found.`);
-    }
-    lastValueByNode$1.get(node) ?? [];
+function applyChangeToFor(bindingInfo, _newValue) {
+    lastValueByNode$1.get(bindingInfo.node) ?? [];
     const newValue = Array.isArray(_newValue) ? _newValue : [];
     const listIndexes = getListIndexesByList(newValue) || [];
-    const lastContents = lastContentsByNode.get(node) || [];
+    const lastContents = lastContentsByNode.get(bindingInfo.node) || [];
     for (const content of lastContents) {
         content.unmount();
     }
     const newContents = [];
-    let lastNode = node;
-    const listPathInfo = fragmentInfo.parseBindTextResult.statePathInfo;
+    let lastNode = bindingInfo.node;
+    const listPathInfo = bindingInfo.statePathInfo;
     if (!listPathInfo) {
         raiseError(`List path info not found in fragment bind text result.`);
     }
     const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
-    const stateName = fragmentInfo.parseBindTextResult.stateName;
+    const stateName = bindingInfo.stateName;
     const stateElement = getStateElementByName(stateName);
     if (!stateElement) {
         raiseError(`State element with name "${stateName}" not found.`);
@@ -2672,17 +2708,14 @@ function applyChangeToFor(node, uuid, _newValue) {
     const loopContextStack = stateElement.loopContextStack;
     for (const index of listIndexes) {
         loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
-            const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-            const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
-            const content = createContent(cloneFragment);
-            setBindingsByContent(content, bindings);
+            const content = createContent(bindingInfo, loopContext);
             content.mountAfter(lastNode);
             lastNode = content.lastNode || lastNode;
             newContents.push(content);
         });
     }
-    lastContentsByNode.set(node, newContents);
-    lastValueByNode$1.set(node, newValue);
+    lastContentsByNode.set(bindingInfo.node, newContents);
+    lastValueByNode$1.set(bindingInfo.node, newValue);
 }
 
 /**
@@ -2733,39 +2766,30 @@ function applyChangeFromBindings(bindingInfos) {
 }
 
 const lastValueByNode = new WeakMap();
-const contentByNode = new WeakMap();
-function applyChangeToIf(node, uuid, _newValue) {
-    const fragmentInfo = getFragmentInfoByUUID(uuid);
-    if (!fragmentInfo) {
-        raiseError(`Fragment with UUID "${uuid}" not found.`);
-    }
-    const oldValue = lastValueByNode.get(node) ?? false;
+function applyChangeToIf(bindingInfo, _newValue) {
+    const oldValue = lastValueByNode.get(bindingInfo.node) ?? false;
     const newValue = Boolean(_newValue);
-    let content = contentByNode.get(node);
+    let content = getContentByNode(bindingInfo.node);
     let initiaized = false;
-    if (typeof content === "undefined") {
-        const loopContext = getLoopContextByNode(node);
-        const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-        const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
-        content = createContent(cloneFragment);
-        setBindingsByContent(content, bindings);
-        contentByNode.set(node, content);
+    if (content === null) {
+        const loopContext = getLoopContextByNode(bindingInfo.node);
+        content = createContent(bindingInfo, loopContext);
         initiaized = true;
     }
-    if (oldValue === newValue) {
+    if (oldValue === newValue && content.mounted) {
         return;
     }
-    if (oldValue) {
+    if (!newValue) {
         content.unmount();
     }
     if (newValue) {
-        content.mountAfter(node);
+        content.mountAfter(bindingInfo.node);
         if (!initiaized) {
             const bindings = getBindingsByContent(content);
             applyChangeFromBindings(bindings);
         }
     }
-    lastValueByNode.set(node, newValue);
+    lastValueByNode.set(bindingInfo.node, newValue);
 }
 
 function applyChangeToText(node, newValue) {
@@ -2786,18 +2810,12 @@ function applyChange(bindingInfo, newValue) {
         applyChangeToElement(bindingInfo.node, bindingInfo.propSegments, filteredValue);
     }
     else if (bindingInfo.bindingType === "for") {
-        if (!bindingInfo.uuid) {
-            throw new Error(`BindingInfo for 'for' binding must have a UUID.`);
-        }
-        applyChangeToFor(bindingInfo.node, bindingInfo.uuid, filteredValue);
+        applyChangeToFor(bindingInfo, filteredValue);
     }
     else if (bindingInfo.bindingType === "if"
         || bindingInfo.bindingType === "else"
         || bindingInfo.bindingType === "elseif") {
-        if (!bindingInfo.uuid) {
-            throw new Error(`BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID.`);
-        }
-        applyChangeToIf(bindingInfo.node, bindingInfo.uuid, filteredValue);
+        applyChangeToIf(bindingInfo, filteredValue);
     }
 }
 

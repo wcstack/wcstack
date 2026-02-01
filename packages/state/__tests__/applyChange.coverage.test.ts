@@ -97,7 +97,7 @@ describe('applyChange (coverage)', () => {
     applyChange(bindingInfo, [1, 2]);
 
     expect(applyChangeToForMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToForMock).toHaveBeenCalledWith(placeholder, 'test-uuid', [1, 2]);
+    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, [1, 2]);
   });
 
   it('ifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
@@ -115,7 +115,7 @@ describe('applyChange (coverage)', () => {
     applyChange(bindingInfo, true);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(placeholder, 'test-if-uuid', true);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true);
   });
 
   it('elseバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
@@ -133,7 +133,7 @@ describe('applyChange (coverage)', () => {
     applyChange(bindingInfo, false);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(placeholder, 'test-else-uuid', false);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, false);
   });
 
   it('elseifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
@@ -151,7 +151,7 @@ describe('applyChange (coverage)', () => {
     applyChange(bindingInfo, true);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(placeholder, 'test-elseif-uuid', true);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true);
   });
 
   it('対象外のbindingTypeは何も呼ばれないこと', () => {

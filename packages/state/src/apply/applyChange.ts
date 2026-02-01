@@ -14,17 +14,11 @@ export function applyChange(bindingInfo: IBindingInfo, newValue: any): void {
   } else if (bindingInfo.bindingType === "prop") {
     applyChangeToElement(bindingInfo.node as HTMLElement, bindingInfo.propSegments, filteredValue);
   } else if (bindingInfo.bindingType === "for") {
-    if (!bindingInfo.uuid) {
-      throw new Error(`BindingInfo for 'for' binding must have a UUID.`);
-    }
-    applyChangeToFor(bindingInfo.node, bindingInfo.uuid, filteredValue);
+    applyChangeToFor(bindingInfo, filteredValue);
   } else if (bindingInfo.bindingType === "if"
      || bindingInfo.bindingType === "else"
      || bindingInfo.bindingType === "elseif"
   ) {
-    if (!bindingInfo.uuid) {
-      throw new Error(`BindingInfo for 'if' or 'else' or 'elseif' binding must have a UUID.`);
-    }
-    applyChangeToIf(bindingInfo.node, bindingInfo.uuid, filteredValue);
+    applyChangeToIf(bindingInfo, filteredValue);
   }
 }

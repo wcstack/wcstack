@@ -15,6 +15,23 @@ import type { IVersionInfo } from '../src/version/types';
 
 const uuid = 'test-uuid';
 
+function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): IBindingInfo {
+  return {
+    propName: 'for',
+    propSegments: [],
+    propModifiers: [],
+    statePathName: 'items',
+    statePathInfo: getPathInfo('items'),
+    stateName: 'default',
+    filters: [],
+    bindingType: 'for',
+    uuid,
+    node,
+    replaceNode: node,
+    ...overrides,
+  } as IBindingInfo;
+}
+
 function createMockStateElement(): IStateElement {
   const bindingInfosByAddress = new Map<IStateAddress, IBindingInfo[]>();
   const listPaths = new Set<string>();
@@ -121,26 +138,32 @@ describe('applyChangeToFor', () => {
     setStateElementByName('default', stateElement);
 
     const placeholder = document.createComment('for');
-    expect(() => applyChangeToFor(placeholder, uuid, [])).toThrow(/Fragment with UUID/);
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+
+    expect(() => applyChangeToFor(bindingInfo, list)).toThrow(/Fragment with UUID/);
+
+    setListIndexesByList(list, null);
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {
     const placeholder = document.createComment('for');
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
 
-    expect(() => applyChangeToFor(placeholder, uuid, [])).toThrow(/State element with name/);
+    expect(() => applyChangeToFor(bindingInfo, [1])).toThrow(/State element with name/);
   });
 
   it('listPathInfoがない場合はエラーになること', () => {
     const placeholder = document.createComment('for');
-    const fragmentInfo = createFragmentInfo();
-    fragmentInfo.parseBindTextResult.statePathInfo = null as any;
-    setFragmentInfoByUUID(uuid, fragmentInfo);
+    const bindingInfo = createBindingInfo(placeholder, { statePathInfo: null as any });
 
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
-    expect(() => applyChangeToFor(placeholder, uuid, [])).toThrow(/List path info not found/);
+    expect(() => applyChangeToFor(bindingInfo, [])).toThrow(/List path info not found/);
   });
 
   it('配列以外の値は空配列として扱われること', () => {
@@ -153,7 +176,9 @@ describe('applyChangeToFor', () => {
 
     setFragmentInfoByUUID(uuid, createFragmentInfo());
 
-    applyChangeToFor(placeholder, uuid, { not: 'array' });
+    const bindingInfo = createBindingInfo(placeholder);
+
+    applyChangeToFor(bindingInfo, { not: 'array' });
 
     expect(container.childNodes.length).toBe(1);
   });
@@ -167,12 +192,13 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
 
     setFragmentInfoByUUID(uuid, createEmptyFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    applyChangeToFor(placeholder, uuid, list);
+    applyChangeToFor(bindingInfo, list);
 
     expect(container.childNodes.length).toBe(1);
 
@@ -188,12 +214,13 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
 
     setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    applyChangeToFor(placeholder, uuid, list);
+    applyChangeToFor(bindingInfo, list);
 
     // コメントノード + 2つのspan
     expect(container.childNodes.length).toBe(3);
@@ -213,16 +240,17 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
 
     setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    applyChangeToFor(placeholder, uuid, list);
+    applyChangeToFor(bindingInfo, list);
     expect(container.childNodes.length).toBe(3);
 
     // 次の更新は空配列
-    applyChangeToFor(placeholder, uuid, []);
+    applyChangeToFor(bindingInfo, []);
     expect(container.childNodes.length).toBe(1);
 
     // 後片付け

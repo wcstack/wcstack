@@ -1,1 +1,1 @@
-{"version":3,"file":"applyChangeToFor.d.ts","sourceRoot":"","sources":["../../src/apply/applyChangeToFor.ts"],"names":[],"mappings":"AAeA,wBAAgB,gBAAgB,CAAC,IAAI,EAAE,IAAI,EAAE,IAAI,EAAE,MAAM,EAAE,SAAS,EAAE,GAAG,GAAG,IAAI,CAuC/E"}
+{"version":3,"file":"applyChangeToFor.d.ts","sourceRoot":"","sources":["../../src/apply/applyChangeToFor.ts"],"names":[],"mappings":"AAOA,OAAO,EAAE,YAAY,EAAE,MAAM,UAAU,CAAC;AAKxC,wBAAgB,gBAAgB,CAAC,WAAW,EAAE,YAAY,EAAE,SAAS,EAAE,GAAG,GAAG,IAAI,CAgChF"}

@@ -1,1 +1,1 @@
-{"version":3,"file":"applyChangeToIf.d.ts","sourceRoot":"","sources":["../../src/apply/applyChangeToIf.ts"],"names":[],"mappings":"AAYA,wBAAgB,eAAe,CAAC,IAAI,EAAE,IAAI,EAAE,IAAI,EAAE,MAAM,EAAE,SAAS,EAAE,GAAG,GAAG,IAAI,CAiC9E"}
+{"version":3,"file":"applyChangeToIf.d.ts","sourceRoot":"","sources":["../../src/apply/applyChangeToIf.ts"],"names":[],"mappings":"AAIA,OAAO,EAAE,YAAY,EAAE,MAAM,UAAU,CAAC;AAKxC,wBAAgB,eAAe,CAAC,WAAW,EAAE,YAAY,EAAE,SAAS,EAAE,GAAG,GAAG,IAAI,CAyB/E"}

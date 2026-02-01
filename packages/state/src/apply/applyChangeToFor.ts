@@ -1,39 +1,32 @@
 import { getPathInfo } from "../address/PathInfo";
-import { setBindingsByContent } from "../bindings/bindingsByContent";
-import { initializeBindingsByFragment } from "../bindings/initializeBindings";
 import { WILDCARD } from "../define";
 import { getListIndexesByList } from "../list/listIndexesByList";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { createContent } from "../structural/createContent";
-import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
 
 const lastValueByNode = new WeakMap<Node, any>();
 const lastContentsByNode = new WeakMap<Node, IContent[]>();
 
-export function applyChangeToFor(node: Node, uuid: string, _newValue: any): void {
-  const fragmentInfo = getFragmentInfoByUUID(uuid);
-  if (!fragmentInfo) {
-    raiseError(`Fragment with UUID "${uuid}" not found.`);
-  }
-  const lastValue = lastValueByNode.get(node) ?? [];
+export function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any): void {
+  const lastValue = lastValueByNode.get(bindingInfo.node) ?? [];
   const newValue = Array.isArray(_newValue) ? _newValue : [];
   const listIndexes = getListIndexesByList(newValue) || [];
 
-  const lastContents = lastContentsByNode.get(node) || [];
+  const lastContents = lastContentsByNode.get(bindingInfo.node) || [];
   for(const content of lastContents) {
     content.unmount();
   }
   const newContents: IContent[] = [];
-  let lastNode = node;
-  const listPathInfo = fragmentInfo.parseBindTextResult.statePathInfo;
+  let lastNode = bindingInfo.node;
+  const listPathInfo = bindingInfo.statePathInfo;
   if (!listPathInfo) {
     raiseError(`List path info not found in fragment bind text result.`);
   }
   const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
-  const stateName = fragmentInfo.parseBindTextResult.stateName;
+  const stateName = bindingInfo.stateName;
   const stateElement = getStateElementByName(stateName);
   if (!stateElement) {
     raiseError(`State element with name "${stateName}" not found.`);
@@ -41,15 +34,12 @@ export function applyChangeToFor(node: Node, uuid: string, _newValue: any): void
   const loopContextStack = stateElement.loopContextStack;
   for(const index of listIndexes) {
     loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
-      const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-      const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
-      const content = createContent(cloneFragment);
-      setBindingsByContent(content, bindings);
+      const content = createContent(bindingInfo, loopContext);
       content.mountAfter(lastNode);
       lastNode = content.lastNode || lastNode;
       newContents.push(content);
     });
   }
-  lastContentsByNode.set(node, newContents);
-  lastValueByNode.set(node, newValue);
+  lastContentsByNode.set(bindingInfo.node, newContents);
+  lastValueByNode.set(bindingInfo.node, newValue);
 }
