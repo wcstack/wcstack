@@ -35,13 +35,13 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('stateElementが存在しない場合はエラーになること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(null as any);
-    expect(() => new StateHandler('missing')).toThrow(/State element with name "missing" not found/);
+    expect(() => new StateHandler('missing', 'readonly')).toThrow(/State element with name "missing" not found/);
   });
 
   it('lastAddressStackが空ならnullを返すこと', () => {
     const stateElement = mockStateElement();
     vi.mocked(getStateElementByName).mockReturnValue(stateElement);
-    const handler = new StateHandler('default');
+    const handler = new StateHandler('default', 'readonly');
     expect(handler.lastAddressStack).toBeNull();
     expect(handler.addressStackIndex).toBe(-1);
     expect(handler.stateName).toBe('default');
@@ -51,7 +51,7 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('push/popでスタックが更新されること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default');
+    const handler = new StateHandler('default', 'readonly');
 
     const addrA = { id: 'a' } as any;
     const addrB = { id: 'b' } as any;
@@ -69,19 +69,19 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('空スタックのpopはnullを返すこと', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default');
+    const handler = new StateHandler('default', 'readonly');
     expect(handler.popAddress()).toBeNull();
   });
 
   it('updater未設定で取得するとエラーになること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default');
+    const handler = new StateHandler('default', 'readonly');
     expect(() => handler.updater).toThrow(/updater is not set yet/);
   });
 
   it('loopContextのset/clearができること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default');
+    const handler = new StateHandler('default', 'readonly');
     const loopContext = { elementPathInfo: {} as any, listIndex: {} as any } as any;
 
     handler.setLoopContext(loopContext);
@@ -93,7 +93,7 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('get/set/hasがtrapとReflectへ委譲されること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default');
+    const handler = new StateHandler('default', 'writable');
     const target = { value: 1 } as any;
 
     expect(handler.get(target, 'value', target)).toBe('get-result');
@@ -104,6 +104,28 @@ describe('proxy/StateHandler (coverage)', () => {
 
     expect(handler.has(target, 'value')).toBe(true);
     expect(handler.has(target, 'missing')).toBe(false);
+  });
+
+  it('readonlyではsetでエラーになること', () => {
+    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    const handler = new StateHandler('default', 'readonly');
+    const target = { value: 1 } as any;
+
+    expect(() => handler.set(target, 'value', 2, target)).toThrow(/State "default" is readonly/);
+    expect(trapSet).not.toHaveBeenCalled();
+  });
+
+  it('createStateProxyがupdaterを生成すること', () => {
+    const stateElement = mockStateElement(7);
+    vi.mocked(getStateElementByName).mockReturnValue(stateElement);
+
+    const state = { count: 1 };
+    createStateProxy(state, 'default', 'writable');
+
+    expect(createUpdater).toHaveBeenCalledTimes(1);
+    const [stateName, _stateProxy, version] = vi.mocked(createUpdater).mock.calls[0];
+    expect(stateName).toBe('default');
+    expect(version).toBe(7);
   });
 
 });

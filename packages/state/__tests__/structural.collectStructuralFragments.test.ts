@@ -239,6 +239,47 @@ describe('collectStructuralFragments', () => {
     expect(ifInfo?.parseBindTextResult.bindingType).toBe('if');
   });
 
+  it('複数elseifでelseチェーンが連結されること', () => {
+    const root = document.createElement('div');
+
+    const ifTemplate = document.createElement('template');
+    ifTemplate.setAttribute(config.bindAttributeName, 'if: cond1');
+    ifTemplate.content.appendChild(document.createTextNode('if content'));
+
+    const elseifTemplate1 = document.createElement('template');
+    elseifTemplate1.setAttribute(config.bindAttributeName, 'elseif: cond2');
+    elseifTemplate1.content.appendChild(document.createTextNode('elseif content 1'));
+
+    const elseifTemplate2 = document.createElement('template');
+    elseifTemplate2.setAttribute(config.bindAttributeName, 'elseif: cond3');
+    elseifTemplate2.content.appendChild(document.createTextNode('elseif content 2'));
+
+    const elseTemplate = document.createElement('template');
+    elseTemplate.setAttribute(config.bindAttributeName, 'else:');
+    elseTemplate.content.appendChild(document.createTextNode('else content'));
+
+    root.appendChild(ifTemplate);
+    root.appendChild(elseifTemplate1);
+    root.appendChild(elseifTemplate2);
+    root.appendChild(elseTemplate);
+
+    collectStructuralFragments(root);
+
+    // DOM上にはifのプレースホルダと最初のelseプレースホルダのみが残る
+    expect(root.childNodes.length).toBe(2);
+    const elseComment1 = root.childNodes[1] as Comment;
+    expect(elseComment1.data).toContain(config.commentElsePrefix);
+
+    const elseUuid1 = elseComment1.data.split(':')[1];
+    const elseInfo1 = getFragmentInfoByUUID(elseUuid1);
+    expect(elseInfo1?.nodeInfos.length).toBe(2); // elseif1 + else(elseif2)
+
+    const elseComment2 = elseInfo1?.fragment.childNodes[1] as Comment;
+    const elseUuid2 = elseComment2.data.split(':')[1];
+    const elseInfo2 = getFragmentInfoByUUID(elseUuid2);
+    expect(elseInfo2?.nodeInfos.length).toBe(2); // elseif2 + else
+  });
+
   it('elseが先行するifなしで使われた場合はエラーになること', () => {
     const root = document.createElement('div');
     

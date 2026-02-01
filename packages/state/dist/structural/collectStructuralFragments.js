@@ -70,10 +70,6 @@ export function collectStructuralFragments(root) {
             if (lastIfFragmentInfo === null) {
                 raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
             }
-            const lastBindingType = lastIfFragmentInfo.parseBindTextResult.bindingType;
-            if (lastBindingType !== "if" && lastBindingType !== "elseif") {
-                raiseError(`'else' binding must follow 'if' or 'elseif' binding.`);
-            }
             // else condition
             parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
             fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
@@ -96,10 +92,6 @@ export function collectStructuralFragments(root) {
             // check last 'if' or 'elseif' fragment info
             if (lastIfFragmentInfo === null) {
                 raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
-            }
-            const lastBindingType = lastIfFragmentInfo.parseBindTextResult.bindingType;
-            if (lastBindingType !== "if" && lastBindingType !== "elseif") {
-                raiseError(`'elseif' binding must follow 'if' or 'elseif' binding.`);
             }
             fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
             setFragmentInfoByUUID(uuid, fragmentInfo);
@@ -138,18 +130,17 @@ export function collectStructuralFragments(root) {
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
             template.replaceWith(placeHolder);
         }
-        if (fragmentInfo !== null) {
-            if (bindingType === "if") {
-                elseFragmentInfos.length = 0; // start new if chain
-                lastIfFragmentInfo = fragmentInfo;
-            }
-            else if (bindingType === "elseif") {
-                lastIfFragmentInfo = fragmentInfo;
-            }
-            else if (bindingType === "else") {
-                lastIfFragmentInfo = null;
-                elseFragmentInfos.length = 0; // end if chain
-            }
+        // Update lastIfFragmentInfo for if/elseif/else chaining
+        if (bindingType === "if") {
+            elseFragmentInfos.length = 0; // start new if chain
+            lastIfFragmentInfo = fragmentInfo;
+        }
+        else if (bindingType === "elseif") {
+            lastIfFragmentInfo = fragmentInfo;
+        }
+        else if (bindingType === "else") {
+            lastIfFragmentInfo = null;
+            elseFragmentInfos.length = 0; // end if chain
         }
     }
 }

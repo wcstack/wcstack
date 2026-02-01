@@ -12,15 +12,26 @@ vi.mock('../src/list/loopContextByNode', () => ({
 vi.mock('../src/structural/createContent', () => ({
   createContent: vi.fn()
 }));
+vi.mock('../src/bindings/bindingsByContent', () => ({
+  getBindingsByContent: vi.fn(),
+  setBindingsByContent: vi.fn()
+}));
+vi.mock('../src/apply/applyChangeFromBindings', () => ({
+  applyChangeFromBindings: vi.fn()
+}));
 
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { getFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { initializeBindingsByFragment } from '../src/bindings/initializeBindings';
 import { createContent } from '../src/structural/createContent';
+import { getBindingsByContent } from '../src/bindings/bindingsByContent';
+import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 
 const getFragmentInfoByUUIDMock = vi.mocked(getFragmentInfoByUUID);
 const initializeBindingsByFragmentMock = vi.mocked(initializeBindingsByFragment);
 const createContentMock = vi.mocked(createContent);
+const getBindingsByContentMock = vi.mocked(getBindingsByContent);
+const applyChangeFromBindingsMock = vi.mocked(applyChangeFromBindings);
 
 describe('applyChangeToIf', () => {
   beforeEach(() => {
@@ -151,5 +162,41 @@ describe('applyChangeToIf', () => {
 
     applyChangeToIf(node, 'test-uuid-4', 'non-empty string');
     expect(mountAfterMock).toHaveBeenCalled();
+  });
+
+  it('初期化済みのcontent再マウント時にbindingsが適用されること', () => {
+    const fragment = document.createDocumentFragment();
+    const nodeInfos: any[] = [];
+    getFragmentInfoByUUIDMock.mockReturnValue({ fragment, nodeInfos });
+
+    const mountAfterMock = vi.fn();
+    const unmountMock = vi.fn();
+    const content = {
+      firstNode: null,
+      lastNode: null,
+      mountAfter: mountAfterMock,
+      unmount: unmountMock
+    };
+    createContentMock.mockReturnValue(content as any);
+
+    const bindings = [{ stateName: 'app' }] as any[];
+    getBindingsByContentMock.mockReturnValue(bindings as any);
+
+    const container = document.createElement('div');
+    const node = document.createComment('if');
+    container.appendChild(node);
+
+    // 初回は初期化されるためapplyChangeFromBindingsは呼ばれない
+    applyChangeToIf(node, 'test-uuid-5', true);
+    expect(applyChangeFromBindingsMock).not.toHaveBeenCalled();
+
+    // falseにしてアンマウント
+    applyChangeToIf(node, 'test-uuid-5', false);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+
+    // 再度trueで再マウントすると、既存contentなのでbindings適用
+    applyChangeToIf(node, 'test-uuid-5', true);
+    expect(getBindingsByContentMock).toHaveBeenCalledWith(content as any);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith(bindings as any);
   });
 });
