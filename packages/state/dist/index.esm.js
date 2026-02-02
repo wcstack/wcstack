@@ -2150,6 +2150,11 @@ const builtinFilters = {
     "null": _null,
 };
 const outputBuiltinFilters = builtinFilters;
+const inputBuiltinFilters = builtinFilters;
+const builtinFiltersByFilterIOType = {
+    "input": inputBuiltinFilters,
+    "output": outputBuiltinFilters,
+};
 /**
  * Retrieves built-in filter function by name and options.
  *
@@ -2196,8 +2201,10 @@ function parseFilterArgs(argsText) {
     return args;
 }
 
+const filterFnByKey = new Map();
 // format: filterName(arg1,arg2) or filterName
-function parseFilters(filterTextList) {
+function parseFilters(filterTextList, filterIOType) {
+    const builtinFilters = builtinFiltersByFilterIOType[filterIOType];
     const filters = filterTextList.map((filterText) => {
         const openParenIndex = filterText.indexOf('(');
         const closeParenIndex = filterText.lastIndexOf(')');
@@ -2211,7 +2218,12 @@ function parseFilters(filterTextList) {
         if (openParenIndex === -1) {
             // no arguments
             const filterName = filterText.trim();
-            const filterFn = builtinFilterFn(filterName, [])(outputBuiltinFilters);
+            const filterKey = `${filterName}():${filterIOType}`;
+            let filterFn = filterFnByKey.get(filterKey);
+            if (typeof filterFn === 'undefined') {
+                filterFn = builtinFilterFn(filterName, [])(builtinFilters);
+                filterFnByKey.set(filterKey, filterFn);
+            }
             return {
                 filterName: filterName,
                 args: [],
@@ -2220,9 +2232,14 @@ function parseFilters(filterTextList) {
         }
         else {
             const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
-            const args = parseFilterArgs(argsText);
             const filterName = filterText.substring(0, openParenIndex).trim();
-            const filterFn = builtinFilterFn(filterName, args)(outputBuiltinFilters);
+            const args = parseFilterArgs(argsText);
+            const filterKey = `${filterName}(${args.join(',')}):${filterIOType}`;
+            let filterFn = filterFnByKey.get(filterKey);
+            if (typeof filterFn === 'undefined') {
+                filterFn = builtinFilterFn(filterName, args)(builtinFilters);
+                filterFnByKey.set(filterKey, filterFn);
+            }
             return {
                 filterName,
                 args,
@@ -2252,7 +2269,7 @@ function parseStatePart(statePart) {
         }
         else {
             filterTexts = filtersText.split('|').map(trimFn);
-            filters = parseFilters(filterTexts);
+            filters = parseFilters(filterTexts, "output");
             cacheFilterInfos.set(filtersText, filters);
         }
     }

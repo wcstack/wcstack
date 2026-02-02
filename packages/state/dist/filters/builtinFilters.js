@@ -686,6 +686,10 @@ const builtinFilters = {
 };
 export const outputBuiltinFilters = builtinFilters;
 export const inputBuiltinFilters = builtinFilters;
+export const builtinFiltersByFilterIOType = {
+    "input": inputBuiltinFilters,
+    "output": outputBuiltinFilters,
+};
 /**
  * Retrieves built-in filter function by name and options.
  *

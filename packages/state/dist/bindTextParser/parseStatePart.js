@@ -20,7 +20,7 @@ export function parseStatePart(statePart) {
         }
         else {
             filterTexts = filtersText.split('|').map(trimFn);
-            filters = parseFilters(filterTexts);
+            filters = parseFilters(filterTexts, "output");
             cacheFilterInfos.set(filtersText, filters);
         }
     }

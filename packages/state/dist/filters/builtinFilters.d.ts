@@ -1,6 +1,10 @@
 import { FilterFn, FilterWithOptions } from "./types";
 export declare const outputBuiltinFilters: FilterWithOptions;
 export declare const inputBuiltinFilters: FilterWithOptions;
+export declare const builtinFiltersByFilterIOType: {
+    readonly input: FilterWithOptions;
+    readonly output: FilterWithOptions;
+};
 /**
  * Retrieves built-in filter function by name and options.
  *

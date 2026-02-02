@@ -24,3 +24,5 @@ export type FilterFnByBuiltinFiltersFn = (filters: FilterWithOptions) => FilterF
 export type FilterFnByBuiltinFiltersFnByNameAndOptions = 
   (name: string, options: string[]) => FilterFnByBuiltinFiltersFn;
 
+export type FilterIOType = "input" | "output";
+export type FiltersByFilterIOType = Record<FilterIOType, FilterWithOptions>;

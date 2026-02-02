@@ -25,7 +25,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
       filterTexts = filtersText.split('|').map(trimFn);
-      filters = parseFilters(filterTexts);
+      filters = parseFilters(filterTexts, "output");
       cacheFilterInfos.set(filtersText, filters);
     }
   } else {

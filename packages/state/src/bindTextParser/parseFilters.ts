@@ -1,11 +1,15 @@
-import { builtinFilterFn, outputBuiltinFilters } from "../filters/builtinFilters";
+import { builtinFilterFn, builtinFiltersByFilterIOType } from "../filters/builtinFilters";
+import { FilterFn, FilterIOType } from "../filters/types";
 import { raiseError } from "../raiseError";
 import { IFilterInfo } from "../types";
 import { parseFilterArgs } from "./parseFilterArgs";
 
+const filterFnByKey: Map<string, FilterFn<unknown>> = new Map();
+
 // format: filterName(arg1,arg2) or filterName
 
-export function parseFilters(filterTextList: string[]): IFilterInfo[] {
+export function parseFilters(filterTextList: string[], filterIOType: FilterIOType): IFilterInfo[] {
+  const builtinFilters = builtinFiltersByFilterIOType[filterIOType];
   const filters: IFilterInfo[] = filterTextList.map((filterText) => {
     const openParenIndex = filterText.indexOf('(');
     const closeParenIndex = filterText.lastIndexOf(')');
@@ -19,7 +23,12 @@ export function parseFilters(filterTextList: string[]): IFilterInfo[] {
     if (openParenIndex === -1) {
       // no arguments
       const filterName = filterText.trim();
-      const filterFn = builtinFilterFn(filterName, [])(outputBuiltinFilters);
+      const filterKey = `${filterName}():${filterIOType}`;
+      let filterFn = filterFnByKey.get(filterKey);
+      if (typeof filterFn === 'undefined') {
+        filterFn = builtinFilterFn(filterName, [])(builtinFilters);
+        filterFnByKey.set(filterKey, filterFn);
+      }
       return {
         filterName: filterName,
         args: [],
@@ -27,9 +36,14 @@ export function parseFilters(filterTextList: string[]): IFilterInfo[] {
       };
     } else {
       const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
-      const args = parseFilterArgs(argsText);
       const filterName = filterText.substring(0, openParenIndex).trim();
-      const filterFn = builtinFilterFn(filterName, args)(outputBuiltinFilters);
+      const args = parseFilterArgs(argsText);
+      const filterKey = `${filterName}(${args.join(',')}):${filterIOType}`;
+      let filterFn = filterFnByKey.get(filterKey);
+      if (typeof filterFn === 'undefined') {
+        filterFn = builtinFilterFn(filterName, args)(builtinFilters);
+        filterFnByKey.set(filterKey, filterFn);
+      }
       return {
         filterName,
         args,
