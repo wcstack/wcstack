@@ -4,12 +4,13 @@ import { WILDCARD } from "../define";
 import { getListDiff } from "../list/createListIndexes";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { IListIndex } from "../list/types";
+import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
-import { applyChangeFromBindings } from "./applyChangeFromBindings";
+import { applyChange } from "./applyChange";
 
 const lastValueByNode = new WeakMap<Node, any>();
 const contentByListIndex = new WeakMap<IListIndex, IContent>();
@@ -37,7 +38,12 @@ function setPooledContent(bindingInfo: IBindingInfo, content: IContent): void {
   }
 }
 
-export function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any): void {
+export function applyChangeToFor(
+  bindingInfo: IBindingInfo, 
+  _newValue: any, 
+  state: IStateProxy, 
+  stateName: string
+): void {
   const listPathInfo = bindingInfo.statePathInfo;
   if (!listPathInfo) {
     raiseError(`List path info not found in fragment bind text result.`);
@@ -58,7 +64,6 @@ export function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any): voi
 
   let lastNode = bindingInfo.node;
   const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
-  const stateName = bindingInfo.stateName;
   const stateElement = getStateElementByName(stateName);
   if (!stateElement) {
     raiseError(`State element with name "${stateName}" not found.`);
@@ -80,16 +85,19 @@ export function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any): voi
             if (!nodeSet.has(bindingInfo.node)) {
               nodeSet.add(bindingInfo.node);
               setLoopContextByNode(bindingInfo.node, loopContext);
+              applyChange(bindingInfo, state, stateName);
             }
           }
-          applyChangeFromBindings(bindings);
         }
       });
     } else {
       content = contentByListIndex.get(index)!;
       if (diff.changeIndexSet.has(index)) {
         // change
-        applyChangeFromBindings(getBindingsByContent(content));
+        const bindings = getBindingsByContent(content);
+        for(const bindingInfo of bindings) {
+          applyChange(bindingInfo, state, stateName);
+        }
       }
 
     }

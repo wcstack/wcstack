@@ -1,6 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyChange } from '../src/apply/applyChange';
+import { applyChangeToFor } from '../src/apply/applyChangeToFor';
+import { applyChangeToIf } from '../src/apply/applyChangeToIf';
+import { getValue } from '../src/apply/getValue';
 import type { IBindingInfo } from '../src/types';
+
+vi.mock('../src/apply/applyChangeToFor', () => ({
+  applyChangeToFor: vi.fn()
+}));
+vi.mock('../src/apply/applyChangeToIf', () => ({
+  applyChangeToIf: vi.fn()
+}));
+vi.mock('../src/apply/getValue', () => ({
+  getValue: vi.fn()
+}));
 
 function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   return {
@@ -16,6 +29,16 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
 }
 
 describe('applyChange', () => {
+  const state = {} as any;
+  const stateName = 'default';
+  const getValueMock = vi.mocked(getValue);
+  const applyChangeToForMock = vi.mocked(applyChangeToFor);
+  const applyChangeToIfMock = vi.mocked(applyChangeToIf);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('textバインディングでテキストを更新できること', () => {
     const textNode = document.createTextNode('a');
     const bindingInfo: IBindingInfo = {
@@ -27,7 +50,8 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    applyChange(bindingInfo, 'b');
+    getValueMock.mockReturnValue('b');
+    applyChange(bindingInfo, state, stateName);
     expect(textNode.nodeValue).toBe('b');
   });
 
@@ -42,11 +66,12 @@ describe('applyChange', () => {
       propSegments: ['value']
     } as IBindingInfo;
 
-    applyChange(bindingInfo, 'hello');
+    getValueMock.mockReturnValue('hello');
+    applyChange(bindingInfo, state, stateName);
     expect(input.value).toBe('hello');
   });
 
-  it('forバインディングでuuidがない場合はエラーになること', () => {
+  it('forバインディングはapplyChangeToForが呼ばれること', () => {
     const placeholder = document.createComment('for');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -57,10 +82,13 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, [])).toThrow(/List path info not found/);
+    const list = [1, 2];
+    getValueMock.mockReturnValue(list);
+    applyChange(bindingInfo, state, stateName);
+    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, list, state, stateName);
   });
 
-  it('ifバインディングでuuidがない場合はエラーになること', () => {
+  it('ifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('if');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -71,10 +99,12 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo.uuid is null/);
+    getValueMock.mockReturnValue(true);
+    applyChange(bindingInfo, state, stateName);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
   });
 
-  it('elseバインディングでuuidがない場合はエラーになること', () => {
+  it('elseバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('else');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -85,10 +115,12 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo.uuid is null/);
+    getValueMock.mockReturnValue(false);
+    applyChange(bindingInfo, state, stateName);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, false, state, stateName);
   });
 
-  it('elseifバインディングでuuidがない場合はエラーになること', () => {
+  it('elseifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('elseif');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -99,6 +131,8 @@ describe('applyChange', () => {
       propSegments: []
     } as IBindingInfo;
 
-    expect(() => applyChange(bindingInfo, true)).toThrow(/BindingInfo.uuid is null/);
+    getValueMock.mockReturnValue(true);
+    applyChange(bindingInfo, state, stateName);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
   });
 });

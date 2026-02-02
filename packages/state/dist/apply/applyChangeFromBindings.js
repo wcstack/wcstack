@@ -29,7 +29,7 @@ export function applyChangeFromBindings(bindingInfos) {
                 const continueWithNewLoopContext = state.$$setLoopContext(loopContext, () => {
                     // 内側ループ: 同じ stateName + loopContext のバインディングを連続処理
                     do {
-                        applyChange(bindingInfo, state[bindingInfo.statePathName]);
+                        applyChange(bindingInfo, state, stateName);
                         bindingInfoIndex++;
                         const nextBindingInfo = bindingInfos[bindingInfoIndex];
                         if (!nextBindingInfo)

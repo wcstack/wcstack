@@ -12,21 +12,21 @@ vi.mock('../src/structural/contentByNode', () => ({
 vi.mock('../src/bindings/bindingsByContent', () => ({
   getBindingsByContent: vi.fn()
 }));
-vi.mock('../src/apply/applyChangeFromBindings', () => ({
-  applyChangeFromBindings: vi.fn()
+vi.mock('../src/apply/applyChange', () => ({
+  applyChange: vi.fn()
 }));
 
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { createContent } from '../src/structural/createContent';
 import { getContentByNode } from '../src/structural/contentByNode';
 import { getBindingsByContent } from '../src/bindings/bindingsByContent';
-import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
+import { applyChange } from '../src/apply/applyChange';
 import type { IBindingInfo } from '../src/types';
 
 const createContentMock = vi.mocked(createContent);
 const getContentByNodeMock = vi.mocked(getContentByNode);
 const getBindingsByContentMock = vi.mocked(getBindingsByContent);
-const applyChangeFromBindingsMock = vi.mocked(applyChangeFromBindings);
+const applyChangeMock = vi.mocked(applyChange);
 
 function createBindingInfo(node: Node, uuid: string): IBindingInfo {
   return {
@@ -45,8 +45,12 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
 }
 
 describe('applyChangeToIf', () => {
+  const state = { $$getByAddress: () => undefined } as any;
+  const stateName = 'default';
+
   beforeEach(() => {
     vi.clearAllMocks();
+    getBindingsByContentMock.mockReturnValue([] as any);
   });
 
   it('contentが未初期化の場合はcreateContentが呼ばれること', () => {
@@ -64,7 +68,7 @@ describe('applyChangeToIf', () => {
       unmount: unmountMock
     } as any);
 
-    applyChangeToIf(bindingInfo, true);
+    applyChangeToIf(bindingInfo, true, state, stateName);
 
     expect(createContentMock).toHaveBeenCalledWith(bindingInfo, null);
     expect(mountAfterMock).toHaveBeenCalledWith(node);
@@ -85,7 +89,7 @@ describe('applyChangeToIf', () => {
     } as any);
     getContentByNodeMock.mockReturnValue(null);
 
-    applyChangeToIf(bindingInfo, true);
+    applyChangeToIf(bindingInfo, true, state, stateName);
 
     expect(createContentMock).toHaveBeenCalled();
     expect(mountAfterMock).toHaveBeenCalledWith(node);
@@ -108,9 +112,9 @@ describe('applyChangeToIf', () => {
     getContentByNodeMock.mockReturnValue(content);
 
     // まずtrueを呼んでlastValueByNodeを設定
-    applyChangeToIf(bindingInfo, true);
+    applyChangeToIf(bindingInfo, true, state, stateName);
     // その後falseを呼ぶ
-    applyChangeToIf(bindingInfo, false);
+    applyChangeToIf(bindingInfo, false, state, stateName);
 
     expect(unmountMock).toHaveBeenCalled();
     expect(mountAfterMock).toHaveBeenCalled();
@@ -132,11 +136,11 @@ describe('applyChangeToIf', () => {
     getContentByNodeMock.mockReturnValue(content);
 
     // true → マウント
-    applyChangeToIf(bindingInfo, true);
+    applyChangeToIf(bindingInfo, true, state, stateName);
     expect(mountAfterMock).toHaveBeenCalledTimes(1);
 
     // false → アンマウント
-    applyChangeToIf(bindingInfo, false);
+    applyChangeToIf(bindingInfo, false, state, stateName);
     expect(unmountMock).toHaveBeenCalledTimes(1);
   });
 
@@ -155,11 +159,11 @@ describe('applyChangeToIf', () => {
     } as any;
     getContentByNodeMock.mockReturnValue(content);
 
-    applyChangeToIf(bindingInfo, true);
+    applyChangeToIf(bindingInfo, true, state, stateName);
     expect(mountAfterMock).toHaveBeenCalledTimes(1);
 
     // 同じ値で再呼び出し
-    applyChangeToIf(bindingInfo, true);
+    applyChangeToIf(bindingInfo, true, state, stateName);
     expect(mountAfterMock).toHaveBeenCalledTimes(1); // 増えない
   });
 
@@ -177,7 +181,7 @@ describe('applyChangeToIf', () => {
     } as any);
     getContentByNodeMock.mockReturnValue(null);
 
-    applyChangeToIf(bindingInfo, 'non-empty string');
+    applyChangeToIf(bindingInfo, 'non-empty string', state, stateName);
     expect(mountAfterMock).toHaveBeenCalled();
   });
 
@@ -205,16 +209,16 @@ describe('applyChangeToIf', () => {
       .mockReturnValueOnce(content);
 
     // 初回は初期化されるためapplyChangeFromBindingsは呼ばれない
-    applyChangeToIf(bindingInfo, true);
-    expect(applyChangeFromBindingsMock).not.toHaveBeenCalled();
+    applyChangeToIf(bindingInfo, true, state, stateName);
+    expect(applyChangeMock).not.toHaveBeenCalled();
 
     // falseにしてアンマウント
-    applyChangeToIf(bindingInfo, false);
+    applyChangeToIf(bindingInfo, false, state, stateName);
     expect(unmountMock).toHaveBeenCalledTimes(1);
 
     // 再度trueで再マウントすると、既存contentなのでbindings適用
-    applyChangeToIf(bindingInfo, true);
+    applyChangeToIf(bindingInfo, true, state, stateName);
     expect(getBindingsByContentMock).toHaveBeenCalledWith(content as any);
-    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith(bindings as any);
+    expect(applyChangeMock).toHaveBeenCalledTimes(bindings.length);
   });
 });

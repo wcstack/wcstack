@@ -1,16 +1,11 @@
 import { IStateAddress } from "../address/types";
-import { applyChange } from "../apply/applyChange";
+import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IStateElement } from "../components/types";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
 import { IVersionInfo } from "../version/types";
-
-interface IApplyInfo {
-  bindingInfo: IBindingInfo;
-  value: any;
-}
 
 class Updater {
   private _stateName: string;
@@ -57,25 +52,18 @@ class Updater {
     const stateElement = this._stateElement;
     const addressSet = new Set(this._updateAddresses);
     this._updateAddresses.length = 0;
-    const applyList: IApplyInfo[] = [];
+    const applyBindings: IBindingInfo[] = [];
     for(const address of addressSet) {
-      const value = this._state.$$getByAddress(address);
       const bindingInfos = stateElement.bindingInfosByAddress.get(address);
       if (typeof bindingInfos === "undefined") {
         continue;
       }
       for(const bindingInfo of bindingInfos) {
-        applyList.push({
-          bindingInfo,
-          value,
-        });
+        applyBindings.push(bindingInfo);
       }
     }
+    applyChangeFromBindings(applyBindings);
 
-    for(const applyInfo of applyList) {
-      const { bindingInfo, value } = applyInfo;
-      applyChange(bindingInfo, value);
-    }
     if (this._applyResolve !== null) {
       this._applyResolve();
       this._applyResolve = null;

@@ -4,22 +4,17 @@ import { IBindingInfo } from "../types";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
-import { applyChange } from "../apply/applyChange";
 import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
 import { IFragmentNodeInfo } from "../structural/types";
 import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
-
-interface IApplyInfo {
-  bindingInfo: IBindingInfo;
-  value: any;
-}
+import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 
 function _initializeBindings(
   allBindings: IBindingInfo[],
 ): void {
-  const applyInfoList: IApplyInfo[] = [];
+  const applyBindings: IBindingInfo[] = [];
   const bindingsByStateElement = new Map<IStateElement, IBindingInfo[]>();
   for(const bindingInfo of allBindings) {
     const stateElement = getStateElementByName(bindingInfo.stateName);
@@ -63,15 +58,13 @@ function _initializeBindings(
           });
           cacheValueByPath.set(bindingInfo.statePathName, cacheValue);
         }
-        applyInfoList.push({ bindingInfo, value: cacheValue });
+        applyBindings.push(bindingInfo);
       }
     });
   }
 
   // apply all at once
-  for(const applyInfo of applyInfoList) {
-    applyChange(applyInfo.bindingInfo, applyInfo.value);
-  }
+  applyChangeFromBindings(applyBindings);
 }
 
 export  function initializeBindings(

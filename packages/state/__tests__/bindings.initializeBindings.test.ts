@@ -31,6 +31,7 @@ function createMockStateElement(): IStateElement {
   const stateProxy: any = {
     message: 'hello',
     $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
+    $$getByAddress: () => 'hello',
   };
 
   return {

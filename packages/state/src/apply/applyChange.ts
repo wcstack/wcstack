@@ -1,24 +1,41 @@
+import { IStateProxy } from "../proxy/types.js";
+import { raiseError } from "../raiseError.js";
+import { getStateElementByName } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
 import { applyChangeToElement } from "./applyChangeToElement.js";
 import { applyChangeToFor } from "./applyChangeToFor.js";
 import { applyChangeToIf } from "./applyChangeToIf.js";
 import { applyChangeToText } from "./applyChangeToText.js";
+import { getFilteredValue } from "./getFilteredValue.js";
+import { getValue } from "./getValue.js";
 
-export function applyChange(bindingInfo: IBindingInfo, newValue: any): void {
-  let filteredValue = newValue;
-  for(const filter of bindingInfo.filters) {
-    filteredValue = filter.filterFn(filteredValue);
-  }
+function _applyChange(bindingInfo: IBindingInfo, state: IStateProxy, stateName: string): void {
+  const value = getValue(state, bindingInfo);
+  const filteredValue = getFilteredValue(value, bindingInfo.filters);
   if (bindingInfo.bindingType === "text") {
     applyChangeToText(bindingInfo.replaceNode as Text, filteredValue);
   } else if (bindingInfo.bindingType === "prop") {
     applyChangeToElement(bindingInfo.node as HTMLElement, bindingInfo.propSegments, filteredValue);
   } else if (bindingInfo.bindingType === "for") {
-    applyChangeToFor(bindingInfo, filteredValue);
+    applyChangeToFor(bindingInfo, filteredValue, state, stateName);
   } else if (bindingInfo.bindingType === "if"
      || bindingInfo.bindingType === "else"
      || bindingInfo.bindingType === "elseif"
   ) {
-    applyChangeToIf(bindingInfo, filteredValue);
+    applyChangeToIf(bindingInfo, filteredValue, state, stateName);
+  }
+}
+
+export function applyChange(bindingInfo: IBindingInfo, state: IStateProxy, stateName: string): void {
+  if (bindingInfo.stateName !== stateName) {
+    const stateElement = getStateElementByName(bindingInfo.stateName);
+    if (stateElement === null) {
+      raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
+    }
+    stateElement.createState("readonly", (targetState) => {
+      _applyChange(bindingInfo, targetState, bindingInfo.stateName);
+    });
+  } else {
+    _applyChange(bindingInfo, state, stateName);
   }
 }

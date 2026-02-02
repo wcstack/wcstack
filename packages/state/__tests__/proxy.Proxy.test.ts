@@ -11,13 +11,13 @@ import { setStateElementByName } from '../src/stateElementByName';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 
-vi.mock('../src/apply/applyChange', () => ({
-  applyChange: vi.fn()
+vi.mock('../src/apply/applyChangeFromBindings', () => ({
+  applyChangeFromBindings: vi.fn()
 }));
 
-import { applyChange } from '../src/apply/applyChange';
+import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 
-const applyChangeMock = vi.mocked(applyChange);
+const applyChangeFromBindingsMock = vi.mocked(applyChangeFromBindings);
 
 function createMockStateElement(options?: {
   listPaths?: Set<string>;
@@ -61,10 +61,10 @@ function createMockStateElement(options?: {
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(mutability, callback) {
-      return callback({} as any);
+      return callback({ $$setLoopContext: (_loopContext: any, cb: () => any) => cb() } as any);
     },
     async createStateAsync(mutability, callback) {
-      return callback({} as any);
+      return callback({ $$setLoopContext: (_loopContext: any, cb: () => any) => cb() } as any);
     },
     nextVersion() {
       version += 1;
@@ -163,7 +163,7 @@ describe('proxy/StateHandler', () => {
 
     (proxy as any).count = 2;
     await new Promise<void>((resolve) => queueMicrotask(resolve));
-    expect(applyChangeMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeMock).toHaveBeenCalledWith(bindingInfo, 2);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo]);
   });
 });

@@ -52,6 +52,13 @@ afterEach(() => {
 });
 
 describe('createContent', () => {
+  it('uuidがnullの場合はエラーになること', () => {
+    const placeholder = document.createComment('placeholder');
+    const bindingInfo = createBindingInfo(placeholder, { uuid: null });
+
+    expect(() => createContent(bindingInfo, null)).toThrow(/BindingInfo\.uuid is null/);
+  });
+
   it('mountAfterでノードを挿入できること', () => {
     const container = document.createElement('div');
     const placeholder = document.createComment('placeholder');

@@ -6,7 +6,7 @@ import { setLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { createContent } from "../structural/createContent";
-import { applyChangeFromBindings } from "./applyChangeFromBindings";
+import { applyChange } from "./applyChange";
 const lastValueByNode = new WeakMap();
 const contentByListIndex = new WeakMap();
 const pooledContentsByNode = new WeakMap();
@@ -31,7 +31,7 @@ function setPooledContent(bindingInfo, content) {
         contents.push(content);
     }
 }
-export function applyChangeToFor(bindingInfo, _newValue) {
+export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
     const listPathInfo = bindingInfo.statePathInfo;
     if (!listPathInfo) {
         raiseError(`List path info not found in fragment bind text result.`);
@@ -50,7 +50,6 @@ export function applyChangeToFor(bindingInfo, _newValue) {
     }
     let lastNode = bindingInfo.node;
     const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
-    const stateName = bindingInfo.stateName;
     const stateElement = getStateElementByName(stateName);
     if (!stateElement) {
         raiseError(`State element with name "${stateName}" not found.`);
@@ -73,9 +72,9 @@ export function applyChangeToFor(bindingInfo, _newValue) {
                         if (!nodeSet.has(bindingInfo.node)) {
                             nodeSet.add(bindingInfo.node);
                             setLoopContextByNode(bindingInfo.node, loopContext);
+                            applyChange(bindingInfo, state, stateName);
                         }
                     }
-                    applyChangeFromBindings(bindings);
                 }
             });
         }
@@ -83,7 +82,10 @@ export function applyChangeToFor(bindingInfo, _newValue) {
             content = contentByListIndex.get(index);
             if (diff.changeIndexSet.has(index)) {
                 // change
-                applyChangeFromBindings(getBindingsByContent(content));
+                const bindings = getBindingsByContent(content);
+                for (const bindingInfo of bindings) {
+                    applyChange(bindingInfo, state, stateName);
+                }
             }
         }
         // Update lastNode for next iteration to ensure correct order

@@ -1,4 +1,4 @@
-/* v8 ignore start */
+/* v8 ignore file */
 export {};
 
 declare global {

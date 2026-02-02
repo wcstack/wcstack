@@ -13,17 +13,27 @@ vi.mock('../src/apply/applyChangeToFor', () => ({
 vi.mock('../src/apply/applyChangeToIf', () => ({
   applyChangeToIf: vi.fn()
 }));
+vi.mock('../src/apply/getValue', () => ({
+  getValue: vi.fn()
+}));
+vi.mock('../src/stateElementByName', () => ({
+  getStateElementByName: vi.fn()
+}));
 
 import { applyChange } from '../src/apply/applyChange';
 import { applyChangeToElement } from '../src/apply/applyChangeToElement';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
 import { applyChangeToFor } from '../src/apply/applyChangeToFor';
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
+import { getValue } from '../src/apply/getValue';
+import { getStateElementByName } from '../src/stateElementByName';
 
 const applyChangeToElementMock = vi.mocked(applyChangeToElement);
 const applyChangeToTextMock = vi.mocked(applyChangeToText);
 const applyChangeToForMock = vi.mocked(applyChangeToFor);
 const applyChangeToIfMock = vi.mocked(applyChangeToIf);
+const getValueMock = vi.mocked(getValue);
+const getStateElementByNameMock = vi.mocked(getStateElementByName);
 
 function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   return {
@@ -39,6 +49,9 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
 }
 
 describe('applyChange (coverage)', () => {
+  const state = {} as any;
+  const stateName = 'default';
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -59,7 +72,8 @@ describe('applyChange (coverage)', () => {
       filters
     } as IBindingInfo;
 
-    applyChange(bindingInfo, 3);
+    getValueMock.mockReturnValue(3);
+    applyChange(bindingInfo, state, stateName);
 
     expect(applyChangeToElementMock).toHaveBeenCalledTimes(1);
     expect(applyChangeToElementMock).toHaveBeenCalledWith(input, ['value'], 8);
@@ -76,7 +90,8 @@ describe('applyChange (coverage)', () => {
       propSegments: []
     } as IBindingInfo;
 
-    applyChange(bindingInfo, 'y');
+    getValueMock.mockReturnValue('y');
+    applyChange(bindingInfo, state, stateName);
 
     expect(applyChangeToTextMock).toHaveBeenCalledTimes(1);
     expect(applyChangeToTextMock).toHaveBeenCalledWith(textNode, 'y');
@@ -94,10 +109,12 @@ describe('applyChange (coverage)', () => {
       uuid: 'test-uuid'
     } as IBindingInfo;
 
-    applyChange(bindingInfo, [1, 2]);
+    const list = [1, 2];
+    getValueMock.mockReturnValue(list);
+    applyChange(bindingInfo, state, stateName);
 
     expect(applyChangeToForMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, [1, 2]);
+    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, list, state, stateName);
   });
 
   it('ifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
@@ -112,10 +129,11 @@ describe('applyChange (coverage)', () => {
       uuid: 'test-if-uuid'
     } as IBindingInfo;
 
-    applyChange(bindingInfo, true);
+    getValueMock.mockReturnValue(true);
+    applyChange(bindingInfo, state, stateName);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
   });
 
   it('elseバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
@@ -130,10 +148,11 @@ describe('applyChange (coverage)', () => {
       uuid: 'test-else-uuid'
     } as IBindingInfo;
 
-    applyChange(bindingInfo, false);
+    getValueMock.mockReturnValue(false);
+    applyChange(bindingInfo, state, stateName);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, false);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, false, state, stateName);
   });
 
   it('elseifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
@@ -148,10 +167,11 @@ describe('applyChange (coverage)', () => {
       uuid: 'test-elseif-uuid'
     } as IBindingInfo;
 
-    applyChange(bindingInfo, true);
+    getValueMock.mockReturnValue(true);
+    applyChange(bindingInfo, state, stateName);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
   });
 
   it('対象外のbindingTypeは何も呼ばれないこと', () => {
@@ -165,11 +185,54 @@ describe('applyChange (coverage)', () => {
       propSegments: ['onclick']
     } as IBindingInfo;
 
-    applyChange(bindingInfo, () => {});
+    getValueMock.mockReturnValue(() => {});
+    applyChange(bindingInfo, state, stateName);
 
     expect(applyChangeToTextMock).not.toHaveBeenCalled();
     expect(applyChangeToElementMock).not.toHaveBeenCalled();
     expect(applyChangeToForMock).not.toHaveBeenCalled();
     expect(applyChangeToIfMock).not.toHaveBeenCalled();
+  });
+
+  it('stateNameが異なる場合は別stateで適用されること', () => {
+    const textNode = document.createTextNode('x');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'text',
+      node: textNode,
+      replaceNode: textNode,
+      propName: 'text',
+      propSegments: [],
+      stateName: 'other'
+    } as IBindingInfo;
+
+    const otherState = {} as any;
+    getStateElementByNameMock.mockReturnValue({
+      createState: (_mutability: any, callback: (state: any) => any) => callback(otherState)
+    } as any);
+
+    getValueMock.mockReturnValue('z');
+    applyChange(bindingInfo, state, stateName);
+
+    expect(getStateElementByNameMock).toHaveBeenCalledWith('other');
+    expect(applyChangeToTextMock).toHaveBeenCalledWith(textNode, 'z');
+  });
+
+  it('stateNameが異なる場合にstateElementが見つからなければエラーになること', () => {
+    const textNode = document.createTextNode('x');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'text',
+      node: textNode,
+      replaceNode: textNode,
+      propName: 'text',
+      propSegments: [],
+      stateName: 'missing'
+    } as IBindingInfo;
+
+    getStateElementByNameMock.mockReturnValue(null as any);
+
+    expect(() => applyChange(bindingInfo, state, stateName))
+      .toThrow(/State element with name "missing" not found for binding/);
   });
 });

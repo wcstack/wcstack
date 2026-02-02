@@ -13,6 +13,7 @@ import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
+import { setBindingsByContent } from '../src/bindings/bindingsByContent';
 
 const uuid = 'test-uuid';
 
@@ -46,6 +47,7 @@ function createMockStateElement(): IStateElement {
   const stateProxy: any = {
     items: [],
     $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
+    $$getByAddress: () => undefined,
   };
 
   return {
@@ -186,6 +188,11 @@ afterEach(() => {
 });
 
 describe('applyChangeToFor', () => {
+  const state = { $$getByAddress: () => undefined } as any;
+  const stateName = 'default';
+  const apply = (bindingInfo: IBindingInfo, value: any) =>
+    applyChangeToFor(bindingInfo, value, state, stateName);
+
   it('fragmentInfoが存在しない場合はエラーになること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
@@ -197,7 +204,7 @@ describe('applyChangeToFor', () => {
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    expect(() => applyChangeToFor(bindingInfo, list)).toThrow(/Fragment with UUID/);
+    expect(() => apply(bindingInfo, list)).toThrow(/Fragment with UUID/);
 
     setListIndexesByList(list, null);
   });
@@ -208,7 +215,7 @@ describe('applyChangeToFor', () => {
 
     const list = [1];
     createListIndexes(null, [], list, []);
-    expect(() => applyChangeToFor(bindingInfo, list)).toThrow(/State element with name/);
+    expect(() => apply(bindingInfo, list)).toThrow(/State element with name/);
   });
 
   it('listPathInfoがない場合はエラーになること', () => {
@@ -220,7 +227,7 @@ describe('applyChangeToFor', () => {
 
     const list: any[] = [];
     createListIndexes(null, [], list, []);
-    expect(() => applyChangeToFor(bindingInfo, list)).toThrow(/List path info not found/);
+    expect(() => apply(bindingInfo, list)).toThrow(/List path info not found/);
   });
 
   it('list diffが存在しない場合はエラーになること', () => {
@@ -232,7 +239,7 @@ describe('applyChangeToFor', () => {
 
     const list = [1];
     // createListIndexes を呼ばず、diff が生成されない状態を作る
-    expect(() => applyChangeToFor(bindingInfo, list)).toThrow(/Failed to get list diff/);
+    expect(() => apply(bindingInfo, list)).toThrow(/Failed to get list diff/);
   });
 
   it('配列以外の値は空配列として扱われること', () => {
@@ -243,13 +250,13 @@ describe('applyChangeToFor', () => {
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, createFragmentInfoWithBinding());
 
     const bindingInfo = createBindingInfo(placeholder);
 
     const notList = { not: 'array' };
     createListIndexes(null, [], notList, []);
-    applyChangeToFor(bindingInfo, notList);
+    apply(bindingInfo, notList);
 
     expect(container.childNodes.length).toBe(1);
   });
@@ -269,7 +276,7 @@ describe('applyChangeToFor', () => {
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     expect(container.childNodes.length).toBe(1);
 
@@ -291,7 +298,7 @@ describe('applyChangeToFor', () => {
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     // コメントノード + 2つのspan
     expect(container.childNodes.length).toBe(3);
@@ -317,13 +324,13 @@ describe('applyChangeToFor', () => {
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
     expect(container.childNodes.length).toBe(3);
 
     // 次の更新は空配列
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
-    applyChangeToFor(bindingInfo, emptyList);
+    apply(bindingInfo, emptyList);
     expect(container.childNodes.length).toBe(1);
 
     // 後片付け
@@ -345,19 +352,19 @@ describe('applyChangeToFor', () => {
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
     const firstSpan = container.childNodes[1];
     const secondSpan = container.childNodes[2];
 
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
-    applyChangeToFor(bindingInfo, emptyList);
+    apply(bindingInfo, emptyList);
     expect(container.childNodes.length).toBe(1);
 
     const list2 = [3];
     const list2Indexes = createListIndexes(null, emptyList, list2, []);
     setListIndexesByList(list2, list2Indexes);
-    applyChangeToFor(bindingInfo, list2);
+    apply(bindingInfo, list2);
 
     expect(container.childNodes.length).toBe(2);
     const reusedSpan = container.childNodes[1];
@@ -382,7 +389,7 @@ describe('applyChangeToFor', () => {
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     const firstSpan = container.childNodes[1];
     const secondSpan = container.childNodes[2];
@@ -390,13 +397,65 @@ describe('applyChangeToFor', () => {
     const reordered = [2, 1];
     const reorderedIndexes = createListIndexes(null, list, reordered, listIndexes);
     setListIndexesByList(reordered, reorderedIndexes);
-    applyChangeToFor(bindingInfo, reordered);
+    apply(bindingInfo, reordered);
 
     expect(container.childNodes[1]).toBe(secondSpan);
     expect(container.childNodes[2]).toBe(firstSpan);
 
     setListIndexesByList(list, null);
     setListIndexesByList(reordered, null);
+  });
+
+  it('変更時にbindingsが存在する場合はapplyChangeが実行されること', () => {
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createEmptyFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+
+    // 初回適用でcontentByListIndexをセット
+    apply(bindingInfo, list);
+
+    // 変更時のbindingsを設定するためのダミーcontentを登録
+    const textNode = document.createTextNode('');
+    const dummyBindingInfo: IBindingInfo = {
+      ...createBindingInfo(textNode, { bindingType: 'text', propName: 'text', propSegments: [] }),
+      node: textNode,
+      replaceNode: textNode,
+    } as IBindingInfo;
+
+    const content1 = {
+      firstNode: textNode,
+      lastNode: textNode,
+      mounted: true,
+      mountAfter: () => {},
+      unmount: () => {},
+    } as any;
+
+    __test_setContentByListIndex(listIndexes[0], content1);
+    __test_setContentByListIndex(listIndexes[1], content1);
+    setBindingsByContent(content1, [dummyBindingInfo]);
+
+    // 順序変更でchangeIndexSetを発生させる
+    const prevGetByAddress = state.$$getByAddress;
+    state.$$getByAddress = () => 'x';
+    const reordered = [2, 1];
+    createListIndexes(null, list, reordered, listIndexes);
+    apply(bindingInfo, reordered);
+
+    // applyChangeが実行されてtextが更新されること
+    expect(textNode.nodeValue).toBe('x');
+    state.$$getByAddress = prevGetByAddress;
+
+    setListIndexesByList(list, null);
   });
 
   it('同じリストを再適用しても要素が正しく保持されること', () => {
@@ -415,7 +474,7 @@ describe('applyChangeToFor', () => {
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     expect(container.childNodes.length).toBe(3);
     const firstSpan = container.childNodes[1];
@@ -424,7 +483,7 @@ describe('applyChangeToFor', () => {
     // 同じリストを再適用 (isSameList = trueのケース)
     const sameList = [1, 2];
     createListIndexes(null, list, sameList, listIndexes);
-    applyChangeToFor(bindingInfo, sameList);
+    apply(bindingInfo, sameList);
 
     // 要素が同じ位置に保持されていること
     expect(container.childNodes.length).toBe(3);
@@ -449,7 +508,7 @@ describe('applyChangeToFor', () => {
     const list = [1];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     expect(container.childNodes.length).toBe(2);
     const firstSpan = container.childNodes[1];
@@ -458,7 +517,7 @@ describe('applyChangeToFor', () => {
     const extendedList = [1, 2];
     const extendedIndexes = createListIndexes(null, list, extendedList, listIndexes);
     setListIndexesByList(extendedList, extendedIndexes);
-    applyChangeToFor(bindingInfo, extendedList);
+    apply(bindingInfo, extendedList);
 
     expect(container.childNodes.length).toBe(3);
     // 既存要素が同じ位置に保持
@@ -484,14 +543,14 @@ describe('applyChangeToFor', () => {
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     expect(container.childNodes.length).toBe(3);
 
     // 空にしてプールに追加
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
-    applyChangeToFor(bindingInfo, emptyList);
+    apply(bindingInfo, emptyList);
 
     expect(container.childNodes.length).toBe(1);
 
@@ -499,7 +558,7 @@ describe('applyChangeToFor', () => {
     const list2 = [3];
     const list2Indexes = createListIndexes(null, emptyList, list2, []);
     setListIndexesByList(list2, list2Indexes);
-    applyChangeToFor(bindingInfo, list2);
+    apply(bindingInfo, list2);
 
     expect(container.childNodes.length).toBe(2);
 
@@ -523,7 +582,7 @@ describe('applyChangeToFor', () => {
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     expect(container.childNodes.length).toBe(3);
 
@@ -535,7 +594,7 @@ describe('applyChangeToFor', () => {
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     // contentが見つからなくてもエラーにならないこと
-    expect(() => applyChangeToFor(bindingInfo, emptyList)).not.toThrow();
+    expect(() => apply(bindingInfo, emptyList)).not.toThrow();
 
     // 後片付け
     setListIndexesByList(list, null);
@@ -556,7 +615,7 @@ describe('applyChangeToFor', () => {
     const list = [1];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
-    applyChangeToFor(bindingInfo, list);
+    apply(bindingInfo, list);
 
     // ダミーのcontentを作成
     const dummyContent = {

@@ -34,7 +34,7 @@ export function applyChangeFromBindings(bindingInfos: IBindingInfo[]): void {
         const continueWithNewLoopContext = state.$$setLoopContext(loopContext, (): boolean => {
           // 内側ループ: 同じ stateName + loopContext のバインディングを連続処理
           do {
-            applyChange(bindingInfo, state[bindingInfo.statePathName]);
+            applyChange(bindingInfo, state, stateName);
             bindingInfoIndex++;
 
             const nextBindingInfo: IBindingInfo | undefined = bindingInfos[bindingInfoIndex];

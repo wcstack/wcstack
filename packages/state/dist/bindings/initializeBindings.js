@@ -1,13 +1,13 @@
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
-import { applyChange } from "../apply/applyChange";
 import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
 import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
+import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 function _initializeBindings(allBindings) {
-    const applyInfoList = [];
+    const applyBindings = [];
     const bindingsByStateElement = new Map();
     for (const bindingInfo of allBindings) {
         const stateElement = getStateElementByName(bindingInfo.stateName);
@@ -46,14 +46,12 @@ function _initializeBindings(allBindings) {
                     });
                     cacheValueByPath.set(bindingInfo.statePathName, cacheValue);
                 }
-                applyInfoList.push({ bindingInfo, value: cacheValue });
+                applyBindings.push(bindingInfo);
             }
         });
     }
     // apply all at once
-    for (const applyInfo of applyInfoList) {
-        applyChange(applyInfo.bindingInfo, applyInfo.value);
-    }
+    applyChangeFromBindings(applyBindings);
 }
 export function initializeBindings(root, parentLoopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
