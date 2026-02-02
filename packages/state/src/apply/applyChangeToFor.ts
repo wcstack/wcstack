@@ -2,7 +2,6 @@ import { getPathInfo } from "../address/PathInfo";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { WILDCARD } from "../define";
 import { getListDiff } from "../list/createListIndexes";
-import { getListIndexesByList } from "../list/listIndexesByList";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
@@ -13,9 +12,17 @@ import { IBindingInfo } from "../types";
 import { applyChangeFromBindings } from "./applyChangeFromBindings";
 
 const lastValueByNode = new WeakMap<Node, any>();
-//const lastContentsByNode = new WeakMap<Node, IContent[]>();
 const contentByListIndex = new WeakMap<IListIndex, IContent>();
 const pooledContentsByNode = new WeakMap<Node, IContent[]>();
+
+// テスト用ヘルパー（内部状態の操作）
+export function __test_setContentByListIndex(index: IListIndex, content: IContent | null): void {
+  if (content === null) {
+    contentByListIndex.delete(index);
+  } else {
+    contentByListIndex.set(index, content);
+  }
+}
 
 function getPooledContents(bindingInfo: IBindingInfo): IContent[] {
   return pooledContentsByNode.get(bindingInfo.node) || [];
@@ -31,30 +38,25 @@ function setPooledContent(bindingInfo: IBindingInfo, content: IContent): void {
 }
 
 export function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any): void {
+  const listPathInfo = bindingInfo.statePathInfo;
+  if (!listPathInfo) {
+    raiseError(`List path info not found in fragment bind text result.`);
+  }
   const lastValue = lastValueByNode.get(bindingInfo.node);
   const diff = getListDiff(lastValue, _newValue);
   if (diff === null) {
     raiseError(`Failed to get list diff for binding.`);
   }
-//  const newValue = Array.isArray(_newValue) ? _newValue : [];
-//  const listIndexes = getListIndexesByList(newValue) || [];
 
-//  const lastContents = lastContentsByNode.get(bindingInfo.node) || [];
   for(const deleteIndex of diff.deleteIndexSet) {
     const content = contentByListIndex.get(deleteIndex);
-    if (typeof content === 'undefined') {
-      raiseError(`Content not found for deleted list index.`);
+    if (typeof content !== 'undefined') {
+      content.unmount();
+      setPooledContent(bindingInfo, content);
     }
-    content.unmount();
-    setPooledContent(bindingInfo, content);
   }
 
-  const newContents: IContent[] = [];
   let lastNode = bindingInfo.node;
-  const listPathInfo = bindingInfo.statePathInfo;
-  if (!listPathInfo) {
-    raiseError(`List path info not found in fragment bind text result.`);
-  }
   const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
   const stateName = bindingInfo.stateName;
   const stateElement = getStateElementByName(stateName);
@@ -82,31 +84,22 @@ export function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any): voi
           }
           applyChangeFromBindings(bindings);
         }
-        content.mountAfter(lastNode);
       });
     } else {
-      content = contentByListIndex.get(index);
-      if (typeof content === 'undefined') {
-        raiseError(`Content not found for changed list index.`);
-      }
+      content = contentByListIndex.get(index)!;
       if (diff.changeIndexSet.has(index)) {
         // change
         applyChangeFromBindings(getBindingsByContent(content));
-        content.mountAfter(lastNode);
       }
 
     }
     // Update lastNode for next iteration to ensure correct order
-    if (content) {
-      // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
-      if (lastNode.nextSibling !== content.firstNode) {
-        content.mountAfter(lastNode);
-      }
-      lastNode = content.lastNode || lastNode;
+    // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
+    if (lastNode.nextSibling !== content!.firstNode) {
+      content!.mountAfter(lastNode);
     }
+    lastNode = content!.lastNode || lastNode;
     contentByListIndex.set(index, content!);
-//    newContents.push(content!);
   }
-//  lastContentsByNode.set(bindingInfo.node, newContents);
   lastValueByNode.set(bindingInfo.node, _newValue);
 }

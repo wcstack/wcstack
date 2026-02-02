@@ -29,12 +29,10 @@ export interface ILoopContextStack {
     createLoopContext(elementPathInfo: IPathInfo, listIndex: IListIndex, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
 }
 export interface IListDiff {
-    added: Array<any>;
-    removed: Array<any>;
-    moved: Array<{
-        item: any;
-        from: number;
-        to: number;
-    }>;
+    oldIndexes: IListIndex[];
+    newIndexes: IListIndex[];
+    changeIndexSet: Set<IListIndex>;
+    deleteIndexSet: Set<IListIndex>;
+    addIndexSet: Set<IListIndex>;
 }
 //# sourceMappingURL=types.d.ts.map

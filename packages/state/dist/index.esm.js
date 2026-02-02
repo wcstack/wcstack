@@ -407,6 +407,27 @@ function createStateAddress(pathInfo, listIndex) {
     }
 }
 
+if (!Set.prototype.difference) {
+    Set.prototype.difference = function (other) {
+        const result = new Set(this);
+        for (const elem of other) {
+            result.delete(elem);
+        }
+        return result;
+    };
+}
+if (!Set.prototype.intersection) {
+    Set.prototype.intersection = function (other) {
+        const result = new Set();
+        for (const elem of other) {
+            if (this.has(elem)) {
+                result.add(elem);
+            }
+        }
+        return result;
+    };
+}
+
 function getUUID() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -553,6 +574,26 @@ function createListIndex(parentListIndex, index) {
     return new ListIndex(parentListIndex, index);
 }
 
+const listDiffByOldListByNewList = new WeakMap();
+const EMPTY_LIST = Object.freeze([]);
+const EMPTY_SET = new Set();
+function getListDiff(rawOldList, rawNewList) {
+    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
+    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
+    let diffByNewList = listDiffByOldListByNewList.get(oldList);
+    if (!diffByNewList) {
+        return null;
+    }
+    return diffByNewList.get(newList) || null;
+}
+function setListDiff(oldList, newList, diff) {
+    let diffByNewList = listDiffByOldListByNewList.get(oldList);
+    if (!diffByNewList) {
+        diffByNewList = new WeakMap();
+        listDiffByOldListByNewList.set(oldList, diffByNewList);
+    }
+    diffByNewList.set(newList, diff);
+}
 /**
  * Checks if two lists are identical by comparing length and each element.
  * @param oldList - Previous list to compare
@@ -581,11 +622,22 @@ function isSameList(oldList, newList) {
  */
 function createListIndexes(parentListIndex, rawOldList, rawNewList, oldIndexes) {
     // Normalize inputs to arrays (handles null/undefined)
-    const oldList = Array.isArray(rawOldList) ? rawOldList : [];
-    const newList = Array.isArray(rawNewList) ? rawNewList : [];
+    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
+    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
+    const cachedDiff = getListDiff(oldList, newList);
+    if (cachedDiff) {
+        return cachedDiff.newIndexes;
+    }
     const newIndexes = [];
     // Early return for empty list
     if (newList.length === 0) {
+        setListDiff(oldList, newList, {
+            oldIndexes: oldIndexes,
+            newIndexes: [],
+            changeIndexSet: EMPTY_SET,
+            deleteIndexSet: new Set(oldIndexes),
+            addIndexSet: EMPTY_SET,
+        });
         return [];
     }
     // If old list was empty, create all new indexes
@@ -594,26 +646,50 @@ function createListIndexes(parentListIndex, rawOldList, rawNewList, oldIndexes) 
             const newListIndex = createListIndex(parentListIndex, i);
             newIndexes.push(newListIndex);
         }
+        setListDiff(oldList, newList, {
+            oldIndexes: oldIndexes,
+            newIndexes: newIndexes,
+            changeIndexSet: EMPTY_SET,
+            deleteIndexSet: EMPTY_SET,
+            addIndexSet: new Set(newIndexes),
+        });
         return newIndexes;
     }
     // If lists are identical, return existing indexes unchanged (optimization)
     if (isSameList(oldList, newList)) {
+        setListDiff(oldList, newList, {
+            oldIndexes: oldIndexes,
+            newIndexes: oldIndexes,
+            changeIndexSet: EMPTY_SET,
+            deleteIndexSet: EMPTY_SET,
+            addIndexSet: EMPTY_SET,
+        });
         return oldIndexes;
     }
     // Use index-based map for efficiency
+    // Supports duplicate values by storing array of indexes
     const indexByValue = new Map();
     for (let i = 0; i < oldList.length; i++) {
-        // For duplicate values, the last index takes precedence (maintains existing behavior)
-        indexByValue.set(oldList[i], i);
+        const val = oldList[i];
+        let indexes = indexByValue.get(val);
+        if (!indexes) {
+            indexes = [];
+            indexByValue.set(val, indexes);
+        }
+        indexes.push(i);
     }
     // Build new indexes array by matching values with old list
+    const changeIndexSet = new Set();
+    const addIndexSet = new Set();
     for (let i = 0; i < newList.length; i++) {
         const newValue = newList[i];
-        const oldIndex = indexByValue.get(newValue);
+        const existingIndexes = indexByValue.get(newValue);
+        const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
         if (typeof oldIndex === "undefined") {
             // New element
             const newListIndex = createListIndex(parentListIndex, i);
             newIndexes.push(newListIndex);
+            addIndexSet.add(newListIndex);
         }
         else {
             // Reuse existing element
@@ -621,10 +697,19 @@ function createListIndexes(parentListIndex, rawOldList, rawNewList, oldIndexes) 
             // Update index if position changed
             if (existingListIndex.index !== i) {
                 existingListIndex.index = i;
+                changeIndexSet.add(existingListIndex);
             }
             newIndexes.push(existingListIndex);
         }
     }
+    const deleteIndexSet = (new Set(oldIndexes)).difference(new Set(newIndexes));
+    setListDiff(oldList, newList, {
+        oldIndexes: oldIndexes,
+        newIndexes: newIndexes,
+        changeIndexSet: changeIndexSet,
+        deleteIndexSet: deleteIndexSet,
+        addIndexSet: addIndexSet,
+    });
     return newIndexes;
 }
 
@@ -1228,6 +1313,18 @@ function getBindingsByContent(content) {
 }
 function setBindingsByContent(content, bindings) {
     bindingsByContent.set(content, bindings);
+}
+
+const loopContextByNode = new WeakMap();
+function getLoopContextByNode(node) {
+    return loopContextByNode.get(node) || null;
+}
+function setLoopContextByNode(node, loopContext) {
+    if (loopContext === null) {
+        loopContextByNode.delete(node);
+        return;
+    }
+    loopContextByNode.set(node, loopContext);
 }
 
 function replaceToReplaceNode(bindingInfo) {
@@ -2467,18 +2564,6 @@ function isPossibleTwoWay(node, propName) {
     return false;
 }
 
-const loopContextByNode = new WeakMap();
-function getLoopContextByNode(node) {
-    return loopContextByNode.get(node) || null;
-}
-function setLoopContextByNode(node, loopContext) {
-    if (loopContext === null) {
-        loopContextByNode.delete(node);
-        return;
-    }
-    loopContextByNode.set(node, loopContext);
-}
-
 const handlerByHandlerKey = new Map();
 const bindingInfoSetByHandlerKey = new Map();
 function getHandlerKey(bindingInfo, eventName) {
@@ -2596,10 +2681,10 @@ function initializeBindings(root, parentLoopContext) {
     _initializeBindings(allBindings);
     return allBindings;
 }
-function initializeBindingsByFragment(root, nodeInfos, parentLoopContext) {
+function initializeBindingsByFragment(root, nodeInfos, loopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
     for (const node of subscriberNodes) {
-        setLoopContextByNode(node, parentLoopContext);
+        setLoopContextByNode(node, loopContext);
     }
     _initializeBindings(allBindings);
     return allBindings;
@@ -2683,41 +2768,6 @@ function createContent(bindingInfo, loopContext) {
     return content;
 }
 
-const lastValueByNode$1 = new WeakMap();
-const lastContentsByNode = new WeakMap();
-function applyChangeToFor(bindingInfo, _newValue) {
-    lastValueByNode$1.get(bindingInfo.node) ?? [];
-    const newValue = Array.isArray(_newValue) ? _newValue : [];
-    const listIndexes = getListIndexesByList(newValue) || [];
-    const lastContents = lastContentsByNode.get(bindingInfo.node) || [];
-    for (const content of lastContents) {
-        content.unmount();
-    }
-    const newContents = [];
-    let lastNode = bindingInfo.node;
-    const listPathInfo = bindingInfo.statePathInfo;
-    if (!listPathInfo) {
-        raiseError(`List path info not found in fragment bind text result.`);
-    }
-    const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
-    const stateName = bindingInfo.stateName;
-    const stateElement = getStateElementByName(stateName);
-    if (!stateElement) {
-        raiseError(`State element with name "${stateName}" not found.`);
-    }
-    const loopContextStack = stateElement.loopContextStack;
-    for (const index of listIndexes) {
-        loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
-            const content = createContent(bindingInfo, loopContext);
-            content.mountAfter(lastNode);
-            lastNode = content.lastNode || lastNode;
-            newContents.push(content);
-        });
-    }
-    lastContentsByNode.set(bindingInfo.node, newContents);
-    lastValueByNode$1.set(bindingInfo.node, newValue);
-}
-
 /**
  * バインディング情報の配列を処理し、各バインディングに対して状態の変更を適用する。
  *
@@ -2763,6 +2813,87 @@ function applyChangeFromBindings(bindingInfos) {
             } while (true); // eslint-disable-line no-constant-condition
         });
     }
+}
+
+const lastValueByNode$1 = new WeakMap();
+const contentByListIndex = new WeakMap();
+const pooledContentsByNode = new WeakMap();
+function getPooledContents(bindingInfo) {
+    return pooledContentsByNode.get(bindingInfo.node) || [];
+}
+function setPooledContent(bindingInfo, content) {
+    const contents = pooledContentsByNode.get(bindingInfo.node);
+    if (typeof contents === 'undefined') {
+        pooledContentsByNode.set(bindingInfo.node, [content]);
+    }
+    else {
+        contents.push(content);
+    }
+}
+function applyChangeToFor(bindingInfo, _newValue) {
+    const listPathInfo = bindingInfo.statePathInfo;
+    if (!listPathInfo) {
+        raiseError(`List path info not found in fragment bind text result.`);
+    }
+    const lastValue = lastValueByNode$1.get(bindingInfo.node);
+    const diff = getListDiff(lastValue, _newValue);
+    if (diff === null) {
+        raiseError(`Failed to get list diff for binding.`);
+    }
+    for (const deleteIndex of diff.deleteIndexSet) {
+        const content = contentByListIndex.get(deleteIndex);
+        if (typeof content !== 'undefined') {
+            content.unmount();
+            setPooledContent(bindingInfo, content);
+        }
+    }
+    let lastNode = bindingInfo.node;
+    const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
+    const stateName = bindingInfo.stateName;
+    const stateElement = getStateElementByName(stateName);
+    if (!stateElement) {
+        raiseError(`State element with name "${stateName}" not found.`);
+    }
+    const loopContextStack = stateElement.loopContextStack;
+    for (const index of diff.newIndexes) {
+        let content;
+        // add
+        if (diff.addIndexSet.has(index)) {
+            loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
+                const pooledContents = getPooledContents(bindingInfo);
+                content = pooledContents.pop();
+                if (typeof content === 'undefined') {
+                    content = createContent(bindingInfo, loopContext);
+                }
+                else {
+                    const bindings = getBindingsByContent(content);
+                    const nodeSet = new Set();
+                    for (const bindingInfo of bindings) {
+                        if (!nodeSet.has(bindingInfo.node)) {
+                            nodeSet.add(bindingInfo.node);
+                            setLoopContextByNode(bindingInfo.node, loopContext);
+                        }
+                    }
+                    applyChangeFromBindings(bindings);
+                }
+            });
+        }
+        else {
+            content = contentByListIndex.get(index);
+            if (diff.changeIndexSet.has(index)) {
+                // change
+                applyChangeFromBindings(getBindingsByContent(content));
+            }
+        }
+        // Update lastNode for next iteration to ensure correct order
+        // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
+        if (lastNode.nextSibling !== content.firstNode) {
+            content.mountAfter(lastNode);
+        }
+        lastNode = content.lastNode || lastNode;
+        contentByListIndex.set(index, content);
+    }
+    lastValueByNode$1.set(bindingInfo.node, _newValue);
 }
 
 const lastValueByNode = new WeakMap();

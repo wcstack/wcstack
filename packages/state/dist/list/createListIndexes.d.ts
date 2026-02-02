@@ -1,4 +1,6 @@
-import { IListIndex } from "./types";
+import "../polyfills";
+import { IListDiff, IListIndex } from "./types";
+export declare function getListDiff(rawOldList: readonly unknown[], rawNewList: readonly unknown[]): IListDiff | null;
 /**
  * Creates or updates list indexes by comparing old and new lists.
  * Optimizes by reusing existing list indexes when values match.

@@ -1,5 +1,4 @@
 import "../polyfills";
-import { set } from "../proxy/traps/set";
 import { createListIndex } from "./createListIndex";
 import { IListDiff, IListIndex } from "./types";
 
@@ -75,7 +74,7 @@ export function createListIndexes(
       oldIndexes: oldIndexes,
       newIndexes: [] as IListIndex[],
       changeIndexSet: EMPTY_SET,
-      deleteIndexSet: EMPTY_SET,
+      deleteIndexSet: new Set<IListIndex>(oldIndexes),
       addIndexSet: EMPTY_SET,
     });
     return [];
