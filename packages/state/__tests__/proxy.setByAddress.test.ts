@@ -11,6 +11,18 @@ vi.mock('../src/proxy/methods/getByAddress', () => ({
   getByAddress: vi.fn(),
 }));
 
+const mockEnqueueAbsoluteAddress = vi.fn();
+
+vi.mock('../src/updater/updater', () => ({
+  getUpdater: vi.fn(() => ({
+    enqueueAbsoluteAddress: mockEnqueueAbsoluteAddress,
+  })),
+}));
+
+vi.mock('../src/address/AbsoluteStateAddress', () => ({
+  createAbsoluteStateAddress: vi.fn((stateName, address) => ({ stateName, address })),
+}));
+
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 
 function createStateElement(overrides?: Partial<any>) {
@@ -27,12 +39,10 @@ function createStateElement(overrides?: Partial<any>) {
 function createHandler(stateElement: any, overrides?: Partial<any>) {
   return {
     stateElement,
+    stateName: 'default',
     pushAddress: vi.fn(),
     popAddress: vi.fn(),
-    updater: {
-      versionInfo: { version: 1, revision: 0 },
-      enqueueUpdateAddress: vi.fn(),
-    },
+    versionInfo: { version: 1, revision: 0 },
     ...overrides,
   };
 }
@@ -53,7 +63,8 @@ describe('setByAddress', () => {
     expect(target.count).toBe(5);
     expect(handler.pushAddress).toHaveBeenCalledWith(address);
     expect(handler.popAddress).toHaveBeenCalled();
-    expect(handler.updater.enqueueUpdateAddress).toHaveBeenCalledWith(address);
+
+    expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
 
     const cacheEntry = stateElement.cache.get(address);
     expect(cacheEntry.value).toBe(5);
@@ -65,14 +76,15 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ setterPaths: new Set(['count']), getterPaths: new Set(['count']) });
     stateElement.cache.set(address, { value: 1, versionInfo: { version: 0, revision: 0 } });
-    const handler = createHandler(stateElement, { updater: { versionInfo: { version: 2, revision: 3 }, enqueueUpdateAddress: vi.fn() } });
+    const handler = createHandler(stateElement, { versionInfo: { version: 2, revision: 3 } });
 
     setByAddress(target, address, 9, target, handler as any);
 
     const cacheEntry = stateElement.cache.get(address);
     expect(cacheEntry.value).toBe(9);
     expect(cacheEntry.versionInfo.version).toBe(2);
-    expect(cacheEntry.versionInfo.revision).toBe(3);
+    // revision は前置インクリメントなので 4 がセットされる
+    expect(cacheEntry.versionInfo.revision).toBe(4);
   });
 
   it('親経由で非ワイルドカードの値を設定できること', () => {
@@ -106,7 +118,7 @@ describe('setByAddress', () => {
     });
 
     expect(() => setByAddress(target, address, 'b', target, handler as any)).toThrow(/listIndex/);
-    expect(handler.updater.enqueueUpdateAddress).toHaveBeenCalledWith(address);
+    expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
   });
 
   it('elementsのswapで重複が無ければswapInfoが削除されること', () => {

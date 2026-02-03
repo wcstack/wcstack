@@ -1,83 +1,61 @@
-import { IStateAddress } from "../address/types";
+import { IAbsoluteStateAddress } from "../address/types";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { IStateElement } from "../components/types";
-import { config } from "../config";
-import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { IVersionInfo } from "../version/types";
 
 class Updater {
-  private _stateName: string;
-  private _versionInfo: IVersionInfo;
-  private _updateAddresses: IStateAddress[] = [];
-  private _state: IStateProxy;
-  private _applyPromise: Promise<void> | null = null;
-  private _applyResolve: (() => void) | null = null;
-  private _stateElement: IStateElement;
-  constructor(stateName: string, state:IStateProxy, version: number) {
-    this._versionInfo = {
-      version: version,
-      revision: 0,
-    };
-    this._stateName = stateName;
-    this._state = state;
-    this._stateElement = getStateElementByName(this._stateName) ?? raiseError(`Updater: State element with name "${this._stateName}" not found.`);
+  private _queueAbsoluteAddresses: IAbsoluteStateAddress[] = [];
+  constructor() {
   }
 
-  get versionInfo(): IVersionInfo {
-    return this._versionInfo;
-  }
-
-  enqueueUpdateAddress(address: IStateAddress): void {
-    const stateElement = this._stateElement;
-    this._updateAddresses.push(address);
-    this._versionInfo.revision++;
-    stateElement.mightChangeByPath.set(address.pathInfo.path, {
-      version: this._versionInfo.version,
-      revision: this._versionInfo.revision,
-    });
-
-    if (this._applyPromise !== null) {
-      return;
+  enqueueAbsoluteAddress(absoluteAddress: IAbsoluteStateAddress): void {
+    const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
+    this._queueAbsoluteAddresses.push(absoluteAddress);
+    if (requireStartProcess) {
+      queueMicrotask(() => {
+        const absoluteAddresses = this._queueAbsoluteAddresses;
+        this._queueAbsoluteAddresses = [];
+        this._applyChange(absoluteAddresses);
+      });
     }
-    this._applyPromise = new Promise<void>((resolve) => {
-      this._applyResolve = resolve;
-    });
-    queueMicrotask(() => {
-      this._processUpdates();
-    });
   }
 
-  private _processUpdates(): void {
-    const stateElement = this._stateElement;
-    const addressSet = new Set(this._updateAddresses);
-    this._updateAddresses.length = 0;
-    const applyBindings: IBindingInfo[] = [];
-    for(const address of addressSet) {
-      const bindingInfos = stateElement.bindingInfosByAddress.get(address);
-      if (typeof bindingInfos === "undefined") {
-        continue;
+  // テスト用に公開
+  testApplyChange(absoluteAddresses: IAbsoluteStateAddress[]): void {
+    this._applyChange(absoluteAddresses);
+  }
+
+  private _applyChange(absoluteAddresses: IAbsoluteStateAddress[]): void {
+    // Note: AbsoluteStateAddress はキャッシュされているため、
+    // 同一の (stateName, address) は同じインスタンスとなり、
+    // Set による重複排除が正しく機能する    
+    const absoluteAddressSet = new Set(absoluteAddresses);
+    const processBindingInfos: IBindingInfo[] = [];
+    for (const absoluteAddress of absoluteAddressSet) {
+      const stateElement = getStateElementByName(absoluteAddress.stateName);
+      if (stateElement === null) {
+        raiseError(`State element with name "${absoluteAddress.stateName}" not found for updater.`);
       }
-      for(const bindingInfo of bindingInfos) {
-        applyBindings.push(bindingInfo);
+      const bindingInfos = stateElement.bindingInfosByAddress.get(absoluteAddress.address);
+      if (typeof bindingInfos !== "undefined") {
+        processBindingInfos.push(...bindingInfos);
       }
     }
-    if (config.debug) {
-      console.log(`Updater: Applying changes for state "${this._stateName}", version ${this._versionInfo.version}, revision ${this._versionInfo.revision}, ${applyBindings.length} bindings.`, applyBindings);
-    }
-    applyChangeFromBindings(applyBindings);
-
-    if (this._applyResolve !== null) {
-      this._applyResolve();
-      this._applyResolve = null;
-      this._applyPromise = null;
-    }
+    applyChangeFromBindings(
+      processBindingInfos
+    );
   }
 
 }
 
-export function createUpdater(stateName: string, state: IStateProxy, version: number): Updater {
-  return new Updater(stateName, state, version);
+const updater = new Updater();
+
+export function getUpdater(): Updater {
+  return updater;
 }
+
+// テスト用にprivateメソッドを公開
+export const __private__ = {
+  Updater,
+};

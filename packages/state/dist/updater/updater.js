@@ -1,71 +1,50 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 class Updater {
-    _stateName;
-    _versionInfo;
-    _updateAddresses = [];
-    _state;
-    _applyPromise = null;
-    _applyResolve = null;
-    _stateElement;
-    constructor(stateName, state, version) {
-        this._versionInfo = {
-            version: version,
-            revision: 0,
-        };
-        this._stateName = stateName;
-        this._state = state;
-        this._stateElement = getStateElementByName(this._stateName) ?? raiseError(`Updater: State element with name "${this._stateName}" not found.`);
+    _queueAbsoluteAddresses = [];
+    constructor() {
     }
-    get versionInfo() {
-        return this._versionInfo;
-    }
-    enqueueUpdateAddress(address) {
-        const stateElement = this._stateElement;
-        this._updateAddresses.push(address);
-        this._versionInfo.revision++;
-        stateElement.mightChangeByPath.set(address.pathInfo.path, {
-            version: this._versionInfo.version,
-            revision: this._versionInfo.revision,
-        });
-        if (this._applyPromise !== null) {
-            return;
+    enqueueAbsoluteAddress(absoluteAddress) {
+        const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
+        this._queueAbsoluteAddresses.push(absoluteAddress);
+        if (requireStartProcess) {
+            queueMicrotask(() => {
+                const absoluteAddresses = this._queueAbsoluteAddresses;
+                this._queueAbsoluteAddresses = [];
+                this._applyChange(absoluteAddresses);
+            });
         }
-        this._applyPromise = new Promise((resolve) => {
-            this._applyResolve = resolve;
-        });
-        queueMicrotask(() => {
-            this._processUpdates();
-        });
     }
-    _processUpdates() {
-        const stateElement = this._stateElement;
-        const addressSet = new Set(this._updateAddresses);
-        this._updateAddresses.length = 0;
-        const applyBindings = [];
-        for (const address of addressSet) {
-            const bindingInfos = stateElement.bindingInfosByAddress.get(address);
-            if (typeof bindingInfos === "undefined") {
-                continue;
+    // テスト用に公開
+    testApplyChange(absoluteAddresses) {
+        this._applyChange(absoluteAddresses);
+    }
+    _applyChange(absoluteAddresses) {
+        // Note: AbsoluteStateAddress はキャッシュされているため、
+        // 同一の (stateName, address) は同じインスタンスとなり、
+        // Set による重複排除が正しく機能する    
+        const absoluteAddressSet = new Set(absoluteAddresses);
+        const processBindingInfos = [];
+        for (const absoluteAddress of absoluteAddressSet) {
+            const stateElement = getStateElementByName(absoluteAddress.stateName);
+            if (stateElement === null) {
+                raiseError(`State element with name "${absoluteAddress.stateName}" not found for updater.`);
             }
-            for (const bindingInfo of bindingInfos) {
-                applyBindings.push(bindingInfo);
+            const bindingInfos = stateElement.bindingInfosByAddress.get(absoluteAddress.address);
+            if (typeof bindingInfos !== "undefined") {
+                processBindingInfos.push(...bindingInfos);
             }
         }
-        if (config.debug) {
-            console.log(`Updater: Applying changes for state "${this._stateName}", version ${this._versionInfo.version}, revision ${this._versionInfo.revision}, ${applyBindings.length} bindings.`, applyBindings);
-        }
-        applyChangeFromBindings(applyBindings);
-        if (this._applyResolve !== null) {
-            this._applyResolve();
-            this._applyResolve = null;
-            this._applyPromise = null;
-        }
+        applyChangeFromBindings(processBindingInfos);
     }
 }
-export function createUpdater(stateName, state, version) {
-    return new Updater(stateName, state, version);
+const updater = new Updater();
+export function getUpdater() {
+    return updater;
 }
+// テスト用にprivateメソッドを公開
+export const __private__ = {
+    Updater,
+};
 //# sourceMappingURL=updater.js.map

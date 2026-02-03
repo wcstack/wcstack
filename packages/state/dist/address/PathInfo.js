@@ -4,7 +4,7 @@ export function getPathInfo(path) {
     if (_cache[path]) {
         return _cache[path];
     }
-    const pathInfo = new PathInfo(path);
+    const pathInfo = Object.freeze(new PathInfo(path));
     _cache[path] = pathInfo;
     return pathInfo;
 }

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { createUpdater } from '../src/updater/updater';
-import { setStateElementByName } from '../src/stateElementByName';
-import { config } from '../src/config';
+import { getUpdater } from '../src/updater/updater';
+import { setStateElementByName, getStateElementByName } from '../src/stateElementByName';
+import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+import { createStateAddress } from '../src/address/StateAddress';
+import { getPathInfo } from '../src/address/PathInfo';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
   applyChangeFromBindings: vi.fn()
@@ -12,7 +14,7 @@ import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 const applyChangeFromBindingsMock = vi.mocked(applyChangeFromBindings);
 
 function createAddress(path: string) {
-  return { pathInfo: { path } } as any;
+  return createStateAddress(getPathInfo(path), null);
 }
 
 function createStateElement(bindingInfosByAddress?: Map<any, any[]>) {
@@ -23,42 +25,37 @@ function createStateElement(bindingInfosByAddress?: Map<any, any[]>) {
 }
 
 describe('updater/updater', () => {
-  let originalDebug: boolean;
 
   beforeEach(() => {
-    originalDebug = config.debug;
-    config.debug = true;
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
     setStateElementByName('default', null);
     setStateElementByName('missing', null);
-    config.debug = originalDebug;
   });
 
-  it('stateElementが見つからない場合はエラーになること', () => {
-    const state = { $$getByAddress: vi.fn() } as any;
-    expect(() => createUpdater('missing', state, 1)).toThrow(/Updater: State element/);
+  it('stateElementが見つからない場合はエラーになること', async () => {
+    const address = createAddress('count');
+    // stateElementが存在しない状態でAbsoluteStateAddressを作成しようとするとエラー
+    expect(() => createAbsoluteStateAddress('missing', address)).toThrow(/State element with name "missing" not found/);
   });
 
-  it('enqueueでapplyChangeFromBindingsが呼ばれ、versionInfoとmightChangeが更新されること', async () => {
+  it('enqueueでapplyChangeFromBindingsが呼ばれること', async () => {
     const address = createAddress('count');
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
     const bindingInfosByAddress = new Map([[address, [bindingInfo]]]);
     const stateElement = createStateElement(bindingInfosByAddress);
     setStateElementByName('default', stateElement);
 
-    const state = { $$getByAddress: vi.fn(() => 5) } as any;
-    const updater = createUpdater('default', state, 3);
+    const updater = getUpdater();
+    const absoluteAddress = createAbsoluteStateAddress('default', address);
 
-    updater.enqueueUpdateAddress(address);
+    updater.enqueueAbsoluteAddress(absoluteAddress);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
     expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo]);
-    expect(updater.versionInfo).toEqual({ version: 3, revision: 1 });
-    expect(stateElement.mightChangeByPath.get('count')).toEqual({ version: 3, revision: 1 });
   });
 
   it('同一フレームで複数enqueueしても処理は一度だけ行われること', async () => {
@@ -68,16 +65,16 @@ describe('updater/updater', () => {
     const stateElement = createStateElement(bindingInfosByAddress);
     setStateElementByName('default', stateElement);
 
-    const state = { $$getByAddress: vi.fn(() => 10) } as any;
-    const updater = createUpdater('default', state, 1);
+    const updater = getUpdater();
+    const absoluteAddress = createAbsoluteStateAddress('default', address);
 
-    updater.enqueueUpdateAddress(address);
-    updater.enqueueUpdateAddress(address);
+    updater.enqueueAbsoluteAddress(absoluteAddress);
+    updater.enqueueAbsoluteAddress(absoluteAddress);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
+    // 同一のAbsoluteStateAddressはSetで重複排除される
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
-    expect(updater.versionInfo.revision).toBe(2);
-    expect(stateElement.mightChangeByPath.get('value')?.revision).toBe(2);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo]);
   });
 
   it('bindingInfosが無い場合は空配列でapplyChangeFromBindingsが呼ばれること', async () => {
@@ -85,48 +82,47 @@ describe('updater/updater', () => {
     const stateElement = createStateElement();
     setStateElementByName('default', stateElement);
 
-    const state = { $$getByAddress: vi.fn(() => 'x') } as any;
-    const updater = createUpdater('default', state, 2);
+    const updater = getUpdater();
+    const absoluteAddress = createAbsoluteStateAddress('default', address);
 
-    updater.enqueueUpdateAddress(address);
+    updater.enqueueAbsoluteAddress(absoluteAddress);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
-
-    expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([]);
-    expect(stateElement.mightChangeByPath.get('missing')).toEqual({ version: 2, revision: 1 });
-  });
-
-  it('_applyResolveがnullの場合は解放処理を行わないこと', () => {
-    const stateElement = createStateElement();
-    setStateElementByName('default', stateElement);
-    const state = { $$getByAddress: vi.fn() } as any;
-    const updater = createUpdater('default', state, 1) as any;
-
-    updater._applyResolve = null;
-    updater._processUpdates();
 
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
     expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([]);
   });
 
-  it('debug=falseの場合はログ出力されないこと', async () => {
-    config.debug = false;
-    const consoleSpy = vi.spyOn(console, 'log');
+  it('getUpdaterはシングルトンを返すこと', () => {
+    const updater1 = getUpdater();
+    const updater2 = getUpdater();
+    expect(updater1).toBe(updater2);
+  });
 
-    const address = createAddress('count');
-    const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
-    const bindingInfosByAddress = new Map([[address, [bindingInfo]]]);
-    const stateElement = createStateElement(bindingInfosByAddress);
-    setStateElementByName('default', stateElement);
+  it('複数のstateNameのアドレスを一括処理できること', async () => {
+    const address1 = createAddress('count');
+    const address2 = createAddress('name');
+    
+    const bindingInfo1 = { propName: 'value', stateName: 'state1', node: document.createTextNode('') } as any;
+    const bindingInfo2 = { propName: 'text', stateName: 'state2', node: document.createTextNode('') } as any;
+    
+    const stateElement1 = createStateElement(new Map([[address1, [bindingInfo1]]]));
+    const stateElement2 = createStateElement(new Map([[address2, [bindingInfo2]]]));
+    
+    setStateElementByName('state1', stateElement1);
+    setStateElementByName('state2', stateElement2);
 
-    const state = { $$getByAddress: vi.fn(() => 5) } as any;
-    const updater = createUpdater('default', state, 3);
+    const updater = getUpdater();
+    const absoluteAddress1 = createAbsoluteStateAddress('state1', address1);
+    const absoluteAddress2 = createAbsoluteStateAddress('state2', address2);
 
-    updater.enqueueUpdateAddress(address);
+    updater.enqueueAbsoluteAddress(absoluteAddress1);
+    updater.enqueueAbsoluteAddress(absoluteAddress2);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
-    expect(consoleSpy).not.toHaveBeenCalled();
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
-    consoleSpy.mockRestore();
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo1, bindingInfo2]);
+
+    setStateElementByName('state1', null);
+    setStateElementByName('state2', null);
   });
 });

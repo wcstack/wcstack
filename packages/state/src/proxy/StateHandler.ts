@@ -2,26 +2,23 @@ import { IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
-import { IUpdater } from "../updater/types";
 import { IStateHandler, IStateProxy, Mutability } from "./types";
 import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
 import { ILoopContext } from "../list/types";
 import { IState } from "../types";
-import { createUpdater } from "../updater/updater";
+import { IVersionInfo } from "../version/types";
+import { getNextVersion } from "../version/version";
 
 class StateHandler implements IStateHandler {
   private _stateElement: IStateElement;
   private _stateName: string;
   private _addressStack: (IStateAddress | null)[] = [];
   private _addressStackIndex: number = -1;
-
-  private _updater: IUpdater | undefined;
-
   private _loopContext: ILoopContext | null | undefined;
-
   private _mutability: Mutability;
-
+  private _versionInfo: IVersionInfo;
+ 
   constructor(
     stateName: string,
     mutability: Mutability
@@ -33,6 +30,7 @@ class StateHandler implements IStateHandler {
     }
     this._stateElement = stateElement;
     this._mutability = mutability;
+    this._versionInfo = getNextVersion();
   }
 
   get stateName(): string {
@@ -59,18 +57,12 @@ class StateHandler implements IStateHandler {
     return this._addressStackIndex;
   }
 
-  get updater(): IUpdater {
-    if (typeof this._updater === "undefined") {
-      raiseError(`StateHandler: updater is not set yet.`);
-    }
-    return this._updater;
-  }
-  set updater(value: IUpdater) {
-    this._updater = value;
-  }
-
   get loopContext(): ILoopContext | null | undefined {
     return this._loopContext;
+  }
+
+  get versionInfo(): IVersionInfo {
+    return this._versionInfo;
   }
 
   pushAddress(address: IStateAddress | null): void {
@@ -136,7 +128,6 @@ export function createStateProxy(
 ): IStateProxy {
   const handler = new StateHandler(stateName, mutability);
   const stateProxy = new Proxy<IStateProxy>(state as IStateProxy, handler);
-  handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
   return stateProxy;
 }
 

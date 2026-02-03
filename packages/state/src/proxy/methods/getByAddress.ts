@@ -85,7 +85,7 @@ function _getByAddressWithCache(
       // 更新なし
       return lastCacheEntry.value;
     } else {
-      if (lastVersionInfo.version > handler.updater.versionInfo.version) {
+      if (lastVersionInfo.version > handler.versionInfo.version) {
         // これは非同期更新が発生した場合にありえる
         return lastCacheEntry.value;
       }
@@ -110,7 +110,7 @@ function _getByAddressWithCache(
     const cacheEntry: ICacheEntry = {
       ...(lastCacheEntry ?? {}),
       value: value,
-      versionInfo: { ...handler.updater.versionInfo },
+      versionInfo: { ...handler.versionInfo },
     };
     stateElement.cache.set(address, cacheEntry);
   }

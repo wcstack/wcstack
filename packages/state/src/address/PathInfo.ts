@@ -1,13 +1,13 @@
 import { WILDCARD } from "../define.js";
 import { IPathInfo } from "./types.js";
 
-const _cache: { [key: string]: PathInfo } = {};
+const _cache: { [key: string]: IPathInfo } = {};
 
 export function getPathInfo(path: string): IPathInfo {
   if (_cache[path]) {
     return _cache[path];
   }
-  const pathInfo = new PathInfo(path);
+  const pathInfo = Object.freeze(new PathInfo(path));
   _cache[path] = pathInfo;
   return pathInfo;
 }

@@ -16,11 +16,13 @@
  * - getter/setter経由のスコープ切り替えも考慮した設計
  */
 
+import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
+import { getUpdater } from "../../updater/updater";
 import { IStateHandler } from "../types";
 import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
@@ -64,7 +66,9 @@ function _setByAddress(
       }
     }
   } finally {
-    handler.updater.enqueueUpdateAddress(address); // 更新情報を登録
+    const updater = getUpdater();
+    const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
+    updater.enqueueAbsoluteAddress(absoluteAddress);
   }
 }
 
@@ -136,15 +140,15 @@ export function setByAddress(
         stateElement.cache.set(address, {
           value: value,
           versionInfo: {
-            version: handler.updater.versionInfo.version,
-            revision: handler.updater.versionInfo.revision,
+            version: handler.versionInfo.version,
+            revision: ++handler.versionInfo.revision,
           },
         });
       } else {
         // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
         cacheEntry.value = value;
-        cacheEntry.versionInfo.version = handler.updater.versionInfo.version;
-        cacheEntry.versionInfo.revision = handler.updater.versionInfo.revision;
+        cacheEntry.versionInfo.version = handler.versionInfo.version;
+        cacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
       }
     }
   }

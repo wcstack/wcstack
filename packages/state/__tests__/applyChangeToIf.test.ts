@@ -37,7 +37,7 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
     statePathName: 'flag',
     statePathInfo: null,
     stateName: 'default',
-    filters: [{ filterName: 'not', args: [] }],
+    filters: [{ filterName: 'not', args: [], filterFn: (v: any) => !v }],
     bindingType: 'if',
     uuid,
     node,

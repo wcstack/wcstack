@@ -2,15 +2,15 @@ import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
-import { createUpdater } from "../updater/updater";
+import { getNextVersion } from "../version/version";
 class StateHandler {
     _stateElement;
     _stateName;
     _addressStack = [];
     _addressStackIndex = -1;
-    _updater;
     _loopContext;
     _mutability;
+    _versionInfo;
     constructor(stateName, mutability) {
         this._stateName = stateName;
         const stateElement = getStateElementByName(this._stateName);
@@ -19,6 +19,7 @@ class StateHandler {
         }
         this._stateElement = stateElement;
         this._mutability = mutability;
+        this._versionInfo = getNextVersion();
     }
     get stateName() {
         return this._stateName;
@@ -40,17 +41,11 @@ class StateHandler {
     get addressStackIndex() {
         return this._addressStackIndex;
     }
-    get updater() {
-        if (typeof this._updater === "undefined") {
-            raiseError(`StateHandler: updater is not set yet.`);
-        }
-        return this._updater;
-    }
-    set updater(value) {
-        this._updater = value;
-    }
     get loopContext() {
         return this._loopContext;
+    }
+    get versionInfo() {
+        return this._versionInfo;
     }
     pushAddress(address) {
         this._addressStackIndex++;
@@ -92,7 +87,6 @@ class StateHandler {
 export function createStateProxy(state, stateName, mutability) {
     const handler = new StateHandler(stateName, mutability);
     const stateProxy = new Proxy(state, handler);
-    handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
     return stateProxy;
 }
 export const __private__ = {

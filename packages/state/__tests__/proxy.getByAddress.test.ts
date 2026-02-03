@@ -24,7 +24,7 @@ function createHandler(stateElement: any, overrides?: Partial<any>) {
     stateElement,
     pushAddress: vi.fn(),
     popAddress: vi.fn(),
-    updater: { versionInfo: { version: 1, revision: 0 } },
+    versionInfo: { version: 1, revision: 0 },
     ...overrides,
   };
 }
@@ -91,7 +91,7 @@ describe('getByAddress', () => {
     const address = createStateAddress(getPathInfo('total'), null);
     const stateElement = createStateElement({ getterPaths: new Set(['total']) });
     stateElement.cache.set(address, { value: 99, versionInfo: { version: 1, revision: 0 } });
-    const handler = createHandler(stateElement, { updater: { versionInfo: { version: 1, revision: 0 } } });
+    const handler = createHandler(stateElement, { versionInfo: { version: 1, revision: 0 } });
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(99);
@@ -103,7 +103,7 @@ describe('getByAddress', () => {
     const stateElement = createStateElement({ getterPaths: new Set(['total']) });
     stateElement.cache.set(address, { value: 55, versionInfo: { version: 5, revision: 0 } });
     stateElement.mightChangeByPath.set('total', { version: 1, revision: 0 });
-    const handler = createHandler(stateElement, { updater: { versionInfo: { version: 3, revision: 0 } } });
+    const handler = createHandler(stateElement, { versionInfo: { version: 3, revision: 0 } });
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(55);
@@ -115,7 +115,7 @@ describe('getByAddress', () => {
     const stateElement = createStateElement({ listPaths: new Set(['items']) });
     stateElement.cache.set(address, { value: [0], versionInfo: { version: 1, revision: 0 } });
     stateElement.mightChangeByPath.set('items', { version: 2, revision: 0 });
-    const handler = createHandler(stateElement, { updater: { versionInfo: { version: 2, revision: 0 } } });
+    const handler = createHandler(stateElement, { versionInfo: { version: 2, revision: 0 } });
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toEqual([1, 2]);
@@ -130,7 +130,7 @@ describe('getByAddress', () => {
     const stateElement = createStateElement({ getterPaths: new Set(['total']) });
     stateElement.cache.set(address, { value: 77, versionInfo: { version: 2, revision: 1 } });
     stateElement.mightChangeByPath.set('total', { version: 2, revision: 1 });
-    const handler = createHandler(stateElement, { updater: { versionInfo: { version: 3, revision: 0 } } });
+    const handler = createHandler(stateElement, { versionInfo: { version: 3, revision: 0 } });
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(77);

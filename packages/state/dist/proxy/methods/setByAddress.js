@@ -15,10 +15,12 @@
  * - finallyで必ず更新情報を登録し、再描画や依存解決に利用
  * - getter/setter経由のスコープ切り替えも考慮した設計
  */
+import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
+import { getUpdater } from "../../updater/updater";
 import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 function _setByAddress(target, address, value, receiver, handler) {
@@ -58,7 +60,9 @@ function _setByAddress(target, address, value, receiver, handler) {
         }
     }
     finally {
-        handler.updater.enqueueUpdateAddress(address); // 更新情報を登録
+        const updater = getUpdater();
+        const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
+        updater.enqueueAbsoluteAddress(absoluteAddress);
     }
 }
 function _setByAddressWithSwap(target, address, value, receiver, handler) {
@@ -119,16 +123,16 @@ export function setByAddress(target, address, value, receiver, handler) {
                 stateElement.cache.set(address, {
                     value: value,
                     versionInfo: {
-                        version: handler.updater.versionInfo.version,
-                        revision: handler.updater.versionInfo.revision,
+                        version: handler.versionInfo.version,
+                        revision: ++handler.versionInfo.revision,
                     },
                 });
             }
             else {
                 // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
                 cacheEntry.value = value;
-                cacheEntry.versionInfo.version = handler.updater.versionInfo.version;
-                cacheEntry.versionInfo.revision = handler.updater.versionInfo.revision;
+                cacheEntry.versionInfo.version = handler.versionInfo.version;
+                cacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
             }
         }
     }

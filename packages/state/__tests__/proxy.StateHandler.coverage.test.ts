@@ -4,10 +4,6 @@ vi.mock('../src/stateElementByName', () => ({
   getStateElementByName: vi.fn(),
 }));
 
-vi.mock('../src/updater/updater', () => ({
-  createUpdater: vi.fn(() => ({ __updater: true })),
-}));
-
 vi.mock('../src/proxy/traps/get', () => ({
   get: vi.fn(() => 'get-result'),
 }));
@@ -18,14 +14,13 @@ vi.mock('../src/proxy/traps/set', () => ({
 
 import { __private__, createStateProxy } from '../src/proxy/StateHandler';
 import { getStateElementByName } from '../src/stateElementByName';
-import { createUpdater } from '../src/updater/updater';
 import { get as trapGet } from '../src/proxy/traps/get';
 import { set as trapSet } from '../src/proxy/traps/set';
 
 const { StateHandler } = __private__;
 
-function mockStateElement(nextVersionValue = 1) {
-  return { nextVersion: vi.fn(() => nextVersionValue) } as any;
+function mockStateElement() {
+  return {} as any;
 }
 
 describe('proxy/StateHandler (coverage)', () => {
@@ -73,10 +68,20 @@ describe('proxy/StateHandler (coverage)', () => {
     expect(handler.popAddress()).toBeNull();
   });
 
-  it('updater未設定で取得するとエラーになること', () => {
+  it('readonlyでもversionInfoが設定されること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
     const handler = new StateHandler('default', 'readonly');
-    expect(() => handler.updater).toThrow(/updater is not set yet/);
+    expect(handler.versionInfo).toBeDefined();
+    expect(handler.versionInfo.version).toBeGreaterThan(0);
+    expect(handler.versionInfo.revision).toBe(0);
+  });
+
+  it('writable時はversionInfoが設定されること', () => {
+    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    const handler = new StateHandler('default', 'writable');
+    expect(handler.versionInfo).toBeDefined();
+    expect(handler.versionInfo.version).toBeGreaterThan(0);
+    expect(handler.versionInfo.revision).toBe(0);
   });
 
   it('loopContextのset/clearができること', () => {
@@ -115,17 +120,15 @@ describe('proxy/StateHandler (coverage)', () => {
     expect(trapSet).not.toHaveBeenCalled();
   });
 
-  it('createStateProxyがupdaterを生成すること', () => {
-    const stateElement = mockStateElement(7);
+  it('createStateProxyがStateProxyを生成すること', () => {
+    const stateElement = mockStateElement();
     vi.mocked(getStateElementByName).mockReturnValue(stateElement);
 
     const state = { count: 1 };
-    createStateProxy(state, 'default', 'writable');
+    const proxy = createStateProxy(state, 'default', 'writable');
 
-    expect(createUpdater).toHaveBeenCalledTimes(1);
-    const [stateName, _stateProxy, version] = vi.mocked(createUpdater).mock.calls[0];
-    expect(stateName).toBe('default');
-    expect(version).toBe(7);
+    expect(proxy).toBeDefined();
+    expect(typeof proxy).toBe('object');
   });
 
 });

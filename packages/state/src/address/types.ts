@@ -31,6 +31,11 @@ export interface IStateAddress {
   readonly parentAddress: IStateAddress | null;
 }
 
+export interface IAbsoluteStateAddress {
+  readonly address: IStateAddress;
+  readonly stateName: string;
+}
+
 export type WildcardType = "none" | "context" | "partial" | "all";
 
 export interface IResolvedAddress {

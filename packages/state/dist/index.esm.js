@@ -149,7 +149,7 @@ function getPathInfo(path) {
     if (_cache$2[path]) {
         return _cache$2[path];
     }
-    const pathInfo = new PathInfo(path);
+    const pathInfo = Object.freeze(new PathInfo(path));
     _cache$2[path] = pathInfo;
     return pathInfo;
 }
@@ -807,7 +807,7 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
             return lastCacheEntry.value;
         }
         else {
-            if (lastVersionInfo.version > handler.updater.versionInfo.version) {
+            if (lastVersionInfo.version > handler.versionInfo.version) {
                 // これは非同期更新が発生した場合にありえる
                 return lastCacheEntry.value;
             }
@@ -832,7 +832,7 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
         const cacheEntry = {
             ...(lastCacheEntry ?? {}),
             value: value,
-            versionInfo: { ...handler.updater.versionInfo },
+            versionInfo: { ...handler.versionInfo },
         };
         stateElement.cache.set(address, cacheEntry);
     }
@@ -1069,173 +1069,32 @@ function get(target, prop, receiver, handler) {
     }
 }
 
-const swapInfoByStateAddress = new WeakMap();
-function getSwapInfoByAddress(address) {
-    return swapInfoByStateAddress.get(address) ?? null;
-}
-function setSwapInfoByAddress(address, swapInfo) {
-    if (swapInfo === null) {
-        swapInfoByStateAddress.delete(address);
+const absoluteStateAddressByStateAddressByStateElement = new WeakMap();
+function createAbsoluteStateAddress(stateName, address) {
+    const stateElement = getStateElementByName(stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found.`);
+    }
+    let absoluteStateAddressByStateAddress = absoluteStateAddressByStateAddressByStateElement.get(stateElement);
+    if (typeof absoluteStateAddressByStateAddress !== "undefined") {
+        let absoluteStateAddress = absoluteStateAddressByStateAddress.get(address);
+        if (typeof absoluteStateAddress === "undefined") {
+            absoluteStateAddress = Object.freeze({
+                address,
+                stateName,
+            });
+            absoluteStateAddressByStateAddress.set(address, absoluteStateAddress);
+        }
+        return absoluteStateAddress;
     }
     else {
-        swapInfoByStateAddress.set(address, swapInfo);
-    }
-}
-
-/**
- * setByAddress.ts
- *
- * Stateの内部APIとして、アドレス情報（IStateAddress）を指定して
- * 状態オブジェクト（target）に値を設定するための関数（setByAddress）の実装です。
- *
- * 主な役割:
- * - 指定されたパス・インデックスに対応するState値を設定（多重ループやワイルドカードにも対応）
- * - getter/setter経由で値設定時はpushAddressでスコープを一時設定
- * - 存在しない場合は親pathInfoやlistIndexを辿って再帰的に値を設定
- * - 設定後はupdater.enqueueUpdateAddressで更新情報を登録
- *
- * 設計ポイント:
- * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値設定を実現
- * - finallyで必ず更新情報を登録し、再描画や依存解決に利用
- * - getter/setter経由のスコープ切り替えも考慮した設計
- */
-function _setByAddress(target, address, value, receiver, handler) {
-    try {
-        // ToDo:親子関係のあるgetterが存在する場合は、外部依存を通じて値を設定
-        /*
-            if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.setters.intersection(ref.info.cumulativePathSet).size === 0) {
-              return handler.engine.stateOutput.set(ref, value);
-            }
-        */
-        if (address.pathInfo.path in target) {
-            if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
-                // setterの中で参照の可能性があるので、addressをプッシュする
-                handler.pushAddress(address);
-                try {
-                    return Reflect.set(target, address.pathInfo.path, value, receiver);
-                }
-                finally {
-                    handler.popAddress();
-                }
-            }
-            else {
-                return Reflect.set(target, address.pathInfo.path, value);
-            }
-        }
-        else {
-            const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
-            const parentValue = getByAddress(target, parentAddress, receiver, handler);
-            const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
-            if (lastSegment === WILDCARD) {
-                const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
-                return Reflect.set(parentValue, index, value);
-            }
-            else {
-                return Reflect.set(parentValue, lastSegment, value);
-            }
-        }
-    }
-    finally {
-        handler.updater.enqueueUpdateAddress(address); // 更新情報を登録
-    }
-}
-function _setByAddressWithSwap(target, address, value, receiver, handler) {
-    // elementsの場合はswapInfoを準備
-    let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
-    let swapInfo = getSwapInfoByAddress(parentAddress);
-    if (swapInfo === null) {
-        const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-        const listIndexes = getListIndexesByList(parentValue) ?? [];
-        swapInfo = {
-            value: [...parentValue], listIndexes: [...listIndexes]
-        };
-        setSwapInfoByAddress(parentAddress, swapInfo);
-    }
-    try {
-        return _setByAddress(target, address, value, receiver, handler);
-    }
-    finally {
-        const index = swapInfo.value.indexOf(value);
-        const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-        const currentListIndexes = Array.isArray(currentParentValue) ? (getListIndexesByList(currentParentValue) ?? []) : [];
-        const curIndex = address.listIndex.index;
-        const listIndex = (index !== -1) ?
-            swapInfo.listIndexes[index] :
-            createListIndex(parentAddress.listIndex, -1);
-        currentListIndexes[curIndex] = listIndex;
-        // 重複チェック
-        // 重複していない場合、swapが完了したとみなし、インデックスを更新
-        const listValueSet = new Set(currentParentValue);
-        if (listValueSet.size === swapInfo.value.length) {
-            for (let i = 0; i < currentListIndexes.length; i++) {
-                currentListIndexes[i].index = i;
-            }
-            // 完了したのでswapInfoを削除
-            setSwapInfoByAddress(parentAddress, null);
-        }
-    }
-}
-function setByAddress(target, address, value, receiver, handler) {
-    const stateElement = handler.stateElement;
-    const isElements = stateElement.elementPaths.has(address.pathInfo.path);
-    // リストはキャッシュ対象
-    const listable = stateElement.listPaths.has(address.pathInfo.path);
-    const cacheable = address.pathInfo.wildcardCount > 0 ||
-        stateElement.getterPaths.has(address.pathInfo.path);
-    try {
-        if (isElements) {
-            return _setByAddressWithSwap(target, address, value, receiver, handler);
-        }
-        else {
-            return _setByAddress(target, address, value, receiver, handler);
-        }
-    }
-    finally {
-        if (cacheable || listable) {
-            let cacheEntry = stateElement.cache.get(address) ?? null;
-            if (cacheEntry === null) {
-                stateElement.cache.set(address, {
-                    value: value,
-                    versionInfo: {
-                        version: handler.updater.versionInfo.version,
-                        revision: handler.updater.versionInfo.revision,
-                    },
-                });
-            }
-            else {
-                // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-                cacheEntry.value = value;
-                cacheEntry.versionInfo.version = handler.updater.versionInfo.version;
-                cacheEntry.versionInfo.revision = handler.updater.versionInfo.revision;
-            }
-        }
-    }
-}
-
-/**
- * set.ts
- *
- * StateClassのProxyトラップとして、プロパティ設定時の値セット処理を担う関数（set）の実装です。
- *
- * 主な役割:
- * - 文字列プロパティの場合、getResolvedPathInfoでパス情報を解決し、getListIndexでリストインデックスを取得
- * - setByRefで構造化パス・リストインデックスに対応した値設定を実行
- * - それ以外（シンボル等）の場合はReflect.setで通常のプロパティ設定を実行
- *
- * 設計ポイント:
- * - バインディングや多重ループ、ワイルドカードを含むパスにも柔軟に対応
- * - setByRefを利用することで、依存解決や再描画などの副作用も一元管理
- * - Reflect.setで標準的なプロパティ設定の互換性も確保
- */
-function set(target, prop, value, receiver, handler) {
-    if (typeof prop === "string") {
-        const resolvedAddress = getResolvedAddress(prop);
-        const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
-        const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
-        return setByAddress(target, stateAddress, value, receiver, handler);
-    }
-    else {
-        return Reflect.set(target, prop, value, receiver);
+        const absoluteStateAddress = Object.freeze({
+            address,
+            stateName,
+        });
+        absoluteStateAddressByStateAddress = new WeakMap([[address, absoluteStateAddress]]);
+        absoluteStateAddressByStateAddressByStateElement.set(stateElement, absoluteStateAddressByStateAddress);
+        return absoluteStateAddress;
     }
 }
 
@@ -3045,70 +2904,227 @@ function applyChangeFromBindings(bindingInfos) {
 }
 
 class Updater {
-    _stateName;
-    _versionInfo;
-    _updateAddresses = [];
-    _state;
-    _applyPromise = null;
-    _applyResolve = null;
-    _stateElement;
-    constructor(stateName, state, version) {
-        this._versionInfo = {
-            version: version,
-            revision: 0,
+    _queueAbsoluteAddresses = [];
+    constructor() {
+    }
+    enqueueAbsoluteAddress(absoluteAddress) {
+        const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
+        this._queueAbsoluteAddresses.push(absoluteAddress);
+        if (requireStartProcess) {
+            queueMicrotask(() => {
+                const absoluteAddresses = this._queueAbsoluteAddresses;
+                this._queueAbsoluteAddresses = [];
+                this._applyChange(absoluteAddresses);
+            });
+        }
+    }
+    // テスト用に公開
+    testApplyChange(absoluteAddresses) {
+        this._applyChange(absoluteAddresses);
+    }
+    _applyChange(absoluteAddresses) {
+        // Note: AbsoluteStateAddress はキャッシュされているため、
+        // 同一の (stateName, address) は同じインスタンスとなり、
+        // Set による重複排除が正しく機能する    
+        const absoluteAddressSet = new Set(absoluteAddresses);
+        const processBindingInfos = [];
+        for (const absoluteAddress of absoluteAddressSet) {
+            const stateElement = getStateElementByName(absoluteAddress.stateName);
+            if (stateElement === null) {
+                raiseError(`State element with name "${absoluteAddress.stateName}" not found for updater.`);
+            }
+            const bindingInfos = stateElement.bindingInfosByAddress.get(absoluteAddress.address);
+            if (typeof bindingInfos !== "undefined") {
+                processBindingInfos.push(...bindingInfos);
+            }
+        }
+        applyChangeFromBindings(processBindingInfos);
+    }
+}
+const updater = new Updater();
+function getUpdater() {
+    return updater;
+}
+
+const swapInfoByStateAddress = new WeakMap();
+function getSwapInfoByAddress(address) {
+    return swapInfoByStateAddress.get(address) ?? null;
+}
+function setSwapInfoByAddress(address, swapInfo) {
+    if (swapInfo === null) {
+        swapInfoByStateAddress.delete(address);
+    }
+    else {
+        swapInfoByStateAddress.set(address, swapInfo);
+    }
+}
+
+/**
+ * setByAddress.ts
+ *
+ * Stateの内部APIとして、アドレス情報（IStateAddress）を指定して
+ * 状態オブジェクト（target）に値を設定するための関数（setByAddress）の実装です。
+ *
+ * 主な役割:
+ * - 指定されたパス・インデックスに対応するState値を設定（多重ループやワイルドカードにも対応）
+ * - getter/setter経由で値設定時はpushAddressでスコープを一時設定
+ * - 存在しない場合は親pathInfoやlistIndexを辿って再帰的に値を設定
+ * - 設定後はupdater.enqueueUpdateAddressで更新情報を登録
+ *
+ * 設計ポイント:
+ * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値設定を実現
+ * - finallyで必ず更新情報を登録し、再描画や依存解決に利用
+ * - getter/setter経由のスコープ切り替えも考慮した設計
+ */
+function _setByAddress(target, address, value, receiver, handler) {
+    try {
+        // ToDo:親子関係のあるgetterが存在する場合は、外部依存を通じて値を設定
+        /*
+            if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.setters.intersection(ref.info.cumulativePathSet).size === 0) {
+              return handler.engine.stateOutput.set(ref, value);
+            }
+        */
+        if (address.pathInfo.path in target) {
+            if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
+                // setterの中で参照の可能性があるので、addressをプッシュする
+                handler.pushAddress(address);
+                try {
+                    return Reflect.set(target, address.pathInfo.path, value, receiver);
+                }
+                finally {
+                    handler.popAddress();
+                }
+            }
+            else {
+                return Reflect.set(target, address.pathInfo.path, value);
+            }
+        }
+        else {
+            const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+            const parentValue = getByAddress(target, parentAddress, receiver, handler);
+            const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
+            if (lastSegment === WILDCARD) {
+                const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+                return Reflect.set(parentValue, index, value);
+            }
+            else {
+                return Reflect.set(parentValue, lastSegment, value);
+            }
+        }
+    }
+    finally {
+        const updater = getUpdater();
+        const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
+        updater.enqueueAbsoluteAddress(absoluteAddress);
+    }
+}
+function _setByAddressWithSwap(target, address, value, receiver, handler) {
+    // elementsの場合はswapInfoを準備
+    let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+    let swapInfo = getSwapInfoByAddress(parentAddress);
+    if (swapInfo === null) {
+        const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
+        const listIndexes = getListIndexesByList(parentValue) ?? [];
+        swapInfo = {
+            value: [...parentValue], listIndexes: [...listIndexes]
         };
-        this._stateName = stateName;
-        this._state = state;
-        this._stateElement = getStateElementByName(this._stateName) ?? raiseError(`Updater: State element with name "${this._stateName}" not found.`);
+        setSwapInfoByAddress(parentAddress, swapInfo);
     }
-    get versionInfo() {
-        return this._versionInfo;
+    try {
+        return _setByAddress(target, address, value, receiver, handler);
     }
-    enqueueUpdateAddress(address) {
-        const stateElement = this._stateElement;
-        this._updateAddresses.push(address);
-        this._versionInfo.revision++;
-        stateElement.mightChangeByPath.set(address.pathInfo.path, {
-            version: this._versionInfo.version,
-            revision: this._versionInfo.revision,
-        });
-        if (this._applyPromise !== null) {
-            return;
-        }
-        this._applyPromise = new Promise((resolve) => {
-            this._applyResolve = resolve;
-        });
-        queueMicrotask(() => {
-            this._processUpdates();
-        });
-    }
-    _processUpdates() {
-        const stateElement = this._stateElement;
-        const addressSet = new Set(this._updateAddresses);
-        this._updateAddresses.length = 0;
-        const applyBindings = [];
-        for (const address of addressSet) {
-            const bindingInfos = stateElement.bindingInfosByAddress.get(address);
-            if (typeof bindingInfos === "undefined") {
-                continue;
+    finally {
+        const index = swapInfo.value.indexOf(value);
+        const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
+        const currentListIndexes = Array.isArray(currentParentValue) ? (getListIndexesByList(currentParentValue) ?? []) : [];
+        const curIndex = address.listIndex.index;
+        const listIndex = (index !== -1) ?
+            swapInfo.listIndexes[index] :
+            createListIndex(parentAddress.listIndex, -1);
+        currentListIndexes[curIndex] = listIndex;
+        // 重複チェック
+        // 重複していない場合、swapが完了したとみなし、インデックスを更新
+        const listValueSet = new Set(currentParentValue);
+        if (listValueSet.size === swapInfo.value.length) {
+            for (let i = 0; i < currentListIndexes.length; i++) {
+                currentListIndexes[i].index = i;
             }
-            for (const bindingInfo of bindingInfos) {
-                applyBindings.push(bindingInfo);
-            }
-        }
-        {
-            console.log(`Updater: Applying changes for state "${this._stateName}", version ${this._versionInfo.version}, revision ${this._versionInfo.revision}, ${applyBindings.length} bindings.`, applyBindings);
-        }
-        applyChangeFromBindings(applyBindings);
-        if (this._applyResolve !== null) {
-            this._applyResolve();
-            this._applyResolve = null;
-            this._applyPromise = null;
+            // 完了したのでswapInfoを削除
+            setSwapInfoByAddress(parentAddress, null);
         }
     }
 }
-function createUpdater(stateName, state, version) {
-    return new Updater(stateName, state, version);
+function setByAddress(target, address, value, receiver, handler) {
+    const stateElement = handler.stateElement;
+    const isElements = stateElement.elementPaths.has(address.pathInfo.path);
+    // リストはキャッシュ対象
+    const listable = stateElement.listPaths.has(address.pathInfo.path);
+    const cacheable = address.pathInfo.wildcardCount > 0 ||
+        stateElement.getterPaths.has(address.pathInfo.path);
+    try {
+        if (isElements) {
+            return _setByAddressWithSwap(target, address, value, receiver, handler);
+        }
+        else {
+            return _setByAddress(target, address, value, receiver, handler);
+        }
+    }
+    finally {
+        if (cacheable || listable) {
+            let cacheEntry = stateElement.cache.get(address) ?? null;
+            if (cacheEntry === null) {
+                stateElement.cache.set(address, {
+                    value: value,
+                    versionInfo: {
+                        version: handler.versionInfo.version,
+                        revision: ++handler.versionInfo.revision,
+                    },
+                });
+            }
+            else {
+                // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
+                cacheEntry.value = value;
+                cacheEntry.versionInfo.version = handler.versionInfo.version;
+                cacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+            }
+        }
+    }
+}
+
+/**
+ * set.ts
+ *
+ * StateClassのProxyトラップとして、プロパティ設定時の値セット処理を担う関数（set）の実装です。
+ *
+ * 主な役割:
+ * - 文字列プロパティの場合、getResolvedPathInfoでパス情報を解決し、getListIndexでリストインデックスを取得
+ * - setByRefで構造化パス・リストインデックスに対応した値設定を実行
+ * - それ以外（シンボル等）の場合はReflect.setで通常のプロパティ設定を実行
+ *
+ * 設計ポイント:
+ * - バインディングや多重ループ、ワイルドカードを含むパスにも柔軟に対応
+ * - setByRefを利用することで、依存解決や再描画などの副作用も一元管理
+ * - Reflect.setで標準的なプロパティ設定の互換性も確保
+ */
+function set(target, prop, value, receiver, handler) {
+    if (typeof prop === "string") {
+        const resolvedAddress = getResolvedAddress(prop);
+        const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+        const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
+        return setByAddress(target, stateAddress, value, receiver, handler);
+    }
+    else {
+        return Reflect.set(target, prop, value, receiver);
+    }
+}
+
+let versionCounter = 0;
+function getNextVersion() {
+    versionCounter++;
+    return {
+        version: versionCounter,
+        revision: 0,
+    };
 }
 
 class StateHandler {
@@ -3116,9 +3132,9 @@ class StateHandler {
     _stateName;
     _addressStack = [];
     _addressStackIndex = -1;
-    _updater;
     _loopContext;
     _mutability;
+    _versionInfo;
     constructor(stateName, mutability) {
         this._stateName = stateName;
         const stateElement = getStateElementByName(this._stateName);
@@ -3127,6 +3143,7 @@ class StateHandler {
         }
         this._stateElement = stateElement;
         this._mutability = mutability;
+        this._versionInfo = getNextVersion();
     }
     get stateName() {
         return this._stateName;
@@ -3148,17 +3165,11 @@ class StateHandler {
     get addressStackIndex() {
         return this._addressStackIndex;
     }
-    get updater() {
-        if (typeof this._updater === "undefined") {
-            raiseError(`StateHandler: updater is not set yet.`);
-        }
-        return this._updater;
-    }
-    set updater(value) {
-        this._updater = value;
-    }
     get loopContext() {
         return this._loopContext;
+    }
+    get versionInfo() {
+        return this._versionInfo;
     }
     pushAddress(address) {
         this._addressStackIndex++;
@@ -3200,7 +3211,6 @@ class StateHandler {
 function createStateProxy(state, stateName, mutability) {
     const handler = new StateHandler(stateName, mutability);
     const stateProxy = new Proxy(state, handler);
-    handler.updater = createUpdater(stateName, stateProxy, handler.stateElement.nextVersion());
     return stateProxy;
 }
 
