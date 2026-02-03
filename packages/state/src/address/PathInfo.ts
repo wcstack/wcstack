@@ -112,5 +112,3 @@ class PathInfo implements IPathInfo {
     this.wildcardCount = wildcardCount;
   }
 }
-
-
