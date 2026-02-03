@@ -24,4 +24,8 @@ export function getStateAddressByBindingInfo(bindingInfo) {
     stateAddressByBindingInfo.set(bindingInfo, stateAddress);
     return stateAddress;
 }
+// call for change loopContext
+export function clearStateAddressByBindingInfo(bindingInfo) {
+    stateAddressByBindingInfo.delete(bindingInfo);
+}
 //# sourceMappingURL=getStateAddressByBindingInfo.js.map

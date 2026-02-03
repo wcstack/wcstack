@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getStateAddressByBindingInfo } from '../src/binding/getStateAddressByBindingInfo';
+import { getStateAddressByBindingInfo, clearStateAddressByBindingInfo } from '../src/binding/getStateAddressByBindingInfo';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
 import type { IBindingInfo } from '../src/types';
@@ -71,5 +71,60 @@ describe('getStateAddressByBindingInfo', () => {
 
     const address = getStateAddressByBindingInfo(bindingInfo);
     expect(address.listIndex).toBeNull();
+  });
+
+  it('キャッシュされたアドレスを返すこと', () => {
+    const bindingInfo = createBindingInfo({
+      statePathName: 'items',
+      statePathInfo: getPathInfo('items')
+    });
+
+    const address1 = getStateAddressByBindingInfo(bindingInfo);
+    const address2 = getStateAddressByBindingInfo(bindingInfo);
+    expect(address1).toBe(address2);
+  });
+});
+
+describe('clearStateAddressByBindingInfo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getLoopContextByNodeMock.mockReturnValue(null as any);
+  });
+
+  it('キャッシュをクリアするとアドレスが再計算されること', () => {
+    const listIndex1 = createListIndex(null, 0);
+    const listIndex2 = createListIndex(null, 5);
+
+    const bindingInfo = createBindingInfo({
+      statePathName: 'items.*',
+      statePathInfo: getPathInfo('items.*')
+    });
+
+    // 最初のloopContextでアドレスを取得
+    getLoopContextByNodeMock.mockReturnValue({ listIndex: listIndex1 } as any);
+    const address1 = getStateAddressByBindingInfo(bindingInfo);
+    expect(address1.listIndex).toBe(listIndex1);
+
+    // キャッシュをクリアせずにloopContextを変更
+    getLoopContextByNodeMock.mockReturnValue({ listIndex: listIndex2 } as any);
+    const addressCached = getStateAddressByBindingInfo(bindingInfo);
+    // キャッシュから古いアドレスが返される
+    expect(addressCached.listIndex).toBe(listIndex1);
+
+    // キャッシュをクリアしてから取得
+    clearStateAddressByBindingInfo(bindingInfo);
+    const address2 = getStateAddressByBindingInfo(bindingInfo);
+    // 新しいloopContextに基づいたアドレスが返される
+    expect(address2.listIndex).toBe(listIndex2);
+  });
+
+  it('キャッシュが存在しない場合でもエラーにならないこと', () => {
+    const bindingInfo = createBindingInfo({
+      statePathName: 'items',
+      statePathInfo: getPathInfo('items')
+    });
+
+    // 何も登録されていない状態でクリアしてもエラーにならない
+    expect(() => clearStateAddressByBindingInfo(bindingInfo)).not.toThrow();
   });
 });

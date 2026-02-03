@@ -1327,6 +1327,34 @@ function setBindingsByContent(content, bindings) {
     bindingsByContent.set(content, bindings);
 }
 
+const stateAddressByBindingInfo = new WeakMap();
+function getStateAddressByBindingInfo(bindingInfo) {
+    let stateAddress = null;
+    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
+    if (stateAddress !== null) {
+        return stateAddress;
+    }
+    if (bindingInfo.statePathInfo === null) {
+        raiseError(`State path info is null for binding with statePathName "${bindingInfo.statePathName}".`);
+    }
+    if (bindingInfo.statePathInfo.wildcardCount > 0) {
+        const loopContext = getLoopContextByNode(bindingInfo.node);
+        if (loopContext === null) {
+            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because loop context is null.`);
+        }
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, loopContext.listIndex);
+    }
+    else {
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
+    }
+    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
+    return stateAddress;
+}
+// call for change loopContext
+function clearStateAddressByBindingInfo(bindingInfo) {
+    stateAddressByBindingInfo.delete(bindingInfo);
+}
+
 function replaceToReplaceNode(bindingInfo) {
     const node = bindingInfo.node;
     const replaceNode = bindingInfo.replaceNode;
@@ -2756,6 +2784,7 @@ class Content {
             }
         });
         const bindings = getBindingsByContent(this);
+        const nodeSet = new Set();
         for (const binding of bindings) {
             if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
                 const content = getContentByNode(binding.node);
@@ -2763,6 +2792,12 @@ class Content {
                     content.unmount();
                 }
             }
+            if (!nodeSet.has(binding.node)) {
+                nodeSet.add(binding.node);
+                setContentByNode(binding.node, null);
+                setLoopContextByNode(binding.node, null);
+            }
+            clearStateAddressByBindingInfo(binding);
         }
         this._mounted = false;
     }
@@ -2907,30 +2942,6 @@ function getFilteredValue(value, filters) {
         filteredValue = filter.filterFn(filteredValue);
     }
     return filteredValue;
-}
-
-const stateAddressByBindingInfo = new WeakMap();
-function getStateAddressByBindingInfo(bindingInfo) {
-    let stateAddress = null;
-    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
-    if (stateAddress !== null) {
-        return stateAddress;
-    }
-    if (bindingInfo.statePathInfo === null) {
-        raiseError(`State path info is null for binding with statePathName "${bindingInfo.statePathName}".`);
-    }
-    if (bindingInfo.statePathInfo.wildcardCount > 0) {
-        const loopContext = getLoopContextByNode(bindingInfo.node);
-        if (loopContext === null) {
-            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because loop context is null.`);
-        }
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, loopContext.listIndex);
-    }
-    else {
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
-    }
-    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
-    return stateAddress;
 }
 
 function getValue(state, bindingInfo) {

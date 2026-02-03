@@ -27,3 +27,8 @@ export function getStateAddressByBindingInfo(bindingInfo: IBindingInfo) {
   stateAddressByBindingInfo.set(bindingInfo, stateAddress);
   return stateAddress;
 }
+
+// call for change loopContext
+export function clearStateAddressByBindingInfo(bindingInfo: IBindingInfo) {
+  stateAddressByBindingInfo.delete(bindingInfo);
+}

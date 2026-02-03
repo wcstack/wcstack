@@ -1,5 +1,7 @@
+import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
+import { setLoopContextByNode } from "../list/loopContextByNode.js";
 import { raiseError } from "../raiseError.js";
 import { getContentByNode, setContentByNode } from "./contentByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
@@ -41,6 +43,7 @@ class Content {
             }
         });
         const bindings = getBindingsByContent(this);
+        const nodeSet = new Set();
         for (const binding of bindings) {
             if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
                 const content = getContentByNode(binding.node);
@@ -48,6 +51,12 @@ class Content {
                     content.unmount();
                 }
             }
+            if (!nodeSet.has(binding.node)) {
+                nodeSet.add(binding.node);
+                setContentByNode(binding.node, null);
+                setLoopContextByNode(binding.node, null);
+            }
+            clearStateAddressByBindingInfo(binding);
         }
         this._mounted = false;
     }
