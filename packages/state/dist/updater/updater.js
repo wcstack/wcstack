@@ -1,4 +1,5 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
+import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 class Updater {
@@ -52,6 +53,9 @@ class Updater {
             for (const bindingInfo of bindingInfos) {
                 applyBindings.push(bindingInfo);
             }
+        }
+        if (config.debug) {
+            console.log(`Updater: Applying changes for state "${this._stateName}", version ${this._versionInfo.version}, revision ${this._versionInfo.revision}, ${applyBindings.length} bindings.`, applyBindings);
         }
         applyChangeFromBindings(applyBindings);
         if (this._applyResolve !== null) {

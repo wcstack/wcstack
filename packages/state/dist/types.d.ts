@@ -14,5 +14,6 @@ export interface IConfig {
     commentElsePrefix: string;
     tagNames: ITagNames;
     locale: string;
+    debug: boolean;
 }
 //# sourceMappingURL=types.d.ts.map

@@ -9,6 +9,7 @@ const config = {
         state: 'wcs-state',
     },
     locale: 'en',
+    debug: true,
 };
 
 async function loadFromInnerScript(script, name) {
@@ -2784,18 +2785,12 @@ class Content {
             }
         });
         const bindings = getBindingsByContent(this);
-        const nodeSet = new Set();
         for (const binding of bindings) {
             if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
                 const content = getContentByNode(binding.node);
                 if (content !== null) {
                     content.unmount();
                 }
-            }
-            if (!nodeSet.has(binding.node)) {
-                nodeSet.add(binding.node);
-                setContentByNode(binding.node, null);
-                setLoopContextByNode(binding.node, null);
             }
             clearStateAddressByBindingInfo(binding);
         }
@@ -2902,7 +2897,13 @@ function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
 }
 
 const lastValueByNode = new WeakMap();
+const lastConnectedByNode = new WeakMap();
+function bindingInfoText(bindingInfo) {
+    return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.filters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
+}
 function applyChangeToIf(bindingInfo, _newValue, state, stateName) {
+    const lastConnected = lastConnectedByNode.get(bindingInfo.node) ?? false;
+    const currentConnected = bindingInfo.node.isConnected;
     const oldValue = lastValueByNode.get(bindingInfo.node) ?? false;
     const newValue = Boolean(_newValue);
     let content = getContentByNode(bindingInfo.node);
@@ -2912,22 +2913,36 @@ function applyChangeToIf(bindingInfo, _newValue, state, stateName) {
         content = createContent(bindingInfo, loopContext);
         initialized = true;
     }
-    if (oldValue === newValue && content.mounted) {
-        return;
-    }
-    if (!newValue) {
-        content.unmount();
-    }
-    if (newValue) {
-        content.mountAfter(bindingInfo.node);
-        if (!initialized) {
-            const bindings = getBindingsByContent(content);
-            for (const bindingInfo of bindings) {
-                applyChange(bindingInfo, state, stateName);
+    try {
+        if (oldValue === newValue && lastConnected === currentConnected) {
+            if (config.debug) {
+                console.log(`if content unchanged (same connecting): ${bindingInfoText(bindingInfo)}`);
+            }
+            return;
+        }
+        if (!newValue) {
+            if (config.debug) {
+                console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
+            }
+            content.unmount();
+        }
+        if (newValue) {
+            if (config.debug) {
+                console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
+            }
+            content.mountAfter(bindingInfo.node);
+            if (!initialized) {
+                const bindings = getBindingsByContent(content);
+                for (const bindingInfo of bindings) {
+                    applyChange(bindingInfo, state, stateName);
+                }
             }
         }
     }
-    lastValueByNode.set(bindingInfo.node, newValue);
+    finally {
+        lastValueByNode.set(bindingInfo.node, newValue);
+        lastConnectedByNode.set(bindingInfo.node, currentConnected);
+    }
 }
 
 function applyChangeToText(node, newValue) {
@@ -3080,6 +3095,9 @@ class Updater {
             for (const bindingInfo of bindingInfos) {
                 applyBindings.push(bindingInfo);
             }
+        }
+        {
+            console.log(`Updater: Applying changes for state "${this._stateName}", version ${this._versionInfo.version}, revision ${this._versionInfo.revision}, ${applyBindings.length} bindings.`, applyBindings);
         }
         applyChangeFromBindings(applyBindings);
         if (this._applyResolve !== null) {

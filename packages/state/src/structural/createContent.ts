@@ -1,7 +1,6 @@
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
-import { setLoopContextByNode } from "../list/loopContextByNode.js";
 import { ILoopContext } from "../list/types.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
@@ -52,18 +51,12 @@ class Content implements IContent {
       }
     });
     const bindings = getBindingsByContent(this);
-    const nodeSet = new Set<Node>();
     for(const binding of bindings) {
       if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
         const content = getContentByNode(binding.node);
         if (content !== null) {
           content.unmount();
         }
-      }
-      if (!nodeSet.has(binding.node)) {
-        nodeSet.add(binding.node);
-        setContentByNode(binding.node, null);
-        setLoopContextByNode(binding.node, null);
       }
       clearStateAddressByBindingInfo(binding);
     }

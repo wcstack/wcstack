@@ -1,6 +1,7 @@
 import { IStateAddress } from "../address/types";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IStateElement } from "../components/types";
+import { config } from "../config";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
@@ -48,6 +49,7 @@ class Updater {
       this._processUpdates();
     });
   }
+
   private _processUpdates(): void {
     const stateElement = this._stateElement;
     const addressSet = new Set(this._updateAddresses);
@@ -61,6 +63,9 @@ class Updater {
       for(const bindingInfo of bindingInfos) {
         applyBindings.push(bindingInfo);
       }
+    }
+    if (config.debug) {
+      console.log(`Updater: Applying changes for state "${this._stateName}", version ${this._versionInfo.version}, revision ${this._versionInfo.revision}, ${applyBindings.length} bindings.`, applyBindings);
     }
     applyChangeFromBindings(applyBindings);
 

@@ -121,87 +121,6 @@ describe('createContent (unmount branches)', () => {
     setFragmentInfoByUUID(uuid, null);
   });
 
-  it('unmountでcontentByNodeがnullにクリアされること', async () => {
-    const { content, setFragmentInfoByUUID, bindingsByContent, contentByNode } = await setup();
-
-    const childNode = document.createComment('child-text');
-    const childBinding = createBindingInfo(childNode, { bindingType: 'text', propName: 'text' });
-    
-    // contentByNodeを設定
-    const dummyContent = {
-      firstNode: null,
-      lastNode: null,
-      mounted: true,
-      mountAfter: vi.fn(),
-      unmount: vi.fn(),
-    } as any;
-    contentByNode.setContentByNode(childNode, dummyContent);
-    bindingsByContent.setBindingsByContent(content, [childBinding]);
-
-    content.unmount();
-
-    // unmount後はcontentByNodeがnullになっていること
-    expect(contentByNode.getContentByNode(childNode)).toBeNull();
-
-    setFragmentInfoByUUID(uuid, null);
-  });
-
-  it('unmountでloopContextByNodeがnullにクリアされること', async () => {
-    vi.resetModules();
-    const { createContent } = await import('../src/structural/createContent');
-    const { setFragmentInfoByUUID } = await import('../src/structural/fragmentInfoByUUID');
-    const bindingsByContent = await import('../src/bindings/bindingsByContent.js');
-    const loopContextByNode = await import('../src/list/loopContextByNode.js');
-    const { createListIndex } = await import('../src/list/createListIndex');
-
-    const placeholder = document.createComment('placeholder');
-    const fragment = document.createDocumentFragment();
-    fragment.appendChild(document.createElement('span'));
-
-    const parseBindTextResult = {
-      propName: 'if',
-      propSegments: [],
-      propModifiers: [],
-      statePathName: 'flag',
-      statePathInfo: getPathInfo('flag'),
-      stateName: 'default',
-      filters: [],
-      filterTexts: [],
-      bindingType: 'if',
-      uuid,
-    } as any;
-
-    setFragmentInfoByUUID(uuid, {
-      fragment,
-      parseBindTextResult,
-      nodeInfos: [],
-    });
-
-    const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
-
-    const childNode = document.createComment('child-for');
-    const childBinding = createBindingInfo(childNode, { bindingType: 'for', propName: 'for' });
-    
-    // loopContextByNodeを設定
-    const listIndex = createListIndex(null, 0);
-    loopContextByNode.setLoopContextByNode(childNode, { 
-      listIndex, 
-      elementPathInfo: getPathInfo('items.*') 
-    } as any);
-    bindingsByContent.setBindingsByContent(content, [childBinding]);
-
-    // unmount前はloopContextが存在する
-    expect(loopContextByNode.getLoopContextByNode(childNode)).not.toBeNull();
-
-    content.unmount();
-
-    // unmount後はloopContextByNodeがnullになっていること
-    expect(loopContextByNode.getLoopContextByNode(childNode)).toBeNull();
-
-    setFragmentInfoByUUID(uuid, null);
-  });
-
   it('unmountでstateAddressキャッシュがクリアされること', async () => {
     vi.resetModules();
     const { createContent } = await import('../src/structural/createContent');
@@ -262,7 +181,7 @@ describe('createContent (unmount branches)', () => {
 
     content.unmount();
 
-    // unmount後はloopContextがクリアされているので、新しいloopContextを設定
+    // unmount後、新しいloopContextを設定
     const listIndex2 = createListIndex(null, 5);
     loopContextByNode.setLoopContextByNode(childNode, { 
       listIndex: listIndex2, 
@@ -276,12 +195,14 @@ describe('createContent (unmount branches)', () => {
     setFragmentInfoByUUID(uuid, null);
   });
 
-  it('同じノードに複数のバインディングがある場合でもcontentByNodeとloopContextByNodeは1回だけクリアされること', async () => {
+  it('同じノードに複数のバインディングがある場合でも各バインディングのstateAddressキャッシュがクリアされること', async () => {
     vi.resetModules();
     const { createContent } = await import('../src/structural/createContent');
     const { setFragmentInfoByUUID } = await import('../src/structural/fragmentInfoByUUID');
     const bindingsByContent = await import('../src/bindings/bindingsByContent.js');
-    const contentByNode = await import('../src/structural/contentByNode.js');
+    const { getStateAddressByBindingInfo } = await import('../src/binding/getStateAddressByBindingInfo');
+    const loopContextByNode = await import('../src/list/loopContextByNode.js');
+    const { createListIndex } = await import('../src/list/createListIndex');
 
     const placeholder = document.createComment('placeholder');
     const fragment = document.createDocumentFragment();
@@ -309,36 +230,50 @@ describe('createContent (unmount branches)', () => {
     const bindingInfo = createBindingInfo(placeholder);
     const content = createContent(bindingInfo, null);
 
-    // 同じノードに複数のバインディング
+    // 同じノードに複数のバインディング（ワイルドカード付き）
     const sharedNode = document.createElement('span');
     const childBinding1 = createBindingInfo(sharedNode, { 
       bindingType: 'text', 
       propName: 'textContent',
-      statePathName: 'value1',
-      statePathInfo: getPathInfo('value1')
+      statePathName: 'items.*.name',
+      statePathInfo: getPathInfo('items.*.name')
     });
     const childBinding2 = createBindingInfo(sharedNode, { 
       bindingType: 'text', 
       propName: 'title',
-      statePathName: 'value2',
-      statePathInfo: getPathInfo('value2')
+      statePathName: 'items.*.title',
+      statePathInfo: getPathInfo('items.*.title')
     });
     
-    // ダミーのcontentを設定
-    const dummyContent = {
-      firstNode: null,
-      lastNode: null,
-      mounted: true,
-      mountAfter: vi.fn(),
-      unmount: vi.fn(),
-    } as any;
-    contentByNode.setContentByNode(sharedNode, dummyContent);
     bindingsByContent.setBindingsByContent(content, [childBinding1, childBinding2]);
+
+    // loopContextを設定
+    const listIndex1 = createListIndex(null, 0);
+    loopContextByNode.setLoopContextByNode(sharedNode, { 
+      listIndex: listIndex1, 
+      elementPathInfo: getPathInfo('items.*') 
+    } as any);
+
+    // 両方のバインディングのアドレスを取得してキャッシュ
+    const address1_1 = getStateAddressByBindingInfo(childBinding1);
+    const address1_2 = getStateAddressByBindingInfo(childBinding2);
+    expect(address1_1.listIndex).toBe(listIndex1);
+    expect(address1_2.listIndex).toBe(listIndex1);
 
     content.unmount();
 
-    // contentByNodeがnullになっていること（nodeSetによる重複排除が機能）
-    expect(contentByNode.getContentByNode(sharedNode)).toBeNull();
+    // unmount後、新しいloopContextを設定
+    const listIndex2 = createListIndex(null, 5);
+    loopContextByNode.setLoopContextByNode(sharedNode, { 
+      listIndex: listIndex2, 
+      elementPathInfo: getPathInfo('items.*') 
+    } as any);
+
+    // 両方のバインディングで新しいアドレスが生成される
+    const address2_1 = getStateAddressByBindingInfo(childBinding1);
+    const address2_2 = getStateAddressByBindingInfo(childBinding2);
+    expect(address2_1.listIndex).toBe(listIndex2);
+    expect(address2_2.listIndex).toBe(listIndex2);
 
     setFragmentInfoByUUID(uuid, null);
   });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../src/list/loopContextByNode', () => ({
   getLoopContextByNode: vi.fn().mockReturnValue(null)
@@ -21,6 +21,7 @@ import { createContent } from '../src/structural/createContent';
 import { getContentByNode } from '../src/structural/contentByNode';
 import { getBindingsByContent } from '../src/bindings/bindingsByContent';
 import { applyChange } from '../src/apply/applyChange';
+import { config } from '../src/config';
 import type { IBindingInfo } from '../src/types';
 
 const createContentMock = vi.mocked(createContent);
@@ -36,7 +37,7 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
     statePathName: 'flag',
     statePathInfo: null,
     stateName: 'default',
-    filters: [],
+    filters: [{ filterName: 'not', args: [] }],
     bindingType: 'if',
     uuid,
     node,
@@ -47,10 +48,17 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
 describe('applyChangeToIf', () => {
   const state = { $$getByAddress: () => undefined } as any;
   const stateName = 'default';
+  let originalDebug: boolean;
 
   beforeEach(() => {
     vi.clearAllMocks();
     getBindingsByContentMock.mockReturnValue([] as any);
+    originalDebug = config.debug;
+    config.debug = true;
+  });
+
+  afterEach(() => {
+    config.debug = originalDebug;
   });
 
   it('contentが未初期化の場合はcreateContentが呼ばれること', () => {
@@ -220,5 +228,117 @@ describe('applyChangeToIf', () => {
     applyChangeToIf(bindingInfo, true, state, stateName);
     expect(getBindingsByContentMock).toHaveBeenCalledWith(content as any);
     expect(applyChangeMock).toHaveBeenCalledTimes(bindings.length);
+  });
+
+  it('debug=falseの場合はログ出力されないこと（mount）', () => {
+    config.debug = false;
+    const consoleSpy = vi.spyOn(console, 'log');
+    
+    const node = document.createComment('if');
+    const bindingInfo = createBindingInfo(node, 'test-uuid-debug-false-mount');
+
+    const mountAfterMock = vi.fn();
+    const unmountMock = vi.fn();
+    createContentMock.mockReturnValue({
+      firstNode: null,
+      lastNode: null,
+      mounted: false,
+      mountAfter: mountAfterMock,
+      unmount: unmountMock
+    } as any);
+    getContentByNodeMock.mockReturnValue(null);
+
+    applyChangeToIf(bindingInfo, true, state, stateName);
+
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('debug=falseの場合はログ出力されないこと（unmount）', () => {
+    config.debug = false;
+    const consoleSpy = vi.spyOn(console, 'log');
+    
+    const node = document.createComment('if');
+    const bindingInfo = createBindingInfo(node, 'test-uuid-debug-false-unmount');
+
+    const mountAfterMock = vi.fn();
+    const unmountMock = vi.fn();
+    const content = {
+      firstNode: null,
+      lastNode: null,
+      mounted: true,
+      mountAfter: mountAfterMock,
+      unmount: unmountMock
+    } as any;
+    getContentByNodeMock.mockReturnValue(content);
+
+    // trueを呼んでから
+    applyChangeToIf(bindingInfo, true, state, stateName);
+    // falseを呼ぶ
+    applyChangeToIf(bindingInfo, false, state, stateName);
+
+    expect(consoleSpy).not.toHaveBeenCalled();
+    expect(unmountMock).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('debug=falseの場合はログ出力されないこと（unchanged）', () => {
+    config.debug = false;
+    const consoleSpy = vi.spyOn(console, 'log');
+    
+    const node = document.createComment('if');
+    const bindingInfo = createBindingInfo(node, 'test-uuid-debug-false-unchanged');
+
+    const mountAfterMock = vi.fn();
+    const unmountMock = vi.fn();
+    const content = {
+      firstNode: null,
+      lastNode: null,
+      mounted: true,
+      mountAfter: mountAfterMock,
+      unmount: unmountMock
+    } as any;
+    getContentByNodeMock.mockReturnValue(content);
+
+    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, true, state, stateName);
+
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('接続状態が変わった場合は値が同じでも再マウントされること', () => {
+    const node = document.createComment('if');
+    // isConnectedをモックする
+    let isConnectedValue = false;
+    Object.defineProperty(node, 'isConnected', {
+      get: () => isConnectedValue,
+      configurable: true
+    });
+
+    const bindingInfo = createBindingInfo(node, 'test-uuid-reconnect');
+
+    const mountAfterMock = vi.fn();
+    const unmountMock = vi.fn();
+    const content = {
+      firstNode: null,
+      lastNode: null,
+      mounted: true,
+      mountAfter: mountAfterMock,
+      unmount: unmountMock
+    } as any;
+    getContentByNodeMock.mockReturnValue(content);
+
+    // 切断状態でtrueを設定
+    isConnectedValue = false;
+    applyChangeToIf(bindingInfo, true, state, stateName);
+    expect(mountAfterMock).toHaveBeenCalledTimes(1);
+
+    // 接続状態に変更
+    isConnectedValue = true;
+    
+    // 同じtrueでも接続状態が変わったので再度処理される
+    applyChangeToIf(bindingInfo, true, state, stateName);
+    expect(mountAfterMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -9,5 +9,6 @@ export const config = {
         state: 'wcs-state',
     },
     locale: 'en',
+    debug: true,
 };
 //# sourceMappingURL=config.js.map
