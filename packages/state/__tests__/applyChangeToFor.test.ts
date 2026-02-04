@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { applyChangeToFor, __test_setContentByListIndex } from '../src/apply/applyChangeToFor';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
-import { createListIndexes } from '../src/list/createListIndexes';
+import { createListIndexes } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import { setStateElementByName } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';

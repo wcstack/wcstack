@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createListIndexes } from '../src/list/createListIndexes';
+import { createListIndexes } from '../src/list/createListDiff';
 import { createListIndex } from '../src/list/createListIndex';
 
 describe('createListIndexes', () => {

@@ -238,23 +238,23 @@ export class State extends HTMLElement implements IStateElement {
 
   private _addDependency(
     map: Map<string, string[]>, 
-    fromPath: string, 
-    toPath: string
+    sourcePath: string, 
+    targetPath: string
   ): void {
-    const deps = map.get(fromPath);
+    const deps = map.get(sourcePath);
     if (deps === undefined) {
-      map.set(fromPath, [toPath]);
-    } else if (!deps.includes(toPath)) {
-      deps.push(toPath);
+      map.set(sourcePath, [targetPath]);
+    } else if (!deps.includes(targetPath)) {
+      deps.push(targetPath);
     }
   }  
 
-  addDynamicDependency(fromPath: string, toPath: string): void {
-    this._addDependency(this._dynamicDependency, fromPath, toPath);
+  addDynamicDependency(sourcePath: string, targetPath: string): void {
+    this._addDependency(this._dynamicDependency, sourcePath, targetPath);
   }
 
-  addStaticDependency(fromPath: string, toPath: string): void {
-    this._addDependency(this._staticDependency, fromPath, toPath);
+  addStaticDependency(sourcePath: string, targetPath: string): void {
+    this._addDependency(this._staticDependency, sourcePath, targetPath);
   }
 
   addBindingInfo(bindingInfo: IBindingInfo): void {

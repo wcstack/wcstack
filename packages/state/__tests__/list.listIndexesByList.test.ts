@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
-import { createListIndexes } from '../src/list/createListIndexes';
+import { createListIndexes } from '../src/list/createListDiff';
 
 describe('listIndexesByList', () => {
   it('set/get できること', () => {

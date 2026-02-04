@@ -19,10 +19,9 @@
  */
 
 import { IStateAddress } from "../../address/types";
-import { ICacheEntry } from "../../cache/types";
 import { IStateElement } from "../../components/types";
 import { WILDCARD } from "../../define";
-import { createListIndexes } from "../../list/createListIndexes";
+import { createListDiff } from "../../list/createListDiff";
 import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
@@ -99,20 +98,27 @@ function _getByAddressWithCache(
   try {
     return value = _getByAddress(target, address, receiver, handler, stateElement);
   } finally {
-    let newListIndexes = null;
     if (listable) {
       // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
       const oldList = lastCacheEntry?.value;
       const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
-      newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
-      setListIndexesByList(value, newListIndexes);
+      const listDiff = createListDiff(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
+      setListIndexesByList(value, listDiff.newIndexes);
     }
-    const cacheEntry: ICacheEntry = {
-      ...(lastCacheEntry ?? {}),
-      value: value,
-      versionInfo: { ...handler.versionInfo },
-    };
-    stateElement.cache.set(address, cacheEntry);
+    if (lastCacheEntry === null) {
+      stateElement.cache.set(address, {
+        value: value,
+        versionInfo: {
+          version: handler.versionInfo.version,
+          revision: ++handler.versionInfo.revision,
+        },
+      });
+    } else {
+      // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
+      lastCacheEntry.value = value;
+      lastCacheEntry.versionInfo.version = handler.versionInfo.version;
+      lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+    }
   }
 }
 

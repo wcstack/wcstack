@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createListIndexes } from '../src/list/createListIndexes';
+import { createListIndexes } from '../src/list/createListDiff';
 
 describe('createListIndexes Duplicate Check', () => {
   it('重複値があるリストでも正しくインデックスを生成・維持すること', () => {

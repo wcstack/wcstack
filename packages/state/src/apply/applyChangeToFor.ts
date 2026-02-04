@@ -1,7 +1,9 @@
 import { getPathInfo } from "../address/PathInfo";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { WILDCARD } from "../define";
-import { getListDiff } from "../list/createListIndexes";
+import { createListDiff } from "../list/createListDiff";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { getListIndexesByList } from "../list/listIndexesByList";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { IListIndex } from "../list/types";
 import { IStateProxy } from "../proxy/types";
@@ -48,8 +50,10 @@ export function applyChangeToFor(
   if (!listPathInfo) {
     raiseError(`List path info not found in fragment bind text result.`);
   }
+  const listIndex = getListIndexByBindingInfo(bindingInfo);
   const lastValue = lastValueByNode.get(bindingInfo.node);
-  const diff = getListDiff(lastValue, _newValue);
+  const lastIndexes = getListIndexesByList(lastValue) || [];
+  const diff = createListDiff(listIndex, lastValue, _newValue, lastIndexes);
   if (diff === null) {
     raiseError(`Failed to get list diff for binding.`);
   }

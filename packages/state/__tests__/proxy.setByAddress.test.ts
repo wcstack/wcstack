@@ -3,7 +3,7 @@ import { setByAddress } from '../src/proxy/methods/setByAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
-import { createListIndexes } from '../src/list/createListIndexes';
+import { createListIndexes } from '../src/list/createListDiff';
 import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
 import { getSwapInfoByAddress, setSwapInfoByAddress } from '../src/proxy/methods/swapInfo';
 

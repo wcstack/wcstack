@@ -20,7 +20,8 @@ import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
-import { getListIndexesByList } from "../../list/listIndexesByList";
+import { createListDiff } from "../../list/createListDiff";
+import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { IStateHandler } from "../types";
@@ -135,8 +136,15 @@ export function setByAddress(
     }
   } finally {
     if (cacheable || listable) {
-      let cacheEntry = stateElement.cache.get(address) ?? null;
-      if (cacheEntry === null) {
+      let lastCacheEntry = stateElement.cache.get(address) ?? null;
+      if (listable) {
+        // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
+        const oldList = lastCacheEntry?.value;
+        const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
+        const listDiff = createListDiff(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
+        setListIndexesByList(value, listDiff.newIndexes);
+      }
+      if (lastCacheEntry === null) {
         stateElement.cache.set(address, {
           value: value,
           versionInfo: {
@@ -146,9 +154,9 @@ export function setByAddress(
         });
       } else {
         // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-        cacheEntry.value = value;
-        cacheEntry.versionInfo.version = handler.versionInfo.version;
-        cacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+        lastCacheEntry.value = value;
+        lastCacheEntry.versionInfo.version = handler.versionInfo.version;
+        lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
       }
     }
   }
