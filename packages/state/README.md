@@ -39,7 +39,7 @@
 
 <!-- データバインディング -->
 <input type="text" name="count" data-bind-state="value: count">
-<!--{{ count }}-->
+<!--@@:count--><!-- 埋込表示 -->
 
 <template data-bind-state="for: users">
   <div>
@@ -58,23 +58,20 @@
 
 ### data-bind-state属性構文
 
-[property][#modifier]: [path][@state][|filter,args...]
+[property][#modifier]: [path][@state][|(filter | filter(args))...]
 
 property  : DOM属性 (value, checked, text, html, class, style.*, attr.*)
 modifier  : ro (read-only), wo (write-only)
 path      : 状態パス (users.*.name)
 state     : 名前つき状態 (@cart, @user)
-filter    : 変換フィルタ (|gt,0 |currency,JPY)
+filter    : 変換フィルタ (|round|currency(JPY))
 
-// パース用正規表現（イメージ）
-const pattern = /^(\w+)(#\w+)?:\s*([^@|]+)(@\w+)?(\|.+)?$/;
-
-// value#ro: count@cart|gt,0|currency,JPY
+// value#ro: count@cart|gt(0)|currency(JPY)
 // $1 = "value"      (プロパティ)
 // $2 = "#ro"        (修飾子)
 // $3 = "count"      (パス)
 // $4 = "@cart"      (状態名)
-// $5 = "|gt,0|currency,JPY" (フィルタチェーン)
+// $5 = "|round|currencyJPY" (フィルタチェーン)
 
 input[type=radio,checkbox].checked
 input[type上記以外].value
