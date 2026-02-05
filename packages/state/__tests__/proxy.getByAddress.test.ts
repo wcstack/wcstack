@@ -3,7 +3,6 @@ import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
-import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
 
 function createStateElement(overrides?: Partial<any>) {
   return {
@@ -119,9 +118,24 @@ describe('getByAddress', () => {
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toEqual([1, 2]);
-    expect(getListIndexesByList(value)).not.toBeNull();
+  });
 
-    setListIndexesByList(value, null);
+  it('ワイルドカードのキャッシュがある場合は再取得して更新すること', () => {
+    const target = { users: [{ name: 'Ann' }] };
+    const listIndex = createListIndex(null, 0);
+    const address = createStateAddress(getPathInfo('users.*.name'), listIndex);
+    const stateElement = createStateElement();
+    stateElement.cache.set(address, { value: 'Old', versionInfo: { version: 1, revision: 0 } });
+    stateElement.mightChangeByPath.set('users.*.name', { version: 2, revision: 0 });
+    const handler = createHandler(stateElement, { versionInfo: { version: 2, revision: 0 } });
+
+    const value = getByAddress(target, address, target, handler as any);
+    expect(value).toBe('Ann');
+
+    const cacheEntry = stateElement.cache.get(address);
+    expect(cacheEntry.value).toBe('Ann');
+    expect(cacheEntry.versionInfo.version).toBe(2);
+    expect(cacheEntry.versionInfo.revision).toBe(2);
   });
 
   it('更新が無い場合はキャッシュを返すこと', () => {

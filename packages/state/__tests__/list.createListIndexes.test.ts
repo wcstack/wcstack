@@ -1,8 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { createListIndexes } from '../src/list/createListDiff';
+import { describe, it, expect, vi } from 'vitest';
+import { createListDiff } from '../src/list/createListDiff';
 import { createListIndex } from '../src/list/createListIndex';
 
-describe('createListIndexes', () => {
+const createListIndexes = (
+  parentListIndex,
+  oldList,
+  newList,
+  oldIndexes
+) => createListDiff(parentListIndex, oldList, newList, oldIndexes).newIndexes;
+
+describe('createListDiff (newIndexes)', () => {
   it('配列の長さ分のListIndexを生成すること', () => {
     const list = ['a', 'b', 'c'];
     const indexes = createListIndexes(null, [], list, []);
@@ -91,5 +98,19 @@ describe('createListIndexes', () => {
     // Result should be exactly the same object (reference equality)
     // because it comes from the cache
     expect(indexes2).toBe(indexes1);
+  });
+
+  it('createListIndexが例外をスローした場合はキャッシュに保存しないこと', async () => {
+    const listModule = await import('../src/list/createListIndex');
+    const spy = vi.spyOn(listModule, 'createListIndex').mockImplementation(() => {
+      throw new Error('mock error');
+    });
+
+    const oldList = ['a'];
+    const newList = ['b'];
+    const oldIndexes = [{ index: 0, parentListIndex: null, indexes: [0], at: () => null }] as any;
+
+    expect(() => createListDiff(null, oldList, newList, oldIndexes)).toThrow('mock error');
+    spy.mockRestore();
   });
 });

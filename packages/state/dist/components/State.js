@@ -201,20 +201,44 @@ export class State extends HTMLElement {
     get version() {
         return this._version;
     }
-    _addDependency(map, fromPath, toPath) {
-        const deps = map.get(fromPath);
+    _addDependency(map, sourcePath, targetPath) {
+        const deps = map.get(sourcePath);
         if (deps === undefined) {
-            map.set(fromPath, [toPath]);
+            map.set(sourcePath, [targetPath]);
         }
-        else if (!deps.includes(toPath)) {
-            deps.push(toPath);
+        else if (!deps.includes(targetPath)) {
+            deps.push(targetPath);
         }
     }
-    addDynamicDependency(fromPath, toPath) {
-        this._addDependency(this._dynamicDependency, fromPath, toPath);
+    /**
+     * source,           target
+     *
+     * products.*.price => products.*.tax
+     * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+     *
+     * products.*.price => products.summary
+     * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+     *
+     * categories.*.name => categories.*.products.*.categoryName
+     * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addDynamicDependency(sourcePath, targetPath) {
+        this._addDependency(this._dynamicDependency, sourcePath, targetPath);
     }
-    addStaticDependency(fromPath, toPath) {
-        this._addDependency(this._staticDependency, fromPath, toPath);
+    /**
+     * source,      target
+     * products => products.*
+     * products.* => products.*.price
+     * products.* => products.*.name
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addStaticDependency(sourcePath, targetPath) {
+        this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
     addBindingInfo(bindingInfo) {
         const listIndex = getListIndexByBindingInfo(bindingInfo);

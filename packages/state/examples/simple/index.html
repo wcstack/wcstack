@@ -37,6 +37,9 @@ export default {
     }
     this.toggle = !this.toggle;
   },
+  get "users.*.dispName"() {
+    return this["users.*.name"] + " (ID: " + this["users.*.id"] + ")";
+  },
   isActive: true
 };
     </script>
@@ -73,6 +76,7 @@ export default {
       <span data-bind-state="textContent: users.*.id"></span>:
       <input type="text" data-bind-state="value: users.*.name">
       <span data-bind-state="textContent: users.*.name"></span>
+      <span data-bind-state="textContent: users.*.dispName"></span>
     </div>
   </template>
 

@@ -74,8 +74,8 @@ describe('checkDependency', () => {
 
     checkDependency(handler, address);
     expect(handler.stateElement.addDynamicDependency).toHaveBeenCalledWith(
-      lastInfo.path,
-      'users.*.name'
+      'users.*.name',
+      lastInfo.path
     );
   });
 });

@@ -20,13 +20,13 @@ import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
-import { createListDiff } from "../../list/createListDiff";
-import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
+import { getListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
-import { IStateHandler } from "../types";
+import { IStateHandler, IStateProxy } from "../types";
 import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
+import { walkDependency } from "../../dependency/walkDependency";
 
 function _setByAddress(
   target   : object, 
@@ -70,6 +70,22 @@ function _setByAddress(
     const updater = getUpdater();
     const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
     updater.enqueueAbsoluteAddress(absoluteAddress);
+    // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
+    walkDependency(
+      address,
+      handler.stateElement.staticDependency,
+      handler.stateElement.dynamicDependency,
+      handler.stateElement.listPaths,
+      receiver as IStateProxy,
+      "add",
+      (depAddress: IStateAddress) => {
+        // キャッシュを無効化（ダーティ）
+        if (depAddress === address) return;
+        handler.stateElement.cache.delete(depAddress);
+        const absDepAddress = createAbsoluteStateAddress(handler.stateName, depAddress);
+        updater.enqueueAbsoluteAddress(absDepAddress);
+      }
+    )
   }
 }
 
@@ -124,8 +140,6 @@ export function setByAddress(
 ): any {
   const stateElement = handler.stateElement;
   const isElements = stateElement.elementPaths.has(address.pathInfo.path);
-  // リストはキャッシュ対象
-  const listable = stateElement.listPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
   try {
@@ -135,15 +149,8 @@ export function setByAddress(
       return _setByAddress(target, address, value, receiver, handler);
     }
   } finally {
-    if (cacheable || listable) {
+    if (cacheable) {
       let lastCacheEntry = stateElement.cache.get(address) ?? null;
-      if (listable) {
-        // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
-        const oldList = lastCacheEntry?.value;
-        const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
-        const listDiff = createListDiff(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
-        setListIndexesByList(value, listDiff.newIndexes);
-      }
       if (lastCacheEntry === null) {
         stateElement.cache.set(address, {
           value: value,

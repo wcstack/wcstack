@@ -54,9 +54,6 @@ export function applyChangeToFor(
   const lastValue = lastValueByNode.get(bindingInfo.node);
   const lastIndexes = getListIndexesByList(lastValue) || [];
   const diff = createListDiff(listIndex, lastValue, _newValue, lastIndexes);
-  if (diff === null) {
-    raiseError(`Failed to get list diff for binding.`);
-  }
 
   for(const deleteIndex of diff.deleteIndexSet) {
     const content = contentByListIndex.get(deleteIndex);

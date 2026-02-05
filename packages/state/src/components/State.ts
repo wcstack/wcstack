@@ -249,10 +249,34 @@ export class State extends HTMLElement implements IStateElement {
     }
   }  
 
+  /**
+   * source,           target
+   * 
+   * products.*.price => products.*.tax 
+   * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+   * 
+   * products.*.price => products.summary 
+   * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+   * 
+   * categories.*.name => categories.*.products.*.categoryName 
+   * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+   * 
+   * @param sourcePath 
+   * @param targetPath 
+   */
   addDynamicDependency(sourcePath: string, targetPath: string): void {
     this._addDependency(this._dynamicDependency, sourcePath, targetPath);
   }
 
+  /**
+   * source,      target
+   * products => products.*
+   * products.* => products.*.price
+   * products.* => products.*.name
+   * 
+   * @param sourcePath 
+   * @param targetPath 
+   */
   addStaticDependency(sourcePath: string, targetPath: string): void {
     this._addDependency(this._staticDependency, sourcePath, targetPath);
   }

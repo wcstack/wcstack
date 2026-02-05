@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { createListIndexes } from '../src/list/createListDiff';
+import { createListDiff } from '../src/list/createListDiff';
 
-describe('createListIndexes Duplicate Check', () => {
+const createListIndexes = (
+  parentListIndex,
+  oldList,
+  newList,
+  oldIndexes
+) => createListDiff(parentListIndex, oldList, newList, oldIndexes).newIndexes;
+
+describe('createListDiff Duplicate Check', () => {
   it('重複値があるリストでも正しくインデックスを生成・維持すること', () => {
     const oldList = ['a', 'a'];
     const oldIndexes = createListIndexes(null, [], oldList, []);

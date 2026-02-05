@@ -21,8 +21,6 @@
 import { IStateAddress } from "../../address/types";
 import { IStateElement } from "../../components/types";
 import { WILDCARD } from "../../define";
-import { createListDiff } from "../../list/createListDiff";
-import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
@@ -70,8 +68,7 @@ function _getByAddressWithCache(
   address  : IStateAddress,
   receiver : any,
   handler  : IStateHandler,
-  stateElement: IStateElement,
-  listable: boolean,
+  stateElement: IStateElement
 ): any {
   let value: any;
   let lastCacheEntry = stateElement.cache.get(address) ?? null;
@@ -98,13 +95,6 @@ function _getByAddressWithCache(
   try {
     return value = _getByAddress(target, address, receiver, handler, stateElement);
   } finally {
-    if (listable) {
-      // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
-      const oldList = lastCacheEntry?.value;
-      const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
-      const listDiff = createListDiff(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
-      setListIndexesByList(value, listDiff.newIndexes);
-    }
     if (lastCacheEntry === null) {
       stateElement.cache.set(address, {
         value: value,
@@ -130,13 +120,11 @@ export function getByAddress(
 ): any {
   checkDependency(handler, address);
   const stateElement = handler.stateElement;
-  // リストはキャッシュ対象とする。前回の値をもとにListIndexesの差分更新を行うため
-  const listable = stateElement.listPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
-  if (cacheable || listable) {
+  if (cacheable) {
     return _getByAddressWithCache(
-      target, address, receiver, handler, stateElement, listable
+      target, address, receiver, handler, stateElement
     );
   } else {
     return _getByAddress(target, address, receiver, handler, stateElement);

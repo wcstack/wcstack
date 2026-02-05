@@ -23,6 +23,7 @@ import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
+import { walkDependency } from "../../dependency/walkDependency";
 function _setByAddress(target, address, value, receiver, handler) {
     try {
         // ToDo:親子関係のあるgetterが存在する場合は、外部依存を通じて値を設定
@@ -63,6 +64,15 @@ function _setByAddress(target, address, value, receiver, handler) {
         const updater = getUpdater();
         const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
         updater.enqueueAbsoluteAddress(absoluteAddress);
+        // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
+        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "add", (depAddress) => {
+            // キャッシュを無効化（ダーティ）
+            if (depAddress === address)
+                return;
+            handler.stateElement.cache.delete(depAddress);
+            const absDepAddress = createAbsoluteStateAddress(handler.stateName, depAddress);
+            updater.enqueueAbsoluteAddress(absDepAddress);
+        });
     }
 }
 function _setByAddressWithSwap(target, address, value, receiver, handler) {
@@ -104,8 +114,6 @@ function _setByAddressWithSwap(target, address, value, receiver, handler) {
 export function setByAddress(target, address, value, receiver, handler) {
     const stateElement = handler.stateElement;
     const isElements = stateElement.elementPaths.has(address.pathInfo.path);
-    // リストはキャッシュ対象
-    const listable = stateElement.listPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
     try {
@@ -117,9 +125,9 @@ export function setByAddress(target, address, value, receiver, handler) {
         }
     }
     finally {
-        if (cacheable || listable) {
-            let cacheEntry = stateElement.cache.get(address) ?? null;
-            if (cacheEntry === null) {
+        if (cacheable) {
+            let lastCacheEntry = stateElement.cache.get(address) ?? null;
+            if (lastCacheEntry === null) {
                 stateElement.cache.set(address, {
                     value: value,
                     versionInfo: {
@@ -130,9 +138,9 @@ export function setByAddress(target, address, value, receiver, handler) {
             }
             else {
                 // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-                cacheEntry.value = value;
-                cacheEntry.versionInfo.version = handler.versionInfo.version;
-                cacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+                lastCacheEntry.value = value;
+                lastCacheEntry.versionInfo.version = handler.versionInfo.version;
+                lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
             }
         }
     }

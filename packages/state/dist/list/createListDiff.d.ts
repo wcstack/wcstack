@@ -1,6 +1,5 @@
 import "../polyfills";
 import { IListDiff, IListIndex } from "./types";
-export declare function getListDiff(rawOldList: readonly unknown[], rawNewList: readonly unknown[]): IListDiff | null;
 /**
  * Creates or updates list indexes by comparing old and new lists.
  * Optimizes by reusing existing list indexes when values match.
@@ -10,5 +9,5 @@ export declare function getListDiff(rawOldList: readonly unknown[], rawNewList: 
  * @param oldIndexes - Array of existing list indexes to potentially reuse
  * @returns Array of list indexes for the new list
  */
-export declare function createListIndexes(parentListIndex: IListIndex | null, rawOldList: unknown, rawNewList: unknown, oldIndexes: IListIndex[]): IListIndex[];
-//# sourceMappingURL=createListIndexes.d.ts.map
+export declare function createListDiff(parentListIndex: IListIndex | null, rawOldList: unknown, rawNewList: unknown, oldIndexes: IListIndex[]): IListDiff;
+//# sourceMappingURL=createListDiff.d.ts.map

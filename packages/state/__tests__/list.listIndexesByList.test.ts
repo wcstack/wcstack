@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
-import { createListIndexes } from '../src/list/createListDiff';
+import { createListDiff } from '../src/list/createListDiff';
+
+const createListIndexes = (
+  parentListIndex,
+  oldList,
+  newList,
+  oldIndexes
+) => createListDiff(parentListIndex, oldList, newList, oldIndexes).newIndexes;
 
 describe('listIndexesByList', () => {
   it('set/get できること', () => {

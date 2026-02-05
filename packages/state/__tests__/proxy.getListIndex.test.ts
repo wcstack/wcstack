@@ -2,8 +2,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
-import { createListIndexes } from '../src/list/createListDiff';
+import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
+
+const createListIndexes = (
+  parentListIndex,
+  oldList,
+  newList,
+  oldIndexes
+) => createListDiff(parentListIndex, oldList, newList, oldIndexes).newIndexes;
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
   getByAddress: vi.fn(),

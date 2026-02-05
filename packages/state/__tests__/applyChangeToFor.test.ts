@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { applyChangeToFor, __test_setContentByListIndex } from '../src/apply/applyChangeToFor';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
-import { createListIndexes } from '../src/list/createListDiff';
+import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import { setStateElementByName } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
@@ -16,6 +16,13 @@ import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { setBindingsByContent } from '../src/bindings/bindingsByContent';
 
 const uuid = 'test-uuid';
+
+const createListIndexes = (
+  parentListIndex,
+  oldList,
+  newList,
+  oldIndexes
+) => createListDiff(parentListIndex, oldList, newList, oldIndexes).newIndexes;
 
 function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): IBindingInfo {
   return {
@@ -230,16 +237,16 @@ describe('applyChangeToFor', () => {
     expect(() => apply(bindingInfo, list)).toThrow(/List path info not found/);
   });
 
-  it('list diffが存在しない場合はエラーになること', () => {
+  it('list diffが事前に存在しなくても処理できること', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
     const placeholder = document.createComment('for');
     const bindingInfo = createBindingInfo(placeholder);
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
 
     const list = [1];
-    // createListIndexes を呼ばず、diff が生成されない状態を作る
-    expect(() => apply(bindingInfo, list)).toThrow(/Failed to get list diff/);
+    expect(() => apply(bindingInfo, list)).not.toThrow();
   });
 
   it('配列以外の値は空配列として扱われること', () => {

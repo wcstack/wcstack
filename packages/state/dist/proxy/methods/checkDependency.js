@@ -6,7 +6,9 @@ export function checkDependency(handler, address) {
         if (lastInfo !== null) {
             if (stateElement.getterPaths.has(lastInfo.path) &&
                 lastInfo.path !== address.pathInfo.path) {
-                stateElement.addDynamicDependency(lastInfo.path, address.pathInfo.path);
+                // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
+                // そのgetterが参照している値のパスである
+                stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
             }
         }
     }

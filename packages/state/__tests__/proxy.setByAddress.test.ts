@@ -3,9 +3,16 @@ import { setByAddress } from '../src/proxy/methods/setByAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
-import { createListIndexes } from '../src/list/createListDiff';
+import { createListDiff } from '../src/list/createListDiff';
 import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
 import { getSwapInfoByAddress, setSwapInfoByAddress } from '../src/proxy/methods/swapInfo';
+
+const createListIndexes = (
+  parentListIndex,
+  oldList,
+  newList,
+  oldIndexes
+) => createListDiff(parentListIndex, oldList, newList, oldIndexes).newIndexes;
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
   getByAddress: vi.fn(),
@@ -32,6 +39,8 @@ function createStateElement(overrides?: Partial<any>) {
     getterPaths: new Set<string>(),
     setterPaths: new Set<string>(),
     cache: new Map(),
+    staticDependency: new Map(),
+    dynamicDependency: new Map(),
     ...overrides,
   };
 }
@@ -85,6 +94,25 @@ describe('setByAddress', () => {
     expect(cacheEntry.versionInfo.version).toBe(2);
     // revision は前置インクリメントなので 4 がセットされる
     expect(cacheEntry.versionInfo.revision).toBe(4);
+  });
+
+  it('依存先がある場合はキャッシュ削除と更新通知が行われること', () => {
+    const target = { count: 1, total: 2 };
+    const address = createStateAddress(getPathInfo('count'), null);
+    const stateElement = createStateElement({
+      staticDependency: new Map<string, string[]>([['count', ['total']]]),
+    });
+    const handler = createHandler(stateElement);
+    const deleteSpy = vi.spyOn(stateElement.cache, 'delete');
+
+    setByAddress(target, address, 5, target, handler as any);
+
+    expect(deleteSpy).toHaveBeenCalled();
+    const hasDependentEnqueue = mockEnqueueAbsoluteAddress.mock.calls.some(
+      ([arg]) => arg.address?.pathInfo?.path === 'total'
+    );
+    expect(hasDependentEnqueue).toBe(true);
+    deleteSpy.mockRestore();
   });
 
   it('親経由で非ワイルドカードの値を設定できること', () => {

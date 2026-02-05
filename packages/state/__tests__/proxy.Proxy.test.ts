@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createStateProxy } from '../src/proxy/StateHandler';
 import { createListIndex } from '../src/list/createListIndex';
-import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
+import { getListIndexesByList } from '../src/list/listIndexesByList';
 import type { IBindingInfo } from '../src/types';
 import type { IStateElement } from '../src/components/types';
 import type { IStateAddress } from '../src/address/types';
@@ -112,7 +112,7 @@ describe('proxy/StateHandler', () => {
     expect(result).toBe('Carol');
   });
 
-  it('listPathsに含まれる配列はget時にlistIndexesが設定されること', () => {
+  it('listPathsに含まれる配列でもget時にlistIndexesは設定されないこと', () => {
     const list = [1, 2, 3];
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
@@ -122,12 +122,10 @@ describe('proxy/StateHandler', () => {
     expect(getListIndexesByList(list)).toBeNull();
     const value = (proxy as any).items;
     expect(value).toBe(list);
-    expect(getListIndexesByList(list)).not.toBeNull();
-
-    setListIndexesByList(list, null);
+    expect(getListIndexesByList(list)).toBeNull();
   });
 
-  it('listPathsに含まれる配列はset時にlistIndexesが設定されること', () => {
+  it('listPathsに含まれる配列でもset時にlistIndexesは設定されないこと', () => {
     const listPaths = new Set<string>(['items']);
     const stateElement = createMockStateElement({ listPaths });
     setStateElementByName('default', stateElement);
@@ -137,7 +135,6 @@ describe('proxy/StateHandler', () => {
     (proxy as any).items = list;
 
     expect(getListIndexesByList(list)).toBeNull();
-    setListIndexesByList(list, null);
   });
 
   it('setでバインディングがあればapplyChangeが呼ばれること', async () => {

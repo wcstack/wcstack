@@ -18,8 +18,6 @@
  * - finallyでキャッシュへの格納を保証
  */
 import { WILDCARD } from "../../define";
-import { createListIndexes } from "../../list/createListIndexes";
-import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { checkDependency } from "./checkDependency";
 function _getByAddress(target, address, receiver, handler, stateElement) {
@@ -57,7 +55,7 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
         }
     }
 }
-function _getByAddressWithCache(target, address, receiver, handler, stateElement, listable) {
+function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
     let value;
     let lastCacheEntry = stateElement.cache.get(address) ?? null;
     // Updateで変更が必要な可能性があるパスのバージョン情報
@@ -86,31 +84,30 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
         return value = _getByAddress(target, address, receiver, handler, stateElement);
     }
     finally {
-        let newListIndexes = null;
-        if (listable) {
-            // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
-            const oldList = lastCacheEntry?.value;
-            const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
-            newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
-            setListIndexesByList(value, newListIndexes);
+        if (lastCacheEntry === null) {
+            stateElement.cache.set(address, {
+                value: value,
+                versionInfo: {
+                    version: handler.versionInfo.version,
+                    revision: ++handler.versionInfo.revision,
+                },
+            });
         }
-        const cacheEntry = {
-            ...(lastCacheEntry ?? {}),
-            value: value,
-            versionInfo: { ...handler.versionInfo },
-        };
-        stateElement.cache.set(address, cacheEntry);
+        else {
+            // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
+            lastCacheEntry.value = value;
+            lastCacheEntry.versionInfo.version = handler.versionInfo.version;
+            lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+        }
     }
 }
 export function getByAddress(target, address, receiver, handler) {
     checkDependency(handler, address);
     const stateElement = handler.stateElement;
-    // リストはキャッシュ対象とする。前回の値をもとにListIndexesの差分更新を行うため
-    const listable = stateElement.listPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
-    if (cacheable || listable) {
-        return _getByAddressWithCache(target, address, receiver, handler, stateElement, listable);
+    if (cacheable) {
+        return _getByAddressWithCache(target, address, receiver, handler, stateElement);
     }
     else {
         return _getByAddress(target, address, receiver, handler, stateElement);

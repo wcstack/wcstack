@@ -408,324 +408,6 @@ function createStateAddress(pathInfo, listIndex) {
     }
 }
 
-if (!Set.prototype.difference) {
-    Set.prototype.difference = function (other) {
-        const result = new Set(this);
-        for (const elem of other) {
-            result.delete(elem);
-        }
-        return result;
-    };
-}
-if (!Set.prototype.intersection) {
-    Set.prototype.intersection = function (other) {
-        const result = new Set();
-        for (const elem of other) {
-            if (this.has(elem)) {
-                result.add(elem);
-            }
-        }
-        return result;
-    };
-}
-
-function getUUID() {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
-    }
-    // Simple UUID generator
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        const r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-    });
-}
-
-let version = 0;
-class ListIndex {
-    uuid = getUUID();
-    parentListIndex;
-    position;
-    length;
-    _index;
-    _version;
-    _indexes;
-    _listIndexes;
-    /**
-     * Creates a new ListIndex instance.
-     *
-     * @param parentListIndex - Parent list index for nested loops, or null for top-level
-     * @param index - Current index value in the loop
-     */
-    constructor(parentListIndex, index) {
-        this.parentListIndex = parentListIndex;
-        this.position = parentListIndex ? parentListIndex.position + 1 : 0;
-        this.length = this.position + 1;
-        this._index = index;
-        this._version = version;
-    }
-    /**
-     * Gets current index value.
-     *
-     * @returns Current index number
-     */
-    get index() {
-        return this._index;
-    }
-    /**
-     * Sets index value and updates version.
-     *
-     * @param value - New index value
-     */
-    set index(value) {
-        this._index = value;
-        this._version = ++version;
-        this.indexes[this.position] = value;
-    }
-    /**
-     * Gets current version number for change detection.
-     *
-     * @returns Version number
-     */
-    get version() {
-        return this._version;
-    }
-    /**
-     * Checks if parent indexes have changed since last access.
-     *
-     * @returns true if parent has newer version, false otherwise
-     */
-    get dirty() {
-        if (this.parentListIndex === null) {
-            return false;
-        }
-        else {
-            return this.parentListIndex.dirty || this.parentListIndex.version > this._version;
-        }
-    }
-    /**
-     * Gets array of all index values from root to current level.
-     * Rebuilds array if parent indexes have changed (dirty).
-     *
-     * @returns Array of index values
-     */
-    get indexes() {
-        if (this.parentListIndex === null) {
-            if (typeof this._indexes === "undefined") {
-                this._indexes = [this._index];
-            }
-        }
-        else {
-            if (typeof this._indexes === "undefined" || this.dirty) {
-                this._indexes = [...this.parentListIndex.indexes, this._index];
-                this._version = version;
-            }
-        }
-        return this._indexes;
-    }
-    /**
-     * Gets array of WeakRef to all ListIndex instances from root to current level.
-     *
-     * @returns Array of WeakRef<IListIndex>
-     */
-    get listIndexes() {
-        if (this.parentListIndex === null) {
-            if (typeof this._listIndexes === "undefined") {
-                this._listIndexes = [new WeakRef(this)];
-            }
-        }
-        else {
-            if (typeof this._listIndexes === "undefined") {
-                this._listIndexes = [...this.parentListIndex.listIndexes, new WeakRef(this)];
-            }
-        }
-        return this._listIndexes;
-    }
-    /**
-     * Gets variable name for this loop index ($1, $2, etc.).
-     *
-     * @returns Variable name string
-     */
-    get varName() {
-        return `$${this.position + 1}`;
-    }
-    /**
-     * Gets ListIndex at specified position in hierarchy.
-     * Supports negative indexing from end.
-     *
-     * @param pos - Position index (0-based, negative for from end)
-     * @returns ListIndex at position or null if not found/garbage collected
-     */
-    at(pos) {
-        if (pos >= 0) {
-            return this.listIndexes[pos]?.deref() || null;
-        }
-        else {
-            return this.listIndexes[this.listIndexes.length + pos]?.deref() || null;
-        }
-    }
-}
-/**
- * Factory function to create ListIndex instance.
- *
- * @param parentListIndex - Parent list index for nested loops, or null for top-level
- * @param index - Current index value in the loop
- * @returns New IListIndex instance
- */
-function createListIndex(parentListIndex, index) {
-    return new ListIndex(parentListIndex, index);
-}
-
-const listDiffByOldListByNewList = new WeakMap();
-const EMPTY_LIST = Object.freeze([]);
-const EMPTY_SET = new Set();
-function getListDiff(rawOldList, rawNewList) {
-    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
-    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
-    let diffByNewList = listDiffByOldListByNewList.get(oldList);
-    if (!diffByNewList) {
-        return null;
-    }
-    return diffByNewList.get(newList) || null;
-}
-function setListDiff(oldList, newList, diff) {
-    let diffByNewList = listDiffByOldListByNewList.get(oldList);
-    if (!diffByNewList) {
-        diffByNewList = new WeakMap();
-        listDiffByOldListByNewList.set(oldList, diffByNewList);
-    }
-    diffByNewList.set(newList, diff);
-}
-/**
- * Checks if two lists are identical by comparing length and each element.
- * @param oldList - Previous list to compare
- * @param newList - New list to compare
- * @returns True if lists are identical, false otherwise
- */
-function isSameList(oldList, newList) {
-    if (oldList.length !== newList.length) {
-        return false;
-    }
-    for (let i = 0; i < oldList.length; i++) {
-        if (oldList[i] !== newList[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-/**
- * Creates or updates list indexes by comparing old and new lists.
- * Optimizes by reusing existing list indexes when values match.
- * @param parentListIndex - Parent list index for nested lists, or null for top-level
- * @param oldList - Previous list (will be normalized to array)
- * @param newList - New list (will be normalized to array)
- * @param oldIndexes - Array of existing list indexes to potentially reuse
- * @returns Array of list indexes for the new list
- */
-function createListIndexes(parentListIndex, rawOldList, rawNewList, oldIndexes) {
-    // Normalize inputs to arrays (handles null/undefined)
-    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
-    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
-    const cachedDiff = getListDiff(oldList, newList);
-    if (cachedDiff) {
-        return cachedDiff.newIndexes;
-    }
-    const newIndexes = [];
-    // Early return for empty list
-    if (newList.length === 0) {
-        setListDiff(oldList, newList, {
-            oldIndexes: oldIndexes,
-            newIndexes: [],
-            changeIndexSet: EMPTY_SET,
-            deleteIndexSet: new Set(oldIndexes),
-            addIndexSet: EMPTY_SET,
-        });
-        return [];
-    }
-    // If old list was empty, create all new indexes
-    if (oldList.length === 0) {
-        for (let i = 0; i < newList.length; i++) {
-            const newListIndex = createListIndex(parentListIndex, i);
-            newIndexes.push(newListIndex);
-        }
-        setListDiff(oldList, newList, {
-            oldIndexes: oldIndexes,
-            newIndexes: newIndexes,
-            changeIndexSet: EMPTY_SET,
-            deleteIndexSet: EMPTY_SET,
-            addIndexSet: new Set(newIndexes),
-        });
-        return newIndexes;
-    }
-    // If lists are identical, return existing indexes unchanged (optimization)
-    if (isSameList(oldList, newList)) {
-        setListDiff(oldList, newList, {
-            oldIndexes: oldIndexes,
-            newIndexes: oldIndexes,
-            changeIndexSet: EMPTY_SET,
-            deleteIndexSet: EMPTY_SET,
-            addIndexSet: EMPTY_SET,
-        });
-        return oldIndexes;
-    }
-    // Use index-based map for efficiency
-    // Supports duplicate values by storing array of indexes
-    const indexByValue = new Map();
-    for (let i = 0; i < oldList.length; i++) {
-        const val = oldList[i];
-        let indexes = indexByValue.get(val);
-        if (!indexes) {
-            indexes = [];
-            indexByValue.set(val, indexes);
-        }
-        indexes.push(i);
-    }
-    // Build new indexes array by matching values with old list
-    const changeIndexSet = new Set();
-    const addIndexSet = new Set();
-    for (let i = 0; i < newList.length; i++) {
-        const newValue = newList[i];
-        const existingIndexes = indexByValue.get(newValue);
-        const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
-        if (typeof oldIndex === "undefined") {
-            // New element
-            const newListIndex = createListIndex(parentListIndex, i);
-            newIndexes.push(newListIndex);
-            addIndexSet.add(newListIndex);
-        }
-        else {
-            // Reuse existing element
-            const existingListIndex = oldIndexes[oldIndex];
-            // Update index if position changed
-            if (existingListIndex.index !== i) {
-                existingListIndex.index = i;
-                changeIndexSet.add(existingListIndex);
-            }
-            newIndexes.push(existingListIndex);
-        }
-    }
-    const deleteIndexSet = (new Set(oldIndexes)).difference(new Set(newIndexes));
-    setListDiff(oldList, newList, {
-        oldIndexes: oldIndexes,
-        newIndexes: newIndexes,
-        changeIndexSet: changeIndexSet,
-        deleteIndexSet: deleteIndexSet,
-        addIndexSet: addIndexSet,
-    });
-    return newIndexes;
-}
-
-const listIndexesByList = new WeakMap();
-function getListIndexesByList(list) {
-    return listIndexesByList.get(list) || null;
-}
-function setListIndexesByList(list, listIndexes) {
-    if (listIndexes === null) {
-        listIndexesByList.delete(list);
-        return;
-    }
-    listIndexesByList.set(list, listIndexes);
-}
-
 function checkDependency(handler, address) {
     // 動的依存関係の登録
     if (handler.addressStackIndex >= 0) {
@@ -734,7 +416,9 @@ function checkDependency(handler, address) {
         if (lastInfo !== null) {
             if (stateElement.getterPaths.has(lastInfo.path) &&
                 lastInfo.path !== address.pathInfo.path) {
-                stateElement.addDynamicDependency(lastInfo.path, address.pathInfo.path);
+                // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
+                // そのgetterが参照している値のパスである
+                stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
             }
         }
     }
@@ -794,7 +478,7 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
         }
     }
 }
-function _getByAddressWithCache(target, address, receiver, handler, stateElement, listable) {
+function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
     let value;
     let lastCacheEntry = stateElement.cache.get(address) ?? null;
     // Updateで変更が必要な可能性があるパスのバージョン情報
@@ -821,35 +505,39 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
         return value = _getByAddress(target, address, receiver, handler, stateElement);
     }
     finally {
-        let newListIndexes = null;
-        if (listable) {
-            // 古いリストからリストインデックスを取得し、新しいリスト用に作成し直す（差分更新）
-            const oldList = lastCacheEntry?.value;
-            const oldListIndexes = (Array.isArray(oldList)) ? (getListIndexesByList(oldList) ?? []) : [];
-            newListIndexes = createListIndexes(address.listIndex, lastCacheEntry?.value, value, oldListIndexes);
-            setListIndexesByList(value, newListIndexes);
+        if (lastCacheEntry === null) {
+            stateElement.cache.set(address, {
+                value: value,
+                versionInfo: {
+                    version: handler.versionInfo.version,
+                    revision: ++handler.versionInfo.revision,
+                },
+            });
         }
-        const cacheEntry = {
-            ...(lastCacheEntry ?? {}),
-            value: value,
-            versionInfo: { ...handler.versionInfo },
-        };
-        stateElement.cache.set(address, cacheEntry);
+        else {
+            // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
+            lastCacheEntry.value = value;
+            lastCacheEntry.versionInfo.version = handler.versionInfo.version;
+            lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+        }
     }
 }
 function getByAddress(target, address, receiver, handler) {
     checkDependency(handler, address);
     const stateElement = handler.stateElement;
-    // リストはキャッシュ対象とする。前回の値をもとにListIndexesの差分更新を行うため
-    const listable = stateElement.listPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
-    if (cacheable || listable) {
-        return _getByAddressWithCache(target, address, receiver, handler, stateElement, listable);
+    if (cacheable) {
+        return _getByAddressWithCache(target, address, receiver, handler, stateElement);
     }
     else {
         return _getByAddress(target, address, receiver, handler, stateElement);
     }
+}
+
+const listIndexesByList = new WeakMap();
+function getListIndexesByList(list) {
+    return listIndexesByList.get(list) || null;
 }
 
 /**
@@ -1098,6 +786,152 @@ function createAbsoluteStateAddress(stateName, address) {
     }
 }
 
+function getUUID() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    // Simple UUID generator
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+}
+
+let version = 0;
+class ListIndex {
+    uuid = getUUID();
+    parentListIndex;
+    position;
+    length;
+    _index;
+    _version;
+    _indexes;
+    _listIndexes;
+    /**
+     * Creates a new ListIndex instance.
+     *
+     * @param parentListIndex - Parent list index for nested loops, or null for top-level
+     * @param index - Current index value in the loop
+     */
+    constructor(parentListIndex, index) {
+        this.parentListIndex = parentListIndex;
+        this.position = parentListIndex ? parentListIndex.position + 1 : 0;
+        this.length = this.position + 1;
+        this._index = index;
+        this._version = version;
+    }
+    /**
+     * Gets current index value.
+     *
+     * @returns Current index number
+     */
+    get index() {
+        return this._index;
+    }
+    /**
+     * Sets index value and updates version.
+     *
+     * @param value - New index value
+     */
+    set index(value) {
+        this._index = value;
+        this._version = ++version;
+        this.indexes[this.position] = value;
+    }
+    /**
+     * Gets current version number for change detection.
+     *
+     * @returns Version number
+     */
+    get version() {
+        return this._version;
+    }
+    /**
+     * Checks if parent indexes have changed since last access.
+     *
+     * @returns true if parent has newer version, false otherwise
+     */
+    get dirty() {
+        if (this.parentListIndex === null) {
+            return false;
+        }
+        else {
+            return this.parentListIndex.dirty || this.parentListIndex.version > this._version;
+        }
+    }
+    /**
+     * Gets array of all index values from root to current level.
+     * Rebuilds array if parent indexes have changed (dirty).
+     *
+     * @returns Array of index values
+     */
+    get indexes() {
+        if (this.parentListIndex === null) {
+            if (typeof this._indexes === "undefined") {
+                this._indexes = [this._index];
+            }
+        }
+        else {
+            if (typeof this._indexes === "undefined" || this.dirty) {
+                this._indexes = [...this.parentListIndex.indexes, this._index];
+                this._version = version;
+            }
+        }
+        return this._indexes;
+    }
+    /**
+     * Gets array of WeakRef to all ListIndex instances from root to current level.
+     *
+     * @returns Array of WeakRef<IListIndex>
+     */
+    get listIndexes() {
+        if (this.parentListIndex === null) {
+            if (typeof this._listIndexes === "undefined") {
+                this._listIndexes = [new WeakRef(this)];
+            }
+        }
+        else {
+            if (typeof this._listIndexes === "undefined") {
+                this._listIndexes = [...this.parentListIndex.listIndexes, new WeakRef(this)];
+            }
+        }
+        return this._listIndexes;
+    }
+    /**
+     * Gets variable name for this loop index ($1, $2, etc.).
+     *
+     * @returns Variable name string
+     */
+    get varName() {
+        return `$${this.position + 1}`;
+    }
+    /**
+     * Gets ListIndex at specified position in hierarchy.
+     * Supports negative indexing from end.
+     *
+     * @param pos - Position index (0-based, negative for from end)
+     * @returns ListIndex at position or null if not found/garbage collected
+     */
+    at(pos) {
+        if (pos >= 0) {
+            return this.listIndexes[pos]?.deref() || null;
+        }
+        else {
+            return this.listIndexes[this.listIndexes.length + pos]?.deref() || null;
+        }
+    }
+}
+/**
+ * Factory function to create ListIndex instance.
+ *
+ * @param parentListIndex - Parent list index for nested loops, or null for top-level
+ * @param index - Current index value in the loop
+ * @returns New IListIndex instance
+ */
+function createListIndex(parentListIndex, index) {
+    return new ListIndex(parentListIndex, index);
+}
+
 const loopContextByNode = new WeakMap();
 function getLoopContextByNode(node) {
     return loopContextByNode.get(node) || null;
@@ -1185,6 +1019,206 @@ function getBindingsByContent(content) {
 }
 function setBindingsByContent(content, bindings) {
     bindingsByContent.set(content, bindings);
+}
+
+if (!Set.prototype.difference) {
+    Set.prototype.difference = function (other) {
+        const result = new Set(this);
+        for (const elem of other) {
+            result.delete(elem);
+        }
+        return result;
+    };
+}
+if (!Set.prototype.intersection) {
+    Set.prototype.intersection = function (other) {
+        const result = new Set();
+        for (const elem of other) {
+            if (this.has(elem)) {
+                result.add(elem);
+            }
+        }
+        return result;
+    };
+}
+
+const listDiffByOldListByNewList = new WeakMap();
+const EMPTY_LIST = Object.freeze([]);
+const EMPTY_SET = new Set();
+function getListDiff(rawOldList, rawNewList) {
+    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
+    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
+    let diffByNewList = listDiffByOldListByNewList.get(oldList);
+    if (!diffByNewList) {
+        return null;
+    }
+    return diffByNewList.get(newList) || null;
+}
+function setListDiff(oldList, newList, diff) {
+    let diffByNewList = listDiffByOldListByNewList.get(oldList);
+    if (!diffByNewList) {
+        diffByNewList = new WeakMap();
+        listDiffByOldListByNewList.set(oldList, diffByNewList);
+    }
+    diffByNewList.set(newList, diff);
+}
+/**
+ * Checks if two lists are identical by comparing length and each element.
+ * @param oldList - Previous list to compare
+ * @param newList - New list to compare
+ * @returns True if lists are identical, false otherwise
+ */
+function isSameList(oldList, newList) {
+    if (oldList.length !== newList.length) {
+        return false;
+    }
+    for (let i = 0; i < oldList.length; i++) {
+        if (oldList[i] !== newList[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+/**
+ * Creates or updates list indexes by comparing old and new lists.
+ * Optimizes by reusing existing list indexes when values match.
+ * @param parentListIndex - Parent list index for nested lists, or null for top-level
+ * @param oldList - Previous list (will be normalized to array)
+ * @param newList - New list (will be normalized to array)
+ * @param oldIndexes - Array of existing list indexes to potentially reuse
+ * @returns Array of list indexes for the new list
+ */
+function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndexes) {
+    // Normalize inputs to arrays (handles null/undefined)
+    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
+    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
+    const cachedDiff = getListDiff(oldList, newList);
+    if (cachedDiff) {
+        return cachedDiff;
+    }
+    let retValue;
+    try {
+        // Early return for empty list
+        if (newList.length === 0) {
+            return retValue = {
+                oldIndexes: oldIndexes,
+                newIndexes: [],
+                changeIndexSet: EMPTY_SET,
+                deleteIndexSet: new Set(oldIndexes),
+                addIndexSet: EMPTY_SET,
+            };
+        }
+        // If old list was empty, create all new indexes
+        const newIndexes = [];
+        if (oldList.length === 0) {
+            for (let i = 0; i < newList.length; i++) {
+                const newListIndex = createListIndex(parentListIndex, i);
+                newIndexes.push(newListIndex);
+            }
+            return retValue = {
+                oldIndexes: oldIndexes,
+                newIndexes: newIndexes,
+                changeIndexSet: EMPTY_SET,
+                deleteIndexSet: EMPTY_SET,
+                addIndexSet: new Set(newIndexes),
+            };
+        }
+        // If lists are identical, return existing indexes unchanged (optimization)
+        if (isSameList(oldList, newList)) {
+            return retValue = {
+                oldIndexes: oldIndexes,
+                newIndexes: oldIndexes,
+                changeIndexSet: EMPTY_SET,
+                deleteIndexSet: EMPTY_SET,
+                addIndexSet: EMPTY_SET,
+            };
+        }
+        // Use index-based map for efficiency
+        // Supports duplicate values by storing array of indexes
+        const indexByValue = new Map();
+        for (let i = 0; i < oldList.length; i++) {
+            const val = oldList[i];
+            let indexes = indexByValue.get(val);
+            if (!indexes) {
+                indexes = [];
+                indexByValue.set(val, indexes);
+            }
+            indexes.push(i);
+        }
+        // Build new indexes array by matching values with old list
+        const changeIndexSet = new Set();
+        const addIndexSet = new Set();
+        for (let i = 0; i < newList.length; i++) {
+            const newValue = newList[i];
+            const existingIndexes = indexByValue.get(newValue);
+            const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
+            if (typeof oldIndex === "undefined") {
+                // New element
+                const newListIndex = createListIndex(parentListIndex, i);
+                newIndexes.push(newListIndex);
+                addIndexSet.add(newListIndex);
+            }
+            else {
+                // Reuse existing element
+                const existingListIndex = oldIndexes[oldIndex];
+                // Update index if position changed
+                if (existingListIndex.index !== i) {
+                    existingListIndex.index = i;
+                    changeIndexSet.add(existingListIndex);
+                }
+                newIndexes.push(existingListIndex);
+            }
+        }
+        const deleteIndexSet = (new Set(oldIndexes)).difference(new Set(newIndexes));
+        return retValue = {
+            oldIndexes: oldIndexes,
+            newIndexes: newIndexes,
+            changeIndexSet: changeIndexSet,
+            deleteIndexSet: deleteIndexSet,
+            addIndexSet: addIndexSet,
+        };
+    }
+    finally {
+        if (typeof retValue !== "undefined") {
+            setListDiff(oldList, newList, retValue);
+        }
+    }
+}
+
+const listIndexByBindingInfoByLoopContext = new WeakMap();
+function getListIndexByBindingInfo(bindingInfo) {
+    const loopContext = getLoopContextByNode(bindingInfo.node);
+    if (loopContext === null) {
+        return null;
+    }
+    let listIndexByBindingInfo = listIndexByBindingInfoByLoopContext.get(loopContext);
+    if (typeof listIndexByBindingInfo === "undefined") {
+        listIndexByBindingInfo = new WeakMap();
+        listIndexByBindingInfoByLoopContext.set(loopContext, listIndexByBindingInfo);
+    }
+    else {
+        const listIndex = listIndexByBindingInfo.get(bindingInfo);
+        if (typeof listIndex !== "undefined") {
+            return listIndex;
+        }
+    }
+    let listIndex = null;
+    try {
+        const bindingWildCardParentPathSet = bindingInfo.statePathInfo?.wildcardParentPathSet;
+        if (typeof bindingWildCardParentPathSet === "undefined") {
+            raiseError(`BindingInfo does not have statePathInfo for list index retrieval.`);
+        }
+        const loopContextWildcardParentPathSet = loopContext.elementPathInfo.wildcardParentPathSet;
+        const matchPath = bindingWildCardParentPathSet.intersection(loopContextWildcardParentPathSet);
+        const wildcardLen = matchPath.size;
+        if (wildcardLen > 0) {
+            listIndex = loopContext.listIndex.at(wildcardLen - 1);
+        }
+        return listIndex;
+    }
+    finally {
+        listIndexByBindingInfo.set(bindingInfo, listIndex);
+    }
 }
 
 const stateAddressByBindingInfo = new WeakMap();
@@ -2692,11 +2726,10 @@ function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
     if (!listPathInfo) {
         raiseError(`List path info not found in fragment bind text result.`);
     }
+    const listIndex = getListIndexByBindingInfo(bindingInfo);
     const lastValue = lastValueByNode$1.get(bindingInfo.node);
-    const diff = getListDiff(lastValue, _newValue);
-    if (diff === null) {
-        raiseError(`Failed to get list diff for binding.`);
-    }
+    const lastIndexes = getListIndexesByList(lastValue) || [];
+    const diff = createListDiff(listIndex, lastValue, _newValue, lastIndexes);
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = contentByListIndex.get(deleteIndex);
         if (typeof content !== 'undefined') {
@@ -2959,6 +2992,178 @@ function setSwapInfoByAddress(address, swapInfo) {
     }
 }
 
+const MAX_DEPENDENCY_DEPTH = 1000;
+const lastValueByListAddress = new WeakMap();
+function getIndexes(listDiff, searchType) {
+    switch (searchType) {
+        case "old":
+            return listDiff.oldIndexes;
+        case "new":
+            return listDiff.newIndexes;
+        case "add":
+            return listDiff.addIndexSet;
+        case "change":
+            return listDiff.changeIndexSet;
+        case "delete":
+            return listDiff.deleteIndexSet;
+        default:
+            {
+                console.log(`Invalid search type: ${searchType}`);
+            }
+            return [];
+    }
+}
+function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
+    const parentPath = context.wildcardParentPaths[currentWildcardIndex];
+    const parentPathInfo = getPathInfo(parentPath);
+    const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
+    const lastValue = lastValueByListAddress.get(parentAddress);
+    const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
+    const newValue = context.stateProxy.$$getByAddress(parentAddress);
+    const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue, lastIndexes);
+    const loopIndexes = getIndexes(listDiff, context.searchType);
+    if (currentWildcardIndex === context.wildcardPaths.length - 1) {
+        context.targetListIndexes.push(...loopIndexes);
+    }
+    else {
+        for (const listIndex of loopIndexes) {
+            _walkExpandWildcard(context, currentWildcardIndex + 1, listIndex);
+        }
+    }
+    context.newValueByAddress.set(parentAddress, newValue);
+}
+function _walkDependency(context, address, depth, callback) {
+    if (depth > MAX_DEPENDENCY_DEPTH) {
+        raiseError(`Maximum dependency depth of ${MAX_DEPENDENCY_DEPTH} exceeded. Possible circular dependency detected at path: ${address.pathInfo.path}`);
+    }
+    if (context.visited.has(address)) {
+        return;
+    }
+    context.visited.add(address);
+    callback(address);
+    const sourcePath = address.pathInfo.path;
+    /**
+     * パスから依存関係をたどる
+     * users.*.name <= users.* <= users
+     * ただし、users がリストであれば users.* の依存関係は展開する
+     */
+    const staticDeps = context.staticMap.get(sourcePath);
+    if (staticDeps) {
+        for (const dep of staticDeps) {
+            const depPathInfo = getPathInfo(dep);
+            if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
+                //expand indexes
+                const newValue = context.stateProxy.$$getByAddress(address);
+                const lastValue = lastValueByListAddress.get(address);
+                const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
+                const listDiff = createListDiff(address.listIndex, lastValue, newValue, lastIndexes);
+                for (const listIndex of listDiff.newIndexes) {
+                    const depAddress = createStateAddress(depPathInfo, listIndex);
+                    context.result.add(depAddress);
+                    _walkDependency(context, depAddress, depth + 1, callback);
+                }
+                context.newValueByAddress.set(address, newValue);
+            }
+            else {
+                const depAddress = createStateAddress(depPathInfo, address.listIndex);
+                context.result.add(depAddress);
+                _walkDependency(context, depAddress, depth + 1, callback);
+            }
+        }
+    }
+    /**
+     * 動的依存関係をたどる
+     * 動的依存関係は、getterの実行時に決定される
+     *
+     * source,           target
+     *
+     * products.*.price => products.*.tax
+     * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+     *
+     * products.*.price => products.summary
+     * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+     *
+     * categories.*.name => categories.*.products.*.categoryName
+     * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+     */
+    const dynamicDeps = context.dynamicMap.get(sourcePath);
+    if (dynamicDeps) {
+        for (const dep of dynamicDeps) {
+            const depPathInfo = getPathInfo(dep);
+            const listIndexes = [];
+            if (depPathInfo.wildcardCount > 0) {
+                // ワイルドカードを含む依存関係の処理
+                // 同じ親を持つかをパスの集合積で判定する
+                const wildcardPathSet = address.pathInfo.wildcardPathSet;
+                const depWildcardPathSet = depPathInfo.wildcardPathSet;
+                // polyfills.tsにてSetのintersectionメソッドを定義している
+                const matchingWildcards = wildcardPathSet.intersection(depWildcardPathSet);
+                const wildcardLen = matchingWildcards.size;
+                const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
+                if (expandable) {
+                    // categories.*.name => categories.*.products.*.categoryName 
+                    // ワイルドカードを含む同じ親（products.*）を持つのが、
+                    // さらに下位にワイルドカードがあるので展開する
+                    if (address.listIndex === null) {
+                        raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+                    }
+                    const listIndex = address.listIndex.at(wildcardLen - 1);
+                    const expandContext = {
+                        targetListIndexes: [],
+                        wildcardPaths: depPathInfo.wildcardPaths,
+                        wildcardParentPaths: depPathInfo.wildcardParentPaths,
+                        stateProxy: context.stateProxy,
+                        searchType: context.searchType,
+                        newValueByAddress: context.newValueByAddress,
+                    };
+                    _walkExpandWildcard(expandContext, wildcardLen, listIndex);
+                    listIndexes.push(...expandContext.targetListIndexes);
+                }
+                else {
+                    // products.*.price => products.*.tax 
+                    // ワイルドカードを含む同じ親（products.*）を持つので、リストインデックスは引き継ぐ
+                    if (address.listIndex === null) {
+                        raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+                    }
+                    const listIndex = address.listIndex.at(wildcardLen - 1);
+                    listIndexes.push(listIndex);
+                }
+            }
+            else {
+                // products.*.tax => currentTaxRate
+                // 同じ親を持たないので、リストインデックスはnull
+                listIndexes.push(null);
+            }
+            for (const listIndex of listIndexes) {
+                const depAddress = createStateAddress(depPathInfo, listIndex);
+                context.result.add(depAddress);
+                _walkDependency(context, depAddress, depth + 1, callback);
+            }
+        }
+    }
+}
+function walkDependency(startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
+    const context = {
+        staticMap: staticDependency,
+        dynamicMap: dynamicDependency,
+        result: new Set(),
+        listPathSet: listPathSet,
+        visited: new Set(),
+        stateProxy: stateProxy,
+        searchType: searchType,
+        newValueByAddress: new Map(),
+    };
+    try {
+        _walkDependency(context, startAddress, 0, callback);
+        return Array.from(context.result);
+    }
+    finally {
+        for (const [address, newValue] of context.newValueByAddress.entries()) {
+            lastValueByListAddress.set(address, newValue);
+        }
+    }
+}
+
 /**
  * setByAddress.ts
  *
@@ -3016,6 +3221,15 @@ function _setByAddress(target, address, value, receiver, handler) {
         const updater = getUpdater();
         const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
         updater.enqueueAbsoluteAddress(absoluteAddress);
+        // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
+        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "add", (depAddress) => {
+            // キャッシュを無効化（ダーティ）
+            if (depAddress === address)
+                return;
+            handler.stateElement.cache.delete(depAddress);
+            const absDepAddress = createAbsoluteStateAddress(handler.stateName, depAddress);
+            updater.enqueueAbsoluteAddress(absDepAddress);
+        });
     }
 }
 function _setByAddressWithSwap(target, address, value, receiver, handler) {
@@ -3057,8 +3271,6 @@ function _setByAddressWithSwap(target, address, value, receiver, handler) {
 function setByAddress(target, address, value, receiver, handler) {
     const stateElement = handler.stateElement;
     const isElements = stateElement.elementPaths.has(address.pathInfo.path);
-    // リストはキャッシュ対象
-    const listable = stateElement.listPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
     try {
@@ -3070,9 +3282,9 @@ function setByAddress(target, address, value, receiver, handler) {
         }
     }
     finally {
-        if (cacheable || listable) {
-            let cacheEntry = stateElement.cache.get(address) ?? null;
-            if (cacheEntry === null) {
+        if (cacheable) {
+            let lastCacheEntry = stateElement.cache.get(address) ?? null;
+            if (lastCacheEntry === null) {
                 stateElement.cache.set(address, {
                     value: value,
                     versionInfo: {
@@ -3083,9 +3295,9 @@ function setByAddress(target, address, value, receiver, handler) {
             }
             else {
                 // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-                cacheEntry.value = value;
-                cacheEntry.versionInfo.version = handler.versionInfo.version;
-                cacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+                lastCacheEntry.value = value;
+                lastCacheEntry.versionInfo.version = handler.versionInfo.version;
+                lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
             }
         }
     }
@@ -3212,42 +3424,6 @@ function createStateProxy(state, stateName, mutability) {
     const handler = new StateHandler(stateName, mutability);
     const stateProxy = new Proxy(state, handler);
     return stateProxy;
-}
-
-const listIndexByBindingInfoByLoopContext = new WeakMap();
-function getListIndexByBindingInfo(bindingInfo) {
-    const loopContext = getLoopContextByNode(bindingInfo.node);
-    if (loopContext === null) {
-        return null;
-    }
-    let listIndexByBindingInfo = listIndexByBindingInfoByLoopContext.get(loopContext);
-    if (typeof listIndexByBindingInfo === "undefined") {
-        listIndexByBindingInfo = new WeakMap();
-        listIndexByBindingInfoByLoopContext.set(loopContext, listIndexByBindingInfo);
-    }
-    else {
-        const listIndex = listIndexByBindingInfo.get(bindingInfo);
-        if (typeof listIndex !== "undefined") {
-            return listIndex;
-        }
-    }
-    let listIndex = null;
-    try {
-        const bindingWildCardParentPathSet = bindingInfo.statePathInfo?.wildcardParentPathSet;
-        if (typeof bindingWildCardParentPathSet === "undefined") {
-            raiseError(`BindingInfo does not have statePathInfo for list index retrieval.`);
-        }
-        const loopContextWildcardParentPathSet = loopContext.elementPathInfo.wildcardParentPathSet;
-        const matchPath = bindingWildCardParentPathSet.intersection(loopContextWildcardParentPathSet);
-        const wildcardLen = matchPath.size;
-        if (wildcardLen > 0) {
-            listIndex = loopContext.listIndex.at(wildcardLen - 1);
-        }
-        return listIndex;
-    }
-    finally {
-        listIndexByBindingInfo.set(bindingInfo, listIndex);
-    }
 }
 
 function getAllPropertyDescriptors(obj) {
@@ -3440,20 +3616,44 @@ class State extends HTMLElement {
     get version() {
         return this._version;
     }
-    _addDependency(map, fromPath, toPath) {
-        const deps = map.get(fromPath);
+    _addDependency(map, sourcePath, targetPath) {
+        const deps = map.get(sourcePath);
         if (deps === undefined) {
-            map.set(fromPath, [toPath]);
+            map.set(sourcePath, [targetPath]);
         }
-        else if (!deps.includes(toPath)) {
-            deps.push(toPath);
+        else if (!deps.includes(targetPath)) {
+            deps.push(targetPath);
         }
     }
-    addDynamicDependency(fromPath, toPath) {
-        this._addDependency(this._dynamicDependency, fromPath, toPath);
+    /**
+     * source,           target
+     *
+     * products.*.price => products.*.tax
+     * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+     *
+     * products.*.price => products.summary
+     * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+     *
+     * categories.*.name => categories.*.products.*.categoryName
+     * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addDynamicDependency(sourcePath, targetPath) {
+        this._addDependency(this._dynamicDependency, sourcePath, targetPath);
     }
-    addStaticDependency(fromPath, toPath) {
-        this._addDependency(this._staticDependency, fromPath, toPath);
+    /**
+     * source,      target
+     * products => products.*
+     * products.* => products.*.price
+     * products.* => products.*.name
+     *
+     * @param sourcePath
+     * @param targetPath
+     */
+    addStaticDependency(sourcePath, targetPath) {
+        this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
     addBindingInfo(bindingInfo) {
         const listIndex = getListIndexByBindingInfo(bindingInfo);

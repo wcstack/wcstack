@@ -1,7 +1,9 @@
 import { getPathInfo } from "../address/PathInfo";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { WILDCARD } from "../define";
-import { getListDiff } from "../list/createListIndexes";
+import { createListDiff } from "../list/createListDiff";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { getListIndexesByList } from "../list/listIndexesByList";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
@@ -36,11 +38,10 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
     if (!listPathInfo) {
         raiseError(`List path info not found in fragment bind text result.`);
     }
+    const listIndex = getListIndexByBindingInfo(bindingInfo);
     const lastValue = lastValueByNode.get(bindingInfo.node);
-    const diff = getListDiff(lastValue, _newValue);
-    if (diff === null) {
-        raiseError(`Failed to get list diff for binding.`);
-    }
+    const lastIndexes = getListIndexesByList(lastValue) || [];
+    const diff = createListDiff(listIndex, lastValue, _newValue, lastIndexes);
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = contentByListIndex.get(deleteIndex);
         if (typeof content !== 'undefined') {
