@@ -1,5 +1,6 @@
 import "../polyfills";
 import { createListIndex } from "./createListIndex";
+import { setListIndexesByList } from "./listIndexesByList";
 const listDiffByOldListByNewList = new WeakMap();
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_SET = new Set();
@@ -139,6 +140,7 @@ export function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndex
     finally {
         if (typeof retValue !== "undefined") {
             setListDiff(oldList, newList, retValue);
+            setListIndexesByList(newList, retValue.newIndexes);
         }
     }
 }

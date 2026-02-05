@@ -1,3 +1,4 @@
+import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 const handlerByHandlerKey = new Map();
@@ -6,16 +7,20 @@ function getHandlerKey(bindingInfo) {
     return `${bindingInfo.stateName}::${bindingInfo.statePathName}`;
 }
 const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
+    const node = event.target;
     const stateElement = getStateElementByName(stateName);
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }
+    const loopContext = getLoopContextByNode(node);
     stateElement.createStateAsync("writable", async (state) => {
-        const handler = state[handlerName];
-        if (typeof handler !== "function") {
-            raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
-        }
-        return handler.call(state, event);
+        state.$$setLoopContext(loopContext, () => {
+            const handler = state[handlerName];
+            if (typeof handler !== "function") {
+                raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
+            }
+            return handler.call(state, event, ...(loopContext?.listIndex.indexes ?? []));
+        });
     });
 };
 export function attachEventHandler(bindingInfo) {

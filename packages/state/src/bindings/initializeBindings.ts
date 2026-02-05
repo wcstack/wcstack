@@ -10,6 +10,7 @@ import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
+import { IInitialBindingInfo } from "./types";
 
 function _initializeBindings(
   allBindings: IBindingInfo[],
@@ -69,24 +70,30 @@ function _initializeBindings(
 
 export  function initializeBindings(
   root: Document | Element, parentLoopContext: ILoopContext | null
-): IBindingInfo[] {
+): IInitialBindingInfo {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
   for(const node of subscriberNodes) {
     setLoopContextByNode(node, parentLoopContext);
   }
   _initializeBindings(allBindings);
-  return allBindings;
+  return {
+    nodes: subscriberNodes,
+    bindingInfos: allBindings,
+  };
 }
 
 export function initializeBindingsByFragment(
   root: DocumentFragment,
   nodeInfos: IFragmentNodeInfo[], 
   loopContext: ILoopContext | null
-): IBindingInfo[] {
+): IInitialBindingInfo {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
   for(const node of subscriberNodes) {
     setLoopContextByNode(node, loopContext);
   }
   _initializeBindings(allBindings);
-  return allBindings;
+  return {
+    nodes: subscriberNodes,
+    bindingInfos: allBindings,
+  };
 }

@@ -77,7 +77,7 @@ function _setByAddress(
       handler.stateElement.dynamicDependency,
       handler.stateElement.listPaths,
       receiver as IStateProxy,
-      "add",
+      "new",
       (depAddress: IStateAddress) => {
         // キャッシュを無効化（ダーティ）
         if (depAddress === address) return;

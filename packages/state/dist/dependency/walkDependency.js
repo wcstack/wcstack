@@ -107,20 +107,26 @@ function _walkDependency(context, address, depth, callback) {
             if (depPathInfo.wildcardCount > 0) {
                 // ワイルドカードを含む依存関係の処理
                 // 同じ親を持つかをパスの集合積で判定する
-                const wildcardPathSet = address.pathInfo.wildcardPathSet;
-                const depWildcardPathSet = depPathInfo.wildcardPathSet;
                 // polyfills.tsにてSetのintersectionメソッドを定義している
-                const matchingWildcards = wildcardPathSet.intersection(depWildcardPathSet);
+                const matchingWildcards = address.pathInfo.wildcardPathSet.intersection(depPathInfo.wildcardPathSet);
                 const wildcardLen = matchingWildcards.size;
                 const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
                 if (expandable) {
-                    // categories.*.name => categories.*.products.*.categoryName 
-                    // ワイルドカードを含む同じ親（products.*）を持つのが、
-                    // さらに下位にワイルドカードがあるので展開する
-                    if (address.listIndex === null) {
-                        raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+                    let listIndex;
+                    if (wildcardLen > 0) {
+                        // categories.*.name => categories.*.products.*.categoryName 
+                        // ワイルドカードを含む同じ親（products.*）を持つのが、
+                        // さらに下位にワイルドカードがあるので展開する
+                        if (address.listIndex === null) {
+                            raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+                        }
+                        listIndex = address.listIndex.at(wildcardLen - 1);
                     }
-                    const listIndex = address.listIndex.at(wildcardLen - 1);
+                    else {
+                        // selectedIndex => items.*.selected
+                        // 同じ親を持たない場合はnullから開始
+                        listIndex = null;
+                    }
                     const expandContext = {
                         targetPathInfo: depPathInfo,
                         targetListIndexes: [],

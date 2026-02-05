@@ -147,7 +147,8 @@ describe('event/handler', () => {
     const state: any = {
       'handleClick-ok': vi.fn(function (this: any) {
         expect(this).toBe(state);
-      })
+      }),
+      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
     setStateElementByName('default', {

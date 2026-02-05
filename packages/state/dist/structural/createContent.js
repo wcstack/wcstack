@@ -1,6 +1,7 @@
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
+import { setNodesByContent } from "../bindings/nodesByContent.js";
 import { raiseError } from "../raiseError.js";
 import { getContentByNode, setContentByNode } from "./contentByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
@@ -63,9 +64,10 @@ export function createContent(bindingInfo, loopContext) {
         raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
     }
     const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-    const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+    const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
     const content = new Content(cloneFragment);
-    setBindingsByContent(content, bindings);
+    setBindingsByContent(content, initialInfo.bindingInfos);
+    setNodesByContent(content, initialInfo.nodes);
     setContentByNode(bindingInfo.node, content);
     return content;
 }

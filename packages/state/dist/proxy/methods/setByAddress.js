@@ -65,7 +65,7 @@ function _setByAddress(target, address, value, receiver, handler) {
         const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
         updater.enqueueAbsoluteAddress(absoluteAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "add", (depAddress) => {
+        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
             if (depAddress === address)
                 return;

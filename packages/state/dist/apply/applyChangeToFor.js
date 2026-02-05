@@ -1,5 +1,7 @@
 import { getPathInfo } from "../address/PathInfo";
+import { createStateAddress } from "../address/StateAddress";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
+import { getNodesByContent } from "../bindings/nodesByContent";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
@@ -67,14 +69,25 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
                     content = createContent(bindingInfo, loopContext);
                 }
                 else {
-                    const bindings = getBindingsByContent(content);
-                    const nodeSet = new Set();
-                    for (const bindingInfo of bindings) {
-                        if (!nodeSet.has(bindingInfo.node)) {
-                            nodeSet.add(bindingInfo.node);
-                            setLoopContextByNode(bindingInfo.node, loopContext);
-                            applyChange(bindingInfo, state, stateName);
+                    const nodes = getNodesByContent(content);
+                    for (const node of nodes) {
+                        setLoopContextByNode(node, loopContext);
+                    }
+                    const bindingsForContent = getBindingsByContent(content);
+                    for (const bindingInfoForContent of bindingsForContent) {
+                        if (bindingInfoForContent.statePathInfo === null) {
+                            raiseError(`BindingInfo.statePathInfo is null.`);
                         }
+                        const listIndex = getListIndexByBindingInfo(bindingInfoForContent);
+                        const address = createStateAddress(bindingInfoForContent.statePathInfo, listIndex);
+                        const bindingInfosForStateElement = stateElement.bindingInfosByAddress.get(address);
+                        if (typeof bindingInfosForStateElement === "undefined") {
+                            stateElement.bindingInfosByAddress.set(address, [bindingInfoForContent]);
+                        }
+                        else {
+                            bindingInfosForStateElement.push(bindingInfoForContent);
+                        }
+                        applyChange(bindingInfoForContent, state, stateName);
                     }
                 }
             });

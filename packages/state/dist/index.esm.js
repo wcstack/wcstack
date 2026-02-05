@@ -539,6 +539,13 @@ const listIndexesByList = new WeakMap();
 function getListIndexesByList(list) {
     return listIndexesByList.get(list) || null;
 }
+function setListIndexesByList(list, listIndexes) {
+    if (listIndexes === null) {
+        listIndexesByList.delete(list);
+        return;
+    }
+    listIndexesByList.set(list, listIndexes);
+}
 
 /**
  * getContextListIndex.ts
@@ -786,15 +793,9 @@ function createAbsoluteStateAddress(stateName, address) {
     }
 }
 
+let count = 0;
 function getUUID() {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
-    }
-    // Simple UUID generator
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        const r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-    });
+    return `u${(count++).toString(36)}`;
 }
 
 let version = 0;
@@ -934,7 +935,15 @@ function createListIndex(parentListIndex, index) {
 
 const loopContextByNode = new WeakMap();
 function getLoopContextByNode(node) {
-    return loopContextByNode.get(node) || null;
+    let paramNode = node;
+    while (paramNode) {
+        const loopContext = loopContextByNode.get(paramNode);
+        if (loopContext) {
+            return loopContext;
+        }
+        paramNode = paramNode.parentNode;
+    }
+    return null;
 }
 function setLoopContextByNode(node, loopContext) {
     if (loopContext === null) {
@@ -1019,6 +1028,14 @@ function getBindingsByContent(content) {
 }
 function setBindingsByContent(content, bindings) {
     bindingsByContent.set(content, bindings);
+}
+
+const nodesByContent = new WeakMap();
+function getNodesByContent(content) {
+    return nodesByContent.get(content) ?? [];
+}
+function setNodesByContent(content, nodes) {
+    nodesByContent.set(content, nodes);
 }
 
 if (!Set.prototype.difference) {
@@ -1181,6 +1198,7 @@ function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndexes) {
     finally {
         if (typeof retValue !== "undefined") {
             setListDiff(oldList, newList, retValue);
+            setListIndexesByList(newList, retValue.newIndexes);
         }
     }
 }
@@ -2439,16 +2457,20 @@ function getHandlerKey$1(bindingInfo) {
     return `${bindingInfo.stateName}::${bindingInfo.statePathName}`;
 }
 const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
+    const node = event.target;
     const stateElement = getStateElementByName(stateName);
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }
+    const loopContext = getLoopContextByNode(node);
     stateElement.createStateAsync("writable", async (state) => {
-        const handler = state[handlerName];
-        if (typeof handler !== "function") {
-            raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
-        }
-        return handler.call(state, event);
+        state.$$setLoopContext(loopContext, () => {
+            const handler = state[handlerName];
+            if (typeof handler !== "function") {
+                raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
+            }
+            return handler.call(state, event, ...(loopContext?.listIndex.indexes ?? []));
+        });
     });
 };
 function attachEventHandler(bindingInfo) {
@@ -2616,7 +2638,10 @@ function initializeBindings(root, parentLoopContext) {
         setLoopContextByNode(node, parentLoopContext);
     }
     _initializeBindings(allBindings);
-    return allBindings;
+    return {
+        nodes: subscriberNodes,
+        bindingInfos: allBindings,
+    };
 }
 function initializeBindingsByFragment(root, nodeInfos, loopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
@@ -2624,7 +2649,10 @@ function initializeBindingsByFragment(root, nodeInfos, loopContext) {
         setLoopContextByNode(node, loopContext);
     }
     _initializeBindings(allBindings);
-    return allBindings;
+    return {
+        nodes: subscriberNodes,
+        bindingInfos: allBindings,
+    };
 }
 
 const contentByNode = new WeakMap();
@@ -2699,9 +2727,10 @@ function createContent(bindingInfo, loopContext) {
         raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
     }
     const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-    const bindings = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+    const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
     const content = new Content(cloneFragment);
-    setBindingsByContent(content, bindings);
+    setBindingsByContent(content, initialInfo.bindingInfos);
+    setNodesByContent(content, initialInfo.nodes);
     setContentByNode(bindingInfo.node, content);
     return content;
 }
@@ -2755,14 +2784,25 @@ function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
                     content = createContent(bindingInfo, loopContext);
                 }
                 else {
-                    const bindings = getBindingsByContent(content);
-                    const nodeSet = new Set();
-                    for (const bindingInfo of bindings) {
-                        if (!nodeSet.has(bindingInfo.node)) {
-                            nodeSet.add(bindingInfo.node);
-                            setLoopContextByNode(bindingInfo.node, loopContext);
-                            applyChange(bindingInfo, state, stateName);
+                    const nodes = getNodesByContent(content);
+                    for (const node of nodes) {
+                        setLoopContextByNode(node, loopContext);
+                    }
+                    const bindingsForContent = getBindingsByContent(content);
+                    for (const bindingInfoForContent of bindingsForContent) {
+                        if (bindingInfoForContent.statePathInfo === null) {
+                            raiseError(`BindingInfo.statePathInfo is null.`);
                         }
+                        const listIndex = getListIndexByBindingInfo(bindingInfoForContent);
+                        const address = createStateAddress(bindingInfoForContent.statePathInfo, listIndex);
+                        const bindingInfosForStateElement = stateElement.bindingInfosByAddress.get(address);
+                        if (typeof bindingInfosForStateElement === "undefined") {
+                            stateElement.bindingInfosByAddress.set(address, [bindingInfoForContent]);
+                        }
+                        else {
+                            bindingInfosForStateElement.push(bindingInfoForContent);
+                        }
+                        applyChange(bindingInfoForContent, state, stateName);
                     }
                 }
             });
@@ -3094,20 +3134,26 @@ function _walkDependency(context, address, depth, callback) {
             if (depPathInfo.wildcardCount > 0) {
                 // ワイルドカードを含む依存関係の処理
                 // 同じ親を持つかをパスの集合積で判定する
-                const wildcardPathSet = address.pathInfo.wildcardPathSet;
-                const depWildcardPathSet = depPathInfo.wildcardPathSet;
                 // polyfills.tsにてSetのintersectionメソッドを定義している
-                const matchingWildcards = wildcardPathSet.intersection(depWildcardPathSet);
+                const matchingWildcards = address.pathInfo.wildcardPathSet.intersection(depPathInfo.wildcardPathSet);
                 const wildcardLen = matchingWildcards.size;
                 const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
                 if (expandable) {
-                    // categories.*.name => categories.*.products.*.categoryName 
-                    // ワイルドカードを含む同じ親（products.*）を持つのが、
-                    // さらに下位にワイルドカードがあるので展開する
-                    if (address.listIndex === null) {
-                        raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+                    let listIndex;
+                    if (wildcardLen > 0) {
+                        // categories.*.name => categories.*.products.*.categoryName 
+                        // ワイルドカードを含む同じ親（products.*）を持つのが、
+                        // さらに下位にワイルドカードがあるので展開する
+                        if (address.listIndex === null) {
+                            raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+                        }
+                        listIndex = address.listIndex.at(wildcardLen - 1);
                     }
-                    const listIndex = address.listIndex.at(wildcardLen - 1);
+                    else {
+                        // selectedIndex => items.*.selected
+                        // 同じ親を持たない場合はnullから開始
+                        listIndex = null;
+                    }
                     const expandContext = {
                         targetListIndexes: [],
                         wildcardPaths: depPathInfo.wildcardPaths,
@@ -3222,7 +3268,7 @@ function _setByAddress(target, address, value, receiver, handler) {
         const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
         updater.enqueueAbsoluteAddress(absoluteAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "add", (depAddress) => {
+        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
             if (depAddress === address)
                 return;

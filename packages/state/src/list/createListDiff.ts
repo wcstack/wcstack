@@ -1,5 +1,6 @@
 import "../polyfills";
 import { createListIndex } from "./createListIndex";
+import { setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 
 const listDiffByOldListByNewList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
@@ -153,6 +154,7 @@ export function createListDiff(
   } finally {
     if (typeof retValue !== "undefined") {
       setListDiff(oldList, newList, retValue);
+      setListIndexesByList(newList, retValue.newIndexes);
     }
   }
 }

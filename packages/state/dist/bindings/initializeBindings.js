@@ -59,7 +59,10 @@ export function initializeBindings(root, parentLoopContext) {
         setLoopContextByNode(node, parentLoopContext);
     }
     _initializeBindings(allBindings);
-    return allBindings;
+    return {
+        nodes: subscriberNodes,
+        bindingInfos: allBindings,
+    };
 }
 export function initializeBindingsByFragment(root, nodeInfos, loopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
@@ -67,6 +70,9 @@ export function initializeBindingsByFragment(root, nodeInfos, loopContext) {
         setLoopContextByNode(node, loopContext);
     }
     _initializeBindings(allBindings);
-    return allBindings;
+    return {
+        nodes: subscriberNodes,
+        bindingInfos: allBindings,
+    };
 }
 //# sourceMappingURL=initializeBindings.js.map
