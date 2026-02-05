@@ -7,6 +7,25 @@ import { getListIndexesByList } from "../list/listIndexesByList";
 import { raiseError } from "../raiseError";
 const MAX_DEPENDENCY_DEPTH = 1000;
 const lastValueByListAddress = new WeakMap();
+const cacheCalcWildcardLen = new WeakMap();
+function calcWildcardLen(pathInfo, targetPathInfo) {
+    const [path1, path2] = pathInfo.id < targetPathInfo.id ? [pathInfo, targetPathInfo] : [targetPathInfo, pathInfo];
+    let cacheByPath2 = cacheCalcWildcardLen.get(path1);
+    if (typeof cacheByPath2 === "undefined") {
+        cacheByPath2 = new WeakMap();
+        cacheCalcWildcardLen.set(path1, cacheByPath2);
+    }
+    else {
+        const cached = cacheByPath2.get(path2);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+    }
+    const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
+    const retValue = matchPath.size;
+    cacheByPath2.set(path2, retValue);
+    return retValue;
+}
 function getIndexes(listDiff, searchType) {
     switch (searchType) {
         case "old":
@@ -108,8 +127,7 @@ function _walkDependency(context, address, depth, callback) {
                 // ワイルドカードを含む依存関係の処理
                 // 同じ親を持つかをパスの集合積で判定する
                 // polyfills.tsにてSetのintersectionメソッドを定義している
-                const matchingWildcards = address.pathInfo.wildcardPathSet.intersection(depPathInfo.wildcardPathSet);
-                const wildcardLen = matchingWildcards.size;
+                const wildcardLen = calcWildcardLen(address.pathInfo, depPathInfo);
                 const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
                 if (expandable) {
                     let listIndex;

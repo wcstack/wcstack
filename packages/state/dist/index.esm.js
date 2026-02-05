@@ -145,6 +145,7 @@ const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
 
 const _cache$2 = {};
+let id = 0;
 function getPathInfo(path) {
     if (_cache$2[path]) {
         return _cache$2[path];
@@ -154,6 +155,7 @@ function getPathInfo(path) {
     return pathInfo;
 }
 class PathInfo {
+    id = ++id;
     path;
     segments;
     lastSegment;
@@ -1196,6 +1198,25 @@ function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndexes) {
 }
 
 const listIndexByBindingInfoByLoopContext = new WeakMap();
+const cacheCalcWildcardIndex = new WeakMap();
+function calcWildcardIndex(pathInfo, targetPathInfo) {
+    const [path1, path2] = pathInfo.id < targetPathInfo.id ? [pathInfo, targetPathInfo] : [targetPathInfo, pathInfo];
+    let cacheByPath2 = cacheCalcWildcardIndex.get(path1);
+    if (typeof cacheByPath2 === "undefined") {
+        cacheByPath2 = new WeakMap();
+        cacheCalcWildcardIndex.set(path1, cacheByPath2);
+    }
+    else {
+        const cached = cacheByPath2.get(path2);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+    }
+    const matchPath = path1.wildcardParentPathSet.intersection(path2.wildcardParentPathSet);
+    const retValue = matchPath.size - 1;
+    cacheByPath2.set(path2, retValue);
+    return retValue;
+}
 function getListIndexByBindingInfo(bindingInfo) {
     const loopContext = getLoopContextByNode(bindingInfo.node);
     if (loopContext === null) {
@@ -1214,15 +1235,12 @@ function getListIndexByBindingInfo(bindingInfo) {
     }
     let listIndex = null;
     try {
-        const bindingWildCardParentPathSet = bindingInfo.statePathInfo?.wildcardParentPathSet;
-        if (typeof bindingWildCardParentPathSet === "undefined") {
+        if (bindingInfo.statePathInfo === null) {
             raiseError(`BindingInfo does not have statePathInfo for list index retrieval.`);
         }
-        const loopContextWildcardParentPathSet = loopContext.elementPathInfo.wildcardParentPathSet;
-        const matchPath = bindingWildCardParentPathSet.intersection(loopContextWildcardParentPathSet);
-        const wildcardLen = matchPath.size;
-        if (wildcardLen > 0) {
-            listIndex = loopContext.listIndex.at(wildcardLen - 1);
+        const wildcardIndex = calcWildcardIndex(loopContext.elementPathInfo, bindingInfo.statePathInfo);
+        if (wildcardIndex >= 0) {
+            listIndex = loopContext.listIndex.at(wildcardIndex) || null;
         }
         return listIndex;
     }
@@ -2699,9 +2717,6 @@ function initializeBindings(root, parentLoopContext) {
 }
 function initializeBindingsByFragment(root, nodeInfos) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
-    //  for(const node of subscriberNodes) {
-    //    setLoopContextByNode(node, loopContext);
-    //  }
     _initializeBindings(allBindings);
     return {
         nodes: subscriberNodes,
@@ -3055,6 +3070,25 @@ function setSwapInfoByAddress(address, swapInfo) {
 
 const MAX_DEPENDENCY_DEPTH = 1000;
 const lastValueByListAddress = new WeakMap();
+const cacheCalcWildcardLen = new WeakMap();
+function calcWildcardLen(pathInfo, targetPathInfo) {
+    const [path1, path2] = pathInfo.id < targetPathInfo.id ? [pathInfo, targetPathInfo] : [targetPathInfo, pathInfo];
+    let cacheByPath2 = cacheCalcWildcardLen.get(path1);
+    if (typeof cacheByPath2 === "undefined") {
+        cacheByPath2 = new WeakMap();
+        cacheCalcWildcardLen.set(path1, cacheByPath2);
+    }
+    else {
+        const cached = cacheByPath2.get(path2);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+    }
+    const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
+    const retValue = matchPath.size;
+    cacheByPath2.set(path2, retValue);
+    return retValue;
+}
 function getIndexes(listDiff, searchType) {
     switch (searchType) {
         case "old":
@@ -3156,8 +3190,7 @@ function _walkDependency(context, address, depth, callback) {
                 // ワイルドカードを含む依存関係の処理
                 // 同じ親を持つかをパスの集合積で判定する
                 // polyfills.tsにてSetのintersectionメソッドを定義している
-                const matchingWildcards = address.pathInfo.wildcardPathSet.intersection(depPathInfo.wildcardPathSet);
-                const wildcardLen = matchingWildcards.size;
+                const wildcardLen = calcWildcardLen(address.pathInfo, depPathInfo);
                 const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
                 if (expandable) {
                     let listIndex;

@@ -1,5 +1,6 @@
 import { IListIndex } from "../list/types";
 export interface IPathInfo {
+    readonly id: number;
     readonly path: string;
     readonly segments: string[];
     readonly lastSegment: string;

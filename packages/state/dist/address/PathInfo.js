@@ -1,5 +1,6 @@
 import { WILDCARD } from "../define.js";
 const _cache = {};
+let id = 0;
 export function getPathInfo(path) {
     if (_cache[path]) {
         return _cache[path];
@@ -9,6 +10,7 @@ export function getPathInfo(path) {
     return pathInfo;
 }
 class PathInfo {
+    id = ++id;
     path;
     segments;
     lastSegment;

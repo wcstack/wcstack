@@ -51,9 +51,6 @@ export function initializeBindings(root, parentLoopContext) {
 }
 export function initializeBindingsByFragment(root, nodeInfos) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
-    //  for(const node of subscriberNodes) {
-    //    setLoopContextByNode(node, loopContext);
-    //  }
     _initializeBindings(allBindings);
     return {
         nodes: subscriberNodes,

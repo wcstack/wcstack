@@ -3,6 +3,7 @@ import { IPathInfo } from "./types.js";
 
 const _cache: { [key: string]: IPathInfo } = {};
 
+let id: number = 0;
 export function getPathInfo(path: string): IPathInfo {
   if (_cache[path]) {
     return _cache[path];
@@ -13,6 +14,7 @@ export function getPathInfo(path: string): IPathInfo {
 }
 
 class PathInfo implements IPathInfo {
+  readonly id: number = ++id;
   readonly path: string;
   readonly segments: string[];
   readonly lastSegment: string;
