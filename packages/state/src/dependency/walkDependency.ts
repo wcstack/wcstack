@@ -17,7 +17,15 @@ const lastValueByListAddress = new WeakMap<IStateAddress, unknown[]>();
 const cacheCalcWildcardLen: WeakMap<IPathInfo, WeakMap<IPathInfo, number>> = new WeakMap(); 
 
 function calcWildcardLen(pathInfo: IPathInfo, targetPathInfo: IPathInfo): number {
-  const [ path1, path2 ] = pathInfo.id < targetPathInfo.id ? [pathInfo, targetPathInfo] : [targetPathInfo, pathInfo];
+  let path1: IPathInfo;
+  let path2: IPathInfo;
+  if (pathInfo.id < targetPathInfo.id) {
+    path1 = pathInfo;
+    path2 = targetPathInfo;
+  } else {
+    path1 = targetPathInfo;
+    path2 = pathInfo;
+  }
   let cacheByPath2 = cacheCalcWildcardLen.get(path1);
   if (typeof cacheByPath2 === "undefined") {
     cacheByPath2 = new WeakMap<IPathInfo, number>();

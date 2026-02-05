@@ -3,7 +3,16 @@ import { getLoopContextByNode } from "./loopContextByNode";
 const listIndexByBindingInfoByLoopContext = new WeakMap();
 const cacheCalcWildcardIndex = new WeakMap();
 function calcWildcardIndex(pathInfo, targetPathInfo) {
-    const [path1, path2] = pathInfo.id < targetPathInfo.id ? [pathInfo, targetPathInfo] : [targetPathInfo, pathInfo];
+    let path1;
+    let path2;
+    if (pathInfo.id < targetPathInfo.id) {
+        path1 = pathInfo;
+        path2 = targetPathInfo;
+    }
+    else {
+        path1 = targetPathInfo;
+        path2 = pathInfo;
+    }
     let cacheByPath2 = cacheCalcWildcardIndex.get(path1);
     if (typeof cacheByPath2 === "undefined") {
         cacheByPath2 = new WeakMap();

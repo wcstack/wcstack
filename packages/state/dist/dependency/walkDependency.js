@@ -9,7 +9,16 @@ const MAX_DEPENDENCY_DEPTH = 1000;
 const lastValueByListAddress = new WeakMap();
 const cacheCalcWildcardLen = new WeakMap();
 function calcWildcardLen(pathInfo, targetPathInfo) {
-    const [path1, path2] = pathInfo.id < targetPathInfo.id ? [pathInfo, targetPathInfo] : [targetPathInfo, pathInfo];
+    let path1;
+    let path2;
+    if (pathInfo.id < targetPathInfo.id) {
+        path1 = pathInfo;
+        path2 = targetPathInfo;
+    }
+    else {
+        path1 = targetPathInfo;
+        path2 = pathInfo;
+    }
     let cacheByPath2 = cacheCalcWildcardLen.get(path1);
     if (typeof cacheByPath2 === "undefined") {
         cacheByPath2 = new WeakMap();
