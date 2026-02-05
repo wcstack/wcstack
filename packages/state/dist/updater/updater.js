@@ -1,6 +1,5 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
+import { getBindingInfosByAbsoluteStateAddress } from "../binding/getBindingInfosByAbsoluteStateAddress";
 class Updater {
     _queueAbsoluteAddresses = [];
     constructor() {
@@ -27,14 +26,8 @@ class Updater {
         const absoluteAddressSet = new Set(absoluteAddresses);
         const processBindingInfos = [];
         for (const absoluteAddress of absoluteAddressSet) {
-            const stateElement = getStateElementByName(absoluteAddress.stateName);
-            if (stateElement === null) {
-                raiseError(`State element with name "${absoluteAddress.stateName}" not found for updater.`);
-            }
-            const bindingInfos = stateElement.bindingInfosByAddress.get(absoluteAddress.address);
-            if (typeof bindingInfos !== "undefined") {
-                processBindingInfos.push(...bindingInfos);
-            }
+            const bindings = getBindingInfosByAbsoluteStateAddress(absoluteAddress);
+            processBindingInfos.push(...bindings);
         }
         applyChangeFromBindings(processBindingInfos);
     }

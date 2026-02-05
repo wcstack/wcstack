@@ -24,7 +24,6 @@ import { loadFromScriptFile } from '../src/stateLoader/loadFromScriptFile';
 import { loadFromScriptJson } from '../src/stateLoader/loadFromScriptJson';
 import { createStateProxy } from '../src/proxy/StateHandler';
 import { getPathInfo } from '../src/address/PathInfo';
-import { createStateAddress } from '../src/address/StateAddress';
 import type { IBindingInfo } from '../src/types';
 
 const loadFromInnerScriptMock = vi.mocked(loadFromInnerScript);
@@ -250,7 +249,6 @@ describe('State component', () => {
     const stateEl = createStateElement();
     await stateEl.connectedCallback();
 
-    expect(stateEl.bindingInfosByAddress).toBeInstanceOf(Map);
     expect(stateEl.initializePromise).toBeInstanceOf(Promise);
     expect(stateEl.listPaths).toBeInstanceOf(Set);
     expect(stateEl.elementPaths).toBeInstanceOf(Set);
@@ -264,7 +262,7 @@ describe('State component', () => {
     expect(stateEl.version).toBe(0);
   });
 
-  it('addBindingInfoで登録とlistPathsが更新されること', () => {
+  it('setBindingInfoでlistPathsが更新されること', () => {
     const stateEl = createStateElement();
     const bindingInfo = {
       propName: 'for',
@@ -280,35 +278,34 @@ describe('State component', () => {
       replaceNode: document.createComment('for')
     } as IBindingInfo;
 
-    stateEl.addBindingInfo(bindingInfo);
+    stateEl.setBindingInfo(bindingInfo);
 
-    const address = createStateAddress(bindingInfo.statePathInfo!, null);
-    const list = stateEl.bindingInfosByAddress.get(address) || [];
-    expect(list.length).toBe(1);
     expect(stateEl.listPaths.has('items')).toBe(true);
     expect(stateEl.elementPaths.has('items.*')).toBe(true);
   });
 
-  it('addBindingInfoの再登録で配列に追加されること', () => {
-    const stateEl = createStateElement();
-    const bindingInfo = createBindingInfo();
-
-    stateEl.addBindingInfo(bindingInfo);
-    stateEl.addBindingInfo(bindingInfo);
-
-    const address = createStateAddress(bindingInfo.statePathInfo!, null);
-    const list = stateEl.bindingInfosByAddress.get(address) || [];
-    expect(list.length).toBe(2);
-  });
-
-  it('addBindingInfoで親パスの静的依存が登録されること', () => {
+  it('setBindingInfoの再登録で静的依存が重複しないこと', () => {
     const stateEl = createStateElement();
     const bindingInfo = createBindingInfo({
       statePathName: 'user.name',
       statePathInfo: getPathInfo('user.name'),
     });
 
-    stateEl.addBindingInfo(bindingInfo);
+    stateEl.setBindingInfo(bindingInfo);
+    stateEl.setBindingInfo(bindingInfo);
+
+    const deps = stateEl.staticDependency.get('user') || [];
+    expect(deps).toEqual(['user.name']);
+  });
+
+  it('setBindingInfoで親パスの静的依存が登録されること', () => {
+    const stateEl = createStateElement();
+    const bindingInfo = createBindingInfo({
+      statePathName: 'user.name',
+      statePathInfo: getPathInfo('user.name'),
+    });
+
+    stateEl.setBindingInfo(bindingInfo);
 
     const deps = stateEl.staticDependency.get('user') || [];
     expect(deps).toContain('user.name');
@@ -329,24 +326,6 @@ describe('State component', () => {
 
     const dynamicDeps = stateEl.dynamicDependency.get('getter') || [];
     expect(dynamicDeps).toEqual(['dep', 'dep2']);
-  });
-
-  it('deleteBindingInfoで登録が削除されること', () => {
-    const stateEl = createStateElement();
-    const bindingInfo = createBindingInfo();
-
-    stateEl.addBindingInfo(bindingInfo);
-    const address = createStateAddress(bindingInfo.statePathInfo!, null);
-    expect(stateEl.bindingInfosByAddress.get(address)).toHaveLength(1);
-
-    stateEl.deleteBindingInfo(bindingInfo);
-    expect(stateEl.bindingInfosByAddress.get(address)).toHaveLength(0);
-
-    const missingBindingInfo = createBindingInfo({ statePathName: 'missing', statePathInfo: getPathInfo('missing') });
-    stateEl.deleteBindingInfo(missingBindingInfo);
-
-    const sameAddressOtherBinding = createBindingInfo();
-    stateEl.deleteBindingInfo(sameAddressOtherBinding);
   });
 
   it('nextVersionでバージョンがインクリメントされること', () => {

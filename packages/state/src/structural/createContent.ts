@@ -1,8 +1,8 @@
+import { clearAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo.js";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
-import { ILoopContext } from "../list/types.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
 import { getContentByNode, setContentByNode } from "./contentByNode.js";
@@ -60,6 +60,7 @@ class Content implements IContent {
         }
       }
       clearStateAddressByBindingInfo(binding);
+      clearAbsoluteStateAddressByBindingInfo(binding);
     }
     this._mounted = false;
   }
@@ -67,7 +68,6 @@ class Content implements IContent {
 
 export function createContent(
   bindingInfo: IBindingInfo, 
-  loopContext: ILoopContext | null
 ): IContent {
   if (typeof bindingInfo.uuid === 'undefined' || bindingInfo.uuid === null) {
     raiseError(`BindingInfo.uuid is null.`);
@@ -77,7 +77,7 @@ export function createContent(
     raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
   }
   const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-  const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+  const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
   const content = new Content(cloneFragment);
   setBindingsByContent(content, initialInfo.bindingInfos);
   setNodesByContent(content, initialInfo.nodes);

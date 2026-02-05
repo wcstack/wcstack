@@ -5,6 +5,7 @@ import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
+import * as listIndexesByList from '../src/list/listIndexesByList';
 
 function createStateProxy(values: Record<string, any>) {
   return {
@@ -86,6 +87,87 @@ describe('walkDependency', () => {
       { path: 'users.*', index: 0 },
       { path: 'users.*', index: 1 },
     ]);
+  });
+
+  it('static dependency uses cached lastValue branch', () => {
+    const stateProxy = createStateProxy({
+      users: [{ id: 1 }, { id: 2 }],
+    });
+    const startAddress = createStateAddress(getPathInfo('users'), null);
+    const staticDependency = new Map<string, string[]>([['users', ['users.*']]]);
+    const listPathSet = new Set<string>(['users']);
+
+    // First call to seed lastValueByListAddress
+    walkDependency(
+      startAddress,
+      staticDependency,
+      new Map(),
+      listPathSet,
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    // Ensure list indexes are available for cached path
+    setListIndexesByList(stateProxy.$$getByAddress(startAddress), [
+      createListIndex(null, 0),
+      createListIndex(null, 1),
+    ]);
+
+    const result = walkDependency(
+      startAddress,
+      staticDependency,
+      new Map(),
+      listPathSet,
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    expect(collectResult(result)).toEqual([
+      { path: 'users.*', index: 0 },
+      { path: 'users.*', index: 1 },
+    ]);
+  });
+
+  it('static dependency hits lastValue branch of getListIndexesByList', () => {
+    const stateProxy = createStateProxy({
+      users: [{ id: 1 }, { id: 2 }],
+    });
+    const startAddress = createStateAddress(getPathInfo('users'), null);
+    const staticDependency = new Map<string, string[]>([['users', ['users.*']]]);
+    const listPathSet = new Set<string>(['users']);
+    const spy = vi.spyOn(listIndexesByList, 'getListIndexesByList');
+
+    const beforeFirst = spy.mock.calls.length;
+    walkDependency(
+      startAddress,
+      staticDependency,
+      new Map(),
+      listPathSet,
+      stateProxy,
+      'new',
+      () => {}
+    );
+    const afterFirst = spy.mock.calls.length;
+
+    setListIndexesByList(stateProxy.$$getByAddress(startAddress), [
+      createListIndex(null, 0),
+      createListIndex(null, 1),
+    ]);
+
+    walkDependency(
+      startAddress,
+      staticDependency,
+      new Map(),
+      listPathSet,
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    expect(spy.mock.calls.length).toBeGreaterThan(afterFirst);
+    spy.mockRestore();
   });
 
   it('static dependency follows non-list path', () => {
@@ -183,6 +265,80 @@ describe('walkDependency', () => {
       { path: 'users.*.orders.*.id', index: 0 },
       { path: 'users.*.orders.*.id', index: 1 },
     ]);
+  });
+
+  it('dynamic dependency expansion uses cached lastValue branch', () => {
+    const stateProxy = createStateProxy({
+      'users.*.orders': [1, 2],
+    });
+    const listIndex = createListIndex(null, 0);
+    const startAddress = createStateAddress(getPathInfo('users.*.name'), listIndex);
+    const dynamicDependency = new Map<string, string[]>([
+      ['users.*.name', ['users.*.orders.*.id']],
+    ]);
+
+    // First call to seed lastValueByListAddress for expansion
+    walkDependency(
+      startAddress,
+      new Map(),
+      dynamicDependency,
+      new Set(),
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    const result = walkDependency(
+      startAddress,
+      new Map(),
+      dynamicDependency,
+      new Set(),
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    expect(collectResult(result)).toEqual([
+      { path: 'users.*.orders.*.id', index: 0 },
+      { path: 'users.*.orders.*.id', index: 1 },
+    ]);
+  });
+
+  it('dynamic dependency hits lastValue branch of getListIndexesByList', () => {
+    const stateProxy = createStateProxy({
+      'users.*.orders': [1, 2],
+    });
+    const listIndex = createListIndex(null, 0);
+    const startAddress = createStateAddress(getPathInfo('users.*.name'), listIndex);
+    const dynamicDependency = new Map<string, string[]>([
+      ['users.*.name', ['users.*.orders.*.id']],
+    ]);
+    const spy = vi.spyOn(listIndexesByList, 'getListIndexesByList');
+
+    const beforeFirst = spy.mock.calls.length;
+    walkDependency(
+      startAddress,
+      new Map(),
+      dynamicDependency,
+      new Set(),
+      stateProxy,
+      'new',
+      () => {}
+    );
+    const afterFirst = spy.mock.calls.length;
+
+    walkDependency(
+      startAddress,
+      new Map(),
+      dynamicDependency,
+      new Set(),
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    expect(spy.mock.calls.length).toBeGreaterThan(afterFirst);
+    spy.mockRestore();
   });
 
   it('dynamic dependency recurses when multiple wildcards remain', () => {

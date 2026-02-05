@@ -56,7 +56,7 @@ describe('createContent', () => {
     const placeholder = document.createComment('placeholder');
     const bindingInfo = createBindingInfo(placeholder, { uuid: null });
 
-    expect(() => createContent(bindingInfo, null)).toThrow(/BindingInfo\.uuid is null/);
+    expect(() => createContent(bindingInfo)).toThrow(/BindingInfo\.uuid is null/);
   });
 
   it('mountAfterでノードを挿入できること', () => {
@@ -74,7 +74,7 @@ describe('createContent', () => {
 
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
     content.mountAfter(placeholder);
 
     expect(container.childNodes.length).toBe(3);
@@ -93,7 +93,7 @@ describe('createContent', () => {
 
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
     content.mountAfter(placeholder);
     expect(container.childNodes.length).toBe(2);
 
@@ -117,7 +117,7 @@ describe('createContent', () => {
     const placeholder = document.createComment('placeholder');
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
     expect((content.firstNode as HTMLElement).id).toBe('first');
     expect((content.lastNode as HTMLElement).id).toBe('last');
   });
@@ -127,7 +127,7 @@ describe('createContent', () => {
     const placeholder = document.createComment('placeholder');
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
     expect(content.firstNode).toBeNull();
     expect(content.lastNode).toBeNull();
   });
@@ -140,7 +140,7 @@ describe('createContent', () => {
 
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
     content.mountAfter(placeholder);
 
     expect(span.parentNode).toBe(fragment);
@@ -156,7 +156,7 @@ describe('createContent', () => {
 
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
 
     expect(content.mounted).toBe(false);
 
@@ -174,7 +174,7 @@ describe('createContent', () => {
 
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
 
     const childNode = document.createComment('child-if');
     const childContent = {

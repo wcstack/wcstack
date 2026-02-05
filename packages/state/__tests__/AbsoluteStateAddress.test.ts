@@ -6,7 +6,6 @@ import { setStateElementByName } from '../src/stateElementByName';
 
 function createStateElement() {
   return {
-    bindingInfosByAddress: new Map(),
     mightChangeByPath: new Map()
   } as any;
 }

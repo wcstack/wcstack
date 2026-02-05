@@ -1030,14 +1030,6 @@ function setBindingsByContent(content, bindings) {
     bindingsByContent.set(content, bindings);
 }
 
-const nodesByContent = new WeakMap();
-function getNodesByContent(content) {
-    return nodesByContent.get(content) ?? [];
-}
-function setNodesByContent(content, nodes) {
-    nodesByContent.set(content, nodes);
-}
-
 if (!Set.prototype.difference) {
     Set.prototype.difference = function (other) {
         const result = new Set(this);
@@ -1250,11 +1242,11 @@ function getStateAddressByBindingInfo(bindingInfo) {
         raiseError(`State path info is null for binding with statePathName "${bindingInfo.statePathName}".`);
     }
     if (bindingInfo.statePathInfo.wildcardCount > 0) {
-        const loopContext = getLoopContextByNode(bindingInfo.node);
-        if (loopContext === null) {
-            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because loop context is null.`);
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        if (listIndex === null) {
+            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
         }
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, loopContext.listIndex);
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
     }
     else {
         stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
@@ -1265,6 +1257,85 @@ function getStateAddressByBindingInfo(bindingInfo) {
 // call for change loopContext
 function clearStateAddressByBindingInfo(bindingInfo) {
     stateAddressByBindingInfo.delete(bindingInfo);
+}
+
+const absoluteStateAddressByBindingInfo = new WeakMap();
+function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
+    let absoluteStateAddress = null;
+    absoluteStateAddress = absoluteStateAddressByBindingInfo.get(bindingInfo) || null;
+    if (absoluteStateAddress !== null) {
+        return absoluteStateAddress;
+    }
+    const stateAddress = getStateAddressByBindingInfo(bindingInfo);
+    absoluteStateAddress = createAbsoluteStateAddress(bindingInfo.stateName, stateAddress);
+    absoluteStateAddressByBindingInfo.set(bindingInfo, absoluteStateAddress);
+    return absoluteStateAddress;
+}
+function clearAbsoluteStateAddressByBindingInfo(bindingInfo) {
+    absoluteStateAddressByBindingInfo.delete(bindingInfo);
+}
+
+const bindingInfosByAbsoluteStateAddress = new WeakMap();
+function getBindingInfosByAbsoluteStateAddress(absoluteStateAddress) {
+    let bindingInfos = null;
+    bindingInfos = bindingInfosByAbsoluteStateAddress.get(absoluteStateAddress) || null;
+    if (bindingInfos === null) {
+        bindingInfos = [];
+        bindingInfosByAbsoluteStateAddress.set(absoluteStateAddress, bindingInfos);
+    }
+    return bindingInfos;
+}
+function addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, bindingInfo) {
+    const bindingInfos = getBindingInfosByAbsoluteStateAddress(absoluteStateAddress);
+    bindingInfos.push(bindingInfo);
+}
+function removeBindingInfoByAbsoluteStateAddress(absoluteStateAddress, bindingInfo) {
+    const bindingInfos = getBindingInfosByAbsoluteStateAddress(absoluteStateAddress);
+    const index = bindingInfos.indexOf(bindingInfo);
+    if (index !== -1) {
+        bindingInfos.splice(index, 1);
+    }
+}
+
+const nodesByContent = new WeakMap();
+function getNodesByContent(content) {
+    return nodesByContent.get(content) ?? [];
+}
+function setNodesByContent(content, nodes) {
+    nodesByContent.set(content, nodes);
+}
+
+function bindLoopContextToContent(content, loopContext) {
+    const nodes = getNodesByContent(content);
+    for (const node of nodes) {
+        setLoopContextByNode(node, loopContext);
+    }
+}
+function unbindLoopContextToContent(content) {
+    const nodes = getNodesByContent(content);
+    for (const node of nodes) {
+        setLoopContextByNode(node, null);
+    }
+}
+
+function activateContent(content, loopContext, state, stateName) {
+    bindLoopContextToContent(content, loopContext);
+    const bindings = getBindingsByContent(content);
+    for (const binding of bindings) {
+        const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+        addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        applyChange(binding, state, stateName);
+    }
+}
+function deactivateContent(content) {
+    const bindings = getBindingsByContent(content);
+    for (const binding of bindings) {
+        const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+        removeBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        clearAbsoluteStateAddressByBindingInfo(binding);
+        clearStateAddressByBindingInfo(binding);
+    }
+    unbindLoopContextToContent(content);
 }
 
 function replaceToReplaceNode(bindingInfo) {
@@ -2586,7 +2657,6 @@ function attachTwowayEventHandler(bindingInfo) {
 }
 
 function _initializeBindings(allBindings) {
-    const applyBindings = [];
     const bindingsByStateElement = new Map();
     for (const bindingInfo of allBindings) {
         const stateElement = getStateElementByName(bindingInfo.stateName);
@@ -2602,7 +2672,7 @@ function _initializeBindings(allBindings) {
         // two-way binding
         attachTwowayEventHandler(bindingInfo);
         // register binding
-        stateElement.addBindingInfo(bindingInfo);
+        stateElement.setBindingInfo(bindingInfo);
         // group by state element
         let bindings = bindingsByStateElement.get(stateElement);
         if (typeof bindings === "undefined") {
@@ -2612,25 +2682,6 @@ function _initializeBindings(allBindings) {
             bindings.push(bindingInfo);
         }
     }
-    // get apply values from cache and state
-    for (const [stateElement, bindings] of bindingsByStateElement.entries()) {
-        const cacheValueByPath = new Map();
-        stateElement.createState("readonly", (state) => {
-            for (const bindingInfo of bindings) {
-                let cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
-                if (typeof cacheValue === "undefined") {
-                    const loopContext = getLoopContextByNode(bindingInfo.node);
-                    cacheValue = state.$$setLoopContext(loopContext, () => {
-                        return state[bindingInfo.statePathName];
-                    });
-                    cacheValueByPath.set(bindingInfo.statePathName, cacheValue);
-                }
-                applyBindings.push(bindingInfo);
-            }
-        });
-    }
-    // apply all at once
-    applyChangeFromBindings(applyBindings);
 }
 function initializeBindings(root, parentLoopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
@@ -2638,16 +2689,19 @@ function initializeBindings(root, parentLoopContext) {
         setLoopContextByNode(node, parentLoopContext);
     }
     _initializeBindings(allBindings);
-    return {
-        nodes: subscriberNodes,
-        bindingInfos: allBindings,
-    };
-}
-function initializeBindingsByFragment(root, nodeInfos, loopContext) {
-    const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
-    for (const node of subscriberNodes) {
-        setLoopContextByNode(node, loopContext);
+    // create absolute state address and register binding infos
+    for (const binding of allBindings) {
+        const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+        addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
     }
+    // apply all at once
+    applyChangeFromBindings(allBindings);
+}
+function initializeBindingsByFragment(root, nodeInfos) {
+    const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
+    //  for(const node of subscriberNodes) {
+    //    setLoopContextByNode(node, loopContext);
+    //  }
     _initializeBindings(allBindings);
     return {
         nodes: subscriberNodes,
@@ -2665,7 +2719,15 @@ function setContentByNode(node, content) {
     }
 }
 function getContentByNode(node) {
-    return contentByNode.get(node) || null;
+    let currentNode = node;
+    while (currentNode) {
+        const loopContext = contentByNode.get(currentNode);
+        if (loopContext) {
+            return loopContext;
+        }
+        currentNode = currentNode.parentNode;
+    }
+    return null;
 }
 
 class Content {
@@ -2714,11 +2776,12 @@ class Content {
                 }
             }
             clearStateAddressByBindingInfo(binding);
+            clearAbsoluteStateAddressByBindingInfo(binding);
         }
         this._mounted = false;
     }
 }
-function createContent(bindingInfo, loopContext) {
+function createContent(bindingInfo) {
     if (typeof bindingInfo.uuid === 'undefined' || bindingInfo.uuid === null) {
         raiseError(`BindingInfo.uuid is null.`);
     }
@@ -2727,7 +2790,7 @@ function createContent(bindingInfo, loopContext) {
         raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
     }
     const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-    const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+    const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
     const content = new Content(cloneFragment);
     setBindingsByContent(content, initialInfo.bindingInfos);
     setNodesByContent(content, initialInfo.nodes);
@@ -2735,7 +2798,7 @@ function createContent(bindingInfo, loopContext) {
     return content;
 }
 
-const lastValueByNode$1 = new WeakMap();
+const lastValueByNode = new WeakMap();
 const contentByListIndex = new WeakMap();
 const pooledContentsByNode = new WeakMap();
 function getPooledContents(bindingInfo) {
@@ -2756,13 +2819,14 @@ function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
         raiseError(`List path info not found in fragment bind text result.`);
     }
     const listIndex = getListIndexByBindingInfo(bindingInfo);
-    const lastValue = lastValueByNode$1.get(bindingInfo.node);
+    const lastValue = lastValueByNode.get(bindingInfo.node);
     const lastIndexes = getListIndexesByList(lastValue) || [];
     const diff = createListDiff(listIndex, lastValue, _newValue, lastIndexes);
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = contentByListIndex.get(deleteIndex);
         if (typeof content !== 'undefined') {
             content.unmount();
+            deactivateContent(content);
             setPooledContent(bindingInfo, content);
         }
     }
@@ -2781,39 +2845,18 @@ function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
                 const pooledContents = getPooledContents(bindingInfo);
                 content = pooledContents.pop();
                 if (typeof content === 'undefined') {
-                    content = createContent(bindingInfo, loopContext);
+                    content = createContent(bindingInfo);
                 }
-                else {
-                    const nodes = getNodesByContent(content);
-                    for (const node of nodes) {
-                        setLoopContextByNode(node, loopContext);
-                    }
-                    const bindingsForContent = getBindingsByContent(content);
-                    for (const bindingInfoForContent of bindingsForContent) {
-                        if (bindingInfoForContent.statePathInfo === null) {
-                            raiseError(`BindingInfo.statePathInfo is null.`);
-                        }
-                        const listIndex = getListIndexByBindingInfo(bindingInfoForContent);
-                        const address = createStateAddress(bindingInfoForContent.statePathInfo, listIndex);
-                        const bindingInfosForStateElement = stateElement.bindingInfosByAddress.get(address);
-                        if (typeof bindingInfosForStateElement === "undefined") {
-                            stateElement.bindingInfosByAddress.set(address, [bindingInfoForContent]);
-                        }
-                        else {
-                            bindingInfosForStateElement.push(bindingInfoForContent);
-                        }
-                        applyChange(bindingInfoForContent, state, stateName);
-                    }
-                }
+                activateContent(content, loopContext, state, stateName);
             });
         }
         else {
             content = contentByListIndex.get(index);
             if (diff.changeIndexSet.has(index)) {
                 // change
-                const bindings = getBindingsByContent(content);
-                for (const bindingInfo of bindings) {
-                    applyChange(bindingInfo, state, stateName);
+                const bindingsForContent = getBindingsByContent(content);
+                for (const bindingForContent of bindingsForContent) {
+                    applyChange(bindingForContent, state, stateName);
                 }
             }
         }
@@ -2825,54 +2868,38 @@ function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
         lastNode = content.lastNode || lastNode;
         contentByListIndex.set(index, content);
     }
-    lastValueByNode$1.set(bindingInfo.node, _newValue);
+    lastValueByNode.set(bindingInfo.node, _newValue);
 }
 
-const lastValueByNode = new WeakMap();
 const lastConnectedByNode = new WeakMap();
 function bindingInfoText(bindingInfo) {
     return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.filters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
 }
 function applyChangeToIf(bindingInfo, _newValue, state, stateName) {
-    const lastConnected = lastConnectedByNode.get(bindingInfo.node) ?? false;
     const currentConnected = bindingInfo.node.isConnected;
-    const oldValue = lastValueByNode.get(bindingInfo.node) ?? false;
     const newValue = Boolean(_newValue);
     let content = getContentByNode(bindingInfo.node);
-    let initialized = false;
     if (content === null) {
-        const loopContext = getLoopContextByNode(bindingInfo.node);
-        content = createContent(bindingInfo, loopContext);
-        initialized = true;
+        content = createContent(bindingInfo);
     }
     try {
-        if (oldValue === newValue && lastConnected === currentConnected) {
-            if (config.debug) {
-                console.log(`if content unchanged (same connecting): ${bindingInfoText(bindingInfo)}`);
-            }
-            return;
-        }
         if (!newValue) {
             if (config.debug) {
                 console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
             }
             content.unmount();
+            deactivateContent(content);
         }
         if (newValue) {
             if (config.debug) {
                 console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
             }
             content.mountAfter(bindingInfo.node);
-            if (!initialized) {
-                const bindings = getBindingsByContent(content);
-                for (const bindingInfo of bindings) {
-                    applyChange(bindingInfo, state, stateName);
-                }
-            }
+            const loopContext = getLoopContextByNode(bindingInfo.node);
+            activateContent(content, loopContext, state, stateName);
         }
     }
     finally {
-        lastValueByNode.set(bindingInfo.node, newValue);
         lastConnectedByNode.set(bindingInfo.node, currentConnected);
     }
 }
@@ -3002,14 +3029,8 @@ class Updater {
         const absoluteAddressSet = new Set(absoluteAddresses);
         const processBindingInfos = [];
         for (const absoluteAddress of absoluteAddressSet) {
-            const stateElement = getStateElementByName(absoluteAddress.stateName);
-            if (stateElement === null) {
-                raiseError(`State element with name "${absoluteAddress.stateName}" not found for updater.`);
-            }
-            const bindingInfos = stateElement.bindingInfosByAddress.get(absoluteAddress.address);
-            if (typeof bindingInfos !== "undefined") {
-                processBindingInfos.push(...bindingInfos);
-            }
+            const bindings = getBindingInfosByAbsoluteStateAddress(absoluteAddress);
+            processBindingInfos.push(...bindings);
         }
         applyChangeFromBindings(processBindingInfos);
     }
@@ -3499,10 +3520,8 @@ function getStateInfo(state) {
 }
 class State extends HTMLElement {
     __state;
-    _proxyState;
     _name = 'default';
     _initialized = false;
-    _bindingInfosByAddress = new Map();
     _initializePromise;
     _resolveInitialize = null;
     _listPaths = new Set();
@@ -3537,7 +3556,6 @@ class State extends HTMLElement {
         this._elementPaths.clear();
         this._getterPaths.clear();
         this._pathSet.clear();
-        this._proxyState = undefined;
         const stateInfo = getStateInfo(value);
         for (const path of stateInfo.getterPaths) {
             this._getterPaths.add(path);
@@ -3626,9 +3644,6 @@ class State extends HTMLElement {
     disconnectedCallback() {
         setStateElementByName(this._name, null);
     }
-    get bindingInfosByAddress() {
-        return this._bindingInfosByAddress;
-    }
     get initializePromise() {
         return this._initializePromise;
     }
@@ -3701,17 +3716,8 @@ class State extends HTMLElement {
     addStaticDependency(sourcePath, targetPath) {
         this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
-    addBindingInfo(bindingInfo) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        const address = createStateAddress(bindingInfo.statePathInfo, listIndex);
+    setBindingInfo(bindingInfo) {
         const path = bindingInfo.statePathName;
-        const bindingInfos = this._bindingInfosByAddress.get(address);
-        if (typeof bindingInfos === "undefined") {
-            this._bindingInfosByAddress.set(address, [bindingInfo]);
-        }
-        else {
-            bindingInfos.push(bindingInfo);
-        }
         if (bindingInfo.bindingType === "for") {
             this._listPaths.add(path);
             this._elementPaths.add(path + '.' + WILDCARD);
@@ -3721,17 +3727,6 @@ class State extends HTMLElement {
             this._pathSet.add(path);
             if (pathInfo.parentPath !== null) {
                 this.addStaticDependency(pathInfo.parentPath, path);
-            }
-        }
-    }
-    deleteBindingInfo(bindingInfo) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        const address = createStateAddress(bindingInfo.statePathInfo, listIndex);
-        const bindingInfos = this._bindingInfosByAddress.get(address);
-        if (typeof bindingInfos !== "undefined") {
-            const index = bindingInfos.indexOf(bindingInfo);
-            if (index !== -1) {
-                bindingInfos.splice(index, 1);
             }
         }
     }

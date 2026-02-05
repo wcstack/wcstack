@@ -1,14 +1,12 @@
 import { getPathInfo } from "../address/PathInfo";
-import { createStateAddress } from "../address/StateAddress";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
-import { getNodesByContent } from "../bindings/nodesByContent";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getListIndexesByList } from "../list/listIndexesByList";
-import { setLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
+import { activateContent, deactivateContent } from "../structural/activateContent";
 import { createContent } from "../structural/createContent";
 import { applyChange } from "./applyChange";
 const lastValueByNode = new WeakMap();
@@ -48,6 +46,7 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
         const content = contentByListIndex.get(deleteIndex);
         if (typeof content !== 'undefined') {
             content.unmount();
+            deactivateContent(content);
             setPooledContent(bindingInfo, content);
         }
     }
@@ -66,39 +65,18 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
                 const pooledContents = getPooledContents(bindingInfo);
                 content = pooledContents.pop();
                 if (typeof content === 'undefined') {
-                    content = createContent(bindingInfo, loopContext);
+                    content = createContent(bindingInfo);
                 }
-                else {
-                    const nodes = getNodesByContent(content);
-                    for (const node of nodes) {
-                        setLoopContextByNode(node, loopContext);
-                    }
-                    const bindingsForContent = getBindingsByContent(content);
-                    for (const bindingInfoForContent of bindingsForContent) {
-                        if (bindingInfoForContent.statePathInfo === null) {
-                            raiseError(`BindingInfo.statePathInfo is null.`);
-                        }
-                        const listIndex = getListIndexByBindingInfo(bindingInfoForContent);
-                        const address = createStateAddress(bindingInfoForContent.statePathInfo, listIndex);
-                        const bindingInfosForStateElement = stateElement.bindingInfosByAddress.get(address);
-                        if (typeof bindingInfosForStateElement === "undefined") {
-                            stateElement.bindingInfosByAddress.set(address, [bindingInfoForContent]);
-                        }
-                        else {
-                            bindingInfosForStateElement.push(bindingInfoForContent);
-                        }
-                        applyChange(bindingInfoForContent, state, stateName);
-                    }
-                }
+                activateContent(content, loopContext, state, stateName);
             });
         }
         else {
             content = contentByListIndex.get(index);
             if (diff.changeIndexSet.has(index)) {
                 // change
-                const bindings = getBindingsByContent(content);
-                for (const bindingInfo of bindings) {
-                    applyChange(bindingInfo, state, stateName);
+                const bindingsForContent = getBindingsByContent(content);
+                for (const bindingForContent of bindingsForContent) {
+                    applyChange(bindingForContent, state, stateName);
                 }
             }
         }

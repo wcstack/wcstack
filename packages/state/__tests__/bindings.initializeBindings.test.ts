@@ -7,19 +7,23 @@ import { createLoopContextStack } from '../src/list/loopContext';
 import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
-import { createStateAddress } from '../src/address/StateAddress';
-import { getListIndexByBindingInfo } from '../src/list/getListIndexByBindingInfo';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { getPathInfo } from '../src/address/PathInfo';
-import { createListIndex } from '../src/list/createListIndex';
+import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
+import { getAbsoluteStateAddressByBindingInfo } from '../src/binding/getAbsoluteStateAddressByBindingInfo';
+import { getBindingInfosByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
 
 vi.mock('../src/event/handler', () => ({
   attachEventHandler: vi.fn((bindingInfo: IBindingInfo) => bindingInfo.bindingType === 'event')
 }));
+vi.mock('../src/apply/applyChangeFromBindings', () => ({
+  applyChangeFromBindings: vi.fn()
+}));
+
+const applyChangeFromBindingsMock = vi.mocked(applyChangeFromBindings);
 
 function createMockStateElement(): IStateElement {
-  const bindingInfosByAddress = new Map<IStateAddress, IBindingInfo[]>();
   const listPaths = new Set<string>();
   const elementPaths = new Set<string>();
   const getterPaths = new Set<string>();
@@ -27,6 +31,7 @@ function createMockStateElement(): IStateElement {
   const mightChangeByPath = new Map<string, IVersionInfo>();
   const dynamicDependency = new Map<string, string[]>();
   const staticDependency = new Map<string, string[]>();
+  const pathSet = new Set<string>();
   let version = 0;
   const stateProxy: any = {
     message: 'hello',
@@ -36,7 +41,6 @@ function createMockStateElement(): IStateElement {
 
   return {
     name: 'default',
-    bindingInfosByAddress,
     initializePromise: Promise.resolve(),
     listPaths,
     elementPaths,
@@ -50,23 +54,22 @@ function createMockStateElement(): IStateElement {
     get version() {
       return version;
     },
-    addBindingInfo(bindingInfo: IBindingInfo) {
-      const listIndex = getListIndexByBindingInfo(bindingInfo);
-      const address = createStateAddress(bindingInfo.statePathInfo!, listIndex);
-      const list = bindingInfosByAddress.get(address) || [];
-      list.push(bindingInfo);
-      bindingInfosByAddress.set(address, list);
-    },
-    deleteBindingInfo(bindingInfo: IBindingInfo) {
-      const listIndex = getListIndexByBindingInfo(bindingInfo);
-      const address = createStateAddress(bindingInfo.statePathInfo!, listIndex);
-      const list = bindingInfosByAddress.get(address) || [];
-      const index = list.indexOf(bindingInfo);
-      if (index !== -1) {
-        list.splice(index, 1);
+    setBindingInfo(bindingInfo: IBindingInfo) {
+      const path = bindingInfo.statePathName;
+      if (bindingInfo.bindingType === 'for') {
+        listPaths.add(path);
+        elementPaths.add(path + '.*');
       }
-      if (list.length === 0) {
-        bindingInfosByAddress.delete(address);
+      if (!pathSet.has(path)) {
+        pathSet.add(path);
+        const pathInfo = getPathInfo(path);
+        if (pathInfo.parentPath !== null) {
+          const deps = staticDependency.get(pathInfo.parentPath) ?? [];
+          if (!deps.includes(path)) {
+            deps.push(path);
+            staticDependency.set(pathInfo.parentPath, deps);
+          }
+        }
       }
     },
     addStaticDependency() {},
@@ -87,6 +90,7 @@ function createMockStateElement(): IStateElement {
 describe('initializeBindings', () => {
   afterEach(() => {
     setStateElementByName('default', null);
+    vi.clearAllMocks();
   });
 
   it('コメントノードのtextバインディングを初期化できること', () => {
@@ -97,16 +101,20 @@ describe('initializeBindings', () => {
     const comment = document.createComment('@@wcs-text: message');
     container.appendChild(comment);
 
+    const setBindingSpy = vi.spyOn(stateElement, 'setBindingInfo');
+
     initializeBindings(container, null);
 
     expect(container.childNodes.length).toBe(1);
     expect(container.childNodes[0].nodeType).toBe(Node.TEXT_NODE);
-    expect(container.childNodes[0].nodeValue).toBe('hello');
+    expect(container.childNodes[0].nodeValue).toBe('');
 
-    const bindingInfos = Array.from(stateElement.bindingInfosByAddress.values()).flat();
-    expect(bindingInfos.length).toBe(1);
-    const address = createStateAddress(bindingInfos[0].statePathInfo!, null);
-    expect(stateElement.bindingInfosByAddress.get(address)).toBeDefined();
+    expect(setBindingSpy).toHaveBeenCalledTimes(1);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
+    const [bindings] = applyChangeFromBindingsMock.mock.calls[0];
+    expect(bindings).toHaveLength(1);
+    const absoluteAddress = getAbsoluteStateAddressByBindingInfo(bindings[0]);
+    expect(getBindingInfosByAbsoluteStateAddress(absoluteAddress)).toContain(bindings[0]);
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {
@@ -122,7 +130,7 @@ describe('initializeBindings', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
-    const addBindingSpy = vi.spyOn(stateElement, 'addBindingInfo');
+    const setBindingSpy = vi.spyOn(stateElement, 'setBindingInfo');
 
     const container = document.createElement('div');
     const el = document.createElement('button');
@@ -131,7 +139,7 @@ describe('initializeBindings', () => {
 
     initializeBindings(container, null);
 
-    expect(addBindingSpy).not.toHaveBeenCalled();
+    expect(setBindingSpy).not.toHaveBeenCalled();
   });
 
   it('同じstateElementに複数バインディングがある場合も処理されること', () => {
@@ -148,11 +156,12 @@ describe('initializeBindings', () => {
 
     initializeBindings(container, null);
 
-    const bindingInfos = Array.from(stateElement.bindingInfosByAddress.values()).flat();
-    expect(bindingInfos).toHaveLength(2);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
+    const [bindings] = applyChangeFromBindingsMock.mock.calls[0];
+    expect(bindings).toHaveLength(2);
   });
 
-  it('fragment初期化でループコンテキストが設定されること', () => {
+  it('fragment初期化ではループコンテキストが設定されないこと', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
@@ -162,14 +171,9 @@ describe('initializeBindings', () => {
     fragment.appendChild(el);
 
     const nodeInfos = getFragmentNodeInfos(fragment);
-    const loopContext = {
-      elementPathInfo: getPathInfo('items.*'),
-      listIndex: createListIndex(null, 0)
-    };
-
-    initializeBindingsByFragment(fragment, nodeInfos, loopContext);
+    initializeBindingsByFragment(fragment, nodeInfos);
 
     const [node] = Array.from(fragment.childNodes);
-    expect(getLoopContextByNode(node)).toBe(loopContext);
+    expect(getLoopContextByNode(node)).toBeNull();
   });
 });

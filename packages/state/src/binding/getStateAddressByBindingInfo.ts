@@ -1,6 +1,6 @@
 import { createStateAddress } from "../address/StateAddress";
 import { IStateAddress } from "../address/types";
-import { getLoopContextByNode } from "../list/loopContextByNode";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 
@@ -16,11 +16,11 @@ export function getStateAddressByBindingInfo(bindingInfo: IBindingInfo) {
     raiseError(`State path info is null for binding with statePathName "${bindingInfo.statePathName}".`);
   }
   if (bindingInfo.statePathInfo.wildcardCount > 0) {
-    const loopContext = getLoopContextByNode(bindingInfo.node);
-    if (loopContext === null) {
-      raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because loop context is null.`);
+    const listIndex = getListIndexByBindingInfo(bindingInfo);
+    if (listIndex === null) {
+      raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
     }
-    stateAddress = createStateAddress(bindingInfo.statePathInfo, loopContext.listIndex);
+    stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
   } else {
     stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
   }

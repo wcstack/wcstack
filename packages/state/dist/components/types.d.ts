@@ -6,7 +6,6 @@ import { IBindingInfo } from "../types";
 import { IVersionInfo } from "../version/types";
 export interface IStateElement {
     readonly name: string;
-    readonly bindingInfosByAddress: Map<IStateAddress, IBindingInfo[]>;
     readonly initializePromise: Promise<void>;
     readonly listPaths: Set<string>;
     readonly elementPaths: Set<string>;
@@ -18,8 +17,7 @@ export interface IStateElement {
     readonly dynamicDependency: Map<string, string[]>;
     readonly staticDependency: Map<string, string[]>;
     readonly version: number;
-    addBindingInfo(bindingInfo: IBindingInfo): void;
-    deleteBindingInfo(bindingInfo: IBindingInfo): void;
+    setBindingInfo(bindingInfo: IBindingInfo): void;
     addStaticDependency(parentPath: string, childPath: string): void;
     addDynamicDependency(fromPath: string, toPath: string): void;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;

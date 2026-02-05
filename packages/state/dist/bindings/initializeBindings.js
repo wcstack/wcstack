@@ -4,10 +4,11 @@ import { replaceToReplaceNode } from "./replaceToReplaceNode";
 import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
 import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
-import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
+import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
+import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
+import { addBindingInfoByAbsoluteStateAddress } from "../binding/getBindingInfosByAbsoluteStateAddress";
 function _initializeBindings(allBindings) {
-    const applyBindings = [];
     const bindingsByStateElement = new Map();
     for (const bindingInfo of allBindings) {
         const stateElement = getStateElementByName(bindingInfo.stateName);
@@ -23,7 +24,7 @@ function _initializeBindings(allBindings) {
         // two-way binding
         attachTwowayEventHandler(bindingInfo);
         // register binding
-        stateElement.addBindingInfo(bindingInfo);
+        stateElement.setBindingInfo(bindingInfo);
         // group by state element
         let bindings = bindingsByStateElement.get(stateElement);
         if (typeof bindings === "undefined") {
@@ -33,25 +34,6 @@ function _initializeBindings(allBindings) {
             bindings.push(bindingInfo);
         }
     }
-    // get apply values from cache and state
-    for (const [stateElement, bindings] of bindingsByStateElement.entries()) {
-        const cacheValueByPath = new Map();
-        stateElement.createState("readonly", (state) => {
-            for (const bindingInfo of bindings) {
-                let cacheValue = cacheValueByPath.get(bindingInfo.statePathName);
-                if (typeof cacheValue === "undefined") {
-                    const loopContext = getLoopContextByNode(bindingInfo.node);
-                    cacheValue = state.$$setLoopContext(loopContext, () => {
-                        return state[bindingInfo.statePathName];
-                    });
-                    cacheValueByPath.set(bindingInfo.statePathName, cacheValue);
-                }
-                applyBindings.push(bindingInfo);
-            }
-        });
-    }
-    // apply all at once
-    applyChangeFromBindings(applyBindings);
 }
 export function initializeBindings(root, parentLoopContext) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
@@ -59,16 +41,19 @@ export function initializeBindings(root, parentLoopContext) {
         setLoopContextByNode(node, parentLoopContext);
     }
     _initializeBindings(allBindings);
-    return {
-        nodes: subscriberNodes,
-        bindingInfos: allBindings,
-    };
-}
-export function initializeBindingsByFragment(root, nodeInfos, loopContext) {
-    const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
-    for (const node of subscriberNodes) {
-        setLoopContextByNode(node, loopContext);
+    // create absolute state address and register binding infos
+    for (const binding of allBindings) {
+        const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+        addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
     }
+    // apply all at once
+    applyChangeFromBindings(allBindings);
+}
+export function initializeBindingsByFragment(root, nodeInfos) {
+    const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
+    //  for(const node of subscriberNodes) {
+    //    setLoopContextByNode(node, loopContext);
+    //  }
     _initializeBindings(allBindings);
     return {
         nodes: subscriberNodes,

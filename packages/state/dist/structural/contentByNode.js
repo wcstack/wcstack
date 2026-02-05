@@ -8,6 +8,14 @@ export function setContentByNode(node, content) {
     }
 }
 export function getContentByNode(node) {
-    return contentByNode.get(node) || null;
+    let currentNode = node;
+    while (currentNode) {
+        const loopContext = contentByNode.get(currentNode);
+        if (loopContext) {
+            return loopContext;
+        }
+        currentNode = currentNode.parentNode;
+    }
+    return null;
 }
 //# sourceMappingURL=contentByNode.js.map

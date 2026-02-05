@@ -9,8 +9,6 @@ import { createLoopContextStack } from "../list/loopContext";
 import { WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateProxy } from "../proxy/StateHandler";
-import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { createStateAddress } from "../address/StateAddress";
 function getAllPropertyDescriptors(obj) {
     let descriptors = {};
     let proto = obj;
@@ -38,10 +36,8 @@ function getStateInfo(state) {
 }
 export class State extends HTMLElement {
     __state;
-    _proxyState;
     _name = 'default';
     _initialized = false;
-    _bindingInfosByAddress = new Map();
     _initializePromise;
     _resolveInitialize = null;
     _listPaths = new Set();
@@ -76,7 +72,6 @@ export class State extends HTMLElement {
         this._elementPaths.clear();
         this._getterPaths.clear();
         this._pathSet.clear();
-        this._proxyState = undefined;
         const stateInfo = getStateInfo(value);
         for (const path of stateInfo.getterPaths) {
             this._getterPaths.add(path);
@@ -165,9 +160,6 @@ export class State extends HTMLElement {
     disconnectedCallback() {
         setStateElementByName(this._name, null);
     }
-    get bindingInfosByAddress() {
-        return this._bindingInfosByAddress;
-    }
     get initializePromise() {
         return this._initializePromise;
     }
@@ -240,17 +232,8 @@ export class State extends HTMLElement {
     addStaticDependency(sourcePath, targetPath) {
         this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
-    addBindingInfo(bindingInfo) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        const address = createStateAddress(bindingInfo.statePathInfo, listIndex);
+    setBindingInfo(bindingInfo) {
         const path = bindingInfo.statePathName;
-        const bindingInfos = this._bindingInfosByAddress.get(address);
-        if (typeof bindingInfos === "undefined") {
-            this._bindingInfosByAddress.set(address, [bindingInfo]);
-        }
-        else {
-            bindingInfos.push(bindingInfo);
-        }
         if (bindingInfo.bindingType === "for") {
             this._listPaths.add(path);
             this._elementPaths.add(path + '.' + WILDCARD);
@@ -260,17 +243,6 @@ export class State extends HTMLElement {
             this._pathSet.add(path);
             if (pathInfo.parentPath !== null) {
                 this.addStaticDependency(pathInfo.parentPath, path);
-            }
-        }
-    }
-    deleteBindingInfo(bindingInfo) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        const address = createStateAddress(bindingInfo.statePathInfo, listIndex);
-        const bindingInfos = this._bindingInfosByAddress.get(address);
-        if (typeof bindingInfos !== "undefined") {
-            const index = bindingInfos.indexOf(bindingInfo);
-            if (index !== -1) {
-                bindingInfos.splice(index, 1);
             }
         }
     }

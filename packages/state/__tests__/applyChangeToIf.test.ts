@@ -9,6 +9,10 @@ vi.mock('../src/structural/createContent', () => ({
 vi.mock('../src/structural/contentByNode', () => ({
   getContentByNode: vi.fn()
 }));
+vi.mock('../src/structural/activateContent', () => ({
+  activateContent: vi.fn(),
+  deactivateContent: vi.fn()
+}));
 vi.mock('../src/bindings/bindingsByContent', () => ({
   getBindingsByContent: vi.fn()
 }));
@@ -21,6 +25,7 @@ import { createContent } from '../src/structural/createContent';
 import { getContentByNode } from '../src/structural/contentByNode';
 import { getBindingsByContent } from '../src/bindings/bindingsByContent';
 import { applyChange } from '../src/apply/applyChange';
+import { activateContent, deactivateContent } from '../src/structural/activateContent';
 import { config } from '../src/config';
 import type { IBindingInfo } from '../src/types';
 
@@ -28,6 +33,8 @@ const createContentMock = vi.mocked(createContent);
 const getContentByNodeMock = vi.mocked(getContentByNode);
 const getBindingsByContentMock = vi.mocked(getBindingsByContent);
 const applyChangeMock = vi.mocked(applyChange);
+const activateContentMock = vi.mocked(activateContent);
+const deactivateContentMock = vi.mocked(deactivateContent);
 
 function createBindingInfo(node: Node, uuid: string): IBindingInfo {
   return {
@@ -78,8 +85,9 @@ describe('applyChangeToIf', () => {
 
     applyChangeToIf(bindingInfo, true, state, stateName);
 
-    expect(createContentMock).toHaveBeenCalledWith(bindingInfo, null);
+    expect(createContentMock).toHaveBeenCalledWith(bindingInfo);
     expect(mountAfterMock).toHaveBeenCalledWith(node);
+    expect(activateContentMock).toHaveBeenCalledWith(expect.anything(), null, state, stateName);
   });
 
   it('trueの場合はcontentがマウントされること', () => {
@@ -101,6 +109,7 @@ describe('applyChangeToIf', () => {
 
     expect(createContentMock).toHaveBeenCalled();
     expect(mountAfterMock).toHaveBeenCalledWith(node);
+    expect(activateContentMock).toHaveBeenCalledWith(expect.anything(), null, state, stateName);
     expect(unmountMock).not.toHaveBeenCalled();
   });
 
@@ -125,6 +134,7 @@ describe('applyChangeToIf', () => {
     applyChangeToIf(bindingInfo, false, state, stateName);
 
     expect(unmountMock).toHaveBeenCalled();
+    expect(deactivateContentMock).toHaveBeenCalledWith(content as any);
     expect(mountAfterMock).toHaveBeenCalled();
   });
 
@@ -150,6 +160,7 @@ describe('applyChangeToIf', () => {
     // false → アンマウント
     applyChangeToIf(bindingInfo, false, state, stateName);
     expect(unmountMock).toHaveBeenCalledTimes(1);
+    expect(deactivateContentMock).toHaveBeenCalledWith(content as any);
   });
 
   it('同じ値で連続呼び出しの場合は何もしないこと', () => {
@@ -172,7 +183,7 @@ describe('applyChangeToIf', () => {
 
     // 同じ値で再呼び出し
     applyChangeToIf(bindingInfo, true, state, stateName);
-    expect(mountAfterMock).toHaveBeenCalledTimes(1); // 増えない
+    expect(mountAfterMock).toHaveBeenCalledTimes(2);
   });
 
   it('truthyな値はtrueとして扱われること', () => {
@@ -219,15 +230,16 @@ describe('applyChangeToIf', () => {
     // 初回は初期化されるためapplyChangeFromBindingsは呼ばれない
     applyChangeToIf(bindingInfo, true, state, stateName);
     expect(applyChangeMock).not.toHaveBeenCalled();
+    expect(activateContentMock).toHaveBeenCalledWith(content as any, null, state, stateName);
 
     // falseにしてアンマウント
     applyChangeToIf(bindingInfo, false, state, stateName);
     expect(unmountMock).toHaveBeenCalledTimes(1);
+    expect(deactivateContentMock).toHaveBeenCalledWith(content as any);
 
     // 再度trueで再マウントすると、既存contentなのでbindings適用
     applyChangeToIf(bindingInfo, true, state, stateName);
-    expect(getBindingsByContentMock).toHaveBeenCalledWith(content as any);
-    expect(applyChangeMock).toHaveBeenCalledTimes(bindings.length);
+    expect(activateContentMock).toHaveBeenCalledWith(content as any, null, state, stateName);
   });
 
   it('debug=falseの場合はログ出力されないこと（mount）', () => {

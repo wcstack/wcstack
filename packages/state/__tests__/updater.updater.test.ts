@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { getUpdater } from '../src/updater/updater';
-import { setStateElementByName, getStateElementByName } from '../src/stateElementByName';
+import { setStateElementByName } from '../src/stateElementByName';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
+import { addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
   applyChangeFromBindings: vi.fn()
@@ -17,11 +18,8 @@ function createAddress(path: string) {
   return createStateAddress(getPathInfo(path), null);
 }
 
-function createStateElement(bindingInfosByAddress?: Map<any, any[]>) {
-  return {
-    bindingInfosByAddress: bindingInfosByAddress ?? new Map(),
-    mightChangeByPath: new Map()
-  } as any;
+function createStateElement() {
+  return {} as any;
 }
 
 describe('updater/updater', () => {
@@ -44,12 +42,12 @@ describe('updater/updater', () => {
   it('enqueueでapplyChangeFromBindingsが呼ばれること', async () => {
     const address = createAddress('count');
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
-    const bindingInfosByAddress = new Map([[address, [bindingInfo]]]);
-    const stateElement = createStateElement(bindingInfosByAddress);
+    const stateElement = createStateElement();
     setStateElementByName('default', stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsoluteStateAddress('default', address);
+    addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
@@ -61,12 +59,12 @@ describe('updater/updater', () => {
   it('同一フレームで複数enqueueしても処理は一度だけ行われること', async () => {
     const address = createAddress('value');
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
-    const bindingInfosByAddress = new Map([[address, [bindingInfo]]]);
-    const stateElement = createStateElement(bindingInfosByAddress);
+    const stateElement = createStateElement();
     setStateElementByName('default', stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsoluteStateAddress('default', address);
+    addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
     updater.enqueueAbsoluteAddress(absoluteAddress);
@@ -105,8 +103,8 @@ describe('updater/updater', () => {
     const bindingInfo1 = { propName: 'value', stateName: 'state1', node: document.createTextNode('') } as any;
     const bindingInfo2 = { propName: 'text', stateName: 'state2', node: document.createTextNode('') } as any;
     
-    const stateElement1 = createStateElement(new Map([[address1, [bindingInfo1]]]));
-    const stateElement2 = createStateElement(new Map([[address2, [bindingInfo2]]]));
+    const stateElement1 = createStateElement();
+    const stateElement2 = createStateElement();
     
     setStateElementByName('state1', stateElement1);
     setStateElementByName('state2', stateElement2);
@@ -114,6 +112,9 @@ describe('updater/updater', () => {
     const updater = getUpdater();
     const absoluteAddress1 = createAbsoluteStateAddress('state1', address1);
     const absoluteAddress2 = createAbsoluteStateAddress('state2', address2);
+
+    addBindingInfoByAbsoluteStateAddress(absoluteAddress1, bindingInfo1);
+    addBindingInfoByAbsoluteStateAddress(absoluteAddress2, bindingInfo2);
 
     updater.enqueueAbsoluteAddress(absoluteAddress1);
     updater.enqueueAbsoluteAddress(absoluteAddress2);

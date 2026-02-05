@@ -7,10 +7,8 @@ import { IVersionInfo } from "../version/types";
 import { IStateProxy, Mutability } from "../proxy/types";
 export declare class State extends HTMLElement implements IStateElement {
     private __state;
-    private _proxyState;
     private _name;
     private _initialized;
-    private _bindingInfosByAddress;
     private _initializePromise;
     private _resolveInitialize;
     private _listPaths;
@@ -35,7 +33,6 @@ export declare class State extends HTMLElement implements IStateElement {
     private _initialize;
     connectedCallback(): Promise<void>;
     disconnectedCallback(): void;
-    get bindingInfosByAddress(): Map<IStateAddress, IBindingInfo[]>;
     get initializePromise(): Promise<void>;
     get listPaths(): Set<string>;
     get elementPaths(): Set<string>;
@@ -74,8 +71,7 @@ export declare class State extends HTMLElement implements IStateElement {
      * @param targetPath
      */
     addStaticDependency(sourcePath: string, targetPath: string): void;
-    addBindingInfo(bindingInfo: IBindingInfo): void;
-    deleteBindingInfo(bindingInfo: IBindingInfo): void;
+    setBindingInfo(bindingInfo: IBindingInfo): void;
     private _createState;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;

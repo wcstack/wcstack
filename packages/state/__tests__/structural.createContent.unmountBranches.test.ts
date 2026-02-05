@@ -58,7 +58,7 @@ describe('createContent (unmount branches)', () => {
     });
 
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
 
     return { content, setFragmentInfoByUUID, bindingsByContent, contentByNode };
   }
@@ -154,7 +154,7 @@ describe('createContent (unmount branches)', () => {
     });
 
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
 
     const childNode = document.createComment('child-text');
     // ワイルドカード付きのパスでテスト（loopContextが使用される）
@@ -228,7 +228,7 @@ describe('createContent (unmount branches)', () => {
     });
 
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
 
     // 同じノードに複数のバインディング（ワイルドカード付き）
     const sharedNode = document.createElement('span');

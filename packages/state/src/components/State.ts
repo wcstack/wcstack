@@ -16,8 +16,6 @@ import { WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
-import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { createStateAddress } from "../address/StateAddress";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -55,10 +53,8 @@ function getStateInfo(
 
 export class State extends HTMLElement implements IStateElement {
   private __state: IState | undefined;
-  private _proxyState: IStateProxy | undefined;
   private _name: string = 'default';
   private _initialized: boolean = false;
-  private _bindingInfosByAddress = new Map<IStateAddress, IBindingInfo[]>();
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
@@ -96,7 +92,6 @@ export class State extends HTMLElement implements IStateElement {
     this._elementPaths.clear();
     this._getterPaths.clear();
     this._pathSet.clear();
-    this._proxyState = undefined;
     const stateInfo = getStateInfo(value);
     for(const path of stateInfo.getterPaths) {
       this._getterPaths.add(path);
@@ -188,10 +183,6 @@ export class State extends HTMLElement implements IStateElement {
     setStateElementByName(this._name, null);
   }
 
-  get bindingInfosByAddress(): Map<IStateAddress, IBindingInfo[]> {
-    return this._bindingInfosByAddress;
-  }
-
   get initializePromise(): Promise<void> {
     return this._initializePromise;
   }
@@ -281,16 +272,8 @@ export class State extends HTMLElement implements IStateElement {
     this._addDependency(this._staticDependency, sourcePath, targetPath);
   }
 
-  addBindingInfo(bindingInfo: IBindingInfo): void {
-    const listIndex = getListIndexByBindingInfo(bindingInfo);
-    const address = createStateAddress(bindingInfo.statePathInfo!, listIndex);
+  setBindingInfo(bindingInfo: IBindingInfo): void {
     const path = bindingInfo.statePathName;
-    const bindingInfos = this._bindingInfosByAddress.get(address);
-    if (typeof bindingInfos === "undefined") {
-      this._bindingInfosByAddress.set(address, [ bindingInfo ]);
-    } else {
-      bindingInfos.push(bindingInfo);
-    }
     if (bindingInfo.bindingType === "for") {
       this._listPaths.add(path);
       this._elementPaths.add(path + '.' + WILDCARD);
@@ -300,18 +283,6 @@ export class State extends HTMLElement implements IStateElement {
       this._pathSet.add(path);
       if (pathInfo.parentPath !== null) {
         this.addStaticDependency(pathInfo.parentPath, path);
-      }
-    }
-  }
-
-  deleteBindingInfo(bindingInfo: IBindingInfo): void {
-    const listIndex = getListIndexByBindingInfo(bindingInfo);
-    const address = createStateAddress(bindingInfo.statePathInfo!, listIndex);
-    const bindingInfos = this._bindingInfosByAddress.get(address);
-    if (typeof bindingInfos !== "undefined") {
-      const index = bindingInfos.indexOf(bindingInfo);
-      if (index !== -1) {
-        bindingInfos.splice(index, 1);
       }
     }
   }

@@ -47,12 +47,15 @@ describe('getStateAddressByBindingInfo', () => {
       statePathInfo: getPathInfo('items.*')
     });
     expect(() => getStateAddressByBindingInfo(bindingInfo))
-      .toThrow(/loop context is null/);
+      .toThrow(/list index is null/);
   });
 
   it('ワイルドカードでloopContextがあればlistIndexを使って解決できること', () => {
     const listIndex = createListIndex(null, 0);
-    getLoopContextByNodeMock.mockReturnValue({ listIndex } as any);
+    getLoopContextByNodeMock.mockReturnValue({
+      listIndex,
+      elementPathInfo: getPathInfo('items.*')
+    } as any);
 
     const bindingInfo = createBindingInfo({
       statePathName: 'items.*',
@@ -101,12 +104,18 @@ describe('clearStateAddressByBindingInfo', () => {
     });
 
     // 最初のloopContextでアドレスを取得
-    getLoopContextByNodeMock.mockReturnValue({ listIndex: listIndex1 } as any);
+    getLoopContextByNodeMock.mockReturnValue({
+      listIndex: listIndex1,
+      elementPathInfo: getPathInfo('items.*')
+    } as any);
     const address1 = getStateAddressByBindingInfo(bindingInfo);
     expect(address1.listIndex).toBe(listIndex1);
 
     // キャッシュをクリアせずにloopContextを変更
-    getLoopContextByNodeMock.mockReturnValue({ listIndex: listIndex2 } as any);
+    getLoopContextByNodeMock.mockReturnValue({
+      listIndex: listIndex2,
+      elementPathInfo: getPathInfo('items.*')
+    } as any);
     const addressCached = getStateAddressByBindingInfo(bindingInfo);
     // キャッシュから古いアドレスが返される
     expect(addressCached.listIndex).toBe(listIndex1);

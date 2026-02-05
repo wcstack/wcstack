@@ -123,7 +123,10 @@ describe('event/handler', () => {
     const addSpy = vi.spyOn(el, 'addEventListener');
     const binding = createBindingInfo(el, { statePathName: 'handleClick-not-fn' });
 
-    const state = { 'handleClick-not-fn': 123 } as any;
+    const state = {
+      'handleClick-not-fn': 123,
+      $$setLoopContext: (_ctx: any, cb: () => void) => cb(),
+    } as any;
     let lastPromise: Promise<any> | null = null;
     setStateElementByName('default', {
       createStateAsync: (mutability: string, callback: (s: any) => Promise<void>) => {

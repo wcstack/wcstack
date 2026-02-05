@@ -59,7 +59,7 @@ describe('contentByNode', () => {
 
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
     setContentByNode(node, content);
 
     expect(getContentByNode(node)).toBe(content);
@@ -73,7 +73,7 @@ describe('contentByNode', () => {
     
     setFragment(fragment);
     const bindingInfo = createBindingInfo(placeholder);
-    const content = createContent(bindingInfo, null);
+    const content = createContent(bindingInfo);
 
     setContentByNode(node, content);
     setContentByNode(node, null);

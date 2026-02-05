@@ -42,7 +42,6 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
 }
 
 function createMockStateElement(): IStateElement {
-  const bindingInfosByAddress = new Map<IStateAddress, IBindingInfo[]>();
   const listPaths = new Set<string>();
   const elementPaths = new Set<string>();
   const getterPaths = new Set<string>();
@@ -59,7 +58,6 @@ function createMockStateElement(): IStateElement {
 
   return {
     name: 'default',
-    bindingInfosByAddress,
     initializePromise: Promise.resolve(),
     listPaths,
     elementPaths,
@@ -73,8 +71,7 @@ function createMockStateElement(): IStateElement {
     get version() {
       return version;
     },
-    addBindingInfo() {},
-    deleteBindingInfo() {},
+    setBindingInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(_mutability, callback) {

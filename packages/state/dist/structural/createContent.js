@@ -1,3 +1,4 @@
+import { clearAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo.js";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
@@ -51,11 +52,12 @@ class Content {
                 }
             }
             clearStateAddressByBindingInfo(binding);
+            clearAbsoluteStateAddressByBindingInfo(binding);
         }
         this._mounted = false;
     }
 }
-export function createContent(bindingInfo, loopContext) {
+export function createContent(bindingInfo) {
     if (typeof bindingInfo.uuid === 'undefined' || bindingInfo.uuid === null) {
         raiseError(`BindingInfo.uuid is null.`);
     }
@@ -64,7 +66,7 @@ export function createContent(bindingInfo, loopContext) {
         raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
     }
     const cloneFragment = document.importNode(fragmentInfo.fragment, true);
-    const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos, loopContext);
+    const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
     const content = new Content(cloneFragment);
     setBindingsByContent(content, initialInfo.bindingInfos);
     setNodesByContent(content, initialInfo.nodes);

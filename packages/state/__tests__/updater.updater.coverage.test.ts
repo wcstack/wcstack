@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { __private__ } from '../src/updater/updater';
 import { setStateElementByName } from '../src/stateElementByName';
+import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 import { IAbsoluteStateAddress } from '../src/address/types';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
@@ -8,6 +9,7 @@ vi.mock('../src/apply/applyChangeFromBindings', () => ({
 }));
 
 const { Updater } = __private__;
+const applyChangeFromBindingsMock = vi.mocked(applyChangeFromBindings);
 
 describe('updater/updater coverage', () => {
   beforeEach(() => {
@@ -18,16 +20,15 @@ describe('updater/updater coverage', () => {
     setStateElementByName('test', null);
   });
 
-  it('_applyChange時にstateElementが見つからない場合はエラーになること', () => {
-    // stateElementが存在しない状態でtestApplyChangeを呼ぶ
+  it('_applyChangeでbindingが無い場合は空配列でapplyChangeFromBindingsが呼ばれること', () => {
     const updater = new Updater();
-    
+
     const mockAbsoluteAddress: IAbsoluteStateAddress = {
       stateName: 'nonexistent',
       address: { pathInfo: { path: 'count' } } as any,
     };
 
-    expect(() => updater.testApplyChange([mockAbsoluteAddress]))
-      .toThrow(/State element with name "nonexistent" not found for updater/);
+    expect(() => updater.testApplyChange([mockAbsoluteAddress])).not.toThrow();
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([]);
   });
 });

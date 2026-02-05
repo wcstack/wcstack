@@ -10,6 +10,8 @@ import type { IVersionInfo } from '../src/version/types';
 import { setStateElementByName } from '../src/stateElementByName';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
+import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+import { addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
   applyChangeFromBindings: vi.fn()
@@ -24,9 +26,7 @@ function createMockStateElement(options?: {
   elementPaths?: Set<string>;
   getterPaths?: Set<string>;
   setterPaths?: Set<string>;
-  bindingInfosByAddress?: Map<IStateAddress, IBindingInfo[]>;
 }): IStateElement {
-  const bindingInfosByAddress = options?.bindingInfosByAddress ?? new Map<IStateAddress, IBindingInfo[]>();
   const listPaths = options?.listPaths ?? new Set<string>();
   const elementPaths = options?.elementPaths ?? new Set<string>();
   const getterPaths = options?.getterPaths ?? new Set<string>();
@@ -38,7 +38,6 @@ function createMockStateElement(options?: {
   let version = 0;
   return {
     name: 'default',
-    bindingInfosByAddress,
     initializePromise: Promise.resolve(),
     listPaths,
     elementPaths,
@@ -56,8 +55,7 @@ function createMockStateElement(options?: {
     get version() {
       return version;
     },
-    addBindingInfo() {},
-    deleteBindingInfo() {},
+    setBindingInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(mutability, callback) {
@@ -153,9 +151,10 @@ describe('proxy/StateHandler', () => {
     } as IBindingInfo;
 
     const address = createStateAddress(bindingInfo.statePathInfo!, null);
-    const bindingInfosByAddress = new Map<IStateAddress, IBindingInfo[]>([[address, [bindingInfo]]]);
-    const stateElement = createMockStateElement({ bindingInfosByAddress });
+    const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
+    const absoluteAddress = createAbsoluteStateAddress('default', address);
+    addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
     const proxy = createStateProxy({ count: 0 }, 'default', 'writable');
 
     (proxy as any).count = 2;
