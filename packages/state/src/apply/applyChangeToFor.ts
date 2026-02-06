@@ -1,5 +1,5 @@
 import { getPathInfo } from "../address/PathInfo";
-import { getBindingsByContent } from "../bindings/bindingsByContent";
+import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
@@ -87,9 +87,9 @@ export function applyChangeToFor(
       content = contentByListIndex.get(index)!;
       if (diff.changeIndexSet.has(index)) {
         // change
-        const bindingsForContent = getBindingsByContent(content);
-        for(const bindingForContent of bindingsForContent) {
-          applyChange(bindingForContent, state, stateName);
+        const indexBindings = getIndexBindingsByContent(content);
+        for(const indexBinding of indexBindings) {
+          applyChange(indexBinding, state, stateName);
         }
       }
 

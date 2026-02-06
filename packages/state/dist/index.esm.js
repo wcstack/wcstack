@@ -1024,12 +1024,12 @@ function applyChangeToElement(element, propSegment, newValue) {
     // const remainingSegments = propSegment.slice(1);
 }
 
-const bindingsByContent = new WeakMap();
-function getBindingsByContent(content) {
-    return bindingsByContent.get(content) ?? [];
+const indexBindingsByContent = new WeakMap();
+function getIndexBindingsByContent(content) {
+    return indexBindingsByContent.get(content) ?? [];
 }
-function setBindingsByContent(content, bindings) {
-    bindingsByContent.set(content, bindings);
+function setIndexBindingsByContent(content, bindings) {
+    indexBindingsByContent.set(content, bindings);
 }
 
 if (!Set.prototype.difference) {
@@ -1322,6 +1322,14 @@ function removeBindingInfoByAbsoluteStateAddress(absoluteStateAddress, bindingIn
     if (index !== -1) {
         bindingInfos.splice(index, 1);
     }
+}
+
+const bindingsByContent = new WeakMap();
+function getBindingsByContent(content) {
+    return bindingsByContent.get(content) ?? [];
+}
+function setBindingsByContent(content, bindings) {
+    bindingsByContent.set(content, bindings);
 }
 
 const nodesByContent = new WeakMap();
@@ -2817,6 +2825,13 @@ function createContent(bindingInfo) {
     const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
     const content = new Content(cloneFragment);
     setBindingsByContent(content, initialInfo.bindingInfos);
+    const indexBindings = [];
+    for (const binding of initialInfo.bindingInfos) {
+        if (binding.statePathName in indexByIndexName) {
+            indexBindings.push(binding);
+        }
+    }
+    setIndexBindingsByContent(content, indexBindings);
     setNodesByContent(content, initialInfo.nodes);
     setContentByNode(bindingInfo.node, content);
     return content;
@@ -2878,9 +2893,9 @@ function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
             content = contentByListIndex.get(index);
             if (diff.changeIndexSet.has(index)) {
                 // change
-                const bindingsForContent = getBindingsByContent(content);
-                for (const bindingForContent of bindingsForContent) {
-                    applyChange(bindingForContent, state, stateName);
+                const indexBindings = getIndexBindingsByContent(content);
+                for (const indexBinding of indexBindings) {
+                    applyChange(indexBinding, state, stateName);
                 }
             }
         }

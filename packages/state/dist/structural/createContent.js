@@ -1,8 +1,10 @@
 import { clearAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo.js";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
+import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
+import { indexByIndexName } from "../proxy/traps/indexByIndexName.js";
 import { raiseError } from "../raiseError.js";
 import { getContentByNode, setContentByNode } from "./contentByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
@@ -69,6 +71,13 @@ export function createContent(bindingInfo) {
     const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
     const content = new Content(cloneFragment);
     setBindingsByContent(content, initialInfo.bindingInfos);
+    const indexBindings = [];
+    for (const binding of initialInfo.bindingInfos) {
+        if (binding.statePathName in indexByIndexName) {
+            indexBindings.push(binding);
+        }
+    }
+    setIndexBindingsByContent(content, indexBindings);
     setNodesByContent(content, initialInfo.nodes);
     setContentByNode(bindingInfo.node, content);
     return content;

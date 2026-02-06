@@ -14,6 +14,7 @@ import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { setBindingsByContent } from '../src/bindings/bindingsByContent';
+import { setIndexBindingsByContent } from '../src/bindings/indexBindingsByContent';
 
 const uuid = 'test-uuid';
 
@@ -447,6 +448,7 @@ describe('applyChangeToFor', () => {
     __test_setContentByListIndex(listIndexes[0], content1);
     __test_setContentByListIndex(listIndexes[1], content1);
     setBindingsByContent(content1, [dummyBindingInfo]);
+    setIndexBindingsByContent(content1, [dummyBindingInfo]);
 
     // 順序変更でchangeIndexSetを発生させる
     const prevGetByAddress = state.$$getByAddress;
