@@ -29,6 +29,7 @@ import { activateContent, deactivateContent } from '../src/structural/activateCo
 import { config } from '../src/config';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
+import type { IApplyContext } from '../src/apply/types';
 
 const createContentMock = vi.mocked(createContent);
 const getContentByNodeMock = vi.mocked(getContentByNode);
@@ -55,7 +56,11 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
 
 describe('applyChangeToIf', () => {
   const state = { $$getByAddress: () => undefined } as any;
-  const stateName = 'default';
+  const context: IApplyContext = {
+    stateName: 'default',
+    stateElement: {} as any,
+    state,
+  };
   let originalDebug: boolean;
 
   beforeEach(() => {
@@ -84,11 +89,11 @@ describe('applyChangeToIf', () => {
       unmount: unmountMock
     } as any);
 
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
 
     expect(createContentMock).toHaveBeenCalledWith(bindingInfo);
     expect(mountAfterMock).toHaveBeenCalledWith(node);
-    expect(activateContentMock).toHaveBeenCalledWith(expect.anything(), null, state, stateName);
+    expect(activateContentMock).toHaveBeenCalledWith(expect.anything(), null, context);
   });
 
   it('trueの場合はcontentがマウントされること', () => {
@@ -106,11 +111,11 @@ describe('applyChangeToIf', () => {
     } as any);
     getContentByNodeMock.mockReturnValue(null);
 
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
 
     expect(createContentMock).toHaveBeenCalled();
     expect(mountAfterMock).toHaveBeenCalledWith(node);
-    expect(activateContentMock).toHaveBeenCalledWith(expect.anything(), null, state, stateName);
+    expect(activateContentMock).toHaveBeenCalledWith(expect.anything(), null, context);
     expect(unmountMock).not.toHaveBeenCalled();
   });
 
@@ -130,9 +135,9 @@ describe('applyChangeToIf', () => {
     getContentByNodeMock.mockReturnValue(content);
 
     // まずtrueを呼んでlastValueByNodeを設定
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     // その後falseを呼ぶ
-    applyChangeToIf(bindingInfo, false, state, stateName);
+    applyChangeToIf(bindingInfo, context, false);
 
     expect(unmountMock).toHaveBeenCalled();
     expect(deactivateContentMock).toHaveBeenCalledWith(content as any);
@@ -155,11 +160,11 @@ describe('applyChangeToIf', () => {
     getContentByNodeMock.mockReturnValue(content);
 
     // true → マウント
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     expect(mountAfterMock).toHaveBeenCalledTimes(1);
 
     // false → アンマウント
-    applyChangeToIf(bindingInfo, false, state, stateName);
+    applyChangeToIf(bindingInfo, context, false);
     expect(unmountMock).toHaveBeenCalledTimes(1);
     expect(deactivateContentMock).toHaveBeenCalledWith(content as any);
   });
@@ -179,11 +184,11 @@ describe('applyChangeToIf', () => {
     } as any;
     getContentByNodeMock.mockReturnValue(content);
 
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     expect(mountAfterMock).toHaveBeenCalledTimes(1);
 
     // 同じ値で再呼び出し
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     expect(mountAfterMock).toHaveBeenCalledTimes(2);
   });
 
@@ -201,7 +206,7 @@ describe('applyChangeToIf', () => {
     } as any);
     getContentByNodeMock.mockReturnValue(null);
 
-    applyChangeToIf(bindingInfo, 'non-empty string', state, stateName);
+    applyChangeToIf(bindingInfo, context, 'non-empty string');
     expect(mountAfterMock).toHaveBeenCalled();
   });
 
@@ -229,24 +234,24 @@ describe('applyChangeToIf', () => {
       .mockReturnValueOnce(content);
 
     // 初回は初期化されるためapplyChangeFromBindingsは呼ばれない
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     expect(applyChangeMock).not.toHaveBeenCalled();
-    expect(activateContentMock).toHaveBeenCalledWith(content as any, null, state, stateName);
+    expect(activateContentMock).toHaveBeenCalledWith(content as any, null, context);
 
     // falseにしてアンマウント
-    applyChangeToIf(bindingInfo, false, state, stateName);
+    applyChangeToIf(bindingInfo, context, false);
     expect(unmountMock).toHaveBeenCalledTimes(1);
     expect(deactivateContentMock).toHaveBeenCalledWith(content as any);
 
     // 再度trueで再マウントすると、既存contentなのでbindings適用
-    applyChangeToIf(bindingInfo, true, state, stateName);
-    expect(activateContentMock).toHaveBeenCalledWith(content as any, null, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
+    expect(activateContentMock).toHaveBeenCalledWith(content as any, null, context);
   });
 
   it('debug=falseの場合はログ出力されないこと（mount）', () => {
     config.debug = false;
     const consoleSpy = vi.spyOn(console, 'log');
-    
+
     const node = document.createComment('if');
     const bindingInfo = createBindingInfo(node, 'test-uuid-debug-false-mount');
 
@@ -261,7 +266,7 @@ describe('applyChangeToIf', () => {
     } as any);
     getContentByNodeMock.mockReturnValue(null);
 
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
 
     expect(consoleSpy).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
@@ -270,7 +275,7 @@ describe('applyChangeToIf', () => {
   it('debug=falseの場合はログ出力されないこと（unmount）', () => {
     config.debug = false;
     const consoleSpy = vi.spyOn(console, 'log');
-    
+
     const node = document.createComment('if');
     const bindingInfo = createBindingInfo(node, 'test-uuid-debug-false-unmount');
 
@@ -286,9 +291,9 @@ describe('applyChangeToIf', () => {
     getContentByNodeMock.mockReturnValue(content);
 
     // trueを呼んでから
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     // falseを呼ぶ
-    applyChangeToIf(bindingInfo, false, state, stateName);
+    applyChangeToIf(bindingInfo, context, false);
 
     expect(consoleSpy).not.toHaveBeenCalled();
     expect(unmountMock).toHaveBeenCalled();
@@ -298,7 +303,7 @@ describe('applyChangeToIf', () => {
   it('debug=falseの場合はログ出力されないこと（unchanged）', () => {
     config.debug = false;
     const consoleSpy = vi.spyOn(console, 'log');
-    
+
     const node = document.createComment('if');
     const bindingInfo = createBindingInfo(node, 'test-uuid-debug-false-unchanged');
 
@@ -313,8 +318,8 @@ describe('applyChangeToIf', () => {
     } as any;
     getContentByNodeMock.mockReturnValue(content);
 
-    applyChangeToIf(bindingInfo, true, state, stateName);
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
+    applyChangeToIf(bindingInfo, context, true);
 
     expect(consoleSpy).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
@@ -344,14 +349,14 @@ describe('applyChangeToIf', () => {
 
     // 切断状態でtrueを設定
     isConnectedValue = false;
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     expect(mountAfterMock).toHaveBeenCalledTimes(1);
 
     // 接続状態に変更
     isConnectedValue = true;
-    
+
     // 同じtrueでも接続状態が変わったので再度処理される
-    applyChangeToIf(bindingInfo, true, state, stateName);
+    applyChangeToIf(bindingInfo, context, true);
     expect(mountAfterMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,4 +1,4 @@
-import { IStateProxy } from "../proxy/types";
 import { IBindingInfo } from "../types";
-export declare function applyChangeToIf(bindingInfo: IBindingInfo, _newValue: any, state: IStateProxy, stateName: string): void;
+import { IApplyContext } from "./types";
+export declare function applyChangeToIf(bindingInfo: IBindingInfo, context: IApplyContext, rawNewValue: unknown): void;
 //# sourceMappingURL=applyChangeToIf.d.ts.map

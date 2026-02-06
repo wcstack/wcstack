@@ -18,13 +18,13 @@
  */
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
+import { INDEX_BY_INDEX_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { indexByIndexName } from "./indexByIndexName";
 export function get(target, prop, receiver, handler) {
-    const index = indexByIndexName[prop];
+    const index = INDEX_BY_INDEX_NAME[prop];
     if (typeof index !== "undefined") {
         const listIndex = handler.lastAddressStack?.listIndex;
         return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);

@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo, IFilterInfo } from '../src/types';
+import type { IApplyContext } from '../src/apply/types';
 
-vi.mock('../src/apply/applyChangeToElement', () => ({
-  applyChangeToElement: vi.fn()
-}));
 vi.mock('../src/apply/applyChangeToText', () => ({
   applyChangeToText: vi.fn()
 }));
@@ -14,6 +12,18 @@ vi.mock('../src/apply/applyChangeToFor', () => ({
 vi.mock('../src/apply/applyChangeToIf', () => ({
   applyChangeToIf: vi.fn()
 }));
+vi.mock('../src/apply/applyChangeToAttribute', () => ({
+  applyChangeToAttribute: vi.fn()
+}));
+vi.mock('../src/apply/applyChangeToClass', () => ({
+  applyChangeToClass: vi.fn()
+}));
+vi.mock('../src/apply/applyChangeToStyle', () => ({
+  applyChangeToStyle: vi.fn()
+}));
+vi.mock('../src/apply/applyChangeToProperty', () => ({
+  applyChangeToProperty: vi.fn()
+}));
 vi.mock('../src/apply/getValue', () => ({
   getValue: vi.fn()
 }));
@@ -22,17 +32,23 @@ vi.mock('../src/stateElementByName', () => ({
 }));
 
 import { applyChange } from '../src/apply/applyChange';
-import { applyChangeToElement } from '../src/apply/applyChangeToElement';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
 import { applyChangeToFor } from '../src/apply/applyChangeToFor';
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
+import { applyChangeToAttribute } from '../src/apply/applyChangeToAttribute';
+import { applyChangeToClass } from '../src/apply/applyChangeToClass';
+import { applyChangeToStyle } from '../src/apply/applyChangeToStyle';
+import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
 import { getValue } from '../src/apply/getValue';
 import { getStateElementByName } from '../src/stateElementByName';
 
-const applyChangeToElementMock = vi.mocked(applyChangeToElement);
 const applyChangeToTextMock = vi.mocked(applyChangeToText);
 const applyChangeToForMock = vi.mocked(applyChangeToFor);
 const applyChangeToIfMock = vi.mocked(applyChangeToIf);
+const applyChangeToAttributeMock = vi.mocked(applyChangeToAttribute);
+const applyChangeToClassMock = vi.mocked(applyChangeToClass);
+const applyChangeToStyleMock = vi.mocked(applyChangeToStyle);
+const applyChangeToPropertyMock = vi.mocked(applyChangeToProperty);
 const getValueMock = vi.mocked(getValue);
 const getStateElementByNameMock = vi.mocked(getStateElementByName);
 
@@ -51,7 +67,11 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
 
 describe('applyChange (coverage)', () => {
   const state = {} as any;
-  const stateName = 'default';
+  const context: IApplyContext = {
+    stateName: 'default',
+    stateElement: {} as any,
+    state,
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,10 +94,10 @@ describe('applyChange (coverage)', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(3);
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
-    expect(applyChangeToElementMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToElementMock).toHaveBeenCalledWith(input, ['value'], 8);
+    expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToPropertyMock).toHaveBeenCalledWith(bindingInfo, context, 8);
   });
 
   it('textバインディングはapplyChangeToTextが呼ばれること', () => {
@@ -92,13 +112,67 @@ describe('applyChange (coverage)', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue('y');
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
     expect(applyChangeToTextMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToTextMock).toHaveBeenCalledWith(textNode, 'y');
+    expect(applyChangeToTextMock).toHaveBeenCalledWith(bindingInfo, context, 'y');
   });
 
-  it('forバインディングはuuidがあればapplyChangeToForが呼ばれること', () => {
+  it('classバインディングはapplyChangeToClassが呼ばれること', () => {
+    const el = document.createElement('div');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: el,
+      replaceNode: el,
+      propName: 'class',
+      propSegments: ['class', 'active']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue(true);
+    applyChange(bindingInfo, context);
+
+    expect(applyChangeToClassMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToClassMock).toHaveBeenCalledWith(bindingInfo, context, true);
+  });
+
+  it('attrバインディングはapplyChangeToAttributeが呼ばれること', () => {
+    const el = document.createElement('div');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: el,
+      replaceNode: el,
+      propName: 'attr',
+      propSegments: ['attr', 'data-id']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue('123');
+    applyChange(bindingInfo, context);
+
+    expect(applyChangeToAttributeMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToAttributeMock).toHaveBeenCalledWith(bindingInfo, context, '123');
+  });
+
+  it('styleバインディングはapplyChangeToStyleが呼ばれること', () => {
+    const el = document.createElement('div');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: el,
+      replaceNode: el,
+      propName: 'style',
+      propSegments: ['style', 'color']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue('red');
+    applyChange(bindingInfo, context);
+
+    expect(applyChangeToStyleMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToStyleMock).toHaveBeenCalledWith(bindingInfo, context, 'red');
+  });
+
+  it('forバインディングはapplyChangeToForが呼ばれること', () => {
     const placeholder = document.createComment('for');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -112,13 +186,13 @@ describe('applyChange (coverage)', () => {
 
     const list = [1, 2];
     getValueMock.mockReturnValue(list);
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
     expect(applyChangeToForMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, list, state, stateName);
+    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, context, list);
   });
 
-  it('ifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
+  it('ifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('if');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -131,13 +205,13 @@ describe('applyChange (coverage)', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(true);
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, context, true);
   });
 
-  it('elseバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
+  it('elseバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('else');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -150,13 +224,13 @@ describe('applyChange (coverage)', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(false);
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, false, state, stateName);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, context, false);
   });
 
-  it('elseifバインディングはuuidがあればapplyChangeToIfが呼ばれること', () => {
+  it('elseifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('elseif');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -169,13 +243,13 @@ describe('applyChange (coverage)', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(true);
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
     expect(applyChangeToIfMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, context, true);
   });
 
-  it('対象外のbindingTypeは何も呼ばれないこと', () => {
+  it('eventバインディングはapplyChangeToPropertyにフォールバックすること', () => {
     const node = document.createElement('button');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -187,12 +261,12 @@ describe('applyChange (coverage)', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(() => {});
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
     expect(applyChangeToTextMock).not.toHaveBeenCalled();
-    expect(applyChangeToElementMock).not.toHaveBeenCalled();
     expect(applyChangeToForMock).not.toHaveBeenCalled();
     expect(applyChangeToIfMock).not.toHaveBeenCalled();
+    expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
   });
 
   it('stateNameが異なる場合は別stateで適用されること', () => {
@@ -208,15 +282,20 @@ describe('applyChange (coverage)', () => {
     } as IBindingInfo;
 
     const otherState = {} as any;
+    const otherStateElement = {} as any;
     getStateElementByNameMock.mockReturnValue({
       createState: (_mutability: any, callback: (state: any) => any) => callback(otherState)
     } as any);
 
     getValueMock.mockReturnValue('z');
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
 
     expect(getStateElementByNameMock).toHaveBeenCalledWith('other');
-    expect(applyChangeToTextMock).toHaveBeenCalledWith(textNode, 'z');
+    expect(applyChangeToTextMock).toHaveBeenCalledWith(
+      bindingInfo,
+      expect.objectContaining({ stateName: 'other', state: otherState }),
+      'z'
+    );
   });
 
   it('stateNameが異なる場合にstateElementが見つからなければエラーになること', () => {
@@ -233,7 +312,7 @@ describe('applyChange (coverage)', () => {
 
     getStateElementByNameMock.mockReturnValue(null as any);
 
-    expect(() => applyChange(bindingInfo, state, stateName))
+    expect(() => applyChange(bindingInfo, context))
       .toThrow(/State element with name "missing" not found for binding/);
   });
 });

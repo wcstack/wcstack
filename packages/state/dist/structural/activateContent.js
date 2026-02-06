@@ -4,13 +4,13 @@ import { addBindingInfoByAbsoluteStateAddress, removeBindingInfoByAbsoluteStateA
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { bindLoopContextToContent, unbindLoopContextToContent } from "../bindings/bindLoopContextToContent";
-export function activateContent(content, loopContext, state, stateName) {
+export function activateContent(content, loopContext, context) {
     bindLoopContextToContent(content, loopContext);
     const bindings = getBindingsByContent(content);
     for (const binding of bindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
         addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
-        applyChange(binding, state, stateName);
+        applyChange(binding, context);
     }
 }
 export function deactivateContent(content) {

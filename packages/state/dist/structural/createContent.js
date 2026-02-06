@@ -4,7 +4,7 @@ import { getBindingsByContent, setBindingsByContent } from "../bindings/bindings
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
-import { indexByIndexName } from "../proxy/traps/indexByIndexName.js";
+import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { getContentByNode, setContentByNode } from "./contentByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
@@ -73,7 +73,7 @@ export function createContent(bindingInfo) {
     setBindingsByContent(content, initialInfo.bindingInfos);
     const indexBindings = [];
     for (const binding of initialInfo.bindingInfos) {
-        if (binding.statePathName in indexByIndexName) {
+        if (binding.statePathName in INDEX_BY_INDEX_NAME) {
             indexBindings.push(binding);
         }
     }

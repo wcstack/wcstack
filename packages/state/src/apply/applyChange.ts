@@ -1,41 +1,61 @@
-import { IStateProxy } from "../proxy/types.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
-import { applyChangeToElement } from "./applyChangeToElement.js";
+import { applyChangeToAttribute } from "./applyChangeToAttribute.js";
+import { applyChangeToClass } from "./applyChangeToClass.js";
 import { applyChangeToFor } from "./applyChangeToFor.js";
 import { applyChangeToIf } from "./applyChangeToIf.js";
+import { applyChangeToProperty } from "./applyChangeToProperty.js";
+import { applyChangeToStyle } from "./applyChangeToStyle.js";
 import { applyChangeToText } from "./applyChangeToText.js";
 import { getFilteredValue } from "./getFilteredValue.js";
 import { getValue } from "./getValue.js";
+import { ApplyChangeFn, IApplyContext } from "./types.js";
 
-function _applyChange(bindingInfo: IBindingInfo, state: IStateProxy, stateName: string): void {
-  const value = getValue(state, bindingInfo);
-  const filteredValue = getFilteredValue(value, bindingInfo.filters);
-  if (bindingInfo.bindingType === "text") {
-    applyChangeToText(bindingInfo.replaceNode as Text, filteredValue);
-  } else if (bindingInfo.bindingType === "prop") {
-    applyChangeToElement(bindingInfo.node as HTMLElement, bindingInfo.propSegments, filteredValue);
-  } else if (bindingInfo.bindingType === "for") {
-    applyChangeToFor(bindingInfo, filteredValue, state, stateName);
-  } else if (bindingInfo.bindingType === "if"
-     || bindingInfo.bindingType === "else"
-     || bindingInfo.bindingType === "elseif"
-  ) {
-    applyChangeToIf(bindingInfo, filteredValue, state, stateName);
+const applyChangeByFirstSegment: { [key: string]: ApplyChangeFn } = {
+  "class": applyChangeToClass,
+  "attr": applyChangeToAttribute,
+  "style": applyChangeToStyle,
+};
+
+const applyChangeByBindingType: { [key: string]: ApplyChangeFn } = {
+  "text": applyChangeToText,
+  "for": applyChangeToFor,
+  "if": applyChangeToIf,
+  "else": applyChangeToIf,
+  "elseif": applyChangeToIf,
+};
+
+function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
+  const value = getValue(context.state, binding);
+  const filteredValue = getFilteredValue(value, binding.filters);
+
+  let fn = applyChangeByBindingType[binding.bindingType];
+  if (typeof fn === 'undefined') {
+    const firstSegment = binding.propSegments[0];
+    fn = applyChangeByFirstSegment[firstSegment];
+    if (typeof fn === 'undefined') {
+      fn = applyChangeToProperty;
+    }
   }
+  fn(binding, context, filteredValue);
 }
 
-export function applyChange(bindingInfo: IBindingInfo, state: IStateProxy, stateName: string): void {
-  if (bindingInfo.stateName !== stateName) {
-    const stateElement = getStateElementByName(bindingInfo.stateName);
+export function applyChange(binding: IBindingInfo, context: IApplyContext): void {
+  if (binding.stateName !== context.stateName) {
+    const stateElement = getStateElementByName(binding.stateName);
     if (stateElement === null) {
-      raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
+      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
     }
     stateElement.createState("readonly", (targetState) => {
-      _applyChange(bindingInfo, targetState, bindingInfo.stateName);
+      const newContext = {
+        stateName: binding.stateName,
+        stateElement: stateElement,
+        state: targetState
+      }
+      _applyChange(binding, newContext);
     });
   } else {
-    _applyChange(bindingInfo, state, stateName);
+    _applyChange(binding, context);
   }
 }

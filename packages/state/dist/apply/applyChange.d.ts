@@ -1,4 +1,4 @@
-import { IStateProxy } from "../proxy/types.js";
 import { IBindingInfo } from "../types.js";
-export declare function applyChange(bindingInfo: IBindingInfo, state: IStateProxy, stateName: string): void;
+import { IApplyContext } from "./types.js";
+export declare function applyChange(binding: IBindingInfo, context: IApplyContext): void;
 //# sourceMappingURL=applyChange.d.ts.map

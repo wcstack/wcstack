@@ -13,6 +13,7 @@ import type { IBindingInfo } from '../src/types';
 import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
+import type { IApplyContext } from '../src/apply/types';
 
 const uuid = 'index-opt-test-uuid';
 
@@ -143,13 +144,20 @@ afterEach(() => {
 
 describe('applyChangeToFor - changeIndexSet最適化', () => {
   const state = { $$getByAddress: () => undefined } as any;
-  const stateName = 'default';
-  const apply = (bindingInfo: IBindingInfo, value: any) =>
-    applyChangeToFor(bindingInfo, value, state, stateName);
+  let context: IApplyContext;
 
-  it('changeIndexSet時にインデックスバインディングのみ再適用されること', () => {
+  function setupContext() {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
+    context = { stateName: 'default', stateElement: stateElement as any, state };
+    return stateElement;
+  }
+
+  const apply = (bindingInfo: IBindingInfo, value: any) =>
+    applyChangeToFor(bindingInfo, context, value);
+
+  it('changeIndexSet時にインデックスバインディングのみ再適用されること', () => {
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -182,8 +190,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
   });
 
   it('$1を使わないリストではchangeIndexSet時にバインディングが再適用されないこと', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -223,8 +230,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
   });
 
   it('changeIndexSet時にindexBindingsのみが再適用され通常バインディングはスキップされること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');

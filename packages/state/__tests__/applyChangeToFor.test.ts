@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { applyChangeToFor, __test_setContentByListIndex } from '../src/apply/applyChangeToFor';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
@@ -12,6 +12,7 @@ import type { IBindingInfo } from '../src/types';
 import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
+import type { IApplyContext } from '../src/apply/types';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { setBindingsByContent } from '../src/bindings/bindingsByContent';
 import { setIndexBindingsByContent } from '../src/bindings/indexBindingsByContent';
@@ -187,20 +188,27 @@ function createEmptyFragmentInfo() {
   };
 }
 
-afterEach(() => {
-  setFragmentInfoByUUID(uuid, null);
-  setStateElementByName('default', null);
-});
-
 describe('applyChangeToFor', () => {
   const state = { $$getByAddress: () => undefined } as any;
-  const stateName = 'default';
-  const apply = (bindingInfo: IBindingInfo, value: any) =>
-    applyChangeToFor(bindingInfo, value, state, stateName);
+  let context: IApplyContext;
 
-  it('fragmentInfoが存在しない場合はエラーになること', () => {
+  function setupContext() {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
+    context = { stateName: 'default', stateElement: stateElement as any, state };
+    return stateElement;
+  }
+
+  const apply = (bindingInfo: IBindingInfo, value: any) =>
+    applyChangeToFor(bindingInfo, context, value);
+
+  afterEach(() => {
+    setFragmentInfoByUUID(uuid, null);
+    setStateElementByName('default', null);
+  });
+
+  it('fragmentInfoが存在しない場合はエラーになること', () => {
+    setupContext();
 
     const placeholder = document.createComment('for');
     const bindingInfo = createBindingInfo(placeholder);
@@ -214,30 +222,8 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('stateElementが存在しない場合はエラーになること', () => {
-    const placeholder = document.createComment('for');
-    const bindingInfo = createBindingInfo(placeholder);
-
-    const list = [1];
-    createListIndexes(null, [], list, []);
-    expect(() => apply(bindingInfo, list)).toThrow(/State element with name/);
-  });
-
-  it('listPathInfoがない場合はエラーになること', () => {
-    const placeholder = document.createComment('for');
-    const bindingInfo = createBindingInfo(placeholder, { statePathInfo: undefined as any });
-
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
-
-    const list: any[] = [];
-    createListIndexes(null, [], list, []);
-    expect(() => apply(bindingInfo, list)).toThrow(/List path info not found/);
-  });
-
   it('list diffが事前に存在しなくても処理できること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const placeholder = document.createComment('for');
     const bindingInfo = createBindingInfo(placeholder);
@@ -248,8 +234,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('配列以外の値は空配列として扱われること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -267,8 +252,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('空のフラグメントでもエラーにならないこと', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -289,8 +273,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('リストに応じてコンテンツを生成すること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -315,8 +298,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('再適用時に以前のコンテンツをアンマウントすること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -343,8 +325,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('再適用時にプールされたコンテンツを再利用すること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -381,8 +362,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('順序変更時に変更バインディングを再適用すること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -412,8 +392,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('変更時にbindingsが存在する場合はapplyChangeが実行されること', () => {
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -465,10 +444,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('同じリストを再適用しても要素が正しく保持されること', () => {
-    // 同じリストを再適用するケース（changeIndexSet, addIndexSet, deleteIndexSet が全て空）
-    // lastNode.nextSibling === content.firstNode となり、mountAfterがスキップされる
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -500,9 +476,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('要素追加時に既存の要素を維持すること', () => {
-    // 既存要素が変更なしで保持されるケース
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -534,9 +508,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('同じノードに複数のバインディングがある場合でもloopContextが正しく設定されること', () => {
-    // 行72の else ブランチをカバー: nodeSet.has(bindingInfo.node) が true の場合
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -573,9 +545,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('削除対象のコンテンツがcontentByListIndexに存在しない場合でもエラーにならないこと', () => {
-    // 行45のelseブランチをカバー: contentByListIndexにcontentが登録されていない場合
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
@@ -607,9 +577,7 @@ describe('applyChangeToFor', () => {
   });
 
   it('__test_setContentByListIndexでcontentを設定できること', () => {
-    // テストヘルパーの content !== null ブランチをカバー
-    const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');

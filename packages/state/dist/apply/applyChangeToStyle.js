@@ -1,5 +1,6 @@
-export function applyChangeToStyle(node, styleName, newValue) {
-    const style = node.style;
+export function applyChangeToStyle(binding, _context, newValue) {
+    const styleName = binding.propSegments[1];
+    const style = binding.node.style;
     const currentValue = style[styleName];
     if (currentValue !== newValue) {
         style[styleName] = newValue;

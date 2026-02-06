@@ -5,6 +5,7 @@ import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { getValue } from '../src/apply/getValue';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
+import type { IApplyContext } from '../src/apply/types';
 
 vi.mock('../src/apply/applyChangeToFor', () => ({
   applyChangeToFor: vi.fn()
@@ -31,7 +32,11 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
 
 describe('applyChange', () => {
   const state = {} as any;
-  const stateName = 'default';
+  const context: IApplyContext = {
+    stateName: 'default',
+    stateElement: {} as any,
+    state,
+  };
   const getValueMock = vi.mocked(getValue);
   const applyChangeToForMock = vi.mocked(applyChangeToFor);
   const applyChangeToIfMock = vi.mocked(applyChangeToIf);
@@ -52,7 +57,7 @@ describe('applyChange', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue('b');
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
     expect(textNode.nodeValue).toBe('b');
   });
 
@@ -68,7 +73,7 @@ describe('applyChange', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue('hello');
-    applyChange(bindingInfo, state, stateName);
+    applyChange(bindingInfo, context);
     expect(input.value).toBe('hello');
   });
 
@@ -85,8 +90,8 @@ describe('applyChange', () => {
 
     const list = [1, 2];
     getValueMock.mockReturnValue(list);
-    applyChange(bindingInfo, state, stateName);
-    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, list, state, stateName);
+    applyChange(bindingInfo, context);
+    expect(applyChangeToForMock).toHaveBeenCalledWith(bindingInfo, context, list);
   });
 
   it('ifバインディングはapplyChangeToIfが呼ばれること', () => {
@@ -101,8 +106,8 @@ describe('applyChange', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(true);
-    applyChange(bindingInfo, state, stateName);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
+    applyChange(bindingInfo, context);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, context, true);
   });
 
   it('elseバインディングはapplyChangeToIfが呼ばれること', () => {
@@ -117,8 +122,8 @@ describe('applyChange', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(false);
-    applyChange(bindingInfo, state, stateName);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, false, state, stateName);
+    applyChange(bindingInfo, context);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, context, false);
   });
 
   it('elseifバインディングはapplyChangeToIfが呼ばれること', () => {
@@ -133,7 +138,7 @@ describe('applyChange', () => {
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(true);
-    applyChange(bindingInfo, state, stateName);
-    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, true, state, stateName);
+    applyChange(bindingInfo, context);
+    expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, context, true);
   });
 });

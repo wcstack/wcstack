@@ -20,6 +20,11 @@ export function applyChangeFromBindings(bindingInfos) {
             raiseError(`State element with name "${stateName}" not found for binding.`);
         }
         stateElement.createState("readonly", (state) => {
+            const context = {
+                stateName: stateName,
+                stateElement: stateElement,
+                state: state
+            };
             // 中間ループ: 同じ stateName 内で loopContext ごとにグループ化
             do {
                 const loopContext = getLoopContextByNode(bindingInfo.node);
@@ -29,7 +34,7 @@ export function applyChangeFromBindings(bindingInfos) {
                 const continueWithNewLoopContext = state.$$setLoopContext(loopContext, () => {
                     // 内側ループ: 同じ stateName + loopContext のバインディングを連続処理
                     do {
-                        applyChange(bindingInfo, state, stateName);
+                        applyChange(bindingInfo, context);
                         bindingInfoIndex++;
                         const nextBindingInfo = bindingInfos[bindingInfoIndex];
                         if (!nextBindingInfo)

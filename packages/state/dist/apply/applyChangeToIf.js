@@ -7,9 +7,9 @@ const lastConnectedByNode = new WeakMap();
 function bindingInfoText(bindingInfo) {
     return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.filters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
 }
-export function applyChangeToIf(bindingInfo, _newValue, state, stateName) {
+export function applyChangeToIf(bindingInfo, context, rawNewValue) {
     const currentConnected = bindingInfo.node.isConnected;
-    const newValue = Boolean(_newValue);
+    const newValue = Boolean(rawNewValue);
     let content = getContentByNode(bindingInfo.node);
     if (content === null) {
         content = createContent(bindingInfo);
@@ -28,7 +28,7 @@ export function applyChangeToIf(bindingInfo, _newValue, state, stateName) {
             }
             content.mountAfter(bindingInfo.node);
             const loopContext = getLoopContextByNode(bindingInfo.node);
-            activateContent(content, loopContext, state, stateName);
+            activateContent(content, loopContext, context);
         }
     }
     finally {

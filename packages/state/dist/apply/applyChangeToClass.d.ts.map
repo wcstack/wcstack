@@ -1,1 +1,1 @@
-{"version":3,"file":"applyChangeToClass.d.ts","sourceRoot":"","sources":["../../src/apply/applyChangeToClass.ts"],"names":[],"mappings":"AAEA,wBAAgB,kBAAkB,CAAC,OAAO,EAAE,OAAO,EAAE,SAAS,EAAE,MAAM,EAAE,QAAQ,EAAE,GAAG,GAAG,IAAI,CAK3F"}
+{"version":3,"file":"applyChangeToClass.d.ts","sourceRoot":"","sources":["../../src/apply/applyChangeToClass.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,YAAY,EAAE,MAAM,UAAU,CAAC;AACxC,OAAO,EAAE,aAAa,EAAE,MAAM,SAAS,CAAC;AAExC,wBAAgB,kBAAkB,CAAC,OAAO,EAAE,YAAY,EAAE,QAAQ,EAAE,aAAa,EAAE,QAAQ,EAAE,OAAO,GAAG,IAAI,CAO1G"}

@@ -1,7 +1,7 @@
 import { IListIndex } from "../list/types";
-import { IStateProxy } from "../proxy/types";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
+import { IApplyContext } from "./types";
 export declare function __test_setContentByListIndex(index: IListIndex, content: IContent | null): void;
-export declare function applyChangeToFor(bindingInfo: IBindingInfo, _newValue: any, state: IStateProxy, stateName: string): void;
+export declare function applyChangeToFor(bindingInfo: IBindingInfo, context: IApplyContext, newValue: unknown): void;
 //# sourceMappingURL=applyChangeToFor.d.ts.map

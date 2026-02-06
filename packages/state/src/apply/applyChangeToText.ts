@@ -1,6 +1,8 @@
+import { IBindingInfo } from "../binding/types";
+import { IApplyContext } from "./types";
 
-export function applyChangeToText(node: Text, newValue: string): void {
-  if (node.nodeValue !== newValue) {
-    node.nodeValue = newValue;
+export function applyChangeToText(binding: IBindingInfo, _context: IApplyContext, newValue: unknown): void {
+  if (binding.replaceNode.nodeValue !== newValue) {
+    binding.replaceNode.nodeValue = newValue as string;
   }
 }

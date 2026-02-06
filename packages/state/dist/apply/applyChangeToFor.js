@@ -4,8 +4,6 @@ import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getListIndexesByList } from "../list/listIndexesByList";
-import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { createContent } from "../structural/createContent";
 import { applyChange } from "./applyChange";
@@ -33,15 +31,12 @@ function setPooledContent(bindingInfo, content) {
         contents.push(content);
     }
 }
-export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
+export function applyChangeToFor(bindingInfo, context, newValue) {
     const listPathInfo = bindingInfo.statePathInfo;
-    if (!listPathInfo) {
-        raiseError(`List path info not found in fragment bind text result.`);
-    }
     const listIndex = getListIndexByBindingInfo(bindingInfo);
     const lastValue = lastValueByNode.get(bindingInfo.node);
     const lastIndexes = getListIndexesByList(lastValue) || [];
-    const diff = createListDiff(listIndex, lastValue, _newValue, lastIndexes);
+    const diff = createListDiff(listIndex, lastValue, newValue, lastIndexes);
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = contentByListIndex.get(deleteIndex);
         if (typeof content !== 'undefined') {
@@ -52,11 +47,7 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
     }
     let lastNode = bindingInfo.node;
     const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
-    const stateElement = getStateElementByName(stateName);
-    if (!stateElement) {
-        raiseError(`State element with name "${stateName}" not found.`);
-    }
-    const loopContextStack = stateElement.loopContextStack;
+    const loopContextStack = context.stateElement.loopContextStack;
     for (const index of diff.newIndexes) {
         let content;
         // add
@@ -67,7 +58,7 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
                 if (typeof content === 'undefined') {
                     content = createContent(bindingInfo);
                 }
-                activateContent(content, loopContext, state, stateName);
+                activateContent(content, loopContext, context);
             });
         }
         else {
@@ -76,7 +67,7 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
                 // change
                 const indexBindings = getIndexBindingsByContent(content);
                 for (const indexBinding of indexBindings) {
-                    applyChange(indexBinding, state, stateName);
+                    applyChange(indexBinding, context);
                 }
             }
         }
@@ -88,6 +79,6 @@ export function applyChangeToFor(bindingInfo, _newValue, state, stateName) {
         lastNode = content.lastNode || lastNode;
         contentByListIndex.set(index, content);
     }
-    lastValueByNode.set(bindingInfo.node, _newValue);
+    lastValueByNode.set(bindingInfo.node, newValue);
 }
 //# sourceMappingURL=applyChangeToFor.js.map

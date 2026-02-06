@@ -5,14 +5,12 @@ import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getListIndexesByList } from "../list/listIndexesByList";
 import { IListIndex } from "../list/types";
-import { IStateProxy } from "../proxy/types";
-import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
 import { applyChange } from "./applyChange";
+import { IApplyContext } from "./types";
 
 const lastValueByNode = new WeakMap<Node, any>();
 const contentByListIndex = new WeakMap<IListIndex, IContent>();
@@ -42,18 +40,14 @@ function setPooledContent(bindingInfo: IBindingInfo, content: IContent): void {
 
 export function applyChangeToFor(
   bindingInfo: IBindingInfo, 
-  _newValue: any, 
-  state: IStateProxy, 
-  stateName: string
+  context: IApplyContext,
+  newValue: unknown, 
 ): void {
   const listPathInfo = bindingInfo.statePathInfo;
-  if (!listPathInfo) {
-    raiseError(`List path info not found in fragment bind text result.`);
-  }
   const listIndex = getListIndexByBindingInfo(bindingInfo);
   const lastValue = lastValueByNode.get(bindingInfo.node);
   const lastIndexes = getListIndexesByList(lastValue) || [];
-  const diff = createListDiff(listIndex, lastValue, _newValue, lastIndexes);
+  const diff = createListDiff(listIndex, lastValue, newValue, lastIndexes);
 
   for(const deleteIndex of diff.deleteIndexSet) {
     const content = contentByListIndex.get(deleteIndex);
@@ -66,11 +60,7 @@ export function applyChangeToFor(
 
   let lastNode = bindingInfo.node;
   const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
-  const stateElement = getStateElementByName(stateName);
-  if (!stateElement) {
-    raiseError(`State element with name "${stateName}" not found.`);
-  }
-  const loopContextStack = stateElement.loopContextStack;
+  const loopContextStack = context.stateElement.loopContextStack;
   for(const index of diff.newIndexes) {
     let content: IContent | undefined;
     // add
@@ -81,7 +71,7 @@ export function applyChangeToFor(
         if (typeof content === 'undefined') {
           content = createContent(bindingInfo);
         }
-        activateContent(content, loopContext, state, stateName);
+        activateContent(content, loopContext, context);
       });
     } else {
       content = contentByListIndex.get(index)!;
@@ -89,7 +79,7 @@ export function applyChangeToFor(
         // change
         const indexBindings = getIndexBindingsByContent(content);
         for(const indexBinding of indexBindings) {
-          applyChange(indexBinding, state, stateName);
+          applyChange(indexBinding, context);
         }
       }
 
@@ -102,5 +92,5 @@ export function applyChangeToFor(
     lastNode = content!.lastNode || lastNode;
     contentByListIndex.set(index, content!);
   }
-  lastValueByNode.set(bindingInfo.node, _newValue);
+  lastValueByNode.set(bindingInfo.node, newValue);
 }
