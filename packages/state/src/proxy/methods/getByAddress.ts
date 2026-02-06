@@ -23,6 +23,7 @@ import { IStateElement } from "../../components/types";
 import { WILDCARD } from "../../define";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
+import { indexByIndexName } from "../traps/indexByIndexName";
 import { checkDependency } from "./checkDependency";
 
 function _getByAddress(
@@ -113,11 +114,17 @@ function _getByAddressWithCache(
 }
 
 export function getByAddress(
-  target   : object, 
+  target   : object,
   address  : IStateAddress,
   receiver : any,
   handler  : IStateHandler
 ): any {
+  // $1, $2, ... のインデックス変数はlistIndexから直接値を取得
+  const indexVarIndex = indexByIndexName[address.pathInfo.path];
+  if (typeof indexVarIndex !== "undefined") {
+    const listIndex = handler.lastAddressStack?.listIndex;
+    return listIndex?.indexes[indexVarIndex] ?? raiseError(`ListIndex not found: ${address.pathInfo.path}`);
+  }
   checkDependency(handler, address);
   const stateElement = handler.stateElement;
   const cacheable = address.pathInfo.wildcardCount > 0 || 

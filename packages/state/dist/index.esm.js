@@ -410,6 +410,20 @@ function createStateAddress(pathInfo, listIndex) {
     }
 }
 
+/**
+ * stackIndexByIndexName
+ * インデックス名からスタックインデックスへのマッピング
+ * $1 => 0
+ * $2 => 1
+ * :
+ * ${i + 1} => i
+ * i < MAX_WILDCARD_DEPTH
+ */
+const indexByIndexName = {};
+for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
+    indexByIndexName[`$${i + 1}`] = i;
+}
+
 function checkDependency(handler, address) {
     // 動的依存関係の登録
     if (handler.addressStackIndex >= 0) {
@@ -525,6 +539,12 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
     }
 }
 function getByAddress(target, address, receiver, handler) {
+    // $1, $2, ... のインデックス変数はlistIndexから直接値を取得
+    const indexVarIndex = indexByIndexName[address.pathInfo.path];
+    if (typeof indexVarIndex !== "undefined") {
+        const listIndex = handler.lastAddressStack?.listIndex;
+        return listIndex?.indexes[indexVarIndex] ?? raiseError(`ListIndex not found: ${address.pathInfo.path}`);
+    }
     checkDependency(handler, address);
     const stateElement = handler.stateElement;
     const cacheable = address.pathInfo.wildcardCount > 0 ||
@@ -675,20 +695,6 @@ function setLoopContext(handler, loopContext, callback) {
 }
 async function setLoopContextAsync(handler, loopContext, callback) {
     return await _setLoopContext(handler, loopContext, callback);
-}
-
-/**
- * stackIndexByIndexName
- * インデックス名からスタックインデックスへのマッピング
- * $1 => 0
- * $2 => 1
- * :
- * ${i + 1} => i
- * i < MAX_WILDCARD_DEPTH
- */
-const indexByIndexName = {};
-for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
-    indexByIndexName[`$${i + 1}`] = i;
 }
 
 /**

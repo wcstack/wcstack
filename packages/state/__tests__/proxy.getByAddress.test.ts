@@ -149,4 +149,38 @@ describe('getByAddress', () => {
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(77);
   });
+
+  it('$1のインデックス変数はlistIndexから値を取得すること', () => {
+    const target = { items: ['a', 'b', 'c'] };
+    const address = createStateAddress(getPathInfo('$1'), null);
+    const listIndex = createListIndex(null, 2);
+    const lastAddress = createStateAddress(getPathInfo('items.*'), listIndex);
+    const stateElement = createStateElement();
+    const handler = createHandler(stateElement, { lastAddressStack: lastAddress });
+
+    const value = getByAddress(target, address, target, handler as any);
+    expect(value).toBe(2);
+  });
+
+  it('$2のインデックス変数は2階層目のlistIndexから値を取得すること', () => {
+    const target = {};
+    const address = createStateAddress(getPathInfo('$2'), null);
+    const parentListIndex = createListIndex(null, 1);
+    const childListIndex = createListIndex(parentListIndex, 3);
+    const lastAddress = createStateAddress(getPathInfo('categories.*.items.*'), childListIndex);
+    const stateElement = createStateElement();
+    const handler = createHandler(stateElement, { lastAddressStack: lastAddress });
+
+    const value = getByAddress(target, address, target, handler as any);
+    expect(value).toBe(3);
+  });
+
+  it('$1でlastAddressStackにlistIndexがない場合はエラーになること', () => {
+    const target = {};
+    const address = createStateAddress(getPathInfo('$1'), null);
+    const stateElement = createStateElement();
+    const handler = createHandler(stateElement, { lastAddressStack: null });
+
+    expect(() => getByAddress(target, address, target, handler as any)).toThrow(/ListIndex not found/);
+  });
 });
