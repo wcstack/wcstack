@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { replaceToReplaceNode } from '../src/bindings/replaceToReplaceNode';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 
 function createBindingInfo(node: Node, replaceNode: Node): IBindingInfo {
@@ -8,7 +9,7 @@ function createBindingInfo(node: Node, replaceNode: Node): IBindingInfo {
     propSegments: ['textContent'],
     propModifiers: [],
     statePathName: 'message',
-    statePathInfo: null,
+    statePathInfo: getPathInfo('message'),
     stateName: 'default',
     filters: [],
     bindingType: 'text',

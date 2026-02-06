@@ -8,9 +8,6 @@ export function getStateAddressByBindingInfo(bindingInfo) {
     if (stateAddress !== null) {
         return stateAddress;
     }
-    if (bindingInfo.statePathInfo === null) {
-        raiseError(`State path info is null for binding with statePathName "${bindingInfo.statePathName}".`);
-    }
     if (bindingInfo.statePathInfo.wildcardCount > 0) {
         const listIndex = getListIndexByBindingInfo(bindingInfo);
         if (listIndex === null) {

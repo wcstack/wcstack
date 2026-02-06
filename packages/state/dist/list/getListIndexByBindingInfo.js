@@ -1,4 +1,3 @@
-import { raiseError } from "../raiseError";
 import { getLoopContextByNode } from "./loopContextByNode";
 const listIndexByBindingInfoByLoopContext = new WeakMap();
 const cacheCalcWildcardIndex = new WeakMap();
@@ -47,9 +46,6 @@ export function getListIndexByBindingInfo(bindingInfo) {
     }
     let listIndex = null;
     try {
-        if (bindingInfo.statePathInfo === null) {
-            raiseError(`BindingInfo does not have statePathInfo for list index retrieval.`);
-        }
         const wildcardIndex = calcWildcardIndex(loopContext.elementPathInfo, bindingInfo.statePathInfo);
         if (wildcardIndex >= 0) {
             listIndex = loopContext.listIndex.at(wildcardIndex) || null;

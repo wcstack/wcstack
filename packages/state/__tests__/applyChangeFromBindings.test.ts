@@ -14,6 +14,7 @@ import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { getStateElementByName } from '../src/stateElementByName';
 import { applyChange } from '../src/apply/applyChange';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 
 const getLoopContextByNodeMock = vi.mocked(getLoopContextByNode);
@@ -26,7 +27,7 @@ function createBindingInfo(stateName: string, statePathName: string, node: Node)
     propSegments: [],
     propModifiers: [],
     statePathName,
-    statePathInfo: null,
+    statePathInfo: getPathInfo(statePathName),
     stateName,
     filters: [],
     node,

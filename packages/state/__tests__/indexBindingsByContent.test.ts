@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { getIndexBindingsByContent, setIndexBindingsByContent } from '../src/bindings/indexBindingsByContent';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import type { IContent } from '../src/structural/types';
 
@@ -21,7 +22,7 @@ function createBindingInfo(statePathName: string): IBindingInfo {
     propSegments: [],
     propModifiers: [],
     statePathName,
-    statePathInfo: null,
+    statePathInfo: getPathInfo(statePathName),
     stateName: 'default',
     filters: [],
     node,

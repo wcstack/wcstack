@@ -6,6 +6,7 @@ import {
   clearBindingInfosByAbsoluteStateAddress,
 } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
 import type { IAbsoluteStateAddress } from '../src/address/types';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 
 const createAbsoluteAddress = (path = 'count'): IAbsoluteStateAddress => ({
@@ -18,7 +19,7 @@ const createBindingInfo = (id: string): IBindingInfo => ({
   propSegments: [],
   propModifiers: [],
   statePathName: 'count',
-  statePathInfo: null,
+  statePathInfo: getPathInfo('count'),
   stateName: 'default',
   filters: [],
   bindingType: 'text',

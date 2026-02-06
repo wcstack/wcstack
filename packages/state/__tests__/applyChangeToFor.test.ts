@@ -225,7 +225,7 @@ describe('applyChangeToFor', () => {
 
   it('listPathInfoがない場合はエラーになること', () => {
     const placeholder = document.createComment('for');
-    const bindingInfo = createBindingInfo(placeholder, { statePathInfo: null as any });
+    const bindingInfo = createBindingInfo(placeholder, { statePathInfo: undefined as any });
 
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);

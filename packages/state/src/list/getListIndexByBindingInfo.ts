@@ -1,5 +1,4 @@
 import { IPathInfo } from "../address/types";
-import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 import { getLoopContextByNode } from "./loopContextByNode";
 import { IListIndex, ILoopContext } from "./types";
@@ -52,9 +51,6 @@ export function getListIndexByBindingInfo(bindingInfo: IBindingInfo): IListIndex
 
   let listIndex: IListIndex | null = null;
   try {
-    if (bindingInfo.statePathInfo === null) {
-      raiseError(`BindingInfo does not have statePathInfo for list index retrieval.`);
-    }
     const wildcardIndex = calcWildcardIndex(loopContext.elementPathInfo, bindingInfo.statePathInfo);
     if (wildcardIndex >= 0) {
       listIndex = loopContext.listIndex.at(wildcardIndex) || null;

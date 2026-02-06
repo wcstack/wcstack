@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo, IFilterInfo } from '../src/types';
 
 vi.mock('../src/apply/applyChangeToElement', () => ({
@@ -38,7 +39,7 @@ const getStateElementByNameMock = vi.mocked(getStateElementByName);
 function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   return {
     statePathName: 'value',
-    statePathInfo: null,
+    statePathInfo: getPathInfo('value'),
     stateName: 'default',
     filters: [],
     propModifiers: [],

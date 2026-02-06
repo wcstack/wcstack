@@ -3,6 +3,7 @@ import { applyChange } from '../src/apply/applyChange';
 import { applyChangeToFor } from '../src/apply/applyChangeToFor';
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { getValue } from '../src/apply/getValue';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 
 vi.mock('../src/apply/applyChangeToFor', () => ({
@@ -18,7 +19,7 @@ vi.mock('../src/apply/getValue', () => ({
 function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   return {
     statePathName: 'value',
-    statePathInfo: null,
+    statePathInfo: getPathInfo('value'),
     stateName: 'default',
     filters: [],
     propModifiers: [],

@@ -11,7 +11,7 @@ export interface IBindingInfo {
     readonly propSegments: string[];
     readonly propModifiers: string[];
     readonly statePathName: string;
-    readonly statePathInfo: IPathInfo | null;
+    readonly statePathInfo: IPathInfo;
     readonly stateName: string;
     readonly filters: IFilterInfo[];
     readonly node: Node;

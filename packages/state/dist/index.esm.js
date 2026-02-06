@@ -1250,9 +1250,6 @@ function getListIndexByBindingInfo(bindingInfo) {
     }
     let listIndex = null;
     try {
-        if (bindingInfo.statePathInfo === null) {
-            raiseError(`BindingInfo does not have statePathInfo for list index retrieval.`);
-        }
         const wildcardIndex = calcWildcardIndex(loopContext.elementPathInfo, bindingInfo.statePathInfo);
         if (wildcardIndex >= 0) {
             listIndex = loopContext.listIndex.at(wildcardIndex) || null;
@@ -1270,9 +1267,6 @@ function getStateAddressByBindingInfo(bindingInfo) {
     stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
     if (stateAddress !== null) {
         return stateAddress;
-    }
-    if (bindingInfo.statePathInfo === null) {
-        raiseError(`State path info is null for binding with statePathName "${bindingInfo.statePathName}".`);
     }
     if (bindingInfo.statePathInfo.wildcardCount > 0) {
         const listIndex = getListIndexByBindingInfo(bindingInfo);
@@ -2358,8 +2352,8 @@ function parseBindTextsForElement(bindText) {
                 propName: 'else',
                 propSegments: ['else'],
                 propModifiers: [],
-                statePathName: '',
-                statePathInfo: null,
+                statePathName: '#else',
+                statePathInfo: getPathInfo('#else'),
                 stateName: '',
                 filters: [],
                 bindingType: 'else',

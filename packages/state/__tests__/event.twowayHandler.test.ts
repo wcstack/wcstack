@@ -14,6 +14,7 @@ vi.mock('../src/raiseError', () => ({
 }));
 
 import { attachTwowayEventHandler, detachTwowayEventHandler, __private__ } from '../src/event/twowayHandler';
+import { getPathInfo } from '../src/address/PathInfo';
 import { getStateElementByName } from '../src/stateElementByName';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { raiseError } from '../src/raiseError';
@@ -24,7 +25,7 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     propSegments: ['value'],
     propModifiers: [],
     statePathName: 'users.*.name',
-    statePathInfo: null,
+    statePathInfo: getPathInfo('users.*.name'),
     stateName: 'default',
     filters: [],
     bindingType: 'prop',

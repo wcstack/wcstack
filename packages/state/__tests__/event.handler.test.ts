@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { attachEventHandler, detachEventHandler, __private__ } from '../src/event/handler';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import { setStateElementByName } from '../src/stateElementByName';
 
@@ -9,7 +10,7 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     propSegments: ['onclick'],
     propModifiers: [],
     statePathName: 'handleClick',
-    statePathInfo: null,
+    statePathInfo: getPathInfo('handleClick'),
     stateName: 'default',
     filterTexts: [],
     bindingType: 'event',

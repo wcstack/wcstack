@@ -91,18 +91,4 @@ describe('getListIndexByBindingInfo', () => {
     expect(second).not.toBeNull();
   });
 
-  it('statePathInfoがない場合はエラーになること', () => {
-    const node = document.createElement('div');
-    const loopContext: ILoopContext = {
-      elementPathInfo: getPathInfo('users.*'),
-      listIndex: createListIndex(null, 0),
-    };
-    setLoopContextByNode(node, loopContext);
-
-    const bindingInfo = createBindingInfo(node, {
-      statePathInfo: null,
-    });
-
-    expect(() => getListIndexByBindingInfo(bindingInfo)).toThrow(/BindingInfo does not have statePathInfo/);
-  });
 });

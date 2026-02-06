@@ -29,7 +29,7 @@ describe('parseBindTextsForElement', () => {
     const result = parseBindTextsForElement('else:');
     expect(result).toHaveLength(1);
     expect(result[0].bindingType).toBe('else');
-    expect(result[0].statePathName).toBe('');
+    expect(result[0].statePathName).toBe('#else');
   });
 
   it('forバインディングをパースできること', () => {

@@ -27,6 +27,7 @@ import { getBindingsByContent } from '../src/bindings/bindingsByContent';
 import { applyChange } from '../src/apply/applyChange';
 import { activateContent, deactivateContent } from '../src/structural/activateContent';
 import { config } from '../src/config';
+import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 
 const createContentMock = vi.mocked(createContent);
@@ -42,7 +43,7 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
     propSegments: [],
     propModifiers: [],
     statePathName: 'flag',
-    statePathInfo: null,
+    statePathInfo: getPathInfo('flag'),
     stateName: 'default',
     filters: [{ filterName: 'not', args: [], filterFn: (v: any) => !v }],
     bindingType: 'if',

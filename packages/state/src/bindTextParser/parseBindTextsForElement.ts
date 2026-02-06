@@ -1,3 +1,4 @@
+import { getPathInfo } from "../address/PathInfo.js";
 import { raiseError } from "../raiseError.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
 import { parsePropPart } from "./parsePropPart.js";
@@ -27,8 +28,8 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         propName: 'else',
         propSegments: ['else'],
         propModifiers: [],
-        statePathName: '',
-        statePathInfo: null,
+        statePathName: '#else',
+        statePathInfo: getPathInfo('#else'),
         stateName: '',
         filters: [],
         bindingType: 'else',

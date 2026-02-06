@@ -35,12 +35,6 @@ describe('getStateAddressByBindingInfo', () => {
     getLoopContextByNodeMock.mockReturnValue(null as any);
   });
 
-  it('statePathInfoがnullならエラーになること', () => {
-    const bindingInfo = createBindingInfo({ statePathInfo: null });
-    expect(() => getStateAddressByBindingInfo(bindingInfo))
-      .toThrow(/State path info is null/);
-  });
-
   it('ワイルドカードでloopContextがnullならエラーになること', () => {
     const bindingInfo = createBindingInfo({
       statePathName: 'items.*',
