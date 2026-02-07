@@ -2329,9 +2329,14 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
 const handlerByHandlerKey$1 = new Map();
 const bindingInfoSetByHandlerKey$1 = new Map();
 function getHandlerKey$1(bindingInfo) {
-    return `${bindingInfo.stateName}::${bindingInfo.statePathName}`;
+    const modifierKey = bindingInfo.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+    return `${bindingInfo.stateName}::${bindingInfo.statePathName}::${modifierKey}`;
 }
-const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
+const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event) => {
+    if (modifiers.includes('prevent'))
+        event.preventDefault();
+    if (modifiers.includes('stop'))
+        event.stopPropagation();
     const node = event.target;
     const stateElement = getStateElementByName(stateName);
     if (stateElement === null) {
@@ -2355,7 +2360,7 @@ function attachEventHandler(bindingInfo) {
     const key = getHandlerKey$1(bindingInfo);
     let stateEventHandler = handlerByHandlerKey$1.get(key);
     if (typeof stateEventHandler === "undefined") {
-        stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName);
+        stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName, bindingInfo.propModifiers);
         handlerByHandlerKey$1.set(key, stateEventHandler);
     }
     const eventName = bindingInfo.propName.slice(2);

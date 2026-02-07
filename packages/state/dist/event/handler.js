@@ -4,9 +4,14 @@ import { getStateElementByName } from "../stateElementByName";
 const handlerByHandlerKey = new Map();
 const bindingInfoSetByHandlerKey = new Map();
 function getHandlerKey(bindingInfo) {
-    return `${bindingInfo.stateName}::${bindingInfo.statePathName}`;
+    const modifierKey = bindingInfo.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+    return `${bindingInfo.stateName}::${bindingInfo.statePathName}::${modifierKey}`;
 }
-const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
+const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event) => {
+    if (modifiers.includes('prevent'))
+        event.preventDefault();
+    if (modifiers.includes('stop'))
+        event.stopPropagation();
     const node = event.target;
     const stateElement = getStateElementByName(stateName);
     if (stateElement === null) {
@@ -30,7 +35,7 @@ export function attachEventHandler(bindingInfo) {
     const key = getHandlerKey(bindingInfo);
     let stateEventHandler = handlerByHandlerKey.get(key);
     if (typeof stateEventHandler === "undefined") {
-        stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName);
+        stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName, bindingInfo.propModifiers);
         handlerByHandlerKey.set(key, stateEventHandler);
     }
     const eventName = bindingInfo.propName.slice(2);

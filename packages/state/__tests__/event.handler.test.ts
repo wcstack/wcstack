@@ -81,7 +81,7 @@ describe('event/handler', () => {
 
     attachEventHandler(binding);
 
-    const key = `${binding.stateName}::${binding.statePathName}`;
+    const key = `${binding.stateName}::${binding.statePathName}::`;
     __private__.bindingInfoSetByHandlerKey.delete(key);
 
     expect(detachEventHandler(binding)).toBe(false);
@@ -100,7 +100,7 @@ describe('event/handler', () => {
     attachEventHandler(binding1);
     attachEventHandler(binding2);
 
-    const key = `${binding1.stateName}::${binding1.statePathName}`;
+    const key = `${binding1.stateName}::${binding1.statePathName}::`;
     expect(detachEventHandler(binding1)).toBe(true);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
 
@@ -141,6 +141,127 @@ describe('event/handler', () => {
     handler(new Event('click'));
     expect(lastPromise).not.toBeNull();
     return expect(lastPromise!).rejects.toThrow(/is not a function/);
+  });
+
+  it('preventモディファイアでpreventDefaultが呼ばれること', async () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, {
+      propName: 'onclick',
+      propModifiers: ['prevent'],
+      statePathName: 'handleClick-prevent',
+    });
+
+    const state: any = {
+      'handleClick-prevent': vi.fn(),
+      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
+    };
+    let lastPromise: Promise<any> | null = null;
+    setStateElementByName('default', {
+      createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
+        lastPromise = callback(state);
+        return lastPromise as Promise<void>;
+      }
+    } as any);
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+    const event = new Event('click', { cancelable: true });
+    const preventSpy = vi.spyOn(event, 'preventDefault');
+    handler(event);
+
+    await lastPromise;
+    expect(preventSpy).toHaveBeenCalledTimes(1);
+    expect(state['handleClick-prevent']).toHaveBeenCalledTimes(1);
+  });
+
+  it('stopモディファイアでstopPropagationが呼ばれること', async () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, {
+      propName: 'onclick',
+      propModifiers: ['stop'],
+      statePathName: 'handleClick-stop',
+    });
+
+    const state: any = {
+      'handleClick-stop': vi.fn(),
+      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
+    };
+    let lastPromise: Promise<any> | null = null;
+    setStateElementByName('default', {
+      createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
+        lastPromise = callback(state);
+        return lastPromise as Promise<void>;
+      }
+    } as any);
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+    const event = new Event('click', { bubbles: true });
+    const stopSpy = vi.spyOn(event, 'stopPropagation');
+    handler(event);
+
+    await lastPromise;
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(state['handleClick-stop']).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevent,stopモディファイアで両方呼ばれること', async () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, {
+      propName: 'onclick',
+      propModifiers: ['prevent', 'stop'],
+      statePathName: 'handleClick-both',
+    });
+
+    const state: any = {
+      'handleClick-both': vi.fn(),
+      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
+    };
+    let lastPromise: Promise<any> | null = null;
+    setStateElementByName('default', {
+      createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
+        lastPromise = callback(state);
+        return lastPromise as Promise<void>;
+      }
+    } as any);
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+    const event = new Event('click', { cancelable: true, bubbles: true });
+    const preventSpy = vi.spyOn(event, 'preventDefault');
+    const stopSpy = vi.spyOn(event, 'stopPropagation');
+    handler(event);
+
+    await lastPromise;
+    expect(preventSpy).toHaveBeenCalledTimes(1);
+    expect(stopSpy).toHaveBeenCalledTimes(1);
+    expect(state['handleClick-both']).toHaveBeenCalledTimes(1);
+  });
+
+  it('モディファイアが異なるバインディングは別のハンドラキーを持つこと', () => {
+    const el1 = document.createElement('button');
+    const el2 = document.createElement('button');
+    const addSpy1 = vi.spyOn(el1, 'addEventListener');
+    const addSpy2 = vi.spyOn(el2, 'addEventListener');
+
+    const binding1 = createBindingInfo(el1, {
+      propModifiers: ['prevent'],
+      statePathName: 'handleClick-diff-mod',
+    });
+    const binding2 = createBindingInfo(el2, {
+      propModifiers: [],
+      statePathName: 'handleClick-diff-mod',
+    });
+
+    attachEventHandler(binding1);
+    attachEventHandler(binding2);
+
+    const handler1 = addSpy1.mock.calls[0]?.[1];
+    const handler2 = addSpy2.mock.calls[0]?.[1];
+    expect(handler1).not.toBe(handler2);
   });
 
   it('stateのハンドラが呼び出されること', async () => {

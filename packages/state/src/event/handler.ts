@@ -7,13 +7,18 @@ const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 const bindingInfoSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
 
 function getHandlerKey(bindingInfo: IBindingInfo): string {
-  return `${bindingInfo.stateName}::${bindingInfo.statePathName}`;
+  const modifierKey = bindingInfo.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+  return `${bindingInfo.stateName}::${bindingInfo.statePathName}::${modifierKey}`;
 }
 
 const stateEventHandlerFunction = (
   stateName: string,
-  handlerName: string
+  handlerName: string,
+  modifiers: string[]
 ) => (event: Event): any => {
+  if (modifiers.includes('prevent')) event.preventDefault();
+  if (modifiers.includes('stop')) event.stopPropagation();
+
   const node = event.target as Element;
   const stateElement = getStateElementByName(stateName);
   if (stateElement === null) {
@@ -39,7 +44,7 @@ export function attachEventHandler(bindingInfo: IBindingInfo): boolean {
   const key = getHandlerKey(bindingInfo);
   let stateEventHandler = handlerByHandlerKey.get(key);
   if (typeof stateEventHandler === "undefined") {
-    stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName);
+    stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName, bindingInfo.propModifiers);
     handlerByHandlerKey.set(key, stateEventHandler);
   }
 
