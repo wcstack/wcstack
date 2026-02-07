@@ -947,11 +947,18 @@ function setIndexBindingsByContent(content, bindings) {
     indexBindingsByContent.set(content, bindings);
 }
 
-const listIndexByBindingInfoByLoopContext = new WeakMap();
-const cacheCalcWildcardIndex = new WeakMap();
-function calcWildcardIndex(pathInfo, targetPathInfo) {
+const cacheCalcWildcardLen = new WeakMap();
+function calcWildcardLen(pathInfo, targetPathInfo) {
     let path1;
     let path2;
+    if (pathInfo.wildcardCount === 0 || targetPathInfo.wildcardCount === 0) {
+        return 0;
+    }
+    if (pathInfo.wildcardCount === 1
+        && targetPathInfo.wildcardCount > 0
+        && targetPathInfo.wildcardPathSet.has(pathInfo.path)) {
+        return 1;
+    }
     if (pathInfo.id < targetPathInfo.id) {
         path1 = pathInfo;
         path2 = targetPathInfo;
@@ -960,10 +967,10 @@ function calcWildcardIndex(pathInfo, targetPathInfo) {
         path1 = targetPathInfo;
         path2 = pathInfo;
     }
-    let cacheByPath2 = cacheCalcWildcardIndex.get(path1);
+    let cacheByPath2 = cacheCalcWildcardLen.get(path1);
     if (typeof cacheByPath2 === "undefined") {
         cacheByPath2 = new WeakMap();
-        cacheCalcWildcardIndex.set(path1, cacheByPath2);
+        cacheCalcWildcardLen.set(path1, cacheByPath2);
     }
     else {
         const cached = cacheByPath2.get(path2);
@@ -971,11 +978,13 @@ function calcWildcardIndex(pathInfo, targetPathInfo) {
             return cached;
         }
     }
-    const matchPath = path1.wildcardParentPathSet.intersection(path2.wildcardParentPathSet);
-    const retValue = matchPath.size - 1;
+    const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
+    const retValue = matchPath.size;
     cacheByPath2.set(path2, retValue);
     return retValue;
 }
+
+const listIndexByBindingInfoByLoopContext = new WeakMap();
 function getListIndexByBindingInfo(bindingInfo) {
     const loopContext = getLoopContextByNode(bindingInfo.node);
     if (loopContext === null) {
@@ -994,9 +1003,9 @@ function getListIndexByBindingInfo(bindingInfo) {
     }
     let listIndex = null;
     try {
-        const wildcardIndex = calcWildcardIndex(loopContext.elementPathInfo, bindingInfo.statePathInfo);
-        if (wildcardIndex >= 0) {
-            listIndex = loopContext.listIndex.at(wildcardIndex) || null;
+        const wildcardLen = calcWildcardLen(loopContext.elementPathInfo, bindingInfo.statePathInfo);
+        if (wildcardLen > 0) {
+            listIndex = loopContext.listIndex.at(wildcardLen - 1);
         }
         return listIndex;
     }
@@ -2946,34 +2955,6 @@ function setSwapInfoByAddress(address, swapInfo) {
 const MAX_DEPENDENCY_DEPTH = 1000;
 // ToDo: IAbsoluteStateAddressに変更する
 const lastValueByListAddress$1 = new WeakMap();
-const cacheCalcWildcardLen = new WeakMap();
-function calcWildcardLen(pathInfo, targetPathInfo) {
-    let path1;
-    let path2;
-    if (pathInfo.id < targetPathInfo.id) {
-        path1 = pathInfo;
-        path2 = targetPathInfo;
-    }
-    else {
-        path1 = targetPathInfo;
-        path2 = pathInfo;
-    }
-    let cacheByPath2 = cacheCalcWildcardLen.get(path1);
-    if (typeof cacheByPath2 === "undefined") {
-        cacheByPath2 = new WeakMap();
-        cacheCalcWildcardLen.set(path1, cacheByPath2);
-    }
-    else {
-        const cached = cacheByPath2.get(path2);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-    }
-    const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
-    const retValue = matchPath.size;
-    cacheByPath2.set(path2, retValue);
-    return retValue;
-}
 function getIndexes(listDiff, searchType) {
     switch (searchType) {
         case "old":

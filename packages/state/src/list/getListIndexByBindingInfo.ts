@@ -1,37 +1,9 @@
-import { IPathInfo } from "../address/types";
+import { calcWildcardLen } from "../address/calcWildcardLen";
 import { IBindingInfo } from "../types";
 import { getLoopContextByNode } from "./loopContextByNode";
 import { IListIndex, ILoopContext } from "./types";
 
 const listIndexByBindingInfoByLoopContext: WeakMap<ILoopContext, WeakMap<IBindingInfo, IListIndex | null>> = new WeakMap();
-
-const cacheCalcWildcardIndex: WeakMap<IPathInfo, WeakMap<IPathInfo, number>> = new WeakMap(); 
-
-function calcWildcardIndex(pathInfo: IPathInfo, targetPathInfo: IPathInfo): number {
-  let path1: IPathInfo;
-  let path2: IPathInfo;
-  if (pathInfo.id < targetPathInfo.id) {
-    path1 = pathInfo;
-    path2 = targetPathInfo;
-  } else {
-    path1 = targetPathInfo;
-    path2 = pathInfo;
-  }
-  let cacheByPath2 = cacheCalcWildcardIndex.get(path1);
-  if (typeof cacheByPath2 === "undefined") {
-    cacheByPath2 = new WeakMap<IPathInfo, number>();
-    cacheCalcWildcardIndex.set(path1, cacheByPath2);
-  } else {
-    const cached = cacheByPath2.get(path2);
-    if (typeof cached !== "undefined") {
-      return cached;
-    }
-  }
-  const matchPath = path1.wildcardParentPathSet.intersection(path2.wildcardParentPathSet);
-  const retValue = matchPath.size - 1;
-  cacheByPath2.set(path2, retValue);
-  return retValue;
-}
 
 export function getListIndexByBindingInfo(bindingInfo: IBindingInfo): IListIndex | null {
   const loopContext = getLoopContextByNode(bindingInfo.node);
@@ -40,7 +12,7 @@ export function getListIndexByBindingInfo(bindingInfo: IBindingInfo): IListIndex
   }
   let listIndexByBindingInfo = listIndexByBindingInfoByLoopContext.get(loopContext);
   if (typeof listIndexByBindingInfo === "undefined") {
-    listIndexByBindingInfo = new WeakMap<IBindingInfo, IListIndex>();
+    listIndexByBindingInfo = new WeakMap<IBindingInfo, IListIndex | null>();
     listIndexByBindingInfoByLoopContext.set(loopContext, listIndexByBindingInfo);
   } else {
     const listIndex = listIndexByBindingInfo.get(bindingInfo);
@@ -51,9 +23,9 @@ export function getListIndexByBindingInfo(bindingInfo: IBindingInfo): IListIndex
 
   let listIndex: IListIndex | null = null;
   try {
-    const wildcardIndex = calcWildcardIndex(loopContext.elementPathInfo, bindingInfo.statePathInfo);
-    if (wildcardIndex >= 0) {
-      listIndex = loopContext.listIndex.at(wildcardIndex) || null;
+    const wildcardLen = calcWildcardLen(loopContext.elementPathInfo, bindingInfo.statePathInfo);
+    if (wildcardLen > 0) {
+      listIndex = loopContext.listIndex.at(wildcardLen - 1);
     }
     return listIndex;
   } finally {
