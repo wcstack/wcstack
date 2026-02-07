@@ -48,7 +48,8 @@ describe('getParseBindTextResults', () => {
       statePathName: 'items',
       statePathInfo: getPathInfo('items'),
       stateName: 'default',
-      filters: [],
+      outFilters: [],
+      inFilters: [],
       bindingType: 'for',
       uuid: null,
     };

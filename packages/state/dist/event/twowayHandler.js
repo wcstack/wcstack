@@ -5,7 +5,8 @@ import { getStateElementByName } from "../stateElementByName";
 const handlerByHandlerKey = new Map();
 const bindingInfoSetByHandlerKey = new Map();
 function getHandlerKey(bindingInfo, eventName) {
-    return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}`;
+    const filterKey = bindingInfo.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}::${filterKey}`;
 }
 function getEventName(bindingInfo) {
     const tagName = bindingInfo.node.tagName.toLowerCase();
@@ -17,7 +18,7 @@ function getEventName(bindingInfo) {
     }
     return eventName;
 }
-const twowayEventHandlerFunction = (stateName, propName, statePathName) => (event) => {
+const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters) => (event) => {
     const node = event.target;
     if (typeof node === "undefined") {
         console.warn(`[@wcstack/state] event.target is undefined.`);
@@ -28,6 +29,10 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
         return;
     }
     const newValue = node[propName];
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
     const stateElement = getStateElementByName(stateName);
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for two-way binding.`);
@@ -35,7 +40,7 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
     const loopContext = getLoopContextByNode(node);
     stateElement.createState("writable", (state) => {
         state.$$setLoopContext(loopContext, () => {
-            state[statePathName] = newValue;
+            state[statePathName] = filteredNewValue;
         });
     });
 };
@@ -45,7 +50,7 @@ export function attachTwowayEventHandler(bindingInfo) {
         const key = getHandlerKey(bindingInfo, eventName);
         let twowayEventHandler = handlerByHandlerKey.get(key);
         if (typeof twowayEventHandler === "undefined") {
-            twowayEventHandler = twowayEventHandlerFunction(bindingInfo.stateName, bindingInfo.propName, bindingInfo.statePathName);
+            twowayEventHandler = twowayEventHandlerFunction(bindingInfo.stateName, bindingInfo.propName, bindingInfo.statePathName, bindingInfo.inFilters);
             handlerByHandlerKey.set(key, twowayEventHandler);
         }
         bindingInfo.node.addEventListener(eventName, twowayEventHandler);

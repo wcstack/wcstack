@@ -1,7 +1,10 @@
-import { IBindingInfo } from "../types";
+import { IBindingInfo, IFilterInfo } from "../types";
+import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
 
-type PropPartParseResult = Pick<IBindingInfo, 'propName' | 'propSegments' | 'propModifiers'>;
+type PropPartParseResult = Pick<IBindingInfo, 'propName' | 'propSegments' | 'propModifiers' | 'inFilters'>;
+
+const cacheFilterInfos = new Map<string, IFilterInfo[]>();
 
 // format: propName#moodifier1,modifier2
 // propName-format: path.to.property (e.g., textContent, style.color, not include :)
@@ -12,7 +15,26 @@ type PropPartParseResult = Pick<IBindingInfo, 'propName' | 'propSegments' | 'pro
 //   'onclick', 'onchange' etc. for event listeners
 
 export function parsePropPart(propPart: string): PropPartParseResult {
-  const [propName, propModifiersText] = propPart.split('#').map(trimFn);
+  const pos = propPart.indexOf('|');
+  let propText: string = '';
+  let filterTexts: string[] = [];
+  let filtersText = '';
+  let filters: IFilterInfo[] = [];
+  if (pos !== -1) {
+    propText = propPart.slice(0, pos).trim();
+    filtersText = propPart.slice(pos + 1).trim();
+    if (cacheFilterInfos.has(filtersText)) {
+      filters = cacheFilterInfos.get(filtersText)!;
+    } else {
+      filterTexts = filtersText.split('|').map(trimFn);
+      filters = parseFilters(filterTexts, "input");
+      cacheFilterInfos.set(filtersText, filters);
+    }
+  } else {
+    propText = propPart.trim();
+  }
+
+  const [propName, propModifiersText] = propText.split('#').map(trimFn);
   const propSegments = propName.split('.').map(trimFn);
   const propModifiers = propModifiersText
     ? propModifiersText.split(',').map(trimFn)
@@ -21,5 +43,6 @@ export function parsePropPart(propPart: string): PropPartParseResult {
     propName,
     propSegments,
     propModifiers,
+    inFilters: filters,
   };
 }

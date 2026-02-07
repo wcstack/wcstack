@@ -5,7 +5,7 @@ import { getContentByNode } from "../structural/contentByNode";
 import { createContent } from "../structural/createContent";
 const lastConnectedByNode = new WeakMap();
 function bindingInfoText(bindingInfo) {
-    return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.filters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
+    return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.outFilters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
 }
 export function applyChangeToIf(bindingInfo, context, rawNewValue) {
     const currentConnected = bindingInfo.node.isConnected;

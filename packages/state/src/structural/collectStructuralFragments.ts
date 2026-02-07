@@ -24,10 +24,10 @@ function cloneNotParseBindTextResult(
   bindingType: BindingType,
   parseBindTextResult: ParseBindTextResult
 ): ParseBindTextResult {
-  const filters = parseBindTextResult.filters;
+  const filters = parseBindTextResult.outFilters;
   return {
     ...parseBindTextResult,
-    filters: [...filters, notFilter],
+    outFilters: [...filters, notFilter],
     bindingType: bindingType,
   };
 }

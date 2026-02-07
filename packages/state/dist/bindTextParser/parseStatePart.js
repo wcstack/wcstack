@@ -32,7 +32,7 @@ export function parseStatePart(statePart) {
         stateName,
         statePathName,
         statePathInfo: getPathInfo(statePathName),
-        filters,
+        outFilters: filters,
     };
 }
 //# sourceMappingURL=parseStatePart.js.map

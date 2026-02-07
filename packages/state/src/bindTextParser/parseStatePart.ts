@@ -4,7 +4,7 @@ import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
 
 type StatePartParseResult = Pick<IBindingInfo, 
-  'stateName' | 'statePathName' | 'statePathInfo' | 'filters'>;
+  'stateName' | 'statePathName' | 'statePathInfo' | 'outFilters'>;
 
 const cacheFilterInfos = new Map<string, IFilterInfo[]>();
 
@@ -36,6 +36,6 @@ export function parseStatePart(statePart: string): StatePartParseResult {
     stateName,
     statePathName,
     statePathInfo: getPathInfo(statePathName),
-    filters,
+    outFilters: filters,
   };
 }

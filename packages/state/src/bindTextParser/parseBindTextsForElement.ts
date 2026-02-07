@@ -31,7 +31,8 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         statePathName: '#else',
         statePathInfo: getPathInfo('#else'),
         stateName: '',
-        filters: [],
+        inFilters: [],
+        outFilters: [],
         bindingType: 'else',
       };
     } else if (propPart === 'if' || propPart === 'elseif' || propPart === 'for') {
@@ -40,6 +41,7 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         propName: propPart,
         propSegments: [propPart],
         propModifiers: [],
+        inFilters: [],
         ...stateResult,
         bindingType: propPart,
       };

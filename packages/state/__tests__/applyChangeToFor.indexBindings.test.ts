@@ -32,7 +32,8 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
     stateName: 'default',
-    filters: [],
+    outFilters: [],
+    inFilters: [],
     bindingType: 'for',
     uuid,
     node,
@@ -100,7 +101,8 @@ function createFragmentInfoWithBinding() {
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
     stateName: 'default',
-    filters: [],
+    outFilters: [],
+    inFilters: [],
     bindingType: 'for',
     uuid
   };
@@ -125,7 +127,8 @@ function createFragmentInfoWithIndexBinding() {
     statePathName: 'items',
     statePathInfo: getPathInfo('items'),
     stateName: 'default',
-    filters: [],
+    outFilters: [],
+    inFilters: [],
     bindingType: 'for',
     uuid
   };

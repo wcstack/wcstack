@@ -16,7 +16,8 @@ export interface IBindingInfo {
   readonly statePathName: string;
   readonly statePathInfo: IPathInfo;
   readonly stateName: string;
-  readonly filters: IFilterInfo[];
+  readonly inFilters: IFilterInfo[];
+  readonly outFilters: IFilterInfo[];
   readonly node: Node; // raw node
   readonly replaceNode: Node; // replaced node or raw node
   readonly bindingType: BindingType;

@@ -57,7 +57,8 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
     statePathName: 'value',
     statePathInfo: getPathInfo('value'),
     stateName: 'default',
-    filters: [],
+    outFilters: [],
+    inFilters: [],
     propModifiers: [],
     uuid: null,
     node: document.createTextNode(''),
@@ -90,7 +91,8 @@ describe('applyChange (coverage)', () => {
       replaceNode: input,
       propName: 'value',
       propSegments: ['value'],
-      filters
+      outFilters: filters,
+      inFilters: []
     } as IBindingInfo;
 
     getValueMock.mockReturnValue(3);

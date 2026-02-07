@@ -1,4 +1,4 @@
-import { IBindingInfo } from "../types";
+import { IBindingInfo, IFilterInfo } from "../types";
 declare function getHandlerKey(bindingInfo: IBindingInfo, eventName: string): string;
 declare function getEventName(bindingInfo: IBindingInfo): string;
 export declare function attachTwowayEventHandler(bindingInfo: IBindingInfo): boolean;
@@ -8,7 +8,7 @@ export declare const __private__: {
     bindingInfoSetByHandlerKey: Map<string, Set<IBindingInfo>>;
     getHandlerKey: typeof getHandlerKey;
     getEventName: typeof getEventName;
-    twowayEventHandlerFunction: (stateName: string, propName: string, statePathName: string) => (event: Event) => any;
+    twowayEventHandlerFunction: (stateName: string, propName: string, statePathName: string, inFilters: IFilterInfo[]) => (event: Event) => any;
 };
 export {};
 //# sourceMappingURL=twowayHandler.d.ts.map

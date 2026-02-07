@@ -27,7 +27,8 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
     statePathName: 'users.*.name',
     statePathInfo: getPathInfo('users.*.name'),
     stateName: 'default',
-    filters: [],
+    outFilters: [],
+    inFilters: [],
     bindingType: 'prop',
     uuid: null,
     node,
@@ -167,6 +168,62 @@ describe('event/twowayHandler', () => {
     expect(state['users.*.name-set']).toBe('Alice');
   });
 
+  it('inFilters が適用された値がstateに反映されること', async () => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'text');
+    input.value = '  hello  ';
+    const addSpy = vi.spyOn(input, 'addEventListener');
+
+    const loopContext = { index: 0 };
+    vi.mocked(getLoopContextByNode).mockReturnValue(loopContext as any);
+
+    const state: any = {
+      $$setLoopContext: vi.fn((ctx, fn) => fn()),
+    };
+    const createState = vi.fn((mutability, fn) => fn(state));
+    vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
+
+    const trimFilter = { filterName: 'trim', args: [] as string[], filterFn: (v: any) => String(v).trim() };
+    const ucFilter = { filterName: 'uc', args: [] as string[], filterFn: (v: any) => String(v).toUpperCase() };
+    const binding = createBindingInfo(input, {
+      statePathName: 'users.*.name-infilter',
+      inFilters: [trimFilter, ucFilter],
+    });
+    attachTwowayEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
+
+    await handler({ target: input } as unknown as Event);
+
+    expect(state['users.*.name-infilter']).toBe('HELLO');
+  });
+
+  it('異なる inFilters を持つバインディングは異なるハンドラーキーになること', () => {
+    const input1 = document.createElement('input');
+    input1.setAttribute('type', 'text');
+    const input2 = document.createElement('input');
+    input2.setAttribute('type', 'text');
+
+    const addSpy1 = vi.spyOn(input1, 'addEventListener');
+    const addSpy2 = vi.spyOn(input2, 'addEventListener');
+
+    const intFilter = { filterName: 'int', args: [] as string[], filterFn: (v: any) => parseInt(v) };
+    const binding1 = createBindingInfo(input1, {
+      statePathName: 'users.*.age-key',
+      inFilters: [intFilter],
+    });
+    const binding2 = createBindingInfo(input2, {
+      statePathName: 'users.*.age-key',
+      inFilters: [],
+    });
+
+    attachTwowayEventHandler(binding1);
+    attachTwowayEventHandler(binding2);
+
+    const handler1 = addSpy1.mock.calls[0]?.[1];
+    const handler2 = addSpy2.mock.calls[0]?.[1];
+    expect(handler1).not.toBe(handler2);
+  });
+
   it('event.targetがundefinedなら警告して終了すること', () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'text');
@@ -245,7 +302,8 @@ describe('event/twowayHandler', () => {
     const handler = __private__.twowayEventHandlerFunction(
       binding.stateName,
       binding.propName,
-      binding.statePathName
+      binding.statePathName,
+      binding.inFilters
     );
     __private__.handlerByHandlerKey.set(key, handler);
     const bindingInfoSet = new Set([binding]);

@@ -15,10 +15,10 @@ const keywordByBindingType = new Map([
 ]);
 const notFilter = createNotFilter();
 function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
-    const filters = parseBindTextResult.filters;
+    const filters = parseBindTextResult.outFilters;
     return {
         ...parseBindTextResult,
-        filters: [...filters, notFilter],
+        outFilters: [...filters, notFilter],
         bindingType: bindingType,
     };
 }

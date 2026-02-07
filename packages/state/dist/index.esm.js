@@ -1171,28 +1171,6 @@ const STRUCTURAL_BINDING_TYPE_SET = new Set([
     "for",
 ]);
 
-const trimFn = (s) => s.trim();
-
-// format: propName#moodifier1,modifier2
-// propName-format: path.to.property (e.g., textContent, style.color, not include :)
-// special path: 
-//   'attr.attributeName' for attributes (e.g., attr.href, attr.data-id)
-//   'style.propertyName' for style properties (e.g., style.backgroundColor, style.fontSize)
-//   'class.className' for class names (e.g., class.active, class.hidden)
-//   'onclick', 'onchange' etc. for event listeners
-function parsePropPart(propPart) {
-    const [propName, propModifiersText] = propPart.split('#').map(trimFn);
-    const propSegments = propName.split('.').map(trimFn);
-    const propModifiers = propModifiersText
-        ? propModifiersText.split(',').map(trimFn)
-        : [];
-    return {
-        propName,
-        propSegments,
-        propModifiers,
-    };
-}
-
 /**
  * errorMessages.ts
  *
@@ -2039,6 +2017,50 @@ function parseFilters(filterTextList, filterIOType) {
     return filters;
 }
 
+const trimFn = (s) => s.trim();
+
+const cacheFilterInfos$1 = new Map();
+// format: propName#moodifier1,modifier2
+// propName-format: path.to.property (e.g., textContent, style.color, not include :)
+// special path: 
+//   'attr.attributeName' for attributes (e.g., attr.href, attr.data-id)
+//   'style.propertyName' for style properties (e.g., style.backgroundColor, style.fontSize)
+//   'class.className' for class names (e.g., class.active, class.hidden)
+//   'onclick', 'onchange' etc. for event listeners
+function parsePropPart(propPart) {
+    const pos = propPart.indexOf('|');
+    let propText = '';
+    let filterTexts = [];
+    let filtersText = '';
+    let filters = [];
+    if (pos !== -1) {
+        propText = propPart.slice(0, pos).trim();
+        filtersText = propPart.slice(pos + 1).trim();
+        if (cacheFilterInfos$1.has(filtersText)) {
+            filters = cacheFilterInfos$1.get(filtersText);
+        }
+        else {
+            filterTexts = filtersText.split('|').map(trimFn);
+            filters = parseFilters(filterTexts, "input");
+            cacheFilterInfos$1.set(filtersText, filters);
+        }
+    }
+    else {
+        propText = propPart.trim();
+    }
+    const [propName, propModifiersText] = propText.split('#').map(trimFn);
+    const propSegments = propName.split('.').map(trimFn);
+    const propModifiers = propModifiersText
+        ? propModifiersText.split(',').map(trimFn)
+        : [];
+    return {
+        propName,
+        propSegments,
+        propModifiers,
+        inFilters: filters,
+    };
+}
+
 const cacheFilterInfos = new Map();
 // format: statePath@stateName|filter|filter
 // statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
@@ -2070,7 +2092,7 @@ function parseStatePart(statePart) {
         stateName,
         statePathName,
         statePathInfo: getPathInfo(statePathName),
-        filters,
+        outFilters: filters,
     };
 }
 
@@ -2098,7 +2120,8 @@ function parseBindTextsForElement(bindText) {
                 statePathName: '#else',
                 statePathInfo: getPathInfo('#else'),
                 stateName: '',
-                filters: [],
+                inFilters: [],
+                outFilters: [],
                 bindingType: 'else',
             };
         }
@@ -2108,6 +2131,7 @@ function parseBindTextsForElement(bindText) {
                 propName: propPart,
                 propSegments: [propPart],
                 propModifiers: [],
+                inFilters: [],
                 ...stateResult,
                 bindingType: propPart,
             };
@@ -2190,6 +2214,7 @@ function parseBindTextForEmbeddedNode(bindText) {
         propName: 'textContent',
         propSegments: ['textContent'],
         propModifiers: [],
+        inFilters: [],
         ...stateResult,
         bindingType: 'text',
     };
@@ -2377,7 +2402,8 @@ function isPossibleTwoWay(node, propName) {
 const handlerByHandlerKey = new Map();
 const bindingInfoSetByHandlerKey = new Map();
 function getHandlerKey(bindingInfo, eventName) {
-    return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}`;
+    const filterKey = bindingInfo.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}::${filterKey}`;
 }
 function getEventName(bindingInfo) {
     const tagName = bindingInfo.node.tagName.toLowerCase();
@@ -2389,7 +2415,7 @@ function getEventName(bindingInfo) {
     }
     return eventName;
 }
-const twowayEventHandlerFunction = (stateName, propName, statePathName) => (event) => {
+const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters) => (event) => {
     const node = event.target;
     if (typeof node === "undefined") {
         console.warn(`[@wcstack/state] event.target is undefined.`);
@@ -2400,6 +2426,10 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
         return;
     }
     const newValue = node[propName];
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
     const stateElement = getStateElementByName(stateName);
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for two-way binding.`);
@@ -2407,7 +2437,7 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName) => (even
     const loopContext = getLoopContextByNode(node);
     stateElement.createState("writable", (state) => {
         state.$$setLoopContext(loopContext, () => {
-            state[statePathName] = newValue;
+            state[statePathName] = filteredNewValue;
         });
     });
 };
@@ -2417,7 +2447,7 @@ function attachTwowayEventHandler(bindingInfo) {
         const key = getHandlerKey(bindingInfo, eventName);
         let twowayEventHandler = handlerByHandlerKey.get(key);
         if (typeof twowayEventHandler === "undefined") {
-            twowayEventHandler = twowayEventHandlerFunction(bindingInfo.stateName, bindingInfo.propName, bindingInfo.statePathName);
+            twowayEventHandler = twowayEventHandlerFunction(bindingInfo.stateName, bindingInfo.propName, bindingInfo.statePathName, bindingInfo.inFilters);
             handlerByHandlerKey.set(key, twowayEventHandler);
         }
         bindingInfo.node.addEventListener(eventName, twowayEventHandler);
@@ -2648,7 +2678,7 @@ function applyChangeToFor(bindingInfo, context, newValue) {
 
 const lastConnectedByNode = new WeakMap();
 function bindingInfoText(bindingInfo) {
-    return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.filters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
+    return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.outFilters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
 }
 function applyChangeToIf(bindingInfo, context, rawNewValue) {
     const currentConnected = bindingInfo.node.isConnected;
@@ -2771,7 +2801,7 @@ const applyChangeByBindingType = {
 };
 function _applyChange(binding, context) {
     const value = getValue(context.state, binding);
-    const filteredValue = getFilteredValue(value, binding.filters);
+    const filteredValue = getFilteredValue(value, binding.outFilters);
     let fn = applyChangeByBindingType[binding.bindingType];
     if (typeof fn === 'undefined') {
         const firstSegment = binding.propSegments[0];
@@ -3974,10 +4004,10 @@ const keywordByBindingType = new Map([
 ]);
 const notFilter = createNotFilter();
 function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
-    const filters = parseBindTextResult.filters;
+    const filters = parseBindTextResult.outFilters;
     return {
         ...parseBindTextResult,
-        filters: [...filters, notFilter],
+        outFilters: [...filters, notFilter],
         bindingType: bindingType,
     };
 }

@@ -23,7 +23,7 @@ const applyChangeByBindingType = {
 };
 function _applyChange(binding, context) {
     const value = getValue(context.state, binding);
-    const filteredValue = getFilteredValue(value, binding.filters);
+    const filteredValue = getFilteredValue(value, binding.outFilters);
     let fn = applyChangeByBindingType[binding.bindingType];
     if (typeof fn === 'undefined') {
         const firstSegment = binding.propSegments[0];

@@ -7,6 +7,7 @@ export function parseBindTextForEmbeddedNode(bindText: string): ParseBindTextRes
     propName: 'textContent',
     propSegments: ['textContent'],
     propModifiers: [],
+    inFilters: [],
     ...stateResult,
     bindingType: 'text',
   }

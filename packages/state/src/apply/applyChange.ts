@@ -28,7 +28,7 @@ const applyChangeByBindingType: { [key: string]: ApplyChangeFn } = {
 
 function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
   const value = getValue(context.state, binding);
-  const filteredValue = getFilteredValue(value, binding.filters);
+  const filteredValue = getFilteredValue(value, binding.outFilters);
 
   let fn = applyChangeByBindingType[binding.bindingType];
   if (typeof fn === 'undefined') {

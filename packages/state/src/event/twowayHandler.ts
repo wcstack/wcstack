@@ -2,13 +2,14 @@ import { isPossibleTwoWay } from "./isPossibleTwoWay";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
-import { IBindingInfo } from "../types";
+import { IBindingInfo, IFilterInfo } from "../types";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 const bindingInfoSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
 
 function getHandlerKey(bindingInfo: IBindingInfo, eventName: string): string {
-  return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}`;
+  const filterKey = bindingInfo.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+  return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}::${filterKey}`;
 }
 
 function getEventName(bindingInfo: IBindingInfo): string {
@@ -26,6 +27,7 @@ const twowayEventHandlerFunction = (
   stateName: string,
   propName: string,
   statePathName: string,
+  inFilters: IFilterInfo[],
 ) => (event: Event): any => {
   const node = event.target as Element;
   if (typeof node === "undefined") {
@@ -37,6 +39,11 @@ const twowayEventHandlerFunction = (
     return;
   }
   const newValue = (node as any)[propName];
+  let filteredNewValue = newValue;
+  for(const filter of inFilters) {
+    filteredNewValue = filter.filterFn(filteredNewValue);
+  }
+
   const stateElement = getStateElementByName(stateName);
   if (stateElement === null) {
     raiseError(`State element with name "${stateName}" not found for two-way binding.`);
@@ -45,7 +52,7 @@ const twowayEventHandlerFunction = (
   const loopContext = getLoopContextByNode(node);
   stateElement.createState("writable", (state) => {
     state.$$setLoopContext(loopContext, () => {
-      state[statePathName] = newValue;
+      state[statePathName] = filteredNewValue;
     });
   });
 }
@@ -59,7 +66,8 @@ export function attachTwowayEventHandler(bindingInfo: IBindingInfo): boolean {
       twowayEventHandler = twowayEventHandlerFunction(
         bindingInfo.stateName,
         bindingInfo.propName,
-        bindingInfo.statePathName
+        bindingInfo.statePathName,
+        bindingInfo.inFilters
       );
       handlerByHandlerKey.set(key, twowayEventHandler);
     }

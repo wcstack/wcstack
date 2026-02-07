@@ -9,7 +9,7 @@ import { IApplyContext } from "./types";
 const lastConnectedByNode: WeakMap<Node, boolean> = new WeakMap();
 
 function bindingInfoText(bindingInfo: IBindingInfo): string {
-  return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.filters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
+  return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.outFilters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
 }
 
 export function applyChangeToIf(
