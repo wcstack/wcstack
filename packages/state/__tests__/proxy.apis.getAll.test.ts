@@ -275,7 +275,7 @@ describe('getAll', () => {
     // createListDiff が newIndexes: null を返すようモック
     createListDiffMock.mockReturnValueOnce({
       oldIndexes: [],
-      newIndexes: null as any,
+      newIndexes: [],
       changeIndexSet: new Set(),
       deleteIndexSet: new Set(),
       addIndexSet: new Set(),
@@ -283,7 +283,7 @@ describe('getAll', () => {
 
     const getAllFn = getAll(target, '$getAll', target, handler as any);
 
-    expect(() => getAllFn('items.*', [])).toThrow(/ListIndex not found/);
+    expect(() => getAllFn('items.*', [0])).toThrow(/ListIndex not found/);
   });
 
   it('indexes 指定で範囲外のインデックスを指定した場合はエラーになること', () => {

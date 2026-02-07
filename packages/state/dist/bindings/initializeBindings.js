@@ -23,8 +23,6 @@ function _initializeBindings(allBindings) {
         }
         // two-way binding
         attachTwowayEventHandler(bindingInfo);
-        // register binding
-        stateElement.setBindingInfo(bindingInfo);
         // group by state element
         let bindings = bindingsByStateElement.get(stateElement);
         if (typeof bindings === "undefined") {
@@ -45,6 +43,13 @@ export function initializeBindings(root, parentLoopContext) {
     for (const binding of allBindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
         addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        const stateElement = getStateElementByName(binding.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        }
+        if (binding.bindingType !== 'event') {
+            stateElement.setPathInfo(binding.statePathName, binding.bindingType);
+        }
     }
     // apply all at once
     applyChangeFromBindings(allBindings);

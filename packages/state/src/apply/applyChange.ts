@@ -42,6 +42,10 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
 }
 
 export function applyChange(binding: IBindingInfo, context: IApplyContext): void {
+  if (context.appliedBindingSet.has(binding)) {
+    return;
+  }
+  context.appliedBindingSet.add(binding);
   if (binding.bindingType === "event") {
     return;
   }
@@ -54,7 +58,8 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
       const newContext = {
         stateName: binding.stateName,
         stateElement: stateElement,
-        state: targetState
+        state: targetState,
+        appliedBindingSet: context.appliedBindingSet
       }
       _applyChange(binding, newContext);
     });

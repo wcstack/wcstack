@@ -7,7 +7,6 @@
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
 import { createListDiff } from "../../list/createListDiff";
-import { getListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
 import { getByAddress } from "../methods/getByAddress";
 import { getContextListIndex } from "../methods/getContextListIndex";
@@ -48,13 +47,9 @@ export function getAll(target, prop, receiver, handler) {
             }
             const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
             const oldValue = lastValueByListAddress.get(wildcardAddress);
-            const oldIndexes = (typeof oldValue !== "undefined") ? (getListIndexesByList(oldValue) || []) : [];
             const newValue = getByAddress(target, wildcardAddress, receiver, handler);
-            const listDiff = createListDiff(wildcardAddress.listIndex, oldValue, newValue, oldIndexes);
+            const listDiff = createListDiff(listIndex, oldValue, newValue);
             const listIndexes = listDiff.newIndexes;
-            if (listIndexes === null) {
-                raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
-            }
             const index = indexes[indexPos] ?? null;
             newValueByAddress.set(wildcardAddress, newValue);
             if (index === null) {

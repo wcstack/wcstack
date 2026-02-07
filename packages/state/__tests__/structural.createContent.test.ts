@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { createContent } from '../src/structural/createContent';
 import * as bindingsByContent from '../src/bindings/bindingsByContent.js';
 import * as contentByNode from '../src/structural/contentByNode.js';
@@ -6,8 +6,20 @@ import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import type { IBindingInfo } from '../src/types';
+import { setStateElementByName } from '../src/stateElementByName';
 
 const uuid = 'content-test-uuid';
+
+vi.mock('../src/stateElementByName', () => {
+  const map = new Map();
+  return {
+    getStateElementByName: (name: string) => map.get(name) || null,
+    setStateElementByName: (name: string, el: any) => {
+      if (el === null) map.delete(name);
+      else map.set(name, el);
+    }
+  };
+});
 
 function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): IBindingInfo {
   return {
@@ -51,9 +63,16 @@ function setFragment(fragment: DocumentFragment) {
 
 afterEach(() => {
   setFragmentInfoByUUID(uuid, null);
+  vi.restoreAllMocks();
 });
 
 describe('createContent', () => {
+  beforeEach(() => {
+    setStateElementByName('default', {
+      setPathInfo: vi.fn(),
+    } as any);
+  });
+
   it('uuidがnullの場合はエラーになること', () => {
     const placeholder = document.createComment('placeholder');
     const bindingInfo = createBindingInfo(placeholder, { uuid: null });

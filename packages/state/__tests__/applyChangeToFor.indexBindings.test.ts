@@ -72,7 +72,7 @@ function createMockStateElement(): IStateElement {
     get version() {
       return version;
     },
-    setBindingInfo() {},
+    setPathInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(_mutability, callback) {
@@ -152,7 +152,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
   function setupContext() {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
-    context = { stateName: 'default', stateElement: stateElement as any, state };
+    context = { stateName: 'default', stateElement: stateElement as any, state, appliedBindingSet: new Set() };
     return stateElement;
   }
 

@@ -8,6 +8,7 @@ const dummyContext: IApplyContext = {
   stateName: 'default',
   stateElement: {} as any,
   state: {} as any,
+  appliedBindingSet: new Set(),
 };
 
 function createBinding(replaceNode: Node): IBindingInfo {

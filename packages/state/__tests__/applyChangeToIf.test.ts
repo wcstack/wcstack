@@ -61,6 +61,7 @@ describe('applyChangeToIf', () => {
     stateName: 'default',
     stateElement: {} as any,
     state,
+    appliedBindingSet: new Set(),
   };
   let originalDebug: boolean;
 

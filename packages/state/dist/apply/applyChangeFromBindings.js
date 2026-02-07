@@ -9,6 +9,7 @@ import { applyChange } from "./applyChange";
  */
 export function applyChangeFromBindings(bindingInfos) {
     let bindingInfoIndex = 0;
+    const appliedBindingSet = new Set();
     // 外側ループ: stateName ごとにグループ化
     while (bindingInfoIndex < bindingInfos.length) {
         let bindingInfo = bindingInfos[bindingInfoIndex];
@@ -21,7 +22,8 @@ export function applyChangeFromBindings(bindingInfos) {
             const context = {
                 stateName: stateName,
                 stateElement: stateElement,
-                state: state
+                state: state,
+                appliedBindingSet: appliedBindingSet
             };
             do {
                 applyChange(bindingInfo, context);

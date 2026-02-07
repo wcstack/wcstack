@@ -1,6 +1,6 @@
 import { ILoopContextStack } from "../list/types";
 import { IStateProxy, Mutability } from "../proxy/types";
-import { IBindingInfo } from "../types";
+import { BindingType } from "../types";
 export interface IStateElement {
     readonly name: string;
     readonly initializePromise: Promise<void>;
@@ -12,9 +12,9 @@ export interface IStateElement {
     readonly dynamicDependency: Map<string, string[]>;
     readonly staticDependency: Map<string, string[]>;
     readonly version: number;
-    setBindingInfo(bindingInfo: IBindingInfo): void;
-    addStaticDependency(parentPath: string, childPath: string): void;
-    addDynamicDependency(fromPath: string, toPath: string): void;
+    setPathInfo(path: string, bindingType: BindingType): void;
+    addStaticDependency(parentPath: string, childPath: string): boolean;
+    addDynamicDependency(fromPath: string, toPath: string): boolean;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;

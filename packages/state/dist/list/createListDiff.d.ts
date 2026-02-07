@@ -9,5 +9,5 @@ import { IListDiff, IListIndex } from "./types";
  * @param oldIndexes - Array of existing list indexes to potentially reuse
  * @returns Array of list indexes for the new list
  */
-export declare function createListDiff(parentListIndex: IListIndex | null, rawOldList: unknown, rawNewList: unknown, oldIndexes: IListIndex[]): IListDiff;
+export declare function createListDiff(parentListIndex: IListIndex | null, rawOldList: unknown, rawNewList: unknown): IListDiff;
 //# sourceMappingURL=createListDiff.d.ts.map

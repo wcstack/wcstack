@@ -645,7 +645,7 @@ function isSameList(oldList, newList) {
  * @param oldIndexes - Array of existing list indexes to potentially reuse
  * @returns Array of list indexes for the new list
  */
-function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndexes) {
+function createListDiff(parentListIndex, rawOldList, rawNewList) {
     // Normalize inputs to arrays (handles null/undefined)
     const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
     const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
@@ -653,6 +653,7 @@ function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndexes) {
     if (cachedDiff) {
         return cachedDiff;
     }
+    const oldIndexes = getListIndexesByList(oldList) || [];
     let retValue;
     try {
         // Early return for empty list
@@ -2238,6 +2239,21 @@ function setFragmentInfoByUUID(uuid, fragmentInfo) {
     }
     else {
         fragmentInfoByUUID.set(uuid, fragmentInfo);
+        const bindingPartial = fragmentInfo.parseBindTextResult;
+        const stateElement = getStateElementByName(bindingPartial.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${bindingPartial.stateName}" not found for fragment info.`);
+        }
+        stateElement.setPathInfo(bindingPartial.statePathName, bindingPartial.bindingType);
+        for (const nodeInfo of fragmentInfo.nodeInfos) {
+            for (const nodeBindingPartial of nodeInfo.parseBindTextResults) {
+                const nodeStateElement = getStateElementByName(nodeBindingPartial.stateName);
+                if (nodeStateElement === null) {
+                    raiseError(`State element with name "${nodeBindingPartial.stateName}" not found for fragment info node.`);
+                }
+                nodeStateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
+            }
+        }
     }
 }
 function getFragmentInfoByUUID(uuid) {
@@ -2495,8 +2511,6 @@ function _initializeBindings(allBindings) {
         }
         // two-way binding
         attachTwowayEventHandler(bindingInfo);
-        // register binding
-        stateElement.setBindingInfo(bindingInfo);
         // group by state element
         let bindings = bindingsByStateElement.get(stateElement);
         if (typeof bindings === "undefined") {
@@ -2517,6 +2531,13 @@ function initializeBindings(root, parentLoopContext) {
     for (const binding of allBindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
         addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        const stateElement = getStateElementByName(binding.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        }
+        if (binding.bindingType !== 'event') {
+            stateElement.setPathInfo(binding.statePathName, binding.bindingType);
+        }
     }
     // apply all at once
     applyChangeFromBindings(allBindings);
@@ -2645,8 +2666,7 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     const listPathInfo = bindingInfo.statePathInfo;
     const listIndex = getListIndexByBindingInfo(bindingInfo);
     const lastValue = lastValueByNode.get(bindingInfo.node);
-    const lastIndexes = getListIndexesByList(lastValue) || [];
-    const diff = createListDiff(listIndex, lastValue, newValue, lastIndexes);
+    const diff = createListDiff(listIndex, lastValue, newValue);
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = contentByListIndex.get(deleteIndex);
         if (typeof content !== 'undefined') {
@@ -2829,6 +2849,10 @@ function _applyChange(binding, context) {
     fn(binding, context, filteredValue);
 }
 function applyChange(binding, context) {
+    if (context.appliedBindingSet.has(binding)) {
+        return;
+    }
+    context.appliedBindingSet.add(binding);
     if (binding.bindingType === "event") {
         return;
     }
@@ -2841,7 +2865,8 @@ function applyChange(binding, context) {
             const newContext = {
                 stateName: binding.stateName,
                 stateElement: stateElement,
-                state: targetState
+                state: targetState,
+                appliedBindingSet: context.appliedBindingSet
             };
             _applyChange(binding, newContext);
         });
@@ -2859,6 +2884,7 @@ function applyChange(binding, context) {
  */
 function applyChangeFromBindings(bindingInfos) {
     let bindingInfoIndex = 0;
+    const appliedBindingSet = new Set();
     // 外側ループ: stateName ごとにグループ化
     while (bindingInfoIndex < bindingInfos.length) {
         let bindingInfo = bindingInfos[bindingInfoIndex];
@@ -2871,7 +2897,8 @@ function applyChangeFromBindings(bindingInfos) {
             const context = {
                 stateName: stateName,
                 stateElement: stateElement,
-                state: state
+                state: state,
+                appliedBindingSet: appliedBindingSet
             };
             do {
                 applyChange(bindingInfo, context);
@@ -2964,9 +2991,8 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentPathInfo = getPathInfo(parentPath);
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
     const lastValue = lastValueByListAddress$1.get(parentAddress);
-    const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
     const newValue = context.stateProxy.$$getByAddress(parentAddress);
-    const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue, lastIndexes);
+    const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
     const loopIndexes = getIndexes(listDiff, context.searchType);
     if (currentWildcardIndex === context.wildcardPaths.length - 1) {
         context.targetListIndexes.push(...loopIndexes);
@@ -3001,8 +3027,7 @@ function _walkDependency(context, address, depth, callback) {
                 //expand indexes
                 const newValue = context.stateProxy.$$getByAddress(address);
                 const lastValue = lastValueByListAddress$1.get(address);
-                const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
-                const listDiff = createListDiff(address.listIndex, lastValue, newValue, lastIndexes);
+                const listDiff = createListDiff(address.listIndex, lastValue, newValue);
                 for (const listIndex of listDiff.newIndexes) {
                     const depAddress = createStateAddress(depPathInfo, listIndex);
                     context.result.add(depAddress);
@@ -3342,13 +3367,9 @@ function getAll(target, prop, receiver, handler) {
             }
             const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
             const oldValue = lastValueByListAddress.get(wildcardAddress);
-            const oldIndexes = (typeof oldValue !== "undefined") ? (getListIndexesByList(oldValue) || []) : [];
             const newValue = getByAddress(target, wildcardAddress, receiver, handler);
-            const listDiff = createListDiff(wildcardAddress.listIndex, oldValue, newValue, oldIndexes);
+            const listDiff = createListDiff(listIndex, oldValue, newValue);
             const listIndexes = listDiff.newIndexes;
-            if (listIndexes === null) {
-                raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
-            }
             const index = indexes[indexPos] ?? null;
             newValueByAddress.set(wildcardAddress, newValue);
             if (index === null) {
@@ -3850,10 +3871,13 @@ class State extends HTMLElement {
         const deps = map.get(sourcePath);
         if (deps === undefined) {
             map.set(sourcePath, [targetPath]);
+            return true;
         }
         else if (!deps.includes(targetPath)) {
             deps.push(targetPath);
+            return true;
         }
+        return false;
     }
     /**
      * source,           target
@@ -3871,7 +3895,7 @@ class State extends HTMLElement {
      * @param targetPath
      */
     addDynamicDependency(sourcePath, targetPath) {
-        this._addDependency(this._dynamicDependency, sourcePath, targetPath);
+        return this._addDependency(this._dynamicDependency, sourcePath, targetPath);
     }
     /**
      * source,      target
@@ -3883,11 +3907,10 @@ class State extends HTMLElement {
      * @param targetPath
      */
     addStaticDependency(sourcePath, targetPath) {
-        this._addDependency(this._staticDependency, sourcePath, targetPath);
+        return this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
-    setBindingInfo(bindingInfo) {
-        const path = bindingInfo.statePathName;
-        if (bindingInfo.bindingType === "for") {
+    setPathInfo(path, bindingType) {
+        if (bindingType === "for") {
             this._listPaths.add(path);
             this._elementPaths.add(path + '.' + WILDCARD);
         }
@@ -3895,7 +3918,13 @@ class State extends HTMLElement {
             const pathInfo = getPathInfo(path);
             this._pathSet.add(path);
             if (pathInfo.parentPath !== null) {
-                this.addStaticDependency(pathInfo.parentPath, path);
+                let currentPathInfo = pathInfo;
+                while (currentPathInfo.parentPath !== null) {
+                    if (!this.addStaticDependency(currentPathInfo.parentPath, currentPathInfo.path)) {
+                        break;
+                    }
+                    currentPathInfo = getPathInfo(currentPathInfo.parentPath);
+                }
             }
         }
     }

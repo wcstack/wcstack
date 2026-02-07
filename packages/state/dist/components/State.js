@@ -189,10 +189,13 @@ export class State extends HTMLElement {
         const deps = map.get(sourcePath);
         if (deps === undefined) {
             map.set(sourcePath, [targetPath]);
+            return true;
         }
         else if (!deps.includes(targetPath)) {
             deps.push(targetPath);
+            return true;
         }
+        return false;
     }
     /**
      * source,           target
@@ -210,7 +213,7 @@ export class State extends HTMLElement {
      * @param targetPath
      */
     addDynamicDependency(sourcePath, targetPath) {
-        this._addDependency(this._dynamicDependency, sourcePath, targetPath);
+        return this._addDependency(this._dynamicDependency, sourcePath, targetPath);
     }
     /**
      * source,      target
@@ -222,11 +225,10 @@ export class State extends HTMLElement {
      * @param targetPath
      */
     addStaticDependency(sourcePath, targetPath) {
-        this._addDependency(this._staticDependency, sourcePath, targetPath);
+        return this._addDependency(this._staticDependency, sourcePath, targetPath);
     }
-    setBindingInfo(bindingInfo) {
-        const path = bindingInfo.statePathName;
-        if (bindingInfo.bindingType === "for") {
+    setPathInfo(path, bindingType) {
+        if (bindingType === "for") {
             this._listPaths.add(path);
             this._elementPaths.add(path + '.' + WILDCARD);
         }
@@ -234,7 +236,13 @@ export class State extends HTMLElement {
             const pathInfo = getPathInfo(path);
             this._pathSet.add(path);
             if (pathInfo.parentPath !== null) {
-                this.addStaticDependency(pathInfo.parentPath, path);
+                let currentPathInfo = pathInfo;
+                while (currentPathInfo.parentPath !== null) {
+                    if (!this.addStaticDependency(currentPathInfo.parentPath, currentPathInfo.path)) {
+                        break;
+                    }
+                    currentPathInfo = getPathInfo(currentPathInfo.parentPath);
+                }
             }
         }
     }

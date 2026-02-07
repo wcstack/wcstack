@@ -4,7 +4,7 @@ import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
 import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
 import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { raiseError } from "../raiseError";
-import { IBindingInfo, IState } from "../types";
+import { BindingType, IState } from "../types";
 import { IStateElement } from "./types";
 import { setStateElementByName } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
@@ -218,13 +218,16 @@ export class State extends HTMLElement implements IStateElement {
     map: Map<string, string[]>, 
     sourcePath: string, 
     targetPath: string
-  ): void {
+  ): boolean {
     const deps = map.get(sourcePath);
     if (deps === undefined) {
       map.set(sourcePath, [targetPath]);
+      return true;
     } else if (!deps.includes(targetPath)) {
       deps.push(targetPath);
+      return true;
     }
+    return false;
   }  
 
   /**
@@ -242,8 +245,8 @@ export class State extends HTMLElement implements IStateElement {
    * @param sourcePath 
    * @param targetPath 
    */
-  addDynamicDependency(sourcePath: string, targetPath: string): void {
-    this._addDependency(this._dynamicDependency, sourcePath, targetPath);
+  addDynamicDependency(sourcePath: string, targetPath: string): boolean {
+    return this._addDependency(this._dynamicDependency, sourcePath, targetPath);
   }
 
   /**
@@ -255,13 +258,12 @@ export class State extends HTMLElement implements IStateElement {
    * @param sourcePath 
    * @param targetPath 
    */
-  addStaticDependency(sourcePath: string, targetPath: string): void {
-    this._addDependency(this._staticDependency, sourcePath, targetPath);
+  addStaticDependency(sourcePath: string, targetPath: string): boolean {
+    return this._addDependency(this._staticDependency, sourcePath, targetPath);
   }
 
-  setBindingInfo(bindingInfo: IBindingInfo): void {
-    const path = bindingInfo.statePathName;
-    if (bindingInfo.bindingType === "for") {
+  setPathInfo(path: string, bindingType: BindingType): void {
+    if (bindingType === "for") {
       this._listPaths.add(path);
       this._elementPaths.add(path + '.' + WILDCARD);
     }
@@ -269,7 +271,13 @@ export class State extends HTMLElement implements IStateElement {
       const pathInfo = getPathInfo(path);
       this._pathSet.add(path);
       if (pathInfo.parentPath !== null) {
-        this.addStaticDependency(pathInfo.parentPath, path);
+        let currentPathInfo = pathInfo;
+        while(currentPathInfo.parentPath !== null) {
+          if (!this.addStaticDependency(currentPathInfo.parentPath, currentPathInfo.path)) {
+            break;
+          }
+          currentPathInfo = getPathInfo(currentPathInfo.parentPath);
+        }
       }
     }
   }

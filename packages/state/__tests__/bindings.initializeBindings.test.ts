@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { initializeBindings, initializeBindingsByFragment } from '../src/bindings/initializeBindings';
 import { setStateElementByName } from '../src/stateElementByName';
+import { attachEventHandler } from '../src/event/handler';
 import type { IStateElement } from '../src/components/types';
 import type { IBindingInfo } from '../src/types';
 import { createLoopContextStack } from '../src/list/loopContext';
@@ -12,7 +13,15 @@ import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { getPathInfo } from '../src/address/PathInfo';
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 import { getAbsoluteStateAddressByBindingInfo } from '../src/binding/getAbsoluteStateAddressByBindingInfo';
-import { getBindingInfosByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
+import { getBindingInfosByAbsoluteStateAddress, addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
+
+vi.mock('../src/binding/getBindingInfosByAbsoluteStateAddress', async () => {
+  const actual = await vi.importActual('../src/binding/getBindingInfosByAbsoluteStateAddress') as any;
+  return {
+    ...actual,
+    addBindingInfoByAbsoluteStateAddress: vi.fn((...args) => actual.addBindingInfoByAbsoluteStateAddress(...args)),
+  };
+});
 
 vi.mock('../src/event/handler', () => ({
   attachEventHandler: vi.fn((bindingInfo: IBindingInfo) => bindingInfo.bindingType === 'event')
@@ -54,9 +63,8 @@ function createMockStateElement(): IStateElement {
     get version() {
       return version;
     },
-    setBindingInfo(bindingInfo: IBindingInfo) {
-      const path = bindingInfo.statePathName;
-      if (bindingInfo.bindingType === 'for') {
+    setPathInfo(path: string, bindingType: string) {
+      if (bindingType === 'for') {
         listPaths.add(path);
         elementPaths.add(path + '.*');
       }
@@ -101,7 +109,7 @@ describe('initializeBindings', () => {
     const comment = document.createComment('@@wcs-text: message');
     container.appendChild(comment);
 
-    const setBindingSpy = vi.spyOn(stateElement, 'setBindingInfo');
+    const setBindingSpy = vi.spyOn(stateElement, 'setPathInfo');
 
     initializeBindings(container, null);
 
@@ -130,7 +138,7 @@ describe('initializeBindings', () => {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
 
-    const setBindingSpy = vi.spyOn(stateElement, 'setBindingInfo');
+    const setBindingSpy = vi.spyOn(stateElement, 'setPathInfo');
 
     const container = document.createElement('div');
     const el = document.createElement('button');
@@ -175,5 +183,22 @@ describe('initializeBindings', () => {
 
     const [node] = Array.from(fragment.childNodes);
     expect(getLoopContextByNode(node)).toBeNull();
+  });
+
+  it('初期化途中でStateElementが削除された場合はエラーになること', () => {
+    const stateElement = createMockStateElement();
+    setStateElementByName('default', stateElement);
+
+    const container = document.createElement('div');
+    const comment = document.createComment('@@wcs-text: message');
+    container.appendChild(comment);
+
+    // addBindingInfoByAbsoluteStateAddress の呼び出しタイミングで StateElement を削除し、
+    // 直後の getStateElementByName チェックでエラーを発生させる
+    vi.mocked(addBindingInfoByAbsoluteStateAddress).mockImplementationOnce(() => {
+      setStateElementByName('default', null);
+    });
+
+    expect(() => initializeBindings(container, null)).toThrow(/State element with name "default" not found for binding/);
   });
 });

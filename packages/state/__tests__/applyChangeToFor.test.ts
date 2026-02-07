@@ -74,7 +74,7 @@ function createMockStateElement(): IStateElement {
     get version() {
       return version;
     },
-    setBindingInfo() {},
+    setPathInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(_mutability, callback) {
@@ -200,7 +200,7 @@ describe('applyChangeToFor', () => {
   function setupContext() {
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
-    context = { stateName: 'default', stateElement: stateElement as any, state };
+    context = { stateName: 'default', stateElement: stateElement as any, state, appliedBindingSet: new Set() };
     return stateElement;
   }
 

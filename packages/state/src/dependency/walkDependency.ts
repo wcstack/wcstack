@@ -5,7 +5,6 @@ import { IPathInfo, IStateAddress } from "../address/types";
 import { config } from "../config";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
-import { getListIndexesByList } from "../list/listIndexesByList";
 import { IListDiff, IListIndex } from "../list/types";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
@@ -55,9 +54,8 @@ function _walkExpandWildcard(
   const parentPathInfo = getPathInfo(parentPath);
   const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
   const lastValue = lastValueByListAddress.get(parentAddress);
-  const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
   const newValue = context.stateProxy.$$getByAddress(parentAddress);
-  const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue, lastIndexes);
+  const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
 
   const loopIndexes = getIndexes(listDiff, context.searchType);
   if (currentWildcardIndex === context.wildcardPaths.length - 1) {
@@ -113,8 +111,7 @@ function _walkDependency(
         //expand indexes
         const newValue = context.stateProxy.$$getByAddress(address);
         const lastValue = lastValueByListAddress.get(address);
-        const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
-        const listDiff = createListDiff(address.listIndex, lastValue, newValue, lastIndexes);
+        const listDiff = createListDiff(address.listIndex, lastValue, newValue);
         for(const listIndex of listDiff.newIndexes) {
           const depAddress = createStateAddress(depPathInfo, listIndex);
           context.result.add(depAddress);

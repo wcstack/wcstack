@@ -1,6 +1,6 @@
 import "../polyfills";
 import { createListIndex } from "./createListIndex";
-import { setListIndexesByList } from "./listIndexesByList";
+import { getListIndexesByList, setListIndexesByList } from "./listIndexesByList";
 const listDiffByOldListByNewList = new WeakMap();
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_SET = new Set();
@@ -47,7 +47,7 @@ function isSameList(oldList, newList) {
  * @param oldIndexes - Array of existing list indexes to potentially reuse
  * @returns Array of list indexes for the new list
  */
-export function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndexes) {
+export function createListDiff(parentListIndex, rawOldList, rawNewList) {
     // Normalize inputs to arrays (handles null/undefined)
     const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
     const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
@@ -55,6 +55,7 @@ export function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndex
     if (cachedDiff) {
         return cachedDiff;
     }
+    const oldIndexes = getListIndexesByList(oldList) || [];
     let retValue;
     try {
         // Early return for empty list

@@ -1,17 +1,35 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { getParseBindTextResults } from '../src/bindings/getParseBindTextResults';
 import { parseCommentNode } from '../src/bindings/parseCommentNode';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
+import { setStateElementByName } from '../src/stateElementByName';
 
 const uuid = 'parsebind-fragment-uuid';
 
-afterEach(() => {
-	setFragmentInfoByUUID(uuid, null);
+vi.mock('../src/stateElementByName', () => {
+  const map = new Map();
+  return {
+    getStateElementByName: (name: string) => map.get(name) || null,
+    setStateElementByName: (name: string, el: any) => {
+      if (el === null) map.delete(name);
+      else map.set(name, el);
+    }
+  };
 });
 
 describe('bindings.getParseBindTextResults.fragment', () => {
+  beforeEach(() => {
+    setStateElementByName('default', {
+      setPathInfo: vi.fn(),
+    } as any);
+  });
+
+  afterEach(() => {
+    setFragmentInfoByUUID(uuid, null);
+  });
+
 	it('構造フラグメントUUIDが見つからない場合は埋め込みとして処理されること', () => {
 		const comment = document.createComment('@@wcs-text: message');
 		expect(parseCommentNode(comment)).toBe('message');

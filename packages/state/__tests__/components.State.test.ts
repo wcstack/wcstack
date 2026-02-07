@@ -278,7 +278,7 @@ describe('State component', () => {
       replaceNode: document.createComment('for')
     } as IBindingInfo;
 
-    stateEl.setBindingInfo(bindingInfo);
+    stateEl.setPathInfo('items', 'for');
 
     expect(stateEl.listPaths.has('items')).toBe(true);
     expect(stateEl.elementPaths.has('items.*')).toBe(true);
@@ -291,8 +291,8 @@ describe('State component', () => {
       statePathInfo: getPathInfo('user.name'),
     });
 
-    stateEl.setBindingInfo(bindingInfo);
-    stateEl.setBindingInfo(bindingInfo);
+    stateEl.setPathInfo('user.name', 'text');
+    stateEl.setPathInfo('user.name', 'text');
 
     const deps = stateEl.staticDependency.get('user') || [];
     expect(deps).toEqual(['user.name']);
@@ -305,10 +305,38 @@ describe('State component', () => {
       statePathInfo: getPathInfo('user.name'),
     });
 
-    stateEl.setBindingInfo(bindingInfo);
+    stateEl.setPathInfo('user.name', 'text');
 
     const deps = stateEl.staticDependency.get('user') || [];
     expect(deps).toContain('user.name');
+  });
+
+  it('setPathInfoで深いパスを登録した時に既に登録済みの親依存関係がある場合はループを抜けること', () => {
+    const stateEl = createStateElement();
+
+    // 1. a.b を登録 (a -> a.b)
+    stateEl.setPathInfo('a.b', 'text');
+    
+    const depsA = stateEl.staticDependency.get('a') || [];
+    expect(depsA).toEqual(['a.b']);
+
+    // spy on addStaticDependency to verify break
+    const spy = vi.spyOn(stateEl, 'addStaticDependency');
+
+    // 2. a.b.c を登録 (a.b -> a.b.c, then attempts a -> a.b)
+    stateEl.setPathInfo('a.b.c', 'text');
+
+    // a.b -> a.b.c is registered
+    const depsAB = stateEl.staticDependency.get('a.b') || [];
+    expect(depsAB).toEqual(['a.b.c']);
+
+    // verify spy calls
+    // 1st call: a.b -> a.b.c (returns true)
+    // 2nd call: a -> a.b (returns false, breaks loop)
+    // Should NOT go higher if 'a' had a parent (e.g. if we had root.a.b and root.a)
+    
+    // Check that it returned false for the second call
+    expect(spy).toHaveReturnedWith(false);
   });
 
   it('addStaticDependencyとaddDynamicDependencyが重複を防ぐこと', () => {

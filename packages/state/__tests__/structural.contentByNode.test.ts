@@ -1,12 +1,24 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { setContentByNode, getContentByNode } from '../src/structural/contentByNode';
 import { createContent } from '../src/structural/createContent';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import type { IBindingInfo } from '../src/types';
+import { setStateElementByName } from '../src/stateElementByName';
 
 const uuid = 'content-by-node-test-uuid';
+
+vi.mock('../src/stateElementByName', () => {
+  const map = new Map();
+  return {
+    getStateElementByName: (name: string) => map.get(name) || null,
+    setStateElementByName: (name: string, el: any) => {
+      if (el === null) map.delete(name);
+      else map.set(name, el);
+    }
+  };
+});
 
 function createBindingInfo(node: Node): IBindingInfo {
   return {
@@ -49,9 +61,17 @@ function setFragment(fragment: DocumentFragment) {
 
 afterEach(() => {
   setFragmentInfoByUUID(uuid, null);
+  setContentByNode(document.createComment(''), null!); 
+  vi.restoreAllMocks();
 });
 
 describe('contentByNode', () => {
+  beforeEach(() => {
+    setStateElementByName('default', {
+      setPathInfo: vi.fn(),
+    } as any);
+  });
+
   it('set/getできること', () => {
     const node = document.createElement('div');
     const placeholder = document.createComment('placeholder');

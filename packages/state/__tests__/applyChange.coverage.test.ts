@@ -72,6 +72,7 @@ describe('applyChange (coverage)', () => {
     stateName: 'default',
     stateElement: {} as any,
     state,
+    appliedBindingSet: new Set(),
   };
 
   beforeEach(() => {

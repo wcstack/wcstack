@@ -37,6 +37,7 @@ describe('applyChange', () => {
     stateName: 'default',
     stateElement: {} as any,
     state,
+    appliedBindingSet: new Set(),
   };
   const getValueMock = vi.mocked(getValue);
   const applyChangeToForMock = vi.mocked(applyChangeToFor);

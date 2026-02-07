@@ -55,7 +55,7 @@ function createMockStateElement(options?: {
     get version() {
       return version;
     },
-    setBindingInfo() {},
+    setPathInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(mutability, callback) {

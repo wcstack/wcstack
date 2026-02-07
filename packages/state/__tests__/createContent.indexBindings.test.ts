@@ -54,7 +54,7 @@ function createMockStateElement(): IStateElement {
     get version() {
       return version;
     },
-    setBindingInfo() {},
+    setPathInfo() {},
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(_mutability, callback) {
@@ -187,6 +187,8 @@ describe('createContent - indexBindingsの分類', () => {
   });
 
   it('インデックスバインディングがない場合はindexBindingsが空配列になること', () => {
+    setStateElementByName('default', createMockStateElement());
+
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
     span.textContent = 'static text';

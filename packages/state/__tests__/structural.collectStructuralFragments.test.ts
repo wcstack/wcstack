@@ -1,17 +1,36 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { collectStructuralFragments } from '../src/structural/collectStructuralFragments';
 import { getFragmentInfoByUUID, setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { config } from '../src/config';
+import { setStateElementByName } from '../src/stateElementByName';
 
 let uuidCounter = 0;
 vi.mock('../src/getUUID', () => ({
   getUUID: () => `uuid-collect-${uuidCounter++}`
 }));
 
+vi.mock('../src/stateElementByName', () => {
+  const map = new Map();
+  return {
+    getStateElementByName: (name: string) => map.get(name) || null,
+    setStateElementByName: (name: string, el: any) => {
+      if (el === null) map.delete(name);
+      else map.set(name, el);
+    }
+  };
+});
+
 describe('collectStructuralFragments', () => {
+  beforeEach(() => {
+    setStateElementByName('default', {
+      setPathInfo: vi.fn(),
+    } as any);
+  });
+
   afterEach(() => {
     // Clean up all UUIDs
     for (let i = 0; i < uuidCounter; i++) {
+
       setFragmentInfoByUUID(`uuid-collect-${i}`, null);
     }
     uuidCounter = 0;
@@ -156,8 +175,13 @@ describe('collectStructuralFragments', () => {
   it('bindTextのフォールバック分岐が実行されること', async () => {
     vi.resetModules();
     vi.doMock('../src/bindTextParser/parseBindTextsForElement', () => ({
-      parseBindTextsForElement: () => [{ bindingType: 'for' }]
+      parseBindTextsForElement: () => [{ bindingType: 'for', stateName: 'default' }]
     }));
+
+    const { setStateElementByName } = await import('../src/stateElementByName');
+    setStateElementByName('default', {
+      setPathInfo: vi.fn(),
+    } as any);
 
     const { collectStructuralFragments: collectWithMock } = await import('../src/structural/collectStructuralFragments');
 

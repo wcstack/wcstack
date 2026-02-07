@@ -3,6 +3,17 @@ import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import type { IBindingInfo } from '../src/types';
 
+vi.mock('../src/stateElementByName', () => {
+  const map = new Map();
+  return {
+    getStateElementByName: (name: string) => map.get(name) || null,
+    setStateElementByName: (name: string, el: any) => {
+      if (el === null) map.delete(name);
+      else map.set(name, el);
+    }
+  };
+});
+
 const uuid = 'content-unmount-branch-uuid';
 
 function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): IBindingInfo {
@@ -30,6 +41,11 @@ afterEach(() => {
 describe('createContent (unmount branches)', () => {
   async function setup() {
     vi.resetModules();
+    const { setStateElementByName } = await import('../src/stateElementByName');
+    setStateElementByName('default', {
+      setPathInfo: vi.fn(),
+    } as any);
+
     const { createContent } = await import('../src/structural/createContent');
     const { setFragmentInfoByUUID } = await import('../src/structural/fragmentInfoByUUID');
     const bindingsByContent = await import('../src/bindings/bindingsByContent.js');

@@ -1,4 +1,4 @@
-import { IBindingInfo } from "../types";
+import { BindingType } from "../types";
 import { IStateElement } from "./types";
 import { ILoopContextStack } from "../list/types";
 import { IStateProxy, Mutability } from "../proxy/types";
@@ -53,7 +53,7 @@ export declare class State extends HTMLElement implements IStateElement {
      * @param sourcePath
      * @param targetPath
      */
-    addDynamicDependency(sourcePath: string, targetPath: string): void;
+    addDynamicDependency(sourcePath: string, targetPath: string): boolean;
     /**
      * source,      target
      * products => products.*
@@ -63,8 +63,8 @@ export declare class State extends HTMLElement implements IStateElement {
      * @param sourcePath
      * @param targetPath
      */
-    addStaticDependency(sourcePath: string, targetPath: string): void;
-    setBindingInfo(bindingInfo: IBindingInfo): void;
+    addStaticDependency(sourcePath: string, targetPath: string): boolean;
+    setPathInfo(path: string, bindingType: BindingType): void;
     private _createState;
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;

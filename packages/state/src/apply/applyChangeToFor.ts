@@ -3,7 +3,6 @@ import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { getListIndexesByList } from "../list/listIndexesByList";
 import { IListIndex } from "../list/types";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { createContent } from "../structural/createContent";
@@ -46,8 +45,7 @@ export function applyChangeToFor(
   const listPathInfo = bindingInfo.statePathInfo;
   const listIndex = getListIndexByBindingInfo(bindingInfo);
   const lastValue = lastValueByNode.get(bindingInfo.node);
-  const lastIndexes = getListIndexesByList(lastValue) || [];
-  const diff = createListDiff(listIndex, lastValue, newValue, lastIndexes);
+  const diff = createListDiff(listIndex, lastValue, newValue);
 
   for(const deleteIndex of diff.deleteIndexSet) {
     const content = contentByListIndex.get(deleteIndex);

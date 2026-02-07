@@ -1,6 +1,6 @@
 import "../polyfills";
 import { createListIndex } from "./createListIndex";
-import { setListIndexesByList } from "./listIndexesByList";
+import { getListIndexesByList, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 
 const listDiffByOldListByNewList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
@@ -59,7 +59,6 @@ export function createListDiff(
   parentListIndex: IListIndex | null,
   rawOldList: unknown,
   rawNewList: unknown,
-  oldIndexes: IListIndex[]
 ): IListDiff {
   // Normalize inputs to arrays (handles null/undefined)
   const oldList: readonly unknown[] = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
@@ -68,6 +67,7 @@ export function createListDiff(
   if (cachedDiff) {
     return cachedDiff;
   }
+  const oldIndexes = getListIndexesByList(oldList) || [];
   let retValue: IListDiff | undefined;
   try {
     // Early return for empty list

@@ -35,6 +35,10 @@ function _applyChange(binding, context) {
     fn(binding, context, filteredValue);
 }
 export function applyChange(binding, context) {
+    if (context.appliedBindingSet.has(binding)) {
+        return;
+    }
+    context.appliedBindingSet.add(binding);
     if (binding.bindingType === "event") {
         return;
     }
@@ -47,7 +51,8 @@ export function applyChange(binding, context) {
             const newContext = {
                 stateName: binding.stateName,
                 stateElement: stateElement,
-                state: targetState
+                state: targetState,
+                appliedBindingSet: context.appliedBindingSet
             };
             _applyChange(binding, newContext);
         });
