@@ -303,4 +303,131 @@ describe('collectStructuralFragments', () => {
 
     expect(() => collectStructuralFragments(root)).toThrow(/elseif.*without preceding/);
   });
+
+  describe('ドットショートハンドパス展開', () => {
+    it('forテンプレート内のコメントノードのショートハンドが展開されること', () => {
+      const root = document.createElement('div');
+      const template = document.createElement('template');
+      template.setAttribute(config.bindAttributeName, 'for: users');
+
+      // Mustacheコメント形式のショートハンド
+      const comment = document.createComment('@@: .name');
+      template.content.appendChild(comment);
+
+      root.appendChild(template);
+      collectStructuralFragments(root);
+
+      const info = getFragmentInfoByUUID('uuid-collect-0');
+      expect(info).not.toBeNull();
+      // コメントが展開されていること
+      const fragmentComment = info?.fragment.firstChild as Comment;
+      expect(fragmentComment.data).toBe('@@: users.*.name');
+    });
+
+    it('forテンプレート内の要素属性のショートハンドが展開されること', () => {
+      const root = document.createElement('div');
+      const template = document.createElement('template');
+      template.setAttribute(config.bindAttributeName, 'for: items');
+
+      const span = document.createElement('span');
+      span.setAttribute(config.bindAttributeName, 'textContent: .label');
+      template.content.appendChild(span);
+
+      root.appendChild(template);
+      collectStructuralFragments(root);
+
+      const info = getFragmentInfoByUUID('uuid-collect-0');
+      expect(info).not.toBeNull();
+      const fragmentSpan = info?.fragment.querySelector('span');
+      expect(fragmentSpan?.getAttribute(config.bindAttributeName)).toBe('textContent: items.*.label');
+    });
+
+    it('ネストしたforテンプレートで正しく展開されること', () => {
+      const root = document.createElement('div');
+      const outerTemplate = document.createElement('template');
+      outerTemplate.setAttribute(config.bindAttributeName, 'for: users');
+
+      // 内側: for: .orders (→ users.*.orders)
+      const innerTemplate = document.createElement('template');
+      innerTemplate.setAttribute(config.bindAttributeName, 'for: .orders');
+
+      const span = document.createElement('span');
+      span.setAttribute(config.bindAttributeName, 'textContent: .total');
+      innerTemplate.content.appendChild(span);
+
+      outerTemplate.content.appendChild(innerTemplate);
+      root.appendChild(outerTemplate);
+
+      collectStructuralFragments(root);
+
+      // 外側テンプレート
+      const outerInfo = getFragmentInfoByUUID('uuid-collect-0');
+      expect(outerInfo).not.toBeNull();
+
+      // 内側テンプレートのコメントを取得
+      const innerComment = outerInfo?.fragment.firstChild as Comment;
+      expect(innerComment.nodeType).toBe(Node.COMMENT_NODE);
+      const innerUuid = innerComment.data.split(':')[1];
+      const innerInfo = getFragmentInfoByUUID(innerUuid);
+      expect(innerInfo).not.toBeNull();
+
+      // 内側のspanの属性が users.*.orders.*.total に展開されていること
+      const fragmentSpan = innerInfo?.fragment.querySelector('span');
+      expect(fragmentSpan?.getAttribute(config.bindAttributeName)).toBe('textContent: users.*.orders.*.total');
+    });
+
+    it('for内のifテンプレートでforPathが継承されること', () => {
+      const root = document.createElement('div');
+      const forTemplate = document.createElement('template');
+      forTemplate.setAttribute(config.bindAttributeName, 'for: users');
+
+      const ifTemplate = document.createElement('template');
+      ifTemplate.setAttribute(config.bindAttributeName, 'if: .isActive');
+
+      const span = document.createElement('span');
+      span.setAttribute(config.bindAttributeName, 'textContent: .name');
+      ifTemplate.content.appendChild(span);
+
+      forTemplate.content.appendChild(ifTemplate);
+      root.appendChild(forTemplate);
+
+      collectStructuralFragments(root);
+
+      // forテンプレートの情報
+      const forInfo = getFragmentInfoByUUID('uuid-collect-0');
+      expect(forInfo).not.toBeNull();
+
+      // ifテンプレートのコメントを取得
+      const ifComment = forInfo?.fragment.firstChild as Comment;
+      expect(ifComment.nodeType).toBe(Node.COMMENT_NODE);
+      const ifUuid = ifComment.data.split(':')[1];
+      const ifInfo = getFragmentInfoByUUID(ifUuid);
+      expect(ifInfo).not.toBeNull();
+      // ifのパスが展開されていること
+      expect(ifInfo?.parseBindTextResult.statePathName).toBe('users.*.isActive');
+
+      // if内のspanも展開されていること
+      const fragmentSpan = ifInfo?.fragment.querySelector('span');
+      expect(fragmentSpan?.getAttribute(config.bindAttributeName)).toBe('textContent: users.*.name');
+    });
+
+    it('forなしのifテンプレートではショートハンド展開が行われないこと', () => {
+      const root = document.createElement('div');
+      const ifTemplate = document.createElement('template');
+      ifTemplate.setAttribute(config.bindAttributeName, 'if: condition');
+
+      const span = document.createElement('span');
+      span.setAttribute(config.bindAttributeName, 'textContent: .name');
+      ifTemplate.content.appendChild(span);
+
+      root.appendChild(ifTemplate);
+      collectStructuralFragments(root);
+
+      const info = getFragmentInfoByUUID('uuid-collect-0');
+      expect(info).not.toBeNull();
+      // forPathがないので展開されない
+      const fragmentSpan = info?.fragment.querySelector('span');
+      expect(fragmentSpan?.getAttribute(config.bindAttributeName)).toBe('textContent: .name');
+    });
+  });
 });

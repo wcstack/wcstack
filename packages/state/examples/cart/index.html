@@ -121,8 +121,8 @@ export default {
       Select Product:
       <select data-bind-state="value|number: selectedProductId">
         <template data-bind-state="for: products">
-          <option data-bind-state="value: products.*.id">
-            {{ products.*.name }} - ${{ products.*.price|fix(2) }}</option>
+          <option data-bind-state="value: .id">
+            {{ .name }} - ${{ .price|fix(2) }}</option>
         </template>
       </select>
       <button type="button" data-bind-state="onclick: onAddProductToCart">Add to Cart</button>
@@ -157,12 +157,12 @@ export default {
           <template data-bind-state="for: cart.items">
             <tr>
               <td>{{ $1|inc(1) }}</td>
-              <td class="left">{{ cart.items.*.product.name }}</td>
-              <td class="right">{{ cart.items.*.product.price|fix(2) }}</td>
+              <td class="left">{{ .product.name }}</td>
+              <td class="right">{{ .product.price|fix(2) }}</td>
               <td>
-                <input type="number" name="item" data-bind-state="attr.min: minQuantity; valueAsNumber: cart.items.*.quantity">
+                <input type="number" name="item" data-bind-state="attr.min: minQuantity; valueAsNumber: .quantity">
               </td>
-              <td class="right">{{ cart.items.*.price|fix(2) }}</td>
+              <td class="right">{{ .price|fix(2) }}</td>
               <td>
                 <button type="button" data-bind-state="onclick: onDeleteItemFromCart">Delete</button>
               </td>

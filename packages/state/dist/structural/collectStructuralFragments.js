@@ -4,6 +4,7 @@ import { config } from "../config";
 import { getUUID } from "../getUUID";
 import { raiseError } from "../raiseError";
 import { createNotFilter } from "./createNotFilter";
+import { expandShorthandInBindAttribute, expandShorthandPaths } from "./expandShorthandPaths";
 import { setFragmentInfoByUUID } from "./fragmentInfoByUUID";
 import { getFragmentNodeInfos } from "./getFragmentNodeInfos";
 import { getNodePath } from "./getNodePath";
@@ -22,8 +23,11 @@ function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
         bindingType: bindingType,
     };
 }
-function _getFragmentInfo(fragment, parseBindingTextResult) {
-    collectStructuralFragments(fragment);
+function _getFragmentInfo(fragment, parseBindingTextResult, forPath) {
+    if (typeof forPath === "string") {
+        expandShorthandPaths(fragment, forPath);
+    }
+    collectStructuralFragments(fragment, forPath);
     // after replacing and collect node infos on child fragment
     const fragmentInfo = {
         fragment: fragment,
@@ -32,7 +36,7 @@ function _getFragmentInfo(fragment, parseBindingTextResult) {
     };
     return fragmentInfo;
 }
-export function collectStructuralFragments(root) {
+export function collectStructuralFragments(root, forPath) {
     const elseKeyword = config.commentElsePrefix;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
         acceptNode(node) {
@@ -54,7 +58,10 @@ export function collectStructuralFragments(root) {
         templates.push(template);
     }
     for (const template of templates) {
-        const bindText = template.getAttribute(config.bindAttributeName) || '';
+        let bindText = template.getAttribute(config.bindAttributeName) || '';
+        if (typeof forPath === "string") {
+            bindText = expandShorthandInBindAttribute(bindText, forPath);
+        }
         const parseBindTextResults = parseBindTextsForElement(bindText);
         let parseBindTextResult = parseBindTextResults[0];
         const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
@@ -65,6 +72,10 @@ export function collectStructuralFragments(root) {
         const fragment = template.content;
         const uuid = getUUID();
         let fragmentInfo = null;
+        // Determine childForPath for shorthand expansion
+        const childForPath = bindingType === "for"
+            ? parseBindTextResult.statePathName
+            : forPath;
         if (bindingType === "else") {
             // check last 'if' or 'elseif' fragment info
             if (lastIfFragmentInfo === null) {
@@ -72,7 +83,7 @@ export function collectStructuralFragments(root) {
             }
             // else condition
             parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
-            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
             setFragmentInfoByUUID(uuid, fragmentInfo);
             const lastElseFragmentInfo = elseFragmentInfos.at(-1);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
@@ -93,7 +104,7 @@ export function collectStructuralFragments(root) {
             if (lastIfFragmentInfo === null) {
                 raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
             }
-            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
             setFragmentInfoByUUID(uuid, fragmentInfo);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
             // create else fragment
@@ -125,7 +136,7 @@ export function collectStructuralFragments(root) {
             }
         }
         else {
-            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
             setFragmentInfoByUUID(uuid, fragmentInfo);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
             template.replaceWith(placeHolder);

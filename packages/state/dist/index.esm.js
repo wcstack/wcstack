@@ -142,6 +142,7 @@ function createLoopContextStack() {
     return new LoopContextStack();
 }
 
+const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
 /**
@@ -3988,6 +3989,100 @@ function createNotFilter() {
     return _notFilterInfo;
 }
 
+const COMMENT_REGEX = /^(\s*@@\s*(?:.*?)\s*:\s*)(.+?)(\s*)$/;
+function expandShorthandInStatePart(statePart, forPath) {
+    const prefix = forPath + DELIMITER + WILDCARD;
+    const pipeIndex = statePart.indexOf('|');
+    const atIndex = statePart.indexOf('@');
+    let pathPart;
+    let suffix;
+    if (pipeIndex !== -1) {
+        pathPart = statePart.slice(0, pipeIndex).trim();
+        suffix = statePart.slice(pipeIndex);
+    }
+    else if (atIndex !== -1) {
+        pathPart = statePart.slice(0, atIndex).trim();
+        suffix = statePart.slice(atIndex);
+    }
+    else {
+        pathPart = statePart.trim();
+        suffix = '';
+    }
+    if (pathPart === '.') {
+        pathPart = prefix;
+    }
+    else if (pathPart.startsWith('.')) {
+        pathPart = prefix + DELIMITER + pathPart.slice(1);
+    }
+    else {
+        return statePart;
+    }
+    if (suffix.length > 0) {
+        return pathPart + suffix;
+    }
+    return pathPart;
+}
+function expandCommentData(data, forPath) {
+    const match = COMMENT_REGEX.exec(data);
+    if (match === null) {
+        return data;
+    }
+    const commentPrefix = match[1];
+    const bindText = match[2];
+    const commentSuffix = match[3];
+    const expanded = expandShorthandInStatePart(bindText, forPath);
+    return commentPrefix + expanded + commentSuffix;
+}
+function expandBindAttribute(attrValue, forPath) {
+    const parts = attrValue.split(';');
+    let changed = false;
+    const result = parts.map(part => {
+        const trimmed = part.trim();
+        if (trimmed.length === 0)
+            return part;
+        const colonIndex = trimmed.indexOf(':');
+        if (colonIndex === -1)
+            return part;
+        const propPart = trimmed.slice(0, colonIndex).trim();
+        const statePart = trimmed.slice(colonIndex + 1).trim();
+        const expanded = expandShorthandInStatePart(statePart, forPath);
+        if (expanded !== statePart) {
+            changed = true;
+            return `${propPart}: ${expanded}`;
+        }
+        return part;
+    });
+    if (!changed)
+        return attrValue;
+    return result.join(';');
+}
+function expandShorthandInBindAttribute(attrValue, forPath) {
+    return expandBindAttribute(attrValue, forPath);
+}
+function expandShorthandPaths(root, forPath) {
+    const bindAttr = config.bindAttributeName;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.nodeType === Node.COMMENT_NODE) {
+            const comment = node;
+            comment.data = expandCommentData(comment.data, forPath);
+            continue;
+        }
+        const element = node;
+        if (element instanceof HTMLTemplateElement) {
+            continue;
+        }
+        const attr = element.getAttribute(bindAttr);
+        if (attr !== null) {
+            const expanded = expandBindAttribute(attr, forPath);
+            if (expanded !== attr) {
+                element.setAttribute(bindAttr, expanded);
+            }
+        }
+    }
+}
+
 function getNodePath(node) {
     let currentNode = node;
     const path = [];
@@ -4028,8 +4123,11 @@ function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
         bindingType: bindingType,
     };
 }
-function _getFragmentInfo(fragment, parseBindingTextResult) {
-    collectStructuralFragments(fragment);
+function _getFragmentInfo(fragment, parseBindingTextResult, forPath) {
+    if (typeof forPath === "string") {
+        expandShorthandPaths(fragment, forPath);
+    }
+    collectStructuralFragments(fragment, forPath);
     // after replacing and collect node infos on child fragment
     const fragmentInfo = {
         fragment: fragment,
@@ -4038,7 +4136,7 @@ function _getFragmentInfo(fragment, parseBindingTextResult) {
     };
     return fragmentInfo;
 }
-function collectStructuralFragments(root) {
+function collectStructuralFragments(root, forPath) {
     const elseKeyword = config.commentElsePrefix;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
         acceptNode(node) {
@@ -4060,7 +4158,10 @@ function collectStructuralFragments(root) {
         templates.push(template);
     }
     for (const template of templates) {
-        const bindText = template.getAttribute(config.bindAttributeName) || '';
+        let bindText = template.getAttribute(config.bindAttributeName) || '';
+        if (typeof forPath === "string") {
+            bindText = expandShorthandInBindAttribute(bindText, forPath);
+        }
         const parseBindTextResults = parseBindTextsForElement(bindText);
         let parseBindTextResult = parseBindTextResults[0];
         const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
@@ -4071,6 +4172,10 @@ function collectStructuralFragments(root) {
         const fragment = template.content;
         const uuid = getUUID();
         let fragmentInfo = null;
+        // Determine childForPath for shorthand expansion
+        const childForPath = bindingType === "for"
+            ? parseBindTextResult.statePathName
+            : forPath;
         if (bindingType === "else") {
             // check last 'if' or 'elseif' fragment info
             if (lastIfFragmentInfo === null) {
@@ -4078,7 +4183,7 @@ function collectStructuralFragments(root) {
             }
             // else condition
             parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
-            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
             setFragmentInfoByUUID(uuid, fragmentInfo);
             const lastElseFragmentInfo = elseFragmentInfos.at(-1);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
@@ -4099,7 +4204,7 @@ function collectStructuralFragments(root) {
             if (lastIfFragmentInfo === null) {
                 raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
             }
-            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
             setFragmentInfoByUUID(uuid, fragmentInfo);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
             // create else fragment
@@ -4131,7 +4236,7 @@ function collectStructuralFragments(root) {
             }
         }
         else {
-            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
             setFragmentInfoByUUID(uuid, fragmentInfo);
             const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
             template.replaceWith(placeHolder);
