@@ -42,6 +42,9 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
 }
 
 export function applyChange(binding: IBindingInfo, context: IApplyContext): void {
+  if (binding.bindingType === "event") {
+    return;
+  }
   if (binding.stateName !== context.stateName) {
     const stateElement = getStateElementByName(binding.stateName);
     if (stateElement === null) {

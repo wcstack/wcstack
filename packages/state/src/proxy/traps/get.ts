@@ -68,7 +68,6 @@ export function get(
       receiver,
       handler
     );
-
   } else if (typeof prop === "symbol") {
     return Reflect.get(
       target, 

@@ -1,9 +1,6 @@
 import { IBindingInfo } from "../types";
 import { IStateElement } from "./types";
 import { ILoopContextStack } from "../list/types";
-import { IStateAddress } from "../address/types";
-import { ICacheEntry } from "../cache/types";
-import { IVersionInfo } from "../version/types";
 import { IStateProxy, Mutability } from "../proxy/types";
 export declare class State extends HTMLElement implements IStateElement {
     private __state;
@@ -18,8 +15,6 @@ export declare class State extends HTMLElement implements IStateElement {
     private _isLoadingState;
     private _isLoadedState;
     private _loopContextStack;
-    private _cache;
-    private _mightChangeByPath;
     private _dynamicDependency;
     private _staticDependency;
     private _pathSet;
@@ -39,8 +34,6 @@ export declare class State extends HTMLElement implements IStateElement {
     get getterPaths(): Set<string>;
     get setterPaths(): Set<string>;
     get loopContextStack(): ILoopContextStack;
-    get cache(): Map<IStateAddress, ICacheEntry>;
-    get mightChangeByPath(): Map<string, IVersionInfo>;
     get dynamicDependency(): Map<string, string[]>;
     get staticDependency(): Map<string, string[]>;
     get version(): number;

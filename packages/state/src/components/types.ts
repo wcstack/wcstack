@@ -1,9 +1,6 @@
-import { IStateAddress } from "../address/types";
-import { ICacheEntry } from "../cache/types";
 import { ILoopContextStack } from "../list/types";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { IBindingInfo } from "../types";
-import { IVersionInfo } from "../version/types";
 
 export interface IStateElement {
   readonly name: string;
@@ -13,8 +10,6 @@ export interface IStateElement {
   readonly getterPaths: Set<string>;
   readonly setterPaths: Set<string>;
   readonly loopContextStack: ILoopContextStack;
-  readonly cache: Map<IStateAddress, ICacheEntry>;
-  readonly mightChangeByPath: Map<string, IVersionInfo>
   readonly dynamicDependency: Map<string, string[]>;
   readonly staticDependency: Map<string, string[]>;
   readonly version: number;

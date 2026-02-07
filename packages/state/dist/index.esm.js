@@ -424,6 +424,48 @@ function createStateAddress(pathInfo, listIndex) {
     }
 }
 
+const absoluteStateAddressByStateAddressByStateElement = new WeakMap();
+function createAbsoluteStateAddress(stateName, address) {
+    const stateElement = getStateElementByName(stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found.`);
+    }
+    let absoluteStateAddressByStateAddress = absoluteStateAddressByStateAddressByStateElement.get(stateElement);
+    if (typeof absoluteStateAddressByStateAddress !== "undefined") {
+        let absoluteStateAddress = absoluteStateAddressByStateAddress.get(address);
+        if (typeof absoluteStateAddress === "undefined") {
+            absoluteStateAddress = Object.freeze({
+                address,
+                stateName,
+            });
+            absoluteStateAddressByStateAddress.set(address, absoluteStateAddress);
+        }
+        return absoluteStateAddress;
+    }
+    else {
+        const absoluteStateAddress = Object.freeze({
+            address,
+            stateName,
+        });
+        absoluteStateAddressByStateAddress = new WeakMap([[address, absoluteStateAddress]]);
+        absoluteStateAddressByStateAddressByStateElement.set(stateElement, absoluteStateAddressByStateAddress);
+        return absoluteStateAddress;
+    }
+}
+
+const cacheEntryByAbsoluteStateAddress = new WeakMap();
+function getCacheEntryByAbsoluteStateAddress(address) {
+    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
+}
+function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
+    if (cacheEntry === null) {
+        cacheEntryByAbsoluteStateAddress.delete(address);
+    }
+    else {
+        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
+    }
+}
+
 function checkDependency(handler, address) {
     // 動的依存関係の登録
     if (handler.addressStackIndex >= 0) {
@@ -460,12 +502,6 @@ function checkDependency(handler, address) {
  * - finallyでキャッシュへの格納を保証
  */
 function _getByAddress(target, address, receiver, handler, stateElement) {
-    // ToDo:親子関係のあるgetterが存在する場合は、外部依存から取得
-    /*
-      if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.getters.intersection(ref.info.cumulativePathSet).size === 0) {
-        return handler.engine.stateOutput.get(ref);
-      }
-    */
     if (address.pathInfo.path in target) {
         // getterの中で参照の可能性があるので、addressをプッシュする
         if (stateElement.getterPaths.has(address.pathInfo.path)) {
@@ -495,48 +531,16 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
     }
 }
 function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    let value;
-    let lastCacheEntry = stateElement.cache.get(address) ?? null;
-    // Updateで変更が必要な可能性があるパスのバージョン情報
-    const mightChangeByPath = handler.stateElement.mightChangeByPath;
-    const versionRevision = mightChangeByPath.get(address.pathInfo.path);
-    if (lastCacheEntry !== null) {
-        const lastVersionInfo = lastCacheEntry.versionInfo;
-        if (typeof versionRevision === "undefined") {
-            // 更新なし
-            return lastCacheEntry.value;
-        }
-        else {
-            if (lastVersionInfo.version > handler.versionInfo.version) {
-                // これは非同期更新が発生した場合にありえる
-                return lastCacheEntry.value;
-            }
-            if (lastVersionInfo.version < versionRevision.version || lastVersionInfo.revision < versionRevision.revision) ;
-            else {
-                return lastCacheEntry.value;
-            }
-        }
+    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+    if (cacheEntry !== null) {
+        return cacheEntry.value;
     }
-    try {
-        return value = _getByAddress(target, address, receiver, handler, stateElement);
-    }
-    finally {
-        if (lastCacheEntry === null) {
-            stateElement.cache.set(address, {
-                value: value,
-                versionInfo: {
-                    version: handler.versionInfo.version,
-                    revision: ++handler.versionInfo.revision,
-                },
-            });
-        }
-        else {
-            // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-            lastCacheEntry.value = value;
-            lastCacheEntry.versionInfo.version = handler.versionInfo.version;
-            lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
-        }
-    }
+    const value = _getByAddress(target, address, receiver, handler, stateElement);
+    setCacheEntryByAbsoluteStateAddress(absAddress, {
+        value: value
+    });
+    return value;
 }
 function getByAddress(target, address, receiver, handler) {
     // $1, $2, ... のインデックス変数はlistIndexから直接値を取得
@@ -769,35 +773,6 @@ function get(target, prop, receiver, handler) {
               );
             }
         */
-    }
-}
-
-const absoluteStateAddressByStateAddressByStateElement = new WeakMap();
-function createAbsoluteStateAddress(stateName, address) {
-    const stateElement = getStateElementByName(stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found.`);
-    }
-    let absoluteStateAddressByStateAddress = absoluteStateAddressByStateAddressByStateElement.get(stateElement);
-    if (typeof absoluteStateAddressByStateAddress !== "undefined") {
-        let absoluteStateAddress = absoluteStateAddressByStateAddress.get(address);
-        if (typeof absoluteStateAddress === "undefined") {
-            absoluteStateAddress = Object.freeze({
-                address,
-                stateName,
-            });
-            absoluteStateAddressByStateAddress.set(address, absoluteStateAddress);
-        }
-        return absoluteStateAddress;
-    }
-    else {
-        const absoluteStateAddress = Object.freeze({
-            address,
-            stateName,
-        });
-        absoluteStateAddressByStateAddress = new WeakMap([[address, absoluteStateAddress]]);
-        absoluteStateAddressByStateAddressByStateElement.set(stateElement, absoluteStateAddressByStateAddress);
-        return absoluteStateAddress;
     }
 }
 
@@ -2523,7 +2498,7 @@ const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
             if (typeof handler !== "function") {
                 raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
             }
-            return handler.call(state, event, ...(loopContext?.listIndex.indexes ?? []));
+            return Reflect.apply(handler, state, [event, ...(loopContext?.listIndex.indexes ?? [])]);
         });
     });
 };
@@ -2963,6 +2938,9 @@ function _applyChange(binding, context) {
     fn(binding, context, filteredValue);
 }
 function applyChange(binding, context) {
+    if (binding.bindingType === "event") {
+        return;
+    }
     if (binding.stateName !== context.stateName) {
         const stateElement = getStateElementByName(binding.stateName);
         if (stateElement === null) {
@@ -3306,14 +3284,8 @@ function walkDependency(startAddress, staticDependency, dynamicDependency, listP
  * - finallyで必ず更新情報を登録し、再描画や依存解決に利用
  * - getter/setter経由のスコープ切り替えも考慮した設計
  */
-function _setByAddress(target, address, value, receiver, handler) {
+function _setByAddress(target, address, absAddress, value, receiver, handler) {
     try {
-        // ToDo:親子関係のあるgetterが存在する場合は、外部依存を通じて値を設定
-        /*
-            if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.setters.intersection(ref.info.cumulativePathSet).size === 0) {
-              return handler.engine.stateOutput.set(ref, value);
-            }
-        */
         if (address.pathInfo.path in target) {
             if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
                 // setterの中で参照の可能性があるので、addressをプッシュする
@@ -3344,20 +3316,20 @@ function _setByAddress(target, address, value, receiver, handler) {
     }
     finally {
         const updater = getUpdater();
-        const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
-        updater.enqueueAbsoluteAddress(absoluteAddress);
+        updater.enqueueAbsoluteAddress(absAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
         walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
             if (depAddress === address)
                 return;
-            handler.stateElement.cache.delete(depAddress);
             const absDepAddress = createAbsoluteStateAddress(handler.stateName, depAddress);
+            setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+            // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
         });
     }
 }
-function _setByAddressWithSwap(target, address, value, receiver, handler) {
+function _setByAddressWithSwap(target, address, absAddress, value, receiver, handler) {
     // elementsの場合はswapInfoを準備
     let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
     let swapInfo = getSwapInfoByAddress(parentAddress);
@@ -3370,7 +3342,7 @@ function _setByAddressWithSwap(target, address, value, receiver, handler) {
         setSwapInfoByAddress(parentAddress, swapInfo);
     }
     try {
-        return _setByAddress(target, address, value, receiver, handler);
+        return _setByAddress(target, address, absAddress, value, receiver, handler);
     }
     finally {
         const index = swapInfo.value.indexOf(value);
@@ -3395,34 +3367,29 @@ function _setByAddressWithSwap(target, address, value, receiver, handler) {
 }
 function setByAddress(target, address, value, receiver, handler) {
     const stateElement = handler.stateElement;
-    const isElements = stateElement.elementPaths.has(address.pathInfo.path);
+    const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
+    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
     try {
-        if (isElements) {
-            return _setByAddressWithSwap(target, address, value, receiver, handler);
+        if (isSwappable) {
+            return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler);
         }
         else {
-            return _setByAddress(target, address, value, receiver, handler);
+            return _setByAddress(target, address, absAddress, value, receiver, handler);
         }
     }
     finally {
         if (cacheable) {
-            let lastCacheEntry = stateElement.cache.get(address) ?? null;
-            if (lastCacheEntry === null) {
-                stateElement.cache.set(address, {
-                    value: value,
-                    versionInfo: {
-                        version: handler.versionInfo.version,
-                        revision: ++handler.versionInfo.revision,
-                    },
+            const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+            if (cacheEntry === null) {
+                setCacheEntryByAbsoluteStateAddress(absAddress, {
+                    value: value
                 });
             }
             else {
                 // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-                lastCacheEntry.value = value;
-                lastCacheEntry.versionInfo.version = handler.versionInfo.version;
-                lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+                cacheEntry.value = value;
             }
         }
     }
@@ -3455,15 +3422,6 @@ function set(target, prop, value, receiver, handler) {
     }
 }
 
-let versionCounter = 0;
-function getNextVersion() {
-    versionCounter++;
-    return {
-        version: versionCounter,
-        revision: 0,
-    };
-}
-
 class StateHandler {
     _stateElement;
     _stateName;
@@ -3471,7 +3429,6 @@ class StateHandler {
     _addressStackIndex = -1;
     _loopContext;
     _mutability;
-    _versionInfo;
     constructor(stateName, mutability) {
         this._stateName = stateName;
         const stateElement = getStateElementByName(this._stateName);
@@ -3480,7 +3437,6 @@ class StateHandler {
         }
         this._stateElement = stateElement;
         this._mutability = mutability;
-        this._versionInfo = getNextVersion();
     }
     get stateName() {
         return this._stateName;
@@ -3504,9 +3460,6 @@ class StateHandler {
     }
     get loopContext() {
         return this._loopContext;
-    }
-    get versionInfo() {
-        return this._versionInfo;
     }
     pushAddress(address) {
         this._addressStackIndex++;
@@ -3589,8 +3542,6 @@ class State extends HTMLElement {
     _isLoadingState = false;
     _isLoadedState = false;
     _loopContextStack = createLoopContextStack();
-    _cache = new Map();
-    _mightChangeByPath = new Map();
     _dynamicDependency = new Map();
     _staticDependency = new Map();
     _pathSet = new Set();
@@ -3719,12 +3670,6 @@ class State extends HTMLElement {
     }
     get loopContextStack() {
         return this._loopContextStack;
-    }
-    get cache() {
-        return this._cache;
-    }
-    get mightChangeByPath() {
-        return this._mightChangeByPath;
     }
     get dynamicDependency() {
         return this._dynamicDependency;

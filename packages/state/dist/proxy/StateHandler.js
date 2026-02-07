@@ -2,7 +2,6 @@ import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
-import { getNextVersion } from "../version/version";
 class StateHandler {
     _stateElement;
     _stateName;
@@ -10,7 +9,6 @@ class StateHandler {
     _addressStackIndex = -1;
     _loopContext;
     _mutability;
-    _versionInfo;
     constructor(stateName, mutability) {
         this._stateName = stateName;
         const stateElement = getStateElementByName(this._stateName);
@@ -19,7 +17,6 @@ class StateHandler {
         }
         this._stateElement = stateElement;
         this._mutability = mutability;
-        this._versionInfo = getNextVersion();
     }
     get stateName() {
         return this._stateName;
@@ -43,9 +40,6 @@ class StateHandler {
     }
     get loopContext() {
         return this._loopContext;
-    }
-    get versionInfo() {
-        return this._versionInfo;
     }
     pushAddress(address) {
         this._addressStackIndex++;

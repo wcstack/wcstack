@@ -255,8 +255,6 @@ describe('State component', () => {
     expect(stateEl.getterPaths).toBeInstanceOf(Set);
     expect(stateEl.setterPaths).toBeInstanceOf(Set);
     expect(stateEl.loopContextStack).toBeDefined();
-    expect(stateEl.cache).toBeInstanceOf(Map);
-    expect(stateEl.mightChangeByPath).toBeInstanceOf(Map);
     expect(stateEl.dynamicDependency).toBeInstanceOf(Map);
     expect(stateEl.staticDependency).toBeInstanceOf(Map);
     expect(stateEl.version).toBe(0);

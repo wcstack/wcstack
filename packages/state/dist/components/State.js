@@ -47,8 +47,6 @@ export class State extends HTMLElement {
     _isLoadingState = false;
     _isLoadedState = false;
     _loopContextStack = createLoopContextStack();
-    _cache = new Map();
-    _mightChangeByPath = new Map();
     _dynamicDependency = new Map();
     _staticDependency = new Map();
     _pathSet = new Set();
@@ -177,12 +175,6 @@ export class State extends HTMLElement {
     }
     get loopContextStack() {
         return this._loopContextStack;
-    }
-    get cache() {
-        return this._cache;
-    }
-    get mightChangeByPath() {
-        return this._mightChangeByPath;
     }
     get dynamicDependency() {
         return this._dynamicDependency;

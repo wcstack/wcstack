@@ -6,6 +6,9 @@ import { createListIndex } from '../src/list/createListIndex';
 import { createListDiff } from '../src/list/createListDiff';
 import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
 import { getSwapInfoByAddress, setSwapInfoByAddress } from '../src/proxy/methods/swapInfo';
+import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+
+const absAddressByState = new Map<string, WeakMap<object, object>>();
 
 const createListIndexes = (
   parentListIndex,
@@ -27,13 +30,27 @@ vi.mock('../src/updater/updater', () => ({
 }));
 
 vi.mock('../src/address/AbsoluteStateAddress', () => ({
-  createAbsoluteStateAddress: vi.fn((stateName, address) => ({ stateName, address })),
+  createAbsoluteStateAddress: vi.fn((stateName, address) => {
+    let byAddress = absAddressByState.get(stateName);
+    if (!byAddress) {
+      byAddress = new WeakMap();
+      absAddressByState.set(stateName, byAddress);
+    }
+    let absAddress = byAddress.get(address);
+    if (!absAddress) {
+      absAddress = { stateName, address };
+      byAddress.set(address, absAddress);
+    }
+    return absAddress;
+  }),
 }));
 
 import { getByAddress } from '../src/proxy/methods/getByAddress';
+import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
 
 function createStateElement(overrides?: Partial<any>) {
   return {
+    name: 'default',
     elementPaths: new Set<string>(),
     listPaths: new Set<string>(),
     getterPaths: new Set<string>(),
@@ -51,7 +68,6 @@ function createHandler(stateElement: any, overrides?: Partial<any>) {
     stateName: 'default',
     pushAddress: vi.fn(),
     popAddress: vi.fn(),
-    versionInfo: { version: 1, revision: 0 },
     ...overrides,
   };
 }
@@ -61,7 +77,7 @@ describe('setByAddress', () => {
     vi.clearAllMocks();
   });
 
-  it('既存プロパティはsetterがあればpush/popしつつ更新し、キャッシュを作成すること', () => {
+  it('既存プロパティはsetterがあればpush/popしつつ更新すること', () => {
     const target = { count: 1 };
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ setterPaths: new Set(['count']), getterPaths: new Set(['count']) });
@@ -74,26 +90,24 @@ describe('setByAddress', () => {
     expect(handler.popAddress).toHaveBeenCalled();
 
     expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
-
-    const cacheEntry = stateElement.cache.get(address);
-    expect(cacheEntry.value).toBe(5);
-    expect(cacheEntry.versionInfo.version).toBe(1);
   });
 
-  it('既存キャッシュは更新されること', () => {
+  it('既存キャッシュがある場合は更新されること', () => {
     const target = { count: 1 };
     const address = createStateAddress(getPathInfo('count'), null);
-    const stateElement = createStateElement({ setterPaths: new Set(['count']), getterPaths: new Set(['count']) });
-    stateElement.cache.set(address, { value: 1, versionInfo: { version: 0, revision: 0 } });
-    const handler = createHandler(stateElement, { versionInfo: { version: 2, revision: 3 } });
+    const stateElement = createStateElement({ getterPaths: new Set(['count']) });
+    const handler = createHandler(stateElement);
+    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+
+    setCacheEntryByAbsoluteStateAddress(absAddress, { value: 1 });
 
     setByAddress(target, address, 9, target, handler as any);
 
-    const cacheEntry = stateElement.cache.get(address);
-    expect(cacheEntry.value).toBe(9);
-    expect(cacheEntry.versionInfo.version).toBe(2);
-    // revision は前置インクリメントなので 4 がセットされる
-    expect(cacheEntry.versionInfo.revision).toBe(4);
+    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+    expect(cacheEntry).not.toBeNull();
+    expect(cacheEntry!.value).toBe(9);
+
+    setCacheEntryByAbsoluteStateAddress(absAddress, null);
   });
 
   it('依存先がある場合はキャッシュ削除と更新通知が行われること', () => {
@@ -103,16 +117,13 @@ describe('setByAddress', () => {
       staticDependency: new Map<string, string[]>([['count', ['total']]]),
     });
     const handler = createHandler(stateElement);
-    const deleteSpy = vi.spyOn(stateElement.cache, 'delete');
 
     setByAddress(target, address, 5, target, handler as any);
 
-    expect(deleteSpy).toHaveBeenCalled();
     const hasDependentEnqueue = mockEnqueueAbsoluteAddress.mock.calls.some(
       ([arg]) => arg.address?.pathInfo?.path === 'total'
     );
     expect(hasDependentEnqueue).toBe(true);
-    deleteSpy.mockRestore();
   });
 
   it('親経由で非ワイルドカードの値を設定できること', () => {

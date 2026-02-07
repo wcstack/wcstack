@@ -19,7 +19,7 @@ const stateEventHandlerFunction = (stateName, handlerName) => (event) => {
             if (typeof handler !== "function") {
                 raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
             }
-            return handler.call(state, event, ...(loopContext?.listIndex.indexes ?? []));
+            return Reflect.apply(handler, state, [event, ...(loopContext?.listIndex.indexes ?? [])]);
         });
     });
 };

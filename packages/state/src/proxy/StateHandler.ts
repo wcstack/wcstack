@@ -7,8 +7,6 @@ import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
 import { ILoopContext } from "../list/types";
 import { IState } from "../types";
-import { IVersionInfo } from "../version/types";
-import { getNextVersion } from "../version/version";
 
 class StateHandler implements IStateHandler {
   private _stateElement: IStateElement;
@@ -17,7 +15,6 @@ class StateHandler implements IStateHandler {
   private _addressStackIndex: number = -1;
   private _loopContext: ILoopContext | null | undefined;
   private _mutability: Mutability;
-  private _versionInfo: IVersionInfo;
  
   constructor(
     stateName: string,
@@ -30,7 +27,6 @@ class StateHandler implements IStateHandler {
     }
     this._stateElement = stateElement;
     this._mutability = mutability;
-    this._versionInfo = getNextVersion();
   }
 
   get stateName(): string {
@@ -59,10 +55,6 @@ class StateHandler implements IStateHandler {
 
   get loopContext(): ILoopContext | null | undefined {
     return this._loopContext;
-  }
-
-  get versionInfo(): IVersionInfo {
-    return this._versionInfo;
   }
 
   pushAddress(address: IStateAddress | null): void {

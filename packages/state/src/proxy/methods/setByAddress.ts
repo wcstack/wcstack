@@ -17,7 +17,7 @@
  */
 
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
-import { IStateAddress } from "../../address/types";
+import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";
@@ -27,22 +27,17 @@ import { IStateHandler, IStateProxy } from "../types";
 import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
+import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 
 function _setByAddress(
   target   : object, 
   address  : IStateAddress,
+  absAddress: IAbsoluteStateAddress,
   value    : any, 
   receiver : any,
   handler  : IStateHandler
 ): any {
   try {
-    // ToDo:親子関係のあるgetterが存在する場合は、外部依存を通じて値を設定
-/*
-    if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.setters.intersection(ref.info.cumulativePathSet).size === 0) {
-      return handler.engine.stateOutput.set(ref, value);
-    }
-*/
-
     if (address.pathInfo.path in target) {
       if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
         // setterの中で参照の可能性があるので、addressをプッシュする
@@ -68,8 +63,7 @@ function _setByAddress(
     }
   } finally {
     const updater = getUpdater();
-    const absoluteAddress = createAbsoluteStateAddress(handler.stateName, address);
-    updater.enqueueAbsoluteAddress(absoluteAddress);
+    updater.enqueueAbsoluteAddress(absAddress);
     // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
     walkDependency(
       address,
@@ -81,8 +75,9 @@ function _setByAddress(
       (depAddress: IStateAddress) => {
         // キャッシュを無効化（ダーティ）
         if (depAddress === address) return;
-        handler.stateElement.cache.delete(depAddress);
         const absDepAddress = createAbsoluteStateAddress(handler.stateName, depAddress);
+        setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+        // 更新対象として登録
         updater.enqueueAbsoluteAddress(absDepAddress);
       }
     )
@@ -92,6 +87,7 @@ function _setByAddress(
 function _setByAddressWithSwap(
   target   : object, 
   address  : IStateAddress,
+  absAddress: IAbsoluteStateAddress,
   value    : any, 
   receiver : any,
   handler  : IStateHandler
@@ -108,7 +104,7 @@ function _setByAddressWithSwap(
     setSwapInfoByAddress(parentAddress, swapInfo);
   }
   try {
-    return _setByAddress(target, address, value, receiver, handler);
+    return _setByAddress(target, address, absAddress, value, receiver, handler);
   } finally {
     const index = swapInfo.value.indexOf(value);
     const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
@@ -139,31 +135,26 @@ export function setByAddress(
     handler  : IStateHandler
 ): any {
   const stateElement = handler.stateElement;
-  const isElements = stateElement.elementPaths.has(address.pathInfo.path);
+  const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
+  const absAddress = createAbsoluteStateAddress(stateElement.name, address);
   try {
-    if (isElements) {
-      return _setByAddressWithSwap(target, address, value, receiver, handler);
+    if (isSwappable) {
+      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler);
     } else {
-      return _setByAddress(target, address, value, receiver, handler);
+      return _setByAddress(target, address, absAddress, value, receiver, handler);
     }
   } finally {
     if (cacheable) {
-      let lastCacheEntry = stateElement.cache.get(address) ?? null;
-      if (lastCacheEntry === null) {
-        stateElement.cache.set(address, {
-          value: value,
-          versionInfo: {
-            version: handler.versionInfo.version,
-            revision: ++handler.versionInfo.revision,
-          },
+      const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+      if (cacheEntry === null) {
+        setCacheEntryByAbsoluteStateAddress(absAddress, {
+          value: value
         });
       } else {
         // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-        lastCacheEntry.value = value;
-        lastCacheEntry.versionInfo.version = handler.versionInfo.version;
-        lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
+        cacheEntry.value = value;
       }
     }
   }

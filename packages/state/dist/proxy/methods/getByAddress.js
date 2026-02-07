@@ -17,16 +17,12 @@
  * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
  * - finallyでキャッシュへの格納を保証
  */
+import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
+import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { INDEX_BY_INDEX_NAME, WILDCARD } from "../../define";
 import { raiseError } from "../../raiseError";
 import { checkDependency } from "./checkDependency";
 function _getByAddress(target, address, receiver, handler, stateElement) {
-    // ToDo:親子関係のあるgetterが存在する場合は、外部依存から取得
-    /*
-      if (handler.engine.stateOutput.startsWith(ref.info) && handler.engine.pathManager.getters.intersection(ref.info.cumulativePathSet).size === 0) {
-        return handler.engine.stateOutput.get(ref);
-      }
-    */
     if (address.pathInfo.path in target) {
         // getterの中で参照の可能性があるので、addressをプッシュする
         if (stateElement.getterPaths.has(address.pathInfo.path)) {
@@ -56,50 +52,16 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
     }
 }
 function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    let value;
-    let lastCacheEntry = stateElement.cache.get(address) ?? null;
-    // Updateで変更が必要な可能性があるパスのバージョン情報
-    const mightChangeByPath = handler.stateElement.mightChangeByPath;
-    const versionRevision = mightChangeByPath.get(address.pathInfo.path);
-    if (lastCacheEntry !== null) {
-        const lastVersionInfo = lastCacheEntry.versionInfo;
-        if (typeof versionRevision === "undefined") {
-            // 更新なし
-            return lastCacheEntry.value;
-        }
-        else {
-            if (lastVersionInfo.version > handler.versionInfo.version) {
-                // これは非同期更新が発生した場合にありえる
-                return lastCacheEntry.value;
-            }
-            if (lastVersionInfo.version < versionRevision.version || lastVersionInfo.revision < versionRevision.revision) {
-                // 更新あり
-            }
-            else {
-                return lastCacheEntry.value;
-            }
-        }
+    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+    if (cacheEntry !== null) {
+        return cacheEntry.value;
     }
-    try {
-        return value = _getByAddress(target, address, receiver, handler, stateElement);
-    }
-    finally {
-        if (lastCacheEntry === null) {
-            stateElement.cache.set(address, {
-                value: value,
-                versionInfo: {
-                    version: handler.versionInfo.version,
-                    revision: ++handler.versionInfo.revision,
-                },
-            });
-        }
-        else {
-            // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-            lastCacheEntry.value = value;
-            lastCacheEntry.versionInfo.version = handler.versionInfo.version;
-            lastCacheEntry.versionInfo.revision = ++handler.versionInfo.revision;
-        }
-    }
+    const value = _getByAddress(target, address, receiver, handler, stateElement);
+    setCacheEntryByAbsoluteStateAddress(absAddress, {
+        value: value
+    });
+    return value;
 }
 export function getByAddress(target, address, receiver, handler) {
     // $1, $2, ... のインデックス変数はlistIndexから直接値を取得

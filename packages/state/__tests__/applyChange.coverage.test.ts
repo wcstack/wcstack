@@ -249,7 +249,7 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToIfMock).toHaveBeenCalledWith(bindingInfo, context, true);
   });
 
-  it('eventバインディングはapplyChangeToPropertyにフォールバックすること', () => {
+  it('eventバインディングはapplyChangeをスキップすること', () => {
     const node = document.createElement('button');
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -266,7 +266,7 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToTextMock).not.toHaveBeenCalled();
     expect(applyChangeToForMock).not.toHaveBeenCalled();
     expect(applyChangeToIfMock).not.toHaveBeenCalled();
-    expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToPropertyMock).not.toHaveBeenCalled();
   });
 
   it('stateNameが異なる場合は別stateで適用されること', () => {

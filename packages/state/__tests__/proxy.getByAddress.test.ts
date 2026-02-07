@@ -1,16 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
+import { setStateElementByName } from '../src/stateElementByName';
+import { setCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
+import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 
 function createStateElement(overrides?: Partial<any>) {
   return {
+    name: 'default',
     listPaths: new Set<string>(),
     getterPaths: new Set<string>(),
     setterPaths: new Set<string>(),
-    cache: new Map(),
-    mightChangeByPath: new Map(),
     addDynamicDependency: vi.fn(),
     ...overrides,
   };
@@ -23,12 +25,22 @@ function createHandler(stateElement: any, overrides?: Partial<any>) {
     stateElement,
     pushAddress: vi.fn(),
     popAddress: vi.fn(),
-    versionInfo: { version: 1, revision: 0 },
     ...overrides,
   };
 }
 
 describe('getByAddress', () => {
+  let mockStateElement: any;
+
+  beforeEach(() => {
+    mockStateElement = createStateElement();
+    setStateElementByName('default', mockStateElement);
+  });
+
+  afterEach(() => {
+    setStateElementByName('default', null);
+  });
+
   it('getterPathsに含まれる場合はpush/popしつつgetter経由で取得すること', () => {
     const target = {
       _total: 3,
@@ -37,20 +49,22 @@ describe('getByAddress', () => {
       }
     };
     const address = createStateAddress(getPathInfo('total'), null);
-    const stateElement = createStateElement({ getterPaths: new Set(['total']) });
-    const handler = createHandler(stateElement);
+    mockStateElement.getterPaths.add('total');
+    const handler = createHandler(mockStateElement);
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(3);
     expect(handler.pushAddress).toHaveBeenCalledWith(address);
     expect(handler.popAddress).toHaveBeenCalled();
+
+    // クリーンアップ
+    mockStateElement.getterPaths.delete('total');
   });
 
   it('通常のプロパティは直接取得できること', () => {
     const target = { count: 2 };
     const address = createStateAddress(getPathInfo('count'), null);
-    const stateElement = createStateElement();
-    const handler = createHandler(stateElement);
+    const handler = createHandler(mockStateElement);
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(2);
@@ -60,8 +74,7 @@ describe('getByAddress', () => {
     const target = { users: [{ name: 'Ann' }] };
     const listIndex = createListIndex(null, 0);
     const address = createStateAddress(getPathInfo('users.*.name'), listIndex);
-    const stateElement = createStateElement();
-    const handler = createHandler(stateElement);
+    const handler = createHandler(mockStateElement);
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe('Ann');
@@ -70,8 +83,7 @@ describe('getByAddress', () => {
   it('ワイルドカードでlistIndexが無い場合はエラーになること', () => {
     const target = { users: [{ name: 'Ann' }] };
     const address = createStateAddress(getPathInfo('users.*'), null);
-    const stateElement = createStateElement();
-    const handler = createHandler(stateElement);
+    const handler = createHandler(mockStateElement);
 
     expect(() => getByAddress(target, address, target, handler as any)).toThrow(/listIndex.*undefined/);
   });
@@ -79,75 +91,58 @@ describe('getByAddress', () => {
   it('親が存在しないパスでtargetに無い場合はエラーになること', () => {
     const target = {};
     const address = createStateAddress(getPathInfo('missing'), null);
-    const stateElement = createStateElement();
-    const handler = createHandler(stateElement);
+    const handler = createHandler(mockStateElement);
 
     expect(() => getByAddress(target, address, target, handler as any)).toThrow(/address.parentAddress is undefined/);
   });
 
-  it('キャッシュがあり更新情報が無い場合はキャッシュを返すこと', () => {
+  it('キャッシュがある場合はキャッシュを返すこと', () => {
     const target = { total: 10 };
     const address = createStateAddress(getPathInfo('total'), null);
-    const stateElement = createStateElement({ getterPaths: new Set(['total']) });
-    stateElement.cache.set(address, { value: 99, versionInfo: { version: 1, revision: 0 } });
-    const handler = createHandler(stateElement, { versionInfo: { version: 1, revision: 0 } });
+    mockStateElement.getterPaths.add('total');
+    const absAddress = createAbsoluteStateAddress(mockStateElement.name, address);
+    setCacheEntryByAbsoluteStateAddress(absAddress, { value: 99 });
+    const handler = createHandler(mockStateElement);
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(99);
+
+    // クリーンアップ
+    setCacheEntryByAbsoluteStateAddress(absAddress, null);
+    mockStateElement.getterPaths.delete('total');
   });
 
-  it('キャッシュのversionがhandlerより新しい場合はキャッシュを返すこと', () => {
+  it('キャッシュが無い場合は取得してキャッシュに保存すること', () => {
     const target = { total: 10 };
     const address = createStateAddress(getPathInfo('total'), null);
-    const stateElement = createStateElement({ getterPaths: new Set(['total']) });
-    stateElement.cache.set(address, { value: 55, versionInfo: { version: 5, revision: 0 } });
-    stateElement.mightChangeByPath.set('total', { version: 1, revision: 0 });
-    const handler = createHandler(stateElement, { versionInfo: { version: 3, revision: 0 } });
+    mockStateElement.getterPaths.add('total');
+    const absAddress = createAbsoluteStateAddress(mockStateElement.name, address);
+    // キャッシュをクリア
+    setCacheEntryByAbsoluteStateAddress(absAddress, null);
+    const handler = createHandler(mockStateElement);
 
     const value = getByAddress(target, address, target, handler as any);
-    expect(value).toBe(55);
+    expect(value).toBe(10);
+
+    // クリーンアップ
+    setCacheEntryByAbsoluteStateAddress(absAddress, null);
+    mockStateElement.getterPaths.delete('total');
   });
 
-  it('更新情報が古い場合は再取得してキャッシュ更新すること', () => {
-    const target = { items: [1, 2] };
-    const address = createStateAddress(getPathInfo('items'), null);
-    const stateElement = createStateElement({ listPaths: new Set(['items']) });
-    stateElement.cache.set(address, { value: [0], versionInfo: { version: 1, revision: 0 } });
-    stateElement.mightChangeByPath.set('items', { version: 2, revision: 0 });
-    const handler = createHandler(stateElement, { versionInfo: { version: 2, revision: 0 } });
-
-    const value = getByAddress(target, address, target, handler as any);
-    expect(value).toEqual([1, 2]);
-  });
-
-  it('ワイルドカードのキャッシュがある場合は再取得して更新すること', () => {
+  it('ワイルドカードのキャッシュが無い場合は取得してキャッシュに保存すること', () => {
     const target = { users: [{ name: 'Ann' }] };
     const listIndex = createListIndex(null, 0);
     const address = createStateAddress(getPathInfo('users.*.name'), listIndex);
-    const stateElement = createStateElement();
-    stateElement.cache.set(address, { value: 'Old', versionInfo: { version: 1, revision: 0 } });
-    stateElement.mightChangeByPath.set('users.*.name', { version: 2, revision: 0 });
-    const handler = createHandler(stateElement, { versionInfo: { version: 2, revision: 0 } });
+    const absAddress = createAbsoluteStateAddress(mockStateElement.name, address);
+    // キャッシュをクリア
+    setCacheEntryByAbsoluteStateAddress(absAddress, null);
+    const handler = createHandler(mockStateElement);
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe('Ann');
 
-    const cacheEntry = stateElement.cache.get(address);
-    expect(cacheEntry.value).toBe('Ann');
-    expect(cacheEntry.versionInfo.version).toBe(2);
-    expect(cacheEntry.versionInfo.revision).toBe(2);
-  });
-
-  it('更新が無い場合はキャッシュを返すこと', () => {
-    const target = { total: 10 };
-    const address = createStateAddress(getPathInfo('total'), null);
-    const stateElement = createStateElement({ getterPaths: new Set(['total']) });
-    stateElement.cache.set(address, { value: 77, versionInfo: { version: 2, revision: 1 } });
-    stateElement.mightChangeByPath.set('total', { version: 2, revision: 1 });
-    const handler = createHandler(stateElement, { versionInfo: { version: 3, revision: 0 } });
-
-    const value = getByAddress(target, address, target, handler as any);
-    expect(value).toBe(77);
+    // クリーンアップ
+    setCacheEntryByAbsoluteStateAddress(absAddress, null);
   });
 
   it('$1のインデックス変数はlistIndexから値を取得すること', () => {
@@ -155,8 +150,7 @@ describe('getByAddress', () => {
     const address = createStateAddress(getPathInfo('$1'), null);
     const listIndex = createListIndex(null, 2);
     const lastAddress = createStateAddress(getPathInfo('items.*'), listIndex);
-    const stateElement = createStateElement();
-    const handler = createHandler(stateElement, { lastAddressStack: lastAddress });
+    const handler = createHandler(mockStateElement, { lastAddressStack: lastAddress });
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(2);
@@ -168,8 +162,7 @@ describe('getByAddress', () => {
     const parentListIndex = createListIndex(null, 1);
     const childListIndex = createListIndex(parentListIndex, 3);
     const lastAddress = createStateAddress(getPathInfo('categories.*.items.*'), childListIndex);
-    const stateElement = createStateElement();
-    const handler = createHandler(stateElement, { lastAddressStack: lastAddress });
+    const handler = createHandler(mockStateElement, { lastAddressStack: lastAddress });
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe(3);
@@ -178,8 +171,7 @@ describe('getByAddress', () => {
   it('$1でlastAddressStackにlistIndexがない場合はエラーになること', () => {
     const target = {};
     const address = createStateAddress(getPathInfo('$1'), null);
-    const stateElement = createStateElement();
-    const handler = createHandler(stateElement, { lastAddressStack: null });
+    const handler = createHandler(mockStateElement, { lastAddressStack: null });
 
     expect(() => getByAddress(target, address, target, handler as any)).toThrow(/ListIndex not found/);
   });

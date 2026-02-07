@@ -29,7 +29,7 @@ export default {
     this.count = 0;
   },
   toggle: false,
-  toggleName() {
+  toggleName(e) {
     if (this.toggle === false) {
       this["user.name"] = this["user.name"].toUpperCase();
     } else {

@@ -68,22 +68,6 @@ describe('proxy/StateHandler (coverage)', () => {
     expect(handler.popAddress()).toBeNull();
   });
 
-  it('readonlyでもversionInfoが設定されること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
-    expect(handler.versionInfo).toBeDefined();
-    expect(handler.versionInfo.version).toBeGreaterThan(0);
-    expect(handler.versionInfo.revision).toBe(0);
-  });
-
-  it('writable時はversionInfoが設定されること', () => {
-    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'writable');
-    expect(handler.versionInfo).toBeDefined();
-    expect(handler.versionInfo.version).toBeGreaterThan(0);
-    expect(handler.versionInfo.revision).toBe(0);
-  });
-
   it('loopContextのset/clearができること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
     const handler = new StateHandler('default', 'readonly');

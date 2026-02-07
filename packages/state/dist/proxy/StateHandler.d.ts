@@ -3,7 +3,6 @@ import { IStateElement } from "../components/types";
 import { IStateHandler, IStateProxy, Mutability } from "./types";
 import { ILoopContext } from "../list/types";
 import { IState } from "../types";
-import { IVersionInfo } from "../version/types";
 declare class StateHandler implements IStateHandler {
     private _stateElement;
     private _stateName;
@@ -11,7 +10,6 @@ declare class StateHandler implements IStateHandler {
     private _addressStackIndex;
     private _loopContext;
     private _mutability;
-    private _versionInfo;
     constructor(stateName: string, mutability: Mutability);
     get stateName(): string;
     get stateElement(): IStateElement;
@@ -19,7 +17,6 @@ declare class StateHandler implements IStateHandler {
     get addressStack(): (IStateAddress | null)[];
     get addressStackIndex(): number;
     get loopContext(): ILoopContext | null | undefined;
-    get versionInfo(): IVersionInfo;
     pushAddress(address: IStateAddress | null): void;
     popAddress(): IStateAddress | null;
     setLoopContext(loopContext: ILoopContext | null): void;

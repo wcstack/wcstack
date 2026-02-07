@@ -9,9 +9,6 @@ import { IStateElement } from "./types";
 import { setStateElementByName } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { IStateAddress } from "../address/types";
-import { ICacheEntry } from "../cache/types";
-import { IVersionInfo } from "../version/types";
 import { WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
@@ -64,8 +61,6 @@ export class State extends HTMLElement implements IStateElement {
   private _isLoadingState: boolean = false;
   private _isLoadedState: boolean = false;
   private _loopContextStack: ILoopContextStack = createLoopContextStack();
-  private _cache: Map<IStateAddress, ICacheEntry> = new Map<IStateAddress, ICacheEntry>();
-  private _mightChangeByPath: Map<string, IVersionInfo> = new Map<string, IVersionInfo>();
   private _dynamicDependency: Map<string, string[]> = new Map<string, string[]>();
   private _staticDependency: Map<string, string[]> = new Map<string, string[]>();
   private _pathSet: Set<string> = new Set<string>();
@@ -205,14 +200,6 @@ export class State extends HTMLElement implements IStateElement {
 
   get loopContextStack(): ILoopContextStack {
     return this._loopContextStack;
-  }
-
-  get cache(): Map<IStateAddress, ICacheEntry> {
-    return this._cache;
-  }
-
-  get mightChangeByPath(): Map<string, IVersionInfo> {
-    return this._mightChangeByPath;
   }
 
   get dynamicDependency(): Map<string, string[]> {

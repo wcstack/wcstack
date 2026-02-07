@@ -35,6 +35,9 @@ function _applyChange(binding, context) {
     fn(binding, context, filteredValue);
 }
 export function applyChange(binding, context) {
+    if (binding.bindingType === "event") {
+        return;
+    }
     if (binding.stateName !== context.stateName) {
         const stateElement = getStateElementByName(binding.stateName);
         if (stateElement === null) {
