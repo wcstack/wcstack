@@ -10,5 +10,6 @@ export const config = {
     },
     locale: 'en',
     debug: true,
+    enableMustache: true,
 };
 //# sourceMappingURL=config.js.map

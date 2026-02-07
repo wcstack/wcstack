@@ -122,7 +122,7 @@ export default {
       <select data-bind-state="value|number: selectedProductId">
         <template data-bind-state="for: products">
           <option data-bind-state="value: products.*.id">
-            <!--@@: products.*.name --> - $<!--@@: products.*.price|fix(2) --></option>
+            {{ products.*.name }} - ${{ products.*.price|fix(2) }}</option>
         </template>
       </select>
       <button type="button" data-bind-state="onclick: onAddProductToCart">Add to Cart</button>
@@ -154,33 +154,33 @@ export default {
           </tr>
         </thead>
         <tbody>
-            <template data-bind-state="for: cart.items">
+          <template data-bind-state="for: cart.items">
             <tr>
-              <td><!--@@: $1|inc(1) --></td>
-              <td class="left"><!--@@: cart.items.*.product.name --></td>
-              <td class="right"><!--@@: cart.items.*.product.price|fix(2) --></td>
+              <td>{{ $1|inc(1) }}</td>
+              <td class="left">{{ cart.items.*.product.name }}</td>
+              <td class="right">{{ cart.items.*.product.price|fix(2) }}</td>
               <td>
                 <input type="number" name="item" data-bind-state="attr.min: minQuantity; valueAsNumber: cart.items.*.quantity">
               </td>
-              <td class="right"><!--@@: cart.items.*.price|fix(2) --></td>
+              <td class="right">{{ cart.items.*.price|fix(2) }}</td>
               <td>
                 <button type="button" data-bind-state="onclick: onDeleteItemFromCart">Delete</button>
               </td>
             </tr>
-            </template>
+          </template>
           <tr>
             <td colspan="4" class="right"><strong>Total ($):</strong></td>
-            <td class="right"><!--@@: cart.totalPrice|fix(2) --></td>
+            <td class="right">{{ cart.totalPrice|fix(2) }}</td>
             <td></td>
           </tr>
           <tr>
-            <td colspan="4" class="right"><strong>Tax (<!--@@: taxRate|percent -->) ($):</strong></td>
-            <td class="right"><!--@@: cart.tax|fix(2) --></td>
+            <td colspan="4" class="right"><strong>Tax ({{ taxRate|percent }}) ($):</strong></td>
+            <td class="right">{{ cart.tax|fix(2) }}</td>
             <td></td>
           </tr>
           <tr>
             <td colspan="4" class="right"><strong>Grand Total ($):</strong></td>
-            <td class="right"><!--@@: cart.grandTotal|fix(2) --></td>
+            <td class="right">{{ cart.grandTotal|fix(2) }}</td>
             <td></td>
           </tr>
         </tbody>

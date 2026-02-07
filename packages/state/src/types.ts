@@ -18,4 +18,5 @@ export interface IConfig {
   tagNames: ITagNames;
   locale: string;
   debug: boolean;
+  enableMustache: boolean;
 }

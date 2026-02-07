@@ -13,4 +13,5 @@ export const config: IConfig = {
   },
   locale: 'en',
   debug: true,
+  enableMustache: true,
 };

@@ -92,8 +92,8 @@ export default {
         <tbody>
           <template data-bind-state="for: data">
             <tr data-bind-state="class.danger: data.*.selected">
-              <td class="col-md-1"><!--@@: data.*.id --></td>
-              <td class="col-md-4"><a data-bind-state="onclick: onSelect"><!--@@: data.*.label --></a></td>
+              <td class="col-md-1">{{ data.*.id }}</td>
+              <td class="col-md-4"><a data-bind-state="onclick: onSelect">{{ data.*.label }}</a></td>
               <td class="col-md-1"><a data-bind-state="onclick: onRemove"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
               <td class="col-md-6"></td>
             </tr>
