@@ -19,7 +19,7 @@
  */
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
-import { INDEX_BY_INDEX_NAME, WILDCARD } from "../../define";
+import { WILDCARD } from "../../define";
 import { raiseError } from "../../raiseError";
 import { checkDependency } from "./checkDependency";
 function _getByAddress(target, address, receiver, handler, stateElement) {
@@ -64,12 +64,6 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
     return value;
 }
 export function getByAddress(target, address, receiver, handler) {
-    // $1, $2, ... のインデックス変数はlistIndexから直接値を取得
-    const indexVarIndex = INDEX_BY_INDEX_NAME[address.pathInfo.path];
-    if (typeof indexVarIndex !== "undefined") {
-        const listIndex = handler.lastAddressStack?.listIndex;
-        return listIndex?.indexes[indexVarIndex] ?? raiseError(`ListIndex not found: ${address.pathInfo.path}`);
-    }
     checkDependency(handler, address);
     const stateElement = handler.stateElement;
     const cacheable = address.pathInfo.wildcardCount > 0 ||

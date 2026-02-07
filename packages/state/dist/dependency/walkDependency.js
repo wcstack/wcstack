@@ -6,6 +6,7 @@ import { createListDiff } from "../list/createListDiff";
 import { getListIndexesByList } from "../list/listIndexesByList";
 import { raiseError } from "../raiseError";
 const MAX_DEPENDENCY_DEPTH = 1000;
+// ToDo: IAbsoluteStateAddressに変更する
 const lastValueByListAddress = new WeakMap();
 const cacheCalcWildcardLen = new WeakMap();
 function calcWildcardLen(pathInfo, targetPathInfo) {

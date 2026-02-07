@@ -7,7 +7,8 @@
 
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
-import { IPathInfo } from "../../address/types";
+import { IPathInfo, IStateAddress } from "../../address/types";
+import { createListDiff } from "../../list/createListDiff";
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
@@ -15,6 +16,9 @@ import { getByAddress } from "../methods/getByAddress";
 import { getContextListIndex } from "../methods/getContextListIndex";
 import { IStateHandler } from "../types";
 import { resolve } from "./resolve";
+
+// ToDo: IAbsoluteStateAddressに変更する
+const lastValueByListAddress = new WeakMap<IStateAddress, unknown[]>();
 
 type GetAllFunction = (path: string, indexes?: number[]) => any[];
 
@@ -26,6 +30,7 @@ export function getAll(
 ): GetAllFunction {
     const resolveFn = resolve(target, prop, receiver, handler);
     return (path: string, indexes?: number[]): any[] => {
+      const newValueByAddress: Map<IStateAddress, any> = new Map();
       const pathInfo = getPathInfo(path);
       const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
       const stateElement = handler.stateElement;
@@ -38,8 +43,7 @@ export function getAll(
   
       if (typeof indexes === "undefined") {
         for(let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
-          const wildcardPattern = pathInfo.wildcardParentPathInfos[i] ?? 
-            raiseError('wildcardPattern is null');
+          const wildcardPattern = pathInfo.wildcardParentPathInfos[i];
           const listIndex = getContextListIndex(handler, wildcardPattern.path);
           if (listIndex) {
             indexes = listIndex.indexes;
@@ -52,31 +56,35 @@ export function getAll(
       }
       const walkWildcardPattern = (
         wildcardParentPathInfos: IPathInfo[],
-        wildardIndexPos: number,
+        wildcardIndexPos: number,
         listIndex: IListIndex | null,
         indexes: number[],
         indexPos: number,
         parentIndexes: number[],
         results: number[][]
       ) => {
-        const wildcardParentPathInfo = wildcardParentPathInfos[wildardIndexPos] ?? null;
+        const wildcardParentPathInfo = wildcardParentPathInfos[wildcardIndexPos] ?? null;
         if (wildcardParentPathInfo === null) {
           results.push(parentIndexes);
           return;
         }
         const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
-        const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
-        const listIndexes = getListIndexesByList(tmpValue);
+        const oldValue = lastValueByListAddress.get(wildcardAddress);
+        const oldIndexes = (typeof oldValue !== "undefined") ? (getListIndexesByList(oldValue) || []) : [];
+        const newValue = getByAddress(target, wildcardAddress, receiver, handler);
+        const listDiff = createListDiff(wildcardAddress.listIndex, oldValue, newValue, oldIndexes);
+        const listIndexes = listDiff.newIndexes;
         if (listIndexes === null) {
           raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
         }
         const index = indexes[indexPos] ?? null;
+        newValueByAddress.set(wildcardAddress, newValue);
         if (index === null) {
           for(let i = 0; i < listIndexes.length; i++) {
             const listIndex = listIndexes[i];
             walkWildcardPattern(
               wildcardParentPathInfos, 
-              wildardIndexPos + 1, 
+              wildcardIndexPos + 1, 
               listIndex, 
               indexes, 
               indexPos + 1, 
@@ -86,10 +94,10 @@ export function getAll(
         } else {
           const listIndex = listIndexes[index] ?? 
             raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
-          if ((wildardIndexPos + 1) < wildcardParentPathInfos.length) {
+          if ((wildcardIndexPos + 1) < wildcardParentPathInfos.length) {
             walkWildcardPattern(
               wildcardParentPathInfos, 
-              wildardIndexPos + 1, 
+              wildcardIndexPos + 1, 
               listIndex, 
               indexes, 
               indexPos + 1, 
@@ -119,7 +127,9 @@ export function getAll(
           resultIndexes[i]
         ));
       }
+      for(const [address, newValue] of newValueByAddress.entries()) {
+        lastValueByListAddress.set(address, newValue);
+      }
       return resultValues;
     }
   }
-

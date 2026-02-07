@@ -20,6 +20,7 @@ import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { INDEX_BY_INDEX_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
+import { getAll } from "../apis/getAll";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
@@ -43,6 +44,11 @@ export function get(target, prop, receiver, handler) {
         if (prop === "$$getByAddress") {
             return (address) => {
                 return getByAddress(target, address, receiver, handler);
+            };
+        }
+        if (prop === "$getAll") {
+            return (path, indexes) => {
+                return getAll(target, prop, receiver, handler)(path, indexes);
             };
         }
         const resolvedAddress = getResolvedAddress(prop);

@@ -17,14 +17,20 @@ vi.mock('../src/proxy/methods/getListIndex', () => ({
   getListIndex: vi.fn()
 }));
 
+vi.mock('../src/proxy/apis/getAll', () => ({
+  getAll: vi.fn()
+}));
+
 import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
+import { getAll } from '../src/proxy/apis/getAll';
 
 const setLoopContextMock = vi.mocked(setLoopContext);
 const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
 const getByAddressMock = vi.mocked(getByAddress);
 const getListIndexMock = vi.mocked(getListIndex);
+const getAllMock = vi.mocked(getAll);
 
 describe('proxy/traps/get', () => {
   afterEach(() => {
@@ -89,6 +95,33 @@ describe('proxy/traps/get', () => {
     expect(getByAddressMock).toHaveBeenCalledTimes(1);
     expect(getByAddressMock).toHaveBeenCalledWith(target, address, receiver, handler);
     expect(result).toBe('value');
+  });
+
+  it('$getAll が getAll を呼び出すこと', () => {
+    const innerFn = vi.fn().mockReturnValue(['a', 'b', 'c']);
+    getAllMock.mockReturnValueOnce(innerFn);
+    const handler = {} as any;
+    const target = { items: ['a', 'b', 'c'] };
+    const receiver = { receiver: true };
+
+    const fn = get(target, '$getAll', receiver, handler) as (path: string, indexes?: number[]) => any[];
+    const result = fn('items.*', [0, 1, 2]);
+
+    expect(getAllMock).toHaveBeenCalledTimes(1);
+    expect(getAllMock).toHaveBeenCalledWith(target, '$getAll', receiver, handler);
+    expect(innerFn).toHaveBeenCalledWith('items.*', [0, 1, 2]);
+    expect(result).toEqual(['a', 'b', 'c']);
+  });
+
+  it('$getAll が indexes なしで呼び出せること', () => {
+    const innerFn = vi.fn().mockReturnValue([1, 2]);
+    getAllMock.mockReturnValueOnce(innerFn);
+    const handler = {} as any;
+
+    const fn = get({}, '$getAll', {}, handler) as (path: string) => any[];
+    fn('items.*');
+
+    expect(innerFn).toHaveBeenCalledWith('items.*', undefined);
   });
 
   it('通常の文字列プロパティは getListIndex と getByAddress を経由すること', () => {

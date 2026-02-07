@@ -424,356 +424,25 @@ function createStateAddress(pathInfo, listIndex) {
     }
 }
 
-const absoluteStateAddressByStateAddressByStateElement = new WeakMap();
-function createAbsoluteStateAddress(stateName, address) {
-    const stateElement = getStateElementByName(stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found.`);
-    }
-    let absoluteStateAddressByStateAddress = absoluteStateAddressByStateAddressByStateElement.get(stateElement);
-    if (typeof absoluteStateAddressByStateAddress !== "undefined") {
-        let absoluteStateAddress = absoluteStateAddressByStateAddress.get(address);
-        if (typeof absoluteStateAddress === "undefined") {
-            absoluteStateAddress = Object.freeze({
-                address,
-                stateName,
-            });
-            absoluteStateAddressByStateAddress.set(address, absoluteStateAddress);
+if (!Set.prototype.difference) {
+    Set.prototype.difference = function (other) {
+        const result = new Set(this);
+        for (const elem of other) {
+            result.delete(elem);
         }
-        return absoluteStateAddress;
-    }
-    else {
-        const absoluteStateAddress = Object.freeze({
-            address,
-            stateName,
-        });
-        absoluteStateAddressByStateAddress = new WeakMap([[address, absoluteStateAddress]]);
-        absoluteStateAddressByStateAddressByStateElement.set(stateElement, absoluteStateAddressByStateAddress);
-        return absoluteStateAddress;
-    }
+        return result;
+    };
 }
-
-const cacheEntryByAbsoluteStateAddress = new WeakMap();
-function getCacheEntryByAbsoluteStateAddress(address) {
-    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
-}
-function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
-    if (cacheEntry === null) {
-        cacheEntryByAbsoluteStateAddress.delete(address);
-    }
-    else {
-        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
-    }
-}
-
-function checkDependency(handler, address) {
-    // 動的依存関係の登録
-    if (handler.addressStackIndex >= 0) {
-        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
-        const stateElement = handler.stateElement;
-        if (lastInfo !== null) {
-            if (stateElement.getterPaths.has(lastInfo.path) &&
-                lastInfo.path !== address.pathInfo.path) {
-                // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
-                // そのgetterが参照している値のパスである
-                stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
+if (!Set.prototype.intersection) {
+    Set.prototype.intersection = function (other) {
+        const result = new Set();
+        for (const elem of other) {
+            if (this.has(elem)) {
+                result.add(elem);
             }
         }
-    }
-}
-
-/**
- * getByAddress.ts
- *
- * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
- * 状態オブジェクト（target）から値を取得するための関数（getByAddress）の実装です。
- *
- * 主な役割:
- * - 指定されたパス・インデックスに対応するState値を取得（多重ループやワイルドカードにも対応）
- * - 依存関係の自動登録（checkDependencyで登録）
- * - キャッシュ機構（リストもキャッシュ対象）
- * - getter経由で値取得時はpushAddressでスコープを一時設定
- * - 存在しない場合は親pathAddressやlistIndexを辿って再帰的に値を取得
- *
- * 設計ポイント:
- * - checkDependencyで依存追跡を実行
- * - キャッシュ有効時はstateAddressで値をキャッシュし、取得・再利用を最適化
- * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
- * - finallyでキャッシュへの格納を保証
- */
-function _getByAddress(target, address, receiver, handler, stateElement) {
-    if (address.pathInfo.path in target) {
-        // getterの中で参照の可能性があるので、addressをプッシュする
-        if (stateElement.getterPaths.has(address.pathInfo.path)) {
-            handler.pushAddress(address);
-            try {
-                return Reflect.get(target, address.pathInfo.path, receiver);
-            }
-            finally {
-                handler.popAddress();
-            }
-        }
-        else {
-            return Reflect.get(target, address.pathInfo.path);
-        }
-    }
-    else {
-        const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
-        const parentValue = getByAddress(target, parentAddress, receiver, handler);
-        const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
-        if (lastSegment === WILDCARD) {
-            const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
-            return Reflect.get(parentValue, index);
-        }
-        else {
-            return Reflect.get(parentValue, lastSegment);
-        }
-    }
-}
-function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
-    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-    if (cacheEntry !== null) {
-        return cacheEntry.value;
-    }
-    const value = _getByAddress(target, address, receiver, handler, stateElement);
-    setCacheEntryByAbsoluteStateAddress(absAddress, {
-        value: value
-    });
-    return value;
-}
-function getByAddress(target, address, receiver, handler) {
-    // $1, $2, ... のインデックス変数はlistIndexから直接値を取得
-    const indexVarIndex = INDEX_BY_INDEX_NAME[address.pathInfo.path];
-    if (typeof indexVarIndex !== "undefined") {
-        const listIndex = handler.lastAddressStack?.listIndex;
-        return listIndex?.indexes[indexVarIndex] ?? raiseError(`ListIndex not found: ${address.pathInfo.path}`);
-    }
-    checkDependency(handler, address);
-    const stateElement = handler.stateElement;
-    const cacheable = address.pathInfo.wildcardCount > 0 ||
-        stateElement.getterPaths.has(address.pathInfo.path);
-    if (cacheable) {
-        return _getByAddressWithCache(target, address, receiver, handler, stateElement);
-    }
-    else {
-        return _getByAddress(target, address, receiver, handler, stateElement);
-    }
-}
-
-const listIndexesByList = new WeakMap();
-function getListIndexesByList(list) {
-    return listIndexesByList.get(list) || null;
-}
-function setListIndexesByList(list, listIndexes) {
-    if (listIndexes === null) {
-        listIndexesByList.delete(list);
-        return;
-    }
-    listIndexesByList.set(list, listIndexes);
-}
-
-/**
- * getContextListIndex.ts
- *
- * Stateの内部APIとして、現在のプロパティ参照スコープにおける
- * 指定したstructuredPath（ワイルドカード付きプロパティパス）に対応する
- * リストインデックス（IListIndex）を取得する関数です。
- *
- * 主な役割:
- * - handlerの最後にアクセスされたAddressから、指定パスに対応するリストインデックスを取得
- * - ワイルドカード階層に対応し、多重ループやネストした配列バインディングにも利用可能
- *
- * 設計ポイント:
- * - 直近のプロパティ参照情報を取得
- * - info.indexByWildcardPathからstructuredPathのインデックスを特定
- * - listIndex.at(index)で該当階層のリストインデックスを取得
- * - パスが一致しない場合や参照が存在しない場合はnullを返す
- */
-function getContextListIndex(handler, structuredPath) {
-    const address = handler.lastAddressStack;
-    if (address === null || typeof address === "undefined") {
-        return null;
-    }
-    const index = address.pathInfo.indexByWildcardPath[structuredPath];
-    if (typeof index === "undefined") {
-        return null;
-    }
-    return address.listIndex?.at(index) ?? null;
-}
-
-/**
- * getListIndex.ts
- *
- * StateClassの内部APIとして、パス情報（IResolvedAddress）から
- * 対応するリストインデックス（IListIndex）を取得する関数です。
- *
- * 主な役割:
- * - パスのワイルドカード種別（context/all/partial/none）に応じてリストインデックスを解決
- * - context型は現在のループコンテキストからリストインデックスを取得
- * - all型は各階層のリストインデックス集合からインデックスを辿って取得
- * - partial型やnone型は未実装またはnullを返す
- *
- * 設計ポイント:
- * - ワイルドカードや多重ループ、ネストした配列バインディングに柔軟に対応
- * - getListIndexesByListで各階層のリストインデックス集合を取得
- * - エラー時はraiseErrorで例外を投げる
- */
-function getListIndex(target, resolvedAddress, receiver, handler) {
-    const pathInfo = resolvedAddress.pathInfo;
-    switch (resolvedAddress.wildcardType) {
-        case "none":
-            return null;
-        case "context": {
-            const lastWildcardPath = pathInfo.wildcardPaths.at(-1) ??
-                raiseError(`lastWildcardPath is null: ${resolvedAddress.pathInfo.path}`);
-            return getContextListIndex(handler, lastWildcardPath) ??
-                raiseError(`ListIndex not found: ${resolvedAddress.pathInfo.path}`);
-        }
-        case "all": {
-            let parentListIndex = null;
-            for (let i = 0; i < resolvedAddress.pathInfo.wildcardCount; i++) {
-                const wildcardParentPathInfo = resolvedAddress.pathInfo.wildcardParentPathInfos[i] ??
-                    raiseError(`wildcardParentPathInfo is null: ${resolvedAddress.pathInfo.path}`);
-                const wildcardParentAddress = createStateAddress(wildcardParentPathInfo, parentListIndex);
-                const wildcardParentValue = getByAddress(target, wildcardParentAddress, receiver, handler);
-                const wildcardParentListIndexes = getListIndexesByList(wildcardParentValue) ??
-                    raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
-                const wildcardIndex = resolvedAddress.wildcardIndexes[i] ??
-                    raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);
-                parentListIndex = wildcardParentListIndexes[wildcardIndex] ??
-                    raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
-            }
-            return parentListIndex;
-        }
-        case "partial": {
-            raiseError(`Partial wildcard type is not supported yet: ${resolvedAddress.pathInfo.path}`);
-        }
-    }
-}
-
-/**
- * setLoopContext.ts
- *
- * StateClassの内部APIとして、ループコンテキスト（ILoopContext）を一時的に設定し、
- * 指定した同期/非同期コールバックをそのスコープ内で実行するための関数です。
- *
- * 主な役割:
- * - handler.loopContextにループコンテキストを一時的に設定
- * - 既にループコンテキストが設定されている場合はエラーを投げる
- * - loopContextが存在する場合はasyncSetStatePropertyRefでスコープを設定しコールバックを実行
- * - loopContextがnullの場合はそのままコールバックを実行
- * - finallyで必ずloopContextをnullに戻し、スコープ外への影響を防止
- *
- * 設計ポイント:
- * - ループバインディングや多重ループ時のスコープ管理を安全に行う
- * - finallyで状態復元を保証し、例外発生時も安全
- * - 非同期処理にも対応
- */
-function _setLoopContext(handler, loopContext, callback) {
-    if (typeof handler.loopContext !== "undefined") {
-        raiseError('already in loop context');
-    }
-    handler.setLoopContext(loopContext);
-    try {
-        if (loopContext) {
-            const stateAddress = createStateAddress(loopContext.elementPathInfo, loopContext.listIndex);
-            handler.pushAddress(stateAddress);
-            try {
-                return callback();
-            }
-            finally {
-                handler.popAddress();
-            }
-        }
-        else {
-            return callback();
-        }
-    }
-    finally {
-        handler.clearLoopContext();
-    }
-}
-function setLoopContext(handler, loopContext, callback) {
-    return _setLoopContext(handler, loopContext, callback);
-}
-async function setLoopContextAsync(handler, loopContext, callback) {
-    return await _setLoopContext(handler, loopContext, callback);
-}
-
-/**
- * get.ts
- *
- * StateClassのProxyトラップとして、プロパティアクセス時の値取得処理を担う関数（get）の実装です。
- *
- * 主な役割:
- * - 文字列プロパティの場合、特殊プロパティ（$1〜$9, $resolve, $getAll, $navigate）に応じた値やAPIを返却
- * - 通常のプロパティはgetResolvedPathInfoでパス情報を解決し、getListIndexでリストインデックスを取得
- * - getByRefで構造化パス・リストインデックスに対応した値を取得
- * - シンボルプロパティの場合はhandler.callableApi経由でAPIを呼び出し
- * - それ以外はReflect.getで通常のプロパティアクセスを実行
- *
- * 設計ポイント:
- * - $1〜$9は直近のStatePropertyRefのリストインデックス値を返す特殊プロパティ
- * - $resolve, $getAll, $navigateはAPI関数やルーターインスタンスを返す
- * - 通常のプロパティアクセスもバインディングや多重ループに対応
- * - シンボルAPIやReflect.getで拡張性・互換性も確保
- */
-function get(target, prop, receiver, handler) {
-    const index = INDEX_BY_INDEX_NAME[prop];
-    if (typeof index !== "undefined") {
-        const listIndex = handler.lastAddressStack?.listIndex;
-        return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
-    }
-    if (typeof prop === "string") {
-        if (prop === "$$setLoopContextAsync") {
-            return (loopContext, callback = async () => { }) => {
-                return setLoopContextAsync(handler, loopContext, callback);
-            };
-        }
-        if (prop === "$$setLoopContext") {
-            return (loopContext, callback = () => { }) => {
-                return setLoopContext(handler, loopContext, callback);
-            };
-        }
-        if (prop === "$$getByAddress") {
-            return (address) => {
-                return getByAddress(target, address, receiver, handler);
-            };
-        }
-        const resolvedAddress = getResolvedAddress(prop);
-        const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
-        const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
-        return getByAddress(target, stateAddress, receiver, handler);
-    }
-    else if (typeof prop === "symbol") {
-        return Reflect.get(target, prop, receiver);
-        /*
-            if (handler.symbols.has(prop)) {
-              switch (prop) {
-                case GetByRefSymbol:
-                  return (ref: IStatePropertyRef) =>
-                    getByRef(target, ref, receiver, handler);
-                case SetByRefSymbol:
-                  return (ref: IStatePropertyRef, value: any) =>
-                    setByRef(target, ref, value, receiver, handler);
-                case GetListIndexesByRefSymbol:
-                  return (ref: IStatePropertyRef) =>
-                    getListIndexesByRef(target, ref, receiver, handler);
-                case ConnectedCallbackSymbol:
-                  return () => connectedCallback(target, prop, receiver, handler);
-                case DisconnectedCallbackSymbol:
-                  return () => disconnectedCallback(target, prop, receiver, handler);
-              }
-            } else {
-              return Reflect.get(
-                target,
-                prop,
-                receiver
-              );
-            }
-        */
-    }
+        return result;
+    };
 }
 
 let count = 0;
@@ -916,70 +585,16 @@ function createListIndex(parentListIndex, index) {
     return new ListIndex(parentListIndex, index);
 }
 
-const loopContextByNode = new WeakMap();
-function getLoopContextByNode(node) {
-    let paramNode = node;
-    while (paramNode) {
-        const loopContext = loopContextByNode.get(paramNode);
-        if (loopContext) {
-            return loopContext;
-        }
-        paramNode = paramNode.parentNode;
-    }
-    return null;
+const listIndexesByList = new WeakMap();
+function getListIndexesByList(list) {
+    return listIndexesByList.get(list) || null;
 }
-function setLoopContextByNode(node, loopContext) {
-    if (loopContext === null) {
-        loopContextByNode.delete(node);
+function setListIndexesByList(list, listIndexes) {
+    if (listIndexes === null) {
+        listIndexesByList.delete(list);
         return;
     }
-    loopContextByNode.set(node, loopContext);
-}
-
-function applyChangeToAttribute(binding, _context, newValue) {
-    const element = binding.node;
-    const attrName = binding.propSegments[1];
-    if (element.getAttribute(attrName) !== newValue) {
-        element.setAttribute(attrName, newValue);
-    }
-}
-
-function applyChangeToClass(binding, _context, newValue) {
-    const element = binding.node;
-    const className = binding.propSegments[1];
-    if (typeof newValue !== 'boolean') {
-        raiseError(`Invalid value for class application: expected boolean, got ${typeof newValue}`);
-    }
-    element.classList.toggle(className, newValue);
-}
-
-const indexBindingsByContent = new WeakMap();
-function getIndexBindingsByContent(content) {
-    return indexBindingsByContent.get(content) ?? [];
-}
-function setIndexBindingsByContent(content, bindings) {
-    indexBindingsByContent.set(content, bindings);
-}
-
-if (!Set.prototype.difference) {
-    Set.prototype.difference = function (other) {
-        const result = new Set(this);
-        for (const elem of other) {
-            result.delete(elem);
-        }
-        return result;
-    };
-}
-if (!Set.prototype.intersection) {
-    Set.prototype.intersection = function (other) {
-        const result = new Set();
-        for (const elem of other) {
-            if (this.has(elem)) {
-                result.add(elem);
-            }
-        }
-        return result;
-    };
+    listIndexesByList.set(list, listIndexes);
 }
 
 const listDiffByOldListByNewList = new WeakMap();
@@ -1124,6 +739,211 @@ function createListDiff(parentListIndex, rawOldList, rawNewList, oldIndexes) {
             setListIndexesByList(newList, retValue.newIndexes);
         }
     }
+}
+
+const absoluteStateAddressByStateAddressByStateElement = new WeakMap();
+function createAbsoluteStateAddress(stateName, address) {
+    const stateElement = getStateElementByName(stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found.`);
+    }
+    let absoluteStateAddressByStateAddress = absoluteStateAddressByStateAddressByStateElement.get(stateElement);
+    if (typeof absoluteStateAddressByStateAddress !== "undefined") {
+        let absoluteStateAddress = absoluteStateAddressByStateAddress.get(address);
+        if (typeof absoluteStateAddress === "undefined") {
+            absoluteStateAddress = Object.freeze({
+                address,
+                stateName,
+            });
+            absoluteStateAddressByStateAddress.set(address, absoluteStateAddress);
+        }
+        return absoluteStateAddress;
+    }
+    else {
+        const absoluteStateAddress = Object.freeze({
+            address,
+            stateName,
+        });
+        absoluteStateAddressByStateAddress = new WeakMap([[address, absoluteStateAddress]]);
+        absoluteStateAddressByStateAddressByStateElement.set(stateElement, absoluteStateAddressByStateAddress);
+        return absoluteStateAddress;
+    }
+}
+
+const cacheEntryByAbsoluteStateAddress = new WeakMap();
+function getCacheEntryByAbsoluteStateAddress(address) {
+    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
+}
+function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
+    if (cacheEntry === null) {
+        cacheEntryByAbsoluteStateAddress.delete(address);
+    }
+    else {
+        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
+    }
+}
+
+function checkDependency(handler, address) {
+    // 動的依存関係の登録
+    if (handler.addressStackIndex >= 0) {
+        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+        const stateElement = handler.stateElement;
+        if (lastInfo !== null) {
+            if (stateElement.getterPaths.has(lastInfo.path) &&
+                lastInfo.path !== address.pathInfo.path) {
+                // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
+                // そのgetterが参照している値のパスである
+                stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
+            }
+        }
+    }
+}
+
+/**
+ * getByAddress.ts
+ *
+ * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
+ * 状態オブジェクト（target）から値を取得するための関数（getByAddress）の実装です。
+ *
+ * 主な役割:
+ * - 指定されたパス・インデックスに対応するState値を取得（多重ループやワイルドカードにも対応）
+ * - 依存関係の自動登録（checkDependencyで登録）
+ * - キャッシュ機構（リストもキャッシュ対象）
+ * - getter経由で値取得時はpushAddressでスコープを一時設定
+ * - 存在しない場合は親pathAddressやlistIndexを辿って再帰的に値を取得
+ *
+ * 設計ポイント:
+ * - checkDependencyで依存追跡を実行
+ * - キャッシュ有効時はstateAddressで値をキャッシュし、取得・再利用を最適化
+ * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
+ * - finallyでキャッシュへの格納を保証
+ */
+function _getByAddress(target, address, receiver, handler, stateElement) {
+    if (address.pathInfo.path in target) {
+        // getterの中で参照の可能性があるので、addressをプッシュする
+        if (stateElement.getterPaths.has(address.pathInfo.path)) {
+            handler.pushAddress(address);
+            try {
+                return Reflect.get(target, address.pathInfo.path, receiver);
+            }
+            finally {
+                handler.popAddress();
+            }
+        }
+        else {
+            return Reflect.get(target, address.pathInfo.path);
+        }
+    }
+    else {
+        const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+        const parentValue = getByAddress(target, parentAddress, receiver, handler);
+        const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
+        if (lastSegment === WILDCARD) {
+            const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+            return Reflect.get(parentValue, index);
+        }
+        else {
+            return Reflect.get(parentValue, lastSegment);
+        }
+    }
+}
+function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
+    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+    if (cacheEntry !== null) {
+        return cacheEntry.value;
+    }
+    const value = _getByAddress(target, address, receiver, handler, stateElement);
+    setCacheEntryByAbsoluteStateAddress(absAddress, {
+        value: value
+    });
+    return value;
+}
+function getByAddress(target, address, receiver, handler) {
+    checkDependency(handler, address);
+    const stateElement = handler.stateElement;
+    const cacheable = address.pathInfo.wildcardCount > 0 ||
+        stateElement.getterPaths.has(address.pathInfo.path);
+    if (cacheable) {
+        return _getByAddressWithCache(target, address, receiver, handler, stateElement);
+    }
+    else {
+        return _getByAddress(target, address, receiver, handler, stateElement);
+    }
+}
+
+/**
+ * getContextListIndex.ts
+ *
+ * Stateの内部APIとして、現在のプロパティ参照スコープにおける
+ * 指定したstructuredPath（ワイルドカード付きプロパティパス）に対応する
+ * リストインデックス（IListIndex）を取得する関数です。
+ *
+ * 主な役割:
+ * - handlerの最後にアクセスされたAddressから、指定パスに対応するリストインデックスを取得
+ * - ワイルドカード階層に対応し、多重ループやネストした配列バインディングにも利用可能
+ *
+ * 設計ポイント:
+ * - 直近のプロパティ参照情報を取得
+ * - info.indexByWildcardPathからstructuredPathのインデックスを特定
+ * - listIndex.at(index)で該当階層のリストインデックスを取得
+ * - パスが一致しない場合や参照が存在しない場合はnullを返す
+ */
+function getContextListIndex(handler, structuredPath) {
+    const address = handler.lastAddressStack;
+    if (address === null || typeof address === "undefined") {
+        return null;
+    }
+    const index = address.pathInfo.indexByWildcardPath[structuredPath];
+    if (typeof index === "undefined") {
+        return null;
+    }
+    return address.listIndex?.at(index) ?? null;
+}
+
+const loopContextByNode = new WeakMap();
+function getLoopContextByNode(node) {
+    let paramNode = node;
+    while (paramNode) {
+        const loopContext = loopContextByNode.get(paramNode);
+        if (loopContext) {
+            return loopContext;
+        }
+        paramNode = paramNode.parentNode;
+    }
+    return null;
+}
+function setLoopContextByNode(node, loopContext) {
+    if (loopContext === null) {
+        loopContextByNode.delete(node);
+        return;
+    }
+    loopContextByNode.set(node, loopContext);
+}
+
+function applyChangeToAttribute(binding, _context, newValue) {
+    const element = binding.node;
+    const attrName = binding.propSegments[1];
+    if (element.getAttribute(attrName) !== newValue) {
+        element.setAttribute(attrName, newValue);
+    }
+}
+
+function applyChangeToClass(binding, _context, newValue) {
+    const element = binding.node;
+    const className = binding.propSegments[1];
+    if (typeof newValue !== 'boolean') {
+        raiseError(`Invalid value for class application: expected boolean, got ${typeof newValue}`);
+    }
+    element.classList.toggle(className, newValue);
+}
+
+const indexBindingsByContent = new WeakMap();
+function getIndexBindingsByContent(content) {
+    return indexBindingsByContent.get(content) ?? [];
+}
+function setIndexBindingsByContent(content, bindings) {
+    indexBindingsByContent.set(content, bindings);
 }
 
 const listIndexByBindingInfoByLoopContext = new WeakMap();
@@ -2907,9 +2727,34 @@ function getFilteredValue(value, filters) {
     return filteredValue;
 }
 
-function getValue(state, bindingInfo) {
-    const stateAddress = getStateAddressByBindingInfo(bindingInfo);
-    return state.$$getByAddress(stateAddress);
+// indexName ... $1, $2, ...
+function getIndexValueByLoopContext(loopContext, indexName) {
+    if (loopContext.listIndex === null) {
+        raiseError(`ListIndex not found for loopContext:`);
+    }
+    const indexPos = INDEX_BY_INDEX_NAME[indexName];
+    if (typeof indexPos === "undefined") {
+        raiseError(`Invalid index name: ${indexName}`);
+    }
+    const listIndex = loopContext.listIndex.at(indexPos);
+    if (listIndex === null) {
+        raiseError(`Index not found at position ${indexPos} for loopContext:`);
+    }
+    return listIndex.index;
+}
+
+function getValue(state, binding) {
+    const stateAddress = getStateAddressByBindingInfo(binding);
+    if (stateAddress.pathInfo.path in INDEX_BY_INDEX_NAME) {
+        const loopContext = getLoopContextByNode(binding.node);
+        if (loopContext === null) {
+            raiseError(`ListIndex not found for binding: ${binding.statePathName}`);
+        }
+        return getIndexValueByLoopContext(loopContext, stateAddress.pathInfo.path);
+    }
+    else {
+        return state.$$getByAddress(stateAddress);
+    }
 }
 
 const applyChangeByFirstSegment = {
@@ -3063,7 +2908,8 @@ function setSwapInfoByAddress(address, swapInfo) {
 }
 
 const MAX_DEPENDENCY_DEPTH = 1000;
-const lastValueByListAddress = new WeakMap();
+// ToDo: IAbsoluteStateAddressに変更する
+const lastValueByListAddress$1 = new WeakMap();
 const cacheCalcWildcardLen = new WeakMap();
 function calcWildcardLen(pathInfo, targetPathInfo) {
     let path1;
@@ -3115,7 +2961,7 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentPath = context.wildcardParentPaths[currentWildcardIndex];
     const parentPathInfo = getPathInfo(parentPath);
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
-    const lastValue = lastValueByListAddress.get(parentAddress);
+    const lastValue = lastValueByListAddress$1.get(parentAddress);
     const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
     const newValue = context.stateProxy.$$getByAddress(parentAddress);
     const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue, lastIndexes);
@@ -3152,7 +2998,7 @@ function _walkDependency(context, address, depth, callback) {
             if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
                 //expand indexes
                 const newValue = context.stateProxy.$$getByAddress(address);
-                const lastValue = lastValueByListAddress.get(address);
+                const lastValue = lastValueByListAddress$1.get(address);
                 const lastIndexes = (typeof lastValue !== "undefined") ? (getListIndexesByList(lastValue) || []) : [];
                 const listDiff = createListDiff(address.listIndex, lastValue, newValue, lastIndexes);
                 for (const listIndex of listDiff.newIndexes) {
@@ -3262,7 +3108,7 @@ function walkDependency(startAddress, staticDependency, dynamicDependency, listP
     }
     finally {
         for (const [address, newValue] of context.newValueByAddress.entries()) {
-            lastValueByListAddress.set(address, newValue);
+            lastValueByListAddress$1.set(address, newValue);
         }
     }
 }
@@ -3392,6 +3238,324 @@ function setByAddress(target, address, value, receiver, handler) {
                 cacheEntry.value = value;
             }
         }
+    }
+}
+
+/**
+ * resolve.ts
+ *
+ * StateClassのAPIとして、パス（path）とインデックス（indexes）を指定して
+ * Stateの値を取得・設定するための関数（resolve）の実装です。
+ *
+ * 主な役割:
+ * - 文字列パス（path）とインデックス配列（indexes）から、該当するState値の取得・設定を行う
+ * - ワイルドカードや多重ループを含むパスにも対応
+ * - value未指定時は取得（getByRef）、指定時は設定（setByRef）を実行
+ *
+ * 設計ポイント:
+ * - getStructuredPathInfoでパスを解析し、ワイルドカード階層ごとにリストインデックスを解決
+ * - handler.engine.getListIndexesSetで各階層のリストインデックス集合を取得
+ * - getByRef/setByRefで値の取得・設定を一元的に処理
+ * - 柔軟なバインディングやAPI経由での利用が可能
+ */
+function resolve(target, _prop, receiver, handler) {
+    return (path, indexes, value) => {
+        const pathInfo = getPathInfo(path);
+        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+        const stateElement = handler.stateElement;
+        if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
+            // gettersに含まれる場合は依存関係を登録
+            if (stateElement.getterPaths.has(lastInfo.path)) {
+                stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+            }
+        }
+        if (pathInfo.wildcardParentPathInfos.length > indexes.length) {
+            raiseError(`indexes length is insufficient: ${path}`);
+        }
+        // ワイルドカード階層ごとにListIndexを解決していく
+        let listIndex = null;
+        for (let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
+            const wildcardParentPathInfo = pathInfo.wildcardParentPathInfos[i];
+            const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
+            const tmpValue = getByAddress(target, wildcardAddress, receiver, handler);
+            const listIndexes = getListIndexesByList(tmpValue);
+            if (listIndexes == null) {
+                raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
+            }
+            const index = indexes[i];
+            listIndex = listIndexes[index] ??
+                raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+        }
+        // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す
+        const address = createStateAddress(pathInfo, listIndex);
+        const hasSetValue = typeof value !== "undefined";
+        if (!hasSetValue) {
+            return getByAddress(target, address, receiver, handler);
+        }
+        else {
+            setByAddress(target, address, value, receiver, handler);
+        }
+    };
+}
+
+/**
+ * getAllReadonly
+ *
+ * ワイルドカードを含む State パスから、対象となる全要素を配列で取得する。
+ * Throws: LIST-201（インデックス未解決）、BIND-201（ワイルドカード情報不整合）
+ */
+// ToDo: IAbsoluteStateAddressに変更する
+const lastValueByListAddress = new WeakMap();
+function getAll(target, prop, receiver, handler) {
+    const resolveFn = resolve(target, prop, receiver, handler);
+    return (path, indexes) => {
+        const newValueByAddress = new Map();
+        const pathInfo = getPathInfo(path);
+        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+        const stateElement = handler.stateElement;
+        if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
+            // gettersに含まれる場合は依存関係を登録
+            if (stateElement.getterPaths.has(lastInfo.path)) {
+                stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+            }
+        }
+        if (typeof indexes === "undefined") {
+            for (let i = 0; i < pathInfo.wildcardParentPathInfos.length; i++) {
+                const wildcardPattern = pathInfo.wildcardParentPathInfos[i];
+                const listIndex = getContextListIndex(handler, wildcardPattern.path);
+                if (listIndex) {
+                    indexes = listIndex.indexes;
+                    break;
+                }
+            }
+            if (typeof indexes === "undefined") {
+                indexes = [];
+            }
+        }
+        const walkWildcardPattern = (wildcardParentPathInfos, wildcardIndexPos, listIndex, indexes, indexPos, parentIndexes, results) => {
+            const wildcardParentPathInfo = wildcardParentPathInfos[wildcardIndexPos] ?? null;
+            if (wildcardParentPathInfo === null) {
+                results.push(parentIndexes);
+                return;
+            }
+            const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
+            const oldValue = lastValueByListAddress.get(wildcardAddress);
+            const oldIndexes = (typeof oldValue !== "undefined") ? (getListIndexesByList(oldValue) || []) : [];
+            const newValue = getByAddress(target, wildcardAddress, receiver, handler);
+            const listDiff = createListDiff(wildcardAddress.listIndex, oldValue, newValue, oldIndexes);
+            const listIndexes = listDiff.newIndexes;
+            if (listIndexes === null) {
+                raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+            }
+            const index = indexes[indexPos] ?? null;
+            newValueByAddress.set(wildcardAddress, newValue);
+            if (index === null) {
+                for (let i = 0; i < listIndexes.length; i++) {
+                    const listIndex = listIndexes[i];
+                    walkWildcardPattern(wildcardParentPathInfos, wildcardIndexPos + 1, listIndex, indexes, indexPos + 1, parentIndexes.concat(listIndex.index), results);
+                }
+            }
+            else {
+                const listIndex = listIndexes[index] ??
+                    raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+                if ((wildcardIndexPos + 1) < wildcardParentPathInfos.length) {
+                    walkWildcardPattern(wildcardParentPathInfos, wildcardIndexPos + 1, listIndex, indexes, indexPos + 1, parentIndexes.concat(listIndex.index), results);
+                }
+                else {
+                    // 最終ワイルドカード層まで到達しているので、結果を確定
+                    results.push(parentIndexes.concat(listIndex.index));
+                }
+            }
+        };
+        const resultIndexes = [];
+        walkWildcardPattern(pathInfo.wildcardParentPathInfos, 0, null, indexes, 0, [], resultIndexes);
+        const resultValues = [];
+        for (let i = 0; i < resultIndexes.length; i++) {
+            resultValues.push(resolveFn(pathInfo.path, resultIndexes[i]));
+        }
+        for (const [address, newValue] of newValueByAddress.entries()) {
+            lastValueByListAddress.set(address, newValue);
+        }
+        return resultValues;
+    };
+}
+
+/**
+ * getListIndex.ts
+ *
+ * StateClassの内部APIとして、パス情報（IResolvedAddress）から
+ * 対応するリストインデックス（IListIndex）を取得する関数です。
+ *
+ * 主な役割:
+ * - パスのワイルドカード種別（context/all/partial/none）に応じてリストインデックスを解決
+ * - context型は現在のループコンテキストからリストインデックスを取得
+ * - all型は各階層のリストインデックス集合からインデックスを辿って取得
+ * - partial型やnone型は未実装またはnullを返す
+ *
+ * 設計ポイント:
+ * - ワイルドカードや多重ループ、ネストした配列バインディングに柔軟に対応
+ * - getListIndexesByListで各階層のリストインデックス集合を取得
+ * - エラー時はraiseErrorで例外を投げる
+ */
+function getListIndex(target, resolvedAddress, receiver, handler) {
+    const pathInfo = resolvedAddress.pathInfo;
+    switch (resolvedAddress.wildcardType) {
+        case "none":
+            return null;
+        case "context": {
+            const lastWildcardPath = pathInfo.wildcardPaths.at(-1) ??
+                raiseError(`lastWildcardPath is null: ${resolvedAddress.pathInfo.path}`);
+            return getContextListIndex(handler, lastWildcardPath) ??
+                raiseError(`ListIndex not found: ${resolvedAddress.pathInfo.path}`);
+        }
+        case "all": {
+            let parentListIndex = null;
+            for (let i = 0; i < resolvedAddress.pathInfo.wildcardCount; i++) {
+                const wildcardParentPathInfo = resolvedAddress.pathInfo.wildcardParentPathInfos[i] ??
+                    raiseError(`wildcardParentPathInfo is null: ${resolvedAddress.pathInfo.path}`);
+                const wildcardParentAddress = createStateAddress(wildcardParentPathInfo, parentListIndex);
+                const wildcardParentValue = getByAddress(target, wildcardParentAddress, receiver, handler);
+                const wildcardParentListIndexes = getListIndexesByList(wildcardParentValue) ??
+                    raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+                const wildcardIndex = resolvedAddress.wildcardIndexes[i] ??
+                    raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);
+                parentListIndex = wildcardParentListIndexes[wildcardIndex] ??
+                    raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+            }
+            return parentListIndex;
+        }
+        case "partial": {
+            raiseError(`Partial wildcard type is not supported yet: ${resolvedAddress.pathInfo.path}`);
+        }
+    }
+}
+
+/**
+ * setLoopContext.ts
+ *
+ * StateClassの内部APIとして、ループコンテキスト（ILoopContext）を一時的に設定し、
+ * 指定した同期/非同期コールバックをそのスコープ内で実行するための関数です。
+ *
+ * 主な役割:
+ * - handler.loopContextにループコンテキストを一時的に設定
+ * - 既にループコンテキストが設定されている場合はエラーを投げる
+ * - loopContextが存在する場合はasyncSetStatePropertyRefでスコープを設定しコールバックを実行
+ * - loopContextがnullの場合はそのままコールバックを実行
+ * - finallyで必ずloopContextをnullに戻し、スコープ外への影響を防止
+ *
+ * 設計ポイント:
+ * - ループバインディングや多重ループ時のスコープ管理を安全に行う
+ * - finallyで状態復元を保証し、例外発生時も安全
+ * - 非同期処理にも対応
+ */
+function _setLoopContext(handler, loopContext, callback) {
+    if (typeof handler.loopContext !== "undefined") {
+        raiseError('already in loop context');
+    }
+    handler.setLoopContext(loopContext);
+    try {
+        if (loopContext) {
+            const stateAddress = createStateAddress(loopContext.elementPathInfo, loopContext.listIndex);
+            handler.pushAddress(stateAddress);
+            try {
+                return callback();
+            }
+            finally {
+                handler.popAddress();
+            }
+        }
+        else {
+            return callback();
+        }
+    }
+    finally {
+        handler.clearLoopContext();
+    }
+}
+function setLoopContext(handler, loopContext, callback) {
+    return _setLoopContext(handler, loopContext, callback);
+}
+async function setLoopContextAsync(handler, loopContext, callback) {
+    return await _setLoopContext(handler, loopContext, callback);
+}
+
+/**
+ * get.ts
+ *
+ * StateClassのProxyトラップとして、プロパティアクセス時の値取得処理を担う関数（get）の実装です。
+ *
+ * 主な役割:
+ * - 文字列プロパティの場合、特殊プロパティ（$1〜$9, $resolve, $getAll, $navigate）に応じた値やAPIを返却
+ * - 通常のプロパティはgetResolvedPathInfoでパス情報を解決し、getListIndexでリストインデックスを取得
+ * - getByRefで構造化パス・リストインデックスに対応した値を取得
+ * - シンボルプロパティの場合はhandler.callableApi経由でAPIを呼び出し
+ * - それ以外はReflect.getで通常のプロパティアクセスを実行
+ *
+ * 設計ポイント:
+ * - $1〜$9は直近のStatePropertyRefのリストインデックス値を返す特殊プロパティ
+ * - $resolve, $getAll, $navigateはAPI関数やルーターインスタンスを返す
+ * - 通常のプロパティアクセスもバインディングや多重ループに対応
+ * - シンボルAPIやReflect.getで拡張性・互換性も確保
+ */
+function get(target, prop, receiver, handler) {
+    const index = INDEX_BY_INDEX_NAME[prop];
+    if (typeof index !== "undefined") {
+        const listIndex = handler.lastAddressStack?.listIndex;
+        return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
+    }
+    if (typeof prop === "string") {
+        if (prop === "$$setLoopContextAsync") {
+            return (loopContext, callback = async () => { }) => {
+                return setLoopContextAsync(handler, loopContext, callback);
+            };
+        }
+        if (prop === "$$setLoopContext") {
+            return (loopContext, callback = () => { }) => {
+                return setLoopContext(handler, loopContext, callback);
+            };
+        }
+        if (prop === "$$getByAddress") {
+            return (address) => {
+                return getByAddress(target, address, receiver, handler);
+            };
+        }
+        if (prop === "$getAll") {
+            return (path, indexes) => {
+                return getAll(target, prop, receiver, handler)(path, indexes);
+            };
+        }
+        const resolvedAddress = getResolvedAddress(prop);
+        const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+        const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
+        return getByAddress(target, stateAddress, receiver, handler);
+    }
+    else if (typeof prop === "symbol") {
+        return Reflect.get(target, prop, receiver);
+        /*
+            if (handler.symbols.has(prop)) {
+              switch (prop) {
+                case GetByRefSymbol:
+                  return (ref: IStatePropertyRef) =>
+                    getByRef(target, ref, receiver, handler);
+                case SetByRefSymbol:
+                  return (ref: IStatePropertyRef, value: any) =>
+                    setByRef(target, ref, value, receiver, handler);
+                case GetListIndexesByRefSymbol:
+                  return (ref: IStatePropertyRef) =>
+                    getListIndexesByRef(target, ref, receiver, handler);
+                case ConnectedCallbackSymbol:
+                  return () => connectedCallback(target, prop, receiver, handler);
+                case DisconnectedCallbackSymbol:
+                  return () => disconnectedCallback(target, prop, receiver, handler);
+              }
+            } else {
+              return Reflect.get(
+                target,
+                prop,
+                receiver
+              );
+            }
+        */
     }
 }
 

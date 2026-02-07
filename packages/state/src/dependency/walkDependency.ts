@@ -12,6 +12,7 @@ import { SearchType } from "./types";
 
 const MAX_DEPENDENCY_DEPTH = 1000;
 
+// ToDo: IAbsoluteStateAddressに変更する
 const lastValueByListAddress = new WeakMap<IStateAddress, unknown[]>();
 
 const cacheCalcWildcardLen: WeakMap<IPathInfo, WeakMap<IPathInfo, number>> = new WeakMap(); 
