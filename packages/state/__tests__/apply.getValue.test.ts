@@ -3,6 +3,7 @@ import { getValue } from '../src/apply/getValue';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
 import { setLoopContextByNode } from '../src/list/loopContextByNode';
+import { createStateAddress } from '../src/address/StateAddress';
 import { IBindingInfo } from '../src/binding/types';
 
 function createMockBindingInfo(path: string, node: Node): IBindingInfo {
@@ -40,10 +41,7 @@ describe('getValue', () => {
     parentNode.appendChild(node);
 
     const listIndex = createListIndex(null, 7);
-    setLoopContextByNode(parentNode, {
-      elementPathInfo: getPathInfo('items.*'),
-      listIndex,
-    });
+    setLoopContextByNode(parentNode, createStateAddress(getPathInfo('items.*'), listIndex) as any);
 
     const binding = createMockBindingInfo('$1', node);
     const state = {
@@ -63,10 +61,7 @@ describe('getValue', () => {
 
     const parentListIndex = createListIndex(null, 1);
     const childListIndex = createListIndex(parentListIndex, 4);
-    setLoopContextByNode(node, {
-      elementPathInfo: getPathInfo('categories.*.items.*'),
-      listIndex: childListIndex,
-    });
+    setLoopContextByNode(node, createStateAddress(getPathInfo('categories.*.items.*'), childListIndex) as any);
 
     const binding = createMockBindingInfo('$2', node);
     const state = {

@@ -189,7 +189,7 @@ describe('createContent (unmount branches)', () => {
     const listIndex1 = createListIndex(null, 0);
     loopContextByNode.setLoopContextByNode(childNode, { 
       listIndex: listIndex1, 
-      elementPathInfo: getPathInfo('items.*') 
+      pathInfo: getPathInfo('items.*')
     } as any);
 
     // アドレスを取得してキャッシュされることを確認
@@ -204,7 +204,7 @@ describe('createContent (unmount branches)', () => {
     const listIndex2 = createListIndex(null, 5);
     loopContextByNode.setLoopContextByNode(childNode, { 
       listIndex: listIndex2, 
-      elementPathInfo: getPathInfo('items.*') 
+      pathInfo: getPathInfo('items.*')
     } as any);
 
     // unmount後は新しいlistIndexに基づいたアドレスが生成される（キャッシュがクリアされた証拠）
@@ -271,7 +271,7 @@ describe('createContent (unmount branches)', () => {
     const listIndex1 = createListIndex(null, 0);
     loopContextByNode.setLoopContextByNode(sharedNode, { 
       listIndex: listIndex1, 
-      elementPathInfo: getPathInfo('items.*') 
+      pathInfo: getPathInfo('items.*')
     } as any);
 
     // 両方のバインディングのアドレスを取得してキャッシュ
@@ -286,7 +286,7 @@ describe('createContent (unmount branches)', () => {
     const listIndex2 = createListIndex(null, 5);
     loopContextByNode.setLoopContextByNode(sharedNode, { 
       listIndex: listIndex2, 
-      elementPathInfo: getPathInfo('items.*') 
+      pathInfo: getPathInfo('items.*')
     } as any);
 
     // 両方のバインディングで新しいアドレスが生成される

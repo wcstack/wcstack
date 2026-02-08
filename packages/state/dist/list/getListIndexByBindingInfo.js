@@ -19,7 +19,7 @@ export function getListIndexByBindingInfo(bindingInfo) {
     }
     let listIndex = null;
     try {
-        const wildcardLen = calcWildcardLen(loopContext.elementPathInfo, bindingInfo.statePathInfo);
+        const wildcardLen = calcWildcardLen(loopContext.pathInfo, bindingInfo.statePathInfo);
         if (wildcardLen > 0) {
             listIndex = loopContext.listIndex.at(wildcardLen - 1);
         }

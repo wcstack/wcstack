@@ -1,4 +1,4 @@
-import { IPathInfo } from "../address/types";
+import { IPathInfo, IStateAddress } from "../address/types";
 /**
  * Interface for hierarchical loop index management in nested loops.
  * Tracks parent-child relationships, versions, and provides access to index hierarchy.
@@ -21,12 +21,12 @@ export interface IListManager {
     setList(path: string, list: Array<any>, parentListIndex: IListIndex | null): void;
     getListIndexes(path: string): IListIndex[] | null;
 }
-export interface ILoopContext {
-    elementPathInfo: IPathInfo;
-    listIndex: IListIndex;
+export interface ILoopContext extends IStateAddress {
+    readonly pathInfo: IPathInfo;
+    readonly listIndex: IListIndex;
 }
 export interface ILoopContextStack {
-    createLoopContext(elementPathInfo: IPathInfo, listIndex: IListIndex, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
+    createLoopContext(elementStateAddress: IStateAddress, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
 }
 export interface IListDiff {
     oldIndexes: IListIndex[];

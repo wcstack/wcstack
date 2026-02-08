@@ -17,7 +17,6 @@
  * - 非同期処理にも対応
  */
 
-import { createStateAddress } from "../../address/StateAddress";
 import { ILoopContext } from "../../list/types";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
@@ -33,11 +32,7 @@ function _setLoopContext<T>(
   handler.setLoopContext(loopContext);
   try {
     if (loopContext) {
-      const stateAddress = createStateAddress(
-        loopContext.elementPathInfo,
-        loopContext.listIndex
-      );
-      handler.pushAddress(stateAddress);
+      handler.pushAddress(loopContext);
       try {
         return callback();
       } finally {

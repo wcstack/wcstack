@@ -2,15 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { getLoopContextByNode, setLoopContextByNode } from '../src/list/loopContextByNode';
 import { createListIndex } from '../src/list/createListIndex';
 import { getPathInfo } from '../src/address/PathInfo';
+import { createStateAddress } from '../src/address/StateAddress';
 import type { ILoopContext } from '../src/list/types';
 
 describe('loopContextByNode', () => {
   it('set/get できること', () => {
     const node = document.createElement('div');
-    const loopContext: ILoopContext = {
-      elementPathInfo: getPathInfo('users.*'),
-      listIndex: createListIndex(null, 0)
-    };
+    const loopContext = createStateAddress(getPathInfo('users.*'), createListIndex(null, 0)) as ILoopContext;
 
     setLoopContextByNode(node, loopContext);
     expect(getLoopContextByNode(node)).toBe(loopContext);

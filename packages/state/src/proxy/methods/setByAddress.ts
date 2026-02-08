@@ -17,7 +17,7 @@
  */
 
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
-import { IAbsoluteStateAddress, IPathInfo, IStateAddress } from "../../address/types";
+import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";

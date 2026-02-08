@@ -2,7 +2,6 @@ const _cache = {};
 function makeKey(stateName, path) {
     return `${path}@${stateName}`;
 }
-let id = 0;
 export function getAbsolutePathInfo(stateName, pathInfo) {
     const key = makeKey(stateName, pathInfo.path);
     if (_cache[key]) {

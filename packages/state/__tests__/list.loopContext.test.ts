@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { createLoopContextStack } from '../src/list/loopContext';
 import { createListIndex } from '../src/list/createListIndex';
 import { getPathInfo } from '../src/address/PathInfo';
+import { createStateAddress } from '../src/address/StateAddress';
+import { MAX_LOOP_DEPTH } from '../src/define';
 
 describe('loopContext', () => {
   it('ループコンテキストがない状態でwildcardが1以外ならエラーになること', () => {
@@ -9,7 +11,7 @@ describe('loopContext', () => {
     const listIndex = createListIndex(null, 0);
     const pathInfo = getPathInfo('users.*.orders.*'); // wildcardCount = 2
 
-    expect(() => stack.createLoopContext(pathInfo, listIndex, () => undefined)).toThrow(
+    expect(() => stack.createLoopContext(createStateAddress(pathInfo, listIndex), () => undefined)).toThrow(
       /Cannot push loop context for a list with wildcard positions when there is no active loop context/,
     );
   });
@@ -21,8 +23,8 @@ describe('loopContext', () => {
     const outerPath = getPathInfo('users.*.orders'); // wildcardCount = 1
     const innerPath = getPathInfo('users.*.orders'); // wildcardCount = 1
 
-    stack.createLoopContext(outerPath, rootIndex, () => {
-      expect(() => stack.createLoopContext(innerPath, childIndex, () => undefined)).toThrow(
+    stack.createLoopContext(createStateAddress(outerPath, rootIndex), () => {
+      expect(() => stack.createLoopContext(createStateAddress(innerPath, childIndex), () => undefined)).toThrow(
         /wildcard count is not exactly one more/,
       );
     });
@@ -35,8 +37,8 @@ describe('loopContext', () => {
     const outerPath = getPathInfo('users.*'); // wildcardCount = 1
     const innerPath = getPathInfo('users.*.orders.*'); // wildcardCount = 2, parent path mismatch
 
-    stack.createLoopContext(outerPath, rootIndex, () => {
-      expect(() => stack.createLoopContext(innerPath, childIndex, () => undefined)).toThrow(
+    stack.createLoopContext(createStateAddress(outerPath, rootIndex), () => {
+      expect(() => stack.createLoopContext(createStateAddress(innerPath, childIndex), () => undefined)).toThrow(
         /parent wildcard path info does not match/,
       );
     });
@@ -49,10 +51,10 @@ describe('loopContext', () => {
     const outerPath = getPathInfo('users.*.orders'); // wildcardCount = 1
     const innerPath = getPathInfo('users.*.orders.*'); // last wildcard parent path == outerPath
 
-    stack.createLoopContext(outerPath, rootIndex, (outer) => {
-      expect(outer.elementPathInfo).toBe(outerPath);
-      stack.createLoopContext(innerPath, childIndex, (inner) => {
-        expect(inner.elementPathInfo).toBe(innerPath);
+    stack.createLoopContext(createStateAddress(outerPath, rootIndex), (outer) => {
+      expect(outer.pathInfo).toBe(outerPath);
+      stack.createLoopContext(createStateAddress(innerPath, childIndex), (inner) => {
+        expect(inner.pathInfo).toBe(innerPath);
       });
     });
   });
@@ -62,11 +64,33 @@ describe('loopContext', () => {
     const listIndex = createListIndex(null, 0);
     const pathInfo = getPathInfo('users.*');
 
-    await stack.createLoopContext(pathInfo, listIndex, async () => {
+    await stack.createLoopContext(createStateAddress(pathInfo, listIndex), async () => {
       return Promise.resolve();
     });
 
     // after async, should allow new root context
-    expect(() => stack.createLoopContext(pathInfo, listIndex, () => undefined)).not.toThrow();
+    expect(() => stack.createLoopContext(createStateAddress(pathInfo, listIndex), () => undefined)).not.toThrow();
+  });
+
+  it('listIndexがnullのStateAddressを渡すとエラーになること', () => {
+    const stack = createLoopContextStack();
+    const pathInfo = getPathInfo('users.*');
+    const address = createStateAddress(pathInfo, null);
+
+    expect(() => stack.createLoopContext(address, () => undefined)).toThrow(
+      /Cannot create loop context for a state address that does not have a list index/,
+    );
+  });
+
+  it('MAX_LOOP_DEPTHを超えるとエラーになること', () => {
+    const stack = createLoopContextStack();
+    (stack as any)._length = MAX_LOOP_DEPTH;
+
+    const listIndex = createListIndex(null, 0);
+    const pathInfo = getPathInfo('users.*');
+
+    expect(() => stack.createLoopContext(createStateAddress(pathInfo, listIndex), () => undefined)).toThrow(
+      /Exceeded maximum loop context stack depth/,
+    );
   });
 });

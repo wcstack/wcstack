@@ -112,6 +112,16 @@ describe('AbsoluteStateAddress', () => {
     expect(parent!.listIndex).toBe(parentListIndex);
   });
 
+  it('ワイルドカード末尾でlistIndexがnullの場合parentListIndexがnullになること', () => {
+    const pathInfo = getPathInfo('users.*');
+    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, null);
+
+    const parent = absoluteAddress.parentAbsoluteAddress;
+    expect(parent).not.toBeNull();
+    expect(parent!.listIndex).toBeNull();
+  });
+
   it('非ワイルドカード末尾でlistIndexがそのまま引き継がれること', () => {
     const listIndex = createListIndex(null, 0);
     const pathInfo = getPathInfo('users.*.name');

@@ -1,1 +1,1 @@
-{"version":3,"file":"loopContext.d.ts","sourceRoot":"","sources":["../../src/list/loopContext.ts"],"names":[],"mappings":"AAEA,OAAO,EAA4B,iBAAiB,EAAE,MAAM,SAAS,CAAC;AA4CtE,wBAAgB,sBAAsB,IAAI,iBAAiB,CAE1D"}
+{"version":3,"file":"loopContext.d.ts","sourceRoot":"","sources":["../../src/list/loopContext.ts"],"names":[],"mappings":"AAGA,OAAO,EAAgB,iBAAiB,EAAE,MAAM,SAAS,CAAC;AAqD1D,wBAAgB,sBAAsB,IAAI,iBAAiB,CAE1D"}

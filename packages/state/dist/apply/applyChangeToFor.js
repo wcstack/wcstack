@@ -1,4 +1,5 @@
 import { getPathInfo } from "../address/PathInfo";
+import { createStateAddress } from "../address/StateAddress";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
@@ -50,7 +51,8 @@ export function applyChangeToFor(bindingInfo, context, newValue) {
         let content;
         // add
         if (diff.addIndexSet.has(index)) {
-            loopContextStack.createLoopContext(elementPathInfo, index, (loopContext) => {
+            const stateAddress = createStateAddress(elementPathInfo, index);
+            loopContextStack.createLoopContext(stateAddress, (loopContext) => {
                 const pooledContents = getPooledContents(bindingInfo);
                 content = pooledContents.pop();
                 if (typeof content === 'undefined') {

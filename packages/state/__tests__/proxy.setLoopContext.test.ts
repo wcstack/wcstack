@@ -31,7 +31,7 @@ describe('proxy/methods/setLoopContext', () => {
     } as any;
 
     const loopContext = {
-      elementPathInfo: getPathInfo('users.*'),
+      pathInfo: getPathInfo('users.*'),
       listIndex: createListIndex(null, 1)
     } as any;
 
@@ -92,7 +92,7 @@ describe('proxy/methods/setLoopContextAsync', () => {
     } as any;
 
     const loopContext = {
-      elementPathInfo: getPathInfo('users.*'),
+      pathInfo: getPathInfo('users.*'),
       listIndex: createListIndex(null, 1)
     } as any;
 

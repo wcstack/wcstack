@@ -45,118 +45,129 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     }
     context.newValueByAddress.set(parentAddress, newValue);
 }
-function _walkDependency(context, address, depth, callback) {
-    if (depth > MAX_DEPENDENCY_DEPTH) {
-        raiseError(`Maximum dependency depth of ${MAX_DEPENDENCY_DEPTH} exceeded. Possible circular dependency detected at path: ${address.pathInfo.path}`);
-    }
-    if (context.visited.has(address)) {
-        return;
-    }
-    context.visited.add(address);
-    callback(address);
-    const sourcePath = address.pathInfo.path;
-    /**
-     * パスから依存関係をたどる
-     * users.*.name <= users.* <= users
-     * ただし、users がリストであれば users.* の依存関係は展開する
-     */
-    const staticDeps = context.staticMap.get(sourcePath);
-    if (staticDeps) {
-        for (const dep of staticDeps) {
-            const depPathInfo = getPathInfo(dep);
-            if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
-                //expand indexes
-                const newValue = context.stateProxy.$$getByAddress(address);
-                const lastValue = lastValueByListAddress.get(address);
-                const listDiff = createListDiff(address.listIndex, lastValue, newValue);
-                for (const listIndex of listDiff.newIndexes) {
-                    const depAddress = createStateAddress(depPathInfo, listIndex);
-                    context.result.add(depAddress);
-                    _walkDependency(context, depAddress, depth + 1, callback);
+function _walkDependency(context, startAddress, callback) {
+    const stack = [{ address: startAddress, depth: 0 }];
+    while (stack.length > 0) {
+        const { address, depth } = stack.pop();
+        if (depth > MAX_DEPENDENCY_DEPTH) {
+            raiseError(`Maximum dependency depth of ${MAX_DEPENDENCY_DEPTH} exceeded. Possible circular dependency detected at path: ${address.pathInfo.path}`);
+        }
+        if (context.visited.has(address)) {
+            continue;
+        }
+        context.visited.add(address);
+        callback(address);
+        const sourcePath = address.pathInfo.path;
+        const nextDepth = depth + 1;
+        // 依存アドレスを逆順でpushするための一時バッファ
+        const nextEntries = [];
+        /**
+         * パスから依存関係をたどる
+         * users.*.name <= users.* <= users
+         * ただし、users がリストであれば users.* の依存関係は展開する
+         */
+        const staticDeps = context.staticMap.get(sourcePath);
+        if (staticDeps) {
+            for (const dep of staticDeps) {
+                const depPathInfo = getPathInfo(dep);
+                if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
+                    //expand indexes
+                    const newValue = context.stateProxy.$$getByAddress(address);
+                    const lastValue = lastValueByListAddress.get(address);
+                    const listDiff = createListDiff(address.listIndex, lastValue, newValue);
+                    for (const listIndex of listDiff.newIndexes) {
+                        const depAddress = createStateAddress(depPathInfo, listIndex);
+                        context.result.add(depAddress);
+                        nextEntries.push({ address: depAddress, depth: nextDepth });
+                    }
+                    context.newValueByAddress.set(address, newValue);
                 }
-                context.newValueByAddress.set(address, newValue);
-            }
-            else {
-                const depAddress = createStateAddress(depPathInfo, address.listIndex);
-                context.result.add(depAddress);
-                _walkDependency(context, depAddress, depth + 1, callback);
+                else {
+                    const depAddress = createStateAddress(depPathInfo, address.listIndex);
+                    context.result.add(depAddress);
+                    nextEntries.push({ address: depAddress, depth: nextDepth });
+                }
             }
         }
-    }
-    /**
-     * 動的依存関係をたどる
-     * 動的依存関係は、getterの実行時に決定される
-     *
-     * source,           target
-     *
-     * products.*.price => products.*.tax
-     * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
-     *
-     * products.*.price => products.summary
-     * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
-     *
-     * categories.*.name => categories.*.products.*.categoryName
-     * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
-     */
-    const dynamicDeps = context.dynamicMap.get(sourcePath);
-    if (dynamicDeps) {
-        for (const dep of dynamicDeps) {
-            const depPathInfo = getPathInfo(dep);
-            const listIndexes = [];
-            if (depPathInfo.wildcardCount > 0) {
-                // ワイルドカードを含む依存関係の処理
-                // 同じ親を持つかをパスの集合積で判定する
-                // polyfills.tsにてSetのintersectionメソッドを定義している
-                const wildcardLen = calcWildcardLen(address.pathInfo, depPathInfo);
-                const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
-                if (expandable) {
-                    let listIndex;
-                    if (wildcardLen > 0) {
-                        // categories.*.name => categories.*.products.*.categoryName 
-                        // ワイルドカードを含む同じ親（products.*）を持つのが、
-                        // さらに下位にワイルドカードがあるので展開する
+        /**
+         * 動的依存関係をたどる
+         * 動的依存関係は、getterの実行時に決定される
+         *
+         * source,           target
+         *
+         * products.*.price => products.*.tax
+         * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+         *
+         * products.*.price => products.summary
+         * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+         *
+         * categories.*.name => categories.*.products.*.categoryName
+         * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+         */
+        const dynamicDeps = context.dynamicMap.get(sourcePath);
+        if (dynamicDeps) {
+            for (const dep of dynamicDeps) {
+                const depPathInfo = getPathInfo(dep);
+                const listIndexes = [];
+                if (depPathInfo.wildcardCount > 0) {
+                    // ワイルドカードを含む依存関係の処理
+                    // 同じ親を持つかをパスの集合積で判定する
+                    // polyfills.tsにてSetのintersectionメソッドを定義している
+                    const wildcardLen = calcWildcardLen(address.pathInfo, depPathInfo);
+                    const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
+                    if (expandable) {
+                        let listIndex;
+                        if (wildcardLen > 0) {
+                            // categories.*.name => categories.*.products.*.categoryName
+                            // ワイルドカードを含む同じ親（products.*）を持つのが、
+                            // さらに下位にワイルドカードがあるので展開する
+                            if (address.listIndex === null) {
+                                raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+                            }
+                            listIndex = address.listIndex.at(wildcardLen - 1);
+                        }
+                        else {
+                            // selectedIndex => items.*.selected
+                            // 同じ親を持たない場合はnullから開始
+                            listIndex = null;
+                        }
+                        const expandContext = {
+                            targetPathInfo: depPathInfo,
+                            targetListIndexes: [],
+                            wildcardPaths: depPathInfo.wildcardPaths,
+                            wildcardParentPaths: depPathInfo.wildcardParentPaths,
+                            stateProxy: context.stateProxy,
+                            searchType: context.searchType,
+                            newValueByAddress: context.newValueByAddress,
+                        };
+                        _walkExpandWildcard(expandContext, wildcardLen, listIndex);
+                        listIndexes.push(...expandContext.targetListIndexes);
+                    }
+                    else {
+                        // products.*.price => products.*.tax
+                        // ワイルドカードを含む同じ親（products.*）を持つので、リストインデックスは引き継ぐ
                         if (address.listIndex === null) {
                             raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
                         }
-                        listIndex = address.listIndex.at(wildcardLen - 1);
+                        const listIndex = address.listIndex.at(wildcardLen - 1);
+                        listIndexes.push(listIndex);
                     }
-                    else {
-                        // selectedIndex => items.*.selected
-                        // 同じ親を持たない場合はnullから開始
-                        listIndex = null;
-                    }
-                    const expandContext = {
-                        targetPathInfo: depPathInfo,
-                        targetListIndexes: [],
-                        wildcardPaths: depPathInfo.wildcardPaths,
-                        wildcardParentPaths: depPathInfo.wildcardParentPaths,
-                        stateProxy: context.stateProxy,
-                        searchType: context.searchType,
-                        newValueByAddress: context.newValueByAddress,
-                    };
-                    _walkExpandWildcard(expandContext, wildcardLen, listIndex);
-                    listIndexes.push(...expandContext.targetListIndexes);
                 }
                 else {
-                    // products.*.price => products.*.tax 
-                    // ワイルドカードを含む同じ親（products.*）を持つので、リストインデックスは引き継ぐ
-                    if (address.listIndex === null) {
-                        raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
-                    }
-                    const listIndex = address.listIndex.at(wildcardLen - 1);
-                    listIndexes.push(listIndex);
+                    // products.*.tax => currentTaxRate
+                    // 同じ親を持たないので、リストインデックスはnull
+                    listIndexes.push(null);
+                }
+                for (const listIndex of listIndexes) {
+                    const depAddress = createStateAddress(depPathInfo, listIndex);
+                    context.result.add(depAddress);
+                    nextEntries.push({ address: depAddress, depth: nextDepth });
                 }
             }
-            else {
-                // products.*.tax => currentTaxRate
-                // 同じ親を持たないので、リストインデックスはnull
-                listIndexes.push(null);
-            }
-            for (const listIndex of listIndexes) {
-                const depAddress = createStateAddress(depPathInfo, listIndex);
-                context.result.add(depAddress);
-                _walkDependency(context, depAddress, depth + 1, callback);
-            }
+        }
+        // 逆順でpushして、元の再帰と同じ探索順序を保つ
+        for (let i = nextEntries.length - 1; i >= 0; i--) {
+            stack.push(nextEntries[i]);
         }
     }
 }
@@ -172,7 +183,7 @@ export function walkDependency(startAddress, staticDependency, dynamicDependency
         newValueByAddress: new Map(),
     };
     try {
-        _walkDependency(context, startAddress, 0, callback);
+        _walkDependency(context, startAddress, callback);
         return Array.from(context.result);
     }
     finally {

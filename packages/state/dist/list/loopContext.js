@@ -1,24 +1,33 @@
+import { MAX_LOOP_DEPTH } from "../define";
 import { raiseError } from "../raiseError";
 class LoopContextStack {
-    _loopContextStack = [];
-    createLoopContext(elementPathInfo, listIndex, callback) {
-        const lastLoopContext = this._loopContextStack[this._loopContextStack.length - 1];
+    _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
+    _length = 0;
+    createLoopContext(elementStateAddress, callback) {
+        if (elementStateAddress.listIndex === null) {
+            raiseError(`Cannot create loop context for a state address that does not have a list index.`);
+        }
+        const loopContext = elementStateAddress;
+        if (this._length >= MAX_LOOP_DEPTH) {
+            raiseError(`Exceeded maximum loop context stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
+        }
+        const lastLoopContext = this._loopContextStack[this._length - 1];
         if (typeof lastLoopContext !== "undefined") {
-            if (lastLoopContext.elementPathInfo.wildcardCount + 1 !== elementPathInfo.wildcardCount) {
+            if (lastLoopContext.pathInfo.wildcardCount + 1 !== loopContext.pathInfo.wildcardCount) {
                 raiseError(`Cannot push loop context for a list whose wildcard count is not exactly one more than the current active loop context.`);
             }
-            const lastWildcardParentPathInfo = elementPathInfo.wildcardParentPathInfos[elementPathInfo.wildcardParentPathInfos.length - 1];
-            if (lastLoopContext.elementPathInfo !== lastWildcardParentPathInfo) {
+            const lastWildcardParentPathInfo = loopContext.pathInfo.wildcardParentPathInfos[loopContext.pathInfo.wildcardParentPathInfos.length - 1];
+            if (lastLoopContext.pathInfo !== lastWildcardParentPathInfo) {
                 raiseError(`Cannot push loop context for a list whose parent wildcard path info does not match the current active loop context.`);
             }
         }
         else {
-            if (elementPathInfo.wildcardCount !== 1) {
+            if (loopContext.pathInfo.wildcardCount !== 1) {
                 raiseError(`Cannot push loop context for a list with wildcard positions when there is no active loop context.`);
             }
         }
-        const loopContext = { elementPathInfo, listIndex };
-        this._loopContextStack.push(loopContext);
+        this._loopContextStack[this._length] = loopContext;
+        this._length++;
         let retValue = void 0;
         try {
             retValue = callback(loopContext);
@@ -26,11 +35,13 @@ class LoopContextStack {
         finally {
             if (retValue instanceof Promise) {
                 retValue.finally(() => {
-                    this._loopContextStack.pop();
+                    this._length--;
+                    this._loopContextStack[this._length] = undefined;
                 });
             }
             else {
-                this._loopContextStack.pop();
+                this._length--;
+                this._loopContextStack[this._length] = undefined;
             }
         }
         return retValue;

@@ -16,7 +16,6 @@
  * - finallyで状態復元を保証し、例外発生時も安全
  * - 非同期処理にも対応
  */
-import { createStateAddress } from "../../address/StateAddress";
 import { raiseError } from "../../raiseError";
 function _setLoopContext(handler, loopContext, callback) {
     if (typeof handler.loopContext !== "undefined") {
@@ -25,8 +24,7 @@ function _setLoopContext(handler, loopContext, callback) {
     handler.setLoopContext(loopContext);
     try {
         if (loopContext) {
-            const stateAddress = createStateAddress(loopContext.elementPathInfo, loopContext.listIndex);
-            handler.pushAddress(stateAddress);
+            handler.pushAddress(loopContext);
             try {
                 return callback();
             }

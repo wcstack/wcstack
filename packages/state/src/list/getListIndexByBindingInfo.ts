@@ -23,7 +23,7 @@ export function getListIndexByBindingInfo(bindingInfo: IBindingInfo): IListIndex
 
   let listIndex: IListIndex | null = null;
   try {
-    const wildcardLen = calcWildcardLen(loopContext.elementPathInfo, bindingInfo.statePathInfo);
+    const wildcardLen = calcWildcardLen(loopContext.pathInfo, bindingInfo.statePathInfo);
     if (wildcardLen > 0) {
       listIndex = loopContext.listIndex.at(wildcardLen - 1);
     }

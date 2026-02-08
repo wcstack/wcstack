@@ -1,8 +1,6 @@
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { IAbsoluteStateAddress } from "../address/types";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { getListIndex } from "../proxy/methods/getListIndex";
-import { getStateAddressByBindingInfo } from "./getStateAddressByBindingInfo";
 import { IBindingInfo } from "./types";
 
 const absoluteStateAddressByBindingInfo: WeakMap<IBindingInfo, IAbsoluteStateAddress> = new WeakMap();

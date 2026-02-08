@@ -1,4 +1,4 @@
-import { IPathInfo } from "../address/types";
+import { IPathInfo, IStateAddress } from "../address/types";
 
 /**
  * Interface for hierarchical loop index management in nested loops.
@@ -24,19 +24,17 @@ export interface IListManager {
   getListIndexes(path: string): IListIndex[] | null;
 }
 
-export interface ILoopContext {
-  elementPathInfo: IPathInfo; // ex. getPathInfo("users.*")
-  listIndex: IListIndex;
+export interface ILoopContext extends IStateAddress {
+  readonly pathInfo: IPathInfo;
+  readonly listIndex: IListIndex;
 }
 
 export interface ILoopContextStack {
   createLoopContext(
-    elementPathInfo: IPathInfo, 
-    listIndex: IListIndex, 
+    elementStateAddress: IStateAddress,
     callback: (loopContext: ILoopContext) => void | Promise<void>
   ): void | Promise<void>;
 }
-
 
 export interface IListDiff {
   oldIndexes: IListIndex[];

@@ -6,7 +6,6 @@ function makeKey(stateName: string, path: string): string {
   return `${path}@${stateName}`;
 }
 
-let id: number = 0;
 export function getAbsolutePathInfo(stateName: string, pathInfo: IPathInfo): IAbsolutePathInfo {
   const key = makeKey(stateName, pathInfo.path);
   if (_cache[key]) {

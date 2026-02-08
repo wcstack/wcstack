@@ -71,7 +71,7 @@ describe('proxy/StateHandler (coverage)', () => {
   it('loopContextのset/clearができること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
     const handler = new StateHandler('default', 'readonly');
-    const loopContext = { elementPathInfo: {} as any, listIndex: {} as any } as any;
+    const loopContext = { pathInfo: {} as any, listIndex: {} as any } as any;
 
     handler.setLoopContext(loopContext);
     expect(handler.loopContext).toBe(loopContext);

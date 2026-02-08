@@ -1,6 +1,7 @@
 export const DELIMITER = '.';
 export const WILDCARD = '*';
 export const MAX_WILDCARD_DEPTH = 128;
+export const MAX_LOOP_DEPTH = 128;
 
 /**
  * stackIndexByIndexName

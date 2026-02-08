@@ -10,6 +10,7 @@ import type { IVersionInfo } from '../src/version/types';
 import { setStateElementByName } from '../src/stateElementByName';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
+
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
@@ -45,8 +46,8 @@ function createMockStateElement(options?: {
     getterPaths,
     setterPaths,
     loopContextStack: {
-      createLoopContext: (_elementPathInfo, _listIndex, callback) => {
-        return callback({ elementPathInfo: _elementPathInfo, listIndex: _listIndex } as any);
+      createLoopContext: (_elementStateAddress, callback) => {
+        return callback(_elementStateAddress as any);
       }
     },
     cache,
@@ -102,10 +103,7 @@ describe('proxy/StateHandler', () => {
     const state = { users: [{ name: 'Bob' }, { name: 'Carol' }] };
     const proxy = createStateProxy(state, 'default', 'readonly');
     const listIndex = createListIndex(null, 1);
-    const loopContext = {
-      elementPathInfo: getPathInfo('users.*'),
-      listIndex
-    };
+    const loopContext = createStateAddress(getPathInfo('users.*'), listIndex);
 
     const result = (proxy as any).$$setLoopContext(loopContext, () => (proxy as any)['users.*.name']);
     expect(result).toBe('Carol');

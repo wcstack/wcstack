@@ -49,7 +49,7 @@ describe('getStateAddressByBindingInfo', () => {
     const listIndex = createListIndex(null, 0);
     getLoopContextByNodeMock.mockReturnValue({
       listIndex,
-      elementPathInfo: getPathInfo('items.*')
+      pathInfo: getPathInfo('items.*')
     } as any);
 
     const bindingInfo = createBindingInfo({
@@ -101,7 +101,7 @@ describe('clearStateAddressByBindingInfo', () => {
     // 最初のloopContextでアドレスを取得
     getLoopContextByNodeMock.mockReturnValue({
       listIndex: listIndex1,
-      elementPathInfo: getPathInfo('items.*')
+      pathInfo: getPathInfo('items.*')
     } as any);
     const address1 = getStateAddressByBindingInfo(bindingInfo);
     expect(address1.listIndex).toBe(listIndex1);
@@ -109,7 +109,7 @@ describe('clearStateAddressByBindingInfo', () => {
     // キャッシュをクリアせずにloopContextを変更
     getLoopContextByNodeMock.mockReturnValue({
       listIndex: listIndex2,
-      elementPathInfo: getPathInfo('items.*')
+      pathInfo: getPathInfo('items.*')
     } as any);
     const addressCached = getStateAddressByBindingInfo(bindingInfo);
     // キャッシュから古いアドレスが返される

@@ -3,6 +3,7 @@ import { getListIndexByBindingInfo } from '../src/list/getListIndexByBindingInfo
 import { setLoopContextByNode } from '../src/list/loopContextByNode';
 import { createListIndex } from '../src/list/createListIndex';
 import { getPathInfo } from '../src/address/PathInfo';
+import { createStateAddress } from '../src/address/StateAddress';
 import type { IBindingInfo } from '../src/types';
 import type { ILoopContext } from '../src/list/types';
 
@@ -36,10 +37,7 @@ describe('getListIndexByBindingInfo', () => {
     const node = document.createElement('div');
     const root = createListIndex(null, 0);
     const child = createListIndex(root, 1);
-    const loopContext: ILoopContext = {
-      elementPathInfo: getPathInfo('users.*.orders.*'),
-      listIndex: child,
-    };
+    const loopContext = createStateAddress(getPathInfo('users.*.orders.*'), child) as ILoopContext;
     setLoopContextByNode(node, loopContext);
 
     const bindingInfo = createBindingInfo(node, {
@@ -55,10 +53,7 @@ describe('getListIndexByBindingInfo', () => {
 
   it('一致するワイルドカードがない場合はnullを返すこと', () => {
     const node = document.createElement('div');
-    const loopContext: ILoopContext = {
-      elementPathInfo: getPathInfo('users.*'),
-      listIndex: createListIndex(null, 0),
-    };
+    const loopContext = createStateAddress(getPathInfo('users.*'), createListIndex(null, 0)) as ILoopContext;
     setLoopContextByNode(node, loopContext);
 
     const bindingInfo = createBindingInfo(node, {
@@ -72,10 +67,7 @@ describe('getListIndexByBindingInfo', () => {
 
   it('同じloopContextでも別のbindingInfoは再評価されること', () => {
     const node = document.createElement('div');
-    const loopContext: ILoopContext = {
-      elementPathInfo: getPathInfo('users.*'),
-      listIndex: createListIndex(null, 0),
-    };
+    const loopContext = createStateAddress(getPathInfo('users.*'), createListIndex(null, 0)) as ILoopContext;
     setLoopContextByNode(node, loopContext);
 
     const bindingInfo1 = createBindingInfo(node, {
