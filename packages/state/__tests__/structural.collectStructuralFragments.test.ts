@@ -328,6 +328,47 @@ describe('collectStructuralFragments', () => {
     expect(() => collectStructuralFragments(root)).toThrow(/elseif.*without preceding/);
   });
 
+  it('forテンプレート内の空白テキストノードが除去されること', () => {
+    const root = document.createElement('div');
+    const template = document.createElement('template');
+    template.setAttribute(config.bindAttributeName, 'for: items');
+
+    // テンプレート内に空白テキストノードと要素を混在
+    template.content.appendChild(document.createTextNode('\n  '));
+    const span = document.createElement('span');
+    span.textContent = 'item';
+    template.content.appendChild(span);
+    template.content.appendChild(document.createTextNode('\n'));
+
+    root.appendChild(template);
+    collectStructuralFragments(root);
+
+    const info = getFragmentInfoByUUID('uuid-collect-0');
+    expect(info).not.toBeNull();
+    // 空白テキストノードが除去され、spanのみ残ること
+    expect(info?.fragment.childNodes.length).toBe(1);
+    expect(info?.fragment.childNodes[0].nodeName).toBe('SPAN');
+  });
+
+  it('ifテンプレート内の空白テキストノードが除去されること', () => {
+    const root = document.createElement('div');
+    const template = document.createElement('template');
+    template.setAttribute(config.bindAttributeName, 'if: flag');
+
+    template.content.appendChild(document.createTextNode('  '));
+    const div = document.createElement('div');
+    template.content.appendChild(div);
+    template.content.appendChild(document.createTextNode('\t\n'));
+
+    root.appendChild(template);
+    collectStructuralFragments(root);
+
+    const info = getFragmentInfoByUUID('uuid-collect-0');
+    expect(info).not.toBeNull();
+    expect(info?.fragment.childNodes.length).toBe(1);
+    expect(info?.fragment.childNodes[0]).toBe(div);
+  });
+
   describe('ドットショートハンドパス展開', () => {
     it('forテンプレート内のコメントノードのショートハンドが展開されること', () => {
       const root = document.createElement('div');

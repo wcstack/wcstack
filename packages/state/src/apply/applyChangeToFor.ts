@@ -5,6 +5,7 @@ import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { IListIndex } from "../list/types";
+import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
@@ -60,6 +61,14 @@ export function applyChangeToFor(
   let lastNode = bindingInfo.node;
   const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
   const loopContextStack = context.stateElement.loopContextStack;
+  let fragment: DocumentFragment | null = null;
+  if (diff.newIndexes.length == diff.addIndexSet.size 
+    && diff.newIndexes.length > 0
+    && lastNode.isConnected
+  ) {
+    // 全部追加の場合はまとめて処理
+    fragment = document.createDocumentFragment();
+  }
   for(const index of diff.newIndexes) {
     let content: IContent | undefined;
     // add
@@ -82,15 +91,25 @@ export function applyChangeToFor(
           applyChange(indexBinding, context);
         }
       }
-
     }
-    // Update lastNode for next iteration to ensure correct order
-    // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
-    if (lastNode.nextSibling !== content!.firstNode) {
-      content!.mountAfter(lastNode);
+    if (typeof content === 'undefined') {
+      raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
     }
-    lastNode = content!.lastNode || lastNode;
-    contentByListIndex.set(index, content!);
+    if (fragment !== null) {
+      content.appendTo(fragment);
+    } else {
+      // Update lastNode for next iteration to ensure correct order
+      // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
+      if (lastNode.nextSibling !== content.firstNode) {
+        content.mountAfter(lastNode);
+      }
+      lastNode = content.lastNode || lastNode;
+    }
+    contentByListIndex.set(index, content);
+  }
+  if (fragment !== null) {
+    // Mount all at once
+    lastNode.parentNode!.insertBefore(fragment, lastNode.nextSibling);
   }
   lastValueByNode.set(bindingInfo.node, newValue);
 }

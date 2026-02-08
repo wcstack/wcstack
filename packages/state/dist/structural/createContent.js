@@ -29,21 +29,26 @@ class Content {
     get mounted() {
         return this._mounted;
     }
+    appendTo(targetNode) {
+        targetNode.appendChild(this._content);
+        this._mounted = true;
+    }
     mountAfter(targetNode) {
         const parentNode = targetNode.parentNode;
         const nextSibling = targetNode.nextSibling;
         if (parentNode) {
-            this._childNodeArray.forEach((node) => {
-                parentNode.insertBefore(node, nextSibling);
-            });
+            if (this._mounted) {
+                this._childNodeArray.forEach((node) => {
+                    this._content.appendChild(node);
+                });
+            }
+            parentNode.insertBefore(this._content, nextSibling);
         }
         this._mounted = true;
     }
     unmount() {
         this._childNodeArray.forEach((node) => {
-            if (node.parentNode) {
-                node.parentNode.removeChild(node);
-            }
+            this._content.appendChild(node);
         });
         const bindings = getBindingsByContent(this);
         for (const binding of bindings) {

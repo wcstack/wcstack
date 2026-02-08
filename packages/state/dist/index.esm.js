@@ -2670,21 +2670,26 @@ class Content {
     get mounted() {
         return this._mounted;
     }
+    appendTo(targetNode) {
+        targetNode.appendChild(this._content);
+        this._mounted = true;
+    }
     mountAfter(targetNode) {
         const parentNode = targetNode.parentNode;
         const nextSibling = targetNode.nextSibling;
         if (parentNode) {
-            this._childNodeArray.forEach((node) => {
-                parentNode.insertBefore(node, nextSibling);
-            });
+            if (this._mounted) {
+                this._childNodeArray.forEach((node) => {
+                    this._content.appendChild(node);
+                });
+            }
+            parentNode.insertBefore(this._content, nextSibling);
         }
         this._mounted = true;
     }
     unmount() {
         this._childNodeArray.forEach((node) => {
-            if (node.parentNode) {
-                node.parentNode.removeChild(node);
-            }
+            this._content.appendChild(node);
         });
         const bindings = getBindingsByContent(this);
         for (const binding of bindings) {
@@ -2755,6 +2760,13 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     let lastNode = bindingInfo.node;
     const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
     const loopContextStack = context.stateElement.loopContextStack;
+    let fragment = null;
+    if (diff.newIndexes.length == diff.addIndexSet.size
+        && diff.newIndexes.length > 0
+        && lastNode.isConnected) {
+        // 全部追加の場合はまとめて処理
+        fragment = document.createDocumentFragment();
+    }
     for (const index of diff.newIndexes) {
         let content;
         // add
@@ -2779,13 +2791,25 @@ function applyChangeToFor(bindingInfo, context, newValue) {
                 }
             }
         }
-        // Update lastNode for next iteration to ensure correct order
-        // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
-        if (lastNode.nextSibling !== content.firstNode) {
-            content.mountAfter(lastNode);
+        if (typeof content === 'undefined') {
+            raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
         }
-        lastNode = content.lastNode || lastNode;
+        if (fragment !== null) {
+            content.appendTo(fragment);
+        }
+        else {
+            // Update lastNode for next iteration to ensure correct order
+            // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
+            if (lastNode.nextSibling !== content.firstNode) {
+                content.mountAfter(lastNode);
+            }
+            lastNode = content.lastNode || lastNode;
+        }
         contentByListIndex.set(index, content);
+    }
+    if (fragment !== null) {
+        // Mount all at once
+        lastNode.parentNode.insertBefore(fragment, lastNode.nextSibling);
     }
     lastValueByNode.set(bindingInfo.node, newValue);
 }
@@ -4229,6 +4253,19 @@ function getFragmentNodeInfos(fragment) {
     return fragmnentNodeInfos;
 }
 
+function optimizeFragment(fragment) {
+    const childNodes = Array.from(fragment.childNodes);
+    for (const childNode of childNodes) {
+        if (childNode.nodeType === Node.TEXT_NODE) {
+            const textContent = childNode.textContent || '';
+            if (textContent.trim() === '') {
+                // Remove empty text nodes
+                fragment.removeChild(childNode);
+            }
+        }
+    }
+}
+
 const keywordByBindingType = new Map([
     ["for", config.commentForPrefix],
     ["if", config.commentIfPrefix],
@@ -4245,6 +4282,7 @@ function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
     };
 }
 function _getFragmentInfo(fragment, parseBindingTextResult, forPath) {
+    optimizeFragment(fragment);
     if (typeof forPath === "string") {
         expandShorthandPaths(fragment, forPath);
     }

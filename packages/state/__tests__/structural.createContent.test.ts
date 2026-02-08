@@ -188,6 +188,106 @@ describe('createContent', () => {
     expect(content.mounted).toBe(false);
   });
 
+  it('appendToでノードをターゲットに追加できること', () => {
+    const container = document.createElement('div');
+
+    const fragment = document.createDocumentFragment();
+    const span1 = document.createElement('span');
+    span1.id = 'a1';
+    const span2 = document.createElement('span');
+    span2.id = 'a2';
+    fragment.appendChild(span1);
+    fragment.appendChild(span2);
+
+    const placeholder = document.createComment('placeholder');
+    setFragment(fragment);
+    const bindingInfo = createBindingInfo(placeholder);
+    const content = createContent(bindingInfo);
+    content.appendTo(container);
+
+    expect(container.childNodes.length).toBe(2);
+    expect((container.childNodes[0] as HTMLElement).id).toBe('a1');
+    expect((container.childNodes[1] as HTMLElement).id).toBe('a2');
+    expect(content.mounted).toBe(true);
+  });
+
+  it('appendTo後にunmountしてノードがフラグメントに戻ること', () => {
+    const container = document.createElement('div');
+
+    const fragment = document.createDocumentFragment();
+    const span = document.createElement('span');
+    fragment.appendChild(span);
+
+    const placeholder = document.createComment('placeholder');
+    setFragment(fragment);
+    const bindingInfo = createBindingInfo(placeholder);
+    const content = createContent(bindingInfo);
+
+    content.appendTo(container);
+    expect(container.childNodes.length).toBe(1);
+    expect(content.mounted).toBe(true);
+
+    content.unmount();
+    expect(container.childNodes.length).toBe(0);
+    expect(content.mounted).toBe(false);
+  });
+
+  it('mountAfterでフラグメント一括挿入されること', () => {
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    const tail = document.createElement('div');
+    tail.id = 'tail';
+    container.appendChild(placeholder);
+    container.appendChild(tail);
+
+    const fragment = document.createDocumentFragment();
+    const span1 = document.createElement('span');
+    span1.id = 's1';
+    const span2 = document.createElement('span');
+    span2.id = 's2';
+    fragment.appendChild(span1);
+    fragment.appendChild(span2);
+
+    setFragment(fragment);
+    const bindingInfo = createBindingInfo(placeholder);
+    const content = createContent(bindingInfo);
+    content.mountAfter(placeholder);
+
+    // placeholder, span1, span2, tail の順
+    expect(container.childNodes.length).toBe(4);
+    expect((container.childNodes[1] as HTMLElement).id).toBe('s1');
+    expect((container.childNodes[2] as HTMLElement).id).toBe('s2');
+    expect((container.childNodes[3] as HTMLElement).id).toBe('tail');
+  });
+
+  it('unmount後に再度mountAfterできること', () => {
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    container.appendChild(placeholder);
+
+    const fragment = document.createDocumentFragment();
+    const span = document.createElement('span');
+    span.id = 'remount';
+    fragment.appendChild(span);
+
+    setFragment(fragment);
+    const bindingInfo = createBindingInfo(placeholder);
+    const content = createContent(bindingInfo);
+
+    content.mountAfter(placeholder);
+    expect(container.childNodes.length).toBe(2);
+    expect(content.mounted).toBe(true);
+
+    content.unmount();
+    expect(container.childNodes.length).toBe(1);
+    expect(content.mounted).toBe(false);
+
+    content.mountAfter(placeholder);
+    expect(container.childNodes.length).toBe(2);
+    expect(content.mounted).toBe(true);
+    expect((container.childNodes[1] as HTMLElement).id).toBe('remount');
+  });
+
   it('unmountで子のif/elseif/else contentもアンマウントされること', () => {
     const placeholder = document.createComment('placeholder');
     const fragment = document.createDocumentFragment();

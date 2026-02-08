@@ -4,6 +4,7 @@ export interface IContent {
   readonly firstNode: Node | null;
   readonly lastNode: Node | null;
   readonly mounted: boolean;
+  appendTo(targetNode: Node): void;
   mountAfter(targetNode: Node): void;
   unmount(): void;
 }

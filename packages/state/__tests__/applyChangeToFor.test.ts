@@ -581,6 +581,182 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
+  it('全件追加時にバッチ処理で一括挿入されること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2, 3];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+
+    // isConnected=true かつ全件追加 → バッチパス
+    apply(bindingInfo, list);
+
+    // コメントノード + 3つのspan
+    expect(container.childNodes.length).toBe(4);
+    expect(container.childNodes[1].nodeName).toBe('SPAN');
+    expect(container.childNodes[2].nodeName).toBe('SPAN');
+    expect(container.childNodes[3].nodeName).toBe('SPAN');
+
+    // 後片付け
+    document.body.removeChild(container);
+    setListIndexesByList(list, null);
+  });
+
+  it('バッチ挿入された各コンテンツのfirstNode/lastNodeが正しいこと', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+
+    apply(bindingInfo, list);
+
+    // バッチ挿入後もDOMの順序が正しいこと
+    expect(container.childNodes.length).toBe(3);
+    const span1 = container.childNodes[1];
+    const span2 = container.childNodes[2];
+    expect(span1.nodeName).toBe('SPAN');
+    expect(span2.nodeName).toBe('SPAN');
+    // 順序が placeholder -> span1 -> span2 であること
+    expect(placeholder.nextSibling).toBe(span1);
+    expect(span1.nextSibling).toBe(span2);
+
+    document.body.removeChild(container);
+    setListIndexesByList(list, null);
+  });
+
+  it('バッチ挿入後にアンマウントが正しく動作すること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+
+    apply(bindingInfo, list);
+    expect(container.childNodes.length).toBe(3);
+
+    // 空配列で再適用 → アンマウント
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+    expect(container.childNodes.length).toBe(1);
+
+    document.body.removeChild(container);
+    setListIndexesByList(list, null);
+  });
+
+  it('isConnected=falseの場合はバッチ処理されないこと', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    // document.bodyに追加しない → isConnected=false
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+
+    // 非バッチパスでも正しく動作すること
+    apply(bindingInfo, list);
+
+    expect(container.childNodes.length).toBe(3);
+    expect(container.childNodes[1].nodeName).toBe('SPAN');
+    expect(container.childNodes[2].nodeName).toBe('SPAN');
+
+    setListIndexesByList(list, null);
+  });
+
+  it('追加と既存が混在する場合はバッチ処理されないこと', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    // 初回適用
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+    expect(container.childNodes.length).toBe(3);
+
+    const firstSpan = container.childNodes[1];
+
+    // 既存要素＋新規追加（混在ケース → 非バッチパス）
+    const extendedList = [1, 2, 3];
+    const extendedIndexes = createListIndexes(null, list, extendedList, listIndexes);
+    setListIndexesByList(extendedList, extendedIndexes);
+    apply(bindingInfo, extendedList);
+
+    expect(container.childNodes.length).toBe(4);
+    // 既存要素が保持されていること
+    expect(container.childNodes[1]).toBe(firstSpan);
+
+    document.body.removeChild(container);
+    setListIndexesByList(list, null);
+    setListIndexesByList(extendedList, null);
+  });
+
+  it('既存インデックスのcontentが見つからない場合はエラーになること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    // 初回適用
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+
+    // contentByListIndexから手動でcontentを削除
+    __test_setContentByListIndex(listIndexes[0], null);
+    __test_setContentByListIndex(listIndexes[1], null);
+
+    // 同じリストを再適用（既存インデックスだがcontentが無い）
+    const sameList = [1, 2];
+    createListIndexes(null, list, sameList, listIndexes);
+    expect(() => apply(bindingInfo, sameList)).toThrow(/Content not found for ListIndex/);
+
+    setListIndexesByList(list, null);
+  });
+
   it('__test_setContentByListIndexでcontentを設定できること', () => {
     setupContext();
 

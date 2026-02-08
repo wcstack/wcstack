@@ -8,6 +8,7 @@ import { expandShorthandInBindAttribute, expandShorthandPaths } from "./expandSh
 import { setFragmentInfoByUUID } from "./fragmentInfoByUUID";
 import { getFragmentNodeInfos } from "./getFragmentNodeInfos";
 import { getNodePath } from "./getNodePath";
+import { optimizeFragment } from "./optimizeFragment";
 const keywordByBindingType = new Map([
     ["for", config.commentForPrefix],
     ["if", config.commentIfPrefix],
@@ -24,6 +25,7 @@ function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
     };
 }
 function _getFragmentInfo(fragment, parseBindingTextResult, forPath) {
+    optimizeFragment(fragment);
     if (typeof forPath === "string") {
         expandShorthandPaths(fragment, forPath);
     }

@@ -10,6 +10,7 @@ import { expandShorthandInBindAttribute, expandShorthandPaths } from "./expandSh
 import { setFragmentInfoByUUID } from "./fragmentInfoByUUID";
 import { getFragmentNodeInfos } from "./getFragmentNodeInfos";
 import { getNodePath } from "./getNodePath";
+import { optimizeFragment } from "./optimizeFragment";
 import { IFragmentInfo } from "./types";
 
 const keywordByBindingType: Map<BindingType, string> = new Map<BindingType, string>([
@@ -38,6 +39,7 @@ function _getFragmentInfo(
   parseBindingTextResult: ParseBindTextResult,
   forPath?: string
 ): IFragmentInfo {
+  optimizeFragment(fragment);
   if (typeof forPath === "string") {
     expandShorthandPaths(fragment, forPath);
   }
