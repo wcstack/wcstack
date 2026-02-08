@@ -1,6 +1,6 @@
 export function checkDependency(handler, address) {
     // 動的依存関係の登録
-    if (handler.addressStackIndex >= 0) {
+    if (handler.addressStackLength > 0) {
         const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
         const stateElement = handler.stateElement;
         if (lastInfo !== null) {

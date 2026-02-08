@@ -31,7 +31,7 @@ function createStateElement(overrides?: Partial<any>) {
 
 function createHandler(stateElement: any, overrides?: Partial<any>) {
   return {
-    addressStackIndex: -1,
+    addressStackLength: 0,
     lastAddressStack: null,
     stateElement,
     pushAddress: vi.fn(),
@@ -170,7 +170,7 @@ describe('resolve', () => {
       pathInfo: { path: 'computed' },
       listIndex: null,
     };
-    const handler = createHandler(mockStateElement, { lastAddressStack: lastAddress });
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
     const target = {};
 
     getByAddressMock.mockReturnValueOnce('value');
@@ -179,6 +179,59 @@ describe('resolve', () => {
     resolveFn('name', []);
 
     expect(mockStateElement.addDynamicDependency).toHaveBeenCalledWith('name', 'computed');
+  });
+
+  it('addressStackLength>0でlastAddressStackがnullなら依存関係を登録しないこと', () => {
+    mockStateElement = createStateElement();
+    setStateElementByName('default', mockStateElement);
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: null });
+    const target = {};
+
+    getByAddressMock.mockReturnValueOnce('value');
+
+    const resolveFn = resolve(target, '$resolve', target, handler as any);
+    resolveFn('name', []);
+
+    expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
+  });
+
+  it('addressStackLength>0でgetterPathsに含まれない場合は依存関係を登録しないこと', () => {
+    mockStateElement = createStateElement();
+    setStateElementByName('default', mockStateElement);
+
+    const lastAddress = {
+      pathInfo: { path: 'other' },
+      listIndex: null,
+    };
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
+    const target = {};
+
+    getByAddressMock.mockReturnValueOnce('value');
+
+    const resolveFn = resolve(target, '$resolve', target, handler as any);
+    resolveFn('name', []);
+
+    expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
+  });
+
+  it('addressStackLength>0で同一パスの場合は依存関係を登録しないこと', () => {
+    mockStateElement = createStateElement();
+    mockStateElement.getterPaths.add('name');
+    setStateElementByName('default', mockStateElement);
+
+    const lastAddress = {
+      pathInfo: { path: 'name' },
+      listIndex: null,
+    };
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
+    const target = {};
+
+    getByAddressMock.mockReturnValueOnce('value');
+
+    const resolveFn = resolve(target, '$resolve', target, handler as any);
+    resolveFn('name', []);
+
+    expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
   });
 
   it('ワイルドカードパスで listIndexes が null の場合はエラーになること', () => {
@@ -221,7 +274,7 @@ describe('resolve', () => {
       pathInfo: { path: 'name' },
       listIndex: null,
     };
-    const handler = createHandler(mockStateElement, { lastAddressStack: lastAddress });
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
     const target = {};
 
     getByAddressMock.mockReturnValueOnce('value');

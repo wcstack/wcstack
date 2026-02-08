@@ -7,8 +7,7 @@
  * 主な役割:
  * - handler.loopContextにループコンテキストを一時的に設定
  * - 既にループコンテキストが設定されている場合はエラーを投げる
- * - loopContextが存在する場合はasyncSetStatePropertyRefでスコープを設定しコールバックを実行
- * - loopContextがnullの場合はそのままコールバックを実行
+ * - 常にスコープを設定しコールバックを実行
  * - finallyで必ずloopContextをnullに戻し、スコープ外への影響を防止
  *
  * 設計ポイント:
@@ -31,15 +30,11 @@ function _setLoopContext<T>(
   }
   handler.setLoopContext(loopContext);
   try {
-    if (loopContext) {
-      handler.pushAddress(loopContext);
-      try {
-        return callback();
-      } finally {
-        handler.popAddress();
-      }
-    } else {
+    handler.pushAddress(loopContext);
+    try {
       return callback();
+    } finally {
+      handler.popAddress();
     }
   } finally {
     handler.clearLoopContext();

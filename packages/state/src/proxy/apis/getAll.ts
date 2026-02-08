@@ -31,12 +31,14 @@ export function getAll(
     return (path: string, indexes?: number[]): any[] => {
       const newValueByAddress: Map<IStateAddress, any> = new Map();
       const pathInfo = getPathInfo(path);
-      const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
-      const stateElement = handler.stateElement;
-      if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
-        // gettersに含まれる場合は依存関係を登録
-        if (stateElement.getterPaths.has(lastInfo.path)) {
-          stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+      if (handler.addressStackLength > 0) {
+        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+        const stateElement = handler.stateElement;
+        if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
+          // gettersに含まれる場合は依存関係を登録
+          if (stateElement.getterPaths.has(lastInfo.path)) {
+            stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+          }
         }
       }
   

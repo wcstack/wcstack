@@ -47,8 +47,13 @@ describe('proxy/traps/get', () => {
     expect(result).toBe(3);
   });
 
+  it('addressStackLength が 0 の場合は $1 でエラーになること', () => {
+    const handler = { addressStackLength: 0 } as any;
+    expect(() => get({}, '$1', {}, handler)).toThrow(/No active state reference to get list index/);
+  });
+
   it('listIndex が無い場合は $1 でエラーになること', () => {
-    const handler = { lastAddressStack: null } as any;
+    const handler = { addressStackLength: 1, lastAddressStack: null } as any;
     expect(() => get({}, '$1', {}, handler)).toThrow('ListIndex not found: $1');
   });
 

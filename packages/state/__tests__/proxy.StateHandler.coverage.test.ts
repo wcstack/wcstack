@@ -14,6 +14,7 @@ vi.mock('../src/proxy/traps/set', () => ({
 
 import { __private__, createStateProxy } from '../src/proxy/StateHandler';
 import { getStateElementByName } from '../src/stateElementByName';
+import { MAX_LOOP_DEPTH } from '../src/define';
 import { get as trapGet } from '../src/proxy/traps/get';
 import { set as trapSet } from '../src/proxy/traps/set';
 
@@ -33,15 +34,19 @@ describe('proxy/StateHandler (coverage)', () => {
     expect(() => new StateHandler('missing', 'readonly')).toThrow(/State element with name "missing" not found/);
   });
 
-  it('lastAddressStackが空ならnullを返すこと', () => {
+  it('初期状態のプロパティが正しいこと', () => {
     const stateElement = mockStateElement();
     vi.mocked(getStateElementByName).mockReturnValue(stateElement);
     const handler = new StateHandler('default', 'readonly');
-    expect(handler.lastAddressStack).toBeNull();
-    expect(handler.addressStackIndex).toBe(-1);
+    expect(handler.addressStackLength).toBe(0);
     expect(handler.stateName).toBe('default');
     expect(handler.stateElement).toBe(stateElement);
-    expect(handler.addressStack).toEqual([]);
+  });
+
+  it('スタックが空の場合lastAddressStackはエラーになること', () => {
+    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    const handler = new StateHandler('default', 'readonly');
+    expect(() => handler.lastAddressStack).toThrow(/Last address stack is undefined/);
   });
 
   it('push/popでスタックが更新されること', () => {
@@ -66,6 +71,24 @@ describe('proxy/StateHandler (coverage)', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
     const handler = new StateHandler('default', 'readonly');
     expect(handler.popAddress()).toBeNull();
+  });
+
+  it('pushAddressがMAX_LOOP_DEPTHを超えるとエラーになること', () => {
+    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    const handler = new StateHandler('default', 'readonly');
+    for (let i = 0; i < MAX_LOOP_DEPTH; i++) {
+      handler.pushAddress(null);
+    }
+    expect(() => handler.pushAddress(null)).toThrow(/Exceeded maximum address stack depth/);
+  });
+
+  it('popAddressでスロットがundefinedの場合エラーになること', () => {
+    vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
+    const handler = new StateHandler('default', 'readonly');
+    handler.pushAddress({ id: 'a' } as any);
+    // 内部スロットを強制的にundefinedにする
+    (handler as any)._addressStack[(handler as any)._addressStackIndex] = undefined;
+    expect(() => handler.popAddress()).toThrow(/Address stack at index .* is undefined/);
   });
 
   it('loopContextのset/clearができること', () => {

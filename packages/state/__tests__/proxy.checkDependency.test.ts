@@ -4,7 +4,7 @@ import { getPathInfo } from '../src/address/PathInfo';
 
 function createHandler(overrides?: Partial<any>): any {
   return {
-    addressStackIndex: -1,
+    addressStackLength: 0,
     lastAddressStack: null,
     stateElement: {
       getterPaths: new Set<string>(),
@@ -16,7 +16,7 @@ function createHandler(overrides?: Partial<any>): any {
 }
 
 describe('checkDependency', () => {
-  it('addressStackIndexが負なら何もしないこと', () => {
+  it('addressStackLengthが0なら何もしないこと', () => {
     const handler = createHandler();
     const address = { pathInfo: getPathInfo('users.*.name') } as any;
 
@@ -25,7 +25,7 @@ describe('checkDependency', () => {
   });
 
   it('lastAddressStackがnullなら何もしないこと', () => {
-    const handler = createHandler({ addressStackIndex: 0, lastAddressStack: null });
+    const handler = createHandler({ addressStackLength: 1, lastAddressStack: null });
     const address = { pathInfo: getPathInfo('users.*.name') } as any;
 
     checkDependency(handler, address);
@@ -35,7 +35,7 @@ describe('checkDependency', () => {
   it('getterPathsに含まれない場合は依存関係を登録しないこと', () => {
     const lastInfo = getPathInfo('users.*.profile');
     const handler = createHandler({
-      addressStackIndex: 0,
+      addressStackLength: 1,
       lastAddressStack: { pathInfo: lastInfo },
     });
     const address = { pathInfo: getPathInfo('users.*.name') } as any;
@@ -47,7 +47,7 @@ describe('checkDependency', () => {
   it('同一パスの場合は依存関係を登録しないこと', () => {
     const lastInfo = getPathInfo('users.*.name');
     const handler = createHandler({
-      addressStackIndex: 0,
+      addressStackLength: 1,
       lastAddressStack: { pathInfo: lastInfo },
       stateElement: {
         getterPaths: new Set<string>([lastInfo.path]),
@@ -63,7 +63,7 @@ describe('checkDependency', () => {
   it('getterPathsに含まれ、異なるパスなら依存関係を登録すること', () => {
     const lastInfo = getPathInfo('users.*.profile');
     const handler = createHandler({
-      addressStackIndex: 0,
+      addressStackLength: 1,
       lastAddressStack: { pathInfo: lastInfo },
       stateElement: {
         getterPaths: new Set<string>([lastInfo.path]),

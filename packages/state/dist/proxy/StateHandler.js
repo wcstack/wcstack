@@ -2,10 +2,11 @@ import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
+import { MAX_LOOP_DEPTH } from "../define";
 class StateHandler {
     _stateElement;
     _stateName;
-    _addressStack = [];
+    _addressStack = Array(MAX_LOOP_DEPTH).fill(undefined);
     _addressStackIndex = -1;
     _loopContext;
     _mutability;
@@ -25,36 +26,37 @@ class StateHandler {
         return this._stateElement;
     }
     get lastAddressStack() {
+        let address = undefined;
         if (this._addressStackIndex >= 0) {
-            return this._addressStack[this._addressStackIndex];
+            address = this._addressStack[this._addressStackIndex];
         }
-        else {
-            return null;
+        if (typeof address === "undefined") {
+            raiseError(`Last address stack is undefined.`);
         }
+        return address;
     }
-    get addressStack() {
-        return this._addressStack;
-    }
-    get addressStackIndex() {
-        return this._addressStackIndex;
+    get addressStackLength() {
+        return this._addressStackIndex + 1;
     }
     get loopContext() {
         return this._loopContext;
     }
     pushAddress(address) {
         this._addressStackIndex++;
-        if (this._addressStackIndex >= this._addressStack.length) {
-            this._addressStack.push(address);
+        if (this._addressStackIndex >= MAX_LOOP_DEPTH) {
+            raiseError(`Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
         }
-        else {
-            this._addressStack[this._addressStackIndex] = address;
-        }
+        this._addressStack[this._addressStackIndex] = address;
     }
     popAddress() {
         if (this._addressStackIndex < 0) {
             return null;
         }
         const address = this._addressStack[this._addressStackIndex];
+        if (typeof address === "undefined") {
+            raiseError(`Address stack at index ${this._addressStackIndex} is undefined.`);
+        }
+        this._addressStack[this._addressStackIndex] = undefined;
         this._addressStackIndex--;
         return address;
     }

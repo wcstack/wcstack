@@ -7,11 +7,12 @@ import { get as trapGet } from "./traps/get";
 import { set as trapSet } from "./traps/set";
 import { ILoopContext } from "../list/types";
 import { IState } from "../types";
+import { MAX_LOOP_DEPTH } from "../define";
 
 class StateHandler implements IStateHandler {
   private _stateElement: IStateElement;
   private _stateName: string;
-  private _addressStack: (IStateAddress | null)[] = [];
+  private _addressStack: (IStateAddress | null | undefined)[] = Array(MAX_LOOP_DEPTH).fill(undefined);
   private _addressStackIndex: number = -1;
   private _loopContext: ILoopContext | null | undefined;
   private _mutability: Mutability;
@@ -38,19 +39,18 @@ class StateHandler implements IStateHandler {
   }
 
   get lastAddressStack(): IStateAddress | null {
+    let address: IStateAddress | null | undefined = undefined;
     if (this._addressStackIndex >= 0) {
-      return this._addressStack[this._addressStackIndex];
-    } else {
-      return null;
+      address = this._addressStack[this._addressStackIndex];
     }
+    if (typeof address === "undefined") {
+      raiseError(`Last address stack is undefined.`);
+    }
+    return address;
   }
 
-  get addressStack(): (IStateAddress | null)[] {
-    return this._addressStack;
-  }
-
-  get addressStackIndex(): number {
-    return this._addressStackIndex;
+  get addressStackLength(): number {
+    return this._addressStackIndex + 1;
   }
 
   get loopContext(): ILoopContext | null | undefined {
@@ -59,11 +59,10 @@ class StateHandler implements IStateHandler {
 
   pushAddress(address: IStateAddress | null): void {
     this._addressStackIndex++;
-    if (this._addressStackIndex >= this._addressStack.length) {
-      this._addressStack.push(address);
-    } else {
-      this._addressStack[this._addressStackIndex] = address;
+    if (this._addressStackIndex >= MAX_LOOP_DEPTH) {
+      raiseError(`Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
     }
+    this._addressStack[this._addressStackIndex] = address;
   }
 
   popAddress(): IStateAddress | null {
@@ -71,6 +70,10 @@ class StateHandler implements IStateHandler {
       return null;
     }
     const address = this._addressStack[this._addressStackIndex];
+    if (typeof address === "undefined") {
+      raiseError(`Address stack at index ${this._addressStackIndex} is undefined.`);
+    }
+    this._addressStack[this._addressStackIndex] = undefined;
     this._addressStackIndex--;
     return address;
   }

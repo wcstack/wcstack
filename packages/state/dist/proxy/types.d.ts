@@ -5,8 +5,7 @@ import { IState } from "../types";
 export interface IStateHandler extends ProxyHandler<IState> {
     readonly stateName: string;
     readonly stateElement: IStateElement;
-    readonly addressStack: (IStateAddress | null)[];
-    readonly addressStackIndex: number;
+    readonly addressStackLength: number;
     readonly lastAddressStack: IStateAddress | null;
     readonly loopContext: ILoopContext | null | undefined;
     pushAddress(address: IStateAddress | null): void;

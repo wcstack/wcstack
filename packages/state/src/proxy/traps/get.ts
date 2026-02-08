@@ -36,6 +36,9 @@ export function get(
 ): any {
   const index = INDEX_BY_INDEX_NAME[prop];
   if (typeof index !== "undefined") {
+    if (handler.addressStackLength === 0) {
+      raiseError(`No active state reference to get list index for "${prop.toString()}".`);
+    }
     const listIndex = handler.lastAddressStack?.listIndex;
     return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }

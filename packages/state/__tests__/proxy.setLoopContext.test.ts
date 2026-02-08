@@ -44,7 +44,7 @@ describe('proxy/methods/setLoopContext', () => {
     expect(result).toBe('ok');
   });
 
-  it('loopContext が null の場合でも clearLoopContext が呼ばれること', () => {
+  it('loopContext が null の場合でも push/pop と clearLoopContext が呼ばれること', () => {
     const handler = {
       loopContext: undefined,
       setLoopContext: vi.fn(),
@@ -58,8 +58,8 @@ describe('proxy/methods/setLoopContext', () => {
     })).toThrow('fail');
 
     expect(handler.setLoopContext).toHaveBeenCalledWith(null);
-    expect(handler.pushAddress).not.toHaveBeenCalled();
-    expect(handler.popAddress).not.toHaveBeenCalled();
+    expect(handler.pushAddress).toHaveBeenCalledWith(null);
+    expect(handler.popAddress).toHaveBeenCalledTimes(1);
     expect(handler.clearLoopContext).toHaveBeenCalledTimes(1);
   });
 });
@@ -105,7 +105,7 @@ describe('proxy/methods/setLoopContextAsync', () => {
     expect(result).toBe('ok');
   });
 
-  it('loopContext が null の場合でも clearLoopContext が呼ばれること', async () => {
+  it('loopContext が null の場合でも push/pop と clearLoopContext が呼ばれること', async () => {
     const handler = {
       loopContext: undefined,
       setLoopContext: vi.fn(),
@@ -119,8 +119,8 @@ describe('proxy/methods/setLoopContextAsync', () => {
     })).rejects.toThrow('fail');
 
     expect(handler.setLoopContext).toHaveBeenCalledWith(null);
-    expect(handler.pushAddress).not.toHaveBeenCalled();
-    expect(handler.popAddress).not.toHaveBeenCalled();
+    expect(handler.pushAddress).toHaveBeenCalledWith(null);
+    expect(handler.popAddress).toHaveBeenCalledTimes(1);
     expect(handler.clearLoopContext).toHaveBeenCalledTimes(1);
   });
 });

@@ -854,7 +854,7 @@ function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
 
 function checkDependency(handler, address) {
     // 動的依存関係の登録
-    if (handler.addressStackIndex >= 0) {
+    if (handler.addressStackLength > 0) {
         const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
         const stateElement = handler.stateElement;
         if (lastInfo !== null) {
@@ -960,8 +960,11 @@ function getByAddress(target, address, receiver, handler) {
  * - パスが一致しない場合や参照が存在しない場合はnullを返す
  */
 function getContextListIndex(handler, structuredPath) {
+    if (handler.addressStackLength === 0) {
+        return null;
+    }
     const address = handler.lastAddressStack;
-    if (address === null || typeof address === "undefined") {
+    if (address === null) {
         return null;
     }
     const index = address.pathInfo.indexByWildcardPath[structuredPath];
@@ -3376,12 +3379,14 @@ function setByAddress(target, address, value, receiver, handler) {
 function resolve(target, _prop, receiver, handler) {
     return (path, indexes, value) => {
         const pathInfo = getPathInfo(path);
-        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
-        const stateElement = handler.stateElement;
-        if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
-            // gettersに含まれる場合は依存関係を登録
-            if (stateElement.getterPaths.has(lastInfo.path)) {
-                stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+        if (handler.addressStackLength > 0) {
+            const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+            const stateElement = handler.stateElement;
+            if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
+                // gettersに含まれる場合は依存関係を登録
+                if (stateElement.getterPaths.has(lastInfo.path)) {
+                    stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+                }
             }
         }
         if (pathInfo.wildcardParentPathInfos.length > indexes.length) {
@@ -3426,12 +3431,14 @@ function getAll(target, prop, receiver, handler) {
     return (path, indexes) => {
         const newValueByAddress = new Map();
         const pathInfo = getPathInfo(path);
-        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
-        const stateElement = handler.stateElement;
-        if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
-            // gettersに含まれる場合は依存関係を登録
-            if (stateElement.getterPaths.has(lastInfo.path)) {
-                stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+        if (handler.addressStackLength > 0) {
+            const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+            const stateElement = handler.stateElement;
+            if (lastInfo !== null && lastInfo.path !== pathInfo.path) {
+                // gettersに含まれる場合は依存関係を登録
+                if (stateElement.getterPaths.has(lastInfo.path)) {
+                    stateElement.addDynamicDependency(pathInfo.path, lastInfo.path);
+                }
             }
         }
         if (typeof indexes === "undefined") {
@@ -3550,8 +3557,7 @@ function getListIndex(target, resolvedAddress, receiver, handler) {
  * 主な役割:
  * - handler.loopContextにループコンテキストを一時的に設定
  * - 既にループコンテキストが設定されている場合はエラーを投げる
- * - loopContextが存在する場合はasyncSetStatePropertyRefでスコープを設定しコールバックを実行
- * - loopContextがnullの場合はそのままコールバックを実行
+ * - 常にスコープを設定しコールバックを実行
  * - finallyで必ずloopContextをnullに戻し、スコープ外への影響を防止
  *
  * 設計ポイント:
@@ -3565,17 +3571,12 @@ function _setLoopContext(handler, loopContext, callback) {
     }
     handler.setLoopContext(loopContext);
     try {
-        if (loopContext) {
-            handler.pushAddress(loopContext);
-            try {
-                return callback();
-            }
-            finally {
-                handler.popAddress();
-            }
-        }
-        else {
+        handler.pushAddress(loopContext);
+        try {
             return callback();
+        }
+        finally {
+            handler.popAddress();
         }
     }
     finally {
@@ -3610,6 +3611,9 @@ async function setLoopContextAsync(handler, loopContext, callback) {
 function get(target, prop, receiver, handler) {
     const index = INDEX_BY_INDEX_NAME[prop];
     if (typeof index !== "undefined") {
+        if (handler.addressStackLength === 0) {
+            raiseError(`No active state reference to get list index for "${prop.toString()}".`);
+        }
         const listIndex = handler.lastAddressStack?.listIndex;
         return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
     }
@@ -3699,7 +3703,7 @@ function set(target, prop, value, receiver, handler) {
 class StateHandler {
     _stateElement;
     _stateName;
-    _addressStack = [];
+    _addressStack = Array(MAX_LOOP_DEPTH).fill(undefined);
     _addressStackIndex = -1;
     _loopContext;
     _mutability;
@@ -3719,36 +3723,37 @@ class StateHandler {
         return this._stateElement;
     }
     get lastAddressStack() {
+        let address = undefined;
         if (this._addressStackIndex >= 0) {
-            return this._addressStack[this._addressStackIndex];
+            address = this._addressStack[this._addressStackIndex];
         }
-        else {
-            return null;
+        if (typeof address === "undefined") {
+            raiseError(`Last address stack is undefined.`);
         }
+        return address;
     }
-    get addressStack() {
-        return this._addressStack;
-    }
-    get addressStackIndex() {
-        return this._addressStackIndex;
+    get addressStackLength() {
+        return this._addressStackIndex + 1;
     }
     get loopContext() {
         return this._loopContext;
     }
     pushAddress(address) {
         this._addressStackIndex++;
-        if (this._addressStackIndex >= this._addressStack.length) {
-            this._addressStack.push(address);
+        if (this._addressStackIndex >= MAX_LOOP_DEPTH) {
+            raiseError(`Exceeded maximum address stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
         }
-        else {
-            this._addressStack[this._addressStackIndex] = address;
-        }
+        this._addressStack[this._addressStackIndex] = address;
     }
     popAddress() {
         if (this._addressStackIndex < 0) {
             return null;
         }
         const address = this._addressStack[this._addressStackIndex];
+        if (typeof address === "undefined") {
+            raiseError(`Address stack at index ${this._addressStackIndex} is undefined.`);
+        }
+        this._addressStack[this._addressStackIndex] = undefined;
         this._addressStackIndex--;
         return address;
     }

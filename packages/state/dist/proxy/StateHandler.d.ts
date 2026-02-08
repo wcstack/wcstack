@@ -14,8 +14,7 @@ declare class StateHandler implements IStateHandler {
     get stateName(): string;
     get stateElement(): IStateElement;
     get lastAddressStack(): IStateAddress | null;
-    get addressStack(): (IStateAddress | null)[];
-    get addressStackIndex(): number;
+    get addressStackLength(): number;
     get loopContext(): ILoopContext | null | undefined;
     pushAddress(address: IStateAddress | null): void;
     popAddress(): IStateAddress | null;

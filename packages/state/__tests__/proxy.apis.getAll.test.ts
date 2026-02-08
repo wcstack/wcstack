@@ -39,7 +39,7 @@ function createStateElement(overrides?: Partial<any>) {
 
 function createHandler(stateElement: any, overrides?: Partial<any>) {
   return {
-    addressStackIndex: -1,
+    addressStackLength: 0,
     lastAddressStack: null,
     stateElement,
     pushAddress: vi.fn(),
@@ -125,7 +125,7 @@ describe('getAll', () => {
       },
       listIndex: contextListIndex,
     };
-    const handler = createHandler(mockStateElement, { lastAddressStack: lastAddress });
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
     const target = {};
 
     getByAddressMock
@@ -174,7 +174,7 @@ describe('getAll', () => {
       pathInfo: { path: 'computed' },
       listIndex: null,
     };
-    const handler = createHandler(mockStateElement, { lastAddressStack: lastAddress });
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
     const target = {};
     const list = ['a'];
 
@@ -190,6 +190,54 @@ describe('getAll', () => {
     getAllFn('items.*', []);
 
     expect(mockStateElement.addDynamicDependency).toHaveBeenCalledWith('items.*', 'computed');
+  });
+
+  it('addressStackLength>0でlastAddressStackがnullなら依存関係を登録しないこと', () => {
+    mockStateElement = createStateElement();
+    setStateElementByName('default', mockStateElement);
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: null });
+    const target = {};
+    const list = ['a'];
+
+    const listIndex0 = createListIndex(null, 0);
+    setListIndexesByList(list, [listIndex0]);
+
+    getByAddressMock
+      .mockReturnValueOnce(list)
+      .mockReturnValueOnce(list)
+      .mockReturnValueOnce('a');
+
+    const getAllFn = getAll(target, '$getAll', target, handler as any);
+    getAllFn('items.*', []);
+
+    expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
+  });
+
+  it('addressStackLength>0で同一パスの場合は依存関係を登録しないこと', () => {
+    mockStateElement = createStateElement();
+    mockStateElement.getterPaths.add('items.*');
+    setStateElementByName('default', mockStateElement);
+
+    const lastAddress = {
+      pathInfo: { path: 'items.*' },
+      listIndex: null,
+    };
+    const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: lastAddress });
+    const target = {};
+    const list = ['a'];
+
+    const listIndex0 = createListIndex(null, 0);
+    setListIndexesByList(list, [listIndex0]);
+
+    getByAddressMock
+      .mockReturnValueOnce(list)
+      .mockReturnValueOnce(list)
+      .mockReturnValueOnce('a');
+
+    const getAllFn = getAll(target, '$getAll', target, handler as any);
+    getAllFn('items.*', []);
+
+    expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
   });
 
   it('2回目の呼び出しで lastValue との差分が計算されること', () => {

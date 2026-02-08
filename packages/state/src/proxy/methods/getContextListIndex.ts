@@ -23,8 +23,11 @@ export function getContextListIndex(
   handler: IStateHandler,
   structuredPath: string
 ): IListIndex | null {
+  if (handler.addressStackLength === 0) {
+    return null;
+  }
   const address = handler.lastAddressStack;
-  if (address === null || typeof address === "undefined") {
+  if (address === null) {
     return null;
   }
   const index: number | undefined = address.pathInfo.indexByWildcardPath[structuredPath];

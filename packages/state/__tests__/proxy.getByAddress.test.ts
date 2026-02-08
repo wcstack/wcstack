@@ -21,7 +21,7 @@ function createStateElement(overrides?: Partial<any>) {
 
 function createHandler(stateElement: any, overrides?: Partial<any>) {
   return {
-    addressStackIndex: -1,
+    addressStackLength: 0,
     lastAddressStack: null,
     stateElement,
     pushAddress: vi.fn(),

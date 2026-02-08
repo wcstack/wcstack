@@ -17,6 +17,9 @@
 import { raiseError } from "../../raiseError";
 export function trackDependency(_target, _prop, _receiver, handler) {
     return (path) => {
+        if (handler.addressStackLength === 0) {
+            raiseError(`No active state reference to track dependency for path "${path}".`);
+        }
         const lastInfo = handler.lastAddressStack?.pathInfo ??
             raiseError('Internal error: lastAddressStack is null');
         const stateElement = handler.stateElement;

@@ -16,8 +16,11 @@
  * - パスが一致しない場合や参照が存在しない場合はnullを返す
  */
 export function getContextListIndex(handler, structuredPath) {
+    if (handler.addressStackLength === 0) {
+        return null;
+    }
     const address = handler.lastAddressStack;
-    if (address === null || typeof address === "undefined") {
+    if (address === null) {
         return null;
     }
     const index = address.pathInfo.indexByWildcardPath[structuredPath];
