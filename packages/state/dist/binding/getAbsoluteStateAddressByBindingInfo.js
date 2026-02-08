@@ -1,5 +1,5 @@
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
-import { getStateAddressByBindingInfo } from "./getStateAddressByBindingInfo";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 const absoluteStateAddressByBindingInfo = new WeakMap();
 export function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
     let absoluteStateAddress = null;
@@ -7,8 +7,9 @@ export function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
     if (absoluteStateAddress !== null) {
         return absoluteStateAddress;
     }
-    const stateAddress = getStateAddressByBindingInfo(bindingInfo);
-    absoluteStateAddress = createAbsoluteStateAddress(bindingInfo.stateName, stateAddress);
+    const listIndex = getListIndexByBindingInfo(bindingInfo);
+    absoluteStateAddress =
+        createAbsoluteStateAddress(bindingInfo.stateAbsolutePathInfo, listIndex);
     absoluteStateAddressByBindingInfo.set(bindingInfo, absoluteStateAddress);
     return absoluteStateAddress;
 }

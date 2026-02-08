@@ -1,5 +1,7 @@
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { IAbsoluteStateAddress } from "../address/types";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { getListIndex } from "../proxy/methods/getListIndex";
 import { getStateAddressByBindingInfo } from "./getStateAddressByBindingInfo";
 import { IBindingInfo } from "./types";
 
@@ -11,8 +13,9 @@ export function getAbsoluteStateAddressByBindingInfo(bindingInfo: IBindingInfo) 
   if (absoluteStateAddress !== null) {
     return absoluteStateAddress;
   }
-  const stateAddress = getStateAddressByBindingInfo(bindingInfo);
-  absoluteStateAddress = createAbsoluteStateAddress(bindingInfo.stateName, stateAddress);
+  const listIndex = getListIndexByBindingInfo(bindingInfo);
+  absoluteStateAddress = 
+    createAbsoluteStateAddress(bindingInfo.stateAbsolutePathInfo, listIndex);
   absoluteStateAddressByBindingInfo.set(bindingInfo, absoluteStateAddress);
   return absoluteStateAddress;
 }

@@ -160,14 +160,14 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
 }
 const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
 
-const _cache$2 = {};
+const _cache$4 = {};
 let id = 0;
 function getPathInfo(path) {
-    if (_cache$2[path]) {
-        return _cache$2[path];
+    if (_cache$4[path]) {
+        return _cache$4[path];
     }
     const pathInfo = Object.freeze(new PathInfo(path));
-    _cache$2[path] = pathInfo;
+    _cache$4[path] = pathInfo;
     return pathInfo;
 }
 class PathInfo {
@@ -266,7 +266,7 @@ class PathInfo {
  * Cache for resolved path information.
  * Uses Map to safely handle property names including reserved words like "constructor" and "toString".
  */
-const _cache$1 = new Map();
+const _cache$3 = new Map();
 /**
  * Class that parses and stores resolved path information.
  *
@@ -368,11 +368,11 @@ class ResolvedAddress {
 function getResolvedAddress(name) {
     let nameInfo;
     // Return cached value or create, cache, and return new instance
-    return _cache$1.get(name) ?? (_cache$1.set(name, nameInfo = new ResolvedAddress(name)), nameInfo);
+    return _cache$3.get(name) ?? (_cache$3.set(name, nameInfo = new ResolvedAddress(name)), nameInfo);
 }
 
-const _cache = new WeakMap();
-const _cacheNullListIndex = new WeakMap();
+const _cache$2 = new WeakMap();
+const _cacheNullListIndex$1 = new WeakMap();
 class StateAddress {
     pathInfo;
     listIndex;
@@ -402,19 +402,19 @@ class StateAddress {
 }
 function createStateAddress(pathInfo, listIndex) {
     if (listIndex === null) {
-        let cached = _cacheNullListIndex.get(pathInfo);
+        let cached = _cacheNullListIndex$1.get(pathInfo);
         if (typeof cached !== "undefined") {
             return cached;
         }
         cached = new StateAddress(pathInfo, null);
-        _cacheNullListIndex.set(pathInfo, cached);
+        _cacheNullListIndex$1.set(pathInfo, cached);
         return cached;
     }
     else {
-        let cacheByPathInfo = _cache.get(listIndex);
+        let cacheByPathInfo = _cache$2.get(listIndex);
         if (typeof cacheByPathInfo === "undefined") {
             cacheByPathInfo = new WeakMap();
-            _cache.set(listIndex, cacheByPathInfo);
+            _cache$2.set(listIndex, cacheByPathInfo);
         }
         let cached = cacheByPathInfo.get(pathInfo);
         if (typeof cached !== "undefined") {
@@ -744,32 +744,87 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
     }
 }
 
-const absoluteStateAddressByStateAddressByStateElement = new WeakMap();
-function createAbsoluteStateAddress(stateName, address) {
-    const stateElement = getStateElementByName(stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found.`);
+const _cache$1 = {};
+function makeKey(stateName, path) {
+    return `${path}@${stateName}`;
+}
+function getAbsolutePathInfo(stateName, pathInfo) {
+    const key = makeKey(stateName, pathInfo.path);
+    if (_cache$1[key]) {
+        return _cache$1[key];
     }
-    let absoluteStateAddressByStateAddress = absoluteStateAddressByStateAddressByStateElement.get(stateElement);
-    if (typeof absoluteStateAddressByStateAddress !== "undefined") {
-        let absoluteStateAddress = absoluteStateAddressByStateAddress.get(address);
-        if (typeof absoluteStateAddress === "undefined") {
-            absoluteStateAddress = Object.freeze({
-                address,
-                stateName,
-            });
-            absoluteStateAddressByStateAddress.set(address, absoluteStateAddress);
+    const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateName, pathInfo));
+    _cache$1[key] = absolutePathInfo;
+    return absolutePathInfo;
+}
+class AbsolutePathInfo {
+    pathInfo;
+    stateName;
+    parentAbsolutePathInfo;
+    constructor(stateName, pathInfo) {
+        this.pathInfo = pathInfo;
+        this.stateName = stateName;
+        if (pathInfo.parentPathInfo === null) {
+            this.parentAbsolutePathInfo = null;
         }
-        return absoluteStateAddress;
+        else {
+            this.parentAbsolutePathInfo = getAbsolutePathInfo(stateName, pathInfo.parentPathInfo);
+        }
+    }
+}
+
+const _cache = new WeakMap();
+const _cacheNullListIndex = new WeakMap();
+class AbsoluteStateAddress {
+    absolutePathInfo;
+    listIndex;
+    _parentAbsoluteAddress;
+    constructor(absolutePathInfo, listIndex) {
+        this.absolutePathInfo = absolutePathInfo;
+        this.listIndex = listIndex;
+    }
+    get parentAbsoluteAddress() {
+        if (typeof this._parentAbsoluteAddress !== 'undefined') {
+            return this._parentAbsoluteAddress;
+        }
+        const parentAbsolutePathInfo = this.absolutePathInfo.parentAbsolutePathInfo;
+        if (parentAbsolutePathInfo === null) {
+            return null;
+        }
+        const lastSegment = this.absolutePathInfo.pathInfo.segments[this.absolutePathInfo.pathInfo.segments.length - 1];
+        let parentListIndex = null;
+        if (lastSegment === WILDCARD) {
+            parentListIndex = this.listIndex?.parentListIndex ?? null;
+        }
+        else {
+            parentListIndex = this.listIndex;
+        }
+        return this._parentAbsoluteAddress = createAbsoluteStateAddress(parentAbsolutePathInfo, parentListIndex);
+    }
+}
+function createAbsoluteStateAddress(absolutePathInfo, listIndex) {
+    if (listIndex === null) {
+        let cached = _cacheNullListIndex.get(absolutePathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new AbsoluteStateAddress(absolutePathInfo, null);
+        _cacheNullListIndex.set(absolutePathInfo, cached);
+        return cached;
     }
     else {
-        const absoluteStateAddress = Object.freeze({
-            address,
-            stateName,
-        });
-        absoluteStateAddressByStateAddress = new WeakMap([[address, absoluteStateAddress]]);
-        absoluteStateAddressByStateAddressByStateElement.set(stateElement, absoluteStateAddressByStateAddress);
-        return absoluteStateAddress;
+        let cacheByAbsolutePathInfo = _cache.get(listIndex);
+        if (typeof cacheByAbsolutePathInfo === "undefined") {
+            cacheByAbsolutePathInfo = new WeakMap();
+            _cache.set(listIndex, cacheByAbsolutePathInfo);
+        }
+        let cached = cacheByAbsolutePathInfo.get(absolutePathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new AbsoluteStateAddress(absolutePathInfo, listIndex);
+        cacheByAbsolutePathInfo.set(absolutePathInfo, cached);
+        return cached;
     }
 }
 
@@ -851,7 +906,8 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
     }
 }
 function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+    const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+    const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
     if (cacheEntry !== null) {
         return cacheEntry.value;
@@ -1016,31 +1072,6 @@ function getListIndexByBindingInfo(bindingInfo) {
     }
 }
 
-const stateAddressByBindingInfo = new WeakMap();
-function getStateAddressByBindingInfo(bindingInfo) {
-    let stateAddress = null;
-    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
-    if (stateAddress !== null) {
-        return stateAddress;
-    }
-    if (bindingInfo.statePathInfo.wildcardCount > 0) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        if (listIndex === null) {
-            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
-        }
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
-    }
-    else {
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
-    }
-    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
-    return stateAddress;
-}
-// call for change loopContext
-function clearStateAddressByBindingInfo(bindingInfo) {
-    stateAddressByBindingInfo.delete(bindingInfo);
-}
-
 const absoluteStateAddressByBindingInfo = new WeakMap();
 function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
     let absoluteStateAddress = null;
@@ -1048,8 +1079,9 @@ function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
     if (absoluteStateAddress !== null) {
         return absoluteStateAddress;
     }
-    const stateAddress = getStateAddressByBindingInfo(bindingInfo);
-    absoluteStateAddress = createAbsoluteStateAddress(bindingInfo.stateName, stateAddress);
+    const listIndex = getListIndexByBindingInfo(bindingInfo);
+    absoluteStateAddress =
+        createAbsoluteStateAddress(bindingInfo.stateAbsolutePathInfo, listIndex);
     absoluteStateAddressByBindingInfo.set(bindingInfo, absoluteStateAddress);
     return absoluteStateAddress;
 }
@@ -1077,6 +1109,31 @@ function removeBindingInfoByAbsoluteStateAddress(absoluteStateAddress, bindingIn
     if (index !== -1) {
         bindingInfos.splice(index, 1);
     }
+}
+
+const stateAddressByBindingInfo = new WeakMap();
+function getStateAddressByBindingInfo(bindingInfo) {
+    let stateAddress = null;
+    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
+    if (stateAddress !== null) {
+        return stateAddress;
+    }
+    if (bindingInfo.statePathInfo.wildcardCount > 0) {
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        if (listIndex === null) {
+            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
+        }
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
+    }
+    else {
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
+    }
+    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
+    return stateAddress;
+}
+// call for change loopContext
+function clearStateAddressByBindingInfo(bindingInfo) {
+    stateAddressByBindingInfo.delete(bindingInfo);
 }
 
 const bindingsByContent = new WeakMap();
@@ -2100,10 +2157,13 @@ function parseStatePart(statePart) {
         stateAndPath = statePart.trim();
     }
     const [statePathName, stateName = 'default'] = stateAndPath.split('@').map(trimFn);
+    const pathInfo = getPathInfo(statePathName);
+    const absolutePathInfo = getAbsolutePathInfo(stateName, pathInfo);
     return {
         stateName,
         statePathName,
-        statePathInfo: getPathInfo(statePathName),
+        statePathInfo: pathInfo,
+        stateAbsolutePathInfo: absolutePathInfo,
         outFilters: filters,
     };
 }
@@ -2125,12 +2185,15 @@ function parseBindTextsForElement(bindText) {
         const propPart = bindText.slice(0, separatorIndex).trim();
         const statePart = bindText.slice(separatorIndex + 1).trim();
         if (propPart === 'else') {
+            const pathInfo = getPathInfo('#else');
+            const absolutePathInfo = getAbsolutePathInfo('', pathInfo);
             return {
                 propName: 'else',
                 propSegments: ['else'],
                 propModifiers: [],
                 statePathName: '#else',
-                statePathInfo: getPathInfo('#else'),
+                statePathInfo: pathInfo,
+                stateAbsolutePathInfo: absolutePathInfo,
                 stateName: '',
                 inFilters: [],
                 outFilters: [],
@@ -3195,7 +3258,8 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
             // キャッシュを無効化（ダーティ）
             if (depAddress === address)
                 return;
-            const absDepAddress = createAbsoluteStateAddress(handler.stateName, depAddress);
+            const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
+            const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
             setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
@@ -3243,7 +3307,8 @@ function setByAddress(target, address, value, receiver, handler) {
     const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
-    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+    const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+    const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     try {
         if (isSwappable) {
             return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler);

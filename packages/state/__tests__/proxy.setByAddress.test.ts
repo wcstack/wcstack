@@ -8,8 +8,6 @@ import { getListIndexesByList, setListIndexesByList } from '../src/list/listInde
 import { getSwapInfoByAddress, setSwapInfoByAddress } from '../src/proxy/methods/swapInfo';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 
-const absAddressByState = new Map<string, WeakMap<object, object>>();
-
 const createListIndexes = (
   parentListIndex,
   oldList,
@@ -29,21 +27,26 @@ vi.mock('../src/updater/updater', () => ({
   })),
 }));
 
-vi.mock('../src/address/AbsoluteStateAddress', () => ({
-  createAbsoluteStateAddress: vi.fn((stateName, address) => {
-    let byAddress = absAddressByState.get(stateName);
-    if (!byAddress) {
-      byAddress = new WeakMap();
-      absAddressByState.set(stateName, byAddress);
-    }
-    let absAddress = byAddress.get(address);
-    if (!absAddress) {
-      absAddress = { stateName, address };
-      byAddress.set(address, absAddress);
-    }
-    return absAddress;
+vi.mock('../src/address/AbsolutePathInfo', () => ({
+  getAbsolutePathInfo: vi.fn((stateName, pathInfo) => {
+    return { stateName, pathInfo };
   }),
 }));
+
+vi.mock('../src/address/AbsoluteStateAddress', () => {
+  const cache = new Map<string, object>();
+  return {
+    createAbsoluteStateAddress: vi.fn((absolutePathInfo, listIndex) => {
+      const key = `${absolutePathInfo.pathInfo.path}@${absolutePathInfo.stateName}#${listIndex?.index ?? 'null'}`;
+      let absAddress = cache.get(key);
+      if (!absAddress) {
+        absAddress = { absolutePathInfo, listIndex };
+        cache.set(key, absAddress);
+      }
+      return absAddress;
+    }),
+  };
+});
 
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
@@ -97,7 +100,7 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ getterPaths: new Set(['count']) });
     const handler = createHandler(stateElement);
-    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
 
     setCacheEntryByAbsoluteStateAddress(absAddress, { value: 1 });
 
@@ -121,7 +124,7 @@ describe('setByAddress', () => {
     setByAddress(target, address, 5, target, handler as any);
 
     const hasDependentEnqueue = mockEnqueueAbsoluteAddress.mock.calls.some(
-      ([arg]) => arg.address?.pathInfo?.path === 'total'
+      ([arg]) => arg.absolutePathInfo?.pathInfo?.path === 'total'
     );
     expect(hasDependentEnqueue).toBe(true);
   });

@@ -32,9 +32,16 @@ export interface IStateAddress {
   readonly parentAddress: IStateAddress | null;
 }
 
-export interface IAbsoluteStateAddress {
-  readonly address: IStateAddress;
+export interface IAbsolutePathInfo {
   readonly stateName: string;
+  readonly pathInfo: IPathInfo;
+  readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
+}
+
+export interface IAbsoluteStateAddress {
+  readonly absolutePathInfo: IAbsolutePathInfo;
+  readonly listIndex: IListIndex | null;
+  readonly parentAbsoluteAddress: IAbsoluteStateAddress | null;
 }
 
 export type WildcardType = "none" | "context" | "partial" | "all";
@@ -49,3 +56,4 @@ export interface IResolvedAddress {
   /** Reference to the structured pattern information this resolved path is based on */
   readonly pathInfo: IPathInfo;
 }
+

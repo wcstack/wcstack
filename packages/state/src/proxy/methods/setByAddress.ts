@@ -17,7 +17,7 @@
  */
 
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
-import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
+import { IAbsoluteStateAddress, IPathInfo, IStateAddress } from "../../address/types";
 import { WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";
@@ -28,6 +28,7 @@ import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
+import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 
 function _setByAddress(
   target   : object, 
@@ -75,7 +76,8 @@ function _setByAddress(
       (depAddress: IStateAddress) => {
         // キャッシュを無効化（ダーティ）
         if (depAddress === address) return;
-        const absDepAddress = createAbsoluteStateAddress(handler.stateName, depAddress);
+        const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
+        const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
         setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
         // 更新対象として登録
         updater.enqueueAbsoluteAddress(absDepAddress);
@@ -138,7 +140,8 @@ export function setByAddress(
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
-  const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+  const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+  const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
   try {
     if (isSwappable) {
       return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler);
@@ -159,3 +162,4 @@ export function setByAddress(
     }
   }
 }
+

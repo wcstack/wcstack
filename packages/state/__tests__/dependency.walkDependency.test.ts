@@ -555,6 +555,51 @@ describe('walkDependency', () => {
     )).toThrow(/Maximum dependency depth/);
   });
 
+  it('static dependency with empty list skips loop body', () => {
+    const stateProxy = createStateProxy({
+      users: [],
+    });
+    const startAddress = createStateAddress(getPathInfo('users'), null);
+    const staticDependency = new Map<string, string[]>([['users', ['users.*']]]);
+    const dynamicDependency = new Map<string, string[]>();
+    const listPathSet = new Set<string>(['users']);
+
+    const result = walkDependency(
+      startAddress,
+      staticDependency,
+      dynamicDependency,
+      listPathSet,
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    expect(collectResult(result)).toEqual([]);
+  });
+
+  it('dynamic dependency expansion with empty list skips loop body', () => {
+    const stateProxy = createStateProxy({
+      'users.*.orders': [],
+    });
+    const listIndex = createListIndex(null, 0);
+    const startAddress = createStateAddress(getPathInfo('users.*.name'), listIndex);
+    const dynamicDependency = new Map<string, string[]>([
+      ['users.*.name', ['users.*.orders.*.id']],
+    ]);
+
+    const result = walkDependency(
+      startAddress,
+      new Map(),
+      dynamicDependency,
+      new Set(),
+      stateProxy,
+      'new',
+      () => {}
+    );
+
+    expect(collectResult(result)).toEqual([]);
+  });
+
   it('dynamic dependency with different wildcard paths uses null listIndex', () => {
     // users.*.name -> groups.*.id (no common wildcard paths)
     const stateProxy = createStateProxy({

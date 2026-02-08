@@ -2,8 +2,8 @@ import { WILDCARD } from "../define";
 import { IListIndex } from "../list/types";
 import { IPathInfo, IStateAddress } from "./types";
 
-const _cache: WeakMap<IListIndex, WeakMap<IPathInfo, StateAddress>> = new WeakMap();
-const _cacheNullListIndex: WeakMap<IPathInfo, StateAddress> = new WeakMap();
+const _cache: WeakMap<IListIndex, WeakMap<IPathInfo, IStateAddress>> = new WeakMap();
+const _cacheNullListIndex: WeakMap<IPathInfo, IStateAddress> = new WeakMap();
 
 class StateAddress implements IStateAddress {
   readonly pathInfo: IPathInfo;
@@ -46,7 +46,7 @@ export function createStateAddress(pathInfo: IPathInfo, listIndex: IListIndex | 
   } else {
     let cacheByPathInfo = _cache.get(listIndex);
     if (typeof cacheByPathInfo === "undefined") {
-      cacheByPathInfo = new WeakMap<IPathInfo, StateAddress>();
+      cacheByPathInfo = new WeakMap<IPathInfo, IStateAddress>();
       _cache.set(listIndex, cacheByPathInfo);
     }
     let cached = cacheByPathInfo.get(pathInfo);

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { getUpdater } from '../src/updater/updater';
 import { setStateElementByName } from '../src/stateElementByName';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
@@ -16,6 +17,12 @@ const applyChangeFromBindingsMock = vi.mocked(applyChangeFromBindings);
 
 function createAddress(path: string) {
   return createStateAddress(getPathInfo(path), null);
+}
+
+function createAbsAddress(stateName: string, path: string) {
+  const pathInfo = getPathInfo(path);
+  const absPathInfo = getAbsolutePathInfo(stateName, pathInfo);
+  return createAbsoluteStateAddress(absPathInfo, null);
 }
 
 function createStateElement() {
@@ -33,10 +40,11 @@ describe('updater/updater', () => {
     setStateElementByName('missing', null);
   });
 
-  it('stateElementが見つからない場合はエラーになること', async () => {
-    const address = createAddress('count');
-    // stateElementが存在しない状態でAbsoluteStateAddressを作成しようとするとエラー
-    expect(() => createAbsoluteStateAddress('missing', address)).toThrow(/State element with name "missing" not found/);
+  it('stateElementが見つからない場合でもAbsoluteStateAddressは作成できること', async () => {
+    // 新しいAPIではstateElementの存在チェックはcreateAbsoluteStateAddress内で行われない
+    const absoluteAddress = createAbsAddress('missing', 'count');
+    expect(absoluteAddress).toBeDefined();
+    expect(absoluteAddress.absolutePathInfo.stateName).toBe('missing');
   });
 
   it('enqueueでapplyChangeFromBindingsが呼ばれること', async () => {
@@ -46,7 +54,7 @@ describe('updater/updater', () => {
     setStateElementByName('default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsoluteStateAddress('default', address);
+    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
     addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
@@ -63,7 +71,7 @@ describe('updater/updater', () => {
     setStateElementByName('default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsoluteStateAddress('default', address);
+    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
     addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
@@ -81,7 +89,7 @@ describe('updater/updater', () => {
     setStateElementByName('default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsoluteStateAddress('default', address);
+    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
@@ -110,8 +118,8 @@ describe('updater/updater', () => {
     setStateElementByName('state2', stateElement2);
 
     const updater = getUpdater();
-    const absoluteAddress1 = createAbsoluteStateAddress('state1', address1);
-    const absoluteAddress2 = createAbsoluteStateAddress('state2', address2);
+    const absoluteAddress1 = createAbsAddress('state1', address1.pathInfo.path);
+    const absoluteAddress2 = createAbsAddress('state2', address2.pathInfo.path);
 
     addBindingInfoByAbsoluteStateAddress(absoluteAddress1, bindingInfo1);
     addBindingInfoByAbsoluteStateAddress(absoluteAddress2, bindingInfo2);

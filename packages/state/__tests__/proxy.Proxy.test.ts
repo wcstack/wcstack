@@ -11,6 +11,7 @@ import { setStateElementByName } from '../src/stateElementByName';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
@@ -136,12 +137,14 @@ describe('proxy/StateHandler', () => {
   });
 
   it('setでバインディングがあればapplyChangeが呼ばれること', async () => {
+    const countPathInfo = getPathInfo('count');
     const bindingInfo = {
       propName: 'value',
       propSegments: ['value'],
       propModifiers: [],
       statePathName: 'count',
-      statePathInfo: getPathInfo('count'),
+      statePathInfo: countPathInfo,
+      stateAbsolutePathInfo: getAbsolutePathInfo('default', countPathInfo),
       stateName: 'default',
       outFilters: [],
       inFilters: [],
@@ -154,7 +157,7 @@ describe('proxy/StateHandler', () => {
     const address = createStateAddress(bindingInfo.statePathInfo!, null);
     const stateElement = createMockStateElement();
     setStateElementByName('default', stateElement);
-    const absoluteAddress = createAbsoluteStateAddress('default', address);
+    const absoluteAddress = createAbsoluteStateAddress(getAbsolutePathInfo('default', address.pathInfo), address.listIndex);
     addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
     const proxy = createStateProxy({ count: 0 }, 'default', 'writable');
 

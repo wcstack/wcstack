@@ -17,6 +17,7 @@
  * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
  * - finallyでキャッシュへの格納を保証
  */
+import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { WILDCARD } from "../../define";
@@ -52,7 +53,8 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
     }
 }
 function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+    const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+    const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
     if (cacheEntry !== null) {
         return cacheEntry.value;

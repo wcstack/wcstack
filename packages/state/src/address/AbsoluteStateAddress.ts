@@ -1,36 +1,63 @@
-import { IStateElement } from "../components/types";
-import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
-import { IAbsoluteStateAddress, IStateAddress } from "./types";
+import { WILDCARD } from "../define";
+import { IListIndex } from "../list/types";
+import { IAbsolutePathInfo, IAbsoluteStateAddress } from "./types";
 
-const absoluteStateAddressByStateAddressByStateElement: WeakMap<IStateElement, WeakMap<IStateAddress, IAbsoluteStateAddress>> = new WeakMap();
+const _cache: WeakMap<IListIndex, WeakMap<IAbsolutePathInfo, IAbsoluteStateAddress>> = new WeakMap();
+const _cacheNullListIndex: WeakMap<IAbsolutePathInfo, IAbsoluteStateAddress> = new WeakMap();
 
-export function createAbsoluteStateAddress(stateName: string, address: IStateAddress): IAbsoluteStateAddress {
-  const stateElement = getStateElementByName(stateName);
-  if (stateElement === null) {
-    raiseError(`State element with name "${stateName}" not found.`);
+class AbsoluteStateAddress implements IAbsoluteStateAddress {
+  readonly absolutePathInfo: IAbsolutePathInfo;
+  readonly listIndex: IListIndex | null;
+  private _parentAbsoluteAddress: IAbsoluteStateAddress | null | undefined;
+
+  constructor(absolutePathInfo: IAbsolutePathInfo, listIndex: IListIndex | null) {
+    this.absolutePathInfo = absolutePathInfo;
+    this.listIndex = listIndex;
   }
-  let absoluteStateAddressByStateAddress = 
-    absoluteStateAddressByStateAddressByStateElement.get(stateElement);
-  if (typeof absoluteStateAddressByStateAddress !== "undefined") {
-    let absoluteStateAddress = 
-      absoluteStateAddressByStateAddress.get(address);
-    if (typeof absoluteStateAddress === "undefined") {
-      absoluteStateAddress = Object.freeze({
-        address,
-        stateName,
-      });
-      absoluteStateAddressByStateAddress.set(address, absoluteStateAddress);
+
+  get parentAbsoluteAddress(): IAbsoluteStateAddress | null {
+    if (typeof this._parentAbsoluteAddress !== 'undefined') {
+      return this._parentAbsoluteAddress;
     }
-    return absoluteStateAddress;
+    const parentAbsolutePathInfo = this.absolutePathInfo.parentAbsolutePathInfo;
+    if (parentAbsolutePathInfo === null) {
+      return null;
+    }
+    const lastSegment = this.absolutePathInfo.pathInfo.segments[this.absolutePathInfo.pathInfo.segments.length - 1];
+    let parentListIndex: IListIndex | null = null;
+    if (lastSegment === WILDCARD) {
+      parentListIndex = this.listIndex?.parentListIndex ?? null;
+    } else {
+      parentListIndex = this.listIndex;
+    }
+    return this._parentAbsoluteAddress = createAbsoluteStateAddress(
+      parentAbsolutePathInfo,
+      parentListIndex
+    );
+  }
+}
+
+export function createAbsoluteStateAddress(absolutePathInfo: IAbsolutePathInfo, listIndex: IListIndex | null): IAbsoluteStateAddress {
+  if (listIndex === null) {
+    let cached = _cacheNullListIndex.get(absolutePathInfo);
+    if (typeof cached !== "undefined") {
+      return cached;
+    }
+    cached = new AbsoluteStateAddress(absolutePathInfo, null);
+    _cacheNullListIndex.set(absolutePathInfo, cached);
+    return cached;
   } else {
-    const absoluteStateAddress = Object.freeze({
-      address,
-      stateName,
-    });
-    absoluteStateAddressByStateAddress = new WeakMap([[address, absoluteStateAddress]]);
-    absoluteStateAddressByStateAddressByStateElement.set(
-      stateElement, absoluteStateAddressByStateAddress);
-    return absoluteStateAddress;
+    let cacheByAbsolutePathInfo = _cache.get(listIndex);
+    if (typeof cacheByAbsolutePathInfo === "undefined") {
+      cacheByAbsolutePathInfo = new WeakMap<IAbsolutePathInfo, IAbsoluteStateAddress>();
+      _cache.set(listIndex, cacheByAbsolutePathInfo);
+    }
+    let cached = cacheByAbsolutePathInfo.get(absolutePathInfo);
+    if (typeof cached !== "undefined") {
+      return cached;
+    }
+    cached = new AbsoluteStateAddress(absolutePathInfo, listIndex);
+    cacheByAbsolutePathInfo.set(absolutePathInfo, cached);
+    return cached;
   }
 }

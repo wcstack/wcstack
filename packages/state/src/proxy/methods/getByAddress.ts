@@ -18,6 +18,7 @@
  * - finallyでキャッシュへの格納を保証
  */
 
+import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
@@ -66,7 +67,8 @@ function _getByAddressWithCache(
   handler  : IStateHandler,
   stateElement: IStateElement
 ): any {
-  const absAddress = createAbsoluteStateAddress(stateElement.name, address);
+  const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+  const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
   const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
   if (cacheEntry !== null) {
     return cacheEntry.value;

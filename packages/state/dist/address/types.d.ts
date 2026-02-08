@@ -29,9 +29,15 @@ export interface IStateAddress {
     readonly listIndex: IListIndex | null;
     readonly parentAddress: IStateAddress | null;
 }
-export interface IAbsoluteStateAddress {
-    readonly address: IStateAddress;
+export interface IAbsolutePathInfo {
     readonly stateName: string;
+    readonly pathInfo: IPathInfo;
+    readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
+}
+export interface IAbsoluteStateAddress {
+    readonly absolutePathInfo: IAbsolutePathInfo;
+    readonly listIndex: IListIndex | null;
+    readonly parentAbsoluteAddress: IAbsoluteStateAddress | null;
 }
 export type WildcardType = "none" | "context" | "partial" | "all";
 export interface IResolvedAddress {
