@@ -1,0 +1,110 @@
+<template>
+  <div class="container">
+    <div>
+      <table class="table table-striped">
+        <colgroup>
+          <col class="col-md-3">
+          <col class="col-md-3">
+          <col class="col-md-2">
+          <col class="col-md-2">
+          <col class="col-md-2">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="text-center">State</th>
+            <th class="text-center">Capital City</th>
+            <th class="text-center">Population</th>
+            <th class="text-center">Percent of Region's Population</th>
+            <th class="text-center">Percent of Total Population</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ for:regions }}
+            {{ for:regions.*.states }}
+              <tr>
+                <td class="text-center">{{ regions.*.states.*.name }}</td>
+                <td class="text-center">{{ regions.*.states.*.capital }}</td>
+                <td class="text-right" data-bind="
+                  class.over : regions.*.states.*.population|ge,5000000;
+                  class.under: regions.*.states.*.population|lt,1000000;
+                ">{{ regions.*.states.*.population|locale }}</td>
+                <td class="text-right">{{ regions.*.states.*.shareOfRegionPopulation|percent,2 }}</td>
+                <td class="text-right">{{ regions.*.states.*.shareOfPopulation|percent,2 }}</td>
+              </tr>
+            {{ endfor: }}
+            <tr class="summary">
+              <td class="text-center" colspan="2">{{ regions.* }}</td>
+              <td class="text-right">{{ regions.*.population|locale }}</td>
+              <td></td>
+              <td class="text-right">{{ regions.*.shareOfPopulation|percent,2 }}</td>
+            </tr>
+          {{ endfor: }}
+        </tbody>
+        <tfoot>
+          <tr class="summary">
+            <td class="text-center" colspan="2">Total</td>
+            <td class="text-right">{{ population|locale }}</td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  
+</template>  
+
+<style>
+  body {
+    margin-left: 10px;
+  }
+  
+  .over {
+    color: red;
+  }
+  
+  .under {
+    color: blue;
+  }
+  
+  tr.summary td {
+    background-color: white;
+    font-weight: bold;
+  }
+</style>
+  
+<script type="module">
+import { allStates } from "states";
+
+const summaryPopulation = (sum, population) => sum + population;
+
+export default class {
+  stateByRegion = Map.groupBy(allStates, state => state.region);
+  regions = Array.from(new Set(allStates.map(state => state.region))).toSorted();
+
+  get "regions.*.states"() {
+    return this.stateByRegion.get(this["regions.*"]);
+  }
+
+  get "regions.*.states.*.shareOfRegionPopulation"() {
+    return this["regions.*.states.*.population"] / this["regions.*.population"];
+  }
+
+  get "regions.*.states.*.shareOfPopulation"() {
+    return this["regions.*.states.*.population"] / this.population;
+  }
+
+  get "regions.*.population"() {
+    return this.$getAll("regions.*.states.*.population", [ this.$1 ]).reduce(summaryPopulation, 0);
+  }
+
+  get "regions.*.shareOfPopulation"() {
+    return this["regions.*.population"] / this.population;
+  }
+
+  get population() {
+    return this.$getAll("regions.*.population", []).reduce(summaryPopulation, 0);
+  }
+
+}
+</script>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>U.S. State population</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "states": "./allStates.js",
+          "@components/app-main"     : "./us-states.st.html"
+        }
+      }
+    </script>
+    <script type="module" src="../../dist/EasyLoaders/components--shadow-dom-mode-none.js"></script>
+  </head>
+  <body>
+    <app-main></app-main>
+  </body>
+</html>

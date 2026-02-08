@@ -136,8 +136,9 @@ class LoopContextStack {
             if (lastLoopContext.pathInfo.wildcardCount + 1 !== loopContext.pathInfo.wildcardCount) {
                 raiseError(`Cannot push loop context for a list whose wildcard count is not exactly one more than the current active loop context.`);
             }
-            const lastWildcardParentPathInfo = loopContext.pathInfo.wildcardParentPathInfos[loopContext.pathInfo.wildcardParentPathInfos.length - 1];
-            if (lastLoopContext.pathInfo !== lastWildcardParentPathInfo) {
+            // 
+            const prevWildcardPathInfo = loopContext.pathInfo.wildcardPathInfos[loopContext.pathInfo.wildcardPathInfos.length - 2];
+            if (lastLoopContext.pathInfo !== prevWildcardPathInfo) {
                 raiseError(`Cannot push loop context for a list whose parent wildcard path info does not match the current active loop context.`);
             }
         }

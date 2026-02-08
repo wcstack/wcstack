@@ -34,8 +34,8 @@ describe('loopContext', () => {
     const stack = createLoopContextStack();
     const rootIndex = createListIndex(null, 0);
     const childIndex = createListIndex(rootIndex, 0);
-    const outerPath = getPathInfo('users.*'); // wildcardCount = 1
-    const innerPath = getPathInfo('users.*.orders.*'); // wildcardCount = 2, parent path mismatch
+    const outerPath = getPathInfo('items.*'); // wildcardCount = 1
+    const innerPath = getPathInfo('users.*.orders.*'); // wildcardCount = 2, prev wildcard path = users.* != items.*
 
     stack.createLoopContext(createStateAddress(outerPath, rootIndex), () => {
       expect(() => stack.createLoopContext(createStateAddress(innerPath, childIndex), () => undefined)).toThrow(
@@ -48,8 +48,8 @@ describe('loopContext', () => {
     const stack = createLoopContextStack();
     const rootIndex = createListIndex(null, 0);
     const childIndex = createListIndex(rootIndex, 1);
-    const outerPath = getPathInfo('users.*.orders'); // wildcardCount = 1
-    const innerPath = getPathInfo('users.*.orders.*'); // last wildcard parent path == outerPath
+    const outerPath = getPathInfo('users.*'); // wildcardCount = 1
+    const innerPath = getPathInfo('users.*.orders.*'); // prev wildcard path = users.* == outerPath
 
     stack.createLoopContext(createStateAddress(outerPath, rootIndex), (outer) => {
       expect(outer.pathInfo).toBe(outerPath);
