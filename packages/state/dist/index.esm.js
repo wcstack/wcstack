@@ -2671,26 +2671,27 @@ class Content {
         return this._mounted;
     }
     appendTo(targetNode) {
-        targetNode.appendChild(this._content);
+        for (const node of this._childNodeArray) {
+            targetNode.appendChild(node);
+        }
         this._mounted = true;
     }
     mountAfter(targetNode) {
         const parentNode = targetNode.parentNode;
         const nextSibling = targetNode.nextSibling;
         if (parentNode) {
-            if (this._mounted) {
-                this._childNodeArray.forEach((node) => {
-                    this._content.appendChild(node);
-                });
+            for (const node of this._childNodeArray) {
+                parentNode.insertBefore(node, nextSibling);
             }
-            parentNode.insertBefore(this._content, nextSibling);
         }
         this._mounted = true;
     }
     unmount() {
-        this._childNodeArray.forEach((node) => {
-            this._content.appendChild(node);
-        });
+        for (const node of this._childNodeArray) {
+            if (node.parentNode !== null) {
+                node.parentNode.removeChild(node);
+            }
+        }
         const bindings = getBindingsByContent(this);
         for (const binding of bindings) {
             if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
@@ -2730,8 +2731,10 @@ function createContent(bindingInfo) {
 }
 
 const lastValueByNode = new WeakMap();
+const lastNodeByNode = new WeakMap();
 const contentByListIndex = new WeakMap();
 const pooledContentsByNode = new WeakMap();
+const isOnlyNodeInParentContentByNode = new WeakMap();
 function getPooledContents(bindingInfo) {
     return pooledContentsByNode.get(bindingInfo.node) || [];
 }
@@ -2744,11 +2747,49 @@ function setPooledContent(bindingInfo, content) {
         contents.push(content);
     }
 }
+function isOnlyNodeInParentContent(firstNode, lastNode) {
+    let prevCheckNode = firstNode.previousSibling;
+    let nextCheckNode = lastNode.nextSibling;
+    let onlyNode = true;
+    while (prevCheckNode !== null) {
+        if (prevCheckNode.nodeType === Node.ELEMENT_NODE
+            || (prevCheckNode.nodeType === Node.TEXT_NODE && (prevCheckNode.textContent?.trim() ?? '') !== '')) {
+            onlyNode = false;
+            break;
+        }
+        prevCheckNode = prevCheckNode.previousSibling;
+    }
+    while (nextCheckNode !== null) {
+        if (nextCheckNode.nodeType === Node.ELEMENT_NODE
+            || (nextCheckNode.nodeType === Node.TEXT_NODE && (nextCheckNode.textContent?.trim() ?? '') !== '')) {
+            onlyNode = false;
+            break;
+        }
+        nextCheckNode = nextCheckNode.nextSibling;
+    }
+    return onlyNode;
+}
 function applyChangeToFor(bindingInfo, context, newValue) {
     const listPathInfo = bindingInfo.statePathInfo;
     const listIndex = getListIndexByBindingInfo(bindingInfo);
     const lastValue = lastValueByNode.get(bindingInfo.node);
     const diff = createListDiff(listIndex, lastValue, newValue);
+    if (Array.isArray(lastValue)
+        && lastValue.length === diff.deleteIndexSet.size
+        && diff.deleteIndexSet.size > 0
+        && bindingInfo.node.parentNode !== null) {
+        let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
+        if (typeof isOnlyNode === 'undefined') {
+            const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
+            isOnlyNode = isOnlyNodeInParentContent(bindingInfo.node, lastNode);
+            isOnlyNodeInParentContentByNode.set(bindingInfo.node, isOnlyNode);
+        }
+        if (isOnlyNode) {
+            const parentNode = bindingInfo.node.parentNode;
+            parentNode.textContent = '';
+            parentNode.appendChild(bindingInfo.node);
+        }
+    }
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = contentByListIndex.get(deleteIndex);
         if (typeof content !== 'undefined') {
@@ -2803,13 +2844,14 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             if (lastNode.nextSibling !== content.firstNode) {
                 content.mountAfter(lastNode);
             }
-            lastNode = content.lastNode || lastNode;
         }
+        lastNode = content.lastNode || lastNode;
         contentByListIndex.set(index, content);
     }
+    lastNodeByNode.set(bindingInfo.node, lastNode);
     if (fragment !== null) {
         // Mount all at once
-        lastNode.parentNode.insertBefore(fragment, lastNode.nextSibling);
+        bindingInfo.node.parentNode.insertBefore(fragment, bindingInfo.node.nextSibling);
     }
     lastValueByNode.set(bindingInfo.node, newValue);
 }

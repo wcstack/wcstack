@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { applyChangeToFor, __test_setContentByListIndex } from '../src/apply/applyChangeToFor';
+import { applyChangeToFor, __test_setContentByListIndex, __test_deleteLastNodeByNode } from '../src/apply/applyChangeToFor';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import { createListDiff } from '../src/list/createListDiff';
@@ -727,6 +727,246 @@ describe('applyChangeToFor', () => {
     document.body.removeChild(container);
     setListIndexesByList(list, null);
     setListIndexesByList(extendedList, null);
+  });
+
+  it('全件削除でisOnlyNode=trueの場合にtextContent一括クリアされること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2, 3];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+    expect(container.childNodes.length).toBe(4);
+
+    // 全件削除 → textContent='' による一括クリア
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+
+    // placeholderのみ残ること
+    expect(container.childNodes.length).toBe(1);
+    expect(container.firstChild).toBe(placeholder);
+
+    setListIndexesByList(list, null);
+  });
+
+  it('全件削除でisOnlyNode=trueの場合にキャッシュが使われること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    // 1回目: apply → 全削除（キャッシュ作成）
+    const list1 = [1, 2];
+    const list1Indexes = createListIndexes(null, [], list1, []);
+    setListIndexesByList(list1, list1Indexes);
+    apply(bindingInfo, list1);
+
+    const empty1: any[] = [];
+    createListIndexes(null, list1, empty1, list1Indexes);
+    apply(bindingInfo, empty1);
+    expect(container.childNodes.length).toBe(1);
+
+    // 2回目: apply → 全削除（キャッシュヒット）
+    const list2 = [3, 4];
+    const list2Indexes = createListIndexes(null, empty1, list2, []);
+    setListIndexesByList(list2, list2Indexes);
+    apply(bindingInfo, list2);
+
+    const empty2: any[] = [];
+    createListIndexes(null, list2, empty2, list2Indexes);
+    apply(bindingInfo, empty2);
+    expect(container.childNodes.length).toBe(1);
+    expect(container.firstChild).toBe(placeholder);
+
+    setListIndexesByList(list1, null);
+    setListIndexesByList(list2, null);
+  });
+
+  it('全件削除で前方に要素がある場合はisOnlyNode=falseとなること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const sibling = document.createElement('div');
+    sibling.id = 'sibling';
+    container.appendChild(sibling);
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+    expect(container.childNodes.length).toBe(4);
+
+    // 全件削除 → 前方にsibling要素あり → textContentクリアされない
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+
+    // sibling + placeholder が残ること
+    expect(container.childNodes.length).toBe(2);
+    expect(container.childNodes[0]).toBe(sibling);
+    expect(container.childNodes[1]).toBe(placeholder);
+
+    setListIndexesByList(list, null);
+  });
+
+  it('全件削除で後方に要素がある場合はisOnlyNode=falseとなること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    const tail = document.createElement('div');
+    tail.id = 'tail';
+    container.appendChild(tail);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+
+    // 全件削除 → 後方にtail要素あり → textContentクリアされない
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+
+    // placeholder + tail が残ること
+    expect(container.childNodes.length).toBe(2);
+    expect(container.childNodes[0]).toBe(placeholder);
+    expect(container.childNodes[1]).toBe(tail);
+
+    setListIndexesByList(list, null);
+  });
+
+  it('全件削除で前方に非空白テキストがある場合はisOnlyNode=falseとなること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    container.appendChild(document.createTextNode('hello'));
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+
+    // テキストノード + placeholder が残ること
+    expect(container.childNodes.length).toBe(2);
+    expect(container.childNodes[0].textContent).toBe('hello');
+
+    setListIndexesByList(list, null);
+  });
+
+  it('全件削除で後方に非空白テキストがある場合はisOnlyNode=falseとなること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    container.appendChild(document.createTextNode('world'));
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+
+    // placeholder + テキストノード が残ること
+    expect(container.childNodes.length).toBe(2);
+    expect(container.childNodes[1].textContent).toBe('world');
+
+    setListIndexesByList(list, null);
+  });
+
+  it('全件削除でlastNodeByNodeが未設定の場合はbindingInfo.nodeがフォールバックされること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+    expect(container.childNodes.length).toBe(2);
+
+    // lastNodeByNodeを削除してフォールバックを発生させる
+    __test_deleteLastNodeByNode(placeholder);
+
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+
+    expect(container.childNodes.length).toBe(1);
+    expect(container.firstChild).toBe(placeholder);
+
+    setListIndexesByList(list, null);
+  });
+
+  it('全件削除で空白テキストのみの兄弟はisOnlyNode=trueとなること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    container.appendChild(document.createTextNode('\n  '));
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+    container.appendChild(document.createTextNode('  \t'));
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1];
+    const listIndexes = createListIndexes(null, [], list, []);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+
+    // 全件削除 → 空白テキストのみなのでisOnlyNode=true → textContentクリア
+    const emptyList: any[] = [];
+    createListIndexes(null, list, emptyList, listIndexes);
+    apply(bindingInfo, emptyList);
+
+    // textContent=''でクリア後、placeholderのみ
+    expect(container.childNodes.length).toBe(1);
+    expect(container.firstChild).toBe(placeholder);
+
+    setListIndexesByList(list, null);
   });
 
   it('既存インデックスのcontentが見つからない場合はエラーになること', () => {

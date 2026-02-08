@@ -14,8 +14,10 @@ import { applyChange } from "./applyChange";
 import { IApplyContext } from "./types";
 
 const lastValueByNode = new WeakMap<Node, any>();
+const lastNodeByNode = new WeakMap<Node, Node>();
 const contentByListIndex = new WeakMap<IListIndex, IContent>();
 const pooledContentsByNode = new WeakMap<Node, IContent[]>();
+const isOnlyNodeInParentContentByNode = new WeakMap<Node, boolean>();
 
 // テスト用ヘルパー（内部状態の操作）
 export function __test_setContentByListIndex(index: IListIndex, content: IContent | null): void {
@@ -24,6 +26,10 @@ export function __test_setContentByListIndex(index: IListIndex, content: IConten
   } else {
     contentByListIndex.set(index, content);
   }
+}
+
+export function __test_deleteLastNodeByNode(node: Node): void {
+  lastNodeByNode.delete(node);
 }
 
 function getPooledContents(bindingInfo: IBindingInfo): IContent[] {
@@ -39,6 +45,29 @@ function setPooledContent(bindingInfo: IBindingInfo, content: IContent): void {
   }
 }
 
+function isOnlyNodeInParentContent(firstNode: Node, lastNode: Node): boolean {
+  let prevCheckNode = firstNode.previousSibling;
+  let nextCheckNode = lastNode.nextSibling;
+  let onlyNode = true;
+  while(prevCheckNode !== null) {
+    if (prevCheckNode.nodeType === Node.ELEMENT_NODE 
+      || (prevCheckNode.nodeType === Node.TEXT_NODE && (prevCheckNode.textContent?.trim() ?? '') !== '')) {
+      onlyNode = false;
+      break;
+    }
+    prevCheckNode = prevCheckNode.previousSibling;
+  }
+  while(nextCheckNode !== null) {
+    if (nextCheckNode.nodeType === Node.ELEMENT_NODE 
+      || (nextCheckNode.nodeType === Node.TEXT_NODE && (nextCheckNode.textContent?.trim() ?? '') !== '')) {
+      onlyNode = false;
+      break;
+    }
+    nextCheckNode = nextCheckNode.nextSibling;
+  }
+  return onlyNode;
+}
+
 export function applyChangeToFor(
   bindingInfo: IBindingInfo, 
   context: IApplyContext,
@@ -49,6 +78,23 @@ export function applyChangeToFor(
   const lastValue = lastValueByNode.get(bindingInfo.node);
   const diff = createListDiff(listIndex, lastValue, newValue);
 
+  if (Array.isArray(lastValue) 
+    && lastValue.length === diff.deleteIndexSet.size 
+    && diff.deleteIndexSet.size > 0
+    && bindingInfo.node.parentNode !== null
+  ) {
+    let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
+    if (typeof isOnlyNode === 'undefined') {
+      const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
+      isOnlyNode = isOnlyNodeInParentContent(bindingInfo.node, lastNode);
+      isOnlyNodeInParentContentByNode.set(bindingInfo.node, isOnlyNode);
+    }
+    if (isOnlyNode) {
+      const parentNode = bindingInfo.node.parentNode;
+      parentNode.textContent = '';
+      parentNode.appendChild(bindingInfo.node);
+    }
+  }
   for(const deleteIndex of diff.deleteIndexSet) {
     const content = contentByListIndex.get(deleteIndex);
     if (typeof content !== 'undefined') {
@@ -103,13 +149,14 @@ export function applyChangeToFor(
       if (lastNode.nextSibling !== content.firstNode) {
         content.mountAfter(lastNode);
       }
-      lastNode = content.lastNode || lastNode;
     }
+    lastNode = content.lastNode || lastNode;
     contentByListIndex.set(index, content);
   }
+  lastNodeByNode.set(bindingInfo.node, lastNode);
   if (fragment !== null) {
     // Mount all at once
-    lastNode.parentNode!.insertBefore(fragment, lastNode.nextSibling);
+    bindingInfo.node.parentNode!.insertBefore(fragment, bindingInfo.node.nextSibling);
   }
   lastValueByNode.set(bindingInfo.node, newValue);
 }

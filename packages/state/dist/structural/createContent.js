@@ -30,26 +30,27 @@ class Content {
         return this._mounted;
     }
     appendTo(targetNode) {
-        targetNode.appendChild(this._content);
+        for (const node of this._childNodeArray) {
+            targetNode.appendChild(node);
+        }
         this._mounted = true;
     }
     mountAfter(targetNode) {
         const parentNode = targetNode.parentNode;
         const nextSibling = targetNode.nextSibling;
         if (parentNode) {
-            if (this._mounted) {
-                this._childNodeArray.forEach((node) => {
-                    this._content.appendChild(node);
-                });
+            for (const node of this._childNodeArray) {
+                parentNode.insertBefore(node, nextSibling);
             }
-            parentNode.insertBefore(this._content, nextSibling);
         }
         this._mounted = true;
     }
     unmount() {
-        this._childNodeArray.forEach((node) => {
-            this._content.appendChild(node);
-        });
+        for (const node of this._childNodeArray) {
+            if (node.parentNode !== null) {
+                node.parentNode.removeChild(node);
+            }
+        }
         const bindings = getBindingsByContent(this);
         for (const binding of bindings) {
             if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
