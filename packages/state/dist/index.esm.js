@@ -2820,8 +2820,23 @@ function applyChangeToFor(bindingInfo, context, newValue) {
                 if (typeof content === 'undefined') {
                     content = createContent(bindingInfo);
                 }
+                // コンテント活性化の前にDOMツリーに追加しておく必要がある
+                if (fragment !== null) {
+                    content.appendTo(fragment);
+                }
+                else {
+                    // Update lastNode for next iteration to ensure correct order
+                    // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
+                    if (lastNode.nextSibling !== content.firstNode) {
+                        content.mountAfter(lastNode);
+                    }
+                }
+                // コンテントを活性化
                 activateContent(content, loopContext, context);
             });
+            if (typeof content === 'undefined') {
+                raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
+            }
         }
         else {
             content = contentByListIndex.get(index);
@@ -2832,16 +2847,11 @@ function applyChangeToFor(bindingInfo, context, newValue) {
                     applyChange(indexBinding, context);
                 }
             }
-        }
-        if (typeof content === 'undefined') {
-            raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
-        }
-        if (fragment !== null) {
-            content.appendTo(fragment);
-        }
-        else {
             // Update lastNode for next iteration to ensure correct order
             // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
+            if (typeof content === 'undefined') {
+                raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
+            }
             if (lastNode.nextSibling !== content.firstNode) {
                 content.mountAfter(lastNode);
             }
@@ -4458,8 +4468,8 @@ function collectStructuralFragments(root, forPath) {
     }
 }
 
-async function waitForStateInitialize() {
-    const elements = document.querySelectorAll(config.tagNames.state);
+async function waitForStateInitialize(root) {
+    const elements = root.querySelectorAll(config.tagNames.state);
     const promises = [];
     for (const element of elements) {
         const stateElement = element;
@@ -4470,7 +4480,7 @@ async function waitForStateInitialize() {
 
 function registerHandler() {
     document.addEventListener("DOMContentLoaded", async () => {
-        await waitForStateInitialize();
+        await waitForStateInitialize(document);
         convertMustacheToComments(document);
         collectStructuralFragments(document);
         initializeBindings(document.body, null);

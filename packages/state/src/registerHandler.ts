@@ -5,7 +5,7 @@ import { waitForStateInitialize } from "./waitForStateInitialize.js";
 
 export function registerHandler() {
   document.addEventListener("DOMContentLoaded", async () => {
-    await waitForStateInitialize();
+    await waitForStateInitialize(document);
     convertMustacheToComments(document);
     collectStructuralFragments(document);
     initializeBindings(document.body, null);

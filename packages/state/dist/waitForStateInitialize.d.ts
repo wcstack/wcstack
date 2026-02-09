@@ -1,2 +1,2 @@
-export declare function waitForStateInitialize(): Promise<void>;
+export declare function waitForStateInitialize(root: Document | Element | DocumentFragment): Promise<void>;
 //# sourceMappingURL=waitForStateInitialize.d.ts.map

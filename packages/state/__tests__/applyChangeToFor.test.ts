@@ -1027,4 +1027,30 @@ describe('applyChangeToFor', () => {
     // 後片付け
     setListIndexesByList(list, null);
   });
+
+  it('add時にcreateLoopContextがコールバックを実行しなかった場合はエラーになること', () => {
+    const stateElement = createMockStateElement();
+    // コールバックを実行しないloopContextStackをモック
+    stateElement.loopContextStack = {
+      createLoopContext: (_stateAddress: any, _callback: any) => {
+        // コールバックを呼ばない → content が undefined のまま
+      }
+    } as any;
+    setStateElementByName('default', stateElement);
+    context = { stateName: 'default', stateElement: stateElement as any, state, appliedBindingSet: new Set() };
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    const list = [1];
+    createListDiff(null, [], list);
+
+    expect(() => apply(bindingInfo, list)).toThrow(/Content not found for ListIndex/);
+
+    setListIndexesByList(list, null);
+  });
 });

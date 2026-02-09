@@ -20,7 +20,7 @@ describe('waitForStateInitialize', () => {
   });
 
   it('state要素が存在しない場合は即時に解決されること', async () => {
-    await expect(waitForStateInitialize()).resolves.toBeUndefined();
+    await expect(waitForStateInitialize(document)).resolves.toBeUndefined();
   });
 
   it('全てのstate要素のinitializePromiseを待つこと', async () => {
@@ -36,7 +36,7 @@ describe('waitForStateInitialize', () => {
     document.body.appendChild(el2);
 
     let finished = false;
-    const waitPromise = waitForStateInitialize().then(() => {
+    const waitPromise = waitForStateInitialize(document).then(() => {
       finished = true;
     });
 
