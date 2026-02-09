@@ -9,6 +9,7 @@ import { createLoopContextStack } from "../list/loopContext";
 import { WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateProxy } from "../proxy/StateHandler";
+import { bindWebComponent } from "../webComponent/bindWebComponent";
 function getAllPropertyDescriptors(obj) {
     let descriptors = {};
     let proto = obj;
@@ -272,6 +273,12 @@ export class State extends HTMLElement {
     nextVersion() {
         this._version++;
         return this._version;
+    }
+    async bindWebComponent(component) {
+        await bindWebComponent(component, this);
+    }
+    bindProperty(prop, desc) {
+        Object.defineProperty(this._state, prop, desc);
     }
 }
 //# sourceMappingURL=State.js.map

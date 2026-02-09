@@ -46,7 +46,7 @@ function _initializeBindings(
 }
 
 export function initializeBindings(
-  root: Document | Element, parentLoopContext: ILoopContext | null
+  root: Document | DocumentFragment |Element, parentLoopContext: ILoopContext | null
 ): void {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
   for(const node of subscriberNodes) {

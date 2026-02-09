@@ -13,6 +13,7 @@ import { WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
+import { bindWebComponent } from "../webComponent/bindWebComponent";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -311,4 +312,13 @@ export class State extends HTMLElement implements IStateElement {
     this._version++;
     return this._version;
   }
+
+  async bindWebComponent(component: Element): Promise<void> {
+    await bindWebComponent(component, this);
+  }
+
+  bindProperty(prop: string, desc: PropertyDescriptor): void {
+    Object.defineProperty(this._state, prop, desc);
+  }
+
 }

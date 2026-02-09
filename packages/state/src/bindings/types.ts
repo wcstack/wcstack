@@ -4,3 +4,8 @@ export interface IInitialBindingInfo {
   nodes: Node[];
   bindingInfos: IBindingInfo[];
 }
+
+export interface IInitializeBindingPromise {
+  promise: Promise<void>;
+  resolve: () => void;
+}

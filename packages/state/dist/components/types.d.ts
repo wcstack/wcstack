@@ -18,5 +18,7 @@ export interface IStateElement {
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
+    bindWebComponent(component: Element): Promise<void>;
+    bindProperty(prop: string, desc: PropertyDescriptor): void;
 }
 //# sourceMappingURL=types.d.ts.map

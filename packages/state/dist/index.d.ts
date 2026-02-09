@@ -59,6 +59,6 @@ interface ILoopContext extends IStateAddress {
     readonly listIndex: IListIndex;
 }
 
-declare function initializeBindings(root: Document | Element, parentLoopContext: ILoopContext | null): void;
+declare function initializeBindings(root: Document | DocumentFragment | Element, parentLoopContext: ILoopContext | null): void;
 
 export { bootstrapState, collectStructuralFragments, convertMustacheToComments, initializeBindings, waitForStateInitialize };
