@@ -82,15 +82,7 @@ function loadFromScriptJson(id) {
 
 const stateElementByName = new Map();
 function getStateElementByName(name) {
-    const result = stateElementByName.get(name) || null;
-    if (result === null && name === 'default') {
-        const state = document.querySelector(`${config.tagNames.state}:not([name])`);
-        if (state instanceof State) {
-            stateElementByName.set('default', state);
-            return state;
-        }
-    }
-    return result;
+    return stateElementByName.get(name) || null;
 }
 function setStateElementByName(name, element) {
     if (element === null) {
@@ -3625,6 +3617,28 @@ function getListIndex(target, resolvedAddress, receiver, handler) {
     }
 }
 
+function postUpdate(target, _prop, receiver, handler) {
+    const stateElement = handler.stateElement;
+    return (path) => {
+        const resolvedAddress = getResolvedAddress(path);
+        const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+        const address = createStateAddress(resolvedAddress.pathInfo, listIndex);
+        const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+        const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+        const updater = getUpdater();
+        updater.enqueueAbsoluteAddress(absAddress);
+        // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
+        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+            // キャッシュを無効化（ダーティ）
+            const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
+            const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
+            setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+            // 更新対象として登録
+            updater.enqueueAbsoluteAddress(absDepAddress);
+        });
+    };
+}
+
 /**
  * setLoopContext.ts
  *
@@ -3695,6 +3709,9 @@ function get(target, prop, receiver, handler) {
         return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
     }
     if (typeof prop === "string") {
+        if (prop === "$stateElement") {
+            return handler.stateElement;
+        }
         if (prop === "$$setLoopContextAsync") {
             return (loopContext, callback = async () => { }) => {
                 return setLoopContextAsync(handler, loopContext, callback);
@@ -3713,6 +3730,11 @@ function get(target, prop, receiver, handler) {
         if (prop === "$getAll") {
             return (path, indexes) => {
                 return getAll(target, prop, receiver, handler)(path, indexes);
+            };
+        }
+        if (prop === "$postUpdate") {
+            return (path) => {
+                return postUpdate(target, prop, receiver, handler)(path);
             };
         }
         const resolvedAddress = getResolvedAddress(prop);
@@ -3891,6 +3913,8 @@ class State extends HTMLElement {
     _initialized = false;
     _initializePromise;
     _resolveInitialize = null;
+    _loadingPromise;
+    _resolveLoading = null;
     _listPaths = new Set();
     _elementPaths = new Set();
     _getterPaths = new Set();
@@ -3907,6 +3931,9 @@ class State extends HTMLElement {
         super();
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
+        });
+        this._loadingPromise = new Promise((resolve) => {
+            this._resolveLoading = resolve;
         });
     }
     get _state() {
@@ -3928,6 +3955,7 @@ class State extends HTMLElement {
         for (const path of stateInfo.setterPaths) {
             this._setterPaths.add(path);
         }
+        this._resolveLoading?.();
     }
     get name() {
         return this._name;
@@ -3995,9 +4023,11 @@ class State extends HTMLElement {
                 this._isLoadingState = false;
             }
         }
-        if (typeof this.__state === "undefined") {
+        if (!this._isLoadedState && !this._isLoadingState) {
             this._state = {};
         }
+        await this._loadingPromise;
+        setStateElementByName(this._name, this);
     }
     async connectedCallback() {
         if (!this._initialized) {
@@ -4471,6 +4501,7 @@ function collectStructuralFragments(root, forPath) {
 async function waitForStateInitialize(root) {
     const elements = root.querySelectorAll(config.tagNames.state);
     const promises = [];
+    await customElements.whenDefined(config.tagNames.state);
     for (const element of elements) {
         const stateElement = element;
         promises.push(stateElement.initializePromise);
@@ -4492,5 +4523,5 @@ function bootstrapState() {
     registerHandler();
 }
 
-export { bootstrapState };
+export { bootstrapState, collectStructuralFragments, convertMustacheToComments, initializeBindings, waitForStateInitialize };
 //# sourceMappingURL=index.esm.js.map

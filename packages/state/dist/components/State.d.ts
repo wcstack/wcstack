@@ -8,6 +8,8 @@ export declare class State extends HTMLElement implements IStateElement {
     private _initialized;
     private _initializePromise;
     private _resolveInitialize;
+    private _loadingPromise;
+    private _resolveLoading;
     private _listPaths;
     private _elementPaths;
     private _getterPaths;

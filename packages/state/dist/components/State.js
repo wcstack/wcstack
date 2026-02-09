@@ -40,6 +40,8 @@ export class State extends HTMLElement {
     _initialized = false;
     _initializePromise;
     _resolveInitialize = null;
+    _loadingPromise;
+    _resolveLoading = null;
     _listPaths = new Set();
     _elementPaths = new Set();
     _getterPaths = new Set();
@@ -56,6 +58,9 @@ export class State extends HTMLElement {
         super();
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
+        });
+        this._loadingPromise = new Promise((resolve) => {
+            this._resolveLoading = resolve;
         });
     }
     get _state() {
@@ -77,6 +82,7 @@ export class State extends HTMLElement {
         for (const path of stateInfo.setterPaths) {
             this._setterPaths.add(path);
         }
+        this._resolveLoading?.();
     }
     get name() {
         return this._name;
@@ -144,9 +150,11 @@ export class State extends HTMLElement {
                 this._isLoadingState = false;
             }
         }
-        if (typeof this.__state === "undefined") {
+        if (!this._isLoadedState && !this._isLoadingState) {
             this._state = {};
         }
+        await this._loadingPromise;
+        setStateElementByName(this._name, this);
     }
     async connectedCallback() {
         if (!this._initialized) {

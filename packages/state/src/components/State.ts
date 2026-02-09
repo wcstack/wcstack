@@ -54,6 +54,8 @@ export class State extends HTMLElement implements IStateElement {
   private _initialized: boolean = false;
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
+  private _loadingPromise: Promise<void>;
+  private _resolveLoading: (() => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
   private _elementPaths: Set<string> = new Set<string>();
   private _getterPaths: Set<string> = new Set<string>();
@@ -73,6 +75,9 @@ export class State extends HTMLElement implements IStateElement {
     this._initializePromise = new Promise<void>((resolve) => {
       this._resolveInitialize = resolve;
     });
+    this._loadingPromise = new Promise<void>((resolve) => {
+      this._resolveLoading = resolve;
+    });
   }
 
   private get _state(): IState {
@@ -81,6 +86,7 @@ export class State extends HTMLElement implements IStateElement {
     }
     return this.__state;
   }
+
   private set _state(value: IState) {
     this.__state = value;
     this._listPaths.clear();
@@ -94,6 +100,7 @@ export class State extends HTMLElement implements IStateElement {
     for(const path of stateInfo.setterPaths) {
       this._setterPaths.add(path);
     }
+    this._resolveLoading?.();
   }
 
   get name(): string {
@@ -156,14 +163,15 @@ export class State extends HTMLElement implements IStateElement {
         }
       } catch(e) {
         raiseError(`Failed to load state from inner script: ${(e as Error).message}`);
-
       } finally {
         this._isLoadingState = false;
       }
     }
-    if (typeof this.__state === "undefined") {
+    if (!this._isLoadedState && !this._isLoadingState) {
       this._state = {};
     }
+    await this._loadingPromise;
+    setStateElementByName(this._name, this);
   }
 
   async connectedCallback() {

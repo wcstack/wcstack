@@ -23,6 +23,7 @@ import { IStateAddress } from "../../address/types";
 import { INDEX_BY_INDEX_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
 import { getAll } from "../apis/getAll";
+import { postUpdate } from "../apis/postUpdate";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
@@ -43,6 +44,9 @@ export function get(
     return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {
+    if (prop === "$stateElement") {
+      return handler.stateElement;
+    }
     if (prop === "$$setLoopContextAsync") {
       return (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
         return setLoopContextAsync(handler, loopContext, callback);
@@ -71,7 +75,17 @@ export function get(
           receiver,
           handler
         )(path, indexes);
-      };
+      }
+    }
+    if (prop === "$postUpdate") {
+      return (path: string): void => {
+        return postUpdate(
+          target, 
+          prop, 
+          receiver,
+          handler
+        )(path);
+      }
     }
     const resolvedAddress = getResolvedAddress(prop);
     const listIndex = getListIndex(target, resolvedAddress, receiver, handler);

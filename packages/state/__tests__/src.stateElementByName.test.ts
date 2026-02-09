@@ -20,13 +20,16 @@ describe('stateElementByName', () => {
     expect(getStateElementByName('custom')).toBeNull();
   });
 
-  it('default名はDOMから取得できること', () => {
+  it('default名はDOMに追加されると自動的に登録されること', async () => {
     if (!customElements.get(config.tagNames.state)) {
       registerComponents();
     }
 
-    const el = document.createElement(config.tagNames.state);
+    const el = document.createElement(config.tagNames.state) as any;
     document.body.appendChild(el);
+
+    // connectedCallback内での非同期登録を待つ
+    await el.initializePromise;
 
     const found = getStateElementByName('default');
     expect(found).toBe(el);

@@ -4,7 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>simple state</title>
-  <script type="module" src="../../dist/auto.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "@wcstack/state": "../../dist/index.esm.js",
+        "@components/myComponent": "./components/myComponent.js"
+      }
+    }
+  </script>
   <style>
     .over {
       color: red;
@@ -14,6 +21,10 @@
 <body>
   <wcs-state>
     <script type="module">
+import "@components/myComponent";
+import { bootstrapState } from "@wcstack/state";
+bootstrapState();
+
 export default {
   count: 0,
   user: { id: 1, name: "Alice" },
@@ -80,8 +91,6 @@ export default {
     </div>
   </template>
 
-  <div>
-  </div>
-
+  <my-component data-bind-state="outer.value: user.name"></my-component>
 </body>
 </html>
