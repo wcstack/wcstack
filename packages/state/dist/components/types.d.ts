@@ -12,6 +12,7 @@ export interface IStateElement {
     readonly dynamicDependency: Map<string, string[]>;
     readonly staticDependency: Map<string, string[]>;
     readonly version: number;
+    readonly rootNode: Node;
     setPathInfo(path: string, bindingType: BindingType): void;
     addStaticDependency(parentPath: string, childPath: string): boolean;
     addDynamicDependency(fromPath: string, toPath: string): boolean;

@@ -1,10 +1,19 @@
 import { config } from "./config";
 import { raiseError } from "./raiseError";
-const stateElementByName = new Map();
-export function getStateElementByName(name) {
+const stateElementByNameByNode = new WeakMap();
+export function getStateElementByName(rootNode, name) {
+    let stateElementByName = stateElementByNameByNode.get(rootNode);
+    if (!stateElementByName) {
+        return null;
+    }
     return stateElementByName.get(name) || null;
 }
-export function setStateElementByName(name, element) {
+export function setStateElementByName(rootNode, name, element) {
+    let stateElementByName = stateElementByNameByNode.get(rootNode);
+    if (!stateElementByName) {
+        stateElementByName = new Map();
+        stateElementByNameByNode.set(rootNode, stateElementByName);
+    }
     if (element === null) {
         stateElementByName.delete(name);
         if (config.debug) {

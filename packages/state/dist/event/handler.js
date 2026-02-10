@@ -13,7 +13,8 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event)
     if (modifiers.includes('stop'))
         event.stopPropagation();
     const node = event.target;
-    const stateElement = getStateElementByName(stateName);
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }

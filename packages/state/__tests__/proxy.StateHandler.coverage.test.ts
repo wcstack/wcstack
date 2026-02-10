@@ -31,13 +31,13 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('stateElementが存在しない場合はエラーになること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(null as any);
-    expect(() => new StateHandler('missing', 'readonly')).toThrow(/State element with name "missing" not found/);
+    expect(() => new StateHandler(document, 'missing', 'readonly')).toThrow(/State element with name "missing" not found/);
   });
 
   it('初期状態のプロパティが正しいこと', () => {
     const stateElement = mockStateElement();
     vi.mocked(getStateElementByName).mockReturnValue(stateElement);
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
     expect(handler.addressStackLength).toBe(0);
     expect(handler.stateName).toBe('default');
     expect(handler.stateElement).toBe(stateElement);
@@ -45,13 +45,13 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('スタックが空の場合lastAddressStackはエラーになること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
     expect(() => handler.lastAddressStack).toThrow(/Last address stack is undefined/);
   });
 
   it('push/popでスタックが更新されること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
 
     const addrA = { id: 'a' } as any;
     const addrB = { id: 'b' } as any;
@@ -69,13 +69,13 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('空スタックのpopはnullを返すこと', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
     expect(handler.popAddress()).toBeNull();
   });
 
   it('pushAddressがMAX_LOOP_DEPTHを超えるとエラーになること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
     for (let i = 0; i < MAX_LOOP_DEPTH; i++) {
       handler.pushAddress(null);
     }
@@ -84,7 +84,7 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('popAddressでスロットがundefinedの場合エラーになること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
     handler.pushAddress({ id: 'a' } as any);
     // 内部スロットを強制的にundefinedにする
     (handler as any)._addressStack[(handler as any)._addressStackIndex] = undefined;
@@ -93,7 +93,7 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('loopContextのset/clearができること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
     const loopContext = { pathInfo: {} as any, listIndex: {} as any } as any;
 
     handler.setLoopContext(loopContext);
@@ -105,7 +105,7 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('get/set/hasがtrapとReflectへ委譲されること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'writable');
+    const handler = new StateHandler(document, 'default', 'writable');
     const target = { value: 1 } as any;
 
     expect(handler.get(target, 'value', target)).toBe('get-result');
@@ -120,7 +120,7 @@ describe('proxy/StateHandler (coverage)', () => {
 
   it('readonlyではsetでエラーになること', () => {
     vi.mocked(getStateElementByName).mockReturnValue(mockStateElement());
-    const handler = new StateHandler('default', 'readonly');
+    const handler = new StateHandler(document, 'default', 'readonly');
     const target = { value: 1 } as any;
 
     expect(() => handler.set(target, 'value', 2, target)).toThrow(/State "default" is readonly/);
@@ -132,7 +132,7 @@ describe('proxy/StateHandler (coverage)', () => {
     vi.mocked(getStateElementByName).mockReturnValue(stateElement);
 
     const state = { count: 1 };
-    const proxy = createStateProxy(state, 'default', 'writable');
+    const proxy = createStateProxy(document, state, 'default', 'writable');
 
     expect(proxy).toBeDefined();
     expect(typeof proxy).toBe('object');

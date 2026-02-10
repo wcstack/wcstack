@@ -6,8 +6,8 @@ import type { IBindingInfo } from '../src/types';
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (name: string) => map.get(name) || null,
-    setStateElementByName: (name: string, el: any) => {
+    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
+    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
       if (el === null) map.delete(name);
       else map.set(name, el);
     }
@@ -42,7 +42,7 @@ describe('createContent (unmount branches)', () => {
   async function setup() {
     vi.resetModules();
     const { setStateElementByName } = await import('../src/stateElementByName');
-    setStateElementByName('default', {
+    setStateElementByName(document, 'default', {
       setPathInfo: vi.fn(),
     } as any);
 
@@ -69,7 +69,7 @@ describe('createContent (unmount branches)', () => {
       uuid,
     } as ParseBindTextResult;
 
-    setFragmentInfoByUUID(uuid, {
+    setFragmentInfoByUUID(uuid, document, {
       fragment,
       parseBindTextResult,
       nodeInfos: [],
@@ -101,7 +101,7 @@ describe('createContent (unmount branches)', () => {
 
     expect(childContent.unmount).toHaveBeenCalled();
 
-    setFragmentInfoByUUID(uuid, null);
+    setFragmentInfoByUUID(uuid, document, null);
   });
 
   it('bindingTypeがif/elseif/else以外の場合は子contentが呼ばれないこと', async () => {
@@ -124,7 +124,7 @@ describe('createContent (unmount branches)', () => {
 
     expect(childContent.unmount).not.toHaveBeenCalled();
 
-    setFragmentInfoByUUID(uuid, null);
+    setFragmentInfoByUUID(uuid, document, null);
   });
 
   it('contentがnullの場合は子contentが呼ばれないこと', async () => {
@@ -136,7 +136,7 @@ describe('createContent (unmount branches)', () => {
 
     content.unmount();
 
-    setFragmentInfoByUUID(uuid, null);
+    setFragmentInfoByUUID(uuid, document, null);
   });
 
   it('unmountでstateAddressキャッシュがクリアされること', async () => {
@@ -166,7 +166,7 @@ describe('createContent (unmount branches)', () => {
       uuid,
     } as any;
 
-    setFragmentInfoByUUID(uuid, {
+    setFragmentInfoByUUID(uuid, document, {
       fragment,
       parseBindTextResult,
       nodeInfos: [],
@@ -211,7 +211,7 @@ describe('createContent (unmount branches)', () => {
     const address2 = getStateAddressByBindingInfo(childBinding);
     expect(address2.listIndex).toBe(listIndex2);
 
-    setFragmentInfoByUUID(uuid, null);
+    setFragmentInfoByUUID(uuid, document, null);
   });
 
   it('同じノードに複数のバインディングがある場合でも各バインディングのstateAddressキャッシュがクリアされること', async () => {
@@ -241,7 +241,7 @@ describe('createContent (unmount branches)', () => {
       uuid,
     } as any;
 
-    setFragmentInfoByUUID(uuid, {
+    setFragmentInfoByUUID(uuid, document, {
       fragment,
       parseBindTextResult,
       nodeInfos: [],
@@ -295,6 +295,6 @@ describe('createContent (unmount branches)', () => {
     expect(address2_1.listIndex).toBe(listIndex2);
     expect(address2_2.listIndex).toBe(listIndex2);
 
-    setFragmentInfoByUUID(uuid, null);
+    setFragmentInfoByUUID(uuid, document, null);
   });
 });

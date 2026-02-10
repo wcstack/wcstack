@@ -30,6 +30,9 @@ vi.mock('../src/apply/getValue', () => ({
 vi.mock('../src/stateElementByName', () => ({
   getStateElementByName: vi.fn()
 }));
+vi.mock('../src/apply/rootNodeByFragment', () => ({
+  getRootNodeByFragment: vi.fn()
+}));
 
 import { applyChange } from '../src/apply/applyChange';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
@@ -41,8 +44,10 @@ import { applyChangeToStyle } from '../src/apply/applyChangeToStyle';
 import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
 import { getValue } from '../src/apply/getValue';
 import { getStateElementByName } from '../src/stateElementByName';
+import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 
 const applyChangeToTextMock = vi.mocked(applyChangeToText);
+const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
 const applyChangeToForMock = vi.mocked(applyChangeToFor);
 const applyChangeToIfMock = vi.mocked(applyChangeToIf);
 const applyChangeToAttributeMock = vi.mocked(applyChangeToAttribute);
@@ -70,6 +75,7 @@ describe('applyChange (coverage)', () => {
   const state = {} as any;
   const context: IApplyContext = {
     stateName: 'default',
+    rootNode: document as any,
     stateElement: {} as any,
     state,
     appliedBindingSet: new Set(),
@@ -77,6 +83,7 @@ describe('applyChange (coverage)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    document.body.innerHTML = '';
   });
 
   it('filtersが順に適用されること', () => {
@@ -85,6 +92,7 @@ describe('applyChange (coverage)', () => {
       { filterName: 'mul2', args: [], filterFn: (v: any) => v * 2 }
     ];
     const input = document.createElement('input');
+    document.body.appendChild(input);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'prop',
@@ -105,6 +113,7 @@ describe('applyChange (coverage)', () => {
 
   it('textバインディングはapplyChangeToTextが呼ばれること', () => {
     const textNode = document.createTextNode('x');
+    document.body.appendChild(textNode);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'text',
@@ -123,6 +132,7 @@ describe('applyChange (coverage)', () => {
 
   it('classバインディングはapplyChangeToClassが呼ばれること', () => {
     const el = document.createElement('div');
+    document.body.appendChild(el);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'prop',
@@ -141,6 +151,7 @@ describe('applyChange (coverage)', () => {
 
   it('attrバインディングはapplyChangeToAttributeが呼ばれること', () => {
     const el = document.createElement('div');
+    document.body.appendChild(el);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'prop',
@@ -159,6 +170,7 @@ describe('applyChange (coverage)', () => {
 
   it('styleバインディングはapplyChangeToStyleが呼ばれること', () => {
     const el = document.createElement('div');
+    document.body.appendChild(el);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'prop',
@@ -177,6 +189,7 @@ describe('applyChange (coverage)', () => {
 
   it('forバインディングはapplyChangeToForが呼ばれること', () => {
     const placeholder = document.createComment('for');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'for',
@@ -197,6 +210,7 @@ describe('applyChange (coverage)', () => {
 
   it('ifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('if');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'if',
@@ -216,6 +230,7 @@ describe('applyChange (coverage)', () => {
 
   it('elseバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('else');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'else',
@@ -235,6 +250,7 @@ describe('applyChange (coverage)', () => {
 
   it('elseifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('elseif');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'elseif',
@@ -254,6 +270,7 @@ describe('applyChange (coverage)', () => {
 
   it('eventバインディングはapplyChangeをスキップすること', () => {
     const node = document.createElement('button');
+    document.body.appendChild(node);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'event',
@@ -274,6 +291,7 @@ describe('applyChange (coverage)', () => {
 
   it('stateNameが異なる場合は別stateで適用されること', () => {
     const textNode = document.createTextNode('x');
+    document.body.appendChild(textNode);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'text',
@@ -293,7 +311,7 @@ describe('applyChange (coverage)', () => {
     getValueMock.mockReturnValue('z');
     applyChange(bindingInfo, context);
 
-    expect(getStateElementByNameMock).toHaveBeenCalledWith('other');
+    expect(getStateElementByNameMock).toHaveBeenCalledWith(document, 'other');
     expect(applyChangeToTextMock).toHaveBeenCalledWith(
       bindingInfo,
       expect.objectContaining({ stateName: 'other', state: otherState }),
@@ -301,8 +319,71 @@ describe('applyChange (coverage)', () => {
     );
   });
 
+  it('同じbindingが2回適用された場合はスキップされること', () => {
+    const textNode = document.createTextNode('x');
+    document.body.appendChild(textNode);
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'text',
+      node: textNode,
+      replaceNode: textNode,
+      propName: 'text',
+      propSegments: []
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue('y');
+    const ctx: IApplyContext = {
+      stateName: 'default',
+      rootNode: document as any,
+      stateElement: {} as any,
+      state,
+      appliedBindingSet: new Set(),
+    };
+    applyChange(bindingInfo, ctx);
+    applyChange(bindingInfo, ctx);
+
+    expect(applyChangeToTextMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('DocumentFragmentのrootNodeが解決できない場合はエラーになること', () => {
+    getRootNodeByFragmentMock.mockReturnValue(null);
+
+    const fragment = document.createDocumentFragment();
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'text',
+      node: fragment,
+      replaceNode: fragment as any,
+      propName: 'text',
+      propSegments: []
+    } as IBindingInfo;
+
+    expect(() => applyChange(bindingInfo, context)).toThrow(/Root node for fragment not found for binding/);
+  });
+
+  it('DocumentFragmentのrootNodeが解決できる場合は正常に処理されること', () => {
+    getRootNodeByFragmentMock.mockReturnValue(document);
+    getValueMock.mockReturnValue('z');
+
+    const fragment = document.createDocumentFragment();
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'text',
+      node: fragment,
+      replaceNode: fragment as any,
+      propName: 'text',
+      propSegments: []
+    } as IBindingInfo;
+
+    applyChange(bindingInfo, context);
+
+    expect(getRootNodeByFragmentMock).toHaveBeenCalledWith(fragment);
+    expect(applyChangeToTextMock).toHaveBeenCalledTimes(1);
+  });
+
   it('stateNameが異なる場合にstateElementが見つからなければエラーになること', () => {
     const textNode = document.createTextNode('x');
+    document.body.appendChild(textNode);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'text',

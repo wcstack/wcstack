@@ -157,10 +157,10 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
 
   function setup(createOuterFn: () => ReturnType<typeof createOuterFragmentInfoUnwrapped>) {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
     // 内側フラグメントを先に登録（外側のnodeInfos生成時にUUID解決が必要）
-    setFragmentInfoByUUID(innerUUID, createInnerFragmentInfo());
-    setFragmentInfoByUUID(outerUUID, createOuterFn());
+    setFragmentInfoByUUID(innerUUID, document, createInnerFragmentInfo());
+    setFragmentInfoByUUID(outerUUID, document, createOuterFn());
 
     const state = {
       $$getByAddress: (stateAddress: any) => {
@@ -175,6 +175,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
 
     const context: IApplyContext = {
       stateName: 'default',
+      rootNode: document,
       stateElement: stateElement as any,
       state,
       appliedBindingSet: new Set(),
@@ -184,9 +185,9 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
   }
 
   afterEach(() => {
-    setFragmentInfoByUUID(outerUUID, null);
-    setFragmentInfoByUUID(innerUUID, null);
-    setStateElementByName('default', null);
+    setFragmentInfoByUUID(outerUUID, document, null);
+    setFragmentInfoByUUID(innerUUID, document, null);
+    setStateElementByName(document, 'default', null);
   });
 
   it('ネストされたforループ（ラップなし）で子コンテンツがDOMツリーに正しく配置されること', () => {
@@ -195,6 +196,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     const container = document.createElement('div');
     const outerPlaceholder = document.createComment('for');
     container.appendChild(outerPlaceholder);
+    document.body.appendChild(container);
 
     const outerData = [{}, {}];
     createListDiff(null, [], outerData);
@@ -229,6 +231,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     const container = document.createElement('div');
     const outerPlaceholder = document.createComment('for');
     container.appendChild(outerPlaceholder);
+    document.body.appendChild(container);
 
     const outerData = [{}, {}];
     createListDiff(null, [], outerData);
@@ -275,6 +278,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     const outerPlaceholder = document.createComment('for');
     container.appendChild(outerPlaceholder);
     document.body.appendChild(container);
+    document.body.appendChild(container);
 
     const outerData = [{}, {}];
     createListDiff(null, [], outerData);
@@ -299,6 +303,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     const container = document.createElement('div');
     const outerPlaceholder = document.createComment('for');
     container.appendChild(outerPlaceholder);
+    document.body.appendChild(container);
 
     // 初回: 1アイテム（children1 = ['a', 'b']）
     const singleItemChildren = ['a', 'b'];
@@ -350,6 +355,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     const container = document.createElement('div');
     const outerPlaceholder = document.createComment('for');
     container.appendChild(outerPlaceholder);
+    document.body.appendChild(container);
 
     const singleChildren = ['x'];
     context.state.$$getByAddress = (stateAddress: any) => {

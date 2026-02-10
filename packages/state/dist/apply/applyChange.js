@@ -9,6 +9,7 @@ import { applyChangeToStyle } from "./applyChangeToStyle.js";
 import { applyChangeToText } from "./applyChangeToText.js";
 import { getFilteredValue } from "./getFilteredValue.js";
 import { getValue } from "./getValue.js";
+import { getRootNodeByFragment } from "./rootNodeByFragment.js";
 const applyChangeByFirstSegment = {
     "class": applyChangeToClass,
     "attr": applyChangeToAttribute,
@@ -42,14 +43,22 @@ export function applyChange(binding, context) {
     if (binding.bindingType === "event") {
         return;
     }
-    if (binding.stateName !== context.stateName) {
-        const stateElement = getStateElementByName(binding.stateName);
+    let rootNode = binding.replaceNode.getRootNode();
+    if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
+        rootNode = getRootNodeByFragment(rootNode);
+        if (rootNode === null) {
+            raiseError(`Root node for fragment not found for binding.`);
+        }
+    }
+    if (binding.stateName !== context.stateName || rootNode !== context.rootNode) {
+        const stateElement = getStateElementByName(rootNode, binding.stateName);
         if (stateElement === null) {
             raiseError(`State element with name "${binding.stateName}" not found for binding.`);
         }
         stateElement.createState("readonly", (targetState) => {
             const newContext = {
                 stateName: binding.stateName,
+                rootNode: rootNode,
                 stateElement: stateElement,
                 state: targetState,
                 appliedBindingSet: context.appliedBindingSet

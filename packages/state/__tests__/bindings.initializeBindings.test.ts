@@ -97,17 +97,18 @@ function createMockStateElement(): IStateElement {
 
 describe('initializeBindings', () => {
   afterEach(() => {
-    setStateElementByName('default', null);
+    setStateElementByName(document, 'default', null);
     vi.clearAllMocks();
   });
 
   it('コメントノードのtextバインディングを初期化できること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const container = document.createElement('div');
     const comment = document.createComment('@@wcs-text: message');
     container.appendChild(comment);
+    document.body.appendChild(container);
 
     const setBindingSpy = vi.spyOn(stateElement, 'setPathInfo');
 
@@ -136,7 +137,7 @@ describe('initializeBindings', () => {
 
   it('eventバインディングは登録処理をスキップすること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const setBindingSpy = vi.spyOn(stateElement, 'setPathInfo');
 
@@ -144,6 +145,7 @@ describe('initializeBindings', () => {
     const el = document.createElement('button');
     el.setAttribute('data-bind-state', 'onclick: handleClick');
     container.appendChild(el);
+    document.body.appendChild(container);
 
     initializeBindings(container, null);
 
@@ -152,7 +154,7 @@ describe('initializeBindings', () => {
 
   it('同じstateElementに複数バインディングがある場合も処理されること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const container = document.createElement('div');
     const el1 = document.createElement('span');
@@ -161,6 +163,7 @@ describe('initializeBindings', () => {
     el2.setAttribute('data-bind-state', 'textContent: message');
     container.appendChild(el1);
     container.appendChild(el2);
+    document.body.appendChild(container);
 
     initializeBindings(container, null);
 
@@ -171,7 +174,7 @@ describe('initializeBindings', () => {
 
   it('fragment初期化ではループコンテキストが設定されないこと', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const fragment = document.createDocumentFragment();
     const el = document.createElement('span');
@@ -187,16 +190,17 @@ describe('initializeBindings', () => {
 
   it('初期化途中でStateElementが削除された場合はエラーになること', () => {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const container = document.createElement('div');
     const comment = document.createComment('@@wcs-text: message');
     container.appendChild(comment);
+    document.body.appendChild(container);
 
     // addBindingInfoByAbsoluteStateAddress の呼び出しタイミングで StateElement を削除し、
     // 直後の getStateElementByName チェックでエラーを発生させる
     vi.mocked(addBindingInfoByAbsoluteStateAddress).mockImplementationOnce(() => {
-      setStateElementByName('default', null);
+      setStateElementByName(document, 'default', null);
     });
 
     expect(() => initializeBindings(container, null)).toThrow(/State element with name "default" not found for binding/);

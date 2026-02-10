@@ -23,11 +23,11 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
 
 describe('event/handler', () => {
   beforeEach(() => {
-    setStateElementByName('default', null);
+    setStateElementByName(document, 'default', null);
   });
 
   afterEach(() => {
-    setStateElementByName('default', null);
+    setStateElementByName(document, 'default', null);
   });
 
   it('attachEventHandlerはon*以外でfalseを返すこと', () => {
@@ -123,8 +123,10 @@ describe('event/handler', () => {
     attachEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
 
-    setStateElementByName('default', null);
-    expect(() => handler(new Event('click'))).toThrow(/State element with name "default" not found/);
+    setStateElementByName(document, 'default', null);
+    const event = new Event('click');
+    Object.defineProperty(event, 'target', { value: el });
+    expect(() => handler(event)).toThrow(/State element with name "default" not found/);
   });
 
   it('stateのハンドラが関数でない場合はエラーになること', () => {
@@ -137,7 +139,7 @@ describe('event/handler', () => {
       $$setLoopContext: (_ctx: any, cb: () => void) => cb(),
     } as any;
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName('default', {
+    setStateElementByName(el, 'default', {
       createStateAsync: (mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -146,7 +148,9 @@ describe('event/handler', () => {
 
     attachEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
-    handler(new Event('click'));
+    const event = new Event('click');
+    Object.defineProperty(event, 'target', { value: el });
+    handler(event);
     expect(lastPromise).not.toBeNull();
     return expect(lastPromise!).rejects.toThrow(/is not a function/);
   });
@@ -165,7 +169,7 @@ describe('event/handler', () => {
       $$setLoopContext: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName('default', {
+    setStateElementByName(el, 'default', {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -175,6 +179,7 @@ describe('event/handler', () => {
     attachEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
     const event = new Event('click', { cancelable: true });
+    Object.defineProperty(event, 'target', { value: el });
     const preventSpy = vi.spyOn(event, 'preventDefault');
     handler(event);
 
@@ -197,7 +202,7 @@ describe('event/handler', () => {
       $$setLoopContext: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName('default', {
+    setStateElementByName(el, 'default', {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -207,6 +212,7 @@ describe('event/handler', () => {
     attachEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
     const event = new Event('click', { bubbles: true });
+    Object.defineProperty(event, 'target', { value: el });
     const stopSpy = vi.spyOn(event, 'stopPropagation');
     handler(event);
 
@@ -229,7 +235,7 @@ describe('event/handler', () => {
       $$setLoopContext: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName('default', {
+    setStateElementByName(el, 'default', {
       createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -239,6 +245,7 @@ describe('event/handler', () => {
     attachEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
     const event = new Event('click', { cancelable: true, bubbles: true });
+    Object.defineProperty(event, 'target', { value: el });
     const preventSpy = vi.spyOn(event, 'preventDefault');
     const stopSpy = vi.spyOn(event, 'stopPropagation');
     handler(event);
@@ -284,7 +291,7 @@ describe('event/handler', () => {
       $$setLoopContext: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
-    setStateElementByName('default', {
+    setStateElementByName(el, 'default', {
       createStateAsync: (mutability: string, callback: (s: any) => Promise<void>) => {
         lastPromise = callback(state);
         return lastPromise as Promise<void>;
@@ -293,7 +300,9 @@ describe('event/handler', () => {
 
     attachEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
-    handler(new Event('click'));
+    const event = new Event('click');
+    Object.defineProperty(event, 'target', { value: el });
+    handler(event);
 
     await lastPromise;
     expect(state['handleClick-ok']).toHaveBeenCalledTimes(1);

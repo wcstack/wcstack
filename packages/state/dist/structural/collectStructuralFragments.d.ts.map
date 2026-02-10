@@ -1,1 +1,1 @@
-{"version":3,"file":"collectStructuralFragments.d.ts","sourceRoot":"","sources":["../../src/structural/collectStructuralFragments.ts"],"names":[],"mappings":"AAwDA,wBAAgB,0BAA0B,CAAC,IAAI,EAAE,QAAQ,GAAG,OAAO,GAAG,gBAAgB,EAAE,OAAO,CAAC,EAAE,MAAM,GAAG,IAAI,CA8H9G"}
+{"version":3,"file":"collectStructuralFragments.d.ts","sourceRoot":"","sources":["../../src/structural/collectStructuralFragments.ts"],"names":[],"mappings":"AAyDA,wBAAgB,0BAA0B,CAAC,QAAQ,EAAE,IAAI,EAAE,QAAQ,EAAE,QAAQ,GAAG,OAAO,GAAG,gBAAgB,EAAE,OAAO,CAAC,EAAE,MAAM,GAAG,IAAI,CA8HlI"}

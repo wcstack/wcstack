@@ -17,7 +17,7 @@ describe('updater/updater coverage', () => {
   });
 
   afterEach(() => {
-    setStateElementByName('test', null);
+    setStateElementByName(document, 'test', null);
   });
 
   it('_applyChangeでbindingが無い場合は空配列でapplyChangeFromBindingsが呼ばれること', () => {

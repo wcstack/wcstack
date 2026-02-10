@@ -6,7 +6,7 @@ export function registerHandler() {
     document.addEventListener("DOMContentLoaded", async () => {
         await waitForStateInitialize(document);
         convertMustacheToComments(document);
-        collectStructuralFragments(document);
+        collectStructuralFragments(document, document);
         initializeBindings(document.body, null);
     });
 }

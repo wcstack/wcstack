@@ -45,12 +45,12 @@ describe('resolve', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    setStateElementByName('default', null);
+    setStateElementByName(document, 'default', null);
   });
 
   it('ワイルドカードなしのパスで値を取得できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = { name: 'Alice' };
 
@@ -65,7 +65,7 @@ describe('resolve', () => {
 
   it('ワイルドカードなしのパスで値を設定できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = { name: 'Alice' };
 
@@ -78,7 +78,7 @@ describe('resolve', () => {
 
   it('ワイルドカード付きパスでインデックスを解決して値を取得できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
     const list = ['a', 'b', 'c'];
@@ -102,7 +102,7 @@ describe('resolve', () => {
 
   it('ワイルドカード付きパスで値を設定できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
     const list = ['a', 'b', 'c'];
@@ -123,7 +123,7 @@ describe('resolve', () => {
 
   it('indexes の長さが不足している場合はエラーになること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -134,7 +134,7 @@ describe('resolve', () => {
 
   it('多重ワイルドカードでネストしたインデックスを解決できること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -164,7 +164,7 @@ describe('resolve', () => {
   it('getterパスの場合は動的依存関係を登録すること', () => {
     mockStateElement = createStateElement();
     mockStateElement.getterPaths.add('computed');
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
 
     const lastAddress = {
       pathInfo: { path: 'computed' },
@@ -183,7 +183,7 @@ describe('resolve', () => {
 
   it('addressStackLength>0でlastAddressStackがnullなら依存関係を登録しないこと', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: null });
     const target = {};
 
@@ -197,7 +197,7 @@ describe('resolve', () => {
 
   it('addressStackLength>0でgetterPathsに含まれない場合は依存関係を登録しないこと', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
 
     const lastAddress = {
       pathInfo: { path: 'other' },
@@ -217,7 +217,7 @@ describe('resolve', () => {
   it('addressStackLength>0で同一パスの場合は依存関係を登録しないこと', () => {
     mockStateElement = createStateElement();
     mockStateElement.getterPaths.add('name');
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
 
     const lastAddress = {
       pathInfo: { path: 'name' },
@@ -236,7 +236,7 @@ describe('resolve', () => {
 
   it('ワイルドカードパスで listIndexes が null の場合はエラーになること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
@@ -250,7 +250,7 @@ describe('resolve', () => {
 
   it('ワイルドカードパスで指定インデックスが存在しない場合はエラーになること', () => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
     const list = ['a'];
@@ -268,7 +268,7 @@ describe('resolve', () => {
   it('lastAddressStackのパスと同一パスの場合は依存関係を登録しないこと', () => {
     mockStateElement = createStateElement();
     mockStateElement.getterPaths.add('name');
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
 
     const lastAddress = {
       pathInfo: { path: 'name' },

@@ -12,8 +12,8 @@ vi.mock('../src/getUUID', () => ({
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (name: string) => map.get(name) || null,
-    setStateElementByName: (name: string, el: any) => {
+    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
+    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
       if (el === null) map.delete(name);
       else map.set(name, el);
     }
@@ -22,7 +22,7 @@ vi.mock('../src/stateElementByName', () => {
 
 describe('collectStructuralFragments', () => {
   beforeEach(() => {
-    setStateElementByName('default', {
+    setStateElementByName(document, 'default', {
       setPathInfo: vi.fn(),
     } as any);
   });
@@ -31,7 +31,7 @@ describe('collectStructuralFragments', () => {
     // Clean up all UUIDs
     for (let i = 0; i < uuidCounter; i++) {
 
-      setFragmentInfoByUUID(`uuid-collect-${i}`, null);
+      setFragmentInfoByUUID(`uuid-collect-${i}`, document, null);
     }
     uuidCounter = 0;
     document.body.innerHTML = '';
@@ -48,7 +48,7 @@ describe('collectStructuralFragments', () => {
 
     root.appendChild(template);
 
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     const first = root.firstChild as Comment;
     expect(first.nodeType).toBe(Node.COMMENT_NODE);
@@ -66,7 +66,7 @@ describe('collectStructuralFragments', () => {
     template.setAttribute(config.bindAttributeName, 'textContent: message');
     root.appendChild(template);
 
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     expect(root.firstChild).toBe(template);
     expect(getFragmentInfoByUUID('uuid-collect-0')).toBeNull();
@@ -83,7 +83,7 @@ describe('collectStructuralFragments', () => {
     root.appendChild(nonTemplate);
     root.appendChild(emptyTemplate);
 
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     expect(root.childNodes[0]).toBe(nonTemplate);
     expect(root.childNodes[1]).toBe(emptyTemplate);
@@ -101,7 +101,7 @@ describe('collectStructuralFragments', () => {
     root.appendChild(nonTemplate);
     root.appendChild(template);
 
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     const first = root.childNodes[0] as HTMLElement;
     const second = root.childNodes[1] as Comment;
@@ -133,7 +133,7 @@ describe('collectStructuralFragments', () => {
     }) as any;
 
     try {
-      collectStructuralFragments(root);
+      collectStructuralFragments(root, root);
     } finally {
       document.createTreeWalker = originalCreateTreeWalker as any;
     }
@@ -166,7 +166,7 @@ describe('collectStructuralFragments', () => {
     }) as any;
 
     try {
-      collectStructuralFragments(root);
+      collectStructuralFragments(root, root);
     } finally {
       document.createTreeWalker = originalCreateTreeWalker as any;
     }
@@ -179,7 +179,7 @@ describe('collectStructuralFragments', () => {
     }));
 
     const { setStateElementByName } = await import('../src/stateElementByName');
-    setStateElementByName('default', {
+    setStateElementByName(document, 'default', {
       setPathInfo: vi.fn(),
     } as any);
 
@@ -195,7 +195,7 @@ describe('collectStructuralFragments', () => {
 
     root.appendChild(template);
 
-    collectWithMock(root);
+    collectWithMock(root, root);
 
     expect(calls).toBeGreaterThanOrEqual(2);
 
@@ -216,7 +216,7 @@ describe('collectStructuralFragments', () => {
     root.appendChild(ifTemplate);
     root.appendChild(elseTemplate);
 
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     // if コメントノードが生成されている
     const ifComment = root.childNodes[0] as Comment;
@@ -249,7 +249,7 @@ describe('collectStructuralFragments', () => {
     root.appendChild(elseifTemplate);
     root.appendChild(elseTemplate);
 
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     // if コメントが生成されている
     const ifComment = root.childNodes[0] as Comment;
@@ -287,7 +287,7 @@ describe('collectStructuralFragments', () => {
     root.appendChild(elseifTemplate2);
     root.appendChild(elseTemplate);
 
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     // DOM上にはifのプレースホルダと最初のelseプレースホルダのみが残る
     expect(root.childNodes.length).toBe(2);
@@ -313,7 +313,7 @@ describe('collectStructuralFragments', () => {
     
     root.appendChild(elseTemplate);
 
-    expect(() => collectStructuralFragments(root)).toThrow(/else.*without preceding/);
+    expect(() => collectStructuralFragments(root, root)).toThrow(/else.*without preceding/);
   });
 
   it('elseifが先行するifなしで使われた場合はエラーになること', () => {
@@ -325,7 +325,7 @@ describe('collectStructuralFragments', () => {
     
     root.appendChild(elseifTemplate);
 
-    expect(() => collectStructuralFragments(root)).toThrow(/elseif.*without preceding/);
+    expect(() => collectStructuralFragments(root, root)).toThrow(/elseif.*without preceding/);
   });
 
   it('forテンプレート内の空白テキストノードが除去されること', () => {
@@ -341,7 +341,7 @@ describe('collectStructuralFragments', () => {
     template.content.appendChild(document.createTextNode('\n'));
 
     root.appendChild(template);
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     const info = getFragmentInfoByUUID('uuid-collect-0');
     expect(info).not.toBeNull();
@@ -361,7 +361,7 @@ describe('collectStructuralFragments', () => {
     template.content.appendChild(document.createTextNode('\t\n'));
 
     root.appendChild(template);
-    collectStructuralFragments(root);
+    collectStructuralFragments(root, root);
 
     const info = getFragmentInfoByUUID('uuid-collect-0');
     expect(info).not.toBeNull();
@@ -380,7 +380,7 @@ describe('collectStructuralFragments', () => {
       template.content.appendChild(comment);
 
       root.appendChild(template);
-      collectStructuralFragments(root);
+      collectStructuralFragments(root, root);
 
       const info = getFragmentInfoByUUID('uuid-collect-0');
       expect(info).not.toBeNull();
@@ -399,7 +399,7 @@ describe('collectStructuralFragments', () => {
       template.content.appendChild(span);
 
       root.appendChild(template);
-      collectStructuralFragments(root);
+      collectStructuralFragments(root, root);
 
       const info = getFragmentInfoByUUID('uuid-collect-0');
       expect(info).not.toBeNull();
@@ -423,7 +423,7 @@ describe('collectStructuralFragments', () => {
       outerTemplate.content.appendChild(innerTemplate);
       root.appendChild(outerTemplate);
 
-      collectStructuralFragments(root);
+      collectStructuralFragments(root, root);
 
       // 外側テンプレート
       const outerInfo = getFragmentInfoByUUID('uuid-collect-0');
@@ -456,7 +456,7 @@ describe('collectStructuralFragments', () => {
       forTemplate.content.appendChild(ifTemplate);
       root.appendChild(forTemplate);
 
-      collectStructuralFragments(root);
+      collectStructuralFragments(root, root);
 
       // forテンプレートの情報
       const forInfo = getFragmentInfoByUUID('uuid-collect-0');
@@ -486,7 +486,7 @@ describe('collectStructuralFragments', () => {
       ifTemplate.content.appendChild(span);
 
       root.appendChild(ifTemplate);
-      collectStructuralFragments(root);
+      collectStructuralFragments(root, root);
 
       const info = getFragmentInfoByUUID('uuid-collect-0');
       expect(info).not.toBeNull();

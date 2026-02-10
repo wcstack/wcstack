@@ -11,8 +11,8 @@ const uuid = 'parsebind-fragment-uuid';
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (name: string) => map.get(name) || null,
-    setStateElementByName: (name: string, el: any) => {
+    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
+    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
       if (el === null) map.delete(name);
       else map.set(name, el);
     }
@@ -21,13 +21,13 @@ vi.mock('../src/stateElementByName', () => {
 
 describe('bindings.getParseBindTextResults.fragment', () => {
   beforeEach(() => {
-    setStateElementByName('default', {
+    setStateElementByName(document, 'default', {
       setPathInfo: vi.fn(),
     } as any);
   });
 
   afterEach(() => {
-    setFragmentInfoByUUID(uuid, null);
+    setFragmentInfoByUUID(uuid, document, null);
   });
 
 	it('構造フラグメントUUIDが見つからない場合は埋め込みとして処理されること', () => {
@@ -53,7 +53,7 @@ describe('bindings.getParseBindTextResults.fragment', () => {
 			uuid: null,
 		};
 
-		setFragmentInfoByUUID(uuid, {
+		setFragmentInfoByUUID(uuid, document, {
 			fragment: document.createDocumentFragment(),
 			parseBindTextResult,
 			nodeInfos: [],

@@ -7,7 +7,8 @@ import { IInnerState } from "./types";
 const getterFn = (
   binding: IBindingInfo,
 ) => {
-  const outerStateElement = getStateElementByName(binding.stateName);
+  const rootNode = binding.replaceNode.getRootNode() as Node;
+  const outerStateElement = getStateElementByName(rootNode, binding.stateName);
   if (outerStateElement === null) {
     raiseError(`State element with name "${binding.stateName}" not found for binding.`);
   }
@@ -27,7 +28,8 @@ const getterFn = (
 const setterFn = (
   binding: IBindingInfo,
 ) => {
-  const outerStateElement = getStateElementByName(binding.stateName);
+  const rootNode = binding.replaceNode.getRootNode() as Node;
+  const outerStateElement = getStateElementByName(rootNode, binding.stateName);
   if (outerStateElement === null) {
     raiseError(`State element with name "${binding.stateName}" not found for binding.`);
   }

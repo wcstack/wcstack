@@ -68,6 +68,7 @@ export class State extends HTMLElement implements IStateElement {
   private _staticDependency: Map<string, string[]> = new Map<string, string[]>();
   private _pathSet: Set<string> = new Set<string>();
   private _version = 0;
+  private _rootNode: Node | null = null;
 
   constructor() {
     super();
@@ -144,17 +145,16 @@ export class State extends HTMLElement implements IStateElement {
     }
     await this._loadingPromise;
     this._name = this.getAttribute('name') || 'default';
-    setStateElementByName(this._name, this);
+    setStateElementByName(this.rootNode!, this._name, this);
 
   }
 
   private async _bindWebComponent() {
     if (this.hasAttribute('bind-component')) {
-      const rootNode = this.getRootNode();
-      if (!(rootNode instanceof ShadowRoot)) {
+      if (!(this.rootNode instanceof ShadowRoot)) {
         raiseError('bind-component can only be used inside a shadow root.');
       }
-      const component = rootNode.host;
+      const component = this.rootNode.host;
       const componentStateProp = this.getAttribute('bind-component')!;
       try {
         await customElements.whenDefined(component.tagName.toLowerCase());
@@ -173,6 +173,7 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   async connectedCallback() {
+    this._rootNode = this.getRootNode() as Node;
     if (!this._initialized) {
       // (1)のデッドロック回避のためにawaitしない
       this._bindWebComponent();
@@ -183,7 +184,10 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   disconnectedCallback() {
-    setStateElementByName(this._name, null);
+    if (this._rootNode !== null) {
+      setStateElementByName(this.rootNode, this._name, null);
+      this._rootNode = null;
+    }
   }
 
   get initializePromise(): Promise<void> {
@@ -220,6 +224,13 @@ export class State extends HTMLElement implements IStateElement {
 
   get version(): number {
     return this._version;
+  }
+
+  get rootNode(): Node {
+    if (this._rootNode === null) {
+      raiseError('State rootNode is not available.');
+    }
+    return this._rootNode;
   }
 
   private _addDependency(
@@ -290,9 +301,9 @@ export class State extends HTMLElement implements IStateElement {
     }
   }
 
-  private _createState<T>(mutability: Mutability, callback: (state: IStateProxy) => T): T {
+  private _createState<T>(rootNode: Node, mutability: Mutability, callback: (state: IStateProxy) => T): T {
     try {
-      const stateProxy = createStateProxy(this._state, this._name, mutability);
+      const stateProxy = createStateProxy(rootNode, this._state, this._name, mutability);
       return callback(stateProxy);
     } finally {
       // cleanup if needed
@@ -300,11 +311,11 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   async createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void> {
-    return await this._createState(mutability, callback);
+    return await this._createState(this.rootNode, mutability, callback);
   }
 
   createState(mutability: Mutability, callback: (state: IStateProxy) => void): void {
-    this._createState(mutability, callback);
+    this._createState(this.rootNode, mutability, callback);
   }
 
   nextVersion(): number {

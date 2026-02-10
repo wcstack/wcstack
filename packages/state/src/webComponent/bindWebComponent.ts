@@ -37,7 +37,7 @@ export async function bindWebComponent(
 
   await waitForStateInitialize(shadowRoot);
   convertMustacheToComments(shadowRoot);
-  collectStructuralFragments(shadowRoot);
+  collectStructuralFragments(shadowRoot, shadowRoot);
   await waitInitializeBinding(component);
 
   // initializeBindingsの前にinerState,outerStateの紐付けを行う

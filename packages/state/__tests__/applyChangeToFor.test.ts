@@ -142,11 +142,11 @@ function createFragmentInfoWithBinding() {
   };
 }
 
-// 同じノードに複数のバインディングを持つフラグメントを作成
+// 同じノ�Eドに褁E��のバインチE��ングを持つフラグメントを作�E
 function createFragmentInfoWithMultipleBindings() {
   const fragment = document.createDocumentFragment();
   const span = document.createElement('span');
-  // 同じノードに複数のバインディングを設定
+  // 同じノ�Eドに褁E��のバインチE��ングを設宁E
   span.setAttribute('data-bind-state', 'textContent: items.*; title: items.*');
   fragment.appendChild(span);
 
@@ -199,8 +199,8 @@ describe('applyChangeToFor', () => {
 
   function setupContext() {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
-    context = { stateName: 'default', stateElement: stateElement as any, state, appliedBindingSet: new Set() };
+    setStateElementByName(document, 'default', stateElement);
+    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set() };
     return stateElement;
   }
 
@@ -208,11 +208,11 @@ describe('applyChangeToFor', () => {
     applyChangeToFor(bindingInfo, context, value);
 
   afterEach(() => {
-    setFragmentInfoByUUID(uuid, null);
-    setStateElementByName('default', null);
+    setFragmentInfoByUUID(uuid, document, null);
+    setStateElementByName(document, 'default', null);
   });
 
-  it('fragmentInfoが存在しない場合はエラーになること', () => {
+  it('fragmentInfoが存在しなぁE��合�Eエラーになること', () => {
     setupContext();
 
     const placeholder = document.createComment('for');
@@ -227,25 +227,25 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('list diffが事前に存在しなくても処理できること', () => {
+  it('list diffが事前に存在しなくても�E琁E��きること', () => {
     setupContext();
 
     const placeholder = document.createComment('for');
     const bindingInfo = createBindingInfo(placeholder);
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
 
     const list = [1];
     expect(() => apply(bindingInfo, list)).not.toThrow();
   });
 
-  it('配列以外の値は空配列として扱われること', () => {
+  it('配�E以外�E値は空配�Eとして扱われること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfoWithBinding());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfoWithBinding());
 
     const bindingInfo = createBindingInfo(placeholder);
 
@@ -256,14 +256,14 @@ describe('applyChangeToFor', () => {
     expect(container.childNodes.length).toBe(1);
   });
 
-  it('空のフラグメントでもエラーにならないこと', () => {
+  it('空のフラグメントでもエラーにならなぁE��と', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createEmptyFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createEmptyFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
@@ -277,14 +277,14 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('リストに応じてコンテンツを生成すること', () => {
+  it('リストに応じてコンチE��チE��生�Eすること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -293,7 +293,7 @@ describe('applyChangeToFor', () => {
 
     apply(bindingInfo, list);
 
-    // コメントノード + 2つのspan
+    // コメントノーチE+ 2つのspan
     expect(container.childNodes.length).toBe(3);
     expect(container.childNodes[1].nodeName).toBe('SPAN');
     expect(container.childNodes[2].nodeName).toBe('SPAN');
@@ -302,14 +302,14 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('再適用時に以前のコンテンツをアンマウントすること', () => {
+  it('再適用時に以前�EコンチE��チE��アンマウントすること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -319,7 +319,7 @@ describe('applyChangeToFor', () => {
     apply(bindingInfo, list);
     expect(container.childNodes.length).toBe(3);
 
-    // 次の更新は空配列
+    // 次の更新は空配�E
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
@@ -329,14 +329,15 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('再適用時にプールされたコンテンツを再利用すること', () => {
+  it('再適用時にプ�EルされたコンチE��チE��再利用すること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
+    document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfoWithBinding());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfoWithBinding());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -366,14 +367,14 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list2, null);
   });
 
-  it('順序変更時に変更バインディングを再適用すること', () => {
+  it('頁E��変更時に変更バインチE��ングを�E適用すること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -396,25 +397,27 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(reordered, null);
   });
 
-  it('変更時にbindingsが存在する場合はapplyChangeが実行されること', () => {
+  it('変更時にbindingsが存在する場合�EapplyChangeが実行されること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
+    document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createEmptyFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createEmptyFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    // 初回適用でcontentByListIndexをセット
+    // 初回適用でcontentByListIndexをセチE��
     apply(bindingInfo, list);
 
-    // 変更時のbindingsを設定するためのダミーcontentを登録
+    // 変更時�Ebindingsを設定するため�Eダミ�Econtentを登録
     const textNode = document.createTextNode('');
+    container.appendChild(textNode);
     const dummyBindingInfo: IBindingInfo = {
       ...createBindingInfo(textNode, { bindingType: 'text', propName: 'text', propSegments: [] }),
       node: textNode,
@@ -434,7 +437,7 @@ describe('applyChangeToFor', () => {
     setBindingsByContent(content1, [dummyBindingInfo]);
     setIndexBindingsByContent(content1, [dummyBindingInfo]);
 
-    // 順序変更でchangeIndexSetを発生させる
+    // 頁E��変更でchangeIndexSetを発生させる
     const prevGetByAddress = state.$$getByAddress;
     state.$$getByAddress = () => 'x';
     const reordered = [2, 1];
@@ -455,7 +458,7 @@ describe('applyChangeToFor', () => {
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -472,7 +475,7 @@ describe('applyChangeToFor', () => {
     createListIndexes(null, list, sameList, listIndexes);
     apply(bindingInfo, sameList);
 
-    // 要素が同じ位置に保持されていること
+    // 要素が同じ位置に保持されてぁE��こと
     expect(container.childNodes.length).toBe(3);
     expect(container.childNodes[1]).toBe(firstSpan);
     expect(container.childNodes[2]).toBe(secondSpan);
@@ -480,14 +483,14 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('要素追加時に既存の要素を維持すること', () => {
+  it('要素追加時に既存�E要素を維持すること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
@@ -512,17 +515,18 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(extendedList, null);
   });
 
-  it('同じノードに複数のバインディングがある場合でもloopContextが正しく設定されること', () => {
+  it('同じノ�Eドに褁E��のバインチE��ングがある場合でもloopContextが正しく設定されること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
+    document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfoWithMultipleBindings());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfoWithMultipleBindings());
     const bindingInfo = createBindingInfo(placeholder);
 
-    // 最初のリスト
+    // 最初�EリスチE
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
@@ -530,14 +534,14 @@ describe('applyChangeToFor', () => {
 
     expect(container.childNodes.length).toBe(3);
 
-    // 空にしてプールに追加
+    // 空にしてプ�Eルに追加
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
 
     expect(container.childNodes.length).toBe(1);
 
-    // 再度リストを設定（プールから再利用、複数バインディングのあるノードでnodeSet.has()がtrueになる）
+    // 再度リストを設定（�Eールから再利用、褁E��バインチE��ングのあるノ�EドでnodeSet.has()がtrueになる！E
     const list2 = [3];
     const list2Indexes = createListIndexes(null, emptyList, list2, []);
     setListIndexesByList(list2, list2Indexes);
@@ -549,17 +553,17 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list2, null);
   });
 
-  it('削除対象のコンテンツがcontentByListIndexに存在しない場合でもエラーにならないこと', () => {
+  it('削除対象のコンチE��チE��contentByListIndexに存在しなぁE��合でもエラーにならなぁE��と', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
-    // 最初のリストを作成・適用
+    // 最初�Eリストを作�E・適用
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
@@ -567,21 +571,21 @@ describe('applyChangeToFor', () => {
 
     expect(container.childNodes.length).toBe(3);
 
-    // contentByListIndexから手動でcontentを削除して、
-    // 削除処理時にcontentが見つからない状態を作る
+    // contentByListIndexから手動でcontentを削除して、E
+    // 削除処琁E��にcontentが見つからなぁE��態を作る
     __test_setContentByListIndex(listIndexes[0], null);
 
-    // 空リストに変更（削除処理が発生）
+    // 空リストに変更�E�削除処琁E��発生！E
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
-    // contentが見つからなくてもエラーにならないこと
+    // contentが見つからなくてもエラーにならなぁE��と
     expect(() => apply(bindingInfo, emptyList)).not.toThrow();
 
     // 後片付け
     setListIndexesByList(list, null);
   });
 
-  it('全件追加時にバッチ処理で一括挿入されること', () => {
+  it('全件追加時にバッチ�E琁E��一括挿入されること', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -589,17 +593,17 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
     document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2, 3];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    // isConnected=true かつ全件追加 → バッチパス
+    // isConnected=true かつ全件追加 ↁEバッチパス
     apply(bindingInfo, list);
 
-    // コメントノード + 3つのspan
+    // コメントノーチE+ 3つのspan
     expect(container.childNodes.length).toBe(4);
     expect(container.childNodes[1].nodeName).toBe('SPAN');
     expect(container.childNodes[2].nodeName).toBe('SPAN');
@@ -610,7 +614,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('バッチ挿入された各コンテンツのfirstNode/lastNodeが正しいこと', () => {
+  it('バッチ挿入された各コンチE��チE�EfirstNode/lastNodeが正しいこと', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -618,7 +622,7 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
     document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -627,13 +631,13 @@ describe('applyChangeToFor', () => {
 
     apply(bindingInfo, list);
 
-    // バッチ挿入後もDOMの順序が正しいこと
+    // バッチ挿入後もDOMの頁E��が正しいこと
     expect(container.childNodes.length).toBe(3);
     const span1 = container.childNodes[1];
     const span2 = container.childNodes[2];
     expect(span1.nodeName).toBe('SPAN');
     expect(span2.nodeName).toBe('SPAN');
-    // 順序が placeholder -> span1 -> span2 であること
+    // 頁E��が placeholder -> span1 -> span2 であること
     expect(placeholder.nextSibling).toBe(span1);
     expect(span1.nextSibling).toBe(span2);
 
@@ -649,7 +653,7 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
     document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -659,7 +663,7 @@ describe('applyChangeToFor', () => {
     apply(bindingInfo, list);
     expect(container.childNodes.length).toBe(3);
 
-    // 空配列で再適用 → アンマウント
+    // 空配�Eで再適用 ↁEアンマウンチE
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
@@ -669,22 +673,22 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('isConnected=falseの場合はバッチ処理されないこと', () => {
+  it('isConnected=falseの場合�Eバッチ�E琁E��れなぁE��と', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
-    // document.bodyに追加しない → isConnected=false
+    // document.bodyに追加しなぁEↁEisConnected=false
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
     const listIndexes = createListIndexes(null, [], list, []);
     setListIndexesByList(list, listIndexes);
 
-    // 非バッチパスでも正しく動作すること
+    // 非バチE��パスでも正しく動作すること
     apply(bindingInfo, list);
 
     expect(container.childNodes.length).toBe(3);
@@ -694,7 +698,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('追加と既存が混在する場合はバッチ処理されないこと', () => {
+  it('追加と既存が混在する場合�Eバッチ�E琁E��れなぁE��と', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -702,7 +706,7 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
     document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     // 初回適用
@@ -714,14 +718,14 @@ describe('applyChangeToFor', () => {
 
     const firstSpan = container.childNodes[1];
 
-    // 既存要素＋新規追加（混在ケース → 非バッチパス）
+    // 既存要素�E�新規追加�E�混在ケース ↁE非バチE��パス�E�E
     const extendedList = [1, 2, 3];
     const extendedIndexes = createListIndexes(null, list, extendedList, listIndexes);
     setListIndexesByList(extendedList, extendedIndexes);
     apply(bindingInfo, extendedList);
 
     expect(container.childNodes.length).toBe(4);
-    // 既存要素が保持されていること
+    // 既存要素が保持されてぁE��こと
     expect(container.childNodes[1]).toBe(firstSpan);
 
     document.body.removeChild(container);
@@ -736,7 +740,7 @@ describe('applyChangeToFor', () => {
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2, 3];
@@ -745,7 +749,7 @@ describe('applyChangeToFor', () => {
     apply(bindingInfo, list);
     expect(container.childNodes.length).toBe(4);
 
-    // 全件削除 → textContent='' による一括クリア
+    // 全件削除 ↁEtextContent='' による一括クリア
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
@@ -757,17 +761,17 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('全件削除でisOnlyNode=trueの場合にキャッシュが使われること', () => {
+  it('全件削除でisOnlyNode=trueの場合にキャチE��ュが使われること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
-    // 1回目: apply → 全削除（キャッシュ作成）
+    // 1回目: apply ↁE全削除�E�キャチE��ュ作�E�E�E
     const list1 = [1, 2];
     const list1Indexes = createListIndexes(null, [], list1, []);
     setListIndexesByList(list1, list1Indexes);
@@ -778,7 +782,7 @@ describe('applyChangeToFor', () => {
     apply(bindingInfo, empty1);
     expect(container.childNodes.length).toBe(1);
 
-    // 2回目: apply → 全削除（キャッシュヒット）
+    // 2回目: apply ↁE全削除�E�キャチE��ュヒット！E
     const list2 = [3, 4];
     const list2Indexes = createListIndexes(null, empty1, list2, []);
     setListIndexesByList(list2, list2Indexes);
@@ -794,7 +798,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list2, null);
   });
 
-  it('全件削除で前方に要素がある場合はisOnlyNode=falseとなること', () => {
+  it('全件削除で前方に要素がある場合�EisOnlyNode=falseとなること', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -804,7 +808,7 @@ describe('applyChangeToFor', () => {
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -813,7 +817,7 @@ describe('applyChangeToFor', () => {
     apply(bindingInfo, list);
     expect(container.childNodes.length).toBe(4);
 
-    // 全件削除 → 前方にsibling要素あり → textContentクリアされない
+    // 全件削除 ↁE前方にsibling要素あり ↁEtextContentクリアされなぁE
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
@@ -826,7 +830,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('全件削除で後方に要素がある場合はisOnlyNode=falseとなること', () => {
+  it('全件削除で後方に要素がある場合�EisOnlyNode=falseとなること', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -836,7 +840,7 @@ describe('applyChangeToFor', () => {
     tail.id = 'tail';
     container.appendChild(tail);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1, 2];
@@ -844,7 +848,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, listIndexes);
     apply(bindingInfo, list);
 
-    // 全件削除 → 後方にtail要素あり → textContentクリアされない
+    // 全件削除 ↁE後方にtail要素あり ↁEtextContentクリアされなぁE
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
@@ -857,7 +861,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('全件削除で前方に非空白テキストがある場合はisOnlyNode=falseとなること', () => {
+  it('全件削除で前方に非空白チE��ストがある場合�EisOnlyNode=falseとなること', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -865,7 +869,7 @@ describe('applyChangeToFor', () => {
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
@@ -877,14 +881,14 @@ describe('applyChangeToFor', () => {
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
 
-    // テキストノード + placeholder が残ること
+    // チE��ストノーチE+ placeholder が残ること
     expect(container.childNodes.length).toBe(2);
     expect(container.childNodes[0].textContent).toBe('hello');
 
     setListIndexesByList(list, null);
   });
 
-  it('全件削除で後方に非空白テキストがある場合はisOnlyNode=falseとなること', () => {
+  it('全件削除で後方に非空白チE��ストがある場合�EisOnlyNode=falseとなること', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -892,7 +896,7 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
     container.appendChild(document.createTextNode('world'));
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
@@ -904,21 +908,21 @@ describe('applyChangeToFor', () => {
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
 
-    // placeholder + テキストノード が残ること
+    // placeholder + チE��ストノーチEが残ること
     expect(container.childNodes.length).toBe(2);
     expect(container.childNodes[1].textContent).toBe('world');
 
     setListIndexesByList(list, null);
   });
 
-  it('全件削除でlastNodeByNodeが未設定の場合はbindingInfo.nodeがフォールバックされること', () => {
+  it('全件削除でlastNodeByNodeが未設定�E場合�EbindingInfo.nodeがフォールバックされること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
@@ -940,7 +944,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('全件削除で空白テキストのみの兄弟はisOnlyNode=trueとなること', () => {
+  it('全件削除で空白チE��スト�Eみの允E���EisOnlyNode=trueとなること', () => {
     setupContext();
 
     const container = document.createElement('div');
@@ -949,7 +953,7 @@ describe('applyChangeToFor', () => {
     container.appendChild(placeholder);
     container.appendChild(document.createTextNode('  \t'));
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
@@ -957,7 +961,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, listIndexes);
     apply(bindingInfo, list);
 
-    // 全件削除 → 空白テキストのみなのでisOnlyNode=true → textContentクリア
+    // 全件削除 ↁE空白チE��スト�EみなのでisOnlyNode=true ↁEtextContentクリア
     const emptyList: any[] = [];
     createListIndexes(null, list, emptyList, listIndexes);
     apply(bindingInfo, emptyList);
@@ -969,14 +973,14 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
-  it('既存インデックスのcontentが見つからない場合はエラーになること', () => {
+  it('既存インチE��クスのcontentが見つからなぁE��合�Eエラーになること', () => {
     setupContext();
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     // 初回適用
@@ -989,7 +993,7 @@ describe('applyChangeToFor', () => {
     __test_setContentByListIndex(listIndexes[0], null);
     __test_setContentByListIndex(listIndexes[1], null);
 
-    // 同じリストを再適用（既存インデックスだがcontentが無い）
+    // 同じリストを再適用�E�既存インチE��クスだがcontentが無ぁE��E
     const sameList = [1, 2];
     createListIndexes(null, list, sameList, listIndexes);
     expect(() => apply(bindingInfo, sameList)).toThrow(/Content not found for ListIndex/);
@@ -1004,7 +1008,7 @@ describe('applyChangeToFor', () => {
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];
@@ -1012,7 +1016,7 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, listIndexes);
     apply(bindingInfo, list);
 
-    // ダミーのcontentを作成
+    // ダミ�Eのcontentを作�E
     const dummyContent = {
       firstNode: document.createElement('div'),
       lastNode: document.createElement('div'),
@@ -1021,29 +1025,29 @@ describe('applyChangeToFor', () => {
       unmount: () => {},
     };
 
-    // テストヘルパーでcontentを設定（else分岐をカバー）
+    // チE��ト�Eルパ�Eでcontentを設定！Else刁E��をカバ�E�E�E
     __test_setContentByListIndex(listIndexes[0], dummyContent);
 
     // 後片付け
     setListIndexesByList(list, null);
   });
 
-  it('add時にcreateLoopContextがコールバックを実行しなかった場合はエラーになること', () => {
+  it('add時にcreateLoopContextがコールバックを実行しなかった場合�Eエラーになること', () => {
     const stateElement = createMockStateElement();
-    // コールバックを実行しないloopContextStackをモック
+    // コールバックを実行しなぁEoopContextStackをモチE��
     stateElement.loopContextStack = {
       createLoopContext: (_stateAddress: any, _callback: any) => {
-        // コールバックを呼ばない → content が undefined のまま
+        // コールバックを呼ばなぁEↁEcontent ぁEundefined のまま
       }
     } as any;
-    setStateElementByName('default', stateElement);
-    context = { stateName: 'default', stateElement: stateElement as any, state, appliedBindingSet: new Set() };
+    setStateElementByName(document, 'default', stateElement);
+    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set() };
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfo());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
     const bindingInfo = createBindingInfo(placeholder);
 
     const list = [1];

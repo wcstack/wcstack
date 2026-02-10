@@ -18,11 +18,12 @@ class StateHandler implements IStateHandler {
   private _mutability: Mutability;
  
   constructor(
+    rootNode: Node,
     stateName: string,
     mutability: Mutability
   ) {
     this._stateName = stateName;
-    const stateElement = getStateElementByName(this._stateName);
+    const stateElement = getStateElementByName(rootNode, this._stateName);
     if (stateElement === null) {
       raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
     }
@@ -117,11 +118,12 @@ class StateHandler implements IStateHandler {
 }
 
 export function createStateProxy(
+  rootNode: Node,
   state: IState,
   stateName: string,
   mutability: Mutability
 ): IStateProxy {
-  const handler = new StateHandler(stateName, mutability);
+  const handler = new StateHandler(rootNode, stateName, mutability);
   const stateProxy = new Proxy<IStateProxy>(state as IStateProxy, handler);
   return stateProxy;
 }

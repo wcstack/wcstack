@@ -90,7 +90,7 @@ function setFragment(fragment: DocumentFragment, nodeInfos: any[] = []) {
     uuid,
   } as ParseBindTextResult;
 
-  setFragmentInfoByUUID(uuid, {
+  setFragmentInfoByUUID(uuid, document, {
     fragment,
     parseBindTextResult,
     nodeInfos,
@@ -98,13 +98,13 @@ function setFragment(fragment: DocumentFragment, nodeInfos: any[] = []) {
 }
 
 afterEach(() => {
-  setFragmentInfoByUUID(uuid, null);
-  setStateElementByName('default', null);
+  setFragmentInfoByUUID(uuid, document, null);
+  setStateElementByName(document, 'default', null);
 });
 
 describe('createContent - indexBindingsの分類', () => {
   it('$1バインディングがindexBindingsに分類されること', () => {
-    setStateElementByName('default', createMockStateElement());
+    setStateElementByName(document, 'default', createMockStateElement());
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
@@ -123,7 +123,7 @@ describe('createContent - indexBindingsの分類', () => {
   });
 
   it('$2バインディングがindexBindingsに分類されること', () => {
-    setStateElementByName('default', createMockStateElement());
+    setStateElementByName(document, 'default', createMockStateElement());
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
@@ -142,7 +142,7 @@ describe('createContent - indexBindingsの分類', () => {
   });
 
   it('通常のバインディング（items.*）はindexBindingsに含まれないこと', () => {
-    setStateElementByName('default', createMockStateElement());
+    setStateElementByName(document, 'default', createMockStateElement());
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
@@ -164,7 +164,7 @@ describe('createContent - indexBindingsの分類', () => {
   });
 
   it('$1と通常バインディングが混在する場合、$1のみがindexBindingsに含まれること', () => {
-    setStateElementByName('default', createMockStateElement());
+    setStateElementByName(document, 'default', createMockStateElement());
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
@@ -187,7 +187,7 @@ describe('createContent - indexBindingsの分類', () => {
   });
 
   it('インデックスバインディングがない場合はindexBindingsが空配列になること', () => {
-    setStateElementByName('default', createMockStateElement());
+    setStateElementByName(document, 'default', createMockStateElement());
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
@@ -205,7 +205,7 @@ describe('createContent - indexBindingsの分類', () => {
   });
 
   it('複数の$NバインディングがすべてindexBindingsに分類されること', () => {
-    setStateElementByName('default', createMockStateElement());
+    setStateElementByName(document, 'default', createMockStateElement());
 
     const fragment = document.createDocumentFragment();
     const span1 = document.createElement('span');

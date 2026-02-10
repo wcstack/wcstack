@@ -7,8 +7,8 @@ import { setStateElementByName } from '../src/stateElementByName';
 vi.mock('../src/stateElementByName', () => {
   const map = new Map();
   return {
-    getStateElementByName: (name: string) => map.get(name) || null,
-    setStateElementByName: (name: string, el: any) => {
+    getStateElementByName: (_rootNode: Node, name: string) => map.get(name) || null,
+    setStateElementByName: (_rootNode: Node, name: string, el: any) => {
       if (el === null) map.delete(name);
       else map.set(name, el);
     }
@@ -17,7 +17,7 @@ vi.mock('../src/stateElementByName', () => {
 
 describe('fragmentInfoByUUID', () => {
   beforeEach(() => {
-    setStateElementByName('default', {
+    setStateElementByName(document, 'default', {
       setPathInfo: vi.fn(),
     } as any);
   });
@@ -43,10 +43,10 @@ describe('fragmentInfoByUUID', () => {
       nodeInfos: []
     };
 
-    setFragmentInfoByUUID(uuid, fragmentInfo);
+    setFragmentInfoByUUID(uuid, document, fragmentInfo);
     expect(getFragmentInfoByUUID(uuid)).toBe(fragmentInfo);
 
-    setFragmentInfoByUUID(uuid, null);
+    setFragmentInfoByUUID(uuid, document, null);
     expect(getFragmentInfoByUUID(uuid)).toBeNull();
   });
 
@@ -71,12 +71,12 @@ describe('fragmentInfoByUUID', () => {
       nodeInfos: []
     };
 
-    expect(() => setFragmentInfoByUUID(uuid, fragmentInfo)).toThrow(/State element with name "missing-state" not found/);
+    expect(() => setFragmentInfoByUUID(uuid, document, fragmentInfo)).toThrow(/State element with name "missing-state" not found/);
   });
 
   it('nodeInfosの依存関係も登録されること', () => {
     const setPathInfo = vi.fn();
-    setStateElementByName('default', { setPathInfo } as any);
+    setStateElementByName(document, 'default', { setPathInfo } as any);
 
     const uuid = 'uuid-node-infos';
     const parseBindTextResult: ParseBindTextResult = {
@@ -114,7 +114,7 @@ describe('fragmentInfoByUUID', () => {
       }]
     };
 
-    setFragmentInfoByUUID(uuid, fragmentInfo);
+    setFragmentInfoByUUID(uuid, document, fragmentInfo);
 
     // Fragment itself
     expect(setPathInfo).toHaveBeenCalledWith('items', 'for');
@@ -159,6 +159,6 @@ describe('fragmentInfoByUUID', () => {
       }]
     };
 
-    expect(() => setFragmentInfoByUUID(uuid, fragmentInfo)).toThrow(/State element with name "missing-state-node" not found/);
+    expect(() => setFragmentInfoByUUID(uuid, document, fragmentInfo)).toThrow(/State element with name "missing-state-node" not found/);
   });
 });

@@ -2,6 +2,7 @@ import { IStateElement } from "../components/types";
 import { IStateProxy } from "../proxy/types";
 import { IBindingInfo } from "../binding/types";
 export interface IApplyContext {
+    readonly rootNode: Node;
     readonly stateName: string;
     readonly stateElement: IStateElement;
     readonly state: IStateProxy;

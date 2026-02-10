@@ -36,7 +36,7 @@ describe('registerHandler', () => {
     await callback?.();
 
     expect(waitMock).toHaveBeenCalledWith(document);
-    expect(collectMock).toHaveBeenCalledWith(document);
+    expect(collectMock).toHaveBeenCalledWith(document, document);
     expect(initMock).toHaveBeenCalledWith(document.body, null);
 
     addListenerSpy.mockRestore();

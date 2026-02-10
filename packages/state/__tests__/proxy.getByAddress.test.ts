@@ -35,11 +35,11 @@ describe('getByAddress', () => {
 
   beforeEach(() => {
     mockStateElement = createStateElement();
-    setStateElementByName('default', mockStateElement);
+    setStateElementByName(document, 'default', mockStateElement);
   });
 
   afterEach(() => {
-    setStateElementByName('default', null);
+    setStateElementByName(document, 'default', null);
   });
 
   it('getterPathsに含まれる場合はpush/popしつつgetter経由で取得すること', () => {

@@ -36,8 +36,8 @@ describe('updater/updater', () => {
   });
 
   afterEach(() => {
-    setStateElementByName('default', null);
-    setStateElementByName('missing', null);
+    setStateElementByName(document, 'default', null);
+    setStateElementByName(document, 'missing', null);
   });
 
   it('stateElementが見つからない場合でもAbsoluteStateAddressは作成できること', async () => {
@@ -51,7 +51,7 @@ describe('updater/updater', () => {
     const address = createAddress('count');
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
     const stateElement = createStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
@@ -68,7 +68,7 @@ describe('updater/updater', () => {
     const address = createAddress('value');
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
     const stateElement = createStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
@@ -86,7 +86,7 @@ describe('updater/updater', () => {
   it('bindingInfosが無い場合は空配列でapplyChangeFromBindingsが呼ばれること', async () => {
     const address = createAddress('missing');
     const stateElement = createStateElement();
-    setStateElementByName('default', stateElement);
+    setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
@@ -114,8 +114,8 @@ describe('updater/updater', () => {
     const stateElement1 = createStateElement();
     const stateElement2 = createStateElement();
     
-    setStateElementByName('state1', stateElement1);
-    setStateElementByName('state2', stateElement2);
+    setStateElementByName(document, 'state1', stateElement1);
+    setStateElementByName(document, 'state2', stateElement2);
 
     const updater = getUpdater();
     const absoluteAddress1 = createAbsAddress('state1', address1.pathInfo.path);
@@ -131,7 +131,7 @@ describe('updater/updater', () => {
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
     expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo1, bindingInfo2]);
 
-    setStateElementByName('state1', null);
-    setStateElementByName('state2', null);
+    setStateElementByName(document, 'state1', null);
+    setStateElementByName(document, 'state2', null);
   });
 });

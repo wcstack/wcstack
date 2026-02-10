@@ -1,4 +1,3 @@
-import { IStateElement } from "../components/types";
 import { ILoopContext } from "../list/types";
 import { IBindingInfo } from "../types";
 import { getStateElementByName } from "../stateElementByName";
@@ -17,31 +16,19 @@ import { addBindingInfoByAbsoluteStateAddress } from "../binding/getBindingInfos
 function _initializeBindings(
   allBindings: IBindingInfo[],
 ): void {
-  const bindingsByStateElement = new Map<IStateElement, IBindingInfo[]>();
-  for(const bindingInfo of allBindings) {
-    const stateElement = getStateElementByName(bindingInfo.stateName);
-    if (stateElement === null) {
-      raiseError(`State element with name "${bindingInfo.stateName}" not found for binding.`);
-    }
+  for(const binding of allBindings) {
 
     // replace node
-    replaceToReplaceNode(bindingInfo);
+    replaceToReplaceNode(binding);
 
     // event
-    if (attachEventHandler(bindingInfo)) {
+    if (attachEventHandler(binding)) {
       continue;
     }
 
     // two-way binding
-    attachTwowayEventHandler(bindingInfo);
+    attachTwowayEventHandler(binding);
 
-    // group by state element
-    let bindings = bindingsByStateElement.get(stateElement);
-    if (typeof bindings === "undefined") {
-      bindingsByStateElement.set(stateElement, [ bindingInfo ]);
-    } else {
-      bindings.push(bindingInfo);
-    }
   }
 }
 
@@ -57,7 +44,8 @@ export function initializeBindings(
   for(const binding of allBindings) {
     const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
     addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
-    const stateElement = getStateElementByName(binding.stateName);
+    const rootNode = binding.replaceNode.getRootNode() as Node;
+    const stateElement = getStateElementByName(rootNode, binding.stateName);
     if (stateElement === null) {
       raiseError(`State element with name "${binding.stateName}" not found for binding.`);
     }

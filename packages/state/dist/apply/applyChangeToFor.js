@@ -8,6 +8,7 @@ import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { createContent } from "../structural/createContent";
 import { applyChange } from "./applyChange";
+import { setRootNodeByFragment } from "./rootNodeByFragment";
 const lastValueByNode = new WeakMap();
 const lastNodeByNode = new WeakMap();
 const contentByListIndex = new WeakMap();
@@ -97,6 +98,7 @@ export function applyChangeToFor(bindingInfo, context, newValue) {
         && lastNode.isConnected) {
         // 全部追加の場合はまとめて処理
         fragment = document.createDocumentFragment();
+        setRootNodeByFragment(fragment, context.rootNode);
     }
     for (const index of diff.newIndexes) {
         let content;
@@ -152,6 +154,7 @@ export function applyChangeToFor(bindingInfo, context, newValue) {
     if (fragment !== null) {
         // Mount all at once
         bindingInfo.node.parentNode.insertBefore(fragment, bindingInfo.node.nextSibling);
+        setRootNodeByFragment(fragment, null);
     }
     lastValueByNode.set(bindingInfo.node, newValue);
 }

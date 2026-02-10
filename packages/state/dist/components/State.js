@@ -54,6 +54,7 @@ export class State extends HTMLElement {
     _staticDependency = new Map();
     _pathSet = new Set();
     _version = 0;
+    _rootNode = null;
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -132,15 +133,14 @@ export class State extends HTMLElement {
         }
         await this._loadingPromise;
         this._name = this.getAttribute('name') || 'default';
-        setStateElementByName(this._name, this);
+        setStateElementByName(this.rootNode, this._name, this);
     }
     async _bindWebComponent() {
         if (this.hasAttribute('bind-component')) {
-            const rootNode = this.getRootNode();
-            if (!(rootNode instanceof ShadowRoot)) {
+            if (!(this.rootNode instanceof ShadowRoot)) {
                 raiseError('bind-component can only be used inside a shadow root.');
             }
-            const component = rootNode.host;
+            const component = this.rootNode.host;
             const componentStateProp = this.getAttribute('bind-component');
             try {
                 await customElements.whenDefined(component.tagName.toLowerCase());
@@ -159,6 +159,7 @@ export class State extends HTMLElement {
         }
     }
     async connectedCallback() {
+        this._rootNode = this.getRootNode();
         if (!this._initialized) {
             // (1)のデッドロック回避のためにawaitしない
             this._bindWebComponent();
@@ -168,7 +169,10 @@ export class State extends HTMLElement {
         }
     }
     disconnectedCallback() {
-        setStateElementByName(this._name, null);
+        if (this._rootNode !== null) {
+            setStateElementByName(this.rootNode, this._name, null);
+            this._rootNode = null;
+        }
     }
     get initializePromise() {
         return this._initializePromise;
@@ -196,6 +200,12 @@ export class State extends HTMLElement {
     }
     get version() {
         return this._version;
+    }
+    get rootNode() {
+        if (this._rootNode === null) {
+            raiseError('State rootNode is not available.');
+        }
+        return this._rootNode;
     }
     _addDependency(map, sourcePath, targetPath) {
         const deps = map.get(sourcePath);
@@ -258,9 +268,9 @@ export class State extends HTMLElement {
             }
         }
     }
-    _createState(mutability, callback) {
+    _createState(rootNode, mutability, callback) {
         try {
-            const stateProxy = createStateProxy(this._state, this._name, mutability);
+            const stateProxy = createStateProxy(rootNode, this._state, this._name, mutability);
             return callback(stateProxy);
         }
         finally {
@@ -268,10 +278,10 @@ export class State extends HTMLElement {
         }
     }
     async createStateAsync(mutability, callback) {
-        return await this._createState(mutability, callback);
+        return await this._createState(this.rootNode, mutability, callback);
     }
     createState(mutability, callback) {
-        this._createState(mutability, callback);
+        this._createState(this.rootNode, mutability, callback);
     }
     nextVersion() {
         this._version++;

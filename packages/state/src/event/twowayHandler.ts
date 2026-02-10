@@ -44,7 +44,8 @@ const twowayEventHandlerFunction = (
     filteredNewValue = filter.filterFn(filteredNewValue);
   }
 
-  const stateElement = getStateElementByName(stateName);
+  const rootNode = node.getRootNode() as Node;
+  const stateElement = getStateElementByName(rootNode, stateName);
   if (stateElement === null) {
     raiseError(`State element with name "${stateName}" not found for two-way binding.`);
   }

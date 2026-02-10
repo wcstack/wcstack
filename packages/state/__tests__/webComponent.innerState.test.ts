@@ -26,6 +26,7 @@ const createMockBinding = (overrides: Partial<IBindingInfo> = {}): IBindingInfo 
   stateName: 'defaultState',
   statePathName: 'outer.path',
   node: document.createElement('div'),
+  replaceNode: document.createElement('div'),
   ...overrides
 } as IBindingInfo);
 
@@ -65,6 +66,7 @@ describe('innerState', () => {
         stateName: 'myState',
         statePathName: 'data.val'
       });
+      const rootNode = binding.replaceNode.getRootNode();
 
       const stateProxy = {
         $$setLoopContext: vi.fn((ctx, cb) => cb()),
@@ -82,7 +84,8 @@ describe('innerState', () => {
       
       const value = innerState.value;
 
-      expect(getStateElementByNameMock).toHaveBeenCalledWith('myState');
+      expect(getStateElementByNameMock).toHaveBeenCalledTimes(2);
+      expect(getStateElementByNameMock).toHaveBeenCalledWith(rootNode, 'myState');
       expect(stateEl.createState).toHaveBeenCalledWith('readonly', expect.any(Function));
       expect(getLoopContextByNodeMock).toHaveBeenCalledWith(binding.node);
       expect(stateProxy.$$setLoopContext).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));
@@ -115,6 +118,7 @@ describe('innerState', () => {
         stateName: 'myState',
         statePathName: 'data.val'
       });
+      const rootNode = binding.replaceNode.getRootNode();
 
       const stateProxy = {
         $$setLoopContext: vi.fn((ctx, cb) => cb()),
@@ -132,7 +136,8 @@ describe('innerState', () => {
       
       innerState.value = 'new-value';
 
-      expect(getStateElementByNameMock).toHaveBeenCalledWith('myState');
+      expect(getStateElementByNameMock).toHaveBeenCalledTimes(2);
+      expect(getStateElementByNameMock).toHaveBeenCalledWith(rootNode, 'myState');
       expect(stateEl.createState).toHaveBeenCalledWith('writable', expect.any(Function));
       expect(getLoopContextByNodeMock).toHaveBeenCalledWith(binding.node);
       expect(stateProxy.$$setLoopContext).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));

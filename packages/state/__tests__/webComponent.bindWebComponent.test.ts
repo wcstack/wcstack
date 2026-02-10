@@ -133,7 +133,7 @@ describe('bindWebComponent', () => {
     // waitForStateInitialize, convertMustache, collectStructural が呼ばれること
     expect(waitForStateInitialize).toHaveBeenCalledWith(component.shadowRoot);
     expect(convertMustacheToComments).toHaveBeenCalledWith(component.shadowRoot);
-    expect(collectStructuralFragments).toHaveBeenCalledWith(component.shadowRoot);
+    expect(collectStructuralFragments).toHaveBeenCalledWith(component.shadowRoot, component.shadowRoot);
 
     // waitInitializeBinding が呼ばれること
     expect(waitInitializeBinding).toHaveBeenCalledWith(component);

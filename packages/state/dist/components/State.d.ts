@@ -21,6 +21,7 @@ export declare class State extends HTMLElement implements IStateElement {
     private _staticDependency;
     private _pathSet;
     private _version;
+    private _rootNode;
     constructor();
     private get _state();
     private set _state(value);
@@ -38,6 +39,7 @@ export declare class State extends HTMLElement implements IStateElement {
     get dynamicDependency(): Map<string, string[]>;
     get staticDependency(): Map<string, string[]>;
     get version(): number;
+    get rootNode(): Node;
     private _addDependency;
     /**
      * source,           target

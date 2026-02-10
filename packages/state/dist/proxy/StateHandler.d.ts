@@ -10,7 +10,7 @@ declare class StateHandler implements IStateHandler {
     private _addressStackIndex;
     private _loopContext;
     private _mutability;
-    constructor(stateName: string, mutability: Mutability);
+    constructor(rootNode: Node, stateName: string, mutability: Mutability);
     get stateName(): string;
     get stateElement(): IStateElement;
     get lastAddressStack(): IStateAddress | null;
@@ -24,7 +24,7 @@ declare class StateHandler implements IStateHandler {
     set(target: object, prop: PropertyKey, value: any, receiver: any): boolean;
     has(target: object, prop: PropertyKey): boolean;
 }
-export declare function createStateProxy(state: IState, stateName: string, mutability: Mutability): IStateProxy;
+export declare function createStateProxy(rootNode: Node, state: IState, stateName: string, mutability: Mutability): IStateProxy;
 export declare const __private__: {
     StateHandler: typeof StateHandler;
 };

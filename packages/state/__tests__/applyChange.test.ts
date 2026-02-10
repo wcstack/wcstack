@@ -35,6 +35,7 @@ describe('applyChange', () => {
   const state = {} as any;
   const context: IApplyContext = {
     stateName: 'default',
+    rootNode: document as any,
     stateElement: {} as any,
     state,
     appliedBindingSet: new Set(),
@@ -45,10 +46,13 @@ describe('applyChange', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    document.body.innerHTML = '';
+    context.appliedBindingSet.clear();
   });
 
   it('textバインディングでテキストを更新できること', () => {
     const textNode = document.createTextNode('a');
+    document.body.appendChild(textNode);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'text',
@@ -65,6 +69,7 @@ describe('applyChange', () => {
 
   it('propバインディングでプロパティを更新できること', () => {
     const input = document.createElement('input');
+    document.body.appendChild(input);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'prop',
@@ -81,6 +86,7 @@ describe('applyChange', () => {
 
   it('forバインディングはapplyChangeToForが呼ばれること', () => {
     const placeholder = document.createComment('for');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'for',
@@ -98,6 +104,7 @@ describe('applyChange', () => {
 
   it('ifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('if');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'if',
@@ -114,6 +121,7 @@ describe('applyChange', () => {
 
   it('elseバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('else');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'else',
@@ -130,6 +138,7 @@ describe('applyChange', () => {
 
   it('elseifバインディングはapplyChangeToIfが呼ばれること', () => {
     const placeholder = document.createComment('elseif');
+    document.body.appendChild(placeholder);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
       bindingType: 'elseif',

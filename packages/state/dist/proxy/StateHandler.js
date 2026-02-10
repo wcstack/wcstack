@@ -10,9 +10,9 @@ class StateHandler {
     _addressStackIndex = -1;
     _loopContext;
     _mutability;
-    constructor(stateName, mutability) {
+    constructor(rootNode, stateName, mutability) {
         this._stateName = stateName;
-        const stateElement = getStateElementByName(this._stateName);
+        const stateElement = getStateElementByName(rootNode, this._stateName);
         if (stateElement === null) {
             raiseError(`StateHandler: State element with name "${this._stateName}" not found.`);
         }
@@ -80,8 +80,8 @@ class StateHandler {
         //    return Reflect.has(target, prop) || this.symbols.has(prop) || this.apis.has(prop);
     }
 }
-export function createStateProxy(state, stateName, mutability) {
-    const handler = new StateHandler(stateName, mutability);
+export function createStateProxy(rootNode, state, stateName, mutability) {
+    const handler = new StateHandler(rootNode, stateName, mutability);
     const stateProxy = new Proxy(state, handler);
     return stateProxy;
 }

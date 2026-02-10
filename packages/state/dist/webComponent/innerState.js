@@ -2,7 +2,8 @@ import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 const getterFn = (binding) => {
-    const outerStateElement = getStateElementByName(binding.stateName);
+    const rootNode = binding.replaceNode.getRootNode();
+    const outerStateElement = getStateElementByName(rootNode, binding.stateName);
     if (outerStateElement === null) {
         raiseError(`State element with name "${binding.stateName}" not found for binding.`);
     }
@@ -19,7 +20,8 @@ const getterFn = (binding) => {
     };
 };
 const setterFn = (binding) => {
-    const outerStateElement = getStateElementByName(binding.stateName);
+    const rootNode = binding.replaceNode.getRootNode();
+    const outerStateElement = getStateElementByName(rootNode, binding.stateName);
     if (outerStateElement === null) {
         raiseError(`State element with name "${binding.stateName}" not found for binding.`);
     }

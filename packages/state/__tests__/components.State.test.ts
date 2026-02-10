@@ -13,7 +13,7 @@ vi.mock('../src/stateLoader/loadFromScriptJson', () => ({
   loadFromScriptJson: vi.fn().mockReturnValue({ fromScriptJson: true })
 }));
 vi.mock('../src/proxy/StateHandler', () => ({
-  createStateProxy: vi.fn((state: any) => state)
+  createStateProxy: vi.fn((_rootNode: any, state: any) => state)
 }));
 vi.mock('../src/webComponent/bindWebComponent', () => ({
   bindWebComponent: vi.fn().mockResolvedValue(undefined)
@@ -93,9 +93,9 @@ const createBindingInfo = (overrides?: Partial<IBindingInfo>): IBindingInfo => (
 describe('State component', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    setStateElementByName('default', null);
-    setStateElementByName('foo', null);
-    createStateProxyMock.mockImplementation((state: any) => state);
+    setStateElementByName(document, 'default', null);
+    setStateElementByName(document, 'foo', null);
+    createStateProxyMock.mockImplementation((_rootNode: any, state: any) => state);
     loadFromInnerScriptMock.mockResolvedValue({ fromInner: true });
     loadFromJsonFileMock.mockResolvedValue({ fromJson: true });
     loadFromScriptFileMock.mockResolvedValue({ fromScript: true });
@@ -103,13 +103,19 @@ describe('State component', () => {
   });
 
   afterEach(() => {
-    setStateElementByName('default', null);
-    setStateElementByName('foo', null);
+    setStateElementByName(document, 'default', null);
+    setStateElementByName(document, 'foo', null);
     vi.clearAllMocks();
   });
 
   it('初期状態でcreateStateがエラーになること', () => {
     const stateEl = createStateElement();
+    expect(() => stateEl.createState('readonly', () => {})).toThrow(/State rootNode is not available/);
+  });
+
+  it('_stateが未初期化状態でcreateStateがエラーになること', () => {
+    const stateEl = createStateElement();
+    (stateEl as any)._rootNode = document;
     expect(() => stateEl.createState('readonly', () => {})).toThrow(/_state is not initialized yet/);
   });
 
@@ -152,8 +158,8 @@ describe('State component', () => {
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
 
-    expect(getStateElementByName('foo')).toBe(stateEl);
-    expect(getStateElementByName('default')).toBeNull();
+    expect(getStateElementByName(stateEl.rootNode, 'foo')).toBe(stateEl);
+    expect(getStateElementByName(stateEl.rootNode, 'default')).toBeNull();
   });
 
   it('name getterで現在の名前を取得できること', async () => {
@@ -350,11 +356,24 @@ describe('State component', () => {
     expect(stateEl.nextVersion()).toBe(2);
   });
 
-  it('disconnectedCallbackで登録が解除されること', () => {
+  it('disconnectedCallbackで登録が解除されること', async () => {
     const stateEl = createStateElement();
-    setStateElementByName('default', stateEl);
+    stateEl.setInitialState({});
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    const rootNode = stateEl.rootNode;
+    expect(getStateElementByName(rootNode, 'default')).toBe(stateEl);
     stateEl.disconnectedCallback();
-    expect(getStateElementByName('default')).toBeNull();
+    expect(getStateElementByName(rootNode, 'default')).toBeNull();
+  });
+
+  it('disconnectedCallbackを2回呼んでもエラーにならないこと', async () => {
+    const stateEl = createStateElement();
+    stateEl.setInitialState({});
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    stateEl.disconnectedCallback();
+    stateEl.disconnectedCallback(); // _rootNode is already null
   });
 
   it('内包スクリプト読み込み失敗時はエラーになること', async () => {
@@ -452,6 +471,7 @@ describe('State component', () => {
 
   it('bind-componentがshadow root外だとエラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
+    (stateEl as any)._rootNode = document;
 
     await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
       /bind-component can only be used inside a shadow root/
@@ -461,6 +481,7 @@ describe('State component', () => {
   it('bind-componentのプロパティがない場合はエラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
 
     await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
       /does not have property "outer"/
@@ -470,6 +491,7 @@ describe('State component', () => {
   it('bind-componentのプロパティがオブジェクトでない場合はエラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
     (host as any).outer = 123;
 
     await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
@@ -480,6 +502,7 @@ describe('State component', () => {
   it('bind-componentでbindWebComponentを呼び出すこと', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
     const initialState = { message: 'hi' };
     (host as any).outer = initialState;
 
@@ -491,6 +514,7 @@ describe('State component', () => {
   it('bindWebComponentが失敗した場合はエラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
     (host as any).outer = {};
 
     bindWebComponentMock.mockRejectedValueOnce(new Error('bind failed'));

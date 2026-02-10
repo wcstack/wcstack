@@ -35,6 +35,7 @@ function cloneNotParseBindTextResult(
 }
 
 function _getFragmentInfo(
+  rootNode: Node,
   fragment: DocumentFragment,
   parseBindingTextResult: ParseBindTextResult,
   forPath?: string
@@ -43,7 +44,7 @@ function _getFragmentInfo(
   if (typeof forPath === "string") {
     expandShorthandPaths(fragment, forPath);
   }
-  collectStructuralFragments(fragment, forPath);
+  collectStructuralFragments(rootNode, fragment, forPath);
   // after replacing and collect node infos on child fragment
   const fragmentInfo = {
     fragment: fragment,
@@ -54,10 +55,10 @@ function _getFragmentInfo(
 }
 
 
-export function collectStructuralFragments(root: Document | Element | DocumentFragment, forPath?: string): void {
+export function collectStructuralFragments(rootNode: Node, walkRoot: Document | Element | DocumentFragment, forPath?: string): void {
   const elseKeyword = config.commentElsePrefix;
   const walker = document.createTreeWalker(
-    root, 
+    walkRoot, 
     NodeFilter.SHOW_ELEMENT, 
     {
       acceptNode(node: Node) {
@@ -109,8 +110,8 @@ export function collectStructuralFragments(root: Document | Element | DocumentFr
       }
       // else condition
       parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
-      fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
-      setFragmentInfoByUUID(uuid, fragmentInfo);
+      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+      setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
 
       const lastElseFragmentInfo = elseFragmentInfos.at(-1);
       const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
@@ -130,8 +131,8 @@ export function collectStructuralFragments(root: Document | Element | DocumentFr
         raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
       }
 
-      fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
-      setFragmentInfoByUUID(uuid, fragmentInfo);
+      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+      setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
       const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
 
       // create else fragment
@@ -146,7 +147,7 @@ export function collectStructuralFragments(root: Document | Element | DocumentFr
         nodePath: getNodePath(placeHolder),
         parseBindTextResults: getParseBindTextResults(placeHolder),
       });
-      setFragmentInfoByUUID(elseUUID, elseFragmentInfo);
+      setFragmentInfoByUUID(elseUUID, rootNode, elseFragmentInfo);
       const lastElseFragmentInfo = elseFragmentInfos.at(-1);
       elseFragmentInfos.push(elseFragmentInfo);
       const elsePlaceHolder = document.createComment(`@@${elseKeyword}:${elseUUID}`);
@@ -163,8 +164,8 @@ export function collectStructuralFragments(root: Document | Element | DocumentFr
       }
 
     } else {
-      fragmentInfo = _getFragmentInfo(fragment, parseBindTextResult, childForPath);
-      setFragmentInfoByUUID(uuid, fragmentInfo);
+      fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+      setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
       const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
       template.replaceWith(placeHolder);
     }

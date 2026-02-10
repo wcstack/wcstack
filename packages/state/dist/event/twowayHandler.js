@@ -33,7 +33,8 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
     for (const filter of inFilters) {
         filteredNewValue = filter.filterFn(filteredNewValue);
     }
-    const stateElement = getStateElementByName(stateName);
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
     if (stateElement === null) {
         raiseError(`State element with name "${stateName}" not found for two-way binding.`);
     }

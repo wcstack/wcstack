@@ -141,8 +141,8 @@ function createFragmentInfoWithIndexBinding() {
 }
 
 afterEach(() => {
-  setFragmentInfoByUUID(uuid, null);
-  setStateElementByName('default', null);
+  setFragmentInfoByUUID(uuid, document, null);
+  setStateElementByName(document, 'default', null);
 });
 
 describe('applyChangeToFor - changeIndexSet最適化', () => {
@@ -151,8 +151,8 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
   function setupContext() {
     const stateElement = createMockStateElement();
-    setStateElementByName('default', stateElement);
-    context = { stateName: 'default', stateElement: stateElement as any, state, appliedBindingSet: new Set() };
+    setStateElementByName(document, 'default', stateElement);
+    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set() };
     return stateElement;
   }
 
@@ -165,8 +165,9 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
+    document.body.appendChild(container);
 
-    setFragmentInfoByUUID(uuid, createFragmentInfoWithIndexBinding());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfoWithIndexBinding());
     const bindingInfo = createBindingInfo(placeholder);
 
     // 初回適用: [1, 2]
@@ -198,9 +199,10 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
+    document.body.appendChild(container);
 
     // $1を含まないフラグメント
-    setFragmentInfoByUUID(uuid, createFragmentInfoWithBinding());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfoWithBinding());
     const bindingInfo = createBindingInfo(placeholder);
 
     // 初回適用: [1, 2]
@@ -238,9 +240,10 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     const container = document.createElement('div');
     const placeholder = document.createComment('for');
     container.appendChild(placeholder);
+    document.body.appendChild(container);
 
     // items.* と $1 の両方を持つフラグメント
-    setFragmentInfoByUUID(uuid, createFragmentInfoWithIndexBinding());
+    setFragmentInfoByUUID(uuid, document, createFragmentInfoWithIndexBinding());
     const bindingInfo = createBindingInfo(placeholder);
 
     // 初回適用
