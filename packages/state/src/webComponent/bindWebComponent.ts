@@ -19,8 +19,10 @@ const innerStateSetter = (inner:IInnerState, innerName:string) => (v:any):void =
 }
 
 export async function bindWebComponent(
+  innerStateElement: IStateElement,
   component: Element,
-  innerStateElement: IStateElement
+  stateProp: string,
+  initialState: Record<string, any>
 ): Promise<void> {
   if (component.shadowRoot === null) {
     raiseError('Component has no shadow root.');
@@ -29,11 +31,16 @@ export async function bindWebComponent(
     raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
   }
   const shadowRoot = component.shadowRoot;
+
+  // waitForStateInitializeよりも前に呼ばないとデッドロックする
+  innerStateElement.setInitialState(initialState);
+
   await waitForStateInitialize(shadowRoot);
   convertMustacheToComments(shadowRoot);
   collectStructuralFragments(shadowRoot);
-  // initializeBindingsの前にinerState,outerStateの紐付けを行う
   await waitInitializeBinding(component);
+
+  // initializeBindingsの前にinerState,outerStateの紐付けを行う
   const bindings = getBindingsByNode(component);
   if (bindings === null) {
     raiseError('Bindings not found for component node.');
@@ -45,7 +52,11 @@ export async function bindWebComponent(
     outerState.$$bind(innerStateElement, binding);
     innerState.$$bind(binding);
 
+    const innerStateProp = binding.propSegments[0];
     const innerName = binding.propSegments.slice(1).join('.');
+    if (stateProp !== innerStateProp) {
+      raiseError(`Binding prop "${innerStateProp}" does not match stateProp "${stateProp}".`);
+    }
     innerStateElement.bindProperty(innerName, {
       get: innerStateGetter(innerState, innerName),
       set: innerStateSetter(innerState, innerName),
@@ -53,7 +64,7 @@ export async function bindWebComponent(
       configurable: true,
     });
   }
-  Object.defineProperty(component, "outer", {
+  Object.defineProperty(component, stateProp, {
     get: getOuter(outerState),
     enumerable: true,
     configurable: true,

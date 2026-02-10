@@ -4370,7 +4370,7 @@ const innerStateGetter = (inner, innerName) => () => inner[innerName];
 const innerStateSetter = (inner, innerName) => (v) => {
     inner[innerName] = v;
 };
-async function bindWebComponent(component, innerStateElement) {
+async function bindWebComponent(innerStateElement, component, stateProp, initialState) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
     }
@@ -4378,11 +4378,13 @@ async function bindWebComponent(component, innerStateElement) {
         raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
     }
     const shadowRoot = component.shadowRoot;
+    // waitForStateInitializeよりも前に呼ばないとデッドロックする
+    innerStateElement.setInitialState(initialState);
     await waitForStateInitialize(shadowRoot);
     convertMustacheToComments(shadowRoot);
     collectStructuralFragments(shadowRoot);
-    // initializeBindingsの前にinerState,outerStateの紐付けを行う
     await waitInitializeBinding(component);
+    // initializeBindingsの前にinerState,outerStateの紐付けを行う
     const bindings = getBindingsByNode(component);
     if (bindings === null) {
         raiseError('Bindings not found for component node.');
@@ -4392,7 +4394,11 @@ async function bindWebComponent(component, innerStateElement) {
     for (const binding of bindings) {
         outerState.$$bind(innerStateElement, binding);
         innerState.$$bind(binding);
+        const innerStateProp = binding.propSegments[0];
         const innerName = binding.propSegments.slice(1).join('.');
+        if (stateProp !== innerStateProp) {
+            raiseError(`Binding prop "${innerStateProp}" does not match stateProp "${stateProp}".`);
+        }
         innerStateElement.bindProperty(innerName, {
             get: innerStateGetter(innerState, innerName),
             set: innerStateSetter(innerState, innerName),
@@ -4400,7 +4406,7 @@ async function bindWebComponent(component, innerStateElement) {
             configurable: true,
         });
     }
-    Object.defineProperty(component, "outer", {
+    Object.defineProperty(component, stateProp, {
         get: getOuter(outerState),
         enumerable: true,
         configurable: true,
@@ -4519,6 +4525,7 @@ class State extends HTMLElement {
                     const timerId = setTimeout(() => {
                         console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
                     }, NO_SET_TIMEOUT);
+                    // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
                     this._state = await this._setStatePromise;
                     clearTimeout(timerId);
                 }
@@ -4531,8 +4538,34 @@ class State extends HTMLElement {
         this._name = this.getAttribute('name') || 'default';
         setStateElementByName(this._name, this);
     }
+    async _bindWebComponent() {
+        if (this.hasAttribute('bind-component')) {
+            const rootNode = this.getRootNode();
+            if (!(rootNode instanceof ShadowRoot)) {
+                raiseError('bind-component can only be used inside a shadow root.');
+            }
+            const component = rootNode.host;
+            const componentStateProp = this.getAttribute('bind-component');
+            try {
+                await customElements.whenDefined(component.tagName.toLowerCase());
+                if (!(componentStateProp in component)) {
+                    raiseError(`Component does not have property "${componentStateProp}" for state binding.`);
+                }
+                const state = component[componentStateProp];
+                if (typeof state !== 'object' || state === null) {
+                    raiseError(`Component property "${componentStateProp}" is not an object for state binding.`);
+                }
+                await this.bindWebComponent(component, componentStateProp, state);
+            }
+            catch (e) {
+                raiseError(`Failed to bind web component: ${e}`);
+            }
+        }
+    }
     async connectedCallback() {
         if (!this._initialized) {
+            // (1)のデッドロック回避のためにawaitしない
+            this._bindWebComponent();
             await this._initialize();
             this._initialized = true;
             this._resolveInitialize?.();
@@ -4648,8 +4681,8 @@ class State extends HTMLElement {
         this._version++;
         return this._version;
     }
-    async bindWebComponent(component) {
-        await bindWebComponent(component, this);
+    async bindWebComponent(component, stateProp, initialState) {
+        await bindWebComponent(this, component, stateProp, initialState);
     }
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);

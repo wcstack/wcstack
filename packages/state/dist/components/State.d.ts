@@ -26,6 +26,7 @@ export declare class State extends HTMLElement implements IStateElement {
     private set _state(value);
     get name(): string;
     private _initialize;
+    private _bindWebComponent;
     connectedCallback(): Promise<void>;
     disconnectedCallback(): void;
     get initializePromise(): Promise<void>;
@@ -69,7 +70,7 @@ export declare class State extends HTMLElement implements IStateElement {
     createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
     createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
     nextVersion(): number;
-    bindWebComponent(component: Element): Promise<void>;
+    bindWebComponent(component: Element, stateProp: string, initialState: Record<string, any>): Promise<void>;
     bindProperty(prop: string, desc: PropertyDescriptor): void;
     setInitialState(state: Record<string, any>): void;
 }

@@ -13,7 +13,7 @@ const innerStateGetter = (inner, innerName) => () => inner[innerName];
 const innerStateSetter = (inner, innerName) => (v) => {
     inner[innerName] = v;
 };
-export async function bindWebComponent(component, innerStateElement) {
+export async function bindWebComponent(innerStateElement, component, stateProp, initialState) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
     }
@@ -21,11 +21,13 @@ export async function bindWebComponent(component, innerStateElement) {
         raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
     }
     const shadowRoot = component.shadowRoot;
+    // waitForStateInitializeよりも前に呼ばないとデッドロックする
+    innerStateElement.setInitialState(initialState);
     await waitForStateInitialize(shadowRoot);
     convertMustacheToComments(shadowRoot);
     collectStructuralFragments(shadowRoot);
-    // initializeBindingsの前にinerState,outerStateの紐付けを行う
     await waitInitializeBinding(component);
+    // initializeBindingsの前にinerState,outerStateの紐付けを行う
     const bindings = getBindingsByNode(component);
     if (bindings === null) {
         raiseError('Bindings not found for component node.');
@@ -35,7 +37,11 @@ export async function bindWebComponent(component, innerStateElement) {
     for (const binding of bindings) {
         outerState.$$bind(innerStateElement, binding);
         innerState.$$bind(binding);
+        const innerStateProp = binding.propSegments[0];
         const innerName = binding.propSegments.slice(1).join('.');
+        if (stateProp !== innerStateProp) {
+            raiseError(`Binding prop "${innerStateProp}" does not match stateProp "${stateProp}".`);
+        }
         innerStateElement.bindProperty(innerName, {
             get: innerStateGetter(innerState, innerName),
             set: innerStateSetter(innerState, innerName),
@@ -43,7 +49,7 @@ export async function bindWebComponent(component, innerStateElement) {
             configurable: true,
         });
     }
-    Object.defineProperty(component, "outer", {
+    Object.defineProperty(component, stateProp, {
         get: getOuter(outerState),
         enumerable: true,
         configurable: true,

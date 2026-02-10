@@ -134,6 +134,7 @@ export class State extends HTMLElement implements IStateElement {
           const timerId = setTimeout(() => {
             console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
           }, NO_SET_TIMEOUT);
+          // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
           this._state = await this._setStatePromise!;
           clearTimeout(timerId);
         }
@@ -144,10 +145,37 @@ export class State extends HTMLElement implements IStateElement {
     await this._loadingPromise;
     this._name = this.getAttribute('name') || 'default';
     setStateElementByName(this._name, this);
+
+  }
+
+  private async _bindWebComponent() {
+    if (this.hasAttribute('bind-component')) {
+      const rootNode = this.getRootNode();
+      if (!(rootNode instanceof ShadowRoot)) {
+        raiseError('bind-component can only be used inside a shadow root.');
+      }
+      const component = rootNode.host;
+      const componentStateProp = this.getAttribute('bind-component')!;
+      try {
+        await customElements.whenDefined(component.tagName.toLowerCase());
+        if (!(componentStateProp in component)) {
+          raiseError(`Component does not have property "${componentStateProp}" for state binding.`);
+        }
+        const state = (component as any)[componentStateProp] as Record<string, any>;
+        if (typeof state !== 'object' || state === null) {
+          raiseError(`Component property "${componentStateProp}" is not an object for state binding.`);
+        }
+        await this.bindWebComponent(component, componentStateProp, state);
+      } catch(e) {
+        raiseError(`Failed to bind web component: ${e}`);
+      }
+    }
   }
 
   async connectedCallback() {
     if (!this._initialized) {
+      // (1)のデッドロック回避のためにawaitしない
+      this._bindWebComponent();
       await this._initialize();
       this._initialized = true;
       this._resolveInitialize?.();
@@ -284,8 +312,8 @@ export class State extends HTMLElement implements IStateElement {
     return this._version;
   }
 
-  async bindWebComponent(component: Element): Promise<void> {
-    await bindWebComponent(component, this);
+  async bindWebComponent(component: Element, stateProp: string, initialState: Record<string, any>): Promise<void> {
+    await bindWebComponent(this, component, stateProp, initialState);
   }
 
   bindProperty(prop: string, desc: PropertyDescriptor): void {

@@ -7,11 +7,11 @@
   <script type="importmap">
     {
       "imports": {
-        "@wcstack/state": "../../dist/index.esm.js",
         "@components/myComponent": "./components/myComponent.js"
       }
     }
   </script>
+  <script type="module" src="../../dist/auto.js"></script>
   <style>
     .over {
       color: red;
@@ -22,8 +22,6 @@
   <wcs-state>
     <script type="module">
 import "@components/myComponent";
-import { bootstrapState } from "@wcstack/state";
-bootstrapState();
 
 export default {
   count: 0,

@@ -64,6 +64,7 @@ const createMockBinding = (propSegments: string[], statePathName: string, stateN
 const createMockStateElement = () => ({
   bindProperty: vi.fn(),
   createState: vi.fn(),
+  setInitialState: vi.fn(),
 } as any);
 
 const createComponentWithShadow = (bindAttr = true): Element => {
@@ -83,13 +84,13 @@ describe('bindWebComponent', () => {
   it('shadowRootがない場合はエラーになること', async () => {
     const component = document.createElement('div');
     const stateEl = createMockStateElement();
-    await expect(bindWebComponent(component, stateEl)).rejects.toThrow(/no shadow root/);
+    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/no shadow root/);
   });
 
   it('bindAttributeNameがない場合はエラーになること', async () => {
     const component = createComponentWithShadow(false);
     const stateEl = createMockStateElement();
-    await expect(bindWebComponent(component, stateEl)).rejects.toThrow(/no "data-bind-state" attribute/);
+    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/no "data-bind-state" attribute/);
   });
 
   it('bindingsがnullの場合はエラーになること', async () => {
@@ -97,22 +98,37 @@ describe('bindWebComponent', () => {
     const stateEl = createMockStateElement();
     getBindingsByNodeMock.mockReturnValue(null);
 
-    await expect(bindWebComponent(component, stateEl)).rejects.toThrow(/Bindings not found/);
+    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/Bindings not found/);
+  });
+
+  it('statePropとバインディングの先頭プロパティが一致しない場合はエラーになること', async () => {
+    const component = createComponentWithShadow();
+    const stateEl = createMockStateElement();
+    const binding = createMockBinding(['other', 'value'], 'data');
+    getBindingsByNodeMock.mockReturnValue([binding]);
+
+    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(
+      /does not match stateProp/,
+    );
   });
 
   it('正常系: バインディングを処理してouterプロパティを設定すること', async () => {
     const component = createComponentWithShadow();
     const stateEl = createMockStateElement();
-    const binding1 = createMockBinding(['component', 'title'], 'name');
-    const binding2 = createMockBinding(['component', 'count'], 'total');
+    const binding1 = createMockBinding(['outer', 'title'], 'name');
+    const binding2 = createMockBinding(['outer', 'count'], 'total');
     getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
+
+    const initialState = { seed: 'value' };
 
     const outerState = (createOuterState as any)();
     const innerState = (createInnerState as any)();
     vi.mocked(createOuterState).mockReturnValue(outerState);
     vi.mocked(createInnerState).mockReturnValue(innerState);
 
-    await bindWebComponent(component, stateEl);
+    await bindWebComponent(stateEl, component, 'outer', initialState);
+
+    expect(stateEl.setInitialState).toHaveBeenCalledWith(initialState);
 
     // waitForStateInitialize, convertMustache, collectStructural が呼ばれること
     expect(waitForStateInitialize).toHaveBeenCalledWith(component.shadowRoot);
@@ -151,7 +167,7 @@ describe('bindWebComponent', () => {
   it('bindPropertyで定義されたgetter/setterが内部状態を操作できること', async () => {
     const component = createComponentWithShadow();
     const stateEl = createMockStateElement();
-    const binding = createMockBinding(['component', 'value'], 'data');
+    const binding = createMockBinding(['outer', 'value'], 'data');
     getBindingsByNodeMock.mockReturnValue([binding]);
 
     const outerState = (createOuterState as any)();
@@ -159,7 +175,7 @@ describe('bindWebComponent', () => {
     vi.mocked(createOuterState).mockReturnValue(outerState);
     vi.mocked(createInnerState).mockReturnValue(innerState);
 
-    await bindWebComponent(component, stateEl);
+    await bindWebComponent(stateEl, component, 'outer', {});
 
     // bindPropertyに渡されたdescriptorを取得
     const call = stateEl.bindProperty.mock.calls[0];

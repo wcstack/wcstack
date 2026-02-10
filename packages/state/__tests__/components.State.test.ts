@@ -52,6 +52,20 @@ const createStateElement = (attrs?: Record<string, string>): State => {
   return el;
 };
 
+const ensureHostDefined = () => {
+  if (!customElements.get('x-host')) {
+    customElements.define('x-host', class extends HTMLElement {});
+  }
+};
+
+const createHostWithState = (stateEl: State): HTMLElement => {
+  ensureHostDefined();
+  const host = document.createElement('x-host');
+  const shadow = host.attachShadow({ mode: 'open' });
+  shadow.appendChild(stateEl);
+  return host;
+};
+
 const getStateValue = async (stateEl: State): Promise<any> => {
   let value: any;
   await stateEl.createState('readonly', (state) => {
@@ -389,9 +403,9 @@ describe('State component', () => {
     await stateEl.initializePromise;
 
     const component = document.createElement('div');
-    await stateEl.bindWebComponent(component);
+    await stateEl.bindWebComponent(component, 'outer', { foo: 'bar' });
 
-    expect(bindWebComponentMock).toHaveBeenCalledWith(component, stateEl);
+    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, component, 'outer', { foo: 'bar' });
   });
 
   it('bindPropertyでstateにプロパティを定義できること', async () => {
@@ -434,5 +448,55 @@ describe('State component', () => {
 
     warnSpy.mockRestore();
     vi.useRealTimers();
+  });
+
+  it('bind-componentがshadow root外だとエラーになること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+
+    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+      /bind-component can only be used inside a shadow root/
+    );
+  });
+
+  it('bind-componentのプロパティがない場合はエラーになること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+
+    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+      /does not have property "outer"/
+    );
+  });
+
+  it('bind-componentのプロパティがオブジェクトでない場合はエラーになること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    (host as any).outer = 123;
+
+    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+      /is not an object/
+    );
+  });
+
+  it('bind-componentでbindWebComponentを呼び出すこと', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    const initialState = { message: 'hi' };
+    (host as any).outer = initialState;
+
+    await (stateEl as any)._bindWebComponent();
+
+    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', initialState);
+  });
+
+  it('bindWebComponentが失敗した場合はエラーになること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    (host as any).outer = {};
+
+    bindWebComponentMock.mockRejectedValueOnce(new Error('bind failed'));
+
+    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+      /Failed to bind web component/
+    );
   });
 });
