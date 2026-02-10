@@ -9,7 +9,7 @@ import { IStateElement } from "./types";
 import { setStateElementByName } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { WILDCARD } from "../define";
+import { NO_SET_TIMEOUT, WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
@@ -57,19 +57,17 @@ export class State extends HTMLElement implements IStateElement {
   private _resolveInitialize: (() => void) | null = null;
   private _loadingPromise: Promise<void>;
   private _resolveLoading: (() => void) | null = null;
+  private _setStatePromise: Promise<Record<string, any>> | null = null;
+  private _resolveSetState: ((value: Record<string, any>) => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
   private _elementPaths: Set<string> = new Set<string>();
   private _getterPaths: Set<string> = new Set<string>();
   private _setterPaths: Set<string> = new Set<string>();
-  private _isLoadingState: boolean = false;
-  private _isLoadedState: boolean = false;
   private _loopContextStack: ILoopContextStack = createLoopContextStack();
   private _dynamicDependency: Map<string, string[]> = new Map<string, string[]>();
   private _staticDependency: Map<string, string[]> = new Map<string, string[]>();
   private _pathSet: Set<string> = new Set<string>();
   private _version = 0;
-
-  static get observedAttributes() { return [ 'name', 'src', 'state' ]; }
 
   constructor() {
     super();
@@ -78,6 +76,9 @@ export class State extends HTMLElement implements IStateElement {
     });
     this._loadingPromise = new Promise<void>((resolve) => {
       this._resolveLoading = resolve;
+    });
+    this._setStatePromise = new Promise<Record<string, any>>((resolve) => {
+      this._resolveSetState = resolve;
     });
   }
 
@@ -108,70 +109,40 @@ export class State extends HTMLElement implements IStateElement {
     return this._name;
   }
 
-  attributeChangedCallback(name: string, oldValue: string, newValue: string): void {
-    if (name === 'name' && oldValue !== newValue) {
-      setStateElementByName(this._name, null);
-      this._name = newValue;
-      setStateElementByName(this._name, this);
-    }
-    if (name === 'state' && oldValue !== newValue) {
-      if (this._isLoadedState) {
-        raiseError(`The state has already been loaded. The 'state' attribute cannot be changed multiple times.`);
-      }
-      if (this._isLoadingState) {
-        raiseError(`The state is currently loading. The 'state' attribute cannot be changed during loading.`);
-      }
-      this._state = loadFromScriptJson(newValue);
-      this._isLoadedState = true;
-    }
-    if (name === 'src' && oldValue !== newValue) {
-      if (this._isLoadedState) {
-        raiseError(`The state has already been loaded. The 'src' attribute cannot be changed multiple times.`);
-      }
-      if (this._isLoadingState) {
-        raiseError(`The state is currently loading. The 'src' attribute cannot be changed during loading.`);
-      }
-      if (newValue && newValue.endsWith('.json')) {
-        this._isLoadingState = true;
-        loadFromJsonFile(newValue).then((state) => {
-          this._isLoadedState = true;
-          this._state = state;
-        }).finally(() => {
-          this._isLoadingState = false;
-        });
-      } else if (newValue && newValue.endsWith('.js')) {
-        this._isLoadingState = true;
-        loadFromScriptFile(newValue).then((state) => {
-          this._isLoadedState = true;
-          this._state = state;
-        }).finally(() => {
-          this._isLoadingState = false;
-        });
-      } else {
-        raiseError(`Unsupported src file type: ${newValue}`);
-      }
-    }
-  }
-
   private async _initialize() {
-    if (!this._isLoadedState && !this._isLoadingState) {
-      this._isLoadingState = true;
-      try {
+    try {
+      if (this.hasAttribute('state')) {
+        const state = this.getAttribute('state');
+        this._state = loadFromScriptJson(state!);
+      } else if (this.hasAttribute('src')) {
+        const src = this.getAttribute('src');
+        if (src && src.endsWith('.json')) {
+          this._state = await loadFromJsonFile(src);
+        } else if (src && src.endsWith('.js')) {
+          this._state = await loadFromScriptFile(src);
+        } else {
+          raiseError(`Unsupported src file type: ${src}`);
+        }
+      } else if (this.hasAttribute('json')) {
+         const json = this.getAttribute('json');
+          this._state = JSON.parse(json!);
+      } else {
         const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
         if (script) {
           this._state = await loadFromInnerScript(script, `state#${this._name}`);
-          this._isLoadedState = true;
+        } else {
+          const timerId = setTimeout(() => {
+            console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
+          }, NO_SET_TIMEOUT);
+          this._state = await this._setStatePromise!;
+          clearTimeout(timerId);
         }
-      } catch(e) {
-        raiseError(`Failed to load state from inner script: ${(e as Error).message}`);
-      } finally {
-        this._isLoadingState = false;
       }
-    }
-    if (!this._isLoadedState && !this._isLoadingState) {
-      this._state = {};
+    } catch(e) {
+      raiseError(`Failed to initialize state: ${e}`);
     }
     await this._loadingPromise;
+    this._name = this.getAttribute('name') || 'default';
     setStateElementByName(this._name, this);
   }
 
@@ -321,4 +292,10 @@ export class State extends HTMLElement implements IStateElement {
     Object.defineProperty(this._state, prop, desc);
   }
 
+  setInitialState(state: Record<string, any>): void {
+    if (this._initialized) {
+      raiseError('setInitialState cannot be called after state is initialized.');
+    }
+    this._resolveSetState?.(state);
+  }
 }

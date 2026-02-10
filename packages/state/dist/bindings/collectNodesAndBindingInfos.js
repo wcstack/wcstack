@@ -31,8 +31,10 @@ export function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
         }
         if (!registeredNodeSet.has(node)) {
             registeredNodeSet.add(node);
-            const bindingInfos = getBindingInfos(node, nodeInfo.parseBindTextResults);
-            allBindings.push(...bindingInfos);
+            const bindings = getBindingInfos(node, nodeInfo.parseBindTextResults);
+            setBindingsByNode(node, bindings);
+            resolveInitializedBinding(node);
+            allBindings.push(...bindings);
             nodes.push(node);
         }
     }

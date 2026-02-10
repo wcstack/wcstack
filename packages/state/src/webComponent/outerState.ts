@@ -1,9 +1,10 @@
+import { IBindingInfo } from "../binding/types";
 import { IStateElement } from "../components/types";
 import { IOuterState } from "./types";
 
 const getterFn = (
-  innerStateElement: IStateElement,
-  innerName: string
+  _innerStateElement: IStateElement,
+  _innerName: string
 ) => () => {
 /*
   let value = undefined;
@@ -18,7 +19,7 @@ const getterFn = (
 const setterFn = (
   innerStateElement: IStateElement,
   innerName: string,
-) => (v: any) => {
+) => (_v: any) => {
   innerStateElement.createState("readonly", (state) => {
     state.$postUpdate(innerName);
   });
@@ -28,14 +29,17 @@ class OuterState implements IOuterState {
   constructor() {
   }
 
-  $$bindName(innerStateElement: IStateElement, innerName: string): void {
+  $$bind(innerStateElement: IStateElement, binding: IBindingInfo): void {
+    const innerName = binding.propSegments.slice(1).join('.');
     Object.defineProperty(this, innerName, {
       get: getterFn(innerStateElement, innerName),
       set: setterFn(innerStateElement, innerName),
       enumerable: true,
       configurable: true,
     });
+    
   }
+  
 }
 
 export function createOuterState(): IOuterState {

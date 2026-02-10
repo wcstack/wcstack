@@ -1,1 +1,1 @@
-{"version":3,"file":"outerState.d.ts","sourceRoot":"","sources":["../../src/webComponent/outerState.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,WAAW,EAAE,MAAM,SAAS,CAAC;AAuCtC,wBAAgB,gBAAgB,IAAI,WAAW,CAE9C"}
+{"version":3,"file":"outerState.d.ts","sourceRoot":"","sources":["../../src/webComponent/outerState.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,WAAW,EAAE,MAAM,SAAS,CAAC;AA0CtC,wBAAgB,gBAAgB,IAAI,WAAW,CAE9C"}

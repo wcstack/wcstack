@@ -15,6 +15,9 @@ vi.mock('../src/stateLoader/loadFromScriptJson', () => ({
 vi.mock('../src/proxy/StateHandler', () => ({
   createStateProxy: vi.fn((state: any) => state)
 }));
+vi.mock('../src/webComponent/bindWebComponent', () => ({
+  bindWebComponent: vi.fn().mockResolvedValue(undefined)
+}));
 
 import { State } from '../src/components/State';
 import { getStateElementByName, setStateElementByName } from '../src/stateElementByName';
@@ -23,6 +26,7 @@ import { loadFromJsonFile } from '../src/stateLoader/loadFromJsonFile';
 import { loadFromScriptFile } from '../src/stateLoader/loadFromScriptFile';
 import { loadFromScriptJson } from '../src/stateLoader/loadFromScriptJson';
 import { createStateProxy } from '../src/proxy/StateHandler';
+import { bindWebComponent } from '../src/webComponent/bindWebComponent';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 
@@ -31,13 +35,22 @@ const loadFromJsonFileMock = vi.mocked(loadFromJsonFile);
 const loadFromScriptFileMock = vi.mocked(loadFromScriptFile);
 const loadFromScriptJsonMock = vi.mocked(loadFromScriptJson);
 const createStateProxyMock = vi.mocked(createStateProxy);
+const bindWebComponentMock = vi.mocked(bindWebComponent);
 
 const STATE_TAG = 'wcs-state-test';
 if (!customElements.get(STATE_TAG)) {
   customElements.define(STATE_TAG, State);
 }
 
-const createStateElement = (): State => document.createElement(STATE_TAG) as State;
+const createStateElement = (attrs?: Record<string, string>): State => {
+  const el = document.createElement(STATE_TAG) as State;
+  if (attrs) {
+    for (const [key, value] of Object.entries(attrs)) {
+      el.setAttribute(key, value);
+    }
+  }
+  return el;
+};
 
 const getStateValue = async (stateEl: State): Promise<any> => {
   let value: any;
@@ -76,6 +89,8 @@ describe('State component', () => {
   });
 
   afterEach(() => {
+    setStateElementByName('default', null);
+    setStateElementByName('foo', null);
     vi.clearAllMocks();
   });
 
@@ -86,6 +101,8 @@ describe('State component', () => {
 
   it('connectedCallbackで初期化されること（スクリプトなし）', async () => {
     const stateEl = createStateElement();
+    // スクリプトも属性もないので、setInitialStateで状態を注入
+    stateEl.setInitialState({});
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
     const value = await getStateValue(stateEl);
@@ -94,6 +111,7 @@ describe('State component', () => {
 
   it('connectedCallbackは2回目以降何もしないこと', async () => {
     const stateEl = createStateElement();
+    stateEl.setInitialState({});
     await stateEl.connectedCallback();
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
@@ -114,52 +132,44 @@ describe('State component', () => {
     expect(value).toEqual({ fromInner: true });
   });
 
-  it('name属性変更で登録が更新されること', () => {
-    const stateEl = createStateElement();
-    stateEl.attributeChangedCallback('name', 'default', 'foo');
+  it('name属性で登録されること', async () => {
+    const stateEl = createStateElement({ name: 'foo' });
+    stateEl.setInitialState({});
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
 
     expect(getStateElementByName('foo')).toBe(stateEl);
     expect(getStateElementByName('default')).toBeNull();
   });
 
-  it('name getterで現在の名前を取得できること', () => {
+  it('name getterで現在の名前を取得できること', async () => {
     const stateEl = createStateElement();
+    stateEl.setInitialState({});
+    await stateEl.connectedCallback();
     expect(stateEl.name).toBe('default');
   });
 
-  it('state属性でスクリプトJSONを読み込めること', () => {
-    const stateEl = createStateElement();
-    stateEl.attributeChangedCallback('state', '', 'state-data');
+  it('state属性でスクリプトJSONを読み込めること', async () => {
+    const stateEl = createStateElement({ state: 'state-data' });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
 
     expect(loadFromScriptJsonMock).toHaveBeenCalledWith('state-data');
     return expect(getStateValue(stateEl)).resolves.toEqual({ fromScriptJson: true });
   });
 
   it('state属性が設定済みの場合はinitializeで読み込みをスキップすること', async () => {
-    const stateEl = createStateElement();
-    stateEl.attributeChangedCallback('state', '', 'state-data');
+    const stateEl = createStateElement({ state: 'state-data' });
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
 
     expect(loadFromInnerScriptMock).not.toHaveBeenCalled();
   });
 
-  it('state属性は2回目の変更でエラーになること', () => {
-    const stateEl = createStateElement();
-    stateEl.attributeChangedCallback('state', '', 'state-a');
-    expect(() => stateEl.attributeChangedCallback('state', 'state-a', 'state-b')).toThrow(/already been loaded/);
-  });
-
-  it('src属性はロード済みの場合エラーになること', () => {
-    const stateEl = createStateElement();
-    stateEl.attributeChangedCallback('state', '', 'state-a');
-    expect(() => stateEl.attributeChangedCallback('src', '', 'data.json')).toThrow(/already been loaded/);
-  });
-
   it('src属性でjsonを読み込めること', async () => {
-    const stateEl = createStateElement();
-    stateEl.attributeChangedCallback('src', '', 'data.json');
-    await new Promise((r) => setTimeout(r, 0));
+    const stateEl = createStateElement({ src: 'data.json' });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
 
     expect(loadFromJsonFileMock).toHaveBeenCalledWith('data.json');
     const value = await getStateValue(stateEl);
@@ -167,36 +177,23 @@ describe('State component', () => {
   });
 
   it('src属性でjsを読み込めること', async () => {
-    const stateEl = createStateElement();
-    stateEl.attributeChangedCallback('src', '', 'data.js');
-    await new Promise((r) => setTimeout(r, 0));
+    const stateEl = createStateElement({ src: 'data.js' });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
 
     expect(loadFromScriptFileMock).toHaveBeenCalledWith('data.js');
     const value = await getStateValue(stateEl);
     expect(value).toEqual({ fromScript: true });
   });
 
-  it('src属性の拡張子が不正な場合はエラーになること', () => {
-    const stateEl = createStateElement();
-    expect(() => stateEl.attributeChangedCallback('src', '', 'data.txt')).toThrow(/Unsupported src file type/);
-  });
-
-  it('srcロード中は変更できないこと', () => {
-    const stateEl = createStateElement();
-    loadFromJsonFileMock.mockImplementation(() => new Promise(() => {}));
-    stateEl.attributeChangedCallback('src', '', 'data.json');
-    expect(() => stateEl.attributeChangedCallback('src', 'data.json', 'data2.json')).toThrow(/currently loading/);
-  });
-
-  it('state属性はロード中に変更できないこと', () => {
-    const stateEl = createStateElement();
-    loadFromJsonFileMock.mockImplementation(() => new Promise(() => {}));
-    stateEl.attributeChangedCallback('src', '', 'data.json');
-    expect(() => stateEl.attributeChangedCallback('state', '', 'state-data')).toThrow(/currently loading/);
+  it('src属性の拡張子が不正な場合はエラーになること', async () => {
+    const stateEl = createStateElement({ src: 'data.txt' });
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/Unsupported src file type/);
   });
 
   it('createState呼び出しごとにproxyが作成されること', async () => {
     const stateEl = createStateElement();
+    stateEl.setInitialState({});
     await stateEl.connectedCallback();
     const state1 = await getStateValue(stateEl);
     const state2 = await getStateValue(stateEl);
@@ -204,20 +201,21 @@ describe('State component', () => {
     expect(state1).toBe(state2);
   });
 
-  it('getterを持つstateはgetterPathsに追加されること', () => {
-    const stateEl = createStateElement();
+  it('getterを持つstateはgetterPathsに追加されること', async () => {
+    const stateEl = createStateElement({ state: 'state-data' });
     loadFromScriptJsonMock.mockReturnValue({
       get computed() {
         return 1;
       }
     });
 
-    stateEl.attributeChangedCallback('state', '', 'state-data');
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
     expect(stateEl.getterPaths.has('computed')).toBe(true);
   });
 
-  it('setterを持つstateはsetterPathsに追加されること', () => {
-    const stateEl = createStateElement();
+  it('setterを持つstateはsetterPathsに追加されること', async () => {
+    const stateEl = createStateElement({ state: 'state-data' });
     let _value = 0;
     loadFromScriptJsonMock.mockReturnValue({
       get value() {
@@ -228,12 +226,14 @@ describe('State component', () => {
       }
     });
 
-    stateEl.attributeChangedCallback('state', '', 'state-data');
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
     expect(stateEl.setterPaths.has('value')).toBe(true);
   });
 
   it('createStateAsyncで非同期コールバックを実行できること', async () => {
     const stateEl = createStateElement();
+    stateEl.setInitialState({});
     await stateEl.connectedCallback();
     
     let callbackExecuted = false;
@@ -248,6 +248,7 @@ describe('State component', () => {
 
   it('各種getterが取得できること', async () => {
     const stateEl = createStateElement();
+    stateEl.setInitialState({});
     await stateEl.connectedCallback();
 
     expect(stateEl.initializePromise).toBeInstanceOf(Promise);
@@ -263,20 +264,6 @@ describe('State component', () => {
 
   it('setBindingInfoでlistPathsが更新されること', () => {
     const stateEl = createStateElement();
-    const bindingInfo = {
-      propName: 'for',
-      propSegments: ['for'],
-      propModifiers: [],
-      statePathName: 'items',
-      statePathInfo: getPathInfo('items'),
-      stateName: 'default',
-      outFilters: [],
-  inFilters: [],
-      bindingType: 'for',
-      uuid: 'uuid',
-      node: document.createElement('div'),
-      replaceNode: document.createComment('for')
-    } as IBindingInfo;
 
     stateEl.setPathInfo('items', 'for');
 
@@ -286,10 +273,6 @@ describe('State component', () => {
 
   it('setBindingInfoの再登録で静的依存が重複しないこと', () => {
     const stateEl = createStateElement();
-    const bindingInfo = createBindingInfo({
-      statePathName: 'user.name',
-      statePathInfo: getPathInfo('user.name'),
-    });
 
     stateEl.setPathInfo('user.name', 'text');
     stateEl.setPathInfo('user.name', 'text');
@@ -300,10 +283,6 @@ describe('State component', () => {
 
   it('setBindingInfoで親パスの静的依存が登録されること', () => {
     const stateEl = createStateElement();
-    const bindingInfo = createBindingInfo({
-      statePathName: 'user.name',
-      statePathInfo: getPathInfo('user.name'),
-    });
 
     stateEl.setPathInfo('user.name', 'text');
 
@@ -330,11 +309,6 @@ describe('State component', () => {
     const depsAB = stateEl.staticDependency.get('a.b') || [];
     expect(depsAB).toEqual(['a.b.c']);
 
-    // verify spy calls
-    // 1st call: a.b -> a.b.c (returns true)
-    // 2nd call: a -> a.b (returns false, breaks loop)
-    // Should NOT go higher if 'a' had a parent (e.g. if we had root.a.b and root.a)
-    
     // Check that it returned false for the second call
     expect(spy).toHaveReturnedWith(false);
   });
@@ -377,6 +351,88 @@ describe('State component', () => {
     stateEl.appendChild(script);
 
     loadFromInnerScriptMock.mockRejectedValueOnce(new Error('load failed'));
-    await expect(stateEl.connectedCallback()).rejects.toThrow(/Failed to load state from inner script/);
+    await expect(stateEl.connectedCallback()).rejects.toThrow(/Failed to initialize state/);
+  });
+
+  it('setInitialStateで状態を注入できること', async () => {
+    const stateEl = createStateElement();
+    stateEl.setInitialState({ injected: true });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+
+    const value = await getStateValue(stateEl);
+    expect(value).toEqual({ injected: true });
+  });
+
+  it('初期化後にsetInitialStateを呼ぶとエラーになること', async () => {
+    const stateEl = createStateElement();
+    stateEl.setInitialState({});
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+
+    expect(() => stateEl.setInitialState({})).toThrow(/cannot be called after state is initialized/);
+  });
+
+  it('json属性でJSON文字列を読み込めること', async () => {
+    const stateEl = createStateElement({ json: '{"key":"value"}' });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+
+    const value = await getStateValue(stateEl);
+    expect(value).toEqual({ key: 'value' });
+  });
+
+  it('bindWebComponentがbindWebComponentモジュールを呼び出すこと', async () => {
+    const stateEl = createStateElement();
+    stateEl.setInitialState({});
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+
+    const component = document.createElement('div');
+    await stateEl.bindWebComponent(component);
+
+    expect(bindWebComponentMock).toHaveBeenCalledWith(component, stateEl);
+  });
+
+  it('bindPropertyでstateにプロパティを定義できること', async () => {
+    const stateEl = createStateElement();
+    stateEl.setInitialState({ count: 0 });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+
+    stateEl.bindProperty('computed', {
+      get() { return 42; },
+      enumerable: true,
+      configurable: true,
+    });
+
+    let computedValue: any;
+    await stateEl.createState('readonly', (state: any) => {
+      computedValue = state.computed;
+    });
+    expect(computedValue).toBe(42);
+  });
+
+  it('setInitialStateが呼ばれない場合にタイムアウト警告が出ること', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const stateEl = createStateElement();
+    // connectedCallbackを開始するが、setInitialStateを呼ばない
+    const connectPromise = stateEl.connectedCallback();
+
+    // NO_SET_TIMEOUT (60秒) を進める
+    vi.advanceTimersByTime(60 * 1000);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Warning: No state source found')
+    );
+
+    // setInitialStateで解決させてクリーンアップ
+    stateEl.setInitialState({});
+    await connectPromise;
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
   });
 });

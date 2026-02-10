@@ -1,34 +1,56 @@
-import { IStateElement } from "../components/types";
+import { IBindingInfo } from "../binding/types";
+import { getLoopContextByNode } from "../list/loopContextByNode";
+import { raiseError } from "../raiseError";
+import { getStateElementByName } from "../stateElementByName";
 import { IInnerState } from "./types";
 
 const getterFn = (
-  outerStateElement: IStateElement,
-  outerName: string
-) => () => {
-  let value = undefined;
-  outerStateElement.createState("readonly", (state) => {
-    value = state[outerName];
-  });
-  return value;
+  binding: IBindingInfo,
+) => {
+  const outerStateElement = getStateElementByName(binding.stateName);
+  if (outerStateElement === null) {
+    raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+  }
+  const outerName = binding.statePathName;
+  return () => {
+    let value = undefined;
+    const loopContext = getLoopContextByNode(binding.node);
+    outerStateElement.createState("readonly", (state) => {
+      state.$$setLoopContext(loopContext, () => {
+        value = state[outerName];
+      });
+    });
+    return value;
+  }
 }
 
 const setterFn = (
-  outerStateElement: IStateElement,
-  outerName: string,
-) => (v: any) => {
-  outerStateElement.createState("writable", (state) => {
-    state[outerName] = v;
-  });
+  binding: IBindingInfo,
+) => {
+  const outerStateElement = getStateElementByName(binding.stateName);
+  if (outerStateElement === null) {
+    raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+  }
+  const outerName = binding.statePathName;
+  return (v: any) => {
+    const loopContext = getLoopContextByNode(binding.node);
+    outerStateElement.createState("writable", (state) => {
+      state.$$setLoopContext(loopContext, () => {
+        state[outerName] = v;
+      });
+    });
+  }
 }
 
 class InnerState implements IInnerState {
   constructor() {
   }
 
-  $$bindName(outerStateElement: IStateElement, innerName: string, outerName: string): void {
+  $$bind(binding: IBindingInfo): void {
+    const innerName = binding.propSegments.slice(1).join('.');
     Object.defineProperty(this, innerName, {
-      get: getterFn(outerStateElement, outerName),
-      set: setterFn(outerStateElement, outerName),
+      get: getterFn(binding),
+      set: setterFn(binding),
       enumerable: true,
       configurable: true,
     });

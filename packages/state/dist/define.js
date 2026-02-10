@@ -16,4 +16,5 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
     tmpIndexByIndexName[`$${i + 1}`] = i;
 }
 export const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
+export const NO_SET_TIMEOUT = 60 * 1000; // 1分
 //# sourceMappingURL=define.js.map

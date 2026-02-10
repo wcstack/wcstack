@@ -21,5 +21,6 @@ export interface IStateElement {
   nextVersion(): number;
   bindWebComponent(component: Element): Promise<void>;
   bindProperty(prop: string, desc: PropertyDescriptor): void;
+  setInitialState(state: Record<string, any>): void;
 }
 

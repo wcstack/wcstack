@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { waitForStateInitialize } from '../src/waitForStateInitialize';
 
@@ -13,10 +13,12 @@ function createDeferred() {
 describe('waitForStateInitialize', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+    vi.spyOn(customElements, 'whenDefined').mockResolvedValue(HTMLElement as any);
   });
 
   afterEach(() => {
     document.body.innerHTML = '';
+    vi.restoreAllMocks();
   });
 
   it('state要素が存在しない場合は即時に解決されること', async () => {

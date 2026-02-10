@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { attachEventHandler, detachEventHandler, __private__ } from '../src/event/handler';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
@@ -22,6 +22,14 @@ function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IB
 }
 
 describe('event/handler', () => {
+  beforeEach(() => {
+    setStateElementByName('default', null);
+  });
+
+  afterEach(() => {
+    setStateElementByName('default', null);
+  });
+
   it('attachEventHandlerはon*以外でfalseを返すこと', () => {
     const el = document.createElement('button');
     const bindingInfo = createBindingInfo(el, {

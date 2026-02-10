@@ -4,7 +4,6 @@ import { initializeBindings } from "../bindings/initializeBindings";
 import { config } from "../config";
 import { convertMustacheToComments } from "../mustache/convertMustacheToComments";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { waitForStateInitialize } from "../waitForStateInitialize";
 import { createInnerState } from "./innerState";
@@ -34,14 +33,9 @@ export async function bindWebComponent(component, innerStateElement) {
     const outerState = createOuterState();
     const innerState = createInnerState();
     for (const binding of bindings) {
+        outerState.$$bind(innerStateElement, binding);
+        innerState.$$bind(binding);
         const innerName = binding.propSegments.slice(1).join('.');
-        const outerName = binding.statePathName;
-        const outerStateElement = getStateElementByName(binding.stateName);
-        if (outerStateElement === null) {
-            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
-        }
-        outerState.$$bindName(innerStateElement, innerName);
-        innerState.$$bindName(outerStateElement, innerName, outerName);
         innerStateElement.bindProperty(innerName, {
             get: innerStateGetter(innerState, innerName),
             set: innerStateSetter(innerState, innerName),

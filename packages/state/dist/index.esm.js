@@ -87,9 +87,18 @@ function getStateElementByName(name) {
 function setStateElementByName(name, element) {
     if (element === null) {
         stateElementByName.delete(name);
+        {
+            console.debug(`State element unregistered: name="${name}"`);
+        }
     }
     else {
+        if (stateElementByName.has(name)) {
+            raiseError(`State element with name "${name}" is already registered.`);
+        }
         stateElementByName.set(name, element);
+        {
+            console.debug(`State element registered: name="${name}"`, element);
+        }
     }
 }
 
@@ -111,6 +120,7 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
     tmpIndexByIndexName[`$${i + 1}`] = i;
 }
 const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
+const NO_SET_TIMEOUT = 60 * 1000; // 1分
 
 class LoopContextStack {
     _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
@@ -2450,8 +2460,10 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
         }
         if (!registeredNodeSet.has(node)) {
             registeredNodeSet.add(node);
-            const bindingInfos = getBindingInfos(node, nodeInfo.parseBindTextResults);
-            allBindings.push(...bindingInfos);
+            const bindings = getBindingInfos(node, nodeInfo.parseBindTextResults);
+            setBindingsByNode(node, bindings);
+            resolveInitializedBinding(node);
+            allBindings.push(...bindings);
             nodes.push(node);
         }
     }
@@ -4272,25 +4284,46 @@ async function waitForStateInitialize(root) {
     await Promise.all(promises);
 }
 
-const getterFn$1 = (outerStateElement, outerName) => () => {
-    let value = undefined;
-    outerStateElement.createState("readonly", (state) => {
-        value = state[outerName];
-    });
-    return value;
+const getterFn$1 = (binding) => {
+    const outerStateElement = getStateElementByName(binding.stateName);
+    if (outerStateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    }
+    const outerName = binding.statePathName;
+    return () => {
+        let value = undefined;
+        const loopContext = getLoopContextByNode(binding.node);
+        outerStateElement.createState("readonly", (state) => {
+            state.$$setLoopContext(loopContext, () => {
+                value = state[outerName];
+            });
+        });
+        return value;
+    };
 };
-const setterFn$1 = (outerStateElement, outerName) => (v) => {
-    outerStateElement.createState("writable", (state) => {
-        state[outerName] = v;
-    });
+const setterFn$1 = (binding) => {
+    const outerStateElement = getStateElementByName(binding.stateName);
+    if (outerStateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    }
+    const outerName = binding.statePathName;
+    return (v) => {
+        const loopContext = getLoopContextByNode(binding.node);
+        outerStateElement.createState("writable", (state) => {
+            state.$$setLoopContext(loopContext, () => {
+                state[outerName] = v;
+            });
+        });
+    };
 };
 class InnerState {
     constructor() {
     }
-    $$bindName(outerStateElement, innerName, outerName) {
+    $$bind(binding) {
+        const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
-            get: getterFn$1(outerStateElement, outerName),
-            set: setterFn$1(outerStateElement, outerName),
+            get: getterFn$1(binding),
+            set: setterFn$1(binding),
             enumerable: true,
             configurable: true,
         });
@@ -4300,7 +4333,7 @@ function createInnerState() {
     return new InnerState();
 }
 
-const getterFn = (innerStateElement, innerName) => () => {
+const getterFn = (_innerStateElement, _innerName) => () => {
     /*
       let value = undefined;
       innerStateElement.createState("readonly", (state) => {
@@ -4310,7 +4343,7 @@ const getterFn = (innerStateElement, innerName) => () => {
     */
     return undefined; // 暫定的に常に更新を発生させる
 };
-const setterFn = (innerStateElement, innerName) => (v) => {
+const setterFn = (innerStateElement, innerName) => (_v) => {
     innerStateElement.createState("readonly", (state) => {
         state.$postUpdate(innerName);
     });
@@ -4318,7 +4351,8 @@ const setterFn = (innerStateElement, innerName) => (v) => {
 class OuterState {
     constructor() {
     }
-    $$bindName(innerStateElement, innerName) {
+    $$bind(innerStateElement, binding) {
+        const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
             get: getterFn(),
             set: setterFn(innerStateElement, innerName),
@@ -4356,14 +4390,9 @@ async function bindWebComponent(component, innerStateElement) {
     const outerState = createOuterState();
     const innerState = createInnerState();
     for (const binding of bindings) {
+        outerState.$$bind(innerStateElement, binding);
+        innerState.$$bind(binding);
         const innerName = binding.propSegments.slice(1).join('.');
-        const outerName = binding.statePathName;
-        const outerStateElement = getStateElementByName(binding.stateName);
-        if (outerStateElement === null) {
-            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
-        }
-        outerState.$$bindName(innerStateElement, innerName);
-        innerState.$$bindName(outerStateElement, innerName, outerName);
         innerStateElement.bindProperty(innerName, {
             get: innerStateGetter(innerState, innerName),
             set: innerStateSetter(innerState, innerName),
@@ -4412,18 +4441,17 @@ class State extends HTMLElement {
     _resolveInitialize = null;
     _loadingPromise;
     _resolveLoading = null;
+    _setStatePromise = null;
+    _resolveSetState = null;
     _listPaths = new Set();
     _elementPaths = new Set();
     _getterPaths = new Set();
     _setterPaths = new Set();
-    _isLoadingState = false;
-    _isLoadedState = false;
     _loopContextStack = createLoopContextStack();
     _dynamicDependency = new Map();
     _staticDependency = new Map();
     _pathSet = new Set();
     _version = 0;
-    static get observedAttributes() { return ['name', 'src', 'state']; }
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -4431,6 +4459,9 @@ class State extends HTMLElement {
         });
         this._loadingPromise = new Promise((resolve) => {
             this._resolveLoading = resolve;
+        });
+        this._setStatePromise = new Promise((resolve) => {
+            this._resolveSetState = resolve;
         });
     }
     get _state() {
@@ -4457,73 +4488,47 @@ class State extends HTMLElement {
     get name() {
         return this._name;
     }
-    attributeChangedCallback(name, oldValue, newValue) {
-        if (name === 'name' && oldValue !== newValue) {
-            setStateElementByName(this._name, null);
-            this._name = newValue;
-            setStateElementByName(this._name, this);
-        }
-        if (name === 'state' && oldValue !== newValue) {
-            if (this._isLoadedState) {
-                raiseError(`The state has already been loaded. The 'state' attribute cannot be changed multiple times.`);
+    async _initialize() {
+        try {
+            if (this.hasAttribute('state')) {
+                const state = this.getAttribute('state');
+                this._state = loadFromScriptJson(state);
             }
-            if (this._isLoadingState) {
-                raiseError(`The state is currently loading. The 'state' attribute cannot be changed during loading.`);
+            else if (this.hasAttribute('src')) {
+                const src = this.getAttribute('src');
+                if (src && src.endsWith('.json')) {
+                    this._state = await loadFromJsonFile(src);
+                }
+                else if (src && src.endsWith('.js')) {
+                    this._state = await loadFromScriptFile(src);
+                }
+                else {
+                    raiseError(`Unsupported src file type: ${src}`);
+                }
             }
-            this._state = loadFromScriptJson(newValue);
-            this._isLoadedState = true;
-        }
-        if (name === 'src' && oldValue !== newValue) {
-            if (this._isLoadedState) {
-                raiseError(`The state has already been loaded. The 'src' attribute cannot be changed multiple times.`);
-            }
-            if (this._isLoadingState) {
-                raiseError(`The state is currently loading. The 'src' attribute cannot be changed during loading.`);
-            }
-            if (newValue && newValue.endsWith('.json')) {
-                this._isLoadingState = true;
-                loadFromJsonFile(newValue).then((state) => {
-                    this._isLoadedState = true;
-                    this._state = state;
-                }).finally(() => {
-                    this._isLoadingState = false;
-                });
-            }
-            else if (newValue && newValue.endsWith('.js')) {
-                this._isLoadingState = true;
-                loadFromScriptFile(newValue).then((state) => {
-                    this._isLoadedState = true;
-                    this._state = state;
-                }).finally(() => {
-                    this._isLoadingState = false;
-                });
+            else if (this.hasAttribute('json')) {
+                const json = this.getAttribute('json');
+                this._state = JSON.parse(json);
             }
             else {
-                raiseError(`Unsupported src file type: ${newValue}`);
-            }
-        }
-    }
-    async _initialize() {
-        if (!this._isLoadedState && !this._isLoadingState) {
-            this._isLoadingState = true;
-            try {
                 const script = this.querySelector('script[type="module"]');
                 if (script) {
                     this._state = await loadFromInnerScript(script, `state#${this._name}`);
-                    this._isLoadedState = true;
+                }
+                else {
+                    const timerId = setTimeout(() => {
+                        console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
+                    }, NO_SET_TIMEOUT);
+                    this._state = await this._setStatePromise;
+                    clearTimeout(timerId);
                 }
             }
-            catch (e) {
-                raiseError(`Failed to load state from inner script: ${e.message}`);
-            }
-            finally {
-                this._isLoadingState = false;
-            }
         }
-        if (!this._isLoadedState && !this._isLoadingState) {
-            this._state = {};
+        catch (e) {
+            raiseError(`Failed to initialize state: ${e}`);
         }
         await this._loadingPromise;
+        this._name = this.getAttribute('name') || 'default';
         setStateElementByName(this._name, this);
     }
     async connectedCallback() {
@@ -4649,6 +4654,12 @@ class State extends HTMLElement {
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);
     }
+    setInitialState(state) {
+        if (this._initialized) {
+            raiseError('setInitialState cannot be called after state is initialized.');
+        }
+        this._resolveSetState?.(state);
+    }
 }
 
 function registerComponents() {
@@ -4672,5 +4683,5 @@ function bootstrapState() {
     registerHandler();
 }
 
-export { bootstrapState, collectStructuralFragments, convertMustacheToComments, initializeBindings, waitForStateInitialize };
+export { bootstrapState };
 //# sourceMappingURL=index.esm.js.map

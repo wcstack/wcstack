@@ -10,23 +10,21 @@ export declare class State extends HTMLElement implements IStateElement {
     private _resolveInitialize;
     private _loadingPromise;
     private _resolveLoading;
+    private _setStatePromise;
+    private _resolveSetState;
     private _listPaths;
     private _elementPaths;
     private _getterPaths;
     private _setterPaths;
-    private _isLoadingState;
-    private _isLoadedState;
     private _loopContextStack;
     private _dynamicDependency;
     private _staticDependency;
     private _pathSet;
     private _version;
-    static get observedAttributes(): string[];
     constructor();
     private get _state();
     private set _state(value);
     get name(): string;
-    attributeChangedCallback(name: string, oldValue: string, newValue: string): void;
     private _initialize;
     connectedCallback(): Promise<void>;
     disconnectedCallback(): void;
@@ -73,5 +71,6 @@ export declare class State extends HTMLElement implements IStateElement {
     nextVersion(): number;
     bindWebComponent(component: Element): Promise<void>;
     bindProperty(prop: string, desc: PropertyDescriptor): void;
+    setInitialState(state: Record<string, any>): void;
 }
 //# sourceMappingURL=State.d.ts.map

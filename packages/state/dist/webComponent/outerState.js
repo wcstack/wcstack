@@ -1,4 +1,4 @@
-const getterFn = (innerStateElement, innerName) => () => {
+const getterFn = (_innerStateElement, _innerName) => () => {
     /*
       let value = undefined;
       innerStateElement.createState("readonly", (state) => {
@@ -8,7 +8,7 @@ const getterFn = (innerStateElement, innerName) => () => {
     */
     return undefined; // 暫定的に常に更新を発生させる
 };
-const setterFn = (innerStateElement, innerName) => (v) => {
+const setterFn = (innerStateElement, innerName) => (_v) => {
     innerStateElement.createState("readonly", (state) => {
         state.$postUpdate(innerName);
     });
@@ -16,7 +16,8 @@ const setterFn = (innerStateElement, innerName) => (v) => {
 class OuterState {
     constructor() {
     }
-    $$bindName(innerStateElement, innerName) {
+    $$bind(innerStateElement, binding) {
+        const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
             get: getterFn(innerStateElement, innerName),
             set: setterFn(innerStateElement, innerName),

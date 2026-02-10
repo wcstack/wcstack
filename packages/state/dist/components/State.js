@@ -6,7 +6,7 @@ import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { raiseError } from "../raiseError";
 import { setStateElementByName } from "../stateElementByName";
 import { createLoopContextStack } from "../list/loopContext";
-import { WILDCARD } from "../define";
+import { NO_SET_TIMEOUT, WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
@@ -43,18 +43,17 @@ export class State extends HTMLElement {
     _resolveInitialize = null;
     _loadingPromise;
     _resolveLoading = null;
+    _setStatePromise = null;
+    _resolveSetState = null;
     _listPaths = new Set();
     _elementPaths = new Set();
     _getterPaths = new Set();
     _setterPaths = new Set();
-    _isLoadingState = false;
-    _isLoadedState = false;
     _loopContextStack = createLoopContextStack();
     _dynamicDependency = new Map();
     _staticDependency = new Map();
     _pathSet = new Set();
     _version = 0;
-    static get observedAttributes() { return ['name', 'src', 'state']; }
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -62,6 +61,9 @@ export class State extends HTMLElement {
         });
         this._loadingPromise = new Promise((resolve) => {
             this._resolveLoading = resolve;
+        });
+        this._setStatePromise = new Promise((resolve) => {
+            this._resolveSetState = resolve;
         });
     }
     get _state() {
@@ -88,73 +90,47 @@ export class State extends HTMLElement {
     get name() {
         return this._name;
     }
-    attributeChangedCallback(name, oldValue, newValue) {
-        if (name === 'name' && oldValue !== newValue) {
-            setStateElementByName(this._name, null);
-            this._name = newValue;
-            setStateElementByName(this._name, this);
-        }
-        if (name === 'state' && oldValue !== newValue) {
-            if (this._isLoadedState) {
-                raiseError(`The state has already been loaded. The 'state' attribute cannot be changed multiple times.`);
+    async _initialize() {
+        try {
+            if (this.hasAttribute('state')) {
+                const state = this.getAttribute('state');
+                this._state = loadFromScriptJson(state);
             }
-            if (this._isLoadingState) {
-                raiseError(`The state is currently loading. The 'state' attribute cannot be changed during loading.`);
+            else if (this.hasAttribute('src')) {
+                const src = this.getAttribute('src');
+                if (src && src.endsWith('.json')) {
+                    this._state = await loadFromJsonFile(src);
+                }
+                else if (src && src.endsWith('.js')) {
+                    this._state = await loadFromScriptFile(src);
+                }
+                else {
+                    raiseError(`Unsupported src file type: ${src}`);
+                }
             }
-            this._state = loadFromScriptJson(newValue);
-            this._isLoadedState = true;
-        }
-        if (name === 'src' && oldValue !== newValue) {
-            if (this._isLoadedState) {
-                raiseError(`The state has already been loaded. The 'src' attribute cannot be changed multiple times.`);
-            }
-            if (this._isLoadingState) {
-                raiseError(`The state is currently loading. The 'src' attribute cannot be changed during loading.`);
-            }
-            if (newValue && newValue.endsWith('.json')) {
-                this._isLoadingState = true;
-                loadFromJsonFile(newValue).then((state) => {
-                    this._isLoadedState = true;
-                    this._state = state;
-                }).finally(() => {
-                    this._isLoadingState = false;
-                });
-            }
-            else if (newValue && newValue.endsWith('.js')) {
-                this._isLoadingState = true;
-                loadFromScriptFile(newValue).then((state) => {
-                    this._isLoadedState = true;
-                    this._state = state;
-                }).finally(() => {
-                    this._isLoadingState = false;
-                });
+            else if (this.hasAttribute('json')) {
+                const json = this.getAttribute('json');
+                this._state = JSON.parse(json);
             }
             else {
-                raiseError(`Unsupported src file type: ${newValue}`);
-            }
-        }
-    }
-    async _initialize() {
-        if (!this._isLoadedState && !this._isLoadingState) {
-            this._isLoadingState = true;
-            try {
                 const script = this.querySelector('script[type="module"]');
                 if (script) {
                     this._state = await loadFromInnerScript(script, `state#${this._name}`);
-                    this._isLoadedState = true;
+                }
+                else {
+                    const timerId = setTimeout(() => {
+                        console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
+                    }, NO_SET_TIMEOUT);
+                    this._state = await this._setStatePromise;
+                    clearTimeout(timerId);
                 }
             }
-            catch (e) {
-                raiseError(`Failed to load state from inner script: ${e.message}`);
-            }
-            finally {
-                this._isLoadingState = false;
-            }
         }
-        if (!this._isLoadedState && !this._isLoadingState) {
-            this._state = {};
+        catch (e) {
+            raiseError(`Failed to initialize state: ${e}`);
         }
         await this._loadingPromise;
+        this._name = this.getAttribute('name') || 'default';
         setStateElementByName(this._name, this);
     }
     async connectedCallback() {
@@ -279,6 +255,12 @@ export class State extends HTMLElement {
     }
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);
+    }
+    setInitialState(state) {
+        if (this._initialized) {
+            raiseError('setInitialState cannot be called after state is initialized.');
+        }
+        this._resolveSetState?.(state);
     }
 }
 //# sourceMappingURL=State.js.map

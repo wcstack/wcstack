@@ -1,22 +1,46 @@
-const getterFn = (outerStateElement, outerName) => () => {
-    let value = undefined;
-    outerStateElement.createState("readonly", (state) => {
-        value = state[outerName];
-    });
-    return value;
+import { getLoopContextByNode } from "../list/loopContextByNode";
+import { raiseError } from "../raiseError";
+import { getStateElementByName } from "../stateElementByName";
+const getterFn = (binding) => {
+    const outerStateElement = getStateElementByName(binding.stateName);
+    if (outerStateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    }
+    const outerName = binding.statePathName;
+    return () => {
+        let value = undefined;
+        const loopContext = getLoopContextByNode(binding.node);
+        outerStateElement.createState("readonly", (state) => {
+            state.$$setLoopContext(loopContext, () => {
+                value = state[outerName];
+            });
+        });
+        return value;
+    };
 };
-const setterFn = (outerStateElement, outerName) => (v) => {
-    outerStateElement.createState("writable", (state) => {
-        state[outerName] = v;
-    });
+const setterFn = (binding) => {
+    const outerStateElement = getStateElementByName(binding.stateName);
+    if (outerStateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    }
+    const outerName = binding.statePathName;
+    return (v) => {
+        const loopContext = getLoopContextByNode(binding.node);
+        outerStateElement.createState("writable", (state) => {
+            state.$$setLoopContext(loopContext, () => {
+                state[outerName] = v;
+            });
+        });
+    };
 };
 class InnerState {
     constructor() {
     }
-    $$bindName(outerStateElement, innerName, outerName) {
+    $$bind(binding) {
+        const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
-            get: getterFn(outerStateElement, outerName),
-            set: setterFn(outerStateElement, outerName),
+            get: getterFn(binding),
+            set: setterFn(binding),
             enumerable: true,
             configurable: true,
         });

@@ -21,16 +21,22 @@ vi.mock('../src/proxy/apis/getAll', () => ({
   getAll: vi.fn()
 }));
 
+vi.mock('../src/proxy/apis/postUpdate', () => ({
+  postUpdate: vi.fn()
+}));
+
 import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
 import { getAll } from '../src/proxy/apis/getAll';
+import { postUpdate } from '../src/proxy/apis/postUpdate';
 
 const setLoopContextMock = vi.mocked(setLoopContext);
 const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
 const getByAddressMock = vi.mocked(getByAddress);
 const getListIndexMock = vi.mocked(getListIndex);
 const getAllMock = vi.mocked(getAll);
+const postUpdateMock = vi.mocked(postUpdate);
 
 describe('proxy/traps/get', () => {
   afterEach(() => {
@@ -54,6 +60,15 @@ describe('proxy/traps/get', () => {
 
   it('listIndex が無い場合は $1 でエラーになること', () => {
     const handler = { addressStackLength: 1, lastAddressStack: null } as any;
+    expect(() => get({}, '$1', {}, handler)).toThrow('ListIndex not found: $1');
+  });
+
+  it('listIndex は有るが index が無い場合は $1 でエラーになること', () => {
+    const listIndex = { indexes: [] }; // index 0 ($1) が無い
+    const handler = {
+      addressStackLength: 1,
+      lastAddressStack: { listIndex }
+    } as any;
     expect(() => get({}, '$1', {}, handler)).toThrow('ListIndex not found: $1');
   });
 
@@ -127,6 +142,28 @@ describe('proxy/traps/get', () => {
     fn('items.*');
 
     expect(innerFn).toHaveBeenCalledWith('items.*', undefined);
+  });
+
+  it('$postUpdate が postUpdate を呼び出すこと', () => {
+    const innerFn = vi.fn();
+    postUpdateMock.mockReturnValueOnce(innerFn);
+    const handler = {} as any;
+    const target = {};
+    const receiver = {};
+
+    const fn = get(target, '$postUpdate', receiver, handler) as (path: string) => void;
+    fn('count');
+
+    expect(postUpdateMock).toHaveBeenCalledWith(target, '$postUpdate', receiver, handler);
+    expect(innerFn).toHaveBeenCalledWith('count');
+  });
+
+  it('$stateElement が handler.stateElement を返すこと', () => {
+    const stateElement = { name: 'my-state' };
+    const handler = { stateElement } as any;
+    
+    const result = get({}, '$stateElement', {}, handler);
+    expect(result).toBe(stateElement);
   });
 
   it('通常の文字列プロパティは getListIndex と getByAddress を経由すること', () => {

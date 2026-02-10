@@ -51,6 +51,7 @@ export default {
   get "users.*.dispName"() {
     return this["users.*.name"] + " (ID: " + this["users.*.id"] + ")";
   },
+  msg: "aaaa",
   isActive: true
 };
     </script>
@@ -82,6 +83,10 @@ export default {
       toggle off / isActive off
     </template>
   </div>
+
+  <my-component data-bind-state="outer.message: user.name"></my-component>
+
+  <div>Loop: users</div>
   <template data-bind-state="for: users">
     <div>
       <span data-bind-state="textContent: .id"></span>:
@@ -89,8 +94,8 @@ export default {
       <span data-bind-state="textContent: .name"></span>
       <span data-bind-state="textContent: .dispName"></span>
     </div>
+    <my-component data-bind-state="outer.message: users.*.name"></my-component>
   </template>
 
-  <my-component data-bind-state="outer.message: user.name"></my-component>
 </body>
 </html>
