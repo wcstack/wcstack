@@ -82,7 +82,7 @@ export default {
     </template>
   </div>
 
-  <my-component data-bind-state="outer.message: user.name"></my-component>
+  <my-component data-bind-state="state.message: user.name"></my-component>
 
   <div>Loop: users</div>
   <template data-bind-state="for: users">
@@ -92,7 +92,7 @@ export default {
       <span data-bind-state="textContent: .name"></span>
       <span data-bind-state="textContent: .dispName"></span>
     </div>
-    <my-component data-bind-state="outer.message: users.*.name"></my-component>
+    <my-component data-bind-state="state.message: users.*.name"></my-component>
   </template>
 
 </body>

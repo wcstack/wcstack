@@ -1,6 +1,6 @@
 
 class MyComponent extends HTMLElement {
-  outer = {
+  state = {
     message: ""
   }
 
@@ -8,7 +8,7 @@ class MyComponent extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `
-<wcs-state bind-component="outer">
+<wcs-state bind-component="state">
 </wcs-state>
 <div style="background-color: lightgray; padding: 4px; margin: 4px;">
   <div>{{ message }}</div>
