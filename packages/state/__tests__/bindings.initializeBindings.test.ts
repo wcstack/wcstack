@@ -8,6 +8,7 @@ import { createLoopContextStack } from '../src/list/loopContext';
 import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
+import { setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { getPathInfo } from '../src/address/PathInfo';
@@ -44,8 +45,8 @@ function createMockStateElement(): IStateElement {
   let version = 0;
   const stateProxy: any = {
     message: 'hello',
-    $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
-    $$getByAddress: () => 'hello',
+    [setLoopContextSymbol]: (_loopContext: any, callback: () => any) => callback(),
+    [getByAddressSymbol]: () => 'hello',
   };
 
   return {

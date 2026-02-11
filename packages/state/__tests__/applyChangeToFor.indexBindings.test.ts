@@ -17,6 +17,7 @@ import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
 import type { IApplyContext } from '../src/apply/types';
+import { setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
 
 const uuid = 'index-opt-test-uuid';
 
@@ -57,8 +58,8 @@ function createMockStateElement(): IStateElement {
   let version = 0;
   const stateProxy: any = {
     items: [],
-    $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
-    $$getByAddress: () => undefined,
+    [setLoopContextSymbol]: (_loopContext: any, callback: () => any) => callback(),
+    [getByAddressSymbol]: () => undefined,
   };
 
   return {
@@ -153,7 +154,7 @@ afterEach(() => {
 });
 
 describe('applyChangeToFor - changeIndexSet最適化', () => {
-  const state = { $$getByAddress: () => undefined } as any;
+  const state = { [getByAddressSymbol]: () => undefined } as any;
   let context: IApplyContext;
 
   function setupContext() {
@@ -196,7 +197,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     setListIndexesByList(newList, newListIndexes);
 
     // applyChangeの実行を追跡
-    state.$$getByAddress = () => 'updated';
+    state[getByAddressSymbol] = () => 'updated';
     apply(bindingInfo, newList);
 
     expect(container.childNodes.length).toBe(4); // comment + 3 spans
@@ -222,7 +223,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     const listIndexes = createListIndexes(null, [], list);
     setListIndexesByList(list, listIndexes);
 
-    state.$$getByAddress = () => 'initial';
+    state[getByAddressSymbol] = () => 'initial';
     apply(bindingInfo, list);
 
     const span1 = container.childNodes[1] as HTMLElement;
@@ -235,7 +236,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     const newListIndexes = createListIndexes(null, list, newList);
     setListIndexesByList(newList, newListIndexes);
 
-    state.$$getByAddress = () => 'should-not-change';
+    state[getByAddressSymbol] = () => 'should-not-change';
     apply(bindingInfo, newList);
 
     // indexBindingsが空なので、changeIndexSetの既存要素のtextContentは変更されない
@@ -264,8 +265,8 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     setListIndexesByList(list, listIndexes);
 
     let callCount = 0;
-    const origGetByAddress = state.$$getByAddress;
-    state.$$getByAddress = () => {
+    const origGetByAddress = state[getByAddressSymbol];
+    state[getByAddressSymbol] = () => {
       callCount++;
       return 'value';
     };
@@ -286,7 +287,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
     // 呼び出し回数は初回より少ないはず
     expect(callCount).toBeLessThan(initialCallCount);
 
-    state.$$getByAddress = origGetByAddress;
+    state[getByAddressSymbol] = origGetByAddress;
     setListIndexesByList(list, null);
     setListIndexesByList(reordered, null);
   });

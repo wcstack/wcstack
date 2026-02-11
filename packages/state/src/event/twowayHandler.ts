@@ -3,6 +3,7 @@ import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
+import { setLoopContextSymbol } from "../proxy/symbols";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 const bindingInfoSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
@@ -52,7 +53,7 @@ const twowayEventHandlerFunction = (
 
   const loopContext = getLoopContextByNode(node);
   stateElement.createState("writable", (state) => {
-    state.$$setLoopContext(loopContext, () => {
+    state[setLoopContextSymbol](loopContext, () => {
       state[statePathName] = filteredNewValue;
     });
   });

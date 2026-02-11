@@ -1,3 +1,4 @@
+import { bindSymbol } from "./symbols";
 const getterFn = (_innerStateElement, _innerName) => () => {
     /*
       let value = undefined;
@@ -16,7 +17,7 @@ const setterFn = (innerStateElement, innerName) => (_v) => {
 class OuterState {
     constructor() {
     }
-    $$bind(innerStateElement, binding) {
+    [bindSymbol](innerStateElement, binding) {
         const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
             get: getterFn(innerStateElement, innerName),

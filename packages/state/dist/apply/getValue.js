@@ -2,6 +2,7 @@ import { getStateAddressByBindingInfo } from "../binding/getStateAddressByBindin
 import { INDEX_BY_INDEX_NAME } from "../define";
 import { getIndexValueByLoopContext } from "../list/getIndexValueByLoopContext";
 import { getLoopContextByNode } from "../list/loopContextByNode";
+import { getByAddressSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 export function getValue(state, binding) {
     const stateAddress = getStateAddressByBindingInfo(binding);
@@ -13,7 +14,7 @@ export function getValue(state, binding) {
         return getIndexValueByLoopContext(loopContext, stateAddress.pathInfo.path);
     }
     else {
-        return state.$$getByAddress(stateAddress);
+        return state[getByAddressSymbol](stateAddress);
     }
 }
 //# sourceMappingURL=getValue.js.map

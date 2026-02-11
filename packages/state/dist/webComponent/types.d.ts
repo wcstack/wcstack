@@ -1,10 +1,11 @@
 import { IBindingInfo } from "../binding/types";
 import { IStateElement } from "../components/types";
+import { bindSymbol } from "./symbols";
 export interface IInnerState extends Record<string, any> {
-    $$bind(binding: IBindingInfo): void;
+    [bindSymbol](binding: IBindingInfo): void;
 }
 export interface IOuterState extends Record<string, any> {
-    $$bind(innerStateElement: IStateElement, binding: IBindingInfo): void;
+    [bindSymbol](innerStateElement: IStateElement, binding: IBindingInfo): void;
 }
 export interface IMappingRule {
     innerName: string;

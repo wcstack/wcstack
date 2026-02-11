@@ -17,6 +17,7 @@ import type { IVersionInfo } from '../src/version/types';
 import type { IApplyContext } from '../src/apply/types';
 import { setLastListValueByAbsoluteStateAddress, clearLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+import { setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
 
 const outerUUID = 'nested-outer-uuid';
 const innerUUID = 'nested-inner-uuid';
@@ -24,8 +25,8 @@ const innerUUID = 'nested-inner-uuid';
 function createMockStateElement(): IStateElement {
   let version = 0;
   const stateProxy: any = {
-    $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
-    $$getByAddress: () => undefined,
+    [setLoopContextSymbol]: (_loopContext: any, callback: () => any) => callback(),
+    [getByAddressSymbol]: () => undefined,
   };
   return {
     name: 'default',
@@ -165,7 +166,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     setFragmentInfoByUUID(outerUUID, document, createOuterFn());
 
     const state = {
-      $$getByAddress: (stateAddress: any) => {
+      [getByAddressSymbol]: (stateAddress: any) => {
         if (stateAddress.pathInfo.path === 'items.*.children') {
           const idx = stateAddress.listIndex?.index;
           if (idx === 0) return children1;
@@ -324,7 +325,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
 
     // 初回: 1アイテム（children1 = ['a', 'b']）
     const singleItemChildren = ['a', 'b'];
-    context.state.$$getByAddress = (stateAddress: any) => {
+    context.state[getByAddressSymbol] = (stateAddress: any) => {
       if (stateAddress.pathInfo.path === 'items.*.children') {
         const idx = stateAddress.listIndex?.index;
         if (idx === 0) return singleItemChildren;
@@ -376,7 +377,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     document.body.appendChild(container);
 
     const singleChildren = ['x'];
-    context.state.$$getByAddress = (stateAddress: any) => {
+    context.state[getByAddressSymbol] = (stateAddress: any) => {
       if (stateAddress.pathInfo.path === 'items.*.children') {
         return singleChildren;
       }

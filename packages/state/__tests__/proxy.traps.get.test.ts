@@ -3,6 +3,7 @@ import { get } from '../src/proxy/traps/get';
 import { createListIndex } from '../src/list/createListIndex';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
+import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
 
 vi.mock('../src/proxy/methods/setLoopContext', () => ({
   setLoopContext: vi.fn(),
@@ -91,7 +92,7 @@ describe('proxy/traps/get', () => {
     const handler = {} as any;
     const loopContext = { name: 'loop' };
 
-    const fn = get({}, '$$setLoopContextAsync', {}, handler) as (loopContext: any) => Promise<any>;
+    const fn = get({}, setLoopContextAsyncSymbol, {}, handler) as (loopContext: any) => Promise<any>;
     const result = await fn(loopContext);
 
     expect(setLoopContextAsyncMock).toHaveBeenCalledTimes(1);
@@ -106,7 +107,7 @@ describe('proxy/traps/get', () => {
     const handler = {} as any;
     const loopContext = { name: 'loop' };
 
-    const fn = get({}, '$$setLoopContext', {}, handler) as (loopContext: any) => any;
+    const fn = get({}, setLoopContextSymbol, {}, handler) as (loopContext: any) => any;
     const result = fn(loopContext);
 
     expect(setLoopContextMock).toHaveBeenCalledTimes(1);
@@ -121,7 +122,7 @@ describe('proxy/traps/get', () => {
     const receiver = { receiver: true };
     const address = createStateAddress(getPathInfo('a'), null);
 
-    const fn = get(target, '$$getByAddress', receiver, handler) as (address: any) => any;
+    const fn = get(target, getByAddressSymbol, receiver, handler) as (address: any) => any;
     const result = fn(address);
 
     expect(getByAddressMock).toHaveBeenCalledTimes(1);

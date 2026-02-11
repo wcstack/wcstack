@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createOuterState } from '../src/webComponent/outerState';
 import { IBindingInfo } from '../src/binding/types';
+import { bindSymbol } from '../src/webComponent/symbols';
 
 describe('outerState', () => {
   it('createOuterStateでインスタンスが作成されること', () => {
     const outerState = createOuterState();
     expect(outerState).toBeDefined();
-    expect(typeof outerState.$$bind).toBe('function');
+    expect(typeof outerState[bindSymbol]).toBe('function');
   });
 
-  describe('$$bind', () => {
+  describe('[bindSymbol]', () => {
     it('プロパティが定義されること', () => {
       const outerState = createOuterState();
       const binding = {
@@ -17,7 +18,7 @@ describe('outerState', () => {
       } as IBindingInfo;
       const innerStateElement = {} as any;
 
-      outerState.$$bind(innerStateElement, binding);
+      outerState[bindSymbol](innerStateElement, binding);
       
       const descriptor = Object.getOwnPropertyDescriptor(outerState, 'propName');
       expect(descriptor).toBeDefined();
@@ -34,9 +35,7 @@ describe('outerState', () => {
       } as IBindingInfo;
       const innerStateElement = {} as any;
 
-      outerState.$$bind(innerStateElement, binding);
-      
-      // 現状の実装では常にundefined
+      outerState[bindSymbol](innerStateElement, binding);
       expect(outerState.propName).toBeUndefined();
     });
 
@@ -54,7 +53,7 @@ describe('outerState', () => {
         createState: vi.fn((mode, cb) => cb(stateProxy))
       } as any;
 
-      outerState.$$bind(innerStateElement, binding);
+      outerState[bindSymbol](innerStateElement, binding);
       
       outerState.propName = 'new-value';
 

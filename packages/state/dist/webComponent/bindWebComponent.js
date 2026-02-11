@@ -8,6 +8,7 @@ import { collectStructuralFragments } from "../structural/collectStructuralFragm
 import { waitForStateInitialize } from "../waitForStateInitialize";
 import { createInnerState } from "./innerState";
 import { createOuterState } from "./outerState";
+import { bindSymbol } from "./symbols";
 const getOuter = (outerState) => () => outerState;
 const innerStateGetter = (inner, innerName) => () => inner[innerName];
 const innerStateSetter = (inner, innerName) => (v) => {
@@ -35,8 +36,8 @@ export async function bindWebComponent(innerStateElement, component, stateProp, 
     const outerState = createOuterState();
     const innerState = createInnerState();
     for (const binding of bindings) {
-        outerState.$$bind(innerStateElement, binding);
-        innerState.$$bind(binding);
+        outerState[bindSymbol](innerStateElement, binding);
+        innerState[bindSymbol](binding);
         const innerStateProp = binding.propSegments[0];
         const innerName = binding.propSegments.slice(1).join('.');
         if (stateProp !== innerStateProp) {

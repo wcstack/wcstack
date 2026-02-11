@@ -1,6 +1,8 @@
 import { getLoopContextByNode } from "../list/loopContextByNode";
+import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
+import { bindSymbol } from "./symbols";
 const getterFn = (binding) => {
     const rootNode = binding.replaceNode.getRootNode();
     const outerStateElement = getStateElementByName(rootNode, binding.stateName);
@@ -12,7 +14,7 @@ const getterFn = (binding) => {
         let value = undefined;
         const loopContext = getLoopContextByNode(binding.node);
         outerStateElement.createState("readonly", (state) => {
-            state.$$setLoopContext(loopContext, () => {
+            state[setLoopContextSymbol](loopContext, () => {
                 value = state[outerName];
             });
         });
@@ -29,7 +31,7 @@ const setterFn = (binding) => {
     return (v) => {
         const loopContext = getLoopContextByNode(binding.node);
         outerStateElement.createState("writable", (state) => {
-            state.$$setLoopContext(loopContext, () => {
+            state[setLoopContextSymbol](loopContext, () => {
                 state[outerName] = v;
             });
         });
@@ -38,7 +40,7 @@ const setterFn = (binding) => {
 class InnerState {
     constructor() {
     }
-    $$bind(binding) {
+    [bindSymbol](binding) {
         const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
             get: getterFn(binding),

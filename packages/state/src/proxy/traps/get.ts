@@ -29,6 +29,7 @@ import { trackDependency } from "../apis/trackDependency";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
+import { getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol } from "../symbols";
 import { IStateHandler } from "../types";
 
 export function get(
@@ -46,109 +47,91 @@ export function get(
     return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {
-    if (prop === "$stateElement") {
-      return handler.stateElement;
-    }
-    if (prop === "$$setLoopContextAsync") {
-      return (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
-        return setLoopContextAsync(handler, loopContext, callback);
-      };
-    }
-    if (prop === "$$setLoopContext") {
-      return (loopContext: any, callback = (): any => {}): any => {
-        return setLoopContext(handler, loopContext, callback);
-      };
-    }
-    if (prop === "$$getByAddress") {
-      return (address: IStateAddress): any => {
-        return getByAddress(
-          target, 
-          address,
-          receiver,
-          handler
-        );
+    if (prop[0] === '$') {
+      switch (prop) {
+        case "$stateElement": {
+          return handler.stateElement;
+        }
+        case "$getAll": {
+          return (path: string, indexes?: number[]): any[] => {
+            return getAll(
+              target, 
+              prop, 
+              receiver,
+              handler
+            )(path, indexes);
+          }
+        }
+        case "$postUpdate": {
+          return (path: string): void => {
+            return postUpdate(
+              target, 
+              prop, 
+              receiver,
+              handler
+            )(path);
+          }
+        }
+        case "$resolve": {
+          return (path: string, indexes: number[], value?: any): any => {
+            return resolve(
+              target, 
+              prop, 
+              receiver,
+              handler
+            )(path, indexes, value);
+          }
+        }
+        case "$trackDependency": {
+          return (path: string): void => {
+            return trackDependency(
+              target, 
+              prop, 
+              receiver,
+              handler
+            )(path);
+          }
+        }
       }
+    } else {
+      const resolvedAddress = getResolvedAddress(prop);
+      const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+      const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
+      return getByAddress(
+        target, 
+        stateAddress,
+        receiver,
+        handler
+      );
     }
-    if (prop === "$getAll") {
-      return (path: string, indexes?: number[]): any[] => {
-        return getAll(
-          target, 
-          prop, 
-          receiver,
-          handler
-        )(path, indexes);
-      }
-    }
-    if (prop === "$postUpdate") {
-      return (path: string): void => {
-        return postUpdate(
-          target, 
-          prop, 
-          receiver,
-          handler
-        )(path);
-      }
-    }
-    if (prop === "$resolve") {
-      return (path: string, indexes: number[], value?: any): any => {
-        return resolve(
-          target, 
-          prop, 
-          receiver,
-          handler
-        )(path, indexes, value);
-      }
-    }
-    if (prop === "$trackDependency") {
-      return (path: string): void => {
-        return trackDependency(
-          target, 
-          prop, 
-          receiver,
-          handler
-        )(path);
-      }
-
-    }
-    const resolvedAddress = getResolvedAddress(prop);
-    const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
-    const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
-    return getByAddress(
-      target, 
-      stateAddress,
-      receiver,
-      handler
-    );
   } else if (typeof prop === "symbol") {
+    switch (prop) {
+      case setLoopContextAsyncSymbol: {
+        return (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
+          return setLoopContextAsync(handler, loopContext, callback);
+        };
+      }
+      case setLoopContextSymbol: {
+        return (loopContext: any, callback = (): any => {}): any => {
+          return setLoopContext(handler, loopContext, callback);
+        };
+      }
+      case getByAddressSymbol: {
+        return (address: IStateAddress): any => {
+          return getByAddress(
+            target,
+            address,
+            receiver,
+            handler
+          );
+        }
+      }
+    }
+
     return Reflect.get(
       target, 
       prop, 
       receiver
     );
-/*
-    if (handler.symbols.has(prop)) {
-      switch (prop) {
-        case GetByRefSymbol: 
-          return (ref: IStatePropertyRef) => 
-            getByRef(target, ref, receiver, handler);
-        case SetByRefSymbol: 
-          return (ref: IStatePropertyRef, value: any) => 
-            setByRef(target, ref, value, receiver, handler);
-        case GetListIndexesByRefSymbol:
-          return (ref: IStatePropertyRef) =>
-            getListIndexesByRef(target, ref, receiver, handler);
-        case ConnectedCallbackSymbol:
-          return () => connectedCallback(target, prop, receiver, handler);
-        case DisconnectedCallbackSymbol: 
-          return () => disconnectedCallback(target, prop, receiver, handler);
-      }
-    } else {
-      return Reflect.get(
-        target, 
-        prop, 
-        receiver
-      );
-    }
-*/
   }
 }

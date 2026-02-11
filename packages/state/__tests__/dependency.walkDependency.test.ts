@@ -6,10 +6,11 @@ import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import * as listIndexesByList from '../src/list/listIndexesByList';
+import { getByAddressSymbol } from '../src/proxy/symbols';
 
 function createStateProxy(values: Record<string, any>) {
   return {
-    $$getByAddress: (address: { pathInfo: { path: string } }) => values[address.pathInfo.path],
+    [getByAddressSymbol]: (address: { pathInfo: { path: string } }) => values[address.pathInfo.path],
   } as any;
 }
 
@@ -70,7 +71,7 @@ describe('walkDependency', () => {
       () => {}
     );
 
-    setListIndexesByList(stateProxy.$$getByAddress(startAddress), [
+    setListIndexesByList(stateProxy[getByAddressSymbol](startAddress), [
       createListIndex(null, 0),
       createListIndex(null, 1),
     ]);
@@ -113,7 +114,7 @@ describe('walkDependency', () => {
     );
 
     // Ensure list indexes are available for cached path
-    setListIndexesByList(stateProxy.$$getByAddress(startAddress), [
+    setListIndexesByList(stateProxy[getByAddressSymbol](startAddress), [
       createListIndex(null, 0),
       createListIndex(null, 1),
     ]);
@@ -157,7 +158,7 @@ describe('walkDependency', () => {
     );
     const afterFirst = spy.mock.calls.length;
 
-    setListIndexesByList(stateProxy.$$getByAddress(startAddress), [
+    setListIndexesByList(stateProxy[getByAddressSymbol](startAddress), [
       createListIndex(null, 0),
       createListIndex(null, 1),
     ]);

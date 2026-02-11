@@ -2,6 +2,7 @@ import { isPossibleTwoWay } from "./isPossibleTwoWay";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
+import { setLoopContextSymbol } from "../proxy/symbols";
 const handlerByHandlerKey = new Map();
 const bindingInfoSetByHandlerKey = new Map();
 function getHandlerKey(bindingInfo, eventName) {
@@ -40,7 +41,7 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
     }
     const loopContext = getLoopContextByNode(node);
     stateElement.createState("writable", (state) => {
-        state.$$setLoopContext(loopContext, () => {
+        state[setLoopContextSymbol](loopContext, () => {
             state[statePathName] = filteredNewValue;
         });
     });

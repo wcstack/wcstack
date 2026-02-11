@@ -30,6 +30,7 @@ import { config } from '../src/config';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
+import { getByAddressSymbol } from '../src/proxy/symbols';
 
 const createContentMock = vi.mocked(createContent);
 const getContentsByNodeMock = vi.mocked(getContentsByNode);
@@ -56,7 +57,7 @@ function createBindingInfo(node: Node, uuid: string): IBindingInfo {
 }
 
 describe('applyChangeToIf', () => {
-  const state = { $$getByAddress: () => undefined } as any;
+  const state = { [getByAddressSymbol]: () => undefined } as any;
   const context: IApplyContext = {
     stateName: 'default',
     stateElement: {} as any,

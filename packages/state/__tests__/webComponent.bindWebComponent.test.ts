@@ -18,12 +18,14 @@ vi.mock('../src/structural/collectStructuralFragments', () => ({
 vi.mock('../src/waitForStateInitialize', () => ({
   waitForStateInitialize: vi.fn().mockResolvedValue(undefined)
 }));
-vi.mock('../src/webComponent/outerState', () => {
-  const outerState = { $$bind: vi.fn() };
+vi.mock('../src/webComponent/outerState', async () => {
+  const { bindSymbol } = await import('../src/webComponent/symbols');
+  const outerState = { [bindSymbol]: vi.fn() };
   return { createOuterState: vi.fn(() => outerState) };
 });
-vi.mock('../src/webComponent/innerState', () => {
-  const innerState = { $$bind: vi.fn() };
+vi.mock('../src/webComponent/innerState', async () => {
+  const { bindSymbol } = await import('../src/webComponent/symbols');
+  const innerState = { [bindSymbol]: vi.fn() };
   return { createInnerState: vi.fn(() => innerState) };
 });
 
@@ -36,6 +38,7 @@ import { collectStructuralFragments } from '../src/structural/collectStructuralF
 import { waitForStateInitialize } from '../src/waitForStateInitialize';
 import { createOuterState } from '../src/webComponent/outerState';
 import { createInnerState } from '../src/webComponent/innerState';
+import { bindSymbol } from '../src/webComponent/symbols';
 import { IBindingInfo } from '../src/types';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
@@ -138,13 +141,13 @@ describe('bindWebComponent', () => {
     // waitInitializeBinding が呼ばれること
     expect(waitInitializeBinding).toHaveBeenCalledWith(component);
 
-    // outerState.$$bind, innerState.$$bind がバインディングごとに呼ばれること
-    expect(outerState.$$bind).toHaveBeenCalledTimes(2);
-    expect(outerState.$$bind).toHaveBeenCalledWith(stateEl, binding1);
-    expect(outerState.$$bind).toHaveBeenCalledWith(stateEl, binding2);
-    expect(innerState.$$bind).toHaveBeenCalledTimes(2);
-    expect(innerState.$$bind).toHaveBeenCalledWith(binding1);
-    expect(innerState.$$bind).toHaveBeenCalledWith(binding2);
+    // outerState[bindSymbol], innerState[bindSymbol] がバインディングごとに呼ばれること
+    expect(outerState[bindSymbol]).toHaveBeenCalledTimes(2);
+    expect(outerState[bindSymbol]).toHaveBeenCalledWith(stateEl, binding1);
+    expect(outerState[bindSymbol]).toHaveBeenCalledWith(stateEl, binding2);
+    expect(innerState[bindSymbol]).toHaveBeenCalledTimes(2);
+    expect(innerState[bindSymbol]).toHaveBeenCalledWith(binding1);
+    expect(innerState[bindSymbol]).toHaveBeenCalledWith(binding2);
 
     // bindProperty が各バインディングに対して呼ばれること
     expect(stateEl.bindProperty).toHaveBeenCalledTimes(2);

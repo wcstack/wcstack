@@ -13,6 +13,7 @@ import type { IStateElement } from '../src/components/types';
 import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
+import { setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
 
 const uuid = 'index-binding-test-uuid';
 
@@ -59,14 +60,14 @@ function createMockStateElement(): IStateElement {
     addDynamicDependency() {},
     createState(_mutability, callback) {
       return callback({
-        $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
-        $$getByAddress: () => undefined,
+        [setLoopContextSymbol]: (_loopContext: any, callback: () => any) => callback(),
+        [getByAddressSymbol]: () => undefined,
       } as any);
     },
     async createStateAsync(_mutability, callback) {
       return callback({
-        $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
-        $$getByAddress: () => undefined,
+        [setLoopContextSymbol]: (_loopContext: any, callback: () => any) => callback(),
+        [getByAddressSymbol]: () => undefined,
       } as any);
     },
     nextVersion() {

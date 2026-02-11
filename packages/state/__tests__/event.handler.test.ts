@@ -3,6 +3,7 @@ import { attachEventHandler, detachEventHandler, __private__ } from '../src/even
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import { setStateElementByName } from '../src/stateElementByName';
+import { setLoopContextSymbol } from '../src/proxy/symbols';
 
 function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IBindingInfo {
   return {
@@ -136,7 +137,7 @@ describe('event/handler', () => {
 
     const state = {
       'handleClick-not-fn': 123,
-      $$setLoopContext: (_ctx: any, cb: () => void) => cb(),
+      [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb(),
     } as any;
     let lastPromise: Promise<any> | null = null;
     setStateElementByName(el, 'default', {
@@ -166,7 +167,7 @@ describe('event/handler', () => {
 
     const state: any = {
       'handleClick-prevent': vi.fn(),
-      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
+      [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
     setStateElementByName(el, 'default', {
@@ -199,7 +200,7 @@ describe('event/handler', () => {
 
     const state: any = {
       'handleClick-stop': vi.fn(),
-      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
+      [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
     setStateElementByName(el, 'default', {
@@ -232,7 +233,7 @@ describe('event/handler', () => {
 
     const state: any = {
       'handleClick-both': vi.fn(),
-      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
+      [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
     setStateElementByName(el, 'default', {
@@ -288,7 +289,7 @@ describe('event/handler', () => {
       'handleClick-ok': vi.fn(function (this: any) {
         expect(this).toBe(state);
       }),
-      $$setLoopContext: (_ctx: any, cb: () => void) => cb()
+      [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb()
     };
     let lastPromise: Promise<any> | null = null;
     setStateElementByName(el, 'default', {

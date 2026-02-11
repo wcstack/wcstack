@@ -9,6 +9,7 @@ import { collectStructuralFragments } from "../structural/collectStructuralFragm
 import { waitForStateInitialize } from "../waitForStateInitialize";
 import { createInnerState } from "./innerState";
 import { createOuterState } from "./outerState";
+import { bindSymbol } from "./symbols";
 import { IInnerState, IOuterState } from "./types";
 
 const getOuter = (outerState: IOuterState) => (): IOuterState => outerState;
@@ -49,8 +50,8 @@ export async function bindWebComponent(
   const innerState = createInnerState();
   for(const binding of bindings) {
 
-    outerState.$$bind(innerStateElement, binding);
-    innerState.$$bind(binding);
+    outerState[bindSymbol](innerStateElement, binding);
+    innerState[bindSymbol](binding);
 
     const innerStateProp = binding.propSegments[0];
     const innerName = binding.propSegments.slice(1).join('.');

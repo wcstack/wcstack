@@ -4,6 +4,8 @@ import { getStateElementByName } from '../src/stateElementByName';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { raiseError } from '../src/raiseError';
 import { IBindingInfo } from '../src/binding/types';
+import { bindSymbol } from '../src/webComponent/symbols';
+import { setLoopContextSymbol } from '../src/proxy/symbols';
 
 vi.mock('../src/stateElementByName', () => ({
   getStateElementByName: vi.fn()
@@ -38,10 +40,10 @@ describe('innerState', () => {
   it('createInnerStateでインスタンスが作成されること', () => {
     const innerState = createInnerState();
     expect(innerState).toBeDefined();
-    expect(typeof innerState.$$bind).toBe('function');
+    expect(typeof innerState[bindSymbol]).toBe('function');
   });
 
-  describe('$$bind', () => {
+  describe('[bindSymbol]', () => {
     it('プロパティが定義されること', () => {
       const innerState = createInnerState();
       const binding = createMockBinding();
@@ -49,7 +51,7 @@ describe('innerState', () => {
       // モックの設定 (getter/setterの初期化時に呼ばれる可能性があるため)
       getStateElementByNameMock.mockReturnValue({ createState: vi.fn() } as any);
 
-      innerState.$$bind(binding);
+      innerState[bindSymbol](binding);
       
       const descriptor = Object.getOwnPropertyDescriptor(innerState, 'propName');
       expect(descriptor).toBeDefined();
@@ -69,7 +71,7 @@ describe('innerState', () => {
       const rootNode = binding.replaceNode.getRootNode();
 
       const stateProxy = {
-        $$setLoopContext: vi.fn((ctx, cb) => cb()),
+        [setLoopContextSymbol]: vi.fn((ctx, cb) => cb()),
         'data.val': 'test-value'
       };
 
@@ -80,7 +82,7 @@ describe('innerState', () => {
       getStateElementByNameMock.mockReturnValue(stateEl as any);
       getLoopContextByNodeMock.mockReturnValue('mockLoopContext' as any);
 
-      innerState.$$bind(binding);
+      innerState[bindSymbol](binding);
       
       const value = innerState.value;
 
@@ -88,7 +90,7 @@ describe('innerState', () => {
       expect(getStateElementByNameMock).toHaveBeenCalledWith(rootNode, 'myState');
       expect(stateEl.createState).toHaveBeenCalledWith('readonly', expect.any(Function));
       expect(getLoopContextByNodeMock).toHaveBeenCalledWith(binding.node);
-      expect(stateProxy.$$setLoopContext).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));
+      expect(stateProxy[setLoopContextSymbol]).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));
       expect(value).toBe('test-value');
     });
 
@@ -106,9 +108,9 @@ describe('innerState', () => {
       //   if (outerStateElement === null) raiseError(...)
       //   return () => { ... }
       // }
-      // つまり $$bind を呼んだ時点でエラーになるはず
+      // つまり [bindSymbol] を呼んだ時点でエラーになるはず
 
-      expect(() => innerState.$$bind(binding)).toThrow(/State element with name "missing" not found/);
+      expect(() => innerState[bindSymbol](binding)).toThrow(/State element with name "missing" not found/);
     });
 
     it('setter: 値を設定できること', () => {
@@ -121,7 +123,7 @@ describe('innerState', () => {
       const rootNode = binding.replaceNode.getRootNode();
 
       const stateProxy = {
-        $$setLoopContext: vi.fn((ctx, cb) => cb()),
+        [setLoopContextSymbol]: vi.fn((ctx, cb) => cb()),
         'data.val': 'initial'
       };
 
@@ -132,7 +134,7 @@ describe('innerState', () => {
       getStateElementByNameMock.mockReturnValue(stateEl as any);
       getLoopContextByNodeMock.mockReturnValue('mockLoopContext' as any);
 
-      innerState.$$bind(binding);
+      innerState[bindSymbol](binding);
       
       innerState.value = 'new-value';
 
@@ -140,7 +142,7 @@ describe('innerState', () => {
       expect(getStateElementByNameMock).toHaveBeenCalledWith(rootNode, 'myState');
       expect(stateEl.createState).toHaveBeenCalledWith('writable', expect.any(Function));
       expect(getLoopContextByNodeMock).toHaveBeenCalledWith(binding.node);
-      expect(stateProxy.$$setLoopContext).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));
+      expect(stateProxy[setLoopContextSymbol]).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));
       
       // プロキシへの代入が行われたか確認
       expect(stateProxy['data.val']).toBe('new-value');
@@ -155,7 +157,7 @@ describe('innerState', () => {
         .mockReturnValueOnce({ createState: vi.fn() } as any)
         .mockReturnValueOnce(null);
 
-      expect(() => innerState.$$bind(binding)).toThrow(/State element with name "missing" not found/);
+      expect(() => innerState[bindSymbol](binding)).toThrow(/State element with name "missing" not found/);
     });
   });
 });

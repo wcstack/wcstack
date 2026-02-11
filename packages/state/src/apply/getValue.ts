@@ -3,6 +3,7 @@ import { IBindingInfo } from "../binding/types";
 import { INDEX_BY_INDEX_NAME } from "../define";
 import { getIndexValueByLoopContext } from "../list/getIndexValueByLoopContext";
 import { getLoopContextByNode } from "../list/loopContextByNode";
+import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 
@@ -15,6 +16,6 @@ export function getValue(state: IStateProxy, binding: IBindingInfo): any {
     }
     return getIndexValueByLoopContext(loopContext, stateAddress.pathInfo.path);
   } else {
-    return state.$$getByAddress(stateAddress);
+    return state[getByAddressSymbol](stateAddress);
   }
 }

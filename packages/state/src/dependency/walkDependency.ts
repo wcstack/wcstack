@@ -9,6 +9,7 @@ import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListDiff, IListIndex } from "../list/types";
+import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { SearchType } from "./types";
@@ -56,7 +57,7 @@ function _walkExpandWildcard(
   const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
   const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
   const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
-  const newValue = context.stateProxy.$$getByAddress(parentAddress);
+  const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
   const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
 
   const loopIndexes = getIndexes(listDiff, context.searchType);
@@ -120,7 +121,7 @@ function _walkDependency(
         const depPathInfo = getPathInfo(dep);
         if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
           //expand indexes
-          const newValue = context.stateProxy.$$getByAddress(address);
+          const newValue = context.stateProxy[getByAddressSymbol](address);
           const absPathInfo = getAbsolutePathInfo(context.stateName, address.pathInfo);
           const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
           const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);

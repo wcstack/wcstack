@@ -10,6 +10,7 @@ import type { IVersionInfo } from '../src/version/types';
 import { setStateElementByName } from '../src/stateElementByName';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
+import { setLoopContextSymbol } from '../src/proxy/symbols';
 
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
@@ -61,10 +62,10 @@ function createMockStateElement(options?: {
     addStaticDependency() {},
     addDynamicDependency() {},
     createState(mutability, callback) {
-      return callback({ $$setLoopContext: (_loopContext: any, cb: () => any) => cb() } as any);
+      return callback({ [setLoopContextSymbol]: (_loopContext: any, cb: () => any) => cb() } as any);
     },
     async createStateAsync(mutability, callback) {
-      return callback({ $$setLoopContext: (_loopContext: any, cb: () => any) => cb() } as any);
+      return callback({ [setLoopContextSymbol]: (_loopContext: any, cb: () => any) => cb() } as any);
     },
     nextVersion() {
       version += 1;
@@ -105,7 +106,7 @@ describe('proxy/StateHandler', () => {
     const listIndex = createListIndex(null, 1);
     const loopContext = createStateAddress(getPathInfo('users.*'), listIndex);
 
-    const result = (proxy as any).$$setLoopContext(loopContext, () => (proxy as any)['users.*.name']);
+    const result = (proxy as any)[setLoopContextSymbol](loopContext, () => (proxy as any)['users.*.name']);
     expect(result).toBe('Carol');
   });
 

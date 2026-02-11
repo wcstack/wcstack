@@ -14,6 +14,7 @@ import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
 import type { IApplyContext } from '../src/apply/types';
+import { setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { setBindingsByContent } from '../src/bindings/bindingsByContent';
 import { setIndexBindingsByContent } from '../src/bindings/indexBindingsByContent';
@@ -59,8 +60,8 @@ function createMockStateElement(): IStateElement {
   let version = 0;
   const stateProxy: any = {
     items: [],
-    $$setLoopContext: (_loopContext: any, callback: () => any) => callback(),
-    $$getByAddress: () => undefined,
+    [setLoopContextSymbol]: (_loopContext: any, callback: () => any) => callback(),
+    [getByAddressSymbol]: () => undefined,
   };
 
   return {
@@ -198,7 +199,7 @@ function createEmptyFragmentInfo() {
 }
 
 describe('applyChangeToFor', () => {
-  const state = { $$getByAddress: () => undefined } as any;
+  const state = { [getByAddressSymbol]: () => undefined } as any;
   let context: IApplyContext;
 
   function setupContext() {
@@ -452,15 +453,15 @@ describe('applyChangeToFor', () => {
     setIndexBindingsByContent(content1, [dummyBindingInfo]);
 
     // 頁E��変更でchangeIndexSetを発生させる
-    const prevGetByAddress = state.$$getByAddress;
-    state.$$getByAddress = () => 'x';
+    const prevGetByAddress = state[getByAddressSymbol];
+    state[getByAddressSymbol] = () => 'x';
     const reordered = [2, 1];
     createListIndexes(null, list, reordered);
     apply(bindingInfo, reordered);
 
     // applyChangeが実行されてtextが更新されること
     expect(textNode.nodeValue).toBe('x');
-    state.$$getByAddress = prevGetByAddress;
+    state[getByAddressSymbol] = prevGetByAddress;
 
     setListIndexesByList(list, null);
   });

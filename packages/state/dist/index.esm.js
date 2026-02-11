@@ -2541,6 +2541,10 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
     return [nodes, allBindings];
 }
 
+const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
+const setLoopContextSymbol = Symbol("$$setLoopContext");
+const getByAddressSymbol = Symbol("$$getByAddress");
+
 const handlerByHandlerKey$1 = new Map();
 const bindingInfoSetByHandlerKey$1 = new Map();
 function getHandlerKey$1(bindingInfo) {
@@ -2560,7 +2564,7 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event)
     }
     const loopContext = getLoopContextByNode(node);
     stateElement.createStateAsync("writable", async (state) => {
-        state.$$setLoopContext(loopContext, () => {
+        state[setLoopContextSymbol](loopContext, () => {
             const handler = state[handlerName];
             if (typeof handler !== "function") {
                 raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
@@ -2659,7 +2663,7 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
     }
     const loopContext = getLoopContextByNode(node);
     stateElement.createState("writable", (state) => {
-        state.$$setLoopContext(loopContext, () => {
+        state[setLoopContextSymbol](loopContext, () => {
             state[statePathName] = filteredNewValue;
         });
     });
@@ -3106,7 +3110,7 @@ function getValue(state, binding) {
         return getIndexValueByLoopContext(loopContext, stateAddress.pathInfo.path);
     }
     else {
-        return state.$$getByAddress(stateAddress);
+        return state[getByAddressSymbol](stateAddress);
     }
 }
 
@@ -3305,7 +3309,7 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
     const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
     const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
-    const newValue = context.stateProxy.$$getByAddress(parentAddress);
+    const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
     const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
     const loopIndexes = getIndexes(listDiff, context.searchType);
     if (currentWildcardIndex === context.wildcardPaths.length - 1) {
@@ -3344,7 +3348,7 @@ function _walkDependency(context, startAddress, callback) {
                 const depPathInfo = getPathInfo(dep);
                 if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
                     //expand indexes
-                    const newValue = context.stateProxy.$$getByAddress(address);
+                    const newValue = context.stateProxy[getByAddressSymbol](address);
                     const absPathInfo = getAbsolutePathInfo(context.stateName, address.pathInfo);
                     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
                     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
@@ -3900,76 +3904,59 @@ function get(target, prop, receiver, handler) {
         return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
     }
     if (typeof prop === "string") {
-        if (prop === "$stateElement") {
-            return handler.stateElement;
+        if (prop[0] === '$') {
+            switch (prop) {
+                case "$stateElement": {
+                    return handler.stateElement;
+                }
+                case "$getAll": {
+                    return (path, indexes) => {
+                        return getAll(target, prop, receiver, handler)(path, indexes);
+                    };
+                }
+                case "$postUpdate": {
+                    return (path) => {
+                        return postUpdate(target, prop, receiver, handler)(path);
+                    };
+                }
+                case "$resolve": {
+                    return (path, indexes, value) => {
+                        return resolve(target, prop, receiver, handler)(path, indexes, value);
+                    };
+                }
+                case "$trackDependency": {
+                    return (path) => {
+                        return trackDependency(target, prop, receiver, handler)(path);
+                    };
+                }
+            }
         }
-        if (prop === "$$setLoopContextAsync") {
-            return (loopContext, callback = async () => { }) => {
-                return setLoopContextAsync(handler, loopContext, callback);
-            };
+        else {
+            const resolvedAddress = getResolvedAddress(prop);
+            const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+            const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
+            return getByAddress(target, stateAddress, receiver, handler);
         }
-        if (prop === "$$setLoopContext") {
-            return (loopContext, callback = () => { }) => {
-                return setLoopContext(handler, loopContext, callback);
-            };
-        }
-        if (prop === "$$getByAddress") {
-            return (address) => {
-                return getByAddress(target, address, receiver, handler);
-            };
-        }
-        if (prop === "$getAll") {
-            return (path, indexes) => {
-                return getAll(target, prop, receiver, handler)(path, indexes);
-            };
-        }
-        if (prop === "$postUpdate") {
-            return (path) => {
-                return postUpdate(target, prop, receiver, handler)(path);
-            };
-        }
-        if (prop === "$resolve") {
-            return (path, indexes, value) => {
-                return resolve(target, prop, receiver, handler)(path, indexes, value);
-            };
-        }
-        if (prop === "$trackDependency") {
-            return (path) => {
-                return trackDependency(target, prop, receiver, handler)(path);
-            };
-        }
-        const resolvedAddress = getResolvedAddress(prop);
-        const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
-        const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
-        return getByAddress(target, stateAddress, receiver, handler);
     }
     else if (typeof prop === "symbol") {
-        return Reflect.get(target, prop, receiver);
-        /*
-            if (handler.symbols.has(prop)) {
-              switch (prop) {
-                case GetByRefSymbol:
-                  return (ref: IStatePropertyRef) =>
-                    getByRef(target, ref, receiver, handler);
-                case SetByRefSymbol:
-                  return (ref: IStatePropertyRef, value: any) =>
-                    setByRef(target, ref, value, receiver, handler);
-                case GetListIndexesByRefSymbol:
-                  return (ref: IStatePropertyRef) =>
-                    getListIndexesByRef(target, ref, receiver, handler);
-                case ConnectedCallbackSymbol:
-                  return () => connectedCallback(target, prop, receiver, handler);
-                case DisconnectedCallbackSymbol:
-                  return () => disconnectedCallback(target, prop, receiver, handler);
-              }
-            } else {
-              return Reflect.get(
-                target,
-                prop,
-                receiver
-              );
+        switch (prop) {
+            case setLoopContextAsyncSymbol: {
+                return (loopContext, callback = async () => { }) => {
+                    return setLoopContextAsync(handler, loopContext, callback);
+                };
             }
-        */
+            case setLoopContextSymbol: {
+                return (loopContext, callback = () => { }) => {
+                    return setLoopContext(handler, loopContext, callback);
+                };
+            }
+            case getByAddressSymbol: {
+                return (address) => {
+                    return getByAddress(target, address, receiver, handler);
+                };
+            }
+        }
+        return Reflect.get(target, prop, receiver);
     }
 }
 
@@ -4452,6 +4439,8 @@ async function waitForStateInitialize(root) {
     await Promise.all(promises);
 }
 
+const bindSymbol = Symbol("$$bind");
+
 const getterFn$1 = (binding) => {
     const rootNode = binding.replaceNode.getRootNode();
     const outerStateElement = getStateElementByName(rootNode, binding.stateName);
@@ -4463,7 +4452,7 @@ const getterFn$1 = (binding) => {
         let value = undefined;
         const loopContext = getLoopContextByNode(binding.node);
         outerStateElement.createState("readonly", (state) => {
-            state.$$setLoopContext(loopContext, () => {
+            state[setLoopContextSymbol](loopContext, () => {
                 value = state[outerName];
             });
         });
@@ -4480,7 +4469,7 @@ const setterFn$1 = (binding) => {
     return (v) => {
         const loopContext = getLoopContextByNode(binding.node);
         outerStateElement.createState("writable", (state) => {
-            state.$$setLoopContext(loopContext, () => {
+            state[setLoopContextSymbol](loopContext, () => {
                 state[outerName] = v;
             });
         });
@@ -4489,7 +4478,7 @@ const setterFn$1 = (binding) => {
 class InnerState {
     constructor() {
     }
-    $$bind(binding) {
+    [bindSymbol](binding) {
         const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
             get: getterFn$1(binding),
@@ -4521,7 +4510,7 @@ const setterFn = (innerStateElement, innerName) => (_v) => {
 class OuterState {
     constructor() {
     }
-    $$bind(innerStateElement, binding) {
+    [bindSymbol](innerStateElement, binding) {
         const innerName = binding.propSegments.slice(1).join('.');
         Object.defineProperty(this, innerName, {
             get: getterFn(),
@@ -4562,8 +4551,8 @@ async function bindWebComponent(innerStateElement, component, stateProp, initial
     const outerState = createOuterState();
     const innerState = createInnerState();
     for (const binding of bindings) {
-        outerState.$$bind(innerStateElement, binding);
-        innerState.$$bind(binding);
+        outerState[bindSymbol](innerStateElement, binding);
+        innerState[bindSymbol](binding);
         const innerStateProp = binding.propSegments[0];
         const innerName = binding.propSegments.slice(1).join('.');
         if (stateProp !== innerStateProp) {

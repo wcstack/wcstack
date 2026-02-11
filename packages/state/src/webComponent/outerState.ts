@@ -1,5 +1,6 @@
 import { IBindingInfo } from "../binding/types";
 import { IStateElement } from "../components/types";
+import { bindSymbol } from "./symbols";
 import { IOuterState } from "./types";
 
 const getterFn = (
@@ -29,7 +30,7 @@ class OuterState implements IOuterState {
   constructor() {
   }
 
-  $$bind(innerStateElement: IStateElement, binding: IBindingInfo): void {
+  [bindSymbol](innerStateElement: IStateElement, binding: IBindingInfo): void {
     const innerName = binding.propSegments.slice(1).join('.');
     Object.defineProperty(this, innerName, {
       get: getterFn(innerStateElement, innerName),

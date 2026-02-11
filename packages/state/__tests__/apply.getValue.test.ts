@@ -5,6 +5,7 @@ import { createListIndex } from '../src/list/createListIndex';
 import { setLoopContextByNode } from '../src/list/loopContextByNode';
 import { createStateAddress } from '../src/address/StateAddress';
 import { IBindingInfo } from '../src/binding/types';
+import { getByAddressSymbol } from '../src/proxy/symbols';
 
 function createMockBindingInfo(path: string, node: Node): IBindingInfo {
   return {
@@ -23,16 +24,16 @@ function createMockBindingInfo(path: string, node: Node): IBindingInfo {
 }
 
 describe('getValue', () => {
-  it('通常のパスは state.$$getByAddress を呼び出すこと', () => {
+  it('通常のパスは state[getByAddressSymbol] を呼び出すこと', () => {
     const node = document.createElement('span');
     const binding = createMockBindingInfo('user.name', node);
     const state = {
-      $$getByAddress: vi.fn().mockReturnValue('Alice'),
+      [getByAddressSymbol]: vi.fn().mockReturnValue('Alice'),
     } as any;
 
     const result = getValue(state, binding);
     expect(result).toBe('Alice');
-    expect(state.$$getByAddress).toHaveBeenCalledTimes(1);
+    expect(state[getByAddressSymbol]).toHaveBeenCalledTimes(1);
   });
 
   it('$1 のインデックスパスは loopContext から値を取得すること', () => {
@@ -45,12 +46,12 @@ describe('getValue', () => {
 
     const binding = createMockBindingInfo('$1', node);
     const state = {
-      $$getByAddress: vi.fn(),
+      [getByAddressSymbol]: vi.fn(),
     } as any;
 
     const result = getValue(state, binding);
     expect(result).toBe(7);
-    expect(state.$$getByAddress).not.toHaveBeenCalled();
+    expect(state[getByAddressSymbol]).not.toHaveBeenCalled();
 
     // クリーンアップ
     setLoopContextByNode(parentNode, null);
@@ -65,12 +66,12 @@ describe('getValue', () => {
 
     const binding = createMockBindingInfo('$2', node);
     const state = {
-      $$getByAddress: vi.fn(),
+      [getByAddressSymbol]: vi.fn(),
     } as any;
 
     const result = getValue(state, binding);
     expect(result).toBe(4);
-    expect(state.$$getByAddress).not.toHaveBeenCalled();
+    expect(state[getByAddressSymbol]).not.toHaveBeenCalled();
 
     // クリーンアップ
     setLoopContextByNode(node, null);
@@ -80,7 +81,7 @@ describe('getValue', () => {
     const node = document.createElement('span');
     const binding = createMockBindingInfo('$1', node);
     const state = {
-      $$getByAddress: vi.fn(),
+      [getByAddressSymbol]: vi.fn(),
     } as any;
 
     expect(() => getValue(state, binding)).toThrow(/ListIndex not found for binding: \$1/);

@@ -1,4 +1,5 @@
 import { getLoopContextByNode } from "../list/loopContextByNode";
+import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
@@ -28,7 +29,7 @@ const stateEventHandlerFunction = (
 
   const loopContext = getLoopContextByNode(node);
   stateElement.createStateAsync("writable", async (state) => {
-    state.$$setLoopContext(loopContext, () => {
+    state[setLoopContextSymbol](loopContext, () => {
       const handler = state[handlerName];
       if (typeof handler !== "function") {
         raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
