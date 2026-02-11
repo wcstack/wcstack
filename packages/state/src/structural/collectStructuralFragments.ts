@@ -63,7 +63,7 @@ export function collectStructuralFragments(rootNode: Node, walkRoot: Document | 
     {
       acceptNode(node: Node) {
         const element = node as Element;
-        if (element instanceof HTMLTemplateElement) {
+        if (element.tagName.toLowerCase() === 'template') {
           const bindText = element.getAttribute(config.bindAttributeName) || '';
           if (bindText.length > 0) {
             return NodeFilter.FILTER_ACCEPT;

@@ -9,7 +9,7 @@ export const config = {
         state: 'wcs-state',
     },
     locale: 'en',
-    debug: true,
+    debug: false,
     enableMustache: true,
 };
 //# sourceMappingURL=config.js.map

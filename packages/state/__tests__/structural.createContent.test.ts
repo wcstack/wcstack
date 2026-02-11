@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { createContent } from '../src/structural/createContent';
 import * as bindingsByContent from '../src/bindings/bindingsByContent.js';
-import * as contentByNode from '../src/structural/contentByNode.js';
+import * as contentByNode from '../src/structural/contentsByNode.js';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';

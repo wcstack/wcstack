@@ -5,7 +5,10 @@ import { createListDiff } from '../src/list/createListDiff';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import { setStateElementByName } from '../src/stateElementByName';
 import { getPathInfo } from '../src/address/PathInfo';
+import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { createLoopContextStack } from '../src/list/loopContext';
+import { setLastListValueByAbsoluteStateAddress, clearLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
 import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
 import type { IStateElement } from '../src/components/types';
@@ -21,16 +24,17 @@ const createListIndexes = (
   parentListIndex: any,
   oldList: any,
   newList: any,
-  oldIndexes: any
-) => createListDiff(parentListIndex, oldList, newList, oldIndexes).newIndexes;
+) => createListDiff(parentListIndex, oldList, newList).newIndexes;
 
 function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): IBindingInfo {
+  const pathInfo = getPathInfo('items');
   return {
     propName: 'for',
     propSegments: [],
     propModifiers: [],
     statePathName: 'items',
-    statePathInfo: getPathInfo('items'),
+    statePathInfo: pathInfo,
+    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -143,6 +147,9 @@ function createFragmentInfoWithIndexBinding() {
 afterEach(() => {
   setFragmentInfoByUUID(uuid, document, null);
   setStateElementByName(document, 'default', null);
+  const pathInfo = getPathInfo('items');
+  const absPathInfo = getAbsolutePathInfo('default', pathInfo);
+  clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, null));
 });
 
 describe('applyChangeToFor - changeIndexSet最適化', () => {
@@ -152,12 +159,17 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
   function setupContext() {
     const stateElement = createMockStateElement();
     setStateElementByName(document, 'default', stateElement);
-    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set() };
+    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map() };
     return stateElement;
   }
 
-  const apply = (bindingInfo: IBindingInfo, value: any) =>
+  const apply = (bindingInfo: IBindingInfo, value: any) => {
     applyChangeToFor(bindingInfo, context, value);
+    for (const [absAddress, newListValue] of context.newListValueByAbsAddress.entries()) {
+      setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
+    }
+    context.newListValueByAbsAddress.clear();
+  };
 
   it('changeIndexSet時にインデックスバインディングのみ再適用されること', () => {
     setupContext();
@@ -172,7 +184,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
     // 初回適用: [1, 2]
     const list = [1, 2];
-    const listIndexes = createListIndexes(null, [], list, []);
+    const listIndexes = createListIndexes(null, [], list);
     setListIndexesByList(list, listIndexes);
     apply(bindingInfo, list);
 
@@ -180,7 +192,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
     // 先頭に追加: [0, 1, 2] → 既存要素はchangeIndexSetに入る
     const newList = [0, 1, 2];
-    const newListIndexes = createListIndexes(null, list, newList, listIndexes);
+    const newListIndexes = createListIndexes(null, list, newList);
     setListIndexesByList(newList, newListIndexes);
 
     // applyChangeの実行を追跡
@@ -207,7 +219,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
     // 初回適用: [1, 2]
     const list = [1, 2];
-    const listIndexes = createListIndexes(null, [], list, []);
+    const listIndexes = createListIndexes(null, [], list);
     setListIndexesByList(list, listIndexes);
 
     state.$$getByAddress = () => 'initial';
@@ -220,7 +232,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
     // 先頭に追加: [0, 1, 2] → 既存要素はchangeIndexSetに入る
     const newList = [0, 1, 2];
-    const newListIndexes = createListIndexes(null, list, newList, listIndexes);
+    const newListIndexes = createListIndexes(null, list, newList);
     setListIndexesByList(newList, newListIndexes);
 
     state.$$getByAddress = () => 'should-not-change';
@@ -248,7 +260,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
     // 初回適用
     const list = [1, 2];
-    const listIndexes = createListIndexes(null, [], list, []);
+    const listIndexes = createListIndexes(null, [], list);
     setListIndexesByList(list, listIndexes);
 
     let callCount = 0;
@@ -265,7 +277,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
 
     // 順序変更: [2, 1] → changeIndexSetが発生
     const reordered = [2, 1];
-    const reorderedIndexes = createListIndexes(null, list, reordered, listIndexes);
+    const reorderedIndexes = createListIndexes(null, list, reordered);
     setListIndexesByList(reordered, reorderedIndexes);
     apply(bindingInfo, reordered);
 

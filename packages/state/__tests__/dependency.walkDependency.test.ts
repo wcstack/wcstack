@@ -32,6 +32,7 @@ describe('walkDependency', () => {
     const visited: string[] = [];
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -59,6 +60,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>(['users']);
 
     walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -74,6 +76,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -99,6 +102,7 @@ describe('walkDependency', () => {
 
     // First call to seed lastValueByListAddress
     walkDependency(
+      'default',
       startAddress,
       staticDependency,
       new Map(),
@@ -115,6 +119,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       new Map(),
@@ -141,6 +146,7 @@ describe('walkDependency', () => {
 
     const beforeFirst = spy.mock.calls.length;
     walkDependency(
+      'default',
       startAddress,
       staticDependency,
       new Map(),
@@ -157,6 +163,7 @@ describe('walkDependency', () => {
     ]);
 
     walkDependency(
+      'default',
       startAddress,
       staticDependency,
       new Map(),
@@ -166,7 +173,8 @@ describe('walkDependency', () => {
       () => {}
     );
 
-    expect(spy.mock.calls.length).toBeGreaterThan(afterFirst);
+    // createListDiff now caches results, so the spy count stays the same
+    expect(spy.mock.calls.length).toBe(afterFirst);
     spy.mockRestore();
   });
 
@@ -178,6 +186,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>();
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -200,6 +209,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>(['user']);
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -225,6 +235,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>();
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -252,6 +263,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>();
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -279,6 +291,7 @@ describe('walkDependency', () => {
 
     // First call to seed lastValueByListAddress for expansion
     walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -289,6 +302,7 @@ describe('walkDependency', () => {
     );
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -317,6 +331,7 @@ describe('walkDependency', () => {
 
     const beforeFirst = spy.mock.calls.length;
     walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -328,6 +343,7 @@ describe('walkDependency', () => {
     const afterFirst = spy.mock.calls.length;
 
     walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -337,7 +353,8 @@ describe('walkDependency', () => {
       () => {}
     );
 
-    expect(spy.mock.calls.length).toBeGreaterThan(afterFirst);
+    // createListDiff now caches results, so the spy count stays the same
+    expect(spy.mock.calls.length).toBe(afterFirst);
     spy.mockRestore();
   });
 
@@ -353,6 +370,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -383,6 +401,7 @@ describe('walkDependency', () => {
     const types = ['old', 'new', 'add', 'change', 'delete'] as const;
     for (const type of types) {
       expect(() => walkDependency(
+        'default',
         startAddress,
         staticDependency,
         dynamicDependency,
@@ -407,6 +426,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -436,6 +456,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -461,6 +482,7 @@ describe('walkDependency', () => {
     ]);
 
     expect(() => walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -479,6 +501,7 @@ describe('walkDependency', () => {
     ]);
 
     expect(() => walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -497,6 +520,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -520,6 +544,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -545,6 +570,7 @@ describe('walkDependency', () => {
     const stateProxy = createStateProxy({});
 
     expect(() => walkDependency(
+      'default',
       startAddress,
       staticDependency,
       new Map(),
@@ -565,6 +591,7 @@ describe('walkDependency', () => {
     const listPathSet = new Set<string>(['users']);
 
     const result = walkDependency(
+      'default',
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -588,6 +615,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,
@@ -612,6 +640,7 @@ describe('walkDependency', () => {
     ]);
 
     const result = walkDependency(
+      'default',
       startAddress,
       new Map(),
       dynamicDependency,

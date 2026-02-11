@@ -9,17 +9,22 @@ vi.mock('../src/apply/applyChange', () => ({
 vi.mock('../src/apply/rootNodeByFragment', () => ({
   getRootNodeByFragment: vi.fn()
 }));
+vi.mock('../src/list/lastListValueByAbsoluteStateAddress', () => ({
+  setLastListValueByAbsoluteStateAddress: vi.fn()
+}));
 
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 import { getStateElementByName } from '../src/stateElementByName';
 import { applyChange } from '../src/apply/applyChange';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
+import { setLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 
 const getStateElementByNameMock = vi.mocked(getStateElementByName);
 const applyChangeMock = vi.mocked(applyChange);
 const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
+const setLastListValueMock = vi.mocked(setLastListValueByAbsoluteStateAddress);
 
 function createBindingInfo(stateName: string, statePathName: string, node: Node): IBindingInfo {
   return {
@@ -157,5 +162,26 @@ describe('applyChangeFromBindings', () => {
 
     expect(createStateMock).toHaveBeenCalledTimes(2);
     expect(applyChangeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('applyChange中にnewListValueByAbsAddressに追加された値がsetLastListValueに反映されること', () => {
+    const state = createStateProxy({ items: [1, 2] });
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
+
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    const bindingInfos = [createBindingInfo('app', 'items', node)];
+
+    // applyChange mock populates newListValueByAbsAddress on the context
+    const fakeAbsAddress = { id: 'test-abs-address' } as any;
+    const fakeListValue = [1, 2, 3];
+    applyChangeMock.mockImplementation((_binding: any, context: any) => {
+      context.newListValueByAbsAddress.set(fakeAbsAddress, fakeListValue);
+    });
+
+    applyChangeFromBindings(bindingInfos);
+
+    expect(setLastListValueMock).toHaveBeenCalledWith(fakeAbsAddress, fakeListValue);
   });
 });

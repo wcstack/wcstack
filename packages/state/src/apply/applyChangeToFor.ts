@@ -1,9 +1,11 @@
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
+import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
@@ -14,23 +16,22 @@ import { applyChange } from "./applyChange";
 import { setRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext } from "./types";
 
-const lastValueByNode = new WeakMap<Node, any>();
-const lastNodeByNode = new WeakMap<Node, Node>();
-const contentByListIndex = new WeakMap<IListIndex, IContent>();
-const pooledContentsByNode = new WeakMap<Node, IContent[]>();
-const isOnlyNodeInParentContentByNode = new WeakMap<Node, boolean>();
+const lastNodeByNode: WeakMap<Node, Node> = new WeakMap();
+const contentByListIndexByNode: WeakMap<Node, WeakMap<IListIndex, IContent>> = new WeakMap();
+const pooledContentsByNode: WeakMap<Node, IContent[]> = new WeakMap();
+const isOnlyNodeInParentContentByNode: WeakMap<Node, boolean> = new WeakMap();
 
 // テスト用ヘルパー（内部状態の操作）
-export function __test_setContentByListIndex(index: IListIndex, content: IContent | null): void {
-  if (content === null) {
-    contentByListIndex.delete(index);
-  } else {
-    contentByListIndex.set(index, content);
-  }
+export function __test_setContentByListIndex(node: Node, index: IListIndex, content: IContent | null): void {
+  setContent(node, index, content);
 }
 
 export function __test_deleteLastNodeByNode(node: Node): void {
   lastNodeByNode.delete(node);
+}
+
+export function __test_deleteContentByNode(node: Node): void {
+  contentByListIndexByNode.delete(node);
 }
 
 function getPooledContents(bindingInfo: IBindingInfo): IContent[] {
@@ -69,6 +70,31 @@ function isOnlyNodeInParentContent(firstNode: Node, lastNode: Node): boolean {
   return onlyNode;
 }
 
+function getContent(node: Node, listIndex: IListIndex): IContent | null {
+  let contentByListIndex = contentByListIndexByNode.get(node);
+  if (typeof contentByListIndex === 'undefined') {
+    return null;
+  }
+  const content = contentByListIndex.get(listIndex);
+  return typeof content === 'undefined' ? null : content;
+}
+
+function setContent(node: Node, listIndex: IListIndex, content: IContent | null): void {
+  let contentByListIndex = contentByListIndexByNode.get(node);
+  if (typeof contentByListIndex === 'undefined') {
+    if (content === null) {
+      return;
+    }
+    contentByListIndex = new WeakMap<IListIndex, IContent>();
+    contentByListIndexByNode.set(node, contentByListIndex);
+  }
+  if (content === null) {
+    contentByListIndex.delete(listIndex);
+  } else {
+    contentByListIndex.set(listIndex, content);
+  }
+}
+
 export function applyChangeToFor(
   bindingInfo: IBindingInfo, 
   context: IApplyContext,
@@ -76,8 +102,10 @@ export function applyChangeToFor(
 ): void {
   const listPathInfo = bindingInfo.statePathInfo;
   const listIndex = getListIndexByBindingInfo(bindingInfo);
-  const lastValue = lastValueByNode.get(bindingInfo.node);
+  const absAddress = getAbsoluteStateAddressByBindingInfo(bindingInfo);
+  const lastValue  = getLastListValueByAbsoluteStateAddress(absAddress);
   const diff = createListDiff(listIndex, lastValue, newValue);
+  context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
 
   if (Array.isArray(lastValue) 
     && lastValue.length === diff.deleteIndexSet.size 
@@ -97,11 +125,12 @@ export function applyChangeToFor(
     }
   }
   for(const deleteIndex of diff.deleteIndexSet) {
-    const content = contentByListIndex.get(deleteIndex);
-    if (typeof content !== 'undefined') {
+    const content = getContent(bindingInfo.node, deleteIndex);
+    if (content !== null) {
       content.unmount();
       deactivateContent(content);
       setPooledContent(bindingInfo, content);
+      setContent(bindingInfo.node, deleteIndex, null);
     }
   }
 
@@ -145,7 +174,7 @@ export function applyChangeToFor(
         raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
       }
     } else {
-      content = contentByListIndex.get(index)!;
+      content = getContent(bindingInfo.node, index)!;
       if (diff.changeIndexSet.has(index)) {
         // change
         const indexBindings = getIndexBindingsByContent(content);
@@ -155,7 +184,7 @@ export function applyChangeToFor(
       }
       // Update lastNode for next iteration to ensure correct order
       // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
-      if (typeof content === 'undefined') {
+      if (content === null) {
         raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
       }
       if (lastNode.nextSibling !== content.firstNode) {
@@ -163,7 +192,7 @@ export function applyChangeToFor(
       }
     }
     lastNode = content.lastNode || lastNode;
-    contentByListIndex.set(index, content);
+    setContent(bindingInfo.node, index, content);
   }
   lastNodeByNode.set(bindingInfo.node, lastNode);
   if (fragment !== null) {
@@ -171,5 +200,4 @@ export function applyChangeToFor(
     bindingInfo.node.parentNode!.insertBefore(fragment, bindingInfo.node.nextSibling);
     setRootNodeByFragment(fragment, null);
   }
-  lastValueByNode.set(bindingInfo.node, newValue);
 }

@@ -9,7 +9,7 @@ const config = {
         state: 'wcs-state',
     },
     locale: 'en',
-    debug: true,
+    debug: false,
     enableMustache: true,
 };
 
@@ -96,18 +96,12 @@ function setStateElementByName(rootNode, name, element) {
     }
     if (element === null) {
         stateElementByName.delete(name);
-        {
-            console.debug(`State element unregistered: name="${name}"`);
-        }
     }
     else {
         if (stateElementByName.has(name)) {
             raiseError(`State element with name "${name}" is already registered.`);
         }
         stateElementByName.set(name, element);
-        {
-            console.debug(`State element registered: name="${name}"`, element);
-        }
     }
 }
 
@@ -130,6 +124,7 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
 }
 const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
 const NO_SET_TIMEOUT = 60 * 1000; // 1分
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 class LoopContextStack {
     _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
@@ -690,11 +685,14 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
             };
         }
         // If old list was empty, create all new indexes
-        const newIndexes = [];
+        let newIndexes = getListIndexesByList(newList);
         if (oldList.length === 0) {
-            for (let i = 0; i < newList.length; i++) {
-                const newListIndex = createListIndex(parentListIndex, i);
-                newIndexes.push(newListIndex);
+            if (newIndexes === null) {
+                newIndexes = [];
+                for (let i = 0; i < newList.length; i++) {
+                    const newListIndex = createListIndex(parentListIndex, i);
+                    newIndexes.push(newListIndex);
+                }
             }
             return retValue = {
                 oldIndexes: oldIndexes,
@@ -726,6 +724,10 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
             }
             indexes.push(i);
         }
+        if (newIndexes !== null) {
+            return calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue);
+        }
+        newIndexes = [];
         // Build new indexes array by matching values with old list
         const changeIndexSet = new Set();
         const addIndexSet = new Set();
@@ -765,6 +767,32 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
             setListIndexesByList(newList, retValue.newIndexes);
         }
     }
+}
+function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue) {
+    const newIndexSet = new Set(newIndexes);
+    const oldIndexSet = new Set(oldIndexes);
+    const changeIndexSet = new Set();
+    const addIndexSet = newIndexSet.difference(oldIndexSet);
+    const deleteIndexSet = oldIndexSet.difference(newIndexSet);
+    for (let i = 0; i < newList.length; i++) {
+        const newValue = newList[i];
+        const existingIndexes = indexByValue.get(newValue);
+        const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
+        if (typeof oldIndex !== "undefined") {
+            const existingListIndex = oldIndexes[oldIndex];
+            if (existingListIndex.index !== i) {
+                // 位置が違うことだけを記録 
+                changeIndexSet.add(existingListIndex);
+            }
+        }
+    }
+    return {
+        oldIndexes: oldIndexes,
+        newIndexes: newIndexes,
+        changeIndexSet: changeIndexSet,
+        deleteIndexSet: deleteIndexSet,
+        addIndexSet: addIndexSet,
+    };
 }
 
 const _cache$1 = {};
@@ -986,6 +1014,14 @@ function getContextListIndex(handler, structuredPath) {
     return address.listIndex?.at(index) ?? null;
 }
 
+const lastListValueByAbsoluteStateAddress = new WeakMap();
+function getLastListValueByAbsoluteStateAddress(address) {
+    return lastListValueByAbsoluteStateAddress.get(address) ?? [];
+}
+function setLastListValueByAbsoluteStateAddress(address, value) {
+    lastListValueByAbsoluteStateAddress.set(address, value);
+}
+
 function applyChangeToAttribute(binding, _context, newValue) {
     const element = binding.node;
     const attrName = binding.propSegments[1];
@@ -1001,14 +1037,6 @@ function applyChangeToClass(binding, _context, newValue) {
         raiseError(`Invalid value for class application: expected boolean, got ${typeof newValue}`);
     }
     element.classList.toggle(className, newValue);
-}
-
-const indexBindingsByContent = new WeakMap();
-function getIndexBindingsByContent(content) {
-    return indexBindingsByContent.get(content) ?? [];
-}
-function setIndexBindingsByContent(content, bindings) {
-    indexBindingsByContent.set(content, bindings);
 }
 
 const cacheCalcWildcardLen = new WeakMap();
@@ -1113,6 +1141,14 @@ function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
 }
 function clearAbsoluteStateAddressByBindingInfo(bindingInfo) {
     absoluteStateAddressByBindingInfo.delete(bindingInfo);
+}
+
+const indexBindingsByContent = new WeakMap();
+function getIndexBindingsByContent(content) {
+    return indexBindingsByContent.get(content) ?? [];
+}
+function setIndexBindingsByContent(content, bindings) {
+    indexBindingsByContent.set(content, bindings);
 }
 
 const bindingInfosByAbsoluteStateAddress = new WeakMap();
@@ -2668,27 +2704,21 @@ function initializeBindingsByFragment(root, nodeInfos) {
     };
 }
 
-const contentByNode = new WeakMap();
+const contentsByNode = new WeakMap();
 function setContentByNode(node, content) {
-    if (content === null) {
-        contentByNode.delete(node);
+    const contents = contentsByNode.get(node);
+    if (contents) {
+        contents.push(content);
     }
     else {
-        contentByNode.set(node, content);
+        contentsByNode.set(node, [content]);
     }
 }
-function getContentByNode(node) {
-    let currentNode = node;
-    while (currentNode) {
-        const loopContext = contentByNode.get(currentNode);
-        if (loopContext) {
-            return loopContext;
-        }
-        currentNode = currentNode.parentNode;
-    }
-    return null;
+function getContentsByNode(node) {
+    return contentsByNode.get(node) || [];
 }
 
+const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
 class Content {
     _content;
     _childNodeArray = [];
@@ -2734,9 +2764,9 @@ class Content {
         }
         const bindings = getBindingsByContent(this);
         for (const binding of bindings) {
-            if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
-                const content = getContentByNode(binding.node);
-                if (content !== null) {
+            if (recursiveBindingTypes.has(binding.bindingType)) {
+                const contents = getContentsByNode(binding.node);
+                for (const content of contents) {
                     content.unmount();
                 }
             }
@@ -2783,9 +2813,8 @@ function getRootNodeByFragment(fragment) {
     return rootNodeByFragment.get(fragment) || null;
 }
 
-const lastValueByNode = new WeakMap();
 const lastNodeByNode = new WeakMap();
-const contentByListIndex = new WeakMap();
+const contentByListIndexByNode = new WeakMap();
 const pooledContentsByNode = new WeakMap();
 const isOnlyNodeInParentContentByNode = new WeakMap();
 function getPooledContents(bindingInfo) {
@@ -2822,11 +2851,37 @@ function isOnlyNodeInParentContent(firstNode, lastNode) {
     }
     return onlyNode;
 }
+function getContent(node, listIndex) {
+    let contentByListIndex = contentByListIndexByNode.get(node);
+    if (typeof contentByListIndex === 'undefined') {
+        return null;
+    }
+    const content = contentByListIndex.get(listIndex);
+    return typeof content === 'undefined' ? null : content;
+}
+function setContent(node, listIndex, content) {
+    let contentByListIndex = contentByListIndexByNode.get(node);
+    if (typeof contentByListIndex === 'undefined') {
+        if (content === null) {
+            return;
+        }
+        contentByListIndex = new WeakMap();
+        contentByListIndexByNode.set(node, contentByListIndex);
+    }
+    if (content === null) {
+        contentByListIndex.delete(listIndex);
+    }
+    else {
+        contentByListIndex.set(listIndex, content);
+    }
+}
 function applyChangeToFor(bindingInfo, context, newValue) {
     const listPathInfo = bindingInfo.statePathInfo;
     const listIndex = getListIndexByBindingInfo(bindingInfo);
-    const lastValue = lastValueByNode.get(bindingInfo.node);
+    const absAddress = getAbsoluteStateAddressByBindingInfo(bindingInfo);
+    const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
     const diff = createListDiff(listIndex, lastValue, newValue);
+    context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
     if (Array.isArray(lastValue)
         && lastValue.length === diff.deleteIndexSet.size
         && diff.deleteIndexSet.size > 0
@@ -2844,11 +2899,12 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         }
     }
     for (const deleteIndex of diff.deleteIndexSet) {
-        const content = contentByListIndex.get(deleteIndex);
-        if (typeof content !== 'undefined') {
+        const content = getContent(bindingInfo.node, deleteIndex);
+        if (content !== null) {
             content.unmount();
             deactivateContent(content);
             setPooledContent(bindingInfo, content);
+            setContent(bindingInfo.node, deleteIndex, null);
         }
     }
     let lastNode = bindingInfo.node;
@@ -2892,7 +2948,7 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             }
         }
         else {
-            content = contentByListIndex.get(index);
+            content = getContent(bindingInfo.node, index);
             if (diff.changeIndexSet.has(index)) {
                 // change
                 const indexBindings = getIndexBindingsByContent(content);
@@ -2902,7 +2958,7 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             }
             // Update lastNode for next iteration to ensure correct order
             // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
-            if (typeof content === 'undefined') {
+            if (content === null) {
                 raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
             }
             if (lastNode.nextSibling !== content.firstNode) {
@@ -2910,7 +2966,7 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             }
         }
         lastNode = content.lastNode || lastNode;
-        contentByListIndex.set(index, content);
+        setContent(bindingInfo.node, index, content);
     }
     lastNodeByNode.set(bindingInfo.node, lastNode);
     if (fragment !== null) {
@@ -2918,7 +2974,6 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         bindingInfo.node.parentNode.insertBefore(fragment, bindingInfo.node.nextSibling);
         setRootNodeByFragment(fragment, null);
     }
-    lastValueByNode.set(bindingInfo.node, newValue);
 }
 
 const lastConnectedByNode = new WeakMap();
@@ -2928,22 +2983,19 @@ function bindingInfoText(bindingInfo) {
 function applyChangeToIf(bindingInfo, context, rawNewValue) {
     const currentConnected = bindingInfo.node.isConnected;
     const newValue = Boolean(rawNewValue);
-    let content = getContentByNode(bindingInfo.node);
-    if (content === null) {
-        content = createContent(bindingInfo);
+    let contents = getContentsByNode(bindingInfo.node);
+    if (contents.length === 0) {
+        contents = [createContent(bindingInfo)];
     }
+    const content = contents[0];
     try {
         if (!newValue) {
-            if (config.debug) {
-                console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
-            }
+            if (config.debug) ;
             content.unmount();
             deactivateContent(content);
         }
         if (newValue) {
-            if (config.debug) {
-                console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
-            }
+            if (config.debug) ;
             content.mountAfter(bindingInfo.node);
             const loopContext = getLoopContextByNode(bindingInfo.node);
             activateContent(content, loopContext, context);
@@ -3083,7 +3135,8 @@ function applyChange(binding, context) {
                 rootNode: rootNode,
                 stateElement: stateElement,
                 state: targetState,
-                appliedBindingSet: context.appliedBindingSet
+                appliedBindingSet: context.appliedBindingSet,
+                newListValueByAbsAddress: context.newListValueByAbsAddress,
             };
             _applyChange(binding, newContext);
         });
@@ -3102,6 +3155,7 @@ function applyChange(binding, context) {
 function applyChangeFromBindings(bindings) {
     let bindingIndex = 0;
     const appliedBindingSet = new Set();
+    const newListValueByAbsAddress = new Map();
     // 外側ループ: stateName ごとにグループ化
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
@@ -3123,7 +3177,8 @@ function applyChangeFromBindings(bindings) {
                 stateName: stateName,
                 stateElement: stateElement,
                 state: state,
-                appliedBindingSet: appliedBindingSet
+                appliedBindingSet: appliedBindingSet,
+                newListValueByAbsAddress: newListValueByAbsAddress
             };
             do {
                 applyChange(binding, context);
@@ -3137,6 +3192,9 @@ function applyChangeFromBindings(bindings) {
                 binding = nextBindingInfo;
             } while (true); // eslint-disable-line no-constant-condition
         });
+    }
+    for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
+        setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
     }
 }
 
@@ -3191,8 +3249,6 @@ function setSwapInfoByAddress(address, swapInfo) {
 }
 
 const MAX_DEPENDENCY_DEPTH = 1000;
-// ToDo: IAbsoluteStateAddressに変更する
-const lastValueByListAddress$1 = new WeakMap();
 function getIndexes(listDiff, searchType) {
     switch (searchType) {
         case "old":
@@ -3206,17 +3262,16 @@ function getIndexes(listDiff, searchType) {
         case "delete":
             return listDiff.deleteIndexSet;
         default:
-            {
-                console.log(`Invalid search type: ${searchType}`);
-            }
             return [];
     }
 }
 function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentPath = context.wildcardParentPaths[currentWildcardIndex];
     const parentPathInfo = getPathInfo(parentPath);
+    const parentAbsPathInfo = getAbsolutePathInfo(context.stateName, parentPathInfo);
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
-    const lastValue = lastValueByListAddress$1.get(parentAddress);
+    const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
+    const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
     const newValue = context.stateProxy.$$getByAddress(parentAddress);
     const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
     const loopIndexes = getIndexes(listDiff, context.searchType);
@@ -3228,7 +3283,6 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
             _walkExpandWildcard(context, currentWildcardIndex + 1, listIndex);
         }
     }
-    context.newValueByAddress.set(parentAddress, newValue);
 }
 function _walkDependency(context, startAddress, callback) {
     const stack = [{ address: startAddress, depth: 0 }];
@@ -3258,14 +3312,15 @@ function _walkDependency(context, startAddress, callback) {
                 if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
                     //expand indexes
                     const newValue = context.stateProxy.$$getByAddress(address);
-                    const lastValue = lastValueByListAddress$1.get(address);
+                    const absPathInfo = getAbsolutePathInfo(context.stateName, address.pathInfo);
+                    const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+                    const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
                     const listDiff = createListDiff(address.listIndex, lastValue, newValue);
                     for (const listIndex of listDiff.newIndexes) {
                         const depAddress = createStateAddress(depPathInfo, listIndex);
                         context.result.add(depAddress);
                         nextEntries.push({ address: depAddress, depth: nextDepth });
                     }
-                    context.newValueByAddress.set(address, newValue);
                 }
                 else {
                     const depAddress = createStateAddress(depPathInfo, address.listIndex);
@@ -3317,12 +3372,12 @@ function _walkDependency(context, startAddress, callback) {
                             listIndex = null;
                         }
                         const expandContext = {
+                            stateName: context.stateName,
                             targetListIndexes: [],
                             wildcardPaths: depPathInfo.wildcardPaths,
                             wildcardParentPaths: depPathInfo.wildcardParentPaths,
                             stateProxy: context.stateProxy,
                             searchType: context.searchType,
-                            newValueByAddress: context.newValueByAddress,
                         };
                         _walkExpandWildcard(expandContext, wildcardLen, listIndex);
                         listIndexes.push(...expandContext.targetListIndexes);
@@ -3355,8 +3410,9 @@ function _walkDependency(context, startAddress, callback) {
         }
     }
 }
-function walkDependency(startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
+function walkDependency(stateName, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
     const context = {
+        stateName: stateName,
         staticMap: staticDependency,
         dynamicMap: dynamicDependency,
         result: new Set(),
@@ -3364,17 +3420,9 @@ function walkDependency(startAddress, staticDependency, dynamicDependency, listP
         visited: new Set(),
         stateProxy: stateProxy,
         searchType: searchType,
-        newValueByAddress: new Map(),
     };
-    try {
-        _walkDependency(context, startAddress, callback);
-        return Array.from(context.result);
-    }
-    finally {
-        for (const [address, newValue] of context.newValueByAddress.entries()) {
-            lastValueByListAddress$1.set(address, newValue);
-        }
-    }
+    _walkDependency(context, startAddress, callback);
+    return Array.from(context.result);
 }
 
 /**
@@ -3428,7 +3476,7 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
         const updater = getUpdater();
         updater.enqueueAbsoluteAddress(absAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+        walkDependency(handler.stateName, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
             if (depAddress === address)
                 return;
@@ -3707,7 +3755,7 @@ function postUpdate(target, _prop, receiver, handler) {
         const updater = getUpdater();
         updater.enqueueAbsoluteAddress(absAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+        walkDependency(handler.stateName, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
             const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
@@ -3715,6 +3763,37 @@ function postUpdate(target, _prop, receiver, handler) {
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
         });
+    };
+}
+
+/**
+ * trackDependency.ts
+ *
+ * StateClassのAPIとして、getterチェーン中に参照されたパス間の
+ * 依存関係を動的に登録するための関数（trackDependency）の実装です。
+ *
+ * 主な役割:
+ * - 現在解決中のStatePropertyRef（lastRefStack）を取得
+ * - pathManager.gettersに登録されているgetterの場合のみ依存を追跡
+ * - 自身と同一パターンでない参照に対してaddDynamicDependencyを呼び出す
+ *
+ * 設計ポイント:
+ * - lastRefStackが存在しない場合はSTATE-202エラーを発生させる
+ * - getter同士の再帰（自己依存）は登録しない
+ * - 動的依存はpathManagerに集約し、キャッシュの無効化に利用する
+ */
+function trackDependency(_target, _prop, _receiver, handler) {
+    return (path) => {
+        if (handler.addressStackLength === 0) {
+            raiseError(`No active state reference to track dependency for path "${path}".`);
+        }
+        const lastInfo = handler.lastAddressStack?.pathInfo ??
+            raiseError('Internal error: lastAddressStack is null');
+        const stateElement = handler.stateElement;
+        if (handler.stateElement.getterPaths.has(lastInfo.path) &&
+            lastInfo.path !== path) {
+            stateElement.addDynamicDependency(path, lastInfo.path);
+        }
     };
 }
 
@@ -3814,6 +3893,16 @@ function get(target, prop, receiver, handler) {
         if (prop === "$postUpdate") {
             return (path) => {
                 return postUpdate(target, prop, receiver, handler)(path);
+            };
+        }
+        if (prop === "$resolve") {
+            return (path, indexes, value) => {
+                return resolve(target, prop, receiver, handler)(path, indexes, value);
+            };
+        }
+        if (prop === "$trackDependency") {
+            return (path) => {
+                return trackDependency(target, prop, receiver, handler)(path);
             };
         }
         const resolvedAddress = getResolvedAddress(prop);
@@ -3965,9 +4054,24 @@ const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
 function convertMustacheToComments(root) {
     convertTextNodes(root);
-    const templates = root.querySelectorAll("template");
+    const templates = Array.from(root.querySelectorAll("template"));
     for (const template of templates) {
-        convertMustacheToComments(template.content);
+        if (template.namespaceURI === SVG_NAMESPACE) {
+            const newTemplate = document.createElement("template");
+            const childNodes = Array.from(template.childNodes);
+            for (let i = 0; i < childNodes.length; i++) {
+                const childNode = childNodes[i];
+                newTemplate.content.appendChild(childNode);
+            }
+            for (const attr of template.attributes) {
+                newTemplate.setAttribute(attr.name, attr.value);
+            }
+            template.replaceWith(newTemplate);
+            convertMustacheToComments(newTemplate.content);
+        }
+        else {
+            convertMustacheToComments(template.content);
+        }
     }
 }
 function convertTextNodes(root) {
@@ -4189,7 +4293,7 @@ function collectStructuralFragments(rootNode, walkRoot, forPath) {
     const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_ELEMENT, {
         acceptNode(node) {
             const element = node;
-            if (element instanceof HTMLTemplateElement) {
+            if (element.tagName.toLowerCase() === 'template') {
                 const bindText = element.getAttribute(config.bindAttributeName) || '';
                 if (bindText.length > 0) {
                     return NodeFilter.FILTER_ACCEPT;

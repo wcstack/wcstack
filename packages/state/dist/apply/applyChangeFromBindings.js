@@ -1,3 +1,4 @@
+import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { applyChange } from "./applyChange";
@@ -11,6 +12,7 @@ import { getRootNodeByFragment } from "./rootNodeByFragment";
 export function applyChangeFromBindings(bindings) {
     let bindingIndex = 0;
     const appliedBindingSet = new Set();
+    const newListValueByAbsAddress = new Map();
     // 外側ループ: stateName ごとにグループ化
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
@@ -32,7 +34,8 @@ export function applyChangeFromBindings(bindings) {
                 stateName: stateName,
                 stateElement: stateElement,
                 state: state,
-                appliedBindingSet: appliedBindingSet
+                appliedBindingSet: appliedBindingSet,
+                newListValueByAbsAddress: newListValueByAbsAddress
             };
             do {
                 applyChange(binding, context);
@@ -46,6 +49,9 @@ export function applyChangeFromBindings(bindings) {
                 binding = nextBindingInfo;
             } while (true); // eslint-disable-line no-constant-condition
         });
+    }
+    for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
+        setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
     }
 }
 //# sourceMappingURL=applyChangeFromBindings.js.map

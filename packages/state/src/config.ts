@@ -12,6 +12,6 @@ export const config: IConfig = {
     state: 'wcs-state',
   },
   locale: 'en',
-  debug: true,
+  debug: false,
   enableMustache: true,
 };

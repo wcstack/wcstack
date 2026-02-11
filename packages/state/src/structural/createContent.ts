@@ -7,9 +7,11 @@ import { setNodesByContent } from "../bindings/nodesByContent.js";
 import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
-import { getContentByNode, setContentByNode } from "./contentByNode.js";
+import { getContentsByNode, setContentByNode } from "./contentsByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
 import { IContent } from "./types.js";
+
+const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
 
 class Content implements IContent {
   private _content: DocumentFragment;
@@ -62,9 +64,9 @@ class Content implements IContent {
     }
     const bindings = getBindingsByContent(this);
     for(const binding of bindings) {
-      if (binding.bindingType === 'if' || binding.bindingType === 'elseif' || binding.bindingType === 'else') {
-        const content = getContentByNode(binding.node);
-        if (content !== null) {
+      if (recursiveBindingTypes.has(binding.bindingType)) {
+        const contents = getContentsByNode(binding.node);
+        for (const content of contents) {
           content.unmount();
         }
       }

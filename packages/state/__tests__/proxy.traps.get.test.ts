@@ -25,11 +25,21 @@ vi.mock('../src/proxy/apis/postUpdate', () => ({
   postUpdate: vi.fn()
 }));
 
+vi.mock('../src/proxy/apis/resolve', () => ({
+  resolve: vi.fn()
+}));
+
+vi.mock('../src/proxy/apis/trackDependency', () => ({
+  trackDependency: vi.fn()
+}));
+
 import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
 import { getAll } from '../src/proxy/apis/getAll';
 import { postUpdate } from '../src/proxy/apis/postUpdate';
+import { resolve } from '../src/proxy/apis/resolve';
+import { trackDependency } from '../src/proxy/apis/trackDependency';
 
 const setLoopContextMock = vi.mocked(setLoopContext);
 const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
@@ -37,6 +47,8 @@ const getByAddressMock = vi.mocked(getByAddress);
 const getListIndexMock = vi.mocked(getListIndex);
 const getAllMock = vi.mocked(getAll);
 const postUpdateMock = vi.mocked(postUpdate);
+const resolveMock = vi.mocked(resolve);
+const trackDependencyMock = vi.mocked(trackDependency);
 
 describe('proxy/traps/get', () => {
   afterEach(() => {
@@ -156,6 +168,35 @@ describe('proxy/traps/get', () => {
 
     expect(postUpdateMock).toHaveBeenCalledWith(target, '$postUpdate', receiver, handler);
     expect(innerFn).toHaveBeenCalledWith('count');
+  });
+
+  it('$resolve が resolve を呼び出すこと', () => {
+    const innerFn = vi.fn().mockReturnValue('resolved');
+    resolveMock.mockReturnValueOnce(innerFn);
+    const handler = {} as any;
+    const target = {};
+    const receiver = {};
+
+    const fn = get(target, '$resolve', receiver, handler) as (path: string, indexes: number[], value?: any) => any;
+    const result = fn('items.*', [0], 'val');
+
+    expect(resolveMock).toHaveBeenCalledWith(target, '$resolve', receiver, handler);
+    expect(innerFn).toHaveBeenCalledWith('items.*', [0], 'val');
+    expect(result).toBe('resolved');
+  });
+
+  it('$trackDependency が trackDependency を呼び出すこと', () => {
+    const innerFn = vi.fn();
+    trackDependencyMock.mockReturnValueOnce(innerFn);
+    const handler = {} as any;
+    const target = {};
+    const receiver = {};
+
+    const fn = get(target, '$trackDependency', receiver, handler) as (path: string) => void;
+    fn('some.path');
+
+    expect(trackDependencyMock).toHaveBeenCalledWith(target, '$trackDependency', receiver, handler);
+    expect(innerFn).toHaveBeenCalledWith('some.path');
   });
 
   it('$stateElement が handler.stateElement を返すこと', () => {

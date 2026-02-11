@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { SVG_NAMESPACE } from "../define.js";
 
 const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
@@ -10,10 +11,24 @@ export function convertMustacheToComments(root: Document | Element | DocumentFra
 
   convertTextNodes(root);
 
-  const templates = root.querySelectorAll("template");
+  const templates = Array.from(root.querySelectorAll("template"));
 
   for (const template of templates) {
-    convertMustacheToComments(template.content);
+    if (template.namespaceURI === SVG_NAMESPACE) {
+      const newTemplate = document.createElement("template");
+      const childNodes = Array.from(template.childNodes);
+      for(let i = 0; i < childNodes.length; i++) {
+        const childNode = childNodes[i];
+        newTemplate.content.appendChild(childNode);
+      }
+      for(const attr of template.attributes) {
+        newTemplate.setAttribute(attr.name, attr.value);
+      }
+      template.replaceWith(newTemplate);
+      convertMustacheToComments(newTemplate.content);
+    } else {
+      convertMustacheToComments(template.content);
+    }
   }
 }
 

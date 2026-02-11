@@ -369,6 +369,65 @@ describe('collectStructuralFragments', () => {
     expect(info?.fragment.childNodes[0]).toBe(div);
   });
 
+  it('SVG内のtemplateが正しく処理されること', () => {
+    const root = document.createElement('div');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const template = document.createElement('template');
+    template.setAttribute(config.bindAttributeName, 'for: items');
+
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', '10');
+    circle.setAttribute('cy', '10');
+    circle.setAttribute('r', '5');
+    template.content.appendChild(circle);
+
+    svg.appendChild(template);
+    root.appendChild(svg);
+
+    collectStructuralFragments(root, root);
+
+    // SVG内のtemplateがコメントに置換されていること
+    const comment = svg.firstChild as Comment;
+    expect(comment.nodeType).toBe(Node.COMMENT_NODE);
+    expect(comment.data).toBe(`@@${config.commentForPrefix}:uuid-collect-0`);
+
+    const info = getFragmentInfoByUUID('uuid-collect-0');
+    expect(info).not.toBeNull();
+    expect(info?.parseBindTextResult.bindingType).toBe('for');
+    expect(info?.fragment.firstChild).toBe(circle);
+  });
+
+  it('SVG内の複数のtemplateが正しく処理されること', () => {
+    const root = document.createElement('div');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+
+    const ifTemplate = document.createElement('template');
+    ifTemplate.setAttribute(config.bindAttributeName, 'if: visible');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    ifTemplate.content.appendChild(rect);
+
+    const forTemplate = document.createElement('template');
+    forTemplate.setAttribute(config.bindAttributeName, 'for: points');
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    forTemplate.content.appendChild(circle);
+
+    svg.appendChild(ifTemplate);
+    svg.appendChild(forTemplate);
+    root.appendChild(svg);
+
+    collectStructuralFragments(root, root);
+
+    // 両方のtemplateがコメントに置換されていること
+    expect(svg.childNodes.length).toBe(2);
+    expect(svg.childNodes[0].nodeType).toBe(Node.COMMENT_NODE);
+    expect(svg.childNodes[1].nodeType).toBe(Node.COMMENT_NODE);
+
+    const ifInfo = getFragmentInfoByUUID('uuid-collect-0');
+    const forInfo = getFragmentInfoByUUID('uuid-collect-1');
+    expect(ifInfo?.parseBindTextResult.bindingType).toBe('if');
+    expect(forInfo?.parseBindTextResult.bindingType).toBe('for');
+  });
+
   describe('ドットショートハンドパス展開', () => {
     it('forテンプレート内のコメントノードのショートハンドが展開されること', () => {
       const root = document.createElement('div');

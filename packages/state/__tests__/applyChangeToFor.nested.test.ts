@@ -15,6 +15,8 @@ import type { IStateAddress } from '../src/address/types';
 import type { ICacheEntry } from '../src/cache/types';
 import type { IVersionInfo } from '../src/version/types';
 import type { IApplyContext } from '../src/apply/types';
+import { setLastListValueByAbsoluteStateAddress, clearLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
+import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 
 const outerUUID = 'nested-outer-uuid';
 const innerUUID = 'nested-inner-uuid';
@@ -179,15 +181,30 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
       stateElement: stateElement as any,
       state,
       appliedBindingSet: new Set(),
+      newListValueByAbsAddress: new Map(),
     };
 
-    return { stateElement, state, context };
+    const flushContext = () => {
+      for (const [absAddress, newListValue] of context.newListValueByAbsAddress.entries()) {
+        setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
+      }
+      context.newListValueByAbsAddress.clear();
+    };
+
+    return { stateElement, state, context, flushContext };
   }
 
   afterEach(() => {
     setFragmentInfoByUUID(outerUUID, document, null);
     setFragmentInfoByUUID(innerUUID, document, null);
     setStateElementByName(document, 'default', null);
+    // Clear cached lastListValue to prevent cross-test contamination
+    const itemsPathInfo = getPathInfo('items');
+    const itemsAbsPathInfo = getAbsolutePathInfo('default', itemsPathInfo);
+    clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(itemsAbsPathInfo, null));
+    const childrenPathInfo = getPathInfo('items.*.children');
+    const childrenAbsPathInfo = getAbsolutePathInfo('default', childrenPathInfo);
+    clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(childrenAbsPathInfo, null));
   });
 
   it('ネストされたforループ（ラップなし）で子コンテンツがDOMツリーに正しく配置されること', () => {
@@ -298,7 +315,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
   });
 
   it('ネストされたforループ（ラップあり）で外側アイテム追加時に内側コンテンツも正しく追加されること', () => {
-    const { context } = setup(createOuterFragmentInfoWrapped);
+    const { context, flushContext } = setup(createOuterFragmentInfoWrapped);
 
     const container = document.createElement('div');
     const outerPlaceholder = document.createComment('for');
@@ -320,6 +337,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     createListDiff(null, [], outerData1);
     const bindingInfo = createOuterBindingInfo(outerPlaceholder);
     applyChangeToFor(bindingInfo, context, outerData1);
+    flushContext();
 
     expect(container.querySelectorAll('.outer-item').length).toBe(1);
     expect(container.querySelectorAll('span').length).toBe(2);

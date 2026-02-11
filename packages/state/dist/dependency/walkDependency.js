@@ -1,13 +1,14 @@
+import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { calcWildcardLen } from "../address/calcWildcardLen";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { config } from "../config";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
+import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { raiseError } from "../raiseError";
 const MAX_DEPENDENCY_DEPTH = 1000;
-// ToDo: IAbsoluteStateAddressに変更する
-const lastValueByListAddress = new WeakMap();
 function getIndexes(listDiff, searchType) {
     switch (searchType) {
         case "old":
@@ -30,8 +31,10 @@ function getIndexes(listDiff, searchType) {
 function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentPath = context.wildcardParentPaths[currentWildcardIndex];
     const parentPathInfo = getPathInfo(parentPath);
+    const parentAbsPathInfo = getAbsolutePathInfo(context.stateName, parentPathInfo);
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
-    const lastValue = lastValueByListAddress.get(parentAddress);
+    const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
+    const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
     const newValue = context.stateProxy.$$getByAddress(parentAddress);
     const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
     const loopIndexes = getIndexes(listDiff, context.searchType);
@@ -43,7 +46,6 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
             _walkExpandWildcard(context, currentWildcardIndex + 1, listIndex);
         }
     }
-    context.newValueByAddress.set(parentAddress, newValue);
 }
 function _walkDependency(context, startAddress, callback) {
     const stack = [{ address: startAddress, depth: 0 }];
@@ -73,14 +75,15 @@ function _walkDependency(context, startAddress, callback) {
                 if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
                     //expand indexes
                     const newValue = context.stateProxy.$$getByAddress(address);
-                    const lastValue = lastValueByListAddress.get(address);
+                    const absPathInfo = getAbsolutePathInfo(context.stateName, address.pathInfo);
+                    const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+                    const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
                     const listDiff = createListDiff(address.listIndex, lastValue, newValue);
                     for (const listIndex of listDiff.newIndexes) {
                         const depAddress = createStateAddress(depPathInfo, listIndex);
                         context.result.add(depAddress);
                         nextEntries.push({ address: depAddress, depth: nextDepth });
                     }
-                    context.newValueByAddress.set(address, newValue);
                 }
                 else {
                     const depAddress = createStateAddress(depPathInfo, address.listIndex);
@@ -132,13 +135,13 @@ function _walkDependency(context, startAddress, callback) {
                             listIndex = null;
                         }
                         const expandContext = {
+                            stateName: context.stateName,
                             targetPathInfo: depPathInfo,
                             targetListIndexes: [],
                             wildcardPaths: depPathInfo.wildcardPaths,
                             wildcardParentPaths: depPathInfo.wildcardParentPaths,
                             stateProxy: context.stateProxy,
                             searchType: context.searchType,
-                            newValueByAddress: context.newValueByAddress,
                         };
                         _walkExpandWildcard(expandContext, wildcardLen, listIndex);
                         listIndexes.push(...expandContext.targetListIndexes);
@@ -171,8 +174,9 @@ function _walkDependency(context, startAddress, callback) {
         }
     }
 }
-export function walkDependency(startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
+export function walkDependency(stateName, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
     const context = {
+        stateName: stateName,
         staticMap: staticDependency,
         dynamicMap: dynamicDependency,
         result: new Set(),
@@ -180,16 +184,8 @@ export function walkDependency(startAddress, staticDependency, dynamicDependency
         visited: new Set(),
         stateProxy: stateProxy,
         searchType: searchType,
-        newValueByAddress: new Map(),
     };
-    try {
-        _walkDependency(context, startAddress, callback);
-        return Array.from(context.result);
-    }
-    finally {
-        for (const [address, newValue] of context.newValueByAddress.entries()) {
-            lastValueByListAddress.set(address, newValue);
-        }
-    }
+    _walkDependency(context, startAddress, callback);
+    return Array.from(context.result);
 }
 //# sourceMappingURL=walkDependency.js.map

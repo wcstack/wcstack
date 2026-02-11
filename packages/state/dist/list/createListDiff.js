@@ -69,11 +69,14 @@ export function createListDiff(parentListIndex, rawOldList, rawNewList) {
             };
         }
         // If old list was empty, create all new indexes
-        const newIndexes = [];
+        let newIndexes = getListIndexesByList(newList);
         if (oldList.length === 0) {
-            for (let i = 0; i < newList.length; i++) {
-                const newListIndex = createListIndex(parentListIndex, i);
-                newIndexes.push(newListIndex);
+            if (newIndexes === null) {
+                newIndexes = [];
+                for (let i = 0; i < newList.length; i++) {
+                    const newListIndex = createListIndex(parentListIndex, i);
+                    newIndexes.push(newListIndex);
+                }
             }
             return retValue = {
                 oldIndexes: oldIndexes,
@@ -105,6 +108,10 @@ export function createListDiff(parentListIndex, rawOldList, rawNewList) {
             }
             indexes.push(i);
         }
+        if (newIndexes !== null) {
+            return calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue);
+        }
+        newIndexes = [];
         // Build new indexes array by matching values with old list
         const changeIndexSet = new Set();
         const addIndexSet = new Set();
@@ -144,5 +151,31 @@ export function createListDiff(parentListIndex, rawOldList, rawNewList) {
             setListIndexesByList(newList, retValue.newIndexes);
         }
     }
+}
+function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue) {
+    const newIndexSet = new Set(newIndexes);
+    const oldIndexSet = new Set(oldIndexes);
+    const changeIndexSet = new Set();
+    const addIndexSet = newIndexSet.difference(oldIndexSet);
+    const deleteIndexSet = oldIndexSet.difference(newIndexSet);
+    for (let i = 0; i < newList.length; i++) {
+        const newValue = newList[i];
+        const existingIndexes = indexByValue.get(newValue);
+        const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
+        if (typeof oldIndex !== "undefined") {
+            const existingListIndex = oldIndexes[oldIndex];
+            if (existingListIndex.index !== i) {
+                // 位置が違うことだけを記録 
+                changeIndexSet.add(existingListIndex);
+            }
+        }
+    }
+    return {
+        oldIndexes: oldIndexes,
+        newIndexes: newIndexes,
+        changeIndexSet: changeIndexSet,
+        deleteIndexSet: deleteIndexSet,
+        addIndexSet: addIndexSet,
+    };
 }
 //# sourceMappingURL=createListDiff.js.map

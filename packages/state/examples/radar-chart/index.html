@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <title>Radar Chart</title>
+    <script type="module" src="../../dist/auto.js"></script>
+    <style>
+polygon {
+  fill: #42b983;
+  opacity: 0.75;
+}
+
+circle {
+  fill: transparent;
+  stroke: #999;
+}
+
+text {
+  font-size: 10px;
+  fill: #666;
+}
+
+label {
+  display: inline-block;
+  margin-left: 10px;
+  width: 20px;
+}
+
+#raw {
+  position: absolute;
+  top: 0;
+  left: 300px;
+}
+    </style>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+function valueToPoint(value, index, total) {
+  const x = 0;
+  const y = -value * 0.8;
+  const angle = ((Math.PI * 2) / total) * index;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const tx = x * cos - y * sin + 100;
+  const ty = x * sin + y * cos + 100;
+  return {
+    x: tx,
+    y: ty
+  };
+}
+
+export default {
+  newLabel: '',
+  stats: [
+    { label: 'A', value: 100 },
+    { label: 'B', value: 100 },
+    { label: 'C', value: 100 },
+    { label: 'D', value: 100 },
+    { label: 'E', value: 100 },
+    { label: 'F', value: 100 }
+  ],
+
+  get "stats.json"() {
+    this.$trackDependency("stats.*.value");
+    return JSON.stringify(this.stats);
+  },
+
+  get "stats.*.labelPoint"() {
+    return valueToPoint(100 + 10, this.$1, this.stats.length);
+  },
+
+  get "stats.*.point"() {
+    return valueToPoint(this["stats.*.value"], this.$1, this.stats.length);
+  },
+
+  get points() {
+    const points = this.$getAll("stats.*.point", []);
+    return points.map(p => `${p.x},${p.y}`).join(" ")
+  },
+
+  onAdd(e) {
+    if (!this.newLabel) return;
+    this.stats = this.stats.concat({ label: this.newLabel, value: 100});
+    this.newLabel = '';
+  },
+
+  onRemove(e, $1) {
+    if (this.stats.length > 3) {
+      this.stats = this.stats.toSpliced($1, 1);
+    } else {
+      alert("Can't delete more!");
+    }
+  }
+}
+      </script>
+    </wcs-state>
+    <svg width="200" height="200">
+      <g>
+        <polygon data-bind-state="attr.points: points"></polygon>
+        <circle cx="100" cy="100" r="80"></circle>
+        <template data-bind-state="for: stats">
+          <text data-bind-state="
+            attr.x: .labelPoint.x;
+            attr.y: .labelPoint.y;
+          ">{{ .label }}</text>
+        </template>
+      </g>
+    </svg>
+    <template data-bind-state="for: stats">
+    <div>
+      <label>{{ .label }}</label>
+      <input type="range" data-bind-state="valueAsNumber: .value" min="0" max="100">
+      <span>{{ .value }}</span>
+      <button data-bind-state="onclick: onRemove" class="remove">X</button>
+    </div>
+    </template>
+    <form id="add">
+      <input name="newlabel" data-bind-state="value: newLabel">
+      <button data-bind-state="onclick#prevent: onAdd">Add a Stat</button>
+    </form>
+
+    <pre id="raw">{{ stats.json }}</pre>
+
+  </body>
+</html>

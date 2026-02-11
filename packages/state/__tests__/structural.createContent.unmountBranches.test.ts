@@ -49,7 +49,7 @@ describe('createContent (unmount branches)', () => {
     const { createContent } = await import('../src/structural/createContent');
     const { setFragmentInfoByUUID } = await import('../src/structural/fragmentInfoByUUID');
     const bindingsByContent = await import('../src/bindings/bindingsByContent.js');
-    const contentByNode = await import('../src/structural/contentByNode.js');
+    const contentByNode = await import('../src/structural/contentsByNode.js');
 
     const placeholder = document.createComment('placeholder');
     const fragment = document.createDocumentFragment();

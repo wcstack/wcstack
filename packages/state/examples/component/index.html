@@ -24,76 +24,49 @@
 import "@components/myComponent";
 
 export default {
-  count: 0,
   user: { id: 1, name: "Alice" },
   users: [
     { id: 1, name: "Alice" },
     { id: 2, name: "Bob" },
     { id: 3, name: "Charlie" }
   ],
-  countUp() {
-    this.count += 1;
-  },
-  clearCount() {
-    this.count = 0;
-  },
-  toggle: false,
-  toggleName(e) {
-    if (this.toggle === false) {
-      this["user.name"] = this["user.name"].toUpperCase();
-    } else {
-      this["user.name"] = this["user.name"].toLowerCase();
-    }
-    this.toggle = !this.toggle;
-  },
-  get "users.*.dispName"() {
-    return this["users.*.name"] + " (ID: " + this["users.*.id"] + ")";
-  },
-  msg: "aaaa",
-  isActive: true
+  points: [
+    { x: 10, y: 10, color: "red" },
+    { x: 30, y: 20, color: "blue" },
+    { x: 50, y: 15, color: "green" }
+  ],
+  showSvg: true,
 };
     </script>
   </wcs-state>
 
-  <div data-bind-state="textContent: count; class.over: count|gt(10)"></div>
-  <button name="increment" data-bind-state="onclick: countUp">Increment</button>
-  <button name="clear" data-bind-state="onclick: clearCount">clear</button>
-  <br>
-
-  <input type="text" name="userName" data-bind-state="value: user.name">
-  <div data-bind-state="textContent: user.name"></div>
-  {{ user.name }}
-  <br>
-  <button name="toggleName" data-bind-state="onclick: toggleName">Toggle Name</button>
-  <br>
-  {{ isActive }}
-  <input type="checkbox" name="toggle" data-bind-state="checked: isActive">
-  <div>
-  </div>
-  <div>
-    <template data-bind-state="if: toggle">
-      toggle on
-    </template>
-    <template data-bind-state="elseif: isActive">
-      toggle off / isActive on
-    </template>
-    <template data-bind-state="else:">
-      toggle off / isActive off
-    </template>
-  </div>
-
+  <div>{{ user.name }}</div>
+  <input type="text" data-bind-state="value: user.name" />
   <my-component data-bind-state="state.message: user.name"></my-component>
 
   <div>Loop: users</div>
   <template data-bind-state="for: users">
-    <div>
-      <span data-bind-state="textContent: .id"></span>:
-      <input type="text" data-bind-state="value: .name">
-      <span data-bind-state="textContent: .name"></span>
-      <span data-bind-state="textContent: .dispName"></span>
-    </div>
-    <my-component data-bind-state="state.message: users.*.name"></my-component>
+    <div>{{ .name}}</div>
+    <input type="text" data-bind-state="value: .name" />
+    <my-component data-bind-state="state.message: .name"></my-component>
   </template>
+
+  <hr>
+
+  <h3>SVG内でのtemplate使用例</h3>
+  <div>
+    <input type="checkbox" data-bind-state="checked: showSvg" id="showSvg" />
+    <label for="showSvg">SVGを表示</label>
+  </div>
+
+  <svg width="200" height="100" style="border: 1px solid #ccc;">
+    <template data-bind-state="if: showSvg">
+      <rect x="0" y="0" width="200" height="100" fill="#f0f0f0" />
+      <template data-bind-state="for: points">
+        <circle data-bind-state="attr.cx: .x; attr.cy: .y; attr.fill: .color" r="5" />
+      </template>
+    </template>
+  </svg>
 
 </body>
 </html>

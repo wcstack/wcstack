@@ -24,6 +24,8 @@ import { INDEX_BY_INDEX_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
 import { getAll } from "../apis/getAll";
 import { postUpdate } from "../apis/postUpdate";
+import { resolve } from "../apis/resolve";
+import { trackDependency } from "../apis/trackDependency";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
@@ -86,6 +88,27 @@ export function get(
           handler
         )(path);
       }
+    }
+    if (prop === "$resolve") {
+      return (path: string, indexes: number[], value?: any): any => {
+        return resolve(
+          target, 
+          prop, 
+          receiver,
+          handler
+        )(path, indexes, value);
+      }
+    }
+    if (prop === "$trackDependency") {
+      return (path: string): void => {
+        return trackDependency(
+          target, 
+          prop, 
+          receiver,
+          handler
+        )(path);
+      }
+
     }
     const resolvedAddress = getResolvedAddress(prop);
     const listIndex = getListIndex(target, resolvedAddress, receiver, handler);

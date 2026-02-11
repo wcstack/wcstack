@@ -81,11 +81,14 @@ export function createListDiff(
       };
     }
     // If old list was empty, create all new indexes
-    const newIndexes: IListIndex[] = [];
+    let newIndexes: IListIndex[] | null = getListIndexesByList(newList);
     if (oldList.length === 0) {
-      for(let i = 0; i < newList.length; i++) {
-        const newListIndex = createListIndex(parentListIndex, i);
-        newIndexes.push(newListIndex);
+      if (newIndexes === null) {
+        newIndexes = [];
+        for(let i = 0; i < newList.length; i++) {
+          const newListIndex = createListIndex(parentListIndex, i);
+          newIndexes.push(newListIndex);
+        }
       }
       return retValue = {
         oldIndexes: oldIndexes,
@@ -117,6 +120,10 @@ export function createListDiff(
       }
       indexes.push(i);
     }
+    if (newIndexes !== null) {
+      return calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue);
+    }
+    newIndexes = [];
 
     // Build new indexes array by matching values with old list
     const changeIndexSet: Set<IListIndex> = new Set();
@@ -157,4 +164,37 @@ export function createListDiff(
       setListIndexesByList(newList, retValue.newIndexes);
     }
   }
+}
+
+function calcDiffIndexes(
+  oldList: readonly unknown[],
+  newList: readonly unknown[],
+  oldIndexes: IListIndex[],
+  newIndexes: IListIndex[],
+  indexByValue: Map<unknown, number[]>
+): IListDiff {
+  const newIndexSet: Set<IListIndex> = new Set(newIndexes);
+  const oldIndexSet: Set<IListIndex> = new Set(oldIndexes);
+  const changeIndexSet: Set<IListIndex> = new Set();
+  const addIndexSet: Set<IListIndex> = newIndexSet.difference(oldIndexSet);
+  const deleteIndexSet: Set<IListIndex> = oldIndexSet.difference(newIndexSet);
+  for(let i = 0; i < newList.length; i++) {
+    const newValue = newList[i];
+    const existingIndexes = indexByValue.get(newValue);
+    const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
+    if (typeof oldIndex !== "undefined") {
+      const existingListIndex = oldIndexes[oldIndex];
+      if (existingListIndex.index !== i) {
+        // 位置が違うことだけを記録 
+        changeIndexSet.add(existingListIndex);
+      }
+    }
+  }
+  return {
+    oldIndexes: oldIndexes,
+    newIndexes: newIndexes,
+    changeIndexSet: changeIndexSet,
+    deleteIndexSet: deleteIndexSet,
+    addIndexSet: addIndexSet,
+  };
 }

@@ -17,4 +17,5 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
 }
 export const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
 export const NO_SET_TIMEOUT = 60 * 1000; // 1分
+export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 //# sourceMappingURL=define.js.map

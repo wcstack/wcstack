@@ -43,7 +43,7 @@ export function collectStructuralFragments(rootNode, walkRoot, forPath) {
     const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_ELEMENT, {
         acceptNode(node) {
             const element = node;
-            if (element instanceof HTMLTemplateElement) {
+            if (element.tagName.toLowerCase() === 'template') {
                 const bindText = element.getAttribute(config.bindAttributeName) || '';
                 if (bindText.length > 0) {
                     return NodeFilter.FILTER_ACCEPT;

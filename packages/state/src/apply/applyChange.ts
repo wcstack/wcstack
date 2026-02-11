@@ -1,3 +1,4 @@
+import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
@@ -46,6 +47,9 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   if (context.appliedBindingSet.has(binding)) {
     return;
   }
+  if(config.debug) {
+    console.log(`applyChange: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`, binding);
+  }
   context.appliedBindingSet.add(binding);
   if (binding.bindingType === "event") {
     return;
@@ -68,7 +72,8 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
         rootNode: rootNode,
         stateElement: stateElement,
         state: targetState,
-        appliedBindingSet: context.appliedBindingSet
+        appliedBindingSet: context.appliedBindingSet,
+        newListValueByAbsAddress: context.newListValueByAbsAddress,
       }
       _applyChange(binding, newContext);
     });

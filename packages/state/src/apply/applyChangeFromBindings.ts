@@ -1,8 +1,11 @@
+import { IAbsoluteStateAddress } from "../address/types";
+import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
 import { applyChange } from "./applyChange";
 import { getRootNodeByFragment } from "./rootNodeByFragment";
+import { IApplyContext } from "./types";
 
 /**
  * バインディング情報の配列を処理し、各バインディングに対して状態の変更を適用する。
@@ -13,6 +16,7 @@ import { getRootNodeByFragment } from "./rootNodeByFragment";
 export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
   let bindingIndex = 0;
   const appliedBindingSet: Set<IBindingInfo> = new Set();
+  const newListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]> = new Map();
 
   // 外側ループ: stateName ごとにグループ化
   while(bindingIndex < bindings.length) {
@@ -31,12 +35,13 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
     }
 
     stateElement.createState("readonly", (state) => {
-      const context = {
+      const context: IApplyContext = {
         rootNode: rootNode,
         stateName: stateName,
         stateElement: stateElement,
         state: state,
-        appliedBindingSet: appliedBindingSet
+        appliedBindingSet: appliedBindingSet,
+        newListValueByAbsAddress: newListValueByAbsAddress
       };
 
       do {
@@ -50,5 +55,8 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
         binding = nextBindingInfo;
       } while(true); // eslint-disable-line no-constant-condition
     });
+  }
+  for(const [ absAddress, newListValue ] of newListValueByAbsAddress.entries()) {
+    setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
   }
 }
