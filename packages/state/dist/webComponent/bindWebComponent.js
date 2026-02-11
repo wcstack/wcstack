@@ -14,7 +14,7 @@ const innerStateGetter = (inner, innerName) => () => inner[innerName];
 const innerStateSetter = (inner, innerName) => (v) => {
     inner[innerName] = v;
 };
-export async function bindWebComponent(innerStateElement, component, stateProp, initialState) {
+export async function bindWebComponent(innerStateElement, component, stateProp) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
     }
@@ -22,8 +22,6 @@ export async function bindWebComponent(innerStateElement, component, stateProp, 
         raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
     }
     const shadowRoot = component.shadowRoot;
-    // waitForStateInitializeよりも前に呼ばないとデッドロックする
-    innerStateElement.setInitialState(initialState);
     await waitForStateInitialize(shadowRoot);
     convertMustacheToComments(shadowRoot);
     collectStructuralFragments(shadowRoot, shadowRoot);

@@ -22,8 +22,7 @@ const innerStateSetter = (inner:IInnerState, innerName:string) => (v:any):void =
 export async function bindWebComponent(
   innerStateElement: IStateElement,
   component: Element,
-  stateProp: string,
-  initialState: Record<string, any>
+  stateProp: string
 ): Promise<void> {
   if (component.shadowRoot === null) {
     raiseError('Component has no shadow root.');
@@ -32,9 +31,6 @@ export async function bindWebComponent(
     raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
   }
   const shadowRoot = component.shadowRoot;
-
-  // waitForStateInitializeよりも前に呼ばないとデッドロックする
-  innerStateElement.setInitialState(initialState);
 
   await waitForStateInitialize(shadowRoot);
   convertMustacheToComments(shadowRoot);

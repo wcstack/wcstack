@@ -415,18 +415,6 @@ describe('State component', () => {
     expect(value).toEqual({ key: 'value' });
   });
 
-  it('bindWebComponentがbindWebComponentモジュールを呼び出すこと', async () => {
-    const stateEl = createStateElement();
-    stateEl.setInitialState({});
-    await stateEl.connectedCallback();
-    await stateEl.initializePromise;
-
-    const component = document.createElement('div');
-    await stateEl.bindWebComponent(component, 'outer', { foo: 'bar' });
-
-    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, component, 'outer', { foo: 'bar' });
-  });
-
   it('bindPropertyでstateにプロパティを定義できること', async () => {
     const stateEl = createStateElement();
     stateEl.setInitialState({ count: 0 });
@@ -454,6 +442,9 @@ describe('State component', () => {
     // connectedCallbackを開始するが、setInitialStateを呼ばない
     const connectPromise = stateEl.connectedCallback();
 
+    // _initializeBindWebComponentのawaitを解消してから_initializeに進めるため
+    await Promise.resolve();
+
     // NO_SET_TIMEOUT (60秒) を進める
     vi.advanceTimersByTime(60 * 1000);
 
@@ -473,7 +464,7 @@ describe('State component', () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     (stateEl as any)._rootNode = document;
 
-    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /bind-component can only be used inside a shadow root/
     );
   });
@@ -483,7 +474,7 @@ describe('State component', () => {
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
 
-    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /does not have property "outer"/
     );
   });
@@ -494,33 +485,63 @@ describe('State component', () => {
     (stateEl as any)._rootNode = stateEl.getRootNode();
     (host as any).outer = 123;
 
-    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /is not an object/
     );
   });
 
-  it('bind-componentでbindWebComponentを呼び出すこと', async () => {
+  it('bind-componentで_initializeBindWebComponentがsetInitialStateを呼びboundComponentを保持すること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
     const initialState = { message: 'hi' };
     (host as any).outer = initialState;
 
-    await (stateEl as any)._bindWebComponent();
+    await (stateEl as any)._initializeBindWebComponent();
 
-    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', initialState);
+    expect((stateEl as any)._boundComponent).toBe(host);
+    expect((stateEl as any)._boundComponentStateProp).toBe('outer');
   });
 
-  it('bindWebComponentが失敗した場合はエラーになること', async () => {
+  it('bind-componentで_bindWebComponentがbindWebComponentモジュールを呼び出すこと', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    host.setAttribute('data-wcs', 'outer:value');
+    (stateEl as any)._rootNode = stateEl.getRootNode();
+    const initialState = { message: 'hi' };
+    (host as any).outer = initialState;
+
+    await (stateEl as any)._initializeBindWebComponent();
+    await (stateEl as any)._bindWebComponent();
+
+    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer');
+  });
+
+  it('data-wcsがないコンポーネントではbindWebComponentが呼ばれないこと', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
+    (host as any).outer = { message: 'hi' };
+
+    await (stateEl as any)._initializeBindWebComponent();
+    await (stateEl as any)._bindWebComponent();
+
+    expect(bindWebComponentMock).not.toHaveBeenCalled();
+  });
+
+  it('bindWebComponentが失敗した場合はエラーが伝播すること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    host.setAttribute('data-wcs', 'outer:value');
+    (stateEl as any)._rootNode = stateEl.getRootNode();
     (host as any).outer = {};
+
+    await (stateEl as any)._initializeBindWebComponent();
 
     bindWebComponentMock.mockRejectedValueOnce(new Error('bind failed'));
 
     await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
-      /Failed to bind web component/
+      /bind failed/
     );
   });
 });

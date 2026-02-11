@@ -87,13 +87,13 @@ describe('bindWebComponent', () => {
   it('shadowRootがない場合はエラーになること', async () => {
     const component = document.createElement('div');
     const stateEl = createMockStateElement();
-    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/no shadow root/);
+    await expect(bindWebComponent(stateEl, component, 'outer')).rejects.toThrow(/no shadow root/);
   });
 
   it('bindAttributeNameがない場合はエラーになること', async () => {
     const component = createComponentWithShadow(false);
     const stateEl = createMockStateElement();
-    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/no "data-wcs" attribute/);
+    await expect(bindWebComponent(stateEl, component, 'outer')).rejects.toThrow(/no "data-wcs" attribute/);
   });
 
   it('bindingsがnullの場合はエラーになること', async () => {
@@ -101,7 +101,7 @@ describe('bindWebComponent', () => {
     const stateEl = createMockStateElement();
     getBindingsByNodeMock.mockReturnValue(null);
 
-    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/Bindings not found/);
+    await expect(bindWebComponent(stateEl, component, 'outer')).rejects.toThrow(/Bindings not found/);
   });
 
   it('statePropとバインディングの先頭プロパティが一致しない場合はエラーになること', async () => {
@@ -110,7 +110,7 @@ describe('bindWebComponent', () => {
     const binding = createMockBinding(['other', 'value'], 'data');
     getBindingsByNodeMock.mockReturnValue([binding]);
 
-    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(
+    await expect(bindWebComponent(stateEl, component, 'outer')).rejects.toThrow(
       /does not match stateProp/,
     );
   });
@@ -122,16 +122,12 @@ describe('bindWebComponent', () => {
     const binding2 = createMockBinding(['outer', 'count'], 'total');
     getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
 
-    const initialState = { seed: 'value' };
-
     const outerState = (createOuterState as any)();
     const innerState = (createInnerState as any)();
     vi.mocked(createOuterState).mockReturnValue(outerState);
     vi.mocked(createInnerState).mockReturnValue(innerState);
 
-    await bindWebComponent(stateEl, component, 'outer', initialState);
-
-    expect(stateEl.setInitialState).toHaveBeenCalledWith(initialState);
+    await bindWebComponent(stateEl, component, 'outer');
 
     // waitForStateInitialize, convertMustache, collectStructural が呼ばれること
     expect(waitForStateInitialize).toHaveBeenCalledWith(component.shadowRoot);
@@ -178,7 +174,7 @@ describe('bindWebComponent', () => {
     vi.mocked(createOuterState).mockReturnValue(outerState);
     vi.mocked(createInnerState).mockReturnValue(innerState);
 
-    await bindWebComponent(stateEl, component, 'outer', {});
+    await bindWebComponent(stateEl, component, 'outer');
 
     // bindPropertyに渡されたdescriptorを取得
     const call = stateEl.bindProperty.mock.calls[0];

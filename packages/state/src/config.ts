@@ -3,6 +3,7 @@ import { IConfig } from "./types.js";
 export const config: IConfig = {
 
   bindAttributeName: 'data-wcs',
+  bindComponentAttributeName: 'bind-component',
   commentTextPrefix: 'wcs-text',
   commentForPrefix: 'wcs-for',
   commentIfPrefix: 'wcs-if',

@@ -55,6 +55,8 @@ export class State extends HTMLElement {
     _pathSet = new Set();
     _version = 0;
     _rootNode = null;
+    _boundComponent = null;
+    _boundComponentStateProp = null;
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -135,35 +137,45 @@ export class State extends HTMLElement {
         this._name = this.getAttribute('name') || 'default';
         setStateElementByName(this.rootNode, this._name, this);
     }
-    async _bindWebComponent() {
-        if (this.hasAttribute('bind-component')) {
+    async _initializeBindWebComponent() {
+        if (this.hasAttribute(config.bindComponentAttributeName)) {
             if (!(this.rootNode instanceof ShadowRoot)) {
-                raiseError('bind-component can only be used inside a shadow root.');
+                raiseError(`${config.bindComponentAttributeName} can only be used inside a shadow root.`);
             }
-            const component = this.rootNode.host;
-            const componentStateProp = this.getAttribute('bind-component');
+            const boundComponent = this.rootNode.host;
+            const boundComponentStateProp = this.getAttribute(config.bindComponentAttributeName);
             try {
-                await customElements.whenDefined(component.tagName.toLowerCase());
-                if (!(componentStateProp in component)) {
-                    raiseError(`Component does not have property "${componentStateProp}" for state binding.`);
+                await customElements.whenDefined(boundComponent.tagName.toLowerCase());
+                if (!(boundComponentStateProp in boundComponent)) {
+                    raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
                 }
-                const state = component[componentStateProp];
+                const state = boundComponent[boundComponentStateProp];
                 if (typeof state !== 'object' || state === null) {
-                    raiseError(`Component property "${componentStateProp}" is not an object for state binding.`);
+                    raiseError(`Component property "${boundComponentStateProp}" is not an object for state binding.`);
                 }
-                await this.bindWebComponent(component, componentStateProp, state);
+                this.setInitialState(state);
+                this._boundComponent = boundComponent;
+                this._boundComponentStateProp = boundComponentStateProp;
             }
             catch (e) {
                 raiseError(`Failed to bind web component: ${e}`);
             }
         }
     }
+    async _bindWebComponent() {
+        if (this._boundComponent === null || this._boundComponentStateProp === null) {
+            return;
+        }
+        if (this._boundComponent.hasAttribute(config.bindAttributeName)) {
+            await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
+        }
+    }
     async connectedCallback() {
         this._rootNode = this.getRootNode();
         if (!this._initialized) {
-            // (1)のデッドロック回避のためにawaitしない
-            this._bindWebComponent();
+            await this._initializeBindWebComponent();
             await this._initialize();
+            await this._bindWebComponent();
             this._initialized = true;
             this._resolveInitialize?.();
         }
@@ -286,9 +298,6 @@ export class State extends HTMLElement {
     nextVersion() {
         this._version++;
         return this._version;
-    }
-    async bindWebComponent(component, stateProp, initialState) {
-        await bindWebComponent(this, component, stateProp, initialState);
     }
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);

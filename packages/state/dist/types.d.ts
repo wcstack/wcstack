@@ -7,6 +7,7 @@ export interface ITagNames {
 }
 export interface IConfig {
     bindAttributeName: string;
+    bindComponentAttributeName: string;
     commentTextPrefix: string;
     commentForPrefix: string;
     commentIfPrefix: string;
