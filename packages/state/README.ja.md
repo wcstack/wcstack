@@ -11,7 +11,7 @@ Web Components のための宣言的リアクティブ状態管理。
 - **組み込みフィルタ** — フォーマット、比較、算術、日付など 37 種類
 - **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
-- **算出プロパティ** — getter ベースの派生値と自動キャッシュ無効化
+- **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）による要素ごとの算出プロパティと自動依存追跡・キャッシュ
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
@@ -253,34 +253,263 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 
 条件をチェーンできます。`elseif` は前の条件を自動的に反転します。
 
-## 算出プロパティ（Getter）
+## パス getter（算出プロパティ）
 
-JavaScript の getter とドットパスキーで算出プロパティを定義します：
+**パス getter** は `@wcstack/state` の中核機能です。JavaScript の getter に**ドットパス文字列キー**とワイルドカード（`*`）を使って定義します。`for:` ループのコンテキストで要素ごとに自動実行される派生プロパティとして機能します。
+
+### 基本的なパス getter
 
 ```html
 <wcs-state>
   <script type="module">
     export default {
-      price: 100,
-      tax: 0.1,
-      get total() {
-        return this.price * (1 + this.tax);
-      },
       users: [
-        { id: 1, name: "Alice" },
-        { id: 2, name: "Bob" }
+        { id: 1, firstName: "Alice", lastName: "Smith" },
+        { id: 2, firstName: "Bob", lastName: "Jones" }
       ],
+      // パス getter — ループ内で要素ごとに実行
+      get "users.*.fullName"() {
+        return this["users.*.firstName"] + " " + this["users.*.lastName"];
+      },
       get "users.*.displayName"() {
-        return this["users.*.name"] + " (ID: " + this["users.*.id"] + ")";
+        return this["users.*.fullName"] + " (ID: " + this["users.*.id"] + ")";
       }
     };
   </script>
 </wcs-state>
+
+<template data-wcs="for: users">
+  <div data-wcs="textContent: .displayName"></div>
+</template>
+<!-- 出力:
+  Alice Smith (ID: 1)
+  Bob Jones (ID: 2)
+-->
 ```
 
-- getter は自動的に追跡・キャッシュされます
-- 依存先が変更されるとキャッシュが無効化（dirty）され、次回アクセス時に再計算されます
-- ワイルドカード getter（`users.*.displayName`）はループ内で動作します
+パス getter 内の `this["users.*.firstName"]` は、手動でインデックスを指定することなく、自動的に現在のループ要素に解決されます。
+
+### トップレベル算出プロパティ
+
+ワイルドカードなしの getter は通常の算出プロパティとして動作します：
+
+```javascript
+export default {
+  price: 100,
+  tax: 0.1,
+  get total() {
+    return this.price * (1 + this.tax);
+  }
+};
+```
+
+### getter のチェーン
+
+パス getter は他のパス getter を参照でき、依存チェーンを形成します。上流の値が変更されると、キャッシュは自動的に無効化されます：
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      taxRate: 0.1,
+      cart: {
+        items: [
+          { productId: "P001", quantity: 2, unitPrice: 500 },
+          { productId: "P002", quantity: 1, unitPrice: 1200 }
+        ]
+      },
+      // アイテムごとの小計
+      get "cart.items.*.subtotal"() {
+        return this["cart.items.*.unitPrice"] * this["cart.items.*.quantity"];
+      },
+      // 集計: 全小計の合計
+      get "cart.totalPrice"() {
+        return this.$getAll("cart.items.*.subtotal", []).reduce((sum, v) => sum + v, 0);
+      },
+      // チェーン: totalPrice から税を算出
+      get "cart.tax"() {
+        return this["cart.totalPrice"] * this.taxRate;
+      },
+      // チェーン: 合計金額
+      get "cart.grandTotal"() {
+        return this["cart.totalPrice"] + this["cart.tax"];
+      }
+    };
+  </script>
+</wcs-state>
+
+<template data-wcs="for: cart.items">
+  <div>
+    <span data-wcs="textContent: .productId"></span>:
+    <span data-wcs="textContent: .subtotal|locale"></span>
+  </div>
+</template>
+<p>合計: <span data-wcs="textContent: cart.totalPrice|locale"></span></p>
+<p>税: <span data-wcs="textContent: cart.tax|locale"></span></p>
+<p>総合計: <span data-wcs="textContent: cart.grandTotal|locale"></span></p>
+```
+
+依存チェーン: `cart.grandTotal` → `cart.tax` → `cart.totalPrice` → `cart.items.*.subtotal` → `cart.items.*.unitPrice` / `cart.items.*.quantity`。アイテムの `unitPrice` や `quantity` を変更すると、チェーン全体が自動的に再計算されます。
+
+### ネストされたワイルドカード getter
+
+ネストされた配列構造では複数のワイルドカードが使用できます：
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      categories: [
+        {
+          name: "果物",
+          items: [
+            { name: "りんご", price: 150 },
+            { name: "バナナ", price: 100 }
+          ]
+        },
+        {
+          name: "野菜",
+          items: [
+            { name: "にんじん", price: 80 }
+          ]
+        }
+      ],
+      get "categories.*.items.*.label"() {
+        return this["categories.*.name"] + " / " + this["categories.*.items.*.name"];
+      }
+    };
+  </script>
+</wcs-state>
+
+<template data-wcs="for: categories">
+  <h3 data-wcs="textContent: .name"></h3>
+  <template data-wcs="for: .items">
+    <div data-wcs="textContent: .label"></div>
+  </template>
+</template>
+<!-- 出力:
+  果物
+    果物 / りんご
+    果物 / バナナ
+  野菜
+    野菜 / にんじん
+-->
+```
+
+### getter の戻り値のサブプロパティへのアクセス
+
+パス getter がオブジェクトを返す場合、ドットパスでそのサブプロパティにアクセスできます：
+
+```javascript
+export default {
+  products: [
+    { id: "P001", name: "ウィジェット", price: 500, stock: 10 },
+    { id: "P002", name: "ガジェット", price: 1200, stock: 3 }
+  ],
+  cart: {
+    items: [
+      { productId: "P001", quantity: 2 },
+      { productId: "P002", quantity: 1 }
+    ]
+  },
+  get productByProductId() {
+    return new Map(this.products.map(p => [p.id, p]));
+  },
+  // 完全な product オブジェクトを返す
+  get "cart.items.*.product"() {
+    return this.productByProductId.get(this["cart.items.*.productId"]);
+  },
+  // 戻り値のサブプロパティにアクセス
+  get "cart.items.*.total"() {
+    return this["cart.items.*.product.price"] * this["cart.items.*.quantity"];
+  }
+};
+```
+
+`this["cart.items.*.product.price"]` は `cart.items.*.product` getter が返すオブジェクトを透過的にチェーンします。
+
+### パス setter
+
+`set "path"()` でカスタム setter ロジックを定義できます：
+
+```javascript
+export default {
+  users: [
+    { firstName: "Alice", lastName: "Smith" },
+    { firstName: "Bob", lastName: "Jones" }
+  ],
+  get "users.*.fullName"() {
+    return this["users.*.firstName"] + " " + this["users.*.lastName"];
+  },
+  set "users.*.fullName"(value) {
+    const [first, ...rest] = value.split(" ");
+    this["users.*.firstName"] = first;
+    this["users.*.lastName"] = rest.join(" ");
+  }
+};
+```
+
+```html
+<template data-wcs="for: users">
+  <input type="text" data-wcs="value: .fullName">
+</template>
+```
+
+パス setter は双方向バインディングと連携します — input を編集すると setter が呼ばれ、`firstName` / `lastName` に分割して書き戻します。
+
+### 対応するパス getter パターン
+
+| パターン | 説明 | 例 |
+|---|---|---|
+| `get prop()` | トップレベル算出 | `get total()` |
+| `get "a.b"()` | ネスト算出（ワイルドカードなし） | `get "cart.totalPrice"()` |
+| `get "a.*.b"()` | 単一ワイルドカード | `get "users.*.fullName"()` |
+| `get "a.*.b.*.c"()` | 複数ワイルドカード | `get "categories.*.items.*.label"()` |
+| `set "a.*.b"(v)` | ワイルドカード setter | `set "users.*.fullName"(v)` |
+
+### 仕組み
+
+1. **コンテキスト解決** — `for:` ループのレンダリング時に、各イテレーションが `ListIndex` をアドレススタックにプッシュします。パス getter 内の `this["users.*.name"]` はこのスタックを使って `*` を解決するため、常に現在の要素を参照します。
+
+2. **自動依存追跡** — getter が `this["users.*.name"]` にアクセスすると、`users.*.name` から getter のパスへの動的依存が登録されます。`users.*.name` が変更されると、getter のキャッシュが dirty になります。
+
+3. **キャッシュ** — getter の結果は具体的なアドレス（パス + ループインデックス）ごとにキャッシュされます。`users.*.fullName` のインデックス 0 とインデックス 1 は別々のキャッシュエントリを持ちます。依存先が変更された場合のみキャッシュが無効化されます。
+
+4. **直接インデックスアクセス** — 数値インデックスで特定の要素にアクセスすることもできます：`this["users.0.name"]` はループコンテキストなしで `users[0].name` に解決されます。
+
+### ループインデックス変数（`$1`, `$2`, ...）
+
+getter やイベントハンドラ内で、`this.$1`、`this.$2` などで現在のループイテレーションのインデックスを取得できます（0始まりの値、1始まりの命名）：
+
+```javascript
+export default {
+  users: ["Alice", "Bob", "Charlie"],
+  get "users.*.rowLabel"() {
+    return "#" + (this.$1 + 1) + ": " + this["users.*"];
+  }
+};
+```
+
+```html
+<template data-wcs="for: users">
+  <div data-wcs="textContent: .rowLabel"></div>
+</template>
+<!-- 出力:
+  #1: Alice
+  #2: Bob
+  #3: Charlie
+-->
+```
+
+ネストループでは、`$1` が外側のインデックス、`$2` が内側のインデックスです。
+
+テンプレート内でループインデックスを直接表示することもできます：
+
+```html
+<template data-wcs="for: items">
+  <td>{{ $1|inc(1) }}</td>  <!-- 1始まりの行番号 -->
+</template>
+```
 
 ### Proxy API
 
@@ -294,6 +523,39 @@ JavaScript の getter とドットパスキーで算出プロパティを定義�
 | `this.$trackDependency(path)` | キャッシュ無効化のための依存関係を手動で登録 |
 | `this.$stateElement` | `IStateElement` インスタンスへのアクセス |
 | `this.$1`, `this.$2`, ... | 現在のループインデックス（1始まりの命名、0始まりの値） |
+
+#### `$getAll` — 配列要素全体の集計
+
+`$getAll` はワイルドカードパスにマッチする全ての値を配列として収集します。集計パターンに不可欠です：
+
+```javascript
+export default {
+  scores: [85, 92, 78, 95, 88],
+  get average() {
+    const all = this.$getAll("scores.*", []);
+    return all.reduce((sum, v) => sum + v, 0) / all.length;
+  },
+  get max() {
+    return Math.max(...this.$getAll("scores.*", []));
+  }
+};
+```
+
+#### `$resolve` — 明示的なインデックスでのアクセス
+
+`$resolve` は特定のワイルドカードインデックスの値を読み書きします：
+
+```javascript
+export default {
+  items: ["A", "B", "C"],
+  swapFirstTwo() {
+    const a = this.$resolve("items.*", [0]);
+    const b = this.$resolve("items.*", [1]);
+    this.$resolve("items.*", [0], b);
+    this.$resolve("items.*", [1], a);
+  }
+};
+```
 
 ## イベントハンドリング
 

@@ -11,7 +11,7 @@ Declarative reactive state management for Web Components.
 - **Built-in filters** — 37 filters for formatting, comparison, arithmetic, date, and more
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
-- **Computed properties** — getter-based derivation with automatic cache invalidation
+- **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for per-element computed properties with automatic dependency tracking and caching
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
@@ -22,7 +22,7 @@ Declarative reactive state management for Web Components.
 ### CDN (recommended)
 
 ```html
-<!-- Auto-initialization — これだけで動作します -->
+<!-- Auto-initialization — this is all you need -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state/dist/auto.js"></script>
 ```
 
@@ -253,34 +253,263 @@ Nested loops are supported with multi-level wildcards:
 
 Conditions can be chained. `elseif` automatically inverts the previous condition.
 
-## Computed Properties (Getters)
+## Path Getters (Computed Properties)
 
-Define computed properties using JavaScript getters with dot-path keys:
+**Path getters** are the core feature of `@wcstack/state`. Define computed properties using JavaScript getters with **dot-path string keys** containing wildcards (`*`). They act as per-element derived properties that automatically run in the context of `for:` loops.
+
+### Basic Path Getter
 
 ```html
 <wcs-state>
   <script type="module">
     export default {
-      price: 100,
-      tax: 0.1,
-      get total() {
-        return this.price * (1 + this.tax);
-      },
       users: [
-        { id: 1, name: "Alice" },
-        { id: 2, name: "Bob" }
+        { id: 1, firstName: "Alice", lastName: "Smith" },
+        { id: 2, firstName: "Bob", lastName: "Jones" }
       ],
+      // Path getter — runs per-element inside a loop
+      get "users.*.fullName"() {
+        return this["users.*.firstName"] + " " + this["users.*.lastName"];
+      },
       get "users.*.displayName"() {
-        return this["users.*.name"] + " (ID: " + this["users.*.id"] + ")";
+        return this["users.*.fullName"] + " (ID: " + this["users.*.id"] + ")";
       }
     };
   </script>
 </wcs-state>
+
+<template data-wcs="for: users">
+  <div data-wcs="textContent: .displayName"></div>
+</template>
+<!-- Output:
+  Alice Smith (ID: 1)
+  Bob Jones (ID: 2)
+-->
 ```
 
-- Getters are automatically tracked and cached
-- When dependencies change, the cache is invalidated (dirty) and recomputed on next access
-- Wildcard getters (`users.*.displayName`) work inside loops
+Inside a path getter, `this["users.*.firstName"]` automatically resolves to the current loop element — no manual indexing needed.
+
+### Top-Level Computed Properties
+
+Getters without wildcards work as standard computed properties:
+
+```javascript
+export default {
+  price: 100,
+  tax: 0.1,
+  get total() {
+    return this.price * (1 + this.tax);
+  }
+};
+```
+
+### Getter Chaining
+
+Path getters can reference other path getters, forming a dependency chain. The cache is automatically invalidated when any upstream value changes:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      taxRate: 0.1,
+      cart: {
+        items: [
+          { productId: "P001", quantity: 2, unitPrice: 500 },
+          { productId: "P002", quantity: 1, unitPrice: 1200 }
+        ]
+      },
+      // Per-item subtotal
+      get "cart.items.*.subtotal"() {
+        return this["cart.items.*.unitPrice"] * this["cart.items.*.quantity"];
+      },
+      // Aggregate: sum of all subtotals
+      get "cart.totalPrice"() {
+        return this.$getAll("cart.items.*.subtotal", []).reduce((sum, v) => sum + v, 0);
+      },
+      // Chained: tax derived from totalPrice
+      get "cart.tax"() {
+        return this["cart.totalPrice"] * this.taxRate;
+      },
+      // Chained: grand total
+      get "cart.grandTotal"() {
+        return this["cart.totalPrice"] + this["cart.tax"];
+      }
+    };
+  </script>
+</wcs-state>
+
+<template data-wcs="for: cart.items">
+  <div>
+    <span data-wcs="textContent: .productId"></span>:
+    <span data-wcs="textContent: .subtotal|locale"></span>
+  </div>
+</template>
+<p>Total: <span data-wcs="textContent: cart.totalPrice|locale"></span></p>
+<p>Tax: <span data-wcs="textContent: cart.tax|locale"></span></p>
+<p>Grand Total: <span data-wcs="textContent: cart.grandTotal|locale"></span></p>
+```
+
+Dependency chain: `cart.grandTotal` → `cart.tax` → `cart.totalPrice` → `cart.items.*.subtotal` → `cart.items.*.unitPrice` / `cart.items.*.quantity`. Changing any item's `unitPrice` or `quantity` automatically recomputes the entire chain.
+
+### Nested Wildcard Getters
+
+Multiple wildcards are supported for nested array structures:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      categories: [
+        {
+          name: "Fruits",
+          items: [
+            { name: "Apple", price: 150 },
+            { name: "Banana", price: 100 }
+          ]
+        },
+        {
+          name: "Vegetables",
+          items: [
+            { name: "Carrot", price: 80 }
+          ]
+        }
+      ],
+      get "categories.*.items.*.label"() {
+        return this["categories.*.name"] + " / " + this["categories.*.items.*.name"];
+      }
+    };
+  </script>
+</wcs-state>
+
+<template data-wcs="for: categories">
+  <h3 data-wcs="textContent: .name"></h3>
+  <template data-wcs="for: .items">
+    <div data-wcs="textContent: .label"></div>
+  </template>
+</template>
+<!-- Output:
+  Fruits
+    Fruits / Apple
+    Fruits / Banana
+  Vegetables
+    Vegetables / Carrot
+-->
+```
+
+### Accessing Sub-Properties of Getter Results
+
+When a path getter returns an object, you can access its sub-properties via dot-path:
+
+```javascript
+export default {
+  products: [
+    { id: "P001", name: "Widget", price: 500, stock: 10 },
+    { id: "P002", name: "Gadget", price: 1200, stock: 3 }
+  ],
+  cart: {
+    items: [
+      { productId: "P001", quantity: 2 },
+      { productId: "P002", quantity: 1 }
+    ]
+  },
+  get productByProductId() {
+    return new Map(this.products.map(p => [p.id, p]));
+  },
+  // Returns the full product object
+  get "cart.items.*.product"() {
+    return this.productByProductId.get(this["cart.items.*.productId"]);
+  },
+  // Access sub-property of the returned object
+  get "cart.items.*.total"() {
+    return this["cart.items.*.product.price"] * this["cart.items.*.quantity"];
+  }
+};
+```
+
+`this["cart.items.*.product.price"]` transparently chains through the object returned by the `cart.items.*.product` getter.
+
+### Path Setters
+
+Custom setter logic can be defined with `set "path"()`:
+
+```javascript
+export default {
+  users: [
+    { firstName: "Alice", lastName: "Smith" },
+    { firstName: "Bob", lastName: "Jones" }
+  ],
+  get "users.*.fullName"() {
+    return this["users.*.firstName"] + " " + this["users.*.lastName"];
+  },
+  set "users.*.fullName"(value) {
+    const [first, ...rest] = value.split(" ");
+    this["users.*.firstName"] = first;
+    this["users.*.lastName"] = rest.join(" ");
+  }
+};
+```
+
+```html
+<template data-wcs="for: users">
+  <input type="text" data-wcs="value: .fullName">
+</template>
+```
+
+Two-way binding works with path setters — editing the input calls the setter, which splits and writes back to `firstName` / `lastName`.
+
+### Supported Path Getter Patterns
+
+| Pattern | Description | Example |
+|---|---|---|
+| `get prop()` | Top-level computed | `get total()` |
+| `get "a.b"()` | Nested computed (no wildcard) | `get "cart.totalPrice"()` |
+| `get "a.*.b"()` | Single wildcard | `get "users.*.fullName"()` |
+| `get "a.*.b.*.c"()` | Multiple wildcards | `get "categories.*.items.*.label"()` |
+| `set "a.*.b"(v)` | Wildcard setter | `set "users.*.fullName"(v)` |
+
+### How It Works
+
+1. **Context resolution** — When a `for:` loop renders, each iteration pushes a `ListIndex` onto the address stack. Inside a path getter, `this["users.*.name"]` resolves the `*` using this stack, so it always points to the current element.
+
+2. **Automatic dependency tracking** — When a getter accesses `this["users.*.name"]`, the system registers a dynamic dependency from `users.*.name` to the getter's path. When `users.*.name` changes, the getter's cache is dirtied.
+
+3. **Caching** — Getter results are cached per concrete address (path + loop index). `users.*.fullName` at index 0 has a separate cache entry from index 1. The cache is invalidated only when dependencies change.
+
+4. **Direct index access** — You can also access specific elements by numeric index: `this["users.0.name"]` resolves as `users[0].name` without needing loop context.
+
+### Loop Index Variables (`$1`, `$2`, ...)
+
+Inside getters and event handlers, `this.$1`, `this.$2`, etc. provide the current loop iteration index (0-based value, 1-based naming):
+
+```javascript
+export default {
+  users: ["Alice", "Bob", "Charlie"],
+  get "users.*.rowLabel"() {
+    return "#" + (this.$1 + 1) + ": " + this["users.*"];
+  }
+};
+```
+
+```html
+<template data-wcs="for: users">
+  <div data-wcs="textContent: .rowLabel"></div>
+</template>
+<!-- Output:
+  #1: Alice
+  #2: Bob
+  #3: Charlie
+-->
+```
+
+For nested loops, `$1` is the outer index and `$2` is the inner index.
+
+You can also display the loop index directly in templates:
+
+```html
+<template data-wcs="for: items">
+  <td>{{ $1|inc(1) }}</td>  <!-- 1-based row number -->
+</template>
+```
 
 ### Proxy APIs
 
@@ -294,6 +523,39 @@ Inside state objects (getters / methods), the following APIs are available via `
 | `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
 | `this.$stateElement` | Access to the `IStateElement` instance |
 | `this.$1`, `this.$2`, ... | Current loop index (1-based naming, 0-based value) |
+
+#### `$getAll` — Aggregate Across Array Elements
+
+`$getAll` collects all values that match a wildcard path, returning them as an array. Essential for aggregation patterns:
+
+```javascript
+export default {
+  scores: [85, 92, 78, 95, 88],
+  get average() {
+    const all = this.$getAll("scores.*", []);
+    return all.reduce((sum, v) => sum + v, 0) / all.length;
+  },
+  get max() {
+    return Math.max(...this.$getAll("scores.*", []));
+  }
+};
+```
+
+#### `$resolve` — Access by Explicit Index
+
+`$resolve` reads or writes a value at a specific wildcard index:
+
+```javascript
+export default {
+  items: ["A", "B", "C"],
+  swapFirstTwo() {
+    const a = this.$resolve("items.*", [0]);
+    const b = this.$resolve("items.*", [1]);
+    this.$resolve("items.*", [0], b);
+    this.$resolve("items.*", [1], a);
+  }
+};
+```
 
 ## Event Handling
 
