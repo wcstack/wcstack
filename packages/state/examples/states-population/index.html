@@ -98,9 +98,9 @@ export default {
               <tr>
                 <td class="text-center">{{ .name }}</td>
                 <td class="text-center">{{ .capital }}</td>
-                <td class="text-right" data-bind="
-                  class.over : .population|ge,5000000;
-                  class.under: .population|lt,1000000;
+                <td class="text-right" data-bind-state="
+                  class.over : .population|ge(5000000);
+                  class.under: .population|lt(1000000);
                 ">{{ .population|locale }}</td>
                 <td class="text-right">{{ .shareOfRegionPopulation|percent(2) }}</td>
                 <td class="text-right">{{ .shareOfPopulation|percent(2) }}</td>
