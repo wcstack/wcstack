@@ -61,7 +61,7 @@ export default {
     { label: 'F', value: 100 }
   ],
 
-  get "stats.json"() {
+  get statsJson() {
     this.$trackDependency("stats.*.value");
     return JSON.stringify(this.stats);
   },
@@ -120,7 +120,7 @@ export default {
       <button data-bind-state="onclick#prevent: onAdd">Add a Stat</button>
     </form>
 
-    <pre id="raw">{{ stats.json }}</pre>
+    <pre id="raw">{{ statsJson }}</pre>
 
   </body>
 </html>
