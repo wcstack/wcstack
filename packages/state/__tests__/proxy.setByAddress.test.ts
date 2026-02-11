@@ -102,7 +102,7 @@ describe('setByAddress', () => {
     const handler = createHandler(stateElement);
     const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
 
-    setCacheEntryByAbsoluteStateAddress(absAddress, { value: 1 });
+    setCacheEntryByAbsoluteStateAddress(absAddress, { value: 1, dirty: false });
 
     setByAddress(target, address, 9, target, handler as any);
 

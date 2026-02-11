@@ -1,4 +1,5 @@
 export interface ICacheEntry {
-    value: unknown;
+    readonly value: unknown;
+    dirty: boolean;
 }
 //# sourceMappingURL=types.d.ts.map

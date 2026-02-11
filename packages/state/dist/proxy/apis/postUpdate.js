@@ -2,7 +2,7 @@ import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
-import { setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
+import { dirtyCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { walkDependency } from "../../dependency/walkDependency";
 import { getUpdater } from "../../updater/updater";
 import { getListIndex } from "../methods/getListIndex";
@@ -21,7 +21,7 @@ export function postUpdate(target, _prop, receiver, handler) {
             // キャッシュを無効化（ダーティ）
             const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
-            setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+            dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
         });

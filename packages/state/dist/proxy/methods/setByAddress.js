@@ -24,7 +24,7 @@ import { getUpdater } from "../../updater/updater";
 import { getByAddress } from "./getByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
-import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
+import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 function _setByAddress(target, address, absAddress, value, receiver, handler) {
     try {
@@ -66,7 +66,7 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
                 return;
             const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
-            setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+            dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
         });
@@ -125,16 +125,10 @@ export function setByAddress(target, address, value, receiver, handler) {
     }
     finally {
         if (cacheable) {
-            const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-            if (cacheEntry === null) {
-                setCacheEntryByAbsoluteStateAddress(absAddress, {
-                    value: value
-                });
-            }
-            else {
-                // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-                cacheEntry.value = value;
-            }
+            setCacheEntryByAbsoluteStateAddress(absAddress, {
+                value: value,
+                dirty: false
+            });
         }
     }
 }

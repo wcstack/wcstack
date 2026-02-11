@@ -3,7 +3,7 @@ import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
-import { setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
+import { dirtyCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { walkDependency } from "../../dependency/walkDependency";
 import { getUpdater } from "../../updater/updater";
 import { getListIndex } from "../methods/getListIndex";
@@ -40,7 +40,7 @@ export function postUpdate(
         // キャッシュを無効化（ダーティ）
         const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
         const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
-        setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+        dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
         // 更新対象として登録
         updater.enqueueAbsoluteAddress(absDepAddress);
       }

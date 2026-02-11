@@ -70,12 +70,13 @@ function _getByAddressWithCache(
   const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
   const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
   const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-  if (cacheEntry !== null) {
+  if (cacheEntry !== null && cacheEntry.dirty === false) {
     return cacheEntry.value;
   }
   const value = _getByAddress(target, address, receiver, handler, stateElement);
   setCacheEntryByAbsoluteStateAddress(absAddress, {
-    value: value
+    value: value,
+    dirty: false
   });
   return value;
 }

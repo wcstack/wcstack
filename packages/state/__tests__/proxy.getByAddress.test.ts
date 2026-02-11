@@ -102,7 +102,7 @@ describe('getByAddress', () => {
     const address = createStateAddress(getPathInfo('total'), null);
     mockStateElement.getterPaths.add('total');
     const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(mockStateElement.name, address.pathInfo), address.listIndex);
-    setCacheEntryByAbsoluteStateAddress(absAddress, { value: 99 });
+    setCacheEntryByAbsoluteStateAddress(absAddress, { value: 99, dirty: false });
     const handler = createHandler(mockStateElement);
 
     const value = getByAddress(target, address, target, handler as any);

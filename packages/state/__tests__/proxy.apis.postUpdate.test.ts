@@ -13,7 +13,7 @@ vi.mock('../src/address/StateAddress', () => ({
   createStateAddress: vi.fn()
 }));
 vi.mock('../src/cache/cacheEntryByAbsoluteStateAddress', () => ({
-  setCacheEntryByAbsoluteStateAddress: vi.fn()
+  dirtyCacheEntryByAbsoluteStateAddress: vi.fn()
 }));
 vi.mock('../src/dependency/walkDependency', () => ({
   walkDependency: vi.fn()
@@ -30,7 +30,7 @@ import { getResolvedAddress } from '../src/address/ResolvedAddress';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { createStateAddress } from '../src/address/StateAddress';
-import { setCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
+import { dirtyCacheEntryByAbsoluteStateAddress } from '../src/cache/cacheEntryByAbsoluteStateAddress';
 import { walkDependency } from '../src/dependency/walkDependency';
 import { getUpdater } from '../src/updater/updater';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
@@ -39,7 +39,7 @@ const getResolvedAddressMock = vi.mocked(getResolvedAddress);
 const getAbsolutePathInfoMock = vi.mocked(getAbsolutePathInfo);
 const createAbsoluteStateAddressMock = vi.mocked(createAbsoluteStateAddress);
 const createStateAddressMock = vi.mocked(createStateAddress);
-const setCacheMock = vi.mocked(setCacheEntryByAbsoluteStateAddress);
+const dirtyCacheMock = vi.mocked(dirtyCacheEntryByAbsoluteStateAddress);
 const walkDependencyMock = vi.mocked(walkDependency);
 const getUpdaterMock = vi.mocked(getUpdater);
 const getListIndexMock = vi.mocked(getListIndex);
@@ -134,8 +134,8 @@ describe('postUpdate', () => {
     const fn = postUpdate({}, '$postUpdate', {}, handler);
     fn('count');
 
-    // コールバック冁E キャチE��ュ無効匁E
-    expect(setCacheMock).toHaveBeenCalled();
+    // コールバック内: キャッシュ無効化（dirty）
+    expect(dirtyCacheMock).toHaveBeenCalled();
     // コールバック冁E 更新対象登録 (本佁E囁E+ コールバック1囁E= 訁E囁E
     expect(updater.enqueueAbsoluteAddress).toHaveBeenCalledTimes(2);
   });

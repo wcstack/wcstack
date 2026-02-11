@@ -19,3 +19,12 @@ export function setCacheEntryByAbsoluteStateAddress(
     cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
   }
 }
+
+export function dirtyCacheEntryByAbsoluteStateAddress(
+  address: IAbsoluteStateAddress
+): void {
+  const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
+  if (cacheEntry) {
+    cacheEntry.dirty = true;
+  }
+}

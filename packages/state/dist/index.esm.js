@@ -892,6 +892,12 @@ function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
         cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
     }
 }
+function dirtyCacheEntryByAbsoluteStateAddress(address) {
+    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
+    if (cacheEntry) {
+        cacheEntry.dirty = true;
+    }
+}
 
 function checkDependency(handler, address) {
     // 動的依存関係の登録
@@ -961,12 +967,13 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
     const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-    if (cacheEntry !== null) {
+    if (cacheEntry !== null && cacheEntry.dirty === false) {
         return cacheEntry.value;
     }
     const value = _getByAddress(target, address, receiver, handler, stateElement);
     setCacheEntryByAbsoluteStateAddress(absAddress, {
-        value: value
+        value: value,
+        dirty: false
     });
     return value;
 }
@@ -3520,7 +3527,7 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
                 return;
             const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
-            setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+            dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
         });
@@ -3579,16 +3586,10 @@ function setByAddress(target, address, value, receiver, handler) {
     }
     finally {
         if (cacheable) {
-            const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-            if (cacheEntry === null) {
-                setCacheEntryByAbsoluteStateAddress(absAddress, {
-                    value: value
-                });
-            }
-            else {
-                // 既存のキャッシュエントリを更新(高速化のため新規オブジェクトを作成しない)
-                cacheEntry.value = value;
-            }
+            setCacheEntryByAbsoluteStateAddress(absAddress, {
+                value: value,
+                dirty: false
+            });
         }
     }
 }
@@ -3797,7 +3798,7 @@ function postUpdate(target, _prop, receiver, handler) {
             // キャッシュを無効化（ダーティ）
             const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
-            setCacheEntryByAbsoluteStateAddress(absDepAddress, null);
+            dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
         });

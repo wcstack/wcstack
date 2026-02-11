@@ -1,3 +1,4 @@
 export interface ICacheEntry {
-  value: unknown;
+  readonly value: unknown;
+  dirty: boolean;
 }

@@ -10,4 +10,10 @@ export function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
         cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
     }
 }
+export function dirtyCacheEntryByAbsoluteStateAddress(address) {
+    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
+    if (cacheEntry) {
+        cacheEntry.dirty = true;
+    }
+}
 //# sourceMappingURL=cacheEntryByAbsoluteStateAddress.js.map
