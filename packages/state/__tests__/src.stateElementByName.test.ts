@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { getStateElementByName, setStateElementByName } from '../src/stateElementByName';
 import { config } from '../src/config';
 
@@ -50,6 +50,37 @@ describe('stateElementByName', () => {
       setStateElementByName(document, 'debug', null);
       expect(getStateElementByName(document, 'debug')).toBeNull();
     } finally {
+      config.debug = originalDebug;
+    }
+  });
+
+  it('未登録のrootNodeに対してgetするとnullを返すこと', () => {
+    const freshNode = document.createElement('div');
+    expect(getStateElementByName(freshNode, 'any')).toBeNull();
+  });
+
+  it('debugモードがtrueの場合、登録・解除でconsole.debugが呼ばれること', () => {
+    const originalDebug = config.debug;
+    config.debug = true;
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    try {
+      const freshNode = document.createElement('div');
+      const fake = { name: 'test' } as any;
+
+      setStateElementByName(freshNode, 'test', fake);
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('registered'),
+        fake
+      );
+
+      debugSpy.mockClear();
+
+      setStateElementByName(freshNode, 'test', null);
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('unregistered')
+      );
+    } finally {
+      debugSpy.mockRestore();
       config.debug = originalDebug;
     }
   });

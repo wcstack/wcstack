@@ -45,38 +45,38 @@ export default {
     </script>
   </wcs-state>
 
-  <div data-bind-state="textContent: count; class.over: count|gt(10)"></div>
-  <button name="increment" data-bind-state="onclick: countUp">Increment</button>
-  <button name="clear" data-bind-state="onclick: clearCount">clear</button>
+  <div data-wcs="textContent: count; class.over: count|gt(10)"></div>
+  <button name="increment" data-wcs="onclick: countUp">Increment</button>
+  <button name="clear" data-wcs="onclick: clearCount">clear</button>
   <br>
 
-  <input type="text" name="userName" data-bind-state="value: user.name">
-  <div data-bind-state="textContent: user.name"></div>
+  <input type="text" name="userName" data-wcs="value: user.name">
+  <div data-wcs="textContent: user.name"></div>
   {{ user.name }}
   <br>
-  <button name="toggleName" data-bind-state="onclick: toggleName">Toggle Name</button>
+  <button name="toggleName" data-wcs="onclick: toggleName">Toggle Name</button>
   <br>
   {{ isActive }}
-  <input type="checkbox" name="toggle" data-bind-state="checked: isActive">
+  <input type="checkbox" name="toggle" data-wcs="checked: isActive">
   <div>
   </div>
   <div>
-    <template data-bind-state="if: toggle">
+    <template data-wcs="if: toggle">
       toggle on
     </template>
-    <template data-bind-state="elseif: isActive">
+    <template data-wcs="elseif: isActive">
       toggle off / isActive on
     </template>
-    <template data-bind-state="else:">
+    <template data-wcs="else:">
       toggle off / isActive off
     </template>
   </div>
-  <template data-bind-state="for: users">
+  <template data-wcs="for: users">
     <div>
-      <span data-bind-state="textContent: .id"></span>:
-      <input type="text" data-bind-state="value: .name">
-      <span data-bind-state="textContent: .name"></span>
-      <span data-bind-state="textContent: .dispName"></span>
+      <span data-wcs="textContent: .id"></span>:
+      <input type="text" data-wcs="value: .name">
+      <span data-wcs="textContent: .name"></span>
+      <span data-wcs="textContent: .dispName"></span>
     </div>
   </template>
 

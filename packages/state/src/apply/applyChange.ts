@@ -1,3 +1,4 @@
+import { isCustomElement } from "../components/isCustomElement.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
@@ -53,6 +54,13 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   context.appliedBindingSet.add(binding);
   if (binding.bindingType === "event") {
     return;
+  }
+  if (isCustomElement(binding.replaceNode)) {
+    const element = binding.replaceNode as Element;
+    if (customElements.get(element.tagName.toLowerCase()) === undefined) {
+      // cutomElement側の初期化を期待
+      return;
+    }
   }
   let rootNode: Node | null = binding.replaceNode.getRootNode() as Node;
   if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {

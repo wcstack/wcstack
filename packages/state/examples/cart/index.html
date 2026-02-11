@@ -119,19 +119,19 @@ export default {
 
     <section>
       Select Product:
-      <select data-bind-state="value|number: selectedProductId">
-        <template data-bind-state="for: products">
-          <option data-bind-state="value: .id">
+      <select data-wcs="value|number: selectedProductId">
+        <template data-wcs="for: products">
+          <option data-wcs="value: .id">
             {{ .name }} - ${{ .price|fix(2) }}</option>
         </template>
       </select>
-      <button type="button" data-bind-state="onclick: onAddProductToCart">Add to Cart</button>
+      <button type="button" data-wcs="onclick: onAddProductToCart">Add to Cart</button>
     </section>
     <section>
-      <template data-bind-state="if: cart.items.length|gt(0)">
+      <template data-wcs="if: cart.items.length|gt(0)">
         <h2>Your Shopping Cart</h2>
       </template>
-      <template data-bind-state="else:">
+      <template data-wcs="else:">
         <h2>Your cart is empty.</h2>
       </template>
       <table>
@@ -154,17 +154,17 @@ export default {
           </tr>
         </thead>
         <tbody>
-          <template data-bind-state="for: cart.items">
+          <template data-wcs="for: cart.items">
             <tr>
               <td>{{ $1|inc(1) }}</td>
               <td class="left">{{ .product.name }}</td>
               <td class="right">{{ .product.price|fix(2) }}</td>
               <td>
-                <input type="number" name="item" data-bind-state="attr.min: minQuantity; valueAsNumber: .quantity">
+                <input type="number" name="item" data-wcs="attr.min: minQuantity; valueAsNumber: .quantity">
               </td>
               <td class="right">{{ .price|fix(2) }}</td>
               <td>
-                <button type="button" data-bind-state="onclick: onDeleteItemFromCart">Delete</button>
+                <button type="button" data-wcs="onclick: onDeleteItemFromCart">Delete</button>
               </td>
             </tr>
           </template>

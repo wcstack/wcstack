@@ -123,7 +123,7 @@ function createFragmentInfo() {
 function createFragmentInfoWithBinding() {
   const fragment = document.createDocumentFragment();
   const span = document.createElement('span');
-  span.setAttribute('data-bind-state', 'textContent: items.*');
+  span.setAttribute('data-wcs', 'textContent: items.*');
   fragment.appendChild(span);
 
   const parseBindTextResult: ParseBindTextResult = {
@@ -151,7 +151,7 @@ function createFragmentInfoWithMultipleBindings() {
   const fragment = document.createDocumentFragment();
   const span = document.createElement('span');
   // 同じノ�Eドに褁E��のバインチE��ングを設宁E
-  span.setAttribute('data-bind-state', 'textContent: items.*; title: items.*');
+  span.setAttribute('data-wcs', 'textContent: items.*; title: items.*');
   fragment.appendChild(span);
 
   const parseBindTextResult: ParseBindTextResult = {

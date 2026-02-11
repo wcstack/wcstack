@@ -125,7 +125,7 @@ describe('expandShorthandPaths', () => {
       expect(el.getAttribute(config.bindAttributeName)).toBe('textContent: users.*.name');
     });
 
-    it('data-bind-state属性のない要素は影響を受けないこと', () => {
+    it('data-wcs属性のない要素は影響を受けないこと', () => {
       const el = document.createElement('span');
       el.textContent = 'hello';
       const fragment = createFragment(el);

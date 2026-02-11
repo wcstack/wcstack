@@ -3,7 +3,7 @@ import { getSubscriberNodes } from '../src/bindings/getSubscriberNodes';
 import { config } from '../src/config';
 
 describe('getSubscriberNodes', () => {
-  it('data-bind-state属性とコメントノードを取得できること', () => {
+  it('data-wcs属性とコメントノードを取得できること', () => {
     const fragment = document.createDocumentFragment();
 
     const boundEl = document.createElement('div');

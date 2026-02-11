@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>simple</title>
+  <!--
+    Import map to define component paths
+    "@components/my/" means is lazy load, <my-xxx> will load ./components/xxx.js on demand
+  -->
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/my/": "./components/"
+      }
+    }
+  </script>
+  <!-- autoloader, state exec bootstrap -->
+  <script type="module" src="../../packages/autoloader/dist/auto.js"></script>
+  <script type="module" src="../../packages/state/dist/auto.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  user: { id: 1, name: "Alice" },
+  users: [
+    { id: 1, name: "Alice" },
+    { id: 2, name: "Bob" },
+    { id: 3, name: "Charlie" }
+  ],
+};
+    </script>
+  </wcs-state>
+
+  <div>{{ user.name }}</div>
+  <input type="text" data-wcs="value: user.name" />
+  <my-component data-wcs="state.message: user.name"></my-component>
+
+  <div>Loop: users</div>
+  <template data-wcs="for: users">
+    <div>{{ .name}}</div>
+    <input type="text" data-wcs="value: .name" />
+    <my-component data-wcs="state.message: .name"></my-component>
+  </template>
+
+  <hr>
+
+</body>
+</html>

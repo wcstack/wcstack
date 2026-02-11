@@ -129,7 +129,7 @@ describe('initializeBindings', () => {
   it('stateElementが存在しない場合はエラーになること', () => {
     const container = document.createElement('div');
     const el = document.createElement('span');
-    el.setAttribute('data-bind-state', 'textContent: message@missing');
+    el.setAttribute('data-wcs', 'textContent: message@missing');
     container.appendChild(el);
 
     expect(() => initializeBindings(container, null)).toThrow(/State element with name "missing" not found/);
@@ -143,7 +143,7 @@ describe('initializeBindings', () => {
 
     const container = document.createElement('div');
     const el = document.createElement('button');
-    el.setAttribute('data-bind-state', 'onclick: handleClick');
+    el.setAttribute('data-wcs', 'onclick: handleClick');
     container.appendChild(el);
     document.body.appendChild(container);
 
@@ -158,9 +158,9 @@ describe('initializeBindings', () => {
 
     const container = document.createElement('div');
     const el1 = document.createElement('span');
-    el1.setAttribute('data-bind-state', 'textContent: message');
+    el1.setAttribute('data-wcs', 'textContent: message');
     const el2 = document.createElement('span');
-    el2.setAttribute('data-bind-state', 'textContent: message');
+    el2.setAttribute('data-wcs', 'textContent: message');
     container.appendChild(el1);
     container.appendChild(el2);
     document.body.appendChild(container);
@@ -178,7 +178,7 @@ describe('initializeBindings', () => {
 
     const fragment = document.createDocumentFragment();
     const el = document.createElement('span');
-    el.setAttribute('data-bind-state', 'textContent: message');
+    el.setAttribute('data-wcs', 'textContent: message');
     fragment.appendChild(el);
 
     const nodeInfos = getFragmentNodeInfos(fragment);

@@ -399,4 +399,45 @@ describe('applyChange (coverage)', () => {
     expect(() => applyChange(bindingInfo, context))
       .toThrow(/State element with name "missing" not found for binding/);
   });
+
+  it('未定義のカスタム要素の場合はスキップされること', () => {
+    const el = document.createElement('my-undefined-element');
+    document.body.appendChild(el);
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: el,
+      replaceNode: el,
+      propName: 'value',
+      propSegments: ['value']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue('test');
+    applyChange(bindingInfo, context);
+
+    // customElements.get returns undefined, so apply is skipped
+    expect(applyChangeToPropertyMock).not.toHaveBeenCalled();
+  });
+
+  it('定義済みのカスタム要素の場合は通常どおり適用されること', () => {
+    class MyDefinedElement extends HTMLElement {}
+    customElements.define('my-defined-element', MyDefinedElement);
+
+    const el = document.createElement('my-defined-element');
+    document.body.appendChild(el);
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: el,
+      replaceNode: el,
+      propName: 'value',
+      propSegments: ['value']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue('hello');
+    applyChange(bindingInfo, context);
+
+    expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToPropertyMock).toHaveBeenCalledWith(bindingInfo, context, 'hello');
+  });
 });

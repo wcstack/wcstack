@@ -41,29 +41,29 @@ export default {
   </wcs-state>
 
   <div>{{ user.name }}</div>
-  <input type="text" data-bind-state="value: user.name" />
-  <my-component data-bind-state="state.message: user.name"></my-component>
+  <input type="text" data-wcs="value: user.name" />
+  <my-component data-wcs="state.message: user.name"></my-component>
 
   <div>Loop: users</div>
-  <template data-bind-state="for: users">
+  <template data-wcs="for: users">
     <div>{{ .name}}</div>
-    <input type="text" data-bind-state="value: .name" />
-    <my-component data-bind-state="state.message: .name"></my-component>
+    <input type="text" data-wcs="value: .name" />
+    <my-component data-wcs="state.message: .name"></my-component>
   </template>
 
   <hr>
 
   <h3>SVG内でのtemplate使用例</h3>
   <div>
-    <input type="checkbox" data-bind-state="checked: showSvg" id="showSvg" />
+    <input type="checkbox" data-wcs="checked: showSvg" id="showSvg" />
     <label for="showSvg">SVGを表示</label>
   </div>
 
   <svg width="200" height="100" style="border: 1px solid #ccc;">
-    <template data-bind-state="if: showSvg">
+    <template data-wcs="if: showSvg">
       <rect x="0" y="0" width="200" height="100" fill="#f0f0f0" />
-      <template data-bind-state="for: points">
-        <circle data-bind-state="attr.cx: .x; attr.cy: .y; attr.fill: .color" r="5" />
+      <template data-wcs="for: points">
+        <circle data-wcs="attr.cx: .x; attr.cy: .y; attr.fill: .color" r="5" />
       </template>
     </template>
   </svg>

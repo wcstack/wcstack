@@ -414,6 +414,8 @@ describe('walkDependency', () => {
   });
 
   it('logs and returns empty for invalid search type', () => {
+    const originalDebug = config.debug;
+    config.debug = true;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const stateProxy = createStateProxy({
       'users.*.orders': [1],
@@ -439,6 +441,7 @@ describe('walkDependency', () => {
     expect(result).toEqual([]);
     expect(logSpy).toHaveBeenCalled();
     logSpy.mockRestore();
+    config.debug = originalDebug;
   });
 
   it('does not log when debug is false for invalid search type', () => {

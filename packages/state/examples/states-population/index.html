@@ -93,12 +93,12 @@ export default {
           </tr>
         </thead>
         <tbody>
-          <template data-bind-state="for: regions">
-            <template data-bind-state="for: regions.*.states">
+          <template data-wcs="for: regions">
+            <template data-wcs="for: regions.*.states">
               <tr>
                 <td class="text-center">{{ .name }}</td>
                 <td class="text-center">{{ .capital }}</td>
-                <td class="text-right" data-bind-state="
+                <td class="text-right" data-wcs="
                   class.over : .population|ge(5000000);
                   class.under: .population|lt(1000000);
                 ">{{ .population|locale }}</td>

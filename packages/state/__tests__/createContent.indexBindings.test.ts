@@ -108,7 +108,7 @@ describe('createContent - indexBindingsの分類', () => {
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
-    span.setAttribute('data-bind-state', 'textContent: $1');
+    span.setAttribute('data-wcs', 'textContent: $1');
     fragment.appendChild(span);
 
     setFragment(fragment, getFragmentNodeInfos(fragment));
@@ -127,7 +127,7 @@ describe('createContent - indexBindingsの分類', () => {
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
-    span.setAttribute('data-bind-state', 'textContent: $2');
+    span.setAttribute('data-wcs', 'textContent: $2');
     fragment.appendChild(span);
 
     setFragment(fragment, getFragmentNodeInfos(fragment));
@@ -146,7 +146,7 @@ describe('createContent - indexBindingsの分類', () => {
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
-    span.setAttribute('data-bind-state', 'textContent: items.*');
+    span.setAttribute('data-wcs', 'textContent: items.*');
     fragment.appendChild(span);
 
     setFragment(fragment, getFragmentNodeInfos(fragment));
@@ -168,7 +168,7 @@ describe('createContent - indexBindingsの分類', () => {
 
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');
-    span.setAttribute('data-bind-state', 'textContent: items.*; title: $1');
+    span.setAttribute('data-wcs', 'textContent: items.*; title: $1');
     fragment.appendChild(span);
 
     setFragment(fragment, getFragmentNodeInfos(fragment));
@@ -209,9 +209,9 @@ describe('createContent - indexBindingsの分類', () => {
 
     const fragment = document.createDocumentFragment();
     const span1 = document.createElement('span');
-    span1.setAttribute('data-bind-state', 'textContent: $1');
+    span1.setAttribute('data-wcs', 'textContent: $1');
     const span2 = document.createElement('span');
-    span2.setAttribute('data-bind-state', 'textContent: $2');
+    span2.setAttribute('data-wcs', 'textContent: $2');
     fragment.appendChild(span1);
     fragment.appendChild(span2);
 

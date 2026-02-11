@@ -71,7 +71,7 @@ const createComponentWithShadow = (bindAttr = true): Element => {
   const component = document.createElement('div');
   const shadow = component.attachShadow({ mode: 'open' });
   if (bindAttr) {
-    component.setAttribute('data-bind-state', 'state:prop1; state:prop2');
+    component.setAttribute('data-wcs', 'state:prop1; state:prop2');
   }
   return component;
 };
@@ -90,7 +90,7 @@ describe('bindWebComponent', () => {
   it('bindAttributeNameがない場合はエラーになること', async () => {
     const component = createComponentWithShadow(false);
     const stateEl = createMockStateElement();
-    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/no "data-bind-state" attribute/);
+    await expect(bindWebComponent(stateEl, component, 'outer', {})).rejects.toThrow(/no "data-wcs" attribute/);
   });
 
   it('bindingsがnullの場合はエラーになること', async () => {

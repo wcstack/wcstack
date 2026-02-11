@@ -4,7 +4,7 @@ import { DELIMITER, WILDCARD } from '../src/define';
 
 describe('config', () => {
   it('デフォルト設定が存在すること', () => {
-    expect(config.bindAttributeName).toBe('data-bind-state');
+    expect(config.bindAttributeName).toBe('data-wcs');
     expect(config.commentTextPrefix).toBe('wcs-text');
     expect(config.tagNames.state).toBe('wcs-state');
   });

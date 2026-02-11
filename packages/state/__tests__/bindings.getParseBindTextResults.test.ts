@@ -32,7 +32,7 @@ describe('getParseBindTextResults', () => {
 
   it('要素ノードのbindTextをパースできること', () => {
     const el = document.createElement('span');
-    el.setAttribute('data-bind-state', 'textContent: message');
+    el.setAttribute('data-wcs', 'textContent: message');
     const results = getParseBindTextResults(el);
     expect(results).toHaveLength(1);
     expect(results[0].bindingType).toBe('prop');
@@ -42,7 +42,7 @@ describe('getParseBindTextResults', () => {
 
   it('バインド属性がない要素ノードでは空配列を返すこと', () => {
     const el = document.createElement('span');
-    // data-bind-state属性を設定しない (getAttributeがnullを返す)
+    // data-wcs属性を設定しない (getAttributeがnullを返す)
     const results = getParseBindTextResults(el);
     expect(results).toHaveLength(0);
   });

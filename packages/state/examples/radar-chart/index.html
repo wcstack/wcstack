@@ -97,27 +97,27 @@ export default {
     </wcs-state>
     <svg width="200" height="200">
       <g>
-        <polygon data-bind-state="attr.points: points"></polygon>
+        <polygon data-wcs="attr.points: points"></polygon>
         <circle cx="100" cy="100" r="80"></circle>
-        <template data-bind-state="for: stats">
-          <text data-bind-state="
+        <template data-wcs="for: stats">
+          <text data-wcs="
             attr.x: .labelPoint.x;
             attr.y: .labelPoint.y;
           ">{{ .label }}</text>
         </template>
       </g>
     </svg>
-    <template data-bind-state="for: stats">
+    <template data-wcs="for: stats">
     <div>
       <label>{{ .label }}</label>
-      <input type="range" data-bind-state="valueAsNumber: .value" min="0" max="100">
+      <input type="range" data-wcs="valueAsNumber: .value" min="0" max="100">
       <span>{{ .value }}</span>
-      <button data-bind-state="onclick: onRemove" class="remove">X</button>
+      <button data-wcs="onclick: onRemove" class="remove">X</button>
     </div>
     </template>
     <form id="add">
-      <input name="newlabel" data-bind-state="value: newLabel">
-      <button data-bind-state="onclick#prevent: onAdd">Add a Stat</button>
+      <input name="newlabel" data-wcs="value: newLabel">
+      <button data-wcs="onclick#prevent: onAdd">Add a Stat</button>
     </form>
 
     <pre id="raw">{{ statsJson }}</pre>

@@ -1,5 +1,5 @@
 const config = {
-    bindAttributeName: 'data-bind-state',
+    bindAttributeName: 'data-wcs',
     commentTextPrefix: 'wcs-text',
     commentForPrefix: 'wcs-for',
     commentIfPrefix: 'wcs-if',
@@ -1020,6 +1020,32 @@ function getLastListValueByAbsoluteStateAddress(address) {
 }
 function setLastListValueByAbsoluteStateAddress(address, value) {
     lastListValueByAbsoluteStateAddress.set(address, value);
+}
+
+const cache = new WeakMap();
+function isCustomElement(node) {
+    let value = cache.get(node);
+    if (value !== undefined) {
+        return value;
+    }
+    try {
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return value = false;
+        }
+        const element = node;
+        if (element.tagName.includes("-")) {
+            return value = true;
+        }
+        if (element.hasAttribute("is")) {
+            if (element.getAttribute("is")?.includes("-")) {
+                return value = true;
+            }
+        }
+        return value = false;
+    }
+    finally {
+        cache.set(node, value ?? false);
+    }
 }
 
 function applyChangeToAttribute(binding, _context, newValue) {
@@ -3116,6 +3142,13 @@ function applyChange(binding, context) {
     context.appliedBindingSet.add(binding);
     if (binding.bindingType === "event") {
         return;
+    }
+    if (isCustomElement(binding.replaceNode)) {
+        const element = binding.replaceNode;
+        if (customElements.get(element.tagName.toLowerCase()) === undefined) {
+            // cutomElement側の初期化を期待
+            return;
+        }
     }
     let rootNode = binding.replaceNode.getRootNode();
     if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
