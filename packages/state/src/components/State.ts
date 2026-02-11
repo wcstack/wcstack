@@ -9,11 +9,12 @@ import { IStateElement } from "./types";
 import { setStateElementByName } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { NO_SET_TIMEOUT, WILDCARD } from "../define";
+import { NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -185,6 +186,24 @@ export class State extends HTMLElement implements IStateElement {
     }
   }
 
+  private async _callStateConnectedCallback(): Promise<void> {
+    await this.createStateAsync("writable", async (state) => {
+      // stateに"$connectedCallback"があるか確認し、connectedCallbackAPIを呼び出す
+      if (STATE_CONNECTED_CALLBACK_NAME in state) {
+        await state[connectedCallbackSymbol]();
+      }
+    });
+  }
+
+  private _callStateDisconnectedCallback(): void {
+    this.createState("writable", (state) => {
+      // stateに"$disconnectedCallback"があるか確認し、disconnectedCallbackAPIを呼び出す
+      if (STATE_DISCONNECTED_CALLBACK_NAME in state) {
+        state[disconnectedCallbackSymbol]();
+      }
+    });
+  }
+
   async connectedCallback() {
     this._rootNode = this.getRootNode() as Node;
     if (!this._initialized) {
@@ -194,10 +213,12 @@ export class State extends HTMLElement implements IStateElement {
       this._initialized = true;
       this._resolveInitialize?.();
     }
+    await this._callStateConnectedCallback();
   }
 
   disconnectedCallback() {
     if (this._rootNode !== null) {
+      this._callStateDisconnectedCallback();
       setStateElementByName(this.rootNode, this._name, null);
       this._rootNode = null;
     }

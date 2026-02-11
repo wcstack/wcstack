@@ -15,6 +15,7 @@ Declarative reactive state management for Web Components.
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
+- **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` for initialization and cleanup
 - **Zero dependencies** — no runtime dependencies
 
 ## Installation
@@ -735,6 +736,42 @@ All bindings work inside `<svg>` elements. Use `attr.*` for SVG attributes:
   </template>
 </svg>
 ```
+
+## Lifecycle Hooks
+
+State objects can define `$connectedCallback` and `$disconnectedCallback` methods that are called when the `<wcs-state>` element is connected to or disconnected from the DOM.
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      timer: null,
+      count: 0,
+
+      // Called when <wcs-state> is connected to the DOM (supports async)
+      async $connectedCallback() {
+        const res = await fetch("/api/initial-count");
+        this.count = await res.json();
+        this.timer = setInterval(() => { this.count++; }, 1000);
+      },
+
+      // Called when <wcs-state> is disconnected from the DOM (sync only)
+      $disconnectedCallback() {
+        clearInterval(this.timer);
+      }
+    };
+  </script>
+</wcs-state>
+```
+
+| Hook | Timing | Async |
+|---|---|---|
+| `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (`async` supported) |
+| `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
+
+- `this` inside hooks is the state proxy with full read/write access
+- `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
+- `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
 
 ## Configuration
 

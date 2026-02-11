@@ -6,7 +6,6 @@
  * 主な役割:
  * - オブジェクト（target）に$disconnectedCallbackメソッドが定義されていれば呼び出す
  * - コールバックはtargetのthisコンテキストで呼び出し、IReadonlyStateProxy（receiver）を引数として渡す
- * - 非同期関数として実行可能（await対応）
  *
  * 設計ポイント:
  * - Reflect.getで$disconnectedCallbackプロパティを安全に取得
@@ -14,5 +13,5 @@
  * - ライフサイクル管理やクリーンアップ処理に利用
  */
 import { IStateHandler } from "../types";
-export declare function disconnectedCallback(target: object, _prop: PropertyKey, receiver: any, _handler: IStateHandler): Promise<void>;
+export declare function disconnectedCallback(target: object, _prop: PropertyKey, receiver: any, _handler: IStateHandler): void;
 //# sourceMappingURL=disconnectedCallback.d.ts.map

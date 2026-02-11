@@ -3,7 +3,7 @@ import { get } from '../src/proxy/traps/get';
 import { createListIndex } from '../src/list/createListIndex';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
-import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
+import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol } from '../src/proxy/symbols';
 
 vi.mock('../src/proxy/methods/setLoopContext', () => ({
   setLoopContext: vi.fn(),
@@ -34,6 +34,14 @@ vi.mock('../src/proxy/apis/trackDependency', () => ({
   trackDependency: vi.fn()
 }));
 
+vi.mock('../src/proxy/apis/connectedCallback', () => ({
+  connectedCallback: vi.fn()
+}));
+
+vi.mock('../src/proxy/apis/disconnectedCallback', () => ({
+  disconnectedCallback: vi.fn()
+}));
+
 import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
@@ -41,6 +49,8 @@ import { getAll } from '../src/proxy/apis/getAll';
 import { postUpdate } from '../src/proxy/apis/postUpdate';
 import { resolve } from '../src/proxy/apis/resolve';
 import { trackDependency } from '../src/proxy/apis/trackDependency';
+import { connectedCallback } from '../src/proxy/apis/connectedCallback';
+import { disconnectedCallback } from '../src/proxy/apis/disconnectedCallback';
 
 const setLoopContextMock = vi.mocked(setLoopContext);
 const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
@@ -50,6 +60,8 @@ const getAllMock = vi.mocked(getAll);
 const postUpdateMock = vi.mocked(postUpdate);
 const resolveMock = vi.mocked(resolve);
 const trackDependencyMock = vi.mocked(trackDependency);
+const connectedCallbackMock = vi.mocked(connectedCallback);
+const disconnectedCallbackMock = vi.mocked(disconnectedCallback);
 
 describe('proxy/traps/get', () => {
   afterEach(() => {
@@ -237,6 +249,52 @@ describe('proxy/traps/get', () => {
 
   it('文字列・symbol 以外のプロパティは undefined を返すこと', () => {
     const result = get({}, 1, {}, {} as any);
+    expect(result).toBeUndefined();
+  });
+
+  it('$$connectedCallback が connectedCallback を呼び出すこと', async () => {
+    connectedCallbackMock.mockResolvedValueOnce(undefined);
+    const handler = {} as any;
+    const target = { $connectedCallback() {} };
+    const receiver = { receiver: true };
+
+    const fn = get(target, connectedCallbackSymbol, receiver, handler) as () => Promise<void>;
+    await fn();
+
+    expect(connectedCallbackMock).toHaveBeenCalledTimes(1);
+    expect(connectedCallbackMock).toHaveBeenCalledWith(target, connectedCallbackSymbol, receiver, handler);
+  });
+
+  it('$$disconnectedCallback が disconnectedCallback を呼び出すこと', () => {
+    disconnectedCallbackMock.mockReturnValueOnce(undefined);
+    const handler = {} as any;
+    const target = { $disconnectedCallback() {} };
+    const receiver = { receiver: true };
+
+    const fn = get(target, disconnectedCallbackSymbol, receiver, handler) as () => void;
+    fn();
+
+    expect(disconnectedCallbackMock).toHaveBeenCalledTimes(1);
+    expect(disconnectedCallbackMock).toHaveBeenCalledWith(target, disconnectedCallbackSymbol, receiver, handler);
+  });
+
+  it('$$connectedCallback が Promise を返すこと', () => {
+    connectedCallbackMock.mockResolvedValueOnce(undefined);
+    const handler = {} as any;
+
+    const fn = get({}, connectedCallbackSymbol, {}, handler) as () => Promise<void>;
+    const result = fn();
+
+    expect(result).toBeInstanceOf(Promise);
+  });
+
+  it('$$disconnectedCallback が void を返すこと（同期）', () => {
+    disconnectedCallbackMock.mockReturnValueOnce(undefined);
+    const handler = {} as any;
+
+    const fn = get({}, disconnectedCallbackSymbol, {}, handler) as () => void;
+    const result = fn();
+
     expect(result).toBeUndefined();
   });
 });

@@ -126,6 +126,8 @@ for (let i = 0; i < MAX_WILDCARD_DEPTH; i++) {
 const INDEX_BY_INDEX_NAME = Object.freeze(tmpIndexByIndexName);
 const NO_SET_TIMEOUT = 60 * 1000; // 1分
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
+const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 
 class LoopContextStack {
     _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
@@ -442,6 +444,49 @@ function createStateAddress(pathInfo, listIndex) {
         cached = new StateAddress(pathInfo, listIndex);
         cacheByPathInfo.set(pathInfo, cached);
         return cached;
+    }
+}
+
+/**
+ * connectedCallback.ts
+ *
+ * StateClassのライフサイクルフック「$connectedCallback」を呼び出すユーティリティ関数です。
+ *
+ * 主な役割:
+ * - オブジェクト（target）に$connectedCallbackメソッドが定義されていれば呼び出す
+ * - コールバックはtargetのthisコンテキストで呼び出し、IReadonlyStateProxy（receiver）を引数として渡す
+ * - 非同期関数として実行可能（await対応）
+ *
+ * 設計ポイント:
+ * - Reflect.getで$connectedCallbackプロパティを安全に取得
+ * - 存在しない場合は何もしない
+ * - ライフサイクル管理やカスタム初期化処理に利用
+ */
+async function connectedCallback(target, _prop, receiver, _handler) {
+    const callback = Reflect.get(target, STATE_CONNECTED_CALLBACK_NAME);
+    if (typeof callback === "function") {
+        await callback.call(receiver);
+    }
+}
+
+/**
+ * disconnectedCallback.ts
+ *
+ * StateClassのライフサイクルフック「$disconnectedCallback」を呼び出すユーティリティ関数です。
+ *
+ * 主な役割:
+ * - オブジェクト（target）に$disconnectedCallbackメソッドが定義されていれば呼び出す
+ * - コールバックはtargetのthisコンテキストで呼び出し、IReadonlyStateProxy（receiver）を引数として渡す
+ *
+ * 設計ポイント:
+ * - Reflect.getで$disconnectedCallbackプロパティを安全に取得
+ * - 存在しない場合は何もしない
+ * - ライフサイクル管理やクリーンアップ処理に利用
+ */
+function disconnectedCallback(target, _prop, receiver, _handler) {
+    const callback = Reflect.get(target, STATE_DISCONNECTED_CALLBACK_NAME);
+    if (typeof callback === "function") {
+        callback.call(receiver);
     }
 }
 
@@ -2552,6 +2597,8 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
 const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
 const setLoopContextSymbol = Symbol("$$setLoopContext");
 const getByAddressSymbol = Symbol("$$getByAddress");
+const connectedCallbackSymbol = Symbol("$$connectedCallback");
+const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
 
 const handlerByHandlerKey$1 = new Map();
 const bindingInfoSetByHandlerKey$1 = new Map();
@@ -3957,6 +4004,16 @@ function get(target, prop, receiver, handler) {
                     return getByAddress(target, address, receiver, handler);
                 };
             }
+            case connectedCallbackSymbol: {
+                return () => {
+                    return connectedCallback(target, prop, receiver);
+                };
+            }
+            case disconnectedCallbackSymbol: {
+                return () => {
+                    return disconnectedCallback(target, prop, receiver);
+                };
+            }
         }
         return Reflect.get(target, prop, receiver);
     }
@@ -4733,6 +4790,22 @@ class State extends HTMLElement {
             await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
         }
     }
+    async _callStateConnectedCallback() {
+        await this.createStateAsync("writable", async (state) => {
+            // stateに"$connectedCallback"があるか確認し、connectedCallbackAPIを呼び出す
+            if (STATE_CONNECTED_CALLBACK_NAME in state) {
+                await state[connectedCallbackSymbol]();
+            }
+        });
+    }
+    _callStateDisconnectedCallback() {
+        this.createState("writable", (state) => {
+            // stateに"$disconnectedCallback"があるか確認し、disconnectedCallbackAPIを呼び出す
+            if (STATE_DISCONNECTED_CALLBACK_NAME in state) {
+                state[disconnectedCallbackSymbol]();
+            }
+        });
+    }
     async connectedCallback() {
         this._rootNode = this.getRootNode();
         if (!this._initialized) {
@@ -4742,9 +4815,11 @@ class State extends HTMLElement {
             this._initialized = true;
             this._resolveInitialize?.();
         }
+        await this._callStateConnectedCallback();
     }
     disconnectedCallback() {
         if (this._rootNode !== null) {
+            this._callStateDisconnectedCallback();
             setStateElementByName(this.rootNode, this._name, null);
             this._rootNode = null;
         }

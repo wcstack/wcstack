@@ -6,10 +6,11 @@ import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { raiseError } from "../raiseError";
 import { setStateElementByName } from "../stateElementByName";
 import { createLoopContextStack } from "../list/loopContext";
-import { NO_SET_TIMEOUT, WILDCARD } from "../define";
+import { NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 function getAllPropertyDescriptors(obj) {
     let descriptors = {};
     let proto = obj;
@@ -170,6 +171,22 @@ export class State extends HTMLElement {
             await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
         }
     }
+    async _callStateConnectedCallback() {
+        await this.createStateAsync("writable", async (state) => {
+            // stateに"$connectedCallback"があるか確認し、connectedCallbackAPIを呼び出す
+            if (STATE_CONNECTED_CALLBACK_NAME in state) {
+                await state[connectedCallbackSymbol]();
+            }
+        });
+    }
+    _callStateDisconnectedCallback() {
+        this.createState("writable", (state) => {
+            // stateに"$disconnectedCallback"があるか確認し、disconnectedCallbackAPIを呼び出す
+            if (STATE_DISCONNECTED_CALLBACK_NAME in state) {
+                state[disconnectedCallbackSymbol]();
+            }
+        });
+    }
     async connectedCallback() {
         this._rootNode = this.getRootNode();
         if (!this._initialized) {
@@ -179,9 +196,11 @@ export class State extends HTMLElement {
             this._initialized = true;
             this._resolveInitialize?.();
         }
+        await this._callStateConnectedCallback();
     }
     disconnectedCallback() {
         if (this._rootNode !== null) {
+            this._callStateDisconnectedCallback();
             setStateElementByName(this.rootNode, this._name, null);
             this._rootNode = null;
         }

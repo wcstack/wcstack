@@ -22,6 +22,8 @@ import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
 import { INDEX_BY_INDEX_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
+import { connectedCallback } from "../apis/connectedCallback";
+import { disconnectedCallback } from "../apis/disconnectedCallback";
 import { getAll } from "../apis/getAll";
 import { postUpdate } from "../apis/postUpdate";
 import { resolve } from "../apis/resolve";
@@ -29,7 +31,7 @@ import { trackDependency } from "../apis/trackDependency";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol } from "../symbols";
 import { IStateHandler } from "../types";
 
 export function get(
@@ -121,6 +123,26 @@ export function get(
           return getByAddress(
             target,
             address,
+            receiver,
+            handler
+          );
+        }
+      }
+      case connectedCallbackSymbol: {
+        return (): Promise<void> => {
+          return connectedCallback(
+            target,
+            prop,
+            receiver,
+            handler
+          );
+        }
+      }
+      case disconnectedCallbackSymbol: {
+        return (): void => {
+          return disconnectedCallback(
+            target,
+            prop,
             receiver,
             handler
           );

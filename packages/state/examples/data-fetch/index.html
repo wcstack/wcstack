@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Data Fetch</title>
+  <script type="module" src="../../dist/auto.js"></script>
+  <style>
+a {
+  text-decoration: none;
+  color: #42b883;
+}
+li {
+  line-height: 1.5em;
+  margin-bottom: 20px;
+}
+.author,
+.date {
+  font-weight: bold;
+}
+  </style>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+const API_URL = `https://api.github.com/repos/wcstack/wcstack/commits?per_page=3&sha=`
+const branches = ['main', 'minor']
+const currentBranch = branches[0];   
+
+function truncate(v) {
+  const newline = v.indexOf('\n')
+  return newline > 0 ? v.slice(0, newline) : v
+}
+
+function formatDate(v) {
+  return v.replace(/T|Z/g, ' ')
+}
+
+export default {
+  commits: [],
+  currentBranch,
+  get "commits.*.commit.author.formatedDate"() {
+    return formatDate(this["commits.*.commit.author.date"]);
+  },
+  get "commits.*.commit.truncatedMessage"() {
+    return truncate(this["commits.*.commit.message"]);
+  },
+  async fetchCommits() {
+    fetch(API_URL + currentBranch)
+      .then(response => response.json())
+      .then(data => {
+        this.commits = data;
+      })
+      .catch(error => {
+        console.error('Error fetching commits:', error);
+      });
+  },
+  async $connectedCallback() {
+    await this.fetchCommits();
+  },
+  async toggleBranch() {
+    const currentIndex = branches.indexOf(this.currentBranch);
+    const nextIndex = (currentIndex + 1) % branches.length;
+    this.currentBranch = branches[nextIndex];
+    this.fetchCommits();
+  }
+};
+    </script>
+  </wcs-state>
+  <h1>Latest wcstack/wcstack Commits</h1>
+  <p>wcstack/wcstack@{{ currentBranch }}</p>
+  <button data-wcs="onclick: toggleBranch">Toggle Branch</button>
+  <template data-wcs="if: commits.length|gt(0)">
+  <ul>
+    <template data-wcs="for: commits">
+    <li>
+      <a target="_blank" class="commit" data-wcs="href: .html_url">{{ .sha|slice(0, 7) }}</a>
+      - <span class="message">{{ .commit.truncatedMessage }}</span><br>
+      by <span class="author">
+        <a target="_blank" data-wcs="href: .commit.author.html_url">{{ .commit.author.name }}</a>
+      </span>
+      at <span class="date">{{ .commit.author.formatedDate }}</span>
+    </li>
+    </template>
+  </ul>
+  </template>
+</body>
+</html>  

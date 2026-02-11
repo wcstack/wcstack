@@ -26,6 +26,7 @@ import { loadFromJsonFile } from '../src/stateLoader/loadFromJsonFile';
 import { loadFromScriptFile } from '../src/stateLoader/loadFromScriptFile';
 import { loadFromScriptJson } from '../src/stateLoader/loadFromScriptJson';
 import { createStateProxy } from '../src/proxy/StateHandler';
+import { connectedCallbackSymbol, disconnectedCallbackSymbol } from '../src/proxy/symbols';
 import { bindWebComponent } from '../src/webComponent/bindWebComponent';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
@@ -215,9 +216,10 @@ describe('State component', () => {
     const stateEl = createStateElement();
     stateEl.setInitialState({});
     await stateEl.connectedCallback();
+    const callCountAfterConnect = createStateProxyMock.mock.calls.length;
     const state1 = await getStateValue(stateEl);
     const state2 = await getStateValue(stateEl);
-    expect(createStateProxyMock).toHaveBeenCalledTimes(2);
+    expect(createStateProxyMock).toHaveBeenCalledTimes(callCountAfterConnect + 2);
     expect(state1).toBe(state2);
   });
 
@@ -374,6 +376,33 @@ describe('State component', () => {
     await stateEl.initializePromise;
     stateEl.disconnectedCallback();
     stateEl.disconnectedCallback(); // _rootNode is already null
+  });
+
+  it('$connectedCallbackが定義されている場合connectedCallback時に呼ばれること', async () => {
+    const connectedFn = vi.fn();
+    const state = {
+      $connectedCallback: connectedFn,
+      [connectedCallbackSymbol]: () => connectedFn(),
+    };
+    const stateEl = createStateElement();
+    stateEl.setInitialState(state);
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    expect(connectedFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('$disconnectedCallbackが定義されている場合disconnectedCallback時に呼ばれること', async () => {
+    const disconnectedFn = vi.fn();
+    const state = {
+      $disconnectedCallback: disconnectedFn,
+      [disconnectedCallbackSymbol]: () => disconnectedFn(),
+    };
+    const stateEl = createStateElement();
+    stateEl.setInitialState(state);
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    stateEl.disconnectedCallback();
+    expect(disconnectedFn).toHaveBeenCalledTimes(1);
   });
 
   it('内包スクリプト読み込み失敗時はエラーになること', async () => {

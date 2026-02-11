@@ -13,9 +13,9 @@
  * - 存在しない場合は何もしない
  * - ライフサイクル管理やカスタム初期化処理に利用
  */
-const CONNECTED_CALLBACK = "$connectedCallback";
+import { STATE_CONNECTED_CALLBACK_NAME } from "../../define";
 export async function connectedCallback(target, _prop, receiver, _handler) {
-    const callback = Reflect.get(target, CONNECTED_CALLBACK);
+    const callback = Reflect.get(target, STATE_CONNECTED_CALLBACK_NAME);
     if (typeof callback === "function") {
         await callback.call(receiver);
     }

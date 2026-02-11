@@ -15,6 +15,7 @@ Web Components のための宣言的リアクティブ状態管理。
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
+- **ライフサイクルフック** — 初期化・クリーンアップ用の `$connectedCallback` / `$disconnectedCallback`
 - **依存ゼロ** — ランタイム依存なし
 
 ## インストール
@@ -735,6 +736,42 @@ customElements.define("my-component", MyComponent);
   </template>
 </svg>
 ```
+
+## ライフサイクルフック
+
+状態オブジェクトに `$connectedCallback` と `$disconnectedCallback` メソッドを定義すると、`<wcs-state>` 要素の DOM への接続・切断時に呼び出されます。
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      timer: null,
+      count: 0,
+
+      // <wcs-state> が DOM に接続された時に呼ばれる（async 対応）
+      async $connectedCallback() {
+        const res = await fetch("/api/initial-count");
+        this.count = await res.json();
+        this.timer = setInterval(() => { this.count++; }, 1000);
+      },
+
+      // <wcs-state> が DOM から切断された時に呼ばれる（同期のみ）
+      $disconnectedCallback() {
+        clearInterval(this.timer);
+      }
+    };
+  </script>
+</wcs-state>
+```
+
+| フック | タイミング | 非同期 |
+|---|---|---|
+| `$connectedCallback` | 初回接続時は状態初期化後、再接続時は毎回呼び出し | 可（`async` 対応） |
+| `$disconnectedCallback` | 要素が DOM から削除された時 | 不可（同期のみ） |
+
+- フック内の `this` は読み書き可能な状態プロキシです
+- `$connectedCallback` は要素が接続される**たびに**呼ばれます（削除後の再接続を含む）。再確立が必要なセットアップ処理に適しています
+- `$disconnectedCallback` は同期的に呼び出されます — タイマーのクリア、イベントリスナーの削除、リソースの解放などのクリーンアップに使用します
 
 ## 設定
 
