@@ -7,7 +7,7 @@ import { setNodesByContent } from "../bindings/nodesByContent.js";
 import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
-import { getContentsByNode, setContentByNode } from "./contentsByNode.js";
+import { getContentSetByNode, setContentByNode } from "./contentsByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
 import { IContent } from "./types.js";
 
@@ -65,7 +65,7 @@ class Content implements IContent {
     const bindings = getBindingsByContent(this);
     for(const binding of bindings) {
       if (recursiveBindingTypes.has(binding.bindingType)) {
-        const contents = getContentsByNode(binding.node);
+        const contents = getContentSetByNode(binding.node);
         for (const content of contents) {
           content.unmount();
         }

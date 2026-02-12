@@ -6,7 +6,7 @@ import { initializeBindingsByFragment } from "../bindings/initializeBindings.js"
 import { setNodesByContent } from "../bindings/nodesByContent.js";
 import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
-import { getContentsByNode, setContentByNode } from "./contentsByNode.js";
+import { getContentSetByNode, setContentByNode } from "./contentsByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
 class Content {
@@ -55,7 +55,7 @@ class Content {
         const bindings = getBindingsByContent(this);
         for (const binding of bindings) {
             if (recursiveBindingTypes.has(binding.bindingType)) {
-                const contents = getContentsByNode(binding.node);
+                const contents = getContentSetByNode(binding.node);
                 for (const content of contents) {
                     content.unmount();
                 }

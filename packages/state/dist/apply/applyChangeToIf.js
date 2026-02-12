@@ -1,7 +1,7 @@
 import { config } from "../config";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { activateContent, deactivateContent } from "../structural/activateContent";
-import { getContentsByNode } from "../structural/contentsByNode";
+import { getContentSetByNode } from "../structural/contentsByNode";
 import { createContent } from "../structural/createContent";
 const lastConnectedByNode = new WeakMap();
 function bindingInfoText(bindingInfo) {
@@ -10,11 +10,14 @@ function bindingInfoText(bindingInfo) {
 export function applyChangeToIf(bindingInfo, context, rawNewValue) {
     const currentConnected = bindingInfo.node.isConnected;
     const newValue = Boolean(rawNewValue);
-    let contents = getContentsByNode(bindingInfo.node);
-    if (contents.length === 0) {
-        contents = [createContent(bindingInfo)];
+    let content;
+    const contents = getContentSetByNode(bindingInfo.node);
+    if (contents.size === 0) {
+        content = createContent(bindingInfo);
     }
-    const content = contents[0];
+    else {
+        content = contents.values().next().value;
+    }
     try {
         if (!newValue) {
             if (config.debug) {

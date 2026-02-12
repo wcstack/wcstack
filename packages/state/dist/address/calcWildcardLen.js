@@ -1,4 +1,4 @@
-const cacheCalcWildcardLen = new WeakMap();
+const cacheCalcWildcardLen = new Map();
 export function calcWildcardLen(pathInfo, targetPathInfo) {
     let path1;
     let path2;
@@ -18,20 +18,14 @@ export function calcWildcardLen(pathInfo, targetPathInfo) {
         path1 = targetPathInfo;
         path2 = pathInfo;
     }
-    let cacheByPath2 = cacheCalcWildcardLen.get(path1);
-    if (typeof cacheByPath2 === "undefined") {
-        cacheByPath2 = new WeakMap();
-        cacheCalcWildcardLen.set(path1, cacheByPath2);
-    }
-    else {
-        const cached = cacheByPath2.get(path2);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
+    const key = `${path1.path}\t${path2.path}`;
+    let len = cacheCalcWildcardLen.get(key);
+    if (typeof len !== "undefined") {
+        return len;
     }
     const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
-    const retValue = matchPath.size;
-    cacheByPath2.set(path2, retValue);
-    return retValue;
+    len = matchPath.size;
+    cacheCalcWildcardLen.set(key, len);
+    return len;
 }
 //# sourceMappingURL=calcWildcardLen.js.map

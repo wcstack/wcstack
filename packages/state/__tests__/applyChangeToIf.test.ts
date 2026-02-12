@@ -7,7 +7,7 @@ vi.mock('../src/structural/createContent', () => ({
   createContent: vi.fn()
 }));
 vi.mock('../src/structural/contentsByNode', () => ({
-  getContentsByNode: vi.fn()
+  getContentSetByNode: vi.fn()
 }));
 vi.mock('../src/structural/activateContent', () => ({
   activateContent: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock('../src/apply/applyChange', () => ({
 
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { createContent } from '../src/structural/createContent';
-import { getContentsByNode } from '../src/structural/contentsByNode';
+import { getContentSetByNode } from '../src/structural/contentsByNode';
 import { getBindingsByContent } from '../src/bindings/bindingsByContent';
 import { applyChange } from '../src/apply/applyChange';
 import { activateContent, deactivateContent } from '../src/structural/activateContent';
@@ -33,7 +33,7 @@ import type { IApplyContext } from '../src/apply/types';
 import { getByAddressSymbol } from '../src/proxy/symbols';
 
 const createContentMock = vi.mocked(createContent);
-const getContentsByNodeMock = vi.mocked(getContentsByNode);
+const getContentSetByNodeMock = vi.mocked(getContentSetByNode);
 const getBindingsByContentMock = vi.mocked(getBindingsByContent);
 const applyChangeMock = vi.mocked(applyChange);
 const activateContentMock = vi.mocked(activateContent);
@@ -78,7 +78,7 @@ describe('applyChangeToIf', () => {
   });
 
   it('contentが未初期化の場合はcreateContentが呼ばれること', () => {
-    getContentsByNodeMock.mockReturnValue([]);
+    getContentSetByNodeMock.mockReturnValue(new Set());
     const node = document.createComment('if');
     const bindingInfo = createBindingInfo(node, 'test-uuid-init');
 
@@ -112,7 +112,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any);
-    getContentsByNodeMock.mockReturnValue([]);
+    getContentSetByNodeMock.mockReturnValue(new Set());
 
     applyChangeToIf(bindingInfo, context, true);
 
@@ -135,7 +135,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any;
-    getContentsByNodeMock.mockReturnValue([content]);
+    getContentSetByNodeMock.mockReturnValue(new Set([content]));
 
     // まずtrueを呼んでlastValueByNodeを設定
     applyChangeToIf(bindingInfo, context, true);
@@ -160,7 +160,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any;
-    getContentsByNodeMock.mockReturnValue([content]);
+    getContentSetByNodeMock.mockReturnValue(new Set([content]));
 
     // true → マウント
     applyChangeToIf(bindingInfo, context, true);
@@ -185,7 +185,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any;
-    getContentsByNodeMock.mockReturnValue([content]);
+    getContentSetByNodeMock.mockReturnValue(new Set([content]));
 
     applyChangeToIf(bindingInfo, context, true);
     expect(mountAfterMock).toHaveBeenCalledTimes(1);
@@ -207,7 +207,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: vi.fn()
     } as any);
-    getContentsByNodeMock.mockReturnValue([]);
+    getContentSetByNodeMock.mockReturnValue(new Set());
 
     applyChangeToIf(bindingInfo, context, 'non-empty string');
     expect(mountAfterMock).toHaveBeenCalled();
@@ -231,10 +231,10 @@ describe('applyChangeToIf', () => {
     const bindings = [{ stateName: 'app' }] as any[];
     getBindingsByContentMock.mockReturnValue(bindings as any);
 
-    getContentsByNodeMock
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([content])
-      .mockReturnValueOnce([content]);
+    getContentSetByNodeMock
+      .mockReturnValueOnce(new Set())
+      .mockReturnValueOnce(new Set([content]))
+      .mockReturnValueOnce(new Set([content]));
 
     // 初回は初期化されるためapplyChangeFromBindingsは呼ばれない
     applyChangeToIf(bindingInfo, context, true);
@@ -267,7 +267,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any);
-    getContentsByNodeMock.mockReturnValue([]);
+    getContentSetByNodeMock.mockReturnValue(new Set());
 
     applyChangeToIf(bindingInfo, context, true);
 
@@ -291,7 +291,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any;
-    getContentsByNodeMock.mockReturnValue([content]);
+    getContentSetByNodeMock.mockReturnValue(new Set([content]));
 
     // trueを呼んでから
     applyChangeToIf(bindingInfo, context, true);
@@ -319,7 +319,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any;
-    getContentsByNodeMock.mockReturnValue([content]);
+    getContentSetByNodeMock.mockReturnValue(new Set([content]));
 
     applyChangeToIf(bindingInfo, context, true);
     applyChangeToIf(bindingInfo, context, true);
@@ -348,7 +348,7 @@ describe('applyChangeToIf', () => {
       mountAfter: mountAfterMock,
       unmount: unmountMock
     } as any;
-    getContentsByNodeMock.mockReturnValue([content]);
+    getContentSetByNodeMock.mockReturnValue(new Set([content]));
 
     // 切断状態でtrueを設定
     isConnectedValue = false;

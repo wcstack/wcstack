@@ -5,7 +5,8 @@ import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress'
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
-import { addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
+import { addBindingByAbsoluteStateAddress, clearBindingSetByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
+import { IAbsoluteStateAddress } from '../src/address/types';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
   applyChangeFromBindings: vi.fn()
@@ -30,6 +31,7 @@ function createStateElement() {
 }
 
 describe('updater/updater', () => {
+  const createdAbsAddresses: IAbsoluteStateAddress[] = [];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,6 +40,10 @@ describe('updater/updater', () => {
   afterEach(() => {
     setStateElementByName(document, 'default', null);
     setStateElementByName(document, 'missing', null);
+    for (const addr of createdAbsAddresses) {
+      clearBindingSetByAbsoluteStateAddress(addr);
+    }
+    createdAbsAddresses.length = 0;
   });
 
   it('stateElementが見つからない場合でもAbsoluteStateAddressは作成できること', async () => {
@@ -49,13 +55,15 @@ describe('updater/updater', () => {
 
   it('enqueueでapplyChangeFromBindingsが呼ばれること', async () => {
     const address = createAddress('count');
-    const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
+    const replaceNode = document.createElement('div');
+    document.body.appendChild(replaceNode);
+    const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
     const stateElement = createStateElement();
     setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
-    addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
+    addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
@@ -66,13 +74,15 @@ describe('updater/updater', () => {
 
   it('同一フレームで複数enqueueしても処理は一度だけ行われること', async () => {
     const address = createAddress('value');
-    const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode('') } as any;
+    const replaceNode = document.createElement('div');
+    document.body.appendChild(replaceNode);
+    const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
     const stateElement = createStateElement();
     setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
     const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
-    addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
+    addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
     updater.enqueueAbsoluteAddress(absoluteAddress);
@@ -108,8 +118,12 @@ describe('updater/updater', () => {
     const address1 = createAddress('count');
     const address2 = createAddress('name');
     
-    const bindingInfo1 = { propName: 'value', stateName: 'state1', node: document.createTextNode('') } as any;
-    const bindingInfo2 = { propName: 'text', stateName: 'state2', node: document.createTextNode('') } as any;
+    const replaceNode1 = document.createElement('div');
+    document.body.appendChild(replaceNode1);
+    const replaceNode2 = document.createElement('div');
+    document.body.appendChild(replaceNode2);
+    const bindingInfo1 = { propName: 'value', stateName: 'state1', node: document.createTextNode(''), replaceNode: replaceNode1 } as any;
+    const bindingInfo2 = { propName: 'text', stateName: 'state2', node: document.createTextNode(''), replaceNode: replaceNode2 } as any;
     
     const stateElement1 = createStateElement();
     const stateElement2 = createStateElement();
@@ -121,8 +135,8 @@ describe('updater/updater', () => {
     const absoluteAddress1 = createAbsAddress('state1', address1.pathInfo.path);
     const absoluteAddress2 = createAbsAddress('state2', address2.pathInfo.path);
 
-    addBindingInfoByAbsoluteStateAddress(absoluteAddress1, bindingInfo1);
-    addBindingInfoByAbsoluteStateAddress(absoluteAddress2, bindingInfo2);
+    addBindingByAbsoluteStateAddress(absoluteAddress1, bindingInfo1);
+    addBindingByAbsoluteStateAddress(absoluteAddress2, bindingInfo2);
 
     updater.enqueueAbsoluteAddress(absoluteAddress1);
     updater.enqueueAbsoluteAddress(absoluteAddress2);
@@ -133,5 +147,51 @@ describe('updater/updater', () => {
 
     setStateElementByName(document, 'state1', null);
     setStateElementByName(document, 'state2', null);
+  });
+
+  it('testApplyChangeで同期的にapplyChangeFromBindingsが呼ばれること', () => {
+    const address = createAddress('testSync');
+    const replaceNode = document.createElement('div');
+    document.body.appendChild(replaceNode);
+    const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
+    const stateElement = createStateElement();
+    setStateElementByName(document, 'default', stateElement);
+
+    const updater = getUpdater();
+    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
+    createdAbsAddresses.push(absoluteAddress);
+    addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
+
+    updater.testApplyChange([absoluteAddress]);
+
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo]);
+  });
+
+  it('切断されたreplaceNodeを持つバインディングはスキップされること', async () => {
+    const address = createAddress('disconnectTest');
+    const connectedNode = document.createElement('div');
+    document.body.appendChild(connectedNode);
+    const disconnectedNode = document.createElement('div');
+    // disconnectedNode は document.body に追加しない（isConnected === false）
+
+    const bindingConnected = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode: connectedNode } as any;
+    const bindingDisconnected = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode: disconnectedNode } as any;
+
+    const stateElement = createStateElement();
+    setStateElementByName(document, 'default', stateElement);
+
+    const updater = getUpdater();
+    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
+    createdAbsAddresses.push(absoluteAddress);
+    addBindingByAbsoluteStateAddress(absoluteAddress, bindingConnected);
+    addBindingByAbsoluteStateAddress(absoluteAddress, bindingDisconnected);
+
+    updater.enqueueAbsoluteAddress(absoluteAddress);
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+
+    // 切断されたバインディングは除外され、接続済みのもののみ渡される
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingConnected]);
   });
 });

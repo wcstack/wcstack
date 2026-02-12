@@ -1,7 +1,7 @@
 import { applyChange } from "../apply/applyChange";
 import { IApplyContext } from "../apply/types";
 import { clearAbsoluteStateAddressByBindingInfo, getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
-import { addBindingInfoByAbsoluteStateAddress, removeBindingInfoByAbsoluteStateAddress } from "../binding/getBindingInfosByAbsoluteStateAddress";
+import { addBindingByAbsoluteStateAddress, removeBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { bindLoopContextToContent, unbindLoopContextToContent } from "../bindings/bindLoopContextToContent";
@@ -17,7 +17,7 @@ export function activateContent(
   const bindings = getBindingsByContent(content);
   for(const binding of bindings) {
     const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
-    addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+    addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
     applyChange(binding, context);
   }
 }
@@ -28,7 +28,7 @@ export function deactivateContent(
   const bindings = getBindingsByContent(content);
   for(const binding of bindings) {
     const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
-    removeBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+    removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
     clearAbsoluteStateAddressByBindingInfo(binding);
     clearStateAddressByBindingInfo(binding);
   }

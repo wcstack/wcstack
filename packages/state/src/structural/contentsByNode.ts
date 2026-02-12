@@ -1,29 +1,33 @@
+import { createEmptySet } from "../createEmptySet";
 import { IContent } from "./types";
 
-const contentsByNode = new WeakMap<Node, IContent[]>();
+const contentSetByNode = new WeakMap<Node, Set<IContent>>();
+
+const EMPTY_SET = createEmptySet<IContent>();
 
 export function setContentByNode(node: Node, content: IContent): void {
-  const contents = contentsByNode.get(node);
+  const contents = contentSetByNode.get(node);
   if (contents) {
-    contents.push(content);
+    contents.add(content);
   } else {
-    contentsByNode.set(node, [content]);
+    contentSetByNode.set(node, new Set([content]));
   }
 }
 
-export function getContentsByNode(node: Node): IContent[] {
-  return contentsByNode.get(node) || [];
+export function getContentSetByNode(node: Node): Readonly<Set<IContent>> {
+  const contents = contentSetByNode.get(node);
+  if (typeof contents !== "undefined") {
+    return contents;
+  }
+  return EMPTY_SET;
 }
 
 export function deleteContentByNode(node: Node, content: IContent): void {
-  const contents = contentsByNode.get(node);
+  const contents = contentSetByNode.get(node);
   if (contents) {
-    const index = contents.indexOf(content);
-    if (index !== -1) {
-      contents.splice(index, 1);
-      if (contents.length === 0) {
-        contentsByNode.delete(node);
-      }
+    contents.delete(content);
+    if (contents.size === 0) {
+      contentSetByNode.delete(node);
     }
   }
 }

@@ -1,8 +1,9 @@
 import { config } from "../config";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { activateContent, deactivateContent } from "../structural/activateContent";
-import { getContentsByNode } from "../structural/contentsByNode";
+import { getContentSetByNode } from "../structural/contentsByNode";
 import { createContent } from "../structural/createContent";
+import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
 
@@ -19,11 +20,13 @@ export function applyChangeToIf(
 ): void {
   const currentConnected = bindingInfo.node.isConnected;
   const newValue = Boolean(rawNewValue);
-  let contents = getContentsByNode(bindingInfo.node);
-  if (contents.length === 0) {
-    contents = [createContent(bindingInfo)];
+  let content: IContent | undefined;
+  const contents = getContentSetByNode(bindingInfo.node);
+  if (contents.size === 0) {
+    content = createContent(bindingInfo);
+  } else {
+    content = contents.values().next().value!;
   }
-  const content = contents[0];
   try {
     if (!newValue) {
       if (config.debug) {

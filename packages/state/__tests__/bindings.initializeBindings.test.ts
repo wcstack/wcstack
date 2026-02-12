@@ -14,13 +14,13 @@ import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { getPathInfo } from '../src/address/PathInfo';
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 import { getAbsoluteStateAddressByBindingInfo } from '../src/binding/getAbsoluteStateAddressByBindingInfo';
-import { getBindingInfosByAbsoluteStateAddress, addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
+import { getBindingSetByAbsoluteStateAddress, addBindingByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
 
-vi.mock('../src/binding/getBindingInfosByAbsoluteStateAddress', async () => {
-  const actual = await vi.importActual('../src/binding/getBindingInfosByAbsoluteStateAddress') as any;
+vi.mock('../src/binding/getBindingSetByAbsoluteStateAddress', async () => {
+  const actual = await vi.importActual('../src/binding/getBindingSetByAbsoluteStateAddress') as any;
   return {
     ...actual,
-    addBindingInfoByAbsoluteStateAddress: vi.fn((...args) => actual.addBindingInfoByAbsoluteStateAddress(...args)),
+    addBindingByAbsoluteStateAddress: vi.fn((...args) => actual.addBindingByAbsoluteStateAddress(...args)),
   };
 });
 
@@ -124,7 +124,7 @@ describe('initializeBindings', () => {
     const [bindings] = applyChangeFromBindingsMock.mock.calls[0];
     expect(bindings).toHaveLength(1);
     const absoluteAddress = getAbsoluteStateAddressByBindingInfo(bindings[0]);
-    expect(getBindingInfosByAbsoluteStateAddress(absoluteAddress)).toContain(bindings[0]);
+    expect(getBindingSetByAbsoluteStateAddress(absoluteAddress)).toContain(bindings[0]);
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {
@@ -200,7 +200,7 @@ describe('initializeBindings', () => {
 
     // addBindingInfoByAbsoluteStateAddress の呼び出しタイミングで StateElement を削除し、
     // 直後の getStateElementByName チェックでエラーを発生させる
-    vi.mocked(addBindingInfoByAbsoluteStateAddress).mockImplementationOnce(() => {
+    vi.mocked(addBindingByAbsoluteStateAddress).mockImplementationOnce(() => {
       setStateElementByName(document, 'default', null);
     });
 

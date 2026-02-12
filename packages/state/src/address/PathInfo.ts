@@ -1,15 +1,16 @@
 import { WILDCARD } from "../define.js";
 import { IPathInfo } from "./types.js";
 
-const _cache: { [key: string]: IPathInfo } = {};
+const _cache: Map<string, IPathInfo> = new Map();
 
 let id: number = 0;
 export function getPathInfo(path: string): IPathInfo {
-  if (_cache[path]) {
-    return _cache[path];
+  let pathInfo = _cache.get(path);
+  if (typeof pathInfo !== "undefined") {
+    return pathInfo;
   }
-  const pathInfo = Object.freeze(new PathInfo(path));
-  _cache[path] = pathInfo;
+  pathInfo = Object.freeze(new PathInfo(path));
+  _cache.set(path, pathInfo);
   return pathInfo;
 }
 

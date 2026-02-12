@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
-import { setContentByNode, getContentsByNode, deleteContentByNode } from '../src/structural/contentsByNode';
+import { setContentByNode, getContentSetByNode, deleteContentByNode } from '../src/structural/contentsByNode';
 import { createContent } from '../src/structural/createContent';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import { getPathInfo } from '../src/address/PathInfo';
@@ -83,9 +83,9 @@ describe('contentsByNode', () => {
     const content = createContent(bindingInfo);
     setContentByNode(node, content);
 
-    const contents = getContentsByNode(node);
-    expect(contents).toHaveLength(1);
-    expect(contents[0]).toBe(content);
+    const contents = getContentSetByNode(node);
+    expect(contents.size).toBe(1);
+    expect(contents).toContain(content);
   });
 
   it('複数のcontentを追加できること', () => {
@@ -106,15 +106,15 @@ describe('contentsByNode', () => {
     setContentByNode(node, content1);
     setContentByNode(node, content2);
 
-    const contents = getContentsByNode(node);
-    expect(contents).toHaveLength(2);
-    expect(contents[0]).toBe(content1);
-    expect(contents[1]).toBe(content2);
+    const contents = getContentSetByNode(node);
+    expect(contents.size).toBe(2);
+    expect(contents).toContain(content1);
+    expect(contents).toContain(content2);
   });
 
-  it('登録されていないノードは空配列を返すこと', () => {
+  it('登録されていないノードは空Setを返すこと', () => {
     const node = document.createElement('div');
-    expect(getContentsByNode(node)).toEqual([]);
+    expect(getContentSetByNode(node).size).toBe(0);
   });
 
   it('deleteContentByNodeで削除できること', () => {
@@ -128,10 +128,10 @@ describe('contentsByNode', () => {
     const content = createContent(bindingInfo);
 
     setContentByNode(node, content);
-    expect(getContentsByNode(node)).toHaveLength(1);
+    expect(getContentSetByNode(node).size).toBe(1);
 
     deleteContentByNode(node, content);
-    expect(getContentsByNode(node)).toEqual([]);
+    expect(getContentSetByNode(node).size).toBe(0);
   });
 
   it('deleteContentByNodeで存在しないcontentを削除しても問題ないこと', () => {
@@ -145,7 +145,7 @@ describe('contentsByNode', () => {
 
     // 登録せずに削除
     deleteContentByNode(node, content);
-    expect(getContentsByNode(node)).toEqual([]);
+    expect(getContentSetByNode(node).size).toBe(0);
   });
 
   it('deleteContentByNodeで登録済みノードから別のcontentを削除しようとしても変化しないこと', () => {
@@ -166,8 +166,8 @@ describe('contentsByNode', () => {
     setContentByNode(node, content1);
     // content2は登録していないので削除しても変化なし
     deleteContentByNode(node, content2);
-    expect(getContentsByNode(node)).toHaveLength(1);
-    expect(getContentsByNode(node)[0]).toBe(content1);
+    expect(getContentSetByNode(node).size).toBe(1);
+    expect(getContentSetByNode(node)).toContain(content1);
   });
 
   it('deleteContentByNodeで複数登録のうち1つだけ削除した場合残りが保持されること', () => {
@@ -187,11 +187,11 @@ describe('contentsByNode', () => {
 
     setContentByNode(node, content1);
     setContentByNode(node, content2);
-    expect(getContentsByNode(node)).toHaveLength(2);
+    expect(getContentSetByNode(node).size).toBe(2);
 
     deleteContentByNode(node, content1);
-    const remaining = getContentsByNode(node);
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0]).toBe(content2);
+    const remaining = getContentSetByNode(node);
+    expect(remaining.size).toBe(1);
+    expect(remaining).toContain(content2);
   });
 });

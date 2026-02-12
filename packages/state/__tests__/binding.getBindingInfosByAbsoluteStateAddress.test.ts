@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getBindingInfosByAbsoluteStateAddress,
-  addBindingInfoByAbsoluteStateAddress,
-  removeBindingInfoByAbsoluteStateAddress,
-  clearBindingInfosByAbsoluteStateAddress,
-} from '../src/binding/getBindingInfosByAbsoluteStateAddress';
+  getBindingSetByAbsoluteStateAddress,
+  addBindingByAbsoluteStateAddress,
+  removeBindingByAbsoluteStateAddress,
+  clearBindingSetByAbsoluteStateAddress,
+} from '../src/binding/getBindingSetByAbsoluteStateAddress';
 import type { IAbsoluteStateAddress } from '../src/address/types';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
@@ -29,50 +29,50 @@ const createBindingInfo = (id: string): IBindingInfo => ({
   replaceNode: document.createTextNode(id),
 } as IBindingInfo);
 
-describe('getBindingInfosByAbsoluteStateAddress', () => {
-  it('同一アドレスで同じ配列が返ること', () => {
+describe('getBindingSetByAbsoluteStateAddress', () => {
+  it('同一アドレスで同じSetが返ること', () => {
     const address = createAbsoluteAddress();
-    const list1 = getBindingInfosByAbsoluteStateAddress(address);
-    const list2 = getBindingInfosByAbsoluteStateAddress(address);
+    const set1 = getBindingSetByAbsoluteStateAddress(address);
+    const set2 = getBindingSetByAbsoluteStateAddress(address);
 
-    expect(list1).toBe(list2);
-    expect(list1).toEqual([]);
+    expect(set1).toBe(set2);
+    expect(set1.size).toBe(0);
   });
 
-  it('add/removeで配列が更新されること', () => {
+  it('add/removeでSetが更新されること', () => {
     const address = createAbsoluteAddress();
     const binding = createBindingInfo('a');
 
-    addBindingInfoByAbsoluteStateAddress(address, binding);
-    expect(getBindingInfosByAbsoluteStateAddress(address)).toContain(binding);
+    addBindingByAbsoluteStateAddress(address, binding);
+    expect(getBindingSetByAbsoluteStateAddress(address)).toContain(binding);
 
-    removeBindingInfoByAbsoluteStateAddress(address, binding);
-    expect(getBindingInfosByAbsoluteStateAddress(address)).not.toContain(binding);
+    removeBindingByAbsoluteStateAddress(address, binding);
+    expect(getBindingSetByAbsoluteStateAddress(address)).not.toContain(binding);
   });
 
   it('存在しないbindingをremoveしても変化しないこと', () => {
     const address = createAbsoluteAddress();
     const binding = createBindingInfo('missing');
 
-    const list = getBindingInfosByAbsoluteStateAddress(address);
-    removeBindingInfoByAbsoluteStateAddress(address, binding);
+    const set = getBindingSetByAbsoluteStateAddress(address);
+    removeBindingByAbsoluteStateAddress(address, binding);
 
-    expect(getBindingInfosByAbsoluteStateAddress(address)).toBe(list);
-    expect(list).toHaveLength(0);
+    expect(getBindingSetByAbsoluteStateAddress(address)).toBe(set);
+    expect(set.size).toBe(0);
   });
 
-  it('clearで配列がリセットされること', () => {
+  it('clearでSetがリセットされること', () => {
     const address = createAbsoluteAddress('value');
     const binding = createBindingInfo('b');
 
-    addBindingInfoByAbsoluteStateAddress(address, binding);
-    const beforeClear = getBindingInfosByAbsoluteStateAddress(address);
+    addBindingByAbsoluteStateAddress(address, binding);
+    const beforeClear = getBindingSetByAbsoluteStateAddress(address);
     expect(beforeClear).toContain(binding);
 
-    clearBindingInfosByAbsoluteStateAddress(address);
-    const afterClear = getBindingInfosByAbsoluteStateAddress(address);
+    clearBindingSetByAbsoluteStateAddress(address);
+    const afterClear = getBindingSetByAbsoluteStateAddress(address);
 
-    expect(afterClear).toEqual([]);
+    expect(afterClear.size).toBe(0);
     expect(afterClear).not.toBe(beforeClear);
   });
 });

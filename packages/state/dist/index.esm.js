@@ -181,14 +181,15 @@ function createLoopContextStack() {
     return new LoopContextStack();
 }
 
-const _cache$4 = {};
+const _cache$4 = new Map();
 let id = 0;
 function getPathInfo(path) {
-    if (_cache$4[path]) {
-        return _cache$4[path];
+    let pathInfo = _cache$4.get(path);
+    if (typeof pathInfo !== "undefined") {
+        return pathInfo;
     }
-    const pathInfo = Object.freeze(new PathInfo(path));
-    _cache$4[path] = pathInfo;
+    pathInfo = Object.freeze(new PathInfo(path));
+    _cache$4.set(path, pathInfo);
     return pathInfo;
 }
 class PathInfo {
@@ -665,7 +666,7 @@ function setListIndexesByList(list, listIndexes) {
 
 const listDiffByOldListByNewList = new WeakMap();
 const EMPTY_LIST = Object.freeze([]);
-const EMPTY_SET = new Set();
+const EMPTY_SET$1 = new Set();
 function getListDiff(rawOldList, rawNewList) {
     const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
     const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
@@ -725,9 +726,9 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
             return retValue = {
                 oldIndexes: oldIndexes,
                 newIndexes: [],
-                changeIndexSet: EMPTY_SET,
+                changeIndexSet: EMPTY_SET$1,
                 deleteIndexSet: new Set(oldIndexes),
-                addIndexSet: EMPTY_SET,
+                addIndexSet: EMPTY_SET$1,
             };
         }
         // If old list was empty, create all new indexes
@@ -743,8 +744,8 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
             return retValue = {
                 oldIndexes: oldIndexes,
                 newIndexes: newIndexes,
-                changeIndexSet: EMPTY_SET,
-                deleteIndexSet: EMPTY_SET,
+                changeIndexSet: EMPTY_SET$1,
+                deleteIndexSet: EMPTY_SET$1,
                 addIndexSet: new Set(newIndexes),
             };
         }
@@ -753,9 +754,9 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
             return retValue = {
                 oldIndexes: oldIndexes,
                 newIndexes: oldIndexes,
-                changeIndexSet: EMPTY_SET,
-                deleteIndexSet: EMPTY_SET,
-                addIndexSet: EMPTY_SET,
+                changeIndexSet: EMPTY_SET$1,
+                deleteIndexSet: EMPTY_SET$1,
+                addIndexSet: EMPTY_SET$1,
             };
         }
         // Use index-based map for efficiency
@@ -1118,7 +1119,7 @@ function applyChangeToClass(binding, _context, newValue) {
     element.classList.toggle(className, newValue);
 }
 
-const cacheCalcWildcardLen = new WeakMap();
+const cacheCalcWildcardLen = new Map();
 function calcWildcardLen(pathInfo, targetPathInfo) {
     let path1;
     let path2;
@@ -1138,21 +1139,15 @@ function calcWildcardLen(pathInfo, targetPathInfo) {
         path1 = targetPathInfo;
         path2 = pathInfo;
     }
-    let cacheByPath2 = cacheCalcWildcardLen.get(path1);
-    if (typeof cacheByPath2 === "undefined") {
-        cacheByPath2 = new WeakMap();
-        cacheCalcWildcardLen.set(path1, cacheByPath2);
-    }
-    else {
-        const cached = cacheByPath2.get(path2);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
+    const key = `${path1.path}\t${path2.path}`;
+    let len = cacheCalcWildcardLen.get(key);
+    if (typeof len !== "undefined") {
+        return len;
     }
     const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
-    const retValue = matchPath.size;
-    cacheByPath2.set(path2, retValue);
-    return retValue;
+    len = matchPath.size;
+    cacheCalcWildcardLen.set(key, len);
+    return len;
 }
 
 const loopContextByNode = new WeakMap();
@@ -1230,26 +1225,23 @@ function setIndexBindingsByContent(content, bindings) {
     indexBindingsByContent.set(content, bindings);
 }
 
-const bindingInfosByAbsoluteStateAddress = new WeakMap();
-function getBindingInfosByAbsoluteStateAddress(absoluteStateAddress) {
-    let bindingInfos = null;
-    bindingInfos = bindingInfosByAbsoluteStateAddress.get(absoluteStateAddress) || null;
-    if (bindingInfos === null) {
-        bindingInfos = [];
-        bindingInfosByAbsoluteStateAddress.set(absoluteStateAddress, bindingInfos);
+const bindingSetByAbsoluteStateAddress = new WeakMap();
+function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
+    let bindingSet = null;
+    bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress) || null;
+    if (bindingSet === null) {
+        bindingSet = new Set();
+        bindingSetByAbsoluteStateAddress.set(absoluteStateAddress, bindingSet);
     }
-    return bindingInfos;
+    return bindingSet;
 }
-function addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, bindingInfo) {
-    const bindingInfos = getBindingInfosByAbsoluteStateAddress(absoluteStateAddress);
-    bindingInfos.push(bindingInfo);
+function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
+    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
+    bindingSet.add(binding);
 }
-function removeBindingInfoByAbsoluteStateAddress(absoluteStateAddress, bindingInfo) {
-    const bindingInfos = getBindingInfosByAbsoluteStateAddress(absoluteStateAddress);
-    const index = bindingInfos.indexOf(bindingInfo);
-    if (index !== -1) {
-        bindingInfos.splice(index, 1);
-    }
+function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
+    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
+    bindingSet.delete(binding);
 }
 
 const stateAddressByBindingInfo = new WeakMap();
@@ -1311,7 +1303,7 @@ function activateContent(content, loopContext, context) {
     const bindings = getBindingsByContent(content);
     for (const binding of bindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
-        addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
         applyChange(binding, context);
     }
 }
@@ -1319,7 +1311,7 @@ function deactivateContent(content) {
     const bindings = getBindingsByContent(content);
     for (const binding of bindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
-        removeBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
         clearAbsoluteStateAddressByBindingInfo(binding);
         clearStateAddressByBindingInfo(binding);
     }
@@ -2767,7 +2759,7 @@ function initializeBindings(root, parentLoopContext) {
     // create absolute state address and register binding infos
     for (const binding of allBindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
-        addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
         const rootNode = binding.replaceNode.getRootNode();
         const stateElement = getStateElementByName(rootNode, binding.stateName);
         if (stateElement === null) {
@@ -2789,18 +2781,27 @@ function initializeBindingsByFragment(root, nodeInfos) {
     };
 }
 
-const contentsByNode = new WeakMap();
+function createEmptySet() {
+    return Object.freeze(new Set());
+}
+
+const contentSetByNode = new WeakMap();
+const EMPTY_SET = createEmptySet();
 function setContentByNode(node, content) {
-    const contents = contentsByNode.get(node);
+    const contents = contentSetByNode.get(node);
     if (contents) {
-        contents.push(content);
+        contents.add(content);
     }
     else {
-        contentsByNode.set(node, [content]);
+        contentSetByNode.set(node, new Set([content]));
     }
 }
-function getContentsByNode(node) {
-    return contentsByNode.get(node) || [];
+function getContentSetByNode(node) {
+    const contents = contentSetByNode.get(node);
+    if (typeof contents !== "undefined") {
+        return contents;
+    }
+    return EMPTY_SET;
 }
 
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
@@ -2850,7 +2851,7 @@ class Content {
         const bindings = getBindingsByContent(this);
         for (const binding of bindings) {
             if (recursiveBindingTypes.has(binding.bindingType)) {
-                const contents = getContentsByNode(binding.node);
+                const contents = getContentSetByNode(binding.node);
                 for (const content of contents) {
                     content.unmount();
                 }
@@ -3068,11 +3069,14 @@ function bindingInfoText(bindingInfo) {
 function applyChangeToIf(bindingInfo, context, rawNewValue) {
     const currentConnected = bindingInfo.node.isConnected;
     const newValue = Boolean(rawNewValue);
-    let contents = getContentsByNode(bindingInfo.node);
-    if (contents.length === 0) {
-        contents = [createContent(bindingInfo)];
+    let content;
+    const contents = getContentSetByNode(bindingInfo.node);
+    if (contents.size === 0) {
+        content = createContent(bindingInfo);
     }
-    const content = contents[0];
+    else {
+        content = contents.values().next().value;
+    }
     try {
         if (!newValue) {
             if (config.debug) ;
@@ -3251,11 +3255,6 @@ function applyChangeFromBindings(bindings) {
     // 外側ループ: stateName ごとにグループ化
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
-        if (binding.replaceNode.isConnected === false) {
-            // 切断済みノードのバインディングはスキップ
-            bindingIndex++;
-            continue;
-        }
         const stateName = binding.stateName;
         let rootNode = binding.replaceNode.getRootNode();
         if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
@@ -3321,8 +3320,14 @@ class Updater {
         const absoluteAddressSet = new Set(absoluteAddresses);
         const processBindingInfos = [];
         for (const absoluteAddress of absoluteAddressSet) {
-            const bindings = getBindingInfosByAbsoluteStateAddress(absoluteAddress);
-            processBindingInfos.push(...bindings);
+            const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
+            for (const binding of bindings) {
+                if (binding.replaceNode.isConnected === false) {
+                    // 切断されているバインディングは無視
+                    continue;
+                }
+                processBindingInfos.push(binding);
+            }
         }
         applyChangeFromBindings(processBindingInfos);
     }

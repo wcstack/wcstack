@@ -7,7 +7,7 @@ import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
-import { addBindingInfoByAbsoluteStateAddress } from "../binding/getBindingInfosByAbsoluteStateAddress";
+import { addBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 function _initializeBindings(allBindings) {
     for (const binding of allBindings) {
         // replace node
@@ -29,7 +29,7 @@ export function initializeBindings(root, parentLoopContext) {
     // create absolute state address and register binding infos
     for (const binding of allBindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
-        addBindingInfoByAbsoluteStateAddress(absoluteStateAddress, binding);
+        addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
         const rootNode = binding.replaceNode.getRootNode();
         const stateElement = getStateElementByName(rootNode, binding.stateName);
         if (stateElement === null) {

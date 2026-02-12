@@ -1,6 +1,6 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { getBindingInfosByAbsoluteStateAddress } from "../binding/getBindingInfosByAbsoluteStateAddress";
+import { getBindingSetByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { IBindingInfo } from "../types";
 
 class Updater {
@@ -32,8 +32,14 @@ class Updater {
     const absoluteAddressSet = new Set(absoluteAddresses);
     const processBindingInfos: IBindingInfo[] = [];
     for (const absoluteAddress of absoluteAddressSet) {
-      const bindings = getBindingInfosByAbsoluteStateAddress(absoluteAddress);
-      processBindingInfos.push(...bindings);
+      const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
+      for(const binding of bindings) {
+        if (binding.replaceNode.isConnected === false) {
+          // 切断されているバインディングは無視
+          continue;
+        }
+        processBindingInfos.push(binding);
+      }
     }
     applyChangeFromBindings(
       processBindingInfos

@@ -14,7 +14,7 @@ import { setLoopContextSymbol } from '../src/proxy/symbols';
 
 import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
-import { addBindingInfoByAbsoluteStateAddress } from '../src/binding/getBindingInfosByAbsoluteStateAddress';
+import { addBindingByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
   applyChangeFromBindings: vi.fn()
@@ -152,12 +152,13 @@ describe('proxy/StateHandler', () => {
       node: document.createElement('input'),
       replaceNode: document.createElement('input')
     } as IBindingInfo;
+    document.body.appendChild(bindingInfo.replaceNode);
 
     const address = createStateAddress(bindingInfo.statePathInfo!, null);
     const stateElement = createMockStateElement();
     setStateElementByName(document, 'default', stateElement);
     const absoluteAddress = createAbsoluteStateAddress(getAbsolutePathInfo('default', address.pathInfo), address.listIndex);
-    addBindingInfoByAbsoluteStateAddress(absoluteAddress, bindingInfo);
+    addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
     const proxy = createStateProxy(document, { count: 0 }, 'default', 'writable');
 
     (proxy as any).count = 2;
