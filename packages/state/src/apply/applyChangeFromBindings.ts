@@ -21,6 +21,12 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
   // 外側ループ: stateName ごとにグループ化
   while(bindingIndex < bindings.length) {
     let binding = bindings[bindingIndex];
+    // ToDo: 本当にこのロジックで良いのか要検討
+    if (binding.replaceNode.isConnected === false) {
+      // 切断済みノードのバインディングはスキップ
+      bindingIndex++;
+      continue;
+    }
     const stateName = binding.stateName;
     let rootNode: Node | null = binding.replaceNode.getRootNode() as Node;
     if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
