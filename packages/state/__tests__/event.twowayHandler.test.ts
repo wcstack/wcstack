@@ -42,7 +42,7 @@ describe('event/twowayHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __private__.handlerByHandlerKey.clear();
-    __private__.bindingInfoSetByHandlerKey.clear();
+    __private__.bindingSetByHandlerKey.clear();
   });
 
   it('two-way対象でイベントを登録できること', () => {
@@ -110,7 +110,7 @@ describe('event/twowayHandler', () => {
     const eventName = __private__.getEventName(binding);
     const key = __private__.getHandlerKey(binding, eventName);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
-    expect(__private__.bindingInfoSetByHandlerKey.has(key)).toBe(false);
+    expect(__private__.bindingSetByHandlerKey.has(key)).toBe(false);
     expect(detachTwowayEventHandler(binding)).toBe(false);
   });
 
@@ -225,18 +225,18 @@ describe('event/twowayHandler', () => {
     expect(handler1).not.toBe(handler2);
   });
 
-  it('event.targetがundefinedなら警告して終了すること', () => {
+  it('event.targetがnullなら警告して終了すること', () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'text');
     const addSpy = vi.spyOn(input, 'addEventListener');
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    const binding = createBindingInfo(input, { statePathName: 'users.*.name-undefined' });
+    const binding = createBindingInfo(input, { statePathName: 'users.*.name-null' });
     attachTwowayEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
 
-    handler({ target: undefined } as unknown as Event);
-    expect(warnSpy).toHaveBeenCalledWith('[@wcstack/state] event.target is undefined.');
+    handler({ target: null } as unknown as Event);
+    expect(warnSpy).toHaveBeenCalledWith('[@wcstack/state] event.target is null.');
   });
 
   it('対象プロパティが存在しない場合は警告すること', () => {
@@ -288,7 +288,7 @@ describe('event/twowayHandler', () => {
     attachTwowayEventHandler(binding);
     const eventName = __private__.getEventName(binding);
     const key = __private__.getHandlerKey(binding, eventName);
-    __private__.bindingInfoSetByHandlerKey.delete(key);
+    __private__.bindingSetByHandlerKey.delete(key);
 
     expect(detachTwowayEventHandler(binding)).toBe(false);
   });
@@ -308,14 +308,14 @@ describe('event/twowayHandler', () => {
     );
     __private__.handlerByHandlerKey.set(key, handler);
     const bindingInfoSet = new Set([binding]);
-    __private__.bindingInfoSetByHandlerKey.set(key, bindingInfoSet);
+    __private__.bindingSetByHandlerKey.set(key, bindingInfoSet);
 
     expect(bindingInfoSet.size).toBe(1);
 
     expect(detachTwowayEventHandler(binding)).toBe(true);
     expect(bindingInfoSet.size).toBe(0);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
-    expect(__private__.bindingInfoSetByHandlerKey.has(key)).toBe(false);
+    expect(__private__.bindingSetByHandlerKey.has(key)).toBe(false);
   });
 
   it('同一キーのbindingが残る場合はハンドラを保持すること', () => {
@@ -334,6 +334,6 @@ describe('event/twowayHandler', () => {
     const key = __private__.getHandlerKey(binding1, eventName);
     expect(detachTwowayEventHandler(binding1)).toBe(true);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
-    expect(__private__.bindingInfoSetByHandlerKey.has(key)).toBe(true);
+    expect(__private__.bindingSetByHandlerKey.has(key)).toBe(true);
   });
 });

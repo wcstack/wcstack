@@ -19,6 +19,7 @@ import { applyChange } from '../src/apply/applyChange';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { setLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
+import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import type { IBindingInfo } from '../src/types';
 
 const getStateElementByNameMock = vi.mocked(getStateElementByName);
@@ -27,12 +28,14 @@ const getRootNodeByFragmentMock = vi.mocked(getRootNodeByFragment);
 const setLastListValueMock = vi.mocked(setLastListValueByAbsoluteStateAddress);
 
 function createBindingInfo(stateName: string, statePathName: string, node: Node): IBindingInfo {
+  const pathInfo = getPathInfo(statePathName);
   return {
     propName: '',
     propSegments: [],
     propModifiers: [],
     statePathName,
-    statePathInfo: getPathInfo(statePathName),
+    statePathInfo: pathInfo,
+    stateAbsolutePathInfo: getAbsolutePathInfo(stateName, pathInfo),
     stateName,
     outFilters: [],
     inFilters: [],
@@ -113,17 +116,19 @@ describe('applyChangeFromBindings', () => {
     expect(applyChangeMock).not.toHaveBeenCalled();
   });
 
-  it('DocumentFragmentのrootNodeが解決できない場合はエラーになること', () => {
+  it('DocumentFragmentのreplaceNodeはisConnected=falseのためスキップされること', () => {
     getRootNodeByFragmentMock.mockReturnValue(null);
 
     const fragment = document.createDocumentFragment();
     const bindingInfos = [createBindingInfo('app', 'a', fragment)];
 
-    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/Root node for fragment not found for binding/);
+    // DocumentFragmentはisConnected=falseなのでスキップされる
+    applyChangeFromBindings(bindingInfos);
+    expect(applyChangeMock).not.toHaveBeenCalled();
     expect(getStateElementByNameMock).not.toHaveBeenCalled();
   });
 
-  it('DocumentFragmentのrootNodeが解決できる場合は正常に処理されること', () => {
+  it('DocumentFragmentのrootNodeが解決できる場合でもisConnected=falseならスキップされること', () => {
     const state = createStateProxy({ a: 1 });
     const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
     getRootNodeByFragmentMock.mockReturnValue(document);
@@ -132,11 +137,10 @@ describe('applyChangeFromBindings', () => {
     const fragment = document.createDocumentFragment();
     const bindingInfos = [createBindingInfo('app', 'a', fragment)];
 
+    // DocumentFragmentはisConnected=falseなのでスキップされる
     applyChangeFromBindings(bindingInfos);
-
-    expect(getRootNodeByFragmentMock).toHaveBeenCalledWith(fragment);
-    expect(getStateElementByNameMock).toHaveBeenCalledWith(document, 'app');
-    expect(applyChangeMock).toHaveBeenCalledTimes(1);
+    expect(getRootNodeByFragmentMock).not.toHaveBeenCalled();
+    expect(applyChangeMock).not.toHaveBeenCalled();
   });
 
   it('同じstateNameでもrootNodeが変わる場合はcreateStateが分割されること', () => {

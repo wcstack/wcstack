@@ -10,6 +10,7 @@ export interface IApplyContext {
   readonly state: IStateProxy;
   appliedBindingSet: Set<IBindingInfo>;
   newListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]>;
+  updatedAbsAddressSetByStateElement: Map<IStateElement, Set<IAbsoluteStateAddress>>;
 }
 
 export type ApplyChangeFn = (binding: IBindingInfo, context: IApplyContext, newValue: unknown) => void;

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPathInfo } from '../src/address/PathInfo';
+import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import type { IBindingInfo, IFilterInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -58,9 +59,11 @@ const getValueMock = vi.mocked(getValue);
 const getStateElementByNameMock = vi.mocked(getStateElementByName);
 
 function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
+  const pathInfo = getPathInfo('value');
   return {
     statePathName: 'value',
-    statePathInfo: getPathInfo('value'),
+    statePathInfo: pathInfo,
+    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -79,6 +82,8 @@ describe('applyChange (coverage)', () => {
     stateElement: {} as any,
     state,
     appliedBindingSet: new Set(),
+    newListValueByAbsAddress: new Map(),
+    updatedAbsAddressSetByStateElement: new Map(),
   };
 
   beforeEach(() => {
@@ -338,6 +343,8 @@ describe('applyChange (coverage)', () => {
       stateElement: {} as any,
       state,
       appliedBindingSet: new Set(),
+      newListValueByAbsAddress: new Map(),
+      updatedAbsAddressSetByStateElement: new Map(),
     };
     applyChange(bindingInfo, ctx);
     applyChange(bindingInfo, ctx);

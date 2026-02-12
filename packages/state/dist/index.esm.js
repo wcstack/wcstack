@@ -128,6 +128,7 @@ const NO_SET_TIMEOUT = 60 * 1000; // 1分
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
+const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 
 class LoopContextStack {
     _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
@@ -1076,48 +1077,12 @@ function setLastListValueByAbsoluteStateAddress(address, value) {
     lastListValueByAbsoluteStateAddress.set(address, value);
 }
 
-const cache = new WeakMap();
-function isCustomElement(node) {
-    let value = cache.get(node);
-    if (value !== undefined) {
-        return value;
-    }
-    try {
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-            return value = false;
-        }
-        const element = node;
-        if (element.tagName.includes("-")) {
-            return value = true;
-        }
-        if (element.hasAttribute("is")) {
-            if (element.getAttribute("is")?.includes("-")) {
-                return value = true;
-            }
-        }
-        return value = false;
-    }
-    finally {
-        cache.set(node, value ?? false);
-    }
-}
-
-function applyChangeToAttribute(binding, _context, newValue) {
-    const element = binding.node;
-    const attrName = binding.propSegments[1];
-    if (element.getAttribute(attrName) !== newValue) {
-        element.setAttribute(attrName, newValue);
-    }
-}
-
-function applyChangeToClass(binding, _context, newValue) {
-    const element = binding.node;
-    const className = binding.propSegments[1];
-    if (typeof newValue !== 'boolean') {
-        raiseError(`Invalid value for class application: expected boolean, got ${typeof newValue}`);
-    }
-    element.classList.toggle(className, newValue);
-}
+const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
+const setLoopContextSymbol = Symbol("$$setLoopContext");
+const getByAddressSymbol = Symbol("$$getByAddress");
+const connectedCallbackSymbol = Symbol("$$connectedCallback");
+const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
+const updatedCallbackSymbol = Symbol("$$updatedCallback");
 
 const cacheCalcWildcardLen = new Map();
 function calcWildcardLen(pathInfo, targetPathInfo) {
@@ -1215,6 +1180,70 @@ function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
 }
 function clearAbsoluteStateAddressByBindingInfo(bindingInfo) {
     absoluteStateAddressByBindingInfo.delete(bindingInfo);
+}
+
+const cache = new WeakMap();
+function isCustomElement(node) {
+    let value = cache.get(node);
+    if (value !== undefined) {
+        return value;
+    }
+    try {
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return value = false;
+        }
+        const element = node;
+        if (element.tagName.includes("-")) {
+            return value = true;
+        }
+        if (element.hasAttribute("is")) {
+            if (element.getAttribute("is")?.includes("-")) {
+                return value = true;
+            }
+        }
+        return value = false;
+    }
+    finally {
+        cache.set(node, value ?? false);
+    }
+}
+
+function applyChangeToAttribute(binding, _context, newValue) {
+    const element = binding.node;
+    const attrName = binding.propSegments[1];
+    if (element.getAttribute(attrName) !== newValue) {
+        element.setAttribute(attrName, newValue);
+    }
+}
+
+function createEmptyArray() {
+    return Object.freeze([]);
+}
+
+function getFilteredValue(value, filters) {
+    let filteredValue = value;
+    for (const filter of filters) {
+        filteredValue = filter.filterFn(filteredValue);
+    }
+    return filteredValue;
+}
+
+const EMPTY_ARRAY = createEmptyArray();
+function applyChangeToCheckbox(binding, _context, newValue) {
+    const element = binding.node;
+    const elementValue = element.value;
+    const elementFilteredValue = getFilteredValue(elementValue, binding.inFilters);
+    const normalizedNewValue = Array.isArray(newValue) ? newValue : EMPTY_ARRAY;
+    element.checked = normalizedNewValue.includes(elementFilteredValue);
+}
+
+function applyChangeToClass(binding, _context, newValue) {
+    const element = binding.node;
+    const className = binding.propSegments[1];
+    if (typeof newValue !== 'boolean') {
+        raiseError(`Invalid value for class application: expected boolean, got ${typeof newValue}`);
+    }
+    element.classList.toggle(className, newValue);
 }
 
 const indexBindingsByContent = new WeakMap();
@@ -2341,7 +2370,11 @@ function parseBindTextsForElement(bindText) {
                 bindingType: 'else',
             };
         }
-        else if (propPart === 'if' || propPart === 'elseif' || propPart === 'for') {
+        else if (propPart === 'if'
+            || propPart === 'elseif'
+            || propPart === 'for'
+            || propPart === 'radio'
+            || propPart === 'checkbox') {
             const stateResult = parseStatePart(statePart);
             return {
                 propName: propPart,
@@ -2586,17 +2619,11 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
     return [nodes, allBindings];
 }
 
-const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
-const setLoopContextSymbol = Symbol("$$setLoopContext");
-const getByAddressSymbol = Symbol("$$getByAddress");
-const connectedCallbackSymbol = Symbol("$$connectedCallback");
-const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
-
-const handlerByHandlerKey$1 = new Map();
-const bindingInfoSetByHandlerKey$1 = new Map();
-function getHandlerKey$1(bindingInfo) {
-    const modifierKey = bindingInfo.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
-    return `${bindingInfo.stateName}::${bindingInfo.statePathName}::${modifierKey}`;
+const handlerByHandlerKey$3 = new Map();
+const bindingSetByHandlerKey$3 = new Map();
+function getHandlerKey$3(binding) {
+    const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+    return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
 }
 const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event) => {
     if (modifiers.includes('prevent'))
@@ -2620,25 +2647,25 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event)
         });
     });
 };
-function attachEventHandler(bindingInfo) {
-    if (!bindingInfo.propName.startsWith("on")) {
+function attachEventHandler(binding) {
+    if (!binding.propName.startsWith("on")) {
         return false;
     }
-    const key = getHandlerKey$1(bindingInfo);
-    let stateEventHandler = handlerByHandlerKey$1.get(key);
+    const key = getHandlerKey$3(binding);
+    let stateEventHandler = handlerByHandlerKey$3.get(key);
     if (typeof stateEventHandler === "undefined") {
-        stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName, bindingInfo.propModifiers);
-        handlerByHandlerKey$1.set(key, stateEventHandler);
+        stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers);
+        handlerByHandlerKey$3.set(key, stateEventHandler);
     }
-    const eventName = bindingInfo.propName.slice(2);
-    bindingInfo.node.addEventListener(eventName, stateEventHandler);
-    let bindingInfoSet = bindingInfoSetByHandlerKey$1.get(key);
-    if (typeof bindingInfoSet === "undefined") {
-        bindingInfoSet = new Set([bindingInfo]);
-        bindingInfoSetByHandlerKey$1.set(key, bindingInfoSet);
+    const eventName = binding.propName.slice(2);
+    binding.node.addEventListener(eventName, stateEventHandler);
+    let bindingSet = bindingSetByHandlerKey$3.get(key);
+    if (typeof bindingSet === "undefined") {
+        bindingSet = new Set([binding]);
+        bindingSetByHandlerKey$3.set(key, bindingSet);
     }
     else {
-        bindingInfoSet.add(bindingInfo);
+        bindingSet.add(binding);
     }
     return true;
 }
@@ -2672,16 +2699,16 @@ function isPossibleTwoWay(node, propName) {
     return false;
 }
 
-const handlerByHandlerKey = new Map();
-const bindingInfoSetByHandlerKey = new Map();
-function getHandlerKey(bindingInfo, eventName) {
-    const filterKey = bindingInfo.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}::${filterKey}`;
+const handlerByHandlerKey$2 = new Map();
+const bindingSetByHandlerKey$2 = new Map();
+function getHandlerKey$2(binding, eventName) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}`;
 }
-function getEventName(bindingInfo) {
-    const tagName = bindingInfo.node.tagName.toLowerCase();
+function getEventName$2(binding) {
+    const tagName = binding.node.tagName.toLowerCase();
     let eventName = (tagName === 'select') ? 'change' : 'input';
-    for (const modifier of bindingInfo.propModifiers) {
+    for (const modifier of binding.propModifiers) {
         if (modifier.startsWith('on')) {
             eventName = modifier.slice(2);
         }
@@ -2690,8 +2717,8 @@ function getEventName(bindingInfo) {
 }
 const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters) => (event) => {
     const node = event.target;
-    if (typeof node === "undefined") {
-        console.warn(`[@wcstack/state] event.target is undefined.`);
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
         return;
     }
     if (!(propName in node)) {
@@ -2715,23 +2742,178 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
         });
     });
 };
-function attachTwowayEventHandler(bindingInfo) {
-    if (isPossibleTwoWay(bindingInfo.node, bindingInfo.propName) && bindingInfo.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName(bindingInfo);
-        const key = getHandlerKey(bindingInfo, eventName);
-        let twowayEventHandler = handlerByHandlerKey.get(key);
+function attachTwowayEventHandler(binding) {
+    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName$2(binding);
+        const key = getHandlerKey$2(binding, eventName);
+        let twowayEventHandler = handlerByHandlerKey$2.get(key);
         if (typeof twowayEventHandler === "undefined") {
-            twowayEventHandler = twowayEventHandlerFunction(bindingInfo.stateName, bindingInfo.propName, bindingInfo.statePathName, bindingInfo.inFilters);
-            handlerByHandlerKey.set(key, twowayEventHandler);
+            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters);
+            handlerByHandlerKey$2.set(key, twowayEventHandler);
         }
-        bindingInfo.node.addEventListener(eventName, twowayEventHandler);
-        let bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
-        if (typeof bindingInfoSet === "undefined") {
-            bindingInfoSet = new Set([bindingInfo]);
-            bindingInfoSetByHandlerKey.set(key, bindingInfoSet);
+        binding.node.addEventListener(eventName, twowayEventHandler);
+        let bindingSet = bindingSetByHandlerKey$2.get(key);
+        if (typeof bindingSet === "undefined") {
+            bindingSet = new Set([binding]);
+            bindingSetByHandlerKey$2.set(key, bindingSet);
         }
         else {
-            bindingInfoSet.add(bindingInfo);
+            bindingSet.add(binding);
+        }
+        return true;
+    }
+    return false;
+}
+
+const handlerByHandlerKey$1 = new Map();
+const bindingSetByHandlerKey$1 = new Map();
+function getHandlerKey$1(binding, eventName) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+}
+function getEventName$1(binding) {
+    let eventName = 'input';
+    for (const modifier of binding.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+    const node = event.target;
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
+        return;
+    }
+    if (node.type !== 'radio') {
+        console.warn(`[@wcstack/state] event.target is not a radio input element.`);
+        return;
+    }
+    if (node.checked === false) {
+        return;
+    }
+    const newValue = node.value;
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            state[statePathName] = filteredNewValue;
+        });
+    });
+};
+function attachRadioEventHandler(binding) {
+    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName$1(binding);
+        const key = getHandlerKey$1(binding, eventName);
+        let radioEventHandler = handlerByHandlerKey$1.get(key);
+        if (typeof radioEventHandler === "undefined") {
+            radioEventHandler = radioEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            handlerByHandlerKey$1.set(key, radioEventHandler);
+        }
+        binding.node.addEventListener(eventName, radioEventHandler);
+        let bindingSet = bindingSetByHandlerKey$1.get(key);
+        if (typeof bindingSet === "undefined") {
+            bindingSet = new Set([binding]);
+            bindingSetByHandlerKey$1.set(key, bindingSet);
+        }
+        else {
+            bindingSet.add(binding);
+        }
+        return true;
+    }
+    return false;
+}
+
+const handlerByHandlerKey = new Map();
+const bindingSetByHandlerKey = new Map();
+function getHandlerKey(binding, eventName) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+}
+function getEventName(binding) {
+    let eventName = 'input';
+    for (const modifier of binding.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+    const node = event.target;
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
+        return;
+    }
+    if (node.type !== 'checkbox') {
+        console.warn(`[@wcstack/state] event.target is not a checkbox input element.`);
+        return;
+    }
+    const checked = node.checked;
+    const newValue = node.value;
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            let currentValue = state[statePathName];
+            if (Array.isArray(currentValue)) {
+                if (checked) {
+                    if (currentValue.indexOf(filteredNewValue) === -1) {
+                        state[statePathName] = currentValue.concat(filteredNewValue);
+                    }
+                }
+                else {
+                    const index = currentValue.indexOf(filteredNewValue);
+                    if (index !== -1) {
+                        state[statePathName] = currentValue.toSpliced(index, 1);
+                    }
+                }
+            }
+            else {
+                if (checked) {
+                    state[statePathName] = [filteredNewValue];
+                }
+                else {
+                    state[statePathName] = [];
+                }
+            }
+        });
+    });
+};
+function attachCheckboxEventHandler(binding) {
+    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName(binding);
+        const key = getHandlerKey(binding, eventName);
+        let checkboxEventHandler = handlerByHandlerKey.get(key);
+        if (typeof checkboxEventHandler === "undefined") {
+            checkboxEventHandler = checkboxEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            handlerByHandlerKey.set(key, checkboxEventHandler);
+        }
+        binding.node.addEventListener(eventName, checkboxEventHandler);
+        let bindingSet = bindingSetByHandlerKey.get(key);
+        if (typeof bindingSet === "undefined") {
+            bindingSet = new Set([binding]);
+            bindingSetByHandlerKey.set(key, bindingSet);
+        }
+        else {
+            bindingSet.add(binding);
         }
         return true;
     }
@@ -2748,6 +2930,10 @@ function _initializeBindings(allBindings) {
         }
         // two-way binding
         attachTwowayEventHandler(binding);
+        // radio binding
+        attachRadioEventHandler(binding);
+        // checkbox binding
+        attachCheckboxEventHandler(binding);
     }
 }
 function initializeBindings(root, parentLoopContext) {
@@ -3120,6 +3306,13 @@ function applyChangeToProperty(binding, _context, newValue) {
     }
 }
 
+function applyChangeToRadio(binding, _context, newValue) {
+    const element = binding.node;
+    const elementValue = element.value;
+    const elementFilteredValue = getFilteredValue(elementValue, binding.inFilters);
+    element.checked = newValue === elementFilteredValue;
+}
+
 function applyChangeToStyle(binding, _context, newValue) {
     const styleName = binding.propSegments[1];
     const style = binding.node.style;
@@ -3133,14 +3326,6 @@ function applyChangeToText(binding, _context, newValue) {
     if (binding.replaceNode.nodeValue !== newValue) {
         binding.replaceNode.nodeValue = newValue;
     }
-}
-
-function getFilteredValue(value, filters) {
-    let filteredValue = value;
-    for (const filter of filters) {
-        filteredValue = filter.filterFn(filteredValue);
-    }
-    return filteredValue;
 }
 
 // indexName ... $1, $2, ...
@@ -3184,6 +3369,8 @@ const applyChangeByBindingType = {
     "if": applyChangeToIf,
     "else": applyChangeToIf,
     "elseif": applyChangeToIf,
+    "radio": applyChangeToRadio,
+    "checkbox": applyChangeToCheckbox,
 };
 function _applyChange(binding, context) {
     const value = getValue(context.state, binding);
@@ -3203,6 +3390,16 @@ function applyChange(binding, context) {
         return;
     }
     context.appliedBindingSet.add(binding);
+    const absAddress = getAbsoluteStateAddressByBindingInfo(binding);
+    if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
+        const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement);
+        addressSet.add(absAddress);
+    }
+    else {
+        context.updatedAbsAddressSetByStateElement.set(context.stateElement, new Set([
+            absAddress
+        ]));
+    }
     if (binding.bindingType === "event") {
         return;
     }
@@ -3233,6 +3430,7 @@ function applyChange(binding, context) {
                 state: targetState,
                 appliedBindingSet: context.appliedBindingSet,
                 newListValueByAbsAddress: context.newListValueByAbsAddress,
+                updatedAbsAddressSetByStateElement: context.updatedAbsAddressSetByStateElement,
             };
             _applyChange(binding, newContext);
         });
@@ -3252,10 +3450,15 @@ function applyChangeFromBindings(bindings) {
     let bindingIndex = 0;
     const appliedBindingSet = new Set();
     const newListValueByAbsAddress = new Map();
+    const updatedAbsAddressSetByStateElement = new Map();
     // 外側ループ: stateName ごとにグループ化
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
         const stateName = binding.stateName;
+        if (binding.replaceNode.isConnected === false) {
+            bindingIndex++;
+            continue;
+        }
         let rootNode = binding.replaceNode.getRootNode();
         if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
             rootNode = getRootNodeByFragment(rootNode);
@@ -3274,7 +3477,8 @@ function applyChangeFromBindings(bindings) {
                 stateElement: stateElement,
                 state: state,
                 appliedBindingSet: appliedBindingSet,
-                newListValueByAbsAddress: newListValueByAbsAddress
+                newListValueByAbsAddress: newListValueByAbsAddress,
+                updatedAbsAddressSetByStateElement: updatedAbsAddressSetByStateElement,
             };
             do {
                 applyChange(binding, context);
@@ -3291,6 +3495,11 @@ function applyChangeFromBindings(bindings) {
     }
     for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
         setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
+    }
+    for (const [stateElement, absAddressSet] of updatedAbsAddressSetByStateElement.entries()) {
+        stateElement.createState("writable", (state) => {
+            state[updatedCallbackSymbol](Array.from(absAddressSet));
+        });
     }
 }
 
@@ -3318,7 +3527,7 @@ class Updater {
         // 同一の (stateName, address) は同じインスタンスとなり、
         // Set による重複排除が正しく機能する    
         const absoluteAddressSet = new Set(absoluteAddresses);
-        const processBindingInfos = [];
+        const processBindings = [];
         for (const absoluteAddress of absoluteAddressSet) {
             const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
             for (const binding of bindings) {
@@ -3326,10 +3535,10 @@ class Updater {
                     // 切断されているバインディングは無視
                     continue;
                 }
-                processBindingInfos.push(binding);
+                processBindings.push(binding);
             }
         }
-        applyChangeFromBindings(processBindingInfos);
+        applyChangeFromBindings(processBindings);
     }
 }
 const updater = new Updater();
@@ -3894,6 +4103,61 @@ function trackDependency(_target, _prop, _receiver, handler) {
 }
 
 /**
+ * updatedCallback.ts
+ *
+ * Utility function to invoke the StateClass lifecycle hook "$updatedCallback".
+ *
+ * Main responsibilities:
+ * - Invokes $updatedCallback method if defined on the object (target)
+ * - Callback is invoked with target's this context, passing IReadonlyStateProxy (receiver) as argument
+ * - Executable as async function (await compatible)
+ *
+ * Design points:
+ * - Safely retrieves $updatedCallback property using Reflect.get
+ * - Does nothing if the callback doesn't exist
+ * - Used for lifecycle management and update handling logic
+ */
+/**
+ * Invokes the $updatedCallback lifecycle hook if defined on the target.
+ * Aggregates updated paths and their indexes before passing to the callback.
+ * @param target - Target object to check for callback
+ * @param refs - Array of state property references that were updated
+ * @param receiver - State proxy to pass as this context
+ * @param handler - State handler (unused but part of signature)
+ * @returns Promise or void depending on callback implementation
+ */
+function updatedCallback(target, refs, receiver, handler) {
+    const callback = Reflect.get(target, STATE_UPDATED_CALLBACK_NAME);
+    if (typeof callback === "function") {
+        const paths = new Set();
+        // ToDo:現状では1階層のみのワイルドカードに対応。多階層対応は後回し
+        const indexesByPath = {};
+        for (const ref of refs) {
+            const pathInfo = ref.absolutePathInfo.pathInfo;
+            let pathName;
+            if (ref.absolutePathInfo.stateName === handler.stateName) {
+                pathName = pathInfo.path;
+            }
+            else {
+                pathName = pathInfo.path + "@" + ref.absolutePathInfo.stateName;
+            }
+            paths.add(pathName);
+            if (pathInfo.wildcardCount > 0) {
+                const index = ref.listIndex.index;
+                const indexes = indexesByPath[pathName];
+                if (typeof indexes === "undefined") {
+                    indexesByPath[pathName] = [index];
+                }
+                else {
+                    indexes.push(index);
+                }
+            }
+        }
+        return callback.call(receiver, Array.from(paths), indexesByPath);
+    }
+}
+
+/**
  * setLoopContext.ts
  *
  * StateClassの内部APIとして、ループコンテキスト（ILoopContext）を一時的に設定し、
@@ -4022,6 +4286,11 @@ function get(target, prop, receiver, handler) {
             case disconnectedCallbackSymbol: {
                 return () => {
                     return disconnectedCallback(target, prop, receiver);
+                };
+            }
+            case updatedCallbackSymbol: {
+                return (refs) => {
+                    return updatedCallback(target, refs, receiver, handler);
                 };
             }
         }

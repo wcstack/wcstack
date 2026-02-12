@@ -24,3 +24,5 @@ export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
 export const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 export const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
+export const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+

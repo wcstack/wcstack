@@ -3,10 +3,10 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 const handlerByHandlerKey = new Map();
-const bindingInfoSetByHandlerKey = new Map();
-function getHandlerKey(bindingInfo) {
-    const modifierKey = bindingInfo.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
-    return `${bindingInfo.stateName}::${bindingInfo.statePathName}::${modifierKey}`;
+const bindingSetByHandlerKey = new Map();
+function getHandlerKey(binding) {
+    const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+    return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
 }
 const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event) => {
     if (modifiers.includes('prevent'))
@@ -30,52 +30,52 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event)
         });
     });
 };
-export function attachEventHandler(bindingInfo) {
-    if (!bindingInfo.propName.startsWith("on")) {
+export function attachEventHandler(binding) {
+    if (!binding.propName.startsWith("on")) {
         return false;
     }
-    const key = getHandlerKey(bindingInfo);
+    const key = getHandlerKey(binding);
     let stateEventHandler = handlerByHandlerKey.get(key);
     if (typeof stateEventHandler === "undefined") {
-        stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName, bindingInfo.propModifiers);
+        stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers);
         handlerByHandlerKey.set(key, stateEventHandler);
     }
-    const eventName = bindingInfo.propName.slice(2);
-    bindingInfo.node.addEventListener(eventName, stateEventHandler);
-    let bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
-    if (typeof bindingInfoSet === "undefined") {
-        bindingInfoSet = new Set([bindingInfo]);
-        bindingInfoSetByHandlerKey.set(key, bindingInfoSet);
+    const eventName = binding.propName.slice(2);
+    binding.node.addEventListener(eventName, stateEventHandler);
+    let bindingSet = bindingSetByHandlerKey.get(key);
+    if (typeof bindingSet === "undefined") {
+        bindingSet = new Set([binding]);
+        bindingSetByHandlerKey.set(key, bindingSet);
     }
     else {
-        bindingInfoSet.add(bindingInfo);
+        bindingSet.add(binding);
     }
     return true;
 }
-export function detachEventHandler(bindingInfo) {
-    if (!bindingInfo.propName.startsWith("on")) {
+export function detachEventHandler(binding) {
+    if (!binding.propName.startsWith("on")) {
         return false;
     }
-    const key = getHandlerKey(bindingInfo);
+    const key = getHandlerKey(binding);
     const stateEventHandler = handlerByHandlerKey.get(key);
     if (typeof stateEventHandler === "undefined") {
         return false;
     }
-    const eventName = bindingInfo.propName.slice(2);
-    bindingInfo.node.removeEventListener(eventName, stateEventHandler);
-    const bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
-    if (typeof bindingInfoSet === "undefined") {
+    const eventName = binding.propName.slice(2);
+    binding.node.removeEventListener(eventName, stateEventHandler);
+    const bindingSet = bindingSetByHandlerKey.get(key);
+    if (typeof bindingSet === "undefined") {
         return false;
     }
-    bindingInfoSet.delete(bindingInfo);
-    if (bindingInfoSet.size === 0) {
+    bindingSet.delete(binding);
+    if (bindingSet.size === 0) {
         handlerByHandlerKey.delete(key);
-        bindingInfoSetByHandlerKey.delete(key);
+        bindingSetByHandlerKey.delete(key);
     }
     return true;
 }
 export const __private__ = {
     handlerByHandlerKey,
-    bindingInfoSetByHandlerKey,
+    bindingSetByHandlerKey,
 };
 //# sourceMappingURL=handler.js.map

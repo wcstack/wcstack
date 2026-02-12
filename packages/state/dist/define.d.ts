@@ -9,4 +9,5 @@ export declare const NO_SET_TIMEOUT: number;
 export declare const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 export declare const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 export declare const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
+export declare const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 //# sourceMappingURL=define.d.ts.map

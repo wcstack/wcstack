@@ -1,4 +1,6 @@
+import { config } from "../config";
 import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { updatedCallbackSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { applyChange } from "./applyChange";
@@ -13,10 +15,19 @@ export function applyChangeFromBindings(bindings) {
     let bindingIndex = 0;
     const appliedBindingSet = new Set();
     const newListValueByAbsAddress = new Map();
+    const updatedAbsAddressSetByStateElement = new Map();
     // 外側ループ: stateName ごとにグループ化
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
         const stateName = binding.stateName;
+        if (binding.replaceNode.isConnected === false) {
+            // 切断されているバインディングは無視、本来は事前に除去されているはず
+            if (config.debug) {
+                console.log(`applyChangeFromBindings: skip disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`, binding);
+            }
+            bindingIndex++;
+            continue;
+        }
         let rootNode = binding.replaceNode.getRootNode();
         if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
             rootNode = getRootNodeByFragment(rootNode);
@@ -35,7 +46,8 @@ export function applyChangeFromBindings(bindings) {
                 stateElement: stateElement,
                 state: state,
                 appliedBindingSet: appliedBindingSet,
-                newListValueByAbsAddress: newListValueByAbsAddress
+                newListValueByAbsAddress: newListValueByAbsAddress,
+                updatedAbsAddressSetByStateElement: updatedAbsAddressSetByStateElement,
             };
             do {
                 applyChange(binding, context);
@@ -52,6 +64,11 @@ export function applyChangeFromBindings(bindings) {
     }
     for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
         setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
+    }
+    for (const [stateElement, absAddressSet] of updatedAbsAddressSetByStateElement.entries()) {
+        stateElement.createState("writable", (state) => {
+            state[updatedCallbackSymbol](Array.from(absAddressSet));
+        });
     }
 }
 //# sourceMappingURL=applyChangeFromBindings.js.map

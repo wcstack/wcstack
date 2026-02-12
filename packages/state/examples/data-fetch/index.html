@@ -37,9 +37,11 @@ function formatDate(v) {
 
 export default {
   commits: [],
+  branches,
   currentBranch,
   isLoading: false,
-  get "commits.*.commit.author.formatedDate"() {
+  message: "No commits found.",
+  get "commits.*.commit.author.formattedDate"() {
     return formatDate(this["commits.*.commit.author.date"]);
   },
   get "commits.*.commit.truncatedMessage"() {
@@ -47,12 +49,19 @@ export default {
   },
   async fetchCommits() {
     this.isLoading = true;
+    this.message = "No commits found.";
     try {
-      const response = await fetch(API_URL + currentBranch);
+      const response = await fetch(API_URL + this.currentBranch);
       const data = await response.json();
-      this.commits = data;
+      if (!Array.isArray(data)) {
+        this.commits = [];
+        this.message = data.message || 'Failed to fetch commits.';
+      } else {
+        this.commits = data;
+      }
     } catch(e) {
       console.error('Error fetching commits:', e);
+      this.message = e.message || 'Error fetching commits.';
     } finally {
       this.isLoading = false;
     }
@@ -60,18 +69,22 @@ export default {
   async $connectedCallback() {
     await this.fetchCommits();
   },
-  async toggleBranch() {
-    const currentIndex = branches.indexOf(this.currentBranch);
-    const nextIndex = (currentIndex + 1) % branches.length;
-    this.currentBranch = branches[nextIndex];
-    await this.fetchCommits();
+  async $updatedCallback(props) {
+    if (props.includes('currentBranch')) {
+      await this.fetchCommits();
+    }
   }
 };
     </script>
   </wcs-state>
   <h1>Latest wcstack/wcstack Commits</h1>
   <p>wcstack/wcstack@{{ currentBranch }}</p>
-  <button data-wcs="onclick: toggleBranch">Toggle Branch</button>
+  <template data-wcs="for: branches">
+    <label>
+      <input type="radio" data-wcs="value: .; radio: currentBranch">
+      {{ . }}
+    </label>
+  </template>
   <template data-wcs="if: isLoading">
     <p>Loading...</p>
   </template>
@@ -85,10 +98,13 @@ export default {
         by <span class="author">
           <a target="_blank" data-wcs="href: .commit.author.html_url">{{ .commit.author.name }}</a>
         </span>
-        at <span class="date">{{ .commit.author.formatedDate }}</span>
+        at <span class="date">{{ .commit.author.formattedDate }}</span>
       </li>
       </template>
     </ul>
+    </template>
+    <template data-wcs="else:">
+      {{ message }}
     </template>
   </template>
 </body>

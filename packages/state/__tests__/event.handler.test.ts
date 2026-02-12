@@ -91,12 +91,12 @@ describe('event/handler', () => {
     attachEventHandler(binding);
 
     const key = `${binding.stateName}::${binding.statePathName}::`;
-    __private__.bindingInfoSetByHandlerKey.delete(key);
+    __private__.bindingSetByHandlerKey.delete(key);
 
     expect(detachEventHandler(binding)).toBe(false);
 
     __private__.handlerByHandlerKey.delete(key);
-    __private__.bindingInfoSetByHandlerKey.delete(key);
+    __private__.bindingSetByHandlerKey.delete(key);
   });
 
   it('複数バインディング時に1つ解除してもハンドラが残ること', () => {

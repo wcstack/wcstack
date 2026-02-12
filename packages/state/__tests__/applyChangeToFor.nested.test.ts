@@ -183,6 +183,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
       state,
       appliedBindingSet: new Set(),
       newListValueByAbsAddress: new Map(),
+      updatedAbsAddressSetByStateElement: new Map(),
     };
 
     const flushContext = () => {

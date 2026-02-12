@@ -26,10 +26,11 @@ import { getAll } from "../apis/getAll";
 import { postUpdate } from "../apis/postUpdate";
 import { resolve } from "../apis/resolve";
 import { trackDependency } from "../apis/trackDependency";
+import { updatedCallback } from "../apis/updatedCallback";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 export function get(target, prop, receiver, handler) {
     const index = INDEX_BY_INDEX_NAME[prop];
     if (typeof index !== "undefined") {
@@ -99,6 +100,11 @@ export function get(target, prop, receiver, handler) {
             case disconnectedCallbackSymbol: {
                 return () => {
                     return disconnectedCallback(target, prop, receiver, handler);
+                };
+            }
+            case updatedCallbackSymbol: {
+                return (refs) => {
+                    return updatedCallback(target, refs, receiver, handler);
                 };
             }
         }

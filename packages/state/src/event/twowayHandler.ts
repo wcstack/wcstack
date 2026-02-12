@@ -6,17 +6,17 @@ import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
-const bindingInfoSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
+const bindingSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
 
-function getHandlerKey(bindingInfo: IBindingInfo, eventName: string): string {
-  const filterKey = bindingInfo.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-  return `${bindingInfo.stateName}::${bindingInfo.propName}::${bindingInfo.statePathName}::${eventName}::${filterKey}`;
+function getHandlerKey(binding: IBindingInfo, eventName: string): string {
+  const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+  return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}`;
 }
 
-function getEventName(bindingInfo: IBindingInfo): string {
-  const tagName = (bindingInfo.node as Element).tagName.toLowerCase();
+function getEventName(binding: IBindingInfo): string {
+  const tagName = (binding.node as Element).tagName.toLowerCase();
   let eventName = (tagName === 'select') ? 'change' : 'input';
-  for(const modifier of bindingInfo.propModifiers) {
+  for(const modifier of binding.propModifiers) {
     if (modifier.startsWith('on')) {
       eventName = modifier.slice(2);
     }
@@ -31,8 +31,8 @@ const twowayEventHandlerFunction = (
   inFilters: IFilterInfo[],
 ) => (event: Event): any => {
   const node = event.target as Element;
-  if (typeof node === "undefined") {
-    console.warn(`[@wcstack/state] event.target is undefined.`);
+  if (node === null) {
+    console.warn(`[@wcstack/state] event.target is null.`);
     return;
   }
   if (!(propName in node)) {
@@ -59,51 +59,51 @@ const twowayEventHandlerFunction = (
   });
 }
 
-export function attachTwowayEventHandler(bindingInfo: IBindingInfo): boolean {
-  if (isPossibleTwoWay(bindingInfo.node, bindingInfo.propName) && bindingInfo.propModifiers.indexOf('ro') === -1) {
-    const eventName = getEventName(bindingInfo);
-    const key = getHandlerKey(bindingInfo, eventName);
+export function attachTwowayEventHandler(binding: IBindingInfo): boolean {
+  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+    const eventName = getEventName(binding);
+    const key = getHandlerKey(binding, eventName);
     let twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       twowayEventHandler = twowayEventHandlerFunction(
-        bindingInfo.stateName,
-        bindingInfo.propName,
-        bindingInfo.statePathName,
-        bindingInfo.inFilters
+        binding.stateName,
+        binding.propName,
+        binding.statePathName,
+        binding.inFilters
       );
       handlerByHandlerKey.set(key, twowayEventHandler);
     }
-    (bindingInfo.node as Element).addEventListener(eventName, twowayEventHandler);
-    let bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
-    if (typeof bindingInfoSet === "undefined") {
-      bindingInfoSet = new Set<IBindingInfo>([bindingInfo]);
-      bindingInfoSetByHandlerKey.set(key, bindingInfoSet);
+    (binding.node as Element).addEventListener(eventName, twowayEventHandler);
+    let bindingSet = bindingSetByHandlerKey.get(key);
+    if (typeof bindingSet === "undefined") {
+      bindingSet = new Set<IBindingInfo>([binding]);
+      bindingSetByHandlerKey.set(key, bindingSet);
     } else {
-      bindingInfoSet.add(bindingInfo);
+      bindingSet.add(binding);
     }
     return true;
   }
   return false;
 }
 
-export function detachTwowayEventHandler(bindingInfo: IBindingInfo): boolean {
-  if (isPossibleTwoWay(bindingInfo.node, bindingInfo.propName) && bindingInfo.propModifiers.indexOf('ro') === -1) {
-    const eventName = getEventName(bindingInfo);
-    const key = getHandlerKey(bindingInfo, eventName);
+export function detachTwowayEventHandler(binding: IBindingInfo): boolean {
+  if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+    const eventName = getEventName(binding);
+    const key = getHandlerKey(binding, eventName);
     const twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       return false;
     }
-    (bindingInfo.node as Element).removeEventListener(eventName, twowayEventHandler);
+    (binding.node as Element).removeEventListener(eventName, twowayEventHandler);
 
-    const bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
-    if (typeof bindingInfoSet === "undefined") {
+    const bindingSet = bindingSetByHandlerKey.get(key);
+    if (typeof bindingSet === "undefined") {
       return false;
     }
-    bindingInfoSet.delete(bindingInfo);
-    if (bindingInfoSet.size === 0) {
+    bindingSet.delete(binding);
+    if (bindingSet.size === 0) {
       handlerByHandlerKey.delete(key);
-      bindingInfoSetByHandlerKey.delete(key);
+      bindingSetByHandlerKey.delete(key);
     }
     return true;
   }
@@ -112,7 +112,7 @@ export function detachTwowayEventHandler(bindingInfo: IBindingInfo): boolean {
 
 export const __private__ = {
   handlerByHandlerKey,
-  bindingInfoSetByHandlerKey,
+  bindingSetByHandlerKey,
   getHandlerKey,
   getEventName,
   twowayEventHandlerFunction,

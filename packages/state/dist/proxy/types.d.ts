@@ -1,8 +1,8 @@
-import { IStateAddress } from "../address/types";
+import { IAbsoluteStateAddress, IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { ILoopContext } from "../list/types";
 import { IState } from "../types";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol } from "./symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "./symbols";
 export interface IStateHandler extends ProxyHandler<IState> {
     readonly stateName: string;
     readonly stateElement: IStateElement;
@@ -20,6 +20,7 @@ export interface IStateProxy extends IState {
     [getByAddressSymbol](address: IStateAddress): any;
     [connectedCallbackSymbol](): Promise<void>;
     [disconnectedCallbackSymbol](): void;
+    [updatedCallbackSymbol](updatedAbsAddressList: IAbsoluteStateAddress[]): void;
 }
 export type Mutability = "readonly" | "writable";
 //# sourceMappingURL=types.d.ts.map

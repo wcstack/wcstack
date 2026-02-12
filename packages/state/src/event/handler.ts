@@ -5,11 +5,11 @@ import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
-const bindingInfoSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
+const bindingSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
 
-function getHandlerKey(bindingInfo: IBindingInfo): string {
-  const modifierKey = bindingInfo.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
-  return `${bindingInfo.stateName}::${bindingInfo.statePathName}::${modifierKey}`;
+function getHandlerKey(binding: IBindingInfo): string {
+  const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+  return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
 }
 
 const stateEventHandlerFunction = (
@@ -39,56 +39,56 @@ const stateEventHandlerFunction = (
   });
 }
 
-export function attachEventHandler(bindingInfo: IBindingInfo): boolean {
-  if (!bindingInfo.propName.startsWith("on")) {
+export function attachEventHandler(binding: IBindingInfo): boolean {
+  if (!binding.propName.startsWith("on")) {
     return false;
   }
-  const key = getHandlerKey(bindingInfo);
+  const key = getHandlerKey(binding);
   let stateEventHandler = handlerByHandlerKey.get(key);
   if (typeof stateEventHandler === "undefined") {
-    stateEventHandler = stateEventHandlerFunction(bindingInfo.stateName, bindingInfo.statePathName, bindingInfo.propModifiers);
+    stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers);
     handlerByHandlerKey.set(key, stateEventHandler);
   }
 
-  const eventName = bindingInfo.propName.slice(2);
-  (bindingInfo.node as Element).addEventListener(eventName, stateEventHandler);
+  const eventName = binding.propName.slice(2);
+  (binding.node as Element).addEventListener(eventName, stateEventHandler);
 
-  let bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
-  if (typeof bindingInfoSet === "undefined") {
-    bindingInfoSet = new Set<IBindingInfo>([bindingInfo]);
-    bindingInfoSetByHandlerKey.set(key, bindingInfoSet);
+  let bindingSet = bindingSetByHandlerKey.get(key);
+  if (typeof bindingSet === "undefined") {
+    bindingSet = new Set<IBindingInfo>([binding]);
+    bindingSetByHandlerKey.set(key, bindingSet);
   } else {
-    bindingInfoSet.add(bindingInfo);
+    bindingSet.add(binding);
   }
   return true;
 }
 
-export function detachEventHandler(bindingInfo: IBindingInfo): boolean {
-  if (!bindingInfo.propName.startsWith("on")) {
+export function detachEventHandler(binding: IBindingInfo): boolean {
+  if (!binding.propName.startsWith("on")) {
     return false;
   }
-  const key = getHandlerKey(bindingInfo);
+  const key = getHandlerKey(binding);
   const stateEventHandler = handlerByHandlerKey.get(key);
   if (typeof stateEventHandler === "undefined") {
     return false;
   }
-  const eventName = bindingInfo.propName.slice(2);
-  (bindingInfo.node as Element).removeEventListener(eventName, stateEventHandler);
+  const eventName = binding.propName.slice(2);
+  (binding.node as Element).removeEventListener(eventName, stateEventHandler);
 
-  const bindingInfoSet = bindingInfoSetByHandlerKey.get(key);
-  if (typeof bindingInfoSet === "undefined") {
+  const bindingSet = bindingSetByHandlerKey.get(key);
+  if (typeof bindingSet === "undefined") {
     return false;
   }
-  bindingInfoSet.delete(bindingInfo);
-  if (bindingInfoSet.size === 0) {
+  bindingSet.delete(binding);
+  if (bindingSet.size === 0) {
     handlerByHandlerKey.delete(key);
-    bindingInfoSetByHandlerKey.delete(key);
+    bindingSetByHandlerKey.delete(key);
   }
   return true;
 }
 
 export const __private__ = {
   handlerByHandlerKey,
-  bindingInfoSetByHandlerKey,
+  bindingSetByHandlerKey,
 };
 

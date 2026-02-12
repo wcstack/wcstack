@@ -39,7 +39,12 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         outFilters: [],
         bindingType: 'else',
       };
-    } else if (propPart === 'if' || propPart === 'elseif' || propPart === 'for') {
+    } else if (propPart === 'if' 
+      || propPart === 'elseif' 
+      || propPart === 'for'
+      || propPart === 'radio'
+      || propPart === 'checkbox'
+    ) {
       const stateResult = parseStatePart(statePart);
       return {
         propName: propPart,

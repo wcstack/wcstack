@@ -30,7 +30,7 @@ class Updater {
     // 同一の (stateName, address) は同じインスタンスとなり、
     // Set による重複排除が正しく機能する    
     const absoluteAddressSet = new Set(absoluteAddresses);
-    const processBindingInfos: IBindingInfo[] = [];
+    const processBindings: IBindingInfo[] = [];
     for (const absoluteAddress of absoluteAddressSet) {
       const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
       for(const binding of bindings) {
@@ -38,11 +38,11 @@ class Updater {
           // 切断されているバインディングは無視
           continue;
         }
-        processBindingInfos.push(binding);
+        processBindings.push(binding);
       }
     }
     applyChangeFromBindings(
-      processBindingInfos
+      processBindings
     );
   }
 

@@ -12,6 +12,8 @@ import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IInitialBindingInfo } from "./types";
 import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
 import { addBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { attachRadioEventHandler } from "../event/radioHandler";
+import { attachCheckboxEventHandler } from "../event/checkboxHandler";
 
 function _initializeBindings(
   allBindings: IBindingInfo[],
@@ -28,6 +30,10 @@ function _initializeBindings(
 
     // two-way binding
     attachTwowayEventHandler(binding);
+    // radio binding
+    attachRadioEventHandler(binding);
+    // checkbox binding
+    attachCheckboxEventHandler(binding);
 
   }
 }

@@ -19,7 +19,7 @@
 
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
-import { IStateAddress } from "../../address/types";
+import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { INDEX_BY_INDEX_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
 import { connectedCallback } from "../apis/connectedCallback";
@@ -28,10 +28,11 @@ import { getAll } from "../apis/getAll";
 import { postUpdate } from "../apis/postUpdate";
 import { resolve } from "../apis/resolve";
 import { trackDependency } from "../apis/trackDependency";
+import { updatedCallback } from "../apis/updatedCallback";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import { IStateHandler } from "../types";
 
 export function get(
@@ -143,6 +144,18 @@ export function get(
           return disconnectedCallback(
             target,
             prop,
+            receiver,
+            handler
+          );
+        }
+      }
+      case updatedCallbackSymbol: {
+        return (
+          refs: IAbsoluteStateAddress[]
+        ): unknown => {
+          return updatedCallback(
+            target,
+            refs,
             receiver,
             handler
           );

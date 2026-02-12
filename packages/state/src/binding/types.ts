@@ -1,7 +1,7 @@
 import { IAbsolutePathInfo, IPathInfo } from "../address/types";
 import { FilterFn } from "../filters/types";
 
-export type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else';
+export type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox';
 
 export interface IFilterInfo {
   readonly filterName: string;

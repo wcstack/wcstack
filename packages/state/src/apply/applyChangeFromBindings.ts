@@ -1,5 +1,8 @@
 import { IAbsoluteStateAddress } from "../address/types";
+import { IStateElement } from "../components/types";
+import { config } from "../config";
 import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { updatedCallbackSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
@@ -17,11 +20,20 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
   let bindingIndex = 0;
   const appliedBindingSet: Set<IBindingInfo> = new Set();
   const newListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]> = new Map();
+  const updatedAbsAddressSetByStateElement: Map<IStateElement, Set<IAbsoluteStateAddress>> = new Map();
 
   // 外側ループ: stateName ごとにグループ化
   while(bindingIndex < bindings.length) {
     let binding = bindings[bindingIndex];
     const stateName = binding.stateName;
+    if (binding.replaceNode.isConnected === false) {
+      // 切断されているバインディングは無視、本来は事前に除去されているはず
+      if (config.debug) {
+        console.log(`applyChangeFromBindings: skip disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`, binding);
+      }
+      bindingIndex++;
+      continue;
+    }
     let rootNode: Node | null = binding.replaceNode.getRootNode() as Node;
     if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
       rootNode = getRootNodeByFragment(rootNode);
@@ -41,7 +53,8 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
         stateElement: stateElement,
         state: state,
         appliedBindingSet: appliedBindingSet,
-        newListValueByAbsAddress: newListValueByAbsAddress
+        newListValueByAbsAddress: newListValueByAbsAddress,
+        updatedAbsAddressSetByStateElement: updatedAbsAddressSetByStateElement,
       };
 
       do {
@@ -58,5 +71,10 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
   }
   for(const [ absAddress, newListValue ] of newListValueByAbsAddress.entries()) {
     setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
+  }
+  for(const [ stateElement, absAddressSet ] of updatedAbsAddressSetByStateElement.entries()) {
+    stateElement.createState("writable", (state) => {
+      state[updatedCallbackSymbol](Array.from(absAddressSet));
+    });
   }
 }

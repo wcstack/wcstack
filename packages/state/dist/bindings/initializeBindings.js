@@ -8,6 +8,8 @@ import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
 import { addBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { attachRadioEventHandler } from "../event/radioHandler";
+import { attachCheckboxEventHandler } from "../event/checkboxHandler";
 function _initializeBindings(allBindings) {
     for (const binding of allBindings) {
         // replace node
@@ -18,6 +20,10 @@ function _initializeBindings(allBindings) {
         }
         // two-way binding
         attachTwowayEventHandler(binding);
+        // radio binding
+        attachRadioEventHandler(binding);
+        // checkbox binding
+        attachCheckboxEventHandler(binding);
     }
 }
 export function initializeBindings(root, parentLoopContext) {
