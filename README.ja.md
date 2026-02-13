@@ -108,7 +108,7 @@
         ]
       },
       removeItem(event, index) {
-        this.cart.items.splice(index, 1);
+        this["cart.items"] = this["cart.items"].toSpliced(index, 1);
       },
       // パスゲッター — ループ要素ごとの算出プロパティ
       get "cart.items.*.subtotal"() {

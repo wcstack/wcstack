@@ -108,7 +108,7 @@ Reactive state with declarative bindings — no virtual DOM, no compilation.
         ]
       },
       removeItem(event, index) {
-        this.cart.items.splice(index, 1);
+        this["cart.items"] = this["cart.items"].toSpliced(index, 1);
       },
       // Path getter — computed per loop element
       get "cart.items.*.subtotal"() {
