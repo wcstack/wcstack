@@ -142,6 +142,38 @@ Multiple state elements can coexist with the `name` attribute. Bindings referenc
 
 Default name is `"default"` (no `@` needed).
 
+## Updating State
+
+State changes are detected through **property assignment** (the Proxy `set` trap). To trigger reactive DOM updates, a value must be **assigned** to a state property.
+
+### Primitive and Object Properties
+
+Direct property assignment is detected at any depth:
+
+```javascript
+this.count = 10;            // ✅ detected
+this.user.name = "Bob";     // ✅ detected (nested assignment)
+```
+
+### Arrays
+
+Array mutating methods (`push`, `splice`, `sort`, `reverse`, …) modify the array in place **without triggering a property assignment**, so the reactive system does not detect the change. Instead, use **non-destructive** methods that return a new array and assign the result:
+
+```javascript
+// ✅ Non-destructive + assignment — change detected
+this.items = this.items.concat({ id: 4, text: "New" });
+this.items = this.items.toSpliced(index, 1);
+this.items = this.items.filter(item => !item.done);
+this.items = this.items.toSorted((a, b) => a.id - b.id);
+this.items = this.items.toReversed();
+this.items = this.items.with(index, newValue);
+
+// ❌ Mutating — no assignment, change NOT detected
+this.items.push({ id: 4, text: "New" });
+this.items.splice(index, 1);
+this.items.sort((a, b) => a.id - b.id);
+```
+
 ## Binding Syntax
 
 ### `data-wcs` Attribute
@@ -689,7 +721,7 @@ export default {
   },
   removeItem(event, index) {
     // index is the loop context ($1)
-    this.items.splice(index, 1);
+    this.items = this.items.toSpliced(index, 1);
   }
 };
 ```

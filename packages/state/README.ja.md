@@ -142,6 +142,38 @@ Web Components のための宣言的リアクティブ状態管理。
 
 デフォルト名は `"default"`（`@` 不要）です。
 
+## 状態の更新
+
+状態の変更は**プロパティへの代入**（Proxy の `set` トラップ）で検知されます。リアクティブな DOM 更新をトリガーするには、状態プロパティに値を**代入**する必要があります。
+
+### プリミティブ・オブジェクトプロパティ
+
+直接のプロパティ代入は任意の深さで検知されます：
+
+```javascript
+this.count = 10;            // ✅ 検知される
+this.user.name = "Bob";     // ✅ 検知される（ネストされた代入）
+```
+
+### 配列
+
+配列の破壊的メソッド（`push`, `splice`, `sort`, `reverse` 等）はその場で配列を変更するだけで**プロパティ代入を発生させない**ため、リアクティブシステムは変更を検知しません。代わりに、新しい配列を返す**非破壊的メソッド**を使用し、結果を代入してください：
+
+```javascript
+// ✅ 非破壊的 + 代入 — 変更が検知される
+this.items = this.items.concat({ id: 4, text: "New" });
+this.items = this.items.toSpliced(index, 1);
+this.items = this.items.filter(item => !item.done);
+this.items = this.items.toSorted((a, b) => a.id - b.id);
+this.items = this.items.toReversed();
+this.items = this.items.with(index, newValue);
+
+// ❌ 破壊的 — 代入なし、変更は検知されない
+this.items.push({ id: 4, text: "New" });
+this.items.splice(index, 1);
+this.items.sort((a, b) => a.id - b.id);
+```
+
 ## バインディング構文
 
 ### `data-wcs` 属性
@@ -689,7 +721,7 @@ export default {
   },
   removeItem(event, index) {
     // index はループコンテキスト ($1)
-    this.items.splice(index, 1);
+    this.items = this.items.toSpliced(index, 1);
   }
 };
 ```

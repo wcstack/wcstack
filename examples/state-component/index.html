@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>simple</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>wcstack state component demo</title>
   <!--
     Import map to define component paths
     "@components/my/" means is lazy load, <my-xxx> will load ./components/xxx.js on demand
@@ -17,6 +18,123 @@
   <!-- autoloader, state exec bootstrap -->
   <script type="module" src="../../packages/autoloader/dist/auto.js"></script>
   <script type="module" src="../../packages/state/dist/auto.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, Segoe UI, system-ui, sans-serif;
+      line-height: 1.5;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top right, #dbeafe 0%, #f5f7fb 40%, #f8fafc 100%);
+    }
+
+    .app {
+      width: min(980px, 100% - 2rem);
+      margin: 2rem auto;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 14px;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      padding: 1rem 1.25rem;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+
+    .hero p {
+      margin: 0.35rem 0 0;
+      color: #64748b;
+      font-size: 0.95rem;
+    }
+
+    .section-title {
+      margin: 0 0 0.75rem;
+      font-weight: 700;
+      font-size: 1rem;
+      color: #0f172a;
+    }
+
+    .field {
+      display: grid;
+      gap: 0.35rem;
+      margin-top: 0.75rem;
+    }
+
+    .field-label {
+      font-size: 0.84rem;
+      color: #475569;
+      font-weight: 600;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      background: #ffffff;
+    }
+
+    input[type="text"]:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .profile-name {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .profile-id {
+      margin: 0.15rem 0 0;
+      color: #64748b;
+      font-size: 0.85rem;
+    }
+
+    .list {
+      display: grid;
+      gap: 0.8rem;
+      margin-top: 0.9rem;
+    }
+
+    .row {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 0.8rem;
+      background: #f8fafc;
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    .row-header {
+      font-size: 0.8rem;
+      color: #334155;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+  </style>
 </head>
 <body>
   <wcs-state>
@@ -32,18 +150,40 @@ export default {
     </script>
   </wcs-state>
 
-  <div>{{ user.name }}</div>
-  <input type="text" data-wcs="value: user.name" />
-  <my-component data-wcs="state.message: user.name"></my-component>
+  <main class="app">
+    <section class="card hero">
+      <h1>State Binding Playground</h1>
+      <p>Type in any input and watch values update instantly across cards and components.</p>
+    </section>
 
-  <div>Loop: users</div>
-  <template data-wcs="for: users">
-    <div>{{ .name}}</div>
-    <input type="text" data-wcs="value: .name" />
-    <my-component data-wcs="state.message: .name"></my-component>
-  </template>
+    <section class="card">
+      <h2 class="section-title">Current User</h2>
+      <p class="profile-name">{{ user.name }}</p>
+      <p class="profile-id">ID: {{ user.id }}</p>
+      <div class="field">
+        <label class="field-label" for="user-name">Edit user name</label>
+        <input id="user-name" type="text" data-wcs="value: user.name" />
+      </div>
+      <my-component data-wcs="state.message: user.name"></my-component>
+    </section>
 
-  <hr>
+    <section class="card">
+      <h2 class="section-title">Team Members (for loop)</h2>
+      <div class="list">
+        <template data-wcs="for: users">
+          <div class="row">
+            <div class="row-header">Member #{{ .id }}</div>
+            <div>{{ .name }}</div>
+            <div class="field">
+              <label class="field-label">Edit member name</label>
+              <input type="text" data-wcs="value: .name" />
+            </div>
+            <my-component data-wcs="state.message: .name"></my-component>
+          </div>
+        </template>
+      </div>
+    </section>
+  </main>
 
 </body>
 </html>

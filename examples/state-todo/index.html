@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>wcstack Todo App</title>
+  <script type="module" src="../../packages/autoloader/dist/auto.js"></script>
+  <script type="module" src="../../packages/state/dist/auto.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.5;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-bg: #eef2ff;
+      --primary-ring: rgba(79, 70, 229, 0.25);
+      --success: #10b981;
+      --success-bg: #ecfdf5;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-muted: #94a3b8;
+      --text-secondary: #64748b;
+      --border: #e2e8f0;
+      --shadow: 0 4px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse at 20% 0%, #c7d2fe33 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, #a5b4fc22 0%, transparent 50%);
+    }
+
+    .app {
+      width: min(580px, 100% - 2rem);
+      margin: 0 auto;
+      padding: 3rem 0 4rem;
+      display: grid;
+      gap: 1rem;
+    }
+
+    /* ── Header ─────────────────────────── */
+    .header {
+      text-align: center;
+      padding: 0 0 0.5rem;
+    }
+    .header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, var(--primary), #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-top: 0.25rem;
+    }
+
+    /* ── Card ───────────────────────────── */
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 1.25rem;
+    }
+
+    /* ── Add Form ──────────────────────── */
+    .add-form {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .add-form input {
+      flex: 1;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 0.65rem 0.85rem;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: inherit;
+    }
+    .add-form input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-ring);
+    }
+    .add-form button {
+      padding: 0.65rem 1.2rem;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .add-form button:hover { background: var(--primary-hover); }
+    .add-form button:active { transform: scale(0.97); }
+
+    /* ── Stats ─────────────────────────── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+    }
+    .stat {
+      text-align: center;
+      padding: 0.6rem 0;
+    }
+    .stat-value {
+      display: block;
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--primary);
+      line-height: 1.2;
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    /* ── Progress Bar ──────────────────── */
+    .progress-wrapper {
+      margin-top: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .progress-track {
+      flex: 1;
+      height: 8px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), #7c3aed);
+      border-radius: 99px;
+      transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      min-width: 0;
+    }
+    .progress-text {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--primary);
+      min-width: 3ch;
+      text-align: right;
+    }
+
+    /* ── Task List ─────────────────────── */
+    .task-list {
+      display: grid;
+      gap: 0;
+    }
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+      transition: opacity 0.2s;
+    }
+    .task-item:last-child { border-bottom: none; }
+
+    /* Custom Checkbox */
+    .task-check {
+      position: relative;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .task-check input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .checkmark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      transition: all 0.2s ease;
+    }
+    .checkmark::after {
+      content: "";
+      display: none;
+      width: 5px;
+      height: 9px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg) translate(-0.5px, -0.5px);
+    }
+    .task-item.completed .checkmark {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+    .task-item.completed .checkmark::after { display: block; }
+
+    /* Task Text */
+    .task-text {
+      flex: 1;
+      font-size: 0.95rem;
+      transition: color 0.2s, text-decoration-color 0.2s;
+    }
+    .task-item.completed .task-text {
+      text-decoration: line-through;
+      text-decoration-color: var(--text-muted);
+      color: var(--text-muted);
+    }
+
+    /* Remove Button */
+    .task-remove {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 1.15rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .task-remove:hover {
+      background: #fef2f2;
+      color: var(--danger);
+    }
+
+    /* ── Footer Actions ────────────────── */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .footer-text {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+    .clear-btn {
+      padding: 0.45rem 0.85rem;
+      background: transparent;
+      color: var(--danger);
+      border: 1.5px solid var(--danger);
+      border-radius: 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      font-family: inherit;
+    }
+    .clear-btn:hover {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    /* ── Empty & Done States ───────────── */
+    .empty-state {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--text-muted);
+    }
+    .empty-state .icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      opacity: 0.5;
+    }
+    .empty-state p {
+      font-size: 0.9rem;
+    }
+
+    .all-done {
+      text-align: center;
+      padding: 0.75rem;
+      background: var(--success-bg);
+      color: var(--success);
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <wcs-state>
+    <script type="module">
+export default {
+  newTask: "",
+  tasks: [
+    { id: 1, text: "Learn @wcstack/state reactive bindings", done: true },
+    { id: 2, text: "Build a zero-dependency SPA", done: false },
+    { id: 3, text: "Master conditional & list rendering", done: false },
+    { id: 4, text: "Deploy buildless app to production", done: false },
+  ],
+  _nextId: 5,
+
+  // ── Computed Properties ──────────────
+  get totalCount() {
+    return this.tasks.length;
+  },
+  get doneCount() {
+    return this.$getAll("tasks.*.done").filter(Boolean).length;
+  },
+  get activeCount() {
+    return this.totalCount - this.doneCount;
+  },
+  get progress() {
+    return this.totalCount === 0
+      ? 0
+      : Math.round((this.doneCount / this.totalCount) * 100);
+  },
+  get progressWidth() {
+    return this.progress + "%";
+  },
+  get allDone() {
+    return this.totalCount > 0 && this.doneCount === this.totalCount;
+  },
+  get hasDone() {
+    return this.doneCount > 0;
+  },
+
+  // ── Event Handlers ───────────────────
+  addTask() {
+    const text = this.newTask.trim();
+    if (text) {
+      this.tasks = this.tasks.concat({ id: this._nextId++, text, done: false });
+      this.newTask = "";
+    }
+  },
+  removeTask(e, index) {
+    this.tasks = this.tasks.toSpliced(index, 1);
+  },
+  clearCompleted() {
+    for (let i = this.tasks.length - 1; i >= 0; i--) {
+      if (this.tasks[i].done) {
+        this.tasks = this.tasks.toSpliced(i, 1);
+      }
+    }
+  },
+};
+    </script>
+  </wcs-state>
+
+  <main class="app">
+
+    <!-- Header -->
+    <div class="header">
+      <h1>Todo</h1>
+      <p>Reactive state management — zero dependencies, zero build step</p>
+    </div>
+
+    <!-- Add Task Form : onsubmit#prevent modifier -->
+    <div class="card">
+      <form class="add-form" data-wcs="onsubmit#prevent: addTask">
+        <input
+          type="text"
+          placeholder="What needs to be done?"
+          data-wcs="value: newTask"
+        />
+        <button type="submit">Add</button>
+      </form>
+    </div>
+
+    <!-- Stats : computed getters + style binding + filter -->
+    <div class="card">
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-value" data-wcs="textContent: totalCount"></span>
+          <span class="stat-label">Total</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" data-wcs="textContent: activeCount"></span>
+          <span class="stat-label">Active</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" data-wcs="textContent: doneCount"></span>
+          <span class="stat-label">Done</span>
+        </div>
+      </div>
+      <div class="progress-wrapper">
+        <div class="progress-track">
+          <div class="progress-fill" data-wcs="style.width: progressWidth"></div>
+        </div>
+        <span class="progress-text" data-wcs="textContent: progress|fix(0)"></span>
+      </div>
+    </div>
+
+    <!-- Task List : for loop + class binding + checkbox + event handler -->
+    <div class="card">
+
+      <template data-wcs="if: totalCount|gt(0)">
+        <div class="task-list">
+          <template data-wcs="for: tasks">
+            <div class="task-item" data-wcs="class.completed: .done">
+              <label class="task-check">
+                <input type="checkbox" data-wcs="checked: .done" />
+                <span class="checkmark"></span>
+              </label>
+              <span class="task-text">{{ .text }}</span>
+              <button
+                class="task-remove"
+                data-wcs="onclick: removeTask"
+                aria-label="Remove"
+              >&times;</button>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Empty state : else conditional -->
+      <template data-wcs="else:">
+        <div class="empty-state">
+          <div class="icon">&#9745;</div>
+          <p>No tasks yet — add one above!</p>
+        </div>
+      </template>
+
+    </div>
+
+    <!-- Footer : conditional rendering -->
+    <template data-wcs="if: totalCount|gt(0)">
+      <div class="card footer">
+        <span class="footer-text">
+          <span data-wcs="textContent: activeCount"></span> item(s) left
+        </span>
+        <template data-wcs="if: hasDone">
+          <button class="clear-btn" data-wcs="onclick: clearCompleted">
+            Clear completed
+          </button>
+        </template>
+      </div>
+    </template>
+
+    <!-- All done celebration : conditional -->
+    <template data-wcs="if: allDone">
+      <div class="all-done">All tasks completed!</div>
+    </template>
+
+  </main>
+
+</body>
+</html>
