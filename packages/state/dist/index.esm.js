@@ -1803,16 +1803,25 @@ const trim = (_options) => {
 /**
  * Slice filter - extracts portion of string from specified index.
  *
- * @param options - Array with start index as first element
+ * @param options - Array with start index and optional end index
  * @returns Filter function that returns sliced string
  */
 const slice = (options) => {
-    const opt = options?.[0] ?? optionsRequired('slice');
-    if (!validateNumberString(opt)) {
+    const numberedOpts = [];
+    const opt1 = options?.[0] ?? optionsRequired('slice');
+    if (!validateNumberString(opt1)) {
         optionMustBeNumber('slice');
     }
+    numberedOpts.push(Number(opt1));
+    const opt2 = options?.[1];
+    if (typeof opt2 !== 'undefined') {
+        if (!validateNumberString(opt2)) {
+            optionMustBeNumber('slice');
+        }
+        numberedOpts.push(Number(opt2));
+    }
     return (value) => {
-        return String(value).slice(Number(opt));
+        return String(value).slice(...numberedOpts);
     };
 };
 /**

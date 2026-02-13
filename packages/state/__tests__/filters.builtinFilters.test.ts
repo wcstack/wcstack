@@ -140,6 +140,15 @@ describe('builtinFilters', () => {
       expect(fn('hello')).toBe('llo');
     });
 
+    it('slice: 開始位置と終了位置を指定してスライスできること', () => {
+      const fn = getFilter('slice', ['0', '7']);
+      expect(fn('hello world')).toBe('hello w');
+    });
+
+    it('slice: 第2引数が不正な場合はエラーになること', () => {
+      expect(() => getFilter('slice', ['0', 'abc'])).toThrow(/requires a number as option/);
+    });
+
     it('substr: 位置と長さで切り出せること', () => {
       const fn = getFilter('substr', ['1', '3']);
       expect(fn('hello')).toBe('ell');

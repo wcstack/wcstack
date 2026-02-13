@@ -22,9 +22,9 @@ li {
 <body>
   <wcs-state>
     <script type="module">
-const API_URL = `https://api.github.com/repos/wcstack/wcstack/commits?per_page=3&sha=`
-const branches = ['main', 'minor']
-const currentBranch = branches[0];   
+const API_URL = "https://api.github.com/repos/wcstack/wcstack/commits?per_page=3&sha=";
+const branches = ['main', 'minor'];
+const currentBranch = branches[0];
 
 function truncate(v) {
   const newline = v.indexOf('\n')
@@ -42,10 +42,15 @@ export default {
   isLoading: false,
   message: "No commits found.",
   get "commits.*.commit.author.formattedDate"() {
+    // ループコンテキストの現在要素を参照しています。
     return formatDate(this["commits.*.commit.author.date"]);
   },
   get "commits.*.commit.truncatedMessage"() {
+    // ループコンテキストの現在要素を参照しています。
     return truncate(this["commits.*.commit.message"]);
+  },
+  get "commits.*.author"() {
+    return this["commits.*"]["author"] || { html_url: '#', login: 'Unknown' };
   },
   async fetchCommits() {
     this.isLoading = true;
@@ -69,8 +74,8 @@ export default {
   async $connectedCallback() {
     await this.fetchCommits();
   },
-  async $updatedCallback(props) {
-    if (props.includes('currentBranch')) {
+  async $updatedCallback(paths) {
+    if (paths.includes('currentBranch')) {
       await this.fetchCommits();
     }
   }
@@ -96,7 +101,7 @@ export default {
         <a target="_blank" class="commit" data-wcs="href: .html_url">{{ .sha|slice(0, 7) }}</a>
         - <span class="message">{{ .commit.truncatedMessage }}</span><br>
         by <span class="author">
-          <a target="_blank" data-wcs="href: .commit.author.html_url">{{ .commit.author.name }}</a>
+          <a target="_blank" data-wcs="href: .author.html_url">{{ .commit.author.name }}</a>
         </span>
         at <span class="date">{{ .commit.author.formattedDate }}</span>
       </li>
@@ -104,7 +109,7 @@ export default {
     </ul>
     </template>
     <template data-wcs="else:">
-      {{ message }}
+      <div>{{ message }}</div>
     </template>
   </template>
 </body>
