@@ -131,22 +131,119 @@ export default class UiButton extends HTMLElement {
 }
 ```
 
+## カスタマイズドビルトイン要素（`is`属性）
+
+オートローダーは`is`属性を使用したカスタマイズドビルトイン要素を検出します：
+
+```html
+<!-- オートローダーが自動的に "my-button" を検出してロード -->
+<button is="my-button">Click me</button>
+```
+
+**遅延読み込み**: `extends`値はホスト要素のタグから自動推論されます（例: `<button>` → `extends: "button"`）。
+
+**即時読み込み**: `extends`値はコンポーネントクラスのプロトタイプから推論されます（例: `HTMLButtonElement` → `extends: "button"`）。Import Mapで明示的に指定することもできます：
+
+```json
+{
+  "imports": {
+    "@components/my-button|vanilla,button": "./my-button.js"
+  }
+}
+```
+
+```javascript
+// my-button.js
+export default class MyButton extends HTMLButtonElement {
+  connectedCallback() {
+    this.style.color = 'red';
+  }
+}
+// オートローダーが呼び出す: customElements.define('my-button', MyButton, { extends: 'button' })
+```
+
 ## 設定
 
-`bootstrapAutoloader`に設定オブジェクトを渡すことでローダーを設定できます。
+`bootstrapAutoloader()`にオプションの設定オブジェクトを渡して初期化します：
+
+```typescript
+interface ILoader {
+  postfix: string;
+  loader: (path: string) => Promise<CustomElementConstructor | null>;
+}
+
+interface IWritableConfig {
+  loaders?: Record<string, ILoader | string>;
+  observable?: boolean;
+}
+```
+
+| オプション | 型 | デフォルト | 説明 |
+|--------|------|---------|-------------|
+| `loaders` | `Record<string, ILoader \| string>` | 下記参照 | ローダー定義。値は`ILoader`オブジェクトまたは他のローダーキーへの文字列エイリアス。 |
+| `observable` | `boolean` | `true` | MutationObserverによる動的追加要素の検出を有効化。`false`で無効化。 |
+
+### デフォルト設定
+
+```javascript
+{
+  loaders: {
+    // 組み込みvanillaローダー: モジュールをインポートしdefaultエクスポートを返す
+    vanilla: { postfix: ".js", loader: vanillaLoader },
+    // デフォルトキー: どのローダーにも一致しない場合のフォールバック
+    "*": "vanilla"
+  },
+  observable: true
+}
+```
+
+- **`vanilla`**: 組み込みローダー。モジュールを動的インポートし、`default`エクスポートをカスタム要素コンストラクタとして返します。
+- **`"*"`（デフォルトキー）**: フォールバックローダー。値は文字列エイリアス`"vanilla"`で、マッチしないコンポーネントはvanillaローダーを使用します。
+
+### ローダー解決
+
+コンポーネントに明示的なローダーキーがない場合（例: `|loader`なしの遅延読み込み名前空間）、以下の順序でローダーを解決します：
+
+1. **postfix一致**: ファイルパスを登録済みローダーの`postfix`値と照合（最長一致優先）。
+2. **デフォルトキーフォールバック**: postfixが一致しない場合、`"*"`キーで参照されるローダーを使用。
+
+### 例
 
 ```javascript
 import { bootstrapAutoloader } from "@wcstack/autoloader";
 
-// 例: デフォルトのpostfixを変更
 bootstrapAutoloader({
   loaders: {
-    vanilla: {
-      postfix: ".vanilla.js"
+    // vanillaローダーのファイル拡張子を変更
+    vanilla: { postfix: ".vanilla.js" },
+    // .lit.jsファイル用のカスタムローダーを追加
+    lit: {
+      postfix: ".lit.js",
+      loader: async (path) => {
+        const module = await import(path);
+        return module.default;
+      }
     }
-  }
+  },
+  // MutationObserverを無効化（動的コンテンツ検出なし）
+  observable: false
 });
 ```
+
+## 動作の仕組み
+
+### ロードライフサイクル
+
+1. **Import Map解析**: `bootstrapAutoloader()`呼び出し時に、すべての`<script type="importmap">`要素から`@components/`エントリを解析。
+2. **即時読み込み**: 名前空間でないキー（`/`で終わらない）のコンポーネントを即座に並列ロード。
+3. **遅延読み込み**（`DOMContentLoaded`時）: TreeWalkerを使用してDOMをスキャンし、登録済み名前空間に一致する未定義カスタム要素を検出。
+4. **ネストされたロード**: カスタム要素が定義・アップグレードされた後、そのShadow DOM（存在する場合）もスキャンしてネストされたカスタム要素を検出。
+5. **監視**（`observable: true`の場合）: MutationObserverがDOMへの新規要素追加を監視し、遅延読み込みをトリガー。
+
+### エラーハンドリング
+
+- ロードに失敗したコンポーネントは内部的に追跡され、以降のスキャンで再試行されません。
+- 重複ロードの防止: コンポーネントが既にロード中の場合、後続のリクエストは既存のロード完了を待機します。
 
 ## ライセンス
 
