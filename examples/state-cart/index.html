@@ -292,6 +292,9 @@ export default {
   get tax() {
     return Math.round(this.totalPrice * this.taxRate);
   },
+  get taxRatePercent() {
+    return Math.round(this.taxRate * 100);
+  },
   get grandTotal() {
     return this.totalPrice + this.tax;
   },
@@ -307,10 +310,12 @@ export default {
     this["items.*.quantity"]++;
   },
   decrement(e) {
-    this["items.*.quantity"]--;
+    if (this["items.*.quantity"] > 1) {
+      this["items.*.quantity"]--;
+    }
   },
   removeItem(e, index) {
-    this.items = this.items.toSpliced(index, 1);
+    this.items = this.items.filter((_, i) => i !== index);
   },
 };
     </script>
@@ -326,21 +331,20 @@ export default {
           <span class="badge" data-wcs="textContent: itemCount"></span>
         </template>
       </div>
-      <p class="header-sub">Path getters, getter chaining, $getAll aggregation, $resolve API</p>
+      <p class="header-sub">Path getters, getter chaining, $getAll aggregation</p>
     </div>
 
     <!-- Feature Labels -->
     <div class="features">
       <span class="feat">get "items.*.subtotal"()</span>
       <span class="feat">$getAll()</span>
-      <span class="feat">$resolve()</span>
       <span class="feat">getter chaining</span>
       <span class="feat">|locale filter</span>
       <span class="feat">if / else</span>
       <span class="feat">disabled binding</span>
     </div>
 
-    <!-- Cart Items : for loop + path getter + $resolve -->
+    <!-- Cart Items : for loop + path getter -->
     <template data-wcs="if: isEmpty|not">
       <div class="card">
         <div class="cart-header">
@@ -396,7 +400,7 @@ export default {
           <span class="value">&yen;<span data-wcs="textContent: totalPrice|locale"></span></span>
         </div>
         <div class="summary-row">
-          <span class="label">Tax (10%)</span>
+          <span class="label">Tax (<span data-wcs="textContent: taxRatePercent"></span>%)</span>
           <span class="value">&yen;<span data-wcs="textContent: tax|locale"></span></span>
         </div>
         <hr class="summary-divider">
