@@ -16,7 +16,7 @@ Provides SPA routing with declarative definitions using custom elements.
 * **Light DOM Layout System**: Defines layout templates in normal DOM (Light DOM) without forcing Shadow DOM. Makes global CSS application and `<slot>` insertion easy.
 * **Typed Parameters**: Specify type constraints like `:id(int)`. Automatically converts values to `number` type.
 * **Mixed Layouts & Routes**: Freely nest `<wcs-layout>` within the routing tree, managing layout switching per area purely through HTML structure.
-* **Auto-Binding**: Automatically injects URL parameters into component properties using `data-bind="props"`.
+* **Auto-Binding**: Automatically injects URL parameters into components using `data-bind` attribute (supports `props`, `states`, `attr`, and direct property modes).
 * **Declarative `<head>` Management**: Declaratively switch `title` and `meta` tags for each page using `<wcs-head>`.
 
 ## Usage
@@ -32,11 +32,17 @@ Provides SPA routing with declarative definitions using custom elements.
 				<main-body>
 					<!-- When path is "/" -->
 					<wcs-route index>
+						<wcs-head>
+							<title>Main Page</title>
+						</wcs-head>
 						<main-dashboard></main-dashboard>
 					</wcs-route>
 
 					<!-- When path is "/products" (relative paths below top-level) -->
 					<wcs-route path="products">
+						<wcs-head>
+							<title>Product Page</title>
+						</wcs-head>
 						<!-- When path is "/products" -->
 						<wcs-route index>
 							<product-list></product-list>
@@ -55,6 +61,9 @@ Provides SPA routing with declarative definitions using custom elements.
 		<wcs-route path="/admin">
 			<!-- Apply the "admin-layout" layout -->
 			<wcs-layout layout="admin-layout">
+				<wcs-head>
+					<title>Admin Page</title>
+				</wcs-head>
 				<admin-header slot="header"></admin-header>
 				<admin-body></admin-body>
 			</wcs-layout>
@@ -225,13 +234,90 @@ When utilizing `disable-shadow-root` (Light DOM), slot replacement targets **onl
 
 In the case of `enable-shadow-root` (Shadow DOM), this limitation does not apply because the native `<slot>` function is used.
 
+### Head (wcs-head)
+
+Manages document `<head>` elements per route. Uses a stack-based system where the most recently connected Head is prioritized.
+
+```html
+<wcs-route path="/about">
+  <wcs-head>
+    <title>About Us</title>
+    <meta name="description" content="About our company">
+  </wcs-head>
+  <about-page></about-page>
+</wcs-route>
+```
+
+**Supported elements**: `<title>`, `<meta>`, `<link>`, `<base>`, `<script>`, `<style>`
+
+**Behavior**:
+- Captures the initial `<head>` state on first connection
+- When multiple `<wcs-head>` elements are active, the last connected one takes priority
+- When all `<wcs-head>` elements disconnect, the initial state is restored
+- Elements are identified by key (e.g., `<meta>` by `name`/`property`/`http-equiv`, `<link>` by `rel`/`href`)
+
 ### Link (wcs-link)
 
-Link. Converted to an `<a>`, and the route path in the `to` attribute is converted to a URL.
+Link. Converted to an `<a>`, and the route path in the `to` attribute is converted to a URL. When the link path matches the current URL, the `active` CSS class is automatically added to the generated `<a>` element.
 
 | Attribute | Description |
 |------|------|
-| `to` | Destination absolute route path. |
+| `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended). Other values are treated as external URLs. |
+
+**Active state**: The generated `<a>` receives the `active` class when its path matches the current location. Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
+
+```css
+/* Style active links */
+a.active { font-weight: bold; color: blue; }
+```
+
+## Auto-Binding (`data-bind`)
+
+Elements with the `data-bind` attribute automatically receive matched route parameters. Four binding modes are available:
+
+| `data-bind` value | Target | Description |
+|------|------|------|
+| `"props"` | `element.props` | Merges params into the `props` property |
+| `"states"` | `element.states` | Merges params into the `states` property |
+| `"attr"` | HTML attributes | Sets params as HTML attributes via `setAttribute()` |
+| `""` (empty) | Direct properties | Sets params directly on the element (e.g., `element.id = value`) |
+
+```html
+<wcs-route path="/users/:userId(int)">
+  <!-- element.props = { userId: 123 } -->
+  <user-detail data-bind="props"></user-detail>
+
+  <!-- element.setAttribute("userId", 123) -->
+  <div data-bind="attr"></div>
+</wcs-route>
+```
+
+Parameters are assigned before `connectedCallback` fires. For custom elements that are not yet defined, assignment is deferred until `customElements.whenDefined()` resolves.
+
+## Configuration
+
+Initialize the router with optional configuration via `bootstrapRouter()`:
+
+```javascript
+import { bootstrapRouter } from '@wcstack/router';
+
+bootstrapRouter({
+  // Custom tag names (all optional)
+  tagNames: {
+    router: 'wcs-router',       // default
+    route: 'wcs-route',         // default
+    outlet: 'wcs-outlet',       // default
+    layout: 'wcs-layout',       // default
+    layoutOutlet: 'wcs-layout-outlet', // default
+    link: 'wcs-link',           // default
+    head: 'wcs-head'            // default
+  },
+  // Use Shadow DOM for outlets (default: false)
+  enableShadowRoot: false,
+  // File extensions stripped from basename (default: [".html"])
+  basenameFileExtensions: [".html"]
+});
+```
 
 ## Path Specification (Router / Route / Link)
 

@@ -10,7 +10,8 @@
       "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\kikuzawa\\\\Documents\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\state''; npx vitest run ''__tests__/proxy.traps.get.test.ts''\")",
       "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\kikuzawa\\\\Documents\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\state''; npx vitest run ''__tests__/proxy.traps.get.test.ts'' --coverage\")",
       "Bash(wc:*)",
-      "Bash(npm run test:coverage:*)"
+      "Bash(npm run test:coverage:*)",
+      "Bash(ls -la \"d:\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\router\\\\src\"\" 2>/dev/null || echo \"src directory not found \")"
     ]
   }
 }

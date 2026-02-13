@@ -16,7 +16,7 @@
 * **Light DOM レイアウトシステム**: Shadow DOM を強制せず、通常のDOM（Light DOM）上でレイアウトテンプレートを展開。グローバルCSSが適用しやすく、`<slot>` 差し込みも容易。
 * **型付きパラメータ (`Typed Parameters`)**: `:id(int)` のように型制約を指定可能。自動的に `number` 型への変換も行います。
 * **レイアウトとルートの混在定義**: ルーティングツリー内に `<wcs-layout>` を自由にネストでき、エリアごとのレイアウト切り替えがHTML構造だけで完結。
-* **自動バインディング**: `data-bind="props"` でURLパラメータをコンポーネントプロパティに自動注入。
+* **自動バインディング**: `data-bind` 属性でURLパラメータをコンポーネントに自動注入（`props`, `states`, `attr`, 直接プロパティの4モード対応）。
 * **宣言的な `<head>` 管理**: `<wcs-head>` でページごとの `title` や `meta` を宣言的に切り替え。
 
 ## 使い方
@@ -234,13 +234,90 @@ console.log(route.typedParams.userId);  // 123 (number)
 
 `enable-shadow-root`（Shadow DOM）の場合は、ネイティブの`<slot>`機能が使われるため、この制限はありません。
 
+### Head(wcs-head)
+
+ルートごとにドキュメントの `<head>` 要素を管理する。スタックベースで、最後に接続された Head が優先される。
+
+```html
+<wcs-route path="/about">
+  <wcs-head>
+    <title>About Us</title>
+    <meta name="description" content="About our company">
+  </wcs-head>
+  <about-page></about-page>
+</wcs-route>
+```
+
+**対応要素**: `<title>`, `<meta>`, `<link>`, `<base>`, `<script>`, `<style>`
+
+**動作**:
+- 初回接続時に初期の `<head>` 状態をキャプチャ
+- 複数の `<wcs-head>` が同時にアクティブな場合、最後に接続されたものが優先（上書き）
+- 全ての `<wcs-head>` が切断されると、初期状態に復元
+- 要素はキーで識別（例: `<meta>` は `name`/`property`/`http-equiv`、`<link>` は `rel`/`href`）
+
 ### Link(wcs-link)
 
-リンク。`<a>`へ変換され、to属性で指定されたパスはURLへ変換される。
+リンク。`<a>`へ変換され、to属性で指定されたパスはURLへ変換される。リンクのパスが現在のURLと一致する場合、生成された `<a>` 要素に `active` CSSクラスが自動付与される。
 
 | 属性 | 説明 |
 |------|------|
 | `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basenameが付与される）。それ以外は外部URLとして扱われる |
+
+**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスを受け取る。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
+
+```css
+/* アクティブなリンクのスタイル */
+a.active { font-weight: bold; color: blue; }
+```
+
+## 自動バインディング (`data-bind`)
+
+`data-bind` 属性を持つ要素は、マッチしたルートパラメータを自動的に受け取る。4つのバインディングモードに対応：
+
+| `data-bind` の値 | ターゲット | 説明 |
+|------|------|------|
+| `"props"` | `element.props` | `props` プロパティにパラメータをマージ |
+| `"states"` | `element.states` | `states` プロパティにパラメータをマージ |
+| `"attr"` | HTML属性 | `setAttribute()` でパラメータをHTML属性に設定 |
+| `""` (空文字) | 直接プロパティ | 要素に直接プロパティを設定（例: `element.id = value`） |
+
+```html
+<wcs-route path="/users/:userId(int)">
+  <!-- element.props = { userId: 123 } -->
+  <user-detail data-bind="props"></user-detail>
+
+  <!-- element.setAttribute("userId", 123) -->
+  <div data-bind="attr"></div>
+</wcs-route>
+```
+
+パラメータは `connectedCallback` の発火前に割り当てられる。未定義のカスタム要素の場合、`customElements.whenDefined()` の解決後に割り当てが遅延される。
+
+## 設定
+
+`bootstrapRouter()` でオプション設定を指定して初期化：
+
+```javascript
+import { bootstrapRouter } from '@wcstack/router';
+
+bootstrapRouter({
+  // カスタムタグ名（すべてオプション）
+  tagNames: {
+    router: 'wcs-router',       // デフォルト
+    route: 'wcs-route',         // デフォルト
+    outlet: 'wcs-outlet',       // デフォルト
+    layout: 'wcs-layout',       // デフォルト
+    layoutOutlet: 'wcs-layout-outlet', // デフォルト
+    link: 'wcs-link',           // デフォルト
+    head: 'wcs-head'            // デフォルト
+  },
+  // outlet で Shadow DOM を使用（デフォルト: false）
+  enableShadowRoot: false,
+  // basename から除去するファイル拡張子（デフォルト: [".html"]）
+  basenameFileExtensions: [".html"]
+});
+```
 
 ## パス仕様案（Router / Route / Link 共通）
 
