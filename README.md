@@ -1,54 +1,185 @@
 # wcstack
-Web Components Stack
 
-Web Components Stack provides a set of tools for building applications with Web Components.
+**Web Components Stack** — A standards-first toolkit for building SPAs with Web Components.
 
-## Concept
-We leverage Web Components standards to make everyday development easy to write, easy to read, and hard to break.
-The design minimizes setup and dependencies so it can be adopted with minimal effort.
+Three independent packages. Zero runtime dependencies. No build step required.
 
-## Why wcstack exists
-- **Longevity through standards**: Reduce framework lock-in and rely on browser-native primitives.
-- **Declarative structure**: Keep UI structure and behavior readable and reviewable in HTML.
-- **Minimal but complete foundation**: Provide routing and autoloading without heavy runtime costs.
-- **Low operational overhead**: Minimize build/config complexity to ease onboarding and migration.
+## Packages
 
-## Recommended for
-- Developers who want to use Web Components in production quickly
-- Teams who prioritize developer experience over configuration
-- Projects that want a declarative and consistent API
+| Package | Description |
+|---------|-------------|
+| [`@wcstack/autoloader`](packages/autoloader/) | Auto-detect and dynamically import custom elements via Import Maps |
+| [`@wcstack/router`](packages/router/) | Declarative SPA routing with layouts, typed parameters, and head management |
+| [`@wcstack/state`](packages/state/) | Reactive state management with declarative data binding and computed properties |
 
-## What you can expect
-- App foundations like routing and layout out of the box
-- Clear naming and structure that scale well in teams
+---
 
-## Design philosophy (overall)
-- **Standards first**: Favor Custom Elements, Shadow DOM, ES Modules, and Import Maps.
-- **Declarative and readable structure**: The HTML structure should express application intent.
-- **Zero-config & buildless**: Make onboarding fast and reduce operational overhead.
-- **Minimal dependencies**: No runtime dependencies to keep risk and maintenance low.
-- **Low learning cost**: Build on familiar Web standards.
-- **Predictable and resilient behavior**: Prefer explicit behavior over hidden magic.
+## @wcstack/autoloader
 
-## Architecture highlights
-- **Autoloader**
-	- Automatically loads components just by writing the tag in HTML.
-	- Uses import maps to map namespaces to file locations, reducing ambiguity.
-	- Supports both lazy and eager loading for a balanced startup and scalability.
-	- Tracks DOM changes to load only what is necessary.
-	- Details: [Autoloader](packages/autoloader/README.md)
-- **Router**
-	- Declarative routing via custom elements like `<wcs-router>` and `<wcs-route>`.
-	- Treats layouts and outlets as standard DOM structure for clearer UI composition.
-	- Prefers the Navigation API with `popstate` fallback for unsupported browsers.
-	- Strict path normalization and route ordering for unambiguous matching.
-	- Details: [Router](packages/router/README.md)
+Write a custom element tag — it loads automatically.
 
-## Quality focus
-- Each package is designed with tests and type definitions as a baseline.
-- Linting and testing are standardized to prevent quality regressions at scale.
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@components/ui/": "./components/ui/",
+      "@components/ui|lit/": "./components/ui-lit/"
+    }
+  }
+</script>
 
-## Best fit
-- Web Components apps that want minimal build steps
-- Teams that value declarative, readable structure
-- Small to mid-sized SPAs that benefit from lightweight composition
+<!-- Auto-loaded from ./components/ui/button.js -->
+<ui-button></ui-button>
+
+<!-- Auto-loaded with Lit loader from ./components/ui-lit/card.js -->
+<ui-lit-card></ui-lit-card>
+```
+
+- **Import Map based** namespace resolution — no per-component registration
+- **Eager & lazy loading** — load critical components first, the rest on demand
+- **MutationObserver** — dynamically added elements are detected automatically
+- **Pluggable loaders** — mix Vanilla, Lit, or any custom loader
+- **`is` attribute support** — customized built-in elements with auto `extends` detection
+
+[Full documentation &rarr;](packages/autoloader/README.md)
+
+---
+
+## @wcstack/router
+
+Declarative SPA routing — define routes in HTML, not JavaScript.
+
+```html
+<wcs-router>
+  <template>
+    <wcs-route path="/">
+      <wcs-layout layout="main-layout">
+        <nav slot="header">
+          <wcs-link to="/">Home</wcs-link>
+          <wcs-link to="/products">Products</wcs-link>
+        </nav>
+        <wcs-route index>
+          <wcs-head><title>Home</title></wcs-head>
+          <app-home></app-home>
+        </wcs-route>
+        <wcs-route path="products">
+          <wcs-head><title>Products</title></wcs-head>
+          <wcs-route index>
+            <product-list></product-list>
+          </wcs-route>
+          <wcs-route path=":id(int)">
+            <product-detail data-bind="props"></product-detail>
+          </wcs-route>
+        </wcs-route>
+      </wcs-layout>
+    </wcs-route>
+    <wcs-route fallback>
+      <error-404></error-404>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+```
+
+- **Nested routes & layouts** — compose UI structure declaratively with Light DOM layout system
+- **Typed parameters** — `:id(int)`, `:slug(slug)`, `:date(isoDate)` with auto-conversion
+- **Auto-binding** — inject URL params into components via `data-bind` (`props`, `states`, `attr`)
+- **Head management** — `<wcs-head>` switches `<title>` and `<meta>` per route
+- **Navigation API** — built on the modern standard with popstate fallback
+- **Route guards** — protect routes with async decision functions
+
+[Full documentation &rarr;](packages/router/README.md)
+
+---
+
+## @wcstack/state
+
+Reactive state with declarative bindings — no virtual DOM, no compilation.
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      taxRate: 0.1,
+      cart: {
+        items: [
+          { name: "Widget", price: 500, quantity: 2 },
+          { name: "Gadget", price: 1200, quantity: 1 }
+        ]
+      },
+      removeItem(event, index) {
+        this.cart.items.splice(index, 1);
+      },
+      // Path getter — computed per loop element
+      get "cart.items.*.subtotal"() {
+        return this["cart.items.*.price"] * this["cart.items.*.quantity"];
+      },
+      get "cart.total"() {
+        return this.$getAll("cart.items.*.subtotal", []).reduce((a, b) => a + b, 0);
+      },
+      get "cart.grandTotal"() {
+        return this["cart.total"] * (1 + this.taxRate);
+      }
+    };
+  </script>
+</wcs-state>
+
+<template data-wcs="for: cart.items">
+  <div>
+    {{ .name }} &times;
+    <input type="number" data-wcs="value: .quantity">
+    = <span data-wcs="textContent: .subtotal|locale"></span>
+    <button data-wcs="onclick: removeItem">Delete</button>
+  </div>
+</template>
+<p>Grand Total: <span data-wcs="textContent: cart.grandTotal|locale(ja-JP)"></span></p>
+```
+
+- **Path getters** — `get "users.*.fullName"()` computed properties per loop element with auto dependency tracking
+- **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>`
+- **37 built-in filters** — comparison, arithmetic, string, date, number formatting
+- **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`, radio & checkbox groups
+- **Mustache syntax** — `{{ path|filter }}` in text nodes
+- **Web Component binding** — bidirectional state binding with Shadow DOM components
+
+[Full documentation &rarr;](packages/state/README.md)
+
+---
+
+## Design Philosophy
+
+| Principle | Description |
+|-----------|-------------|
+| **Standards first** | Custom Elements, Shadow DOM, ES Modules, Import Maps |
+| **Declarative** | HTML structure expresses application intent |
+| **Zero-config & buildless** | No bundler, no transpiler — works in the browser as-is |
+| **Zero dependencies** | No runtime dependencies across all packages |
+| **Low learning cost** | Built on familiar Web standards |
+| **Predictable behavior** | Explicit over implicit — no hidden magic |
+
+## Project Structure
+
+```
+wcstack/
+├── packages/
+│   ├── autoloader/    # @wcstack/autoloader
+│   ├── router/        # @wcstack/router
+│   └── state/         # @wcstack/state
+```
+
+Each package is independently built, tested, and published. No root-level workspace orchestration.
+
+## Development
+
+Commands run from within a specific package directory (e.g., `packages/state/`):
+
+```bash
+npm run build            # Clean dist, compile TypeScript, bundle with Rollup
+npm test                 # Run tests (Vitest)
+npm run test:coverage    # Coverage with 100% thresholds
+npm run lint             # ESLint
+```
+
+## License
+
+MIT
