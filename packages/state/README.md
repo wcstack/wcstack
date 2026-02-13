@@ -176,6 +176,8 @@ Multiple bindings separated by `;`:
 | `class.NAME` | Toggle a CSS class |
 | `style.PROP` | Set a CSS style property |
 | `attr.NAME` | Set an attribute (supports SVG namespace) |
+| `radio` | Radio button group binding (two-way) |
+| `checkbox` | Checkbox group binding to array (two-way) |
 | `onclick`, `on*` | Event handler binding |
 
 ### Modifiers
@@ -199,6 +201,40 @@ Automatically enabled for:
 | `<textarea>` | `value` | `input` |
 
 `<input type="button">` is excluded. Use `#ro` to disable, `#onchange` to change the event.
+
+### Radio Binding
+
+Bind a radio button group to a single state value with `radio`:
+
+```html
+<input type="radio" value="red" data-wcs="radio: selectedColor">
+<input type="radio" value="blue" data-wcs="radio: selectedColor">
+```
+
+The radio button whose `value` matches the state value is automatically checked. When the user selects a different radio button, the state is updated. Use `#ro` for read-only.
+
+Inside a `for` loop:
+
+```html
+<template data-wcs="for: branches">
+  <label>
+    <input type="radio" data-wcs="value: .; radio: currentBranch">
+    {{ . }}
+  </label>
+</template>
+```
+
+### Checkbox Binding
+
+Bind a checkbox group to a state array with `checkbox`:
+
+```html
+<input type="checkbox" value="apple" data-wcs="checkbox: selectedFruits">
+<input type="checkbox" value="banana" data-wcs="checkbox: selectedFruits">
+<input type="checkbox" value="orange" data-wcs="checkbox: selectedFruits">
+```
+
+A checkbox is checked when its `value` is included in the state array. Toggling a checkbox adds or removes the value from the array. Use `|int` to convert string values to numbers, and `#ro` for read-only.
 
 ### Mustache Syntax
 
@@ -228,11 +264,35 @@ Structural directives use `<template>` elements:
 </template>
 ```
 
-Nested loops are supported with multi-level wildcards:
+#### Dot Shorthand
+
+Inside a `for` loop, paths starting with `.` are expanded relative to the loop's array path:
+
+| Shorthand | Expanded to | Description |
+|---|---|---|
+| `.name` | `users.*.name` | Property of the current element |
+| `.` | `users.*` | The current element itself |
+| `.name\|uc` | `users.*.name\|uc` | Filters are preserved |
+| `.name@state` | `users.*.name@state` | State name is preserved |
+
+For primitive arrays, `.` refers to the element value directly:
+
+```html
+<template data-wcs="for: branches">
+  <label>
+    <input type="radio" data-wcs="value: .; radio: currentBranch">
+    {{ . }}
+  </label>
+</template>
+```
+
+Nested loops are supported with multi-level wildcards. The `.` shorthand in nested `for` directives also expands relative to the parent loop path:
 
 ```html
 <template data-wcs="for: regions">
+  <!-- .states → regions.*.states -->
   <template data-wcs="for: .states">
+    <!-- .name → regions.*.states.*.name -->
     <span data-wcs="textContent: .name"></span>
   </template>
 </template>

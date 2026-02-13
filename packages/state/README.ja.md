@@ -176,6 +176,8 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 | `class.NAME` | CSS クラスの切り替え |
 | `style.PROP` | CSS スタイルプロパティの設定 |
 | `attr.NAME` | 属性の設定（SVG 名前空間対応） |
+| `radio` | ラジオボタングループバインディング（双方向） |
+| `checkbox` | チェックボックスグループの配列バインディング（双方向） |
 | `onclick`, `on*` | イベントハンドラバインディング |
 
 ### 修飾子
@@ -199,6 +201,40 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 | `<textarea>` | `value` | `input` |
 
 `<input type="button">` は除外されます。`#ro` で無効化、`#onchange` でイベントを変更できます。
+
+### ラジオボタンバインディング
+
+`radio` でラジオボタングループを単一の状態値にバインドします：
+
+```html
+<input type="radio" value="red" data-wcs="radio: selectedColor">
+<input type="radio" value="blue" data-wcs="radio: selectedColor">
+```
+
+状態値と一致する `value` を持つラジオボタンが自動的にチェックされます。ユーザーが別のラジオボタンを選択すると、状態が更新されます。`#ro` で読み取り専用にできます。
+
+`for` ループ内での使用：
+
+```html
+<template data-wcs="for: branches">
+  <label>
+    <input type="radio" data-wcs="value: .; radio: currentBranch">
+    {{ . }}
+  </label>
+</template>
+```
+
+### チェックボックスバインディング
+
+`checkbox` でチェックボックスグループを状態配列にバインドします：
+
+```html
+<input type="checkbox" value="apple" data-wcs="checkbox: selectedFruits">
+<input type="checkbox" value="banana" data-wcs="checkbox: selectedFruits">
+<input type="checkbox" value="orange" data-wcs="checkbox: selectedFruits">
+```
+
+チェックボックスの `value` が状態配列に含まれている場合にチェック状態になります。チェックボックスの切り替えで配列への値の追加・削除が行われます。`|int` で文字列値を数値に変換、`#ro` で読み取り専用にできます。
 
 ### Mustache 構文
 
@@ -228,11 +264,35 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 </template>
 ```
 
-多重ワイルドカードによるネストループに対応しています：
+#### ドット省略記法
+
+`for` ループ内では、`.` で始まるパスがループの配列パスを基準に展開されます：
+
+| 省略形 | 展開後 | 説明 |
+|---|---|---|
+| `.name` | `users.*.name` | 現在の要素のプロパティ |
+| `.` | `users.*` | 現在の要素そのもの |
+| `.name\|uc` | `users.*.name\|uc` | フィルタは保持される |
+| `.name@state` | `users.*.name@state` | 状態名は保持される |
+
+プリミティブ配列では、`.` が要素の値を直接参照します：
+
+```html
+<template data-wcs="for: branches">
+  <label>
+    <input type="radio" data-wcs="value: .; radio: currentBranch">
+    {{ . }}
+  </label>
+</template>
+```
+
+多重ワイルドカードによるネストループに対応しています。ネストされた `for` ディレクティブの `.` 省略記法も親ループのパスを基準に展開されます：
 
 ```html
 <template data-wcs="for: regions">
+  <!-- .states → regions.*.states -->
   <template data-wcs="for: .states">
+    <!-- .name → regions.*.states.*.name -->
     <span data-wcs="textContent: .name"></span>
   </template>
 </template>
