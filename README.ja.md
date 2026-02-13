@@ -135,7 +135,7 @@
 <p>合計: <span data-wcs="textContent: cart.grandTotal|locale(ja-JP)"></span></p>
 ```
 
-- **パスゲッター** — `get "users.*.fullName"()` ループ要素ごとの算出プロパティ（自動依存追跡付き）
+- **パスゲッター** — `get "users.*.fullName"()` 任意の深さにフラット定義できる仮想プロパティ（自動依存追跡付き）
 - **構造ディレクティブ** — `<template>`による `for`、`if` / `elseif` / `else`
 - **37個の組み込みフィルター** — 比較・算術・文字列・日付・数値フォーマット
 - **双方向バインディング** — `<input>`、`<select>`、`<textarea>`、ラジオ・チェックボックスグループの自動対応

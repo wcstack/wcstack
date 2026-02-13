@@ -135,7 +135,7 @@ Reactive state with declarative bindings — no virtual DOM, no compilation.
 <p>Grand Total: <span data-wcs="textContent: cart.grandTotal|locale(ja-JP)"></span></p>
 ```
 
-- **Path getters** — `get "users.*.fullName"()` computed properties per loop element with auto dependency tracking
+- **Path getters** — `get "users.*.fullName"()` virtual properties at any depth, all defined flat in one place with auto dependency tracking
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>`
 - **37 built-in filters** — comparison, arithmetic, string, date, number formatting
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`, radio & checkbox groups

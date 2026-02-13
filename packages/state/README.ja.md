@@ -11,7 +11,7 @@ Web Components のための宣言的リアクティブ状態管理。
 - **組み込みフィルタ** — フォーマット、比較、算術、日付など 37 種類
 - **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
-- **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）による要素ごとの算出プロパティと自動依存追跡・キャッシュ
+- **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）によるデータツリーの任意の深さへのフラットな仮想プロパティ定義、自動依存追跡・キャッシュ
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
@@ -316,7 +316,7 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 
 ## パス getter（算出プロパティ）
 
-**パス getter** は `@wcstack/state` の中核機能です。JavaScript の getter に**ドットパス文字列キー**とワイルドカード（`*`）を使って定義します。`for:` ループのコンテキストで要素ごとに自動実行される派生プロパティとして機能します。
+**パス getter** は `@wcstack/state` の中核機能です。JavaScript の getter に**ドットパス文字列キー**とワイルドカード（`*`）を使って定義します。**データツリーの任意の深さに仮想プロパティを追加でき、すべてを1箇所にフラットに定義できます**。データのネストがどれほど深くても、定義側は同じレベルに並び、ループ要素ごとの自動依存追跡が機能します。
 
 ### 基本的なパス getter
 
@@ -456,6 +456,58 @@ export default {
     野菜 / にんじん
 -->
 ```
+
+### フラットな仮想プロパティ — ネストの深さに依存しない定義
+
+パス getter の重要な利点は、**データのネストがどれほど深くても、すべての仮想プロパティを1箇所にフラットに定義できる**ことです。各ネストレベルに算出プロパティを持たせるためだけにコンポーネントを分割する必要がありません。
+
+```javascript
+export default {
+  regions: [
+    { name: "関東", prefectures: [
+      { name: "東京", cities: [
+        { name: "渋谷", population: 230000, area: 15.11 },
+        { name: "新宿", population: 346000, area: 18.22 }
+      ]},
+      { name: "神奈川", cities: [
+        { name: "横浜", population: 3750000, area: 437.56 }
+      ]}
+    ]}
+  ],
+
+  // --- ネストの深さに関係なく、すべてフラットに定義 ---
+
+  // 市レベル — 仮想プロパティ
+  get "regions.*.prefectures.*.cities.*.density"() {
+    return this["regions.*.prefectures.*.cities.*.population"]
+         / this["regions.*.prefectures.*.cities.*.area"];
+  },
+  get "regions.*.prefectures.*.cities.*.label"() {
+    return this["regions.*.prefectures.*.name"] + " "
+         + this["regions.*.prefectures.*.cities.*.name"];
+  },
+
+  // 県レベル — 市からの集約
+  get "regions.*.prefectures.*.totalPopulation"() {
+    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+      .reduce((a, b) => a + b, 0);
+  },
+
+  // 地方レベル — 県からの集約
+  get "regions.*.totalPopulation"() {
+    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+      .reduce((a, b) => a + b, 0);
+  },
+
+  // トップレベル — 地方からの集約
+  get totalPopulation() {
+    return this.$getAll("regions.*.totalPopulation", [])
+      .reduce((a, b) => a + b, 0);
+  }
+};
+```
+
+3階層のネスト、5つの仮想プロパティ — すべてが1つのフラットなオブジェクト内に並んで定義されています。各レベルは任意の深さの値を参照でき、`$getAll` による集約は下位から上位へ自然に流れます。コンポーネントベースのフレームワーク（React、Vue）で同じことを実現するには、各ネストレベルに個別のコンポーネントを作成し、算出値をツリーの上位に渡すための props バケツリレーや状態管理が必要になります。
 
 ### getter の戻り値のサブプロパティへのアクセス
 

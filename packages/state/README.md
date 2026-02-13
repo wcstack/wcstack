@@ -11,7 +11,7 @@ Declarative reactive state management for Web Components.
 - **Built-in filters** — 37 filters for formatting, comparison, arithmetic, date, and more
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
-- **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for per-element computed properties with automatic dependency tracking and caching
+- **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for virtual properties at any depth in a data tree, all defined flat in one place with automatic dependency tracking and caching
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
@@ -316,7 +316,7 @@ Conditions can be chained. `elseif` automatically inverts the previous condition
 
 ## Path Getters (Computed Properties)
 
-**Path getters** are the core feature of `@wcstack/state`. Define computed properties using JavaScript getters with **dot-path string keys** containing wildcards (`*`). They act as per-element derived properties that automatically run in the context of `for:` loops.
+**Path getters** are the core feature of `@wcstack/state`. Define computed properties using JavaScript getters with **dot-path string keys** containing wildcards (`*`). They act as **virtual properties that can be attached at any depth in a data tree — all defined flat in one place**. No matter how deeply data is nested, path getters keep definitions at the same level with automatic dependency tracking per loop element.
 
 ### Basic Path Getter
 
@@ -456,6 +456,58 @@ Multiple wildcards are supported for nested array structures:
     Vegetables / Carrot
 -->
 ```
+
+### Flat Virtual Properties Across Any Depth
+
+A key advantage of path getters is that **no matter how deeply data is nested, all virtual properties are defined flat in one place**. This eliminates the need to split components just to hold computed properties at each nesting level.
+
+```javascript
+export default {
+  regions: [
+    { name: "Kanto", prefectures: [
+      { name: "Tokyo", cities: [
+        { name: "Shibuya", population: 230000, area: 15.11 },
+        { name: "Shinjuku", population: 346000, area: 18.22 }
+      ]},
+      { name: "Kanagawa", cities: [
+        { name: "Yokohama", population: 3750000, area: 437.56 }
+      ]}
+    ]}
+  ],
+
+  // --- All flat, regardless of nesting depth ---
+
+  // City level — virtual properties
+  get "regions.*.prefectures.*.cities.*.density"() {
+    return this["regions.*.prefectures.*.cities.*.population"]
+         / this["regions.*.prefectures.*.cities.*.area"];
+  },
+  get "regions.*.prefectures.*.cities.*.label"() {
+    return this["regions.*.prefectures.*.name"] + " "
+         + this["regions.*.prefectures.*.cities.*.name"];
+  },
+
+  // Prefecture level — aggregate from cities
+  get "regions.*.prefectures.*.totalPopulation"() {
+    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+      .reduce((a, b) => a + b, 0);
+  },
+
+  // Region level — aggregate from prefectures
+  get "regions.*.totalPopulation"() {
+    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+      .reduce((a, b) => a + b, 0);
+  },
+
+  // Top level — aggregate from regions
+  get totalPopulation() {
+    return this.$getAll("regions.*.totalPopulation", [])
+      .reduce((a, b) => a + b, 0);
+  }
+};
+```
+
+Three levels of nesting, five virtual properties — all defined side by side in a single flat object. Each level can reference values from any depth, and aggregation flows naturally from bottom to top via `$getAll`. In component-based frameworks (React, Vue), achieving the same requires creating a separate component for each nesting level, with props drilling or state management to pass computed values up the tree.
 
 ### Accessing Sub-Properties of Getter Results
 
