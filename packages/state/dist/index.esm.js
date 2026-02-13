@@ -5099,9 +5099,9 @@ class State extends HTMLElement {
         if (!this._initialized) {
             await this._initializeBindWebComponent();
             await this._initialize();
-            await this._bindWebComponent();
             this._initialized = true;
             this._resolveInitialize?.();
+            await this._bindWebComponent();
         }
         await this._callStateConnectedCallback();
     }

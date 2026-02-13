@@ -1,5 +1,5 @@
 
-class MyComponent extends HTMLElement {
+export default class extends HTMLElement {
   state = {
     message: ""
   }
@@ -16,7 +16,4 @@ class MyComponent extends HTMLElement {
 </div>
     `;
   }
-
 } 
-
-customElements.define('my-component', MyComponent);
