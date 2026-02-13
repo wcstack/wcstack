@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../src/stateElementByName', () => ({
   getStateElementByName: vi.fn()
@@ -20,6 +20,8 @@ import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { setLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { config } from '../src/config';
+import { updatedCallbackSymbol } from '../src/proxy/symbols';
 import type { IBindingInfo } from '../src/types';
 
 const getStateElementByNameMock = vi.mocked(getStateElementByName);
@@ -53,9 +55,16 @@ function createStateProxy(values: Record<string, any>) {
 }
 
 describe('applyChangeFromBindings', () => {
+  let originalDebug: boolean;
+
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '';
+    originalDebug = config.debug;
+  });
+
+  afterEach(() => {
+    config.debug = originalDebug;
   });
 
   it('同じstateNameはcreateStateが1回で処理されること', () => {
@@ -187,5 +196,91 @@ describe('applyChangeFromBindings', () => {
     applyChangeFromBindings(bindingInfos);
 
     expect(setLastListValueMock).toHaveBeenCalledWith(fakeAbsAddress, fakeListValue);
+  });
+
+  it('config.debug=trueで切断されたバインディングはconsole.logが呼ばれスキップされること', () => {
+    config.debug = true;
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const node = document.createElement('div');
+    // DOMに追加しない → isConnected=false
+    const bindingInfos = [createBindingInfo('app', 'a', node)];
+
+    applyChangeFromBindings(bindingInfos);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    expect(consoleSpy.mock.calls[0][0]).toContain('skip disconnected binding');
+    expect(applyChangeMock).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it('DocumentFragmentのrootNodeがgetRootNodeByFragmentで解決されること', () => {
+    const state = createStateProxy({ a: 1 });
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
+
+    // connectedなノードのrootNodeがDocumentFragment(非ShadowRoot)を返すようモック
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    const fakeFragment = document.createDocumentFragment();
+    const originalGetRootNode = node.getRootNode.bind(node);
+    let callCount = 0;
+    vi.spyOn(node, 'getRootNode').mockImplementation(() => {
+      callCount++;
+      // 最初の呼び出し（外側ループ）ではDocumentFragmentを返す
+      if (callCount === 1) return fakeFragment;
+      return originalGetRootNode();
+    });
+    getRootNodeByFragmentMock.mockReturnValue(document);
+
+    const bindingInfos = [createBindingInfo('app', 'a', node)];
+
+    applyChangeFromBindings(bindingInfos);
+
+    expect(getRootNodeByFragmentMock).toHaveBeenCalledWith(fakeFragment);
+    expect(applyChangeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('DocumentFragmentのrootNodeが解決できない場合はエラーになること', () => {
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    const fakeFragment = document.createDocumentFragment();
+    vi.spyOn(node, 'getRootNode').mockReturnValue(fakeFragment);
+    getRootNodeByFragmentMock.mockReturnValue(null);
+
+    const bindingInfos = [createBindingInfo('app', 'a', node)];
+
+    expect(() => applyChangeFromBindings(bindingInfos)).toThrow(/Root node for fragment not found/);
+  });
+
+  it('applyChange中にupdatedAbsAddressSetByStateElementに追加された値がupdatedCallbackに反映されること', () => {
+    const updatedCallbackMock = vi.fn();
+    const stateWritable = { [updatedCallbackSymbol]: updatedCallbackMock } as any;
+    const stateReadonly = createStateProxy({ a: 1 });
+    const createStateMock = vi.fn((mutability: string, callback: (state: any) => void) => {
+      if (mutability === 'readonly') callback(stateReadonly);
+      else if (mutability === 'writable') callback(stateWritable);
+    });
+    const fakeStateElement = { createState: createStateMock } as any;
+    getStateElementByNameMock.mockReturnValue(fakeStateElement);
+
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    const bindingInfos = [createBindingInfo('app', 'a', node)];
+
+    const fakeAbsAddress = { id: 'updated-abs' } as any;
+    applyChangeMock.mockImplementation((_binding: any, context: any) => {
+      let addrSet = context.updatedAbsAddressSetByStateElement.get(fakeStateElement);
+      if (!addrSet) {
+        addrSet = new Set();
+        context.updatedAbsAddressSetByStateElement.set(fakeStateElement, addrSet);
+      }
+      addrSet.add(fakeAbsAddress);
+    });
+
+    applyChangeFromBindings(bindingInfos);
+
+    expect(createStateMock).toHaveBeenCalledWith('writable', expect.any(Function));
+    expect(updatedCallbackMock).toHaveBeenCalledWith([fakeAbsAddress]);
   });
 });

@@ -3,7 +3,7 @@ import { get } from '../src/proxy/traps/get';
 import { createListIndex } from '../src/list/createListIndex';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
-import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol } from '../src/proxy/symbols';
+import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
 
 vi.mock('../src/proxy/methods/setLoopContext', () => ({
   setLoopContext: vi.fn(),
@@ -42,6 +42,10 @@ vi.mock('../src/proxy/apis/disconnectedCallback', () => ({
   disconnectedCallback: vi.fn()
 }));
 
+vi.mock('../src/proxy/apis/updatedCallback', () => ({
+  updatedCallback: vi.fn()
+}));
+
 import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
@@ -51,6 +55,7 @@ import { resolve } from '../src/proxy/apis/resolve';
 import { trackDependency } from '../src/proxy/apis/trackDependency';
 import { connectedCallback } from '../src/proxy/apis/connectedCallback';
 import { disconnectedCallback } from '../src/proxy/apis/disconnectedCallback';
+import { updatedCallback } from '../src/proxy/apis/updatedCallback';
 
 const setLoopContextMock = vi.mocked(setLoopContext);
 const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
@@ -62,6 +67,7 @@ const resolveMock = vi.mocked(resolve);
 const trackDependencyMock = vi.mocked(trackDependency);
 const connectedCallbackMock = vi.mocked(connectedCallback);
 const disconnectedCallbackMock = vi.mocked(disconnectedCallback);
+const updatedCallbackMock = vi.mocked(updatedCallback);
 
 describe('proxy/traps/get', () => {
   afterEach(() => {
@@ -296,5 +302,20 @@ describe('proxy/traps/get', () => {
     const result = fn();
 
     expect(result).toBeUndefined();
+  });
+
+  it('$$updatedCallback が updatedCallback を呼び出すこと', () => {
+    updatedCallbackMock.mockReturnValueOnce('updated-result');
+    const handler = {} as any;
+    const target = { $updatedCallback() {} };
+    const receiver = { receiver: true };
+    const refs = [{ absolutePathInfo: { stateName: 'default', pathInfo: { path: 'user.name' } } }] as any;
+
+    const fn = get(target, updatedCallbackSymbol, receiver, handler) as (refs: any[]) => unknown;
+    const result = fn(refs);
+
+    expect(updatedCallbackMock).toHaveBeenCalledTimes(1);
+    expect(updatedCallbackMock).toHaveBeenCalledWith(target, refs, receiver, handler);
+    expect(result).toBe('updated-result');
   });
 });

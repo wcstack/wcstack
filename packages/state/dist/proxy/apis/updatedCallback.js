@@ -28,7 +28,7 @@ export function updatedCallback(target, refs, receiver, handler) {
     if (typeof callback === "function") {
         const paths = new Set();
         // ToDo:現状では1階層のみのワイルドカードに対応。多階層対応は後回し
-        const indexesByPath = {};
+        const indexesListByPath = {};
         for (const ref of refs) {
             const pathInfo = ref.absolutePathInfo.pathInfo;
             let pathName;
@@ -40,17 +40,17 @@ export function updatedCallback(target, refs, receiver, handler) {
             }
             paths.add(pathName);
             if (pathInfo.wildcardCount > 0) {
-                const index = ref.listIndex.index;
-                const indexes = indexesByPath[pathName];
-                if (typeof indexes === "undefined") {
-                    indexesByPath[pathName] = [index];
+                const indexes = ref.listIndex.indexes ?? [];
+                const indexesList = indexesListByPath[pathName];
+                if (typeof indexesList === "undefined") {
+                    indexesListByPath[pathName] = [indexes];
                 }
                 else {
-                    indexes.push(index);
+                    indexesList.push(indexes);
                 }
             }
         }
-        return callback.call(receiver, Array.from(paths), indexesByPath);
+        return callback.call(receiver, Array.from(paths), indexesListByPath);
     }
 }
 //# sourceMappingURL=updatedCallback.js.map

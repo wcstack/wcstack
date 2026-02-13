@@ -9,7 +9,8 @@
       "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\kikuzawa\\\\Documents\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\state && npx vitest run __tests__/proxy.traps.get.test.ts\")",
       "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\kikuzawa\\\\Documents\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\state''; npx vitest run ''__tests__/proxy.traps.get.test.ts''\")",
       "Bash(powershell -Command \"Set-Location ''C:\\\\Users\\\\kikuzawa\\\\Documents\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\state''; npx vitest run ''__tests__/proxy.traps.get.test.ts'' --coverage\")",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(npm run test:coverage:*)"
     ]
   }
 }

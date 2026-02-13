@@ -1,4 +1,3 @@
-import { IAbsoluteStateAddress } from "../address/types.js";
 import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo.js";
 import { isCustomElement } from "../components/isCustomElement.js";
 import { config } from "../config.js";
