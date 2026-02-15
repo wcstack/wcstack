@@ -7,6 +7,9 @@ import { createListIndex } from '../src/list/createListIndex';
 import { setListIndexesByList } from '../src/list/listIndexesByList';
 import * as listIndexesByList from '../src/list/listIndexesByList';
 import { getByAddressSymbol } from '../src/proxy/symbols';
+import type { IStateElement } from '../src/components/types';
+
+const defaultStateElement = { name: 'default' } as IStateElement;
 
 function createStateProxy(values: Record<string, any>) {
   return {
@@ -34,6 +37,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -62,6 +66,7 @@ describe('walkDependency', () => {
 
     walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -78,6 +83,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -104,6 +110,7 @@ describe('walkDependency', () => {
     // First call to seed lastValueByListAddress
     walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -121,6 +128,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -148,6 +156,7 @@ describe('walkDependency', () => {
     const beforeFirst = spy.mock.calls.length;
     walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -165,6 +174,7 @@ describe('walkDependency', () => {
 
     walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -188,6 +198,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -211,6 +222,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -237,6 +249,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -265,6 +278,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -293,6 +307,7 @@ describe('walkDependency', () => {
     // First call to seed lastValueByListAddress for expansion
     walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -304,6 +319,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -333,6 +349,7 @@ describe('walkDependency', () => {
     const beforeFirst = spy.mock.calls.length;
     walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -345,6 +362,7 @@ describe('walkDependency', () => {
 
     walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -372,6 +390,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -403,6 +422,7 @@ describe('walkDependency', () => {
     for (const type of types) {
       expect(() => walkDependency(
         'default',
+        defaultStateElement,
         startAddress,
         staticDependency,
         dynamicDependency,
@@ -430,6 +450,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -461,6 +482,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -487,6 +509,7 @@ describe('walkDependency', () => {
 
     expect(() => walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -506,6 +529,7 @@ describe('walkDependency', () => {
 
     expect(() => walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -525,6 +549,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -549,6 +574,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -575,6 +601,7 @@ describe('walkDependency', () => {
 
     expect(() => walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       new Map(),
@@ -596,6 +623,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       staticDependency,
       dynamicDependency,
@@ -620,6 +648,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,
@@ -645,6 +674,7 @@ describe('walkDependency', () => {
 
     const result = walkDependency(
       'default',
+      defaultStateElement,
       startAddress,
       new Map(),
       dynamicDependency,

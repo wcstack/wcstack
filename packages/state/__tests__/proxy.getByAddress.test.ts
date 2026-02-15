@@ -101,7 +101,7 @@ describe('getByAddress', () => {
     const target = { total: 10 };
     const address = createStateAddress(getPathInfo('total'), null);
     mockStateElement.getterPaths.add('total');
-    const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(mockStateElement.name, address.pathInfo), address.listIndex);
+    const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(mockStateElement, address.pathInfo), address.listIndex);
     setCacheEntryByAbsoluteStateAddress(absAddress, { value: 99, dirty: false });
     const handler = createHandler(mockStateElement);
 
@@ -117,7 +117,7 @@ describe('getByAddress', () => {
     const target = { total: 10 };
     const address = createStateAddress(getPathInfo('total'), null);
     mockStateElement.getterPaths.add('total');
-    const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(mockStateElement.name, address.pathInfo), address.listIndex);
+    const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(mockStateElement, address.pathInfo), address.listIndex);
     // キャッシュをクリア
     setCacheEntryByAbsoluteStateAddress(absAddress, null);
     const handler = createHandler(mockStateElement);
@@ -134,7 +134,7 @@ describe('getByAddress', () => {
     const target = { users: [{ name: 'Ann' }] };
     const listIndex = createListIndex(null, 0);
     const address = createStateAddress(getPathInfo('users.*.name'), listIndex);
-    const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(mockStateElement.name, address.pathInfo), address.listIndex);
+    const absAddress = createAbsoluteStateAddress(getAbsolutePathInfo(mockStateElement, address.pathInfo), address.listIndex);
     // キャッシュをクリア
     setCacheEntryByAbsoluteStateAddress(absAddress, null);
     const handler = createHandler(mockStateElement);

@@ -1,4 +1,3 @@
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo.js";
 import { getPathInfo } from "../address/PathInfo.js";
 import { raiseError } from "../raiseError.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
@@ -23,14 +22,12 @@ export function parseBindTextsForElement(bindText) {
         const statePart = bindText.slice(separatorIndex + 1).trim();
         if (propPart === 'else') {
             const pathInfo = getPathInfo('#else');
-            const absolutePathInfo = getAbsolutePathInfo('', pathInfo);
             return {
                 propName: 'else',
                 propSegments: ['else'],
                 propModifiers: [],
                 statePathName: '#else',
                 statePathInfo: pathInfo,
-                stateAbsolutePathInfo: absolutePathInfo,
                 stateName: '',
                 inFilters: [],
                 outFilters: [],

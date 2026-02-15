@@ -1,4 +1,4 @@
-import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo.js";
+import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
 import { isCustomElement } from "../components/isCustomElement.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
@@ -57,7 +57,7 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
     console.log(`applyChange: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`, binding);
   }
   context.appliedBindingSet.add(binding);
-  const absAddress = getAbsoluteStateAddressByBindingInfo(binding);
+  const absAddress = getAbsoluteStateAddressByBinding(binding);
   if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
     const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement)!;
     addressSet.add(absAddress);

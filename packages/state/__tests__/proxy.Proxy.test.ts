@@ -143,7 +143,6 @@ describe('proxy/StateHandler', () => {
       propModifiers: [],
       statePathName: 'count',
       statePathInfo: countPathInfo,
-      stateAbsolutePathInfo: getAbsolutePathInfo('default', countPathInfo),
       stateName: 'default',
       outFilters: [],
       inFilters: [],
@@ -157,7 +156,7 @@ describe('proxy/StateHandler', () => {
     const address = createStateAddress(bindingInfo.statePathInfo!, null);
     const stateElement = createMockStateElement();
     setStateElementByName(document, 'default', stateElement);
-    const absoluteAddress = createAbsoluteStateAddress(getAbsolutePathInfo('default', address.pathInfo), address.listIndex);
+    const absoluteAddress = createAbsoluteStateAddress(getAbsolutePathInfo(stateElement, address.pathInfo), address.listIndex);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
     const proxy = createStateProxy(document, { count: 0 }, 'default', 'writable');
 

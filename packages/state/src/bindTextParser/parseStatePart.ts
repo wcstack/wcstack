@@ -1,11 +1,10 @@
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { getPathInfo } from "../address/PathInfo";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
 
 type StatePartParseResult = Pick<IBindingInfo, 
-  'stateName' | 'statePathName' | 'statePathInfo' | 'stateAbsolutePathInfo' | 'outFilters'>;
+  'stateName' | 'statePathName' | 'statePathInfo' | 'outFilters'>;
 
 const cacheFilterInfos = new Map<string, IFilterInfo[]>();
 
@@ -34,12 +33,10 @@ export function parseStatePart(statePart: string): StatePartParseResult {
   }
   const [statePathName, stateName = 'default'] = stateAndPath.split('@').map(trimFn);
   const pathInfo = getPathInfo(statePathName);
-  const absolutePathInfo = getAbsolutePathInfo(stateName, pathInfo);
   return {
     stateName,
     statePathName,
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: absolutePathInfo,
     outFilters: filters,
   };
 }

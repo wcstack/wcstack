@@ -1,32 +1,35 @@
+import { IStateElement } from "../components/types";
 import { IAbsolutePathInfo, IPathInfo } from "./types";
 
-const _cache: { [key: string]: IAbsolutePathInfo } = {};
+const _cache: WeakMap<IStateElement, WeakMap<IPathInfo, IAbsolutePathInfo>> = new WeakMap();
 
-function makeKey(stateName: string, path: string): string {
-  return `${path}@${stateName}`;
-}
-
-export function getAbsolutePathInfo(stateName: string, pathInfo: IPathInfo): IAbsolutePathInfo {
-  const key = makeKey(stateName, pathInfo.path);
-  if (_cache[key]) {
-    return _cache[key];
+export function getAbsolutePathInfo(stateElement: IStateElement, pathInfo: IPathInfo): IAbsolutePathInfo {
+  if (_cache.has(stateElement)) {
+    const pathMap = _cache.get(stateElement)!;
+    if (pathMap.has(pathInfo)) {
+      return pathMap.get(pathInfo)!;
+    }
+  } else {
+    _cache.set(stateElement, new WeakMap());
   }
-  const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateName, pathInfo));
-  _cache[key] = absolutePathInfo;
+  const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateElement, pathInfo));
+  _cache.get(stateElement)!.set(pathInfo, absolutePathInfo);
   return absolutePathInfo;
 }
 
 class AbsolutePathInfo implements IAbsolutePathInfo {
   readonly pathInfo: IPathInfo;
   readonly stateName: string;
+  readonly stateElement: IStateElement;
   readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
-  constructor(stateName: string, pathInfo: IPathInfo) {
+  constructor(stateElement: IStateElement, pathInfo: IPathInfo) {
     this.pathInfo = pathInfo;
-    this.stateName = stateName;
+    this.stateName = stateElement.name;
+    this.stateElement = stateElement;
     if (pathInfo.parentPathInfo === null) {
       this.parentAbsolutePathInfo = null;
     } else {
-      this.parentAbsolutePathInfo = getAbsolutePathInfo(stateName, pathInfo.parentPathInfo);
+      this.parentAbsolutePathInfo = getAbsolutePathInfo(stateElement, pathInfo.parentPathInfo);
     }
   }
 }

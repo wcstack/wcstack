@@ -3,12 +3,17 @@ import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress'
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
+import type { IStateElement } from '../src/components/types';
+
+const testStateElement = { name: 'test' } as IStateElement;
+const test2StateElement = { name: 'test2' } as IStateElement;
+const defaultStateElement = { name: 'default' } as IStateElement;
 
 describe('AbsoluteStateAddress', () => {
 
   it('nullのlistIndexでAbsoluteStateAddressが作成されること', () => {
     const pathInfo = getPathInfo('count');
-    const absolutePathInfo = getAbsolutePathInfo('test', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(testStateElement, pathInfo);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, null);
 
     expect(absoluteAddress).toBeDefined();
@@ -18,7 +23,7 @@ describe('AbsoluteStateAddress', () => {
 
   it('同一のabsolutePathInfo/listIndexで呼び出すとキャッシュから返されること', () => {
     const pathInfo = getPathInfo('count');
-    const absolutePathInfo = getAbsolutePathInfo('test', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(testStateElement, pathInfo);
     const absoluteAddress1 = createAbsoluteStateAddress(absolutePathInfo, null);
     const absoluteAddress2 = createAbsoluteStateAddress(absolutePathInfo, null);
 
@@ -28,8 +33,8 @@ describe('AbsoluteStateAddress', () => {
   it('異なるabsolutePathInfoの場合は新規作成されること', () => {
     const pathInfo1 = getPathInfo('count');
     const pathInfo2 = getPathInfo('name');
-    const absolutePathInfo1 = getAbsolutePathInfo('test', pathInfo1);
-    const absolutePathInfo2 = getAbsolutePathInfo('test', pathInfo2);
+    const absolutePathInfo1 = getAbsolutePathInfo(testStateElement, pathInfo1);
+    const absolutePathInfo2 = getAbsolutePathInfo(testStateElement, pathInfo2);
 
     const absoluteAddress1 = createAbsoluteStateAddress(absolutePathInfo1, null);
     const absoluteAddress2 = createAbsoluteStateAddress(absolutePathInfo2, null);
@@ -39,8 +44,8 @@ describe('AbsoluteStateAddress', () => {
 
   it('異なるstateNameでは別々にキャッシュされること', () => {
     const pathInfo = getPathInfo('count');
-    const absolutePathInfo1 = getAbsolutePathInfo('test', pathInfo);
-    const absolutePathInfo2 = getAbsolutePathInfo('test2', pathInfo);
+    const absolutePathInfo1 = getAbsolutePathInfo(testStateElement, pathInfo);
+    const absolutePathInfo2 = getAbsolutePathInfo(test2StateElement, pathInfo);
 
     const absoluteAddress1 = createAbsoluteStateAddress(absolutePathInfo1, null);
     const absoluteAddress2 = createAbsoluteStateAddress(absolutePathInfo2, null);
@@ -52,7 +57,7 @@ describe('AbsoluteStateAddress', () => {
 
   it('listIndex付きでAbsoluteStateAddressが作成されること', () => {
     const pathInfo = getPathInfo('users.*');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const listIndex = createListIndex(null, 0);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, listIndex);
 
@@ -62,7 +67,7 @@ describe('AbsoluteStateAddress', () => {
 
   it('同一のlistIndex/absolutePathInfoでキャッシュされること', () => {
     const pathInfo = getPathInfo('users.*');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const listIndex = createListIndex(null, 0);
     const absoluteAddress1 = createAbsoluteStateAddress(absolutePathInfo, listIndex);
     const absoluteAddress2 = createAbsoluteStateAddress(absolutePathInfo, listIndex);
@@ -72,7 +77,7 @@ describe('AbsoluteStateAddress', () => {
 
   it('parentAbsoluteAddressが正しく解決されること', () => {
     const pathInfo = getPathInfo('users.*.name');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const listIndex = createListIndex(null, 0);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, listIndex);
 
@@ -83,7 +88,7 @@ describe('AbsoluteStateAddress', () => {
 
   it('parentAbsoluteAddressがキャッシュされること', () => {
     const pathInfo = getPathInfo('users.*.name');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const listIndex = createListIndex(null, 0);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, listIndex);
 
@@ -94,7 +99,7 @@ describe('AbsoluteStateAddress', () => {
 
   it('トップレベルのpathではparentAbsoluteAddressがnullになること', () => {
     const pathInfo = getPathInfo('count');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, null);
 
     expect(absoluteAddress.parentAbsoluteAddress).toBeNull();
@@ -104,7 +109,7 @@ describe('AbsoluteStateAddress', () => {
     const parentListIndex = createListIndex(null, 0);
     const listIndex = createListIndex(parentListIndex, 1);
     const pathInfo = getPathInfo('users.*');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, listIndex);
 
     const parent = absoluteAddress.parentAbsoluteAddress;
@@ -114,7 +119,7 @@ describe('AbsoluteStateAddress', () => {
 
   it('ワイルドカード末尾でlistIndexがnullの場合parentListIndexがnullになること', () => {
     const pathInfo = getPathInfo('users.*');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, null);
 
     const parent = absoluteAddress.parentAbsoluteAddress;
@@ -125,7 +130,7 @@ describe('AbsoluteStateAddress', () => {
   it('非ワイルドカード末尾でlistIndexがそのまま引き継がれること', () => {
     const listIndex = createListIndex(null, 0);
     const pathInfo = getPathInfo('users.*.name');
-    const absolutePathInfo = getAbsolutePathInfo('default', pathInfo);
+    const absolutePathInfo = getAbsolutePathInfo(defaultStateElement, pathInfo);
     const absoluteAddress = createAbsoluteStateAddress(absolutePathInfo, listIndex);
 
     const parent = absoluteAddress.parentAbsoluteAddress;

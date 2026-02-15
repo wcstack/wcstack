@@ -7,7 +7,6 @@ export type ParseBindTextResult = Pick<IBindingInfo,
   | 'statePathName'
   | 'statePathInfo'
   | 'stateName'
-  | 'stateAbsolutePathInfo'
   | 'inFilters'
   | 'outFilters'
   | 'bindingType'

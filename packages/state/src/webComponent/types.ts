@@ -10,7 +10,3 @@ export interface IOuterState extends Record<string, any> {
   [bindSymbol](innerStateElement: IStateElement, binding: IBindingInfo): void;
 }
 
-export interface IMappingRule {
-  innerName: string;
-  outerName: string;
-}

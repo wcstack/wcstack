@@ -35,7 +35,6 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -149,7 +148,8 @@ afterEach(() => {
   setFragmentInfoByUUID(uuid, document, null);
   setStateElementByName(document, 'default', null);
   const pathInfo = getPathInfo('items');
-  const absPathInfo = getAbsolutePathInfo('default', pathInfo);
+  const stateElement = { name: 'default' } as IStateElement;
+  const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
   clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(absPathInfo, null));
 });
 

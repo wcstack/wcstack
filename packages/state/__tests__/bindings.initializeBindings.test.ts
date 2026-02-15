@@ -13,7 +13,7 @@ import { getFragmentNodeInfos } from '../src/structural/getFragmentNodeInfos';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { getPathInfo } from '../src/address/PathInfo';
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
-import { getAbsoluteStateAddressByBindingInfo } from '../src/binding/getAbsoluteStateAddressByBindingInfo';
+import { getAbsoluteStateAddressByBinding } from '../src/binding/getAbsoluteStateAddressByBinding';
 import { getBindingSetByAbsoluteStateAddress, addBindingByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
 
 vi.mock('../src/binding/getBindingSetByAbsoluteStateAddress', async () => {
@@ -123,7 +123,7 @@ describe('initializeBindings', () => {
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
     const [bindings] = applyChangeFromBindingsMock.mock.calls[0];
     expect(bindings).toHaveLength(1);
-    const absoluteAddress = getAbsoluteStateAddressByBindingInfo(bindings[0]);
+    const absoluteAddress = getAbsoluteStateAddressByBinding(bindings[0]);
     expect(getBindingSetByAbsoluteStateAddress(absoluteAddress)).toContain(bindings[0]);
   });
 
@@ -132,6 +132,7 @@ describe('initializeBindings', () => {
     const el = document.createElement('span');
     el.setAttribute('data-wcs', 'textContent: message@missing');
     container.appendChild(el);
+    document.body.appendChild(container);
 
     expect(() => initializeBindings(container, null)).toThrow(/State element with name "missing" not found/);
   });

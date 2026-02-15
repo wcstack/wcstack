@@ -1,6 +1,6 @@
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
-import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
+import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
@@ -86,7 +86,7 @@ function setContent(node, listIndex, content) {
 export function applyChangeToFor(bindingInfo, context, newValue) {
     const listPathInfo = bindingInfo.statePathInfo;
     const listIndex = getListIndexByBindingInfo(bindingInfo);
-    const absAddress = getAbsoluteStateAddressByBindingInfo(bindingInfo);
+    const absAddress = getAbsoluteStateAddressByBinding(bindingInfo);
     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
     const diff = createListDiff(listIndex, lastValue, newValue);
     context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
@@ -109,8 +109,8 @@ export function applyChangeToFor(bindingInfo, context, newValue) {
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = getContent(bindingInfo.node, deleteIndex);
         if (content !== null) {
-            content.unmount();
             deactivateContent(content);
+            content.unmount();
             setPooledContent(bindingInfo, content);
             setContent(bindingInfo.node, deleteIndex, null);
         }

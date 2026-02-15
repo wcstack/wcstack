@@ -41,8 +41,6 @@ import { createInnerState } from '../src/webComponent/innerState';
 import { bindSymbol } from '../src/webComponent/symbols';
 import { IBindingInfo } from '../src/types';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
-
 const getBindingsByNodeMock = vi.mocked(getBindingsByNode);
 
 const createMockBinding = (propSegments: string[], statePathName: string, stateName = 'default'): IBindingInfo => {
@@ -54,7 +52,6 @@ const createMockBinding = (propSegments: string[], statePathName: string, stateN
     statePathName,
     statePathInfo,
     stateName,
-    stateAbsolutePathInfo: getAbsolutePathInfo(stateName, statePathInfo),
     outFilters: [],
     inFilters: [],
     bindingType: 'prop',

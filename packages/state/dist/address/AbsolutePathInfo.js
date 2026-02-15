@@ -1,28 +1,32 @@
-const _cache = {};
-function makeKey(stateName, path) {
-    return `${path}@${stateName}`;
-}
-export function getAbsolutePathInfo(stateName, pathInfo) {
-    const key = makeKey(stateName, pathInfo.path);
-    if (_cache[key]) {
-        return _cache[key];
+const _cache = new WeakMap();
+export function getAbsolutePathInfo(stateElement, pathInfo) {
+    if (_cache.has(stateElement)) {
+        const pathMap = _cache.get(stateElement);
+        if (pathMap.has(pathInfo)) {
+            return pathMap.get(pathInfo);
+        }
     }
-    const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateName, pathInfo));
-    _cache[key] = absolutePathInfo;
+    else {
+        _cache.set(stateElement, new WeakMap());
+    }
+    const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateElement, pathInfo));
+    _cache.get(stateElement).set(pathInfo, absolutePathInfo);
     return absolutePathInfo;
 }
 class AbsolutePathInfo {
     pathInfo;
     stateName;
+    stateElement;
     parentAbsolutePathInfo;
-    constructor(stateName, pathInfo) {
+    constructor(stateElement, pathInfo) {
         this.pathInfo = pathInfo;
-        this.stateName = stateName;
+        this.stateName = stateElement.name;
+        this.stateElement = stateElement;
         if (pathInfo.parentPathInfo === null) {
             this.parentAbsolutePathInfo = null;
         }
         else {
-            this.parentAbsolutePathInfo = getAbsolutePathInfo(stateName, pathInfo.parentPathInfo);
+            this.parentAbsolutePathInfo = getAbsolutePathInfo(stateElement, pathInfo.parentPathInfo);
         }
     }
 }

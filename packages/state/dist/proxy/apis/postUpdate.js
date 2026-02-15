@@ -12,14 +12,14 @@ export function postUpdate(target, _prop, receiver, handler) {
         const resolvedAddress = getResolvedAddress(path);
         const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
         const address = createStateAddress(resolvedAddress.pathInfo, listIndex);
-        const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+        const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
         const updater = getUpdater();
         updater.enqueueAbsoluteAddress(absAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(handler.stateName, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+        walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
-            const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
+            const absDepPathInfo = getAbsolutePathInfo(stateElement, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
             dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録

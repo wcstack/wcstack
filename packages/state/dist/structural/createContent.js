@@ -1,4 +1,4 @@
-import { clearAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo.js";
+import { clearAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
@@ -61,7 +61,7 @@ class Content {
                 }
             }
             clearStateAddressByBindingInfo(binding);
-            clearAbsoluteStateAddressByBindingInfo(binding);
+            clearAbsoluteStateAddressByBinding(binding);
         }
         this._mounted = false;
     }

@@ -21,7 +21,6 @@ function createRadioBinding(element: HTMLInputElement): IBindingInfo {
     propModifiers: [],
     statePathName: 'selected',
     statePathInfo: getPathInfo('selected'),
-    stateAbsolutePathInfo: getPathInfo('selected') as any,
     stateName: 'default',
     outFilters: [],
     inFilters: [],

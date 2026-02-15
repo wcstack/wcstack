@@ -7,6 +7,7 @@ import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { addBindingByAbsoluteStateAddress, clearBindingSetByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
 import { IAbsoluteStateAddress } from '../src/address/types';
+import type { IStateElement } from '../src/components/types';
 
 vi.mock('../src/apply/applyChangeFromBindings', () => ({
   applyChangeFromBindings: vi.fn()
@@ -20,14 +21,14 @@ function createAddress(path: string) {
   return createStateAddress(getPathInfo(path), null);
 }
 
-function createAbsAddress(stateName: string, path: string) {
+function createAbsAddress(stateElement: any, path: string) {
   const pathInfo = getPathInfo(path);
-  const absPathInfo = getAbsolutePathInfo(stateName, pathInfo);
+  const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
   return createAbsoluteStateAddress(absPathInfo, null);
 }
 
-function createStateElement() {
-  return {} as any;
+function createStateElement(name: string = 'default') {
+  return { name } as IStateElement;
 }
 
 describe('updater/updater', () => {
@@ -48,7 +49,8 @@ describe('updater/updater', () => {
 
   it('stateElementが見つからない場合でもAbsoluteStateAddressは作成できること', async () => {
     // 新しいAPIではstateElementの存在チェックはcreateAbsoluteStateAddress内で行われない
-    const absoluteAddress = createAbsAddress('missing', 'count');
+    const missingStateElement = createStateElement('missing');
+    const absoluteAddress = createAbsAddress(missingStateElement, 'count');
     expect(absoluteAddress).toBeDefined();
     expect(absoluteAddress.absolutePathInfo.stateName).toBe('missing');
   });
@@ -58,11 +60,11 @@ describe('updater/updater', () => {
     const replaceNode = document.createElement('div');
     document.body.appendChild(replaceNode);
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
-    const stateElement = createStateElement();
+    const stateElement = createStateElement('default');
     setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
+    const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
@@ -77,11 +79,11 @@ describe('updater/updater', () => {
     const replaceNode = document.createElement('div');
     document.body.appendChild(replaceNode);
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
-    const stateElement = createStateElement();
+    const stateElement = createStateElement('default');
     setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
+    const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
@@ -95,11 +97,11 @@ describe('updater/updater', () => {
 
   it('bindingInfosが無い場合は空配列でapplyChangeFromBindingsが呼ばれること', async () => {
     const address = createAddress('missing');
-    const stateElement = createStateElement();
+    const stateElement = createStateElement('default');
     setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
+    const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
 
     updater.enqueueAbsoluteAddress(absoluteAddress);
     await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
@@ -125,15 +127,15 @@ describe('updater/updater', () => {
     const bindingInfo1 = { propName: 'value', stateName: 'state1', node: document.createTextNode(''), replaceNode: replaceNode1 } as any;
     const bindingInfo2 = { propName: 'text', stateName: 'state2', node: document.createTextNode(''), replaceNode: replaceNode2 } as any;
     
-    const stateElement1 = createStateElement();
-    const stateElement2 = createStateElement();
-    
+    const stateElement1 = createStateElement('state1');
+    const stateElement2 = createStateElement('state2');
+
     setStateElementByName(document, 'state1', stateElement1);
     setStateElementByName(document, 'state2', stateElement2);
 
     const updater = getUpdater();
-    const absoluteAddress1 = createAbsAddress('state1', address1.pathInfo.path);
-    const absoluteAddress2 = createAbsAddress('state2', address2.pathInfo.path);
+    const absoluteAddress1 = createAbsAddress(stateElement1, address1.pathInfo.path);
+    const absoluteAddress2 = createAbsAddress(stateElement2, address2.pathInfo.path);
 
     addBindingByAbsoluteStateAddress(absoluteAddress1, bindingInfo1);
     addBindingByAbsoluteStateAddress(absoluteAddress2, bindingInfo2);
@@ -154,11 +156,11 @@ describe('updater/updater', () => {
     const replaceNode = document.createElement('div');
     document.body.appendChild(replaceNode);
     const bindingInfo = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode } as any;
-    const stateElement = createStateElement();
+    const stateElement = createStateElement('default');
     setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
+    const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
     createdAbsAddresses.push(absoluteAddress);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingInfo);
 
@@ -178,11 +180,11 @@ describe('updater/updater', () => {
     const bindingConnected = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode: connectedNode } as any;
     const bindingDisconnected = { propName: 'value', stateName: 'default', node: document.createTextNode(''), replaceNode: disconnectedNode } as any;
 
-    const stateElement = createStateElement();
+    const stateElement = createStateElement('default');
     setStateElementByName(document, 'default', stateElement);
 
     const updater = getUpdater();
-    const absoluteAddress = createAbsAddress('default', address.pathInfo.path);
+    const absoluteAddress = createAbsAddress(stateElement, address.pathInfo.path);
     createdAbsAddresses.push(absoluteAddress);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingConnected);
     addBindingByAbsoluteStateAddress(absoluteAddress, bindingDisconnected);

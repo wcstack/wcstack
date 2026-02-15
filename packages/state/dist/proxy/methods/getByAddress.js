@@ -53,7 +53,7 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
     }
 }
 function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+    const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
     if (cacheEntry !== null && cacheEntry.dirty === false) {

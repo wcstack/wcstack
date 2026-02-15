@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import type { IBindingInfo, IFilterInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -34,6 +33,9 @@ vi.mock('../src/stateElementByName', () => ({
 vi.mock('../src/apply/rootNodeByFragment', () => ({
   getRootNodeByFragment: vi.fn()
 }));
+vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => ({
+  getAbsoluteStateAddressByBinding: vi.fn(() => ({ absolutePathInfo: {}, listIndex: null }))
+}));
 
 import { applyChange } from '../src/apply/applyChange';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
@@ -63,7 +65,6 @@ function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'r
   return {
     statePathName: 'value',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],

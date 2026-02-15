@@ -1,4 +1,3 @@
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { getPathInfo } from "../address/PathInfo";
 import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
@@ -30,12 +29,10 @@ export function parseStatePart(statePart) {
     }
     const [statePathName, stateName = 'default'] = stateAndPath.split('@').map(trimFn);
     const pathInfo = getPathInfo(statePathName);
-    const absolutePathInfo = getAbsolutePathInfo(stateName, pathInfo);
     return {
         stateName,
         statePathName,
         statePathInfo: pathInfo,
-        stateAbsolutePathInfo: absolutePathInfo,
         outFilters: filters,
     };
 }

@@ -91,11 +91,11 @@ describe('postUpdate', () => {
     expect(getResolvedAddressMock).toHaveBeenCalledWith('count');
     expect(getListIndexMock).toHaveBeenCalledWith(target, resolvedAddress, receiver, handler);
     expect(createStateAddressMock).toHaveBeenCalledWith(resolvedAddress.pathInfo, listIndex);
-    expect(getAbsolutePathInfoMock).toHaveBeenCalledWith('default', stateAddress.pathInfo);
+    expect(getAbsolutePathInfoMock).toHaveBeenCalledWith(handler.stateElement, stateAddress.pathInfo);
     expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(absPathInfo, stateAddress.listIndex);
     expect(updater.enqueueAbsoluteAddress).toHaveBeenCalledWith(absAddress);
     expect(walkDependencyMock).toHaveBeenCalledWith(
-      'default', stateAddress, staticDep, dynamicDep, listPaths, receiver, 'new', expect.any(Function)
+      'default', handler.stateElement, stateAddress, staticDep, dynamicDep, listPaths, receiver, 'new', expect.any(Function)
     );
   });
 
@@ -114,7 +114,7 @@ describe('postUpdate', () => {
     getUpdaterMock.mockReturnValue(updater as any);
 
     // walkDependencyのコールバックを直接実行すめE
-    walkDependencyMock.mockImplementation((_stateName, _addr, _sd, _dd, _lp, _recv, _mode, callback) => {
+    walkDependencyMock.mockImplementation((_stateName, _stateElement, _addr, _sd, _dd, _lp, _recv, _mode, callback) => {
       const depAddress = { pathInfo: { path: 'derived' }, listIndex: null };
       const depAbsPathInfo = { path: 'default.derived' };
       const depAbsAddress = { absPathInfo: depAbsPathInfo, listIndex: null };

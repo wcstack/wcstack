@@ -10,7 +10,7 @@ import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IInitialBindingInfo } from "./types";
-import { getAbsoluteStateAddressByBindingInfo } from "../binding/getAbsoluteStateAddressByBindingInfo";
+import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { attachRadioEventHandler } from "../event/radioHandler";
 import { attachCheckboxEventHandler } from "../event/checkboxHandler";
@@ -48,7 +48,7 @@ export function initializeBindings(
   _initializeBindings(allBindings);
   // create absolute state address and register binding infos
   for(const binding of allBindings) {
-    const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+    const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
     addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
     const rootNode = binding.replaceNode.getRootNode() as Node;
     const stateElement = getStateElementByName(rootNode, binding.stateName);

@@ -1,4 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => {
+  const cache = new WeakMap();
+  return {
+    getAbsoluteStateAddressByBinding: vi.fn((binding) => {
+      if (cache.has(binding)) return cache.get(binding);
+      const addr = { absolutePathInfo: { stateName: binding.stateName, pathInfo: binding.statePathInfo }, listIndex: null };
+      cache.set(binding, addr);
+      return addr;
+    }),
+    clearAbsoluteStateAddressByBinding: vi.fn(),
+  };
+});
 import { applyChangeToFor, __test_setContentByListIndex, __test_deleteLastNodeByNode, __test_deleteContentByNode } from '../src/apply/applyChangeToFor';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
 import type { ParseBindTextResult } from '../src/bindTextParser/types';
@@ -37,7 +50,6 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -222,7 +234,8 @@ describe('applyChangeToFor', () => {
     setStateElementByName(document, 'default', null);
     // Clear cached lastListValue to prevent cross-test contamination
     const pathInfo = getPathInfo('items');
-    const absPathInfo = getAbsolutePathInfo('default', pathInfo);
+    const stateElement = { name: 'default' } as IStateElement;
+    const absPathInfo = getAbsolutePathInfo(stateElement, pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, null);
     clearLastListValueByAbsoluteStateAddress(absAddress);
   });

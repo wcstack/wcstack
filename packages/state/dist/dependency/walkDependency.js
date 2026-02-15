@@ -32,7 +32,7 @@ function getIndexes(listDiff, searchType) {
 function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentPath = context.wildcardParentPaths[currentWildcardIndex];
     const parentPathInfo = getPathInfo(parentPath);
-    const parentAbsPathInfo = getAbsolutePathInfo(context.stateName, parentPathInfo);
+    const parentAbsPathInfo = getAbsolutePathInfo(context.stateElement, parentPathInfo);
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
     const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
     const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
@@ -76,7 +76,7 @@ function _walkDependency(context, startAddress, callback) {
                 if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
                     //expand indexes
                     const newValue = context.stateProxy[getByAddressSymbol](address);
-                    const absPathInfo = getAbsolutePathInfo(context.stateName, address.pathInfo);
+                    const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
                     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
                     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
                     const listDiff = createListDiff(address.listIndex, lastValue, newValue);
@@ -137,6 +137,7 @@ function _walkDependency(context, startAddress, callback) {
                         }
                         const expandContext = {
                             stateName: context.stateName,
+                            stateElement: context.stateElement,
                             targetPathInfo: depPathInfo,
                             targetListIndexes: [],
                             wildcardPaths: depPathInfo.wildcardPaths,
@@ -175,9 +176,10 @@ function _walkDependency(context, startAddress, callback) {
         }
     }
 }
-export function walkDependency(stateName, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
+export function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
     const context = {
         stateName: stateName,
+        stateElement: stateElement,
         staticMap: staticDependency,
         dynamicMap: dynamicDependency,
         result: new Set(),

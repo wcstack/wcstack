@@ -843,31 +843,35 @@ function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue)
     };
 }
 
-const _cache$1 = {};
-function makeKey(stateName, path) {
-    return `${path}@${stateName}`;
-}
-function getAbsolutePathInfo(stateName, pathInfo) {
-    const key = makeKey(stateName, pathInfo.path);
-    if (_cache$1[key]) {
-        return _cache$1[key];
+const _cache$1 = new WeakMap();
+function getAbsolutePathInfo(stateElement, pathInfo) {
+    if (_cache$1.has(stateElement)) {
+        const pathMap = _cache$1.get(stateElement);
+        if (pathMap.has(pathInfo)) {
+            return pathMap.get(pathInfo);
+        }
     }
-    const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateName, pathInfo));
-    _cache$1[key] = absolutePathInfo;
+    else {
+        _cache$1.set(stateElement, new WeakMap());
+    }
+    const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateElement, pathInfo));
+    _cache$1.get(stateElement).set(pathInfo, absolutePathInfo);
     return absolutePathInfo;
 }
 class AbsolutePathInfo {
     pathInfo;
     stateName;
+    stateElement;
     parentAbsolutePathInfo;
-    constructor(stateName, pathInfo) {
+    constructor(stateElement, pathInfo) {
         this.pathInfo = pathInfo;
-        this.stateName = stateName;
+        this.stateName = stateElement.name;
+        this.stateElement = stateElement;
         if (pathInfo.parentPathInfo === null) {
             this.parentAbsolutePathInfo = null;
         }
         else {
-            this.parentAbsolutePathInfo = getAbsolutePathInfo(stateName, pathInfo.parentPathInfo);
+            this.parentAbsolutePathInfo = getAbsolutePathInfo(stateElement, pathInfo.parentPathInfo);
         }
     }
 }
@@ -1011,7 +1015,7 @@ function _getByAddress(target, address, receiver, handler, stateElement) {
     }
 }
 function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+    const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
     if (cacheEntry !== null && cacheEntry.dirty === false) {
@@ -1083,6 +1087,19 @@ const getByAddressSymbol = Symbol("$$getByAddress");
 const connectedCallbackSymbol = Symbol("$$connectedCallback");
 const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
 const updatedCallbackSymbol = Symbol("$$updatedCallback");
+
+const rootNodeByFragment = new WeakMap();
+function setRootNodeByFragment(fragment, rootNode) {
+    if (rootNode === null) {
+        rootNodeByFragment.delete(fragment);
+    }
+    else {
+        rootNodeByFragment.set(fragment, rootNode);
+    }
+}
+function getRootNodeByFragment(fragment) {
+    return rootNodeByFragment.get(fragment) || null;
+}
 
 const cacheCalcWildcardLen = new Map();
 function calcWildcardLen(pathInfo, targetPathInfo) {
@@ -1165,21 +1182,39 @@ function getListIndexByBindingInfo(bindingInfo) {
     }
 }
 
-const absoluteStateAddressByBindingInfo = new WeakMap();
-function getAbsoluteStateAddressByBindingInfo(bindingInfo) {
+const absoluteStateAddressByBinding = new WeakMap();
+function getAbsoluteStateAddressByBinding(binding) {
+    // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
     let absoluteStateAddress = null;
-    absoluteStateAddress = absoluteStateAddressByBindingInfo.get(bindingInfo) || null;
+    absoluteStateAddress = absoluteStateAddressByBinding.get(binding) || null;
     if (absoluteStateAddress !== null) {
         return absoluteStateAddress;
     }
-    const listIndex = getListIndexByBindingInfo(bindingInfo);
+    let rootNode = binding.replaceNode.getRootNode();
+    // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
+    if (binding.replaceNode.isConnected === false) {
+        // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
+        const rootNodeByFragment = getRootNodeByFragment(rootNode);
+        if (rootNodeByFragment === null) {
+            raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
+        }
+        else {
+            rootNode = rootNodeByFragment;
+        }
+    }
+    const listIndex = getListIndexByBindingInfo(binding);
+    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    }
+    const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
     absoluteStateAddress =
-        createAbsoluteStateAddress(bindingInfo.stateAbsolutePathInfo, listIndex);
-    absoluteStateAddressByBindingInfo.set(bindingInfo, absoluteStateAddress);
+        createAbsoluteStateAddress(absolutePathInfo, listIndex);
+    absoluteStateAddressByBinding.set(binding, absoluteStateAddress);
     return absoluteStateAddress;
 }
-function clearAbsoluteStateAddressByBindingInfo(bindingInfo) {
-    absoluteStateAddressByBindingInfo.delete(bindingInfo);
+function clearAbsoluteStateAddressByBinding(binding) {
+    absoluteStateAddressByBinding.delete(binding);
 }
 
 const cache = new WeakMap();
@@ -1331,7 +1366,7 @@ function activateContent(content, loopContext, context) {
     bindLoopContextToContent(content, loopContext);
     const bindings = getBindingsByContent(content);
     for (const binding of bindings) {
-        const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+        const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
         addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
         applyChange(binding, context);
     }
@@ -1339,9 +1374,9 @@ function activateContent(content, loopContext, context) {
 function deactivateContent(content) {
     const bindings = getBindingsByContent(content);
     for (const binding of bindings) {
-        const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+        const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
         removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-        clearAbsoluteStateAddressByBindingInfo(binding);
+        clearAbsoluteStateAddressByBinding(binding);
         clearStateAddressByBindingInfo(binding);
     }
     unbindLoopContextToContent(content);
@@ -2337,12 +2372,10 @@ function parseStatePart(statePart) {
     }
     const [statePathName, stateName = 'default'] = stateAndPath.split('@').map(trimFn);
     const pathInfo = getPathInfo(statePathName);
-    const absolutePathInfo = getAbsolutePathInfo(stateName, pathInfo);
     return {
         stateName,
         statePathName,
         statePathInfo: pathInfo,
-        stateAbsolutePathInfo: absolutePathInfo,
         outFilters: filters,
     };
 }
@@ -2365,14 +2398,12 @@ function parseBindTextsForElement(bindText) {
         const statePart = bindText.slice(separatorIndex + 1).trim();
         if (propPart === 'else') {
             const pathInfo = getPathInfo('#else');
-            const absolutePathInfo = getAbsolutePathInfo('', pathInfo);
             return {
                 propName: 'else',
                 propSegments: ['else'],
                 propModifiers: [],
                 statePathName: '#else',
                 statePathInfo: pathInfo,
-                stateAbsolutePathInfo: absolutePathInfo,
                 stateName: '',
                 inFilters: [],
                 outFilters: [],
@@ -2953,7 +2984,7 @@ function initializeBindings(root, parentLoopContext) {
     _initializeBindings(allBindings);
     // create absolute state address and register binding infos
     for (const binding of allBindings) {
-        const absoluteStateAddress = getAbsoluteStateAddressByBindingInfo(binding);
+        const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
         addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
         const rootNode = binding.replaceNode.getRootNode();
         const stateElement = getStateElementByName(rootNode, binding.stateName);
@@ -3052,7 +3083,7 @@ class Content {
                 }
             }
             clearStateAddressByBindingInfo(binding);
-            clearAbsoluteStateAddressByBindingInfo(binding);
+            clearAbsoluteStateAddressByBinding(binding);
         }
         this._mounted = false;
     }
@@ -3079,19 +3110,6 @@ function createContent(bindingInfo) {
     setNodesByContent(content, initialInfo.nodes);
     setContentByNode(bindingInfo.node, content);
     return content;
-}
-
-const rootNodeByFragment = new WeakMap();
-function setRootNodeByFragment(fragment, rootNode) {
-    if (rootNode === null) {
-        rootNodeByFragment.delete(fragment);
-    }
-    else {
-        rootNodeByFragment.set(fragment, rootNode);
-    }
-}
-function getRootNodeByFragment(fragment) {
-    return rootNodeByFragment.get(fragment) || null;
 }
 
 const lastNodeByNode = new WeakMap();
@@ -3159,7 +3177,7 @@ function setContent(node, listIndex, content) {
 function applyChangeToFor(bindingInfo, context, newValue) {
     const listPathInfo = bindingInfo.statePathInfo;
     const listIndex = getListIndexByBindingInfo(bindingInfo);
-    const absAddress = getAbsoluteStateAddressByBindingInfo(bindingInfo);
+    const absAddress = getAbsoluteStateAddressByBinding(bindingInfo);
     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
     const diff = createListDiff(listIndex, lastValue, newValue);
     context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
@@ -3182,8 +3200,8 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = getContent(bindingInfo.node, deleteIndex);
         if (content !== null) {
-            content.unmount();
             deactivateContent(content);
+            content.unmount();
             setPooledContent(bindingInfo, content);
             setContent(bindingInfo.node, deleteIndex, null);
         }
@@ -3399,7 +3417,7 @@ function applyChange(binding, context) {
         return;
     }
     context.appliedBindingSet.add(binding);
-    const absAddress = getAbsoluteStateAddressByBindingInfo(binding);
+    const absAddress = getAbsoluteStateAddressByBinding(binding);
     if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
         const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement);
         addressSet.add(absAddress);
@@ -3588,7 +3606,7 @@ function getIndexes(listDiff, searchType) {
 function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
     const parentPath = context.wildcardParentPaths[currentWildcardIndex];
     const parentPathInfo = getPathInfo(parentPath);
-    const parentAbsPathInfo = getAbsolutePathInfo(context.stateName, parentPathInfo);
+    const parentAbsPathInfo = getAbsolutePathInfo(context.stateElement, parentPathInfo);
     const parentAddress = createStateAddress(parentPathInfo, parentListIndex);
     const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
     const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
@@ -3632,7 +3650,7 @@ function _walkDependency(context, startAddress, callback) {
                 if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
                     //expand indexes
                     const newValue = context.stateProxy[getByAddressSymbol](address);
-                    const absPathInfo = getAbsolutePathInfo(context.stateName, address.pathInfo);
+                    const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
                     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
                     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
                     const listDiff = createListDiff(address.listIndex, lastValue, newValue);
@@ -3692,7 +3710,7 @@ function _walkDependency(context, startAddress, callback) {
                             listIndex = null;
                         }
                         const expandContext = {
-                            stateName: context.stateName,
+                            stateElement: context.stateElement,
                             targetListIndexes: [],
                             wildcardPaths: depPathInfo.wildcardPaths,
                             wildcardParentPaths: depPathInfo.wildcardParentPaths,
@@ -3730,9 +3748,9 @@ function _walkDependency(context, startAddress, callback) {
         }
     }
 }
-function walkDependency(stateName, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
+function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
     const context = {
-        stateName: stateName,
+        stateElement: stateElement,
         staticMap: staticDependency,
         dynamicMap: dynamicDependency,
         result: new Set(),
@@ -3796,11 +3814,11 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
         const updater = getUpdater();
         updater.enqueueAbsoluteAddress(absAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(handler.stateName, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+        walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
             if (depAddress === address)
                 return;
-            const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
+            const absDepPathInfo = getAbsolutePathInfo(handler.stateElement, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
             dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
@@ -3849,7 +3867,7 @@ function setByAddress(target, address, value, receiver, handler) {
     const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
-    const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+    const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
     try {
         if (isSwappable) {
@@ -4064,14 +4082,14 @@ function postUpdate(target, _prop, receiver, handler) {
         const resolvedAddress = getResolvedAddress(path);
         const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
         const address = createStateAddress(resolvedAddress.pathInfo, listIndex);
-        const absPathInfo = getAbsolutePathInfo(stateElement.name, address.pathInfo);
+        const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
         const updater = getUpdater();
         updater.enqueueAbsoluteAddress(absAddress);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(handler.stateName, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+        walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
-            const absDepPathInfo = getAbsolutePathInfo(handler.stateName, depAddress.pathInfo);
+            const absDepPathInfo = getAbsolutePathInfo(stateElement, depAddress.pathInfo);
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
             dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録

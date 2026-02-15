@@ -4,7 +4,6 @@ import { applyChangeToFor } from '../src/apply/applyChangeToFor';
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { getValue } from '../src/apply/getValue';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { config } from '../src/config';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { getStateElementByName } from '../src/stateElementByName';
@@ -26,13 +25,15 @@ vi.mock('../src/apply/rootNodeByFragment', () => ({
 vi.mock('../src/stateElementByName', () => ({
   getStateElementByName: vi.fn()
 }));
+vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => ({
+  getAbsoluteStateAddressByBinding: vi.fn(() => ({ absolutePathInfo: {}, listIndex: null }))
+}));
 
 function createBaseBindingInfo(): Omit<IBindingInfo, 'bindingType' | 'node' | 'replaceNode' | 'propSegments' | 'propName'> {
   const pathInfo = getPathInfo('value');
   return {
     statePathName: 'value',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],

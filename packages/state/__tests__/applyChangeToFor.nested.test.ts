@@ -58,7 +58,6 @@ function createOuterBindingInfo(node: Node): IBindingInfo {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -83,7 +82,6 @@ function createInnerFragmentInfo() {
     propModifiers: [],
     statePathName: 'items.*.children',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -110,7 +108,6 @@ function createOuterFragmentInfoUnwrapped() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -140,7 +137,6 @@ function createOuterFragmentInfoWrapped() {
     propModifiers: [],
     statePathName: 'items',
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo('default', pathInfo),
     stateName: 'default',
     outFilters: [],
     inFilters: [],
@@ -202,10 +198,11 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     setStateElementByName(document, 'default', null);
     // Clear cached lastListValue to prevent cross-test contamination
     const itemsPathInfo = getPathInfo('items');
-    const itemsAbsPathInfo = getAbsolutePathInfo('default', itemsPathInfo);
+    const stateElement = { name: 'default' } as IStateElement;
+    const itemsAbsPathInfo = getAbsolutePathInfo(stateElement, itemsPathInfo);
     clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(itemsAbsPathInfo, null));
     const childrenPathInfo = getPathInfo('items.*.children');
-    const childrenAbsPathInfo = getAbsolutePathInfo('default', childrenPathInfo);
+    const childrenAbsPathInfo = getAbsolutePathInfo(stateElement, childrenPathInfo);
     clearLastListValueByAbsoluteStateAddress(createAbsoluteStateAddress(childrenAbsPathInfo, null));
   });
 

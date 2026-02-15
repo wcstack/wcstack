@@ -19,7 +19,6 @@ import { applyChange } from '../src/apply/applyChange';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { setLastListValueByAbsoluteStateAddress } from '../src/list/lastListValueByAbsoluteStateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { config } from '../src/config';
 import { updatedCallbackSymbol } from '../src/proxy/symbols';
 import type { IBindingInfo } from '../src/types';
@@ -37,7 +36,6 @@ function createBindingInfo(stateName: string, statePathName: string, node: Node)
     propModifiers: [],
     statePathName,
     statePathInfo: pathInfo,
-    stateAbsolutePathInfo: getAbsolutePathInfo(stateName, pathInfo),
     stateName,
     outFilters: [],
     inFilters: [],
