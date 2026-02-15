@@ -32,8 +32,8 @@ export function applyChangeToIf(
       if (config.debug) {
         console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
       }
-      content.unmount();
       deactivateContent(content);
+      content.unmount();
     }
     if (newValue) {
       if (config.debug) {

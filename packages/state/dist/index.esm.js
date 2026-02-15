@@ -2433,6 +2433,9 @@ function activateContent(content, loopContext, context) {
     }
 }
 function deactivateContent(content) {
+    if (!content.mounted) {
+        return;
+    }
     const bindings = getBindingsByContent(content);
     for (const binding of bindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
@@ -2729,8 +2732,8 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
     try {
         if (!newValue) {
             if (config.debug) ;
-            content.unmount();
             deactivateContent(content);
+            content.unmount();
         }
         if (newValue) {
             if (config.debug) ;

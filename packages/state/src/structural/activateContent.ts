@@ -25,6 +25,9 @@ export function activateContent(
 export function deactivateContent(
   content: IContent
 ): void {
+  if (!content.mounted) {
+    return;
+  }
   const bindings = getBindingsByContent(content);
   for(const binding of bindings) {
     const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
