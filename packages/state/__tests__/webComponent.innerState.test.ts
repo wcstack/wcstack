@@ -198,6 +198,32 @@ describe('innerState', () => {
       expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(outerAbsPathInfo, null);
     });
 
+    it('loopContextありでwildcardCountが0の場合はlistIndexがnullのままであること', () => {
+      const { proxy } = createTestProxy();
+
+      const stateProxy = {
+        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        'userName': 'Bob'
+      };
+      const outerAbsPathInfo = {
+        stateElement: {
+          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+        },
+        pathInfo: { path: 'userName', wildcardCount: 0 }
+      } as any;
+
+      getAbsolutePathInfoMock.mockReturnValue({} as any);
+      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
+      getLoopContextByNodeMock.mockReturnValue({
+        listIndex: { at: vi.fn() }
+      } as any);
+      createAbsoluteStateAddressMock.mockReturnValue({} as any);
+
+      proxy['userName'];
+
+      expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(outerAbsPathInfo, null);
+    });
+
     it('Symbolプロパティの場合はReflect.getを使用すること', () => {
       const { proxy } = createTestProxy();
 

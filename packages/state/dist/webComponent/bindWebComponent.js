@@ -1,23 +1,17 @@
 import { getBindingsByNode } from "../bindings/getBindingsByNode";
-import { initializeBindings } from "../bindings/initializeBindings";
 import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { createInnerState } from "./innerState";
 import { buildPrimaryMappingRule } from "./MappingRule";
 import { createOuterState } from "./outerState";
-import { isWebComponentRegistered, registerWebComponent } from "./registerWebComponent";
 import { setStateElementByWebComponent } from "./stateElementByWebComponent";
 const getOuter = (outerState) => () => outerState;
-export async function bindWebComponent(innerStateElement, component, stateProp) {
+export function bindWebComponent(innerStateElement, component, stateProp) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
     }
     setStateElementByWebComponent(component, stateProp, innerStateElement);
-    if (!isWebComponentRegistered(component)) {
-        await registerWebComponent(component);
-    }
     if (component.hasAttribute(config.bindAttributeName)) {
-        // initializeBindingsの前にinerState,outerStateの紐付けを行う
         const bindings = (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp);
         buildPrimaryMappingRule(component, stateProp, bindings);
         const outerState = createOuterState(component, stateProp);
@@ -29,6 +23,5 @@ export async function bindWebComponent(innerStateElement, component, stateProp) 
             configurable: true,
         });
     }
-    initializeBindings(component.shadowRoot, null);
 }
 //# sourceMappingURL=bindWebComponent.js.map

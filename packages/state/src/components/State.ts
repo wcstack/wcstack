@@ -177,11 +177,11 @@ export class State extends HTMLElement implements IStateElement {
     }
   }
 
-  private async _bindWebComponent(): Promise<void> {
+  private _bindWebComponent(): void {
     if (this._boundComponent === null || this._boundComponentStateProp === null) {
       return;
     }
-    await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
+    bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
   }
 
   private async _callStateConnectedCallback(): Promise<void> {
@@ -208,8 +208,8 @@ export class State extends HTMLElement implements IStateElement {
       await this._initializeBindWebComponent();
       await this._initialize();
       this._initialized = true;
+      this._bindWebComponent();
       this._resolveInitialize?.();
-      await this._bindWebComponent();
     }
     await this._callStateConnectedCallback();
   }

@@ -1,33 +1,26 @@
 import { getBindingsByNode } from "../bindings/getBindingsByNode";
-import { initializeBindings } from "../bindings/initializeBindings";
 import { IStateElement } from "../components/types";
 import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { createInnerState } from "./innerState";
 import { buildPrimaryMappingRule } from "./MappingRule";
 import { createOuterState } from "./outerState";
-import { isWebComponentRegistered, registerWebComponent } from "./registerWebComponent";
 import { setStateElementByWebComponent } from "./stateElementByWebComponent";
 import { IOuterState } from "./types";
 
 const getOuter = (outerState: IOuterState) => (): IOuterState => outerState;
 
-export async function bindWebComponent(
+export function bindWebComponent(
   innerStateElement: IStateElement,
   component: Element,
   stateProp: string
-): Promise<void> {
+): void {
   if (component.shadowRoot === null) {
     raiseError('Component has no shadow root.');
   }
   setStateElementByWebComponent(component, stateProp, innerStateElement);
 
-  if (!isWebComponentRegistered(component)) {
-    await registerWebComponent(component);
-  }
-
   if (component.hasAttribute(config.bindAttributeName)) {
-    // initializeBindingsの前にinerState,outerStateの紐付けを行う
     const bindings = (getBindingsByNode(component) ?? []).filter(
       binding => binding.propSegments[0] === stateProp
     );
@@ -42,7 +35,5 @@ export async function bindWebComponent(
     });
 
   }
-
-  initializeBindings(component.shadowRoot, null);
   
 }

@@ -168,6 +168,34 @@ describe('MappingRule', () => {
 
       expect(result).toBe(innerAbsPathInfo);
     });
+
+    it('マッピングは存在するが対応するキーが見つからない場合はnullを返すこと', () => {
+      const innerStateElement = { name: 'inner' } as any;
+      const binding: IBindingInfo = {
+        propName: 'state.user',
+        propSegments: ['state', 'user'],
+        statePathName: 'users.0'
+      } as any;
+
+      const innerPathInfo = { path: 'user', segments: ['user'], cumulativePathInfoSet: new Set() } as any;
+      const innerAbsPathInfo = { stateElement: innerStateElement, pathInfo: innerPathInfo } as any;
+      const outerAbsPathInfo = { pathInfo: { path: 'users.0' } } as any;
+      const differentOuterAbsPathInfo = { pathInfo: { path: 'products.0' } } as any;
+
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      getPathInfoMock.mockReturnValue(innerPathInfo);
+      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
+      getAbsoluteStateAddressByBindingMock.mockReturnValue({
+        absolutePathInfo: outerAbsPathInfo
+      } as any);
+
+      buildPrimaryMappingRule(component, 'state', [binding]);
+
+      // 異なるouterAbsPathInfoで検索
+      const result = getInnerAbsolutePathInfo(component, differentOuterAbsPathInfo);
+
+      expect(result).toBeNull();
+    });
   });
 
   describe('getOuterAbsolutePathInfo', () => {

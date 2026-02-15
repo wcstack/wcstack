@@ -81,28 +81,94 @@ function loadFromScriptJson(id) {
     return {};
 }
 
-const stateElementByNameByNode = new WeakMap();
-function getStateElementByName(rootNode, name) {
-    let stateElementByName = stateElementByNameByNode.get(rootNode);
-    if (!stateElementByName) {
-        return null;
+const bindingPromiseByNode = new WeakMap();
+function getInitializeBindingPromiseByNode(node) {
+    let bindingPromise = bindingPromiseByNode.get(node) || null;
+    if (bindingPromise !== null) {
+        return bindingPromise;
     }
-    return stateElementByName.get(name) || null;
+    let resolveFn = undefined;
+    const promise = new Promise((resolve) => {
+        resolveFn = resolve;
+    });
+    bindingPromise = {
+        promise,
+        resolve: resolveFn
+    };
+    bindingPromiseByNode.set(node, bindingPromise);
+    return bindingPromise;
 }
-function setStateElementByName(rootNode, name, element) {
-    let stateElementByName = stateElementByNameByNode.get(rootNode);
-    if (!stateElementByName) {
-        stateElementByName = new Map();
-        stateElementByNameByNode.set(rootNode, stateElementByName);
+async function waitInitializeBinding(node) {
+    const bindingPromise = getInitializeBindingPromiseByNode(node);
+    await bindingPromise.promise;
+}
+function resolveInitializedBinding(node) {
+    const bindingPromise = getInitializeBindingPromiseByNode(node);
+    bindingPromise.resolve();
+}
+
+function replaceToReplaceNode(bindingInfo) {
+    const node = bindingInfo.node;
+    const replaceNode = bindingInfo.replaceNode;
+    if (node === replaceNode) {
+        return;
     }
-    if (element === null) {
-        stateElementByName.delete(name);
+    if (node.parentNode === null) {
+        // already replaced
+        return;
+    }
+    node.parentNode.replaceChild(replaceNode, node);
+}
+
+function resolveNodePath(root, path) {
+    let currentNode = root;
+    if (path.length === 0)
+        return currentNode;
+    // path.reduce()だと途中でnullになる可能性があるので、
+    for (let i = 0; i < path.length; i++) {
+        currentNode = currentNode?.childNodes[path[i]] ?? null;
+        if (currentNode === null)
+            break;
+    }
+    return currentNode;
+}
+
+function getBindingInfos(node, parseBindingTextResults) {
+    const bindingInfos = [];
+    for (const parseBindingTextResult of parseBindingTextResults) {
+        if (parseBindingTextResult.bindingType !== 'text') {
+            bindingInfos.push({
+                ...parseBindingTextResult,
+                node: node,
+                replaceNode: node,
+            });
+        }
+        else {
+            const replaceNode = document.createTextNode('');
+            bindingInfos.push({
+                ...parseBindingTextResult,
+                node: node,
+                replaceNode: replaceNode,
+            });
+        }
+    }
+    return bindingInfos;
+}
+
+const bindingsByNode = new WeakMap();
+function getBindingsByNode(node) {
+    return bindingsByNode.get(node) || null;
+}
+function setBindingsByNode(node, bindings) {
+    bindingsByNode.set(node, bindings);
+}
+function addBindingByNode(node, binding) {
+    const bindings = getBindingsByNode(node);
+    if (bindings === null) {
+        setBindingsByNode(node, [binding]);
     }
     else {
-        if (stateElementByName.has(name)) {
-            raiseError(`State element with name "${name}" is already registered.`);
-        }
-        stateElementByName.set(name, element);
+        bindings.push(binding);
     }
 }
 
@@ -129,58 +195,6 @@ const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
-
-class LoopContextStack {
-    _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
-    _length = 0;
-    createLoopContext(elementStateAddress, callback) {
-        if (elementStateAddress.listIndex === null) {
-            raiseError(`Cannot create loop context for a state address that does not have a list index.`);
-        }
-        const loopContext = elementStateAddress;
-        if (this._length >= MAX_LOOP_DEPTH) {
-            raiseError(`Exceeded maximum loop context stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
-        }
-        const lastLoopContext = this._loopContextStack[this._length - 1];
-        if (typeof lastLoopContext !== "undefined") {
-            if (lastLoopContext.pathInfo.wildcardCount + 1 !== loopContext.pathInfo.wildcardCount) {
-                raiseError(`Cannot push loop context for a list whose wildcard count is not exactly one more than the current active loop context.`);
-            }
-            // 
-            const prevWildcardPathInfo = loopContext.pathInfo.wildcardPathInfos[loopContext.pathInfo.wildcardPathInfos.length - 2];
-            if (lastLoopContext.pathInfo !== prevWildcardPathInfo) {
-                raiseError(`Cannot push loop context for a list whose parent wildcard path info does not match the current active loop context.`);
-            }
-        }
-        else {
-            if (loopContext.pathInfo.wildcardCount !== 1) {
-                raiseError(`Cannot push loop context for a list with wildcard positions when there is no active loop context.`);
-            }
-        }
-        this._loopContextStack[this._length] = loopContext;
-        this._length++;
-        let retValue = void 0;
-        try {
-            retValue = callback(loopContext);
-        }
-        finally {
-            if (retValue instanceof Promise) {
-                retValue.finally(() => {
-                    this._length--;
-                    this._loopContextStack[this._length] = undefined;
-                });
-            }
-            else {
-                this._length--;
-                this._loopContextStack[this._length] = undefined;
-            }
-        }
-        return retValue;
-    }
-}
-function createLoopContextStack() {
-    return new LoopContextStack();
-}
 
 const _cache$4 = new Map();
 let id = 0;
@@ -282,1168 +296,6 @@ class PathInfo {
         this.parentPath = parentPath;
         this.parentPathInfo = parentPath ? getPattern(parentPath) : null;
         this.wildcardCount = wildcardCount;
-    }
-}
-
-/**
- * Cache for resolved path information.
- * Uses Map to safely handle property names including reserved words like "constructor" and "toString".
- */
-const _cache$3 = new Map();
-/**
- * Class that parses and stores resolved path information.
- *
- * Analyzes property path strings to extract:
- * - Path segments and their hierarchy
- * - Wildcard locations and types
- * - Numeric indexes vs unresolved wildcards
- * - Wildcard type classification (none/context/all/partial)
- */
-class ResolvedAddress {
-    path;
-    segments;
-    paths;
-    wildcardCount;
-    wildcardType;
-    wildcardIndexes;
-    pathInfo;
-    /**
-     * Constructs resolved path information from a property path string.
-     *
-     * Parses the path to identify wildcards (*) and numeric indexes,
-     * classifies the wildcard type, and generates structured path information.
-     *
-     * @param name - Property path string (e.g., "items.*.name" or "data.0.value")
-     */
-    constructor(path) {
-        // Split path into individual segments
-        const segments = path.split(".");
-        const tmpPatternSegments = segments.slice();
-        const paths = [];
-        let incompleteCount = 0; // Count of unresolved wildcards (*)
-        let completeCount = 0; // Count of resolved wildcards (numeric indexes)
-        let lastPath = "";
-        let wildcardCount = 0;
-        let wildcardType = "none";
-        const wildcardIndexes = [];
-        // Process each segment to identify wildcards and indexes
-        for (let i = 0; i < segments.length; i++) {
-            const segment = segments[i];
-            if (segment === "*") {
-                // Unresolved wildcard
-                tmpPatternSegments[i] = "*";
-                wildcardIndexes.push(null);
-                incompleteCount++;
-                wildcardCount++;
-            }
-            else {
-                const number = Number(segment);
-                if (!Number.isNaN(number)) {
-                    // Numeric index - treat as resolved wildcard
-                    tmpPatternSegments[i] = "*";
-                    wildcardIndexes.push(number);
-                    completeCount++;
-                    wildcardCount++;
-                }
-            }
-            // Build cumulative path array
-            lastPath += segment;
-            paths.push(lastPath);
-            lastPath += (i < segment.length - 1 ? "." : "");
-        }
-        // Generate pattern string with wildcards normalized
-        const structuredPath = tmpPatternSegments.join(".");
-        const pathInfo = getPathInfo(structuredPath);
-        // Classify wildcard type based on resolved vs unresolved counts
-        if (incompleteCount > 0 || completeCount > 0) {
-            if (incompleteCount === wildcardCount) {
-                // All wildcards are unresolved - need context to resolve
-                wildcardType = "context";
-            }
-            else if (completeCount === wildcardCount) {
-                // All wildcards are resolved with numeric indexes
-                wildcardType = "all";
-            }
-            else {
-                // Mix of resolved and unresolved wildcards
-                wildcardType = "partial";
-            }
-        }
-        this.path = path;
-        this.segments = segments;
-        this.paths = paths;
-        this.wildcardCount = wildcardCount;
-        this.wildcardType = wildcardType;
-        this.wildcardIndexes = wildcardIndexes;
-        this.pathInfo = pathInfo;
-    }
-}
-/**
- * Retrieves or creates resolved path information for a property path.
- *
- * This function caches resolved path information for performance.
- * On first access, it parses the path and creates a ResolvedPathInfo instance.
- * Subsequent accesses return the cached result.
- *
- * @param name - Property path string (e.g., "items.*.name", "data.0.value")
- * @returns Resolved path information containing segments, wildcards, and type classification
- */
-function getResolvedAddress(name) {
-    let nameInfo;
-    // Return cached value or create, cache, and return new instance
-    return _cache$3.get(name) ?? (_cache$3.set(name, nameInfo = new ResolvedAddress(name)), nameInfo);
-}
-
-const _cache$2 = new WeakMap();
-const _cacheNullListIndex$1 = new WeakMap();
-class StateAddress {
-    pathInfo;
-    listIndex;
-    _parentAddress;
-    constructor(pathInfo, listIndex) {
-        this.pathInfo = pathInfo;
-        this.listIndex = listIndex;
-    }
-    get parentAddress() {
-        if (typeof this._parentAddress !== 'undefined') {
-            return this._parentAddress;
-        }
-        const parentPathInfo = this.pathInfo.parentPathInfo;
-        if (parentPathInfo === null) {
-            return null;
-        }
-        const lastSegment = this.pathInfo.segments[this.pathInfo.segments.length - 1];
-        let parentListIndex = null;
-        if (lastSegment === WILDCARD) {
-            parentListIndex = this.listIndex?.parentListIndex ?? null;
-        }
-        else {
-            parentListIndex = this.listIndex;
-        }
-        return this._parentAddress = createStateAddress(parentPathInfo, parentListIndex);
-    }
-}
-function createStateAddress(pathInfo, listIndex) {
-    if (listIndex === null) {
-        let cached = _cacheNullListIndex$1.get(pathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new StateAddress(pathInfo, null);
-        _cacheNullListIndex$1.set(pathInfo, cached);
-        return cached;
-    }
-    else {
-        let cacheByPathInfo = _cache$2.get(listIndex);
-        if (typeof cacheByPathInfo === "undefined") {
-            cacheByPathInfo = new WeakMap();
-            _cache$2.set(listIndex, cacheByPathInfo);
-        }
-        let cached = cacheByPathInfo.get(pathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new StateAddress(pathInfo, listIndex);
-        cacheByPathInfo.set(pathInfo, cached);
-        return cached;
-    }
-}
-
-/**
- * connectedCallback.ts
- *
- * StateClassのライフサイクルフック「$connectedCallback」を呼び出すユーティリティ関数です。
- *
- * 主な役割:
- * - オブジェクト（target）に$connectedCallbackメソッドが定義されていれば呼び出す
- * - コールバックはtargetのthisコンテキストで呼び出し、IReadonlyStateProxy（receiver）を引数として渡す
- * - 非同期関数として実行可能（await対応）
- *
- * 設計ポイント:
- * - Reflect.getで$connectedCallbackプロパティを安全に取得
- * - 存在しない場合は何もしない
- * - ライフサイクル管理やカスタム初期化処理に利用
- */
-async function connectedCallback(target, _prop, receiver, _handler) {
-    const callback = Reflect.get(target, STATE_CONNECTED_CALLBACK_NAME);
-    if (typeof callback === "function") {
-        await callback.call(receiver);
-    }
-}
-
-/**
- * disconnectedCallback.ts
- *
- * StateClassのライフサイクルフック「$disconnectedCallback」を呼び出すユーティリティ関数です。
- *
- * 主な役割:
- * - オブジェクト（target）に$disconnectedCallbackメソッドが定義されていれば呼び出す
- * - コールバックはtargetのthisコンテキストで呼び出し、IReadonlyStateProxy（receiver）を引数として渡す
- *
- * 設計ポイント:
- * - Reflect.getで$disconnectedCallbackプロパティを安全に取得
- * - 存在しない場合は何もしない
- * - ライフサイクル管理やクリーンアップ処理に利用
- */
-function disconnectedCallback(target, _prop, receiver, _handler) {
-    const callback = Reflect.get(target, STATE_DISCONNECTED_CALLBACK_NAME);
-    if (typeof callback === "function") {
-        callback.call(receiver);
-    }
-}
-
-if (!Set.prototype.difference) {
-    Set.prototype.difference = function (other) {
-        const result = new Set(this);
-        for (const elem of other) {
-            result.delete(elem);
-        }
-        return result;
-    };
-}
-if (!Set.prototype.intersection) {
-    Set.prototype.intersection = function (other) {
-        const result = new Set();
-        for (const elem of other) {
-            if (this.has(elem)) {
-                result.add(elem);
-            }
-        }
-        return result;
-    };
-}
-
-let count = 0;
-function getUUID() {
-    return `u${(count++).toString(36)}`;
-}
-
-let version = 0;
-class ListIndex {
-    uuid = getUUID();
-    parentListIndex;
-    position;
-    length;
-    _index;
-    _version;
-    _indexes;
-    _listIndexes;
-    /**
-     * Creates a new ListIndex instance.
-     *
-     * @param parentListIndex - Parent list index for nested loops, or null for top-level
-     * @param index - Current index value in the loop
-     */
-    constructor(parentListIndex, index) {
-        this.parentListIndex = parentListIndex;
-        this.position = parentListIndex ? parentListIndex.position + 1 : 0;
-        this.length = this.position + 1;
-        this._index = index;
-        this._version = version;
-    }
-    /**
-     * Gets current index value.
-     *
-     * @returns Current index number
-     */
-    get index() {
-        return this._index;
-    }
-    /**
-     * Sets index value and updates version.
-     *
-     * @param value - New index value
-     */
-    set index(value) {
-        this._index = value;
-        this._version = ++version;
-        this.indexes[this.position] = value;
-    }
-    /**
-     * Gets current version number for change detection.
-     *
-     * @returns Version number
-     */
-    get version() {
-        return this._version;
-    }
-    /**
-     * Checks if parent indexes have changed since last access.
-     *
-     * @returns true if parent has newer version, false otherwise
-     */
-    get dirty() {
-        if (this.parentListIndex === null) {
-            return false;
-        }
-        else {
-            return this.parentListIndex.dirty || this.parentListIndex.version > this._version;
-        }
-    }
-    /**
-     * Gets array of all index values from root to current level.
-     * Rebuilds array if parent indexes have changed (dirty).
-     *
-     * @returns Array of index values
-     */
-    get indexes() {
-        if (this.parentListIndex === null) {
-            if (typeof this._indexes === "undefined") {
-                this._indexes = [this._index];
-            }
-        }
-        else {
-            if (typeof this._indexes === "undefined" || this.dirty) {
-                this._indexes = [...this.parentListIndex.indexes, this._index];
-                this._version = version;
-            }
-        }
-        return this._indexes;
-    }
-    /**
-     * Gets array of WeakRef to all ListIndex instances from root to current level.
-     *
-     * @returns Array of WeakRef<IListIndex>
-     */
-    get listIndexes() {
-        if (this.parentListIndex === null) {
-            if (typeof this._listIndexes === "undefined") {
-                this._listIndexes = [new WeakRef(this)];
-            }
-        }
-        else {
-            if (typeof this._listIndexes === "undefined") {
-                this._listIndexes = [...this.parentListIndex.listIndexes, new WeakRef(this)];
-            }
-        }
-        return this._listIndexes;
-    }
-    /**
-     * Gets variable name for this loop index ($1, $2, etc.).
-     *
-     * @returns Variable name string
-     */
-    get varName() {
-        return `$${this.position + 1}`;
-    }
-    /**
-     * Gets ListIndex at specified position in hierarchy.
-     * Supports negative indexing from end.
-     *
-     * @param pos - Position index (0-based, negative for from end)
-     * @returns ListIndex at position or null if not found/garbage collected
-     */
-    at(pos) {
-        if (pos >= 0) {
-            return this.listIndexes[pos]?.deref() || null;
-        }
-        else {
-            return this.listIndexes[this.listIndexes.length + pos]?.deref() || null;
-        }
-    }
-}
-/**
- * Factory function to create ListIndex instance.
- *
- * @param parentListIndex - Parent list index for nested loops, or null for top-level
- * @param index - Current index value in the loop
- * @returns New IListIndex instance
- */
-function createListIndex(parentListIndex, index) {
-    return new ListIndex(parentListIndex, index);
-}
-
-const listIndexesByList = new WeakMap();
-function getListIndexesByList(list) {
-    return listIndexesByList.get(list) || null;
-}
-function setListIndexesByList(list, listIndexes) {
-    if (listIndexes === null) {
-        listIndexesByList.delete(list);
-        return;
-    }
-    listIndexesByList.set(list, listIndexes);
-}
-
-const listDiffByOldListByNewList = new WeakMap();
-const EMPTY_LIST = Object.freeze([]);
-const EMPTY_SET$1 = new Set();
-function getListDiff(rawOldList, rawNewList) {
-    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
-    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
-    let diffByNewList = listDiffByOldListByNewList.get(oldList);
-    if (!diffByNewList) {
-        return null;
-    }
-    return diffByNewList.get(newList) || null;
-}
-function setListDiff(oldList, newList, diff) {
-    let diffByNewList = listDiffByOldListByNewList.get(oldList);
-    if (!diffByNewList) {
-        diffByNewList = new WeakMap();
-        listDiffByOldListByNewList.set(oldList, diffByNewList);
-    }
-    diffByNewList.set(newList, diff);
-}
-/**
- * Checks if two lists are identical by comparing length and each element.
- * @param oldList - Previous list to compare
- * @param newList - New list to compare
- * @returns True if lists are identical, false otherwise
- */
-function isSameList(oldList, newList) {
-    if (oldList.length !== newList.length) {
-        return false;
-    }
-    for (let i = 0; i < oldList.length; i++) {
-        if (oldList[i] !== newList[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-/**
- * Creates or updates list indexes by comparing old and new lists.
- * Optimizes by reusing existing list indexes when values match.
- * @param parentListIndex - Parent list index for nested lists, or null for top-level
- * @param oldList - Previous list (will be normalized to array)
- * @param newList - New list (will be normalized to array)
- * @param oldIndexes - Array of existing list indexes to potentially reuse
- * @returns Array of list indexes for the new list
- */
-function createListDiff(parentListIndex, rawOldList, rawNewList) {
-    // Normalize inputs to arrays (handles null/undefined)
-    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
-    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
-    const cachedDiff = getListDiff(oldList, newList);
-    if (cachedDiff) {
-        return cachedDiff;
-    }
-    const oldIndexes = getListIndexesByList(oldList) || [];
-    let retValue;
-    try {
-        // Early return for empty list
-        if (newList.length === 0) {
-            return retValue = {
-                oldIndexes: oldIndexes,
-                newIndexes: [],
-                changeIndexSet: EMPTY_SET$1,
-                deleteIndexSet: new Set(oldIndexes),
-                addIndexSet: EMPTY_SET$1,
-            };
-        }
-        // If old list was empty, create all new indexes
-        let newIndexes = getListIndexesByList(newList);
-        if (oldList.length === 0) {
-            if (newIndexes === null) {
-                newIndexes = [];
-                for (let i = 0; i < newList.length; i++) {
-                    const newListIndex = createListIndex(parentListIndex, i);
-                    newIndexes.push(newListIndex);
-                }
-            }
-            return retValue = {
-                oldIndexes: oldIndexes,
-                newIndexes: newIndexes,
-                changeIndexSet: EMPTY_SET$1,
-                deleteIndexSet: EMPTY_SET$1,
-                addIndexSet: new Set(newIndexes),
-            };
-        }
-        // If lists are identical, return existing indexes unchanged (optimization)
-        if (isSameList(oldList, newList)) {
-            return retValue = {
-                oldIndexes: oldIndexes,
-                newIndexes: oldIndexes,
-                changeIndexSet: EMPTY_SET$1,
-                deleteIndexSet: EMPTY_SET$1,
-                addIndexSet: EMPTY_SET$1,
-            };
-        }
-        // Use index-based map for efficiency
-        // Supports duplicate values by storing array of indexes
-        const indexByValue = new Map();
-        for (let i = 0; i < oldList.length; i++) {
-            const val = oldList[i];
-            let indexes = indexByValue.get(val);
-            if (!indexes) {
-                indexes = [];
-                indexByValue.set(val, indexes);
-            }
-            indexes.push(i);
-        }
-        if (newIndexes !== null) {
-            return calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue);
-        }
-        newIndexes = [];
-        // Build new indexes array by matching values with old list
-        const changeIndexSet = new Set();
-        const addIndexSet = new Set();
-        for (let i = 0; i < newList.length; i++) {
-            const newValue = newList[i];
-            const existingIndexes = indexByValue.get(newValue);
-            const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
-            if (typeof oldIndex === "undefined") {
-                // New element
-                const newListIndex = createListIndex(parentListIndex, i);
-                newIndexes.push(newListIndex);
-                addIndexSet.add(newListIndex);
-            }
-            else {
-                // Reuse existing element
-                const existingListIndex = oldIndexes[oldIndex];
-                // Update index if position changed
-                if (existingListIndex.index !== i) {
-                    existingListIndex.index = i;
-                    changeIndexSet.add(existingListIndex);
-                }
-                newIndexes.push(existingListIndex);
-            }
-        }
-        const deleteIndexSet = (new Set(oldIndexes)).difference(new Set(newIndexes));
-        return retValue = {
-            oldIndexes: oldIndexes,
-            newIndexes: newIndexes,
-            changeIndexSet: changeIndexSet,
-            deleteIndexSet: deleteIndexSet,
-            addIndexSet: addIndexSet,
-        };
-    }
-    finally {
-        if (typeof retValue !== "undefined") {
-            setListDiff(oldList, newList, retValue);
-            setListIndexesByList(newList, retValue.newIndexes);
-        }
-    }
-}
-function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue) {
-    const newIndexSet = new Set(newIndexes);
-    const oldIndexSet = new Set(oldIndexes);
-    const changeIndexSet = new Set();
-    const addIndexSet = newIndexSet.difference(oldIndexSet);
-    const deleteIndexSet = oldIndexSet.difference(newIndexSet);
-    for (let i = 0; i < newList.length; i++) {
-        const newValue = newList[i];
-        const existingIndexes = indexByValue.get(newValue);
-        const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
-        if (typeof oldIndex !== "undefined") {
-            const existingListIndex = oldIndexes[oldIndex];
-            if (existingListIndex.index !== i) {
-                // 位置が違うことだけを記録 
-                changeIndexSet.add(existingListIndex);
-            }
-        }
-    }
-    return {
-        oldIndexes: oldIndexes,
-        newIndexes: newIndexes,
-        changeIndexSet: changeIndexSet,
-        deleteIndexSet: deleteIndexSet,
-        addIndexSet: addIndexSet,
-    };
-}
-
-const _cache$1 = new WeakMap();
-function getAbsolutePathInfo(stateElement, pathInfo) {
-    if (_cache$1.has(stateElement)) {
-        const pathMap = _cache$1.get(stateElement);
-        if (pathMap.has(pathInfo)) {
-            return pathMap.get(pathInfo);
-        }
-    }
-    else {
-        _cache$1.set(stateElement, new WeakMap());
-    }
-    const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateElement, pathInfo));
-    _cache$1.get(stateElement).set(pathInfo, absolutePathInfo);
-    return absolutePathInfo;
-}
-class AbsolutePathInfo {
-    pathInfo;
-    stateName;
-    stateElement;
-    parentAbsolutePathInfo;
-    constructor(stateElement, pathInfo) {
-        this.pathInfo = pathInfo;
-        this.stateName = stateElement.name;
-        this.stateElement = stateElement;
-        if (pathInfo.parentPathInfo === null) {
-            this.parentAbsolutePathInfo = null;
-        }
-        else {
-            this.parentAbsolutePathInfo = getAbsolutePathInfo(stateElement, pathInfo.parentPathInfo);
-        }
-    }
-}
-
-const _cache = new WeakMap();
-const _cacheNullListIndex = new WeakMap();
-class AbsoluteStateAddress {
-    absolutePathInfo;
-    listIndex;
-    _parentAbsoluteAddress;
-    constructor(absolutePathInfo, listIndex) {
-        this.absolutePathInfo = absolutePathInfo;
-        this.listIndex = listIndex;
-    }
-    get parentAbsoluteAddress() {
-        if (typeof this._parentAbsoluteAddress !== 'undefined') {
-            return this._parentAbsoluteAddress;
-        }
-        const parentAbsolutePathInfo = this.absolutePathInfo.parentAbsolutePathInfo;
-        if (parentAbsolutePathInfo === null) {
-            return null;
-        }
-        const lastSegment = this.absolutePathInfo.pathInfo.segments[this.absolutePathInfo.pathInfo.segments.length - 1];
-        let parentListIndex = null;
-        if (lastSegment === WILDCARD) {
-            parentListIndex = this.listIndex?.parentListIndex ?? null;
-        }
-        else {
-            parentListIndex = this.listIndex;
-        }
-        return this._parentAbsoluteAddress = createAbsoluteStateAddress(parentAbsolutePathInfo, parentListIndex);
-    }
-}
-function createAbsoluteStateAddress(absolutePathInfo, listIndex) {
-    if (listIndex === null) {
-        let cached = _cacheNullListIndex.get(absolutePathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new AbsoluteStateAddress(absolutePathInfo, null);
-        _cacheNullListIndex.set(absolutePathInfo, cached);
-        return cached;
-    }
-    else {
-        let cacheByAbsolutePathInfo = _cache.get(listIndex);
-        if (typeof cacheByAbsolutePathInfo === "undefined") {
-            cacheByAbsolutePathInfo = new WeakMap();
-            _cache.set(listIndex, cacheByAbsolutePathInfo);
-        }
-        let cached = cacheByAbsolutePathInfo.get(absolutePathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new AbsoluteStateAddress(absolutePathInfo, listIndex);
-        cacheByAbsolutePathInfo.set(absolutePathInfo, cached);
-        return cached;
-    }
-}
-
-const cacheEntryByAbsoluteStateAddress = new WeakMap();
-function getCacheEntryByAbsoluteStateAddress(address) {
-    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
-}
-function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
-    if (cacheEntry === null) {
-        cacheEntryByAbsoluteStateAddress.delete(address);
-    }
-    else {
-        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
-    }
-}
-function dirtyCacheEntryByAbsoluteStateAddress(address) {
-    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
-    if (cacheEntry) {
-        cacheEntry.dirty = true;
-    }
-}
-
-function checkDependency(handler, address) {
-    // 動的依存関係の登録
-    if (handler.addressStackLength > 0) {
-        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
-        const stateElement = handler.stateElement;
-        if (lastInfo !== null) {
-            if (stateElement.getterPaths.has(lastInfo.path) &&
-                lastInfo.path !== address.pathInfo.path) {
-                // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
-                // そのgetterが参照している値のパスである
-                stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
-            }
-        }
-    }
-}
-
-/**
- * getByAddress.ts
- *
- * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
- * 状態オブジェクト（target）から値を取得するための関数（getByAddress）の実装です。
- *
- * 主な役割:
- * - 指定されたパス・インデックスに対応するState値を取得（多重ループやワイルドカードにも対応）
- * - 依存関係の自動登録（checkDependencyで登録）
- * - キャッシュ機構（リストもキャッシュ対象）
- * - getter経由で値取得時はpushAddressでスコープを一時設定
- * - 存在しない場合は親pathAddressやlistIndexを辿って再帰的に値を取得
- *
- * 設計ポイント:
- * - checkDependencyで依存追跡を実行
- * - キャッシュ有効時はstateAddressで値をキャッシュし、取得・再利用を最適化
- * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
- * - finallyでキャッシュへの格納を保証
- */
-function _getByAddress(target, address, receiver, handler, stateElement) {
-    if (address.pathInfo.path in target) {
-        // getterの中で参照の可能性があるので、addressをプッシュする
-        if (stateElement.getterPaths.has(address.pathInfo.path)) {
-            handler.pushAddress(address);
-            try {
-                return Reflect.get(target, address.pathInfo.path, receiver);
-            }
-            finally {
-                handler.popAddress();
-            }
-        }
-        else {
-            return Reflect.get(target, address.pathInfo.path);
-        }
-    }
-    else {
-        const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
-        const parentValue = getByAddress(target, parentAddress, receiver, handler);
-        const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
-        if (lastSegment === WILDCARD) {
-            const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
-            return Reflect.get(parentValue, index);
-        }
-        else {
-            return Reflect.get(parentValue, lastSegment);
-        }
-    }
-}
-function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
-    const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
-    const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
-    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
-    if (cacheEntry !== null && cacheEntry.dirty === false) {
-        return cacheEntry.value;
-    }
-    const value = _getByAddress(target, address, receiver, handler, stateElement);
-    setCacheEntryByAbsoluteStateAddress(absAddress, {
-        value: value,
-        dirty: false
-    });
-    return value;
-}
-function getByAddress(target, address, receiver, handler) {
-    checkDependency(handler, address);
-    const stateElement = handler.stateElement;
-    const cacheable = address.pathInfo.wildcardCount > 0 ||
-        stateElement.getterPaths.has(address.pathInfo.path);
-    if (cacheable) {
-        return _getByAddressWithCache(target, address, receiver, handler, stateElement);
-    }
-    else {
-        return _getByAddress(target, address, receiver, handler, stateElement);
-    }
-}
-
-/**
- * getContextListIndex.ts
- *
- * Stateの内部APIとして、現在のプロパティ参照スコープにおける
- * 指定したstructuredPath（ワイルドカード付きプロパティパス）に対応する
- * リストインデックス（IListIndex）を取得する関数です。
- *
- * 主な役割:
- * - handlerの最後にアクセスされたAddressから、指定パスに対応するリストインデックスを取得
- * - ワイルドカード階層に対応し、多重ループやネストした配列バインディングにも利用可能
- *
- * 設計ポイント:
- * - 直近のプロパティ参照情報を取得
- * - info.indexByWildcardPathからstructuredPathのインデックスを特定
- * - listIndex.at(index)で該当階層のリストインデックスを取得
- * - パスが一致しない場合や参照が存在しない場合はnullを返す
- */
-function getContextListIndex(handler, structuredPath) {
-    if (handler.addressStackLength === 0) {
-        return null;
-    }
-    const address = handler.lastAddressStack;
-    if (address === null) {
-        return null;
-    }
-    const index = address.pathInfo.indexByWildcardPath[structuredPath];
-    if (typeof index === "undefined") {
-        return null;
-    }
-    return address.listIndex?.at(index) ?? null;
-}
-
-const lastListValueByAbsoluteStateAddress = new WeakMap();
-function getLastListValueByAbsoluteStateAddress(address) {
-    return lastListValueByAbsoluteStateAddress.get(address) ?? [];
-}
-function setLastListValueByAbsoluteStateAddress(address, value) {
-    lastListValueByAbsoluteStateAddress.set(address, value);
-}
-
-const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
-const setLoopContextSymbol = Symbol("$$setLoopContext");
-const getByAddressSymbol = Symbol("$$getByAddress");
-const connectedCallbackSymbol = Symbol("$$connectedCallback");
-const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
-const updatedCallbackSymbol = Symbol("$$updatedCallback");
-
-const rootNodeByFragment = new WeakMap();
-function setRootNodeByFragment(fragment, rootNode) {
-    if (rootNode === null) {
-        rootNodeByFragment.delete(fragment);
-    }
-    else {
-        rootNodeByFragment.set(fragment, rootNode);
-    }
-}
-function getRootNodeByFragment(fragment) {
-    return rootNodeByFragment.get(fragment) || null;
-}
-
-const cacheCalcWildcardLen = new Map();
-function calcWildcardLen(pathInfo, targetPathInfo) {
-    let path1;
-    let path2;
-    if (pathInfo.wildcardCount === 0 || targetPathInfo.wildcardCount === 0) {
-        return 0;
-    }
-    if (pathInfo.wildcardCount === 1
-        && targetPathInfo.wildcardCount > 0
-        && targetPathInfo.wildcardPathSet.has(pathInfo.path)) {
-        return 1;
-    }
-    if (pathInfo.id < targetPathInfo.id) {
-        path1 = pathInfo;
-        path2 = targetPathInfo;
-    }
-    else {
-        path1 = targetPathInfo;
-        path2 = pathInfo;
-    }
-    const key = `${path1.path}\t${path2.path}`;
-    let len = cacheCalcWildcardLen.get(key);
-    if (typeof len !== "undefined") {
-        return len;
-    }
-    const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
-    len = matchPath.size;
-    cacheCalcWildcardLen.set(key, len);
-    return len;
-}
-
-const loopContextByNode = new WeakMap();
-function getLoopContextByNode(node) {
-    let paramNode = node;
-    while (paramNode) {
-        const loopContext = loopContextByNode.get(paramNode);
-        if (loopContext) {
-            return loopContext;
-        }
-        paramNode = paramNode.parentNode;
-    }
-    return null;
-}
-function setLoopContextByNode(node, loopContext) {
-    if (loopContext === null) {
-        loopContextByNode.delete(node);
-        return;
-    }
-    loopContextByNode.set(node, loopContext);
-}
-
-const listIndexByBindingInfoByLoopContext = new WeakMap();
-function getListIndexByBindingInfo(bindingInfo) {
-    const loopContext = getLoopContextByNode(bindingInfo.node);
-    if (loopContext === null) {
-        return null;
-    }
-    let listIndexByBindingInfo = listIndexByBindingInfoByLoopContext.get(loopContext);
-    if (typeof listIndexByBindingInfo === "undefined") {
-        listIndexByBindingInfo = new WeakMap();
-        listIndexByBindingInfoByLoopContext.set(loopContext, listIndexByBindingInfo);
-    }
-    else {
-        const listIndex = listIndexByBindingInfo.get(bindingInfo);
-        if (typeof listIndex !== "undefined") {
-            return listIndex;
-        }
-    }
-    let listIndex = null;
-    try {
-        const wildcardLen = calcWildcardLen(loopContext.pathInfo, bindingInfo.statePathInfo);
-        if (wildcardLen > 0) {
-            listIndex = loopContext.listIndex.at(wildcardLen - 1);
-        }
-        return listIndex;
-    }
-    finally {
-        listIndexByBindingInfo.set(bindingInfo, listIndex);
-    }
-}
-
-const absoluteStateAddressByBinding = new WeakMap();
-function getAbsoluteStateAddressByBinding(binding) {
-    // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
-    let absoluteStateAddress = null;
-    absoluteStateAddress = absoluteStateAddressByBinding.get(binding) || null;
-    if (absoluteStateAddress !== null) {
-        return absoluteStateAddress;
-    }
-    let rootNode = binding.replaceNode.getRootNode();
-    // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
-    if (binding.replaceNode.isConnected === false) {
-        // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
-        const rootNodeByFragment = getRootNodeByFragment(rootNode);
-        if (rootNodeByFragment === null) {
-            raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
-        }
-        else {
-            rootNode = rootNodeByFragment;
-        }
-    }
-    const listIndex = getListIndexByBindingInfo(binding);
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
-    }
-    const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
-    absoluteStateAddress =
-        createAbsoluteStateAddress(absolutePathInfo, listIndex);
-    absoluteStateAddressByBinding.set(binding, absoluteStateAddress);
-    return absoluteStateAddress;
-}
-function clearAbsoluteStateAddressByBinding(binding) {
-    absoluteStateAddressByBinding.delete(binding);
-}
-
-const cache = new WeakMap();
-function isCustomElement(node) {
-    let value = cache.get(node);
-    if (value !== undefined) {
-        return value;
-    }
-    try {
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-            return value = false;
-        }
-        const element = node;
-        if (element.tagName.includes("-")) {
-            return value = true;
-        }
-        if (element.hasAttribute("is")) {
-            if (element.getAttribute("is")?.includes("-")) {
-                return value = true;
-            }
-        }
-        return value = false;
-    }
-    finally {
-        cache.set(node, value ?? false);
-    }
-}
-
-function applyChangeToAttribute(binding, _context, newValue) {
-    const element = binding.node;
-    const attrName = binding.propSegments[1];
-    if (element.getAttribute(attrName) !== newValue) {
-        element.setAttribute(attrName, newValue);
-    }
-}
-
-function createEmptyArray() {
-    return Object.freeze([]);
-}
-
-function getFilteredValue(value, filters) {
-    let filteredValue = value;
-    for (const filter of filters) {
-        filteredValue = filter.filterFn(filteredValue);
-    }
-    return filteredValue;
-}
-
-const EMPTY_ARRAY = createEmptyArray();
-function applyChangeToCheckbox(binding, _context, newValue) {
-    const element = binding.node;
-    const elementValue = element.value;
-    const elementFilteredValue = getFilteredValue(elementValue, binding.inFilters);
-    const normalizedNewValue = Array.isArray(newValue) ? newValue : EMPTY_ARRAY;
-    element.checked = normalizedNewValue.includes(elementFilteredValue);
-}
-
-function applyChangeToClass(binding, _context, newValue) {
-    const element = binding.node;
-    const className = binding.propSegments[1];
-    if (typeof newValue !== 'boolean') {
-        raiseError(`Invalid value for class application: expected boolean, got ${typeof newValue}`);
-    }
-    element.classList.toggle(className, newValue);
-}
-
-const indexBindingsByContent = new WeakMap();
-function getIndexBindingsByContent(content) {
-    return indexBindingsByContent.get(content) ?? [];
-}
-function setIndexBindingsByContent(content, bindings) {
-    indexBindingsByContent.set(content, bindings);
-}
-
-const bindingSetByAbsoluteStateAddress = new WeakMap();
-function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
-    let bindingSet = null;
-    bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress) || null;
-    if (bindingSet === null) {
-        bindingSet = new Set();
-        bindingSetByAbsoluteStateAddress.set(absoluteStateAddress, bindingSet);
-    }
-    return bindingSet;
-}
-function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
-    bindingSet.add(binding);
-}
-function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
-    bindingSet.delete(binding);
-}
-
-const stateAddressByBindingInfo = new WeakMap();
-function getStateAddressByBindingInfo(bindingInfo) {
-    let stateAddress = null;
-    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
-    if (stateAddress !== null) {
-        return stateAddress;
-    }
-    if (bindingInfo.statePathInfo.wildcardCount > 0) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        if (listIndex === null) {
-            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
-        }
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
-    }
-    else {
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
-    }
-    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
-    return stateAddress;
-}
-// call for change loopContext
-function clearStateAddressByBindingInfo(bindingInfo) {
-    stateAddressByBindingInfo.delete(bindingInfo);
-}
-
-const bindingsByContent = new WeakMap();
-function getBindingsByContent(content) {
-    return bindingsByContent.get(content) ?? [];
-}
-function setBindingsByContent(content, bindings) {
-    bindingsByContent.set(content, bindings);
-}
-
-const nodesByContent = new WeakMap();
-function getNodesByContent(content) {
-    return nodesByContent.get(content) ?? [];
-}
-function setNodesByContent(content, nodes) {
-    nodesByContent.set(content, nodes);
-}
-
-function bindLoopContextToContent(content, loopContext) {
-    const nodes = getNodesByContent(content);
-    for (const node of nodes) {
-        setLoopContextByNode(node, loopContext);
-    }
-}
-function unbindLoopContextToContent(content) {
-    const nodes = getNodesByContent(content);
-    for (const node of nodes) {
-        setLoopContextByNode(node, null);
-    }
-}
-
-function activateContent(content, loopContext, context) {
-    bindLoopContextToContent(content, loopContext);
-    const bindings = getBindingsByContent(content);
-    for (const binding of bindings) {
-        const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
-        addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-        applyChange(binding, context);
-    }
-}
-function deactivateContent(content) {
-    const bindings = getBindingsByContent(content);
-    for (const binding of bindings) {
-        const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
-        removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-        clearAbsoluteStateAddressByBinding(binding);
-        clearStateAddressByBindingInfo(binding);
-    }
-    unbindLoopContextToContent(content);
-}
-
-function replaceToReplaceNode(bindingInfo) {
-    const node = bindingInfo.node;
-    const replaceNode = bindingInfo.replaceNode;
-    if (node === replaceNode) {
-        return;
-    }
-    if (node.parentNode === null) {
-        // already replaced
-        return;
-    }
-    node.parentNode.replaceChild(replaceNode, node);
-}
-
-function resolveNodePath(root, path) {
-    let currentNode = root;
-    if (path.length === 0)
-        return currentNode;
-    // path.reduce()だと途中でnullになる可能性があるので、
-    for (let i = 0; i < path.length; i++) {
-        currentNode = currentNode?.childNodes[path[i]] ?? null;
-        if (currentNode === null)
-            break;
-    }
-    return currentNode;
-}
-
-function getBindingInfos(node, parseBindingTextResults) {
-    const bindingInfos = [];
-    for (const parseBindingTextResult of parseBindingTextResults) {
-        if (parseBindingTextResult.bindingType !== 'text') {
-            bindingInfos.push({
-                ...parseBindingTextResult,
-                node: node,
-                replaceNode: node,
-            });
-        }
-        else {
-            const replaceNode = document.createTextNode('');
-            bindingInfos.push({
-                ...parseBindingTextResult,
-                node: node,
-                replaceNode: replaceNode,
-            });
-        }
-    }
-    return bindingInfos;
-}
-
-const bindingsByNode = new WeakMap();
-function getBindingsByNode(node) {
-    return bindingsByNode.get(node) || null;
-}
-function setBindingsByNode(node, bindings) {
-    bindingsByNode.set(node, bindings);
-}
-function addBindingByNode(node, binding) {
-    const bindings = getBindingsByNode(node);
-    if (bindings === null) {
-        setBindingsByNode(node, [binding]);
-    }
-    else {
-        bindings.push(binding);
     }
 }
 
@@ -2606,32 +1458,6 @@ function getSubscriberNodes(root) {
     return subscriberNodes;
 }
 
-const bindingPromiseByNode = new WeakMap();
-function getInitializeBindingPromiseByNode(node) {
-    let bindingPromise = bindingPromiseByNode.get(node) || null;
-    if (bindingPromise !== null) {
-        return bindingPromise;
-    }
-    let resolveFn = undefined;
-    const promise = new Promise((resolve) => {
-        resolveFn = resolve;
-    });
-    bindingPromise = {
-        promise,
-        resolve: resolveFn
-    };
-    bindingPromiseByNode.set(node, bindingPromise);
-    return bindingPromise;
-}
-async function waitInitializeBinding(node) {
-    const bindingPromise = getInitializeBindingPromiseByNode(node);
-    await bindingPromise.promise;
-}
-function resolveInitializedBinding(node) {
-    const bindingPromise = getInitializeBindingPromiseByNode(node);
-    bindingPromise.resolve();
-}
-
 const registeredNodeSet = new WeakSet();
 function collectNodesAndBindingInfos(root) {
     const subscriberNodes = getSubscriberNodes(root);
@@ -2667,6 +1493,33 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
     }
     return [nodes, allBindings];
 }
+
+const loopContextByNode = new WeakMap();
+function getLoopContextByNode(node) {
+    let paramNode = node;
+    while (paramNode) {
+        const loopContext = loopContextByNode.get(paramNode);
+        if (loopContext) {
+            return loopContext;
+        }
+        paramNode = paramNode.parentNode;
+    }
+    return null;
+}
+function setLoopContextByNode(node, loopContext) {
+    if (loopContext === null) {
+        loopContextByNode.delete(node);
+        return;
+    }
+    loopContextByNode.set(node, loopContext);
+}
+
+const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
+const setLoopContextSymbol = Symbol("$$setLoopContext");
+const getByAddressSymbol = Symbol("$$getByAddress");
+const connectedCallbackSymbol = Symbol("$$connectedCallback");
+const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
+const updatedCallbackSymbol = Symbol("$$updatedCallback");
 
 const handlerByHandlerKey$3 = new Map();
 const bindingSetByHandlerKey$3 = new Map();
@@ -2814,206 +1667,780 @@ function attachTwowayEventHandler(binding) {
     return false;
 }
 
-const handlerByHandlerKey$1 = new Map();
-const bindingSetByHandlerKey$1 = new Map();
-function getHandlerKey$1(binding, eventName) {
-    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+const lastListValueByAbsoluteStateAddress = new WeakMap();
+function getLastListValueByAbsoluteStateAddress(address) {
+    return lastListValueByAbsoluteStateAddress.get(address) ?? [];
 }
-function getEventName$1(binding) {
-    let eventName = 'input';
-    for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
-        }
-    }
-    return eventName;
-}
-const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
-    const node = event.target;
-    if (node === null) {
-        console.warn(`[@wcstack/state] event.target is null.`);
-        return;
-    }
-    if (node.type !== 'radio') {
-        console.warn(`[@wcstack/state] event.target is not a radio input element.`);
-        return;
-    }
-    if (node.checked === false) {
-        return;
-    }
-    const newValue = node.value;
-    let filteredNewValue = newValue;
-    for (const filter of inFilters) {
-        filteredNewValue = filter.filterFn(filteredNewValue);
-    }
-    const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
-    }
-    const loopContext = getLoopContextByNode(node);
-    stateElement.createState("writable", (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-            state[statePathName] = filteredNewValue;
-        });
-    });
-};
-function attachRadioEventHandler(binding) {
-    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName$1(binding);
-        const key = getHandlerKey$1(binding, eventName);
-        let radioEventHandler = handlerByHandlerKey$1.get(key);
-        if (typeof radioEventHandler === "undefined") {
-            radioEventHandler = radioEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
-            handlerByHandlerKey$1.set(key, radioEventHandler);
-        }
-        binding.node.addEventListener(eventName, radioEventHandler);
-        let bindingSet = bindingSetByHandlerKey$1.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey$1.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
-        return true;
-    }
-    return false;
+function setLastListValueByAbsoluteStateAddress(address, value) {
+    lastListValueByAbsoluteStateAddress.set(address, value);
 }
 
-const handlerByHandlerKey = new Map();
-const bindingSetByHandlerKey = new Map();
-function getHandlerKey(binding, eventName) {
-    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
-}
-function getEventName(binding) {
-    let eventName = 'input';
-    for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
+const _cache$3 = new WeakMap();
+function getAbsolutePathInfo(stateElement, pathInfo) {
+    if (_cache$3.has(stateElement)) {
+        const pathMap = _cache$3.get(stateElement);
+        if (pathMap.has(pathInfo)) {
+            return pathMap.get(pathInfo);
         }
     }
-    return eventName;
+    else {
+        _cache$3.set(stateElement, new WeakMap());
+    }
+    const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateElement, pathInfo));
+    _cache$3.get(stateElement).set(pathInfo, absolutePathInfo);
+    return absolutePathInfo;
 }
-const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
-    const node = event.target;
-    if (node === null) {
-        console.warn(`[@wcstack/state] event.target is null.`);
-        return;
+class AbsolutePathInfo {
+    pathInfo;
+    stateName;
+    stateElement;
+    parentAbsolutePathInfo;
+    constructor(stateElement, pathInfo) {
+        this.pathInfo = pathInfo;
+        this.stateName = stateElement.name;
+        this.stateElement = stateElement;
+        if (pathInfo.parentPathInfo === null) {
+            this.parentAbsolutePathInfo = null;
+        }
+        else {
+            this.parentAbsolutePathInfo = getAbsolutePathInfo(stateElement, pathInfo.parentPathInfo);
+        }
     }
-    if (node.type !== 'checkbox') {
-        console.warn(`[@wcstack/state] event.target is not a checkbox input element.`);
-        return;
+}
+
+const _cache$2 = new WeakMap();
+const _cacheNullListIndex$1 = new WeakMap();
+class AbsoluteStateAddress {
+    absolutePathInfo;
+    listIndex;
+    _parentAbsoluteAddress;
+    constructor(absolutePathInfo, listIndex) {
+        this.absolutePathInfo = absolutePathInfo;
+        this.listIndex = listIndex;
     }
-    const checked = node.checked;
-    const newValue = node.value;
-    let filteredNewValue = newValue;
-    for (const filter of inFilters) {
-        filteredNewValue = filter.filterFn(filteredNewValue);
+    get parentAbsoluteAddress() {
+        if (typeof this._parentAbsoluteAddress !== 'undefined') {
+            return this._parentAbsoluteAddress;
+        }
+        const parentAbsolutePathInfo = this.absolutePathInfo.parentAbsolutePathInfo;
+        if (parentAbsolutePathInfo === null) {
+            return null;
+        }
+        const lastSegment = this.absolutePathInfo.pathInfo.segments[this.absolutePathInfo.pathInfo.segments.length - 1];
+        let parentListIndex = null;
+        if (lastSegment === WILDCARD) {
+            parentListIndex = this.listIndex?.parentListIndex ?? null;
+        }
+        else {
+            parentListIndex = this.listIndex;
+        }
+        return this._parentAbsoluteAddress = createAbsoluteStateAddress(parentAbsolutePathInfo, parentListIndex);
     }
-    const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
+}
+function createAbsoluteStateAddress(absolutePathInfo, listIndex) {
+    if (listIndex === null) {
+        let cached = _cacheNullListIndex$1.get(absolutePathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new AbsoluteStateAddress(absolutePathInfo, null);
+        _cacheNullListIndex$1.set(absolutePathInfo, cached);
+        return cached;
+    }
+    else {
+        let cacheByAbsolutePathInfo = _cache$2.get(listIndex);
+        if (typeof cacheByAbsolutePathInfo === "undefined") {
+            cacheByAbsolutePathInfo = new WeakMap();
+            _cache$2.set(listIndex, cacheByAbsolutePathInfo);
+        }
+        let cached = cacheByAbsolutePathInfo.get(absolutePathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new AbsoluteStateAddress(absolutePathInfo, listIndex);
+        cacheByAbsolutePathInfo.set(absolutePathInfo, cached);
+        return cached;
+    }
+}
+
+const rootNodeByFragment = new WeakMap();
+function setRootNodeByFragment(fragment, rootNode) {
+    if (rootNode === null) {
+        rootNodeByFragment.delete(fragment);
+    }
+    else {
+        rootNodeByFragment.set(fragment, rootNode);
+    }
+}
+function getRootNodeByFragment(fragment) {
+    return rootNodeByFragment.get(fragment) || null;
+}
+
+const cacheCalcWildcardLen = new Map();
+function calcWildcardLen(pathInfo, targetPathInfo) {
+    let path1;
+    let path2;
+    if (pathInfo.wildcardCount === 0 || targetPathInfo.wildcardCount === 0) {
+        return 0;
+    }
+    if (pathInfo.wildcardCount === 1
+        && targetPathInfo.wildcardCount > 0
+        && targetPathInfo.wildcardPathSet.has(pathInfo.path)) {
+        return 1;
+    }
+    if (pathInfo.id < targetPathInfo.id) {
+        path1 = pathInfo;
+        path2 = targetPathInfo;
+    }
+    else {
+        path1 = targetPathInfo;
+        path2 = pathInfo;
+    }
+    const key = `${path1.path}\t${path2.path}`;
+    let len = cacheCalcWildcardLen.get(key);
+    if (typeof len !== "undefined") {
+        return len;
+    }
+    const matchPath = path1.wildcardPathSet.intersection(path2.wildcardPathSet);
+    len = matchPath.size;
+    cacheCalcWildcardLen.set(key, len);
+    return len;
+}
+
+const listIndexByBindingInfoByLoopContext = new WeakMap();
+function getListIndexByBindingInfo(bindingInfo) {
+    const loopContext = getLoopContextByNode(bindingInfo.node);
+    if (loopContext === null) {
+        return null;
+    }
+    let listIndexByBindingInfo = listIndexByBindingInfoByLoopContext.get(loopContext);
+    if (typeof listIndexByBindingInfo === "undefined") {
+        listIndexByBindingInfo = new WeakMap();
+        listIndexByBindingInfoByLoopContext.set(loopContext, listIndexByBindingInfo);
+    }
+    else {
+        const listIndex = listIndexByBindingInfo.get(bindingInfo);
+        if (typeof listIndex !== "undefined") {
+            return listIndex;
+        }
+    }
+    let listIndex = null;
+    try {
+        const wildcardLen = calcWildcardLen(loopContext.pathInfo, bindingInfo.statePathInfo);
+        if (wildcardLen > 0) {
+            listIndex = loopContext.listIndex.at(wildcardLen - 1);
+        }
+        return listIndex;
+    }
+    finally {
+        listIndexByBindingInfo.set(bindingInfo, listIndex);
+    }
+}
+
+const absoluteStateAddressByBinding = new WeakMap();
+function getAbsoluteStateAddressByBinding(binding) {
+    // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
+    let absoluteStateAddress = null;
+    absoluteStateAddress = absoluteStateAddressByBinding.get(binding) || null;
+    if (absoluteStateAddress !== null) {
+        return absoluteStateAddress;
+    }
+    let rootNode = binding.replaceNode.getRootNode();
+    // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
+    if (binding.replaceNode.isConnected === false) {
+        // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
+        const rootNodeByFragment = getRootNodeByFragment(rootNode);
+        if (rootNodeByFragment === null) {
+            raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
+        }
+        else {
+            rootNode = rootNodeByFragment;
+        }
+    }
+    const listIndex = getListIndexByBindingInfo(binding);
+    const stateElement = getStateElementByName(rootNode, binding.stateName);
     if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
     }
-    const loopContext = getLoopContextByNode(node);
-    stateElement.createState("writable", (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-            let currentValue = state[statePathName];
-            if (Array.isArray(currentValue)) {
-                if (checked) {
-                    if (currentValue.indexOf(filteredNewValue) === -1) {
-                        state[statePathName] = currentValue.concat(filteredNewValue);
-                    }
+    const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
+    absoluteStateAddress =
+        createAbsoluteStateAddress(absolutePathInfo, listIndex);
+    absoluteStateAddressByBinding.set(binding, absoluteStateAddress);
+    return absoluteStateAddress;
+}
+function clearAbsoluteStateAddressByBinding(binding) {
+    absoluteStateAddressByBinding.delete(binding);
+}
+
+const cache = new WeakMap();
+function isCustomElement(node) {
+    let value = cache.get(node);
+    if (value !== undefined) {
+        return value;
+    }
+    try {
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return value = false;
+        }
+        const element = node;
+        if (element.tagName.includes("-")) {
+            return value = true;
+        }
+        if (element.hasAttribute("is")) {
+            if (element.getAttribute("is")?.includes("-")) {
+                return value = true;
+            }
+        }
+        return value = false;
+    }
+    finally {
+        cache.set(node, value ?? false);
+    }
+}
+
+function applyChangeToAttribute(binding, _context, newValue) {
+    const element = binding.node;
+    const attrName = binding.propSegments[1];
+    if (element.getAttribute(attrName) !== newValue) {
+        element.setAttribute(attrName, newValue);
+    }
+}
+
+function createEmptyArray() {
+    return Object.freeze([]);
+}
+
+function getFilteredValue(value, filters) {
+    let filteredValue = value;
+    for (const filter of filters) {
+        filteredValue = filter.filterFn(filteredValue);
+    }
+    return filteredValue;
+}
+
+const EMPTY_ARRAY = createEmptyArray();
+function applyChangeToCheckbox(binding, _context, newValue) {
+    const element = binding.node;
+    const elementValue = element.value;
+    const elementFilteredValue = getFilteredValue(elementValue, binding.inFilters);
+    const normalizedNewValue = Array.isArray(newValue) ? newValue : EMPTY_ARRAY;
+    element.checked = normalizedNewValue.includes(elementFilteredValue);
+}
+
+function applyChangeToClass(binding, _context, newValue) {
+    const element = binding.node;
+    const className = binding.propSegments[1];
+    if (typeof newValue !== 'boolean') {
+        raiseError(`Invalid value for class application: expected boolean, got ${typeof newValue}`);
+    }
+    element.classList.toggle(className, newValue);
+}
+
+const _cache$1 = new WeakMap();
+const _cacheNullListIndex = new WeakMap();
+class StateAddress {
+    pathInfo;
+    listIndex;
+    _parentAddress;
+    constructor(pathInfo, listIndex) {
+        this.pathInfo = pathInfo;
+        this.listIndex = listIndex;
+    }
+    get parentAddress() {
+        if (typeof this._parentAddress !== 'undefined') {
+            return this._parentAddress;
+        }
+        const parentPathInfo = this.pathInfo.parentPathInfo;
+        if (parentPathInfo === null) {
+            return null;
+        }
+        const lastSegment = this.pathInfo.segments[this.pathInfo.segments.length - 1];
+        let parentListIndex = null;
+        if (lastSegment === WILDCARD) {
+            parentListIndex = this.listIndex?.parentListIndex ?? null;
+        }
+        else {
+            parentListIndex = this.listIndex;
+        }
+        return this._parentAddress = createStateAddress(parentPathInfo, parentListIndex);
+    }
+}
+function createStateAddress(pathInfo, listIndex) {
+    if (listIndex === null) {
+        let cached = _cacheNullListIndex.get(pathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new StateAddress(pathInfo, null);
+        _cacheNullListIndex.set(pathInfo, cached);
+        return cached;
+    }
+    else {
+        let cacheByPathInfo = _cache$1.get(listIndex);
+        if (typeof cacheByPathInfo === "undefined") {
+            cacheByPathInfo = new WeakMap();
+            _cache$1.set(listIndex, cacheByPathInfo);
+        }
+        let cached = cacheByPathInfo.get(pathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new StateAddress(pathInfo, listIndex);
+        cacheByPathInfo.set(pathInfo, cached);
+        return cached;
+    }
+}
+
+const indexBindingsByContent = new WeakMap();
+function getIndexBindingsByContent(content) {
+    return indexBindingsByContent.get(content) ?? [];
+}
+function setIndexBindingsByContent(content, bindings) {
+    indexBindingsByContent.set(content, bindings);
+}
+
+if (!Set.prototype.difference) {
+    Set.prototype.difference = function (other) {
+        const result = new Set(this);
+        for (const elem of other) {
+            result.delete(elem);
+        }
+        return result;
+    };
+}
+if (!Set.prototype.intersection) {
+    Set.prototype.intersection = function (other) {
+        const result = new Set();
+        for (const elem of other) {
+            if (this.has(elem)) {
+                result.add(elem);
+            }
+        }
+        return result;
+    };
+}
+
+let count = 0;
+function getUUID() {
+    return `u${(count++).toString(36)}`;
+}
+
+let version = 0;
+class ListIndex {
+    uuid = getUUID();
+    parentListIndex;
+    position;
+    length;
+    _index;
+    _version;
+    _indexes;
+    _listIndexes;
+    /**
+     * Creates a new ListIndex instance.
+     *
+     * @param parentListIndex - Parent list index for nested loops, or null for top-level
+     * @param index - Current index value in the loop
+     */
+    constructor(parentListIndex, index) {
+        this.parentListIndex = parentListIndex;
+        this.position = parentListIndex ? parentListIndex.position + 1 : 0;
+        this.length = this.position + 1;
+        this._index = index;
+        this._version = version;
+    }
+    /**
+     * Gets current index value.
+     *
+     * @returns Current index number
+     */
+    get index() {
+        return this._index;
+    }
+    /**
+     * Sets index value and updates version.
+     *
+     * @param value - New index value
+     */
+    set index(value) {
+        this._index = value;
+        this._version = ++version;
+        this.indexes[this.position] = value;
+    }
+    /**
+     * Gets current version number for change detection.
+     *
+     * @returns Version number
+     */
+    get version() {
+        return this._version;
+    }
+    /**
+     * Checks if parent indexes have changed since last access.
+     *
+     * @returns true if parent has newer version, false otherwise
+     */
+    get dirty() {
+        if (this.parentListIndex === null) {
+            return false;
+        }
+        else {
+            return this.parentListIndex.dirty || this.parentListIndex.version > this._version;
+        }
+    }
+    /**
+     * Gets array of all index values from root to current level.
+     * Rebuilds array if parent indexes have changed (dirty).
+     *
+     * @returns Array of index values
+     */
+    get indexes() {
+        if (this.parentListIndex === null) {
+            if (typeof this._indexes === "undefined") {
+                this._indexes = [this._index];
+            }
+        }
+        else {
+            if (typeof this._indexes === "undefined" || this.dirty) {
+                this._indexes = [...this.parentListIndex.indexes, this._index];
+                this._version = version;
+            }
+        }
+        return this._indexes;
+    }
+    /**
+     * Gets array of WeakRef to all ListIndex instances from root to current level.
+     *
+     * @returns Array of WeakRef<IListIndex>
+     */
+    get listIndexes() {
+        if (this.parentListIndex === null) {
+            if (typeof this._listIndexes === "undefined") {
+                this._listIndexes = [new WeakRef(this)];
+            }
+        }
+        else {
+            if (typeof this._listIndexes === "undefined") {
+                this._listIndexes = [...this.parentListIndex.listIndexes, new WeakRef(this)];
+            }
+        }
+        return this._listIndexes;
+    }
+    /**
+     * Gets variable name for this loop index ($1, $2, etc.).
+     *
+     * @returns Variable name string
+     */
+    get varName() {
+        return `$${this.position + 1}`;
+    }
+    /**
+     * Gets ListIndex at specified position in hierarchy.
+     * Supports negative indexing from end.
+     *
+     * @param pos - Position index (0-based, negative for from end)
+     * @returns ListIndex at position or null if not found/garbage collected
+     */
+    at(pos) {
+        if (pos >= 0) {
+            return this.listIndexes[pos]?.deref() || null;
+        }
+        else {
+            return this.listIndexes[this.listIndexes.length + pos]?.deref() || null;
+        }
+    }
+}
+/**
+ * Factory function to create ListIndex instance.
+ *
+ * @param parentListIndex - Parent list index for nested loops, or null for top-level
+ * @param index - Current index value in the loop
+ * @returns New IListIndex instance
+ */
+function createListIndex(parentListIndex, index) {
+    return new ListIndex(parentListIndex, index);
+}
+
+const listIndexesByList = new WeakMap();
+function getListIndexesByList(list) {
+    return listIndexesByList.get(list) || null;
+}
+function setListIndexesByList(list, listIndexes) {
+    if (listIndexes === null) {
+        listIndexesByList.delete(list);
+        return;
+    }
+    listIndexesByList.set(list, listIndexes);
+}
+
+const listDiffByOldListByNewList = new WeakMap();
+const EMPTY_LIST = Object.freeze([]);
+const EMPTY_SET$1 = new Set();
+function getListDiff(rawOldList, rawNewList) {
+    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
+    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
+    let diffByNewList = listDiffByOldListByNewList.get(oldList);
+    if (!diffByNewList) {
+        return null;
+    }
+    return diffByNewList.get(newList) || null;
+}
+function setListDiff(oldList, newList, diff) {
+    let diffByNewList = listDiffByOldListByNewList.get(oldList);
+    if (!diffByNewList) {
+        diffByNewList = new WeakMap();
+        listDiffByOldListByNewList.set(oldList, diffByNewList);
+    }
+    diffByNewList.set(newList, diff);
+}
+/**
+ * Checks if two lists are identical by comparing length and each element.
+ * @param oldList - Previous list to compare
+ * @param newList - New list to compare
+ * @returns True if lists are identical, false otherwise
+ */
+function isSameList(oldList, newList) {
+    if (oldList.length !== newList.length) {
+        return false;
+    }
+    for (let i = 0; i < oldList.length; i++) {
+        if (oldList[i] !== newList[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+/**
+ * Creates or updates list indexes by comparing old and new lists.
+ * Optimizes by reusing existing list indexes when values match.
+ * @param parentListIndex - Parent list index for nested lists, or null for top-level
+ * @param oldList - Previous list (will be normalized to array)
+ * @param newList - New list (will be normalized to array)
+ * @param oldIndexes - Array of existing list indexes to potentially reuse
+ * @returns Array of list indexes for the new list
+ */
+function createListDiff(parentListIndex, rawOldList, rawNewList) {
+    // Normalize inputs to arrays (handles null/undefined)
+    const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
+    const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
+    const cachedDiff = getListDiff(oldList, newList);
+    if (cachedDiff) {
+        return cachedDiff;
+    }
+    const oldIndexes = getListIndexesByList(oldList) || [];
+    let retValue;
+    try {
+        // Early return for empty list
+        if (newList.length === 0) {
+            return retValue = {
+                oldIndexes: oldIndexes,
+                newIndexes: [],
+                changeIndexSet: EMPTY_SET$1,
+                deleteIndexSet: new Set(oldIndexes),
+                addIndexSet: EMPTY_SET$1,
+            };
+        }
+        // If old list was empty, create all new indexes
+        let newIndexes = getListIndexesByList(newList);
+        if (oldList.length === 0) {
+            if (newIndexes === null) {
+                newIndexes = [];
+                for (let i = 0; i < newList.length; i++) {
+                    const newListIndex = createListIndex(parentListIndex, i);
+                    newIndexes.push(newListIndex);
                 }
-                else {
-                    const index = currentValue.indexOf(filteredNewValue);
-                    if (index !== -1) {
-                        state[statePathName] = currentValue.toSpliced(index, 1);
-                    }
-                }
+            }
+            return retValue = {
+                oldIndexes: oldIndexes,
+                newIndexes: newIndexes,
+                changeIndexSet: EMPTY_SET$1,
+                deleteIndexSet: EMPTY_SET$1,
+                addIndexSet: new Set(newIndexes),
+            };
+        }
+        // If lists are identical, return existing indexes unchanged (optimization)
+        if (isSameList(oldList, newList)) {
+            return retValue = {
+                oldIndexes: oldIndexes,
+                newIndexes: oldIndexes,
+                changeIndexSet: EMPTY_SET$1,
+                deleteIndexSet: EMPTY_SET$1,
+                addIndexSet: EMPTY_SET$1,
+            };
+        }
+        // Use index-based map for efficiency
+        // Supports duplicate values by storing array of indexes
+        const indexByValue = new Map();
+        for (let i = 0; i < oldList.length; i++) {
+            const val = oldList[i];
+            let indexes = indexByValue.get(val);
+            if (!indexes) {
+                indexes = [];
+                indexByValue.set(val, indexes);
+            }
+            indexes.push(i);
+        }
+        if (newIndexes !== null) {
+            return calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue);
+        }
+        newIndexes = [];
+        // Build new indexes array by matching values with old list
+        const changeIndexSet = new Set();
+        const addIndexSet = new Set();
+        for (let i = 0; i < newList.length; i++) {
+            const newValue = newList[i];
+            const existingIndexes = indexByValue.get(newValue);
+            const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
+            if (typeof oldIndex === "undefined") {
+                // New element
+                const newListIndex = createListIndex(parentListIndex, i);
+                newIndexes.push(newListIndex);
+                addIndexSet.add(newListIndex);
             }
             else {
-                if (checked) {
-                    state[statePathName] = [filteredNewValue];
+                // Reuse existing element
+                const existingListIndex = oldIndexes[oldIndex];
+                // Update index if position changed
+                if (existingListIndex.index !== i) {
+                    existingListIndex.index = i;
+                    changeIndexSet.add(existingListIndex);
                 }
-                else {
-                    state[statePathName] = [];
-                }
+                newIndexes.push(existingListIndex);
             }
-        });
-    });
-};
-function attachCheckboxEventHandler(binding) {
-    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName(binding);
-        const key = getHandlerKey(binding, eventName);
-        let checkboxEventHandler = handlerByHandlerKey.get(key);
-        if (typeof checkboxEventHandler === "undefined") {
-            checkboxEventHandler = checkboxEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
-            handlerByHandlerKey.set(key, checkboxEventHandler);
         }
-        binding.node.addEventListener(eventName, checkboxEventHandler);
-        let bindingSet = bindingSetByHandlerKey.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
-        return true;
+        const deleteIndexSet = (new Set(oldIndexes)).difference(new Set(newIndexes));
+        return retValue = {
+            oldIndexes: oldIndexes,
+            newIndexes: newIndexes,
+            changeIndexSet: changeIndexSet,
+            deleteIndexSet: deleteIndexSet,
+            addIndexSet: addIndexSet,
+        };
     }
-    return false;
+    finally {
+        if (typeof retValue !== "undefined") {
+            setListDiff(oldList, newList, retValue);
+            setListIndexesByList(newList, retValue.newIndexes);
+        }
+    }
+}
+function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue) {
+    const newIndexSet = new Set(newIndexes);
+    const oldIndexSet = new Set(oldIndexes);
+    const changeIndexSet = new Set();
+    const addIndexSet = newIndexSet.difference(oldIndexSet);
+    const deleteIndexSet = oldIndexSet.difference(newIndexSet);
+    for (let i = 0; i < newList.length; i++) {
+        const newValue = newList[i];
+        const existingIndexes = indexByValue.get(newValue);
+        const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
+        if (typeof oldIndex !== "undefined") {
+            const existingListIndex = oldIndexes[oldIndex];
+            if (existingListIndex.index !== i) {
+                // 位置が違うことだけを記録 
+                changeIndexSet.add(existingListIndex);
+            }
+        }
+    }
+    return {
+        oldIndexes: oldIndexes,
+        newIndexes: newIndexes,
+        changeIndexSet: changeIndexSet,
+        deleteIndexSet: deleteIndexSet,
+        addIndexSet: addIndexSet,
+    };
 }
 
-function _initializeBindings(allBindings) {
-    for (const binding of allBindings) {
-        // replace node
-        replaceToReplaceNode(binding);
-        // event
-        if (attachEventHandler(binding)) {
-            continue;
+const bindingSetByAbsoluteStateAddress = new WeakMap();
+function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
+    let bindingSet = null;
+    bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress) || null;
+    if (bindingSet === null) {
+        bindingSet = new Set();
+        bindingSetByAbsoluteStateAddress.set(absoluteStateAddress, bindingSet);
+    }
+    return bindingSet;
+}
+function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
+    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
+    bindingSet.add(binding);
+}
+function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
+    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
+    bindingSet.delete(binding);
+}
+
+const stateAddressByBindingInfo = new WeakMap();
+function getStateAddressByBindingInfo(bindingInfo) {
+    let stateAddress = null;
+    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
+    if (stateAddress !== null) {
+        return stateAddress;
+    }
+    if (bindingInfo.statePathInfo.wildcardCount > 0) {
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        if (listIndex === null) {
+            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
         }
-        // two-way binding
-        attachTwowayEventHandler(binding);
-        // radio binding
-        attachRadioEventHandler(binding);
-        // checkbox binding
-        attachCheckboxEventHandler(binding);
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
+    }
+    else {
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
+    }
+    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
+    return stateAddress;
+}
+// call for change loopContext
+function clearStateAddressByBindingInfo(bindingInfo) {
+    stateAddressByBindingInfo.delete(bindingInfo);
+}
+
+const bindingsByContent = new WeakMap();
+function getBindingsByContent(content) {
+    return bindingsByContent.get(content) ?? [];
+}
+function setBindingsByContent(content, bindings) {
+    bindingsByContent.set(content, bindings);
+}
+
+const nodesByContent = new WeakMap();
+function getNodesByContent(content) {
+    return nodesByContent.get(content) ?? [];
+}
+function setNodesByContent(content, nodes) {
+    nodesByContent.set(content, nodes);
+}
+
+function bindLoopContextToContent(content, loopContext) {
+    const nodes = getNodesByContent(content);
+    for (const node of nodes) {
+        setLoopContextByNode(node, loopContext);
     }
 }
-function initializeBindings(root, parentLoopContext) {
-    const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
-    for (const node of subscriberNodes) {
-        setLoopContextByNode(node, parentLoopContext);
+function unbindLoopContextToContent(content) {
+    const nodes = getNodesByContent(content);
+    for (const node of nodes) {
+        setLoopContextByNode(node, null);
     }
-    _initializeBindings(allBindings);
-    // create absolute state address and register binding infos
-    for (const binding of allBindings) {
+}
+
+function activateContent(content, loopContext, context) {
+    bindLoopContextToContent(content, loopContext);
+    const bindings = getBindingsByContent(content);
+    for (const binding of bindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
         addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-        const rootNode = binding.replaceNode.getRootNode();
-        const stateElement = getStateElementByName(rootNode, binding.stateName);
-        if (stateElement === null) {
-            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
-        }
-        if (binding.bindingType !== 'event') {
-            stateElement.setPathInfo(binding.statePathName, binding.bindingType);
-        }
+        applyChange(binding, context);
     }
-    // apply all at once
-    applyChangeFromBindings(allBindings);
 }
-function initializeBindingsByFragment(root, nodeInfos) {
-    const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
-    _initializeBindings(allBindings);
-    return {
-        nodes: subscriberNodes,
-        bindingInfos: allBindings,
-    };
+function deactivateContent(content) {
+    const bindings = getBindingsByContent(content);
+    for (const binding of bindings) {
+        const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
+        removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
+        clearAbsoluteStateAddressByBinding(binding);
+        clearStateAddressByBindingInfo(binding);
+    }
+    unbindLoopContextToContent(content);
 }
 
 function createEmptySet() {
@@ -3537,6 +2964,984 @@ function applyChangeFromBindings(bindings) {
             state[updatedCallbackSymbol](Array.from(absAddressSet));
         });
     }
+}
+
+const handlerByHandlerKey$1 = new Map();
+const bindingSetByHandlerKey$1 = new Map();
+function getHandlerKey$1(binding, eventName) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+}
+function getEventName$1(binding) {
+    let eventName = 'input';
+    for (const modifier of binding.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+    const node = event.target;
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
+        return;
+    }
+    if (node.type !== 'radio') {
+        console.warn(`[@wcstack/state] event.target is not a radio input element.`);
+        return;
+    }
+    if (node.checked === false) {
+        return;
+    }
+    const newValue = node.value;
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            state[statePathName] = filteredNewValue;
+        });
+    });
+};
+function attachRadioEventHandler(binding) {
+    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName$1(binding);
+        const key = getHandlerKey$1(binding, eventName);
+        let radioEventHandler = handlerByHandlerKey$1.get(key);
+        if (typeof radioEventHandler === "undefined") {
+            radioEventHandler = radioEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            handlerByHandlerKey$1.set(key, radioEventHandler);
+        }
+        binding.node.addEventListener(eventName, radioEventHandler);
+        let bindingSet = bindingSetByHandlerKey$1.get(key);
+        if (typeof bindingSet === "undefined") {
+            bindingSet = new Set([binding]);
+            bindingSetByHandlerKey$1.set(key, bindingSet);
+        }
+        else {
+            bindingSet.add(binding);
+        }
+        return true;
+    }
+    return false;
+}
+
+const handlerByHandlerKey = new Map();
+const bindingSetByHandlerKey = new Map();
+function getHandlerKey(binding, eventName) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+}
+function getEventName(binding) {
+    let eventName = 'input';
+    for (const modifier of binding.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+    const node = event.target;
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
+        return;
+    }
+    if (node.type !== 'checkbox') {
+        console.warn(`[@wcstack/state] event.target is not a checkbox input element.`);
+        return;
+    }
+    const checked = node.checked;
+    const newValue = node.value;
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            let currentValue = state[statePathName];
+            if (Array.isArray(currentValue)) {
+                if (checked) {
+                    if (currentValue.indexOf(filteredNewValue) === -1) {
+                        state[statePathName] = currentValue.concat(filteredNewValue);
+                    }
+                }
+                else {
+                    const index = currentValue.indexOf(filteredNewValue);
+                    if (index !== -1) {
+                        state[statePathName] = currentValue.toSpliced(index, 1);
+                    }
+                }
+            }
+            else {
+                if (checked) {
+                    state[statePathName] = [filteredNewValue];
+                }
+                else {
+                    state[statePathName] = [];
+                }
+            }
+        });
+    });
+};
+function attachCheckboxEventHandler(binding) {
+    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName(binding);
+        const key = getHandlerKey(binding, eventName);
+        let checkboxEventHandler = handlerByHandlerKey.get(key);
+        if (typeof checkboxEventHandler === "undefined") {
+            checkboxEventHandler = checkboxEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            handlerByHandlerKey.set(key, checkboxEventHandler);
+        }
+        binding.node.addEventListener(eventName, checkboxEventHandler);
+        let bindingSet = bindingSetByHandlerKey.get(key);
+        if (typeof bindingSet === "undefined") {
+            bindingSet = new Set([binding]);
+            bindingSetByHandlerKey.set(key, bindingSet);
+        }
+        else {
+            bindingSet.add(binding);
+        }
+        return true;
+    }
+    return false;
+}
+
+function _initializeBindings(allBindings) {
+    for (const binding of allBindings) {
+        // replace node
+        replaceToReplaceNode(binding);
+        // event
+        if (attachEventHandler(binding)) {
+            continue;
+        }
+        // two-way binding
+        attachTwowayEventHandler(binding);
+        // radio binding
+        attachRadioEventHandler(binding);
+        // checkbox binding
+        attachCheckboxEventHandler(binding);
+    }
+}
+function initializeBindings(root, parentLoopContext) {
+    const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
+    for (const node of subscriberNodes) {
+        setLoopContextByNode(node, parentLoopContext);
+    }
+    _initializeBindings(allBindings);
+    // create absolute state address and register binding infos
+    for (const binding of allBindings) {
+        const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
+        addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
+        const rootNode = binding.replaceNode.getRootNode();
+        const stateElement = getStateElementByName(rootNode, binding.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        }
+        if (binding.bindingType !== 'event') {
+            stateElement.setPathInfo(binding.statePathName, binding.bindingType);
+        }
+    }
+    // apply all at once
+    applyChangeFromBindings(allBindings);
+}
+function initializeBindingsByFragment(root, nodeInfos) {
+    const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
+    _initializeBindings(allBindings);
+    return {
+        nodes: subscriberNodes,
+        bindingInfos: allBindings,
+    };
+}
+
+const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
+const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
+function convertMustacheToComments(root) {
+    convertTextNodes(root);
+    const templates = Array.from(root.querySelectorAll("template"));
+    for (const template of templates) {
+        if (template.namespaceURI === SVG_NAMESPACE) {
+            const newTemplate = document.createElement("template");
+            const childNodes = Array.from(template.childNodes);
+            for (let i = 0; i < childNodes.length; i++) {
+                const childNode = childNodes[i];
+                newTemplate.content.appendChild(childNode);
+            }
+            for (const attr of template.attributes) {
+                newTemplate.setAttribute(attr.name, attr.value);
+            }
+            template.replaceWith(newTemplate);
+            convertMustacheToComments(newTemplate.content);
+        }
+        else {
+            convertMustacheToComments(template.content);
+        }
+    }
+}
+function convertTextNodes(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) {
+        textNodes.push(walker.currentNode);
+    }
+    for (const textNode of textNodes) {
+        if (textNode.parentElement && SKIP_TAGS.has(textNode.parentElement.tagName)) {
+            continue;
+        }
+        replaceTextNode(textNode);
+    }
+}
+function replaceTextNode(textNode) {
+    const text = textNode.data;
+    MUSTACHE_REGEX.lastIndex = 0;
+    if (!MUSTACHE_REGEX.test(text)) {
+        return;
+    }
+    MUSTACHE_REGEX.lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    let match;
+    while ((match = MUSTACHE_REGEX.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+        }
+        const bindText = match[1];
+        fragment.appendChild(document.createComment(`@@: ${bindText}`));
+        lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+    textNode.parentNode.replaceChild(fragment, textNode);
+}
+
+let _notFilterInfo = undefined;
+function createNotFilter() {
+    if (_notFilterInfo) {
+        return _notFilterInfo;
+    }
+    const filterName = "not";
+    const args = [];
+    const filterFn = builtinFilterFn(filterName, args)(outputBuiltinFilters);
+    _notFilterInfo = {
+        filterName,
+        args,
+        filterFn,
+    };
+    return _notFilterInfo;
+}
+
+const COMMENT_REGEX = /^(\s*@@\s*(?:.*?)\s*:\s*)(.+?)(\s*)$/;
+function expandShorthandInStatePart(statePart, forPath) {
+    const prefix = forPath + DELIMITER + WILDCARD;
+    const pipeIndex = statePart.indexOf('|');
+    const atIndex = statePart.indexOf('@');
+    let pathPart;
+    let suffix;
+    if (pipeIndex !== -1) {
+        pathPart = statePart.slice(0, pipeIndex).trim();
+        suffix = statePart.slice(pipeIndex);
+    }
+    else if (atIndex !== -1) {
+        pathPart = statePart.slice(0, atIndex).trim();
+        suffix = statePart.slice(atIndex);
+    }
+    else {
+        pathPart = statePart.trim();
+        suffix = '';
+    }
+    if (pathPart === '.') {
+        pathPart = prefix;
+    }
+    else if (pathPart.startsWith('.')) {
+        pathPart = prefix + DELIMITER + pathPart.slice(1);
+    }
+    else {
+        return statePart;
+    }
+    if (suffix.length > 0) {
+        return pathPart + suffix;
+    }
+    return pathPart;
+}
+function expandCommentData(data, forPath) {
+    const match = COMMENT_REGEX.exec(data);
+    if (match === null) {
+        return data;
+    }
+    const commentPrefix = match[1];
+    const bindText = match[2];
+    const commentSuffix = match[3];
+    const expanded = expandShorthandInStatePart(bindText, forPath);
+    return commentPrefix + expanded + commentSuffix;
+}
+function expandBindAttribute(attrValue, forPath) {
+    const parts = attrValue.split(';');
+    let changed = false;
+    const result = parts.map(part => {
+        const trimmed = part.trim();
+        if (trimmed.length === 0)
+            return part;
+        const colonIndex = trimmed.indexOf(':');
+        if (colonIndex === -1)
+            return part;
+        const propPart = trimmed.slice(0, colonIndex).trim();
+        const statePart = trimmed.slice(colonIndex + 1).trim();
+        const expanded = expandShorthandInStatePart(statePart, forPath);
+        if (expanded !== statePart) {
+            changed = true;
+            return `${propPart}: ${expanded}`;
+        }
+        return part;
+    });
+    if (!changed)
+        return attrValue;
+    return result.join(';');
+}
+function expandShorthandInBindAttribute(attrValue, forPath) {
+    return expandBindAttribute(attrValue, forPath);
+}
+function expandShorthandPaths(root, forPath) {
+    const bindAttr = config.bindAttributeName;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.nodeType === Node.COMMENT_NODE) {
+            const comment = node;
+            comment.data = expandCommentData(comment.data, forPath);
+            continue;
+        }
+        const element = node;
+        if (element instanceof HTMLTemplateElement) {
+            continue;
+        }
+        const attr = element.getAttribute(bindAttr);
+        if (attr !== null) {
+            const expanded = expandBindAttribute(attr, forPath);
+            if (expanded !== attr) {
+                element.setAttribute(bindAttr, expanded);
+            }
+        }
+    }
+}
+
+function getNodePath(node) {
+    let currentNode = node;
+    const path = [];
+    while (currentNode.parentNode !== null) {
+        const nodes = Array.from(currentNode.parentNode.childNodes);
+        const index = nodes.indexOf(currentNode);
+        path.unshift(index);
+        currentNode = currentNode.parentNode;
+    }
+    return path;
+}
+
+function getFragmentNodeInfos(fragment) {
+    const fragmnentNodeInfos = [];
+    const subscriberNodes = getSubscriberNodes(fragment);
+    for (const subscriberNode of subscriberNodes) {
+        const parseBindingTextResults = getParseBindTextResults(subscriberNode);
+        fragmnentNodeInfos.push({
+            nodePath: getNodePath(subscriberNode),
+            parseBindTextResults: parseBindingTextResults,
+        });
+    }
+    return fragmnentNodeInfos;
+}
+
+function optimizeFragment(fragment) {
+    const childNodes = Array.from(fragment.childNodes);
+    for (const childNode of childNodes) {
+        if (childNode.nodeType === Node.TEXT_NODE) {
+            const textContent = childNode.textContent || '';
+            if (textContent.trim() === '') {
+                // Remove empty text nodes
+                fragment.removeChild(childNode);
+            }
+        }
+    }
+}
+
+const keywordByBindingType = new Map([
+    ["for", config.commentForPrefix],
+    ["if", config.commentIfPrefix],
+    ["elseif", config.commentElseIfPrefix],
+    ["else", config.commentElsePrefix],
+]);
+const notFilter = createNotFilter();
+function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
+    const filters = parseBindTextResult.outFilters;
+    return {
+        ...parseBindTextResult,
+        outFilters: [...filters, notFilter],
+        bindingType: bindingType,
+    };
+}
+function _getFragmentInfo(rootNode, fragment, parseBindingTextResult, forPath) {
+    optimizeFragment(fragment);
+    if (typeof forPath === "string") {
+        expandShorthandPaths(fragment, forPath);
+    }
+    collectStructuralFragments(rootNode, fragment, forPath);
+    // after replacing and collect node infos on child fragment
+    const fragmentInfo = {
+        fragment: fragment,
+        parseBindTextResult: parseBindingTextResult,
+        nodeInfos: getFragmentNodeInfos(fragment),
+    };
+    return fragmentInfo;
+}
+function collectStructuralFragments(rootNode, walkRoot, forPath) {
+    const elseKeyword = config.commentElsePrefix;
+    const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_ELEMENT, {
+        acceptNode(node) {
+            const element = node;
+            if (element.tagName.toLowerCase() === 'template') {
+                const bindText = element.getAttribute(config.bindAttributeName) || '';
+                if (bindText.length > 0) {
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            }
+            return NodeFilter.FILTER_SKIP;
+        }
+    });
+    let lastIfFragmentInfo = null; // for elseif chaining
+    const elseFragmentInfos = []; // for elseif chaining
+    const templates = [];
+    while (walker.nextNode()) {
+        const template = walker.currentNode;
+        templates.push(template);
+    }
+    for (const template of templates) {
+        let bindText = template.getAttribute(config.bindAttributeName) || '';
+        if (typeof forPath === "string") {
+            bindText = expandShorthandInBindAttribute(bindText, forPath);
+        }
+        const parseBindTextResults = parseBindTextsForElement(bindText);
+        let parseBindTextResult = parseBindTextResults[0];
+        const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
+        if (typeof keyword === 'undefined') {
+            continue;
+        }
+        const bindingType = parseBindTextResult.bindingType;
+        const fragment = template.content;
+        const uuid = getUUID();
+        let fragmentInfo = null;
+        // Determine childForPath for shorthand expansion
+        const childForPath = bindingType === "for"
+            ? parseBindTextResult.statePathName
+            : forPath;
+        if (bindingType === "else") {
+            // check last 'if' or 'elseif' fragment info
+            if (lastIfFragmentInfo === null) {
+                raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
+            }
+            // else condition
+            parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
+            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
+            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+            if (typeof lastElseFragmentInfo !== "undefined") {
+                template.remove();
+                lastElseFragmentInfo.fragment.appendChild(placeHolder);
+                lastElseFragmentInfo.nodeInfos.push({
+                    nodePath: getNodePath(placeHolder),
+                    parseBindTextResults: getParseBindTextResults(placeHolder),
+                });
+            }
+            else {
+                template.replaceWith(placeHolder);
+            }
+        }
+        else if (bindingType === "elseif") {
+            // check last 'if' or 'elseif' fragment info
+            if (lastIfFragmentInfo === null) {
+                raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
+            }
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
+            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+            // create else fragment
+            const elseUUID = getUUID();
+            const elseFragmentInfo = {
+                fragment: document.createDocumentFragment(),
+                parseBindTextResult: cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult),
+                nodeInfos: [],
+            };
+            elseFragmentInfo.fragment.appendChild(placeHolder);
+            elseFragmentInfo.nodeInfos.push({
+                nodePath: getNodePath(placeHolder),
+                parseBindTextResults: getParseBindTextResults(placeHolder),
+            });
+            setFragmentInfoByUUID(elseUUID, rootNode, elseFragmentInfo);
+            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
+            elseFragmentInfos.push(elseFragmentInfo);
+            const elsePlaceHolder = document.createComment(`@@${elseKeyword}:${elseUUID}`);
+            if (typeof lastElseFragmentInfo !== "undefined") {
+                template.remove();
+                lastElseFragmentInfo.fragment.appendChild(elsePlaceHolder);
+                lastElseFragmentInfo.nodeInfos.push({
+                    nodePath: getNodePath(elsePlaceHolder),
+                    parseBindTextResults: getParseBindTextResults(elsePlaceHolder),
+                });
+            }
+            else {
+                template.replaceWith(elsePlaceHolder);
+            }
+        }
+        else {
+            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
+            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
+            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
+            template.replaceWith(placeHolder);
+        }
+        // Update lastIfFragmentInfo for if/elseif/else chaining
+        if (bindingType === "if") {
+            elseFragmentInfos.length = 0; // start new if chain
+            lastIfFragmentInfo = fragmentInfo;
+        }
+        else if (bindingType === "elseif") {
+            lastIfFragmentInfo = fragmentInfo;
+        }
+        else if (bindingType === "else") {
+            lastIfFragmentInfo = null;
+            elseFragmentInfos.length = 0; // end if chain
+        }
+    }
+}
+
+async function waitForStateInitialize(root) {
+    const elements = root.querySelectorAll(config.tagNames.state);
+    const promises = [];
+    await customElements.whenDefined(config.tagNames.state);
+    for (const element of elements) {
+        const stateElement = element;
+        promises.push(stateElement.initializePromise);
+    }
+    await Promise.all(promises);
+}
+
+async function buildBindings(root) {
+    if (root === document) {
+        await waitForStateInitialize(document);
+        convertMustacheToComments(document);
+        collectStructuralFragments(document, document);
+        initializeBindings(document.body, null);
+    }
+    else {
+        const shadowRoot = root;
+        await waitForStateInitialize(shadowRoot);
+        convertMustacheToComments(shadowRoot);
+        collectStructuralFragments(shadowRoot, shadowRoot);
+        await waitInitializeBinding(shadowRoot.host);
+        initializeBindings(shadowRoot, null);
+    }
+}
+
+const stateElementByNameByNode = new WeakMap();
+function getStateElementByName(rootNode, name) {
+    let stateElementByName = stateElementByNameByNode.get(rootNode);
+    if (!stateElementByName) {
+        return null;
+    }
+    return stateElementByName.get(name) || null;
+}
+function setStateElementByName(rootNode, name, element) {
+    let stateElementByName = stateElementByNameByNode.get(rootNode);
+    if (element === null) {
+        // 削除の場合、Mapが存在しない場合は何もしない
+        if (!stateElementByName) {
+            return;
+        }
+        stateElementByName.delete(name);
+        if (stateElementByName.size === 0) {
+            stateElementByNameByNode.delete(rootNode);
+        }
+    }
+    else {
+        // 登録の場合
+        if (!stateElementByName) {
+            stateElementByName = new Map();
+            stateElementByNameByNode.set(rootNode, stateElementByName);
+            // 初めてルートノードに登録する場合
+            if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
+                queueMicrotask(() => {
+                    buildBindings(rootNode);
+                });
+            }
+            else if (rootNode.constructor.name === 'ShadowRoot') {
+                queueMicrotask(() => {
+                    buildBindings(rootNode);
+                });
+            }
+        }
+        if (stateElementByName.has(name)) {
+            raiseError(`State element with name "${name}" is already registered.`);
+        }
+        stateElementByName.set(name, element);
+    }
+}
+
+class LoopContextStack {
+    _loopContextStack = Array(MAX_LOOP_DEPTH).fill(undefined);
+    _length = 0;
+    createLoopContext(elementStateAddress, callback) {
+        if (elementStateAddress.listIndex === null) {
+            raiseError(`Cannot create loop context for a state address that does not have a list index.`);
+        }
+        const loopContext = elementStateAddress;
+        if (this._length >= MAX_LOOP_DEPTH) {
+            raiseError(`Exceeded maximum loop context stack depth of ${MAX_LOOP_DEPTH}. Possible infinite loop.`);
+        }
+        const lastLoopContext = this._loopContextStack[this._length - 1];
+        if (typeof lastLoopContext !== "undefined") {
+            if (lastLoopContext.pathInfo.wildcardCount + 1 !== loopContext.pathInfo.wildcardCount) {
+                raiseError(`Cannot push loop context for a list whose wildcard count is not exactly one more than the current active loop context.`);
+            }
+            // 
+            const prevWildcardPathInfo = loopContext.pathInfo.wildcardPathInfos[loopContext.pathInfo.wildcardPathInfos.length - 2];
+            if (lastLoopContext.pathInfo !== prevWildcardPathInfo) {
+                raiseError(`Cannot push loop context for a list whose parent wildcard path info does not match the current active loop context.`);
+            }
+        }
+        else {
+            if (loopContext.pathInfo.wildcardCount !== 1) {
+                raiseError(`Cannot push loop context for a list with wildcard positions when there is no active loop context.`);
+            }
+        }
+        this._loopContextStack[this._length] = loopContext;
+        this._length++;
+        let retValue = void 0;
+        try {
+            retValue = callback(loopContext);
+        }
+        finally {
+            if (retValue instanceof Promise) {
+                retValue.finally(() => {
+                    this._length--;
+                    this._loopContextStack[this._length] = undefined;
+                });
+            }
+            else {
+                this._length--;
+                this._loopContextStack[this._length] = undefined;
+            }
+        }
+        return retValue;
+    }
+}
+function createLoopContextStack() {
+    return new LoopContextStack();
+}
+
+/**
+ * Cache for resolved path information.
+ * Uses Map to safely handle property names including reserved words like "constructor" and "toString".
+ */
+const _cache = new Map();
+/**
+ * Class that parses and stores resolved path information.
+ *
+ * Analyzes property path strings to extract:
+ * - Path segments and their hierarchy
+ * - Wildcard locations and types
+ * - Numeric indexes vs unresolved wildcards
+ * - Wildcard type classification (none/context/all/partial)
+ */
+class ResolvedAddress {
+    path;
+    segments;
+    paths;
+    wildcardCount;
+    wildcardType;
+    wildcardIndexes;
+    pathInfo;
+    /**
+     * Constructs resolved path information from a property path string.
+     *
+     * Parses the path to identify wildcards (*) and numeric indexes,
+     * classifies the wildcard type, and generates structured path information.
+     *
+     * @param name - Property path string (e.g., "items.*.name" or "data.0.value")
+     */
+    constructor(path) {
+        // Split path into individual segments
+        const segments = path.split(".");
+        const tmpPatternSegments = segments.slice();
+        const paths = [];
+        let incompleteCount = 0; // Count of unresolved wildcards (*)
+        let completeCount = 0; // Count of resolved wildcards (numeric indexes)
+        let lastPath = "";
+        let wildcardCount = 0;
+        let wildcardType = "none";
+        const wildcardIndexes = [];
+        // Process each segment to identify wildcards and indexes
+        for (let i = 0; i < segments.length; i++) {
+            const segment = segments[i];
+            if (segment === "*") {
+                // Unresolved wildcard
+                tmpPatternSegments[i] = "*";
+                wildcardIndexes.push(null);
+                incompleteCount++;
+                wildcardCount++;
+            }
+            else {
+                const number = Number(segment);
+                if (!Number.isNaN(number)) {
+                    // Numeric index - treat as resolved wildcard
+                    tmpPatternSegments[i] = "*";
+                    wildcardIndexes.push(number);
+                    completeCount++;
+                    wildcardCount++;
+                }
+            }
+            // Build cumulative path array
+            lastPath += segment;
+            paths.push(lastPath);
+            lastPath += (i < segment.length - 1 ? "." : "");
+        }
+        // Generate pattern string with wildcards normalized
+        const structuredPath = tmpPatternSegments.join(".");
+        const pathInfo = getPathInfo(structuredPath);
+        // Classify wildcard type based on resolved vs unresolved counts
+        if (incompleteCount > 0 || completeCount > 0) {
+            if (incompleteCount === wildcardCount) {
+                // All wildcards are unresolved - need context to resolve
+                wildcardType = "context";
+            }
+            else if (completeCount === wildcardCount) {
+                // All wildcards are resolved with numeric indexes
+                wildcardType = "all";
+            }
+            else {
+                // Mix of resolved and unresolved wildcards
+                wildcardType = "partial";
+            }
+        }
+        this.path = path;
+        this.segments = segments;
+        this.paths = paths;
+        this.wildcardCount = wildcardCount;
+        this.wildcardType = wildcardType;
+        this.wildcardIndexes = wildcardIndexes;
+        this.pathInfo = pathInfo;
+    }
+}
+/**
+ * Retrieves or creates resolved path information for a property path.
+ *
+ * This function caches resolved path information for performance.
+ * On first access, it parses the path and creates a ResolvedPathInfo instance.
+ * Subsequent accesses return the cached result.
+ *
+ * @param name - Property path string (e.g., "items.*.name", "data.0.value")
+ * @returns Resolved path information containing segments, wildcards, and type classification
+ */
+function getResolvedAddress(name) {
+    let nameInfo;
+    // Return cached value or create, cache, and return new instance
+    return _cache.get(name) ?? (_cache.set(name, nameInfo = new ResolvedAddress(name)), nameInfo);
+}
+
+/**
+ * connectedCallback.ts
+ *
+ * StateClassのライフサイクルフック「$connectedCallback」を呼び出すユーティリティ関数です。
+ *
+ * 主な役割:
+ * - オブジェクト（target）に$connectedCallbackメソッドが定義されていれば呼び出す
+ * - コールバックはtargetのthisコンテキストで呼び出し、IReadonlyStateProxy（receiver）を引数として渡す
+ * - 非同期関数として実行可能（await対応）
+ *
+ * 設計ポイント:
+ * - Reflect.getで$connectedCallbackプロパティを安全に取得
+ * - 存在しない場合は何もしない
+ * - ライフサイクル管理やカスタム初期化処理に利用
+ */
+async function connectedCallback(target, _prop, receiver, _handler) {
+    const callback = Reflect.get(target, STATE_CONNECTED_CALLBACK_NAME);
+    if (typeof callback === "function") {
+        await callback.call(receiver);
+    }
+}
+
+/**
+ * disconnectedCallback.ts
+ *
+ * StateClassのライフサイクルフック「$disconnectedCallback」を呼び出すユーティリティ関数です。
+ *
+ * 主な役割:
+ * - オブジェクト（target）に$disconnectedCallbackメソッドが定義されていれば呼び出す
+ * - コールバックはtargetのthisコンテキストで呼び出し、IReadonlyStateProxy（receiver）を引数として渡す
+ *
+ * 設計ポイント:
+ * - Reflect.getで$disconnectedCallbackプロパティを安全に取得
+ * - 存在しない場合は何もしない
+ * - ライフサイクル管理やクリーンアップ処理に利用
+ */
+function disconnectedCallback(target, _prop, receiver, _handler) {
+    const callback = Reflect.get(target, STATE_DISCONNECTED_CALLBACK_NAME);
+    if (typeof callback === "function") {
+        callback.call(receiver);
+    }
+}
+
+const cacheEntryByAbsoluteStateAddress = new WeakMap();
+function getCacheEntryByAbsoluteStateAddress(address) {
+    return cacheEntryByAbsoluteStateAddress.get(address) ?? null;
+}
+function setCacheEntryByAbsoluteStateAddress(address, cacheEntry) {
+    if (cacheEntry === null) {
+        cacheEntryByAbsoluteStateAddress.delete(address);
+    }
+    else {
+        cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
+    }
+}
+function dirtyCacheEntryByAbsoluteStateAddress(address) {
+    const cacheEntry = cacheEntryByAbsoluteStateAddress.get(address);
+    if (cacheEntry) {
+        cacheEntry.dirty = true;
+    }
+}
+
+function checkDependency(handler, address) {
+    // 動的依存関係の登録
+    if (handler.addressStackLength > 0) {
+        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+        const stateElement = handler.stateElement;
+        if (lastInfo !== null) {
+            if (stateElement.getterPaths.has(lastInfo.path) &&
+                lastInfo.path !== address.pathInfo.path) {
+                // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
+                // そのgetterが参照している値のパスである
+                stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
+            }
+        }
+    }
+}
+
+/**
+ * getByAddress.ts
+ *
+ * StateClassの内部APIとして、構造化パス情報（IStructuredPathInfo）とリストインデックス（IListIndex）を指定して
+ * 状態オブジェクト（target）から値を取得するための関数（getByAddress）の実装です。
+ *
+ * 主な役割:
+ * - 指定されたパス・インデックスに対応するState値を取得（多重ループやワイルドカードにも対応）
+ * - 依存関係の自動登録（checkDependencyで登録）
+ * - キャッシュ機構（リストもキャッシュ対象）
+ * - getter経由で値取得時はpushAddressでスコープを一時設定
+ * - 存在しない場合は親pathAddressやlistIndexを辿って再帰的に値を取得
+ *
+ * 設計ポイント:
+ * - checkDependencyで依存追跡を実行
+ * - キャッシュ有効時はstateAddressで値をキャッシュし、取得・再利用を最適化
+ * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
+ * - finallyでキャッシュへの格納を保証
+ */
+function _getByAddress(target, address, receiver, handler, stateElement) {
+    if (address.pathInfo.path in target) {
+        // getterの中で参照の可能性があるので、addressをプッシュする
+        if (stateElement.getterPaths.has(address.pathInfo.path)) {
+            handler.pushAddress(address);
+            try {
+                return Reflect.get(target, address.pathInfo.path, receiver);
+            }
+            finally {
+                handler.popAddress();
+            }
+        }
+        else {
+            return Reflect.get(target, address.pathInfo.path);
+        }
+    }
+    else {
+        const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+        const parentValue = getByAddress(target, parentAddress, receiver, handler);
+        const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
+        if (lastSegment === WILDCARD) {
+            const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);
+            return Reflect.get(parentValue, index);
+        }
+        else {
+            return Reflect.get(parentValue, lastSegment);
+        }
+    }
+}
+function _getByAddressWithCache(target, address, receiver, handler, stateElement) {
+    const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
+    const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+    const cacheEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+    if (cacheEntry !== null && cacheEntry.dirty === false) {
+        return cacheEntry.value;
+    }
+    const value = _getByAddress(target, address, receiver, handler, stateElement);
+    setCacheEntryByAbsoluteStateAddress(absAddress, {
+        value: value,
+        dirty: false
+    });
+    return value;
+}
+function getByAddress(target, address, receiver, handler) {
+    checkDependency(handler, address);
+    const stateElement = handler.stateElement;
+    const cacheable = address.pathInfo.wildcardCount > 0 ||
+        stateElement.getterPaths.has(address.pathInfo.path);
+    if (cacheable) {
+        return _getByAddressWithCache(target, address, receiver, handler, stateElement);
+    }
+    else {
+        return _getByAddress(target, address, receiver, handler, stateElement);
+    }
+}
+
+/**
+ * getContextListIndex.ts
+ *
+ * Stateの内部APIとして、現在のプロパティ参照スコープにおける
+ * 指定したstructuredPath（ワイルドカード付きプロパティパス）に対応する
+ * リストインデックス（IListIndex）を取得する関数です。
+ *
+ * 主な役割:
+ * - handlerの最後にアクセスされたAddressから、指定パスに対応するリストインデックスを取得
+ * - ワイルドカード階層に対応し、多重ループやネストした配列バインディングにも利用可能
+ *
+ * 設計ポイント:
+ * - 直近のプロパティ参照情報を取得
+ * - info.indexByWildcardPathからstructuredPathのインデックスを特定
+ * - listIndex.at(index)で該当階層のリストインデックスを取得
+ * - パスが一致しない場合や参照が存在しない場合はnullを返す
+ */
+function getContextListIndex(handler, structuredPath) {
+    if (handler.addressStackLength === 0) {
+        return null;
+    }
+    const address = handler.lastAddressStack;
+    if (address === null) {
+        return null;
+    }
+    const index = address.pathInfo.indexByWildcardPath[structuredPath];
+    if (typeof index === "undefined") {
+        return null;
+    }
+    return address.listIndex?.at(index) ?? null;
 }
 
 class Updater {
@@ -4747,404 +5152,13 @@ function createOuterState(webComponent, stateName) {
     return new Proxy({}, handler);
 }
 
-const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
-const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
-function convertMustacheToComments(root) {
-    convertTextNodes(root);
-    const templates = Array.from(root.querySelectorAll("template"));
-    for (const template of templates) {
-        if (template.namespaceURI === SVG_NAMESPACE) {
-            const newTemplate = document.createElement("template");
-            const childNodes = Array.from(template.childNodes);
-            for (let i = 0; i < childNodes.length; i++) {
-                const childNode = childNodes[i];
-                newTemplate.content.appendChild(childNode);
-            }
-            for (const attr of template.attributes) {
-                newTemplate.setAttribute(attr.name, attr.value);
-            }
-            template.replaceWith(newTemplate);
-            convertMustacheToComments(newTemplate.content);
-        }
-        else {
-            convertMustacheToComments(template.content);
-        }
-    }
-}
-function convertTextNodes(root) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const textNodes = [];
-    while (walker.nextNode()) {
-        textNodes.push(walker.currentNode);
-    }
-    for (const textNode of textNodes) {
-        if (textNode.parentElement && SKIP_TAGS.has(textNode.parentElement.tagName)) {
-            continue;
-        }
-        replaceTextNode(textNode);
-    }
-}
-function replaceTextNode(textNode) {
-    const text = textNode.data;
-    MUSTACHE_REGEX.lastIndex = 0;
-    if (!MUSTACHE_REGEX.test(text)) {
-        return;
-    }
-    MUSTACHE_REGEX.lastIndex = 0;
-    const fragment = document.createDocumentFragment();
-    let lastIndex = 0;
-    let match;
-    while ((match = MUSTACHE_REGEX.exec(text)) !== null) {
-        if (match.index > lastIndex) {
-            fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-        }
-        const bindText = match[1];
-        fragment.appendChild(document.createComment(`@@: ${bindText}`));
-        lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-        fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
-    }
-    textNode.parentNode.replaceChild(fragment, textNode);
-}
-
-let _notFilterInfo = undefined;
-function createNotFilter() {
-    if (_notFilterInfo) {
-        return _notFilterInfo;
-    }
-    const filterName = "not";
-    const args = [];
-    const filterFn = builtinFilterFn(filterName, args)(outputBuiltinFilters);
-    _notFilterInfo = {
-        filterName,
-        args,
-        filterFn,
-    };
-    return _notFilterInfo;
-}
-
-const COMMENT_REGEX = /^(\s*@@\s*(?:.*?)\s*:\s*)(.+?)(\s*)$/;
-function expandShorthandInStatePart(statePart, forPath) {
-    const prefix = forPath + DELIMITER + WILDCARD;
-    const pipeIndex = statePart.indexOf('|');
-    const atIndex = statePart.indexOf('@');
-    let pathPart;
-    let suffix;
-    if (pipeIndex !== -1) {
-        pathPart = statePart.slice(0, pipeIndex).trim();
-        suffix = statePart.slice(pipeIndex);
-    }
-    else if (atIndex !== -1) {
-        pathPart = statePart.slice(0, atIndex).trim();
-        suffix = statePart.slice(atIndex);
-    }
-    else {
-        pathPart = statePart.trim();
-        suffix = '';
-    }
-    if (pathPart === '.') {
-        pathPart = prefix;
-    }
-    else if (pathPart.startsWith('.')) {
-        pathPart = prefix + DELIMITER + pathPart.slice(1);
-    }
-    else {
-        return statePart;
-    }
-    if (suffix.length > 0) {
-        return pathPart + suffix;
-    }
-    return pathPart;
-}
-function expandCommentData(data, forPath) {
-    const match = COMMENT_REGEX.exec(data);
-    if (match === null) {
-        return data;
-    }
-    const commentPrefix = match[1];
-    const bindText = match[2];
-    const commentSuffix = match[3];
-    const expanded = expandShorthandInStatePart(bindText, forPath);
-    return commentPrefix + expanded + commentSuffix;
-}
-function expandBindAttribute(attrValue, forPath) {
-    const parts = attrValue.split(';');
-    let changed = false;
-    const result = parts.map(part => {
-        const trimmed = part.trim();
-        if (trimmed.length === 0)
-            return part;
-        const colonIndex = trimmed.indexOf(':');
-        if (colonIndex === -1)
-            return part;
-        const propPart = trimmed.slice(0, colonIndex).trim();
-        const statePart = trimmed.slice(colonIndex + 1).trim();
-        const expanded = expandShorthandInStatePart(statePart, forPath);
-        if (expanded !== statePart) {
-            changed = true;
-            return `${propPart}: ${expanded}`;
-        }
-        return part;
-    });
-    if (!changed)
-        return attrValue;
-    return result.join(';');
-}
-function expandShorthandInBindAttribute(attrValue, forPath) {
-    return expandBindAttribute(attrValue, forPath);
-}
-function expandShorthandPaths(root, forPath) {
-    const bindAttr = config.bindAttributeName;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_ELEMENT);
-    while (walker.nextNode()) {
-        const node = walker.currentNode;
-        if (node.nodeType === Node.COMMENT_NODE) {
-            const comment = node;
-            comment.data = expandCommentData(comment.data, forPath);
-            continue;
-        }
-        const element = node;
-        if (element instanceof HTMLTemplateElement) {
-            continue;
-        }
-        const attr = element.getAttribute(bindAttr);
-        if (attr !== null) {
-            const expanded = expandBindAttribute(attr, forPath);
-            if (expanded !== attr) {
-                element.setAttribute(bindAttr, expanded);
-            }
-        }
-    }
-}
-
-function getNodePath(node) {
-    let currentNode = node;
-    const path = [];
-    while (currentNode.parentNode !== null) {
-        const nodes = Array.from(currentNode.parentNode.childNodes);
-        const index = nodes.indexOf(currentNode);
-        path.unshift(index);
-        currentNode = currentNode.parentNode;
-    }
-    return path;
-}
-
-function getFragmentNodeInfos(fragment) {
-    const fragmnentNodeInfos = [];
-    const subscriberNodes = getSubscriberNodes(fragment);
-    for (const subscriberNode of subscriberNodes) {
-        const parseBindingTextResults = getParseBindTextResults(subscriberNode);
-        fragmnentNodeInfos.push({
-            nodePath: getNodePath(subscriberNode),
-            parseBindTextResults: parseBindingTextResults,
-        });
-    }
-    return fragmnentNodeInfos;
-}
-
-function optimizeFragment(fragment) {
-    const childNodes = Array.from(fragment.childNodes);
-    for (const childNode of childNodes) {
-        if (childNode.nodeType === Node.TEXT_NODE) {
-            const textContent = childNode.textContent || '';
-            if (textContent.trim() === '') {
-                // Remove empty text nodes
-                fragment.removeChild(childNode);
-            }
-        }
-    }
-}
-
-const keywordByBindingType = new Map([
-    ["for", config.commentForPrefix],
-    ["if", config.commentIfPrefix],
-    ["elseif", config.commentElseIfPrefix],
-    ["else", config.commentElsePrefix],
-]);
-const notFilter = createNotFilter();
-function cloneNotParseBindTextResult(bindingType, parseBindTextResult) {
-    const filters = parseBindTextResult.outFilters;
-    return {
-        ...parseBindTextResult,
-        outFilters: [...filters, notFilter],
-        bindingType: bindingType,
-    };
-}
-function _getFragmentInfo(rootNode, fragment, parseBindingTextResult, forPath) {
-    optimizeFragment(fragment);
-    if (typeof forPath === "string") {
-        expandShorthandPaths(fragment, forPath);
-    }
-    collectStructuralFragments(rootNode, fragment, forPath);
-    // after replacing and collect node infos on child fragment
-    const fragmentInfo = {
-        fragment: fragment,
-        parseBindTextResult: parseBindingTextResult,
-        nodeInfos: getFragmentNodeInfos(fragment),
-    };
-    return fragmentInfo;
-}
-function collectStructuralFragments(rootNode, walkRoot, forPath) {
-    const elseKeyword = config.commentElsePrefix;
-    const walker = document.createTreeWalker(walkRoot, NodeFilter.SHOW_ELEMENT, {
-        acceptNode(node) {
-            const element = node;
-            if (element.tagName.toLowerCase() === 'template') {
-                const bindText = element.getAttribute(config.bindAttributeName) || '';
-                if (bindText.length > 0) {
-                    return NodeFilter.FILTER_ACCEPT;
-                }
-            }
-            return NodeFilter.FILTER_SKIP;
-        }
-    });
-    let lastIfFragmentInfo = null; // for elseif chaining
-    const elseFragmentInfos = []; // for elseif chaining
-    const templates = [];
-    while (walker.nextNode()) {
-        const template = walker.currentNode;
-        templates.push(template);
-    }
-    for (const template of templates) {
-        let bindText = template.getAttribute(config.bindAttributeName) || '';
-        if (typeof forPath === "string") {
-            bindText = expandShorthandInBindAttribute(bindText, forPath);
-        }
-        const parseBindTextResults = parseBindTextsForElement(bindText);
-        let parseBindTextResult = parseBindTextResults[0];
-        const keyword = keywordByBindingType.get(parseBindTextResult.bindingType);
-        if (typeof keyword === 'undefined') {
-            continue;
-        }
-        const bindingType = parseBindTextResult.bindingType;
-        const fragment = template.content;
-        const uuid = getUUID();
-        let fragmentInfo = null;
-        // Determine childForPath for shorthand expansion
-        const childForPath = bindingType === "for"
-            ? parseBindTextResult.statePathName
-            : forPath;
-        if (bindingType === "else") {
-            // check last 'if' or 'elseif' fragment info
-            if (lastIfFragmentInfo === null) {
-                raiseError(`'else' binding found without preceding 'if' or 'elseif' binding.`);
-            }
-            // else condition
-            parseBindTextResult = cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult);
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
-            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
-            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
-            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
-            if (typeof lastElseFragmentInfo !== "undefined") {
-                template.remove();
-                lastElseFragmentInfo.fragment.appendChild(placeHolder);
-                lastElseFragmentInfo.nodeInfos.push({
-                    nodePath: getNodePath(placeHolder),
-                    parseBindTextResults: getParseBindTextResults(placeHolder),
-                });
-            }
-            else {
-                template.replaceWith(placeHolder);
-            }
-        }
-        else if (bindingType === "elseif") {
-            // check last 'if' or 'elseif' fragment info
-            if (lastIfFragmentInfo === null) {
-                raiseError(`'elseif' binding found without preceding 'if' or 'elseif' binding.`);
-            }
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
-            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
-            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
-            // create else fragment
-            const elseUUID = getUUID();
-            const elseFragmentInfo = {
-                fragment: document.createDocumentFragment(),
-                parseBindTextResult: cloneNotParseBindTextResult("else", lastIfFragmentInfo.parseBindTextResult),
-                nodeInfos: [],
-            };
-            elseFragmentInfo.fragment.appendChild(placeHolder);
-            elseFragmentInfo.nodeInfos.push({
-                nodePath: getNodePath(placeHolder),
-                parseBindTextResults: getParseBindTextResults(placeHolder),
-            });
-            setFragmentInfoByUUID(elseUUID, rootNode, elseFragmentInfo);
-            const lastElseFragmentInfo = elseFragmentInfos.at(-1);
-            elseFragmentInfos.push(elseFragmentInfo);
-            const elsePlaceHolder = document.createComment(`@@${elseKeyword}:${elseUUID}`);
-            if (typeof lastElseFragmentInfo !== "undefined") {
-                template.remove();
-                lastElseFragmentInfo.fragment.appendChild(elsePlaceHolder);
-                lastElseFragmentInfo.nodeInfos.push({
-                    nodePath: getNodePath(elsePlaceHolder),
-                    parseBindTextResults: getParseBindTextResults(elsePlaceHolder),
-                });
-            }
-            else {
-                template.replaceWith(elsePlaceHolder);
-            }
-        }
-        else {
-            fragmentInfo = _getFragmentInfo(rootNode, fragment, parseBindTextResult, childForPath);
-            setFragmentInfoByUUID(uuid, rootNode, fragmentInfo);
-            const placeHolder = document.createComment(`@@${keyword}:${uuid}`);
-            template.replaceWith(placeHolder);
-        }
-        // Update lastIfFragmentInfo for if/elseif/else chaining
-        if (bindingType === "if") {
-            elseFragmentInfos.length = 0; // start new if chain
-            lastIfFragmentInfo = fragmentInfo;
-        }
-        else if (bindingType === "elseif") {
-            lastIfFragmentInfo = fragmentInfo;
-        }
-        else if (bindingType === "else") {
-            lastIfFragmentInfo = null;
-            elseFragmentInfos.length = 0; // end if chain
-        }
-    }
-}
-
-async function waitForStateInitialize(root) {
-    const elements = root.querySelectorAll(config.tagNames.state);
-    const promises = [];
-    await customElements.whenDefined(config.tagNames.state);
-    for (const element of elements) {
-        const stateElement = element;
-        promises.push(stateElement.initializePromise);
-    }
-    await Promise.all(promises);
-}
-
-const registeredWebComponents = new WeakSet();
-async function registerWebComponent(webComponent) {
-    if (!registeredWebComponents.has(webComponent)) {
-        if (webComponent.shadowRoot === null) {
-            raiseError('Component has no shadow root.');
-        }
-        registeredWebComponents.add(webComponent);
-        const shadowRoot = webComponent.shadowRoot;
-        await waitForStateInitialize(shadowRoot);
-        convertMustacheToComments(shadowRoot);
-        collectStructuralFragments(shadowRoot, shadowRoot);
-        await waitInitializeBinding(webComponent);
-    }
-}
-function isWebComponentRegistered(webComponent) {
-    return registeredWebComponents.has(webComponent);
-}
-
 const getOuter = (outerState) => () => outerState;
-async function bindWebComponent(innerStateElement, component, stateProp) {
+function bindWebComponent(innerStateElement, component, stateProp) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
     }
     setStateElementByWebComponent(component, stateProp, innerStateElement);
-    if (!isWebComponentRegistered(component)) {
-        await registerWebComponent(component);
-    }
     if (component.hasAttribute(config.bindAttributeName)) {
-        // initializeBindingsの前にinerState,outerStateの紐付けを行う
         const bindings = (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp);
         buildPrimaryMappingRule(component, stateProp, bindings);
         const outerState = createOuterState(component, stateProp);
@@ -5156,7 +5170,6 @@ async function bindWebComponent(innerStateElement, component, stateProp) {
             configurable: true,
         });
     }
-    initializeBindings(component.shadowRoot, null);
 }
 
 function getAllPropertyDescriptors(obj) {
@@ -5311,11 +5324,11 @@ class State extends HTMLElement {
             }
         }
     }
-    async _bindWebComponent() {
+    _bindWebComponent() {
         if (this._boundComponent === null || this._boundComponentStateProp === null) {
             return;
         }
-        await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
+        bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
     }
     async _callStateConnectedCallback() {
         await this.createStateAsync("writable", async (state) => {
@@ -5339,8 +5352,8 @@ class State extends HTMLElement {
             await this._initializeBindWebComponent();
             await this._initialize();
             this._initialized = true;
+            this._bindWebComponent();
             this._resolveInitialize?.();
-            await this._bindWebComponent();
         }
         await this._callStateConnectedCallback();
     }
@@ -5487,18 +5500,8 @@ function registerComponents() {
     }
 }
 
-function registerHandler() {
-    document.addEventListener("DOMContentLoaded", async () => {
-        await waitForStateInitialize(document);
-        convertMustacheToComments(document);
-        collectStructuralFragments(document, document);
-        initializeBindings(document.body, null);
-    });
-}
-
 function bootstrapState() {
     registerComponents();
-    registerHandler();
 }
 
 export { bootstrapState };

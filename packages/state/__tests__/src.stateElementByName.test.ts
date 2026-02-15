@@ -1,9 +1,19 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
+
+vi.mock('../src/buildBindings', () => ({
+  buildBindings: vi.fn().mockResolvedValue(undefined)
+}));
+
 import { getStateElementByName, setStateElementByName } from '../src/stateElementByName';
+import { buildBindings } from '../src/buildBindings';
 import { config } from '../src/config';
 
 
 describe('stateElementByName', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     document.body.innerHTML = '';
     setStateElementByName(document, 'default', null);
@@ -83,5 +93,55 @@ describe('stateElementByName', () => {
       debugSpy.mockRestore();
       config.debug = originalDebug;
     }
+  });
+
+  describe('buildBindings自動呼び出し', () => {
+    it('Documentに初めて登録する場合、buildBindingsが呼ばれること', async () => {
+      const fake = { name: 'test' } as any;
+      setStateElementByName(document, 'test', fake);
+
+      // queueMicrotaskで非同期実行されるため、次のマイクロタスクを待つ
+      await new Promise(resolve => queueMicrotask(resolve));
+
+      expect(buildBindings).toHaveBeenCalledWith(document);
+    });
+
+    it('ShadowRootに初めて登録する場合、buildBindingsが呼ばれること', async () => {
+      const component = document.createElement('div');
+      const shadowRoot = component.attachShadow({ mode: 'open' });
+      const fake = { name: 'test' } as any;
+
+      setStateElementByName(shadowRoot, 'test', fake);
+
+      // queueMicrotaskで非同期実行されるため、次のマイクロタスクを待つ
+      await new Promise(resolve => queueMicrotask(resolve));
+
+      expect(buildBindings).toHaveBeenCalledWith(shadowRoot);
+    });
+
+    it('同じrootNodeに2回目の登録をする場合、buildBindingsは呼ばれないこと', async () => {
+      const fake1 = { name: 'test1' } as any;
+      const fake2 = { name: 'test2' } as any;
+
+      setStateElementByName(document, 'test1', fake1);
+      await new Promise(resolve => queueMicrotask(resolve));
+
+      vi.mocked(buildBindings).mockClear();
+
+      setStateElementByName(document, 'test2', fake2);
+      await new Promise(resolve => queueMicrotask(resolve));
+
+      expect(buildBindings).not.toHaveBeenCalled();
+    });
+
+    it('通常のNodeに登録する場合、buildBindingsは呼ばれないこと', async () => {
+      const normalNode = document.createElement('div');
+      const fake = { name: 'test' } as any;
+
+      setStateElementByName(normalNode, 'test', fake);
+      await new Promise(resolve => queueMicrotask(resolve));
+
+      expect(buildBindings).not.toHaveBeenCalled();
+    });
   });
 });

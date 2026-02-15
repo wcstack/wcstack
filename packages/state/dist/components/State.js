@@ -163,11 +163,11 @@ export class State extends HTMLElement {
             }
         }
     }
-    async _bindWebComponent() {
+    _bindWebComponent() {
         if (this._boundComponent === null || this._boundComponentStateProp === null) {
             return;
         }
-        await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
+        bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
     }
     async _callStateConnectedCallback() {
         await this.createStateAsync("writable", async (state) => {
@@ -191,8 +191,8 @@ export class State extends HTMLElement {
             await this._initializeBindWebComponent();
             await this._initialize();
             this._initialized = true;
+            this._bindWebComponent();
             this._resolveInitialize?.();
-            await this._bindWebComponent();
         }
         await this._callStateConnectedCallback();
     }

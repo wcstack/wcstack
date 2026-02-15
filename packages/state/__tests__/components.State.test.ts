@@ -574,9 +574,11 @@ describe('State component', () => {
 
     await (stateEl as any)._initializeBindWebComponent();
 
-    bindWebComponentMock.mockRejectedValueOnce(new Error('bind failed'));
+    bindWebComponentMock.mockImplementationOnce(() => {
+      throw new Error('bind failed');
+    });
 
-    await expect((stateEl as any)._bindWebComponent()).rejects.toThrow(
+    expect(() => (stateEl as any)._bindWebComponent()).toThrow(
       /bind failed/
     );
   });
