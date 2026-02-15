@@ -426,13 +426,17 @@ describe('State component', () => {
     expect(value).toEqual({ injected: true });
   });
 
-  it('初期化後にsetInitialStateを呼ぶとエラーになること', async () => {
+  it('初期化後にsetInitialStateを呼ぶと状態を上書きできること', async () => {
     const stateEl = createStateElement();
-    stateEl.setInitialState({});
+    stateEl.setInitialState({ initial: true });
     await stateEl.connectedCallback();
     await stateEl.initializePromise;
 
-    expect(() => stateEl.setInitialState({})).toThrow(/cannot be called after state is initialized/);
+    // 初期化後でもsetInitialStateで状態を上書きできる
+    stateEl.setInitialState({ overwritten: true });
+
+    const value = await getStateValue(stateEl);
+    expect(value).toEqual({ overwritten: true });
   });
 
   it('json属性でJSON文字列を読み込めること', async () => {
@@ -530,6 +534,8 @@ describe('State component', () => {
 
     expect((stateEl as any)._boundComponent).toBe(host);
     expect((stateEl as any)._boundComponentStateProp).toBe('outer');
+    // getter経由でもアクセスできることを確認
+    expect(stateEl.boundComponentStateProp).toBe('outer');
   });
 
   it('bind-componentで_bindWebComponentがbindWebComponentモジュールを呼び出すこと', async () => {

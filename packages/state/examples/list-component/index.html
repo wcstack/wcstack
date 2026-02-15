@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>simple state</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/user": "./components/user.js"
+      }
+    }
+  </script>
+  <script type="module" src="../../dist/auto.js"></script>
+  <style>
+    .over {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+import "@components/user";
+
+export default {
+  users: [
+    { id: 1, name: "Alice", age: 30 },
+    { id: 2, name: "Bob", age: 25 },
+    { id: 3, name: "Charlie", age: 35 }
+  ],
+};
+    </script>
+  </wcs-state>
+
+  <div>Loop: users</div>
+  <template data-wcs="for: users">
+    <div>{{ .name}} ({{ .age }} years old)</div>
+    <my-user data-wcs="state.user: ."></my-user>
+  </template>
+
+</body>
+</html>

@@ -8,16 +8,12 @@ import { raiseError } from "../raiseError";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { waitForStateInitialize } from "../waitForStateInitialize";
 import { createInnerState } from "./innerState";
+import { buildPrimaryMappingRule } from "./MappingRule";
 import { createOuterState } from "./outerState";
-import { bindSymbol } from "./symbols";
-import { IInnerState, IOuterState } from "./types";
+import { setStateElementByWebComponent } from "./stateElementByWebComponent";
+import { IOuterState } from "./types";
 
 const getOuter = (outerState: IOuterState) => (): IOuterState => outerState;
-
-const innerStateGetter = (inner:IInnerState, innerName:string) => ():any => inner[innerName];
-const innerStateSetter = (inner:IInnerState, innerName:string) => (v:any):void => {
-  inner[innerName] = v;
-}
 
 export async function bindWebComponent(
   innerStateElement: IStateElement,
@@ -30,6 +26,8 @@ export async function bindWebComponent(
   if (!component.hasAttribute(config.bindAttributeName)) {
     raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
   }
+  setStateElementByWebComponent(component, innerStateElement);
+
   const shadowRoot = component.shadowRoot;
 
   await waitForStateInitialize(shadowRoot);
@@ -42,13 +40,11 @@ export async function bindWebComponent(
   if (bindings === null) {
     raiseError('Bindings not found for component node.');
   }
-  const outerState = createOuterState();
-  const innerState = createInnerState();
+  buildPrimaryMappingRule(component);
+  const outerState = createOuterState(component);
+  const innerState = createInnerState(component);
+/*  
   for(const binding of bindings) {
-
-    outerState[bindSymbol](innerStateElement, binding);
-    innerState[bindSymbol](binding);
-
     const innerStateProp = binding.propSegments[0];
     const innerName = binding.propSegments.slice(1).join('.');
     if (stateProp !== innerStateProp) {
@@ -61,6 +57,8 @@ export async function bindWebComponent(
       configurable: true,
     });
   }
+*/
+  innerStateElement.setInitialState(innerState);
   Object.defineProperty(component, stateProp, {
     get: getOuter(outerState),
     enumerable: true,

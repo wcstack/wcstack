@@ -267,6 +267,10 @@ export class State extends HTMLElement implements IStateElement {
     return this._rootNode;
   }
 
+  get boundComponentStateProp(): string | null {
+    return this._boundComponentStateProp;
+  }
+
   private _addDependency(
     map: Map<string, string[]>, 
     sourcePath: string, 
@@ -362,9 +366,10 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   setInitialState(state: Record<string, any>): void {
-    if (this._initialized) {
-      raiseError('setInitialState cannot be called after state is initialized.');
+    if (!this._initialized) {
+      this._resolveSetState?.(state);
+    } else {
+      this._state = state;
     }
-    this._resolveSetState?.(state);
   }
 }

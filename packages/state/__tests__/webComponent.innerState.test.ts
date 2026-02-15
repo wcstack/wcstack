@@ -1,163 +1,334 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createInnerState } from '../src/webComponent/innerState';
-import { getStateElementByName } from '../src/stateElementByName';
-import { getLoopContextByNode } from '../src/list/loopContextByNode';
-import { raiseError } from '../src/raiseError';
-import { IBindingInfo } from '../src/binding/types';
-import { bindSymbol } from '../src/webComponent/symbols';
-import { setLoopContextSymbol } from '../src/proxy/symbols';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../src/stateElementByName', () => ({
-  getStateElementByName: vi.fn()
+vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
+  getStateElementByWebComponent: vi.fn()
 }));
-
+vi.mock('../src/address/AbsolutePathInfo', () => ({
+  getAbsolutePathInfo: vi.fn()
+}));
+vi.mock('../src/webComponent/MappingRule', () => ({
+  getOuterAbsolutePathInfo: vi.fn()
+}));
 vi.mock('../src/list/loopContextByNode', () => ({
   getLoopContextByNode: vi.fn()
 }));
-
-vi.mock('../src/raiseError', () => ({
-  raiseError: vi.fn((msg) => { throw new Error(msg); })
+vi.mock('../src/address/AbsoluteStateAddress', () => ({
+  createAbsoluteStateAddress: vi.fn()
+}));
+vi.mock('../src/webComponent/lastValueByAbsoluteStateAddress', () => ({
+  setLastValueByAbsoluteStateAddress: vi.fn()
 }));
 
-const getStateElementByNameMock = vi.mocked(getStateElementByName);
-const getLoopContextByNodeMock = vi.mocked(getLoopContextByNode);
-const raiseErrorMock = vi.mocked(raiseError);
+import { createInnerState } from '../src/webComponent/innerState';
+import { getStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
+import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
+import { getOuterAbsolutePathInfo } from '../src/webComponent/MappingRule';
+import { getLoopContextByNode } from '../src/list/loopContextByNode';
+import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
+import { setLastValueByAbsoluteStateAddress } from '../src/webComponent/lastValueByAbsoluteStateAddress';
+import { setLoopContextSymbol } from '../src/proxy/symbols';
 
-const createMockBinding = (overrides: Partial<IBindingInfo> = {}): IBindingInfo => ({
-  propSegments: ['component', 'propName'],
-  stateName: 'defaultState',
-  statePathName: 'outer.path',
-  node: document.createElement('div'),
-  replaceNode: document.createElement('div'),
-  ...overrides
-} as IBindingInfo);
+const getStateElementByWebComponentMock = vi.mocked(getStateElementByWebComponent);
+const getAbsolutePathInfoMock = vi.mocked(getAbsolutePathInfo);
+const getOuterAbsolutePathInfoMock = vi.mocked(getOuterAbsolutePathInfo);
+const getLoopContextByNodeMock = vi.mocked(getLoopContextByNode);
+const createAbsoluteStateAddressMock = vi.mocked(createAbsoluteStateAddress);
+const setLastValueMock = vi.mocked(setLastValueByAbsoluteStateAddress);
 
 describe('innerState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    document.body.innerHTML = '';
   });
 
-  it('createInnerStateでインスタンスが作成されること', () => {
-    const innerState = createInnerState();
-    expect(innerState).toBeDefined();
-    expect(typeof innerState[bindSymbol]).toBe('function');
-  });
+  describe('createInnerState', () => {
+    it('stateElementがnullの場合はエラーになること', () => {
+      const component = document.createElement('div');
+      getStateElementByWebComponentMock.mockReturnValue(null);
 
-  describe('[bindSymbol]', () => {
-    it('プロパティが定義されること', () => {
-      const innerState = createInnerState();
-      const binding = createMockBinding();
-      
-      // モックの設定 (getter/setterの初期化時に呼ばれる可能性があるため)
-      getStateElementByNameMock.mockReturnValue({ createState: vi.fn() } as any);
-
-      innerState[bindSymbol](binding);
-      
-      const descriptor = Object.getOwnPropertyDescriptor(innerState, 'propName');
-      expect(descriptor).toBeDefined();
-      expect(descriptor?.enumerable).toBe(true);
-      expect(descriptor?.configurable).toBe(true);
-      expect(typeof descriptor?.get).toBe('function');
-      expect(typeof descriptor?.set).toBe('function');
+      expect(() => createInnerState(component)).toThrow(/State element not found for web component/);
     });
 
-    it('getter: 値を取得できること', () => {
-      const innerState = createInnerState();
-      const binding = createMockBinding({
-        propSegments: ['cmp', 'value'],
-        stateName: 'myState',
-        statePathName: 'data.val'
-      });
-      const rootNode = binding.replaceNode.getRootNode();
+    it('boundComponentStatePropがnullの場合はエラーになること', () => {
+      const component = document.createElement('div');
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: null
+      } as any);
 
+      expect(() => createInnerState(component)).toThrow(/not bound to any component state prop/);
+    });
+
+    it('boundComponentStatePropがcomponentに存在しない場合はエラーになること', () => {
+      const component = document.createElement('div');
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: 'state'
+      } as any);
+
+      expect(() => createInnerState(component)).toThrow(/not bound to a valid component state prop/);
+    });
+
+    it('stateがオブジェクトでない場合はエラーになること', () => {
+      const component = document.createElement('div') as any;
+      component.state = 'not-an-object';
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: 'state'
+      } as any);
+
+      expect(() => createInnerState(component)).toThrow(/Invalid state object/);
+    });
+
+    it('stateがnullの場合はエラーになること', () => {
+      const component = document.createElement('div') as any;
+      component.state = null;
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: 'state'
+      } as any);
+
+      expect(() => createInnerState(component)).toThrow(/Invalid state object/);
+    });
+
+    it('正常にProxyが作成されること', () => {
+      const component = document.createElement('div') as any;
+      component.state = { user: {} };
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: 'state'
+      } as any);
+
+      const proxy = createInnerState(component);
+      expect(proxy).toBeDefined();
+      expect(typeof proxy).toBe('object');
+    });
+  });
+
+  describe('get trap', () => {
+    function createTestProxy() {
+      const component = document.createElement('div') as any;
+      component.state = {}; // 空オブジェクト（userプロパティは存在しない）
+      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      return { component, proxy: createInnerState(component) };
+    }
+
+    it('文字列プロパティでouter stateの値を取得できること', () => {
+      const { component, proxy } = createTestProxy();
+
+      const innerAbsPathInfo = { pathInfo: { path: 'user' } } as any;
       const stateProxy = {
-        [setLoopContextSymbol]: vi.fn((ctx, cb) => cb()),
-        'data.val': 'test-value'
+        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        'users.*': 'test-value'
       };
+      const outerAbsPathInfo = {
+        stateElement: {
+          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+        },
+        pathInfo: { path: 'users.*', wildcardCount: 0 }
+      } as any;
+      const absStateAddress = {} as any;
 
-      const stateEl = {
-        createState: vi.fn((mode, cb) => cb(stateProxy))
-      };
+      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
+      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
+      getLoopContextByNodeMock.mockReturnValue(null);
+      createAbsoluteStateAddressMock.mockReturnValue(absStateAddress);
 
-      getStateElementByNameMock.mockReturnValue(stateEl as any);
-      getLoopContextByNodeMock.mockReturnValue('mockLoopContext' as any);
+      const value = proxy['user'];
 
-      innerState[bindSymbol](binding);
-      
-      const value = innerState.value;
-
-      expect(getStateElementByNameMock).toHaveBeenCalledTimes(2);
-      expect(getStateElementByNameMock).toHaveBeenCalledWith(rootNode, 'myState');
-      expect(stateEl.createState).toHaveBeenCalledWith('readonly', expect.any(Function));
-      expect(getLoopContextByNodeMock).toHaveBeenCalledWith(binding.node);
-      expect(stateProxy[setLoopContextSymbol]).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));
       expect(value).toBe('test-value');
+      expect(getOuterAbsolutePathInfoMock).toHaveBeenCalledWith(component, innerAbsPathInfo);
+      expect(setLastValueMock).toHaveBeenCalledWith(absStateAddress, 'test-value');
     });
 
-    it('getter: State要素が見つからない場合はエラーになること', () => {
-      const innerState = createInnerState();
-      const binding = createMockBinding({ stateName: 'missing' });
+    it('outerAbsPathInfoがnullの場合はエラーになること', () => {
+      const { proxy } = createTestProxy();
 
-      getStateElementByNameMock.mockReturnValue(null);
+      getAbsolutePathInfoMock.mockReturnValue({ pathInfo: { path: 'user' } } as any);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
 
-      // $$bindは定義時にgetterを作成するが、getterは実行時にエラーになるのではなく、
-      // 今回の実装ではgetterFnの実行時(つまり$$bind時)にgetStateElementByNameを呼んでいる
-      // ソースを確認すると:
-      // const getterFn = (binding) => {
-      //   const outerStateElement = getStateElementByName(...)
-      //   if (outerStateElement === null) raiseError(...)
-      //   return () => { ... }
-      // }
-      // つまり [bindSymbol] を呼んだ時点でエラーになるはず
-
-      expect(() => innerState[bindSymbol](binding)).toThrow(/State element with name "missing" not found/);
+      expect(() => proxy['user']).toThrow(/Outer path info not found/);
     });
 
-    it('setter: 値を設定できること', () => {
-      const innerState = createInnerState();
-      const binding = createMockBinding({
-        propSegments: ['cmp', 'value'],
-        stateName: 'myState',
-        statePathName: 'data.val'
-      });
-      const rootNode = binding.replaceNode.getRootNode();
+    it('loopContextありでwildcardCountが正の場合はlistIndexが設定されること', () => {
+      const { proxy } = createTestProxy();
+
+      const innerAbsPathInfo = {} as any;
+      const listIndex = { index: 0 } as any;
+      const stateProxy = {
+        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        'users.*.name': 'Alice'
+      };
+      const outerAbsPathInfo = {
+        stateElement: {
+          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+        },
+        pathInfo: { path: 'users.*.name', wildcardCount: 1 }
+      } as any;
+
+      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
+      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
+      getLoopContextByNodeMock.mockReturnValue({
+        listIndex: { at: vi.fn(() => listIndex) }
+      } as any);
+      createAbsoluteStateAddressMock.mockReturnValue({} as any);
+
+      proxy['user.name'];
+
+      expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(outerAbsPathInfo, listIndex);
+    });
+
+    it('loopContextがnullの場合はlistIndexがnullのままであること', () => {
+      const { proxy } = createTestProxy();
 
       const stateProxy = {
-        [setLoopContextSymbol]: vi.fn((ctx, cb) => cb()),
-        'data.val': 'initial'
+        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        'users.*': 'value'
       };
+      const outerAbsPathInfo = {
+        stateElement: {
+          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+        },
+        pathInfo: { path: 'users.*', wildcardCount: 1 }
+      } as any;
 
-      const stateEl = {
-        createState: vi.fn((mode, cb) => cb(stateProxy))
-      };
+      getAbsolutePathInfoMock.mockReturnValue({} as any);
+      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
+      getLoopContextByNodeMock.mockReturnValue(null);
+      createAbsoluteStateAddressMock.mockReturnValue({} as any);
 
-      getStateElementByNameMock.mockReturnValue(stateEl as any);
-      getLoopContextByNodeMock.mockReturnValue('mockLoopContext' as any);
+      proxy['user'];
 
-      innerState[bindSymbol](binding);
-      
-      innerState.value = 'new-value';
-
-      expect(getStateElementByNameMock).toHaveBeenCalledTimes(2);
-      expect(getStateElementByNameMock).toHaveBeenCalledWith(rootNode, 'myState');
-      expect(stateEl.createState).toHaveBeenCalledWith('writable', expect.any(Function));
-      expect(getLoopContextByNodeMock).toHaveBeenCalledWith(binding.node);
-      expect(stateProxy[setLoopContextSymbol]).toHaveBeenCalledWith('mockLoopContext', expect.any(Function));
-      
-      // プロキシへの代入が行われたか確認
-      expect(stateProxy['data.val']).toBe('new-value');
+      expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(outerAbsPathInfo, null);
     });
 
-    it('setter: State要素が見つからない場合はエラーになること', () => {
-      const innerState = createInnerState();
-      const binding = createMockBinding({ stateName: 'missing' });
-      
-      // getterFn呼び出し時は成功させ、setterFn呼び出し時に失敗させる
-      getStateElementByNameMock
-        .mockReturnValueOnce({ createState: vi.fn() } as any)
-        .mockReturnValueOnce(null);
+    it('Symbolプロパティの場合はReflect.getを使用すること', () => {
+      const { proxy } = createTestProxy();
 
-      expect(() => innerState[bindSymbol](binding)).toThrow(/State element with name "missing" not found/);
+      const sym = Symbol('test');
+      expect(proxy[sym]).toBeUndefined();
+    });
+
+    it('targetに存在するプロパティはReflect.getで返すこと', () => {
+      const component = document.createElement('div') as any;
+      component.state = { existingProp: 'value' };
+      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+
+      const proxy = createInnerState(component);
+
+      expect(proxy['existingProp']).toBe('value');
+    });
+
+    it('$で始まるプロパティはundefinedを返すこと', () => {
+      const { proxy } = createTestProxy();
+
+      expect(proxy['$someMethod']).toBeUndefined();
+      expect(proxy['$postUpdate']).toBeUndefined();
+    });
+  });
+
+  describe('has trap', () => {
+    function createTestProxy() {
+      const component = document.createElement('div') as any;
+      component.state = {};
+      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      return { component, proxy: createInnerState(component) };
+    }
+
+    it('targetに存在するプロパティはtrueを返すこと', () => {
+      const component = document.createElement('div') as any;
+      component.state = { existingProp: 'value' };
+      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+
+      const proxy = createInnerState(component);
+
+      expect('existingProp' in proxy).toBe(true);
+    });
+
+    it('$で始まるプロパティはfalseを返すこと', () => {
+      const { proxy } = createTestProxy();
+
+      expect('$someMethod' in proxy).toBe(false);
+      expect('$postUpdate' in proxy).toBe(false);
+    });
+
+    it('outerAbsPathInfoが見つかる場合はtrueを返すこと', () => {
+      const { component, proxy } = createTestProxy();
+
+      const innerAbsPathInfo = { pathInfo: { path: 'user' } } as any;
+      const outerAbsPathInfo = { pathInfo: { path: 'users.*' } } as any;
+
+      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
+      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
+
+      expect('user' in proxy).toBe(true);
+    });
+
+    it('outerAbsPathInfoがnullの場合はfalseを返すこと', () => {
+      const { proxy } = createTestProxy();
+
+      getAbsolutePathInfoMock.mockReturnValue({ pathInfo: { path: 'unknown' } } as any);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
+
+      expect('unknown' in proxy).toBe(false);
+    });
+
+    it('Symbolプロパティの場合はReflect.hasを使用すること', () => {
+      const { proxy } = createTestProxy();
+
+      const sym = Symbol('test');
+      expect(sym in proxy).toBe(false);
+    });
+  });
+
+  describe('set trap', () => {
+    function createTestProxy() {
+      const component = document.createElement('div') as any;
+      component.state = {}; // 空オブジェクト（userプロパティは存在しない）
+      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      return { component, proxy: createInnerState(component) };
+    }
+
+    it('文字列プロパティでouter stateに値を設定できること', () => {
+      const { proxy } = createTestProxy();
+
+      const innerAbsPathInfo = {} as any;
+      const stateProxy = {
+        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        'users.*': undefined as any,
+      };
+      const outerAbsPathInfo = {
+        stateElement: {
+          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+        },
+        pathInfo: { path: 'users.*' }
+      } as any;
+
+      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
+      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
+      getLoopContextByNodeMock.mockReturnValue(null);
+
+      proxy['user'] = 'new-value';
+
+      expect(outerAbsPathInfo.stateElement.createState).toHaveBeenCalledWith('writable', expect.any(Function));
+      expect(stateProxy['users.*']).toBe('new-value');
+    });
+
+    it('outerAbsPathInfoがnullの場合はエラーになること', () => {
+      const { proxy } = createTestProxy();
+
+      getAbsolutePathInfoMock.mockReturnValue({ pathInfo: { path: 'user' } } as any);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
+
+      expect(() => { proxy['user'] = 'value'; }).toThrow(/Outer path info not found/);
+    });
+
+    it('Symbolプロパティの場合はReflect.setを使用すること', () => {
+      const { proxy } = createTestProxy();
+
+      const sym = Symbol('test');
+      proxy[sym] = 'value';
+      expect(proxy[sym]).toBe('value');
     });
   });
 });

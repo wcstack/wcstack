@@ -7,13 +7,10 @@ import { raiseError } from "../raiseError";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { waitForStateInitialize } from "../waitForStateInitialize";
 import { createInnerState } from "./innerState";
+import { buildPrimaryMappingRule } from "./MappingRule";
 import { createOuterState } from "./outerState";
-import { bindSymbol } from "./symbols";
+import { setStateElementByWebComponent } from "./stateElementByWebComponent";
 const getOuter = (outerState) => () => outerState;
-const innerStateGetter = (inner, innerName) => () => inner[innerName];
-const innerStateSetter = (inner, innerName) => (v) => {
-    inner[innerName] = v;
-};
 export async function bindWebComponent(innerStateElement, component, stateProp) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
@@ -21,6 +18,7 @@ export async function bindWebComponent(innerStateElement, component, stateProp) 
     if (!component.hasAttribute(config.bindAttributeName)) {
         raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
     }
+    setStateElementByWebComponent(component, innerStateElement);
     const shadowRoot = component.shadowRoot;
     await waitForStateInitialize(shadowRoot);
     convertMustacheToComments(shadowRoot);
@@ -31,23 +29,25 @@ export async function bindWebComponent(innerStateElement, component, stateProp) 
     if (bindings === null) {
         raiseError('Bindings not found for component node.');
     }
-    const outerState = createOuterState();
-    const innerState = createInnerState();
-    for (const binding of bindings) {
-        outerState[bindSymbol](innerStateElement, binding);
-        innerState[bindSymbol](binding);
+    buildPrimaryMappingRule(component);
+    const outerState = createOuterState(component);
+    const innerState = createInnerState(component);
+    /*
+      for(const binding of bindings) {
         const innerStateProp = binding.propSegments[0];
         const innerName = binding.propSegments.slice(1).join('.');
         if (stateProp !== innerStateProp) {
-            raiseError(`Binding prop "${innerStateProp}" does not match stateProp "${stateProp}".`);
+          raiseError(`Binding prop "${innerStateProp}" does not match stateProp "${stateProp}".`);
         }
         innerStateElement.bindProperty(innerName, {
-            get: innerStateGetter(innerState, innerName),
-            set: innerStateSetter(innerState, innerName),
-            enumerable: true,
-            configurable: true,
+          get: innerStateGetter(innerState, innerName),
+          set: innerStateSetter(innerState, innerName),
+          enumerable: true,
+          configurable: true,
         });
-    }
+      }
+    */
+    innerStateElement.setInitialState(innerState);
     Object.defineProperty(component, stateProp, {
         get: getOuter(outerState),
         enumerable: true,

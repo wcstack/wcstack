@@ -1,56 +1,115 @@
+import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
+import { getPathInfo } from "../address/PathInfo";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
-import { bindSymbol } from "./symbols";
-const getterFn = (binding) => {
-    const rootNode = binding.replaceNode.getRootNode();
-    const outerStateElement = getStateElementByName(rootNode, binding.stateName);
-    if (outerStateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+import { setLastValueByAbsoluteStateAddress } from "./lastValueByAbsoluteStateAddress";
+import { getOuterAbsolutePathInfo } from "./MappingRule";
+import { getStateElementByWebComponent } from "./stateElementByWebComponent";
+class InnerStateProxyHandler {
+    _webComponent;
+    _innerStateElement;
+    constructor(webComponent) {
+        this._webComponent = webComponent;
+        this._innerStateElement = getStateElementByWebComponent(webComponent) ?? raiseError('State element not found for web component.');
     }
-    const outerName = binding.statePathName;
-    return () => {
-        let value = undefined;
-        const loopContext = getLoopContextByNode(binding.node);
-        outerStateElement.createState("readonly", (state) => {
-            state[setLoopContextSymbol](loopContext, () => {
-                value = state[outerName];
+    get(target, prop, receiver) {
+        if (typeof prop === 'string') {
+            if (prop in target) {
+                return Reflect.get(target, prop, receiver);
+            }
+            if (prop[0] === '$') {
+                return undefined;
+            }
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
+            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
+            if (outerAbsPathInfo === null) {
+                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
+            }
+            const loopContext = getLoopContextByNode(this._webComponent);
+            let value = undefined;
+            outerAbsPathInfo.stateElement.createState("readonly", (state) => {
+                state[setLoopContextSymbol](loopContext, () => {
+                    value = state[outerAbsPathInfo.pathInfo.path];
+                    let listIndex = null;
+                    if (loopContext !== null && loopContext.listIndex !== null) {
+                        if (outerAbsPathInfo.pathInfo.wildcardCount > 0) {
+                            // wildcardPathSetとloopContextのpathInfoSetのintersectionのうち、segment数が最も多いものをouterAbsPathInfoにする
+                            // 例: outerPathInfoが "todos.*.name"で、loopContextのpathInfoSetに "todos.0.name", "todos.1.name"がある場合、"todos.0.name"や"todos.1.name"をouterAbsPathInfoにする
+                            listIndex = loopContext.listIndex.at(outerAbsPathInfo.pathInfo.wildcardCount - 1);
+                        }
+                    }
+                    const absStateAddress = createAbsoluteStateAddress(outerAbsPathInfo, listIndex);
+                    setLastValueByAbsoluteStateAddress(absStateAddress, value);
+                });
             });
-        });
-        return value;
-    };
-};
-const setterFn = (binding) => {
-    const rootNode = binding.replaceNode.getRootNode();
-    const outerStateElement = getStateElementByName(rootNode, binding.stateName);
-    if (outerStateElement === null) {
-        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+            return value;
+        }
+        else {
+            return Reflect.get(target, prop, receiver);
+        }
     }
-    const outerName = binding.statePathName;
-    return (v) => {
-        const loopContext = getLoopContextByNode(binding.node);
-        outerStateElement.createState("writable", (state) => {
-            state[setLoopContextSymbol](loopContext, () => {
-                state[outerName] = v;
+    set(target, prop, value, receiver) {
+        if (typeof prop === 'string') {
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
+            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
+            if (outerAbsPathInfo === null) {
+                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
+            }
+            const loopContext = getLoopContextByNode(this._webComponent);
+            outerAbsPathInfo.stateElement.createState("writable", (state) => {
+                state[setLoopContextSymbol](loopContext, () => {
+                    state[outerAbsPathInfo.pathInfo.path] = value;
+                });
             });
-        });
-    };
-};
-class InnerState {
-    constructor() {
+            return true;
+        }
+        else {
+            return Reflect.set(target, prop, value, receiver);
+        }
     }
-    [bindSymbol](binding) {
-        const innerName = binding.propSegments.slice(1).join('.');
-        Object.defineProperty(this, innerName, {
-            get: getterFn(binding),
-            set: setterFn(binding),
-            enumerable: true,
-            configurable: true,
-        });
+    has(target, prop) {
+        if (typeof prop === 'string') {
+            if (prop in target) {
+                return Reflect.has(target, prop);
+            }
+            if (prop[0] === '$') {
+                return false;
+            }
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
+            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
+            if (outerAbsPathInfo === null) {
+                return false;
+            }
+            return true;
+        }
+        else {
+            return Reflect.has(target, prop);
+        }
     }
 }
-export function createInnerState() {
-    return new InnerState();
+export function createInnerState(webComponent) {
+    const handler = new InnerStateProxyHandler(webComponent);
+    const innerState = getStateElementByWebComponent(webComponent);
+    /* c8 ignore start */
+    if (innerState === null) {
+        raiseError('State element not found for web component.');
+    }
+    /* c8 ignore stop */
+    if (innerState.boundComponentStateProp === null) {
+        raiseError('State element is not bound to any component state prop.');
+    }
+    if (!(innerState.boundComponentStateProp in webComponent)) {
+        raiseError(`State element is not bound to a valid component state prop: ${innerState.boundComponentStateProp}`);
+    }
+    const state = webComponent[innerState.boundComponentStateProp];
+    if (typeof state !== 'object' || state === null) {
+        raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
+    }
+    return new Proxy(state, handler);
 }
 //# sourceMappingURL=innerState.js.map

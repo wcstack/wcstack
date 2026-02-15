@@ -238,6 +238,9 @@ export class State extends HTMLElement {
         }
         return this._rootNode;
     }
+    get boundComponentStateProp() {
+        return this._boundComponentStateProp;
+    }
     _addDependency(map, sourcePath, targetPath) {
         const deps = map.get(sourcePath);
         if (deps === undefined) {
@@ -322,10 +325,12 @@ export class State extends HTMLElement {
         Object.defineProperty(this._state, prop, desc);
     }
     setInitialState(state) {
-        if (this._initialized) {
-            raiseError('setInitialState cannot be called after state is initialized.');
+        if (!this._initialized) {
+            this._resolveSetState?.(state);
         }
-        this._resolveSetState?.(state);
+        else {
+            this._state = state;
+        }
     }
 }
 //# sourceMappingURL=State.js.map

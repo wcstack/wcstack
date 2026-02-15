@@ -13,7 +13,8 @@
       "Bash(npm run test:coverage:*)",
       "Bash(ls -la \"d:\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\router\\\\src\"\" 2>/dev/null || echo \"src directory not found \")",
       "Bash(ls:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

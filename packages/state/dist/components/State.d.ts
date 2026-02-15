@@ -45,6 +45,7 @@ export declare class State extends HTMLElement implements IStateElement {
     get staticDependency(): Map<string, string[]>;
     get version(): number;
     get rootNode(): Node;
+    get boundComponentStateProp(): string | null;
     private _addDependency;
     /**
      * source,           target

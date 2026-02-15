@@ -1,2 +1,2 @@
-import { bindSymbol } from "./symbols";
+export {};
 //# sourceMappingURL=types.js.map
