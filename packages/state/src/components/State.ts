@@ -181,9 +181,7 @@ export class State extends HTMLElement implements IStateElement {
     if (this._boundComponent === null || this._boundComponentStateProp === null) {
       return;
     }
-    if (this._boundComponent.hasAttribute(config.bindAttributeName)) {
-      await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
-    }
+    await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
   }
 
   private async _callStateConnectedCallback(): Promise<void> {

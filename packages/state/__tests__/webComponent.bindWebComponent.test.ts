@@ -29,6 +29,13 @@ vi.mock('../src/webComponent/innerState', () => {
   const innerState = {};
   return { createInnerState: vi.fn(() => innerState) };
 });
+vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
+  setStateElementByWebComponent: vi.fn()
+}));
+vi.mock('../src/webComponent/registerWebComponent', () => ({
+  isWebComponentRegistered: vi.fn(() => false),
+  registerWebComponent: vi.fn().mockResolvedValue(undefined)
+}));
 
 import { bindWebComponent } from '../src/webComponent/bindWebComponent';
 import { getBindingsByNode } from '../src/bindings/getBindingsByNode';
@@ -40,6 +47,8 @@ import { waitForStateInitialize } from '../src/waitForStateInitialize';
 import { buildPrimaryMappingRule } from '../src/webComponent/MappingRule';
 import { createOuterState } from '../src/webComponent/outerState';
 import { createInnerState } from '../src/webComponent/innerState';
+import { setStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
+import { isWebComponentRegistered, registerWebComponent } from '../src/webComponent/registerWebComponent';
 import { IBindingInfo } from '../src/types';
 import { getPathInfo } from '../src/address/PathInfo';
 
@@ -89,18 +98,28 @@ describe('bindWebComponent', () => {
     await expect(bindWebComponent(stateEl, component, 'outer')).rejects.toThrow(/no shadow root/);
   });
 
-  it('bindAttributeNameがない場合はエラーになること', async () => {
+  it('bindAttributeNameがない場合でも正常に動作すること（単独WebComponent）', async () => {
     const component = createComponentWithShadow(false);
     const stateEl = createMockStateElement();
-    await expect(bindWebComponent(stateEl, component, 'outer')).rejects.toThrow(/no "data-wcs" attribute/);
+
+    await expect(bindWebComponent(stateEl, component, 'state')).resolves.not.toThrow();
+
+    // setStateElementByWebComponentが呼ばれること
+    expect(setStateElementByWebComponent).toHaveBeenCalledWith(component, 'state', stateEl);
+
+    // registerWebComponentが呼ばれること
+    expect(registerWebComponent).toHaveBeenCalledWith(component);
+
+    // initializeBindingsが呼ばれること（data-wcs属性がなくても）
+    expect(initializeBindings).toHaveBeenCalledWith(component.shadowRoot, null);
   });
 
-  it('bindingsがnullの場合はエラーになること', async () => {
+  it('bindingsが空配列でも正常に動作すること', async () => {
     const component = createComponentWithShadow();
     const stateEl = createMockStateElement();
-    getBindingsByNodeMock.mockReturnValue(null);
+    getBindingsByNodeMock.mockReturnValue([]);
 
-    await expect(bindWebComponent(stateEl, component, 'outer')).rejects.toThrow(/Bindings not found/);
+    await expect(bindWebComponent(stateEl, component, 'outer')).resolves.not.toThrow();
   });
 
   // Note: stateProp チェックは現在コメントアウトされているため、このテストは削除またはスキップ
@@ -129,20 +148,18 @@ describe('bindWebComponent', () => {
 
     await bindWebComponent(stateEl, component, 'outer');
 
-    // waitForStateInitialize, convertMustache, collectStructural が呼ばれること
-    expect(waitForStateInitialize).toHaveBeenCalledWith(component.shadowRoot);
-    expect(convertMustacheToComments).toHaveBeenCalledWith(component.shadowRoot);
-    expect(collectStructuralFragments).toHaveBeenCalledWith(component.shadowRoot, component.shadowRoot);
+    // setStateElementByWebComponentが呼ばれること
+    expect(setStateElementByWebComponent).toHaveBeenCalledWith(component, 'outer', stateEl);
 
-    // waitInitializeBinding が呼ばれること
-    expect(waitInitializeBinding).toHaveBeenCalledWith(component);
+    // registerWebComponentが呼ばれること
+    expect(registerWebComponent).toHaveBeenCalledWith(component);
 
-    // buildPrimaryMappingRule が呼ばれること
-    expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component);
+    // buildPrimaryMappingRule が呼ばれること（stateName, bindingsパラメータ付き）
+    expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1, binding2]);
 
-    // createOuterState, createInnerState が component を受け取ること
-    expect(createOuterState).toHaveBeenCalledWith(component);
-    expect(createInnerState).toHaveBeenCalledWith(component);
+    // createOuterState, createInnerState が component, stateName を受け取ること
+    expect(createOuterState).toHaveBeenCalledWith(component, 'outer');
+    expect(createInnerState).toHaveBeenCalledWith(component, 'outer');
 
     // setInitialState が innerState で呼ばれること
     expect(stateEl.setInitialState).toHaveBeenCalledWith(innerState);
@@ -170,5 +187,18 @@ describe('bindWebComponent', () => {
     // setInitialStateが呼ばれたことを確認
     expect(stateEl.setInitialState).toHaveBeenCalledTimes(1);
     expect(stateEl.setInitialState).toHaveBeenCalledWith(innerState);
+  });
+
+  it('異なるstatePropのバインディングはフィルタリングされること', async () => {
+    const component = createComponentWithShadow();
+    const stateEl = createMockStateElement();
+    const binding1 = createMockBinding(['outer', 'title'], 'name');
+    const binding2 = createMockBinding(['props', 'config'], 'settings'); // 別のstateProp
+    getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
+
+    await bindWebComponent(stateEl, component, 'outer');
+
+    // buildPrimaryMappingRuleには'outer'で始まるバインディングのみ渡される
+    expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1]);
   });
 });

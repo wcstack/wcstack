@@ -9,9 +9,9 @@ import { getStateElementByWebComponent } from "./stateElementByWebComponent";
 class OuterStateProxyHandler {
     _webComponent;
     _innerStateElement;
-    constructor(webComponent) {
+    constructor(webComponent, stateName) {
         this._webComponent = webComponent;
-        this._innerStateElement = getStateElementByWebComponent(webComponent) ?? raiseError('State element not found for web component.');
+        this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
     }
     get(target, prop, receiver) {
         if (typeof prop === 'string') {
@@ -59,8 +59,8 @@ class OuterStateProxyHandler {
         }
     }
 }
-export function createOuterState(webComponent) {
-    const handler = new OuterStateProxyHandler(webComponent);
+export function createOuterState(webComponent, stateName) {
+    const handler = new OuterStateProxyHandler(webComponent, stateName);
     return new Proxy({}, handler);
 }
 //# sourceMappingURL=outerState.js.map

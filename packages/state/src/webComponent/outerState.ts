@@ -12,9 +12,9 @@ import { IOuterState } from "./types";
 class OuterStateProxyHandler implements ProxyHandler<IOuterState> {
   private _webComponent: Element;
   private _innerStateElement: IStateElement;
-  constructor(webComponent: Element) {
+  constructor(webComponent: Element, stateName: string) {
     this._webComponent = webComponent;
-    this._innerStateElement = getStateElementByWebComponent(webComponent) ?? raiseError('State element not found for web component.');
+    this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
   }
 
   get(target: IOuterState, prop: string | symbol, receiver: any): any {
@@ -63,7 +63,7 @@ class OuterStateProxyHandler implements ProxyHandler<IOuterState> {
   }
 }
 
-export function createOuterState(webComponent: Element): IOuterState {
-  const handler = new OuterStateProxyHandler(webComponent);
+export function createOuterState(webComponent: Element, stateName: string): IOuterState {
+  const handler = new OuterStateProxyHandler(webComponent, stateName);
   return new Proxy({}, handler);
 }

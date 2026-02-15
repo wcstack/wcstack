@@ -7,8 +7,8 @@ describe('stateElementByWebComponent', () => {
     const webComponent = document.createElement('div');
     const stateElement = { name: 'test-state' } as IStateElement;
 
-    setStateElementByWebComponent(webComponent, stateElement);
-    const result = getStateElementByWebComponent(webComponent);
+    setStateElementByWebComponent(webComponent, 'state', stateElement);
+    const result = getStateElementByWebComponent(webComponent, 'state');
 
     expect(result).toBe(stateElement);
   });
@@ -16,7 +16,17 @@ describe('stateElementByWebComponent', () => {
   it('未登録のwebComponentに対してはnullを返すこと', () => {
     const webComponent = document.createElement('div');
 
-    const result = getStateElementByWebComponent(webComponent);
+    const result = getStateElementByWebComponent(webComponent, 'state');
+
+    expect(result).toBeNull();
+  });
+
+  it('未登録のstateNameに対してはnullを返すこと', () => {
+    const webComponent = document.createElement('div');
+    const stateElement = { name: 'test-state' } as IStateElement;
+
+    setStateElementByWebComponent(webComponent, 'state', stateElement);
+    const result = getStateElementByWebComponent(webComponent, 'props');
 
     expect(result).toBeNull();
   });
@@ -27,11 +37,11 @@ describe('stateElementByWebComponent', () => {
     const stateElement1 = { name: 'state1' } as IStateElement;
     const stateElement2 = { name: 'state2' } as IStateElement;
 
-    setStateElementByWebComponent(webComponent1, stateElement1);
-    setStateElementByWebComponent(webComponent2, stateElement2);
+    setStateElementByWebComponent(webComponent1, 'state', stateElement1);
+    setStateElementByWebComponent(webComponent2, 'state', stateElement2);
 
-    expect(getStateElementByWebComponent(webComponent1)).toBe(stateElement1);
-    expect(getStateElementByWebComponent(webComponent2)).toBe(stateElement2);
+    expect(getStateElementByWebComponent(webComponent1, 'state')).toBe(stateElement1);
+    expect(getStateElementByWebComponent(webComponent2, 'state')).toBe(stateElement2);
   });
 
   it('同じwebComponentに対してstateElementを上書きできること', () => {
@@ -39,10 +49,25 @@ describe('stateElementByWebComponent', () => {
     const stateElement1 = { name: 'state1' } as IStateElement;
     const stateElement2 = { name: 'state2' } as IStateElement;
 
-    setStateElementByWebComponent(webComponent, stateElement1);
-    expect(getStateElementByWebComponent(webComponent)).toBe(stateElement1);
+    setStateElementByWebComponent(webComponent, 'state', stateElement1);
+    expect(getStateElementByWebComponent(webComponent, 'state')).toBe(stateElement1);
 
-    setStateElementByWebComponent(webComponent, stateElement2);
-    expect(getStateElementByWebComponent(webComponent)).toBe(stateElement2);
+    setStateElementByWebComponent(webComponent, 'state', stateElement2);
+    expect(getStateElementByWebComponent(webComponent, 'state')).toBe(stateElement2);
+  });
+
+  it('同じwebComponentに複数のstateNameで異なるstateElementを保持できること', () => {
+    const webComponent = document.createElement('div');
+    const stateElement = { name: 'state' } as IStateElement;
+    const propsElement = { name: 'props' } as IStateElement;
+    const contextElement = { name: 'context' } as IStateElement;
+
+    setStateElementByWebComponent(webComponent, 'state', stateElement);
+    setStateElementByWebComponent(webComponent, 'props', propsElement);
+    setStateElementByWebComponent(webComponent, 'context', contextElement);
+
+    expect(getStateElementByWebComponent(webComponent, 'state')).toBe(stateElement);
+    expect(getStateElementByWebComponent(webComponent, 'props')).toBe(propsElement);
+    expect(getStateElementByWebComponent(webComponent, 'context')).toBe(contextElement);
   });
 });

@@ -51,17 +51,14 @@ describe('MappingRule', () => {
   });
 
   describe('buildPrimaryMappingRule', () => {
-    it('バインディングがnullの場合はエラーになること', () => {
-      getBindingsByNodeMock.mockReturnValue(null);
-
-      expect(() => buildPrimaryMappingRule(component)).toThrow(/WebComponent node must have at least one binding/);
+    it('bindingsが空配列の場合は早期リターンすること', () => {
+      expect(() => buildPrimaryMappingRule(component, 'state', [])).not.toThrow();
     });
 
     it('innerStateが見つからない場合はエラーになること', () => {
-      getBindingsByNodeMock.mockReturnValue([{} as any]);
       getStateElementByWebComponentMock.mockReturnValue(null);
 
-      expect(() => buildPrimaryMappingRule(component)).toThrow(/State element not found for web component/);
+      expect(() => buildPrimaryMappingRule(component, 'state', [{} as any])).toThrow(/State element not found for web component/);
     });
 
     it('正常にプライマリマッピングルールを構築すること', () => {
@@ -87,7 +84,6 @@ describe('MappingRule', () => {
         pathInfo: { path: 'users.0' }
       } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       getPathInfoMock.mockReturnValue(innerPathInfo);
       getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
@@ -95,7 +91,7 @@ describe('MappingRule', () => {
         absolutePathInfo: outerAbsPathInfo
       } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding]);
 
       // getPathInfoが propSegments.slice(1) で呼ばれること
       expect(getPathInfoMock).toHaveBeenCalledWith('user');
@@ -116,7 +112,6 @@ describe('MappingRule', () => {
         statePathName: 'products.0'
       } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
 
       getPathInfoMock
@@ -131,7 +126,7 @@ describe('MappingRule', () => {
         .mockReturnValueOnce({ absolutePathInfo: { pathInfo: { path: 'users.0' } } } as any)
         .mockReturnValueOnce({ absolutePathInfo: { pathInfo: { path: 'products.0' } } } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding1, binding2]);
 
       expect(getPathInfoMock).toHaveBeenCalledTimes(2);
       expect(getPathInfoMock).toHaveBeenNthCalledWith(1, 'user');
@@ -160,7 +155,6 @@ describe('MappingRule', () => {
       const innerAbsPathInfo = { stateElement: innerStateElement, pathInfo: innerPathInfo } as any;
       const outerAbsPathInfo = { pathInfo: { path: 'users.0' } } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       getPathInfoMock.mockReturnValue(innerPathInfo);
       getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
@@ -168,7 +162,7 @@ describe('MappingRule', () => {
         absolutePathInfo: outerAbsPathInfo
       } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding]);
 
       const result = getInnerAbsolutePathInfo(component, outerAbsPathInfo);
 
@@ -189,7 +183,6 @@ describe('MappingRule', () => {
       const innerAbsPathInfo = { stateElement: innerStateElement, pathInfo: innerPathInfo } as any;
       const outerAbsPathInfo = { pathInfo: { path: 'users.0' } } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       getPathInfoMock.mockReturnValue(innerPathInfo);
       getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
@@ -197,7 +190,7 @@ describe('MappingRule', () => {
         absolutePathInfo: outerAbsPathInfo
       } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding]);
 
       const result1 = getOuterAbsolutePathInfo(component, innerAbsPathInfo);
       const result2 = getOuterAbsolutePathInfo(component, innerAbsPathInfo);
@@ -246,7 +239,6 @@ describe('MappingRule', () => {
       const outerUsersAbsPathInfo = { pathInfo: { path: 'users.*', segments: ['users', '*'] } } as any;
       const outerUsersNameAbsPathInfo = { stateElement: outerStateElement, pathInfo: usersNamePathInfo } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
 
       // buildPrimaryMappingRule用のモック
@@ -256,7 +248,7 @@ describe('MappingRule', () => {
         absolutePathInfo: outerUsersAbsPathInfo
       } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding]);
 
       // getOuterAbsolutePathInfo用のモック
       component.getRootNode = vi.fn(() => document);
@@ -298,7 +290,6 @@ describe('MappingRule', () => {
       const innerUserAbsPathInfo = { stateElement: innerStateElement, pathInfo: userPathInfo } as any;
       const innerProductAbsPathInfo = { stateElement: innerStateElement, pathInfo: productPathInfo } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       getPathInfoMock.mockReturnValue(userPathInfo);
       getAbsolutePathInfoMock.mockReturnValue(innerUserAbsPathInfo);
@@ -306,7 +297,7 @@ describe('MappingRule', () => {
         absolutePathInfo: { pathInfo: { path: 'users.*' } }
       } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding]);
 
       expect(() => getOuterAbsolutePathInfo(component, innerProductAbsPathInfo)).toThrow(
         /Mapping rule not found for inner path "product"/
@@ -344,7 +335,6 @@ describe('MappingRule', () => {
         }
       } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       getPathInfoMock.mockReturnValue(userPathInfo);
       getAbsolutePathInfoMock.mockReturnValue(innerUserAbsPathInfo1);
@@ -352,7 +342,7 @@ describe('MappingRule', () => {
         absolutePathInfo: { pathInfo: { path: 'users.*', segments: ['users', '*'] } }
       } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding]);
 
       // 異なるAbsPathInfoオブジェクトで同じセグメント長のパスにアクセス
       expect(() => getOuterAbsolutePathInfo(component, innerUserAbsPathInfo2)).toThrow(
@@ -385,7 +375,6 @@ describe('MappingRule', () => {
       const innerUserAbsPathInfo = { stateElement: innerStateElement, pathInfo: userPathInfo } as any;
       const innerUserNameAbsPathInfo = { stateElement: innerStateElement, pathInfo: userNamePathInfo } as any;
 
-      getBindingsByNodeMock.mockReturnValue([binding]);
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       getPathInfoMock.mockReturnValueOnce(userPathInfo);
       getAbsolutePathInfoMock.mockReturnValueOnce(innerUserAbsPathInfo);
@@ -393,7 +382,7 @@ describe('MappingRule', () => {
         absolutePathInfo: { pathInfo: { path: 'users.*', segments: ['users', '*'] } }
       } as any);
 
-      buildPrimaryMappingRule(component);
+      buildPrimaryMappingRule(component, 'state', [binding]);
 
       component.getRootNode = vi.fn(() => document);
       getStateElementByNameMock.mockReturnValue(null);

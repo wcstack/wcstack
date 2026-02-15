@@ -23,6 +23,3 @@ class MyUser extends HTMLElement {
   }
 }
 </script>
-
-state.userの参照
-state.userの変更

@@ -167,9 +167,7 @@ export class State extends HTMLElement {
         if (this._boundComponent === null || this._boundComponentStateProp === null) {
             return;
         }
-        if (this._boundComponent.hasAttribute(config.bindAttributeName)) {
-            await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
-        }
+        await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
     }
     async _callStateConnectedCallback() {
         await this.createStateAsync("writable", async (state) => {

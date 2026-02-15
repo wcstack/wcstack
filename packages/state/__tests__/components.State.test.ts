@@ -552,7 +552,7 @@ describe('State component', () => {
     expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer');
   });
 
-  it('data-wcsがないコンポーネントではbindWebComponentが呼ばれないこと', async () => {
+  it('data-wcsがないコンポーネントでもbindWebComponentが呼ばれること（単独WebComponent）', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
@@ -561,7 +561,8 @@ describe('State component', () => {
     await (stateEl as any)._initializeBindWebComponent();
     await (stateEl as any)._bindWebComponent();
 
-    expect(bindWebComponentMock).not.toHaveBeenCalled();
+    // data-wcs属性がなくてもbindWebComponentが呼ばれる
+    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer');
   });
 
   it('bindWebComponentが失敗した場合はエラーが伝播すること', async () => {

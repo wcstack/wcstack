@@ -1,7 +1,7 @@
 import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { getPathInfo } from "../address/PathInfo";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
-import { addBindingByNode, getBindingsByNode } from "../bindings/getBindingsByNode";
+import { addBindingByNode } from "../bindings/getBindingsByNode";
 import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
@@ -17,12 +17,11 @@ function createMappingRuleByBinding(innerState, binding) {
     const outerAbsPathInfo = outerAbsStateAddress.absolutePathInfo;
     return { innerAbsPathInfo, outerAbsPathInfo };
 }
-export function buildPrimaryMappingRule(webComponent) {
-    const bindings = getBindingsByNode(webComponent);
-    if (bindings === null) {
-        raiseError('WebComponent node must have at least one binding.');
+export function buildPrimaryMappingRule(webComponent, stateName, bindings) {
+    if (bindings.length === 0) {
+        return;
     }
-    const innerState = getStateElementByWebComponent(webComponent);
+    const innerState = getStateElementByWebComponent(webComponent, stateName);
     if (innerState === null) {
         raiseError('State element not found for web component.');
     }

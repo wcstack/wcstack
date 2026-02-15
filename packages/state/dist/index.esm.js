@@ -4444,6 +4444,309 @@ function createStateProxy(rootNode, state, stateName, mutability) {
     return stateProxy;
 }
 
+// WebComponent専用のキャッシュ
+// outerState.tsからのアクセスで、これを返す
+const lastValueByAbsoluteStateAddress = new WeakMap();
+function setLastValueByAbsoluteStateAddress(absoluteStateAddress, value) {
+    lastValueByAbsoluteStateAddress.set(absoluteStateAddress, value);
+}
+function getLastValueByAbsoluteStateAddress(absoluteStateAddress) {
+    return lastValueByAbsoluteStateAddress.get(absoluteStateAddress);
+}
+
+const stateElementByWebComponent = new WeakMap();
+function setStateElementByWebComponent(webComponent, stateName, stateElement) {
+    let stateMap = stateElementByWebComponent.get(webComponent);
+    if (!stateMap) {
+        stateMap = new Map();
+        stateElementByWebComponent.set(webComponent, stateMap);
+    }
+    stateMap.set(stateName, stateElement);
+}
+function getStateElementByWebComponent(webComponent, stateName) {
+    const stateMap = stateElementByWebComponent.get(webComponent);
+    if (!stateMap) {
+        return null;
+    }
+    return stateMap.get(stateName) ?? null;
+}
+
+const innerMappingByElement = new WeakMap();
+const outerMappingByElement = new WeakMap();
+const primaryMappingRuleSetByElement = new WeakMap();
+const primaryBindingByMappingRule = new WeakMap();
+function createMappingRuleByBinding(innerState, binding) {
+    const innerPathInfo = getPathInfo(binding.propSegments.slice(1).join(DELIMITER));
+    const innerAbsPathInfo = getAbsolutePathInfo(innerState, innerPathInfo);
+    const outerAbsStateAddress = getAbsoluteStateAddressByBinding(binding);
+    const outerAbsPathInfo = outerAbsStateAddress.absolutePathInfo;
+    return { innerAbsPathInfo, outerAbsPathInfo };
+}
+function buildPrimaryMappingRule(webComponent, stateName, bindings) {
+    if (bindings.length === 0) {
+        return;
+    }
+    const innerState = getStateElementByWebComponent(webComponent, stateName);
+    if (innerState === null) {
+        raiseError('State element not found for web component.');
+    }
+    const innerMappingRule = new Map();
+    const outerMappingRule = new Map();
+    for (const binding of bindings) {
+        const mappingRule = createMappingRuleByBinding(innerState, binding);
+        let primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
+        if (typeof primaryMappingRuleSet === 'undefined') {
+            primaryMappingRuleSetByElement.set(webComponent, new Set([mappingRule]));
+        }
+        else {
+            primaryMappingRuleSet.add(mappingRule);
+        }
+        const innerAbsPathInfo = mappingRule.innerAbsPathInfo;
+        const outerAbsPathInfo = mappingRule.outerAbsPathInfo;
+        primaryBindingByMappingRule.set(mappingRule, binding);
+        innerMappingRule.set(innerAbsPathInfo, outerAbsPathInfo);
+        outerMappingRule.set(outerAbsPathInfo, innerAbsPathInfo);
+    }
+    innerMappingByElement.set(webComponent, innerMappingRule);
+    outerMappingByElement.set(webComponent, outerMappingRule);
+}
+function getInnerAbsolutePathInfo(webComponent, outerAbsPathInfo) {
+    const mapping = outerMappingByElement.get(webComponent);
+    if (typeof mapping === 'undefined') {
+        return null;
+    }
+    return mapping.get(outerAbsPathInfo) ?? null;
+}
+function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo) {
+    let innerMapping = innerMappingByElement.get(webComponent);
+    if (typeof innerMapping === 'undefined') {
+        innerMapping = new Map();
+        innerMappingByElement.set(webComponent, innerMapping);
+    }
+    if (innerMapping.has(innerAbsPathInfo)) {
+        return innerMapping.get(innerAbsPathInfo);
+    }
+    let outerMapping = outerMappingByElement.get(webComponent);
+    if (typeof outerMapping === 'undefined') {
+        outerMapping = new Map();
+        outerMappingByElement.set(webComponent, outerMapping);
+    }
+    // 内側からのアクセスの場合、ルールがなければプライマリルールから新たにルールとバインディングを生成する
+    const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
+    if (typeof primaryMappingRuleSet === 'undefined') {
+        raiseError('Primary mapping rule set not found for web component.');
+    }
+    let primaryMappingRule = null;
+    for (const currentPrimaryMappingRule of primaryMappingRuleSet) {
+        // innerPathInfoがprimaryMappingRuleのinnerPathInfoを包含しているか
+        if (!innerAbsPathInfo.pathInfo.cumulativePathInfoSet.has(currentPrimaryMappingRule.innerAbsPathInfo.pathInfo)) {
+            continue;
+        }
+        if (currentPrimaryMappingRule.innerAbsPathInfo.pathInfo.segments.length === innerAbsPathInfo.pathInfo.segments.length) {
+            raiseError('Duplicate mapping rule for web component.');
+        }
+        primaryMappingRule = currentPrimaryMappingRule;
+        break;
+    }
+    if (primaryMappingRule === null) {
+        raiseError(`Mapping rule not found for inner path "${innerAbsPathInfo.pathInfo.path}". ` +
+            `Did you forget to bind this property in the component's data-wcs attribute? ` +
+            `Available mappings: ${Array.from(primaryMappingRuleSet).map(r => r.innerAbsPathInfo.pathInfo.path).join(', ')}`);
+    }
+    // マッチした残りのパスをouterPathInfoに付与して新たなルールを生成
+    const primaryBinding = primaryBindingByMappingRule.get(primaryMappingRule);
+    /* c8 ignore start */
+    if (typeof primaryBinding === 'undefined') {
+        raiseError('Binding not found for primary mapping rule on web component.');
+    }
+    /* c8 ignore stop */
+    const outerRemainingSegments = innerAbsPathInfo.pathInfo.segments.slice(primaryMappingRule.innerAbsPathInfo.pathInfo.segments.length);
+    const outerSegments = primaryMappingRule.outerAbsPathInfo.pathInfo.segments.concat(outerRemainingSegments);
+    const outerPathInfo = getPathInfo(outerSegments.join(DELIMITER));
+    const rootNode = webComponent.getRootNode();
+    const outerStateElement = getStateElementByName(rootNode, primaryBinding.stateName);
+    if (outerStateElement === null) {
+        raiseError(`State element with name "${primaryBinding.stateName}" not found for web component.`);
+    }
+    const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
+    innerMapping.set(innerAbsPathInfo, outerAbsPathInfo);
+    outerMapping.set(outerAbsPathInfo, innerAbsPathInfo);
+    // ルールに対応するバインディングを生成
+    const newBinding = {
+        ...primaryBinding,
+        propName: innerAbsPathInfo.pathInfo.path,
+        propSegments: innerAbsPathInfo.pathInfo.segments,
+        statePathName: outerAbsPathInfo.pathInfo.path,
+        statePathInfo: outerAbsPathInfo.pathInfo,
+    };
+    addBindingByNode(webComponent, newBinding);
+    return outerAbsPathInfo;
+}
+
+class InnerStateProxyHandler {
+    _webComponent;
+    _innerStateElement;
+    constructor(webComponent, stateName) {
+        this._webComponent = webComponent;
+        this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
+    }
+    get(target, prop, receiver) {
+        if (typeof prop === 'string') {
+            if (prop in target) {
+                return Reflect.get(target, prop, receiver);
+            }
+            if (prop[0] === '$') {
+                return undefined;
+            }
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
+            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
+            if (outerAbsPathInfo === null) {
+                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
+            }
+            const loopContext = getLoopContextByNode(this._webComponent);
+            let value = undefined;
+            outerAbsPathInfo.stateElement.createState("readonly", (state) => {
+                state[setLoopContextSymbol](loopContext, () => {
+                    value = state[outerAbsPathInfo.pathInfo.path];
+                    let listIndex = null;
+                    if (loopContext !== null && loopContext.listIndex !== null) {
+                        if (outerAbsPathInfo.pathInfo.wildcardCount > 0) {
+                            // wildcardPathSetとloopContextのpathInfoSetのintersectionのうち、segment数が最も多いものをouterAbsPathInfoにする
+                            // 例: outerPathInfoが "todos.*.name"で、loopContextのpathInfoSetに "todos.0.name", "todos.1.name"がある場合、"todos.0.name"や"todos.1.name"をouterAbsPathInfoにする
+                            listIndex = loopContext.listIndex.at(outerAbsPathInfo.pathInfo.wildcardCount - 1);
+                        }
+                    }
+                    const absStateAddress = createAbsoluteStateAddress(outerAbsPathInfo, listIndex);
+                    setLastValueByAbsoluteStateAddress(absStateAddress, value);
+                });
+            });
+            return value;
+        }
+        else {
+            return Reflect.get(target, prop, receiver);
+        }
+    }
+    set(target, prop, value, receiver) {
+        if (typeof prop === 'string') {
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
+            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
+            if (outerAbsPathInfo === null) {
+                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
+            }
+            const loopContext = getLoopContextByNode(this._webComponent);
+            outerAbsPathInfo.stateElement.createState("writable", (state) => {
+                state[setLoopContextSymbol](loopContext, () => {
+                    state[outerAbsPathInfo.pathInfo.path] = value;
+                });
+            });
+            return true;
+        }
+        else {
+            return Reflect.set(target, prop, value, receiver);
+        }
+    }
+    has(target, prop) {
+        if (typeof prop === 'string') {
+            if (prop in target) {
+                return Reflect.has(target, prop);
+            }
+            if (prop[0] === '$') {
+                return false;
+            }
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
+            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
+            if (outerAbsPathInfo === null) {
+                return false;
+            }
+            return true;
+        }
+        else {
+            return Reflect.has(target, prop);
+        }
+    }
+}
+function createInnerState(webComponent, stateName) {
+    const handler = new InnerStateProxyHandler(webComponent, stateName);
+    const innerState = getStateElementByWebComponent(webComponent, stateName);
+    /* c8 ignore start */
+    if (innerState === null) {
+        raiseError('State element not found for web component.');
+    }
+    /* c8 ignore stop */
+    if (innerState.boundComponentStateProp === null) {
+        raiseError('State element is not bound to any component state prop.');
+    }
+    if (!(innerState.boundComponentStateProp in webComponent)) {
+        raiseError(`State element is not bound to a valid component state prop: ${innerState.boundComponentStateProp}`);
+    }
+    const state = webComponent[innerState.boundComponentStateProp];
+    if (typeof state !== 'object' || state === null) {
+        raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
+    }
+    return new Proxy(state, handler);
+}
+
+class OuterStateProxyHandler {
+    _webComponent;
+    _innerStateElement;
+    constructor(webComponent, stateName) {
+        this._webComponent = webComponent;
+        this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
+    }
+    get(target, prop, receiver) {
+        if (typeof prop === 'string') {
+            const [path, stateName = 'default'] = prop.split('@');
+            const outerPathInfo = getPathInfo(path);
+            const rootNode = this._webComponent.getRootNode();
+            const outerStateElement = getStateElementByName(rootNode, stateName);
+            if (outerStateElement === null) {
+                raiseError(`State element with name "${stateName}" not found for web component.`);
+            }
+            const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
+            const innerAbsPathInfo = getInnerAbsolutePathInfo(this._webComponent, outerAbsPathInfo);
+            if (innerAbsPathInfo === null) {
+                raiseError(`Inner path info not found for outer path "${outerPathInfo.path}" on web component.`);
+            }
+            // 内部StateElementは直下に必ず存在するので、ループコンテキストを考慮しなくてよい
+            const absStateAddress = createAbsoluteStateAddress(innerAbsPathInfo, null);
+            return getLastValueByAbsoluteStateAddress(absStateAddress);
+        }
+        else {
+            return Reflect.get(target, prop, receiver);
+        }
+    }
+    set(target, prop, value, receiver) {
+        if (typeof prop === 'string') {
+            const [path, stateName = 'default'] = prop.split('@');
+            const outerPathInfo = getPathInfo(path);
+            const rootNode = this._webComponent.getRootNode();
+            const outerStateElement = getStateElementByName(rootNode, stateName);
+            if (outerStateElement === null) {
+                raiseError(`State element with name "${stateName}" not found for web component.`);
+            }
+            const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
+            const innerAbsPathInfo = getInnerAbsolutePathInfo(this._webComponent, outerAbsPathInfo);
+            if (innerAbsPathInfo === null) {
+                raiseError(`Inner path info not found for outer path "${outerPathInfo.path}" on web component.`);
+            }
+            this._innerStateElement.createState("readonly", (state) => {
+                state.$postUpdate(innerAbsPathInfo.pathInfo.path);
+            });
+            return true;
+        }
+        else {
+            return Reflect.set(target, prop, value, receiver);
+        }
+    }
+}
+function createOuterState(webComponent, stateName) {
+    const handler = new OuterStateProxyHandler(webComponent, stateName);
+    return new Proxy({}, handler);
+}
+
 const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
 function convertMustacheToComments(root) {
@@ -4813,299 +5116,22 @@ async function waitForStateInitialize(root) {
     await Promise.all(promises);
 }
 
-// WebComponent専用のキャッシュ
-// outerState.tsからのアクセスで、これを返す
-const lastValueByAbsoluteStateAddress = new WeakMap();
-function setLastValueByAbsoluteStateAddress(absoluteStateAddress, value) {
-    lastValueByAbsoluteStateAddress.set(absoluteStateAddress, value);
-}
-function getLastValueByAbsoluteStateAddress(absoluteStateAddress) {
-    return lastValueByAbsoluteStateAddress.get(absoluteStateAddress);
-}
-
-const stateElementByWebComponent = new WeakMap();
-function setStateElementByWebComponent(webComponent, stateElement) {
-    stateElementByWebComponent.set(webComponent, stateElement);
-}
-function getStateElementByWebComponent(webComponent) {
-    return stateElementByWebComponent.get(webComponent) ?? null;
-}
-
-const innerMappingByElement = new WeakMap();
-const outerMappingByElement = new WeakMap();
-const primaryMappingRuleSetByElement = new WeakMap();
-const primaryBindingByMappingRule = new WeakMap();
-function createMappingRuleByBinding(innerState, binding) {
-    const innerPathInfo = getPathInfo(binding.propSegments.slice(1).join(DELIMITER));
-    const innerAbsPathInfo = getAbsolutePathInfo(innerState, innerPathInfo);
-    const outerAbsStateAddress = getAbsoluteStateAddressByBinding(binding);
-    const outerAbsPathInfo = outerAbsStateAddress.absolutePathInfo;
-    return { innerAbsPathInfo, outerAbsPathInfo };
-}
-function buildPrimaryMappingRule(webComponent) {
-    const bindings = getBindingsByNode(webComponent);
-    if (bindings === null) {
-        raiseError('WebComponent node must have at least one binding.');
-    }
-    const innerState = getStateElementByWebComponent(webComponent);
-    if (innerState === null) {
-        raiseError('State element not found for web component.');
-    }
-    const innerMappingRule = new Map();
-    const outerMappingRule = new Map();
-    for (const binding of bindings) {
-        const mappingRule = createMappingRuleByBinding(innerState, binding);
-        let primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
-        if (typeof primaryMappingRuleSet === 'undefined') {
-            primaryMappingRuleSetByElement.set(webComponent, new Set([mappingRule]));
+const registeredWebComponents = new WeakSet();
+async function registerWebComponent(webComponent) {
+    if (!registeredWebComponents.has(webComponent)) {
+        if (webComponent.shadowRoot === null) {
+            raiseError('Component has no shadow root.');
         }
-        else {
-            primaryMappingRuleSet.add(mappingRule);
-        }
-        const innerAbsPathInfo = mappingRule.innerAbsPathInfo;
-        const outerAbsPathInfo = mappingRule.outerAbsPathInfo;
-        primaryBindingByMappingRule.set(mappingRule, binding);
-        innerMappingRule.set(innerAbsPathInfo, outerAbsPathInfo);
-        outerMappingRule.set(outerAbsPathInfo, innerAbsPathInfo);
-    }
-    innerMappingByElement.set(webComponent, innerMappingRule);
-    outerMappingByElement.set(webComponent, outerMappingRule);
-}
-function getInnerAbsolutePathInfo(webComponent, outerAbsPathInfo) {
-    const mapping = outerMappingByElement.get(webComponent);
-    if (typeof mapping === 'undefined') {
-        return null;
-    }
-    return mapping.get(outerAbsPathInfo) ?? null;
-}
-function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo) {
-    let innerMapping = innerMappingByElement.get(webComponent);
-    if (typeof innerMapping === 'undefined') {
-        innerMapping = new Map();
-        innerMappingByElement.set(webComponent, innerMapping);
-    }
-    if (innerMapping.has(innerAbsPathInfo)) {
-        return innerMapping.get(innerAbsPathInfo);
-    }
-    let outerMapping = outerMappingByElement.get(webComponent);
-    if (typeof outerMapping === 'undefined') {
-        outerMapping = new Map();
-        outerMappingByElement.set(webComponent, outerMapping);
-    }
-    // 内側からのアクセスの場合、ルールがなければプライマリルールから新たにルールとバインディングを生成する
-    const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
-    if (typeof primaryMappingRuleSet === 'undefined') {
-        raiseError('Primary mapping rule set not found for web component.');
-    }
-    let primaryMappingRule = null;
-    for (const currentPrimaryMappingRule of primaryMappingRuleSet) {
-        // innerPathInfoがprimaryMappingRuleのinnerPathInfoを包含しているか
-        if (!innerAbsPathInfo.pathInfo.cumulativePathInfoSet.has(currentPrimaryMappingRule.innerAbsPathInfo.pathInfo)) {
-            continue;
-        }
-        if (currentPrimaryMappingRule.innerAbsPathInfo.pathInfo.segments.length === innerAbsPathInfo.pathInfo.segments.length) {
-            raiseError('Duplicate mapping rule for web component.');
-        }
-        primaryMappingRule = currentPrimaryMappingRule;
-        break;
-    }
-    if (primaryMappingRule === null) {
-        raiseError(`Mapping rule not found for inner path "${innerAbsPathInfo.pathInfo.path}". ` +
-            `Did you forget to bind this property in the component's data-wcs attribute? ` +
-            `Available mappings: ${Array.from(primaryMappingRuleSet).map(r => r.innerAbsPathInfo.pathInfo.path).join(', ')}`);
-    }
-    // マッチした残りのパスをouterPathInfoに付与して新たなルールを生成
-    const primaryBinding = primaryBindingByMappingRule.get(primaryMappingRule);
-    /* c8 ignore start */
-    if (typeof primaryBinding === 'undefined') {
-        raiseError('Binding not found for primary mapping rule on web component.');
-    }
-    /* c8 ignore stop */
-    const outerRemainingSegments = innerAbsPathInfo.pathInfo.segments.slice(primaryMappingRule.innerAbsPathInfo.pathInfo.segments.length);
-    const outerSegments = primaryMappingRule.outerAbsPathInfo.pathInfo.segments.concat(outerRemainingSegments);
-    const outerPathInfo = getPathInfo(outerSegments.join(DELIMITER));
-    const rootNode = webComponent.getRootNode();
-    const outerStateElement = getStateElementByName(rootNode, primaryBinding.stateName);
-    if (outerStateElement === null) {
-        raiseError(`State element with name "${primaryBinding.stateName}" not found for web component.`);
-    }
-    const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
-    innerMapping.set(innerAbsPathInfo, outerAbsPathInfo);
-    outerMapping.set(outerAbsPathInfo, innerAbsPathInfo);
-    // ルールに対応するバインディングを生成
-    const newBinding = {
-        ...primaryBinding,
-        propName: innerAbsPathInfo.pathInfo.path,
-        propSegments: innerAbsPathInfo.pathInfo.segments,
-        statePathName: outerAbsPathInfo.pathInfo.path,
-        statePathInfo: outerAbsPathInfo.pathInfo,
-    };
-    addBindingByNode(webComponent, newBinding);
-    return outerAbsPathInfo;
-}
-
-class InnerStateProxyHandler {
-    _webComponent;
-    _innerStateElement;
-    constructor(webComponent) {
-        this._webComponent = webComponent;
-        this._innerStateElement = getStateElementByWebComponent(webComponent) ?? raiseError('State element not found for web component.');
-    }
-    get(target, prop, receiver) {
-        if (typeof prop === 'string') {
-            if (prop in target) {
-                return Reflect.get(target, prop, receiver);
-            }
-            if (prop[0] === '$') {
-                return undefined;
-            }
-            const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo === null) {
-                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
-            }
-            const loopContext = getLoopContextByNode(this._webComponent);
-            let value = undefined;
-            outerAbsPathInfo.stateElement.createState("readonly", (state) => {
-                state[setLoopContextSymbol](loopContext, () => {
-                    value = state[outerAbsPathInfo.pathInfo.path];
-                    let listIndex = null;
-                    if (loopContext !== null && loopContext.listIndex !== null) {
-                        if (outerAbsPathInfo.pathInfo.wildcardCount > 0) {
-                            // wildcardPathSetとloopContextのpathInfoSetのintersectionのうち、segment数が最も多いものをouterAbsPathInfoにする
-                            // 例: outerPathInfoが "todos.*.name"で、loopContextのpathInfoSetに "todos.0.name", "todos.1.name"がある場合、"todos.0.name"や"todos.1.name"をouterAbsPathInfoにする
-                            listIndex = loopContext.listIndex.at(outerAbsPathInfo.pathInfo.wildcardCount - 1);
-                        }
-                    }
-                    const absStateAddress = createAbsoluteStateAddress(outerAbsPathInfo, listIndex);
-                    setLastValueByAbsoluteStateAddress(absStateAddress, value);
-                });
-            });
-            return value;
-        }
-        else {
-            return Reflect.get(target, prop, receiver);
-        }
-    }
-    set(target, prop, value, receiver) {
-        if (typeof prop === 'string') {
-            const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo === null) {
-                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
-            }
-            const loopContext = getLoopContextByNode(this._webComponent);
-            outerAbsPathInfo.stateElement.createState("writable", (state) => {
-                state[setLoopContextSymbol](loopContext, () => {
-                    state[outerAbsPathInfo.pathInfo.path] = value;
-                });
-            });
-            return true;
-        }
-        else {
-            return Reflect.set(target, prop, value, receiver);
-        }
-    }
-    has(target, prop) {
-        if (typeof prop === 'string') {
-            if (prop in target) {
-                return Reflect.has(target, prop);
-            }
-            if (prop[0] === '$') {
-                return false;
-            }
-            const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo === null) {
-                return false;
-            }
-            return true;
-        }
-        else {
-            return Reflect.has(target, prop);
-        }
+        registeredWebComponents.add(webComponent);
+        const shadowRoot = webComponent.shadowRoot;
+        await waitForStateInitialize(shadowRoot);
+        convertMustacheToComments(shadowRoot);
+        collectStructuralFragments(shadowRoot, shadowRoot);
+        await waitInitializeBinding(webComponent);
     }
 }
-function createInnerState(webComponent) {
-    const handler = new InnerStateProxyHandler(webComponent);
-    const innerState = getStateElementByWebComponent(webComponent);
-    /* c8 ignore start */
-    if (innerState === null) {
-        raiseError('State element not found for web component.');
-    }
-    /* c8 ignore stop */
-    if (innerState.boundComponentStateProp === null) {
-        raiseError('State element is not bound to any component state prop.');
-    }
-    if (!(innerState.boundComponentStateProp in webComponent)) {
-        raiseError(`State element is not bound to a valid component state prop: ${innerState.boundComponentStateProp}`);
-    }
-    const state = webComponent[innerState.boundComponentStateProp];
-    if (typeof state !== 'object' || state === null) {
-        raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
-    }
-    return new Proxy(state, handler);
-}
-
-class OuterStateProxyHandler {
-    _webComponent;
-    _innerStateElement;
-    constructor(webComponent) {
-        this._webComponent = webComponent;
-        this._innerStateElement = getStateElementByWebComponent(webComponent) ?? raiseError('State element not found for web component.');
-    }
-    get(target, prop, receiver) {
-        if (typeof prop === 'string') {
-            const [path, stateName = 'default'] = prop.split('@');
-            const outerPathInfo = getPathInfo(path);
-            const rootNode = this._webComponent.getRootNode();
-            const outerStateElement = getStateElementByName(rootNode, stateName);
-            if (outerStateElement === null) {
-                raiseError(`State element with name "${stateName}" not found for web component.`);
-            }
-            const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
-            const innerAbsPathInfo = getInnerAbsolutePathInfo(this._webComponent, outerAbsPathInfo);
-            if (innerAbsPathInfo === null) {
-                raiseError(`Inner path info not found for outer path "${outerPathInfo.path}" on web component.`);
-            }
-            // 内部StateElementは直下に必ず存在するので、ループコンテキストを考慮しなくてよい
-            const absStateAddress = createAbsoluteStateAddress(innerAbsPathInfo, null);
-            return getLastValueByAbsoluteStateAddress(absStateAddress);
-        }
-        else {
-            return Reflect.get(target, prop, receiver);
-        }
-    }
-    set(target, prop, value, receiver) {
-        if (typeof prop === 'string') {
-            const [path, stateName = 'default'] = prop.split('@');
-            const outerPathInfo = getPathInfo(path);
-            const rootNode = this._webComponent.getRootNode();
-            const outerStateElement = getStateElementByName(rootNode, stateName);
-            if (outerStateElement === null) {
-                raiseError(`State element with name "${stateName}" not found for web component.`);
-            }
-            const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
-            const innerAbsPathInfo = getInnerAbsolutePathInfo(this._webComponent, outerAbsPathInfo);
-            if (innerAbsPathInfo === null) {
-                raiseError(`Inner path info not found for outer path "${outerPathInfo.path}" on web component.`);
-            }
-            this._innerStateElement.createState("readonly", (state) => {
-                state.$postUpdate(innerAbsPathInfo.pathInfo.path);
-            });
-            return true;
-        }
-        else {
-            return Reflect.set(target, prop, value, receiver);
-        }
-    }
-}
-function createOuterState(webComponent) {
-    const handler = new OuterStateProxyHandler(webComponent);
-    return new Proxy({}, handler);
+function isWebComponentRegistered(webComponent) {
+    return registeredWebComponents.has(webComponent);
 }
 
 const getOuter = (outerState) => () => outerState;
@@ -5113,45 +5139,24 @@ async function bindWebComponent(innerStateElement, component, stateProp) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
     }
-    if (!component.hasAttribute(config.bindAttributeName)) {
-        raiseError(`Component has no "${config.bindAttributeName}" attribute for state binding.`);
+    setStateElementByWebComponent(component, stateProp, innerStateElement);
+    if (!isWebComponentRegistered(component)) {
+        await registerWebComponent(component);
     }
-    setStateElementByWebComponent(component, innerStateElement);
-    const shadowRoot = component.shadowRoot;
-    await waitForStateInitialize(shadowRoot);
-    convertMustacheToComments(shadowRoot);
-    collectStructuralFragments(shadowRoot, shadowRoot);
-    await waitInitializeBinding(component);
-    // initializeBindingsの前にinerState,outerStateの紐付けを行う
-    const bindings = getBindingsByNode(component);
-    if (bindings === null) {
-        raiseError('Bindings not found for component node.');
-    }
-    buildPrimaryMappingRule(component);
-    const outerState = createOuterState(component);
-    const innerState = createInnerState(component);
-    /*
-      for(const binding of bindings) {
-        const innerStateProp = binding.propSegments[0];
-        const innerName = binding.propSegments.slice(1).join('.');
-        if (stateProp !== innerStateProp) {
-          raiseError(`Binding prop "${innerStateProp}" does not match stateProp "${stateProp}".`);
-        }
-        innerStateElement.bindProperty(innerName, {
-          get: innerStateGetter(innerState, innerName),
-          set: innerStateSetter(innerState, innerName),
-          enumerable: true,
-          configurable: true,
+    if (component.hasAttribute(config.bindAttributeName)) {
+        // initializeBindingsの前にinerState,outerStateの紐付けを行う
+        const bindings = (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp);
+        buildPrimaryMappingRule(component, stateProp, bindings);
+        const outerState = createOuterState(component, stateProp);
+        const innerState = createInnerState(component, stateProp);
+        innerStateElement.setInitialState(innerState);
+        Object.defineProperty(component, stateProp, {
+            get: getOuter(outerState),
+            enumerable: true,
+            configurable: true,
         });
-      }
-    */
-    innerStateElement.setInitialState(innerState);
-    Object.defineProperty(component, stateProp, {
-        get: getOuter(outerState),
-        enumerable: true,
-        configurable: true,
-    });
-    initializeBindings(shadowRoot, null);
+    }
+    initializeBindings(component.shadowRoot, null);
 }
 
 function getAllPropertyDescriptors(obj) {
@@ -5310,9 +5315,7 @@ class State extends HTMLElement {
         if (this._boundComponent === null || this._boundComponentStateProp === null) {
             return;
         }
-        if (this._boundComponent.hasAttribute(config.bindAttributeName)) {
-            await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
-        }
+        await bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
     }
     async _callStateConnectedCallback() {
         await this.createStateAsync("writable", async (state) => {

@@ -10,9 +10,9 @@ import { getStateElementByWebComponent } from "./stateElementByWebComponent";
 class InnerStateProxyHandler {
     _webComponent;
     _innerStateElement;
-    constructor(webComponent) {
+    constructor(webComponent, stateName) {
         this._webComponent = webComponent;
-        this._innerStateElement = getStateElementByWebComponent(webComponent) ?? raiseError('State element not found for web component.');
+        this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
     }
     get(target, prop, receiver) {
         if (typeof prop === 'string') {
@@ -92,9 +92,9 @@ class InnerStateProxyHandler {
         }
     }
 }
-export function createInnerState(webComponent) {
-    const handler = new InnerStateProxyHandler(webComponent);
-    const innerState = getStateElementByWebComponent(webComponent);
+export function createInnerState(webComponent, stateName) {
+    const handler = new InnerStateProxyHandler(webComponent, stateName);
+    const innerState = getStateElementByWebComponent(webComponent, stateName);
     /* c8 ignore start */
     if (innerState === null) {
         raiseError('State element not found for web component.');
