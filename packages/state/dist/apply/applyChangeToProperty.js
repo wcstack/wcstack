@@ -1,3 +1,4 @@
+import { config } from "../config";
 export function applyChangeToProperty(binding, _context, newValue) {
     const element = binding.node;
     const propSegments = binding.propSegments;
@@ -19,6 +20,17 @@ export function applyChangeToProperty(binding, _context, newValue) {
     }
     const oldValue = subObject[propSegments[propSegments.length - 1]];
     if (oldValue !== newValue) {
+        if (Object.isFrozen(subObject)) {
+            if (config.debug) {
+                console.warn(`Attempting to set property on frozen object.`, {
+                    element,
+                    propSegments,
+                    oldValue,
+                    newValue
+                });
+            }
+            return;
+        }
         subObject[propSegments[propSegments.length - 1]] = newValue;
     }
 }

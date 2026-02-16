@@ -1,9 +1,6 @@
 
 export default class extends HTMLElement {
-  state = {
-    message: ""
-  }
-
+  state = {}
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });

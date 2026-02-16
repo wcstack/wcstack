@@ -1,4 +1,5 @@
 const bindingPromiseByNode = new WeakMap();
+let id = 0;
 export function getInitializeBindingPromiseByNode(node) {
     let bindingPromise = bindingPromiseByNode.get(node) || null;
     if (bindingPromise !== null) {
@@ -9,6 +10,7 @@ export function getInitializeBindingPromiseByNode(node) {
         resolveFn = resolve;
     });
     bindingPromise = {
+        id: ++id,
         promise,
         resolve: resolveFn
     };

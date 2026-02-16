@@ -1,9 +1,9 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
 import { isCustomElement } from "../components/isCustomElement.js";
-import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
+import { isWebComponentComplete } from "../webComponent/completeWebComponent.js";
 import { applyChangeToAttribute } from "./applyChangeToAttribute.js";
 import { applyChangeToCheckbox } from "./applyChangeToCheckbox.js";
 import { applyChangeToClass } from "./applyChangeToClass.js";
@@ -13,6 +13,7 @@ import { applyChangeToProperty } from "./applyChangeToProperty.js";
 import { applyChangeToRadio } from "./applyChangeToRadio.js";
 import { applyChangeToStyle } from "./applyChangeToStyle.js";
 import { applyChangeToText } from "./applyChangeToText.js";
+import { applyChangeToWebComponent } from "./applyChangeToWebComponent.js";
 import { getFilteredValue } from "./getFilteredValue.js";
 import { getValue } from "./getValue.js";
 import { getRootNodeByFragment } from "./rootNodeByFragment.js";
@@ -43,7 +44,11 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     const firstSegment = binding.propSegments[0];
     fn = applyChangeByFirstSegment[firstSegment];
     if (typeof fn === 'undefined') {
-      fn = applyChangeToProperty;
+      if (isWebComponentComplete(binding.replaceNode as Element, context.stateElement)) {
+        fn = applyChangeToWebComponent;
+      } else {
+        fn = applyChangeToProperty;
+      }
     }
   }
   fn(binding, context, filteredValue);
@@ -52,9 +57,6 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
 export function applyChange(binding: IBindingInfo, context: IApplyContext): void {
   if (context.appliedBindingSet.has(binding)) {
     return;
-  }
-  if(config.debug) {
-    console.log(`applyChange: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`, binding);
   }
   context.appliedBindingSet.add(binding);
   const absAddress = getAbsoluteStateAddressByBinding(binding);

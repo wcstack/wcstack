@@ -1,1 +1,1 @@
-{"version":3,"file":"bindWebComponent.d.ts","sourceRoot":"","sources":["../../src/webComponent/bindWebComponent.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,aAAa,EAAE,MAAM,qBAAqB,CAAC;AAWpD,wBAAgB,gBAAgB,CAC9B,iBAAiB,EAAE,aAAa,EAChC,SAAS,EAAE,OAAO,EAClB,SAAS,EAAE,MAAM,GAChB,IAAI,CAsBN"}
+{"version":3,"file":"bindWebComponent.d.ts","sourceRoot":"","sources":["../../src/webComponent/bindWebComponent.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,aAAa,EAAE,MAAM,qBAAqB,CAAC;AAWpD,wBAAgB,gBAAgB,CAC9B,iBAAiB,EAAE,aAAa,EAChC,SAAS,EAAE,OAAO,EAClB,SAAS,EAAE,MAAM,GAChB,IAAI,CAkBN"}

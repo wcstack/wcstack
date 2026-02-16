@@ -24,6 +24,12 @@ vi.mock('../src/apply/applyChangeToStyle', () => ({
 vi.mock('../src/apply/applyChangeToProperty', () => ({
   applyChangeToProperty: vi.fn()
 }));
+vi.mock('../src/apply/applyChangeToWebComponent', () => ({
+  applyChangeToWebComponent: vi.fn()
+}));
+vi.mock('../src/webComponent/completeWebComponent', () => ({
+  isWebComponentComplete: vi.fn().mockReturnValue(false)
+}));
 vi.mock('../src/apply/getValue', () => ({
   getValue: vi.fn()
 }));
@@ -45,6 +51,8 @@ import { applyChangeToAttribute } from '../src/apply/applyChangeToAttribute';
 import { applyChangeToClass } from '../src/apply/applyChangeToClass';
 import { applyChangeToStyle } from '../src/apply/applyChangeToStyle';
 import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
+import { applyChangeToWebComponent } from '../src/apply/applyChangeToWebComponent';
+import { isWebComponentComplete } from '../src/webComponent/completeWebComponent';
 import { getValue } from '../src/apply/getValue';
 import { getStateElementByName } from '../src/stateElementByName';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
@@ -57,6 +65,8 @@ const applyChangeToAttributeMock = vi.mocked(applyChangeToAttribute);
 const applyChangeToClassMock = vi.mocked(applyChangeToClass);
 const applyChangeToStyleMock = vi.mocked(applyChangeToStyle);
 const applyChangeToPropertyMock = vi.mocked(applyChangeToProperty);
+const applyChangeToWebComponentMock = vi.mocked(applyChangeToWebComponent);
+const isWebComponentCompleteMock = vi.mocked(isWebComponentComplete);
 const getValueMock = vi.mocked(getValue);
 const getStateElementByNameMock = vi.mocked(getStateElementByName);
 
@@ -447,5 +457,27 @@ describe('applyChange (coverage)', () => {
 
     expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
     expect(applyChangeToPropertyMock).toHaveBeenCalledWith(bindingInfo, context, 'hello');
+  });
+
+  it('isWebComponentCompleteがtrueの場合はapplyChangeToWebComponentが呼ばれること', () => {
+    isWebComponentCompleteMock.mockReturnValue(true);
+
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: el,
+      replaceNode: el,
+      propName: 'state.title',
+      propSegments: ['state', 'title']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue('test-value');
+    applyChange(bindingInfo, context);
+
+    expect(applyChangeToWebComponentMock).toHaveBeenCalledTimes(1);
+    expect(applyChangeToWebComponentMock).toHaveBeenCalledWith(bindingInfo, context, 'test-value');
+    expect(applyChangeToPropertyMock).not.toHaveBeenCalled();
   });
 });

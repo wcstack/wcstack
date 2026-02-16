@@ -30,7 +30,6 @@ export declare class State extends HTMLElement implements IStateElement {
     get name(): string;
     private _initialize;
     private _initializeBindWebComponent;
-    private _bindWebComponent;
     private _callStateConnectedCallback;
     private _callStateDisconnectedCallback;
     connectedCallback(): Promise<void>;

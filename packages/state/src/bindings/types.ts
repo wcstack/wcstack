@@ -6,6 +6,7 @@ export interface IInitialBindingInfo {
 }
 
 export interface IInitializeBindingPromise {
+  id: number;
   promise: Promise<void>;
   resolve: () => void;
 }

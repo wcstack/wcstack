@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
 import { getPathInfo } from '../src/address/PathInfo';
+import { config } from '../src/config';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -67,5 +68,25 @@ describe('applyChangeToProperty', () => {
     const binding = createBinding(el, ['foo', 'bar', 'baz']);
     applyChangeToProperty(binding, dummyContext, 2);
     expect(el.foo).toBeNull();
+  });
+
+  it('ネストしたプロパティの親オブジェクトがfrozenの場合は変更しないこと', () => {
+    const el = document.createElement('div') as any;
+    el.foo = { bar: Object.freeze({ baz: 1 }) };
+    const binding = createBinding(el, ['foo', 'bar', 'baz']);
+    applyChangeToProperty(binding, dummyContext, 2);
+    expect(el.foo.bar.baz).toBe(1);
+  });
+
+  it('frozenオブジェクトでconfig.debug=trueの場合はconsole.warnが呼ばれること', () => {
+    config.debug = true;
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const el = document.createElement('div') as any;
+    el.foo = { bar: Object.freeze({ baz: 1 }) };
+    const binding = createBinding(el, ['foo', 'bar', 'baz']);
+    applyChangeToProperty(binding, dummyContext, 2);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    config.debug = false;
   });
 });

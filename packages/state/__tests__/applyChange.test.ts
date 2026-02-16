@@ -4,7 +4,6 @@ import { applyChangeToFor } from '../src/apply/applyChangeToFor';
 import { applyChangeToIf } from '../src/apply/applyChangeToIf';
 import { getValue } from '../src/apply/getValue';
 import { getPathInfo } from '../src/address/PathInfo';
-import { config } from '../src/config';
 import { getRootNodeByFragment } from '../src/apply/rootNodeByFragment';
 import { getStateElementByName } from '../src/stateElementByName';
 import type { IBindingInfo } from '../src/types';
@@ -56,7 +55,6 @@ describe('applyChange', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '';
-    config.debug = false;
     context = {
       stateName: 'default',
       rootNode: document as any,
@@ -186,26 +184,6 @@ describe('applyChange', () => {
     context.appliedBindingSet.add(bindingInfo);
     applyChange(bindingInfo, context);
     expect(getValueMock).not.toHaveBeenCalled();
-  });
-
-  it('config.debug=trueの場合はconsole.logが呼ばれること', () => {
-    config.debug = true;
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const textNode = document.createTextNode('a');
-    document.body.appendChild(textNode);
-    const bindingInfo: IBindingInfo = {
-      ...createBaseBindingInfo(),
-      bindingType: 'text',
-      node: textNode,
-      replaceNode: textNode,
-      propName: 'text',
-      propSegments: []
-    } as IBindingInfo;
-
-    getValueMock.mockReturnValue('b');
-    applyChange(bindingInfo, context);
-    expect(spy).toHaveBeenCalled();
-    spy.mockRestore();
   });
 
   it('eventバインディングは早期リターンすること', () => {

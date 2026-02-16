@@ -17,6 +17,9 @@ vi.mock('../src/webComponent/innerState', () => {
 vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
   setStateElementByWebComponent: vi.fn()
 }));
+vi.mock('../src/webComponent/completeWebComponent', () => ({
+  markWebComponentAsComplete: vi.fn()
+}));
 
 import { bindWebComponent } from '../src/webComponent/bindWebComponent';
 import { getBindingsByNode } from '../src/bindings/getBindingsByNode';
@@ -24,6 +27,7 @@ import { buildPrimaryMappingRule } from '../src/webComponent/MappingRule';
 import { createOuterState } from '../src/webComponent/outerState';
 import { createInnerState } from '../src/webComponent/innerState';
 import { setStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
+import { markWebComponentAsComplete } from '../src/webComponent/completeWebComponent';
 import { IBindingInfo } from '../src/types';
 import { getPathInfo } from '../src/address/PathInfo';
 
@@ -53,12 +57,9 @@ const createMockStateElement = () => ({
   setInitialState: vi.fn(),
 } as any);
 
-const createComponentWithShadow = (bindAttr = true): Element => {
+const createComponentWithShadow = (): Element => {
   const component = document.createElement('div');
   component.attachShadow({ mode: 'open' });
-  if (bindAttr) {
-    component.setAttribute('data-wcs', 'state:prop1; state:prop2');
-  }
   return component;
 };
 
@@ -71,16 +72,6 @@ describe('bindWebComponent', () => {
     const component = document.createElement('div');
     const stateEl = createMockStateElement();
     expect(() => bindWebComponent(stateEl, component, 'outer')).toThrow(/no shadow root/);
-  });
-
-  it('bindAttributeNameがない場合でも正常に動作すること（単独WebComponent）', () => {
-    const component = createComponentWithShadow(false);
-    const stateEl = createMockStateElement();
-
-    expect(() => bindWebComponent(stateEl, component, 'state')).not.toThrow();
-
-    // setStateElementByWebComponentが呼ばれること
-    expect(setStateElementByWebComponent).toHaveBeenCalledWith(component, 'state', stateEl);
   });
 
   it('bindingsが空配列でも正常に動作すること', () => {
@@ -162,5 +153,15 @@ describe('bindWebComponent', () => {
 
     // buildPrimaryMappingRuleには空配列が渡される
     expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', []);
+  });
+
+  it('markWebComponentAsCompleteが呼ばれること', () => {
+    const component = createComponentWithShadow();
+    const stateEl = createMockStateElement();
+    getBindingsByNodeMock.mockReturnValue([]);
+
+    bindWebComponent(stateEl, component, 'outer');
+
+    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
   });
 });

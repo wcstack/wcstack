@@ -11,6 +11,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
+import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 function getAllPropertyDescriptors(obj) {
     let descriptors = {};
     let proto = obj;
@@ -145,29 +146,25 @@ export class State extends HTMLElement {
             }
             const boundComponent = this.rootNode.host;
             const boundComponentStateProp = this.getAttribute(config.bindComponentAttributeName);
-            try {
-                await customElements.whenDefined(boundComponent.tagName.toLowerCase());
-                if (!(boundComponentStateProp in boundComponent)) {
-                    raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
-                }
-                const state = boundComponent[boundComponentStateProp];
-                if (typeof state !== 'object' || state === null) {
-                    raiseError(`Component property "${boundComponentStateProp}" is not an object for state binding.`);
-                }
-                this.setInitialState(state);
-                this._boundComponent = boundComponent;
-                this._boundComponentStateProp = boundComponentStateProp;
+            await customElements.whenDefined(boundComponent.tagName.toLowerCase());
+            await waitInitializeBinding(boundComponent);
+            // boundComponentは上位の状態によりbinding情報の設定が完了している
+            if (!(boundComponentStateProp in boundComponent)) {
+                raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
             }
-            catch (e) {
-                raiseError(`Failed to bind web component: ${e}`);
+            const state = boundComponent[boundComponentStateProp];
+            if (typeof state !== 'object' || state === null) {
+                raiseError(`Component property "${boundComponentStateProp}" is not an object for state binding.`);
+            }
+            this._boundComponent = boundComponent;
+            this._boundComponentStateProp = boundComponentStateProp;
+            if (boundComponent.hasAttribute(config.bindAttributeName)) {
+                bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
+            }
+            else {
+                this.setInitialState(structuredClone(state));
             }
         }
-    }
-    _bindWebComponent() {
-        if (this._boundComponent === null || this._boundComponentStateProp === null) {
-            return;
-        }
-        bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
     }
     async _callStateConnectedCallback() {
         await this.createStateAsync("writable", async (state) => {
@@ -191,7 +188,6 @@ export class State extends HTMLElement {
             await this._initializeBindWebComponent();
             await this._initialize();
             this._initialized = true;
-            this._bindWebComponent();
             this._resolveInitialize?.();
         }
         await this._callStateConnectedCallback();

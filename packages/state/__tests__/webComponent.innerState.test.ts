@@ -46,7 +46,7 @@ describe('innerState', () => {
       const component = document.createElement('div');
       getStateElementByWebComponentMock.mockReturnValue(null);
 
-      expect(() => createInnerState(component)).toThrow(/State element not found for web component/);
+      expect(() => createInnerState(component, 'state')).toThrow(/State element not found for web component/);
     });
 
     it('boundComponentStatePropがnullの場合はエラーになること', () => {
@@ -55,7 +55,7 @@ describe('innerState', () => {
         boundComponentStateProp: null
       } as any);
 
-      expect(() => createInnerState(component)).toThrow(/not bound to any component state prop/);
+      expect(() => createInnerState(component, 'state')).toThrow(/not bound to any component state prop/);
     });
 
     it('boundComponentStatePropがcomponentに存在しない場合はエラーになること', () => {
@@ -64,7 +64,7 @@ describe('innerState', () => {
         boundComponentStateProp: 'state'
       } as any);
 
-      expect(() => createInnerState(component)).toThrow(/not bound to a valid component state prop/);
+      expect(() => createInnerState(component, 'state')).toThrow(/not bound to a valid component state prop/);
     });
 
     it('stateがオブジェクトでない場合はエラーになること', () => {
@@ -74,7 +74,7 @@ describe('innerState', () => {
         boundComponentStateProp: 'state'
       } as any);
 
-      expect(() => createInnerState(component)).toThrow(/Invalid state object/);
+      expect(() => createInnerState(component, 'state')).toThrow(/Invalid state object/);
     });
 
     it('stateがnullの場合はエラーになること', () => {
@@ -84,7 +84,7 @@ describe('innerState', () => {
         boundComponentStateProp: 'state'
       } as any);
 
-      expect(() => createInnerState(component)).toThrow(/Invalid state object/);
+      expect(() => createInnerState(component, 'state')).toThrow(/Invalid state object/);
     });
 
     it('正常にProxyが作成されること', () => {
@@ -94,9 +94,22 @@ describe('innerState', () => {
         boundComponentStateProp: 'state'
       } as any);
 
-      const proxy = createInnerState(component);
+      const proxy = createInnerState(component, 'state');
       expect(proxy).toBeDefined();
       expect(typeof proxy).toBe('object');
+    });
+
+    it('structuredCloneにより元のstateオブジェクトが変更されないこと', () => {
+      const component = document.createElement('div') as any;
+      const originalState = { user: { name: 'original' } };
+      component.state = originalState;
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: 'state'
+      } as any);
+
+      const proxy = createInnerState(component, 'state');
+      // proxyのtargetはクローンなので、元のオブジェクトと異なるはず
+      expect(proxy['user']).not.toBe(originalState.user);
     });
   });
 
@@ -106,7 +119,7 @@ describe('innerState', () => {
       component.state = {}; // 空オブジェクト（userプロパティは存在しない）
       const innerStateElement = { boundComponentStateProp: 'state' } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
-      return { component, proxy: createInnerState(component) };
+      return { component, proxy: createInnerState(component, 'state') };
     }
 
     it('文字列プロパティでouter stateの値を取得できること', () => {
@@ -135,6 +148,12 @@ describe('innerState', () => {
       expect(value).toBe('test-value');
       expect(getOuterAbsolutePathInfoMock).toHaveBeenCalledWith(component, innerAbsPathInfo);
       expect(setLastValueMock).toHaveBeenCalledWith(absStateAddress, 'test-value');
+    });
+
+    it('thenプロパティはundefinedを返すこと', () => {
+      const { proxy } = createTestProxy();
+
+      expect(proxy['then']).toBeUndefined();
     });
 
     it('outerAbsPathInfoがnullの場合はエラーになること', () => {
@@ -237,7 +256,7 @@ describe('innerState', () => {
       const innerStateElement = { boundComponentStateProp: 'state' } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
 
-      const proxy = createInnerState(component);
+      const proxy = createInnerState(component, 'state');
 
       expect(proxy['existingProp']).toBe('value');
     });
@@ -256,7 +275,7 @@ describe('innerState', () => {
       component.state = {};
       const innerStateElement = { boundComponentStateProp: 'state' } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
-      return { component, proxy: createInnerState(component) };
+      return { component, proxy: createInnerState(component, 'state') };
     }
 
     it('targetに存在するプロパティはtrueを返すこと', () => {
@@ -265,7 +284,7 @@ describe('innerState', () => {
       const innerStateElement = { boundComponentStateProp: 'state' } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
 
-      const proxy = createInnerState(component);
+      const proxy = createInnerState(component, 'state');
 
       expect('existingProp' in proxy).toBe(true);
     });
@@ -312,7 +331,7 @@ describe('innerState', () => {
       component.state = {}; // 空オブジェクト（userプロパティは存在しない）
       const innerStateElement = { boundComponentStateProp: 'state' } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
-      return { component, proxy: createInnerState(component) };
+      return { component, proxy: createInnerState(component, 'state') };
     }
 
     it('文字列プロパティでouter stateに値を設定できること', () => {

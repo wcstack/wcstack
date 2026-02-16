@@ -1,45 +1,63 @@
-# 初期化プロセス
+# 初期化シーケンス
 
-## 概要
-DOMContentLoaded時に以下の2フェーズで初期化を実行
+## 1. `<wcs-state/>`コンポーネントのロード
 
-## フェーズ1: 構造的要素の収集と置換
-目的: テンプレート要素を解析し、プレースホルダーに置換
+`bootstrapState()` → `registerComponents()` で登録。
+`customElements.define("wcs-state", State);`
 
-### 処理対象
-`<template data-bind-state="...">` 要素:
-- `if: stateName` - 条件分岐
-- `elseif: stateName` - 条件分岐（else if）
-- `else:` - 条件分岐（else）
-- `for: stateName` - ループ
+## 2. `<wcs-state/>`の`connectedCallback`
 
-### 処理内容
-1. TreeWalkerで全`<template>`要素を探索
-2. 各テンプレートに対して：
-   - UUIDを生成
-   - `template.content`（DocumentFragment）を`fragmentByUUID`に保存
-   - `data-bind-state`属性を解析し`parseBindTextResultByUUID`に保存
-   - コメントノード `<!--wcs-xxx:UUID-->` を作成し`<template>`を置換
-3. 再帰的にtemplate.content内も処理
+HTML内に`<wcs-state/>`の定義があれば呼ばれる。
 
-## フェーズ2: バインディングの初期化
-目的: バインド対象要素を収集し、state要素と接続
-if/forなどのIContentに対しても実体化時にも実行する
+2-1. `_initializeBindWebComponent()`
+  `bind-component`属性がある場合、ShadowRootのホスト要素から状態オブジェクトを取得し`setInitialState()`でセット。
 
-### 処理対象
-- コメントノード: `<!--wcs-text:path-->`, `<!--wcs-if:UUID-->`, `<!--wcs-for:UUID-->`, `<!--wcs-elseif:UUID-->`, `<!--wcs-else:UUID-->`
-- 属性バインド: `<element data-bind-state="propName: stateName">`
+2-2. `_initialize()`（状態のロード）
+  以下の優先順位で状態を読み込む:
+  - `state`属性 → インラインJSON
+  - `src`属性 → `.json`ファイル or `.js`ファイル
+  - `json`属性 → JSON文字列
+  - `<script type="module">` → インナースクリプト
+  - いずれもない場合 → `setInitialState()` APIによる外部セットを待機
 
-### 処理内容
-1. バインド対象ノードを収集
-2. 各ノードの`data-bind-state`を解析しbindingInfoを生成
-3. イベントハンドラー（`onXxx`）を登録
-4. 双方向バインディング（input/select要素）を設定
-5. bindingInfoをstate要素に登録
-6. 初期値を適用
-7. 構造的要素（if/for）の内部も再帰的に処理
+  読み込み後:
+  - `name`属性を決定（デフォルト: `'default'`）
+  - `stateElementByNameByNode`（`WeakMap<Node, Map<string, IStateElement>>`）に登録
+  - そのrootNodeへの初回登録時、`queueMicrotask`で`buildBindings()`を起動
 
-## データ構造
-- `fragmentByUUID`: UUID → DocumentFragment
-- `parseBindTextResultByUUID`: UUID → ParseBindTextResult
-- `bindingInfo`: ノード、プロパティ名、ステート名、パスなどを含む
+2-3. `_bindWebComponent()`
+  `bind-component`属性がある場合、外部コンポーネントとのバインディングを確立。
+
+2-4. `_resolveInitialize()`
+  `initializePromise`を解決し、buildBindingsの初期化待ちを解放。
+
+2-5. `_callStateConnectedCallback()`
+  状態に`$connectedCallback`が定義されていれば呼び出す。
+
+## 3. 初期化起動（`buildBindings.ts`）
+
+DocumentとShadowRootで処理が分岐する。
+
+Document: waitForStateInitialize → convertMustacheToComments → collectStructuralFragments → initializeBindings
+ShadowRoot: 上記に加え、initializeBindings前に`waitInitializeBinding(host)`が入る
+
+3-1. `waitForStateInitialize()`
+  ルート内の全`<wcs-state/>`を取得し、各要素の`initializePromise`が解決されるまで待機。
+
+3-2. `convertMustacheToComments()`
+  `{{ expression }}`形式のMustache構文をコメントノード（`<!--@@: expression-->`）に変換。
+
+3-3. `collectStructuralFragments()`
+  `data-wcs`属性(if/else/elseif/for)を持つ`<template/>`を全てFragmentにしコメントに置き換える。
+  bindingの部分情報をfragmentに紐づける。
+
+3-4. `waitInitializeBinding()`（ShadowRootのみ）
+  ホスト要素のバインディング初期化完了を待機。
+
+3-5. `initializeBindings()`
+  - `data-wcs`属性を持つ要素・コメントを収集し、完全なbinding情報を取得
+  - ループコンテキスト設定
+  - ノード置換・イベントハンドラ（通常・双方向・ラジオ・チェックボックス）アタッチ
+  - 絶対ステートアドレス作成・バインディング登録
+  - `applyChangeFromBindings()`で全バインディングの初期値を適用
+

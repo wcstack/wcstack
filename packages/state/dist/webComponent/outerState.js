@@ -2,9 +2,7 @@ import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { raiseError } from "../raiseError";
-import { getStateElementByName } from "../stateElementByName";
 import { getLastValueByAbsoluteStateAddress } from "./lastValueByAbsoluteStateAddress";
-import { getInnerAbsolutePathInfo } from "./MappingRule";
 import { getStateElementByWebComponent } from "./stateElementByWebComponent";
 class OuterStateProxyHandler {
     _webComponent;
@@ -15,19 +13,8 @@ class OuterStateProxyHandler {
     }
     get(target, prop, receiver) {
         if (typeof prop === 'string') {
-            const [path, stateName = 'default'] = prop.split('@');
-            const outerPathInfo = getPathInfo(path);
-            const rootNode = this._webComponent.getRootNode();
-            const outerStateElement = getStateElementByName(rootNode, stateName);
-            if (outerStateElement === null) {
-                raiseError(`State element with name "${stateName}" not found for web component.`);
-            }
-            const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
-            const innerAbsPathInfo = getInnerAbsolutePathInfo(this._webComponent, outerAbsPathInfo);
-            if (innerAbsPathInfo === null) {
-                raiseError(`Inner path info not found for outer path "${outerPathInfo.path}" on web component.`);
-            }
-            // 内部StateElementは直下に必ず存在するので、ループコンテキストを考慮しなくてよい
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
             const absStateAddress = createAbsoluteStateAddress(innerAbsPathInfo, null);
             return getLastValueByAbsoluteStateAddress(absStateAddress);
         }
@@ -37,18 +24,8 @@ class OuterStateProxyHandler {
     }
     set(target, prop, value, receiver) {
         if (typeof prop === 'string') {
-            const [path, stateName = 'default'] = prop.split('@');
-            const outerPathInfo = getPathInfo(path);
-            const rootNode = this._webComponent.getRootNode();
-            const outerStateElement = getStateElementByName(rootNode, stateName);
-            if (outerStateElement === null) {
-                raiseError(`State element with name "${stateName}" not found for web component.`);
-            }
-            const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
-            const innerAbsPathInfo = getInnerAbsolutePathInfo(this._webComponent, outerAbsPathInfo);
-            if (innerAbsPathInfo === null) {
-                raiseError(`Inner path info not found for outer path "${outerPathInfo.path}" on web component.`);
-            }
+            const innerPathInfo = getPathInfo(prop);
+            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
             this._innerStateElement.createState("readonly", (state) => {
                 state.$postUpdate(innerAbsPathInfo.pathInfo.path);
             });

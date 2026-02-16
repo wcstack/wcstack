@@ -16,7 +16,10 @@ vi.mock('../src/proxy/StateHandler', () => ({
   createStateProxy: vi.fn((_rootNode: any, state: any) => state)
 }));
 vi.mock('../src/webComponent/bindWebComponent', () => ({
-  bindWebComponent: vi.fn().mockResolvedValue(undefined)
+  bindWebComponent: vi.fn()
+}));
+vi.mock('../src/bindings/initializeBindingPromiseByNode', () => ({
+  waitInitializeBinding: vi.fn().mockResolvedValue(undefined)
 }));
 
 import { State } from '../src/components/State';
@@ -523,7 +526,7 @@ describe('State component', () => {
     );
   });
 
-  it('bind-componentで_initializeBindWebComponentがsetInitialStateを呼びboundComponentを保持すること', async () => {
+  it('bind-componentで_initializeBindWebComponentがboundComponentを保持すること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
@@ -538,7 +541,7 @@ describe('State component', () => {
     expect(stateEl.boundComponentStateProp).toBe('outer');
   });
 
-  it('bind-componentで_bindWebComponentがbindWebComponentモジュールを呼び出すこと', async () => {
+  it('data-wcsがある場合はbindWebComponentが呼ばれること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     host.setAttribute('data-wcs', 'outer:value');
@@ -547,22 +550,23 @@ describe('State component', () => {
     (host as any).outer = initialState;
 
     await (stateEl as any)._initializeBindWebComponent();
-    await (stateEl as any)._bindWebComponent();
 
     expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer');
   });
 
-  it('data-wcsがないコンポーネントでもbindWebComponentが呼ばれること（単独WebComponent）', async () => {
+  it('data-wcsがないコンポーネントではsetInitialStateが呼ばれること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
     (host as any).outer = { message: 'hi' };
 
-    await (stateEl as any)._initializeBindWebComponent();
-    await (stateEl as any)._bindWebComponent();
+    const setInitialStateSpy = vi.spyOn(stateEl, 'setInitialState');
 
-    // data-wcs属性がなくてもbindWebComponentが呼ばれる
-    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer');
+    await (stateEl as any)._initializeBindWebComponent();
+
+    // data-wcs属性がない場合はbindWebComponentは呼ばれず、setInitialStateが呼ばれる
+    expect(bindWebComponentMock).not.toHaveBeenCalled();
+    expect(setInitialStateSpy).toHaveBeenCalledWith(expect.objectContaining({ message: 'hi' }));
   });
 
   it('bindWebComponentが失敗した場合はエラーが伝播すること', async () => {
@@ -572,13 +576,11 @@ describe('State component', () => {
     (stateEl as any)._rootNode = stateEl.getRootNode();
     (host as any).outer = {};
 
-    await (stateEl as any)._initializeBindWebComponent();
-
     bindWebComponentMock.mockImplementationOnce(() => {
       throw new Error('bind failed');
     });
 
-    expect(() => (stateEl as any)._bindWebComponent()).toThrow(
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
       /bind failed/
     );
   });

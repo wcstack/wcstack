@@ -2,6 +2,8 @@ import { IInitializeBindingPromise } from "./types";
 
 const bindingPromiseByNode = new WeakMap<Node, IInitializeBindingPromise>();
 
+let id = 0;
+
 export function getInitializeBindingPromiseByNode(node: Node): IInitializeBindingPromise {
   let bindingPromise = bindingPromiseByNode.get(node) || null;
   if (bindingPromise !== null) {
@@ -12,6 +14,7 @@ export function getInitializeBindingPromiseByNode(node: Node): IInitializeBindin
     resolveFn = resolve;
   });
   bindingPromise = {
+    id: ++id,
     promise,
     resolve: resolveFn!
   };

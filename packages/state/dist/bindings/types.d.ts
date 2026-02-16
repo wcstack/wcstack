@@ -4,6 +4,7 @@ export interface IInitialBindingInfo {
     bindingInfos: IBindingInfo[];
 }
 export interface IInitializeBindingPromise {
+    id: number;
     promise: Promise<void>;
     resolve: () => void;
 }

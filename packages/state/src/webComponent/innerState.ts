@@ -21,6 +21,10 @@ class InnerStateProxyHandler implements ProxyHandler<IInnerState> {
 
   get(target: IInnerState, prop: string | symbol, receiver: any): any {
     if (typeof prop === 'string') {
+      if (prop === "then") {
+        // Promiseのthenと誤認識されるのを防ぐため、Promiseに存在するプロパティはProxyのgetで処理しない
+        return undefined;
+      }
       if (prop in target) {
         return Reflect.get(target, prop, receiver);
       }
@@ -116,5 +120,5 @@ export function createInnerState(webComponent: Element, stateName: string): IInn
   if (typeof state !== 'object' || state === null) {
     raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
   }
-  return new Proxy(state, handler);
+  return new Proxy(structuredClone(state), handler);
 }

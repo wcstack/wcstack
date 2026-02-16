@@ -22,6 +22,7 @@ import { initializeBindings } from '../src/bindings/initializeBindings';
 import { convertMustacheToComments } from '../src/mustache/convertMustacheToComments';
 import { collectStructuralFragments } from '../src/structural/collectStructuralFragments';
 import { waitForStateInitialize } from '../src/waitForStateInitialize';
+import { config } from '../src/config';
 
 describe('buildBindings', () => {
   beforeEach(() => {
@@ -77,17 +78,60 @@ describe('buildBindings', () => {
       shadowRoot = component.attachShadow({ mode: 'open' });
     });
 
-    it('正常にバインディングを構築すること', async () => {
+    it('bindAttributeNameがない場合はwaitInitializeBindingが呼ばれないこと', async () => {
       await buildBindings(shadowRoot);
 
+      expect(waitInitializeBinding).not.toHaveBeenCalled();
       expect(waitForStateInitialize).toHaveBeenCalledWith(shadowRoot);
       expect(convertMustacheToComments).toHaveBeenCalledWith(shadowRoot);
       expect(collectStructuralFragments).toHaveBeenCalledWith(shadowRoot, shadowRoot);
-      expect(waitInitializeBinding).toHaveBeenCalledWith(component);
       expect(initializeBindings).toHaveBeenCalledWith(shadowRoot, null);
     });
 
-    it('各処理が正しい順序で呼ばれること', async () => {
+    it('bindAttributeNameがある場合はwaitInitializeBindingが呼ばれること', async () => {
+      component.setAttribute(config.bindAttributeName, 'state:prop');
+
+      await buildBindings(shadowRoot);
+
+      expect(waitInitializeBinding).toHaveBeenCalledWith(component);
+      expect(waitForStateInitialize).toHaveBeenCalledWith(shadowRoot);
+      expect(convertMustacheToComments).toHaveBeenCalledWith(shadowRoot);
+      expect(collectStructuralFragments).toHaveBeenCalledWith(shadowRoot, shadowRoot);
+      expect(initializeBindings).toHaveBeenCalledWith(shadowRoot, null);
+    });
+
+    it('bindAttributeNameがある場合の各処理の呼び出し順序が正しいこと', async () => {
+      component.setAttribute(config.bindAttributeName, 'state:prop');
+      const callOrder: string[] = [];
+
+      vi.mocked(waitInitializeBinding).mockImplementation(async () => {
+        callOrder.push('waitInitializeBinding');
+      });
+      vi.mocked(waitForStateInitialize).mockImplementation(async () => {
+        callOrder.push('waitForStateInitialize');
+      });
+      vi.mocked(convertMustacheToComments).mockImplementation(() => {
+        callOrder.push('convertMustacheToComments');
+      });
+      vi.mocked(collectStructuralFragments).mockImplementation(() => {
+        callOrder.push('collectStructuralFragments');
+      });
+      vi.mocked(initializeBindings).mockImplementation(() => {
+        callOrder.push('initializeBindings');
+      });
+
+      await buildBindings(shadowRoot);
+
+      expect(callOrder).toEqual([
+        'waitInitializeBinding',
+        'waitForStateInitialize',
+        'convertMustacheToComments',
+        'collectStructuralFragments',
+        'initializeBindings'
+      ]);
+    });
+
+    it('bindAttributeNameがない場合の各処理の呼び出し順序が正しいこと', async () => {
       const callOrder: string[] = [];
 
       vi.mocked(waitForStateInitialize).mockImplementation(async () => {
@@ -99,9 +143,6 @@ describe('buildBindings', () => {
       vi.mocked(collectStructuralFragments).mockImplementation(() => {
         callOrder.push('collectStructuralFragments');
       });
-      vi.mocked(waitInitializeBinding).mockImplementation(async () => {
-        callOrder.push('waitInitializeBinding');
-      });
       vi.mocked(initializeBindings).mockImplementation(() => {
         callOrder.push('initializeBindings');
       });
@@ -112,15 +153,8 @@ describe('buildBindings', () => {
         'waitForStateInitialize',
         'convertMustacheToComments',
         'collectStructuralFragments',
-        'waitInitializeBinding',
         'initializeBindings'
       ]);
-    });
-
-    it('shadowRoot.hostが正しく渡されること', async () => {
-      await buildBindings(shadowRoot);
-
-      expect(waitInitializeBinding).toHaveBeenCalledWith(component);
     });
   });
 });

@@ -1,11 +1,10 @@
 
 class MyComponent extends HTMLElement {
-  state = {
-    message: ""
-  }
-
+  state = Object.freeze({});
   constructor() {
     super();
+  }
+  connectedCallback() {
     this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `
 <wcs-state bind-component="state">
@@ -14,9 +13,8 @@ class MyComponent extends HTMLElement {
   <div>{{ message }}</div>
   <input type="text" data-wcs="value: message" />
 </div>
-    `;
+`;
   }
-
 } 
 
 customElements.define('my-component', MyComponent);
