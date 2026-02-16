@@ -924,7 +924,6 @@ import { config } from '@wcstack/state';
 
 // 全オプションとデフォルト値:
 config.bindAttributeName = 'data-wcs';          // バインディング属性名
-config.bindComponentAttributeName = 'bind-component'; // コンポーネントバインディング属性
 config.tagNames.state = 'wcs-state';            // 状態要素のタグ名
 config.locale = 'en';                           // フィルタのデフォルトロケール
 config.debug = false;                           // デバッグモード

@@ -31,8 +31,9 @@ import { trackDependency } from "../apis/trackDependency";
 import { updatedCallback } from "../apis/updatedCallback";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
+import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import { IStateHandler } from "../types";
 
 export function get(
@@ -124,6 +125,17 @@ export function get(
           return getByAddress(
             target,
             address,
+            receiver,
+            handler
+          );
+        }
+      }
+      case setByAddressSymbol: {
+        return (address: IStateAddress, value: any): void => {
+          return setByAddress(
+            target,
+            address,
+            value,
             receiver,
             handler
           );

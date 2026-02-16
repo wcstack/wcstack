@@ -1,7 +1,14 @@
 function cloneWithDescriptors(obj) {
     const proto = Object.getPrototypeOf(obj);
     const clone = Object.create(proto);
-    Object.defineProperties(clone, Object.getOwnPropertyDescriptors(obj));
+    const descriptors = Object.getOwnPropertyDescriptors(obj);
+    for (const key in descriptors) {
+        const descriptor = descriptors[key];
+        if (descriptor.writable === false) {
+            descriptor.writable = true;
+        }
+    }
+    Object.defineProperties(clone, descriptors);
     return clone;
 }
 export function meltFrozenObject(frozenObj) {

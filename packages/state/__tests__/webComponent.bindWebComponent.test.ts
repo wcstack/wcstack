@@ -10,6 +10,10 @@ vi.mock('../src/webComponent/outerState', () => {
   const outerState = {};
   return { createOuterState: vi.fn(() => outerState) };
 });
+vi.mock('../src/webComponent/plainOuterState', () => {
+  const plainOuterState = {};
+  return { createPlainOuterState: vi.fn(() => plainOuterState) };
+});
 vi.mock('../src/webComponent/innerState', () => {
   const innerState = {};
   return { createInnerState: vi.fn(() => innerState) };
@@ -20,16 +24,22 @@ vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
 vi.mock('../src/webComponent/completeWebComponent', () => ({
   markWebComponentAsComplete: vi.fn()
 }));
+vi.mock('../src/webComponent/meltFrozenObject', () => ({
+  meltFrozenObject: vi.fn((obj: any) => ({ ...obj, melted: true }))
+}));
 
 import { bindWebComponent } from '../src/webComponent/bindWebComponent';
 import { getBindingsByNode } from '../src/bindings/getBindingsByNode';
 import { buildPrimaryMappingRule } from '../src/webComponent/MappingRule';
 import { createOuterState } from '../src/webComponent/outerState';
+import { createPlainOuterState } from '../src/webComponent/plainOuterState';
 import { createInnerState } from '../src/webComponent/innerState';
 import { setStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
 import { markWebComponentAsComplete } from '../src/webComponent/completeWebComponent';
+import { meltFrozenObject } from '../src/webComponent/meltFrozenObject';
 import { IBindingInfo } from '../src/types';
 import { getPathInfo } from '../src/address/PathInfo';
+import { config } from '../src/config';
 
 const getBindingsByNodeMock = vi.mocked(getBindingsByNode);
 
@@ -57,9 +67,12 @@ const createMockStateElement = () => ({
   setInitialState: vi.fn(),
 } as any);
 
-const createComponentWithShadow = (): Element => {
+const createComponentWithShadow = (hasBind = true): Element => {
   const component = document.createElement('div');
   component.attachShadow({ mode: 'open' });
+  if (hasBind) {
+    component.setAttribute(config.bindAttributeName, '');
+  }
   return component;
 };
 
@@ -71,96 +84,155 @@ describe('bindWebComponent', () => {
   it('shadowRootがない場合はエラーになること', () => {
     const component = document.createElement('div');
     const stateEl = createMockStateElement();
-    expect(() => bindWebComponent(stateEl, component, 'outer')).toThrow(/no shadow root/);
+    expect(() => bindWebComponent(stateEl, component, 'outer', {})).toThrow(/no shadow root/);
   });
 
-  it('bindingsが空配列でも正常に動作すること', () => {
-    const component = createComponentWithShadow();
-    const stateEl = createMockStateElement();
-    getBindingsByNodeMock.mockReturnValue([]);
+  describe('data-wcs属性がある場合（バインディングあり）', () => {
+    it('bindingsが空配列でも正常に動作すること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      getBindingsByNodeMock.mockReturnValue([]);
 
-    expect(() => bindWebComponent(stateEl, component, 'outer')).not.toThrow();
+      expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
+    });
+
+    it('正常系: バインディングを処理してouterプロパティを設定すること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const binding1 = createMockBinding(['outer', 'title'], 'name');
+      const binding2 = createMockBinding(['outer', 'count'], 'total');
+      getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
+
+      const outerState = (createOuterState as any)();
+      const innerState = (createInnerState as any)();
+      vi.mocked(createOuterState).mockReturnValue(outerState);
+      vi.mocked(createInnerState).mockReturnValue(innerState);
+
+      bindWebComponent(stateEl, component, 'outer', { title: 'test' });
+
+      // setStateElementByWebComponentが呼ばれること
+      expect(setStateElementByWebComponent).toHaveBeenCalledWith(component, 'outer', stateEl);
+
+      // buildPrimaryMappingRule が呼ばれること（stateName, bindingsパラメータ付き）
+      expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1, binding2]);
+
+      // createOuterState, createInnerState が component, stateName を受け取ること
+      expect(createOuterState).toHaveBeenCalledWith(component, 'outer');
+      expect(createInnerState).toHaveBeenCalledWith(component, 'outer');
+
+      // setInitialState が innerState で呼ばれること
+      expect(stateEl.setInitialState).toHaveBeenCalledWith(innerState);
+
+      // component.outer が設定されていること
+      expect((component as any).outer).toBe(outerState);
+    });
+
+    it('setInitialStateでinnerStateが設定されること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const binding = createMockBinding(['outer', 'value'], 'data');
+      getBindingsByNodeMock.mockReturnValue([binding]);
+
+      const outerState = (createOuterState as any)();
+      const innerState = (createInnerState as any)();
+      vi.mocked(createOuterState).mockReturnValue(outerState);
+      vi.mocked(createInnerState).mockReturnValue(innerState);
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      // setInitialStateが呼ばれたことを確認
+      expect(stateEl.setInitialState).toHaveBeenCalledTimes(1);
+      expect(stateEl.setInitialState).toHaveBeenCalledWith(innerState);
+    });
+
+    it('異なるstatePropのバインディングはフィルタリングされること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const binding1 = createMockBinding(['outer', 'title'], 'name');
+      const binding2 = createMockBinding(['props', 'config'], 'settings'); // 別のstateProp
+      getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      // buildPrimaryMappingRuleには'outer'で始まるバインディングのみ渡される
+      expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1]);
+    });
+
+    it('getBindingsByNodeがnullを返す場合でも正常に動作すること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      getBindingsByNodeMock.mockReturnValue(null as any);
+
+      expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
+
+      // buildPrimaryMappingRuleには空配列が渡される
+      expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', []);
+    });
+
+    it('createPlainOuterStateが呼ばれないこと', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      expect(createPlainOuterState).not.toHaveBeenCalled();
+      expect(meltFrozenObject).not.toHaveBeenCalled();
+    });
   });
 
-  it('正常系: バインディングを処理してouterプロパティを設定すること', () => {
-    const component = createComponentWithShadow();
-    const stateEl = createMockStateElement();
-    const binding1 = createMockBinding(['outer', 'title'], 'name');
-    const binding2 = createMockBinding(['outer', 'count'], 'total');
-    getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
+  describe('data-wcs属性がない場合（バインディングなし）', () => {
+    it('meltFrozenObjectでstateを溶かしてsetInitialStateに渡すこと', () => {
+      const component = createComponentWithShadow(false);
+      const stateEl = createMockStateElement();
+      const state = { count: 0, name: 'test' };
 
-    const outerState = (createOuterState as any)();
-    const innerState = (createInnerState as any)();
-    vi.mocked(createOuterState).mockReturnValue(outerState);
-    vi.mocked(createInnerState).mockReturnValue(innerState);
+      bindWebComponent(stateEl, component, 'outer', state);
 
-    bindWebComponent(stateEl, component, 'outer');
+      expect(meltFrozenObject).toHaveBeenCalledWith(state);
+      expect(stateEl.setInitialState).toHaveBeenCalledWith({ count: 0, name: 'test', melted: true });
+    });
 
-    // setStateElementByWebComponentが呼ばれること
-    expect(setStateElementByWebComponent).toHaveBeenCalledWith(component, 'outer', stateEl);
+    it('createPlainOuterStateでouterプロパティを設定すること', () => {
+      const component = createComponentWithShadow(false);
+      const stateEl = createMockStateElement();
+      const plainOuterState = (createPlainOuterState as any)();
+      vi.mocked(createPlainOuterState).mockReturnValue(plainOuterState);
 
-    // buildPrimaryMappingRule が呼ばれること（stateName, bindingsパラメータ付き）
-    expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1, binding2]);
+      bindWebComponent(stateEl, component, 'outer', {});
 
-    // createOuterState, createInnerState が component, stateName を受け取ること
-    expect(createOuterState).toHaveBeenCalledWith(component, 'outer');
-    expect(createInnerState).toHaveBeenCalledWith(component, 'outer');
+      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
+      expect((component as any).outer).toBe(plainOuterState);
+    });
 
-    // setInitialState が innerState で呼ばれること
-    expect(stateEl.setInitialState).toHaveBeenCalledWith(innerState);
+    it('バインディング関連の関数が呼ばれないこと', () => {
+      const component = createComponentWithShadow(false);
+      const stateEl = createMockStateElement();
 
-    // component.outer が設定されていること
-    expect((component as any).outer).toBe(outerState);
-  });
+      bindWebComponent(stateEl, component, 'outer', {});
 
-  it('setInitialStateでinnerStateが設定されること', () => {
-    const component = createComponentWithShadow();
-    const stateEl = createMockStateElement();
-    const binding = createMockBinding(['outer', 'value'], 'data');
-    getBindingsByNodeMock.mockReturnValue([binding]);
-
-    const outerState = (createOuterState as any)();
-    const innerState = (createInnerState as any)();
-    vi.mocked(createOuterState).mockReturnValue(outerState);
-    vi.mocked(createInnerState).mockReturnValue(innerState);
-
-    bindWebComponent(stateEl, component, 'outer');
-
-    // setInitialStateが呼ばれたことを確認
-    expect(stateEl.setInitialState).toHaveBeenCalledTimes(1);
-    expect(stateEl.setInitialState).toHaveBeenCalledWith(innerState);
-  });
-
-  it('異なるstatePropのバインディングはフィルタリングされること', () => {
-    const component = createComponentWithShadow();
-    const stateEl = createMockStateElement();
-    const binding1 = createMockBinding(['outer', 'title'], 'name');
-    const binding2 = createMockBinding(['props', 'config'], 'settings'); // 別のstateProp
-    getBindingsByNodeMock.mockReturnValue([binding1, binding2]);
-
-    bindWebComponent(stateEl, component, 'outer');
-
-    // buildPrimaryMappingRuleには'outer'で始まるバインディングのみ渡される
-    expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1]);
-  });
-
-  it('getBindingsByNodeがnullを返す場合でも正常に動作すること', () => {
-    const component = createComponentWithShadow();
-    const stateEl = createMockStateElement();
-    getBindingsByNodeMock.mockReturnValue(null as any);
-
-    expect(() => bindWebComponent(stateEl, component, 'outer')).not.toThrow();
-
-    // buildPrimaryMappingRuleには空配列が渡される
-    expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', []);
+      expect(getBindingsByNode).not.toHaveBeenCalled();
+      expect(buildPrimaryMappingRule).not.toHaveBeenCalled();
+      expect(createOuterState).not.toHaveBeenCalled();
+      expect(createInnerState).not.toHaveBeenCalled();
+    });
   });
 
   it('markWebComponentAsCompleteが呼ばれること', () => {
-    const component = createComponentWithShadow();
+    const component = createComponentWithShadow(true);
     const stateEl = createMockStateElement();
     getBindingsByNodeMock.mockReturnValue([]);
 
-    bindWebComponent(stateEl, component, 'outer');
+    bindWebComponent(stateEl, component, 'outer', {});
+
+    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
+  });
+
+  it('data-wcs属性がない場合もmarkWebComponentAsCompleteが呼ばれること', () => {
+    const component = createComponentWithShadow(false);
+    const stateEl = createMockStateElement();
+
+    bindWebComponent(stateEl, component, 'outer', {});
 
     expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
   });

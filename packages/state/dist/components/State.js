@@ -12,7 +12,6 @@ import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
-import { meltFrozenObject } from "../webComponent/meltFrozenObject";
 function getAllPropertyDescriptors(obj) {
     let descriptors = {};
     let proto = obj;
@@ -141,15 +140,17 @@ export class State extends HTMLElement {
         setStateElementByName(this.rootNode, this._name, this);
     }
     async _initializeBindWebComponent() {
-        if (this.hasAttribute(config.bindComponentAttributeName)) {
+        if (this.hasAttribute("bind-component")) {
             if (!(this.rootNode instanceof ShadowRoot)) {
-                raiseError(`${config.bindComponentAttributeName} can only be used inside a shadow root.`);
+                raiseError(`"bind-component" can only be used inside a shadow root.`);
             }
             const boundComponent = this.rootNode.host;
-            const boundComponentStateProp = this.getAttribute(config.bindComponentAttributeName);
+            const boundComponentStateProp = this.getAttribute("bind-component");
             await customElements.whenDefined(boundComponent.tagName.toLowerCase());
-            await waitInitializeBinding(boundComponent);
-            // boundComponentは上位の状態によりbinding情報の設定が完了している
+            // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
+            if (boundComponent.hasAttribute(config.bindAttributeName)) {
+                await waitInitializeBinding(boundComponent);
+            }
             if (!(boundComponentStateProp in boundComponent)) {
                 raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
             }
@@ -159,12 +160,7 @@ export class State extends HTMLElement {
             }
             this._boundComponent = boundComponent;
             this._boundComponentStateProp = boundComponentStateProp;
-            if (boundComponent.hasAttribute(config.bindAttributeName)) {
-                bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
-            }
-            else {
-                this.setInitialState(meltFrozenObject(state));
-            }
+            bindWebComponent(this, this._boundComponent, this._boundComponentStateProp, state);
         }
     }
     async _callStateConnectedCallback() {

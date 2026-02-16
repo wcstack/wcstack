@@ -1,6 +1,5 @@
 const config = {
     bindAttributeName: 'data-wcs',
-    bindComponentAttributeName: 'bind-component',
     commentTextPrefix: 'wcs-text',
     commentForPrefix: 'wcs-for',
     commentIfPrefix: 'wcs-if',
@@ -1519,6 +1518,7 @@ function setLoopContextByNode(node, loopContext) {
 const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
 const setLoopContextSymbol = Symbol("$$setLoopContext");
 const getByAddressSymbol = Symbol("$$getByAddress");
+const setByAddressSymbol = Symbol("$$setByAddress");
 const connectedCallbackSymbol = Symbol("$$connectedCallback");
 const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
 const updatedCallbackSymbol = Symbol("$$updatedCallback");
@@ -4770,6 +4770,11 @@ function get(target, prop, receiver, handler) {
                     return getByAddress(target, address, receiver, handler);
                 };
             }
+            case setByAddressSymbol: {
+                return (address, value) => {
+                    return setByAddress(target, address, value, receiver, handler);
+                };
+            }
             case connectedCallbackSymbol: {
                 return () => {
                     return connectedCallback(target, prop, receiver);
@@ -5035,7 +5040,14 @@ function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo) {
 function cloneWithDescriptors(obj) {
     const proto = Object.getPrototypeOf(obj);
     const clone = Object.create(proto);
-    Object.defineProperties(clone, Object.getOwnPropertyDescriptors(obj));
+    const descriptors = Object.getOwnPropertyDescriptors(obj);
+    for (const key in descriptors) {
+        const descriptor = descriptors[key];
+        if (descriptor.writable === false) {
+            descriptor.writable = true;
+        }
+    }
+    Object.defineProperties(clone, descriptors);
     return clone;
 }
 function meltFrozenObject(frozenObj) {
@@ -5153,10 +5165,8 @@ function createInnerState(webComponent, stateName) {
 }
 
 class OuterStateProxyHandler {
-    _webComponent;
     _innerStateElement;
     constructor(webComponent, stateName) {
-        this._webComponent = webComponent;
         this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
     }
     get(target, prop, receiver) {
@@ -5189,22 +5199,71 @@ function createOuterState(webComponent, stateName) {
     return new Proxy({}, handler);
 }
 
+class PlainOuterStateProxyHandler {
+    _innerStateElement;
+    constructor(webComponent, stateName) {
+        this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
+    }
+    get(target, prop, receiver) {
+        if (typeof prop === 'string') {
+            const innerPathInfo = getPathInfo(prop);
+            const innerStateAddress = createStateAddress(innerPathInfo, null);
+            let value;
+            this._innerStateElement.createState("readonly", (state) => {
+                value = state[getByAddressSymbol](innerStateAddress);
+            });
+            return value;
+        }
+        else {
+            return Reflect.get(target, prop, receiver);
+        }
+    }
+    set(target, prop, value, receiver) {
+        if (typeof prop === 'string') {
+            const innerPathInfo = getPathInfo(prop);
+            const innerStateAddress = createStateAddress(innerPathInfo, null);
+            this._innerStateElement.createState("writable", (state) => {
+                state[setByAddressSymbol](innerStateAddress, value);
+            });
+            return true;
+        }
+        else {
+            return Reflect.set(target, prop, value, receiver);
+        }
+    }
+}
+function createPlainOuterState(webComponent, stateName) {
+    const handler = new PlainOuterStateProxyHandler(webComponent, stateName);
+    return new Proxy({}, handler);
+}
+
 const getOuter = (outerState) => () => outerState;
-function bindWebComponent(innerStateElement, component, stateProp) {
+function bindWebComponent(innerStateElement, component, stateProp, state) {
     if (component.shadowRoot === null) {
         raiseError('Component has no shadow root.');
     }
     setStateElementByWebComponent(component, stateProp, innerStateElement);
-    const bindings = (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp);
-    buildPrimaryMappingRule(component, stateProp, bindings);
-    const outerState = createOuterState(component, stateProp);
-    const innerState = createInnerState(component, stateProp);
-    innerStateElement.setInitialState(innerState);
-    Object.defineProperty(component, stateProp, {
-        get: getOuter(outerState),
-        enumerable: true,
-        configurable: true,
-    });
+    if (component.hasAttribute(config.bindAttributeName)) {
+        const bindings = (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp);
+        buildPrimaryMappingRule(component, stateProp, bindings);
+        const outerState = createOuterState(component, stateProp);
+        const innerState = createInnerState(component, stateProp);
+        innerStateElement.setInitialState(innerState);
+        Object.defineProperty(component, stateProp, {
+            get: getOuter(outerState),
+            enumerable: true,
+            configurable: true,
+        });
+    }
+    else {
+        innerStateElement.setInitialState(meltFrozenObject(state));
+        const outerState = createPlainOuterState(component, stateProp);
+        Object.defineProperty(component, stateProp, {
+            get: getOuter(outerState),
+            enumerable: true,
+            configurable: true,
+        });
+    }
     markWebComponentAsComplete(component, innerStateElement);
 }
 
@@ -5336,15 +5395,17 @@ class State extends HTMLElement {
         setStateElementByName(this.rootNode, this._name, this);
     }
     async _initializeBindWebComponent() {
-        if (this.hasAttribute(config.bindComponentAttributeName)) {
+        if (this.hasAttribute("bind-component")) {
             if (!(this.rootNode instanceof ShadowRoot)) {
-                raiseError(`${config.bindComponentAttributeName} can only be used inside a shadow root.`);
+                raiseError(`"bind-component" can only be used inside a shadow root.`);
             }
             const boundComponent = this.rootNode.host;
-            const boundComponentStateProp = this.getAttribute(config.bindComponentAttributeName);
+            const boundComponentStateProp = this.getAttribute("bind-component");
             await customElements.whenDefined(boundComponent.tagName.toLowerCase());
-            await waitInitializeBinding(boundComponent);
-            // boundComponentは上位の状態によりbinding情報の設定が完了している
+            // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
+            if (boundComponent.hasAttribute(config.bindAttributeName)) {
+                await waitInitializeBinding(boundComponent);
+            }
             if (!(boundComponentStateProp in boundComponent)) {
                 raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
             }
@@ -5354,12 +5415,7 @@ class State extends HTMLElement {
             }
             this._boundComponent = boundComponent;
             this._boundComponentStateProp = boundComponentStateProp;
-            if (boundComponent.hasAttribute(config.bindAttributeName)) {
-                bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
-            }
-            else {
-                this.setInitialState(meltFrozenObject(state));
-            }
+            bindWebComponent(this, this._boundComponent, this._boundComponentStateProp, state);
         }
     }
     async _callStateConnectedCallback() {

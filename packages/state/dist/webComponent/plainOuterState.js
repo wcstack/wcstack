@@ -1,10 +1,9 @@
-import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
+import { createStateAddress } from "../address/StateAddress";
+import { getByAddressSymbol, setByAddressSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
-import { getLastValueByAbsoluteStateAddress } from "./lastValueByAbsoluteStateAddress";
 import { getStateElementByWebComponent } from "./stateElementByWebComponent";
-class OuterStateProxyHandler {
+class PlainOuterStateProxyHandler {
     _innerStateElement;
     constructor(webComponent, stateName) {
         this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
@@ -12,9 +11,12 @@ class OuterStateProxyHandler {
     get(target, prop, receiver) {
         if (typeof prop === 'string') {
             const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            const absStateAddress = createAbsoluteStateAddress(innerAbsPathInfo, null);
-            return getLastValueByAbsoluteStateAddress(absStateAddress);
+            const innerStateAddress = createStateAddress(innerPathInfo, null);
+            let value;
+            this._innerStateElement.createState("readonly", (state) => {
+                value = state[getByAddressSymbol](innerStateAddress);
+            });
+            return value;
         }
         else {
             return Reflect.get(target, prop, receiver);
@@ -23,9 +25,9 @@ class OuterStateProxyHandler {
     set(target, prop, value, receiver) {
         if (typeof prop === 'string') {
             const innerPathInfo = getPathInfo(prop);
-            const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
-            this._innerStateElement.createState("readonly", (state) => {
-                state.$postUpdate(innerAbsPathInfo.pathInfo.path);
+            const innerStateAddress = createStateAddress(innerPathInfo, null);
+            this._innerStateElement.createState("writable", (state) => {
+                state[setByAddressSymbol](innerStateAddress, value);
             });
             return true;
         }
@@ -34,8 +36,8 @@ class OuterStateProxyHandler {
         }
     }
 }
-export function createOuterState(webComponent, stateName) {
-    const handler = new OuterStateProxyHandler(webComponent, stateName);
+export function createPlainOuterState(webComponent, stateName) {
+    const handler = new PlainOuterStateProxyHandler(webComponent, stateName);
     return new Proxy({}, handler);
 }
-//# sourceMappingURL=outerState.js.map
+//# sourceMappingURL=plainOuterState.js.map

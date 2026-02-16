@@ -501,7 +501,7 @@ describe('State component', () => {
     (stateEl as any)._rootNode = document;
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
-      /bind-component can only be used inside a shadow root/
+      /"bind-component" can only be used inside a shadow root/
     );
   });
 
@@ -541,7 +541,7 @@ describe('State component', () => {
     expect(stateEl.boundComponentStateProp).toBe('outer');
   });
 
-  it('data-wcsがある場合はbindWebComponentが呼ばれること', async () => {
+  it('data-wcsがある場合はbindWebComponentがstateを含めて呼ばれること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     host.setAttribute('data-wcs', 'outer:value');
@@ -551,45 +551,37 @@ describe('State component', () => {
 
     await (stateEl as any)._initializeBindWebComponent();
 
-    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer');
+    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', initialState);
   });
 
-  it('data-wcsがないコンポーネントではsetInitialStateが呼ばれること', async () => {
+  it('data-wcsがないコンポーネントでもbindWebComponentがstateを含めて呼ばれること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
-    (host as any).outer = { message: 'hi' };
-
-    const setInitialStateSpy = vi.spyOn(stateEl, 'setInitialState');
+    const initialState = { message: 'hi' };
+    (host as any).outer = initialState;
 
     await (stateEl as any)._initializeBindWebComponent();
 
-    // data-wcs属性がない場合はbindWebComponentは呼ばれず、setInitialStateが呼ばれる
-    expect(bindWebComponentMock).not.toHaveBeenCalled();
-    expect(setInitialStateSpy).toHaveBeenCalledWith(expect.objectContaining({ message: 'hi' }));
+    // data-wcs属性がない場合もbindWebComponentがstateを含めて呼ばれる
+    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', initialState);
   });
 
-  it('data-wcsがないコンポーネントでフリーズされたstateのgetterが保持されること', async () => {
+  it('data-wcsがないコンポーネントでフリーズされたstateでもbindWebComponentが呼ばれること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
     (stateEl as any)._rootNode = stateEl.getRootNode();
-    (host as any).outer = Object.freeze({
+    const frozenState = Object.freeze({
       get "user.title"() {
         return 'computed value';
       }
     });
-
-    const setInitialStateSpy = vi.spyOn(stateEl, 'setInitialState');
+    (host as any).outer = frozenState;
 
     await (stateEl as any)._initializeBindWebComponent();
 
-    expect(bindWebComponentMock).not.toHaveBeenCalled();
-    const arg = setInitialStateSpy.mock.calls[0][0];
-    // meltFrozenObjectにより、getterが保持されていること
-    const desc = Object.getOwnPropertyDescriptor(arg, 'user.title');
-    expect(typeof desc?.get).toBe('function');
-    // 解凍されていること（frozenでないこと）
-    expect(Object.isFrozen(arg)).toBe(false);
+    // bindWebComponentにフリーズされたstateが渡される（解凍はbindWebComponent内部で行われる）
+    expect(bindWebComponentMock).toHaveBeenCalledWith(stateEl, host, 'outer', frozenState);
   });
 
   it('bindWebComponentが失敗した場合はエラーが伝播すること', async () => {

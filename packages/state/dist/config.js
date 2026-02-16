@@ -1,6 +1,5 @@
 export const config = {
     bindAttributeName: 'data-wcs',
-    bindComponentAttributeName: 'bind-component',
     commentTextPrefix: 'wcs-text',
     commentForPrefix: 'wcs-for',
     commentIfPrefix: 'wcs-if',

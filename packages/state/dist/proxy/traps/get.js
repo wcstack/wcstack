@@ -29,8 +29,9 @@ import { trackDependency } from "../apis/trackDependency";
 import { updatedCallback } from "../apis/updatedCallback";
 import { getByAddress } from "../methods/getByAddress";
 import { getListIndex } from "../methods/getListIndex";
+import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 export function get(target, prop, receiver, handler) {
     const index = INDEX_BY_INDEX_NAME[prop];
     if (typeof index !== "undefined") {
@@ -90,6 +91,11 @@ export function get(target, prop, receiver, handler) {
             case getByAddressSymbol: {
                 return (address) => {
                     return getByAddress(target, address, receiver, handler);
+                };
+            }
+            case setByAddressSymbol: {
+                return (address, value) => {
+                    return setByAddress(target, address, value, receiver, handler);
                 };
             }
             case connectedCallbackSymbol: {

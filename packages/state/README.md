@@ -924,7 +924,6 @@ import { config } from '@wcstack/state';
 
 // All options with defaults:
 config.bindAttributeName = 'data-wcs';          // Binding attribute name
-config.bindComponentAttributeName = 'bind-component'; // Component binding attribute
 config.tagNames.state = 'wcs-state';            // State element tag name
 config.locale = 'en';                           // Default locale for filters
 config.debug = false;                           // Debug mode

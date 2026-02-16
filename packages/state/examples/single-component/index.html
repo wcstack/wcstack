@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>single component</title>
+  <script type="module" src="../../dist/auto.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "@components/my-component": "./components/myComponent.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+import "@components/my-component";
+
+export default {
+  toggle: false,
+  show() {
+    const myComponent = document.querySelector("my-component");
+    alert(myComponent.state.message);
+  },
+  change() {
+    const myComponent = document.querySelector("my-component");
+    if (this.toggle) {
+      myComponent.state.message = "Hello, World!";
+    } else {
+      myComponent.state.message = "Goodbye, World!";
+    }
+    this.toggle = !this.toggle;
+  }
+};
+    </script>
+  </wcs-state>
+
+  <my-component></my-component>
+  <button data-wcs="onclick: show">show state.message</button>
+  <button data-wcs="onclick: change">change state.message</button>
+</body>
+</html>
