@@ -1,25 +1,33 @@
 
 class User extends HTMLElement {
-  state = {
-    user : {
-      name: "",
-      age: 0,
-    }
-  }
-
-
+  // bind-component="state" で親の users.* が注入されるため、
+  // 初期状態はフローズンな空オブジェクトでも問題ない。
+  // なお、ここに path getter を定義すると状態に組み込まれて評価される。
+  // 例:
+  // state = Object.freeze({
+  //   get "user.title"() {
+  //     return this["user.name"] + " (Age: " + this["user.age"] + ")";
+  //   }
+  // });
+  state = Object.freeze({
+     get "user.title"() {
+       return this["user.name"] + " (Age: " + this["user.age"] + ")";
+     }
+  });
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
   }
 
   connectedCallback() {
+    this.attachShadow({ mode: 'open' });
     this.shadowRoot.innerHTML = `
-      <wcs-state bind-component="state"></wcs-state>
-      <div>
-        <input type="text" data-wcs="value: user.name">
-        <input type="number" data-wcs="value#change: user.age">
-      </div>
+<wcs-state bind-component="state"></wcs-state>
+<div>
+  <input type="text" data-wcs="value: user.name">
+  <input type="number" data-wcs="valueAsNumber: user.age">
+  <div>{{ user.title }}</div>
+
+</div>
     `;
   }
 }

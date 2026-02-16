@@ -8,6 +8,7 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { setLastValueByAbsoluteStateAddress } from "./lastValueByAbsoluteStateAddress";
 import { getOuterAbsolutePathInfo } from "./MappingRule";
+import { meltFrozenObject } from "./meltFrozenObject";
 import { getStateElementByWebComponent } from "./stateElementByWebComponent";
 import { IInnerState } from "./types";
 
@@ -120,5 +121,5 @@ export function createInnerState(webComponent: Element, stateName: string): IInn
   if (typeof state !== 'object' || state === null) {
     raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
   }
-  return new Proxy(structuredClone(state), handler);
+  return new Proxy(meltFrozenObject(state), handler);
 }

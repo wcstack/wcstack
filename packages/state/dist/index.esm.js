@@ -5032,6 +5032,16 @@ function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo) {
     return outerAbsPathInfo;
 }
 
+function cloneWithDescriptors(obj) {
+    const proto = Object.getPrototypeOf(obj);
+    const clone = Object.create(proto);
+    Object.defineProperties(clone, Object.getOwnPropertyDescriptors(obj));
+    return clone;
+}
+function meltFrozenObject(frozenObj) {
+    return cloneWithDescriptors(frozenObj);
+}
+
 class InnerStateProxyHandler {
     _webComponent;
     _innerStateElement;
@@ -5139,7 +5149,7 @@ function createInnerState(webComponent, stateName) {
     if (typeof state !== 'object' || state === null) {
         raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
     }
-    return new Proxy(structuredClone(state), handler);
+    return new Proxy(meltFrozenObject(state), handler);
 }
 
 class OuterStateProxyHandler {
@@ -5348,7 +5358,7 @@ class State extends HTMLElement {
                 bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
             }
             else {
-                this.setInitialState(structuredClone(state));
+                this.setInitialState(meltFrozenObject(state));
             }
         }
     }

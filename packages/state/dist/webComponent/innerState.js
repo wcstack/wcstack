@@ -6,6 +6,7 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { setLastValueByAbsoluteStateAddress } from "./lastValueByAbsoluteStateAddress";
 import { getOuterAbsolutePathInfo } from "./MappingRule";
+import { meltFrozenObject } from "./meltFrozenObject";
 import { getStateElementByWebComponent } from "./stateElementByWebComponent";
 class InnerStateProxyHandler {
     _webComponent;
@@ -114,6 +115,6 @@ export function createInnerState(webComponent, stateName) {
     if (typeof state !== 'object' || state === null) {
         raiseError(`Invalid state object for component state prop: ${innerState.boundComponentStateProp}`);
     }
-    return new Proxy(structuredClone(state), handler);
+    return new Proxy(meltFrozenObject(state), handler);
 }
 //# sourceMappingURL=innerState.js.map

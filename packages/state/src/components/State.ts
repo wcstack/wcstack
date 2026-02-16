@@ -16,6 +16,7 @@ import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
+import { meltFrozenObject } from "../webComponent/meltFrozenObject";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -174,7 +175,7 @@ export class State extends HTMLElement implements IStateElement {
       if (boundComponent.hasAttribute(config.bindAttributeName)) {
         bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
       } else {
-        this.setInitialState(structuredClone(state));
+        this.setInitialState(meltFrozenObject(state));
       }
     }
   }

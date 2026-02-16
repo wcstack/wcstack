@@ -36,6 +36,7 @@ export default {
   <div>Loop: users</div>
   <template data-wcs="for: users">
     <div>{{ .name}} ({{ .age }} years old)</div>
+    <!-- "."は"users.*"を示す -->
     <my-user data-wcs="state.user: ."></my-user>
   </template>
 

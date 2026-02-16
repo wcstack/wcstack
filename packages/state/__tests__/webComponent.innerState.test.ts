@@ -99,7 +99,7 @@ describe('innerState', () => {
       expect(typeof proxy).toBe('object');
     });
 
-    it('structuredCloneにより元のstateオブジェクトが変更されないこと', () => {
+    it('meltFrozenObjectにより浅いクローンが作成されること', () => {
       const component = document.createElement('div') as any;
       const originalState = { user: { name: 'original' } };
       component.state = originalState;
@@ -108,8 +108,38 @@ describe('innerState', () => {
       } as any);
 
       const proxy = createInnerState(component, 'state');
-      // proxyのtargetはクローンなので、元のオブジェクトと異なるはず
-      expect(proxy['user']).not.toBe(originalState.user);
+      // meltFrozenObjectは浅いクローンなのでネストされたオブジェクトは同一参照
+      expect(proxy['user']).toBe(originalState.user);
+    });
+
+    it('フリーズされたstateからProxyが作成できること', () => {
+      const component = document.createElement('div') as any;
+      component.state = Object.freeze({ count: 0 });
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: 'state'
+      } as any);
+
+      const proxy = createInnerState(component, 'state');
+      expect(proxy).toBeDefined();
+      // meltFrozenObjectによりターゲットは非frozenなので、プロパティに直接アクセス可能
+      expect(proxy['count']).toBe(0);
+    });
+
+    it('getterを持つフリーズされたstateからProxyが作成でき、getterが保持されること', () => {
+      const component = document.createElement('div') as any;
+      component.state = Object.freeze({
+        get "user.title"() {
+          return 'computed';
+        }
+      });
+      getStateElementByWebComponentMock.mockReturnValue({
+        boundComponentStateProp: 'state'
+      } as any);
+
+      const proxy = createInnerState(component, 'state');
+      expect(proxy).toBeDefined();
+      // getterがtargetに存在するのでReflect.getで返される
+      expect(proxy['user.title']).toBe('computed');
     });
   });
 

@@ -12,6 +12,7 @@ import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
+import { meltFrozenObject } from "../webComponent/meltFrozenObject";
 function getAllPropertyDescriptors(obj) {
     let descriptors = {};
     let proto = obj;
@@ -162,7 +163,7 @@ export class State extends HTMLElement {
                 bindWebComponent(this, this._boundComponent, this._boundComponentStateProp);
             }
             else {
-                this.setInitialState(structuredClone(state));
+                this.setInitialState(meltFrozenObject(state));
             }
         }
     }

@@ -569,6 +569,29 @@ describe('State component', () => {
     expect(setInitialStateSpy).toHaveBeenCalledWith(expect.objectContaining({ message: 'hi' }));
   });
 
+  it('data-wcsがないコンポーネントでフリーズされたstateのgetterが保持されること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const host = createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
+    (host as any).outer = Object.freeze({
+      get "user.title"() {
+        return 'computed value';
+      }
+    });
+
+    const setInitialStateSpy = vi.spyOn(stateEl, 'setInitialState');
+
+    await (stateEl as any)._initializeBindWebComponent();
+
+    expect(bindWebComponentMock).not.toHaveBeenCalled();
+    const arg = setInitialStateSpy.mock.calls[0][0];
+    // meltFrozenObjectにより、getterが保持されていること
+    const desc = Object.getOwnPropertyDescriptor(arg, 'user.title');
+    expect(typeof desc?.get).toBe('function');
+    // 解凍されていること（frozenでないこと）
+    expect(Object.isFrozen(arg)).toBe(false);
+  });
+
   it('bindWebComponentが失敗した場合はエラーが伝播すること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);
