@@ -956,16 +956,28 @@ customElements.define("my-component", MyComponent);
 
 ## 設定
 
-```javascript
-import { config } from '@wcstack/state/dist/config.js';
+`bootstrapState()` に部分的な設定オブジェクトを渡します：
 
-// 全オプションとデフォルト値:
-config.bindAttributeName = 'data-wcs';          // バインディング属性名
-config.tagNames.state = 'wcs-state';            // 状態要素のタグ名
-config.locale = 'en';                           // フィルタのデフォルトロケール
-config.debug = false;                           // デバッグモード
-config.enableMustache = true;                   // {{ }} 構文の有効化
+```javascript
+import { bootstrapState } from '@wcstack/state';
+
+bootstrapState({
+  locale: 'ja-JP',
+  debug: true,
+  enableMustache: false,
+  tagNames: { state: 'my-state' },
+});
 ```
+
+全オプションとデフォルト値：
+
+| オプション | デフォルト | 説明 |
+|---|---|---|
+| `bindAttributeName` | `'data-wcs'` | バインディング属性名 |
+| `tagNames.state` | `'wcs-state'` | 状態要素のタグ名 |
+| `locale` | `'en'` | フィルタのデフォルトロケール |
+| `debug` | `false` | デバッグモード |
+| `enableMustache` | `true` | `{{ }}` 構文の有効化 |
 
 ## API リファレンス
 

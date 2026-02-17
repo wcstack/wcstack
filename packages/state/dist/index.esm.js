@@ -1,4 +1,4 @@
-const config = {
+const _config = {
     bindAttributeName: 'data-wcs',
     commentTextPrefix: 'wcs-text',
     commentForPrefix: 'wcs-for',
@@ -12,6 +12,40 @@ const config = {
     debug: false,
     enableMustache: true,
 };
+// backward compatible export (read-only usage)
+const config = _config;
+function setConfig(partialConfig) {
+    if (partialConfig.tagNames) {
+        Object.assign(_config.tagNames, partialConfig.tagNames);
+    }
+    if (typeof partialConfig.bindAttributeName === "string") {
+        _config.bindAttributeName = partialConfig.bindAttributeName;
+    }
+    if (typeof partialConfig.commentTextPrefix === "string") {
+        _config.commentTextPrefix = partialConfig.commentTextPrefix;
+    }
+    if (typeof partialConfig.commentForPrefix === "string") {
+        _config.commentForPrefix = partialConfig.commentForPrefix;
+    }
+    if (typeof partialConfig.commentIfPrefix === "string") {
+        _config.commentIfPrefix = partialConfig.commentIfPrefix;
+    }
+    if (typeof partialConfig.commentElseIfPrefix === "string") {
+        _config.commentElseIfPrefix = partialConfig.commentElseIfPrefix;
+    }
+    if (typeof partialConfig.commentElsePrefix === "string") {
+        _config.commentElsePrefix = partialConfig.commentElsePrefix;
+    }
+    if (typeof partialConfig.locale === "string") {
+        _config.locale = partialConfig.locale;
+    }
+    if (typeof partialConfig.debug === "boolean") {
+        _config.debug = partialConfig.debug;
+    }
+    if (typeof partialConfig.enableMustache === "boolean") {
+        _config.enableMustache = partialConfig.enableMustache;
+    }
+}
 
 async function loadFromInnerScript(script, name) {
     let scriptModule = null;
@@ -2751,12 +2785,16 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
     }
     try {
         if (!newValue) {
-            if (config.debug) ;
+            if (config.debug) {
+                console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
+            }
             deactivateContent(content);
             content.unmount();
         }
         if (newValue) {
-            if (config.debug) ;
+            if (config.debug) {
+                console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
+            }
             content.mountAfter(bindingInfo.node);
             const loopContext = getLoopContextByNode(bindingInfo.node);
             activateContent(content, loopContext, context);
@@ -2789,6 +2827,14 @@ function applyChangeToProperty(binding, _context, newValue) {
     const oldValue = subObject[propSegments[propSegments.length - 1]];
     if (oldValue !== newValue) {
         if (Object.isFrozen(subObject)) {
+            if (config.debug) {
+                console.warn(`Attempting to set property on frozen object.`, {
+                    element,
+                    propSegments,
+                    oldValue,
+                    newValue
+                });
+            }
             return;
         }
         subObject[propSegments[propSegments.length - 1]] = newValue;
@@ -2964,6 +3010,10 @@ function applyChangeFromBindings(bindings) {
         let binding = bindings[bindingIndex];
         const stateName = binding.stateName;
         if (binding.replaceNode.isConnected === false) {
+            // 切断されているバインディングは無視、本来は事前に除去されているはず
+            if (config.debug) {
+                console.log(`applyChangeFromBindings: skip disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`, binding);
+            }
             bindingIndex++;
             continue;
         }
@@ -3216,6 +3266,9 @@ function initializeBindingsByFragment(root, nodeInfos) {
 const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
 function convertMustacheToComments(root) {
+    if (!config.enableMustache) {
+        return;
+    }
     convertTextNodes(root);
     const templates = Array.from(root.querySelectorAll("template"));
     for (const template of templates) {
@@ -3625,6 +3678,9 @@ function setStateElementByName(rootNode, name, element) {
         if (stateElementByName.size === 0) {
             stateElementByNameByNode.delete(rootNode);
         }
+        if (config.debug) {
+            console.debug(`State element unregistered: name="${name}"`);
+        }
     }
     else {
         // 登録の場合
@@ -3647,6 +3703,9 @@ function setStateElementByName(rootNode, name, element) {
             raiseError(`State element with name "${name}" is already registered.`);
         }
         stateElementByName.set(name, element);
+        if (config.debug) {
+            console.debug(`State element registered: name="${name}"`, element);
+        }
     }
 }
 
@@ -4066,6 +4125,9 @@ function getIndexes(listDiff, searchType) {
         case "delete":
             return listDiff.deleteIndexSet;
         default:
+            if (config.debug) {
+                console.log(`Invalid search type: ${searchType}`);
+            }
             return [];
     }
 }
@@ -5595,7 +5657,10 @@ function registerComponents() {
     }
 }
 
-function bootstrapState() {
+function bootstrapState(config) {
+    if (config) {
+        setConfig(config);
+    }
     registerComponents();
 }
 

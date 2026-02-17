@@ -956,16 +956,28 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
 
 ## Configuration
 
-```javascript
-import { config } from '@wcstack/state/dist/config.js';
+Pass a partial configuration object to `bootstrapState()`:
 
-// All options with defaults:
-config.bindAttributeName = 'data-wcs';          // Binding attribute name
-config.tagNames.state = 'wcs-state';            // State element tag name
-config.locale = 'en';                           // Default locale for filters
-config.debug = false;                           // Debug mode
-config.enableMustache = true;                   // Enable {{ }} syntax
+```javascript
+import { bootstrapState } from '@wcstack/state';
+
+bootstrapState({
+  locale: 'ja-JP',
+  debug: true,
+  enableMustache: false,
+  tagNames: { state: 'my-state' },
+});
 ```
+
+All options with defaults:
+
+| Option | Default | Description |
+|---|---|---|
+| `bindAttributeName` | `'data-wcs'` | Binding attribute name |
+| `tagNames.state` | `'wcs-state'` | State element tag name |
+| `locale` | `'en'` | Default locale for filters |
+| `debug` | `false` | Debug mode |
+| `enableMustache` | `true` | Enable `{{ }}` syntax |
 
 ## API Reference
 
