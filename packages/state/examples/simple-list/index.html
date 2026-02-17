@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Simple List</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/wcstack/wcstack@main/packages/state/dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  users: [
+    { name: "Alice", age: 30 },
+    { name: "Bob", age: 25 },
+    { name: "Charlie", age: 35 },
+    { name: "David", age: 28 },
+    { name: "Eve", age: 22 },
+    { name: "Frank", age: 40 },
+    { name: "Grace", age: 27 },
+    { name: "Heidi", age: 33 },
+    { name: "Ivan", age: 29 },
+    { name: "Judy", age: 31 }
+  ],
+}
+      </script>
+    </wcs-state>
+
+    <div class="example-container">
+      <p class="example-title">@wcstack/state</p>
+      <template data-wcs="for: users">
+        <p>{{ .name }} ({{ .age }} years old)</p>
+      </template>
+    </div>
+  </body>
+</html>

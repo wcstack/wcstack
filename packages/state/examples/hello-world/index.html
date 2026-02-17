@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Hello World</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/wcstack/wcstack@main/packages/state/dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  message: "Hello World!"
+}
+      </script>
+    </wcs-state>
+
+    <div class="example-container">
+      <p class="example-title">@wcstack/state</p>
+      <h1>{{ message }}</h1>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Async Fetch</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/wcstack/wcstack@main/packages/state/dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+const API_URL = "https://jsonplaceholder.typicode.com/posts";
+
+export default {
+  posts: [],
+  isLoading: false,
+  message: "No posts found.",
+  async fetchPosts() {
+    this.isLoading = true;
+    this.message = "No posts found.";
+    try {
+      const response = await fetch(API_URL);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch posts. ${response.status}`);
+      }
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        this.posts = [];
+        this.message = data.message || 'Failed to fetch posts.';
+      } else {
+        this.posts = data.slice(0, 5); // Limit to first 5 posts for demo
+      }
+    } catch(e) {
+      console.error('Error fetching posts:', e);
+      this.message = e.message || 'Error fetching posts.';
+    } finally {
+      this.isLoading = false;
+    }
+  },
+  async $connectedCallback() {
+    await this.fetchPosts();
+  },
+  async onReload() {
+    await this.fetchPosts();
+  } 
+}
+      </script>
+    </wcs-state>
+
+    <div class="example-container">
+      <p class="example-title">@wcstack/state</p>
+      <button data-wcs="onclick: onReload">Refresh Posts</button>
+      <template data-wcs="if: isLoading">
+        <p>Loading...</p>
+      </template>
+      <template data-wcs="else:">
+        <template data-wcs="if: posts.length|gt(0)">
+        <ul>
+          <template data-wcs="for: posts">
+          <li>
+            <strong>{{ .title }}</strong><br/>
+            {{ .body|slice(0, 100) }}...
+          </li>
+          </template>
+        </ul>
+        </template>
+        <template data-wcs="else:">
+          <div>{{ message }}</div>
+        </template>
+      </template>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Simple Counter</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/wcstack/wcstack@main/packages/state/dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  count: 0,
+  increment() {
+    this.count++;
+  },
+  decrement() {
+    this.count--;
+  }
+}
+      </script>
+    </wcs-state>
+
+    <div class="example-container">
+      <p class="example-title">@wcstack/state</p>
+      <h1>Counter: {{ count }}</h1>
+      <div class="actions">
+        <button data-wcs="onclick: decrement">- Decrement</button>
+        <button data-wcs="onclick: increment">+ Increment</button>
+      </div>
+    </div>
+  </body>
+</html>

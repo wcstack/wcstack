@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Cart Example</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/wcstack/wcstack@main/packages/state/dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+const products = [
+  { id: 1, name: "Laptop", price: 999.99 },
+  { id: 2, name: "Smartphone", price: 499.99 },
+  { id: 3, name: "Headphones", price: 199.99 },
+  { id: 4, name: "Smartwatch", price: 149.99 },
+  { id: 5, name: "Tablet", price: 299.99 },
+  { id: 6, name: "Camera", price: 599.99 },
+  { id: 7, name: "Printer", price: 89.99 },
+  { id: 8, name: "Monitor", price: 249.99 },
+  { id: 9, name: "Keyboard", price: 49.99 },
+  { id: 10, name: "Mouse", price: 29.99 }
+];
+const TAX_RATE = 0.1; // 10% tax
+const DELETE_COUNT = 1;
+const INIT_QUANTITY = 1;
+const MIN_QUANTITY = 1;
+
+export default {
+  products: products,
+  cart: {
+    items:[
+      { productId: products[0].id, quantity: 1 },
+      { productId: products[4].id, quantity: 2 }
+    ]
+  },
+  selectedProductId: products[0].id,
+  taxRate: TAX_RATE,
+  minQuantity: MIN_QUANTITY,
+  productByProductId: new Map(products.map((product) => [product.id, product])),
+
+  get itemIndexByProductId() {
+    const productIds = this.$getAll("cart.items.*.productId", []);
+    return new Map(productIds.map((productId, index) => [productId, index]));
+  },
+
+  get "cart.items.*.product"() {
+    return this.productByProductId.get(this["cart.items.*.productId"]);
+  },
+
+  get "cart.items.*.price"() {
+    return this["cart.items.*.product.price"] * this["cart.items.*.quantity"];
+  },
+
+  get "cart.totalPrice"() {
+    return this.$getAll("cart.items.*.price", []).reduce((sum, value) => sum + value, 0);
+  },
+
+  get "cart.tax"() {
+    return this["cart.totalPrice"] * this.taxRate;
+  },
+
+  get "cart.grandTotal"() {
+    return this["cart.totalPrice"] + this["cart.tax"];
+  },
+
+  get selectedItemIndex() {
+    return this.itemIndexByProductId.get(this.selectedProductId) ?? -1;
+  },
+
+  onAddProductToCart() {
+    if (this.selectedItemIndex >= 0) {
+      this[`cart.items.${this.selectedItemIndex}.quantity`] += 1;
+    } else {
+      const newCartItem = {
+        productId: this.selectedProductId,
+        quantity: INIT_QUANTITY
+      };
+      this["cart.items"] = this["cart.items"].concat(newCartItem);
+    }
+  },
+
+  onDeleteItemFromCart(event, $1) {
+    if (!confirm("Are you sure you want to delete this item from the cart?")) {
+      return;
+    }
+    this["cart.items"] = this["cart.items"].toSpliced($1, DELETE_COUNT);
+  }
+}
+      </script>
+    </wcs-state>
+
+    <div class="example-container wide">
+      <p class="example-title">@wcstack/state</p>
+      <section>
+        Select Product:
+        <select data-wcs="value|number: selectedProductId">
+          <template data-wcs="for: products">
+            <option data-wcs="value: .id">
+              {{ .name }} - ${{ .price|fix(2) }}</option>
+          </template>
+        </select>
+        <button type="button" data-wcs="onclick: onAddProductToCart">Add to Cart</button>
+      </section>
+      <section>
+        <template data-wcs="if: cart.items.length|gt(0)">
+          <h2>Your Shopping Cart</h2>
+        </template>
+        <template data-wcs="else:">
+          <h2>Your cart is empty.</h2>
+        </template>
+        <table>
+          <colgroup>
+            <col style="width: 5%;">
+            <col style="width: 40%;">
+            <col style="width: 15%;">
+            <col style="width: 10%;">
+            <col style="width: 20%;">
+            <col style="width: 10%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th>Product</th>
+              <th class="right">Unit Price($)</th>
+              <th>Quantity</th>
+              <th class="right">Price($)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template data-wcs="for: cart.items">
+              <tr>
+                <td>{{ $1|inc(1) }}</td>
+                <td>{{ .product.name }}</td>
+                <td class="right">{{ .product.price|fix(2) }}</td>
+                <td>
+                  <input type="number" name="item" data-wcs="attr.min: minQuantity; valueAsNumber: .quantity">
+                </td>
+                <td class="right">{{ .price|fix(2) }}</td>
+                <td>
+                  <button type="button" data-wcs="onclick: onDeleteItemFromCart">Delete</button>
+                </td>
+              </tr>
+            </template>
+            <tr>
+              <td colspan="4" class="right"><strong>Total ($):</strong></td>
+              <td class="right">{{ cart.totalPrice|fix(2) }}</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td colspan="4" class="right"><strong>Tax ({{ taxRate|percent }}) ($):</strong></td>
+              <td class="right">{{ cart.tax|fix(2) }}</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td colspan="4" class="right"><strong>Grand Total ($):</strong></td>
+              <td class="right">{{ cart.grandTotal|fix(2) }}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>U.S. State Population</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="importmap">
+      {
+        "imports": {
+          "states": "./allStates.js"
+        }
+      }
+    </script>
+    <script type="module" src="https://cdn.jsdelivr.net/gh/wcstack/wcstack@main/packages/state/dist/auto.min.js"></script>
+    <style>
+      tbody tr:nth-child(odd) {
+        background-color: #1e2a47;
+      }
+      tbody tr:nth-child(even) {
+        background-color: #16213e;
+      }
+      tr.summary {
+        background-color: #2a1f4e !important;
+        font-weight: 600;
+      }
+      tfoot tr.summary {
+        background-color: #3a2a5e !important;
+      }
+      .over {
+        color: #4ade80;
+      }
+      .under {
+        color: #f87171;
+      }
+    </style>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+import { allStates } from "states";
+
+const summaryPopulation = (sum, population) => sum + population;
+
+export default {
+  stateByRegion: Map.groupBy(allStates, state => state.region),
+  regions: Array.from(new Set(allStates.map(state => state.region))).toSorted(),
+
+  get "regions.*.states"() {
+    return this.stateByRegion.get(this["regions.*"]);
+  },
+
+  get "regions.*.states.*.shareOfRegionPopulation"() {
+    return this["regions.*.states.*.population"] / this["regions.*.population"];
+  },
+
+  get "regions.*.states.*.shareOfPopulation"() {
+    return this["regions.*.states.*.population"] / this.population;
+  },
+
+  get "regions.*.population"() {
+    return this.$getAll("regions.*.states.*.population", [ this.$1 ]).reduce(summaryPopulation, 0);
+  },
+
+  get "regions.*.shareOfPopulation"() {
+    return this["regions.*.population"] / this.population;
+  },
+
+  get population() {
+    return this.$getAll("regions.*.population", []).reduce(summaryPopulation, 0);
+  }
+
+};
+      </script>
+    </wcs-state>
+
+    <div class="example-container wide">
+      <p class="example-title">@wcstack/state</p>
+      <h1>U.S. State Population</h1>
+
+      <table class="table">
+        <colgroup>
+          <col style="width: 25%">
+          <col style="width: 25%">
+          <col style="width: 20%">
+          <col style="width: 15%">
+          <col style="width: 15%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>State</th>
+            <th>Capital City</th>
+            <th>Population</th>
+            <th>Percent of Region's Population</th>
+            <th>Percent of Total Population</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template data-wcs="for: regions">
+            <template data-wcs="for: regions.*.states">
+              <tr>
+                <td class="center">{{ .name }}</td>
+                <td class="center">{{ .capital }}</td>
+                <td class="right" data-wcs="
+                  class.over : .population|ge(5000000);
+                  class.under: .population|lt(1000000);
+                ">{{ .population|locale }}</td>
+                <td class="right">{{ .shareOfRegionPopulation|percent(2) }}</td>
+                <td class="right">{{ .shareOfPopulation|percent(2) }}</td>
+              </tr>
+            </template>
+            <tr class="summary">
+              <td class="center" colspan="2">{{ . }}</td>
+              <td class="right">{{ .population|locale }}</td>
+              <td></td>
+              <td class="right">{{ .shareOfPopulation|percent(2) }}</td>
+            </tr>
+          </template>
+        </tbody>
+        <tfoot>
+          <tr class="summary">
+            <td class="center" colspan="2">Total</td>
+            <td class="right">{{ population|locale }}</td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </body>
+</html>
