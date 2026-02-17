@@ -14,7 +14,8 @@
       "Bash(ls -la \"d:\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\router\\\\src\"\" 2>/dev/null || echo \"src directory not found \")",
       "Bash(ls:*)",
       "Bash(dir:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(git mv:*)"
     ]
   }
 }

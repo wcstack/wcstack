@@ -861,7 +861,7 @@ customElements.define("my-component", MyComponent);
 - `data-wcs="state.message: user.name"` でホスト要素上の外部状態パスを内部コンポーネント状態プロパティにバインド
 - 変更はコンポーネントと外部状態間で双方向に伝播
 
-### 独立した Web Component への状態注入（`examples/single-component`）
+### 独立した Web Component への状態注入（`__e2e__/single-component`）
 
 ホストの外部状態に依存しないコンポーネントでも、`bind-component` で `state` を注入してリアクティブにできます。
 

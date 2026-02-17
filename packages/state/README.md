@@ -861,7 +861,7 @@ customElements.define("my-component", MyComponent);
 - `data-wcs="state.message: user.name"` on the host element binds outer state paths to inner component state properties
 - Changes propagate bidirectionally between the component and the outer state
 
-### Standalone Web Component Injection (`examples/single-component`)
+### Standalone Web Component Injection (`__e2e__/single-component`)
 
 Even when a component is independent from outer host state, you can inject reactive state with `bind-component`.
 

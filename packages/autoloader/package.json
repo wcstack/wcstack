@@ -16,7 +16,7 @@
     "dist"
   ],
   "directories": {
-    "example": "examples"
+    "example": "__e2e__"
   },
   "scripts": {
     "clean": "rimraf dist",

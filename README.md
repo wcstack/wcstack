@@ -137,7 +137,7 @@ Reactive state with declarative bindings — no virtual DOM, no compilation.
 
 - **Path getters** — `get "users.*.fullName"()` virtual properties at any depth, all defined flat in one place with auto dependency tracking
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>`
-- **37 built-in filters** — comparison, arithmetic, string, date, number formatting
+- **40 built-in filters** — comparison, arithmetic, string, date, number formatting
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`, radio & checkbox groups
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
