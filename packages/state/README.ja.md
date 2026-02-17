@@ -861,6 +861,40 @@ customElements.define("my-component", MyComponent);
 - `data-wcs="state.message: user.name"` でホスト要素上の外部状態パスを内部コンポーネント状態プロパティにバインド
 - 変更はコンポーネントと外部状態間で双方向に伝播
 
+### 独立した Web Component への状態注入（`examples/single-component`）
+
+ホストの外部状態に依存しないコンポーネントでも、`bind-component` で `state` を注入してリアクティブにできます。
+
+```javascript
+class MyComponent extends HTMLElement {
+  state = Object.freeze({
+    message: "Hello, World!"
+  });
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <wcs-state bind-component="state"></wcs-state>
+      <div>{{ message }}</div>
+    `;
+  }
+
+  async $stateReadyCallback(stateProp) {
+    console.log("state ready:", stateProp); // "state"
+  }
+}
+customElements.define("my-component", MyComponent);
+```
+
+- 初期 `state` は `Object.freeze(...)` で定義できます（注入後は書き換え可能なリアクティブ状態に置き換え）
+- `bind-component="state"` により `this.state` が `@wcstack/state` の状態プロキシとして利用可能になります
+- `this.state.message = "..."` のような代入で、Shadow DOM 内の `{{ message }}` が即時に更新されます
+- `async $stateReadyCallback(stateProp)` は、Web Component 側で状態が利用可能になった直後に呼ばれます（`stateProp` は `bind-component` のプロパティ名）
+
 ### ループ内でのコンポーネント使用
 
 ```html
@@ -883,7 +917,7 @@ customElements.define("my-component", MyComponent);
 
 ## ライフサイクルフック
 
-状態オブジェクトに `$connectedCallback` と `$disconnectedCallback` メソッドを定義すると、`<wcs-state>` 要素の DOM への接続・切断時に呼び出されます。
+状態オブジェクトに `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback` を定義すると、初期化・クリーンアップ・更新時のフックとして利用できます。
 
 ```html
 <wcs-state>
@@ -912,10 +946,13 @@ customElements.define("my-component", MyComponent);
 |---|---|---|
 | `$connectedCallback` | 初回接続時は状態初期化後、再接続時は毎回呼び出し | 可（`async` 対応） |
 | `$disconnectedCallback` | 要素が DOM から削除された時 | 不可（同期のみ） |
+| `$updatedCallback(paths, indexesListByPath)` | 状態変更が適用された後に呼び出し | 戻り値は未使用（待機されない） |
 
 - フック内の `this` は読み書き可能な状態プロキシです
 - `$connectedCallback` は要素が接続される**たびに**呼ばれます（削除後の再接続を含む）。再確立が必要なセットアップ処理に適しています
 - `$disconnectedCallback` は同期的に呼び出されます — タイマーのクリア、イベントリスナーの削除、リソースの解放などのクリーンアップに使用します
+- `$updatedCallback(paths, indexesListByPath)` は更新された状態パスの一覧を受け取ります。ワイルドカードパス更新時は `indexesListByPath` で更新対象インデックスも受け取れます
+- Web Component では `async $stateReadyCallback(stateProp)` を定義すると、`bind-component` でバインドされた状態が利用可能になったタイミングで呼び出されます
 
 ## 設定
 

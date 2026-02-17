@@ -861,6 +861,40 @@ customElements.define("my-component", MyComponent);
 - `data-wcs="state.message: user.name"` on the host element binds outer state paths to inner component state properties
 - Changes propagate bidirectionally between the component and the outer state
 
+### Standalone Web Component Injection (`examples/single-component`)
+
+Even when a component is independent from outer host state, you can inject reactive state with `bind-component`.
+
+```javascript
+class MyComponent extends HTMLElement {
+  state = Object.freeze({
+    message: "Hello, World!"
+  });
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+
+  connectedCallback() {
+    this.shadowRoot.innerHTML = `
+      <wcs-state bind-component="state"></wcs-state>
+      <div>{{ message }}</div>
+    `;
+  }
+
+  async $stateReadyCallback(stateProp) {
+    console.log("state ready:", stateProp); // "state"
+  }
+}
+customElements.define("my-component", MyComponent);
+```
+
+- Initial component `state` can be defined with `Object.freeze(...)` (it is replaced with a writable reactive state after injection)
+- `bind-component="state"` exposes `this.state` as a state proxy powered by `@wcstack/state`
+- Assignments like `this.state.message = "..."` immediately update `{{ message }}` inside Shadow DOM
+- `async $stateReadyCallback(stateProp)` is called right after component state becomes ready for use (`stateProp` is the property name from `bind-component`)
+
 ### Loop with Components
 
 ```html
@@ -883,7 +917,7 @@ All bindings work inside `<svg>` elements. Use `attr.*` for SVG attributes:
 
 ## Lifecycle Hooks
 
-State objects can define `$connectedCallback` and `$disconnectedCallback` methods that are called when the `<wcs-state>` element is connected to or disconnected from the DOM.
+State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$updatedCallback` for initialization, cleanup, and update lifecycle handling.
 
 ```html
 <wcs-state>
@@ -912,10 +946,13 @@ State objects can define `$connectedCallback` and `$disconnectedCallback` method
 |---|---|---|
 | `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (`async` supported) |
 | `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
+| `$updatedCallback(paths, indexesListByPath)` | After state updates are applied | Return value is ignored (not awaited) |
 
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
+- `$updatedCallback(paths, indexesListByPath)` receives the updated path list. For wildcard updates, `indexesListByPath` contains the updated index sets
+- In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
 ## Configuration
 
