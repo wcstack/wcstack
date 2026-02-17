@@ -8,14 +8,14 @@ Declarative reactive state management for Web Components.
 - **Declarative data binding** — `data-wcs` attribute for property / text / event / structural binding
 - **Reactive Proxy** — ES Proxy-based automatic DOM updates with dependency tracking
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>` elements
-- **Built-in filters** — 37 filters for formatting, comparison, arithmetic, date, and more
+- **Built-in filters** — 40 filters for formatting, comparison, arithmetic, date, and more
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
 - **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for virtual properties at any depth in a data tree, all defined flat in one place with automatic dependency tracking and caching
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
-- **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` for initialization and cleanup
+- **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`, plus `$stateReadyCallback` for Web Components
 - **Zero dependencies** — no runtime dependencies
 
 ## Installation
@@ -734,7 +734,7 @@ export default {
 
 ## Filters
 
-37 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
+40 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
 
 ### Comparison
 
@@ -957,7 +957,7 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
 ## Configuration
 
 ```javascript
-import { config } from '@wcstack/state';
+import { config } from '@wcstack/state/dist/config.js';
 
 // All options with defaults:
 config.bindAttributeName = 'data-wcs';          // Binding attribute name

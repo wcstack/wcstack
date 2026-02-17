@@ -8,14 +8,14 @@ Web Components のための宣言的リアクティブ状態管理。
 - **宣言的データバインディング** — `data-wcs` 属性によるプロパティ / テキスト / イベント / 構造バインディング
 - **リアクティブ Proxy** — ES Proxy による依存追跡付き自動 DOM 更新
 - **構造ディレクティブ** — `<template>` 要素による `for`, `if` / `elseif` / `else`
-- **組み込みフィルタ** — フォーマット、比較、算術、日付など 37 種類
+- **組み込みフィルタ** — フォーマット、比較、算術、日付など 40 種類
 - **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
 - **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）によるデータツリーの任意の深さへのフラットな仮想プロパティ定義、自動依存追跡・キャッシュ
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
 - **SVG サポート** — `<svg>` 要素内でのフルバインディング対応
-- **ライフサイクルフック** — 初期化・クリーンアップ用の `$connectedCallback` / `$disconnectedCallback`
+- **ライフサイクルフック** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`、Web Component 用 `$stateReadyCallback`
 - **依存ゼロ** — ランタイム依存なし
 
 ## インストール
@@ -734,7 +734,7 @@ export default {
 
 ## フィルタ
 
-37 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
+40 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
 
 ### 比較
 
@@ -957,7 +957,7 @@ customElements.define("my-component", MyComponent);
 ## 設定
 
 ```javascript
-import { config } from '@wcstack/state';
+import { config } from '@wcstack/state/dist/config.js';
 
 // 全オプションとデフォルト値:
 config.bindAttributeName = 'data-wcs';          // バインディング属性名
