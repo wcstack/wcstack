@@ -45,6 +45,7 @@ export default {
   stateByRegion: Map.groupBy(allStates, state => state.region),
   regions: Array.from(new Set(allStates.map(state => state.region))).toSorted(),
 
+  // Getters are cached and only re-evaluated when their dependencies change
   get "regions.*.states"() {
     return this.stateByRegion.get(this["regions.*"]);
   },
