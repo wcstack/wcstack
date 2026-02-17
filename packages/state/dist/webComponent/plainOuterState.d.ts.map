@@ -1,1 +1,1 @@
-{"version":3,"file":"plainOuterState.d.ts","sourceRoot":"","sources":["../../src/webComponent/plainOuterState.ts"],"names":[],"mappings":"AAMA,OAAO,EAAE,WAAW,EAAE,MAAM,SAAS,CAAC;AAoCtC,wBAAgB,qBAAqB,CAAC,YAAY,EAAE,OAAO,EAAE,SAAS,EAAE,MAAM,GAAG,WAAW,CAG3F"}
+{"version":3,"file":"plainOuterState.d.ts","sourceRoot":"","sources":["../../src/webComponent/plainOuterState.ts"],"names":[],"mappings":"AAGA,OAAO,EAAE,WAAW,EAAE,MAAM,SAAS,CAAC;AAgCtC,wBAAgB,qBAAqB,CAAC,YAAY,EAAE,OAAO,EAAE,SAAS,EAAE,MAAM,GAAG,WAAW,CAG3F"}

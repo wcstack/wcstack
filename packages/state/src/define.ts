@@ -26,3 +26,4 @@ export const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 export const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 export const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 
+export const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";

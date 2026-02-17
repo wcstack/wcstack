@@ -6,7 +6,6 @@ vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
 
 import { createPlainOuterState } from '../src/webComponent/plainOuterState';
 import { getStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
-import { getByAddressSymbol, setByAddressSymbol } from '../src/proxy/symbols';
 
 const getStateElementByWebComponentMock = vi.mocked(getStateElementByWebComponent);
 
@@ -38,10 +37,7 @@ describe('plainOuterState', () => {
       const component = document.createElement('div');
       document.body.appendChild(component);
 
-      const mockGetByAddress = vi.fn().mockReturnValue(42);
-      const stateProxy = {
-        [getByAddressSymbol]: mockGetByAddress
-      };
+      const stateProxy: Record<string, any> = { count: 42 };
       const innerStateElement = {
         name: 'default',
         createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
@@ -53,12 +49,6 @@ describe('plainOuterState', () => {
 
       expect(value).toBe(42);
       expect(innerStateElement.createState).toHaveBeenCalledWith('readonly', expect.any(Function));
-      expect(mockGetByAddress).toHaveBeenCalledWith(
-        expect.objectContaining({
-          pathInfo: expect.objectContaining({ path: 'count' }),
-          listIndex: null
-        })
-      );
     });
 
     it('Symbolプロパティの場合はReflect.getを使用すること', () => {
@@ -77,10 +67,7 @@ describe('plainOuterState', () => {
       const component = document.createElement('div');
       document.body.appendChild(component);
 
-      const mockSetByAddress = vi.fn();
-      const stateProxy = {
-        [setByAddressSymbol]: mockSetByAddress
-      };
+      const stateProxy: Record<string, any> = {};
       const innerStateElement = {
         name: 'default',
         createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
@@ -91,13 +78,7 @@ describe('plainOuterState', () => {
       outerState['value'] = 'new-value';
 
       expect(innerStateElement.createState).toHaveBeenCalledWith('writable', expect.any(Function));
-      expect(mockSetByAddress).toHaveBeenCalledWith(
-        expect.objectContaining({
-          pathInfo: expect.objectContaining({ path: 'value' }),
-          listIndex: null
-        }),
-        'new-value'
-      );
+      expect(stateProxy['value']).toBe('new-value');
     });
 
     it('Symbolプロパティの場合はReflect.setを使用すること', () => {

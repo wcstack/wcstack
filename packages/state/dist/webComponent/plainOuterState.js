@@ -1,6 +1,3 @@
-import { getPathInfo } from "../address/PathInfo";
-import { createStateAddress } from "../address/StateAddress";
-import { getByAddressSymbol, setByAddressSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByWebComponent } from "./stateElementByWebComponent";
 class PlainOuterStateProxyHandler {
@@ -10,11 +7,9 @@ class PlainOuterStateProxyHandler {
     }
     get(target, prop, receiver) {
         if (typeof prop === 'string') {
-            const innerPathInfo = getPathInfo(prop);
-            const innerStateAddress = createStateAddress(innerPathInfo, null);
             let value;
             this._innerStateElement.createState("readonly", (state) => {
-                value = state[getByAddressSymbol](innerStateAddress);
+                value = state[prop];
             });
             return value;
         }
@@ -24,10 +19,8 @@ class PlainOuterStateProxyHandler {
     }
     set(target, prop, value, receiver) {
         if (typeof prop === 'string') {
-            const innerPathInfo = getPathInfo(prop);
-            const innerStateAddress = createStateAddress(innerPathInfo, null);
             this._innerStateElement.createState("writable", (state) => {
-                state[setByAddressSymbol](innerStateAddress, value);
+                state[prop] = value;
             });
             return true;
         }

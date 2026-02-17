@@ -196,6 +196,7 @@ const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 
 const _cache$4 = new Map();
 let id = 0;
@@ -5206,11 +5207,9 @@ class PlainOuterStateProxyHandler {
     }
     get(target, prop, receiver) {
         if (typeof prop === 'string') {
-            const innerPathInfo = getPathInfo(prop);
-            const innerStateAddress = createStateAddress(innerPathInfo, null);
             let value;
             this._innerStateElement.createState("readonly", (state) => {
-                value = state[getByAddressSymbol](innerStateAddress);
+                value = state[prop];
             });
             return value;
         }
@@ -5220,10 +5219,8 @@ class PlainOuterStateProxyHandler {
     }
     set(target, prop, value, receiver) {
         if (typeof prop === 'string') {
-            const innerPathInfo = getPathInfo(prop);
-            const innerStateAddress = createStateAddress(innerPathInfo, null);
             this._innerStateElement.createState("writable", (state) => {
-                state[setByAddressSymbol](innerStateAddress, value);
+                state[prop] = value;
             });
             return true;
         }
@@ -5265,6 +5262,17 @@ function bindWebComponent(innerStateElement, component, stateProp, state) {
         });
     }
     markWebComponentAsComplete(component, innerStateElement);
+    if (WEBCOMPONENT_STATE_READY_CALLBACK_NAME in component) {
+        const func = component[WEBCOMPONENT_STATE_READY_CALLBACK_NAME];
+        if (typeof func === 'function') {
+            func.call(component, stateProp).catch((error) => {
+                raiseError(`Error in ${WEBCOMPONENT_STATE_READY_CALLBACK_NAME}: ${error instanceof Error ? error.message : String(error)}`);
+            });
+        }
+        else {
+            raiseError(`${WEBCOMPONENT_STATE_READY_CALLBACK_NAME} is not a function.`);
+        }
+    }
 }
 
 function getAllPropertyDescriptors(obj) {

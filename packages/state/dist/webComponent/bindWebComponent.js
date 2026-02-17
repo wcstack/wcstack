@@ -1,5 +1,6 @@
 import { getBindingsByNode } from "../bindings/getBindingsByNode";
 import { config } from "../config";
+import { WEBCOMPONENT_STATE_READY_CALLBACK_NAME } from "../define";
 import { raiseError } from "../raiseError";
 import { markWebComponentAsComplete } from "./completeWebComponent";
 import { createInnerState } from "./innerState";
@@ -36,5 +37,16 @@ export function bindWebComponent(innerStateElement, component, stateProp, state)
         });
     }
     markWebComponentAsComplete(component, innerStateElement);
+    if (WEBCOMPONENT_STATE_READY_CALLBACK_NAME in component) {
+        const func = component[WEBCOMPONENT_STATE_READY_CALLBACK_NAME];
+        if (typeof func === 'function') {
+            func.call(component, stateProp).catch((error) => {
+                raiseError(`Error in ${WEBCOMPONENT_STATE_READY_CALLBACK_NAME}: ${error instanceof Error ? error.message : String(error)}`);
+            });
+        }
+        else {
+            raiseError(`${WEBCOMPONENT_STATE_READY_CALLBACK_NAME} is not a function.`);
+        }
+    }
 }
 //# sourceMappingURL=bindWebComponent.js.map

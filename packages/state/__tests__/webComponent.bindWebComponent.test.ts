@@ -27,6 +27,9 @@ vi.mock('../src/webComponent/completeWebComponent', () => ({
 vi.mock('../src/webComponent/meltFrozenObject', () => ({
   meltFrozenObject: vi.fn((obj: any) => ({ ...obj, melted: true }))
 }));
+vi.mock('../src/raiseError', () => ({
+  raiseError: vi.fn((message: string): never => { throw new Error(`[@wcstack/state] ${message}`); })
+}));
 
 import { bindWebComponent } from '../src/webComponent/bindWebComponent';
 import { getBindingsByNode } from '../src/bindings/getBindingsByNode';
@@ -40,6 +43,8 @@ import { meltFrozenObject } from '../src/webComponent/meltFrozenObject';
 import { IBindingInfo } from '../src/types';
 import { getPathInfo } from '../src/address/PathInfo';
 import { config } from '../src/config';
+import { WEBCOMPONENT_STATE_READY_CALLBACK_NAME } from '../src/define';
+import { raiseError } from '../src/raiseError';
 
 const getBindingsByNodeMock = vi.mocked(getBindingsByNode);
 
@@ -235,5 +240,118 @@ describe('bindWebComponent', () => {
     bindWebComponent(stateEl, component, 'outer', {});
 
     expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
+  });
+
+  describe('$stateReadyCallback', () => {
+    it('コンポーネントに$stateReadyCallbackが定義されていれば呼び出されること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const callback = vi.fn().mockResolvedValue(undefined);
+      (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = callback;
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('statePropが引数として渡されること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const callback = vi.fn().mockResolvedValue(undefined);
+      (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = callback;
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      bindWebComponent(stateEl, component, 'myState', {});
+
+      expect(callback).toHaveBeenCalledWith('myState');
+    });
+
+    it('コンポーネントのthisコンテキストで呼び出されること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      let calledThis: any;
+      const callback = vi.fn().mockImplementation(function(this: any) {
+        calledThis = this;
+        return Promise.resolve();
+      });
+      (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = callback;
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      expect(calledThis).toBe(component);
+    });
+
+    it('$stateReadyCallbackが未定義の場合は何も起きないこと', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
+    });
+
+    it('$stateReadyCallbackが関数でない場合はエラーになること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = 'not a function';
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      expect(() => bindWebComponent(stateEl, component, 'outer', {})).toThrow(
+        /\$stateReadyCallback is not a function/
+      );
+    });
+
+    it('非同期コールバックが拒否された場合はraiseErrorが呼ばれること', async () => {
+      const raiseErrorMock = vi.mocked(raiseError);
+      // catchハンドラ内でthrowさせないようにする（unhandled rejection防止）
+      raiseErrorMock.mockImplementation((() => {}) as any);
+
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const callback = vi.fn().mockRejectedValue(new Error('async error'));
+      (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = callback;
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      // catchハンドラが実行されるのを待つ
+      await vi.waitFor(() => {
+        expect(raiseErrorMock).toHaveBeenCalledWith(
+          expect.stringContaining('async error')
+        );
+      });
+    });
+
+    it('非同期コールバックがError以外で拒否された場合はString変換されること', async () => {
+      const raiseErrorMock = vi.mocked(raiseError);
+      raiseErrorMock.mockImplementation((() => {}) as any);
+
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const callback = vi.fn().mockRejectedValue('string error');
+      (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = callback;
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      await vi.waitFor(() => {
+        expect(raiseErrorMock).toHaveBeenCalledWith(
+          expect.stringContaining('string error')
+        );
+      });
+    });
+
+    it('data-wcs属性がない場合でも$stateReadyCallbackが呼ばれること', () => {
+      const component = createComponentWithShadow(false);
+      const stateEl = createMockStateElement();
+      const callback = vi.fn().mockResolvedValue(undefined);
+      (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME] = callback;
+
+      bindWebComponent(stateEl, component, 'outer', {});
+
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith('outer');
+    });
   });
 });

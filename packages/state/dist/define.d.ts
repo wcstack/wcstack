@@ -10,4 +10,5 @@ export declare const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 export declare const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 export declare const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 export declare const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
+export declare const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 //# sourceMappingURL=define.d.ts.map
