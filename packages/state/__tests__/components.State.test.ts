@@ -496,12 +496,30 @@ describe('State component', () => {
     vi.useRealTimers();
   });
 
-  it('bind-componentがshadow root外だとエラーになること', async () => {
+  it('bind-componentの親がDocumentの場合はエラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
+    // body直下ではなく、documentFragmentに入れてparentNodeがElementでもShadowRootでもない状態にする
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(stateEl);
     (stateEl as any)._rootNode = document;
 
     await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
-      /"bind-component" can only be used inside a shadow root/
+      /"bind-component" requires/
+    );
+  });
+
+  it('LightDOMでbind-componentにname属性がない場合はエラーになること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    // LightDOMの親コンポーネントをシミュレート
+    if (!customElements.get('x-light-host')) {
+      customElements.define('x-light-host', class extends HTMLElement {});
+    }
+    const host = document.createElement('x-light-host');
+    host.appendChild(stateEl);
+    (stateEl as any)._rootNode = document; // LightDOM: rootNodeはdocument
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /"bind-component" in Light DOM requires a "name" attribute/
     );
   });
 

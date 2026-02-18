@@ -821,9 +821,9 @@ export default {
 
 ## Web Component バインディング
 
-`@wcstack/state` は Shadow DOM を使用したカスタム要素との双方向状態バインディングに対応しています。
+`@wcstack/state` は Shadow DOM または Light DOM を使用したカスタム要素との双方向状態バインディングに対応しています。
 
-### コンポーネント定義
+### コンポーネント定義（Shadow DOM）
 
 ```javascript
 class MyComponent extends HTMLElement {
@@ -842,6 +842,29 @@ class MyComponent extends HTMLElement {
 customElements.define("my-component", MyComponent);
 ```
 
+### コンポーネント定義（Light DOM）
+
+Light DOM コンポーネントは Shadow DOM を使用しません。CSS と同様に state の名前空間も上位スコープと共有されるため、`name` 属性が必須です。
+
+```javascript
+class MyLightComponent extends HTMLElement {
+  state = { message: "" };
+
+  connectedCallback() {
+    this.innerHTML = `
+      <wcs-state bind-component="state" name="my-light"></wcs-state>
+      <div data-wcs="text: message@my-light"></div>
+      <input type="text" data-wcs="value: message@my-light" />
+    `;
+  }
+}
+customElements.define("my-light-component", MyLightComponent);
+```
+
+- Light DOM コンポーネントでは `name` 属性が**必須**です（名前空間が上位スコープと共有されるため）
+- バインディングでは `@my-light` のように状態名を明示的に参照する必要があります
+- `<wcs-state>` はコンポーネント要素の直下に配置する必要があります
+
 ### ホスト側の使用方法
 
 ```html
@@ -857,7 +880,7 @@ customElements.define("my-component", MyComponent);
 <my-component data-wcs="state.message: user.name"></my-component>
 ```
 
-- `bind-component="state"` で Shadow DOM 内のコンポーネントの `state` プロパティを `<wcs-state>` にマッピング
+- `bind-component="state"` でコンポーネントの `state` プロパティを `<wcs-state>` にマッピング
 - `data-wcs="state.message: user.name"` でホスト要素上の外部状態パスを内部コンポーネント状態プロパティにバインド
 - 変更はコンポーネントと外部状態間で双方向に伝播
 
@@ -894,6 +917,13 @@ customElements.define("my-component", MyComponent);
 - `bind-component="state"` により `this.state` が `@wcstack/state` の状態プロキシとして利用可能になります
 - `this.state.message = "..."` のような代入で、Shadow DOM 内の `{{ message }}` が即時に更新されます
 - `async $stateReadyCallback(stateProp)` は、Web Component 側で状態が利用可能になった直後に呼ばれます（`stateProp` は `bind-component` のプロパティ名）
+
+### 制約事項
+
+- `bind-component` 付きの `<wcs-state>` はコンポーネント要素の**直下**（トップレベル）に配置すること
+- 親要素は**カスタム要素**（ハイフンを含むタグ名）であること
+- Light DOM コンポーネントでは `name` 属性が**必須**（上位スコープとの名前空間衝突を回避するため）
+- Light DOM のバインディングでは状態名を明示的に参照すること（例: `@my-light`）
 
 ### ループ内でのコンポーネント使用
 

@@ -11,9 +11,6 @@ import { createPlainOuterState } from "./plainOuterState";
 import { setStateElementByWebComponent } from "./stateElementByWebComponent";
 const getOuter = (outerState) => () => outerState;
 export function bindWebComponent(innerStateElement, component, stateProp, state) {
-    if (component.shadowRoot === null) {
-        raiseError('Component has no shadow root.');
-    }
     setStateElementByWebComponent(component, stateProp, innerStateElement);
     if (component.hasAttribute(config.bindAttributeName)) {
         const bindings = (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp);

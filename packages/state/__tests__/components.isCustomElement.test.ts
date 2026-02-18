@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isCustomElement } from "../src/components/isCustomElement";
+import { isCustomElement } from "../src/isCustomElement";
 
 describe("isCustomElement", () => {
   it("returns true for elements with hyphenated tag names", () => {

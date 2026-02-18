@@ -10,7 +10,12 @@
 HTML内に`<wcs-state/>`の定義があれば呼ばれる。
 
 2-1. `_initializeBindWebComponent()`
-  `bind-component`属性がある場合、ShadowRootのホスト要素から状態オブジェクトを取得し`setInitialState()`でセット。
+  `bind-component`属性がある場合、親コンポーネントから状態オブジェクトを取得し`setInitialState()`でセット。
+  親コンポーネントの特定は`parentNode`で行う:
+  - ShadowDOM直下: `parentNode`がShadowRoot → `parentNode.host`が親コンポーネント
+  - LightDOM: `parentNode`がElement → それが親コンポーネント
+  親がカスタム要素でない場合はエラー。
+  LightDOMの場合、名前空間が上位スコープと共有されるため`name`属性が必須。
 
 2-2. `_initialize()`（状態のロード）
   以下の優先順位で状態を読み込む:

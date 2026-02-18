@@ -16,6 +16,7 @@ import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
+import { isCustomElement } from "../isCustomElement";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -154,10 +155,22 @@ export class State extends HTMLElement implements IStateElement {
 
   private async _initializeBindWebComponent() {
     if (this.hasAttribute("bind-component")) {
-      if (!(this.rootNode instanceof ShadowRoot)) {
-        raiseError(`"bind-component" can only be used inside a shadow root.`);
+      // wcs-stateはコンポーネントのトップレベル要素であること
+      // ShadowDOM直下: parentNodeがShadowRoot → hostが親コンポーネント
+      // LightDOM/ShadowDOM内のLightDOM: parentNodeがElement → それが親コンポーネント
+      const parentNode = this.parentNode;
+      const boundComponent = parentNode instanceof ShadowRoot
+        ? parentNode.host
+        : parentNode instanceof Element
+          ? parentNode
+          : null;
+      if (boundComponent === null || !isCustomElement(boundComponent)) {
+        raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
       }
-      const boundComponent = this.rootNode.host;
+      // LightDOMの場合、名前空間が上位スコープと共有されるためnameが必須
+      if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")) {
+        raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
+      }
       const boundComponentStateProp = this.getAttribute("bind-component")!;
       await customElements.whenDefined(boundComponent.tagName.toLowerCase());
       // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する

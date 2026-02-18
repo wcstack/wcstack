@@ -86,10 +86,14 @@ describe('bindWebComponent', () => {
     vi.clearAllMocks();
   });
 
-  it('shadowRootがない場合はエラーになること', () => {
+  it('shadowRootがないLightDOMコンポーネントでも正常に動作すること', () => {
     const component = document.createElement('div');
     const stateEl = createMockStateElement();
-    expect(() => bindWebComponent(stateEl, component, 'outer', {})).toThrow(/no shadow root/);
+    const state = { message: 'hello' };
+
+    expect(() => bindWebComponent(stateEl, component, 'outer', state)).not.toThrow();
+    expect(stateEl.setInitialState).toHaveBeenCalled();
+    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
   });
 
   describe('data-wcs属性がある場合（バインディングあり）', () => {

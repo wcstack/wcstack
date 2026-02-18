@@ -20,9 +20,6 @@ export function bindWebComponent(
   stateProp: string,
   state: Record<string, any>
 ): void {
-  if (component.shadowRoot === null) {
-    raiseError('Component has no shadow root.');
-  }
   setStateElementByWebComponent(component, stateProp, innerStateElement);
   if (component.hasAttribute(config.bindAttributeName)) {
     const bindings = (getBindingsByNode(component) ?? []).filter(

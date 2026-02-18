@@ -1,5 +1,5 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
-import { isCustomElement } from "../components/isCustomElement.js";
+import { isCustomElement } from "../isCustomElement.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
 import { isWebComponentComplete } from "../webComponent/completeWebComponent.js";

@@ -821,9 +821,9 @@ Filters can be chained with `|`:
 
 ## Web Component Binding
 
-`@wcstack/state` supports bidirectional state binding with custom elements using Shadow DOM.
+`@wcstack/state` supports bidirectional state binding with custom elements using Shadow DOM or Light DOM.
 
-### Component Definition
+### Component Definition (Shadow DOM)
 
 ```javascript
 class MyComponent extends HTMLElement {
@@ -842,6 +842,29 @@ class MyComponent extends HTMLElement {
 customElements.define("my-component", MyComponent);
 ```
 
+### Component Definition (Light DOM)
+
+Light DOM components do not use Shadow DOM. The state namespace is shared with the parent scope (just like CSS), so a `name` attribute is required.
+
+```javascript
+class MyLightComponent extends HTMLElement {
+  state = { message: "" };
+
+  connectedCallback() {
+    this.innerHTML = `
+      <wcs-state bind-component="state" name="my-light"></wcs-state>
+      <div data-wcs="text: message@my-light"></div>
+      <input type="text" data-wcs="value: message@my-light" />
+    `;
+  }
+}
+customElements.define("my-light-component", MyLightComponent);
+```
+
+- `name` attribute is **required** for Light DOM components (namespace is shared with the parent scope)
+- Bindings must explicitly reference the state name with `@my-light`
+- `<wcs-state>` must be a direct child of the component element
+
 ### Host Usage
 
 ```html
@@ -857,7 +880,7 @@ customElements.define("my-component", MyComponent);
 <my-component data-wcs="state.message: user.name"></my-component>
 ```
 
-- `bind-component="state"` inside Shadow DOM maps the component's `state` property to `<wcs-state>`
+- `bind-component="state"` maps the component's `state` property to `<wcs-state>`
 - `data-wcs="state.message: user.name"` on the host element binds outer state paths to inner component state properties
 - Changes propagate bidirectionally between the component and the outer state
 
@@ -894,6 +917,13 @@ customElements.define("my-component", MyComponent);
 - `bind-component="state"` exposes `this.state` as a state proxy powered by `@wcstack/state`
 - Assignments like `this.state.message = "..."` immediately update `{{ message }}` inside Shadow DOM
 - `async $stateReadyCallback(stateProp)` is called right after component state becomes ready for use (`stateProp` is the property name from `bind-component`)
+
+### Constraints
+
+- `<wcs-state>` with `bind-component` must be a **direct child** of the component element (top-level)
+- The parent element must be a **custom element** (tag name containing a hyphen)
+- Light DOM components **require** a `name` attribute to avoid namespace conflicts with the parent scope
+- Light DOM bindings must reference the state name explicitly (e.g., `@my-light`)
 
 ### Loop with Components
 

@@ -5298,9 +5298,6 @@ function createPlainOuterState(webComponent, stateName) {
 
 const getOuter = (outerState) => () => outerState;
 function bindWebComponent(innerStateElement, component, stateProp, state) {
-    if (component.shadowRoot === null) {
-        raiseError('Component has no shadow root.');
-    }
     setStateElementByWebComponent(component, stateProp, innerStateElement);
     if (component.hasAttribute(config.bindAttributeName)) {
         const bindings = (getBindingsByNode(component) ?? []).filter(binding => binding.propSegments[0] === stateProp);
@@ -5466,10 +5463,22 @@ class State extends HTMLElement {
     }
     async _initializeBindWebComponent() {
         if (this.hasAttribute("bind-component")) {
-            if (!(this.rootNode instanceof ShadowRoot)) {
-                raiseError(`"bind-component" can only be used inside a shadow root.`);
+            // wcs-stateはコンポーネントのトップレベル要素であること
+            // ShadowDOM直下: parentNodeがShadowRoot → hostが親コンポーネント
+            // LightDOM/ShadowDOM内のLightDOM: parentNodeがElement → それが親コンポーネント
+            const parentNode = this.parentNode;
+            const boundComponent = parentNode instanceof ShadowRoot
+                ? parentNode.host
+                : parentNode instanceof Element
+                    ? parentNode
+                    : null;
+            if (boundComponent === null || !isCustomElement(boundComponent)) {
+                raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
             }
-            const boundComponent = this.rootNode.host;
+            // LightDOMの場合、名前空間が上位スコープと共有されるためnameが必須
+            if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")) {
+                raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
+            }
             const boundComponentStateProp = this.getAttribute("bind-component");
             await customElements.whenDefined(boundComponent.tagName.toLowerCase());
             // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
