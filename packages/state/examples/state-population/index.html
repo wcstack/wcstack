@@ -43,30 +43,48 @@ import { allStates } from "states";
 const summaryPopulation = (sum, population) => sum + population;
 
 export default {
+  // Map<regionName, State[]>
   stateByRegion: Map.groupBy(allStates, state => state.region),
   regions: Array.from(new Set(allStates.map(state => state.region))).toSorted(),
 
+  // All getters are cached, so the population for each state and region is only calculated once and then stored in the state for efficient retrieval on subsequent accesses.
+  // Dependency graph:
+  // regions.* -> regions.*.states
+  // regions.*.states.*.population, regions.*.population -> regions.*.states.*.shareOfRegionPopulation
+  // regions.*.states.*.population, population -> regions.*.states.*.shareOfPopulation
+  // regions.*.states.*.population -> regions.*.population
+  // regions.*.population, population -> regions.*.shareOfPopulation
+  // regions.*.population -> population
+  // Computed property to get states for each region
   get "regions.*.states"() {
     return this.stateByRegion.get(this["regions.*"]);
   },
 
+  // Calcurate the population of each state as a share of its region's population
   get "regions.*.states.*.shareOfRegionPopulation"() {
     return this["regions.*.states.*.population"] / this["regions.*.population"];
   },
 
+  // Calcurate the population of each state as a share of the total population
   get "regions.*.states.*.shareOfPopulation"() {
     return this["regions.*.states.*.population"] / this.population;
   },
 
+  // Calcurate the population of each region by summing the populations of its states
   get "regions.*.population"() {
+    // Use $getAll to retrieve the population of all states in the current region
+    // this.$1 refers to the current region in the outer wildcard, allowing us to filter states by their region
     return this.$getAll("regions.*.states.*.population", [ this.$1 ]).reduce(summaryPopulation, 0);
   },
 
+  // Calcurate the population of each region as a share of the total population
   get "regions.*.shareOfPopulation"() {
     return this["regions.*.population"] / this.population;
   },
 
+  // Calcurate the total population by summing the populations of all regions
   get population() {
+    // Use $getAll to retrieve the population of all regions
     return this.$getAll("regions.*.population", []).reduce(summaryPopulation, 0);
   }
 
@@ -101,6 +119,7 @@ export default {
               <tr>
                 <td class="center">{{ .name }}</td>
                 <td class="center">{{ .capital }}</td>
+                <!-- apply class based on filter boolean results -->
                 <td class="right" data-wcs="
                   class.over : .population|ge(5000000);
                   class.under: .population|lt(1000000);

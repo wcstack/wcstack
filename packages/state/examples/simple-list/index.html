@@ -23,6 +23,12 @@ export default {
     { name: "Ivan", age: 29 },
     { name: "Judy", age: 31 }
   ],
+  // Computed property to determine age category, using a wildcard to apply the logic to each user in the list
+  get "users.*.ageCategory"() {
+    if (this["users.*.age"] < 25) return "Young";
+    if (this["users.*.age"] < 35) return "Adult";
+    return "Senior";
+  }
 }
       </script>
     </wcs-state>
@@ -30,7 +36,7 @@ export default {
     <div class="example-container">
       <p class="example-title">@wcstack/state</p>
       <template data-wcs="for: users">
-        <p>{{ .name }} ({{ .age }} years old)</p>
+        <p>{{ .name }} ({{ .age }} years old, {{ .ageCategory }})</p>
       </template>
     </div>
   </body>

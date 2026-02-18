@@ -6,6 +6,14 @@
     <title>Simple Counter</title>
     <link rel="stylesheet" href="../shared/theme.css"/>
     <script type="module" src="https://cdn.jsdelivr.net/gh/wcstack/wcstack@main/packages/state/dist/auto.min.js"></script>
+    <style>
+      .plus {
+        color: green;
+      }
+      .minus {
+        color: red;
+      }
+    </style>
   </head>
   <body>
     <wcs-state>
@@ -24,7 +32,10 @@ export default {
 
     <div class="example-container">
       <p class="example-title">@wcstack/state</p>
-      <h1>Counter: {{ count }}</h1>
+      <h1>Counter: 
+        <!-- apply class based on filter boolean results -->
+        <span data-wcs="class.plus: count|gt(0); class.minus: count|lt(0)">{{ count }}</span>
+      </h1>
       <div class="actions">
         <button data-wcs="onclick: decrement">- Decrement</button>
         <button data-wcs="onclick: increment">+ Increment</button>

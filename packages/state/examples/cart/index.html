@@ -40,31 +40,38 @@ export default {
   minQuantity: MIN_QUANTITY,
   productByProductId: new Map(products.map((product) => [product.id, product])),
 
+  // Map<productId, itemIndex> to quickly find the index of a cart item by its productId
   get itemIndexByProductId() {
     const productIds = this.$getAll("cart.items.*.productId", []);
     return new Map(productIds.map((productId, index) => [productId, index]));
   },
 
+  // get the product details for each cart item by looking up the productId in the productByProductId map
   get "cart.items.*.product"() {
     return this.productByProductId.get(this["cart.items.*.productId"]);
   },
 
+  // calculate the price for each cart item by multiplying the product price by the quantity
   get "cart.items.*.price"() {
     return this["cart.items.*.product.price"] * this["cart.items.*.quantity"];
   },
 
+  // calculate the total price of the cart by summing the price of all cart items
   get "cart.totalPrice"() {
     return this.$getAll("cart.items.*.price", []).reduce((sum, value) => sum + value, 0);
   },
 
+  // calculate the tax for the cart by multiplying the total price by the tax rate
   get "cart.tax"() {
     return this["cart.totalPrice"] * this.taxRate;
   },
 
+  // calculate the grand total by adding the total price and the tax
   get "cart.grandTotal"() {
     return this["cart.totalPrice"] + this["cart.tax"];
   },
 
+  // get the index of the cart item for the currently selected product, or -1 if the product is not in the cart
   get selectedItemIndex() {
     return this.itemIndexByProductId.get(this.selectedProductId) ?? -1;
   },
