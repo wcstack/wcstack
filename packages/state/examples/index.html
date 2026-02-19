@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>@wcstack/state Examples</title>
+    <link rel="stylesheet" href="shared/theme.css"/>
+    <style>
+      .example-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+      .example-list a {
+        display: block;
+        padding: 0.75rem 1rem;
+        background-color: #2a2a4a;
+        border: 1px solid #3a3a5c;
+        border-radius: 8px;
+        color: #e0e0e0;
+        text-decoration: none;
+        transition: background-color 0.15s, border-color 0.15s;
+      }
+      .example-list a:hover {
+        background-color: #3a3a5c;
+        border-color: #6c63ff;
+      }
+      .example-list .name {
+        font-weight: 600;
+        color: #ffffff;
+      }
+      .example-list .desc {
+        font-size: 0.85rem;
+        color: #a0a0c0;
+        margin-top: 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="example-container wide">
+      <p class="example-title">@wcstack/state</p>
+      <h1>Examples</h1>
+      <ul class="example-list">
+        <li>
+          <a href="hello-world/">
+            <div class="name">Hello World</div>
+            <div class="desc">Basic two-way data binding with text input</div>
+          </a>
+        </li>
+        <li>
+          <a href="simple-counter/">
+            <div class="name">Simple Counter</div>
+            <div class="desc">Counter with increment/decrement and conditional class binding</div>
+          </a>
+        </li>
+        <li>
+          <a href="simple-list/">
+            <div class="name">Simple List</div>
+            <div class="desc">List rendering with computed properties using wildcards</div>
+          </a>
+        </li>
+        <li>
+          <a href="async-fetch/">
+            <div class="name">Async Fetch</div>
+            <div class="desc">Fetching data from an API with loading state and conditional rendering</div>
+          </a>
+        </li>
+        <li>
+          <a href="cart/">
+            <div class="name">Cart</div>
+            <div class="desc">Shopping cart with dynamic item management, computed totals, and tax calculation</div>
+          </a>
+        </li>
+        <li>
+          <a href="state-population/">
+            <div class="name">U.S. State Population</div>
+            <div class="desc">Nested list rendering with multi-level computed properties and filters</div>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </body>
+</html>
