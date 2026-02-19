@@ -42,14 +42,14 @@
     "lazy-loading"
   ],
   "author": "mogera551",
-  "homepage": "https://github.com/nicari/wcstack/tree/main/packages/autoloader#readme",
+  "homepage": "https://wcstack.github.io",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicari/wcstack.git",
+    "url": "https://github.com/wcstack/wcstack.git",
     "directory": "packages/autoloader"
   },
   "bugs": {
-    "url": "https://github.com/nicari/wcstack/issues"
+    "url": "https://github.com/wcstack/wcstack/issues"
   },
   "license": "MIT",
   "devDependencies": {
