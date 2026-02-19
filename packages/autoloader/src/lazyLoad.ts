@@ -160,12 +160,12 @@ async function lazyLoads(
 }
 
 export async function handlerForLazyLoad(
-  root: Document | ShadowRoot, 
+  root: Document | ShadowRoot,
   config: IConfig,
-  prefixMap: IPrefixMap 
-): Promise<void> {
+  prefixMap: IPrefixMap
+): Promise<MutationObserver | null> {
   if (Object.keys(prefixMap).length === 0) {
-    return;
+    return null;
   }
   try {
     await lazyLoads(root, config, prefixMap);
@@ -174,7 +174,7 @@ export async function handlerForLazyLoad(
   }
 
   if (!config.observable) {
-    return;
+    return null;
   }
   const mo = new MutationObserver(async (): Promise<void> => {
     try {
@@ -184,4 +184,5 @@ export async function handlerForLazyLoad(
     }
   });
   mo.observe(root, { childList: true, subtree: true });
+  return mo;
 }

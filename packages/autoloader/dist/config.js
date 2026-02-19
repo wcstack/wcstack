@@ -11,7 +11,10 @@ const _config = {
         [VANILLA_KEY]: VANILLA_LOADER,
         [DEFAULT_KEY]: VANILLA_KEY
     },
-    observable: true
+    observable: true,
+    tagNames: {
+        autoloader: "wcs-autoloader"
+    }
 };
 function deepFreeze(obj) {
     if (obj === null || typeof obj !== "object")
@@ -49,6 +52,9 @@ export function setConfig(partialConfig) {
     }
     if (typeof partialConfig.observable === "boolean") {
         _config.observable = partialConfig.observable;
+    }
+    if (partialConfig.tagNames) {
+        Object.assign(_config.tagNames, partialConfig.tagNames);
     }
     frozenConfig = null;
 }

@@ -3,13 +3,17 @@ interface ILoader {
     readonly postfix: string;
     readonly loader: LoaderFunction;
 }
+interface IWritableTagNames {
+    autoloader?: string;
+}
 interface IWritableConfig {
     scanImportmap?: boolean;
     loaders?: Record<string, ILoader | string>;
     observable?: boolean;
+    tagNames?: IWritableTagNames;
 }
 
-declare function bootstrapAutoloader(config?: Partial<IWritableConfig>): Promise<void>;
+declare function bootstrapAutoloader(config?: IWritableConfig): void;
 
 export { bootstrapAutoloader };
-export type { ILoader, IWritableConfig, LoaderFunction };
+export type { ILoader, IWritableConfig, IWritableTagNames, LoaderFunction };

@@ -142,7 +142,7 @@ async function lazyLoads(root, config, prefixMap) {
 }
 export async function handlerForLazyLoad(root, config, prefixMap) {
     if (Object.keys(prefixMap).length === 0) {
-        return;
+        return null;
     }
     try {
         await lazyLoads(root, config, prefixMap);
@@ -151,7 +151,7 @@ export async function handlerForLazyLoad(root, config, prefixMap) {
         throw new Error("Failed to lazy load components: " + e);
     }
     if (!config.observable) {
-        return;
+        return null;
     }
     const mo = new MutationObserver(async () => {
         try {
@@ -162,5 +162,6 @@ export async function handlerForLazyLoad(root, config, prefixMap) {
         }
     });
     mo.observe(root, { childList: true, subtree: true });
+    return mo;
 }
 //# sourceMappingURL=lazyLoad.js.map

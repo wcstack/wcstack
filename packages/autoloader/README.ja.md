@@ -36,18 +36,33 @@
 </script>
 ```
 
-### 2. ハンドラーの登録
+### 2. オートローダーの読み込み
 
-メインスクリプトで`bootstrapAutoloader`をインポートして呼び出します。
+`<script>`タグでオートローダースクリプトを読み込むか、手動で`bootstrapAutoloader`をインポートして呼び出します。
 
 ```html
+<!-- 方法A: ゼロコンフィグスクリプト（推奨） -->
+<script type="module" src="/path/to/autoloader/auto.js"></script>
+
+<!-- 方法B: 手動初期化 -->
 <script type="module">
   import { bootstrapAutoloader } from "@wcstack/autoloader";
   bootstrapAutoloader();
 </script>
 ```
 
-### 3. コンポーネントの使用
+### 3. `<wcs-autoloader>`要素の配置
+
+HTMLに`<wcs-autoloader>`を追加します。この要素がロードライフサイクルのトリガーとなり、要素の生成時に即時読み込みが開始され、DOMへの接続時に遅延読み込みが開始されます。
+
+```html
+<body>
+  <wcs-autoloader></wcs-autoloader>
+  <!-- アプリのコンポーネント -->
+</body>
+```
+
+### 4. コンポーネントの使用
 
 HTMLでカスタム要素を使用するだけです。`@wcstack/autoloader`が自動的に対応するファイルをインポートします。
 
@@ -172,9 +187,14 @@ interface ILoader {
   loader: (path: string) => Promise<CustomElementConstructor | null>;
 }
 
+interface IWritableTagNames {
+  autoloader?: string;
+}
+
 interface IWritableConfig {
   loaders?: Record<string, ILoader | string>;
   observable?: boolean;
+  tagNames?: IWritableTagNames;
 }
 ```
 
@@ -182,6 +202,7 @@ interface IWritableConfig {
 |--------|------|---------|-------------|
 | `loaders` | `Record<string, ILoader \| string>` | 下記参照 | ローダー定義。値は`ILoader`オブジェクトまたは他のローダーキーへの文字列エイリアス。 |
 | `observable` | `boolean` | `true` | MutationObserverによる動的追加要素の検出を有効化。`false`で無効化。 |
+| `tagNames` | `IWritableTagNames` | `{ autoloader: "wcs-autoloader" }` | カスタム要素のタグ名。名前衝突を避けるために変更可能。 |
 
 ### デフォルト設定
 
@@ -234,11 +255,12 @@ bootstrapAutoloader({
 
 ### ロードライフサイクル
 
-1. **Import Map解析**: `bootstrapAutoloader()`呼び出し時に、すべての`<script type="importmap">`要素から`@components/`エントリを解析。
-2. **即時読み込み**: 名前空間でないキー（`/`で終わらない）のコンポーネントを即座に並列ロード。
-3. **遅延読み込み**（`DOMContentLoaded`時）: TreeWalkerを使用してDOMをスキャンし、登録済み名前空間に一致する未定義カスタム要素を検出。
+1. **登録**: `bootstrapAutoloader()`が`customElements.define()`で`<wcs-autoloader>`カスタム要素を登録。
+2. **constructor**（要素生成時）: すべての`<script type="importmap">`要素から`@components/`エントリを解析。名前空間でないキー（`/`で終わらない）のコンポーネントを即座に並列ロード開始。
+3. **connectedCallback**（DOM接続時）: ドキュメントがまだ読み込み中であれば`DOMContentLoaded`を待機し、TreeWalkerを使用してDOMをスキャンして登録済み名前空間に一致する未定義カスタム要素を検出。
 4. **ネストされたロード**: カスタム要素が定義・アップグレードされた後、そのShadow DOM（存在する場合）もスキャンしてネストされたカスタム要素を検出。
 5. **監視**（`observable: true`の場合）: MutationObserverがDOMへの新規要素追加を監視し、遅延読み込みをトリガー。
+6. **disconnectedCallback**（要素削除時）: MutationObserverを切断し、シングルトンインスタンスを解放。
 
 ### エラーハンドリング
 

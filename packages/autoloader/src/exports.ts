@@ -1,5 +1,5 @@
 export { bootstrapAutoloader } from "./bootstrapAutoloader.js";
 
 export type {
-  IWritableConfig, ILoader, LoaderFunction
+  IWritableConfig, IWritableTagNames, ILoader, LoaderFunction
 } from "./types.js";

@@ -36,18 +36,33 @@ Define your component paths in an import map using the `@components/` prefix.
 </script>
 ```
 
-### 2. Register the Handler
+### 2. Load the Autoloader
 
-Import and call `bootstrapAutoloader` in your main script.
+Load the autoloader script via `<script>` tag, or import and call `bootstrapAutoloader` manually.
 
 ```html
+<!-- Option A: Zero-config script (recommended) -->
+<script type="module" src="/path/to/autoloader/auto.js"></script>
+
+<!-- Option B: Manual initialization -->
 <script type="module">
   import { bootstrapAutoloader } from "@wcstack/autoloader";
   bootstrapAutoloader();
 </script>
 ```
 
-### 3. Use Components
+### 3. Place the `<wcs-autoloader>` Element
+
+Add `<wcs-autoloader>` to your HTML. This element triggers the loading lifecycle — eager loading starts on element creation, and lazy loading starts when the element is connected to the DOM.
+
+```html
+<body>
+  <wcs-autoloader></wcs-autoloader>
+  <!-- your app components -->
+</body>
+```
+
+### 4. Use Components
 
 Just use your custom elements in HTML. `@wcstack/autoloader` will automatically import the matching file.
 
@@ -172,9 +187,14 @@ interface ILoader {
   loader: (path: string) => Promise<CustomElementConstructor | null>;
 }
 
+interface IWritableTagNames {
+  autoloader?: string;
+}
+
 interface IWritableConfig {
   loaders?: Record<string, ILoader | string>;
   observable?: boolean;
+  tagNames?: IWritableTagNames;
 }
 ```
 
@@ -182,6 +202,7 @@ interface IWritableConfig {
 |--------|------|---------|-------------|
 | `loaders` | `Record<string, ILoader \| string>` | See below | Loader definitions. Values can be `ILoader` objects or string aliases pointing to other loader keys. |
 | `observable` | `boolean` | `true` | Enables MutationObserver to detect dynamically added elements. Set to `false` to disable. |
+| `tagNames` | `IWritableTagNames` | `{ autoloader: "wcs-autoloader" }` | Custom element tag name. Can be changed to avoid naming conflicts. |
 
 ### Default Configuration
 
@@ -234,11 +255,12 @@ bootstrapAutoloader({
 
 ### Loading Lifecycle
 
-1. **Import Map Parsing**: On `bootstrapAutoloader()` call, all `<script type="importmap">` elements are parsed for `@components/` entries.
-2. **Eager Loading**: Components with non-namespaced keys (not ending with `/`) are loaded immediately, in parallel.
-3. **Lazy Loading** (on `DOMContentLoaded`): The DOM is scanned using TreeWalker for undefined custom elements matching registered namespaces.
+1. **Registration**: `bootstrapAutoloader()` registers the `<wcs-autoloader>` custom element via `customElements.define()`.
+2. **Constructor** (on element creation): All `<script type="importmap">` elements are parsed for `@components/` entries. Eager loading starts immediately for non-namespaced keys (not ending with `/`).
+3. **connectedCallback** (on DOM attachment): Waits for `DOMContentLoaded` if the document is still loading, then scans the DOM using TreeWalker for undefined custom elements matching registered namespaces.
 4. **Nested Loading**: After each custom element is defined and upgraded, its Shadow DOM (if present) is also scanned for nested custom elements.
 5. **Observation** (if `observable: true`): A MutationObserver watches for new elements added to the DOM and triggers lazy loading.
+6. **disconnectedCallback** (on removal): Disconnects the MutationObserver and releases the singleton instance.
 
 ### Error Handling
 

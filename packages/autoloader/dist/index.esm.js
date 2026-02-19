@@ -15,7 +15,10 @@ const _config = {
         [VANILLA_KEY]: VANILLA_LOADER,
         [DEFAULT_KEY]: VANILLA_KEY
     },
-    observable: true
+    observable: true,
+    tagNames: {
+        autoloader: "wcs-autoloader"
+    }
 };
 // 後方互換のため config もエクスポート（読み取り専用として使用）
 const config = _config;
@@ -28,6 +31,9 @@ function setConfig(partialConfig) {
     }
     if (typeof partialConfig.observable === "boolean") {
         _config.observable = partialConfig.observable;
+    }
+    if (partialConfig.tagNames) {
+        Object.assign(_config.tagNames, partialConfig.tagNames);
     }
 }
 
@@ -409,7 +415,7 @@ async function lazyLoads(root, config, prefixMap) {
 }
 async function handlerForLazyLoad(root, config, prefixMap) {
     if (Object.keys(prefixMap).length === 0) {
-        return;
+        return null;
     }
     try {
         await lazyLoads(root, config, prefixMap);
@@ -418,7 +424,7 @@ async function handlerForLazyLoad(root, config, prefixMap) {
         throw new Error("Failed to lazy load components: " + e);
     }
     if (!config.observable) {
-        return;
+        return null;
     }
     const mo = new MutationObserver(async () => {
         try {
@@ -429,31 +435,62 @@ async function handlerForLazyLoad(root, config, prefixMap) {
         }
     });
     mo.observe(root, { childList: true, subtree: true });
+    return mo;
 }
 
-async function registerHandler() {
-    const importmap = loadImportmap(); // 事前に importmap を読み込んでおく
-    if (importmap === null) {
-        return;
+class Autoloader extends HTMLElement {
+    static _instance = null;
+    _initialized = false;
+    _prefixMap = null;
+    _observer = null;
+    constructor() {
+        super();
+        if (Autoloader._instance) {
+            throw new Error(`${config.tagNames.autoloader} can only be instantiated once.`);
+        }
+        Autoloader._instance = this;
+        const importmap = loadImportmap();
+        if (importmap) {
+            const { prefixMap, loadMap } = buildMap(importmap);
+            this._prefixMap = prefixMap;
+            eagerLoad(loadMap, config.loaders).catch((e) => {
+                console.error("Failed to eager load components:", e);
+            });
+        }
     }
-    const { prefixMap, loadMap } = buildMap(importmap);
-    // 先にeager loadを実行すると、DOMContentLoadedイベントが発生しないことがあるため、後に実行する
-    document.addEventListener("DOMContentLoaded", async () => {
-        await handlerForLazyLoad(document, config, prefixMap);
-    });
-    try {
-        await eagerLoad(loadMap, config.loaders);
+    async connectedCallback() {
+        if (!this._initialized) {
+            this._initialized = true;
+            if (this._prefixMap) {
+                if (document.readyState === "loading") {
+                    await new Promise((r) => document.addEventListener("DOMContentLoaded", () => r(), {
+                        once: true,
+                    }));
+                }
+                this._observer = await handlerForLazyLoad(document, config, this._prefixMap);
+            }
+        }
     }
-    catch (e) {
-        throw new Error("Failed to eager load components: " + e);
+    disconnectedCallback() {
+        this._observer?.disconnect();
+        this._observer = null;
+        if (Autoloader._instance === this) {
+            Autoloader._instance = null;
+        }
     }
 }
 
-async function bootstrapAutoloader(config) {
+function registerComponents() {
+    if (!customElements.get(config.tagNames.autoloader)) {
+        customElements.define(config.tagNames.autoloader, Autoloader);
+    }
+}
+
+function bootstrapAutoloader(config) {
     if (config) {
         setConfig(config);
     }
-    await registerHandler();
+    registerComponents();
 }
 
 export { bootstrapAutoloader };

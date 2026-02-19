@@ -23,6 +23,7 @@ describe('config', () => {
       expect(config.observable).toBe(true);
       expect(config.loaders[VANILLA_KEY]).toBe(VANILLA_LOADER);
       expect(config.loaders[DEFAULT_KEY]).toBe(VANILLA_KEY);
+      expect(config.tagNames.autoloader).toBe('wcs-autoloader');
     });
   });
 
@@ -65,6 +66,15 @@ describe('config', () => {
       };
       setConfig({ loaders: { 'custom': customLoader } });
       expect(config.loaders['custom']).toBe(customLoader);
+    });
+
+    it('tagNamesを変更できること', () => {
+      const original = config.tagNames.autoloader;
+      setConfig({ tagNames: { autoloader: 'my-autoloader' } });
+      expect(config.tagNames.autoloader).toBe('my-autoloader');
+
+      // リセット
+      setConfig({ tagNames: { autoloader: original } });
     });
 
     it('設定変更後にgetConfigは新しいフリーズ済みインスタンスを返すこと', () => {

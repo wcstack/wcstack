@@ -6,6 +6,9 @@ interface IInternalConfig extends IConfig {
   scanImportmap: boolean;
   loaders: Record<string, ILoader | string>;
   observable: boolean;
+  tagNames: {
+    autoloader: string;
+  };
 }
 
 export const DEFAULT_KEY = "*";
@@ -23,7 +26,10 @@ const _config: IInternalConfig = {
     [VANILLA_KEY]: VANILLA_LOADER,
     [DEFAULT_KEY]: VANILLA_KEY
   },
-  observable: true
+  observable: true,
+  tagNames: {
+    autoloader: "wcs-autoloader"
+  }
 }
 
 function deepFreeze<T>(obj: T): T {
@@ -65,6 +71,9 @@ export function setConfig(partialConfig: IWritableConfig): void {
   }
   if (typeof partialConfig.observable === "boolean") {
     _config.observable = partialConfig.observable;
+  }
+  if (partialConfig.tagNames) {
+    Object.assign(_config.tagNames, partialConfig.tagNames);
   }
   frozenConfig = null;
 }

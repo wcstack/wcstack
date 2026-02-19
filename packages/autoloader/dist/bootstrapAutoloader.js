@@ -1,9 +1,9 @@
 import { setConfig } from "./config.js";
-import { registerHandler } from "./registerHandler.js";
-export async function bootstrapAutoloader(config) {
+import { registerComponents } from "./registerComponents.js";
+export function bootstrapAutoloader(config) {
     if (config) {
         setConfig(config);
     }
-    await registerHandler();
+    registerComponents();
 }
 //# sourceMappingURL=bootstrapAutoloader.js.map

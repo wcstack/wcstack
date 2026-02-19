@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { bootstrapAutoloader } from '../src/bootstrapAutoloader';
 import * as configModule from '../src/config';
-import * as registerHandlerModule from '../src/registerHandler';
+import * as registerComponentsModule from '../src/registerComponents';
 
 describe('bootstrapAutoloader', () => {
   beforeEach(() => {
@@ -12,23 +12,23 @@ describe('bootstrapAutoloader', () => {
     vi.restoreAllMocks();
   });
 
-  it('設定なしで呼び出した場合、registerHandlerが呼ばれること', async () => {
-    const registerHandlerSpy = vi.spyOn(registerHandlerModule, 'registerHandler').mockResolvedValue();
+  it('設定なしで呼び出した場合、registerComponentsが呼ばれること', () => {
+    const registerComponentsSpy = vi.spyOn(registerComponentsModule, 'registerComponents').mockImplementation(() => {});
     const setConfigSpy = vi.spyOn(configModule, 'setConfig');
 
-    await bootstrapAutoloader();
+    bootstrapAutoloader();
 
     expect(setConfigSpy).not.toHaveBeenCalled();
-    expect(registerHandlerSpy).toHaveBeenCalled();
+    expect(registerComponentsSpy).toHaveBeenCalled();
   });
 
-  it('設定ありで呼び出した場合、setConfigとregisterHandlerが呼ばれること', async () => {
-    const registerHandlerSpy = vi.spyOn(registerHandlerModule, 'registerHandler').mockResolvedValue();
+  it('設定ありで呼び出した場合、setConfigとregisterComponentsが呼ばれること', () => {
+    const registerComponentsSpy = vi.spyOn(registerComponentsModule, 'registerComponents').mockImplementation(() => {});
     const setConfigSpy = vi.spyOn(configModule, 'setConfig');
 
-    await bootstrapAutoloader({ observable: false });
+    bootstrapAutoloader({ observable: false });
 
     expect(setConfigSpy).toHaveBeenCalledWith({ observable: false });
-    expect(registerHandlerSpy).toHaveBeenCalled();
+    expect(registerComponentsSpy).toHaveBeenCalled();
   });
 });

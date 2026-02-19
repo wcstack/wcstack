@@ -1,10 +1,10 @@
 import { setConfig } from "./config.js";
-import { registerHandler } from "./registerHandler.js";
+import { registerComponents } from "./registerComponents.js";
 import { IWritableConfig } from "./types.js";
 
-export async function bootstrapAutoloader(config?: Partial<IWritableConfig>): Promise<void> {
+export function bootstrapAutoloader(config?: IWritableConfig): void {
   if (config) {
     setConfig(config);
   }
-  await registerHandler();
+  registerComponents();
 }
