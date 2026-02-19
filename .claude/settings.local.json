@@ -16,7 +16,11 @@
       "Bash(dir:*)",
       "Bash(npm run build:*)",
       "Bash(git mv:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(npm whoami)",
+      "Bash(npm view:*)",
+      "Bash(npm publish:*)",
+      "WebFetch(domain:cdn.jsdelivr.net)"
     ]
   }
 }
