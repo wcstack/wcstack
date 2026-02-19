@@ -20,7 +20,13 @@
       "Bash(npm whoami)",
       "Bash(npm view:*)",
       "Bash(npm publish:*)",
-      "WebFetch(domain:cdn.jsdelivr.net)"
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm config get:*)",
+      "Bash(npm config list:*)",
+      "Bash(git push)",
+      "Bash(git push:*)"
     ]
   }
 }

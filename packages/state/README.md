@@ -148,11 +148,15 @@ State changes are detected through **property assignment** (the Proxy `set` trap
 
 ### Primitive and Object Properties
 
-Direct property assignment is detected at any depth:
+Assignment must use **dot-path notation** (bracket syntax). The reactive proxy intercepts only top-level `set` traps, so standard nested property access bypasses change detection:
 
 ```javascript
-this.count = 10;            // ✅ detected
-this.user.name = "Bob";     // ✅ detected (nested assignment)
+// ✅ Path assignment — change detected
+this.count = 10;
+this["user.name"] = "Bob";
+
+// ❌ Direct nested access — change NOT detected
+this.user.name = "Bob";     // bypasses the Proxy set trap
 ```
 
 ### Arrays
