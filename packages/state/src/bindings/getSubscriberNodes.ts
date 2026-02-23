@@ -2,7 +2,7 @@ import { config } from "../config";
 import { parseCommentNode } from "./parseCommentNode";
 
 /**
- * data-bind-state 属性または埋め込みノード<!--{{}}-->を持つノードをすべて取得する
+ * data-wcs 属性または埋め込みノード<!--{{}}-->を持つノードをすべて取得する
  * @param root 
  * @returns 
  */

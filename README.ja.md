@@ -1,6 +1,22 @@
 # wcstack
 
-**Web Components Stack** — Web Componentsで SPA を構築するための、標準技術ファーストなツールキット。
+**The browser is the framework.**
+
+> `setCount(prev => prev + 1)` がカウンターのインクリメントに
+> 必要な理由を、最後に疑問に思ったのはいつですか？
+>
+> 今日あなたが書いたコードのうち、ユーザーの課題を解決しているのはどれだけで、
+> フレームワークを満たすためだけに存在しているのはどれだけですか？
+>
+> `this.count += 1` ではなぜダメなのか
+> — フレームワークのドキュメントを引用せずに説明できますか？
+
+wcstack の答え: **今の JavaScript で十分。**
+
+State はただのプロパティ。Derived state はただの getter。
+更新はただのメソッド。あとは HTML。
+
+---
 
 3つの独立したパッケージ。ランタイム依存ゼロ。ビルドステップ不要。
 
@@ -8,87 +24,9 @@
 
 | パッケージ | 説明 |
 |---------|-------------|
-| [`@wcstack/autoloader`](packages/autoloader/) | Import Mapによるカスタム要素の自動検出・動的インポート |
-| [`@wcstack/router`](packages/router/) | レイアウト・型付きパラメータ・head管理を備えた宣言的SPAルーティング |
 | [`@wcstack/state`](packages/state/) | 宣言的データバインディングと算出プロパティによるリアクティブ状態管理 |
-
----
-
-## @wcstack/autoloader
-
-カスタム要素のタグを書くだけで、自動的にロード。
-
-```html
-<script type="importmap">
-  {
-    "imports": {
-      "@components/ui/": "./components/ui/",
-      "@components/ui|lit/": "./components/ui-lit/"
-    }
-  }
-</script>
-
-<!-- ./components/ui/button.js から自動ロード -->
-<ui-button></ui-button>
-
-<!-- Litローダーで ./components/ui-lit/card.js から自動ロード -->
-<ui-lit-card></ui-lit-card>
-```
-
-- **Import Mapベース**の名前空間解決 — コンポーネントの個別登録不要
-- **即時・遅延読み込み** — 重要なコンポーネントを先に、残りはオンデマンドで
-- **MutationObserver** — 動的に追加された要素も自動検出
-- **プラガブルなローダー** — Vanilla、Lit、カスタムローダーを自由に混在
-- **`is`属性サポート** — カスタマイズドビルトイン要素と `extends` の自動検出
-
-[詳細ドキュメント &rarr;](packages/autoloader/README.ja.md)
-
----
-
-## @wcstack/router
-
-宣言的SPAルーティング — ルートをJavaScriptではなくHTMLで定義。
-
-```html
-<wcs-router>
-  <template>
-    <wcs-route path="/">
-      <wcs-layout layout="main-layout">
-        <nav slot="header">
-          <wcs-link to="/">ホーム</wcs-link>
-          <wcs-link to="/products">商品一覧</wcs-link>
-        </nav>
-        <wcs-route index>
-          <wcs-head><title>ホーム</title></wcs-head>
-          <app-home></app-home>
-        </wcs-route>
-        <wcs-route path="products">
-          <wcs-head><title>商品一覧</title></wcs-head>
-          <wcs-route index>
-            <product-list></product-list>
-          </wcs-route>
-          <wcs-route path=":id(int)">
-            <product-detail data-bind="props"></product-detail>
-          </wcs-route>
-        </wcs-route>
-      </wcs-layout>
-    </wcs-route>
-    <wcs-route fallback>
-      <error-404></error-404>
-    </wcs-route>
-  </template>
-</wcs-router>
-<wcs-outlet></wcs-outlet>
-```
-
-- **ネストされたルート&レイアウト** — Light DOMレイアウトシステムによる宣言的なUI構成
-- **型付きパラメータ** — `:id(int)`、`:slug(slug)`、`:date(isoDate)` による自動型変換
-- **Auto-binding** — `data-bind`（`props`、`states`、`attr`）でURLパラメータをコンポーネントに自動注入
-- **Head管理** — `<wcs-head>`でルートごとに`<title>`や`<meta>`を切り替え
-- **Navigation API** — モダンな標準APIベース、popstateフォールバック対応
-- **ルートガード** — 非同期判定関数によるルート保護
-
-[詳細ドキュメント &rarr;](packages/router/README.ja.md)
+| [`@wcstack/router`](packages/router/) | レイアウト・型付きパラメータ・head管理を備えた宣言的SPAルーティング |
+| [`@wcstack/autoloader`](packages/autoloader/) | Import Mapによるカスタム要素の自動検出・動的インポート |
 
 ---
 
@@ -146,6 +84,84 @@
 
 ---
 
+## @wcstack/router
+
+宣言的SPAルーティング — ルートをJavaScriptではなくHTMLで定義。
+
+```html
+<wcs-router>
+  <template>
+    <wcs-route path="/">
+      <wcs-layout layout="main-layout">
+        <nav slot="header">
+          <wcs-link to="/">ホーム</wcs-link>
+          <wcs-link to="/products">商品一覧</wcs-link>
+        </nav>
+        <wcs-route index>
+          <wcs-head><title>ホーム</title></wcs-head>
+          <app-home></app-home>
+        </wcs-route>
+        <wcs-route path="products">
+          <wcs-head><title>商品一覧</title></wcs-head>
+          <wcs-route index>
+            <product-list></product-list>
+          </wcs-route>
+          <wcs-route path=":id(int)">
+            <product-detail data-bind="props"></product-detail>
+          </wcs-route>
+        </wcs-route>
+      </wcs-layout>
+    </wcs-route>
+    <wcs-route fallback>
+      <error-404></error-404>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+```
+
+- **ネストされたルート&レイアウト** — Light DOMレイアウトシステムによる宣言的なUI構成
+- **型付きパラメータ** — `:id(int)`、`:slug(slug)`、`:date(isoDate)` による自動型変換
+- **Auto-binding** — `data-bind`（`props`、`states`、`attr`）でURLパラメータをコンポーネントに自動注入
+- **Head管理** — `<wcs-head>`でルートごとに`<title>`や`<meta>`を切り替え
+- **Navigation API** — モダンな標準APIベース、popstateフォールバック対応
+- **ルートガード** — 非同期判定関数によるルート保護
+
+[詳細ドキュメント &rarr;](packages/router/README.ja.md)
+
+---
+
+## @wcstack/autoloader
+
+カスタム要素のタグを書くだけで、自動的にロード。
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@components/ui/": "./components/ui/",
+      "@components/ui|lit/": "./components/ui-lit/"
+    }
+  }
+</script>
+
+<!-- ./components/ui/button.js から自動ロード -->
+<ui-button></ui-button>
+
+<!-- Litローダーで ./components/ui-lit/card.js から自動ロード -->
+<ui-lit-card></ui-lit-card>
+```
+
+- **Import Mapベース**の名前空間解決 — コンポーネントの個別登録不要
+- **即時・遅延読み込み** — 重要なコンポーネントを先に、残りはオンデマンドで
+- **MutationObserver** — 動的に追加された要素も自動検出
+- **プラガブルなローダー** — Vanilla、Lit、カスタムローダーを自由に混在
+- **`is`属性サポート** — カスタマイズドビルトイン要素と `extends` の自動検出
+
+[詳細ドキュメント &rarr;](packages/autoloader/README.ja.md)
+
+---
+
 ## 設計哲学
 
 | 原則 | 説明 |
@@ -162,9 +178,9 @@
 ```
 wcstack/
 ├── packages/
-│   ├── autoloader/    # @wcstack/autoloader
+│   ├── state/         # @wcstack/state
 │   ├── router/        # @wcstack/router
-│   └── state/         # @wcstack/state
+│   └── autoloader/    # @wcstack/autoloader
 ```
 
 各パッケージは独立してビルド・テスト・公開されます。ルートレベルのワークスペース管理はありません。

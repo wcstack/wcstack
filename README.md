@@ -1,6 +1,22 @@
 # wcstack
 
-**Web Components Stack** — A standards-first toolkit for building SPAs with Web Components.
+**The browser is the framework.**
+
+> When was the last time you questioned why `setCount(prev => prev + 1)`
+> is necessary just to increment a counter?
+>
+> How much of the code you wrote today solves your users' problems,
+> and how much exists only to satisfy your framework?
+>
+> Can you explain why `this.count += 1` isn't enough
+> — without quoting your framework's documentation?
+
+wcstack is a toolkit that answers: **Today's JavaScript is enough.**
+
+State is just properties. Derived state is just getters.
+Updates are just methods. The rest is HTML.
+
+---
 
 Three independent packages. Zero runtime dependencies. No build step required.
 
@@ -8,87 +24,9 @@ Three independent packages. Zero runtime dependencies. No build step required.
 
 | Package | Description |
 |---------|-------------|
-| [`@wcstack/autoloader`](packages/autoloader/) | Auto-detect and dynamically import custom elements via Import Maps |
-| [`@wcstack/router`](packages/router/) | Declarative SPA routing with layouts, typed parameters, and head management |
 | [`@wcstack/state`](packages/state/) | Reactive state management with declarative data binding and computed properties |
-
----
-
-## @wcstack/autoloader
-
-Write a custom element tag — it loads automatically.
-
-```html
-<script type="importmap">
-  {
-    "imports": {
-      "@components/ui/": "./components/ui/",
-      "@components/ui|lit/": "./components/ui-lit/"
-    }
-  }
-</script>
-
-<!-- Auto-loaded from ./components/ui/button.js -->
-<ui-button></ui-button>
-
-<!-- Auto-loaded with Lit loader from ./components/ui-lit/card.js -->
-<ui-lit-card></ui-lit-card>
-```
-
-- **Import Map based** namespace resolution — no per-component registration
-- **Eager & lazy loading** — load critical components first, the rest on demand
-- **MutationObserver** — dynamically added elements are detected automatically
-- **Pluggable loaders** — mix Vanilla, Lit, or any custom loader
-- **`is` attribute support** — customized built-in elements with auto `extends` detection
-
-[Full documentation &rarr;](packages/autoloader/README.md)
-
----
-
-## @wcstack/router
-
-Declarative SPA routing — define routes in HTML, not JavaScript.
-
-```html
-<wcs-router>
-  <template>
-    <wcs-route path="/">
-      <wcs-layout layout="main-layout">
-        <nav slot="header">
-          <wcs-link to="/">Home</wcs-link>
-          <wcs-link to="/products">Products</wcs-link>
-        </nav>
-        <wcs-route index>
-          <wcs-head><title>Home</title></wcs-head>
-          <app-home></app-home>
-        </wcs-route>
-        <wcs-route path="products">
-          <wcs-head><title>Products</title></wcs-head>
-          <wcs-route index>
-            <product-list></product-list>
-          </wcs-route>
-          <wcs-route path=":id(int)">
-            <product-detail data-bind="props"></product-detail>
-          </wcs-route>
-        </wcs-route>
-      </wcs-layout>
-    </wcs-route>
-    <wcs-route fallback>
-      <error-404></error-404>
-    </wcs-route>
-  </template>
-</wcs-router>
-<wcs-outlet></wcs-outlet>
-```
-
-- **Nested routes & layouts** — compose UI structure declaratively with Light DOM layout system
-- **Typed parameters** — `:id(int)`, `:slug(slug)`, `:date(isoDate)` with auto-conversion
-- **Auto-binding** — inject URL params into components via `data-bind` (`props`, `states`, `attr`)
-- **Head management** — `<wcs-head>` switches `<title>` and `<meta>` per route
-- **Navigation API** — built on the modern standard with popstate fallback
-- **Route guards** — protect routes with async decision functions
-
-[Full documentation &rarr;](packages/router/README.md)
+| [`@wcstack/router`](packages/router/) | Declarative SPA routing with layouts, typed parameters, and head management |
+| [`@wcstack/autoloader`](packages/autoloader/) | Auto-detect and dynamically import custom elements via Import Maps |
 
 ---
 
@@ -146,6 +84,84 @@ Reactive state with declarative bindings — no virtual DOM, no compilation.
 
 ---
 
+## @wcstack/router
+
+Declarative SPA routing — define routes in HTML, not JavaScript.
+
+```html
+<wcs-router>
+  <template>
+    <wcs-route path="/">
+      <wcs-layout layout="main-layout">
+        <nav slot="header">
+          <wcs-link to="/">Home</wcs-link>
+          <wcs-link to="/products">Products</wcs-link>
+        </nav>
+        <wcs-route index>
+          <wcs-head><title>Home</title></wcs-head>
+          <app-home></app-home>
+        </wcs-route>
+        <wcs-route path="products">
+          <wcs-head><title>Products</title></wcs-head>
+          <wcs-route index>
+            <product-list></product-list>
+          </wcs-route>
+          <wcs-route path=":id(int)">
+            <product-detail data-bind="props"></product-detail>
+          </wcs-route>
+        </wcs-route>
+      </wcs-layout>
+    </wcs-route>
+    <wcs-route fallback>
+      <error-404></error-404>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+```
+
+- **Nested routes & layouts** — compose UI structure declaratively with Light DOM layout system
+- **Typed parameters** — `:id(int)`, `:slug(slug)`, `:date(isoDate)` with auto-conversion
+- **Auto-binding** — inject URL params into components via `data-bind` (`props`, `states`, `attr`)
+- **Head management** — `<wcs-head>` switches `<title>` and `<meta>` per route
+- **Navigation API** — built on the modern standard with popstate fallback
+- **Route guards** — protect routes with async decision functions
+
+[Full documentation &rarr;](packages/router/README.md)
+
+---
+
+## @wcstack/autoloader
+
+Write a custom element tag — it loads automatically.
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@components/ui/": "./components/ui/",
+      "@components/ui|lit/": "./components/ui-lit/"
+    }
+  }
+</script>
+
+<!-- Auto-loaded from ./components/ui/button.js -->
+<ui-button></ui-button>
+
+<!-- Auto-loaded with Lit loader from ./components/ui-lit/card.js -->
+<ui-lit-card></ui-lit-card>
+```
+
+- **Import Map based** namespace resolution — no per-component registration
+- **Eager & lazy loading** — load critical components first, the rest on demand
+- **MutationObserver** — dynamically added elements are detected automatically
+- **Pluggable loaders** — mix Vanilla, Lit, or any custom loader
+- **`is` attribute support** — customized built-in elements with auto `extends` detection
+
+[Full documentation &rarr;](packages/autoloader/README.md)
+
+---
+
 ## Design Philosophy
 
 | Principle | Description |
@@ -162,9 +178,9 @@ Reactive state with declarative bindings — no virtual DOM, no compilation.
 ```
 wcstack/
 ├── packages/
-│   ├── autoloader/    # @wcstack/autoloader
+│   ├── state/         # @wcstack/state
 │   ├── router/        # @wcstack/router
-│   └── state/         # @wcstack/state
+│   └── autoloader/    # @wcstack/autoloader
 ```
 
 Each package is independently built, tested, and published. No root-level workspace orchestration.

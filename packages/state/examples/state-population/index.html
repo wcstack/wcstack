@@ -60,29 +60,29 @@ export default {
     return this.stateByRegion.get(this["regions.*"]);
   },
 
-  // Calcurate the population of each state as a share of its region's population
+  // Calculate the population of each state as a share of its region's population
   get "regions.*.states.*.shareOfRegionPopulation"() {
     return this["regions.*.states.*.population"] / this["regions.*.population"];
   },
 
-  // Calcurate the population of each state as a share of the total population
+  // Calculate the population of each state as a share of the total population
   get "regions.*.states.*.shareOfPopulation"() {
     return this["regions.*.states.*.population"] / this.population;
   },
 
-  // Calcurate the population of each region by summing the populations of its states
+  // Calculate the population of each region by summing the populations of its states
   get "regions.*.population"() {
     // Use $getAll to retrieve the population of all states in the current region
     // this.$1 refers to the current region in the outer wildcard, allowing us to filter states by their region
     return this.$getAll("regions.*.states.*.population", [ this.$1 ]).reduce(summaryPopulation, 0);
   },
 
-  // Calcurate the population of each region as a share of the total population
+  // Calculate the population of each region as a share of the total population
   get "regions.*.shareOfPopulation"() {
     return this["regions.*.population"] / this.population;
   },
 
-  // Calcurate the total population by summing the populations of all regions
+  // Calculate the total population by summing the populations of all regions
   get population() {
     // Use $getAll to retrieve the population of all regions
     return this.$getAll("regions.*.population", []).reduce(summaryPopulation, 0);

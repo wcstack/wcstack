@@ -16,7 +16,7 @@ Each package lives under `packages/` and is independently built, tested, and pub
 
 - **`@wcstack/autoloader`** — Automatically detects and dynamically imports undefined custom elements by scanning the DOM and Import Map entries with `@components/` prefixes. Uses MutationObserver for dynamically-added elements.
 - **`@wcstack/router`** — Declarative SPA routing via `<wcs-router>`, `<wcs-route>`, `<wcs-layout>` custom elements. Built on the Navigation API (popstate fallback). Supports typed path parameters (`:id(int)`, `:slug(slug)`, etc.), layout nesting, head management (`<wcs-head>`), and route guards.
-- **`@wcstack/state`** — Reactive state management with declarative data binding via `<wcs-state>` and `data-bind-state` attributes. Features reactive proxy, computed properties, list rendering with diffing, conditional rendering, wildcard paths, and a filter pipeline.
+- **`@wcstack/state`** — Reactive state management with declarative data binding via `<wcs-state>` and `data-wcs` attributes. Features reactive proxy, computed properties, list rendering with diffing, conditional rendering, wildcard paths, and a filter pipeline.
 
 ## Build & Development Commands
 

@@ -6,7 +6,7 @@
 
 ## Package Overview
 
-`@wcstack/state` はリアクティブな状態管理パッケージ。`<wcs-state>` カスタム要素と `data-bind-state` 属性による宣言的データバインディングを提供する。ランタイム依存ゼロ。
+`@wcstack/state` はリアクティブな状態管理パッケージ。`<wcs-state>` カスタム要素と `data-wcs` 属性による宣言的データバインディングを提供する。ランタイム依存ゼロ。
 
 ## Commands
 
@@ -45,7 +45,7 @@ src/
 ├── bindings/
 │   └── *.ts                # DOM ノード走査、バインディング収集・初期化
 ├── bindTextParser/
-│   └── *.ts                # data-bind-state 属性値のパース
+│   └── *.ts                # data-wcs 属性値のパース
 ├── apply/
 │   ├── applyChange.ts      # 変更適用のエントリポイント
 │   ├── applyChangeTo*.ts   # Text, Attribute, Class, Style, Property, Element, SubObject, If, For
@@ -81,7 +81,7 @@ src/
 ### Core Flow
 1. `bootstrapState()` → カスタム要素登録 + イベントハンドラ登録
 2. `<wcs-state>` の `connectedCallback` → 状態ロード (JSON/Script/属性)
-3. DOM 走査 → `data-bind-state` 属性と `<!--wcs-*-->` コメントノードを収集
+3. DOM 走査 → `data-wcs` 属性と `<!--wcs-*-->` コメントノードを収集
 4. バインディング情報を解析 → Proxy 経由でリアクティブにDOM更新
 
 ### Binding Syntax
@@ -128,4 +128,4 @@ src/
 - ワイルドカードは `*` (WILDCARD)
 - ステート名省略時のデフォルトは `'default'`
 - コメントノードプレフィックス: `wcs-text`, `wcs-for`, `wcs-if`, `wcs-elseif`, `wcs-else`
-- バインド属性名: `data-bind-state`
+- バインド属性名: `data-wcs`
