@@ -2937,6 +2937,16 @@ function _applyChange(binding, context) {
             }
         }
     }
+    if (fn === applyChangeToProperty) {
+        const element = binding.node;
+        if (element.tagName === 'SELECT') {
+            const propName = binding.propSegments[0];
+            if (propName === 'value' || propName === 'selectedIndex') {
+                context.deferredSelectBindings.push({ binding, value: filteredValue });
+                return;
+            }
+        }
+    }
     fn(binding, context, filteredValue);
 }
 function applyChange(binding, context) {
@@ -2985,6 +2995,7 @@ function applyChange(binding, context) {
                 appliedBindingSet: context.appliedBindingSet,
                 newListValueByAbsAddress: context.newListValueByAbsAddress,
                 updatedAbsAddressSetByStateElement: context.updatedAbsAddressSetByStateElement,
+                deferredSelectBindings: context.deferredSelectBindings,
             };
             _applyChange(binding, newContext);
         });
@@ -2997,6 +3008,10 @@ function applyChange(binding, context) {
 /**
  * バインディング情報の配列を処理し、各バインディングに対して状態の変更を適用する。
  *
+ * 2フェーズで処理:
+ * Phase 1: 構造的更新(for/if) + 値更新(select以外) — select.value/selectedIndex は遅延収集
+ * Phase 2: 遅延されたselect.value/selectedIndex を適用（option要素の生成後）
+ *
  * 最適化のため、以下のグループ化を行う:
  * 同じ stateNameとrootNode を持つバインディングをグループ化 → createState の呼び出しを削減
  */
@@ -3005,7 +3020,8 @@ function applyChangeFromBindings(bindings) {
     const appliedBindingSet = new Set();
     const newListValueByAbsAddress = new Map();
     const updatedAbsAddressSetByStateElement = new Map();
-    // 外側ループ: stateName ごとにグループ化
+    const deferredSelectBindings = [];
+    // Phase 1: 構造的更新 + 値更新（select.value/selectedIndex は遅延）
     while (bindingIndex < bindings.length) {
         let binding = bindings[bindingIndex];
         const stateName = binding.stateName;
@@ -3037,6 +3053,7 @@ function applyChangeFromBindings(bindings) {
                 appliedBindingSet: appliedBindingSet,
                 newListValueByAbsAddress: newListValueByAbsAddress,
                 updatedAbsAddressSetByStateElement: updatedAbsAddressSetByStateElement,
+                deferredSelectBindings: deferredSelectBindings,
             };
             do {
                 applyChange(binding, context);
@@ -3050,6 +3067,11 @@ function applyChangeFromBindings(bindings) {
                 binding = nextBindingInfo;
             } while (true); // eslint-disable-line no-constant-condition
         });
+    }
+    // Phase 2: 遅延されたselect.value/selectedIndex を適用
+    // applyChangeToProperty は context を参照しないため null を渡す
+    for (const { binding, value } of deferredSelectBindings) {
+        applyChangeToProperty(binding, null, value);
     }
     for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
         setLastListValueByAbsoluteStateAddress(absAddress, newListValue);

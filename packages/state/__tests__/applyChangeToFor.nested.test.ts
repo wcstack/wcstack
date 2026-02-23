@@ -180,6 +180,7 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
       appliedBindingSet: new Set(),
       newListValueByAbsAddress: new Map(),
       updatedAbsAddressSetByStateElement: new Map(),
+      deferredSelectBindings: [],
     };
 
     const flushContext = () => {

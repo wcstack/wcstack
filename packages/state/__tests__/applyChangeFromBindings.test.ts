@@ -281,4 +281,61 @@ describe('applyChangeFromBindings', () => {
     expect(createStateMock).toHaveBeenCalledWith('writable', expect.any(Function));
     expect(updatedCallbackMock).toHaveBeenCalledWith([fakeAbsAddress]);
   });
+
+  it('applyChange中にdeferredSelectBindingsに追加されたselect.valueがPhase2で適用されること', () => {
+    const state = createStateProxy({ selectedId: '2' });
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
+
+    const select = document.createElement('select');
+    const option1 = document.createElement('option');
+    option1.value = '1';
+    option1.textContent = 'Option 1';
+    const option2 = document.createElement('option');
+    option2.value = '2';
+    option2.textContent = 'Option 2';
+    select.appendChild(option1);
+    select.appendChild(option2);
+    document.body.appendChild(select);
+
+    const bindingInfos = [createBindingInfo('app', 'selectedId', select)];
+
+    // applyChange mock が deferredSelectBindings に select.value を追加するシミュレーション
+    applyChangeMock.mockImplementation((_binding: any, context: any) => {
+      context.deferredSelectBindings.push({
+        binding: { ..._binding, propSegments: ['value'] },
+        value: '2'
+      });
+    });
+
+    applyChangeFromBindings(bindingInfos);
+
+    expect(select.value).toBe('2');
+  });
+
+  it('Phase2で値が変わらない場合はスキップされること', () => {
+    const state = createStateProxy({ selectedId: '1' });
+    const createStateMock = vi.fn((_mutability: string, callback: (state: any) => void) => callback(state));
+    getStateElementByNameMock.mockReturnValue({ createState: createStateMock } as any);
+
+    const select = document.createElement('select');
+    const option1 = document.createElement('option');
+    option1.value = '1';
+    select.appendChild(option1);
+    document.body.appendChild(select);
+    select.value = '1'; // 既に正しい値
+
+    const bindingInfos = [createBindingInfo('app', 'selectedId', select)];
+
+    applyChangeMock.mockImplementation((_binding: any, context: any) => {
+      context.deferredSelectBindings.push({
+        binding: { ..._binding, propSegments: ['value'] },
+        value: '1'
+      });
+    });
+
+    applyChangeFromBindings(bindingInfos);
+
+    expect(select.value).toBe('1');
+  });
 });

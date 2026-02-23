@@ -63,6 +63,7 @@ describe('applyChange', () => {
       appliedBindingSet: new Set(),
       newListValueByAbsAddress: new Map(),
       updatedAbsAddressSetByStateElement: new Map(),
+      deferredSelectBindings: [],
     };
   });
 
@@ -338,5 +339,60 @@ describe('applyChange', () => {
     // but stateName differs so it tries getStateElementByName → null → error
     expect(() => applyChange(bindingInfo, context)).toThrow(/State element with name "other" not found/);
     expect(getRootNodeByFragmentMock).toHaveBeenCalled();
+  });
+
+  it('select要素のvalueバインディングはdeferredSelectBindingsに遅延されること', () => {
+    const select = document.createElement('select');
+    document.body.appendChild(select);
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: select,
+      replaceNode: select,
+      propName: 'value',
+      propSegments: ['value']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue('option1');
+    applyChange(bindingInfo, context);
+    expect(select.value).not.toBe('option1');
+    expect(context.deferredSelectBindings).toHaveLength(1);
+    expect(context.deferredSelectBindings[0].value).toBe('option1');
+  });
+
+  it('select要素のselectedIndexバインディングはdeferredSelectBindingsに遅延されること', () => {
+    const select = document.createElement('select');
+    document.body.appendChild(select);
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: select,
+      replaceNode: select,
+      propName: 'selectedIndex',
+      propSegments: ['selectedIndex']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue(2);
+    applyChange(bindingInfo, context);
+    expect(context.deferredSelectBindings).toHaveLength(1);
+    expect(context.deferredSelectBindings[0].value).toBe(2);
+  });
+
+  it('select要素のvalue/selectedIndex以外のプロパティは遅延されないこと', () => {
+    const select = document.createElement('select');
+    document.body.appendChild(select);
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: select,
+      replaceNode: select,
+      propName: 'disabled',
+      propSegments: ['disabled']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue(true);
+    applyChange(bindingInfo, context);
+    expect(select.disabled).toBe(true);
+    expect(context.deferredSelectBindings).toHaveLength(0);
   });
 });

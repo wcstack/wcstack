@@ -217,7 +217,7 @@ describe('applyChangeToFor', () => {
   function setupContext() {
     const stateElement = createMockStateElement();
     setStateElementByName(document, 'default', stateElement);
-    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map() };
+    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
     return stateElement;
   }
 
@@ -1107,7 +1107,7 @@ describe('applyChangeToFor', () => {
       }
     } as any;
     setStateElementByName(document, 'default', stateElement);
-    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map() };
+    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
 
     const container = document.createElement('div');
     const placeholder = document.createComment('for');

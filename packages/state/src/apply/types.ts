@@ -3,6 +3,11 @@ import { IStateProxy } from "../proxy/types";
 import { IBindingInfo } from "../binding/types";
 import { IAbsoluteStateAddress } from "../address/types";
 
+export interface IDeferredSelectBinding {
+  readonly binding: IBindingInfo;
+  readonly value: unknown;
+}
+
 export interface IApplyContext {
   readonly rootNode: Node;
   readonly stateName: string;
@@ -11,6 +16,7 @@ export interface IApplyContext {
   appliedBindingSet: Set<IBindingInfo>;
   newListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]>;
   updatedAbsAddressSetByStateElement: Map<IStateElement, Set<IAbsoluteStateAddress>>;
+  deferredSelectBindings: IDeferredSelectBinding[];
 }
 
 export type ApplyChangeFn = (binding: IBindingInfo, context: IApplyContext, newValue: unknown) => void;

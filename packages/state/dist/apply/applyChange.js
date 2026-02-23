@@ -46,6 +46,16 @@ function _applyChange(binding, context) {
             }
         }
     }
+    if (fn === applyChangeToProperty) {
+        const element = binding.node;
+        if (element.tagName === 'SELECT') {
+            const propName = binding.propSegments[0];
+            if (propName === 'value' || propName === 'selectedIndex') {
+                context.deferredSelectBindings.push({ binding, value: filteredValue });
+                return;
+            }
+        }
+    }
     fn(binding, context, filteredValue);
 }
 export function applyChange(binding, context) {
@@ -94,6 +104,7 @@ export function applyChange(binding, context) {
                 appliedBindingSet: context.appliedBindingSet,
                 newListValueByAbsAddress: context.newListValueByAbsAddress,
                 updatedAbsAddressSetByStateElement: context.updatedAbsAddressSetByStateElement,
+                deferredSelectBindings: context.deferredSelectBindings,
             };
             _applyChange(binding, newContext);
         });

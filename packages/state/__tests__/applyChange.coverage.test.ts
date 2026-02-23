@@ -95,6 +95,7 @@ describe('applyChange (coverage)', () => {
     appliedBindingSet: new Set(),
     newListValueByAbsAddress: new Map(),
     updatedAbsAddressSetByStateElement: new Map(),
+    deferredSelectBindings: [],
   };
 
   beforeEach(() => {
@@ -356,6 +357,7 @@ describe('applyChange (coverage)', () => {
       appliedBindingSet: new Set(),
       newListValueByAbsAddress: new Map(),
       updatedAbsAddressSetByStateElement: new Map(),
+      deferredSelectBindings: [],
     };
     applyChange(bindingInfo, ctx);
     applyChange(bindingInfo, ctx);

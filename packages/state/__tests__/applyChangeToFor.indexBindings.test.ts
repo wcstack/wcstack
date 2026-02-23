@@ -160,7 +160,7 @@ describe('applyChangeToFor - changeIndexSet最適化', () => {
   function setupContext() {
     const stateElement = createMockStateElement();
     setStateElementByName(document, 'default', stateElement);
-    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map() };
+    context = { stateName: 'default', rootNode: document, stateElement: stateElement as any, state, appliedBindingSet: new Set(), newListValueByAbsAddress: new Map(), updatedAbsAddressSetByStateElement: new Map(), deferredSelectBindings: [] };
     return stateElement;
   }
 

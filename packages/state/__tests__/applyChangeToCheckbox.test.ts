@@ -11,6 +11,7 @@ const dummyContext: IApplyContext = {
   appliedBindingSet: new Set(),
   newListValueByAbsAddress: new Map(),
   updatedAbsAddressSetByStateElement: new Map(),
+  deferredSelectBindings: [],
   rootNode: document.body,
 };
 

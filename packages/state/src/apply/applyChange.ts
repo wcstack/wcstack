@@ -51,6 +51,16 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
       }
     }
   }
+  if (fn === applyChangeToProperty) {
+    const element = binding.node as Element;
+    if (element.tagName === 'SELECT') {
+      const propName = binding.propSegments[0];
+      if (propName === 'value' || propName === 'selectedIndex') {
+        context.deferredSelectBindings.push({ binding, value: filteredValue });
+        return;
+      }
+    }
+  }
   fn(binding, context, filteredValue);
 }
 
@@ -99,6 +109,7 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
         appliedBindingSet: context.appliedBindingSet,
         newListValueByAbsAddress: context.newListValueByAbsAddress,
         updatedAbsAddressSetByStateElement: context.updatedAbsAddressSetByStateElement,
+        deferredSelectBindings: context.deferredSelectBindings,
       }
       _applyChange(binding, newContext);
     });
