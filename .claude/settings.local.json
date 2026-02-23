@@ -27,7 +27,8 @@
       "Bash(npm config list:*)",
       "Bash(git push)",
       "Bash(git push:*)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(npm install:*)"
     ]
   }
 }
