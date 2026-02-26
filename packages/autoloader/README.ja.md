@@ -1,6 +1,10 @@
 # @wcstack/autoloader
 
-カスタム要素（要 Web Components 対応）を、HTMLにタグを書くだけで自動的にロードします。
+**もしカスタム要素が勝手に読み込まれたら？**
+
+カスタム要素のタグを書くだけで、ブラウザが勝手にその定義を見つけてくれる未来を妄想してみる。`import` も `customElements.define()` も登録ボイラープレートも不要。タグを書けば、読み込まれる。
+
+それが `<wcs-autoloader>` の探求するもの。CDN一発、依存ゼロ、Import Mapを活用。
 
 ## 特徴
 

@@ -1,38 +1,38 @@
 # wcstack
 
-**The browser is the framework.**
+**もしブラウザにこれが最初からあったら？**
 
-> `setCount(prev => prev + 1)` がカウンターのインクリメントに
-> 必要な理由を、最後に疑問に思ったのはいつですか？
->
-> 今日あなたが書いたコードのうち、ユーザーの課題を解決しているのはどれだけで、
-> フレームワークを満たすためだけに存在しているのはどれだけですか？
->
-> `this.count += 1` ではなぜダメなのか
-> — フレームワークのドキュメントを引用せずに説明できますか？
+wcstack は「未来のWeb標準を妄想して、ライブラリとして実装する」プロジェクトです。リアクティブなデータバインディング、宣言的ルーティング、コンポーネントの自動読み込み — これらがブラウザに最初から組み込まれていたら、どんな形になるだろう？
 
-wcstack の答え: **今の JavaScript で十分。**
-
-State はただのプロパティ。Derived state はただの getter。
-更新はただのメソッド。あとは HTML。
+フレームワークじゃない。*あるべきだった* HTMLタグを作る。
 
 ---
 
-3つの独立したパッケージ。ランタイム依存ゼロ。ビルドステップ不要。
+## ルール
+
+このプロジェクトには5つの縛りがあります。これが面白さの源泉です。
+
+| # | ルール | 理由 |
+|---|--------|------|
+| 1 | **CDN一発** | `<script>` タグ1つ。npm不要、バンドラー不要、設定不要。 |
+| 2 | **機能はカスタムタグで提供** | すべてがカスタム要素。`<wcs-something>` で表現できないなら、このプロジェクトの範囲外。 |
+| 3 | **初期ロード = タグ定義だけ** | スクリプトはカスタム要素を登録するだけ。初期化コードもブートストラップも不要。 |
+| 4 | **HTML記法に合わせる** | 独自DSLも特殊なテンプレート構文もなし。普通のHTMLに見えないなら、別のやり方を探す。 |
+| 5 | **最新のECMAScript** | 最新のJS機能を積極的に採用。ES5へのトランスパイルはしない。未来を作ってるんだから。 |
+
+この縛り、簡単そうに見えるでしょう？　そうでもないです。
+
+HTML記法に合わせるには、HTMLの設計思想を深く理解していないと破綻する。すべてをカスタムタグで作るには、ライフサイクル・順序制御・コンポーネント間通信をCustom Elementsの仕組みの中で解決しないといけない。依存ライブラリゼロということは、すべてのアルゴリズムを自分で書くということ。そしてそのすべてが、「ブラウザ組み込みかも」と思えるクオリティでなければならない。
+
+---
 
 ## パッケージ
 
-| パッケージ | 説明 |
-|---------|-------------|
-| [`@wcstack/state`](packages/state/) | 宣言的データバインディングと算出プロパティによるリアクティブ状態管理 |
-| [`@wcstack/router`](packages/router/) | レイアウト・型付きパラメータ・head管理を備えた宣言的SPAルーティング |
-| [`@wcstack/autoloader`](packages/autoloader/) | Import Mapによるカスタム要素の自動検出・動的インポート |
+3つの独立したパッケージ。ランタイム依存ゼロ。ビルド不要。
 
----
+### もしHTMLにリアクティブなデータバインディングがあったら？
 
-## @wcstack/state
-
-宣言的バインディングによるリアクティブ状態管理 — 仮想DOMもコンパイルも不要。
+[`@wcstack/state`](packages/state/) — 状態をインラインで宣言し、属性でDOMにバインドする。
 
 ```html
 <wcs-state>
@@ -48,7 +48,6 @@ State はただのプロパティ。Derived state はただの getter。
       removeItem(event, index) {
         this["cart.items"] = this["cart.items"].toSpliced(index, 1);
       },
-      // パスゲッター — ループ要素ごとの算出プロパティ
       get "cart.items.*.subtotal"() {
         return this["cart.items.*.price"] * this["cart.items.*.quantity"];
       },
@@ -73,20 +72,20 @@ State はただのプロパティ。Derived state はただの getter。
 <p>合計: <span data-wcs="textContent: cart.grandTotal|locale(ja-JP)"></span></p>
 ```
 
-- **パスゲッター** — `get "users.*.fullName"()` 任意の深さにフラット定義できる仮想プロパティ（自動依存追跡付き）
-- **構造ディレクティブ** — `<template>`による `for`、`if` / `elseif` / `else`
-- **40個の組み込みフィルター** — 比較・算術・文字列・日付・数値フォーマット
-- **双方向バインディング** — `<input>`、`<select>`、`<textarea>`、ラジオ・チェックボックスグループの自動対応
+- **パスgetter** — `get "users.*.fullName"()` あらゆる深さの算出プロパティ
+- **構造ディレクティブ** — `<template>` による `for`、`if` / `elseif` / `else`
+- **40以上のフィルタ** — 比較、算術、文字列、日付、フォーマット
+- **双方向バインディング** — `<input>`、`<select>`、`<textarea>` で自動
 - **Mustache構文** — テキストノード内の `{{ path|filter }}`
-- **Web Componentバインディング** — Shadow DOMコンポーネントとの双方向状態バインディング
+- **Web Componentバインディング** — Shadow DOMとの双方向状態同期
 
 [詳細ドキュメント &rarr;](packages/state/README.ja.md)
 
 ---
 
-## @wcstack/router
+### もしルーティングがただのHTMLタグだったら？
 
-宣言的SPAルーティング — ルートをJavaScriptではなくHTMLで定義。
+[`@wcstack/router`](packages/router/) — アプリのナビゲーション構造をマークアップで定義する。
 
 ```html
 <wcs-router>
@@ -102,7 +101,6 @@ State はただのプロパティ。Derived state はただの getter。
           <app-home></app-home>
         </wcs-route>
         <wcs-route path="products">
-          <wcs-head><title>商品一覧</title></wcs-head>
           <wcs-route index>
             <product-list></product-list>
           </wcs-route>
@@ -120,20 +118,20 @@ State はただのプロパティ。Derived state はただの getter。
 <wcs-outlet></wcs-outlet>
 ```
 
-- **ネストされたルート&レイアウト** — Light DOMレイアウトシステムによる宣言的なUI構成
-- **型付きパラメータ** — `:id(int)`、`:slug(slug)`、`:date(isoDate)` による自動型変換
-- **Auto-binding** — `data-bind`（`props`、`states`、`attr`）でURLパラメータをコンポーネントに自動注入
-- **Head管理** — `<wcs-head>`でルートごとに`<title>`や`<meta>`を切り替え
-- **Navigation API** — モダンな標準APIベース、popstateフォールバック対応
-- **ルートガード** — 非同期判定関数によるルート保護
+- **ネストされたルート & レイアウト** — Light DOMで宣言的にUI構造を組み立て
+- **型付きパラメータ** — `:id(int)`、`:slug(slug)`、`:date(isoDate)` で自動変換
+- **自動バインディング** — `data-bind` でURLパラメータをコンポーネントに注入
+- **Head管理** — `<wcs-head>` でルートごとに `<title>` と `<meta>` を切り替え
+- **Navigation API** — モダンな標準APIベース、popstateフォールバック付き
+- **ルートガード** — 非同期の判定関数でルートを保護
 
 [詳細ドキュメント &rarr;](packages/router/README.ja.md)
 
 ---
 
-## @wcstack/autoloader
+### もしカスタム要素が勝手に読み込まれたら？
 
-カスタム要素のタグを書くだけで、自動的にロード。
+[`@wcstack/autoloader`](packages/autoloader/) — タグを書くだけで読み込まれる。登録コード不要。
 
 ```html
 <script type="importmap">
@@ -145,35 +143,51 @@ State はただのプロパティ。Derived state はただの getter。
   }
 </script>
 
-<!-- ./components/ui/button.js から自動ロード -->
+<!-- ./components/ui/button.js から自動読み込み -->
 <ui-button></ui-button>
 
-<!-- Litローダーで ./components/ui-lit/card.js から自動ロード -->
+<!-- Litローダーで ./components/ui-lit/card.js から自動読み込み -->
 <ui-lit-card></ui-lit-card>
 ```
 
-- **Import Mapベース**の名前空間解決 — コンポーネントの個別登録不要
-- **即時・遅延読み込み** — 重要なコンポーネントを先に、残りはオンデマンドで
-- **MutationObserver** — 動的に追加された要素も自動検出
-- **プラガブルなローダー** — Vanilla、Lit、カスタムローダーを自由に混在
-- **`is`属性サポート** — カスタマイズドビルトイン要素と `extends` の自動検出
+- **Import Mapベース** — 名前空間解決、コンポーネントごとの登録不要
+- **即時 & 遅延読み込み** — 重要なコンポーネントを先に、残りはオンデマンドで
+- **MutationObserver** — 動的に追加された要素も自動検知
+- **プラガブルローダー** — Vanilla、Lit、カスタムローダーを混在可能
+- **`is` 属性** — カスタマイズされた組み込み要素の `extends` 自動検出
 
 [詳細ドキュメント &rarr;](packages/autoloader/README.ja.md)
 
 ---
 
-## 設計哲学
+## Quick Start
 
-| 原則 | 説明 |
-|-----------|-------------|
-| **標準技術ファースト** | Custom Elements、Shadow DOM、ES Modules、Import Maps |
-| **宣言的** | HTMLの構造がアプリケーションの意図を表現 |
-| **ゼロコンフィグ・ビルドレス** | バンドラーもトランスパイラも不要 — ブラウザでそのまま動作 |
-| **依存関係ゼロ** | 全パッケージでランタイム依存なし |
-| **低学習コスト** | 馴染みのあるWeb標準技術がベース |
-| **予測可能な挙動** | 暗黙の魔法より明示的な動作を優先 |
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <script type="module" src="https://esm.run/@wcstack/state"></script>
+</head>
+<body>
 
-## プロジェクト構造
+<wcs-state>
+  <script type="module">
+    export default { count: 0 };
+  </script>
+</wcs-state>
+
+<p>Count: {{ count }}</p>
+<button data-wcs="onclick: count++">+1</button>
+
+</body>
+</html>
+```
+
+`<script>` タグ1つ。カスタム要素1つ。あとはHTML。以上。
+
+---
+
+## プロジェクト構成
 
 ```
 wcstack/
@@ -183,19 +197,19 @@ wcstack/
 │   └── autoloader/    # @wcstack/autoloader
 ```
 
-各パッケージは独立してビルド・テスト・公開されます。ルートレベルのワークスペース管理はありません。
+各パッケージは独立してビルド・テスト・公開されます。
 
 ## 開発
 
-コマンドは各パッケージディレクトリ内で実行します（例: `packages/state/`）:
+各パッケージのディレクトリ内で実行します（例: `packages/state/`）:
 
 ```bash
-npm run build            # dist削除 → TypeScriptコンパイル → Rollupバンドル
-npm test                 # テスト実行（Vitest）
+npm run build            # dist削除、TypeScriptコンパイル、Rollupバンドル
+npm test                 # テスト実行 (Vitest)
 npm run test:coverage    # カバレッジ（100%閾値）
 npm run lint             # ESLint
 ```
 
-## ライセンス
+## License
 
 MIT

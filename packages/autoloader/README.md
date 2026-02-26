@@ -1,6 +1,10 @@
 # @wcstack/autoloader
 
-Automatically loads custom elements (requires Web Components support) just by writing the tags in HTML.
+**What if custom elements loaded themselves?**
+
+Imagine a future where you just write a custom element tag and the browser figures out where to find it. No `import`, no `customElements.define()`, no registration boilerplate. You write the tag, it loads.
+
+That's what `<wcs-autoloader>` explores. One CDN import, zero dependencies, powered by Import Maps.
 
 ## Features
 

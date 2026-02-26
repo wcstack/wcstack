@@ -1,38 +1,38 @@
 # wcstack
 
-**The browser is the framework.**
+**What if the browser had these built in?**
 
-> When was the last time you questioned why `setCount(prev => prev + 1)`
-> is necessary just to increment a counter?
->
-> How much of the code you wrote today solves your users' problems,
-> and how much exists only to satisfy your framework?
->
-> Can you explain why `this.count += 1` isn't enough
-> — without quoting your framework's documentation?
+wcstack is a thought experiment turned into code. We imagine what future web standards *could* look like — reactive data binding, declarative routing, automatic component loading — and build them as if they already existed in the browser.
 
-wcstack is a toolkit that answers: **Today's JavaScript is enough.**
-
-State is just properties. Derived state is just getters.
-Updates are just methods. The rest is HTML.
+No framework. Just HTML tags that *should* exist.
 
 ---
 
-Three independent packages. Zero runtime dependencies. No build step required.
+## Rules of the Game
+
+This project follows five strict constraints. They're what make it interesting.
+
+| # | Rule | Why |
+|---|------|-----|
+| 1 | **Single CDN import** | One `<script>` tag. That's it. No npm, no bundler, no config. |
+| 2 | **Features as custom tags** | Everything is a custom element. If it can't be expressed as `<wcs-something>`, it doesn't belong here. |
+| 3 | **Initial load = tag definitions only** | The script just registers custom elements. No initialization code, no bootstrap ritual. |
+| 4 | **HTML-native syntax** | No DSL, no special template syntax. If it doesn't look like regular HTML, we find another way. |
+| 5 | **Latest ECMAScript** | We actively adopt cutting-edge JS features. No transpiling to ES5. This is the future, after all. |
+
+These rules sound simple. They're not.
+
+Constraining yourself to HTML-native syntax means you need to deeply understand how HTML was designed. Building everything as custom tags means solving lifecycle, ordering, and communication within the Custom Elements spec. No dependencies means every algorithm is yours to write. And it all has to feel like it *could* be a browser built-in.
+
+---
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| [`@wcstack/state`](packages/state/) | Reactive state management with declarative data binding and computed properties |
-| [`@wcstack/router`](packages/router/) | Declarative SPA routing with layouts, typed parameters, and head management |
-| [`@wcstack/autoloader`](packages/autoloader/) | Auto-detect and dynamically import custom elements via Import Maps |
+Three independent packages. Zero runtime dependencies. No build step required.
 
----
+### What if HTML had reactive data binding?
 
-## @wcstack/state
-
-Reactive state with declarative bindings — no virtual DOM, no compilation.
+[`@wcstack/state`](packages/state/) — Declare state inline, bind it to the DOM with attributes.
 
 ```html
 <wcs-state>
@@ -48,7 +48,6 @@ Reactive state with declarative bindings — no virtual DOM, no compilation.
       removeItem(event, index) {
         this["cart.items"] = this["cart.items"].toSpliced(index, 1);
       },
-      // Path getter — computed per loop element
       get "cart.items.*.subtotal"() {
         return this["cart.items.*.price"] * this["cart.items.*.quantity"];
       },
@@ -73,20 +72,20 @@ Reactive state with declarative bindings — no virtual DOM, no compilation.
 <p>Grand Total: <span data-wcs="textContent: cart.grandTotal|locale(ja-JP)"></span></p>
 ```
 
-- **Path getters** — `get "users.*.fullName"()` virtual properties at any depth, all defined flat in one place with auto dependency tracking
+- **Path getters** — `get "users.*.fullName"()` computed properties at any depth
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>`
-- **40 built-in filters** — comparison, arithmetic, string, date, number formatting
-- **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`, radio & checkbox groups
+- **40+ built-in filters** — comparison, arithmetic, string, date, formatting
+- **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
-- **Web Component binding** — bidirectional state binding with Shadow DOM components
+- **Web Component binding** — bidirectional state sync with Shadow DOM
 
 [Full documentation &rarr;](packages/state/README.md)
 
 ---
 
-## @wcstack/router
+### What if routing was just HTML tags?
 
-Declarative SPA routing — define routes in HTML, not JavaScript.
+[`@wcstack/router`](packages/router/) — Define your app's navigation structure in markup.
 
 ```html
 <wcs-router>
@@ -102,7 +101,6 @@ Declarative SPA routing — define routes in HTML, not JavaScript.
           <app-home></app-home>
         </wcs-route>
         <wcs-route path="products">
-          <wcs-head><title>Products</title></wcs-head>
           <wcs-route index>
             <product-list></product-list>
           </wcs-route>
@@ -120,9 +118,9 @@ Declarative SPA routing — define routes in HTML, not JavaScript.
 <wcs-outlet></wcs-outlet>
 ```
 
-- **Nested routes & layouts** — compose UI structure declaratively with Light DOM layout system
+- **Nested routes & layouts** — compose UI declaratively with Light DOM
 - **Typed parameters** — `:id(int)`, `:slug(slug)`, `:date(isoDate)` with auto-conversion
-- **Auto-binding** — inject URL params into components via `data-bind` (`props`, `states`, `attr`)
+- **Auto-binding** — inject URL params into components via `data-bind`
 - **Head management** — `<wcs-head>` switches `<title>` and `<meta>` per route
 - **Navigation API** — built on the modern standard with popstate fallback
 - **Route guards** — protect routes with async decision functions
@@ -131,9 +129,9 @@ Declarative SPA routing — define routes in HTML, not JavaScript.
 
 ---
 
-## @wcstack/autoloader
+### What if custom elements loaded themselves?
 
-Write a custom element tag — it loads automatically.
+[`@wcstack/autoloader`](packages/autoloader/) — Write a tag, it loads. No registration needed.
 
 ```html
 <script type="importmap">
@@ -152,26 +150,42 @@ Write a custom element tag — it loads automatically.
 <ui-lit-card></ui-lit-card>
 ```
 
-- **Import Map based** namespace resolution — no per-component registration
+- **Import Map based** — namespace resolution, no per-component registration
 - **Eager & lazy loading** — load critical components first, the rest on demand
-- **MutationObserver** — dynamically added elements are detected automatically
+- **MutationObserver** — dynamically added elements are auto-detected
 - **Pluggable loaders** — mix Vanilla, Lit, or any custom loader
-- **`is` attribute support** — customized built-in elements with auto `extends` detection
+- **`is` attribute** — customized built-in elements with auto `extends` detection
 
 [Full documentation &rarr;](packages/autoloader/README.md)
 
 ---
 
-## Design Philosophy
+## Quick Start
 
-| Principle | Description |
-|-----------|-------------|
-| **Standards first** | Custom Elements, Shadow DOM, ES Modules, Import Maps |
-| **Declarative** | HTML structure expresses application intent |
-| **Zero-config & buildless** | No bundler, no transpiler — works in the browser as-is |
-| **Zero dependencies** | No runtime dependencies across all packages |
-| **Low learning cost** | Built on familiar Web standards |
-| **Predictable behavior** | Explicit over implicit — no hidden magic |
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <script type="module" src="https://esm.run/@wcstack/state"></script>
+</head>
+<body>
+
+<wcs-state>
+  <script type="module">
+    export default { count: 0 };
+  </script>
+</wcs-state>
+
+<p>Count: {{ count }}</p>
+<button data-wcs="onclick: count++">+1</button>
+
+</body>
+</html>
+```
+
+One `<script>` tag. One custom element. Pure HTML. That's it.
+
+---
 
 ## Project Structure
 
@@ -183,7 +197,7 @@ wcstack/
 │   └── autoloader/    # @wcstack/autoloader
 ```
 
-Each package is independently built, tested, and published. No root-level workspace orchestration.
+Each package is independently built, tested, and published.
 
 ## Development
 

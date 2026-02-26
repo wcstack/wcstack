@@ -1,7 +1,12 @@
 # @wcstack/state
 
-Declarative reactive state management for Web Components.  
-`<wcs-state>` custom element and `data-wcs` attribute binding — zero runtime dependencies.
+**What if HTML had reactive data binding?**
+
+Imagine a future where the browser natively understands state — you declare data inline, bind it to the DOM with attributes, and everything stays in sync. No virtual DOM, no compilation, no framework. Just HTML that reacts.
+
+That's what `<wcs-state>` and `data-wcs` explore. One CDN import, zero dependencies, pure HTML syntax.
+
+The CDN script only registers the custom element definition — nothing else happens at load time. When a `<wcs-state>` element connects to the DOM, it reads its state source, scans sibling elements for `data-wcs` bindings, and wires up reactivity. All initialization is driven by the element's lifecycle, not by your code.
 
 ## Features
 
@@ -299,6 +304,8 @@ Structural directives use `<template>` elements:
   </div>
 </template>
 ```
+
+The `for:` directive uses a **value-based diff algorithm** — each array element's value itself serves as the identity key. There is no need for an explicit `key` attribute (like React's `key` or Vue's `:key`). When the array is reassigned, the differ matches old and new elements by value, reusing existing DOM nodes for unchanged items and efficiently adding, removing, or reordering the rest.
 
 #### Dot Shorthand
 
@@ -827,6 +834,15 @@ Filters can be chained with `|`:
 
 `@wcstack/state` supports bidirectional state binding with custom elements using Shadow DOM or Light DOM.
 
+Most frameworks tightly couple state to components, forcing patterns like prop drilling, context providers, or external stores (Redux, Pinia) just to share data across the tree. In `@wcstack/state`, parent and child components are connected through **path contracts** — the parent binds an outer state path to an inner component property via `data-wcs`, and the child simply reads and writes its own state as usual:
+
+1. The child references and updates the parent's state through its own state proxy — no props, no events, no awareness of the parent.
+2. When the parent's state changes, the Proxy `set` trap automatically notifies any child bindings that reference the affected path.
+3. Because the only coupling is the **path name**, both sides remain loosely coupled and independently testable.
+4. The cost is path resolution (cached at O(1) after first access) plus change propagation through the dependency graph.
+
+This provides a concrete solution to cross-component state management that other frameworks have been working around with increasingly complex abstractions.
+
 ### Component Definition (Shadow DOM)
 
 ```javascript
@@ -981,6 +997,8 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
 | `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (`async` supported) |
 | `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
 | `$updatedCallback(paths, indexesListByPath)` | After state updates are applied | Return value is ignored (not awaited) |
+
+Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments. There is no need for abstractions like React Suspense or dedicated loading-state primitives.
 
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established

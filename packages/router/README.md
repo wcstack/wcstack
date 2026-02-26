@@ -1,6 +1,10 @@
 # @wcstack/router
 
-Provides SPA routing with declarative definitions using custom elements.
+**What if routing was just HTML tags?**
+
+Imagine a future where you define your app's navigation structure in markup — nested routes, layouts, typed parameters — all as native HTML elements. No router config objects, no JavaScript ceremony. Just tags that describe where things go.
+
+That's what `<wcs-router>`, `<wcs-route>`, and friends explore. One CDN import, zero dependencies, pure HTML syntax.
 
 ## Features
 
