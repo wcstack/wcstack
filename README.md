@@ -17,12 +17,12 @@ This project follows five strict constraints. They're what make it interesting.
 | 1 | **Single CDN import** | One `<script>` tag. That's it. No npm, no bundler, no config. |
 | 2 | **Features as custom tags** | Everything is a custom element. If it can't be expressed as `<wcs-something>`, it doesn't belong here. |
 | 3 | **Initial load = tag definitions only** | The script just registers custom elements. No initialization code, no bootstrap ritual. |
-| 4 | **HTML-native syntax** | No DSL, no special template syntax. If it doesn't look like regular HTML, we find another way. |
+| 4 | **Respect HTML semantics** | Expressions live in `data-*` attributes and text nodes — places HTML already allows extension. The DOM structure and semantics stay intact. |
 | 5 | **Latest ECMAScript** | We actively adopt cutting-edge JS features. No transpiling to ES5. This is the future, after all. |
 
 These rules sound simple. They're not.
 
-Constraining yourself to HTML-native syntax means you need to deeply understand how HTML was designed. Building everything as custom tags means solving lifecycle, ordering, and communication within the Custom Elements spec. No dependencies means every algorithm is yours to write. And it all has to feel like it *could* be a browser built-in.
+Respecting HTML semantics means you need to deeply understand where the spec allows extension — and where it doesn't. Building everything as custom tags means solving lifecycle, ordering, and communication within the Custom Elements spec. No dependencies means every algorithm is yours to write. And it all has to feel like it *could* be a browser built-in.
 
 ---
 
