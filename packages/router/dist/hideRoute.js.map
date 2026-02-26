@@ -1,1 +1,0 @@
-{"version":3,"file":"hideRoute.js","sourceRoot":"","sources":["../src/hideRoute.ts"],"names":[],"mappings":"AAEA,MAAM,UAAU,SAAS,CAAC,KAAa;IACrC,KAAK,CAAC,WAAW,EAAE,CAAC;IACpB,KAAI,MAAM,IAAI,IAAI,KAAK,CAAC,cAAc,EAAE,CAAC;QACvC,IAAI,CAAC,UAAU,EAAE,WAAW,CAAC,IAAI,CAAC,CAAC;IACrC,CAAC;AACH,CAAC"}

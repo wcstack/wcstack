@@ -10,7 +10,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.esm.js"
-    }
+    },
+    "./auto": "./dist/auto.min.js"
   },
   "files": [
     "dist"
@@ -19,8 +20,8 @@
     "example": "__e2e__"
   },
   "scripts": {
-    "clean": "rimraf dist",
-    "build": "rimraf dist && tsc && rollup -c",
+    "clean": "rimraf dist .tsc-out",
+    "build": "rimraf dist .tsc-out && tsc && rollup -c",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

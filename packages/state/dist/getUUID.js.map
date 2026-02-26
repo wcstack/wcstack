@@ -1,1 +1,0 @@
-{"version":3,"file":"getUUID.js","sourceRoot":"","sources":["../src/getUUID.ts"],"names":[],"mappings":"AACA,IAAI,KAAK,GAAG,CAAC,CAAC;AACd,MAAM,UAAU,OAAO;IACrB,OAAO,IAAI,CAAC,KAAK,EAAE,CAAC,CAAC,QAAQ,CAAC,EAAE,CAAC,EAAE,CAAC;AACtC,CAAC"}

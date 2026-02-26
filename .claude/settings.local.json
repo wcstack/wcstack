@@ -28,7 +28,11 @@
       "Bash(git push)",
       "Bash(git push:*)",
       "Bash(npm run lint)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(du:*)",
+      "Read(//c/Users/kikuzawa/Documents/git/wcstack/wcstack/**)",
+      "Bash(done)",
+      "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -20 \"\"{}\"\"')"
     ]
   }
 }

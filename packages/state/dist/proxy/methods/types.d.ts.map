@@ -1,1 +1,0 @@
-{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../../../src/proxy/methods/types.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,UAAU,EAAE,MAAM,kBAAkB,CAAC;AAE9C,MAAM,WAAW,SAAS;IACxB,QAAQ,CAAC,KAAK,EAAE,OAAO,EAAE,CAAC;IAC1B,QAAQ,CAAC,WAAW,EAAE,UAAU,EAAE,CAAC;CACpC"}

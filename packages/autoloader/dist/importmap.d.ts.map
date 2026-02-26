@@ -1,1 +1,0 @@
-{"version":3,"file":"importmap.d.ts","sourceRoot":"","sources":["../src/importmap.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,UAAU,EAAY,QAAQ,EAAE,UAAU,EAAE,MAAM,YAAY,CAAC;AAIxE,wBAAgB,aAAa,IAAI,UAAU,GAAG,IAAI,CAejD;AAmCD,wBAAgB,QAAQ,CAAC,SAAS,EAAE,UAAU,GAAG;IAC/C,SAAS,EAAE,UAAU,CAAC;IAAC,OAAO,EAAE,QAAQ,CAAA;CACzC,CAeA"}

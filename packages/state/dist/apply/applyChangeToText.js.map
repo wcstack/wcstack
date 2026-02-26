@@ -1,1 +1,0 @@
-{"version":3,"file":"applyChangeToText.js","sourceRoot":"","sources":["../../src/apply/applyChangeToText.ts"],"names":[],"mappings":"AAGA,MAAM,UAAU,iBAAiB,CAAC,OAAqB,EAAE,QAAuB,EAAE,QAAiB;IACjG,IAAI,OAAO,CAAC,WAAW,CAAC,SAAS,KAAK,QAAQ,EAAE,CAAC;QAC/C,OAAO,CAAC,WAAW,CAAC,SAAS,GAAG,QAAkB,CAAC;IACrD,CAAC;AACH,CAAC"}

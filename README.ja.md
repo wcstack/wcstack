@@ -166,7 +166,7 @@ HTMLのセマンティクスを崩さないためには、仕様のどこが拡�
 <!DOCTYPE html>
 <html>
 <head>
-  <script type="module" src="https://esm.run/@wcstack/state"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state/dist/auto.min.js"></script>
 </head>
 <body>
 

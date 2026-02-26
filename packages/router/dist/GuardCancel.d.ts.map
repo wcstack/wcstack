@@ -1,1 +1,0 @@
-{"version":3,"file":"GuardCancel.d.ts","sourceRoot":"","sources":["../src/GuardCancel.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,YAAY,EAAE,MAAM,SAAS,CAAC;AAEvC,qBAAa,WAAY,SAAQ,KAAM,YAAW,YAAY;IAC5D,YAAY,EAAE,MAAM,CAAC;gBAET,OAAO,EAAE,MAAM,EAAE,YAAY,EAAE,MAAM;CAIlD"}
