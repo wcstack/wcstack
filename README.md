@@ -172,12 +172,15 @@ Three independent packages. Zero runtime dependencies. No build step required.
 
 <wcs-state>
   <script type="module">
-    export default { count: 0 };
+    export default {
+      count: 0,
+      countUp() { this.count++; }
+    };
   </script>
 </wcs-state>
 
 <p>Count: {{ count }}</p>
-<button data-wcs="onclick: count++">+1</button>
+<button data-wcs="onclick: countUp">+1</button>
 
 </body>
 </html>
