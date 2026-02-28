@@ -8,6 +8,28 @@
 
 CDNスクリプトはカスタム要素の定義を登録するだけ — ロード時にはそれ以外何も起きない。`<wcs-state>` 要素がDOMに接続されたとき、状態ソースを読み取り、兄弟要素の `data-wcs` バインディングを走査し、リアクティビティを構築する。すべての初期化は要素のライフサイクルが駆動する。あなたのコードではなく。
 
+## 4ステップで動く
+
+```html
+<!-- 1. CDN を読み込む -->
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+
+<!-- 2. <wcs-state> タグを書く -->
+<wcs-state>
+  <!-- 3. 状態オブジェクトを定義する -->
+  <script type="module">
+    export default {
+      message: "Hello, World!"
+    };
+  </script>
+</wcs-state>
+
+<!-- 4. data-wcs 属性でバインドする -->
+<div data-wcs="textContent: message"></div>
+```
+
+これだけ。ビルドなし、初期化コードなし、フレームワークなし。
+
 ## 特徴
 
 - **宣言的データバインディング** — `data-wcs` 属性によるプロパティ / テキスト / イベント / 構造バインディング

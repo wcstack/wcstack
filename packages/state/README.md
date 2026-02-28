@@ -8,6 +8,28 @@ That's what `<wcs-state>` and `data-wcs` explore. One CDN import, zero dependenc
 
 The CDN script only registers the custom element definition — nothing else happens at load time. When a `<wcs-state>` element connects to the DOM, it reads its state source, scans sibling elements for `data-wcs` bindings, and wires up reactivity. All initialization is driven by the element's lifecycle, not by your code.
 
+## 4 Steps to Reactive HTML
+
+```html
+<!-- 1. Load the CDN -->
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+
+<!-- 2. Write a <wcs-state> tag -->
+<wcs-state>
+  <!-- 3. Define your state object -->
+  <script type="module">
+    export default {
+      message: "Hello, World!"
+    };
+  </script>
+</wcs-state>
+
+<!-- 4. Bind with data-wcs attributes -->
+<div data-wcs="textContent: message"></div>
+```
+
+That's it. No build, no bootstrap code, no framework.
+
 ## Features
 
 - **Declarative data binding** — `data-wcs` attribute for property / text / event / structural binding
