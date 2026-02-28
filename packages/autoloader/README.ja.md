@@ -46,7 +46,7 @@
 
 ```html
 <!-- 方法A: ゼロコンフィグスクリプト（推奨） -->
-<script type="module" src="/path/to/autoloader/auto.js"></script>
+<script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
 
 <!-- 方法B: 手動初期化 -->
 <script type="module">

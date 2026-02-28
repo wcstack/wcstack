@@ -46,7 +46,7 @@ Load the autoloader script via `<script>` tag, or import and call `bootstrapAuto
 
 ```html
 <!-- Option A: Zero-config script (recommended) -->
-<script type="module" src="/path/to/autoloader/auto.js"></script>
+<script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
 
 <!-- Option B: Manual initialization -->
 <script type="module">

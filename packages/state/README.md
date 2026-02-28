@@ -29,14 +29,14 @@ The CDN script only registers the custom element definition — nothing else hap
 
 ```html
 <!-- Auto-initialization — this is all you need -->
-<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state/dist/auto.js"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 ```
 
 ### CDN (manual initialization)
 
 ```html
 <script type="module">
-  import { bootstrapState } from 'https://cdn.jsdelivr.net/npm/@wcstack/state/dist/index.esm.js';
+  import { bootstrapState } from 'https://esm.run/@wcstack/state';
   bootstrapState();
 </script>
 ```

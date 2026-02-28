@@ -29,14 +29,14 @@ CDNスクリプトはカスタム要素の定義を登録するだけ — ロー
 
 ```html
 <!-- 自動初期化 — これだけで動作します -->
-<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state/dist/auto.js"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 ```
 
 ### CDN（手動初期化）
 
 ```html
 <script type="module">
-  import { bootstrapState } from 'https://cdn.jsdelivr.net/npm/@wcstack/state/dist/index.esm.js';
+  import { bootstrapState } from 'https://esm.run/@wcstack/state';
   bootstrapState();
 </script>
 ```
