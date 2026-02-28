@@ -1077,12 +1077,21 @@ bootstrapState();
 
 ```
 bootstrapState()
-  ├── registerComponents()    // Register <wcs-state> custom element
-  └── registerHandler()       // DOMContentLoaded handler
-        ├── waitForStateInitialize()    // Wait for all <wcs-state> to load
-        ├── convertMustacheToComments() // {{ }} → comment nodes
-        ├── collectStructuralFragments() // Collect for/if templates
-        └── initializeBindings()        // Walk DOM, parse data-wcs, set up bindings
+  └── registerComponents()              // Register <wcs-state> custom element
+
+<wcs-state> connectedCallback
+  ├── _initializeBindWebComponent()     // bind-component: get state from parent component
+  ├── _initialize()                     // Load state (state attr / src / json / script / API)
+  │     └── setStateElementByName()     // Register to WeakMap<Node, Map<name, element>>
+  │           └── (first registration per rootNode)
+  │                 └── queueMicrotask → buildBindings()
+  ├── _callStateConnectedCallback()     // Call $connectedCallback if defined
+
+buildBindings(root)
+  ├── waitForStateInitialize()          // Wait for all <wcs-state> initializePromise
+  ├── convertMustacheToComments()       // {{ }} → comment nodes
+  ├── collectStructuralFragments()      // Collect for/if templates
+  └── initializeBindings()              // Walk DOM, parse data-wcs, set up bindings
 ```
 
 ### Reactivity Flow

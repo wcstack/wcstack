@@ -1077,12 +1077,21 @@ bootstrapState();
 
 ```
 bootstrapState()
-  ├── registerComponents()    // <wcs-state> カスタム要素を登録
-  └── registerHandler()       // DOMContentLoaded ハンドラ
-        ├── waitForStateInitialize()    // 全 <wcs-state> の読み込み待機
-        ├── convertMustacheToComments() // {{ }} → コメントノードに変換
-        ├── collectStructuralFragments() // for/if テンプレートを収集
-        └── initializeBindings()        // DOM 走査、data-wcs 解析、バインディング設定
+  └── registerComponents()              // <wcs-state> カスタム要素を登録
+
+<wcs-state> connectedCallback
+  ├── _initializeBindWebComponent()     // bind-component: 親コンポーネントから状態を取得
+  ├── _initialize()                     // 状態をロード (state属性 / src / json / script / API)
+  │     └── setStateElementByName()     // WeakMap<Node, Map<name, element>> に登録
+  │           └── (rootNode への初回登録時)
+  │                 └── queueMicrotask → buildBindings()
+  ├── _callStateConnectedCallback()     // $connectedCallback が定義されていれば呼び出し
+
+buildBindings(root)
+  ├── waitForStateInitialize()          // 全 <wcs-state> の initializePromise を待機
+  ├── convertMustacheToComments()       // {{ }} → コメントノードに変換
+  ├── collectStructuralFragments()      // for/if テンプレートを収集
+  └── initializeBindings()              // DOM 走査、data-wcs 解析、バインディング設定
 ```
 
 ### リアクティビティフロー

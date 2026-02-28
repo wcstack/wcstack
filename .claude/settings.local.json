@@ -33,7 +33,8 @@
       "Read(//c/Users/kikuzawa/Documents/git/wcstack/wcstack/**)",
       "Bash(done)",
       "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -20 \"\"{}\"\"')",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(grep:*)"
     ]
   }
 }
