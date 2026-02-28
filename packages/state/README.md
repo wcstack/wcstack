@@ -149,27 +149,33 @@ Default name is `"default"` (no `@` needed).
 
 ## Updating State
 
-State changes are detected through **property assignment** (the Proxy `set` trap). To trigger reactive DOM updates, a value must be **assigned** to a state property.
+In `@wcstack/state`, every piece of state has a **path** — like `count`, `user.name`, or `items`. To update state reactively, **assign to the path**:
 
-### Primitive and Object Properties
+```javascript
+this.count = 10;               // path "count"
+this["user.name"] = "Bob";     // path "user.name"
+```
 
-Assignment must use **dot-path notation** (bracket syntax). The reactive proxy intercepts only top-level `set` traps, so standard nested property access bypasses change detection:
+That's the one rule: **assign to the path, and the DOM updates automatically.**
+
+### Why `this.user.name = "Bob"` Doesn't Work
+
+`this.user.name` first reads the `user` object via `this.user` (a path read), then sets `.name` on that plain object — this is not a path assignment, so the change is not detected:
 
 ```javascript
 // ✅ Path assignment — change detected
-this.count = 10;
 this["user.name"] = "Bob";
 
-// ❌ Direct nested access — change NOT detected
-this.user.name = "Bob";     // bypasses the Proxy set trap
+// ❌ Not a path assignment — change NOT detected
+this.user.name = "Bob";
 ```
 
 ### Arrays
 
-Array mutating methods (`push`, `splice`, `sort`, `reverse`, …) modify the array in place **without triggering a property assignment**, so the reactive system does not detect the change. Instead, use **non-destructive** methods that return a new array and assign the result:
+The same rule applies: assign a new array to the path. Mutating methods (`push`, `splice`, `sort`, ...) modify the array in place without path assignment, so use non-destructive alternatives:
 
 ```javascript
-// ✅ Non-destructive + assignment — change detected
+// ✅ New array assigned to path — change detected
 this.items = this.items.concat({ id: 4, text: "New" });
 this.items = this.items.toSpliced(index, 1);
 this.items = this.items.filter(item => !item.done);
@@ -177,7 +183,7 @@ this.items = this.items.toSorted((a, b) => a.id - b.id);
 this.items = this.items.toReversed();
 this.items = this.items.with(index, newValue);
 
-// ❌ Mutating — no assignment, change NOT detected
+// ❌ In-place mutation — no path assignment, change NOT detected
 this.items.push({ id: 4, text: "New" });
 this.items.splice(index, 1);
 this.items.sort((a, b) => a.id - b.id);
@@ -550,7 +556,7 @@ export default {
 };
 ```
 
-Three levels of nesting, five virtual properties — all defined side by side in a single flat object. Each level can reference values from any depth, and aggregation flows naturally from bottom to top via `$getAll`. In component-based frameworks (React, Vue), achieving the same requires creating a separate component for each nesting level, with props drilling or state management to pass computed values up the tree.
+Three levels of nesting, five virtual properties — all defined side by side in a single flat object. Each level can reference values from any depth, and aggregation flows naturally from bottom to top via `$getAll`. In component-based frameworks, the typical approach is to create a separate component for each nesting level and pass computed values through the tree. Path getters offer a different trade-off by keeping all definitions in one place.
 
 ### Accessing Sub-Properties of Getter Results
 
@@ -834,14 +840,14 @@ Filters can be chained with `|`:
 
 `@wcstack/state` supports bidirectional state binding with custom elements using Shadow DOM or Light DOM.
 
-Most frameworks tightly couple state to components, forcing patterns like prop drilling, context providers, or external stores (Redux, Pinia) just to share data across the tree. In `@wcstack/state`, parent and child components are connected through **path contracts** — the parent binds an outer state path to an inner component property via `data-wcs`, and the child simply reads and writes its own state as usual:
+Many frameworks use patterns like prop drilling, context providers, or external stores (Redux, Pinia) to share state across components. `@wcstack/state` takes a different approach: parent and child components are connected through **path contracts** — the parent binds an outer state path to an inner component property via `data-wcs`, and the child simply reads and writes its own state as usual:
 
 1. The child references and updates the parent's state through its own state proxy — no props, no events, no awareness of the parent.
 2. When the parent's state changes, the Proxy `set` trap automatically notifies any child bindings that reference the affected path.
 3. Because the only coupling is the **path name**, both sides remain loosely coupled and independently testable.
 4. The cost is path resolution (cached at O(1) after first access) plus change propagation through the dependency graph.
 
-This provides a concrete solution to cross-component state management that other frameworks have been working around with increasingly complex abstractions.
+This provides a lightweight approach to cross-component state management based on path resolution rather than component-level abstractions.
 
 ### Component Definition (Shadow DOM)
 
@@ -998,7 +1004,7 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
 | `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
 | `$updatedCallback(paths, indexesListByPath)` | After state updates are applied | Return value is ignored (not awaited) |
 
-Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments. There is no need for abstractions like React Suspense or dedicated loading-state primitives.
+Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments, without requiring additional abstractions for async state management.
 
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
