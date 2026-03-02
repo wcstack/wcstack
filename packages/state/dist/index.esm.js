@@ -1910,28 +1910,31 @@ function clearAbsoluteStateAddressByBinding(binding) {
 }
 
 const cache = new WeakMap();
-function isCustomElement(node) {
-    let value = cache.get(node);
-    if (value !== undefined) {
-        return value;
+function getCustomElement(node) {
+    const cached = cache.get(node);
+    if (cached !== undefined) {
+        return cached;
     }
+    let value = null;
     try {
         if (node.nodeType !== Node.ELEMENT_NODE) {
-            return value = false;
+            return value;
         }
         const element = node;
-        if (element.tagName.includes("-")) {
-            return value = true;
+        const tagName = element.tagName.toLowerCase();
+        if (tagName.includes("-")) {
+            return value = tagName;
         }
         if (element.hasAttribute("is")) {
-            if (element.getAttribute("is")?.includes("-")) {
-                return value = true;
+            const is = element.getAttribute("is");
+            if (is.includes("-")) {
+                return value = is;
             }
         }
-        return value = false;
+        return value;
     }
     finally {
-        cache.set(node, value ?? false);
+        cache.set(node, value);
     }
 }
 
@@ -2967,9 +2970,9 @@ function applyChange(binding, context) {
     if (binding.bindingType === "event") {
         return;
     }
-    if (isCustomElement(binding.replaceNode)) {
-        const element = binding.replaceNode;
-        if (customElements.get(element.tagName.toLowerCase()) === undefined) {
+    const customTag = getCustomElement(binding.replaceNode);
+    if (customTag) {
+        if (customElements.get(customTag) === undefined) {
             // cutomElement側の初期化を期待
             return;
         }
@@ -5494,7 +5497,8 @@ class State extends HTMLElement {
                 : parentNode instanceof Element
                     ? parentNode
                     : null;
-            if (boundComponent === null || !isCustomElement(boundComponent)) {
+            const customTagName = boundComponent ? getCustomElement(boundComponent) : null;
+            if (boundComponent === null || customTagName === null) {
                 raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
             }
             // LightDOMの場合、名前空間が上位スコープと共有されるためnameが必須
@@ -5502,7 +5506,7 @@ class State extends HTMLElement {
                 raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
             }
             const boundComponentStateProp = this.getAttribute("bind-component");
-            await customElements.whenDefined(boundComponent.tagName.toLowerCase());
+            await customElements.whenDefined(customTagName.toLowerCase());
             // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
             if (boundComponent.hasAttribute(config.bindAttributeName)) {
                 await waitInitializeBinding(boundComponent);

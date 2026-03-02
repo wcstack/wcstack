@@ -16,7 +16,7 @@ import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
-import { isCustomElement } from "../isCustomElement";
+import { getCustomElement } from "../getCustomElement";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -164,7 +164,8 @@ export class State extends HTMLElement implements IStateElement {
         : parentNode instanceof Element
           ? parentNode
           : null;
-      if (boundComponent === null || !isCustomElement(boundComponent)) {
+      const customTagName = boundComponent ? getCustomElement(boundComponent) : null;
+      if (boundComponent === null || customTagName === null) {
         raiseError(`"bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`);
       }
       // LightDOMの場合、名前空間が上位スコープと共有されるためnameが必須
@@ -172,7 +173,7 @@ export class State extends HTMLElement implements IStateElement {
         raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
       }
       const boundComponentStateProp = this.getAttribute("bind-component")!;
-      await customElements.whenDefined(boundComponent.tagName.toLowerCase());
+      await customElements.whenDefined(customTagName.toLowerCase());
       // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
       if (boundComponent.hasAttribute(config.bindAttributeName)) {
         await waitInitializeBinding(boundComponent);

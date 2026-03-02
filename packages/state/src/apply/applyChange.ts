@@ -1,5 +1,5 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
-import { isCustomElement } from "../isCustomElement.js";
+import { getCustomElement } from "../getCustomElement.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
@@ -81,9 +81,9 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   if (binding.bindingType === "event") {
     return;
   }
-  if (isCustomElement(binding.replaceNode)) {
-    const element = binding.replaceNode as Element;
-    if (customElements.get(element.tagName.toLowerCase()) === undefined) {
+  const customTag = getCustomElement(binding.replaceNode);
+  if (customTag) {
+    if (customElements.get(customTag) === undefined) {
       // cutomElement側の初期化を期待
       return;
     }
