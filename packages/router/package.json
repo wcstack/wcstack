@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/router",
-  "version": "1.3.17",
+  "version": "1.3.18",
   "description": "Declarative SPA routing for Web Components with Navigation API support. Zero dependencies, buildless.",
   "type": "module",
   "main": "./dist/index.esm.js",
