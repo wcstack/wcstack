@@ -34,7 +34,8 @@
       "Bash(done)",
       "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -20 \"\"{}\"\"')",
       "Bash(node -e:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(head -c 500 d:/git/wcstack/wcstack/packages/state/dist/index.esm.js.map)"
     ]
   }
 }
