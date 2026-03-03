@@ -8,6 +8,38 @@ That's what `<wcs-state>` and `data-wcs` explore. One CDN import, zero dependenc
 
 The CDN script only registers the custom element definition — nothing else happens at load time. When a `<wcs-state>` element connects to the DOM, it reads its state source, scans sibling elements for `data-wcs` bindings, and wires up reactivity. All initialization is driven by the element's lifecycle, not by your code.
 
+## Design Philosophy
+
+### Path as the Universal Contract
+
+In every existing framework, the **component** is the coupling point between UI and state. Components import state hooks, selectors, or reactive primitives, and the binding happens inside JavaScript. No matter how cleanly you separate your state store, there is always glue code in the component that pulls state in.
+
+`@wcstack/state` eliminates that coupling entirely. The **only** thing connecting UI and state is a **path string** — a dot-separated address like `user.name` or `cart.items.*.subtotal`. This is the sole contract between the two layers:
+
+| Layer | What it knows | What it doesn't know |
+|-------|---------------|----------------------|
+| **State** (`<wcs-state>`) | Data structure and business logic | Which DOM nodes are bound |
+| **UI** (`data-wcs`) | Path strings and display intent | How state is stored or computed |
+| **Components** (`@name`) | The path they need from a named state | The other component's internals |
+
+Three levels of path contracts keep everything loosely coupled:
+
+1. **UI ↔ State** — A `data-wcs="textContent: user.name"` attribute is the entire binding. No hooks, no selectors, no reactive primitives. The component's JavaScript doesn't contain a single line that references state.
+
+2. **Component ↔ Component** — Cross-component communication happens through named state references (`@stateName`). Components never import or depend on each other; they share a naming convention, nothing more.
+
+3. **Loop context** — Inside a `for` loop, `*` acts as an abstract index. Bindings like `items.*.price` resolve to the current element automatically. The template doesn't know its concrete position — the wildcard is the contract.
+
+### Why This Matters
+
+This is complete separation of UI and state with **no JavaScript intermediary**. You can:
+
+- Redesign the entire UI without touching state logic
+- Refactor state structure and only update path strings
+- Read the HTML alone and understand every data dependency
+
+The path contract works like a URL in a REST API — a simple string that both sides agree on, with no shared code between them. It's the natural result of building on HTML's declarative nature rather than inventing a template language on top of JavaScript.
+
 ## 4 Steps to Reactive HTML
 
 ```html

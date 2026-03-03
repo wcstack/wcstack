@@ -26,6 +26,24 @@ Respecting HTML semantics means you need to deeply understand where the spec all
 
 ---
 
+## The Core Insight
+
+In every existing framework, the **component** is where UI meets state. Even with external stores, you still write glue code inside the component to pull state in. State and UI always couple through JavaScript.
+
+wcstack takes a different path. Literally.
+
+The **only** contract between UI and state is a **path string** — `user.name`, `cart.items.*.subtotal`, `@shared`. No hooks. No imports. No glue code. The component's JavaScript doesn't contain a single line that references state. The HTML alone describes every data dependency.
+
+```
+State  ← "user.name" →  UI          Path binds the two layers
+Comp A ← "@app" →       Comp B      Named path crosses components
+Loop   ← "items.*" →    Template    Wildcard abstracts the index
+```
+
+This means you can redesign the UI without touching state, refactor state without touching the DOM, and read the HTML to understand everything. It's the same idea as a REST URL — a simple string contract, no shared code.
+
+---
+
 ## Packages
 
 Three independent packages. Zero runtime dependencies. No build step required.
