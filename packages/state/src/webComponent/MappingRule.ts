@@ -81,7 +81,8 @@ export function getOuterAbsolutePathInfo(webComponent: Element, innerAbsPathInfo
   // 内側からのアクセスの場合、ルールがなければプライマリルールから新たにルールとバインディングを生成する
   const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
   if (typeof primaryMappingRuleSet === 'undefined') {
-    raiseError('Primary mapping rule set not found for web component.');
+    // マッピングルールが存在しない場合はnullを返し、ローカル状態へのフォールバックを許可する
+    return null;
   }
   let primaryMappingRule: IMappingRule | null = null;
   for(const currentPrimaryMappingRule of primaryMappingRuleSet) {
@@ -96,11 +97,8 @@ export function getOuterAbsolutePathInfo(webComponent: Element, innerAbsPathInfo
     break;
   }
   if (primaryMappingRule === null) {
-    raiseError(
-      `Mapping rule not found for inner path "${innerAbsPathInfo.pathInfo.path}". ` +
-      `Did you forget to bind this property in the component's data-wcs attribute? ` +
-      `Available mappings: ${Array.from(primaryMappingRuleSet).map(r => r.innerAbsPathInfo.pathInfo.path).join(', ')}`
-    );
+    // マッピングルールに一致しない場合はnullを返し、ローカル状態へのフォールバックを許可する
+    return null;
   }
   // マッチした残りのパスをouterPathInfoに付与して新たなルールを生成
   const primaryBinding = primaryBindingByMappingRule.get(primaryMappingRule);

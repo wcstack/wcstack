@@ -104,8 +104,11 @@ describe('innerState', () => {
       const originalState = { user: { name: 'original' } };
       component.state = originalState;
       getStateElementByWebComponentMock.mockReturnValue({
-        boundComponentStateProp: 'state'
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
       } as any);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
 
       const proxy = createInnerState(component, 'state');
       // meltFrozenObjectは浅いクローンなのでネストされたオブジェクトは同一参照
@@ -116,8 +119,11 @@ describe('innerState', () => {
       const component = document.createElement('div') as any;
       component.state = Object.freeze({ count: 0 });
       getStateElementByWebComponentMock.mockReturnValue({
-        boundComponentStateProp: 'state'
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
       } as any);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
 
       const proxy = createInnerState(component, 'state');
       expect(proxy).toBeDefined();
@@ -133,12 +139,14 @@ describe('innerState', () => {
         }
       });
       getStateElementByWebComponentMock.mockReturnValue({
-        boundComponentStateProp: 'state'
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(['user.title']),
+        setterPaths: new Set(),
       } as any);
 
       const proxy = createInnerState(component, 'state');
       expect(proxy).toBeDefined();
-      // getterがtargetに存在するのでReflect.getで返される
+      // getterPaths完全一致で優先されるのでReflect.getで返される
       expect(proxy['user.title']).toBe('computed');
     });
   });
@@ -147,7 +155,11 @@ describe('innerState', () => {
     function createTestProxy() {
       const component = document.createElement('div') as any;
       component.state = {}; // 空オブジェクト（userプロパティは存在しない）
-      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
+      } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       return { component, proxy: createInnerState(component, 'state') };
     }
@@ -186,13 +198,13 @@ describe('innerState', () => {
       expect(proxy['then']).toBeUndefined();
     });
 
-    it('outerAbsPathInfoがnullの場合はエラーになること', () => {
+    it('マッピングもローカルも見つからない場合はエラーになること', () => {
       const { proxy } = createTestProxy();
 
       getAbsolutePathInfoMock.mockReturnValue({ pathInfo: { path: 'user' } } as any);
       getOuterAbsolutePathInfoMock.mockReturnValue(null);
 
-      expect(() => proxy['user']).toThrow(/Outer path info not found/);
+      expect(() => proxy['user']).toThrow(/not found in inner state/);
     });
 
     it('loopContextありでwildcardCountが正の場合はlistIndexが設定されること', () => {
@@ -280,11 +292,16 @@ describe('innerState', () => {
       expect(proxy[sym]).toBeUndefined();
     });
 
-    it('targetに存在するプロパティはReflect.getで返すこと', () => {
+    it('マッピングにないローカルデータプロパティはReflect.getで返すこと', () => {
       const component = document.createElement('div') as any;
       component.state = { existingProp: 'value' };
-      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
+      } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
 
       const proxy = createInnerState(component, 'state');
 
@@ -303,7 +320,11 @@ describe('innerState', () => {
     function createTestProxy() {
       const component = document.createElement('div') as any;
       component.state = {};
-      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
+      } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       return { component, proxy: createInnerState(component, 'state') };
     }
@@ -311,8 +332,13 @@ describe('innerState', () => {
     it('targetに存在するプロパティはtrueを返すこと', () => {
       const component = document.createElement('div') as any;
       component.state = { existingProp: 'value' };
-      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
+      } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
 
       const proxy = createInnerState(component, 'state');
 
@@ -347,6 +373,27 @@ describe('innerState', () => {
       expect('unknown' in proxy).toBe(false);
     });
 
+    it('getter/setter完全一致のプロパティはtrueを返すこと', () => {
+      const component = document.createElement('div') as any;
+      component.state = Object.create(null, {
+        computed: {
+          get() { return 0; },
+          enumerable: true,
+          configurable: true,
+        }
+      });
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(['computed']),
+        setterPaths: new Set(),
+      } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+
+      const proxy = createInnerState(component, 'state');
+
+      expect('computed' in proxy).toBe(true);
+    });
+
     it('Symbolプロパティの場合はReflect.hasを使用すること', () => {
       const { proxy } = createTestProxy();
 
@@ -359,7 +406,11 @@ describe('innerState', () => {
     function createTestProxy() {
       const component = document.createElement('div') as any;
       component.state = {}; // 空オブジェクト（userプロパティは存在しない）
-      const innerStateElement = { boundComponentStateProp: 'state' } as any;
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
+      } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
       return { component, proxy: createInnerState(component, 'state') };
     }
@@ -389,13 +440,55 @@ describe('innerState', () => {
       expect(stateProxy['users.*']).toBe('new-value');
     });
 
-    it('outerAbsPathInfoがnullの場合はエラーになること', () => {
+    it('マッピングもローカルも見つからない場合はエラーになること', () => {
       const { proxy } = createTestProxy();
 
       getAbsolutePathInfoMock.mockReturnValue({ pathInfo: { path: 'user' } } as any);
       getOuterAbsolutePathInfoMock.mockReturnValue(null);
 
-      expect(() => { proxy['user'] = 'value'; }).toThrow(/Outer path info not found/);
+      expect(() => { proxy['user'] = 'value'; }).toThrow(/not found in inner state/);
+    });
+
+    it('setter完全一致の場合はローカルsetterが実行されること', () => {
+      const component = document.createElement('div') as any;
+      let setterValue: any = undefined;
+      const stateObj = Object.create(null, {
+        total: {
+          get() { return 42; },
+          set(v: any) { setterValue = v; },
+          enumerable: true,
+          configurable: true,
+        }
+      });
+      component.state = stateObj;
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(['total']),
+        setterPaths: new Set(['total']),
+      } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+
+      const proxy = createInnerState(component, 'state');
+      proxy['total'] = 99;
+
+      expect(setterValue).toBe(99);
+    });
+
+    it('マッピングにないローカルデータプロパティに書き込めること', () => {
+      const component = document.createElement('div') as any;
+      component.state = { localProp: 'old' };
+      const innerStateElement = {
+        boundComponentStateProp: 'state',
+        getterPaths: new Set(),
+        setterPaths: new Set(),
+      } as any;
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      getOuterAbsolutePathInfoMock.mockReturnValue(null);
+
+      const proxy = createInnerState(component, 'state');
+      proxy['localProp'] = 'new';
+
+      expect(proxy['localProp']).toBe('new');
     });
 
     it('Symbolプロパティの場合はReflect.setを使用すること', () => {

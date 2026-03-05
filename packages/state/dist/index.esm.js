@@ -5076,7 +5076,8 @@ function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo) {
     // 内側からのアクセスの場合、ルールがなければプライマリルールから新たにルールとバインディングを生成する
     const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
     if (typeof primaryMappingRuleSet === 'undefined') {
-        raiseError('Primary mapping rule set not found for web component.');
+        // マッピングルールが存在しない場合はnullを返し、ローカル状態へのフォールバックを許可する
+        return null;
     }
     let primaryMappingRule = null;
     for (const currentPrimaryMappingRule of primaryMappingRuleSet) {
@@ -5091,9 +5092,8 @@ function getOuterAbsolutePathInfo(webComponent, innerAbsPathInfo) {
         break;
     }
     if (primaryMappingRule === null) {
-        raiseError(`Mapping rule not found for inner path "${innerAbsPathInfo.pathInfo.path}". ` +
-            `Did you forget to bind this property in the component's data-wcs attribute? ` +
-            `Available mappings: ${Array.from(primaryMappingRuleSet).map(r => r.innerAbsPathInfo.pathInfo.path).join(', ')}`);
+        // マッピングルールに一致しない場合はnullを返し、ローカル状態へのフォールバックを許可する
+        return null;
     }
     // マッチした残りのパスをouterPathInfoに付与して新たなルールを生成
     const primaryBinding = primaryBindingByMappingRule.get(primaryMappingRule);
@@ -5155,36 +5155,43 @@ class InnerStateProxyHandler {
                 // Promiseのthenと誤認識されるのを防ぐため、Promiseに存在するプロパティはProxyのgetで処理しない
                 return undefined;
             }
-            if (prop in target) {
-                return Reflect.get(target, prop, receiver);
-            }
             if (prop[0] === '$') {
                 return undefined;
             }
+            // 1. getter完全一致 → ローカル計算（this = receiverで依存自動追跡）
+            if (this._innerStateElement.getterPaths.has(prop) && prop in target) {
+                return Reflect.get(target, prop, receiver);
+            }
+            // 2 & 3. マッピング完全一致 / サブパス → 親の状態
             const innerPathInfo = getPathInfo(prop);
             const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
             const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo === null) {
-                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
-            }
-            const loopContext = getLoopContextByNode(this._webComponent);
-            let value = undefined;
-            outerAbsPathInfo.stateElement.createState("readonly", (state) => {
-                state[setLoopContextSymbol](loopContext, () => {
-                    value = state[outerAbsPathInfo.pathInfo.path];
-                    let listIndex = null;
-                    if (loopContext !== null && loopContext.listIndex !== null) {
-                        if (outerAbsPathInfo.pathInfo.wildcardCount > 0) {
-                            // wildcardPathSetとloopContextのpathInfoSetのintersectionのうち、segment数が最も多いものをouterAbsPathInfoにする
-                            // 例: outerPathInfoが "todos.*.name"で、loopContextのpathInfoSetに "todos.0.name", "todos.1.name"がある場合、"todos.0.name"や"todos.1.name"をouterAbsPathInfoにする
-                            listIndex = loopContext.listIndex.at(outerAbsPathInfo.pathInfo.wildcardCount - 1);
+            if (outerAbsPathInfo !== null) {
+                const loopContext = getLoopContextByNode(this._webComponent);
+                let value = undefined;
+                outerAbsPathInfo.stateElement.createState("readonly", (state) => {
+                    state[setLoopContextSymbol](loopContext, () => {
+                        value = state[outerAbsPathInfo.pathInfo.path];
+                        let listIndex = null;
+                        if (loopContext !== null && loopContext.listIndex !== null) {
+                            if (outerAbsPathInfo.pathInfo.wildcardCount > 0) {
+                                // wildcardPathSetとloopContextのpathInfoSetのintersectionのうち、segment数が最も多いものをouterAbsPathInfoにする
+                                // 例: outerPathInfoが "todos.*.name"で、loopContextのpathInfoSetに "todos.0.name", "todos.1.name"がある場合、"todos.0.name"や"todos.1.name"をouterAbsPathInfoにする
+                                listIndex = loopContext.listIndex.at(outerAbsPathInfo.pathInfo.wildcardCount - 1);
+                            }
                         }
-                    }
-                    const absStateAddress = createAbsoluteStateAddress(outerAbsPathInfo, listIndex);
-                    setLastValueByAbsoluteStateAddress(absStateAddress, value);
+                        const absStateAddress = createAbsoluteStateAddress(outerAbsPathInfo, listIndex);
+                        setLastValueByAbsoluteStateAddress(absStateAddress, value);
+                    });
                 });
-            });
-            return value;
+                return value;
+            }
+            // 4. ローカルデータプロパティ → ローカル値
+            if (prop in target) {
+                return Reflect.get(target, prop, receiver);
+            }
+            // 5. エラー
+            raiseError(`Property "${prop}" not found in inner state: no mapping rule and no local state property.`);
         }
         else {
             return Reflect.get(target, prop, receiver);
@@ -5192,19 +5199,29 @@ class InnerStateProxyHandler {
     }
     set(target, prop, value, receiver) {
         if (typeof prop === 'string') {
+            // 1. setter完全一致 → ローカル処理（this = receiverで親への書き込み可能）
+            if (this._innerStateElement.setterPaths.has(prop) && prop in target) {
+                return Reflect.set(target, prop, value, receiver);
+            }
+            // 2 & 3. マッピング完全一致 / サブパス → 親に書く
             const innerPathInfo = getPathInfo(prop);
             const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
             const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo === null) {
-                raiseError(`Outer path info not found for inner path "${innerAbsPathInfo.pathInfo.path}" on web component.`);
-            }
-            const loopContext = getLoopContextByNode(this._webComponent);
-            outerAbsPathInfo.stateElement.createState("writable", (state) => {
-                state[setLoopContextSymbol](loopContext, () => {
-                    state[outerAbsPathInfo.pathInfo.path] = value;
+            if (outerAbsPathInfo !== null) {
+                const loopContext = getLoopContextByNode(this._webComponent);
+                outerAbsPathInfo.stateElement.createState("writable", (state) => {
+                    state[setLoopContextSymbol](loopContext, () => {
+                        state[outerAbsPathInfo.pathInfo.path] = value;
+                    });
                 });
-            });
-            return true;
+                return true;
+            }
+            // 4. ローカルデータプロパティ → ローカルに書く
+            if (prop in target) {
+                return Reflect.set(target, prop, value, receiver);
+            }
+            // 5. エラー
+            raiseError(`Property "${prop}" not found in inner state: no mapping rule and no local state property.`);
         }
         else {
             return Reflect.set(target, prop, value, receiver);
@@ -5212,19 +5229,26 @@ class InnerStateProxyHandler {
     }
     has(target, prop) {
         if (typeof prop === 'string') {
-            if (prop in target) {
-                return Reflect.has(target, prop);
-            }
             if (prop[0] === '$') {
                 return false;
             }
+            // 1. getter/setter完全一致
+            if ((this._innerStateElement.getterPaths.has(prop) || this._innerStateElement.setterPaths.has(prop)) && prop in target) {
+                return true;
+            }
+            // 2 & 3. マッピング
             const innerPathInfo = getPathInfo(prop);
             const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
             const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
-            if (outerAbsPathInfo === null) {
-                return false;
+            if (outerAbsPathInfo !== null) {
+                return true;
             }
-            return true;
+            // 4. ローカルデータ
+            if (prop in target) {
+                return true;
+            }
+            // 5. 存在しない
+            return false;
         }
         else {
             return Reflect.has(target, prop);

@@ -227,12 +227,10 @@ describe('MappingRule', () => {
       expect(result2).toBe(outerAbsPathInfo);
     });
 
-    it('プライマリマッピングルールセットが存在しない場合はエラーになること', () => {
+    it('プライマリマッピングルールセットが存在しない場合はnullを返すこと', () => {
       const innerAbsPathInfo = { pathInfo: { path: 'user' } } as any;
 
-      expect(() => getOuterAbsolutePathInfo(component, innerAbsPathInfo)).toThrow(
-        /Primary mapping rule set not found/
-      );
+      expect(getOuterAbsolutePathInfo(component, innerAbsPathInfo)).toBeNull();
     });
 
     it('サブパスの動的マッピングが正しく生成されること', () => {
@@ -327,15 +325,8 @@ describe('MappingRule', () => {
 
       buildPrimaryMappingRule(component, 'state', [binding]);
 
-      expect(() => getOuterAbsolutePathInfo(component, innerProductAbsPathInfo)).toThrow(
-        /Mapping rule not found for inner path "product"/
-      );
-      expect(() => getOuterAbsolutePathInfo(component, innerProductAbsPathInfo)).toThrow(
-        /Did you forget to bind this property in the component's data-wcs attribute?/
-      );
-      expect(() => getOuterAbsolutePathInfo(component, innerProductAbsPathInfo)).toThrow(
-        /Available mappings: user/
-      );
+      // マッチするプライマリルールが見つからない場合はnullを返す（ローカル状態へのフォールバックを許可）
+      expect(getOuterAbsolutePathInfo(component, innerProductAbsPathInfo)).toBeNull();
     });
 
     it('同じセグメント長のマッピングルールは重複エラーになること', () => {
