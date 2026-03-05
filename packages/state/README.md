@@ -6,7 +6,7 @@ Imagine a future where the browser natively understands state — you declare da
 
 That's what `<wcs-state>` and `data-wcs` explore. One CDN import, zero dependencies, pure HTML syntax.
 
-The CDN script only registers the custom element definition — nothing else happens at load time. When a `<wcs-state>` element connects to the DOM, it reads its state source, scans sibling elements for `data-wcs` bindings, and wires up reactivity. All initialization is driven by the element's lifecycle, not by your code.
+The CDN script only registers the custom element definition — nothing else happens at load time. When a `<wcs-state>` element connects to the DOM, it reads its state source, scans all `data-wcs` bindings within the same root node (`document` or `ShadowRoot`), and wires up reactivity. All initialization is driven by the element's lifecycle, not by your code.
 
 ## Design Philosophy
 
