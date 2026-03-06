@@ -1,3 +1,6 @@
+import { getCustomElement } from "../getCustomElement";
+import { raiseError } from "../raiseError";
+import { IWcsReactivity } from "./types";
 
 const CHECK_TYPES = new Set([ 'radio', 'checkbox' ]);
 const DEFAULT_VALUE_PROP_NAMES = new Set([ 'value', 'valueAsNumber', 'valueAsDate' ]);
@@ -25,6 +28,21 @@ export function isPossibleTwoWay(node: Node, propName: string): boolean {
   }
   if (tagName === 'textarea' && propName === 'value') {
     return true;
+  }
+  const customTagName = getCustomElement(element);
+  if (customTagName !== null) {
+    const customClass = customElements.get(customTagName) as any;
+    if (typeof customClass === "undefined") {
+      raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
+    }
+    const reactivityInfo: IWcsReactivity | undefined = customClass.wcsReactivity;
+    if (reactivityInfo) {
+      if (reactivityInfo.properties?.includes(propName)  
+        || (reactivityInfo.propertyMap?.[propName] ?? null) !== null
+      ) {
+        return true;
+      }
+    }
   }
   return false;
 }

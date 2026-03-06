@@ -51,7 +51,7 @@ describe('event/twowayHandler', () => {
     const addSpy = vi.spyOn(input, 'addEventListener');
 
     const binding = createBindingInfo(input, { statePathName: 'users.*.name-input' });
-    expect(attachTwowayEventHandler(binding)).toBe(true);
+    attachTwowayEventHandler(binding);
     expect(addSpy).toHaveBeenCalledWith('input', expect.any(Function));
   });
 
@@ -105,25 +105,28 @@ describe('event/twowayHandler', () => {
     attachTwowayEventHandler(binding);
     const handler = addSpy.mock.calls[0]?.[1];
 
-    expect(detachTwowayEventHandler(binding)).toBe(true);
+    detachTwowayEventHandler(binding);
     expect(removeSpy).toHaveBeenCalledWith('input', handler);
     const eventName = __private__.getEventName(binding);
     const key = __private__.getHandlerKey(binding, eventName);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
     expect(__private__.bindingSetByHandlerKey.has(key)).toBe(false);
-    expect(detachTwowayEventHandler(binding)).toBe(false);
   });
 
-  it('two-way対象外はfalseを返すこと', () => {
+  it('two-way対象外はaddEventListenerが呼ばれないこと', () => {
     const div = document.createElement('div');
+    const addSpy = vi.spyOn(div, 'addEventListener');
     const binding = createBindingInfo(div, { propName: 'value', statePathName: 'users.*.name-non' });
-    expect(attachTwowayEventHandler(binding)).toBe(false);
+    attachTwowayEventHandler(binding);
+    expect(addSpy).not.toHaveBeenCalled();
   });
 
-  it('detachでtwo-way対象外ならfalseを返すこと', () => {
+  it('detachでtwo-way対象外ならremoveEventListenerが呼ばれないこと', () => {
     const div = document.createElement('div');
+    const removeSpy = vi.spyOn(div, 'removeEventListener');
     const binding = createBindingInfo(div, { propName: 'value', statePathName: 'users.*.name-non-detach' });
-    expect(detachTwowayEventHandler(binding)).toBe(false);
+    detachTwowayEventHandler(binding);
+    expect(removeSpy).not.toHaveBeenCalled();
   });
 
   it('select要素はchangeイベントを使うこと', () => {
@@ -131,16 +134,18 @@ describe('event/twowayHandler', () => {
     const addSpy = vi.spyOn(select, 'addEventListener');
 
     const binding = createBindingInfo(select, { statePathName: 'users.*.name-select' });
-    expect(attachTwowayEventHandler(binding)).toBe(true);
+    attachTwowayEventHandler(binding);
     expect(addSpy).toHaveBeenCalledWith('change', expect.any(Function));
   });
 
   it('ro修飾子がある場合は登録しないこと', () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'text');
+    const addSpy = vi.spyOn(input, 'addEventListener');
 
     const binding = createBindingInfo(input, { propModifiers: ['ro'], statePathName: 'users.*.name-readonly' });
-    expect(attachTwowayEventHandler(binding)).toBe(false);
+    attachTwowayEventHandler(binding);
+    expect(addSpy).not.toHaveBeenCalled();
   });
 
   it('イベントハンドラでstateに値を反映すること', async () => {
@@ -280,9 +285,10 @@ describe('event/twowayHandler', () => {
     );
   });
 
-  it('bindingInfoSetが未登録ならdetachはfalseを返すこと', () => {
+  it('bindingInfoSetが未登録ならdetachでremoveEventListenerが呼ばれないこと', () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'text');
+    const removeSpy = vi.spyOn(input, 'removeEventListener');
     const binding = createBindingInfo(input, { statePathName: 'users.*.name-detach-missing-set' });
 
     attachTwowayEventHandler(binding);
@@ -290,7 +296,9 @@ describe('event/twowayHandler', () => {
     const key = __private__.getHandlerKey(binding, eventName);
     __private__.bindingSetByHandlerKey.delete(key);
 
-    expect(detachTwowayEventHandler(binding)).toBe(false);
+    detachTwowayEventHandler(binding);
+    // removeEventListenerは呼ばれるが、bindingSetがないため早期リターン
+    expect(removeSpy).toHaveBeenCalled();
   });
 
   it('最後のbindingInfoを削除したらハンドラも削除されること', () => {
@@ -312,7 +320,7 @@ describe('event/twowayHandler', () => {
 
     expect(bindingInfoSet.size).toBe(1);
 
-    expect(detachTwowayEventHandler(binding)).toBe(true);
+    detachTwowayEventHandler(binding);
     expect(bindingInfoSet.size).toBe(0);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
     expect(__private__.bindingSetByHandlerKey.has(key)).toBe(false);
@@ -332,8 +340,170 @@ describe('event/twowayHandler', () => {
 
     const eventName = __private__.getEventName(binding1);
     const key = __private__.getHandlerKey(binding1, eventName);
-    expect(detachTwowayEventHandler(binding1)).toBe(true);
+    detachTwowayEventHandler(binding1);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
     expect(__private__.bindingSetByHandlerKey.has(key)).toBe(true);
+  });
+
+  describe('wcsReactivity プロトコル', () => {
+    it('カスタム要素のdefaultEventでイベント登録されること', () => {
+      class MyDatepickerTw extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'date-change',
+          properties: ['value'],
+        };
+      }
+      customElements.define('my-datepicker-tw', MyDatepickerTw);
+      const el = document.createElement('my-datepicker-tw');
+      const addSpy = vi.spyOn(el, 'addEventListener');
+
+      const binding = createBindingInfo(el, { statePathName: 'date.value-protocol' });
+      attachTwowayEventHandler(binding);
+      expect(addSpy).toHaveBeenCalledWith('date-change', expect.any(Function));
+    });
+
+    it('propertyMapのイベントがdefaultEventより優先されること', () => {
+      class MyPickerTw extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'change',
+          properties: ['value', 'isOpen'],
+          propertyMap: { isOpen: 'toggle' },
+        };
+      }
+      customElements.define('my-picker-tw', MyPickerTw);
+
+      // isOpen → propertyMap の 'toggle' が使われる
+      const el1 = document.createElement('my-picker-tw');
+      const addSpy1 = vi.spyOn(el1, 'addEventListener');
+      const binding1 = createBindingInfo(el1, { propName: 'isOpen', statePathName: 'picker.isOpen-pm' });
+      attachTwowayEventHandler(binding1);
+      expect(addSpy1).toHaveBeenCalledWith('toggle', expect.any(Function));
+
+      // value → defaultEvent の 'change' が使われる
+      const el2 = document.createElement('my-picker-tw');
+      const addSpy2 = vi.spyOn(el2, 'addEventListener');
+      const binding2 = createBindingInfo(el2, { propName: 'value', statePathName: 'picker.value-de' });
+      attachTwowayEventHandler(binding2);
+      expect(addSpy2).toHaveBeenCalledWith('change', expect.any(Function));
+    });
+
+    it('#onXxx修飾子がプロトコルのイベントを上書きすること', () => {
+      class MySliderTw extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'slide',
+          properties: ['value'],
+        };
+      }
+      customElements.define('my-slider-tw', MySliderTw);
+      const el = document.createElement('my-slider-tw');
+      const addSpy = vi.spyOn(el, 'addEventListener');
+
+      const binding = createBindingInfo(el, {
+        propModifiers: ['onmouseup'],
+        statePathName: 'slider.value-mod',
+      });
+      attachTwowayEventHandler(binding);
+      expect(addSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
+    });
+
+    it('未定義カスタム要素はwhenDefinedで遅延登録されること', async () => {
+      const el = document.createElement('my-deferred-tw');
+      const addSpy = vi.spyOn(el, 'addEventListener');
+
+      const binding = createBindingInfo(el, { statePathName: 'deferred.value-wd' });
+      attachTwowayEventHandler(binding);
+
+      // まだ定義されていないのでaddEventListenerは呼ばれない
+      expect(addSpy).not.toHaveBeenCalled();
+
+      // 要素を定義する
+      class MyDeferredTw extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'ready',
+          properties: ['value'],
+        };
+      }
+      customElements.define('my-deferred-tw', MyDeferredTw);
+
+      // whenDefinedのPromiseが解決するのを待つ
+      await customElements.whenDefined('my-deferred-tw');
+      // microtask を待つ（then コールバックの実行のため）
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(addSpy).toHaveBeenCalledWith('ready', expect.any(Function));
+    });
+
+    it('未定義カスタム要素のdetachもwhenDefinedで遅延されること', async () => {
+      const el = document.createElement('my-deferred-detach-tw');
+      const removeSpy = vi.spyOn(el, 'removeEventListener');
+
+      const binding = createBindingInfo(el, { statePathName: 'deferred.value-detach' });
+      detachTwowayEventHandler(binding);
+
+      // まだ定義されていないのでremoveEventListenerは呼ばれない
+      expect(removeSpy).not.toHaveBeenCalled();
+
+      class MyDeferredDetachTw extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'ready',
+          properties: ['value'],
+        };
+      }
+      customElements.define('my-deferred-detach-tw', MyDeferredDetachTw);
+
+      await customElements.whenDefined('my-deferred-detach-tw');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // ハンドラが登録されていないのでremoveEventListenerは呼ばれない
+      expect(removeSpy).not.toHaveBeenCalled();
+    });
+
+    it('wcsReactivityがないカスタム要素はaddEventListenerが呼ばれないこと', () => {
+      class PlainCustomTw extends HTMLElement {}
+      customElements.define('plain-custom-tw', PlainCustomTw);
+      const el = document.createElement('plain-custom-tw');
+      const addSpy = vi.spyOn(el, 'addEventListener');
+
+      const binding = createBindingInfo(el, { statePathName: 'plain.value' });
+      attachTwowayEventHandler(binding);
+      expect(addSpy).not.toHaveBeenCalled();
+    });
+
+    it('getEventNameでwcsReactivityがないカスタム要素はデフォルトイベントを返すこと', () => {
+      class PlainEventTw extends HTMLElement {}
+      customElements.define('plain-event-tw', PlainEventTw);
+      const el = document.createElement('plain-event-tw');
+      const binding = createBindingInfo(el, { statePathName: 'plain.value-event' });
+      const eventName = __private__.getEventName(binding);
+      expect(eventName).toBe('input');
+    });
+
+    it('getEventNameで未定義カスタム要素はraiseErrorを呼ぶこと', () => {
+      vi.mocked(raiseError).mockImplementation(() => {
+        throw new Error('not defined');
+      });
+      const el = document.createElement('my-undefined-event-tw');
+      const binding = createBindingInfo(el, { statePathName: 'undef.value-event' });
+      expect(() => __private__.getEventName(binding)).toThrow('not defined');
+      expect(raiseError).toHaveBeenCalledWith(
+        'Custom element <my-undefined-event-tw> is not defined. Cannot determine event name for two-way binding.'
+      );
+    });
+
+    it('propertyMapのみで定義されたプロパティでもイベント登録されること', () => {
+      class MyToggleTw extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'change',
+          propertyMap: { checked: 'toggle-change' },
+        };
+      }
+      customElements.define('my-toggle-tw', MyToggleTw);
+      const el = document.createElement('my-toggle-tw');
+      const addSpy = vi.spyOn(el, 'addEventListener');
+
+      const binding = createBindingInfo(el, { propName: 'checked', statePathName: 'toggle.checked-pm' });
+      attachTwowayEventHandler(binding);
+      expect(addSpy).toHaveBeenCalledWith('toggle-change', expect.any(Function));
+    });
   });
 });

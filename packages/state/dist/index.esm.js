@@ -1609,6 +1609,35 @@ function attachEventHandler(binding) {
     return true;
 }
 
+const cache = new WeakMap();
+function getCustomElement(node) {
+    const cached = cache.get(node);
+    if (cached !== undefined) {
+        return cached;
+    }
+    let value = null;
+    try {
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return value;
+        }
+        const element = node;
+        const tagName = element.tagName.toLowerCase();
+        if (tagName.includes("-")) {
+            return value = tagName;
+        }
+        if (element.hasAttribute("is")) {
+            const is = element.getAttribute("is");
+            if (is.includes("-")) {
+                return value = is;
+            }
+        }
+        return value;
+    }
+    finally {
+        cache.set(node, value);
+    }
+}
+
 const CHECK_TYPES = new Set(['radio', 'checkbox']);
 const DEFAULT_VALUE_PROP_NAMES = new Set(['value', 'valueAsNumber', 'valueAsDate']);
 function isPossibleTwoWay(node, propName) {
@@ -1635,6 +1664,20 @@ function isPossibleTwoWay(node, propName) {
     if (tagName === 'textarea' && propName === 'value') {
         return true;
     }
+    const customTagName = getCustomElement(element);
+    if (customTagName !== null) {
+        const customClass = customElements.get(customTagName);
+        if (typeof customClass === "undefined") {
+            raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
+        }
+        const reactivityInfo = customClass.wcsReactivity;
+        if (reactivityInfo) {
+            if (reactivityInfo.properties?.includes(propName)
+                || (reactivityInfo.propertyMap?.[propName] ?? null) !== null) {
+                return true;
+            }
+        }
+    }
     return false;
 }
 
@@ -1646,7 +1689,26 @@ function getHandlerKey$2(binding, eventName) {
 }
 function getEventName$2(binding) {
     const tagName = binding.node.tagName.toLowerCase();
+    // 1.default event name
     let eventName = (tagName === 'select') ? 'change' : 'input';
+    // 2.protocol 
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName !== null) {
+        const customClass = customElements.get(customTagName);
+        if (typeof customClass === "undefined") {
+            raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
+        }
+        const reactivityInfo = customClass.wcsReactivity;
+        if (reactivityInfo) {
+            if (reactivityInfo.properties?.includes(binding.propName)) {
+                eventName = reactivityInfo.defaultEvent;
+            }
+            if (reactivityInfo.propertyMap?.[binding.propName]) {
+                eventName = reactivityInfo.propertyMap[binding.propName];
+            }
+        }
+    }
+    // 3.modifier
     for (const modifier of binding.propModifiers) {
         if (modifier.startsWith('on')) {
             eventName = modifier.slice(2);
@@ -1682,6 +1744,16 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
     });
 };
 function attachTwowayEventHandler(binding) {
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName !== null) {
+        const customClass = customElements.get(customTagName);
+        if (typeof customClass === "undefined") {
+            customElements.whenDefined(customTagName).then(() => {
+                attachTwowayEventHandler(binding);
+            });
+            return;
+        }
+    }
     if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
         const eventName = getEventName$2(binding);
         const key = getHandlerKey$2(binding, eventName);
@@ -1699,9 +1771,7 @@ function attachTwowayEventHandler(binding) {
         else {
             bindingSet.add(binding);
         }
-        return true;
     }
-    return false;
 }
 
 const lastListValueByAbsoluteStateAddress = new WeakMap();
@@ -1907,35 +1977,6 @@ function getAbsoluteStateAddressByBinding(binding) {
 }
 function clearAbsoluteStateAddressByBinding(binding) {
     absoluteStateAddressByBinding.delete(binding);
-}
-
-const cache = new WeakMap();
-function getCustomElement(node) {
-    const cached = cache.get(node);
-    if (cached !== undefined) {
-        return cached;
-    }
-    let value = null;
-    try {
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-            return value;
-        }
-        const element = node;
-        const tagName = element.tagName.toLowerCase();
-        if (tagName.includes("-")) {
-            return value = tagName;
-        }
-        if (element.hasAttribute("is")) {
-            const is = element.getAttribute("is");
-            if (is.includes("-")) {
-                return value = is;
-            }
-        }
-        return value;
-    }
-    finally {
-        cache.set(node, value);
-    }
 }
 
 const completeByStateElementByWebComponent = new WeakMap();

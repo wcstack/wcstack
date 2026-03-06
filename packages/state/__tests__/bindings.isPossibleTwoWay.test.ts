@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { isPossibleTwoWay } from '../src/event/isPossibleTwoWay';
+
+vi.mock('../src/raiseError', () => ({
+  raiseError: vi.fn((msg: string) => { throw new Error(msg); }),
+}));
+
+import { raiseError } from '../src/raiseError';
 
 describe('isPossibleTwoWay', () => {
   it('input:text の value はtrue', () => {
@@ -57,5 +63,74 @@ describe('isPossibleTwoWay', () => {
   it('非Elementノードはfalse', () => {
     const text = document.createTextNode('x');
     expect(isPossibleTwoWay(text, 'value')).toBe(false);
+  });
+
+  describe('wcsReactivity プロトコル', () => {
+    it('propertiesに含まれるpropNameはtrue', () => {
+      class MyInputA extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'value-change',
+          properties: ['value', 'selectedDate'],
+        };
+      }
+      customElements.define('my-input-a', MyInputA);
+      const el = document.createElement('my-input-a');
+      expect(isPossibleTwoWay(el, 'value')).toBe(true);
+      expect(isPossibleTwoWay(el, 'selectedDate')).toBe(true);
+    });
+
+    it('propertyMapに含まれるpropNameはtrue', () => {
+      class MyPickerA extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'change',
+          propertyMap: { selectedDate: 'date-change' },
+        };
+      }
+      customElements.define('my-picker-a', MyPickerA);
+      const el = document.createElement('my-picker-a');
+      expect(isPossibleTwoWay(el, 'selectedDate')).toBe(true);
+    });
+
+    it('wcsReactivityがないカスタム要素はfalse', () => {
+      class PlainElementA extends HTMLElement {}
+      customElements.define('plain-element-a', PlainElementA);
+      const el = document.createElement('plain-element-a');
+      expect(isPossibleTwoWay(el, 'value')).toBe(false);
+    });
+
+    it('properties/propertyMapに含まれないpropNameはfalse', () => {
+      class MyWidgetA extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'change',
+          properties: ['value'],
+        };
+      }
+      customElements.define('my-widget-a', MyWidgetA);
+      const el = document.createElement('my-widget-a');
+      expect(isPossibleTwoWay(el, 'notInProperties')).toBe(false);
+    });
+
+    it('未定義のカスタム要素はraiseErrorを呼ぶこと', () => {
+      const el = document.createElement('undefined-element-a');
+      expect(() => isPossibleTwoWay(el, 'value')).toThrow();
+      expect(raiseError).toHaveBeenCalledWith(
+        'Custom element <undefined-element-a> is not defined. Cannot determine if property "value" is suitable for two-way binding.'
+      );
+    });
+
+    it('propertiesとpropertyMapの両方で判定できること', () => {
+      class MyComboA extends HTMLElement {
+        static wcsReactivity = {
+          defaultEvent: 'change',
+          properties: ['value'],
+          propertyMap: { isOpen: 'toggle' },
+        };
+      }
+      customElements.define('my-combo-a', MyComboA);
+      const el = document.createElement('my-combo-a');
+      expect(isPossibleTwoWay(el, 'value')).toBe(true);
+      expect(isPossibleTwoWay(el, 'isOpen')).toBe(true);
+      expect(isPossibleTwoWay(el, 'other')).toBe(false);
+    });
   });
 });
