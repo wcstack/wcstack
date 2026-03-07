@@ -108,7 +108,7 @@ describe('event/twowayHandler', () => {
     detachTwowayEventHandler(binding);
     expect(removeSpy).toHaveBeenCalledWith('input', handler);
     const eventName = __private__.getEventName(binding);
-    const key = __private__.getHandlerKey(binding, eventName);
+    const key = __private__.getHandlerKey(binding, eventName, false);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
     expect(__private__.bindingSetByHandlerKey.has(key)).toBe(false);
   });
@@ -293,7 +293,7 @@ describe('event/twowayHandler', () => {
 
     attachTwowayEventHandler(binding);
     const eventName = __private__.getEventName(binding);
-    const key = __private__.getHandlerKey(binding, eventName);
+    const key = __private__.getHandlerKey(binding, eventName, false);
     __private__.bindingSetByHandlerKey.delete(key);
 
     detachTwowayEventHandler(binding);
@@ -307,12 +307,13 @@ describe('event/twowayHandler', () => {
     const binding = createBindingInfo(input, { statePathName: 'users.*.name-detach-last' });
 
     const eventName = __private__.getEventName(binding);
-    const key = __private__.getHandlerKey(binding, eventName);
+    const key = __private__.getHandlerKey(binding, eventName, false);
     const handler = __private__.twowayEventHandlerFunction(
       binding.stateName,
       binding.propName,
       binding.statePathName,
-      binding.inFilters
+      binding.inFilters,
+      null
     );
     __private__.handlerByHandlerKey.set(key, handler);
     const bindingInfoSet = new Set([binding]);
@@ -339,18 +340,21 @@ describe('event/twowayHandler', () => {
     attachTwowayEventHandler(binding2);
 
     const eventName = __private__.getEventName(binding1);
-    const key = __private__.getHandlerKey(binding1, eventName);
+    const key = __private__.getHandlerKey(binding1, eventName, false);
     detachTwowayEventHandler(binding1);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
     expect(__private__.bindingSetByHandlerKey.has(key)).toBe(true);
   });
 
-  describe('wcsReactivity プロトコル', () => {
-    it('カスタム要素のdefaultEventでイベント登録されること', () => {
+  describe('wcBindable プロトコル', () => {
+    it('カスタム要素のプロトコルイベントで登録されること', () => {
       class MyDatepickerTw extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'date-change',
-          properties: ['value'],
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-datepicker-tw:value-changed' },
+          ],
         };
       }
       customElements.define('my-datepicker-tw', MyDatepickerTw);
@@ -359,39 +363,45 @@ describe('event/twowayHandler', () => {
 
       const binding = createBindingInfo(el, { statePathName: 'date.value-protocol' });
       attachTwowayEventHandler(binding);
-      expect(addSpy).toHaveBeenCalledWith('date-change', expect.any(Function));
+      expect(addSpy).toHaveBeenCalledWith('my-datepicker-tw:value-changed', expect.any(Function));
     });
 
-    it('propertyMapのイベントがdefaultEventより優先されること', () => {
+    it('各プロパティに対応するイベントで登録されること', () => {
       class MyPickerTw extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'change',
-          properties: ['value', 'isOpen'],
-          propertyMap: { isOpen: 'toggle' },
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-picker-tw:value-changed' },
+            { name: 'isOpen', event: 'my-picker-tw:toggle' },
+          ],
         };
       }
       customElements.define('my-picker-tw', MyPickerTw);
 
-      // isOpen → propertyMap の 'toggle' が使われる
+      // isOpen → 'my-picker-tw:toggle'
       const el1 = document.createElement('my-picker-tw');
       const addSpy1 = vi.spyOn(el1, 'addEventListener');
       const binding1 = createBindingInfo(el1, { propName: 'isOpen', statePathName: 'picker.isOpen-pm' });
       attachTwowayEventHandler(binding1);
-      expect(addSpy1).toHaveBeenCalledWith('toggle', expect.any(Function));
+      expect(addSpy1).toHaveBeenCalledWith('my-picker-tw:toggle', expect.any(Function));
 
-      // value → defaultEvent の 'change' が使われる
+      // value → 'my-picker-tw:value-changed'
       const el2 = document.createElement('my-picker-tw');
       const addSpy2 = vi.spyOn(el2, 'addEventListener');
       const binding2 = createBindingInfo(el2, { propName: 'value', statePathName: 'picker.value-de' });
       attachTwowayEventHandler(binding2);
-      expect(addSpy2).toHaveBeenCalledWith('change', expect.any(Function));
+      expect(addSpy2).toHaveBeenCalledWith('my-picker-tw:value-changed', expect.any(Function));
     });
 
     it('#onXxx修飾子がプロトコルのイベントを上書きすること', () => {
       class MySliderTw extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'slide',
-          properties: ['value'],
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-slider-tw:slide' },
+          ],
         };
       }
       customElements.define('my-slider-tw', MySliderTw);
@@ -418,9 +428,12 @@ describe('event/twowayHandler', () => {
 
       // 要素を定義する
       class MyDeferredTw extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'ready',
-          properties: ['value'],
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-deferred-tw:ready' },
+          ],
         };
       }
       customElements.define('my-deferred-tw', MyDeferredTw);
@@ -430,7 +443,7 @@ describe('event/twowayHandler', () => {
       // microtask を待つ（then コールバックの実行のため）
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      expect(addSpy).toHaveBeenCalledWith('ready', expect.any(Function));
+      expect(addSpy).toHaveBeenCalledWith('my-deferred-tw:ready', expect.any(Function));
     });
 
     it('未定義カスタム要素のdetachもwhenDefinedで遅延されること', async () => {
@@ -444,9 +457,12 @@ describe('event/twowayHandler', () => {
       expect(removeSpy).not.toHaveBeenCalled();
 
       class MyDeferredDetachTw extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'ready',
-          properties: ['value'],
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-deferred-detach-tw:ready' },
+          ],
         };
       }
       customElements.define('my-deferred-detach-tw', MyDeferredDetachTw);
@@ -458,7 +474,7 @@ describe('event/twowayHandler', () => {
       expect(removeSpy).not.toHaveBeenCalled();
     });
 
-    it('wcsReactivityがないカスタム要素はaddEventListenerが呼ばれないこと', () => {
+    it('wcBindableがないカスタム要素はaddEventListenerが呼ばれないこと', () => {
       class PlainCustomTw extends HTMLElement {}
       customElements.define('plain-custom-tw', PlainCustomTw);
       const el = document.createElement('plain-custom-tw');
@@ -469,7 +485,7 @@ describe('event/twowayHandler', () => {
       expect(addSpy).not.toHaveBeenCalled();
     });
 
-    it('getEventNameでwcsReactivityがないカスタム要素はデフォルトイベントを返すこと', () => {
+    it('getEventNameでwcBindableがないカスタム要素はデフォルトイベントを返すこと', () => {
       class PlainEventTw extends HTMLElement {}
       customElements.define('plain-event-tw', PlainEventTw);
       const el = document.createElement('plain-event-tw');
@@ -490,11 +506,14 @@ describe('event/twowayHandler', () => {
       );
     });
 
-    it('propertyMapのみで定義されたプロパティでもイベント登録されること', () => {
+    it('propertiesで定義されたプロパティのイベントで登録されること', () => {
       class MyToggleTw extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'change',
-          propertyMap: { checked: 'toggle-change' },
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'checked', event: 'my-toggle-tw:toggle-change' },
+          ],
         };
       }
       customElements.define('my-toggle-tw', MyToggleTw);
@@ -503,7 +522,156 @@ describe('event/twowayHandler', () => {
 
       const binding = createBindingInfo(el, { propName: 'checked', statePathName: 'toggle.checked-pm' });
       attachTwowayEventHandler(binding);
-      expect(addSpy).toHaveBeenCalledWith('toggle-change', expect.any(Function));
+      expect(addSpy).toHaveBeenCalledWith('my-toggle-tw:toggle-change', expect.any(Function));
+    });
+  });
+
+  describe('wcBindable 値取得', () => {
+    it('デフォルトgetterでevent.detailから値を取得すること', async () => {
+      class MyDetailInput extends HTMLElement {
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-detail-input:value-changed' },
+          ],
+        };
+      }
+      customElements.define('my-detail-input', MyDetailInput);
+      const el = document.createElement('my-detail-input');
+      const addSpy = vi.spyOn(el, 'addEventListener');
+
+      const state: any = { [setLoopContextSymbol]: vi.fn((_ctx: any, fn: any) => fn()) };
+      const createState = vi.fn((_mutability: any, fn: any) => fn(state));
+      vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
+      vi.mocked(getLoopContextByNode).mockReturnValue(null as any);
+
+      const binding = createBindingInfo(el, { statePathName: 'form.value-detail' });
+      attachTwowayEventHandler(binding);
+      const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
+
+      const customEvent = new CustomEvent('my-detail-input:value-changed', { detail: 'from-detail' });
+      Object.defineProperty(customEvent, 'target', { value: el });
+      await handler(customEvent);
+
+      expect(state['form.value-detail']).toBe('from-detail');
+    });
+
+    it('カスタムgetterでイベントから値を抽出すること', async () => {
+      class MyCustomGetter extends HTMLElement {
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [{
+            name: 'value',
+            event: 'my-custom-getter:change',
+            getter: (e: Event) => (e as CustomEvent).detail.nested.value,
+          }],
+        };
+      }
+      customElements.define('my-custom-getter', MyCustomGetter);
+      const el = document.createElement('my-custom-getter');
+      const addSpy = vi.spyOn(el, 'addEventListener');
+
+      const state: any = { [setLoopContextSymbol]: vi.fn((_ctx: any, fn: any) => fn()) };
+      const createState = vi.fn((_mutability: any, fn: any) => fn(state));
+      vi.mocked(getStateElementByName).mockReturnValue({ createState } as any);
+      vi.mocked(getLoopContextByNode).mockReturnValue(null as any);
+
+      const binding = createBindingInfo(el, { statePathName: 'form.value-custom' });
+      attachTwowayEventHandler(binding);
+      const handler = addSpy.mock.calls[0]?.[1] as (event: Event) => void;
+
+      const customEvent = new CustomEvent('my-custom-getter:change', {
+        detail: { nested: { value: 'deep-value' } },
+      });
+      Object.defineProperty(customEvent, 'target', { value: el });
+      await handler(customEvent);
+
+      expect(state['form.value-custom']).toBe('deep-value');
+    });
+
+    it('getValueGetterがネイティブ要素に対してnullを返すこと', () => {
+      const input = document.createElement('input');
+      const binding = createBindingInfo(input);
+      const getter = __private__.getValueGetter(binding);
+      expect(getter).toBeNull();
+    });
+
+    it('getValueGetterがwcBindable要素に対してデフォルトgetterを返すこと', () => {
+      const el = document.createElement('my-detail-input');
+      const binding = createBindingInfo(el);
+      const getter = __private__.getValueGetter(binding);
+      expect(getter).toBe(__private__.DEFAULT_GETTER);
+    });
+
+    it('getValueGetterがカスタムgetterを返すこと', () => {
+      const el = document.createElement('my-custom-getter');
+      const binding = createBindingInfo(el);
+      const getter = __private__.getValueGetter(binding);
+      expect(getter).not.toBeNull();
+      expect(getter).not.toBe(__private__.DEFAULT_GETTER);
+    });
+
+    it('プロトコルバリデーション: protocol不一致時はnullを返すこと', () => {
+      class BadProtoTw extends HTMLElement {
+        static wcBindable = {
+          protocol: "wrong",
+          version: 1,
+          properties: [{ name: 'value', event: 'change' }],
+        };
+      }
+      customElements.define('bad-proto-tw', BadProtoTw);
+      const el = document.createElement('bad-proto-tw');
+      const binding = createBindingInfo(el);
+      const getter = __private__.getValueGetter(binding);
+      expect(getter).toBeNull();
+    });
+
+    it('プロトコルバリデーション: version不一致時はnullを返すこと', () => {
+      class BadVersionTw extends HTMLElement {
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 2,
+          properties: [{ name: 'value', event: 'change' }],
+        };
+      }
+      customElements.define('bad-version-tw', BadVersionTw);
+      const el = document.createElement('bad-version-tw');
+      const binding = createBindingInfo(el);
+      const getter = __private__.getValueGetter(binding);
+      expect(getter).toBeNull();
+    });
+
+    it('getEventNameでwcBindableのpropertiesにないpropNameはデフォルトイベントを返すこと', () => {
+      const el = document.createElement('my-detail-input');
+      const binding = createBindingInfo(el, { propName: 'unknownProp', statePathName: 'x.unknown-prop' });
+      const eventName = __private__.getEventName(binding);
+      expect(eventName).toBe('input');
+    });
+
+    it('getValueGetterで未定義カスタム要素はnullを返すこと', () => {
+      const el = document.createElement('my-undefined-getter-tw');
+      const binding = createBindingInfo(el);
+      const getter = __private__.getValueGetter(binding);
+      expect(getter).toBeNull();
+    });
+
+    it('getValueGetterでwcBindableのpropertiesにないpropNameはnullを返すこと', () => {
+      const el = document.createElement('my-detail-input');
+      const binding = createBindingInfo(el, { propName: 'unknownProp' });
+      const getter = __private__.getValueGetter(binding);
+      expect(getter).toBeNull();
+    });
+
+    it('ハンドラキーにgetterフラグが含まれること', () => {
+      const input = document.createElement('input');
+      const binding = createBindingInfo(input, { statePathName: 'x.y-flag' });
+      const keyWithGetter = __private__.getHandlerKey(binding, 'input', true);
+      const keyWithoutGetter = __private__.getHandlerKey(binding, 'input', false);
+      expect(keyWithGetter).toContain('::g');
+      expect(keyWithoutGetter).toContain('::n');
+      expect(keyWithGetter).not.toBe(keyWithoutGetter);
     });
   });
 });

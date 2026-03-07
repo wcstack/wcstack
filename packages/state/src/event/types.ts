@@ -1,7 +1,13 @@
 
-// Protocol for defining custom reactivity in custom elements
-export interface IWcsReactivity {
-  defaultEvent: string;
-  properties?: string[];
-  propertyMap?: Record<string, string>;
+// wc-bindable protocol for custom element two-way binding
+export interface IWcBindableProperty {
+  readonly name: string;
+  readonly event: string;
+  readonly getter?: (event: Event) => any;
+}
+
+export interface IWcBindable {
+  readonly protocol: "wc-bindable";
+  readonly version: number;
+  readonly properties: IWcBindableProperty[];
 }

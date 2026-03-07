@@ -1670,10 +1670,9 @@ function isPossibleTwoWay(node, propName) {
         if (typeof customClass === "undefined") {
             raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
         }
-        const reactivityInfo = customClass.wcsReactivity;
-        if (reactivityInfo) {
-            if (reactivityInfo.properties?.includes(propName)
-                || (reactivityInfo.propertyMap?.[propName] ?? null) !== null) {
+        const bindable = customClass.wcBindable;
+        if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
+            if (bindable.properties.some(p => p.name === propName)) {
                 return true;
             }
         }
@@ -1683,28 +1682,27 @@ function isPossibleTwoWay(node, propName) {
 
 const handlerByHandlerKey$2 = new Map();
 const bindingSetByHandlerKey$2 = new Map();
-function getHandlerKey$2(binding, eventName) {
+const DEFAULT_GETTER = (e) => e.detail;
+function getHandlerKey$2(binding, eventName, hasGetter) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}`;
+    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}`;
 }
 function getEventName$2(binding) {
     const tagName = binding.node.tagName.toLowerCase();
     // 1.default event name
     let eventName = (tagName === 'select') ? 'change' : 'input';
-    // 2.protocol 
+    // 2.wcBindable protocol
     const customTagName = getCustomElement(binding.node);
     if (customTagName !== null) {
         const customClass = customElements.get(customTagName);
         if (typeof customClass === "undefined") {
             raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
         }
-        const reactivityInfo = customClass.wcsReactivity;
-        if (reactivityInfo) {
-            if (reactivityInfo.properties?.includes(binding.propName)) {
-                eventName = reactivityInfo.defaultEvent;
-            }
-            if (reactivityInfo.propertyMap?.[binding.propName]) {
-                eventName = reactivityInfo.propertyMap[binding.propName];
+        const bindable = customClass.wcBindable;
+        if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
+            const propDesc = bindable.properties.find(p => p.name === binding.propName);
+            if (propDesc) {
+                eventName = propDesc.event;
             }
         }
     }
@@ -1716,17 +1714,39 @@ function getEventName$2(binding) {
     }
     return eventName;
 }
-const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters) => (event) => {
+function getValueGetter(binding) {
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName !== null) {
+        const customClass = customElements.get(customTagName);
+        if (customClass) {
+            const bindable = customClass.wcBindable;
+            if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
+                const propDesc = bindable.properties.find(p => p.name === binding.propName);
+                if (propDesc) {
+                    return propDesc.getter ?? DEFAULT_GETTER;
+                }
+            }
+        }
+    }
+    return null;
+}
+const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters, valueGetter) => (event) => {
     const node = event.target;
     if (node === null) {
         console.warn(`[@wcstack/state] event.target is null.`);
         return;
     }
-    if (!(propName in node)) {
-        console.warn(`[@wcstack/state] Property "${propName}" does not exist on target element.`);
-        return;
+    let newValue;
+    if (valueGetter !== null) {
+        newValue = valueGetter(event);
     }
-    const newValue = node[propName];
+    else {
+        if (!(propName in node)) {
+            console.warn(`[@wcstack/state] Property "${propName}" does not exist on target element.`);
+            return;
+        }
+        newValue = node[propName];
+    }
     let filteredNewValue = newValue;
     for (const filter of inFilters) {
         filteredNewValue = filter.filterFn(filteredNewValue);
@@ -1756,10 +1776,11 @@ function attachTwowayEventHandler(binding) {
     }
     if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
         const eventName = getEventName$2(binding);
-        const key = getHandlerKey$2(binding, eventName);
+        const valueGetter = getValueGetter(binding);
+        const key = getHandlerKey$2(binding, eventName, valueGetter !== null);
         let twowayEventHandler = handlerByHandlerKey$2.get(key);
         if (typeof twowayEventHandler === "undefined") {
-            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters);
+            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters, valueGetter);
             handlerByHandlerKey$2.set(key, twowayEventHandler);
         }
         binding.node.addEventListener(eventName, twowayEventHandler);

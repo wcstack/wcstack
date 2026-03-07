@@ -1,6 +1,6 @@
 import { getCustomElement } from "../getCustomElement";
 import { raiseError } from "../raiseError";
-import { IWcsReactivity } from "./types";
+import { IWcBindable } from "./types";
 
 const CHECK_TYPES = new Set([ 'radio', 'checkbox' ]);
 const DEFAULT_VALUE_PROP_NAMES = new Set([ 'value', 'valueAsNumber', 'valueAsDate' ]);
@@ -35,11 +35,9 @@ export function isPossibleTwoWay(node: Node, propName: string): boolean {
     if (typeof customClass === "undefined") {
       raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
     }
-    const reactivityInfo: IWcsReactivity | undefined = customClass.wcsReactivity;
-    if (reactivityInfo) {
-      if (reactivityInfo.properties?.includes(propName)  
-        || (reactivityInfo.propertyMap?.[propName] ?? null) !== null
-      ) {
+    const bindable: IWcBindable | undefined = customClass.wcBindable;
+    if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
+      if (bindable.properties.some(p => p.name === propName)) {
         return true;
       }
     }

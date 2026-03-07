@@ -65,12 +65,16 @@ describe('isPossibleTwoWay', () => {
     expect(isPossibleTwoWay(text, 'value')).toBe(false);
   });
 
-  describe('wcsReactivity プロトコル', () => {
-    it('propertiesに含まれるpropNameはtrue', () => {
+  describe('wcBindable プロトコル', () => {
+    it('properties.nameに一致するpropNameはtrue', () => {
       class MyInputA extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'value-change',
-          properties: ['value', 'selectedDate'],
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-input-a:value-changed' },
+            { name: 'selectedDate', event: 'my-input-a:selected-date-changed' },
+          ],
         };
       }
       customElements.define('my-input-a', MyInputA);
@@ -79,30 +83,21 @@ describe('isPossibleTwoWay', () => {
       expect(isPossibleTwoWay(el, 'selectedDate')).toBe(true);
     });
 
-    it('propertyMapに含まれるpropNameはtrue', () => {
-      class MyPickerA extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'change',
-          propertyMap: { selectedDate: 'date-change' },
-        };
-      }
-      customElements.define('my-picker-a', MyPickerA);
-      const el = document.createElement('my-picker-a');
-      expect(isPossibleTwoWay(el, 'selectedDate')).toBe(true);
-    });
-
-    it('wcsReactivityがないカスタム要素はfalse', () => {
+    it('wcBindableがないカスタム要素はfalse', () => {
       class PlainElementA extends HTMLElement {}
       customElements.define('plain-element-a', PlainElementA);
       const el = document.createElement('plain-element-a');
       expect(isPossibleTwoWay(el, 'value')).toBe(false);
     });
 
-    it('properties/propertyMapに含まれないpropNameはfalse', () => {
+    it('propertiesに含まれないpropNameはfalse', () => {
       class MyWidgetA extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'change',
-          properties: ['value'],
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-widget-a:value-changed' },
+          ],
         };
       }
       customElements.define('my-widget-a', MyWidgetA);
@@ -118,12 +113,15 @@ describe('isPossibleTwoWay', () => {
       );
     });
 
-    it('propertiesとpropertyMapの両方で判定できること', () => {
+    it('複数のpropertiesで判定できること', () => {
       class MyComboA extends HTMLElement {
-        static wcsReactivity = {
-          defaultEvent: 'change',
-          properties: ['value'],
-          propertyMap: { isOpen: 'toggle' },
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 1,
+          properties: [
+            { name: 'value', event: 'my-combo-a:value-changed' },
+            { name: 'isOpen', event: 'my-combo-a:toggle' },
+          ],
         };
       }
       customElements.define('my-combo-a', MyComboA);
@@ -131,6 +129,32 @@ describe('isPossibleTwoWay', () => {
       expect(isPossibleTwoWay(el, 'value')).toBe(true);
       expect(isPossibleTwoWay(el, 'isOpen')).toBe(true);
       expect(isPossibleTwoWay(el, 'other')).toBe(false);
+    });
+
+    it('protocolが"wc-bindable"でない場合はfalse', () => {
+      class BadProtocolA extends HTMLElement {
+        static wcBindable = {
+          protocol: "something-else",
+          version: 1,
+          properties: [{ name: 'value', event: 'change' }],
+        };
+      }
+      customElements.define('bad-protocol-a', BadProtocolA);
+      const el = document.createElement('bad-protocol-a');
+      expect(isPossibleTwoWay(el, 'value')).toBe(false);
+    });
+
+    it('versionが1でない場合はfalse', () => {
+      class BadVersionA extends HTMLElement {
+        static wcBindable = {
+          protocol: "wc-bindable" as const,
+          version: 2,
+          properties: [{ name: 'value', event: 'change' }],
+        };
+      }
+      customElements.define('bad-version-a', BadVersionA);
+      const el = document.createElement('bad-version-a');
+      expect(isPossibleTwoWay(el, 'value')).toBe(false);
     });
   });
 });
