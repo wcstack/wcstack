@@ -5553,7 +5553,7 @@ class State extends HTMLElement {
             else {
                 const script = this.querySelector('script[type="module"]');
                 if (script) {
-                    this._state = await loadFromInnerScript(script, `state#${this._name}`);
+                    this._state = await loadFromInnerScript(script, `${this._name}`);
                 }
                 else {
                     const timerId = setTimeout(() => {

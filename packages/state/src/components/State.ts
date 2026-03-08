@@ -135,7 +135,7 @@ export class State extends HTMLElement implements IStateElement {
       } else {
         const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
         if (script) {
-          this._state = await loadFromInnerScript(script, `state#${this._name}`);
+          this._state = await loadFromInnerScript(script, `${this._name}`);
         } else {
           const timerId = setTimeout(() => {
             console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element with name="${this._name}".`);
