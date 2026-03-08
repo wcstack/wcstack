@@ -174,20 +174,34 @@ bootstrapFetch({
 
 ## Integration with React
 
-```jsx
+Using `@wc-bindable/react` adapter:
+
+```tsx
+import { useWcBindable } from "@wc-bindable/react";
+
 function UserList() {
-  const [users, setUsers] = useState([]);
+  const [ref, { value: users, loading, error }] = useWcBindable<HTMLElement>({
+    value: null,
+    loading: false,
+    error: null,
+  });
 
   return (
-    <wcs-fetch
-      url="/api/users"
-      onWcsFetchResponse={(e) => setUsers(e.detail.value)}
-    />
+    <>
+      <wcs-fetch ref={ref} url="/api/users" />
+      {loading && <p>Loading...</p>}
+      {error && <p>Error: {error.statusText}</p>}
+      <ul>
+        {users?.map((user) => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+    </>
   );
 }
 ```
 
-No `useEffect`, no cleanup, no race conditions. The component handles it all.
+No `useEffect`, no `useState` for async state, no cleanup, no race conditions. The adapter reads `wc-bindable` declarations automatically.
 
 ## License
 

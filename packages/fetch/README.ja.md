@@ -174,20 +174,34 @@ bootstrapFetch({
 
 ## React との連携
 
-```jsx
+`@wc-bindable/react` アダプタを使用:
+
+```tsx
+import { useWcBindable } from "@wc-bindable/react";
+
 function UserList() {
-  const [users, setUsers] = useState([]);
+  const [ref, { value: users, loading, error }] = useWcBindable<HTMLElement>({
+    value: null,
+    loading: false,
+    error: null,
+  });
 
   return (
-    <wcs-fetch
-      url="/api/users"
-      onWcsFetchResponse={(e) => setUsers(e.detail.value)}
-    />
+    <>
+      <wcs-fetch ref={ref} url="/api/users" />
+      {loading && <p>読み込み中...</p>}
+      {error && <p>エラー: {error.statusText}</p>}
+      <ul>
+        {users?.map((user) => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+    </>
   );
 }
 ```
 
-useEffect 不要、クリーンアップ不要、レースコンディション対策不要。コンポーネントがすべて処理します。
+useEffect 不要、非同期状態の useState 不要、クリーンアップ不要、レースコンディション対策不要。アダプタが `wc-bindable` 宣言を自動的に読み取り、バインドします。
 
 ## ライセンス
 
