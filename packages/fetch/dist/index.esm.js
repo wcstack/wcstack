@@ -76,6 +76,17 @@ class Fetch extends HTMLElement {
     get status() {
         return this._status;
     }
+    get manual() {
+        return this.hasAttribute("manual");
+    }
+    set manual(value) {
+        if (value) {
+            this.setAttribute("manual", "");
+        }
+        else {
+            this.removeAttribute("manual");
+        }
+    }
     get body() {
         return this._body;
     }
@@ -213,6 +224,11 @@ class Fetch extends HTMLElement {
             this._abortController = null;
             // bodyをリセット（一回限りの使用）
             this._body = null;
+        }
+    }
+    connectedCallback() {
+        if (!this.manual && this.url) {
+            this.fetch();
         }
     }
     disconnectedCallback() {

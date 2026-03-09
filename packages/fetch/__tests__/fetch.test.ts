@@ -182,11 +182,51 @@ describe("Fetch", () => {
     expect(el.target).toBeNull();
   });
 
+  it("manual属性の取得と設定ができる", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    expect(el.manual).toBe(false);
+    el.manual = true;
+    expect(el.manual).toBe(true);
+    expect(el.hasAttribute("manual")).toBe(true);
+    el.manual = false;
+    expect(el.manual).toBe(false);
+    expect(el.hasAttribute("manual")).toBe(false);
+  });
+
   it("body プロパティの取得と設定ができる", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     expect(el.body).toBeNull();
     el.body = { name: "test" };
     expect(el.body).toEqual({ name: "test" });
+  });
+
+  it("connectedCallbackでurl指定時に自動実行される", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ auto: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/auto");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(el.value).toEqual({ auto: true });
+    });
+  });
+
+  it("manual属性がある場合はconnectedCallbackで自動実行されない", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/manual");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("url未設定時はconnectedCallbackで自動実行されない", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    document.body.appendChild(el);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("url未設定時にfetch()を呼ぶとエラーをスローする", async () => {
@@ -588,6 +628,7 @@ describe("autoTrigger", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.id = "my-fetch";
     el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
     document.body.appendChild(el);
 
     const button = document.createElement("button");
@@ -656,6 +697,7 @@ describe("autoTrigger", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.id = "my-fetch";
     el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
     document.body.appendChild(el);
 
     const button = document.createElement("button");
@@ -676,6 +718,7 @@ describe("autoTrigger", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.id = "my-fetch";
     el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
     document.body.appendChild(el);
 
     const button = document.createElement("button");
@@ -707,6 +750,7 @@ describe("autoTrigger", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.id = "my-fetch";
     el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
     document.body.appendChild(el);
 
     const button = document.createElement("button");
