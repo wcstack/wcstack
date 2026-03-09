@@ -81,6 +81,11 @@ describe("config", () => {
 });
 
 describe("FetchHeader", () => {
+  it("生成時に非表示になる", () => {
+    const el = document.createElement("wcs-fetch-header") as FetchHeader;
+    expect(el.style.display).toBe("none");
+  });
+
   it("name属性とvalue属性を取得できる", () => {
     const el = document.createElement("wcs-fetch-header") as FetchHeader;
     el.setAttribute("name", "Authorization");
@@ -97,6 +102,11 @@ describe("FetchHeader", () => {
 });
 
 describe("FetchBody", () => {
+  it("生成時に非表示になる", () => {
+    const el = document.createElement("wcs-fetch-body") as FetchBody;
+    expect(el.style.display).toBe("none");
+  });
+
   it("type属性を取得できる", () => {
     const el = document.createElement("wcs-fetch-body") as FetchBody;
     el.setAttribute("type", "text/plain");
@@ -130,6 +140,11 @@ describe("Fetch", () => {
   afterEach(() => {
     fetchSpy.mockRestore();
     document.body.innerHTML = "";
+  });
+
+  it("生成時に非表示になる", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    expect(el.style.display).toBe("none");
   });
 
   it("wcBindableプロパティが正しく定義されている", () => {

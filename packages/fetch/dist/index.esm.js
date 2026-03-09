@@ -41,6 +41,10 @@ class Fetch extends HTMLElement {
     _status = 0;
     _body = null;
     _abortController = null;
+    constructor() {
+        super();
+        this.style.display = "none";
+    }
     get url() {
         return this.getAttribute("url") || "";
     }
@@ -237,6 +241,10 @@ class Fetch extends HTMLElement {
 }
 
 class FetchHeader extends HTMLElement {
+    constructor() {
+        super();
+        this.style.display = "none";
+    }
     get headerName() {
         return this.getAttribute("name") || "";
     }
@@ -246,6 +254,10 @@ class FetchHeader extends HTMLElement {
 }
 
 class FetchBody extends HTMLElement {
+    constructor() {
+        super();
+        this.style.display = "none";
+    }
     get contentType() {
         return this.getAttribute("type") || "application/json";
     }

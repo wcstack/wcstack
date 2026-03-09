@@ -23,6 +23,11 @@ export class Fetch extends HTMLElement {
   private _body: any = null;
   private _abortController: AbortController | null = null;
 
+  constructor() {
+    super();
+    this.style.display = "none";
+  }
+
   get url(): string {
     return this.getAttribute("url") || "";
   }
