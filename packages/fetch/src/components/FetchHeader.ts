@@ -1,6 +1,5 @@
 export class FetchHeader extends HTMLElement {
-  constructor() {
-    super();
+  connectedCallback(): void {
     this.style.display = "none";
   }
 

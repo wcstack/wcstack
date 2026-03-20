@@ -1,7 +1,8 @@
 export class FetchBody extends HTMLElement {
   constructor() {
     super();
-    this.style.display = "none";
+    // スロットなしのShadow DOMでlight DOM（bodyテキスト）の描画を抑制
+    this.attachShadow({ mode: "open" });
   }
 
   get contentType(): string {

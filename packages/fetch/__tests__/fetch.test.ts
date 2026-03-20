@@ -81,9 +81,11 @@ describe("config", () => {
 });
 
 describe("FetchHeader", () => {
-  it("生成時に非表示になる", () => {
+  it("DOM追加時に非表示になる", () => {
     const el = document.createElement("wcs-fetch-header") as FetchHeader;
+    document.body.appendChild(el);
     expect(el.style.display).toBe("none");
+    el.remove();
   });
 
   it("name属性とvalue属性を取得できる", () => {
@@ -102,9 +104,11 @@ describe("FetchHeader", () => {
 });
 
 describe("FetchBody", () => {
-  it("生成時に非表示になる", () => {
+  it("Shadow DOMによりlight DOMが描画されない", () => {
     const el = document.createElement("wcs-fetch-body") as FetchBody;
-    expect(el.style.display).toBe("none");
+    el.textContent = '{"key": "value"}';
+    expect(el.shadowRoot).not.toBeNull();
+    expect(el.shadowRoot!.childNodes).toHaveLength(0);
   });
 
   it("type属性を取得できる", () => {
@@ -142,8 +146,10 @@ describe("Fetch", () => {
     document.body.innerHTML = "";
   });
 
-  it("生成時に非表示になる", () => {
+  it("DOM追加時に非表示になる", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
     expect(el.style.display).toBe("none");
   });
 
