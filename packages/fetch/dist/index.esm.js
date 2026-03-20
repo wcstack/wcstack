@@ -24,7 +24,7 @@ function raiseError(message) {
     throw new Error(`[@wcstack/fetch] ${message}`);
 }
 
-class Fetch extends HTMLElement {
+class FetchCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
         version: 1,
@@ -35,15 +35,128 @@ class Fetch extends HTMLElement {
             { name: "status", event: "wcs-fetch:response", getter: (e) => e.detail.status },
         ],
     };
+    _target;
     _value = null;
     _loading = false;
     _error = null;
     _status = 0;
-    _body = null;
     _abortController = null;
+    constructor(target) {
+        super();
+        this._target = target ?? this;
+    }
+    get value() {
+        return this._value;
+    }
+    get loading() {
+        return this._loading;
+    }
+    get error() {
+        return this._error;
+    }
+    get status() {
+        return this._status;
+    }
+    _setLoading(loading) {
+        this._loading = loading;
+        this._target.dispatchEvent(new CustomEvent("wcs-fetch:loading-changed", {
+            detail: loading,
+            bubbles: true,
+        }));
+    }
+    _setError(error) {
+        this._error = error;
+        this._target.dispatchEvent(new CustomEvent("wcs-fetch:error", {
+            detail: error,
+            bubbles: true,
+        }));
+    }
+    _setResponse(value, status) {
+        this._value = value;
+        this._status = status;
+        this._target.dispatchEvent(new CustomEvent("wcs-fetch:response", {
+            detail: { value, status },
+            bubbles: true,
+        }));
+    }
+    abort() {
+        if (this._abortController) {
+            this._abortController.abort();
+            this._abortController = null;
+        }
+    }
+    async fetch(url, options = {}) {
+        if (!url) {
+            raiseError("url attribute is required.");
+        }
+        // 進行中のリクエストをキャンセル
+        this.abort();
+        this._abortController = new AbortController();
+        const { signal } = this._abortController;
+        this._setLoading(true);
+        this._error = null;
+        const { method = "GET", headers = {}, body = null, contentType = null, forceText = false, } = options;
+        try {
+            if (contentType && !headers["Content-Type"]) {
+                headers["Content-Type"] = contentType;
+            }
+            const requestInit = {
+                method,
+                headers,
+                signal,
+            };
+            if (method !== "GET" && method !== "HEAD" && body !== null) {
+                requestInit.body = body;
+            }
+            const response = await globalThis.fetch(url, requestInit);
+            this._status = response.status;
+            if (!response.ok) {
+                const errorBody = await response.text().catch(() => "");
+                const error = { status: response.status, statusText: response.statusText, body: errorBody };
+                this._setError(error);
+                this._setLoading(false);
+                return null;
+            }
+            if (forceText) {
+                const text = await response.text();
+                this._setResponse(text, response.status);
+            }
+            else {
+                const responseContentType = response.headers.get("Content-Type") || "";
+                if (responseContentType.includes("application/json")) {
+                    const data = await response.json();
+                    this._setResponse(data, response.status);
+                }
+                else {
+                    const text = await response.text();
+                    this._setResponse(text, response.status);
+                }
+            }
+            this._setLoading(false);
+            return this._value;
+        }
+        catch (e) {
+            if (e.name === "AbortError") {
+                this._setLoading(false);
+                return null;
+            }
+            this._setError(e);
+            this._setLoading(false);
+            return null;
+        }
+        finally {
+            this._abortController = null;
+        }
+    }
+}
+
+class Fetch extends HTMLElement {
+    static wcBindable = FetchCore.wcBindable;
+    _core;
+    _body = null;
     constructor() {
         super();
-        this.style.display = "none";
+        this._core = new FetchCore(this);
     }
     get url() {
         return this.getAttribute("url") || "";
@@ -69,16 +182,16 @@ class Fetch extends HTMLElement {
         }
     }
     get value() {
-        return this._value;
+        return this._core.value;
     }
     get loading() {
-        return this._loading;
+        return this._core.loading;
     }
     get error() {
-        return this._error;
+        return this._core.error;
     }
     get status() {
-        return this._status;
+        return this._core.status;
     }
     get manual() {
         return this.hasAttribute("manual");
@@ -127,110 +240,32 @@ class Fetch extends HTMLElement {
         }
         return { body: null, contentType: null };
     }
-    _setLoading(loading) {
-        this._loading = loading;
-        this.dispatchEvent(new CustomEvent("wcs-fetch:loading-changed", {
-            detail: loading,
-            bubbles: true,
-        }));
-    }
-    _setError(error) {
-        this._error = error;
-        this.dispatchEvent(new CustomEvent("wcs-fetch:error", {
-            detail: error,
-            bubbles: true,
-        }));
-    }
-    _setResponse(value, status) {
-        this._value = value;
-        this._status = status;
-        this.dispatchEvent(new CustomEvent("wcs-fetch:response", {
-            detail: { value, status },
-            bubbles: true,
-        }));
-    }
     abort() {
-        if (this._abortController) {
-            this._abortController.abort();
-            this._abortController = null;
-        }
+        this._core.abort();
     }
     async fetch() {
-        const url = this.url;
-        if (!url) {
-            raiseError("url attribute is required.");
+        const headers = this._collectHeaders();
+        const { body, contentType } = this._collectBody();
+        const result = await this._core.fetch(this.url, {
+            method: this.method,
+            headers,
+            body,
+            contentType,
+            forceText: !!this.target,
+        });
+        // HTML置換モード
+        if (this.target && result !== null) {
+            const targetElement = document.getElementById(this.target);
+            if (targetElement) {
+                targetElement.innerHTML = result;
+            }
         }
-        // 進行中のリクエストをキャンセル
-        this.abort();
-        this._abortController = new AbortController();
-        const { signal } = this._abortController;
-        this._setLoading(true);
-        this._error = null;
-        try {
-            const headers = this._collectHeaders();
-            const { body, contentType } = this._collectBody();
-            if (contentType && !headers["Content-Type"]) {
-                headers["Content-Type"] = contentType;
-            }
-            const requestInit = {
-                method: this.method,
-                headers,
-                signal,
-            };
-            if (this.method !== "GET" && this.method !== "HEAD" && body !== null) {
-                requestInit.body = body;
-            }
-            const response = await globalThis.fetch(url, requestInit);
-            this._status = response.status;
-            if (!response.ok) {
-                const errorBody = await response.text().catch(() => "");
-                const error = { status: response.status, statusText: response.statusText, body: errorBody };
-                this._setError(error);
-                this._setLoading(false);
-                return null;
-            }
-            const target = this.target;
-            if (target) {
-                // HTMLリプレースモード
-                const html = await response.text();
-                const targetElement = document.getElementById(target);
-                if (targetElement) {
-                    targetElement.innerHTML = html;
-                }
-                this._value = html;
-                this._setResponse(html, response.status);
-            }
-            else {
-                // JSONモード
-                const contentType = response.headers.get("Content-Type") || "";
-                if (contentType.includes("application/json")) {
-                    const data = await response.json();
-                    this._setResponse(data, response.status);
-                }
-                else {
-                    const text = await response.text();
-                    this._setResponse(text, response.status);
-                }
-            }
-            this._setLoading(false);
-            return this._value;
-        }
-        catch (e) {
-            if (e.name === "AbortError") {
-                this._setLoading(false);
-                return null;
-            }
-            this._setError(e);
-            this._setLoading(false);
-            return null;
-        }
-        finally {
-            this._abortController = null;
-            // bodyをリセット（一回限りの使用）
-            this._body = null;
-        }
+        // bodyをリセット（一回限りの使用）
+        this._body = null;
+        return result;
     }
     connectedCallback() {
+        this.style.display = "none";
         if (!this.manual && this.url) {
             this.fetch();
         }
@@ -241,8 +276,7 @@ class Fetch extends HTMLElement {
 }
 
 class FetchHeader extends HTMLElement {
-    constructor() {
-        super();
+    connectedCallback() {
         this.style.display = "none";
     }
     get headerName() {
@@ -256,7 +290,8 @@ class FetchHeader extends HTMLElement {
 class FetchBody extends HTMLElement {
     constructor() {
         super();
-        this.style.display = "none";
+        // スロットなしのShadow DOMでlight DOM（bodyテキスト）の描画を抑制
+        this.attachShadow({ mode: "open" });
     }
     get contentType() {
         return this.getAttribute("type") || "application/json";
@@ -312,5 +347,5 @@ function bootstrapFetch(userConfig) {
     }
 }
 
-export { bootstrapFetch };
+export { FetchCore, bootstrapFetch };
 //# sourceMappingURL=index.esm.js.map

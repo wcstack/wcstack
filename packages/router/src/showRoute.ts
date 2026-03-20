@@ -4,11 +4,13 @@ import { IRoute, IRouteMatchResult } from "./components/types";
 import { config } from "./config";
 
 export function showRoute(route: IRoute, matchResult: IRouteMatchResult): boolean {
-  route.clearParams();
+  const params: Record<string, string> = {};
+  const typedParams: Record<string, any> = {};
   for(const key of route.paramNames) {
-    route.params[key] = matchResult.params[key];
-    route.typedParams[key] = matchResult.typedParams[key];
+    params[key] = matchResult.params[key];
+    typedParams[key] = matchResult.typedParams[key];
   }
+  route.setParams(params, typedParams);
   const parentNode = route.placeHolder.parentNode;
   const nextSibling = route.placeHolder.nextSibling;
   for (const node of route.childNodeArray) {

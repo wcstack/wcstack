@@ -61,6 +61,7 @@ export interface IRoute extends IRouteChildContainer {
   guardCheck(matchResult: IRouteMatchResult): Promise<void>;
   initialize(routerNode: IRouter, parentRouteNode: IRoute | null): void;
   testAncestorNode(ancestorNode: IRoute): boolean;
+  setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
   clearParams(): void;
 }
 

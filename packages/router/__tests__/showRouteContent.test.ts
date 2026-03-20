@@ -16,6 +16,10 @@ function createMockRoute(overrides: Partial<IRoute> = {}): IRoute {
       Object.keys(params).forEach(key => delete params[key]);
       Object.keys(typedParams).forEach(key => delete typedParams[key]);
     }),
+    setParams: vi.fn((newParams: Record<string, string>, newTypedParams: Record<string, any>) => {
+      Object.assign(params, newParams);
+      Object.assign(typedParams, newTypedParams);
+    }),
     childNodeArray: [],
     paramNames: [],
     params,
@@ -159,8 +163,8 @@ describe('showRouteContent', () => {
 
     await showRouteContent(router, matchResult, []);
 
-    // clearParamsが呼ばれてからパラメータが設定される
-    expect(route1.clearParams).toHaveBeenCalled();
+    // setParamsが呼ばれてパラメータが設定される
+    expect(route1.setParams).toHaveBeenCalled();
   });
 
   it('shouldChangeがtrueの場合にルートを表示すること', async () => {
@@ -183,7 +187,7 @@ describe('showRouteContent', () => {
     await showRouteContent(router, matchResult, [route1]);
 
     expect(route1.shouldChange).toHaveBeenCalledWith({});
-    expect(route1.clearParams).toHaveBeenCalled(); // showRoute calls clearParams
+    expect(route1.setParams).toHaveBeenCalled(); // showRoute calls setParams
   });
 
   it('shouldChangeがfalseでforce=falseの場合、showRouteを呼ばないこと', async () => {
@@ -230,8 +234,8 @@ describe('showRouteContent', () => {
     await showRouteContent(router, matchResult, [route1, route2]);
 
     // Both routes should be shown because showRoute returns true, triggering force
-    expect(route1.clearParams).toHaveBeenCalled();
-    expect(route2.clearParams).toHaveBeenCalled();
+    expect(route1.setParams).toHaveBeenCalled();
+    expect(route2.setParams).toHaveBeenCalled();
   });
 
   it('複数のルートで前のルートセットを正しく処理すること', async () => {
@@ -292,6 +296,6 @@ describe('showRouteContent', () => {
 
     await showRouteContent(router, matchResult, []);
 
-    expect(route1.clearParams).toHaveBeenCalled();
+    expect(route1.setParams).toHaveBeenCalled();
   });
 });

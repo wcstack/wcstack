@@ -37,6 +37,18 @@ export interface IGuardCancel {
 
 export type BuiltinParamTypes = "int" | "float" | "bool" | "uuid" | "slug" | "isoDate" | "any";
 
+export interface IWcBindableProperty {
+  readonly name: string;
+  readonly event: string;
+  readonly getter?: (event: Event) => any;
+}
+
+export interface IWcBindable {
+  readonly protocol: "wc-bindable";
+  readonly version: number;
+  readonly properties: IWcBindableProperty[];
+}
+
 export interface IParamTypeInfo<T> {
   readonly typeName: string;
   readonly pattern: RegExp;

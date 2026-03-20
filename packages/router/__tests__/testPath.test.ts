@@ -43,7 +43,7 @@ describe('testPath', () => {
     route.initialize(router, null);
 
     // paramTypeを未設定にしてフォールバック分岐を通す
-    for (const info of (route as any)._segmentInfos) {
+    for (const info of (route as any)._core._segmentInfos) {
       if (info.type === 'param') {
         info.paramType = undefined;
       }

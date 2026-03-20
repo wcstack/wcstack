@@ -108,8 +108,8 @@ describe('Route', () => {
       const route = createRouteWithGuard('/protected', '/login');
       document.body.appendChild(route);
       route.initialize(router, null);
-      expect((route as any)._hasGuard).toBe(true);
-      expect((route as any)._guardFallbackPath).toBe('/login');
+      expect((route as any)._core._hasGuard).toBe(true);
+      expect((route as any)._core._guardFallbackPath).toBe('/login');
     });
 
     it('catch-all(*)を含むpathを解析すること', () => {
@@ -578,7 +578,7 @@ describe('Route', () => {
       route.setAttribute('path', '/dummy');
       route.initialize(router, null);
 
-      (route as any)._segmentInfos = [
+      (route as any)._core._segmentInfos = [
         {
           type: 'catch-all',
           segmentText: '*',
@@ -586,7 +586,7 @@ describe('Route', () => {
           pattern: /^(.*)$/
         }
       ];
-      (route as any)._weight = undefined;
+      (route as any)._core._weight = undefined;
 
       expect(route.weight).toBe(0);
     });
@@ -861,7 +861,7 @@ describe('Route', () => {
 
       route.initialize(router, null);
 
-      expect((route as any)._guardFallbackPath).toBe('/');
+      expect((route as any)._core._guardFallbackPath).toBe('/');
     });
 
     it('初期化済みの場合、何もしないこと', () => {
