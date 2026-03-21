@@ -35,6 +35,15 @@ export interface IWcBindable {
 }
 
 /**
+ * HTTP error returned when the server responds with a non-ok status (>= 400).
+ */
+export interface WcsFetchHttpError {
+  status: number;
+  statusText: string;
+  body: string;
+}
+
+/**
  * Value types for FetchCore (headless) — the 4 async state properties.
  * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
  *
@@ -47,7 +56,7 @@ export interface IWcBindable {
 export interface WcsFetchCoreValues {
   value: unknown;
   loading: boolean;
-  error: { status: number; statusText: string; body: string } | null;
+  error: WcsFetchHttpError | Error | null;
   status: number;
 }
 

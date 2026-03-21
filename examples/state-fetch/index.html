@@ -202,7 +202,7 @@
   <template data-wcs="if: submitLoading">
     <div class="spinner"></div>
   </template>
-  <button class="submit-btn" data-fetchtarget="create-fetch">Create</button>
+  <button class="submit-btn" data-fetchtarget="create-fetch" data-wcs="disabled: submitLoading">Create</button>
 
   <template data-wcs="if: postResult">
     <div class="status-msg success">

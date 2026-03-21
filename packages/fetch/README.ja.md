@@ -1,8 +1,38 @@
 # @wcstack/fetch
 
-Web Components による宣言的な非同期通信コンポーネント。HTTP 通信をカプセル化し、[wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol) でリアクティブな状態を公開する [HAWC](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/docs/articles/HAWC.md)（Headless Async Web Component）です。
+`@wcstack/fetch` は wcstack エコシステムのためのヘッドレス fetch コンポーネントです。
 
-ランタイム依存ゼロ。React、Vue、Svelte、Solid、Angular、vanilla JavaScript のどこからでも使えます。
+視覚的な UI ウィジェットではありません。
+HTTP リクエストとリアクティブな状態をつなぐ **I/O ノード** です。
+
+`@wcstack/state` と組み合わせると、`<wcs-fetch>` はパス契約を通じて直接バインドできます:
+
+- **入力 / コマンドサーフェス**: `url`, `body`, `trigger`
+- **出力ステートサーフェス**: `value`, `loading`, `error`, `status`
+
+つまり、非同期通信を HTML 内で宣言的に表現できます。UI レイヤーに `fetch()`、`async/await`、loading/error のグルーコードを書く必要はありません。
+
+`@wcstack/fetch` は [HAWC](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/docs/articles/HAWC.md) アーキテクチャに従います:
+
+- **Core** (`FetchCore`) が HTTP、abort、非同期状態を処理
+- **Shell** (`<wcs-fetch>`) がその状態を DOM に接続
+- フレームワークやバインディングシステムは [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol) 経由で利用
+
+## なぜこれが存在するのか
+
+多くのフロントエンドアプリで、移行が最も困難なのはテンプレートではなく、非同期ロジックです。
+HTTP リクエスト、ローディングフラグ、エラー処理、リトライ、ライフサイクルのクリーンアップ。
+
+`@wcstack/fetch` はその非同期ロジックを再利用可能なコンポーネントに移し、結果をバインド可能な状態として公開します。
+
+`@wcstack/state` と組み合わせたフローは:
+
+1. 状態が `url` を算出
+2. `<wcs-fetch>` がリクエストを実行
+3. 非同期の結果が `value`, `loading`, `error`, `status` として返る
+4. UI は `data-wcs` でそれらのパスにバインド
+
+非同期通信が命令的な UI コードではなく、**状態遷移**になります。
 
 ## インストール
 
@@ -12,41 +42,228 @@ npm install @wcstack/fetch
 
 ## クイックスタート
 
-```javascript
-import { bootstrapFetch } from "@wcstack/fetch";
+### 1. 状態からのリアクティブ fetch
 
-bootstrapFetch();
-```
-
-または自動ブートストラップ:
+`url` が変わると、`<wcs-fetch>` は自動的に新しいリクエストを実行します。
+既にリクエストが進行中の場合、前のリクエストは abort されます。
 
 ```html
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      get usersUrl() {
+        return "/api/users";
+      },
+    };
+  </script>
+
+  <wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
+
+  <ul>
+    <template data-wcs="for: users">
+      <li data-wcs="textContent: users.*.name"></li>
+    </template>
+  </ul>
+</wcs-state>
 ```
 
-## アーキテクチャ — Core / Shell
+これがデフォルトモードです:
 
-`@wcstack/fetch` は HAWC の Core/Shell パターンに従います:
+- `url` を接続
+- `value` を受け取る
+- 任意で `loading`、`error`、`status` もバインド
+
+### 2. リアクティブ URL の例
+
+算出 URL がデータ取得を自動的に駆動します:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      filterRole: "",
+      users: [],
+
+      get usersUrl() {
+        const role = this.filterRole;
+        return role ? "/api/users?role=" + role : "/api/users";
+      },
+    };
+  </script>
+
+  <select data-wcs="value: filterRole">
+    <option value="">すべて</option>
+    <option value="admin">Admin</option>
+    <option value="staff">Staff</option>
+  </select>
+
+  <wcs-fetch
+    data-wcs="url: usersUrl; value: users; loading: listLoading; error: listError">
+  </wcs-fetch>
+
+  <template data-wcs="if: listLoading">
+    <p>読み込み中...</p>
+  </template>
+  <template data-wcs="if: listError">
+    <p>ユーザーの読み込みに失敗しました。</p>
+  </template>
+
+  <ul>
+    <template data-wcs="for: users">
+      <li data-wcs="textContent: users.*.name"></li>
+    </template>
+  </ul>
+</wcs-state>
+```
+
+### 3. `trigger` による手動実行
+
+入力を先に準備し、後から実行したい場合は `manual` を使います。
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      shouldRefresh: false,
+
+      reload() {
+        this.shouldRefresh = true;
+      },
+    };
+  </script>
+
+  <wcs-fetch
+    url="/api/users"
+    manual
+    data-wcs="trigger: shouldRefresh; value: users; loading: listLoading">
+  </wcs-fetch>
+
+  <button data-wcs="onclick: reload">更新</button>
+</wcs-state>
+```
+
+`trigger` は **単方向のコマンドサーフェス** です:
+
+- `true` を書き込むと `fetch()` を開始
+- 完了後に自動で `false` にリセット
+- リセット時に `wcs-fetch:trigger-changed` を発火
 
 ```
-┌─────────────────────────────────────────────────┐
-│  FetchCore (EventTarget)                        │
-│  - 非同期ロジック、状態管理、dispatchEvent      │
-│  - ブラウザ、Node、Deno、Workers で動作         │
-├─────────────────────────────────────────────────┤
-│  Fetch (HTMLElement) — Shell                    │
-│  - 属性マッピング、ライフサイクル               │
-│  - ref 経由のフレームワークバインディング       │
-└─────────────────────────────────────────────────┘
+外部からの書き込み:  false → true   イベントなし（fetch を開始）
+自動リセット:        true  → false  wcs-fetch:trigger-changed を発火
 ```
 
-**Core (`FetchCore`)** — `EventTarget` を継承し、すべての非同期ロジック（HTTP リクエスト、abort、状態管理）を内包。DOM 依存ゼロで、任意の JavaScript ランタイムで動作します。
+### 4. リアクティブ body での POST
 
-**Shell (`<wcs-fetch>`)** — 薄い `HTMLElement` ラッパー。HTML 属性を Core のパラメータにマッピングし、DOM ライフサイクルを管理し、ref 経由のフレームワークバインディングを可能にします。ビジネスロジックは含みません。
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      newUser: {
+        name: "",
+        email: "",
+      },
+      submitRequest: false,
+      submitResult: null,
+      submitError: null,
+
+      submit() {
+        this.submitRequest = true;
+      },
+    };
+  </script>
+
+  <input data-wcs="value: newUser.name" placeholder="名前">
+  <input data-wcs="value: newUser.email" placeholder="メール">
+
+  <button data-wcs="onclick: submit">作成</button>
+
+  <wcs-fetch
+    url="/api/users"
+    method="POST"
+    manual
+    data-wcs="
+      body: newUser;
+      trigger: submitRequest;
+      value: submitResult;
+      error: submitError;
+      loading: submitLoading
+    ">
+    <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  </wcs-fetch>
+
+  <template data-wcs="if: submitLoading">
+    <p>送信中...</p>
+  </template>
+  <template data-wcs="if: submitError">
+    <p>送信に失敗しました。</p>
+  </template>
+</wcs-state>
+```
+
+## ステートサーフェス vs コマンドサーフェス
+
+`<wcs-fetch>` は 2 種類のプロパティを公開します。
+
+### 出力ステート（バインド可能な非同期状態）
+
+現在のリクエストの結果を表し、HAWC のメインサーフェスです:
+
+| プロパティ | 型 | 説明 |
+|------------|------|------|
+| `value` | `any` | レスポンスデータ |
+| `loading` | `boolean` | リクエスト実行中は `true` |
+| `error` | `WcsFetchHttpError \| Error \| null` | HTTP またはネットワークエラー |
+| `status` | `number` | HTTP ステータスコード |
+
+### 入力 / コマンドサーフェス
+
+HTML、JS、または `@wcstack/state` バインディングからリクエスト実行を制御します:
+
+| プロパティ | 型 | 説明 |
+|------------|------|------|
+| `url` | `string` | リクエスト URL |
+| `body` | `any` | リクエストボディ（`fetch()` 後に `null` にリセット） |
+| `trigger` | `boolean` | 単方向の実行トリガー |
+| `manual` | `boolean` | 接続時 / URL 変更時の自動実行を無効化 |
+
+## アーキテクチャ
+
+`@wcstack/fetch` は HAWC アーキテクチャに従います。
+
+### Core: `FetchCore`
+
+`FetchCore` は純粋な `EventTarget` クラスです。
+以下を内包します:
+
+- HTTP 実行
+- abort 制御
+- 非同期状態遷移
+- `wc-bindable-protocol` 宣言
+
+`EventTarget` と `fetch` をサポートする任意のランタイムでヘッドレスに動作します。
+
+### Shell: `<wcs-fetch>`
+
+`<wcs-fetch>` は `FetchCore` の薄い `HTMLElement` ラッパーです。
+以下を追加します:
+
+- 属性 / プロパティマッピング
+- DOM ライフサイクル統合
+- `trigger` などの宣言的実行ヘルパー
+
+この分離により、非同期ロジックのポータビリティを保ちながら、`@wcstack/state` のような DOM ベースのバインディングシステムとの自然な連携を可能にしています。
+
+### Target injection
 
 Core は **target injection** により Shell 上で直接イベントを発火するため、イベントの再ディスパッチは不要です。
 
-### ヘッドレス利用（Core 単体）
+## ヘッドレス利用（Core 単体）
 
 `FetchCore` は DOM なしで単体利用できます。`static wcBindable` を宣言しているため、`@wc-bindable/core` の `bind()` で状態をサブスクライブできます — フレームワークアダプタと同じ仕組みです:
 
@@ -58,54 +275,117 @@ const core = new FetchCore();
 
 const unbind = bind(core, (name, value) => {
   console.log(`${name}:`, value);
-  // "loading: true"
-  // "value: [{ id: 1, name: "田中" }, ...]"
-  // "status: 200"
-  // "loading: false"
 });
 
 await core.fetch("/api/users");
 
-// 不要になったらクリーンアップ
 unbind();
 ```
 
 Node.js、Deno、Cloudflare Workers など、`EventTarget` と `fetch` が利用可能な環境で動作します。
 
-## 使い方
+## URL の監視
 
-### JSON モード — API データ取得
+`<wcs-fetch>` はデフォルトで以下のタイミングに自動的にリクエストを実行します:
 
-```html
-<wcs-fetch id="user-api" url="/api/users" method="GET"></wcs-fetch>
+1. DOM に接続され、`url` が設定されているとき
+2. `url` が変更されたとき
+
+URL 変更時にリクエストが進行中の場合、前のリクエストは自動的に abort されてから新しいリクエストが開始されます。
+
+`manual` 属性を設定すると自動実行が無効になり、`fetch()` メソッドや `trigger` プロパティで明示的に制御できます。
+
+## プログラムからの利用
+
+```javascript
+const fetchEl = document.querySelector("wcs-fetch");
+
+// JS API 経由で body を設定（<wcs-fetch-body> より優先）
+fetchEl.body = { name: "田中" };
+await fetchEl.fetch();
+// 注意: body は fetch() 後に自動で null にリセットされます。
+// 再度送信する場合は、毎回 body を設定してください。
+
+console.log(fetchEl.value);   // レスポンスデータ
+console.log(fetchEl.status);  // HTTP ステータスコード
+console.log(fetchEl.loading); // boolean
+console.log(fetchEl.error);   // エラー情報 or null
+console.log(fetchEl.body);    // null（fetch 後にリセット済み）
 ```
 
-レスポンスデータは wc-bindable-protocol 経由で公開されます。`@wcstack/state` と組み合わせた例:
+## HTML リプレースモード
 
-```html
-<wcs-fetch url="/api/users" data-wcs="value: users"></wcs-fetch>
-<wcs-state>
-  <ul>
-    <template data-wcs="for: users">
-      <li data-wcs="textContent: users.*.name"></li>
-    </template>
-  </ul>
-</wcs-state>
-```
-
-### HTML リプレースモード — htmx 的な動作
+`target` を設定すると、`<wcs-fetch>` は対象要素の `innerHTML` を差し替えます。
 
 ```html
 <div id="content">初期コンテンツ</div>
 <wcs-fetch url="/api/partial" target="content"></wcs-fetch>
-
-<button data-fetchtarget="my-fetch">読み込む</button>
-<wcs-fetch id="my-fetch" url="/api/fragment" target="content"></wcs-fetch>
 ```
 
-`target` を指定すると、レスポンスの HTML で対象要素の innerHTML を差し替えます。
+このモードはシンプルなフラグメント読み込みに便利ですが、`@wcstack/state` との**ステート駆動**な利用とは別の機能です。
 
-### POST — ヘッダとボディの指定
+## オプションの DOM トリガー
+
+`autoTrigger` が有効（デフォルト）の場合、`data-fetchtarget` 属性を持つ要素のクリックで対応する `<wcs-fetch>` が実行されます:
+
+```html
+<button data-fetchtarget="user-fetch">ユーザー読み込み</button>
+<wcs-fetch id="user-fetch" url="/api/users"></wcs-fetch>
+```
+
+イベント委譲を使用しているため、動的に追加された要素でも動作します。`closest()` API により、ネストされた子要素（ボタン内のアイコン等）のクリックも検出します。
+
+指定した id に一致する要素が存在しない場合、または一致した要素が `<wcs-fetch>` でない場合、クリックは無視されます（エラーは発生しません）。
+
+これは便利機能です。
+wcstack アプリケーションでは、**`trigger` によるステート駆動のトリガー**が通常の主要パターンです。
+
+## 要素一覧
+
+### `<wcs-fetch>`
+
+| 属性 | 型 | デフォルト | 説明 |
+|------|------|------------|------|
+| `url` | `string` | — | リクエスト URL |
+| `method` | `string` | `GET` | HTTP メソッド |
+| `target` | `string` | — | HTML リプレース対象の DOM 要素 id |
+| `manual` | `boolean` | `false` | 自動実行を無効化 |
+
+| プロパティ | 型 | 説明 |
+|------------|------|------|
+| `value` | `any` | レスポンスデータ |
+| `loading` | `boolean` | リクエスト実行中は `true` |
+| `error` | `WcsFetchHttpError \| Error \| null` | エラー情報 |
+| `status` | `number` | HTTP ステータスコード |
+| `body` | `any` | リクエストボディ（`fetch()` 後に `null` にリセット） |
+| `trigger` | `boolean` | `true` を設定すると fetch を実行 |
+| `manual` | `boolean` | 明示的実行モード |
+
+| メソッド | 説明 |
+|----------|------|
+| `fetch()` | HTTP リクエストを実行 |
+| `abort()` | 実行中のリクエストをキャンセル |
+
+### `<wcs-fetch-header>`
+
+リクエストヘッダを定義。`<wcs-fetch>` の子要素として配置。
+
+| 属性 | 型 | 説明 |
+|------|------|------|
+| `name` | `string` | ヘッダ名 |
+| `value` | `string` | ヘッダ値 |
+
+### `<wcs-fetch-body>`
+
+リクエストボディを定義。`<wcs-fetch>` の子要素として配置。
+
+| 属性 | 型 | デフォルト | 説明 |
+|------|------|------------|------|
+| `type` | `string` | `application/json` | Content-Type |
+
+要素のテキストコンテンツがボディとして送信されます。
+
+例:
 
 ```html
 <wcs-fetch url="/api/users" method="POST">
@@ -117,75 +397,15 @@ Node.js、Deno、Cloudflare Workers など、`EventTarget` と `fetch` が利用
 </wcs-fetch>
 ```
 
-### プログラムからの利用
-
-```javascript
-const fetchEl = document.querySelector("wcs-fetch");
-
-// JS API 経由で body を設定（<wcs-fetch-body> より優先）
-fetchEl.body = { name: "田中" };
-await fetchEl.fetch();
-
-console.log(fetchEl.value);   // レスポンスデータ
-console.log(fetchEl.status);  // HTTP ステータスコード
-console.log(fetchEl.loading); // boolean
-console.log(fetchEl.error);   // エラー情報 or null
-```
-
-## 要素一覧
-
-### `<wcs-fetch>`
-
-| 属性 | 型 | デフォルト | 説明 |
-|------|------|------------|------|
-| `url` | string | — | リクエスト URL（必須） |
-| `method` | string | `GET` | HTTP メソッド（`GET`, `POST` 等） |
-| `target` | string | — | HTML リプレース対象の DOM 要素 id |
-
-| プロパティ | 型 | 説明 |
-|------------|------|------|
-| `value` | any | レスポンスデータ（JSON オブジェクトまたは HTML 文字列） |
-| `loading` | boolean | リクエスト実行中は `true` |
-| `error` | object \| null | エラー情報（`{ status, statusText, body }`） |
-| `status` | number | HTTP ステータスコード |
-| `body` | any | リクエストボディ（JS 経由で設定、`fetch()` 後にリセット） |
-| `trigger` | boolean | `true` を設定すると fetch を実行。完了後に自動で `false` に戻る |
-| `manual` | boolean | `true` の場合、接続時や `url` 変更時の自動実行を無効化 |
-
-| メソッド | 説明 |
-|----------|------|
-| `fetch()` | HTTP リクエストを実行。`Promise` を返す |
-| `abort()` | 実行中のリクエストをキャンセル |
-
-### `<wcs-fetch-header>`
-
-リクエストヘッダを定義。`<wcs-fetch>` の子要素として配置。複数指定可。
-
-| 属性 | 型 | 説明 |
-|------|------|------|
-| `name` | string | ヘッダ名（例: `Authorization`） |
-| `value` | string | ヘッダ値（例: `Bearer xxx`） |
-
-### `<wcs-fetch-body>`
-
-リクエストボディを定義。`<wcs-fetch>` の子要素として配置。
-
-| 属性 | 型 | デフォルト | 説明 |
-|------|------|------------|------|
-| `type` | string | `application/json` | Content-Type |
-
-要素のテキストコンテンツがボディとして送信されます。
-
 ## wc-bindable-protocol
 
 `FetchCore` と `<wcs-fetch>` はどちらも wc-bindable-protocol に準拠しており、プロトコル対応の任意のフレームワークやコンポーネントと相互運用できます。
 
-### Core (FetchCore)
+### Core (`FetchCore`)
 
-`FetchCore` は 4 つのバインド可能なプロパティを宣言します — 任意のランタイムからサブスクライブできる非同期状態です:
+`FetchCore` は任意のランタイムからサブスクライブできるバインド可能な非同期状態を宣言します:
 
 ```typescript
-// FetchCore.wcBindable
 static wcBindable = {
   protocol: "wc-bindable",
   version: 1,
@@ -204,10 +424,9 @@ static wcBindable = {
 
 ### Shell (`<wcs-fetch>`)
 
-Shell は Core の宣言を拡張し、`trigger` を追加します — `@wcstack/state` などのバインディングシステムから宣言的に fetch を実行するためのプロパティです:
+Shell は Core の宣言を拡張し、バインディングシステムから宣言的に fetch を実行できるようにします:
 
 ```typescript
-// Fetch.wcBindable
 static wcBindable = {
   ...FetchCore.wcBindable,
   properties: [
@@ -217,112 +436,51 @@ static wcBindable = {
 };
 ```
 
-### TypeScript 値型
-
-パッケージは Core と Shell に対応する 2 つの値型インターフェースをエクスポートします:
+## TypeScript 型
 
 ```typescript
-import type { WcsFetchCoreValues, WcsFetchValues } from "@wcstack/fetch";
-
-// WcsFetchCoreValues — ヘッドレス（FetchCore）用
-// {
-//   value: unknown;
-//   loading: boolean;
-//   error: { status: number; statusText: string; body: string } | null;
-//   status: number;
-// }
-
-// WcsFetchValues — Shell（<wcs-fetch>）用、Core を拡張
-// {
-//   ...WcsFetchCoreValues;
-//   trigger: boolean;
-// }
+import type {
+  WcsFetchHttpError, WcsFetchCoreValues, WcsFetchValues
+} from "@wcstack/fetch";
 ```
 
-## URL の監視
+```typescript
+// HTTP エラー（status >= 400）
+interface WcsFetchHttpError {
+  status: number;
+  statusText: string;
+  body: string;
+}
 
-`<wcs-fetch>` はデフォルトで以下のタイミングに自動的にリクエストを実行します:
+// Core（ヘッドレス）— 4 つの非同期状態プロパティ
+interface WcsFetchCoreValues {
+  value: unknown;
+  loading: boolean;
+  error: WcsFetchHttpError | Error | null;
+  status: number;
+}
 
-1. **DOM に接続されたとき** — `url` が設定済みかつ `manual` 属性がない場合
-2. **`url` 属性が変更されたとき** — 新しい URL で再フェッチ（`manual` がない場合）
-
-`@wcstack/state` と組み合わせると、状態の変更に連動したリアクティブなデータ取得が可能です:
-
-```html
-<wcs-state>
-  <script type="module">
-    export default {
-      filterRole: "",
-      users: [],
-      get usersUrl() {
-        const role = this.filterRole;
-        return role ? "/api/users?role=" + role : "/api/users";
-      },
-    };
-  </script>
-  <!-- URL が変わると自動的に再フェッチ -->
-  <wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
-</wcs-state>
+// Shell（<wcs-fetch>）— Core を拡張し trigger を追加
+interface WcsFetchValues extends WcsFetchCoreValues {
+  trigger: boolean;
+}
 ```
 
-`manual` 属性を設定すると自動実行が無効になり、`fetch()` メソッドや `trigger` プロパティで明示的に制御できます。
+## なぜ `@wcstack/state` とうまく連携するのか
 
-## trigger プロパティ
+`@wcstack/state` は UI と状態の唯一の契約としてパス文字列を使います。
+`<wcs-fetch>` はこのモデルに自然に適合します:
 
-`trigger` プロパティを使うと、DOM 参照なしに状態から宣言的に fetch を実行できます。
+- 状態が `url` を算出
+- `<wcs-fetch>` がリクエストを実行
+- 非同期の結果が `value`, `loading`, `error`, `status` として返る
+- UI は fetch のグルーコードを書かずにそれらのパスにバインド
 
-`true` を設定すると `fetch()` が実行され、完了後（成功・エラー問わず）自動的に `false` にリセットされます。
-
-```html
-<wcs-state>
-  <script type="module">
-    export default {
-      users: [],
-      shouldRefresh: false,
-      reload() {
-        this.shouldRefresh = true;
-      },
-    };
-  </script>
-  <wcs-fetch url="/api/users" manual
-    data-wcs="trigger: shouldRefresh; value: users">
-  </wcs-fetch>
-  <button data-wcs="onclick: reload">更新</button>
-</wcs-state>
-```
-
-リセット時に `wcs-fetch:trigger-changed` イベントが発火し、`@wcstack/state` がバインドされたプロパティを `false` に同期します。
-
-## オートトリガー
-
-`autoTrigger` が有効（デフォルト）の場合、`data-fetchtarget` 属性を持つ要素のクリックで対応する `<wcs-fetch>` が自動実行されます:
-
-```html
-<button data-fetchtarget="user-fetch">ユーザー読み込み</button>
-<wcs-fetch id="user-fetch" url="/api/users"></wcs-fetch>
-```
-
-イベント委譲を使用しているため、動的に追加された要素でも動作します。`closest()` API により、ネストされた子要素（ボタン内のアイコン等）のクリックも検出します。
-
-## 設定
-
-```javascript
-import { bootstrapFetch } from "@wcstack/fetch";
-
-bootstrapFetch({
-  autoTrigger: true,               // デフォルト: true
-  triggerAttribute: "data-fetchtarget", // デフォルト: "data-fetchtarget"
-  tagNames: {
-    fetch: "wcs-fetch",            // デフォルト: "wcs-fetch"
-    fetchHeader: "wcs-fetch-header",
-    fetchBody: "wcs-fetch-body",
-  },
-});
-```
+非同期処理が通常の状態更新と同じように見えるようになります。
 
 ## フレームワーク連携
 
-`<wcs-fetch>` は wc-bindable-protocol 準拠の HAWC なので、`@wc-bindable/*` の薄いアダプタを通じて任意のフレームワークで動作します。useEffect 不要、非同期状態管理不要、クリーンアップ不要、レースコンディション対策不要 — アダプタが `wcBindable` 宣言を自動的に読み取ります。
+`<wcs-fetch>` は HAWC + `wc-bindable-protocol` なので、`@wc-bindable/*` の薄いアダプタを通じて任意のフレームワークで動作します。
 
 ### React
 
@@ -338,9 +496,9 @@ function UserList() {
     <>
       <wcs-fetch ref={ref} url="/api/users" />
       {loading && <p>読み込み中...</p>}
-      {error && <p>エラー: {error.statusText}</p>}
+      {error && <p>エラー</p>}
       <ul>
-        {users?.map((user) => (
+        {Array.isArray(users) && users.map((user) => (
           <li key={user.id}>{user.name}</li>
         ))}
       </ul>
@@ -362,7 +520,7 @@ const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues>();
 <template>
   <wcs-fetch :ref="ref" url="/api/users" />
   <p v-if="values.loading">読み込み中...</p>
-  <p v-else-if="values.error">エラー: {{ values.error.statusText }}</p>
+  <p v-else-if="values.error">エラー</p>
   <ul v-else>
     <li v-for="user in values.value" :key="user.id">{{ user.name }}</li>
   </ul>
@@ -429,6 +587,31 @@ bind(fetchEl, (name, value) => {
   console.log(`${name} changed:`, value);
 });
 ```
+
+## 設定
+
+```javascript
+import { bootstrapFetch } from "@wcstack/fetch";
+
+bootstrapFetch({
+  autoTrigger: true,
+  triggerAttribute: "data-fetchtarget",
+  tagNames: {
+    fetch: "wcs-fetch",
+    fetchHeader: "wcs-fetch-header",
+    fetchBody: "wcs-fetch-body",
+  },
+});
+```
+
+## 設計メモ
+
+- `value`、`loading`、`error`、`status` は **出力ステート**
+- `url`、`body`、`trigger` は **入力 / コマンドサーフェス**
+- `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知
+- `body` は `fetch()` 呼び出しごとに `null` にリセット — 再送信時は毎回設定が必要
+- `manual` は実行タイミングを明示的に制御したい場合に有用
+- HTML リプレースモードはオプション。wcstack の主要パターンはステート駆動バインディング
 
 ## ライセンス
 
