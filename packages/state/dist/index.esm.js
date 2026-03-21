@@ -1121,6 +1121,7 @@ function parseFilterArgs(argsText) {
     const args = [];
     let current = '';
     let inQuote = null;
+    let hasQuote = false;
     for (let i = 0; i < argsText.length; i++) {
         const char = argsText[i];
         if (inQuote) {
@@ -1133,17 +1134,20 @@ function parseFilterArgs(argsText) {
         }
         else if (char === '"' || char === "'") {
             inQuote = char;
+            hasQuote = true;
         }
         else if (char === ',') {
             args.push(current.trim());
             current = '';
+            hasQuote = false;
         }
         else {
             current += char;
         }
     }
-    if (current.trim()) {
-        args.push(current.trim());
+    const last = current.trim();
+    if (last || hasQuote) {
+        args.push(last);
     }
     return args;
 }
@@ -2876,7 +2880,18 @@ function applyChangeToProperty(binding, _context, newValue) {
     if (propSegments.length === 1) {
         const firstSegment = propSegments[0];
         if (element[firstSegment] !== newValue) {
-            element[firstSegment] = newValue;
+            try {
+                element[firstSegment] = newValue;
+            }
+            catch (error) {
+                if (config.debug) {
+                    console.warn(`Failed to set property '${firstSegment}' on element.`, {
+                        element,
+                        newValue,
+                        error
+                    });
+                }
+            }
         }
         return;
     }
@@ -2902,7 +2917,20 @@ function applyChangeToProperty(binding, _context, newValue) {
             }
             return;
         }
-        subObject[propSegments[propSegments.length - 1]] = newValue;
+        try {
+            subObject[propSegments[propSegments.length - 1]] = newValue;
+        }
+        catch (error) {
+            if (config.debug) {
+                console.warn(`Failed to set property on sub-object.`, {
+                    element,
+                    propSegments,
+                    oldValue,
+                    newValue,
+                    error
+                });
+            }
+        }
     }
 }
 

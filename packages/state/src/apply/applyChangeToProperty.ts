@@ -8,7 +8,17 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
   if (propSegments.length === 1) {
     const firstSegment = propSegments[0];
     if ((element as any)[firstSegment] !== newValue) {
-      (element as any)[firstSegment] = newValue;
+      try {
+        (element as any)[firstSegment] = newValue;
+      } catch (error) {
+        if (config.debug) {
+          console.warn(`Failed to set property '${firstSegment}' on element.`, {
+            element,
+            newValue,
+            error
+          });
+        }
+      }
     }
     return;
   }
@@ -34,6 +44,18 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
       }
       return;
     }
-    subObject[propSegments[propSegments.length - 1]] = newValue;
+    try {
+      subObject[propSegments[propSegments.length - 1]] = newValue;
+    } catch (error) {
+      if (config.debug) {
+        console.warn(`Failed to set property on sub-object.`, {
+          element,
+          propSegments,
+          oldValue,
+          newValue,
+          error
+        });
+      }
+    }
   }
 }

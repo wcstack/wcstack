@@ -61,8 +61,12 @@ describe('parseFilterArgs', () => {
       expect(parseFilterArgs('10,"hello, world",\'test\'')).toEqual(['10', 'hello, world', 'test']);
     });
 
-    it('空のクォート文字列を扱えること', () => {
-      expect(parseFilterArgs('""')).toEqual([]);
+    it('空のダブルクォート文字列は空文字の引数として扱われること', () => {
+      expect(parseFilterArgs('""')).toEqual(['']);
+    });
+
+    it('空のシングルクォート文字列は空文字の引数として扱われること', () => {
+      expect(parseFilterArgs("''")).toEqual(['']);
     });
 
     it('クォート外の空要素も含まれること', () => {

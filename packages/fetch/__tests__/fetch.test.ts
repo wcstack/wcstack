@@ -163,6 +163,12 @@ describe("Fetch", () => {
     expect(Fetch.wcBindable.properties[3].name).toBe("status");
   });
 
+  it("valueのgetterがdetail.valueを返す", () => {
+    const getter = Fetch.wcBindable.properties[0].getter!;
+    const event = new CustomEvent("wcs-fetch:response", { detail: { value: "test", status: 200 } });
+    expect(getter(event)).toBe("test");
+  });
+
   it("statusのgetterがdetail.statusを返す", () => {
     const getter = Fetch.wcBindable.properties[3].getter!;
     const event = new CustomEvent("wcs-fetch:response", { detail: { value: "test", status: 200 } });
@@ -248,6 +254,69 @@ describe("Fetch", () => {
     document.body.appendChild(el);
 
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("接続後にurl属性が変更されると自動実行される", async () => {
+    fetchSpy.mockResolvedValue(createMockResponse({ data: "test" }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    document.body.appendChild(el);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    el.setAttribute("url", "/api/test");
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("url属性が空に変更された場合は自動実行されない", async () => {
+    fetchSpy.mockResolvedValue(createMockResponse({ data: "test" }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    fetchSpy.mockClear();
+    el.setAttribute("url", "");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("manual属性がある場合はurl変更でも自動実行されない", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    el.setAttribute("url", "/api/test");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("未接続時のurl変更では自動実行されない", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("url属性が別の値に変更されると再度自動実行される", async () => {
+    fetchSpy.mockResolvedValue(createMockResponse({ data: "test" }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    el.setAttribute("url", "/api/users?role=admin");
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("url未設定時にfetch()を呼ぶとエラーをスローする", async () => {

@@ -29,7 +29,7 @@ class FetchCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "value", event: "wcs-fetch:response" },
+            { name: "value", event: "wcs-fetch:response", getter: (e) => e.detail.value },
             { name: "loading", event: "wcs-fetch:loading-changed" },
             { name: "error", event: "wcs-fetch:error" },
             { name: "status", event: "wcs-fetch:response", getter: (e) => e.detail.status },
@@ -152,6 +152,7 @@ class FetchCore extends EventTarget {
 
 class Fetch extends HTMLElement {
     static wcBindable = FetchCore.wcBindable;
+    static get observedAttributes() { return ["url"]; }
     _core;
     _body = null;
     constructor() {
@@ -263,6 +264,11 @@ class Fetch extends HTMLElement {
         // bodyをリセット（一回限りの使用）
         this._body = null;
         return result;
+    }
+    attributeChangedCallback(name, _oldValue, newValue) {
+        if (name === "url" && this.isConnected && !this.manual && newValue) {
+            this.fetch();
+        }
     }
     connectedCallback() {
         this.style.display = "none";

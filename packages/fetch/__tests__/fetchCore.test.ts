@@ -40,6 +40,18 @@ describe("FetchCore", () => {
     expect(FetchCore.wcBindable.properties[3].name).toBe("status");
   });
 
+  it("valueのgetterがdetail.valueを返す", () => {
+    const getter = FetchCore.wcBindable.properties[0].getter!;
+    const event = new CustomEvent("wcs-fetch:response", { detail: { value: "test", status: 200 } });
+    expect(getter(event)).toBe("test");
+  });
+
+  it("statusのgetterがdetail.statusを返す", () => {
+    const getter = FetchCore.wcBindable.properties[3].getter!;
+    const event = new CustomEvent("wcs-fetch:response", { detail: { value: "test", status: 200 } });
+    expect(getter(event)).toBe(200);
+  });
+
   it("初期状態が正しい", () => {
     const core = new FetchCore();
     expect(core.value).toBeNull();

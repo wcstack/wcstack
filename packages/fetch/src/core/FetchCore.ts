@@ -14,7 +14,7 @@ export class FetchCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: "wcs-fetch:response" },
+      { name: "value", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.value },
       { name: "loading", event: "wcs-fetch:loading-changed" },
       { name: "error", event: "wcs-fetch:error" },
       { name: "status", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.status },

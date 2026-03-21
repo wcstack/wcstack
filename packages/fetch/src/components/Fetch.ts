@@ -6,6 +6,7 @@ import { FetchBody } from "./FetchBody.js";
 
 export class Fetch extends HTMLElement {
   static wcBindable: IWcBindable = FetchCore.wcBindable;
+  static get observedAttributes(): string[] { return ["url"]; }
 
   private _core: FetchCore;
   private _body: any = null;
@@ -141,6 +142,12 @@ export class Fetch extends HTMLElement {
     this._body = null;
 
     return result;
+  }
+
+  attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void {
+    if (name === "url" && this.isConnected && !this.manual && newValue) {
+      this.fetch();
+    }
   }
 
   connectedCallback(): void {

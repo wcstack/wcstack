@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + fetch demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: #16213e; }
+    section { margin-bottom: 2rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    /* User list */
+    .user-list { list-style: none; }
+    .user-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.15s; }
+    .user-item:hover { background: #f8f9fa; }
+    .user-item:last-child { border-bottom: none; }
+    .user-name { font-weight: 500; }
+    .user-email { color: #666; font-size: 0.875rem; }
+    .role-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
+
+    /* Filter */
+    .filter-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .filter-btn { padding: 0.375rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.875rem; }
+    .filter-btn.active { background: #3949ab; color: white; border-color: #3949ab; }
+
+    /* Detail */
+    .detail-card { padding: 1rem; background: #f8f9fa; border-radius: 6px; }
+    .detail-card dt { font-size: 0.75rem; color: #666; text-transform: uppercase; margin-top: 0.5rem; }
+    .detail-card dd { font-size: 1rem; margin-bottom: 0.25rem; }
+
+    /* Form */
+    .form-group { margin-bottom: 0.75rem; }
+    .form-group label { display: block; font-size: 0.875rem; margin-bottom: 0.25rem; color: #444; }
+    .form-group input, .form-group select { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem; }
+    .submit-btn { padding: 0.5rem 1.5rem; background: #3949ab; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.875rem; }
+    .submit-btn:hover { background: #303f9f; }
+
+    /* Spinner */
+    .spinner { display: flex; justify-content: center; padding: 1.5rem; }
+    .spinner::after { content: ''; width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #3949ab; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Status */
+    .status-msg { padding: 0.5rem 0.75rem; border-radius: 4px; margin-top: 0.75rem; font-size: 0.875rem; }
+    .status-msg.success { background: #e8f5e9; color: #2e7d32; }
+    .status-msg.error { background: #fce4ec; color: #c62828; }
+  </style>
+
+  <script type="module" src="/packages/state/dist/auto.js"></script>
+  <script type="module" src="/packages/fetch/dist/auto.js"></script>
+</head>
+<body>
+
+<h1>wcstack: state + fetch demo</h1>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      listLoading: false,
+      selectedUser: null,
+      selectedUserId: null,
+      detailLoading: false,
+      filterRole: "",
+      newUser: { name: "", email: "", role: "viewer" },
+      postResult: null,
+      postError: null,
+      submitLoading: false,
+
+      get detailUrl() {
+        const id = this.selectedUserId;
+        return id ? "/api/users/" + id : "";
+      },
+
+      selectUser() {
+        this.selectedUser = null;
+        this.selectedUserId = this["users.*.id"];
+      },
+
+      get usersUrl() {
+        const role = this.filterRole;
+        return role ? "/api/users?role=" + role : "/api/users";
+      },
+
+      filterBy(role) {
+        this.filterRole = role;
+        this.selectedUser = null;
+        this.selectedUserId = null;
+      },
+
+      filterAll() { this.filterBy(""); },
+      filterAdmin() { this.filterBy("admin"); },
+      filterEditor() { this.filterBy("editor"); },
+      filterViewer() { this.filterBy("viewer"); },
+
+      $updatedCallback(names) {
+        // submit完了時: フォームリセット＋リスト再読み込み
+        if (names.includes("submitLoading") && !this.submitLoading && this.postResult) {
+          this.newUser = { name: "", email: "", role: "viewer" };
+          document.getElementById("list-fetch").fetch();
+        }
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Fetch Components (headless, hidden)
+     ============================================================ -->
+<wcs-fetch id="list-fetch" data-wcs="value: users; loading: listLoading; url: usersUrl"></wcs-fetch>
+<wcs-fetch id="detail-fetch" data-wcs="value: selectedUser; loading: detailLoading; url: detailUrl"></wcs-fetch>
+<wcs-fetch id="create-fetch" url="/api/users" method="POST" manual data-wcs="body: newUser; loading: submitLoading; value: postResult; error: postError">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<!-- ============================================================
+     Section 1: User List with Filtering
+     ============================================================ -->
+<section>
+  <h2>User List</h2>
+
+  <div class="filter-bar">
+    <button class="filter-btn" data-wcs="onclick: filterAll; class.active: filterRole|eq('')">All</button>
+    <button class="filter-btn" data-wcs="onclick: filterAdmin; class.active: filterRole|eq('admin')">Admin</button>
+    <button class="filter-btn" data-wcs="onclick: filterEditor; class.active: filterRole|eq('editor')">Editor</button>
+    <button class="filter-btn" data-wcs="onclick: filterViewer; class.active: filterRole|eq('viewer')">Viewer</button>
+  </div>
+
+  <template data-wcs="if: listLoading">
+    <div class="spinner"></div>
+  </template>
+
+  <ul class="user-list">
+    <template data-wcs="for: users">
+      <li class="user-item" data-wcs="onclick: selectUser">
+        <div>
+          <span class="user-name" data-wcs="textContent: .name"></span>
+          <span class="user-email" data-wcs="textContent: .email"></span>
+        </div>
+        <span class="role-badge" data-wcs="textContent: .role"></span>
+      </li>
+    </template>
+  </ul>
+</section>
+
+<!-- ============================================================
+     Section 2: User Detail
+     ============================================================ -->
+<section>
+  <h2>User Detail</h2>
+
+  <template data-wcs="if: detailLoading">
+    <div class="spinner"></div>
+  </template>
+
+  <template data-wcs="if: selectedUser|truthy">
+    <dl class="detail-card">
+      <dt>ID</dt>
+      <dd data-wcs="textContent: selectedUser.id"></dd>
+      <dt>Name</dt>
+      <dd data-wcs="textContent: selectedUser.name"></dd>
+      <dt>Email</dt>
+      <dd data-wcs="textContent: selectedUser.email"></dd>
+      <dt>Role</dt>
+      <dd data-wcs="textContent: selectedUser.role"></dd>
+    </dl>
+  </template>
+
+  <template data-wcs="else: selectedUser">
+    <p style="color: #999;">Click a user above to see details.</p>
+  </template>
+</section>
+
+<!-- ============================================================
+     Section 3: Create User (POST)
+     ============================================================ -->
+<section>
+  <h2>Create User</h2>
+
+  <div class="form-group">
+    <label>Name</label>
+    <input type="text" data-wcs="value: newUser.name" placeholder="名前を入力">
+  </div>
+  <div class="form-group">
+    <label>Email</label>
+    <input type="email" data-wcs="value: newUser.email" placeholder="email@example.com">
+  </div>
+  <div class="form-group">
+    <label>Role</label>
+    <select data-wcs="value: newUser.role">
+      <option value="viewer">Viewer</option>
+      <option value="editor">Editor</option>
+      <option value="admin">Admin</option>
+    </select>
+  </div>
+  <template data-wcs="if: submitLoading">
+    <div class="spinner"></div>
+  </template>
+  <button class="submit-btn" data-fetchtarget="create-fetch">Create</button>
+
+  <template data-wcs="if: postResult">
+    <div class="status-msg success">
+      Created: <span data-wcs="textContent: postResult.name"></span> (ID: <span data-wcs="textContent: postResult.id"></span>)
+    </div>
+  </template>
+
+  <template data-wcs="if: postError">
+    <div class="status-msg error">Error occurred</div>
+  </template>
+</section>
+
+</body>
+</html>

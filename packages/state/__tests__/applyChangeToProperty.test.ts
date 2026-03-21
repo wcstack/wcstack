@@ -89,4 +89,72 @@ describe('applyChangeToProperty', () => {
     spy.mockRestore();
     config.debug = false;
   });
+
+  it('単一プロパティ設定でエラーが発生した場合、debug=trueならconsole.warnが呼ばれること', () => {
+    config.debug = true;
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const el = document.createElement('div') as any;
+    Object.defineProperty(el, 'readOnly', {
+      get() { return 'fixed'; },
+      set() { throw new Error('cannot set'); },
+    });
+    const binding = createBinding(el, ['readOnly']);
+    applyChangeToProperty(binding, dummyContext, 'new');
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to set property 'readOnly' on element."),
+      expect.objectContaining({ newValue: 'new' })
+    );
+    spy.mockRestore();
+    config.debug = false;
+  });
+
+  it('単一プロパティ設定でエラーが発生した場合、debug=falseなら何もしないこと', () => {
+    config.debug = false;
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const el = document.createElement('div') as any;
+    Object.defineProperty(el, 'readOnly', {
+      get() { return 'fixed'; },
+      set() { throw new Error('cannot set'); },
+    });
+    const binding = createBinding(el, ['readOnly']);
+    applyChangeToProperty(binding, dummyContext, 'new');
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('ネストプロパティ設定でエラーが発生した場合、debug=trueならconsole.warnが呼ばれること', () => {
+    config.debug = true;
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const el = document.createElement('div') as any;
+    const inner = {};
+    Object.defineProperty(inner, 'val', {
+      get() { return 'fixed'; },
+      set() { throw new Error('cannot set'); },
+    });
+    el.foo = { bar: inner };
+    const binding = createBinding(el, ['foo', 'bar', 'val']);
+    applyChangeToProperty(binding, dummyContext, 'new');
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to set property on sub-object."),
+      expect.objectContaining({ newValue: 'new' })
+    );
+    spy.mockRestore();
+    config.debug = false;
+  });
+
+  it('ネストプロパティ設定でエラーが発生した場合、debug=falseなら何もしないこと', () => {
+    config.debug = false;
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const el = document.createElement('div') as any;
+    const inner = {};
+    Object.defineProperty(inner, 'val', {
+      get() { return 'fixed'; },
+      set() { throw new Error('cannot set'); },
+    });
+    el.foo = { bar: inner };
+    const binding = createBinding(el, ['foo', 'bar', 'val']);
+    applyChangeToProperty(binding, dummyContext, 'new');
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });
