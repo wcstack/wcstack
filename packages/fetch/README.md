@@ -453,15 +453,16 @@ interface WcsFetchHttpError {
 }
 
 // Core (headless) — 4 async state properties
-interface WcsFetchCoreValues {
-  value: unknown;
+// T defaults to unknown; pass a type argument for typed `value`
+interface WcsFetchCoreValues<T = unknown> {
+  value: T;
   loading: boolean;
   error: WcsFetchHttpError | Error | null;
   status: number;
 }
 
 // Shell (<wcs-fetch>) — extends Core with trigger
-interface WcsFetchValues extends WcsFetchCoreValues {
+interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
   trigger: boolean;
 }
 ```
@@ -488,9 +489,11 @@ Since `<wcs-fetch>` is HAWC + `wc-bindable-protocol`, it works with any framewor
 import { useWcBindable } from "@wc-bindable/react";
 import type { WcsFetchValues } from "@wcstack/fetch";
 
+interface User { id: number; name: string; }
+
 function UserList() {
   const [ref, { value: users, loading, error }] =
-    useWcBindable<HTMLElement, WcsFetchValues>();
+    useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
 
   return (
     <>
@@ -498,7 +501,7 @@ function UserList() {
       {loading && <p>Loading...</p>}
       {error && <p>Error</p>}
       <ul>
-        {Array.isArray(users) && users.map((user) => (
+        {users?.map((user) => (
           <li key={user.id}>{user.name}</li>
         ))}
       </ul>
@@ -514,7 +517,9 @@ function UserList() {
 import { useWcBindable } from "@wc-bindable/vue";
 import type { WcsFetchValues } from "@wcstack/fetch";
 
-const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues>();
+interface User { id: number; name: string; }
+
+const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
 </script>
 
 <template>
@@ -560,8 +565,10 @@ let loading = $state(false);
 import { createWcBindable } from "@wc-bindable/solid";
 import type { WcsFetchValues } from "@wcstack/fetch";
 
+interface User { id: number; name: string; }
+
 function UserList() {
-  const [values, directive] = createWcBindable<WcsFetchValues>();
+  const [values, directive] = createWcBindable<WcsFetchValues<User[]>>();
 
   return (
     <>

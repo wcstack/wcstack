@@ -453,15 +453,16 @@ interface WcsFetchHttpError {
 }
 
 // Core（ヘッドレス）— 4 つの非同期状態プロパティ
-interface WcsFetchCoreValues {
-  value: unknown;
+// T のデフォルトは unknown。型引数を渡すと value が型付けされる
+interface WcsFetchCoreValues<T = unknown> {
+  value: T;
   loading: boolean;
   error: WcsFetchHttpError | Error | null;
   status: number;
 }
 
 // Shell（<wcs-fetch>）— Core を拡張し trigger を追加
-interface WcsFetchValues extends WcsFetchCoreValues {
+interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
   trigger: boolean;
 }
 ```
@@ -488,9 +489,11 @@ interface WcsFetchValues extends WcsFetchCoreValues {
 import { useWcBindable } from "@wc-bindable/react";
 import type { WcsFetchValues } from "@wcstack/fetch";
 
+interface User { id: number; name: string; }
+
 function UserList() {
   const [ref, { value: users, loading, error }] =
-    useWcBindable<HTMLElement, WcsFetchValues>();
+    useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
 
   return (
     <>
@@ -498,7 +501,7 @@ function UserList() {
       {loading && <p>読み込み中...</p>}
       {error && <p>エラー</p>}
       <ul>
-        {Array.isArray(users) && users.map((user) => (
+        {users?.map((user) => (
           <li key={user.id}>{user.name}</li>
         ))}
       </ul>
@@ -514,7 +517,9 @@ function UserList() {
 import { useWcBindable } from "@wc-bindable/vue";
 import type { WcsFetchValues } from "@wcstack/fetch";
 
-const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues>();
+interface User { id: number; name: string; }
+
+const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
 </script>
 
 <template>
@@ -560,8 +565,10 @@ let loading = $state(false);
 import { createWcBindable } from "@wc-bindable/solid";
 import type { WcsFetchValues } from "@wcstack/fetch";
 
+interface User { id: number; name: string; }
+
 function UserList() {
-  const [values, directive] = createWcBindable<WcsFetchValues>();
+  const [values, directive] = createWcBindable<WcsFetchValues<User[]>>();
 
   return (
     <>

@@ -19,23 +19,28 @@ interface IWcBindable {
     readonly properties: IWcBindableProperty[];
 }
 /**
+ * HTTP error returned when the server responds with a non-ok status (>= 400).
+ */
+interface WcsFetchHttpError {
+    status: number;
+    statusText: string;
+    body: string;
+}
+/**
  * Value types for FetchCore (headless) — the 4 async state properties.
  * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
  *
  * @example
  * ```typescript
+ * interface User { id: number; name: string; }
  * const core = new FetchCore();
- * bind(core, (name: keyof WcsFetchCoreValues, value) => { ... });
+ * bind(core, (name: keyof WcsFetchCoreValues<User>, value) => { ... });
  * ```
  */
-interface WcsFetchCoreValues {
-    value: unknown;
+interface WcsFetchCoreValues<T = unknown> {
+    value: T;
     loading: boolean;
-    error: {
-        status: number;
-        statusText: string;
-        body: string;
-    } | null;
+    error: WcsFetchHttpError | Error | null;
     status: number;
 }
 /**
@@ -45,11 +50,13 @@ interface WcsFetchCoreValues {
  * @example
  * ```tsx
  * // React
- * const [ref, values] = useWcBindable<HTMLElement, WcsFetchValues>();
+ * interface User { id: number; name: string; }
+ * const [ref, values] = useWcBindable<HTMLElement, WcsFetchValues<User>>();
+ * values.value   // User
  * values.loading // boolean
  * ```
  */
-interface WcsFetchValues extends WcsFetchCoreValues {
+interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
     trigger: boolean;
 }
 
@@ -83,4 +90,4 @@ declare class FetchCore extends EventTarget {
 }
 
 export { FetchCore, bootstrapFetch };
-export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchValues };
+export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues };

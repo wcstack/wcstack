@@ -49,12 +49,13 @@ export interface WcsFetchHttpError {
  *
  * @example
  * ```typescript
+ * interface User { id: number; name: string; }
  * const core = new FetchCore();
- * bind(core, (name: keyof WcsFetchCoreValues, value) => { ... });
+ * bind(core, (name: keyof WcsFetchCoreValues<User>, value) => { ... });
  * ```
  */
-export interface WcsFetchCoreValues {
-  value: unknown;
+export interface WcsFetchCoreValues<T = unknown> {
+  value: T;
   loading: boolean;
   error: WcsFetchHttpError | Error | null;
   status: number;
@@ -67,10 +68,12 @@ export interface WcsFetchCoreValues {
  * @example
  * ```tsx
  * // React
- * const [ref, values] = useWcBindable<HTMLElement, WcsFetchValues>();
+ * interface User { id: number; name: string; }
+ * const [ref, values] = useWcBindable<HTMLElement, WcsFetchValues<User>>();
+ * values.value   // User
  * values.loading // boolean
  * ```
  */
-export interface WcsFetchValues extends WcsFetchCoreValues {
+export interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
   trigger: boolean;
 }
