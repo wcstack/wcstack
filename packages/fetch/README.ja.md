@@ -102,6 +102,8 @@ console.log(fetchEl.error);   // エラー情報 or null
 | `error` | object \| null | エラー情報（`{ status, statusText, body }`） |
 | `status` | number | HTTP ステータスコード |
 | `body` | any | リクエストボディ（JS 経由で設定、`fetch()` 後にリセット） |
+| `trigger` | boolean | `true` を設定すると fetch を実行。完了後に自動で `false` に戻る |
+| `manual` | boolean | `true` の場合、接続時や `url` 変更時の自動実行を無効化 |
 
 | メソッド | 説明 |
 |----------|------|
@@ -141,9 +143,64 @@ static wcBindable = {
     { name: "error",   event: "wcs-fetch:error" },
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
+    { name: "trigger", event: "wcs-fetch:trigger-changed" },
   ],
 };
 ```
+
+## URL の監視
+
+`<wcs-fetch>` はデフォルトで以下のタイミングに自動的にリクエストを実行します:
+
+1. **DOM に接続されたとき** — `url` が設定済みかつ `manual` 属性がない場合
+2. **`url` 属性が変更されたとき** — 新しい URL で再フェッチ（`manual` がない場合）
+
+`@wcstack/state` と組み合わせると、状態の変更に連動したリアクティブなデータ取得が可能です:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      filterRole: "",
+      users: [],
+      get usersUrl() {
+        const role = this.filterRole;
+        return role ? "/api/users?role=" + role : "/api/users";
+      },
+    };
+  </script>
+  <!-- URL が変わると自動的に再フェッチ -->
+  <wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
+</wcs-state>
+```
+
+`manual` 属性を設定すると自動実行が無効になり、`fetch()` メソッドや `trigger` プロパティで明示的に制御できます。
+
+## trigger プロパティ
+
+`trigger` プロパティを使うと、DOM 参照なしに状態から宣言的に fetch を実行できます。
+
+`true` を設定すると `fetch()` が実行され、完了後（成功・エラー問わず）自動的に `false` にリセットされます。
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      shouldRefresh: false,
+      reload() {
+        this.shouldRefresh = true;
+      },
+    };
+  </script>
+  <wcs-fetch url="/api/users" manual
+    data-wcs="trigger: shouldRefresh; value: users">
+  </wcs-fetch>
+  <button data-wcs="onclick: reload">更新</button>
+</wcs-state>
+```
+
+リセット時に `wcs-fetch:trigger-changed` イベントが発火し、`@wcstack/state` がバインドされたプロパティを `false` に同期します。
 
 ## オートトリガー
 

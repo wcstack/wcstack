@@ -151,10 +151,17 @@ class FetchCore extends EventTarget {
 }
 
 class Fetch extends HTMLElement {
-    static wcBindable = FetchCore.wcBindable;
+    static wcBindable = {
+        ...FetchCore.wcBindable,
+        properties: [
+            ...FetchCore.wcBindable.properties,
+            { name: "trigger", event: "wcs-fetch:trigger-changed" },
+        ],
+    };
     static get observedAttributes() { return ["url"]; }
     _core;
     _body = null;
+    _trigger = false;
     constructor() {
         super();
         this._core = new FetchCore(this);
@@ -210,6 +217,22 @@ class Fetch extends HTMLElement {
     }
     set body(value) {
         this._body = value;
+    }
+    get trigger() {
+        return this._trigger;
+    }
+    set trigger(value) {
+        const v = !!value;
+        if (v) {
+            this._trigger = true;
+            this.fetch().finally(() => {
+                this._trigger = false;
+                this.dispatchEvent(new CustomEvent("wcs-fetch:trigger-changed", {
+                    detail: false,
+                    bubbles: true,
+                }));
+            });
+        }
     }
     _collectHeaders() {
         const headers = {};

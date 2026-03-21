@@ -156,11 +156,13 @@ describe("Fetch", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(Fetch.wcBindable.protocol).toBe("wc-bindable");
     expect(Fetch.wcBindable.version).toBe(1);
-    expect(Fetch.wcBindable.properties).toHaveLength(4);
+    expect(Fetch.wcBindable.properties).toHaveLength(5);
     expect(Fetch.wcBindable.properties[0].name).toBe("value");
     expect(Fetch.wcBindable.properties[1].name).toBe("loading");
     expect(Fetch.wcBindable.properties[2].name).toBe("error");
     expect(Fetch.wcBindable.properties[3].name).toBe("status");
+    expect(Fetch.wcBindable.properties[4].name).toBe("trigger");
+    expect(Fetch.wcBindable.properties[4].event).toBe("wcs-fetch:trigger-changed");
   });
 
   it("valueのgetterがdetail.valueを返す", () => {
@@ -678,6 +680,76 @@ describe("Fetch", () => {
     expect(el.error).toBeDefined();
     expect(el.error.status).toBe(500);
     expect(el.error.body).toBe("");
+  });
+
+  it("triggerをtrueに設定するとfetch()が実行される", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ triggered: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    el.trigger = true;
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(el.value).toEqual({ triggered: true });
+    });
+  });
+
+  it("trigger完了後にfalseにリセットされイベントが発火する", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    const events: boolean[] = [];
+    el.addEventListener("wcs-fetch:trigger-changed", (e: Event) => {
+      events.push((e as CustomEvent).detail);
+    });
+
+    el.trigger = true;
+    expect(el.trigger).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(el.trigger).toBe(false);
+      expect(events).toEqual([false]);
+    });
+  });
+
+  it("triggerにfalseを設定しても何も起きない", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
+
+    el.trigger = false;
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(el.trigger).toBe(false);
+  });
+
+  it("triggerはfetchエラー時でもfalseにリセットされる", async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/error");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    const events: boolean[] = [];
+    el.addEventListener("wcs-fetch:trigger-changed", (e: Event) => {
+      events.push((e as CustomEvent).detail);
+    });
+
+    el.trigger = true;
+
+    await vi.waitFor(() => {
+      expect(el.trigger).toBe(false);
+      expect(events).toEqual([false]);
+    });
   });
 
   it("name属性が空のヘッダは無視される", async () => {

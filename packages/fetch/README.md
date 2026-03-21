@@ -102,6 +102,8 @@ console.log(fetchEl.error);   // error info or null
 | `error` | object \| null | Error info (`{ status, statusText, body }`) |
 | `status` | number | HTTP status code |
 | `body` | any | Request body (set via JS, resets after `fetch()`) |
+| `trigger` | boolean | Set to `true` to execute fetch. Resets to `false` on completion. |
+| `manual` | boolean | When `true`, disables auto-fetch on connect and `url` change |
 
 | Method | Description |
 |--------|-------------|
@@ -141,9 +143,64 @@ static wcBindable = {
     { name: "error",   event: "wcs-fetch:error" },
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
+    { name: "trigger", event: "wcs-fetch:trigger-changed" },
   ],
 };
 ```
+
+## URL Observation
+
+By default, `<wcs-fetch>` automatically executes a request when:
+
+1. **Connected to DOM** — if `url` is set and `manual` is not present
+2. **`url` attribute changes** — re-fetches with the new URL (unless `manual`)
+
+This enables reactive data fetching when combined with `@wcstack/state`:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      filterRole: "",
+      users: [],
+      get usersUrl() {
+        const role = this.filterRole;
+        return role ? "/api/users?role=" + role : "/api/users";
+      },
+    };
+  </script>
+  <!-- URL changes automatically trigger re-fetch -->
+  <wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
+</wcs-state>
+```
+
+Set the `manual` attribute to disable auto-fetch and control execution explicitly via `fetch()` or `trigger`.
+
+## Trigger Property
+
+The `trigger` property provides a declarative way to execute fetch from state — no DOM references needed.
+
+When set to `true`, it executes `fetch()` and automatically resets to `false` on completion (success or error).
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      shouldRefresh: false,
+      reload() {
+        this.shouldRefresh = true;
+      },
+    };
+  </script>
+  <wcs-fetch url="/api/users" manual
+    data-wcs="trigger: shouldRefresh; value: users">
+  </wcs-fetch>
+  <button data-wcs="onclick: reload">Refresh</button>
+</wcs-state>
+```
+
+The `wcs-fetch:trigger-changed` event is dispatched when the trigger resets, allowing `@wcstack/state` to sync the bound property back to `false`.
 
 ## Auto Trigger
 

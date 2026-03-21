@@ -5,11 +5,18 @@ import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
 
 export class Fetch extends HTMLElement {
-  static wcBindable: IWcBindable = FetchCore.wcBindable;
+  static wcBindable: IWcBindable = {
+    ...FetchCore.wcBindable,
+    properties: [
+      ...FetchCore.wcBindable.properties,
+      { name: "trigger", event: "wcs-fetch:trigger-changed" },
+    ],
+  };
   static get observedAttributes(): string[] { return ["url"]; }
 
   private _core: FetchCore;
   private _body: any = null;
+  private _trigger: boolean = false;
 
   constructor() {
     super();
@@ -78,6 +85,24 @@ export class Fetch extends HTMLElement {
 
   set body(value: any) {
     this._body = value;
+  }
+
+  get trigger(): boolean {
+    return this._trigger;
+  }
+
+  set trigger(value: boolean) {
+    const v = !!value;
+    if (v) {
+      this._trigger = true;
+      this.fetch().finally(() => {
+        this._trigger = false;
+        this.dispatchEvent(new CustomEvent("wcs-fetch:trigger-changed", {
+          detail: false,
+          bubbles: true,
+        }));
+      });
+    }
   }
 
   private _collectHeaders(): Record<string, string> {

@@ -71,6 +71,7 @@
       postResult: null,
       postError: null,
       submitLoading: false,
+      refreshList: false,
 
       get detailUrl() {
         const id = this.selectedUserId;
@@ -102,7 +103,7 @@
         // submit完了時: フォームリセット＋リスト再読み込み
         if (names.includes("submitLoading") && !this.submitLoading && this.postResult) {
           this.newUser = { name: "", email: "", role: "viewer" };
-          document.getElementById("list-fetch").fetch();
+          this.refreshList = true;
         }
       },
     };
@@ -112,7 +113,7 @@
 <!-- ============================================================
      Fetch Components (headless, hidden)
      ============================================================ -->
-<wcs-fetch id="list-fetch" data-wcs="value: users; loading: listLoading; url: usersUrl"></wcs-fetch>
+<wcs-fetch id="list-fetch" data-wcs="value: users; loading: listLoading; url: usersUrl; trigger: refreshList"></wcs-fetch>
 <wcs-fetch id="detail-fetch" data-wcs="value: selectedUser; loading: detailLoading; url: detailUrl"></wcs-fetch>
 <wcs-fetch id="create-fetch" url="/api/users" method="POST" manual data-wcs="body: newUser; loading: submitLoading; value: postResult; error: postError">
   <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
