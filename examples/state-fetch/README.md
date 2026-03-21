@@ -1,23 +1,23 @@
 # state + fetch demo
 
-`@wcstack/state` と `@wcstack/fetch` の連携デモです。ユーザー一覧の取得・フィルタリング・詳細表示・新規作成（POST）を行います。
+A demo integrating `@wcstack/state` and `@wcstack/fetch`. It demonstrates fetching a user list, filtering by role, viewing user details, and creating new users via POST.
 
-## 起動方法
+## Getting Started
 
 ```bash
-# 1. 各パッケージをビルド
+# 1. Build each package
 cd packages/state && npm run build && cd ../..
 cd packages/fetch && npm run build && cd ../..
 
-# 2. デモサーバーを起動
+# 2. Start the demo server
 node examples/state-fetch/server.js
 ```
 
-http://localhost:3000 でアクセスできます。
+Open http://localhost:3000 in your browser.
 
-## 機能
+## Features
 
-- **ユーザー一覧**: `/api/users` からデータを取得しリスト表示
-- **ロールフィルタ**: All / Admin / Editor / Viewer でフィルタリング
-- **詳細表示**: ユーザーをクリックすると `/api/users/:id` から詳細を取得
-- **新規作成**: フォームから POST でユーザーを作成、完了後にリストを自動リロード
+- **User List**: Fetches data from `/api/users` and renders a list
+- **Role Filter**: Filter by All / Admin / Editor / Viewer
+- **Detail View**: Click a user to fetch details from `/api/users/:id`
+- **Create User**: Submit a form to POST a new user; the list auto-reloads on success
