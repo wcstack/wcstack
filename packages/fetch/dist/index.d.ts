@@ -18,6 +18,40 @@ interface IWcBindable {
     readonly version: number;
     readonly properties: IWcBindableProperty[];
 }
+/**
+ * Value types for FetchCore (headless) — the 4 async state properties.
+ * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ *
+ * @example
+ * ```typescript
+ * const core = new FetchCore();
+ * bind(core, (name: keyof WcsFetchCoreValues, value) => { ... });
+ * ```
+ */
+interface WcsFetchCoreValues {
+    value: unknown;
+    loading: boolean;
+    error: {
+        status: number;
+        statusText: string;
+        body: string;
+    } | null;
+    status: number;
+}
+/**
+ * Value types for the Shell (`<wcs-fetch>`) — extends Core with `trigger`.
+ * Use with framework adapters for compile-time type checking.
+ *
+ * @example
+ * ```tsx
+ * // React
+ * const [ref, values] = useWcBindable<HTMLElement, WcsFetchValues>();
+ * values.loading // boolean
+ * ```
+ */
+interface WcsFetchValues extends WcsFetchCoreValues {
+    trigger: boolean;
+}
 
 declare function bootstrapFetch(userConfig?: IWritableConfig): void;
 
@@ -49,4 +83,4 @@ declare class FetchCore extends EventTarget {
 }
 
 export { FetchCore, bootstrapFetch };
-export type { FetchRequestOptions, IWritableConfig, IWritableTagNames };
+export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchValues };

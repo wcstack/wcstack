@@ -1,8 +1,8 @@
 # @wcstack/fetch
 
-Declarative fetch component for Web Components. Framework-agnostic async data fetching via [wc-bindable-protocol](https://github.com/nicolo-ribaudo/tc39-proposal-wc-bindable-protocol).
+Declarative fetch component for Web Components. A [HAWC](https://github.com/nicolo-ribaudo/tc39-proposal-wc-bindable-protocol) (Headless Async Web Component) that encapsulates HTTP communication and exposes reactive state via [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/docs/articles/HAWC.md).
 
-Zero runtime dependencies. Works with any framework — React, Vue, Svelte, or vanilla JavaScript.
+Zero runtime dependencies. Works with any framework — React, Vue, Svelte, Solid, Angular, or vanilla JavaScript.
 
 ## Install
 
@@ -21,8 +21,56 @@ bootstrapFetch();
 Or use the auto-bootstrap script:
 
 ```html
-<script type="module" src="@wcstack/fetch/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
 ```
+
+## Architecture — Core / Shell
+
+`@wcstack/fetch` follows the HAWC Core/Shell pattern:
+
+```
+┌─────────────────────────────────────────────────┐
+│  FetchCore (EventTarget)                        │
+│  - async logic, state, dispatchEvent            │
+│  - runs anywhere: browser, Node, Deno, Workers  │
+├─────────────────────────────────────────────────┤
+│  Fetch (HTMLElement) — Shell                    │
+│  - attribute mapping, lifecycle                 │
+│  - enables framework binding via ref            │
+└─────────────────────────────────────────────────┘
+```
+
+**Core (`FetchCore`)** — Extends `EventTarget`, contains all async logic (HTTP requests, abort, state management). No DOM dependency — works in any JavaScript runtime.
+
+**Shell (`<wcs-fetch>`)** — Thin `HTMLElement` wrapper. Maps HTML attributes to Core parameters, manages DOM lifecycle, and enables framework binding via refs. Contains no business logic.
+
+The Core dispatches events directly on the Shell via **target injection**, so no event re-dispatch is needed.
+
+### Headless Usage (Core only)
+
+`FetchCore` can be used standalone without the DOM. Since it declares `static wcBindable`, you can use `@wc-bindable/core`'s `bind()` to subscribe to its state — the same way framework adapters work:
+
+```typescript
+import { FetchCore } from "@wcstack/fetch";
+import { bind } from "@wc-bindable/core";
+
+const core = new FetchCore();
+
+const unbind = bind(core, (name, value) => {
+  console.log(`${name}:`, value);
+  // "loading: true"
+  // "value: [{ id: 1, name: "Tanaka" }, ...]"
+  // "status: 200"
+  // "loading: false"
+});
+
+await core.fetch("/api/users");
+
+// Clean up when done
+unbind();
+```
+
+This works in Node.js, Deno, Cloudflare Workers — anywhere `EventTarget` and `fetch` are available.
 
 ## Usage
 
@@ -35,12 +83,11 @@ Or use the auto-bootstrap script:
 Response data is exposed via `wc-bindable-protocol`. With `@wcstack/state`:
 
 ```html
-<wcs-state name="app">
-  <wcs-fetch url="/api/users" data-wcs="value: users"></wcs-fetch>
+<wcs-fetch url="/api/users" data-wcs="value: users"></wcs-fetch>
+<wcs-state>
   <ul>
-    <!--wcs-for items -->
-    <template>
-      <li data-wcs="textContent: items.*.name"></li>
+    <template data-wcs="for: users">
+      <li data-wcs="textContent: users.*.name"></li>
     </template>
   </ul>
 </wcs-state>
@@ -131,21 +178,65 @@ The body content is the element's text content.
 
 ## wc-bindable-protocol
 
-`<wcs-fetch>` declares `wc-bindable-protocol` compliance, making it interoperable with any framework or component that supports the protocol.
+`FetchCore` and `<wcs-fetch>` both declare `wc-bindable-protocol` compliance, making them interoperable with any framework or component that supports the protocol.
+
+### Core (FetchCore)
+
+`FetchCore` declares 4 bindable properties — the async state that any runtime can subscribe to:
 
 ```typescript
+// FetchCore.wcBindable
 static wcBindable = {
   protocol: "wc-bindable",
   version: 1,
   properties: [
-    { name: "value",   event: "wcs-fetch:response" },
+    { name: "value",   event: "wcs-fetch:response",
+      getter: (e) => e.detail.value },
     { name: "loading", event: "wcs-fetch:loading-changed" },
     { name: "error",   event: "wcs-fetch:error" },
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
+  ],
+};
+```
+
+Headless consumers call `core.fetch(url)` directly — no `trigger` needed.
+
+### Shell (`<wcs-fetch>`)
+
+The Shell extends Core's declaration with `trigger` — a property for declarative fetch execution from binding systems like `@wcstack/state`:
+
+```typescript
+// Fetch.wcBindable
+static wcBindable = {
+  ...FetchCore.wcBindable,
+  properties: [
+    ...FetchCore.wcBindable.properties,
     { name: "trigger", event: "wcs-fetch:trigger-changed" },
   ],
 };
+```
+
+### TypeScript Value Types
+
+The package exports two value type interfaces matching Core and Shell:
+
+```typescript
+import type { WcsFetchCoreValues, WcsFetchValues } from "@wcstack/fetch";
+
+// WcsFetchCoreValues — for headless (FetchCore) usage
+// {
+//   value: unknown;
+//   loading: boolean;
+//   error: { status: number; statusText: string; body: string } | null;
+//   status: number;
+// }
+
+// WcsFetchValues — for Shell (<wcs-fetch>) usage, extends Core
+// {
+//   ...WcsFetchCoreValues;
+//   trigger: boolean;
+// }
 ```
 
 ## URL Observation
@@ -229,19 +320,19 @@ bootstrapFetch({
 });
 ```
 
-## Integration with React
+## Framework Integration
 
-Using `@wc-bindable/react` adapter:
+Since `<wcs-fetch>` is a HAWC with `wc-bindable-protocol` compliance, it works with any framework through thin adapters from `@wc-bindable/*`. No `useEffect`, no async state management, no cleanup, no race conditions — the adapter reads `wcBindable` declarations automatically.
+
+### React
 
 ```tsx
 import { useWcBindable } from "@wc-bindable/react";
+import type { WcsFetchValues } from "@wcstack/fetch";
 
 function UserList() {
-  const [ref, { value: users, loading, error }] = useWcBindable<HTMLElement>({
-    value: null,
-    loading: false,
-    error: null,
-  });
+  const [ref, { value: users, loading, error }] =
+    useWcBindable<HTMLElement, WcsFetchValues>();
 
   return (
     <>
@@ -258,7 +349,86 @@ function UserList() {
 }
 ```
 
-No `useEffect`, no `useState` for async state, no cleanup, no race conditions. The adapter reads `wc-bindable` declarations automatically.
+### Vue
+
+```vue
+<script setup lang="ts">
+import { useWcBindable } from "@wc-bindable/vue";
+import type { WcsFetchValues } from "@wcstack/fetch";
+
+const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues>();
+</script>
+
+<template>
+  <wcs-fetch :ref="ref" url="/api/users" />
+  <p v-if="values.loading">Loading...</p>
+  <p v-else-if="values.error">Error: {{ values.error.statusText }}</p>
+  <ul v-else>
+    <li v-for="user in values.value" :key="user.id">{{ user.name }}</li>
+  </ul>
+</template>
+```
+
+### Svelte
+
+```svelte
+<script>
+import { wcBindable } from "@wc-bindable/svelte";
+
+let users = $state(null);
+let loading = $state(false);
+</script>
+
+<wcs-fetch url="/api/users"
+  use:wcBindable={{ onUpdate: (name, v) => {
+    if (name === "value") users = v;
+    if (name === "loading") loading = v;
+  }}} />
+
+{#if loading}
+  <p>Loading...</p>
+{:else if users}
+  <ul>
+    {#each users as user (user.id)}
+      <li>{user.name}</li>
+    {/each}
+  </ul>
+{/if}
+```
+
+### Solid
+
+```tsx
+import { createWcBindable } from "@wc-bindable/solid";
+import type { WcsFetchValues } from "@wcstack/fetch";
+
+function UserList() {
+  const [values, directive] = createWcBindable<WcsFetchValues>();
+
+  return (
+    <>
+      <wcs-fetch ref={directive} url="/api/users" />
+      <Show when={!values.loading} fallback={<p>Loading...</p>}>
+        <ul>
+          <For each={values.value}>{(user) => <li>{user.name}</li>}</For>
+        </ul>
+      </Show>
+    </>
+  );
+}
+```
+
+### Vanilla — `bind()` directly
+
+```javascript
+import { bind } from "@wc-bindable/core";
+
+const fetchEl = document.querySelector("wcs-fetch");
+
+bind(fetchEl, (name, value) => {
+  console.log(`${name} changed:`, value);
+});
+```
 
 ## License
 

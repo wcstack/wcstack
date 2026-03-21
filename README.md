@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Three independent packages. Zero runtime dependencies. No build step required.
+Four independent packages. Zero runtime dependencies. No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -147,6 +147,47 @@ Three independent packages. Zero runtime dependencies. No build step required.
 
 ---
 
+### What if fetch was a tag?
+
+[`@wcstack/fetch`](packages/fetch/) — Declarative HTTP communication as a headless Web Component.
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      loading: false,
+      filterRole: "",
+      get usersUrl() {
+        const role = this.filterRole;
+        return role ? "/api/users?role=" + role : "/api/users";
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- URL changes automatically trigger re-fetch -->
+<wcs-fetch data-wcs="url: usersUrl; value: users; loading: loading"></wcs-fetch>
+
+<template data-wcs="if: loading">
+  <p>Loading...</p>
+</template>
+<template data-wcs="for: users">
+  <div data-wcs="textContent: .name"></div>
+</template>
+```
+
+- **HAWC pattern** — Core (`EventTarget`) / Shell (`HTMLElement`) separation
+- **wc-bindable-protocol** — works with React, Vue, Svelte, Solid via thin adapters
+- **URL observation** — auto re-fetch when bound URL changes
+- **Trigger property** — declarative fetch execution from state, no DOM refs
+- **HTML replace mode** — htmx-like `target` attribute for server-rendered fragments
+- **Headless Core** — `FetchCore` runs in Node.js, Deno, Cloudflare Workers
+
+[Full documentation &rarr;](packages/fetch/README.md)
+
+---
+
 ### What if custom elements loaded themselves?
 
 [`@wcstack/autoloader`](packages/autoloader/) — Write a tag, it loads. No registration needed.
@@ -215,6 +256,7 @@ wcstack/
 ├── packages/
 │   ├── state/         # @wcstack/state
 │   ├── router/        # @wcstack/router
+│   ├── fetch/         # @wcstack/fetch
 │   └── autoloader/    # @wcstack/autoloader
 ```
 

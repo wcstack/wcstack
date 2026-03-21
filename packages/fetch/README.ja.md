@@ -1,8 +1,8 @@
 # @wcstack/fetch
 
-Web Components による宣言的な非同期通信コンポーネント。[wc-bindable-protocol](https://github.com/nicolo-ribaudo/tc39-proposal-wc-bindable-protocol) 準拠でフレームワーク非依存。
+Web Components による宣言的な非同期通信コンポーネント。HTTP 通信をカプセル化し、[wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol) でリアクティブな状態を公開する [HAWC](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/docs/articles/HAWC.md)（Headless Async Web Component）です。
 
-ランタイム依存ゼロ。React、Vue、Svelte、vanilla JavaScript のどこからでも使えます。
+ランタイム依存ゼロ。React、Vue、Svelte、Solid、Angular、vanilla JavaScript のどこからでも使えます。
 
 ## インストール
 
@@ -21,8 +21,56 @@ bootstrapFetch();
 または自動ブートストラップ:
 
 ```html
-<script type="module" src="@wcstack/fetch/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
 ```
+
+## アーキテクチャ — Core / Shell
+
+`@wcstack/fetch` は HAWC の Core/Shell パターンに従います:
+
+```
+┌─────────────────────────────────────────────────┐
+│  FetchCore (EventTarget)                        │
+│  - 非同期ロジック、状態管理、dispatchEvent      │
+│  - ブラウザ、Node、Deno、Workers で動作         │
+├─────────────────────────────────────────────────┤
+│  Fetch (HTMLElement) — Shell                    │
+│  - 属性マッピング、ライフサイクル               │
+│  - ref 経由のフレームワークバインディング       │
+└─────────────────────────────────────────────────┘
+```
+
+**Core (`FetchCore`)** — `EventTarget` を継承し、すべての非同期ロジック（HTTP リクエスト、abort、状態管理）を内包。DOM 依存ゼロで、任意の JavaScript ランタイムで動作します。
+
+**Shell (`<wcs-fetch>`)** — 薄い `HTMLElement` ラッパー。HTML 属性を Core のパラメータにマッピングし、DOM ライフサイクルを管理し、ref 経由のフレームワークバインディングを可能にします。ビジネスロジックは含みません。
+
+Core は **target injection** により Shell 上で直接イベントを発火するため、イベントの再ディスパッチは不要です。
+
+### ヘッドレス利用（Core 単体）
+
+`FetchCore` は DOM なしで単体利用できます。`static wcBindable` を宣言しているため、`@wc-bindable/core` の `bind()` で状態をサブスクライブできます — フレームワークアダプタと同じ仕組みです:
+
+```typescript
+import { FetchCore } from "@wcstack/fetch";
+import { bind } from "@wc-bindable/core";
+
+const core = new FetchCore();
+
+const unbind = bind(core, (name, value) => {
+  console.log(`${name}:`, value);
+  // "loading: true"
+  // "value: [{ id: 1, name: "田中" }, ...]"
+  // "status: 200"
+  // "loading: false"
+});
+
+await core.fetch("/api/users");
+
+// 不要になったらクリーンアップ
+unbind();
+```
+
+Node.js、Deno、Cloudflare Workers など、`EventTarget` と `fetch` が利用可能な環境で動作します。
 
 ## 使い方
 
@@ -35,12 +83,11 @@ bootstrapFetch();
 レスポンスデータは wc-bindable-protocol 経由で公開されます。`@wcstack/state` と組み合わせた例:
 
 ```html
-<wcs-state name="app">
-  <wcs-fetch url="/api/users" data-wcs="value: users"></wcs-fetch>
+<wcs-fetch url="/api/users" data-wcs="value: users"></wcs-fetch>
+<wcs-state>
   <ul>
-    <!--wcs-for items -->
-    <template>
-      <li data-wcs="textContent: items.*.name"></li>
+    <template data-wcs="for: users">
+      <li data-wcs="textContent: users.*.name"></li>
     </template>
   </ul>
 </wcs-state>
@@ -131,21 +178,65 @@ console.log(fetchEl.error);   // エラー情報 or null
 
 ## wc-bindable-protocol
 
-`<wcs-fetch>` は wc-bindable-protocol に準拠しており、プロトコル対応の任意のフレームワークやコンポーネントと相互運用できます。
+`FetchCore` と `<wcs-fetch>` はどちらも wc-bindable-protocol に準拠しており、プロトコル対応の任意のフレームワークやコンポーネントと相互運用できます。
+
+### Core (FetchCore)
+
+`FetchCore` は 4 つのバインド可能なプロパティを宣言します — 任意のランタイムからサブスクライブできる非同期状態です:
 
 ```typescript
+// FetchCore.wcBindable
 static wcBindable = {
   protocol: "wc-bindable",
   version: 1,
   properties: [
-    { name: "value",   event: "wcs-fetch:response" },
+    { name: "value",   event: "wcs-fetch:response",
+      getter: (e) => e.detail.value },
     { name: "loading", event: "wcs-fetch:loading-changed" },
     { name: "error",   event: "wcs-fetch:error" },
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
+  ],
+};
+```
+
+ヘッドレスの利用者は `core.fetch(url)` を直接呼ぶため、`trigger` は不要です。
+
+### Shell (`<wcs-fetch>`)
+
+Shell は Core の宣言を拡張し、`trigger` を追加します — `@wcstack/state` などのバインディングシステムから宣言的に fetch を実行するためのプロパティです:
+
+```typescript
+// Fetch.wcBindable
+static wcBindable = {
+  ...FetchCore.wcBindable,
+  properties: [
+    ...FetchCore.wcBindable.properties,
     { name: "trigger", event: "wcs-fetch:trigger-changed" },
   ],
 };
+```
+
+### TypeScript 値型
+
+パッケージは Core と Shell に対応する 2 つの値型インターフェースをエクスポートします:
+
+```typescript
+import type { WcsFetchCoreValues, WcsFetchValues } from "@wcstack/fetch";
+
+// WcsFetchCoreValues — ヘッドレス（FetchCore）用
+// {
+//   value: unknown;
+//   loading: boolean;
+//   error: { status: number; statusText: string; body: string } | null;
+//   status: number;
+// }
+
+// WcsFetchValues — Shell（<wcs-fetch>）用、Core を拡張
+// {
+//   ...WcsFetchCoreValues;
+//   trigger: boolean;
+// }
 ```
 
 ## URL の監視
@@ -229,19 +320,19 @@ bootstrapFetch({
 });
 ```
 
-## React との連携
+## フレームワーク連携
 
-`@wc-bindable/react` アダプタを使用:
+`<wcs-fetch>` は wc-bindable-protocol 準拠の HAWC なので、`@wc-bindable/*` の薄いアダプタを通じて任意のフレームワークで動作します。useEffect 不要、非同期状態管理不要、クリーンアップ不要、レースコンディション対策不要 — アダプタが `wcBindable` 宣言を自動的に読み取ります。
+
+### React
 
 ```tsx
 import { useWcBindable } from "@wc-bindable/react";
+import type { WcsFetchValues } from "@wcstack/fetch";
 
 function UserList() {
-  const [ref, { value: users, loading, error }] = useWcBindable<HTMLElement>({
-    value: null,
-    loading: false,
-    error: null,
-  });
+  const [ref, { value: users, loading, error }] =
+    useWcBindable<HTMLElement, WcsFetchValues>();
 
   return (
     <>
@@ -258,7 +349,86 @@ function UserList() {
 }
 ```
 
-useEffect 不要、非同期状態の useState 不要、クリーンアップ不要、レースコンディション対策不要。アダプタが `wc-bindable` 宣言を自動的に読み取り、バインドします。
+### Vue
+
+```vue
+<script setup lang="ts">
+import { useWcBindable } from "@wc-bindable/vue";
+import type { WcsFetchValues } from "@wcstack/fetch";
+
+const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues>();
+</script>
+
+<template>
+  <wcs-fetch :ref="ref" url="/api/users" />
+  <p v-if="values.loading">読み込み中...</p>
+  <p v-else-if="values.error">エラー: {{ values.error.statusText }}</p>
+  <ul v-else>
+    <li v-for="user in values.value" :key="user.id">{{ user.name }}</li>
+  </ul>
+</template>
+```
+
+### Svelte
+
+```svelte
+<script>
+import { wcBindable } from "@wc-bindable/svelte";
+
+let users = $state(null);
+let loading = $state(false);
+</script>
+
+<wcs-fetch url="/api/users"
+  use:wcBindable={{ onUpdate: (name, v) => {
+    if (name === "value") users = v;
+    if (name === "loading") loading = v;
+  }}} />
+
+{#if loading}
+  <p>読み込み中...</p>
+{:else if users}
+  <ul>
+    {#each users as user (user.id)}
+      <li>{user.name}</li>
+    {/each}
+  </ul>
+{/if}
+```
+
+### Solid
+
+```tsx
+import { createWcBindable } from "@wc-bindable/solid";
+import type { WcsFetchValues } from "@wcstack/fetch";
+
+function UserList() {
+  const [values, directive] = createWcBindable<WcsFetchValues>();
+
+  return (
+    <>
+      <wcs-fetch ref={directive} url="/api/users" />
+      <Show when={!values.loading} fallback={<p>読み込み中...</p>}>
+        <ul>
+          <For each={values.value}>{(user) => <li>{user.name}</li>}</For>
+        </ul>
+      </Show>
+    </>
+  );
+}
+```
+
+### Vanilla — `bind()` を直接利用
+
+```javascript
+import { bind } from "@wc-bindable/core";
+
+const fetchEl = document.querySelector("wcs-fetch");
+
+bind(fetchEl, (name, value) => {
+  console.log(`${name} changed:`, value);
+});
+```
 
 ## ライセンス
 
