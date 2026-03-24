@@ -75,6 +75,7 @@ That's it. No build, no bootstrap code, no framework.
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
 - **SVG support** — full binding support inside `<svg>` elements
 - **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`, plus `$stateReadyCallback` for Web Components
+- **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md))
 - **Zero dependencies** — no runtime dependencies
 
 ## Installation
@@ -1090,6 +1091,31 @@ All options with defaults:
 | `locale` | `'en'` | Default locale for filters |
 | `debug` | `false` | Debug mode |
 | `enableMustache` | `true` | Enable `{{ }}` syntax |
+
+## TypeScript Support
+
+`defineState()` wraps your state object and provides type-safe `this` inside methods and getters — with zero runtime cost (identity function).
+
+```typescript
+import { defineState } from '@wcstack/state';
+
+export default defineState({
+  count: 0,
+  users: [] as { name: string; age: number }[],
+
+  increment() {
+    this.count++;            // ✅ number
+    this["users.*.name"];    // ✅ string (dot-path resolution)
+    this.$getAll("users.*.age", []); // ✅ API method
+  },
+
+  get "users.*.ageCategory"() {
+    return this["users.*.age"] < 25 ? "Young" : "Adult";
+  }
+});
+```
+
+Utility types `WcsPaths<T>` and `WcsPathValue<T, P>` are also exported for advanced use cases. See [docs/define-state.md](docs/define-state.md) for full documentation.
 
 ## API Reference
 

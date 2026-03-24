@@ -5845,5 +5845,91 @@ function bootstrapState(config) {
     registerComponents();
 }
 
-export { bootstrapState };
+/**
+ * defineState.ts
+ *
+ * 状態オブジェクトに型付けを提供するためのユーティリティ。
+ * defineState() はアイデンティティ関数で、ThisType<> を付与することで
+ * メソッド・computed getter 内の this に型補完を提供する。
+ *
+ * テンプレートリテラル型によるドットパスの型解決:
+ * - WcsPaths<T>      : T から生成される全ドットパスの union
+ * - WcsPathValue<T,P>: パス P に対応する値の型
+ * - WcsPathAccessor<T>: ブラケットアクセス用マップ型
+ */
+// ============================================================
+// defineState — 型付き状態定義関数
+// ============================================================
+/**
+ * `<wcs-state>` 用の型付き状態オブジェクトを定義する。
+ *
+ * ランタイムではアイデンティティ関数（引数をそのまま返す）として動作し、
+ * コストはゼロ。TypeScript の `ThisType<>` を利用して、メソッド・getter 内の
+ * `this` に型補完を提供する。
+ *
+ * ### 基本的な使い方 (TypeScript)
+ * ```ts
+ * import { defineState } from '@wcstack/state';
+ *
+ * export default defineState({
+ *   count: 0,
+ *   users: [] as { name: string; age: number }[],
+ *
+ *   increment() {
+ *     this.count++;            // ✅ number
+ *     this["users.*.name"];    // ✅ string (ドットパス型解決)
+ *   },
+ *
+ *   get "users.*.ageCategory"() {
+ *     return this["users.*.age"] < 25 ? "Young" : "Adult";
+ *   }
+ * });
+ * ```
+ *
+ * ### JavaScript (JSDoc)
+ * ```js
+ * import { defineState } from '@wcstack/state';
+ *
+ * export default defineState({
+ *   count: 0,
+ *   increment() {
+ *     this.count++;  // ✅ JSDoc + tsconfig checkJs で型補完
+ *   }
+ * });
+ * ```
+ *
+ * ### HTML インラインスクリプト
+ * ```html
+ * <wcs-state>
+ *   <script type="module">
+ *     import { defineState } from '@wcstack/state';
+ *     export default defineState({
+ *       count: 0,
+ *       increment() { this.count++; }
+ *     });
+ *   </script>
+ * </wcs-state>
+ * ```
+ *
+ * ### ライフサイクルコールバック
+ * ```ts
+ * export default defineState({
+ *   data: null,
+ *   async $connectedCallback() {
+ *     this.data = await fetch('/api/data').then(r => r.json());
+ *   },
+ *   $disconnectedCallback() {
+ *     // cleanup
+ *   },
+ *   $updatedCallback() {
+ *     // called after DOM update
+ *   }
+ * });
+ * ```
+ */
+function defineState(definition) {
+    return definition;
+}
+
+export { bootstrapState, defineState };
 //# sourceMappingURL=index.esm.js.map

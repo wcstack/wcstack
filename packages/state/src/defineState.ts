@@ -1,21 +1,3 @@
-interface IWritableTagNames {
-    state?: string;
-}
-interface IWritableConfig {
-    bindAttributeName?: string;
-    commentTextPrefix?: string;
-    commentForPrefix?: string;
-    commentIfPrefix?: string;
-    commentElseIfPrefix?: string;
-    commentElsePrefix?: string;
-    tagNames?: IWritableTagNames;
-    locale?: string;
-    debug?: boolean;
-    enableMustache?: boolean;
-}
-
-declare function bootstrapState(config?: IWritableConfig): void;
-
 /**
  * defineState.ts
  *
@@ -28,24 +10,46 @@ declare function bootstrapState(config?: IWritableConfig): void;
  * - WcsPathValue<T,P>: パス P に対応する値の型
  * - WcsPathAccessor<T>: ブラケットアクセス用マップ型
  */
+
+// ============================================================
+// Internal helper types
+// ============================================================
+
 /**
  * `any` 型を検出する。
  * `0 extends (1 & T)` は T が `any` の場合のみ true になる。
  */
 type IsAny<T> = 0 extends (1 & T) ? true : false;
+
 /**
  * T がドットパス再帰の対象となる「プレーンなデータオブジェクト」かどうかを判定する。
  * プリミティブ、組み込みオブジェクト (Date, Map 等)、関数、配列、any は除外。
  */
-type IsPlainObject<T> = IsAny<T> extends true ? false : T extends string | number | boolean | null | undefined | symbol | bigint | Function | Date | RegExp | Error | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any> | Promise<any> | readonly any[] ? false : T extends Record<string, any> ? true : false;
+type IsPlainObject<T> =
+  IsAny<T> extends true ? false :
+  T extends
+    | string | number | boolean | null | undefined | symbol | bigint
+    | Function | Date | RegExp | Error
+    | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any>
+    | Promise<any> | readonly any[]
+    ? false
+    : T extends Record<string, any>
+      ? true
+      : false;
+
 /**
  * T のキーのうち、関数でないもの（データプロパティ・computed getter）を抽出する。
  * メソッド（イベントハンドラ等）はドットパスの対象外。
  * any 型のプロパティは除外せず保持する。
  */
 type DataKeys<T> = {
-    [K in keyof T & string]: IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
+  [K in keyof T & string]: IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
 }[keyof T & string];
+
+// ============================================================
+// WcsPaths — ドットパスの union 生成
+// ============================================================
+
 /**
  * 型 T から生成される全てのドットパスの union。
  * 配列プロパティはワイルドカード `*` を使用: `items.*.name`
@@ -64,11 +68,30 @@ type DataKeys<T> = {
  * //   | "cart" | "cart.items" | "cart.items.*" | "cart.items.*.price"
  * ```
  */
-type WcsPaths<T, Depth extends readonly any[] = []> = Depth["length"] extends 4 ? never : {
-    [K in DataKeys<T>]: K | (T[K] extends readonly (infer E)[] ? IsPlainObject<E> extends true ? `${K}.*` | WcsSubPaths<E, `${K}.*.`, [...Depth, 0]> : `${K}.*` : IsPlainObject<T[K]> extends true ? WcsSubPaths<T[K], `${K}.`, [...Depth, 0]> : never);
-}[DataKeys<T>];
+export type WcsPaths<T, Depth extends readonly any[] = []> =
+  Depth["length"] extends 4 ? never :
+  {
+    [K in DataKeys<T>]:
+      | K
+      | (T[K] extends readonly (infer E)[]
+          ? IsPlainObject<E> extends true
+            ? `${K}.*` | WcsSubPaths<E, `${K}.*.`, [...Depth, 0]>
+            : `${K}.*`
+          : IsPlainObject<T[K]> extends true
+            ? WcsSubPaths<T[K], `${K}.`, [...Depth, 0]>
+            : never)
+  }[DataKeys<T>];
+
 /** @internal プレフィックス付きサブパスの生成ヘルパー */
-type WcsSubPaths<T, Prefix extends string, Depth extends readonly any[]> = WcsPaths<T, Depth> extends infer P extends string ? `${Prefix}${P}` : never;
+type WcsSubPaths<T, Prefix extends string, Depth extends readonly any[]> =
+  WcsPaths<T, Depth> extends infer P extends string
+    ? `${Prefix}${P}`
+    : never;
+
+// ============================================================
+// WcsPathValue — パスから値の型を解決
+// ============================================================
+
 /**
  * ドットパス P に対応する値の型を T から解決する。
  *
@@ -85,7 +108,36 @@ type WcsSubPaths<T, Prefix extends string, Depth extends readonly any[]> = WcsPa
  * type V3 = WcsPathValue<S, "cart">;                 // { items: ... }
  * ```
  */
-type WcsPathValue<T, P extends string> = P extends keyof T ? T[P] : P extends `${infer K}.*` ? K extends keyof T ? T[K] extends readonly (infer E)[] ? E : never : never : P extends `${infer K}.${infer Rest}` ? K extends keyof T ? T[K] extends readonly (infer E)[] ? Rest extends `*.${infer SubRest}` ? WcsPathValue<E, SubRest> : Rest extends "*" ? E : never : T[K] extends Record<string, any> ? WcsPathValue<T[K], Rest> : never : never : never;
+export type WcsPathValue<T, P extends string> =
+  // 1. Direct key (includes computed getters like "users.*.ageCategory")
+  P extends keyof T
+    ? T[P]
+  // 2. K.* → array element type
+  : P extends `${infer K}.*`
+    ? K extends keyof T
+      ? T[K] extends readonly (infer E)[] ? E : never
+      : never
+  // 3. K.rest → recurse into nested structure
+  : P extends `${infer K}.${infer Rest}`
+    ? K extends keyof T
+      ? T[K] extends readonly (infer E)[]
+        // Array: expect *.subpath or *
+        ? Rest extends `*.${infer SubRest}`
+          ? WcsPathValue<E, SubRest>
+          : Rest extends "*"
+            ? E
+            : never
+        // Object: recurse
+        : T[K] extends Record<string, any>
+          ? WcsPathValue<T[K], Rest>
+          : never
+      : never
+    : never;
+
+// ============================================================
+// WcsPathAccessor — ブラケットアクセス用マップ型
+// ============================================================
+
 /**
  * 全ドットパスに対する型付きブラケットアクセスを提供するマップ型。
  *
@@ -93,54 +145,72 @@ type WcsPathValue<T, P extends string> = P extends keyof T ? T[P] : P extends `$
  * WcsPaths で生成されたパスに対応する値の型を返す。
  */
 type WcsPathAccessor<T> = {
-    [P in WcsPaths<T>]: WcsPathValue<T, P>;
+  [P in WcsPaths<T>]: WcsPathValue<T, P>;
 };
+
+// ============================================================
+// State Proxy API — this 経由でアクセスできるAPI
+// ============================================================
+
 /**
  * `<wcs-state>` の Proxy 経由で提供されるAPIメソッド。
  * state定義オブジェクト内のメソッド・getter で `this.` 経由で利用可能。
  */
-interface WcsStateApi {
-    /**
-     * ワイルドカードを含むパスにマッチする全要素を配列で取得する。
-     *
-     * @example
-     * ```ts
-     * get "cart.totalPrice"() {
-     *   return this.$getAll("cart.items.*.price", []).reduce((sum, v) => sum + v, 0);
-     * }
-     * ```
-     */
-    $getAll<V = any>(path: string, defaultValue?: V[]): V[];
-    /**
-     * 指定パスの更新を手動でトリガーする。
-     * Proxy の set トラップを経由せずに内部状態を変更した場合に使用。
-     */
-    $postUpdate(path: string): void;
-    /**
-     * パスとインデックス配列を指定して、ワイルドカードを解決した値を取得・設定する。
-     *
-     * @param path - ワイルドカードを含むパス
-     * @param indexes - 各ワイルドカード階層のインデックス
-     * @param value - 設定する値（省略時は取得）
-     */
-    $resolve(path: string, indexes: number[], value?: any): any;
-    /**
-     * 指定パスへの依存関係を明示的に登録する。
-     * computed getter 内で動的にパスを組み立てる場合に使用。
-     */
-    $trackDependency(path: string): void;
-    /** `<wcs-state>` 要素への参照 */
-    readonly $stateElement: HTMLElement;
-    readonly $1: number;
-    readonly $2: number;
-    readonly $3: number;
-    readonly $4: number;
-    readonly $5: number;
-    readonly $6: number;
-    readonly $7: number;
-    readonly $8: number;
-    readonly $9: number;
+export interface WcsStateApi {
+  /**
+   * ワイルドカードを含むパスにマッチする全要素を配列で取得する。
+   *
+   * @example
+   * ```ts
+   * get "cart.totalPrice"() {
+   *   return this.$getAll("cart.items.*.price", []).reduce((sum, v) => sum + v, 0);
+   * }
+   * ```
+   */
+  $getAll<V = any>(path: string, defaultValue?: V[]): V[];
+
+  /**
+   * 指定パスの更新を手動でトリガーする。
+   * Proxy の set トラップを経由せずに内部状態を変更した場合に使用。
+   */
+  $postUpdate(path: string): void;
+
+  /**
+   * パスとインデックス配列を指定して、ワイルドカードを解決した値を取得・設定する。
+   *
+   * @param path - ワイルドカードを含むパス
+   * @param indexes - 各ワイルドカード階層のインデックス
+   * @param value - 設定する値（省略時は取得）
+   */
+  $resolve(path: string, indexes: number[], value?: any): any;
+
+  /**
+   * 指定パスへの依存関係を明示的に登録する。
+   * computed getter 内で動的にパスを組み立てる場合に使用。
+   */
+  $trackDependency(path: string): void;
+
+  /** `<wcs-state>` 要素への参照 */
+  readonly $stateElement: HTMLElement;
+
+  // ループインデックス変数 ($1〜$9)
+  // for テンプレート内のイベントハンドラで、ネストされたループの
+  // 各階層のインデックスにアクセスするために使用。
+  readonly $1: number;
+  readonly $2: number;
+  readonly $3: number;
+  readonly $4: number;
+  readonly $5: number;
+  readonly $6: number;
+  readonly $7: number;
+  readonly $8: number;
+  readonly $9: number;
 }
+
+// ============================================================
+// WcsThis — state メソッド/getter 内の this の型
+// ============================================================
+
 /**
  * state定義オブジェクト内の `this` の型。
  *
@@ -162,7 +232,12 @@ interface WcsStateApi {
  * });
  * ```
  */
-type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>;
+export type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>;
+
+// ============================================================
+// defineState — 型付き状態定義関数
+// ============================================================
+
 /**
  * `<wcs-state>` 用の型付き状態オブジェクトを定義する。
  *
@@ -230,7 +305,8 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>;
  * });
  * ```
  */
-declare function defineState<T extends Record<string, any>>(definition: T & ThisType<WcsThis<T>>): T;
-
-export { bootstrapState, defineState };
-export type { IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
+export function defineState<T extends Record<string, any>>(
+  definition: T & ThisType<WcsThis<T>>
+): T {
+  return definition;
+}
