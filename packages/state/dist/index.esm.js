@@ -3014,19 +3014,50 @@ const applyChangeByBindingType = {
     "radio": applyChangeToRadio,
     "checkbox": applyChangeToCheckbox,
 };
+const fnByBinding = new WeakMap();
+const deferredSelectBindingByBinding = new WeakMap();
 function _applyChange(binding, context) {
     const value = getValue(context.state, binding);
     const filteredValue = getFilteredValue(value, binding.outFilters);
-    let fn = applyChangeByBindingType[binding.bindingType];
+    if (deferredSelectBindingByBinding.get(binding) === true) {
+        context.deferredSelectBindings.push({ binding, value: filteredValue });
+        return;
+    }
+    let fn = fnByBinding.get(binding);
+    if (typeof fn !== 'undefined') {
+        fn(binding, context, filteredValue);
+        return;
+    }
+    if (fnByBinding.has(binding)) {
+        if (isWebComponentComplete(binding.replaceNode, context.stateElement)) {
+            fn = applyChangeToWebComponent;
+            fnByBinding.set(binding, fn); // 確定したのでキャッシュ
+        }
+        else {
+            fn = applyChangeToProperty;
+        }
+        fn(binding, context, filteredValue);
+        return;
+    }
+    fn = applyChangeByBindingType[binding.bindingType];
     if (typeof fn === 'undefined') {
         const firstSegment = binding.propSegments[0];
         fn = applyChangeByFirstSegment[firstSegment];
+        fnByBinding.set(binding, fn);
         if (typeof fn === 'undefined') {
-            if (isWebComponentComplete(binding.replaceNode, context.stateElement)) {
-                fn = applyChangeToWebComponent;
+            const customTag = getCustomElement(binding.replaceNode);
+            if (customTag) {
+                if (isWebComponentComplete(binding.replaceNode, context.stateElement)) {
+                    fn = applyChangeToWebComponent;
+                    fnByBinding.set(binding, fn); // 確定したのでキャッシュ
+                }
+                else {
+                    fn = applyChangeToProperty;
+                }
             }
             else {
                 fn = applyChangeToProperty;
+                fnByBinding.set(binding, fn);
             }
         }
     }
@@ -3036,6 +3067,7 @@ function _applyChange(binding, context) {
             const propName = binding.propSegments[0];
             if (propName === 'value' || propName === 'selectedIndex') {
                 context.deferredSelectBindings.push({ binding, value: filteredValue });
+                deferredSelectBindingByBinding.set(binding, true);
                 return;
             }
         }

@@ -100,6 +100,7 @@ describe('applyChange (coverage)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    isWebComponentCompleteMock.mockReturnValue(false);
     document.body.innerHTML = '';
   });
 
@@ -464,7 +465,7 @@ describe('applyChange (coverage)', () => {
   it('isWebComponentCompleteがtrueの場合はapplyChangeToWebComponentが呼ばれること', () => {
     isWebComponentCompleteMock.mockReturnValue(true);
 
-    const el = document.createElement('div');
+    const el = document.createElement('my-defined-element');
     document.body.appendChild(el);
     const bindingInfo: IBindingInfo = {
       ...createBaseBindingInfo(),
@@ -481,5 +482,241 @@ describe('applyChange (coverage)', () => {
     expect(applyChangeToWebComponentMock).toHaveBeenCalledTimes(1);
     expect(applyChangeToWebComponentMock).toHaveBeenCalledWith(bindingInfo, context, 'test-value');
     expect(applyChangeToPropertyMock).not.toHaveBeenCalled();
+  });
+
+  describe('fnByBindingキャッシュ', () => {
+    it('2回目の呼び出しではキャッシュされた関数が使われること（textバインディング）', () => {
+      const textNode = document.createTextNode('x');
+      document.body.appendChild(textNode);
+      const bindingInfo: IBindingInfo = {
+        ...createBaseBindingInfo(),
+        bindingType: 'text',
+        node: textNode,
+        replaceNode: textNode,
+        propName: 'text',
+        propSegments: []
+      } as IBindingInfo;
+
+      getValueMock.mockReturnValue('y');
+      const ctx: IApplyContext = {
+        stateName: 'default',
+        rootNode: document as any,
+        stateElement: {} as any,
+        state,
+        appliedBindingSet: new Set(),
+        newListValueByAbsAddress: new Map(),
+        updatedAbsAddressSetByStateElement: new Map(),
+        deferredSelectBindings: [],
+      };
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToTextMock).toHaveBeenCalledTimes(1);
+
+      // 2回目: appliedBindingSetをリセットして再呼び出し
+      ctx.appliedBindingSet = new Set();
+      getValueMock.mockReturnValue('z');
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToTextMock).toHaveBeenCalledTimes(2);
+      expect(applyChangeToTextMock).toHaveBeenLastCalledWith(bindingInfo, ctx, 'z');
+    });
+
+    it('2回目の呼び出しではキャッシュされた関数が使われること（classバインディング）', () => {
+      const el = document.createElement('div');
+      document.body.appendChild(el);
+      const bindingInfo: IBindingInfo = {
+        ...createBaseBindingInfo(),
+        bindingType: 'prop',
+        node: el,
+        replaceNode: el,
+        propName: 'class.active',
+        propSegments: ['class', 'active']
+      } as IBindingInfo;
+
+      getValueMock.mockReturnValue(true);
+      const ctx: IApplyContext = {
+        stateName: 'default',
+        rootNode: document as any,
+        stateElement: {} as any,
+        state,
+        appliedBindingSet: new Set(),
+        newListValueByAbsAddress: new Map(),
+        updatedAbsAddressSetByStateElement: new Map(),
+        deferredSelectBindings: [],
+      };
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToClassMock).toHaveBeenCalledTimes(1);
+
+      ctx.appliedBindingSet = new Set();
+      getValueMock.mockReturnValue(false);
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToClassMock).toHaveBeenCalledTimes(2);
+      expect(applyChangeToClassMock).toHaveBeenLastCalledWith(bindingInfo, ctx, false);
+    });
+
+    it('通常要素のpropertyバインディングがキャッシュされること', () => {
+      const el = document.createElement('div');
+      document.body.appendChild(el);
+      const bindingInfo: IBindingInfo = {
+        ...createBaseBindingInfo(),
+        bindingType: 'prop',
+        node: el,
+        replaceNode: el,
+        propName: 'title',
+        propSegments: ['title']
+      } as IBindingInfo;
+
+      getValueMock.mockReturnValue('first');
+      const ctx: IApplyContext = {
+        stateName: 'default',
+        rootNode: document as any,
+        stateElement: {} as any,
+        state,
+        appliedBindingSet: new Set(),
+        newListValueByAbsAddress: new Map(),
+        updatedAbsAddressSetByStateElement: new Map(),
+        deferredSelectBindings: [],
+      };
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
+
+      ctx.appliedBindingSet = new Set();
+      getValueMock.mockReturnValue('second');
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(2);
+      // isWebComponentCompleteは通常要素では再評価されない
+      expect(isWebComponentCompleteMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deferredSelectBindingByBindingキャッシュ', () => {
+    it('select要素のvalueバインディングは2回目以降もdeferredされること', () => {
+      const select = document.createElement('select');
+      document.body.appendChild(select);
+      const bindingInfo: IBindingInfo = {
+        ...createBaseBindingInfo(),
+        bindingType: 'prop',
+        node: select,
+        replaceNode: select,
+        propName: 'value',
+        propSegments: ['value']
+      } as IBindingInfo;
+
+      getValueMock.mockReturnValue('opt1');
+      const ctx: IApplyContext = {
+        stateName: 'default',
+        rootNode: document as any,
+        stateElement: {} as any,
+        state,
+        appliedBindingSet: new Set(),
+        newListValueByAbsAddress: new Map(),
+        updatedAbsAddressSetByStateElement: new Map(),
+        deferredSelectBindings: [],
+      };
+      applyChange(bindingInfo, ctx);
+      expect(ctx.deferredSelectBindings).toHaveLength(1);
+      expect(ctx.deferredSelectBindings[0].value).toBe('opt1');
+
+      // 2回目: キャッシュによりfn解決ロジックをスキップしてdeferredされる
+      ctx.appliedBindingSet = new Set();
+      ctx.deferredSelectBindings = [];
+      getValueMock.mockReturnValue('opt2');
+      applyChange(bindingInfo, ctx);
+      expect(ctx.deferredSelectBindings).toHaveLength(1);
+      expect(ctx.deferredSelectBindings[0].value).toBe('opt2');
+      expect(applyChangeToPropertyMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('WebComponent動的判定キャッシュ', () => {
+    it('isWebComponentCompleteがfalseからtrueに変わるとキャッシュが昇格すること', () => {
+      isWebComponentCompleteMock.mockReturnValue(false);
+
+      const el = document.createElement('my-defined-element');
+      document.body.appendChild(el);
+      const bindingInfo: IBindingInfo = {
+        ...createBaseBindingInfo(),
+        bindingType: 'prop',
+        node: el,
+        replaceNode: el,
+        propName: 'state.value',
+        propSegments: ['state', 'value']
+      } as IBindingInfo;
+
+      getValueMock.mockReturnValue('v1');
+      const ctx: IApplyContext = {
+        stateName: 'default',
+        rootNode: document as any,
+        stateElement: {} as any,
+        state,
+        appliedBindingSet: new Set(),
+        newListValueByAbsAddress: new Map(),
+        updatedAbsAddressSetByStateElement: new Map(),
+        deferredSelectBindings: [],
+      };
+
+      // 1回目: isWebComponentComplete=false → applyChangeToProperty
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
+      expect(applyChangeToWebComponentMock).not.toHaveBeenCalled();
+      expect(isWebComponentCompleteMock).toHaveBeenCalledTimes(1);
+
+      // 2回目: まだfalse → fnByBinding.has=true, get=undefined → 再評価
+      ctx.appliedBindingSet = new Set();
+      getValueMock.mockReturnValue('v2');
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(2);
+      expect(isWebComponentCompleteMock).toHaveBeenCalledTimes(2);
+
+      // 3回目: trueに変化 → applyChangeToWebComponent + キャッシュ昇格
+      ctx.appliedBindingSet = new Set();
+      isWebComponentCompleteMock.mockReturnValue(true);
+      getValueMock.mockReturnValue('v3');
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToWebComponentMock).toHaveBeenCalledTimes(1);
+      expect(applyChangeToWebComponentMock).toHaveBeenCalledWith(bindingInfo, ctx, 'v3');
+      expect(isWebComponentCompleteMock).toHaveBeenCalledTimes(3);
+
+      // 4回目: キャッシュ昇格済み → isWebComponentCompleteは呼ばれない
+      ctx.appliedBindingSet = new Set();
+      getValueMock.mockReturnValue('v4');
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToWebComponentMock).toHaveBeenCalledTimes(2);
+      expect(isWebComponentCompleteMock).toHaveBeenCalledTimes(3); // 増えない
+    });
+
+    it('カスタム要素でない場合はapplyChangeToPropertyで確定キャッシュされること', () => {
+      const el = document.createElement('div');
+      document.body.appendChild(el);
+      const bindingInfo: IBindingInfo = {
+        ...createBaseBindingInfo(),
+        bindingType: 'prop',
+        node: el,
+        replaceNode: el,
+        propName: 'data',
+        propSegments: ['data']
+      } as IBindingInfo;
+
+      getValueMock.mockReturnValue('a');
+      const ctx: IApplyContext = {
+        stateName: 'default',
+        rootNode: document as any,
+        stateElement: {} as any,
+        state,
+        appliedBindingSet: new Set(),
+        newListValueByAbsAddress: new Map(),
+        updatedAbsAddressSetByStateElement: new Map(),
+        deferredSelectBindings: [],
+      };
+
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(1);
+      expect(isWebComponentCompleteMock).not.toHaveBeenCalled();
+
+      // 2回目: キャッシュ済みなのでisWebComponentCompleteは呼ばれない
+      ctx.appliedBindingSet = new Set();
+      getValueMock.mockReturnValue('b');
+      applyChange(bindingInfo, ctx);
+      expect(applyChangeToPropertyMock).toHaveBeenCalledTimes(2);
+      expect(isWebComponentCompleteMock).not.toHaveBeenCalled();
+    });
   });
 });
