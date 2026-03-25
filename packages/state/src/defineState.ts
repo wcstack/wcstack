@@ -217,7 +217,7 @@ export interface WcsStateApi {
  * - `T` のプロパティに型付きでアクセス可能（直接キー）
  * - `WcsPathAccessor<T>` によるネストされたドットパスの型付きアクセス
  * - `WcsStateApi` のメソッド ($getAll, $postUpdate 等) にアクセス可能
- * - 動的パス (`this[\`items.${i}.name\`]`) は `any` としてアクセス可能
+ * - 動的パス (`this[\`items.${i}.name\`]`) は型チェック対象外（キャストが必要）
  *
  * @example
  * ```ts
@@ -232,7 +232,7 @@ export interface WcsStateApi {
  * });
  * ```
  */
-export type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>;
+export type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
 
 // ============================================================
 // defineState — 型付き状態定義関数

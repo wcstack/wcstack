@@ -1,0 +1,25 @@
+.vscode/
+__tests__/
+src/
+test-fixture/
+*.ts
+!*.d.ts
+*.map
+esbuild.config.js
+vitest.config.ts
+tsconfig.json
+.gitignore
+
+# sourcemaps は本番には不要
+dist/*.map
+
+# typescript: lib .d.ts ファイルのみ必要
+node_modules/typescript/bin/
+node_modules/typescript/lib/tsc.js
+node_modules/typescript/lib/typingsInstaller.js
+node_modules/typescript/lib/typescript.js
+node_modules/typescript/lib/tsserverlibrary.js
+node_modules/typescript/lib/tsserver.js
+node_modules/typescript/lib/cancellationToken.js
+node_modules/typescript/lib/watchGuard.js
+node_modules/typescript/lib/*.full.d.ts

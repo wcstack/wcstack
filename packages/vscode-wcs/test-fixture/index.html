@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WcStack VSCode Extension Test</title>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  count: 0,
+  /** @type {boolean|null} */
+  ok: true,
+  users: [
+    { name: "Alice", age: 30 },
+    { name: "Bob", age: 25 },
+  ],
+  increment() {
+    this.count++;
+    const age = this["users.*.age"];
+  },
+  get "users.*.ageCategory"() {
+    return this["users.*.age"] < 25 ? "Young" : "Adult";
+  }
+};
+    </script>
+  </wcs-state>
+
+  <div data-wcs="textContent: count"></div>
+  <button data-wcs="onclick: increment">+</button>
+
+  <template data-wcs="for: users">
+    <p>{{ .name }} ({{ .ageCategory }})</p>
+  </template>
+  <template data-wcs="if: ok|falsy">
+    <p>Total users: {{ users.length }}</p>
+  </template>
+</body>
+</html>

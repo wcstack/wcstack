@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "checkJs": true,
+    "strict": false,
+    "noImplicitThis": true,
+    "paths": {
+      "@wcstack/state": ["../../state/src/exports.ts"]
+    }
+  },
+  "include": ["./**/*"]
+}

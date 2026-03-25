@@ -1,0 +1,60 @@
+{
+  "name": "wcstack-intellisense",
+  "displayName": "WcStack IntelliSense",
+  "description": "TypeScript language features for <wcs-state> inline scripts in HTML",
+  "version": "0.1.0",
+  "publisher": "wcstack",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wcstack/wcstack"
+  },
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:html"
+  ],
+  "main": "./dist/extension.cjs",
+  "contributes": {
+    "configuration": {
+      "title": "WcStack",
+      "properties": {
+        "wcstack.bindAttributeName": {
+          "type": "string",
+          "default": "data-wcs",
+          "description": "The HTML attribute name used for data binding (e.g. \"data-wcs\", \"data-bind\")."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "package": "npm run build && vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/vscode": "^1.110.0",
+    "@vitest/coverage-v8": "^4.0.15",
+    "esbuild": "^0.25.12",
+    "vitest": "^4.1.1"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3",
+    "@volar/language-core": "~2.4.0",
+    "@volar/language-server": "~2.4.0",
+    "@volar/language-service": "~2.4.0",
+    "@volar/typescript": "~2.4.0",
+    "volar-service-typescript": "^0.0.62",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver-protocol": "^3.17.5"
+  }
+}
