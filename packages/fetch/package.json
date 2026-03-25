@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/fetch",
-  "version": "1.4.0",
+  "version": "1.5.2",
   "description": "Declarative fetch component for Web Components. Framework-agnostic async data fetching via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
