@@ -18,8 +18,8 @@ export interface StateTypeDiagnostic {
 /**
  * HTML 内の全 <wcs-state> スクリプトで JSDoc 型と初期値の整合性を検証する。
  */
-export function validateStateTypes(html: string): StateTypeDiagnostic[] {
-  const blocks = parseWcsScriptBlocks(html);
+export function validateStateTypes(html: string, stateTagName: string = 'wcs-state'): StateTypeDiagnostic[] {
+  const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics: StateTypeDiagnostic[] = [];
 
   for (const block of blocks) {

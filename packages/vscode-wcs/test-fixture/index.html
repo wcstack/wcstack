@@ -11,6 +11,7 @@ export default {
   count: 0,
   /** @type {boolean|null} */
   ok: true,
+  /** @type {{ name: string, age: number }[]} */
   users: [
     { name: "Alice", age: 30 },
     { name: "Bob", age: 25 },
@@ -31,6 +32,8 @@ export default {
 
   <template data-wcs="for: users">
     <p>{{ .name }} ({{ .ageCategory }})</p>
+    <div data-wcs="textContent: .ageCategory"></div>
+    {{ }}
   </template>
   <template data-wcs="if: ok|falsy">
     <p>Total users: {{ users.length }}</p>

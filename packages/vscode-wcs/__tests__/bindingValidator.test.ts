@@ -465,6 +465,86 @@ export default { name: "hello" };
     expect(diags.find(d => d.message.includes('"slice"'))).toBeUndefined();
   });
 
+  // 省略パスの存在チェック
+  it('存在しない省略パス .ages に warning を出す', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { users: [{ name: "A", age: 30 }] };
+  </script>
+</wcs-state>
+<template data-wcs="for: users">
+  <span data-wcs="textContent: .ages"></span>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('".ages"') && d.message.includes('存在しません'))).toBe(true);
+  });
+
+  it('存在する省略パス .age は OK', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { users: [{ name: "A", age: 30 }] };
+  </script>
+</wcs-state>
+<template data-wcs="for: users">
+  <span data-wcs="textContent: .age"></span>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('".age"'))).toBe(false);
+  });
+
+  // UI パス制約チェック
+  it('for 外でパターンパスを使用すると warning', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { users: [{ name: "A" }] };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: users.*.name"></div>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('パターンパス') && d.message.includes('<template for>'))).toBe(true);
+  });
+
+  it('for 内でパターンパスは OK', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { users: [{ name: "A" }] };
+  </script>
+</wcs-state>
+<template data-wcs="for: users">
+  <span data-wcs="textContent: users.*.name"></span>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('パターンパス'))).toBe(false);
+  });
+
+  it('for 外で省略パスを使用すると warning', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { users: [{ name: "A" }] };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: .name"></div>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('省略パス'))).toBe(true);
+  });
+
+  it('UI で解決済みパスを使用すると warning', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { users: [{ name: "A" }] };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: users.0.name"></div>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('解決済みパス'))).toBe(true);
+  });
+
   it('カスタム属性名で動作する', () => {
     const html = `
 <wcs-state>

@@ -11,6 +11,7 @@
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import { analyzeStatePaths, type PathCandidate } from './stateAnalyzer.js';
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -33,13 +34,18 @@ export interface BindingDiagnostic {
  * @param html - HTML 全文
  * @param attrName - バインド属性名（例: "data-wcs"）
  */
-export function validateBindings(html: string, attrName: string): BindingDiagnostic[] {
+export function validateBindings(html: string, attrName: string, stateTagName: string = 'wcs-state'): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
 
-  // 状態パスを収集
-  const blocks = parseWcsScriptBlocks(html);
-  const statePaths = blocks.flatMap(block => analyzeStatePaths(block.content));
-  const pathSet = new Set(statePaths.map(p => p.path));
+  // 状態パスを収集（state 名ごとに分類）
+  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  const statePaths = blocks.flatMap(block => analyzeStatePaths(block.content, block.stateName));
+  const pathsByState = new Map<string, PathCandidate[]>();
+  for (const p of statePaths) {
+    const list = pathsByState.get(p.stateName) ?? [];
+    list.push(p);
+    pathsByState.set(p.stateName, list);
+  }
 
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
@@ -56,18 +62,74 @@ export function validateBindings(html: string, attrName: string): BindingDiagnos
       // パスとフィルタを抽出
       const parsed = parseBindingExpression(binding);
 
-      // パス検証
-      if (parsed.path && statePaths.length > 0) {
+      // パス検証（targetState でスコープ）
+      const scopedPaths = pathsByState.get(parsed.targetState) ?? [];
+      const scopedPathSet = new Set(scopedPaths.map(p => p.path));
+      if (parsed.path && scopedPaths.length > 0) {
         const pathTrimmed = parsed.path.trim();
-        // ショートハンドパス (.name) やリテラルはスキップ
-        if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
-          if (!isValidPath(pathTrimmed, pathSet)) {
+        if (pathTrimmed && !isLiteral(pathTrimmed)) {
+          // 省略パスの場合は展開してから検証
+          let checkPath = pathTrimmed;
+          if (pathTrimmed.startsWith('.')) {
+            const forPath = getInnermostForPath(html, attr.valueStart, attrName);
+            if (forPath && !forPath.startsWith('.')) {
+              checkPath = `${forPath}.*.${pathTrimmed.slice(1)}`;
+            } else {
+              checkPath = ''; // 展開できない場合はスキップ
+            }
+          }
+          if (checkPath && !isValidPath(checkPath, scopedPathSet)) {
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
               start: pathStart,
-              end: pathStart + parsed.path.trim().length,
-              message: `パス "${pathTrimmed}" は状態定義に存在しません`,
+              end: pathStart + pathTrimmed.length,
+              message: `パス "${pathTrimmed}" は状態定義に存在しません${pathTrimmed.startsWith('.') ? `（展開: ${checkPath}）` : ''}`,
+              severity: 'warning',
+            });
+          }
+        }
+      }
+
+      // UI パス制約チェック
+      if (parsed.path) {
+        const pathTrimmed = parsed.path.trim();
+        const prop = parsed.property.replace(/#.*$/, '');
+        const insideFor = isInsideForTemplate(html, attr.valueStart, attrName);
+
+        if (pathTrimmed && !prop.startsWith('on')) {
+          // for 外でパターンパス（* を含む）を使用
+          if (!insideFor && pathTrimmed.includes('*')) {
+            const pathOffset = binding.indexOf(parsed.path);
+            const pathStart = bindingStart + pathOffset;
+            diagnostics.push({
+              start: pathStart,
+              end: pathStart + pathTrimmed.length,
+              message: `パターンパス "${pathTrimmed}" は <template for> の外側では使用できません`,
+              severity: 'warning',
+            });
+          }
+
+          // for 外で省略パス（. から始まる）を使用
+          if (!insideFor && pathTrimmed.startsWith('.')) {
+            const pathOffset = binding.indexOf(parsed.path);
+            const pathStart = bindingStart + pathOffset;
+            diagnostics.push({
+              start: pathStart,
+              end: pathStart + pathTrimmed.length,
+              message: `省略パス "${pathTrimmed}" は <template for> の外側では使用できません`,
+              severity: 'warning',
+            });
+          }
+
+          // UI で解決済みパス（数値セグメントを含む）を使用
+          if (/\.\d+\.|\.\d+$/.test(pathTrimmed)) {
+            const pathOffset = binding.indexOf(parsed.path);
+            const pathStart = bindingStart + pathOffset;
+            diagnostics.push({
+              start: pathStart,
+              end: pathStart + pathTrimmed.length,
+              message: `解決済みパス "${pathTrimmed}" は UI バインディングでは使用できません。パターンパスを使用してください`,
               severity: 'warning',
             });
           }
@@ -139,7 +201,7 @@ export function validateBindings(html: string, attrName: string): BindingDiagnos
           const pathTrimmed = parsed.path.trim();
           if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
             const chainDiags = validateFilterChainTypes(
-              pathTrimmed, parsed.filters, statePaths, bindingStart,
+              pathTrimmed, parsed.filters, scopedPaths, bindingStart,
             );
             diagnostics.push(...chainDiags);
           }
@@ -147,10 +209,10 @@ export function validateBindings(html: string, attrName: string): BindingDiagnos
       }
 
       // プロパティに応じた型チェック
-      if (parsed.path && statePaths.length > 0) {
+      if (parsed.path && scopedPaths.length > 0) {
         const pathTrimmed = parsed.path.trim();
         if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
-          const resultType = resolveResultType(pathTrimmed, parsed.filters, statePaths);
+          const resultType = resolveResultType(pathTrimmed, parsed.filters, scopedPaths);
           if (resultType !== null) {
             const typeReq = getExpectedType(parsed.property);
             if (typeReq && resultType !== typeReq.expected) {
@@ -193,6 +255,7 @@ interface ParsedFilter {
 interface ParsedBinding {
   property: string;
   path: string | null;
+  targetState: string;
   filters: ParsedFilter[];
 }
 
@@ -250,7 +313,7 @@ function parseBindingExpression(expr: string): ParsedBinding {
 
   if (colonIndex === -1) {
     // else ディレクティブなど（パスなし）
-    return { property: expr.trim(), path: null, filters: [] };
+    return { property: expr.trim(), path: null, targetState: 'default', filters: [] };
   }
 
   const property = expr.slice(0, colonIndex).trim();
@@ -261,9 +324,10 @@ function parseBindingExpression(expr: string): ParsedBinding {
   const pathSegment = segments[0] || '';
   const filterSegments = segments.slice(1);
 
-  // @state 部分を除去
+  // @state 部分を分離
   const atIndex = pathSegment.indexOf('@');
   const path = atIndex !== -1 ? pathSegment.slice(0, atIndex) : pathSegment;
+  const targetState = atIndex !== -1 ? pathSegment.slice(atIndex + 1).trim() || 'default' : 'default';
 
   // フィルタ名・引数・オフセットを抽出
   const filters: ParsedFilter[] = [];
@@ -287,7 +351,7 @@ function parseBindingExpression(expr: string): ParsedBinding {
     filterSearchStart += seg.length + 1; // +1 for '|'
   }
 
-  return { property, path: path.trim() || null, filters };
+  return { property, path: path.trim() || null, targetState, filters };
 }
 
 /**
@@ -313,21 +377,11 @@ function splitByPipe(value: string): string[] {
 }
 
 /**
- * パスが状態パスセットに存在するか、またはワイルドカード展開で妥当かを判定する。
+ * パスが状態パスセットに存在するかを判定する。
+ * 完全一致のみ。
  */
 function isValidPath(path: string, pathSet: Set<string>): boolean {
-  if (pathSet.has(path)) return true;
-
-  // "users.*.name" のような完全一致でなくても、
-  // 親パス "users" が存在すれば部分的に妥当とみなす
-  const segments = path.split('.');
-  let current = '';
-  for (const seg of segments) {
-    current = current ? `${current}.${seg}` : seg;
-    if (pathSet.has(current)) return true;
-  }
-
-  return false;
+  return pathSet.has(path);
 }
 
 interface TypeRequirement {

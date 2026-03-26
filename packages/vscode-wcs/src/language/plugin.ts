@@ -32,7 +32,7 @@ const fullFeatures: CodeInformation = {
  * HTML 内の <wcs-state><script type="module"> を TypeScript 仮想コードとして提供する
  * Volar LanguagePlugin。
  */
-export function createWcsLanguagePlugin(): LanguagePlugin<URI> {
+export function createWcsLanguagePlugin(stateTagName: string = 'wcs-state'): LanguagePlugin<URI> {
   return {
     getLanguageId(uri) {
       const path = uri.path;
@@ -45,14 +45,14 @@ export function createWcsLanguagePlugin(): LanguagePlugin<URI> {
     createVirtualCode(uri, languageId, snapshot, _ctx) {
       if (languageId !== 'html') return undefined;
       const html = snapshot.getText(0, snapshot.getLength());
-      const blocks = parseWcsScriptBlocks(html);
+      const blocks = parseWcsScriptBlocks(html, stateTagName);
       if (blocks.length === 0) return undefined;
       return createWcsHtmlVirtualCode(blocks, html);
     },
 
     updateVirtualCode(uri, virtualCode, newSnapshot, _ctx) {
       const html = newSnapshot.getText(0, newSnapshot.getLength());
-      const blocks = parseWcsScriptBlocks(html);
+      const blocks = parseWcsScriptBlocks(html, stateTagName);
       if (blocks.length === 0) return undefined;
       return createWcsHtmlVirtualCode(blocks, html);
     },

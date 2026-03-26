@@ -9,8 +9,9 @@
 export type BindingContext =
   | { kind: 'property'; partial: string }
   | { kind: 'modifier'; propName: string; partial: string }
-  | { kind: 'path'; propName: string; partial: string }
-  | { kind: 'filter'; propName: string; partial: string }
+  | { kind: 'path'; propName: string; partial: string; targetState: string | null }
+  | { kind: 'filter'; propName: string; partial: string; targetState: string | null }
+  | { kind: 'stateName'; partial: string }
   | { kind: 'none' };
 
 /**
@@ -102,6 +103,13 @@ function parseBindingAtCursor(binding: string, offset: number): BindingContext {
   // `:` の後（パス + フィルタ部）
   const afterColon = textBeforeCursor.slice(colonIndex + 1).trimStart();
 
+  // `@` を検出して targetState を抽出
+  // afterColon のフィルタ前部分から @stateName を取得
+  const firstPipeIndex = afterColon.indexOf('|');
+  const pathPart = firstPipeIndex !== -1 ? afterColon.slice(0, firstPipeIndex) : afterColon;
+  const atIndex = pathPart.indexOf('@');
+  const targetState = atIndex !== -1 ? pathPart.slice(atIndex + 1).trim() || null : null;
+
   // `|` があればフィルタ部
   const lastPipeIndex = afterColon.lastIndexOf('|');
   if (lastPipeIndex !== -1) {
@@ -110,16 +118,14 @@ function parseBindingAtCursor(binding: string, offset: number): BindingContext {
     if (filterPart.includes('(') && !filterPart.includes(')')) {
       return { kind: 'none' };
     }
-    return { kind: 'filter', propName, partial: filterPart };
+    return { kind: 'filter', propName, partial: filterPart, targetState };
   }
 
-  // パス部
-  // `@` がある場合は状態名指定部分
-  const atIndex = afterColon.indexOf('@');
+  // `@` の直後にカーソルがある場合は state 名補完
   if (atIndex !== -1) {
-    // @の後はstate名 — 補完しない（将来対応可能）
-    return { kind: 'none' };
+    const afterAt = pathPart.slice(atIndex + 1);
+    return { kind: 'stateName', partial: afterAt.trim() };
   }
 
-  return { kind: 'path', propName, partial: afterColon };
+  return { kind: 'path', propName, partial: afterColon, targetState };
 }

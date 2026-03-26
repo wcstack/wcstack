@@ -28,7 +28,7 @@ export interface WcsScriptBlock {
  * - 大文字小文字を区別しない（HTML仕様に準拠）
  * - 複数の <wcs-state> に対応
  */
-export function parseWcsScriptBlocks(html: string): WcsScriptBlock[] {
+export function parseWcsScriptBlocks(html: string, stateTagName: string = 'wcs-state'): WcsScriptBlock[] {
   const blocks: WcsScriptBlock[] = [];
 
   let pos = 0;
@@ -44,7 +44,7 @@ export function parseWcsScriptBlocks(html: string): WcsScriptBlock[] {
     }
 
     // <wcs-state を検出
-    const wcsMatch = matchOpenTag(html, pos, 'wcs-state');
+    const wcsMatch = matchOpenTag(html, pos, stateTagName);
     if (wcsMatch === null) {
       pos++;
       continue;
@@ -54,7 +54,7 @@ export function parseWcsScriptBlocks(html: string): WcsScriptBlock[] {
     pos = wcsMatch.end;
 
     // </wcs-state> の閉じタグまでの範囲内で <script type="module"> を探す
-    const wcsCloseIdx = findCloseTag(html, pos, 'wcs-state');
+    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
     const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
 
     while (pos < wcsEnd) {

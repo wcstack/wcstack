@@ -16,6 +16,8 @@ export interface PathCandidate {
   kind: 'data' | 'computed' | 'method' | 'list';
   /** 値の型ヒント（推定） */
   typeHint?: string;
+  /** 所属する state 名（デフォルト: 'default'） */
+  stateName: string;
 }
 
 /**
@@ -24,7 +26,7 @@ export interface PathCandidate {
  * @param scriptContent - <script type="module"> の内容
  * @returns パス候補の配列
  */
-export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
+export function analyzeStatePaths(scriptContent: string, stateName: string = 'default'): PathCandidate[] {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
 
@@ -34,29 +36,30 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   for (const prop of topLevelProps) {
     if (prop.kind === 'method') {
       // メソッドはパス補完には含めないが、検証用に登録
-      paths.push({ path: prop.name, kind: 'method' });
+      paths.push({ path: prop.name, kind: 'method', stateName });
       continue;
     }
 
     if (prop.kind === 'getter') {
       // computed getter: "users.*.ageCategory" のようなパス
-      paths.push({ path: prop.name, kind: 'computed' });
+      paths.push({ path: prop.name, kind: 'computed', stateName });
       continue;
     }
 
     // データプロパティ
-    paths.push({ path: prop.name, kind: 'data', typeHint: prop.typeHint });
+    paths.push({ path: prop.name, kind: 'data', typeHint: prop.typeHint, stateName });
 
     // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成
     if (prop.value && isArrayLiteral(prop.value)) {
-      paths.push({ path: `${prop.name}.*`, kind: 'list' });
-      paths.push({ path: `${prop.name}.length`, kind: 'data', typeHint: 'number' });
+      paths.push({ path: `${prop.name}.*`, kind: 'list', stateName });
+      paths.push({ path: `${prop.name}.length`, kind: 'data', typeHint: 'number', stateName });
       const elementProps = extractArrayElementProperties(prop.value);
       for (const childProp of elementProps) {
         paths.push({
           path: `${prop.name}.*.${childProp.name}`,
           kind: 'data',
           typeHint: childProp.typeHint,
+          stateName,
         });
       }
     }
@@ -70,18 +73,20 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
             path: `${prop.name}.${childProp.name}`,
             kind: 'data',
             typeHint: childProp.typeHint,
+            stateName,
           });
 
           // ネストした配列
           if (childProp.value && isArrayLiteral(childProp.value)) {
-            paths.push({ path: `${prop.name}.${childProp.name}.*`, kind: 'list' });
-            paths.push({ path: `${prop.name}.${childProp.name}.length`, kind: 'data', typeHint: 'number' });
+            paths.push({ path: `${prop.name}.${childProp.name}.*`, kind: 'list', stateName });
+            paths.push({ path: `${prop.name}.${childProp.name}.length`, kind: 'data', typeHint: 'number', stateName });
             const grandchildProps = extractArrayElementProperties(childProp.value);
             for (const gc of grandchildProps) {
               paths.push({
                 path: `${prop.name}.${childProp.name}.*.${gc.name}`,
                 kind: 'data',
                 typeHint: gc.typeHint,
+                stateName,
               });
             }
           }

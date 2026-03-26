@@ -28,6 +28,11 @@
           "type": "string",
           "default": "data-wcs",
           "description": "The HTML attribute name used for data binding (e.g. \"data-wcs\", \"data-bind\")."
+        },
+        "wcstack.stateTagName": {
+          "type": "string",
+          "default": "wcs-state",
+          "description": "The custom element tag name for state definition (e.g. \"wcs-state\", \"my-state\")."
         }
       }
     }
