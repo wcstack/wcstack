@@ -31,6 +31,15 @@ export function __test_deleteLastNodeByNode(node: Node): void {
   lastNodeByNode.delete(node);
 }
 
+// SSR ハイドレーション用: Content を ListIndex に登録する
+export function hydrateSetContent(node: Node, index: IListIndex, content: IContent): void {
+  setContent(node, index, content);
+}
+
+export function hydrateSetLastNode(node: Node, lastNode: Node): void {
+  lastNodeByNode.set(node, lastNode);
+}
+
 export function __test_deleteContentByNode(node: Node): void {
   contentByListIndexByNode.delete(node);
 }

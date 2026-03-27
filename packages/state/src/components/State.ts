@@ -17,6 +17,7 @@ import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 import { getCustomElement } from "../getCustomElement";
+import { Ssr } from "./Ssr";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -120,7 +121,20 @@ export class State extends HTMLElement implements IStateElement {
     return this._name;
   }
 
+  private _loadFromSsrElement(): IState | null {
+    if (!this.hasAttribute('enable-ssr')) return null;
+    const name = this.getAttribute('name') || 'default';
+    const root = this.parentNode;
+    if (!root) return null;
+    const ssrEl = Ssr.findByName(root, name);
+    if (!ssrEl) return null;
+    const data = ssrEl.stateData;
+    return Object.keys(data).length > 0 ? data : null;
+  }
+
   private async _initialize() {
+    // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
+    const ssrState = !config.ssr ? this._loadFromSsrElement() : null;
     try {
       if (this.hasAttribute('state')) {
         const state = this.getAttribute('state');
@@ -152,6 +166,19 @@ export class State extends HTMLElement implements IStateElement {
       }
     } catch(e) {
       raiseError(`Failed to initialize state: ${e}`);
+    }
+    // SSR データがある場合、state 定義（メソッド/getter）を維持しつつデータ値を上書き
+    if (ssrState !== null && this.__state) {
+      for (const [key, value] of Object.entries(ssrState)) {
+        if (key in this.__state) {
+          const desc = Object.getOwnPropertyDescriptor(this.__state, key);
+          // getter/setter はスキップ（定義側を優先）
+          if (desc && (desc.get || desc.set)) continue;
+          // 関数はスキップ
+          if (typeof this.__state[key] === 'function') continue;
+        }
+        this.__state[key] = value;
+      }
     }
     await this._loadingPromise;
     this._name = this.getAttribute('name') || 'default';
@@ -222,7 +249,11 @@ export class State extends HTMLElement implements IStateElement {
       this._initialized = true;
       this._resolveInitialize?.();
     }
-    await this._callStateConnectedCallback();
+    // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
+    // config.ssr (サーバー側): レンダリング中なので実行する
+    if (!this.hasAttribute('enable-ssr') || config.ssr) {
+      await this._callStateConnectedCallback();
+    }
     this._resolveConnectedCallback?.();
   }
 

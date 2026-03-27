@@ -77,6 +77,24 @@ class Content implements IContent {
   }
 }
 
+/**
+ * SSR ハイドレーション用: 既存の DOM ノード配列から Content を生成する。
+ * テンプレートからの clone ではなく、SSR で描画済みのノードをそのまま使う。
+ */
+export function createContentFromNodes(
+  nodes: Node[],
+): IContent {
+  const fragment = document.createDocumentFragment();
+  // ノードを fragment に移動せず、参照だけ持つ Content を作る
+  const content = new Content(fragment);
+  // Content の内部状態を直接設定
+  (content as any)._childNodeArray = nodes;
+  (content as any)._firstNode = nodes.length > 0 ? nodes[0] : null;
+  (content as any)._lastNode = nodes.length > 0 ? nodes[nodes.length - 1] : null;
+  (content as any)._mounted = true; // SSR で既にマウント済み
+  return content;
+}
+
 export function createContent(
   bindingInfo: IBindingInfo, 
 ): IContent {

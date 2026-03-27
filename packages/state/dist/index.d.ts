@@ -61,8 +61,12 @@ interface IBindingInfo {
     readonly uuid?: string | null;
 }
 
+interface IState {
+    [key: string]: any;
+}
 interface IWritableTagNames {
     state?: string;
+    ssr?: string;
 }
 interface IWritableConfig {
     bindAttributeName?: string;
@@ -79,6 +83,30 @@ interface IWritableConfig {
 }
 
 declare function bootstrapState(config?: IWritableConfig): void;
+
+interface ISsrElement {
+    readonly name: string;
+    readonly stateData: IState;
+    readonly templates: Map<string, HTMLTemplateElement>;
+    readonly hydrateProps: Record<string, Record<string, unknown>>;
+    getTemplate(uuid: string): HTMLTemplateElement | null;
+}
+declare class Ssr extends HTMLElement implements ISsrElement {
+    private _stateData;
+    private _templates;
+    private _hydrateProps;
+    get name(): string;
+    get stateData(): IState;
+    get templates(): Map<string, HTMLTemplateElement>;
+    get hydrateProps(): Record<string, Record<string, unknown>>;
+    getTemplate(uuid: string): HTMLTemplateElement | null;
+    setStateData(data: IState): void;
+    setHydrateProps(props: Record<string, Record<string, unknown>>): void;
+    private _loadStateData;
+    private _loadTemplates;
+    private _loadHydrateProps;
+    static findByName(root: Node, name: string): ISsrElement | null;
+}
 
 declare function buildBindings(root: Document | ShadowRoot): Promise<void>;
 
@@ -325,5 +353,5 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  */
 declare function defineState<T extends Record<string, any>>(definition: T & ThisType<WcsThis<T>>): T;
 
-export { bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
-export type { ISsrPropertyEntry, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
+export { Ssr, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
+export type { ISsrElement, ISsrPropertyEntry, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

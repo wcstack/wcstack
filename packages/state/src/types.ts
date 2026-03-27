@@ -6,10 +6,12 @@ export interface IState {
 
 export interface ITagNames {
   readonly state: string;
+  readonly ssr: string;
 }
 
 export interface IWritableTagNames {
   state?: string;
+  ssr?: string;
 }
 
 export interface IConfig {

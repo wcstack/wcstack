@@ -1,6 +1,9 @@
 
 export { bootstrapState } from "./bootstrapState.js";
 
+export { Ssr } from "./components/Ssr.js";
+export type { ISsrElement } from "./components/Ssr.js";
+
 export { buildBindings } from "./buildBindings.js";
 
 export { getFragmentInfoByUUID, getAllFragmentUUIDs } from "./structural/fragmentInfoByUUID.js";

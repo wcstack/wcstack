@@ -9,6 +9,7 @@ interface IInternalConfig {
   commentElsePrefix: string;
   tagNames: {
     state: string;
+    ssr: string;
   };
   locale: string;
   debug: boolean;
@@ -25,6 +26,7 @@ const _config: IInternalConfig = {
   commentElsePrefix: 'wcs-else',
   tagNames: {
     state: 'wcs-state',
+    ssr: 'wcs-ssr',
   },
   locale: 'en',
   debug: false,

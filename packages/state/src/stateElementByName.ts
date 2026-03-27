@@ -1,4 +1,5 @@
 import { buildBindings } from "./buildBindings";
+import { hydrateBindings } from "./hydrateBindings";
 import { IStateElement } from "./components/types";
 import { config } from "./config";
 import { raiseError } from "./raiseError";
@@ -35,9 +36,15 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
       stateElementByName = new Map<string, IStateElement>();
       stateElementByNameByNode.set(rootNode, stateElementByName);
       // 初めてルートノードに登録する場合
+      // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
+      const enableSsr = !config.ssr && (element as unknown as Element).hasAttribute?.('enable-ssr');
       if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
         queueMicrotask(() => {
-          buildBindings(rootNode as Document);
+          if (enableSsr) {
+            hydrateBindings(rootNode as Document);
+          } else {
+            buildBindings(rootNode as Document);
+          }
         });
       } else if (rootNode.constructor.name === 'ShadowRoot') {
         queueMicrotask(() => {
