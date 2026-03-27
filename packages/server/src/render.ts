@@ -44,7 +44,7 @@ export async function renderToString(html: string): Promise<string> {
   const {
     bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID,
     getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore,
-    VERSION,
+    getBindingsReady, VERSION,
   } = await import('@wcstack/state');
   bootstrapState({ ssr: true });
   clearSsrPropertyStore();
@@ -63,8 +63,8 @@ export async function renderToString(html: string): Promise<string> {
       }
     }
 
-    // buildBindings が queueMicrotask で起動 → バインディング適用を待機
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // buildBindings の完了を待機
+    await getBindingsReady(document as any);
 
     // enable-ssr 属性を持つ <wcs-state> に <wcs-ssr> タグを生成
     for (const stateEl of stateElements) {

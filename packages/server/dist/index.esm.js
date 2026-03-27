@@ -38,7 +38,7 @@ async function renderToString(html) {
     const window = new Window();
     const restoreGlobals = installGlobals(window);
     const document = window.document;
-    const { bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID, getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore, VERSION, } = await import('@wcstack/state');
+    const { bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID, getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore, getBindingsReady, VERSION, } = await import('@wcstack/state');
     bootstrapState({ ssr: true });
     clearSsrPropertyStore();
     try {
@@ -52,8 +52,8 @@ async function renderToString(html) {
                 await stateEl.connectedCallbackPromise;
             }
         }
-        // buildBindings が queueMicrotask で起動 → バインディング適用を待機
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // buildBindings の完了を待機
+        await getBindingsReady(document);
         // enable-ssr 属性を持つ <wcs-state> に <wcs-ssr> タグを生成
         for (const stateEl of stateElements) {
             if (!stateEl.hasAttribute('enable-ssr'))
@@ -128,5 +128,5 @@ var pkg = {
 
 const VERSION = pkg.version;
 
-export { VERSION, renderToString };
+export { GLOBALS_KEYS, VERSION, extractStateData, installGlobals, renderToString };
 //# sourceMappingURL=index.esm.js.map

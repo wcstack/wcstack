@@ -5,6 +5,7 @@ import { config } from "./config";
 import { raiseError } from "./raiseError";
 
 const stateElementByNameByNode: WeakMap<Node, Map<string, IStateElement>> = new WeakMap();
+const bindingsReadyByNode: WeakMap<Node, Promise<void>> = new WeakMap();
 
 export function getStateElementByName(rootNode:Node, name: string): IStateElement | null {
   let stateElementByName = stateElementByNameByNode.get(rootNode);
@@ -12,6 +13,13 @@ export function getStateElementByName(rootNode:Node, name: string): IStateElemen
     return null;
   }
   return stateElementByName.get(name) || null;
+}
+
+/**
+ * 指定された rootNode のバインディング初期化が完了するまで待機する Promise を返す。
+ */
+export function getBindingsReady(rootNode: Node): Promise<void> {
+  return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
 }
 
 export function setStateElementByName(rootNode:Node, name: string, element: IStateElement | null): void {
@@ -39,21 +47,28 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
       // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
       const enableSsr = !config.ssr && (element as unknown as Element).hasAttribute?.('enable-ssr');
       if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
-        queueMicrotask(async () => {
-          if (enableSsr) {
-            const success = await hydrateBindings(rootNode as Document);
-            if (!success) {
-              // バージョン不一致: 通常レンダリングにフォールバック
-              buildBindings(rootNode as Document);
+        const ready = new Promise<void>((resolve) => {
+          queueMicrotask(async () => {
+            if (enableSsr) {
+              const success = await hydrateBindings(rootNode as Document);
+              if (!success) {
+                await buildBindings(rootNode as Document);
+              }
+            } else {
+              await buildBindings(rootNode as Document);
             }
-          } else {
-            buildBindings(rootNode as Document);
-          }
+            resolve();
+          });
         });
+        bindingsReadyByNode.set(rootNode, ready);
       } else if (rootNode.constructor.name === 'ShadowRoot') {
-        queueMicrotask(() => {
-          buildBindings(rootNode as ShadowRoot);
+        const ready = new Promise<void>((resolve) => {
+          queueMicrotask(async () => {
+            await buildBindings(rootNode as ShadowRoot);
+            resolve();
+          });
         });
+        bindingsReadyByNode.set(rootNode, ready);
       }
     }
     if (stateElementByName.has(name)) {

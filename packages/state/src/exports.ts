@@ -1,5 +1,6 @@
 
 export { bootstrapState } from "./bootstrapState.js";
+export { getBindingsReady } from "./stateElementByName.js";
 
 export { Ssr } from "./components/Ssr.js";
 export type { ISsrElement } from "./components/Ssr.js";

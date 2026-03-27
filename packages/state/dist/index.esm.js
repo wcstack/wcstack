@@ -4505,12 +4505,19 @@ async function hydrateBindings(root) {
 }
 
 const stateElementByNameByNode = new WeakMap();
+const bindingsReadyByNode = new WeakMap();
 function getStateElementByName(rootNode, name) {
     let stateElementByName = stateElementByNameByNode.get(rootNode);
     if (!stateElementByName) {
         return null;
     }
     return stateElementByName.get(name) || null;
+}
+/**
+ * 指定された rootNode のバインディング初期化が完了するまで待機する Promise を返す。
+ */
+function getBindingsReady(rootNode) {
+    return bindingsReadyByNode.get(rootNode) ?? Promise.resolve();
 }
 function setStateElementByName(rootNode, name, element) {
     let stateElementByName = stateElementByNameByNode.get(rootNode);
@@ -4536,23 +4543,30 @@ function setStateElementByName(rootNode, name, element) {
             // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
             const enableSsr = !config.ssr && element.hasAttribute?.('enable-ssr');
             if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
-                queueMicrotask(async () => {
-                    if (enableSsr) {
-                        const success = await hydrateBindings(rootNode);
-                        if (!success) {
-                            // バージョン不一致: 通常レンダリングにフォールバック
-                            buildBindings(rootNode);
+                const ready = new Promise((resolve) => {
+                    queueMicrotask(async () => {
+                        if (enableSsr) {
+                            const success = await hydrateBindings(rootNode);
+                            if (!success) {
+                                await buildBindings(rootNode);
+                            }
                         }
-                    }
-                    else {
-                        buildBindings(rootNode);
-                    }
+                        else {
+                            await buildBindings(rootNode);
+                        }
+                        resolve();
+                    });
                 });
+                bindingsReadyByNode.set(rootNode, ready);
             }
             else if (rootNode.constructor.name === 'ShadowRoot') {
-                queueMicrotask(() => {
-                    buildBindings(rootNode);
+                const ready = new Promise((resolve) => {
+                    queueMicrotask(async () => {
+                        await buildBindings(rootNode);
+                        resolve();
+                    });
                 });
+                bindingsReadyByNode.set(rootNode, ready);
             }
         }
         if (stateElementByName.has(name)) {
@@ -6685,5 +6699,5 @@ function defineState(definition) {
     return definition;
 }
 
-export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
+export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getBindingsReady, getFragmentInfoByUUID, getSsrProperties };
 //# sourceMappingURL=index.esm.js.map

@@ -84,6 +84,11 @@ interface IWritableConfig {
 
 declare function bootstrapState(config?: IWritableConfig): void;
 
+/**
+ * 指定された rootNode のバインディング初期化が完了するまで待機する Promise を返す。
+ */
+declare function getBindingsReady(rootNode: Node): Promise<void>;
+
 interface ISsrElement {
     readonly name: string;
     readonly version: string;
@@ -364,5 +369,5 @@ declare function defineState<T extends Record<string, any>>(definition: T & This
 
 declare const VERSION: string;
 
-export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
+export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getBindingsReady, getFragmentInfoByUUID, getSsrProperties };
 export type { ISsrElement, ISsrPropertyEntry, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
