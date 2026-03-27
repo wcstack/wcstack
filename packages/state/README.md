@@ -1037,7 +1037,7 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
       timer: null,
       count: 0,
 
-      // Called when <wcs-state> is connected to the DOM (supports async)
+      // Called when <wcs-state> is connected to the DOM
       async $connectedCallback() {
         const res = await fetch("/api/initial-count");
         this.count = await res.json();
@@ -1055,16 +1055,16 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
 
 | Hook | Timing | Async |
 |---|---|---|
-| `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (`async` supported) |
+| `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (awaited) |
 | `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
-| `$updatedCallback(paths, indexesListByPath)` | After state updates are applied | Return value is ignored (not awaited) |
+| `$updatedCallback(paths, indexesListByPath)` | After state updates are applied | Yes (not awaited) |
 
-Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments, without requiring additional abstractions for async state management.
+All hooks except `$disconnectedCallback` support `async` — you can use `async/await` in any of them. Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments, without requiring additional abstractions for async state management.
 
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
-- `$updatedCallback(paths, indexesListByPath)` receives the updated path list. For wildcard updates, `indexesListByPath` contains the updated index sets
+- `$updatedCallback(paths, indexesListByPath)` receives the updated path list. For wildcard updates, `indexesListByPath` contains the updated index sets. Can be `async`, but the return value is not awaited
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
 ## Configuration

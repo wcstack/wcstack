@@ -1037,7 +1037,7 @@ customElements.define("my-component", MyComponent);
       timer: null,
       count: 0,
 
-      // <wcs-state> が DOM に接続された時に呼ばれる（async 対応）
+      // <wcs-state> が DOM に接続された時に呼ばれる
       async $connectedCallback() {
         const res = await fetch("/api/initial-count");
         this.count = await res.json();
@@ -1055,16 +1055,16 @@ customElements.define("my-component", MyComponent);
 
 | フック | タイミング | 非同期 |
 |---|---|---|
-| `$connectedCallback` | 初回接続時は状態初期化後、再接続時は毎回呼び出し | 可（`async` 対応） |
+| `$connectedCallback` | 初回接続時は状態初期化後、再接続時は毎回呼び出し | 可（await される） |
 | `$disconnectedCallback` | 要素が DOM から削除された時 | 不可（同期のみ） |
-| `$updatedCallback(paths, indexesListByPath)` | 状態変更が適用された後に呼び出し | 戻り値は未使用（待機されない） |
+| `$updatedCallback(paths, indexesListByPath)` | 状態変更が適用された後に呼び出し | 可（await されない） |
 
-リアクティブ Proxy はすべてのプロパティへの代入を変更として検知します。そのため、標準の `async/await` による処理とプロパティへの直接代入だけで非同期ロジックが完結します。ローディングフラグの切り替え、取得したデータの格納、エラーメッセージの更新といった処理もすべて単なるプロパティ代入で行えるため、非同期状態を管理するための複雑な抽象化機能は必要ありません。
+`$disconnectedCallback` を除くすべてのフックで `async` を使用できます。リアクティブ Proxy はすべてのプロパティへの代入を変更として検知します。そのため、標準の `async/await` による処理とプロパティへの直接代入だけで非同期ロジックが完結します。ローディングフラグの切り替え、取得したデータの格納、エラーメッセージの更新といった処理もすべて単なるプロパティ代入で行えるため、非同期状態を管理するための複雑な抽象化機能は必要ありません。
 
 - フック内の `this` は読み書き可能な状態プロキシです。
 - `$connectedCallback` は要素が接続される**たびに**呼ばれます（一度削除された後の再接続も含みます）。再確立が必要なセットアップ処理に適しています。
 - `$disconnectedCallback` は同期的に呼び出されます。タイマーのクリア、イベントリスナーの削除、リソースの解放といったクリーンアップ処理に使用してください。
-- `$updatedCallback(paths, indexesListByPath)` は更新された状態パスの一覧を受け取ります。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。
+- `$updatedCallback(paths, indexesListByPath)` は更新された状態パスの一覧を受け取ります。ワイルドカードをもつパスが更新された場合は、`indexesListByPath` から対象のインデックス情報も取得可能です。`async` を使用できますが、戻り値は await されません。
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
 
 ## 設定
