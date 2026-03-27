@@ -1,12 +1,15 @@
 import { config } from "../config";
 import { IState } from "../types";
+import { VERSION } from "../version";
 
 export interface ISsrElement {
   readonly name: string;
+  readonly version: string;
   readonly stateData: IState;
   readonly templates: Map<string, HTMLTemplateElement>;
   readonly hydrateProps: Record<string, Record<string, unknown>>;
   getTemplate(uuid: string): HTMLTemplateElement | null;
+  verifyVersion(): boolean;
 }
 
 export class Ssr extends HTMLElement implements ISsrElement {
@@ -16,6 +19,10 @@ export class Ssr extends HTMLElement implements ISsrElement {
 
   get name(): string {
     return this.getAttribute('name') || 'default';
+  }
+
+  get version(): string {
+    return this.getAttribute('version') || '';
   }
 
   get stateData(): IState {
@@ -41,6 +48,20 @@ export class Ssr extends HTMLElement implements ISsrElement {
 
   getTemplate(uuid: string): HTMLTemplateElement | null {
     return this.templates.get(uuid) ?? null;
+  }
+
+  /**
+   * サーバーの SSR バージョンとクライアントの state バージョンを検証する。
+   * メジャー・マイナーバージョンが一致すればtrue。
+   * version 属性がない場合は検証スキップ（true）。
+   */
+  verifyVersion(): boolean {
+    const serverVersion = this.version;
+    if (!serverVersion) return true;
+    const serverParts = serverVersion.split('.');
+    const clientParts = VERSION.split('.');
+    // メジャー・マイナーが一致すれば互換
+    return serverParts[0] === clientParts[0] && serverParts[1] === clientParts[1];
   }
 
   setStateData(data: IState): void {

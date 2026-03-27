@@ -39,9 +39,13 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
       // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
       const enableSsr = !config.ssr && (element as unknown as Element).hasAttribute?.('enable-ssr');
       if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
-        queueMicrotask(() => {
+        queueMicrotask(async () => {
           if (enableSsr) {
-            hydrateBindings(rootNode as Document);
+            const success = await hydrateBindings(rootNode as Document);
+            if (!success) {
+              // バージョン不一致: 通常レンダリングにフォールバック
+              buildBindings(rootNode as Document);
+            }
           } else {
             buildBindings(rootNode as Document);
           }

@@ -34,6 +34,7 @@ import { setListIndexesByList } from "./list/listIndexesByList";
 import { getPathInfo } from "./address/PathInfo";
 import { createStateAddress } from "./address/StateAddress";
 import { IBindingInfo } from "./types";
+import { VERSION } from "./version";
 
 // ハイドレーション時にスキップするバインディングタイプ
 const STRUCTURAL_TYPES = new Set(['for', 'if', 'elseif', 'else']);
@@ -376,12 +377,24 @@ function restoreFragments(root: Document, ssrEl: Ssr): void {
 
 /**
  * SSR ハイドレーション用バインディング初期化。
+ * バージョン不一致時は false を返す（呼び出し元で buildBindings にフォールバック）。
  */
-export async function hydrateBindings(root: Document): Promise<void> {
+export async function hydrateBindings(root: Document): Promise<boolean> {
   await waitForStateInitialize(root);
 
-  // <wcs-ssr> からテンプレートを fragmentInfoByUUID に復帰
+  // バージョン検証
   const ssrElements = root.querySelectorAll(config.tagNames.ssr);
+  for (const ssrNode of ssrElements) {
+    const ssrEl = ssrNode as Ssr;
+    if (!ssrEl.verifyVersion()) {
+      console.warn(
+        `[@wcstack/state] SSR version mismatch: server="${ssrEl.version}", client="${VERSION}". Falling back to full render.`
+      );
+      return false;
+    }
+  }
+
+  // <wcs-ssr> からテンプレートを fragmentInfoByUUID に復帰
   for (const ssrNode of ssrElements) {
     restoreFragments(root, ssrNode as Ssr);
   }
@@ -502,4 +515,6 @@ export async function hydrateBindings(root: Document): Promise<void> {
       }
     }
   }
+
+  return true;
 }

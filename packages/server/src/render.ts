@@ -1,4 +1,5 @@
 import { Window } from 'happy-dom';
+import { VERSION } from './version';
 
 const GLOBALS_KEYS = [
   'document', 'customElements', 'HTMLElement',
@@ -73,6 +74,7 @@ export async function renderToString(html: string): Promise<string> {
 
       const ssrEl = document.createElement('wcs-ssr');
       ssrEl.setAttribute('name', name);
+      ssrEl.setAttribute('version', VERSION);
 
       // 初期データ JSON
       const jsonScript = document.createElement('script');

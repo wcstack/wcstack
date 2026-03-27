@@ -52,12 +52,17 @@ function setConfig(partialConfig) {
     }
 }
 
+const VERSION = "1.5.3";
+
 class Ssr extends HTMLElement {
     _stateData = null;
     _templates = null;
     _hydrateProps = null;
     get name() {
         return this.getAttribute('name') || 'default';
+    }
+    get version() {
+        return this.getAttribute('version') || '';
     }
     get stateData() {
         if (this._stateData === null) {
@@ -79,6 +84,20 @@ class Ssr extends HTMLElement {
     }
     getTemplate(uuid) {
         return this.templates.get(uuid) ?? null;
+    }
+    /**
+     * サーバーの SSR バージョンとクライアントの state バージョンを検証する。
+     * メジャー・マイナーバージョンが一致すればtrue。
+     * version 属性がない場合は検証スキップ（true）。
+     */
+    verifyVersion() {
+        const serverVersion = this.version;
+        if (!serverVersion)
+            return true;
+        const serverParts = serverVersion.split('.');
+        const clientParts = VERSION.split('.');
+        // メジャー・マイナーが一致すれば互換
+        return serverParts[0] === clientParts[0] && serverParts[1] === clientParts[1];
     }
     setStateData(data) {
         this._stateData = data;
@@ -4329,11 +4348,20 @@ function restoreFragments(root, ssrEl) {
 }
 /**
  * SSR ハイドレーション用バインディング初期化。
+ * バージョン不一致時は false を返す（呼び出し元で buildBindings にフォールバック）。
  */
 async function hydrateBindings(root) {
     await waitForStateInitialize(root);
-    // <wcs-ssr> からテンプレートを fragmentInfoByUUID に復帰
+    // バージョン検証
     const ssrElements = root.querySelectorAll(config.tagNames.ssr);
+    for (const ssrNode of ssrElements) {
+        const ssrEl = ssrNode;
+        if (!ssrEl.verifyVersion()) {
+            console.warn(`[@wcstack/state] SSR version mismatch: server="${ssrEl.version}", client="${VERSION}". Falling back to full render.`);
+            return false;
+        }
+    }
+    // <wcs-ssr> からテンプレートを fragmentInfoByUUID に復帰
     for (const ssrNode of ssrElements) {
         restoreFragments(root, ssrNode);
     }
@@ -4443,6 +4471,7 @@ async function hydrateBindings(root) {
             }
         }
     }
+    return true;
 }
 
 const stateElementByNameByNode = new WeakMap();
@@ -4477,9 +4506,13 @@ function setStateElementByName(rootNode, name, element) {
             // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
             const enableSsr = !config.ssr && element.hasAttribute?.('enable-ssr');
             if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
-                queueMicrotask(() => {
+                queueMicrotask(async () => {
                     if (enableSsr) {
-                        hydrateBindings(rootNode);
+                        const success = await hydrateBindings(rootNode);
+                        if (!success) {
+                            // バージョン不一致: 通常レンダリングにフォールバック
+                            buildBindings(rootNode);
+                        }
                     }
                     else {
                         buildBindings(rootNode);
@@ -6622,5 +6655,5 @@ function defineState(definition) {
     return definition;
 }
 
-export { Ssr, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
+export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
 //# sourceMappingURL=index.esm.js.map

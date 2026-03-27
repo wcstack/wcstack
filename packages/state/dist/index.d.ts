@@ -86,20 +86,29 @@ declare function bootstrapState(config?: IWritableConfig): void;
 
 interface ISsrElement {
     readonly name: string;
+    readonly version: string;
     readonly stateData: IState;
     readonly templates: Map<string, HTMLTemplateElement>;
     readonly hydrateProps: Record<string, Record<string, unknown>>;
     getTemplate(uuid: string): HTMLTemplateElement | null;
+    verifyVersion(): boolean;
 }
 declare class Ssr extends HTMLElement implements ISsrElement {
     private _stateData;
     private _templates;
     private _hydrateProps;
     get name(): string;
+    get version(): string;
     get stateData(): IState;
     get templates(): Map<string, HTMLTemplateElement>;
     get hydrateProps(): Record<string, Record<string, unknown>>;
     getTemplate(uuid: string): HTMLTemplateElement | null;
+    /**
+     * サーバーの SSR バージョンとクライアントの state バージョンを検証する。
+     * メジャー・マイナーバージョンが一致すればtrue。
+     * version 属性がない場合は検証スキップ（true）。
+     */
+    verifyVersion(): boolean;
     setStateData(data: IState): void;
     setHydrateProps(props: Record<string, Record<string, unknown>>): void;
     private _loadStateData;
@@ -353,5 +362,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  */
 declare function defineState<T extends Record<string, any>>(definition: T & ThisType<WcsThis<T>>): T;
 
-export { Ssr, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
+declare const VERSION = "1.5.3";
+
+export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
 export type { ISsrElement, ISsrPropertyEntry, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

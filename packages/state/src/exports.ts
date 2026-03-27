@@ -21,3 +21,5 @@ export type {
 export type {
   IWritableConfig, IWritableTagNames
 } from "./types.js";
+
+export { VERSION } from "./version.js";
