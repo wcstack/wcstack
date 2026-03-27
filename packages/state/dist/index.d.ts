@@ -1,3 +1,66 @@
+interface IPathInfo {
+    readonly id: number;
+    readonly path: string;
+    readonly segments: string[];
+    readonly lastSegment: string;
+    readonly cumulativePaths: string[];
+    readonly cumulativePathSet: Set<string>;
+    readonly cumulativePathInfos: IPathInfo[];
+    readonly cumulativePathInfoSet: Set<IPathInfo>;
+    readonly parentPath: string | null;
+    readonly parentPathInfo: IPathInfo | null;
+    readonly wildcardPaths: string[];
+    readonly wildcardPathSet: Set<string>;
+    readonly indexByWildcardPath: Record<string, number>;
+    readonly wildcardPathInfos: IPathInfo[];
+    readonly wildcardPathInfoSet: Set<IPathInfo>;
+    readonly wildcardParentPaths: string[];
+    readonly wildcardParentPathSet: Set<string>;
+    readonly wildcardParentPathInfos: IPathInfo[];
+    readonly wildcardParentPathInfoSet: Set<IPathInfo>;
+    readonly wildcardPositions: number[];
+    readonly lastWildcardPath: string | null;
+    readonly lastWildcardInfo: IPathInfo | null;
+    readonly wildcardCount: number;
+}
+
+/**
+ * Filter/types.ts
+ *
+ * Type definition file for filter functions.
+ *
+ * Main responsibilities:
+ * - Defines types for filter functions (FilterFn) and filter functions with options (FilterWithOptionsFn)
+ * - Type-safe management of filter name-to-function mappings (FilterWithOptions) and filter function arrays (Filters)
+ * - Defines types for retrieving filter functions from built-in filter collections
+ *
+ * Design points:
+ * - Type design enabling flexible filter design and extension
+ * - Supports filters with options and combinations of multiple filters
+ */
+type FilterFn<T = unknown> = (value: unknown) => T;
+
+type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox';
+interface IFilterInfo {
+    readonly filterName: string;
+    readonly args: string[];
+    readonly filterFn: FilterFn;
+}
+interface IBindingInfo {
+    readonly propName: string;
+    readonly propSegments: string[];
+    readonly propModifiers: string[];
+    readonly statePathName: string;
+    readonly statePathInfo: IPathInfo;
+    readonly stateName: string;
+    readonly inFilters: IFilterInfo[];
+    readonly outFilters: IFilterInfo[];
+    readonly node: Node;
+    readonly replaceNode: Node;
+    readonly bindingType: BindingType;
+    readonly uuid?: string | null;
+}
+
 interface IWritableTagNames {
     state?: string;
 }
@@ -12,9 +75,39 @@ interface IWritableConfig {
     locale?: string;
     debug?: boolean;
     enableMustache?: boolean;
+    ssr?: boolean;
 }
 
 declare function bootstrapState(config?: IWritableConfig): void;
+
+declare function buildBindings(root: Document | ShadowRoot): Promise<void>;
+
+type ParseBindTextResult = Pick<IBindingInfo, 'propName' | 'propSegments' | 'propModifiers' | 'statePathName' | 'statePathInfo' | 'stateName' | 'inFilters' | 'outFilters' | 'bindingType' | 'uuid'>;
+
+interface IFragmentNodeInfo {
+    readonly nodePath: number[];
+    readonly parseBindTextResults: ParseBindTextResult[];
+}
+interface IFragmentInfo {
+    readonly fragment: DocumentFragment;
+    readonly parseBindTextResult: ParseBindTextResult;
+    readonly nodeInfos: IFragmentNodeInfo[];
+}
+
+declare function getFragmentInfoByUUID(uuid: string): IFragmentInfo | null;
+declare function getAllFragmentUUIDs(): string[];
+
+/**
+ * SSR 時に HTML 属性で表現できないプロパティバインディングを蓄積するストア。
+ * ハイドレーション時にクライアント側で復元する。
+ */
+interface ISsrPropertyEntry {
+    propName: string;
+    value: unknown;
+}
+declare function getSsrProperties(node: Node): ISsrPropertyEntry[];
+declare function getAllSsrPropertyNodes(): Node[];
+declare function clearSsrPropertyStore(): void;
 
 /**
  * defineState.ts
@@ -232,5 +325,5 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  */
 declare function defineState<T extends Record<string, any>>(definition: T & ThisType<WcsThis<T>>): T;
 
-export { bootstrapState, defineState };
-export type { IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
+export { bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
+export type { ISsrPropertyEntry, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

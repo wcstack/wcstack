@@ -11,6 +11,7 @@ const _config = {
     locale: 'en',
     debug: false,
     enableMustache: true,
+    ssr: false,
 };
 // backward compatible export (read-only usage)
 const config = _config;
@@ -44,6 +45,9 @@ function setConfig(partialConfig) {
     }
     if (typeof partialConfig.enableMustache === "boolean") {
         _config.enableMustache = partialConfig.enableMustache;
+    }
+    if (typeof partialConfig.ssr === "boolean") {
+        _config.ssr = partialConfig.ssr;
     }
 }
 
@@ -1437,6 +1441,9 @@ function setFragmentInfoByUUID(uuid, rootNode, fragmentInfo) {
 function getFragmentInfoByUUID(uuid) {
     return fragmentInfoByUUID.get(uuid) || null;
 }
+function getAllFragmentUUIDs() {
+    return Array.from(fragmentInfoByUUID.keys());
+}
 
 function getParseBindTextResults(node) {
     if (node.nodeType === Node.ELEMENT_NODE) {
@@ -2779,6 +2786,8 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         fragment = document.createDocumentFragment();
         setRootNodeByFragment(fragment, context.rootNode);
     }
+    const ssrMode = config.ssr;
+    const uuid = bindingInfo.uuid ?? '';
     for (const index of diff.newIndexes) {
         let content;
         // add
@@ -2792,13 +2801,29 @@ function applyChangeToFor(bindingInfo, context, newValue) {
                 }
                 // コンテント活性化の前にDOMツリーに追加しておく必要がある
                 if (fragment !== null) {
+                    if (ssrMode) {
+                        fragment.appendChild(document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`));
+                    }
                     content.appendTo(fragment);
+                    if (ssrMode) {
+                        fragment.appendChild(document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`));
+                    }
                 }
                 else {
                     // Update lastNode for next iteration to ensure correct order
                     // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
                     if (lastNode.nextSibling !== content.firstNode) {
+                        if (ssrMode) {
+                            const startComment = document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`);
+                            lastNode.parentNode.insertBefore(startComment, lastNode.nextSibling);
+                            lastNode = startComment;
+                        }
                         content.mountAfter(lastNode);
+                    }
+                    if (ssrMode) {
+                        const endComment = document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`);
+                        const afterNode = content.lastNode ?? lastNode;
+                        afterNode.parentNode.insertBefore(endComment, afterNode.nextSibling);
                     }
                 }
                 // コンテントを活性化
@@ -2852,6 +2877,9 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
     else {
         content = contents.values().next().value;
     }
+    const ssrMode = config.ssr;
+    const uuid = bindingInfo.uuid ?? '';
+    const keyword = bindingInfo.bindingType; // if, elseif, else
     try {
         if (!newValue) {
             if (config.debug) {
@@ -2864,7 +2892,17 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
             if (config.debug) {
                 console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
             }
-            content.mountAfter(bindingInfo.node);
+            if (ssrMode) {
+                const startComment = document.createComment(`@@wcs-${keyword}-start:${uuid}:${bindingInfo.statePathName}`);
+                bindingInfo.node.parentNode.insertBefore(startComment, bindingInfo.node.nextSibling);
+                content.mountAfter(startComment);
+                const endComment = document.createComment(`@@wcs-${keyword}-end:${uuid}:${bindingInfo.statePathName}`);
+                const afterNode = content.lastNode ?? startComment;
+                afterNode.parentNode.insertBefore(endComment, afterNode.nextSibling);
+            }
+            else {
+                content.mountAfter(bindingInfo.node);
+            }
             const loopContext = getLoopContextByNode(bindingInfo.node);
             activateContent(content, loopContext, context);
         }
@@ -2874,6 +2912,82 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
     }
 }
 
+/**
+ * SSR 時に HTML 属性で表現できないプロパティバインディングを蓄積するストア。
+ * ハイドレーション時にクライアント側で復元する。
+ */
+// node → プロパティエントリのリスト
+const store = new WeakMap();
+function addSsrProperty(node, propName, value) {
+    let entries = store.get(node);
+    if (!entries) {
+        entries = [];
+        store.set(node, entries);
+    }
+    // 同じプロパティの既存エントリは上書き
+    const existing = entries.find(e => e.propName === propName);
+    if (existing) {
+        existing.value = value;
+    }
+    else {
+        entries.push({ propName, value });
+    }
+}
+function getSsrProperties(node) {
+    return store.get(node) ?? [];
+}
+function getAllSsrPropertyNodes() {
+    // WeakMap は列挙不可なので、別途トラッキングが必要
+    return Array.from(trackedNodes);
+}
+const trackedNodes = new Set();
+function trackSsrPropertyNode(node) {
+    trackedNodes.add(node);
+}
+function clearSsrPropertyStore() {
+    trackedNodes.clear();
+}
+
+// SSR 時に HTML 属性で代替可能なプロパティ
+// これら以外のプロパティは ssrPropertyStore に蓄積してハイドレーション時に復元
+const SSR_ATTR_PROPS = {
+    value(element, value) {
+        if (element.tagName === 'TEXTAREA') {
+            element.textContent = String(value ?? '');
+        }
+        else {
+            element.setAttribute('value', String(value ?? ''));
+        }
+    },
+    checked(element, value) {
+        if (value)
+            element.setAttribute('checked', '');
+        else
+            element.removeAttribute('checked');
+    },
+    selected(element, value) {
+        if (value)
+            element.setAttribute('selected', '');
+        else
+            element.removeAttribute('selected');
+    },
+    disabled(element, value) {
+        if (value)
+            element.setAttribute('disabled', '');
+        else
+            element.removeAttribute('disabled');
+    },
+    selectedIndex(element, value) {
+        const options = element.querySelectorAll('option');
+        const idx = Number(value);
+        for (let i = 0; i < options.length; i++) {
+            if (i === idx)
+                options[i].setAttribute('selected', '');
+            else
+                options[i].removeAttribute('selected');
+        }
+    },
+};
 function applyChangeToProperty(binding, _context, newValue) {
     const element = binding.node;
     const propSegments = binding.propSegments;
@@ -2891,6 +3005,18 @@ function applyChangeToProperty(binding, _context, newValue) {
                         error
                     });
                 }
+            }
+        }
+        if (config.ssr) {
+            const attrHandler = SSR_ATTR_PROPS[firstSegment];
+            if (attrHandler) {
+                // 属性で代替可能 → HTML 属性に反映
+                attrHandler(element, newValue);
+            }
+            else {
+                // 属性で代替不可 → ハイドレーション用ストアに蓄積
+                addSsrProperty(element, firstSegment, newValue);
+                trackSsrPropertyNode(element);
             }
         }
         return;
@@ -2932,6 +3058,7 @@ function applyChangeToProperty(binding, _context, newValue) {
             }
         }
     }
+    // サブオブジェクトプロパティ (e.g. style.xxx) は属性に反映済みなのでストア不要
 }
 
 function applyChangeToRadio(binding, _context, newValue) {
@@ -2950,9 +3077,22 @@ function applyChangeToStyle(binding, _context, newValue) {
     }
 }
 
+const ssrWrappedNodes = new WeakSet();
 function applyChangeToText(binding, _context, newValue) {
     if (binding.replaceNode.nodeValue !== newValue) {
         binding.replaceNode.nodeValue = newValue;
+    }
+    // SSR モード時: テキストノードの前後にコメントを挿入して境界を明示
+    if (config.ssr && !ssrWrappedNodes.has(binding.replaceNode)) {
+        ssrWrappedNodes.add(binding.replaceNode);
+        const parentNode = binding.replaceNode.parentNode;
+        if (parentNode) {
+            const path = binding.statePathName;
+            const startComment = document.createComment(`@@wcs-text-start:${path}`);
+            const endComment = document.createComment(`@@wcs-text-end:${path}`);
+            parentNode.insertBefore(startComment, binding.replaceNode);
+            parentNode.insertBefore(endComment, binding.replaceNode.nextSibling);
+        }
     }
 }
 
@@ -5536,6 +5676,8 @@ class State extends HTMLElement {
     _initialized = false;
     _initializePromise;
     _resolveInitialize = null;
+    _connectedCallbackPromise;
+    _resolveConnectedCallback = null;
     _loadingPromise;
     _resolveLoading = null;
     _setStatePromise = null;
@@ -5556,6 +5698,9 @@ class State extends HTMLElement {
         super();
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
+        });
+        this._connectedCallbackPromise = new Promise((resolve) => {
+            this._resolveConnectedCallback = resolve;
         });
         this._loadingPromise = new Promise((resolve) => {
             this._resolveLoading = resolve;
@@ -5694,6 +5839,7 @@ class State extends HTMLElement {
             this._resolveInitialize?.();
         }
         await this._callStateConnectedCallback();
+        this._resolveConnectedCallback?.();
     }
     disconnectedCallback() {
         if (this._rootNode !== null) {
@@ -5704,6 +5850,9 @@ class State extends HTMLElement {
     }
     get initializePromise() {
         return this._initializePromise;
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     get listPaths() {
         return this._listPaths;
@@ -5931,5 +6080,5 @@ function defineState(definition) {
     return definition;
 }
 
-export { bootstrapState, defineState };
+export { bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
 //# sourceMappingURL=index.esm.js.map

@@ -14,7 +14,7 @@ function bindingInfoText(bindingInfo: IBindingInfo): string {
 }
 
 export function applyChangeToIf(
-  bindingInfo: IBindingInfo, 
+  bindingInfo: IBindingInfo,
   context: IApplyContext,
   rawNewValue: unknown,
 ): void {
@@ -27,6 +27,9 @@ export function applyChangeToIf(
   } else {
     content = contents.values().next().value!;
   }
+  const ssrMode = config.ssr;
+  const uuid = bindingInfo.uuid ?? '';
+  const keyword = bindingInfo.bindingType; // if, elseif, else
   try {
     if (!newValue) {
       if (config.debug) {
@@ -39,7 +42,16 @@ export function applyChangeToIf(
       if (config.debug) {
         console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
       }
-      content.mountAfter(bindingInfo.node);
+      if (ssrMode) {
+        const startComment = document.createComment(`@@wcs-${keyword}-start:${uuid}:${bindingInfo.statePathName}`);
+        bindingInfo.node.parentNode!.insertBefore(startComment, bindingInfo.node.nextSibling);
+        content.mountAfter(startComment);
+        const endComment = document.createComment(`@@wcs-${keyword}-end:${uuid}:${bindingInfo.statePathName}`);
+        const afterNode = content.lastNode ?? startComment;
+        afterNode.parentNode!.insertBefore(endComment, afterNode.nextSibling);
+      } else {
+        content.mountAfter(bindingInfo.node);
+      }
       const loopContext = getLoopContextByNode(bindingInfo.node);
       activateContent(content, loopContext, context);
     }

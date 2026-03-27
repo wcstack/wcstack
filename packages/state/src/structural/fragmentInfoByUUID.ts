@@ -30,3 +30,7 @@ export function setFragmentInfoByUUID(uuid: string, rootNode: Node, fragmentInfo
 export function getFragmentInfoByUUID(uuid: string): IFragmentInfo | null {
   return fragmentInfoByUUID.get(uuid) || null;
 }
+
+export function getAllFragmentUUIDs(): string[] {
+  return Array.from(fragmentInfoByUUID.keys());
+}

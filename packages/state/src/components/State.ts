@@ -58,6 +58,8 @@ export class State extends HTMLElement implements IStateElement {
   private _initialized: boolean = false;
   private _initializePromise: Promise<void>;
   private _resolveInitialize: (() => void) | null = null;
+  private _connectedCallbackPromise: Promise<void>;
+  private _resolveConnectedCallback: (() => void) | null = null;
   private _loadingPromise: Promise<void>;
   private _resolveLoading: (() => void) | null = null;
   private _setStatePromise: Promise<Record<string, any>> | null = null;
@@ -79,6 +81,9 @@ export class State extends HTMLElement implements IStateElement {
     super();
     this._initializePromise = new Promise<void>((resolve) => {
       this._resolveInitialize = resolve;
+    });
+    this._connectedCallbackPromise = new Promise<void>((resolve) => {
+      this._resolveConnectedCallback = resolve;
     });
     this._loadingPromise = new Promise<void>((resolve) => {
       this._resolveLoading = resolve;
@@ -218,6 +223,7 @@ export class State extends HTMLElement implements IStateElement {
       this._resolveInitialize?.();
     }
     await this._callStateConnectedCallback();
+    this._resolveConnectedCallback?.();
   }
 
   disconnectedCallback() {
@@ -230,6 +236,10 @@ export class State extends HTMLElement implements IStateElement {
 
   get initializePromise(): Promise<void> {
     return this._initializePromise;
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   get listPaths(): Set<string> {

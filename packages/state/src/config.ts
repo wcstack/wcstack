@@ -13,6 +13,7 @@ interface IInternalConfig {
   locale: string;
   debug: boolean;
   enableMustache: boolean;
+  ssr: boolean;
 }
 
 const _config: IInternalConfig = {
@@ -28,6 +29,7 @@ const _config: IInternalConfig = {
   locale: 'en',
   debug: false,
   enableMustache: true,
+  ssr: false,
 };
 
 // backward compatible export (read-only usage)
@@ -63,5 +65,8 @@ export function setConfig(partialConfig: IWritableConfig): void {
   }
   if (typeof partialConfig.enableMustache === "boolean") {
     _config.enableMustache = partialConfig.enableMustache;
+  }
+  if (typeof partialConfig.ssr === "boolean") {
+    _config.ssr = partialConfig.ssr;
   }
 }

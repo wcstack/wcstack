@@ -2,6 +2,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
+import { config } from "../config";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
@@ -146,6 +147,8 @@ export function applyChangeToFor(
     fragment = document.createDocumentFragment();
     setRootNodeByFragment(fragment, context.rootNode);
   }
+  const ssrMode = config.ssr;
+  const uuid = bindingInfo.uuid ?? '';
   for(const index of diff.newIndexes) {
     let content: IContent | undefined;
     // add
@@ -159,12 +162,28 @@ export function applyChangeToFor(
         }
         // コンテント活性化の前にDOMツリーに追加しておく必要がある
         if (fragment !== null) {
+          if (ssrMode) {
+            fragment.appendChild(document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`));
+          }
           content.appendTo(fragment);
+          if (ssrMode) {
+            fragment.appendChild(document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`));
+          }
         } else {
           // Update lastNode for next iteration to ensure correct order
           // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
           if (lastNode.nextSibling !== content.firstNode) {
+            if (ssrMode) {
+              const startComment = document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`);
+              lastNode.parentNode!.insertBefore(startComment, lastNode.nextSibling);
+              lastNode = startComment;
+            }
             content.mountAfter(lastNode);
+          }
+          if (ssrMode) {
+            const endComment = document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`);
+            const afterNode = content.lastNode ?? lastNode;
+            afterNode.parentNode!.insertBefore(endComment, afterNode.nextSibling);
           }
         }
         // コンテントを活性化

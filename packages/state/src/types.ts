@@ -23,6 +23,7 @@ export interface IConfig {
   readonly locale: string;
   readonly debug: boolean;
   readonly enableMustache: boolean;
+  readonly ssr: boolean;
 }
 
 export interface IWritableConfig {
@@ -36,4 +37,5 @@ export interface IWritableConfig {
   locale?: string;
   debug?: boolean;
   enableMustache?: boolean;
+  ssr?: boolean;
 }

@@ -5,6 +5,7 @@ import { BindingType } from "../types";
 export interface IStateElement {
   readonly name: string;
   readonly initializePromise: Promise<void>;
+  readonly connectedCallbackPromise: Promise<void>;
   readonly listPaths: Set<string>;
   readonly elementPaths: Set<string>;
   readonly getterPaths: Set<string>;

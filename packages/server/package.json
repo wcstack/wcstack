@@ -1,0 +1,56 @@
+{
+  "name": "@wcstack/server",
+  "version": "0.1.0",
+  "description": "Server-side rendering for wcstack Web Components.",
+  "type": "module",
+  "main": "./dist/index.esm.js",
+  "module": "./dist/index.esm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist .tsc-out",
+    "build": "rimraf dist .tsc-out && tsc && rollup -c",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src"
+  },
+  "keywords": [
+    "web-components",
+    "ssr",
+    "server-side-rendering",
+    "wcstack"
+  ],
+  "author": "mogera551",
+  "homepage": "https://wcstack.github.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wcstack/wcstack.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/wcstack/wcstack/issues"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@wcstack/state": "file:../state",
+    "happy-dom": "^20.0.11"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.15",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.22.4",
+    "rollup-plugin-dts": "^6.1.1",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}
