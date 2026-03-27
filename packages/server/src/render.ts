@@ -1,12 +1,12 @@
 import { Window } from 'happy-dom';
 
-const GLOBALS_KEYS = [
+export const GLOBALS_KEYS = [
   'document', 'customElements', 'HTMLElement',
   'DocumentFragment', 'Node', 'NodeFilter', 'Comment', 'Text',
   'MutationObserver', 'ShadowRoot', 'Element', 'HTMLTemplateElement',
 ];
 
-function installGlobals(window: Window): () => void {
+export function installGlobals(window: Window): () => void {
   const saved: Record<string, any> = {};
   for (const key of GLOBALS_KEYS) {
     saved[key] = (globalThis as any)[key];
@@ -24,7 +24,7 @@ function installGlobals(window: Window): () => void {
   };
 }
 
-function extractStateData(stateEl: any): Record<string, any> {
+export function extractStateData(stateEl: any): Record<string, any> {
   const raw = (stateEl as any).__state;
   if (!raw || typeof raw !== 'object') return {};
   const data: Record<string, any> = {};
