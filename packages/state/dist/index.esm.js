@@ -4330,11 +4330,37 @@ function removeBlockBoundaryComments(root) {
  */
 function restoreFragments(root, ssrEl) {
     const rootNode = root;
+    let lastIfParseResult = null;
     for (const [uuid, tpl] of ssrEl.templates) {
         const bindText = tpl.getAttribute(config.bindAttributeName) || '';
         const parseBindTextResults = parseBindTextsForElement(bindText);
-        const parseBindTextResult = parseBindTextResults[0];
+        let parseBindTextResult = parseBindTextResults[0];
         const bindingType = parseBindTextResult.bindingType;
+        // else: 直前の if 条件の not → 条件反転
+        // elseif: 独自条件を持つが stateName は if から引き継ぐ
+        if (bindingType === 'else' && lastIfParseResult) {
+            parseBindTextResult = {
+                ...lastIfParseResult,
+                outFilters: [...lastIfParseResult.outFilters, createNotFilter()],
+                bindingType: 'else',
+            };
+        }
+        else if (bindingType === 'elseif' && lastIfParseResult) {
+            parseBindTextResult = {
+                ...parseBindTextResult,
+                stateName: lastIfParseResult.stateName,
+            };
+        }
+        // if chain の追跡
+        if (bindingType === 'if') {
+            lastIfParseResult = parseBindTextResult;
+        }
+        else if (bindingType === 'elseif') {
+            lastIfParseResult = parseBindTextResult;
+        }
+        else if (bindingType === 'else') {
+            lastIfParseResult = null;
+        }
         const fragment = document.importNode(tpl.content, true);
         const forPath = bindingType === "for" ? parseBindTextResult.statePathName : undefined;
         optimizeFragment(fragment);

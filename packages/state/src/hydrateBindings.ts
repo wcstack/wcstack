@@ -2,6 +2,7 @@ import { getAbsoluteStateAddressByBinding } from "./binding/getAbsoluteStateAddr
 import { addBindingByAbsoluteStateAddress } from "./binding/getBindingSetByAbsoluteStateAddress";
 import { setLastListValueByAbsoluteStateAddress } from "./list/lastListValueByAbsoluteStateAddress";
 import { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElement";
+import { ParseBindTextResult } from "./bindTextParser/types";
 import { collectNodesAndBindingInfos } from "./bindings/collectNodesAndBindingInfos";
 import { setBindingsByContent } from "./bindings/bindingsByContent";
 import { setIndexBindingsByContent } from "./bindings/indexBindingsByContent";
@@ -25,6 +26,7 @@ import { setFragmentInfoByUUID, getFragmentInfoByUUID } from "./structural/fragm
 import { setContentByNode } from "./structural/contentsByNode";
 import { createContentFromNodes } from "./structural/createContent";
 import { collectStructuralFragments } from "./structural/collectStructuralFragments";
+import { createNotFilter } from "./structural/createNotFilter";
 import { getFragmentNodeInfos } from "./structural/getFragmentNodeInfos";
 import { optimizeFragment } from "./structural/optimizeFragment";
 import { expandShorthandPaths } from "./structural/expandShorthandPaths";
@@ -352,11 +354,37 @@ function removeBlockBoundaryComments(root: Node): void {
  */
 function restoreFragments(root: Document, ssrEl: Ssr): void {
   const rootNode = root as Node;
+  let lastIfParseResult: ParseBindTextResult | null = null;
+
   for (const [uuid, tpl] of ssrEl.templates) {
     const bindText = tpl.getAttribute(config.bindAttributeName) || '';
     const parseBindTextResults = parseBindTextsForElement(bindText);
-    const parseBindTextResult = parseBindTextResults[0];
+    let parseBindTextResult = parseBindTextResults[0];
     const bindingType = parseBindTextResult.bindingType;
+
+    // else: 直前の if 条件の not → 条件反転
+    // elseif: 独自条件を持つが stateName は if から引き継ぐ
+    if (bindingType === 'else' && lastIfParseResult) {
+      parseBindTextResult = {
+        ...lastIfParseResult,
+        outFilters: [...lastIfParseResult.outFilters, createNotFilter()],
+        bindingType: 'else',
+      };
+    } else if (bindingType === 'elseif' && lastIfParseResult) {
+      parseBindTextResult = {
+        ...parseBindTextResult,
+        stateName: lastIfParseResult.stateName,
+      };
+    }
+
+    // if chain の追跡
+    if (bindingType === 'if') {
+      lastIfParseResult = parseBindTextResult;
+    } else if (bindingType === 'elseif') {
+      lastIfParseResult = parseBindTextResult;
+    } else if (bindingType === 'else') {
+      lastIfParseResult = null;
+    }
 
     const fragment = document.importNode(tpl.content, true);
     const forPath = bindingType === "for" ? parseBindTextResult.statePathName : undefined;
