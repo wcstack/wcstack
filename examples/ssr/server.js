@@ -1,0 +1,242 @@
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { join, extname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Window } from "../../packages/server/node_modules/happy-dom/lib/index.js";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const ROOT = join(__dirname, "../..");
+
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+};
+
+// Mock data
+const users = [
+  { name: "田中太郎", role: "admin" },
+  { name: "佐藤花子", role: "editor" },
+  { name: "鈴木一郎", role: "viewer" },
+  { name: "高橋美咲", role: "editor" },
+  { name: "渡辺健太", role: "viewer" },
+];
+
+function jsonResponse(res, data, status = 200) {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(data));
+}
+
+async function serveFile(res, filePath) {
+  try {
+    const content = await readFile(filePath);
+    const ext = extname(filePath);
+    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+    res.end(content);
+  } catch {
+    res.writeHead(404);
+    res.end("Not Found");
+  }
+}
+
+// --- Simple SSR using happy-dom + @wcstack/state ---
+const GLOBALS_KEYS = [
+  "document", "customElements", "HTMLElement",
+  "DocumentFragment", "Node", "NodeFilter", "Comment", "Text",
+  "MutationObserver", "ShadowRoot", "Element", "HTMLTemplateElement",
+];
+
+function installGlobals(window) {
+  const saved = {};
+  for (const key of GLOBALS_KEYS) {
+    saved[key] = globalThis[key];
+    globalThis[key] = window[key];
+  }
+  const origCreateObjectURL = URL.createObjectURL;
+  URL.createObjectURL = undefined;
+  return () => {
+    URL.createObjectURL = origCreateObjectURL;
+    for (const key of GLOBALS_KEYS) {
+      globalThis[key] = saved[key];
+    }
+  };
+}
+
+async function renderToString(html) {
+  const window = new Window();
+  const restoreGlobals = installGlobals(window);
+  const doc = window.document;
+
+  const stateModule = await import("../../packages/state/dist/index.esm.js");
+  stateModule.bootstrapState({ ssr: true });
+
+  try {
+    doc.body.innerHTML = html;
+
+    const stateElements = doc.querySelectorAll("wcs-state");
+    for (const stateEl of stateElements) {
+      if ("connectedCallbackPromise" in stateEl) {
+        await stateEl.connectedCallbackPromise;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Extract state data and create <wcs-ssr>
+    for (const stateEl of stateElements) {
+      if (!stateEl.hasAttribute("enable-ssr")) continue;
+      const name = stateEl.getAttribute("name") || "default";
+      const raw = stateEl.__state;
+      const stateData = {};
+      if (raw) {
+        for (const [key, value] of Object.entries(raw)) {
+          if (!key.startsWith("$") && typeof value !== "function") {
+            stateData[key] = value;
+          }
+        }
+      }
+
+      const ssrEl = doc.createElement("wcs-ssr");
+      ssrEl.setAttribute("name", name);
+      ssrEl.setAttribute("version", stateModule.VERSION);
+
+      const jsonScript = doc.createElement("script");
+      jsonScript.setAttribute("type", "application/json");
+      jsonScript.textContent = JSON.stringify(stateData);
+      ssrEl.appendChild(jsonScript);
+
+      // Copy templates from fragmentInfoByUUID
+      const uuids = stateModule.getAllFragmentUUIDs();
+      for (const uuid of uuids) {
+        const fragmentInfo = stateModule.getFragmentInfoByUUID(uuid);
+        if (!fragmentInfo) continue;
+        const tpl = doc.createElement("template");
+        tpl.setAttribute("id", uuid);
+        const bindResult = fragmentInfo.parseBindTextResult;
+        const bindText = bindResult.bindingType === "else"
+          ? "else:"
+          : `${bindResult.bindingType}: ${bindResult.statePathName}`;
+        tpl.setAttribute("data-wcs", bindText);
+        const content = fragmentInfo.fragment.cloneNode(true);
+        tpl.content.appendChild(content);
+        ssrEl.appendChild(tpl);
+      }
+
+      stateEl.parentNode?.insertBefore(ssrEl, stateEl);
+    }
+
+    return doc.body.innerHTML;
+  } finally {
+    stateModule.bootstrapState({ ssr: false });
+    restoreGlobals();
+    await window.close();
+  }
+}
+
+// --- Page rendering ---
+let ssrCache = null;
+
+async function renderPage(baseUrl) {
+  const template = await readFile(join(__dirname, "template.html"), "utf-8");
+
+  const templateWithAbsUrl = template.replace(
+    'fetch("/api/users")',
+    `fetch("${baseUrl}/api/users")`
+  );
+
+  const ssrBody = await renderToString(templateWithAbsUrl);
+
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack SSR Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 1.1rem; margin: 0.75rem 0; color: #16213e; }
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 1.5rem 0; }
+    button { padding: 0.375rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.875rem; margin-right: 0.5rem; }
+    button:hover { background: #f0f0f0; }
+    .user-list { list-style: none; margin-top: 0.75rem; }
+    .user-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; border-bottom: 1px solid #f0f0f0; }
+    .user-item:last-child { border-bottom: none; }
+    .user-name { font-weight: 500; }
+    .role-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
+    .info-box { padding: 0.75rem; border-radius: 6px; margin-top: 0.5rem; background: #e8f5e9; color: #2e7d32; }
+    .info-box.hidden { background: #fce4ec; color: #c62828; }
+    .ssr-info { margin-bottom: 1.5rem; padding: 0.75rem; background: #fff3e0; border-radius: 6px; font-size: 0.875rem; color: #e65100; }
+  </style>
+</head>
+<body>
+
+<h1>wcstack SSR Demo</h1>
+<div class="ssr-info">
+  This page was server-side rendered. View source to see the SSR output with <code>&lt;wcs-ssr&gt;</code> tags.
+</div>
+
+${ssrBody}
+
+<script type="module" src="/packages/state/dist/auto.js"></script>
+</body>
+</html>`;
+}
+
+const PORT = 3001;
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = url.pathname;
+
+  if (path === "/api/users") {
+    return jsonResponse(res, users);
+  }
+
+  if (path === "/" || path === "/index.html") {
+    try {
+      const baseUrl = `http://localhost:${PORT}`;
+      if (!ssrCache) {
+        console.time("SSR render");
+        ssrCache = await renderPage(baseUrl);
+        console.timeEnd("SSR render");
+      }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(ssrCache);
+    } catch (err) {
+      console.error("SSR error:", err);
+      res.writeHead(500);
+      res.end("SSR Error: " + err.message);
+    }
+    return;
+  }
+
+  if (path === "/nocache") {
+    try {
+      const baseUrl = `http://localhost:${PORT}`;
+      console.time("SSR render (no cache)");
+      const html = await renderPage(baseUrl);
+      console.timeEnd("SSR render (no cache)");
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+    } catch (err) {
+      console.error("SSR error:", err);
+      res.writeHead(500);
+      res.end("SSR Error: " + err.message);
+    }
+    return;
+  }
+
+  if (path.startsWith("/packages/")) {
+    return serveFile(res, join(ROOT, path));
+  }
+
+  res.writeHead(404);
+  res.end("Not Found");
+});
+
+server.listen(PORT, () => {
+  console.log(`SSR Demo: http://localhost:${PORT}`);
+  console.log(`No cache:  http://localhost:${PORT}/nocache`);
+});

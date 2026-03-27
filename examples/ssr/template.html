@@ -1,0 +1,61 @@
+<wcs-state enable-ssr>
+  <script type="module">
+    export default {
+      users: [],
+      show: true,
+      counter: 0,
+
+      async $connectedCallback() {
+        const res = await fetch("/api/users");
+        this.users = await res.json();
+      },
+
+      toggleShow() {
+        this.show = !this.show;
+      },
+
+      increment() {
+        this.counter++;
+      },
+
+      addUser() {
+        this.users = [...this.users, { name: "New User " + (this.users.length + 1), role: "viewer" }];
+      },
+
+      removeLastUser() {
+        if (this.users.length > 0) {
+          this.users = this.users.slice(0, -1);
+        }
+      },
+    };
+  </script>
+</wcs-state>
+
+<h2>Counter: {{ counter }}</h2>
+<button data-wcs="onclick: increment">+1</button>
+
+<hr>
+
+<h2>User List ({{ users.length }} users)</h2>
+<button data-wcs="onclick: addUser">Add User</button>
+<button data-wcs="onclick: removeLastUser">Remove Last</button>
+
+<ul class="user-list">
+  <template data-wcs="for: users">
+    <li class="user-item">
+      <span class="user-name" data-wcs="textContent: .name"></span>
+      <span class="role-badge" data-wcs="textContent: .role"></span>
+    </li>
+  </template>
+</ul>
+
+<hr>
+
+<h2>Conditional Block</h2>
+<button data-wcs="onclick: toggleShow">Toggle</button>
+<template data-wcs="if: show">
+  <div class="info-box">This block is visible because show = true</div>
+</template>
+<template data-wcs="else:">
+  <div class="info-box hidden">Hidden (show = false)</div>
+</template>
