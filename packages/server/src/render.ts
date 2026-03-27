@@ -24,7 +24,7 @@ function installGlobals(window: Window): () => void {
   };
 }
 
-function extractStateData(stateEl: Element): Record<string, any> {
+function extractStateData(stateEl: any): Record<string, any> {
   const raw = (stateEl as any).__state;
   if (!raw || typeof raw !== 'object') return {};
   const data: Record<string, any> = {};
@@ -99,7 +99,7 @@ export async function renderToString(html: string): Promise<string> {
         tpl.setAttribute('data-wcs', bindText);
 
         // fragment の中身をテンプレートにコピー
-        const content = fragmentInfo.fragment.cloneNode(true);
+        const content = fragmentInfo.fragment.cloneNode(true) as any;
         tpl.content.appendChild(content);
 
         ssrEl.appendChild(tpl);

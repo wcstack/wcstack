@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Window } from "../../packages/server/node_modules/happy-dom/lib/index.js";
+import { renderToString } from "../../packages/server/dist/index.esm.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = join(__dirname, "../..");
@@ -40,105 +40,13 @@ async function serveFile(res, filePath) {
   }
 }
 
-// --- Simple SSR using happy-dom + @wcstack/state ---
-const GLOBALS_KEYS = [
-  "document", "customElements", "HTMLElement",
-  "DocumentFragment", "Node", "NodeFilter", "Comment", "Text",
-  "MutationObserver", "ShadowRoot", "Element", "HTMLTemplateElement",
-];
-
-function installGlobals(window) {
-  const saved = {};
-  for (const key of GLOBALS_KEYS) {
-    saved[key] = globalThis[key];
-    globalThis[key] = window[key];
-  }
-  const origCreateObjectURL = URL.createObjectURL;
-  URL.createObjectURL = undefined;
-  return () => {
-    URL.createObjectURL = origCreateObjectURL;
-    for (const key of GLOBALS_KEYS) {
-      globalThis[key] = saved[key];
-    }
-  };
-}
-
-async function renderToString(html) {
-  const window = new Window();
-  const restoreGlobals = installGlobals(window);
-  const doc = window.document;
-
-  const stateModule = await import("../../packages/state/dist/index.esm.js");
-  stateModule.bootstrapState({ ssr: true });
-
-  try {
-    doc.body.innerHTML = html;
-
-    const stateElements = doc.querySelectorAll("wcs-state");
-    for (const stateEl of stateElements) {
-      if ("connectedCallbackPromise" in stateEl) {
-        await stateEl.connectedCallbackPromise;
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Extract state data and create <wcs-ssr>
-    for (const stateEl of stateElements) {
-      if (!stateEl.hasAttribute("enable-ssr")) continue;
-      const name = stateEl.getAttribute("name") || "default";
-      const raw = stateEl.__state;
-      const stateData = {};
-      if (raw) {
-        for (const [key, value] of Object.entries(raw)) {
-          if (!key.startsWith("$") && typeof value !== "function") {
-            stateData[key] = value;
-          }
-        }
-      }
-
-      const ssrEl = doc.createElement("wcs-ssr");
-      ssrEl.setAttribute("name", name);
-      ssrEl.setAttribute("version", stateModule.VERSION);
-
-      const jsonScript = doc.createElement("script");
-      jsonScript.setAttribute("type", "application/json");
-      jsonScript.textContent = JSON.stringify(stateData);
-      ssrEl.appendChild(jsonScript);
-
-      // Copy templates from fragmentInfoByUUID
-      const uuids = stateModule.getAllFragmentUUIDs();
-      for (const uuid of uuids) {
-        const fragmentInfo = stateModule.getFragmentInfoByUUID(uuid);
-        if (!fragmentInfo) continue;
-        const tpl = doc.createElement("template");
-        tpl.setAttribute("id", uuid);
-        const bindResult = fragmentInfo.parseBindTextResult;
-        const bindText = bindResult.bindingType === "else"
-          ? "else:"
-          : `${bindResult.bindingType}: ${bindResult.statePathName}`;
-        tpl.setAttribute("data-wcs", bindText);
-        const content = fragmentInfo.fragment.cloneNode(true);
-        tpl.content.appendChild(content);
-        ssrEl.appendChild(tpl);
-      }
-
-      stateEl.parentNode?.insertBefore(ssrEl, stateEl);
-    }
-
-    return doc.body.innerHTML;
-  } finally {
-    stateModule.bootstrapState({ ssr: false });
-    restoreGlobals();
-    await window.close();
-  }
-}
-
 // --- Page rendering ---
 let ssrCache = null;
 
 async function renderPage(baseUrl) {
   const template = await readFile(join(__dirname, "template.html"), "utf-8");
 
+  // テンプレート内の相対 fetch URL を絶対 URL に変換（サーバー側で fetch するため）
   const templateWithAbsUrl = template.replace(
     'fetch("/api/users")',
     `fetch("${baseUrl}/api/users")`
@@ -190,10 +98,12 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
 
+  // API
   if (path === "/api/users") {
     return jsonResponse(res, users);
   }
 
+  // SSR page (cached)
   if (path === "/" || path === "/index.html") {
     try {
       const baseUrl = `http://localhost:${PORT}`;
@@ -212,6 +122,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // SSR page (no cache, for benchmarking)
   if (path === "/nocache") {
     try {
       const baseUrl = `http://localhost:${PORT}`;
@@ -228,6 +139,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // Static files (packages)
   if (path.startsWith("/packages/")) {
     return serveFile(res, join(ROOT, path));
   }
