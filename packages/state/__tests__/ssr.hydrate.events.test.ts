@@ -67,8 +67,8 @@ describe("ハイドレーション後のイベントハンドラ", () => {
     // ボタンが2つ存在してバインド済み
     const buttons = document.querySelectorAll("button");
     expect(buttons.length).toBe(2);
-    expect(buttons[0].hasAttribute("data-wcs-completed")).toBe(true);
-    expect(buttons[1].hasAttribute("data-wcs-completed")).toBe(true);
+    expect(buttons[0].hasAttribute("data-wcs-completed")).toBe(false);
+    expect(buttons[1].hasAttribute("data-wcs-completed")).toBe(false);
   });
 
   it("if ブロック内の要素にイベントハンドラが登録されている", async () => {
@@ -96,7 +96,7 @@ describe("ハイドレーション後のイベントハンドラ", () => {
 
     const button = document.querySelector("button")!;
     expect(button).not.toBeNull();
-    expect(button.hasAttribute("data-wcs-completed")).toBe(true);
+    expect(button.hasAttribute("data-wcs-completed")).toBe(false);
 
     // if ブロック内のボタンクリックでイベントが動作する
     button.click();

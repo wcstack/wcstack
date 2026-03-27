@@ -207,7 +207,7 @@ describe("hydrateBindings", () => {
     expect(fragmentInfo?.parseBindTextResult.statePathName).toBe("items");
   });
 
-  it("バインド収集後に data-wcs-completed 属性が付与される", async () => {
+  it("ハイドレーション完了後に data-wcs-completed 属性が除去されている", async () => {
     document.body.innerHTML = `
       <wcs-ssr name="default">
         <script type="application/json">{"msg":"Hello","show":true}</script>
@@ -225,14 +225,11 @@ describe("hydrateBindings", () => {
     await stateEl.connectedCallbackPromise;
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    // data-wcs を持つ要素に data-wcs-completed が付いている
-    const p = document.querySelector("p[data-wcs]");
-    expect(p?.hasAttribute("data-wcs-completed")).toBe(true);
-    const input = document.querySelector("input[data-wcs]");
-    expect(input?.hasAttribute("data-wcs-completed")).toBe(true);
+    // data-wcs-completed はハイドレーション完了後に除去されている
+    expect(document.querySelectorAll("[data-wcs-completed]").length).toBe(0);
   });
 
-  it("for ブロック内の要素にも data-wcs-completed が付与される", async () => {
+  it("for ブロック内の要素も data-wcs-completed が除去されている", async () => {
     document.body.innerHTML = `
       <wcs-ssr name="default">
         <script type="application/json">{"items":[{"name":"Alice"},{"name":"Bob"}]}</script>
@@ -252,10 +249,7 @@ describe("hydrateBindings", () => {
     await stateEl.connectedCallbackPromise;
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    const items = document.querySelectorAll("li[data-wcs]");
-    for (const li of items) {
-      expect(li.hasAttribute("data-wcs-completed")).toBe(true);
-    }
+    expect(document.querySelectorAll("[data-wcs-completed]").length).toBe(0);
   });
 
   it("$connectedCallback はスキップされる", async () => {

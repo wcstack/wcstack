@@ -645,5 +645,11 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
     }
   }
 
+  // ハイドレーション中の重複登録防止用属性を除去
+  const completedEls = root.querySelectorAll('[data-wcs-completed]');
+  for (const el of completedEls) {
+    el.removeAttribute('data-wcs-completed');
+  }
+
   return true;
 }
