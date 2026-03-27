@@ -9,8 +9,8 @@
  */
 
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
-import { analyzeStatePaths, type PathCandidate } from './stateAnalyzer.js';
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import type { PathCandidate } from './stateAnalyzer.js';
+import { getStatePathsFromHtml } from './statePathResolver.js';
 import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
 
 /** フィルタ名 → FilterInfo のマップ */
@@ -38,8 +38,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
   const diagnostics: BindingDiagnostic[] = [];
 
   // 状態パスを収集（state 名ごとに分類）
-  const blocks = parseWcsScriptBlocks(html, stateTagName);
-  const statePaths = blocks.flatMap(block => analyzeStatePaths(block.content, block.stateName));
+  const statePaths = getStatePathsFromHtml(html, stateTagName);
   const pathsByState = new Map<string, PathCandidate[]>();
   for (const p of statePaths) {
     const list = pathsByState.get(p.stateName) ?? [];

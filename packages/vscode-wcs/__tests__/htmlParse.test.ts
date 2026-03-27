@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseWcsScriptBlocks, WcsScriptBlock } from '../src/language/htmlParse';
+import { parseWcsScriptBlocks, parseWcsStateElements, findScriptJsonById, WcsScriptBlock } from '../src/language/htmlParse';
 
 describe('parseWcsScriptBlocks', () => {
   it('基本: <wcs-state> 内の <script type="module"> を抽出する', () => {
@@ -151,5 +151,110 @@ export default defineState({
     // オフセットの整合性確認
     const extracted = html.slice(blocks[0].contentStart, blocks[0].contentEnd);
     expect(extracted).toBe(blocks[0].content);
+  });
+});
+
+describe('parseWcsStateElements', () => {
+  it('json 属性を持つ <wcs-state> から jsonAttr を取得する', () => {
+    const html = `<wcs-state json='{"count": 0}'></wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements).toHaveLength(1);
+    expect(elements[0].jsonAttr).toBe('{"count": 0}');
+    expect(elements[0].stateName).toBe('default');
+  });
+
+  it('state 属性を持つ <wcs-state> から stateAttr を取得する', () => {
+    const html = `<wcs-state state="my-state"></wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements).toHaveLength(1);
+    expect(elements[0].stateAttr).toBe('my-state');
+  });
+
+  it('src 属性を持つ <wcs-state> から srcAttr を取得する', () => {
+    const html = `<wcs-state src="./data.json"></wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements).toHaveLength(1);
+    expect(elements[0].srcAttr).toBe('./data.json');
+  });
+
+  it('全ての属性と内部スクリプトを同時に取得する', () => {
+    const html = `<wcs-state name="app" json='{"a":1}' state="s" src="./d.json">
+  <script type="module">export default { b: 2 };</script>
+</wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements).toHaveLength(1);
+    expect(elements[0].stateName).toBe('app');
+    expect(elements[0].jsonAttr).toBe('{"a":1}');
+    expect(elements[0].stateAttr).toBe('s');
+    expect(elements[0].srcAttr).toBe('./d.json');
+    expect(elements[0].scriptBlocks).toHaveLength(1);
+  });
+
+  it('属性がない場合は undefined を返す', () => {
+    const html = `<wcs-state>
+  <script type="module">export default {};</script>
+</wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements[0].jsonAttr).toBeUndefined();
+    expect(elements[0].stateAttr).toBeUndefined();
+    expect(elements[0].srcAttr).toBeUndefined();
+  });
+
+  it('複数の <wcs-state> を解析する', () => {
+    const html = `
+<wcs-state name="a" json='{"x":1}'></wcs-state>
+<wcs-state name="b" state="data-b"></wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements).toHaveLength(2);
+    expect(elements[0].stateName).toBe('a');
+    expect(elements[0].jsonAttr).toBe('{"x":1}');
+    expect(elements[1].stateName).toBe('b');
+    expect(elements[1].stateAttr).toBe('data-b');
+  });
+
+  it('HTML コメント内の <wcs-state> は無視する', () => {
+    const html = `
+<!-- <wcs-state json='{"ignored": true}'></wcs-state> -->
+<wcs-state json='{"visible": true}'></wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements).toHaveLength(1);
+    expect(elements[0].jsonAttr).toBe('{"visible": true}');
+  });
+});
+
+describe('findScriptJsonById', () => {
+  it('指定 ID の <script type="application/json"> の内容を返す', () => {
+    const html = `
+<script type="application/json" id="state">
+  { "count": 0, "name": "test" }
+</script>
+<wcs-state state="state"></wcs-state>`;
+    const content = findScriptJsonById(html, 'state');
+    expect(content).toContain('"count": 0');
+    expect(content).toContain('"name": "test"');
+  });
+
+  it('ID が一致しない場合は null を返す', () => {
+    const html = `
+<script type="application/json" id="other">{ "x": 1 }</script>`;
+    expect(findScriptJsonById(html, 'state')).toBeNull();
+  });
+
+  it('type が application/json でない場合は null を返す', () => {
+    const html = `
+<script type="module" id="state">export default {};</script>`;
+    expect(findScriptJsonById(html, 'state')).toBeNull();
+  });
+
+  it('HTML コメント内の script は無視する', () => {
+    const html = `
+<!-- <script type="application/json" id="state">{"ignored": true}</script> -->
+<script type="application/json" id="state">{"visible": true}</script>`;
+    const content = findScriptJsonById(html, 'state');
+    expect(content).toContain('"visible": true');
+  });
+
+  it('script タグがない場合は null を返す', () => {
+    expect(findScriptJsonById('<div>hello</div>', 'state')).toBeNull();
   });
 });

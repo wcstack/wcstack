@@ -98,6 +98,82 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
   return paths;
 }
 
+/**
+ * JSON 文字列を解析してパス候補を生成する。
+ * `json` 属性や `state` 属性（<script type="application/json">）、
+ * 外部 .json ファイルの内容に対して使用する。
+ *
+ * JSON にはメソッドや computed getter がないため、全て kind: 'data' となる。
+ *
+ * @param jsonString - JSON 文字列
+ * @param stateName - 所属する state 名
+ * @returns パス候補の配列（パース失敗時は空配列）
+ */
+export function analyzeJsonPaths(jsonString: string, stateName: string = 'default'): PathCandidate[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(jsonString);
+  } catch {
+    return [];
+  }
+
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return [];
+
+  const paths: PathCandidate[] = [];
+  collectJsonPaths(data as Record<string, unknown>, '', paths, stateName, 0);
+  return paths;
+}
+
+/**
+ * JSON オブジェクトを再帰的に走査してパス候補を収集する。
+ * 最大深度を制限して無限再帰を防止する。
+ */
+function collectJsonPaths(
+  obj: Record<string, unknown>,
+  prefix: string,
+  paths: PathCandidate[],
+  stateName: string,
+  depth: number,
+): void {
+  if (depth > 5) return; // 深すぎるネストは無視
+
+  for (const [key, value] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const typeHint = inferJsonTypeHint(value);
+
+    paths.push({ path, kind: 'data', typeHint, stateName });
+
+    if (Array.isArray(value)) {
+      paths.push({ path: `${path}.*`, kind: 'list', stateName });
+      paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
+
+      // 最初の要素がオブジェクトなら子パスを生成
+      if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
+        const firstElement = value[0] as Record<string, unknown>;
+        for (const [childKey, childValue] of Object.entries(firstElement)) {
+          const childPath = `${path}.*.${childKey}`;
+          paths.push({ path: childPath, kind: 'data', typeHint: inferJsonTypeHint(childValue), stateName });
+        }
+      }
+    } else if (typeof value === 'object' && value !== null) {
+      collectJsonPaths(value as Record<string, unknown>, path, paths, stateName, depth + 1);
+    }
+  }
+}
+
+/**
+ * JSON 値から型ヒントを推定する。
+ */
+function inferJsonTypeHint(value: unknown): string | undefined {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'object') return 'object';
+  return undefined;
+}
+
 // ============================================================
 // Internal helpers
 // ============================================================

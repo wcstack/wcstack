@@ -16,8 +16,7 @@ import {
   EVENT_MODIFIERS,
 } from './completionData.js';
 import { getBindingContext } from './bindingContext.js';
-import { analyzeStatePaths } from './stateAnalyzer.js';
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { getStatePathsFromHtml } from './statePathResolver.js';
 import { validateBindings } from './bindingValidator.js';
 import { validateStateTypes } from './stateTypeValidator.js';
 import { validateNestedAssigns } from './nestedAssignValidator.js';
@@ -340,10 +339,6 @@ function findBindAttribute(html: string, offset: number, attrName: string): Bind
 }
 
 /**
- * HTML 全体から <wcs-state> のスクリプトを解析し、パス候補を収集する。
- * 複数の <wcs-state> がある場合は全てのパスをマージする。
- */
-/**
  * Mustache / コメント構文のパス・フィルタを検証する。
  */
 function validateTemplateSyntax(
@@ -476,11 +471,6 @@ function validateTemplateSyntax(
 
 function isValidTemplatePath(path: string, pathSet: Set<string>): boolean {
   return pathSet.has(path);
-}
-
-function getStatePathsFromHtml(html: string, stateTagName: string = 'wcs-state') {
-  const blocks = parseWcsScriptBlocks(html, stateTagName);
-  return blocks.flatMap(block => analyzeStatePaths(block.content, block.stateName));
 }
 
 /**

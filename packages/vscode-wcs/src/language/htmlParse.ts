@@ -7,6 +7,23 @@
  * 外部依存なし。正規表現ベースのステートマシンで実装。
  */
 
+/**
+ * <wcs-state> 要素のメタ情報。
+ * 属性（json, state, src）と内部スクリプトブロックを保持する。
+ */
+export interface WcsStateInfo {
+  /** name 属性の値（デフォルト: 'default'） */
+  stateName: string;
+  /** json 属性の値（インライン JSON） */
+  jsonAttr?: string;
+  /** state 属性の値（<script type="application/json"> の ID 参照） */
+  stateAttr?: string;
+  /** src 属性の値（外部ファイルパス） */
+  srcAttr?: string;
+  /** 内部の <script type="module"> ブロック */
+  scriptBlocks: WcsScriptBlock[];
+}
+
 export interface WcsScriptBlock {
   /** スクリプト内容の開始オフセット（<script ...> の直後） */
   contentStart: number;
@@ -108,6 +125,132 @@ export function parseWcsScriptBlocks(html: string, stateTagName: string = 'wcs-s
   }
 
   return blocks;
+}
+
+/**
+ * HTML テキストから <wcs-state> 要素を全て抽出し、
+ * 各要素の属性（json, state, src）と内部スクリプトブロックを返す。
+ */
+export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-state'): WcsStateInfo[] {
+  const elements: WcsStateInfo[] = [];
+
+  let pos = 0;
+  const len = html.length;
+
+  while (pos < len) {
+    // HTML コメントをスキップ
+    if (html.startsWith('<!--', pos)) {
+      const commentEnd = html.indexOf('-->', pos + 4);
+      if (commentEnd === -1) break;
+      pos = commentEnd + 3;
+      continue;
+    }
+
+    // <wcs-state を検出
+    const wcsMatch = matchOpenTag(html, pos, stateTagName);
+    if (wcsMatch === null) {
+      pos++;
+      continue;
+    }
+
+    const stateName = extractAttribute(wcsMatch.tagContent, 'name') ?? 'default';
+    const jsonAttr = extractAttribute(wcsMatch.tagContent, 'json') ?? undefined;
+    const stateAttr = extractAttribute(wcsMatch.tagContent, 'state') ?? undefined;
+    const srcAttr = extractAttribute(wcsMatch.tagContent, 'src') ?? undefined;
+    pos = wcsMatch.end;
+
+    // 内部の <script type="module"> ブロックを収集
+    const scriptBlocks: WcsScriptBlock[] = [];
+    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
+    const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
+
+    while (pos < wcsEnd) {
+      if (html.startsWith('<!--', pos)) {
+        const commentEnd = html.indexOf('-->', pos + 4);
+        if (commentEnd === -1) break;
+        pos = commentEnd + 3;
+        continue;
+      }
+
+      const scriptMatch = matchOpenTag(html, pos, 'script');
+      if (scriptMatch === null) {
+        pos++;
+        continue;
+      }
+
+      const typeAttr = extractAttribute(scriptMatch.tagContent, 'type');
+      if (typeAttr !== 'module') {
+        pos = scriptMatch.end;
+        continue;
+      }
+
+      const contentStart = scriptMatch.end;
+      const scriptCloseIdx = findCloseTag(html, contentStart, 'script');
+      if (scriptCloseIdx === -1) {
+        pos = contentStart;
+        break;
+      }
+
+      scriptBlocks.push({
+        contentStart,
+        contentEnd: scriptCloseIdx,
+        content: html.slice(contentStart, scriptCloseIdx),
+        stateName,
+      });
+
+      pos = html.indexOf('>', scriptCloseIdx) + 1;
+      if (pos === 0) break;
+    }
+
+    elements.push({ stateName, jsonAttr, stateAttr, srcAttr, scriptBlocks });
+
+    pos = wcsEnd;
+    if (wcsCloseIdx !== -1) {
+      const closeEnd = html.indexOf('>', wcsCloseIdx);
+      if (closeEnd !== -1) pos = closeEnd + 1;
+    }
+  }
+
+  return elements;
+}
+
+/**
+ * HTML テキストから指定 ID の <script type="application/json"> の内容を取得する。
+ * <wcs-state> の state 属性が参照する JSON データの解決に使用。
+ */
+export function findScriptJsonById(html: string, id: string): string | null {
+  let pos = 0;
+  const len = html.length;
+
+  while (pos < len) {
+    // HTML コメントをスキップ
+    if (html.startsWith('<!--', pos)) {
+      const commentEnd = html.indexOf('-->', pos + 4);
+      if (commentEnd === -1) break;
+      pos = commentEnd + 3;
+      continue;
+    }
+
+    const scriptMatch = matchOpenTag(html, pos, 'script');
+    if (scriptMatch === null) {
+      pos++;
+      continue;
+    }
+
+    const typeAttr = extractAttribute(scriptMatch.tagContent, 'type');
+    const idAttr = extractAttribute(scriptMatch.tagContent, 'id');
+
+    if (typeAttr === 'application/json' && idAttr === id) {
+      const contentStart = scriptMatch.end;
+      const scriptCloseIdx = findCloseTag(html, contentStart, 'script');
+      if (scriptCloseIdx === -1) return null;
+      return html.slice(contentStart, scriptCloseIdx);
+    }
+
+    pos = scriptMatch.end;
+  }
+
+  return null;
 }
 
 // ============================================================

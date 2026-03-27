@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeStatePaths } from '../src/service/stateAnalyzer';
+import { analyzeStatePaths, analyzeJsonPaths } from '../src/service/stateAnalyzer';
 
 describe('analyzeStatePaths', () => {
   it('プリミティブプロパティのパスを生成する', () => {
@@ -162,5 +162,74 @@ export default defineState({
   it('空のオブジェクトの場合は空配列を返す', () => {
     const paths = analyzeStatePaths(`export default {};`);
     expect(paths).toEqual([]);
+  });
+});
+
+describe('analyzeJsonPaths', () => {
+  it('プリミティブプロパティのパスと型ヒントを生成する', () => {
+    const paths = analyzeJsonPaths('{"count": 0, "name": "test", "active": true}');
+    expect(paths.find(p => p.path === 'count')?.typeHint).toBe('number');
+    expect(paths.find(p => p.path === 'name')?.typeHint).toBe('string');
+    expect(paths.find(p => p.path === 'active')?.typeHint).toBe('boolean');
+    paths.forEach(p => expect(p.kind).toBe('data'));
+  });
+
+  it('配列プロパティからワイルドカードパスと length を生成する', () => {
+    const paths = analyzeJsonPaths('{"users": [{"name": "Alice", "age": 30}]}');
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('users');
+    expect(pathNames).toContain('users.*');
+    expect(pathNames).toContain('users.length');
+    expect(pathNames).toContain('users.*.name');
+    expect(pathNames).toContain('users.*.age');
+    expect(paths.find(p => p.path === 'users')?.typeHint).toBe('array');
+    expect(paths.find(p => p.path === 'users.length')?.typeHint).toBe('number');
+  });
+
+  it('ネストしたオブジェクトの子パスを生成する', () => {
+    const paths = analyzeJsonPaths('{"cart": {"totalPrice": 0, "itemCount": 0}}');
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('cart');
+    expect(pathNames).toContain('cart.totalPrice');
+    expect(pathNames).toContain('cart.itemCount');
+  });
+
+  it('ネストしたオブジェクト内の配列パスを生成する', () => {
+    const paths = analyzeJsonPaths('{"cart": {"items": [{"name": "item1", "price": 100}]}}');
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('cart.items');
+    expect(pathNames).toContain('cart.items.*');
+    expect(pathNames).toContain('cart.items.*.name');
+    expect(pathNames).toContain('cart.items.*.price');
+  });
+
+  it('null 値の型ヒントを正しく設定する', () => {
+    const paths = analyzeJsonPaths('{"value": null}');
+    expect(paths.find(p => p.path === 'value')?.typeHint).toBe('null');
+  });
+
+  it('stateName を指定できる', () => {
+    const paths = analyzeJsonPaths('{"count": 0}', 'cart');
+    expect(paths[0].stateName).toBe('cart');
+  });
+
+  it('不正な JSON の場合は空配列を返す', () => {
+    expect(analyzeJsonPaths('invalid json')).toEqual([]);
+  });
+
+  it('トップレベルが配列の場合は空配列を返す', () => {
+    expect(analyzeJsonPaths('[1, 2, 3]')).toEqual([]);
+  });
+
+  it('空のオブジェクトの場合は空配列を返す', () => {
+    expect(analyzeJsonPaths('{}')).toEqual([]);
+  });
+
+  it('深すぎるネストは制限される', () => {
+    const json = '{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":1}}}}}}}}';
+    const paths = analyzeJsonPaths(json);
+    // depth 5 まで — a.b.c.d.e.f まで、g 以降は生成されない
+    expect(paths.map(p => p.path)).toContain('a.b.c.d.e.f');
+    expect(paths.map(p => p.path)).not.toContain('a.b.c.d.e.f.g.h');
   });
 });
