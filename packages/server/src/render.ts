@@ -1,5 +1,4 @@
 import { Window } from 'happy-dom';
-import { VERSION } from './version';
 
 const GLOBALS_KEYS = [
   'document', 'customElements', 'HTMLElement',
@@ -42,13 +41,15 @@ export async function renderToString(html: string): Promise<string> {
   const restoreGlobals = installGlobals(window);
   const document = window.document;
 
+  const {
+    bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID,
+    getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore,
+    VERSION,
+  } = await import('@wcstack/state');
+  bootstrapState({ ssr: true });
+  clearSsrPropertyStore();
+
   try {
-    const {
-      bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID,
-      getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore,
-    } = await import('@wcstack/state');
-    bootstrapState({ ssr: true });
-    clearSsrPropertyStore();
 
     // HTML をパース
     // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
@@ -134,6 +135,7 @@ export async function renderToString(html: string): Promise<string> {
 
     return document.body.innerHTML;
   } finally {
+    bootstrapState({ ssr: false });
     restoreGlobals();
     await window.close();
   }
