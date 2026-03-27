@@ -52,7 +52,11 @@ function setConfig(partialConfig) {
     }
 }
 
-const VERSION = "1.5.3";
+var version$1 = "1.5.3";
+var pkg = {
+	version: version$1};
+
+const VERSION = pkg.version;
 
 class Ssr extends HTMLElement {
     _stateData = null;

@@ -362,7 +362,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  */
 declare function defineState<T extends Record<string, any>>(definition: T & ThisType<WcsThis<T>>): T;
 
-declare const VERSION = "1.5.3";
+declare const VERSION: string;
 
 export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getFragmentInfoByUUID, getSsrProperties };
 export type { ISsrElement, ISsrPropertyEntry, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
