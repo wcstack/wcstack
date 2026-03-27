@@ -22,6 +22,24 @@ function installGlobals(window) {
         }
     };
 }
+function installBaseUrl(baseUrl) {
+    const OrigURL = globalThis.URL;
+    const base = baseUrl;
+    globalThis.URL = class extends OrigURL {
+        constructor(input, inputBase) {
+            if (typeof input === 'string' && input.startsWith('/') && inputBase === undefined) {
+                super(input, base);
+            }
+            else {
+                super(input, inputBase);
+            }
+        }
+    };
+    // 静的メソッドを引き継ぐ
+    globalThis.URL.createObjectURL = OrigURL.createObjectURL;
+    globalThis.URL.revokeObjectURL = OrigURL.revokeObjectURL;
+    return () => { globalThis.URL = OrigURL; };
+}
 function extractStateData(stateEl) {
     const raw = stateEl.__state;
     if (!raw || typeof raw !== 'object')
@@ -34,10 +52,14 @@ function extractStateData(stateEl) {
     }
     return data;
 }
-async function renderToString(html) {
+async function renderToString(html, options) {
     const window = new Window();
     const restoreGlobals = installGlobals(window);
     const document = window.document;
+    // 相対 URL を baseUrl で解決する URL コンストラクタパッチをインストール
+    const restoreBaseUrl = options?.baseUrl
+        ? installBaseUrl(options.baseUrl)
+        : null;
     const { bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID, getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore, getBindingsReady, VERSION, } = await import('@wcstack/state');
     bootstrapState({ ssr: true });
     clearSsrPropertyStore();
@@ -116,6 +138,7 @@ async function renderToString(html) {
         return document.body.innerHTML;
     }
     finally {
+        restoreBaseUrl?.();
         bootstrapState({ ssr: false });
         restoreGlobals();
         await window.close();
@@ -128,5 +151,62 @@ var pkg = {
 
 const VERSION = pkg.version;
 
-export { GLOBALS_KEYS, VERSION, extractStateData, installGlobals, renderToString };
+class RenderCore extends EventTarget {
+    static wcBindable = {
+        protocol: "wc-bindable",
+        version: 1,
+        properties: [
+            { name: "html", event: "wcs-render:html-changed" },
+            { name: "loading", event: "wcs-render:loading-changed" },
+            { name: "error", event: "wcs-render:error" },
+        ],
+    };
+    _html = null;
+    _loading = false;
+    _error = null;
+    get html() {
+        return this._html;
+    }
+    get loading() {
+        return this._loading;
+    }
+    get error() {
+        return this._error;
+    }
+    _setLoading(loading) {
+        this._loading = loading;
+        this.dispatchEvent(new CustomEvent("wcs-render:loading-changed", {
+            detail: loading,
+        }));
+    }
+    _setHtml(html) {
+        this._html = html;
+        this.dispatchEvent(new CustomEvent("wcs-render:html-changed", {
+            detail: html,
+        }));
+    }
+    _setError(error) {
+        this._error = error;
+        this.dispatchEvent(new CustomEvent("wcs-render:error", {
+            detail: error,
+        }));
+    }
+    async render(html) {
+        this._setLoading(true);
+        this._error = null;
+        try {
+            const result = await renderToString(html);
+            this._setHtml(result);
+            this._setLoading(false);
+            return this._html;
+        }
+        catch (e) {
+            this._setError(e instanceof Error ? e : new Error(String(e)));
+            this._setLoading(false);
+            return null;
+        }
+    }
+}
+
+export { GLOBALS_KEYS, RenderCore, VERSION, extractStateData, installBaseUrl, installGlobals, renderToString };
 //# sourceMappingURL=index.esm.js.map

@@ -40,20 +40,12 @@ async function serveFile(res, filePath) {
   }
 }
 
+// --- SSR cache ---
+let cachedHtml = null;
+
 // --- Page rendering ---
-let ssrCache = null;
 
-async function renderPage(baseUrl) {
-  const template = await readFile(join(__dirname, "template.html"), "utf-8");
-
-  // テンプレート内の相対 fetch URL を絶対 URL に変換（サーバー側で fetch するため）
-  const templateWithAbsUrl = template.replace(
-    'fetch("/api/users")',
-    `fetch("${baseUrl}/api/users")`
-  );
-
-  const ssrBody = await renderToString(templateWithAbsUrl);
-
+function wrapPage(ssrBody) {
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -92,6 +84,10 @@ ${ssrBody}
 </html>`;
 }
 
+async function loadTemplate() {
+  return readFile(join(__dirname, "template.html"), "utf-8");
+}
+
 const PORT = 3001;
 
 const server = createServer(async (req, res) => {
@@ -106,18 +102,19 @@ const server = createServer(async (req, res) => {
   // SSR page (cached)
   if (path === "/" || path === "/index.html") {
     try {
-      const baseUrl = `http://localhost:${PORT}`;
-      if (!ssrCache) {
+      if (!cachedHtml) {
+        const template = await loadTemplate();
         console.time("SSR render");
-        ssrCache = await renderPage(baseUrl);
+        cachedHtml = await renderToString(template, { baseUrl: `http://localhost:${PORT}` });
         console.timeEnd("SSR render");
+        console.log("SSR render complete (%d bytes)", cachedHtml.length);
       }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(ssrCache);
-    } catch (err) {
-      console.error("SSR error:", err);
+      res.end(wrapPage(cachedHtml));
+    } catch (e) {
+      console.error("SSR error:", e);
       res.writeHead(500);
-      res.end("SSR Error: " + err.message);
+      res.end("SSR Error: " + e.message);
     }
     return;
   }
@@ -125,16 +122,17 @@ const server = createServer(async (req, res) => {
   // SSR page (no cache, for benchmarking)
   if (path === "/nocache") {
     try {
-      const baseUrl = `http://localhost:${PORT}`;
-      console.time("SSR render (no cache)");
-      const html = await renderPage(baseUrl);
-      console.timeEnd("SSR render (no cache)");
+      const template = await loadTemplate();
+      console.time("SSR render");
+      const html = await renderToString(template, { baseUrl: `http://localhost:${PORT}` });
+      console.timeEnd("SSR render");
+      console.log("SSR render complete (%d bytes)", html.length);
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html);
-    } catch (err) {
-      console.error("SSR error:", err);
+      res.end(wrapPage(html));
+    } catch (e) {
+      console.error("SSR error:", e);
       res.writeHead(500);
-      res.end("SSR Error: " + err.message);
+      res.end("SSR Error: " + e.message);
     }
     return;
   }

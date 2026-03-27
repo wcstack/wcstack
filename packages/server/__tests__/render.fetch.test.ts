@@ -75,6 +75,63 @@ describe('renderToString + fetch', () => {
     expect(divs[1]?.textContent).toBe('Bob');
   });
 
+  it('baseUrl オプションで相対 URL を自動解決する', async () => {
+    const result = await renderToString(`
+      <wcs-state enable-ssr>
+        <script type="module">
+          export default {
+            users: [],
+            async $connectedCallback() {
+              const res = await fetch("/api/users");
+              this.users = await res.json();
+            }
+          };
+        </script>
+      </wcs-state>
+      <template data-wcs="for: users">
+        <div data-wcs="textContent: .name"></div>
+      </template>
+    `, { baseUrl });
+
+    const data = getSsrData(result);
+    expect(data.users).toEqual([
+      { id: 1, name: 'Alice' },
+      { id: 2, name: 'Bob' },
+    ]);
+
+    const doc = new Window().document;
+    doc.body.innerHTML = result;
+    const divs = doc.querySelectorAll('div');
+    expect(divs[0]?.textContent).toBe('Alice');
+    expect(divs[1]?.textContent).toBe('Bob');
+  });
+
+  it('baseUrl オプションで複数の相対 fetch を並行実行する', async () => {
+    const result = await renderToString(`
+      <wcs-state enable-ssr>
+        <script type="module">
+          export default {
+            users: [],
+            greeting: "",
+            async $connectedCallback() {
+              const [usersRes, greetingRes] = await Promise.all([
+                fetch("/api/users"),
+                fetch("/api/greeting"),
+              ]);
+              this.users = await usersRes.json();
+              const g = await greetingRes.json();
+              this.greeting = g.message;
+            }
+          };
+        </script>
+      </wcs-state>
+    `, { baseUrl });
+
+    const data = getSsrData(result);
+    expect(data.users).toHaveLength(2);
+    expect(data.greeting).toBe('Hello from API');
+  });
+
   it('複数の fetch を並行実行する', async () => {
     const result = await renderToString(`
       <wcs-state enable-ssr>

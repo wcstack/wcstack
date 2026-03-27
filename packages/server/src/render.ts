@@ -24,6 +24,24 @@ export function installGlobals(window: Window): () => void {
   };
 }
 
+export function installBaseUrl(baseUrl: string): () => void {
+  const OrigURL = globalThis.URL;
+  const base = baseUrl;
+  globalThis.URL = class extends OrigURL {
+    constructor(input: string | URL, inputBase?: string | URL) {
+      if (typeof input === 'string' && input.startsWith('/') && inputBase === undefined) {
+        super(input, base);
+      } else {
+        super(input as string, inputBase);
+      }
+    }
+  } as typeof URL;
+  // 静的メソッドを引き継ぐ
+  globalThis.URL.createObjectURL = OrigURL.createObjectURL;
+  globalThis.URL.revokeObjectURL = OrigURL.revokeObjectURL;
+  return () => { globalThis.URL = OrigURL; };
+}
+
 export function extractStateData(stateEl: any): Record<string, any> {
   const raw = (stateEl as any).__state;
   if (!raw || typeof raw !== 'object') return {};
@@ -36,10 +54,20 @@ export function extractStateData(stateEl: any): Record<string, any> {
   return data;
 }
 
-export async function renderToString(html: string): Promise<string> {
+export interface RenderOptions {
+  /** 相対 URL を解決するベース URL (例: "http://localhost:3001") */
+  baseUrl?: string;
+}
+
+export async function renderToString(html: string, options?: RenderOptions): Promise<string> {
   const window = new Window();
   const restoreGlobals = installGlobals(window);
   const document = window.document;
+
+  // 相対 URL を baseUrl で解決する URL コンストラクタパッチをインストール
+  const restoreBaseUrl = options?.baseUrl
+    ? installBaseUrl(options.baseUrl)
+    : null;
 
   const {
     bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID,
@@ -135,6 +163,7 @@ export async function renderToString(html: string): Promise<string> {
 
     return document.body.innerHTML;
   } finally {
+    restoreBaseUrl?.();
     bootstrapState({ ssr: false });
     restoreGlobals();
     await window.close();
