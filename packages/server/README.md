@@ -204,24 +204,140 @@ createServer(async (req, res) => {
 }).listen(3000);
 ```
 
+## Input HTML Rules
+
+- Pass only the contents of `<body>` — do not include `<html>`, `<head>`, or `<body>` tags.
+- `<script>` / `<link>` external resource loading is not executed.
+  → Provide required packages via `options.bootstraps`.
+
+## What SSR Can Do
+
+### State Initialization & Data Fetching
+
+- Load `<wcs-state>` from `json` attribute, `src` attribute, or inline `<script type="module">`
+- Execute `$connectedCallback` for server-side fetch (API calls, etc.)
+
+```html
+<!-- Direct JSON -->
+<wcs-state enable-ssr json='{"title":"Hello"}'></wcs-state>
+
+<!-- Fetch data from API in $connectedCallback -->
+<!-- $connectedCallback is defined as a method on the state object; `this` is the state proxy -->
+<wcs-state enable-ssr>
+  <script type="module">
+    export default {
+      async $connectedCallback() {
+        const res = await fetch('/api/users');
+        this.users = await res.json();
+      }
+    };
+  </script>
+</wcs-state>
+```
+
+### Server Communication with wcs-fetch
+
+- `<wcs-fetch>` auto-fetch (without `manual`) also executes on the server
+- Use `manual` + `$connectedCallback` for explicit control:
+
+```html
+<wcs-fetch id="api" url="/api/users" manual></wcs-fetch>
+<wcs-state enable-ssr>
+  <script type="module">
+    export default {
+      async $connectedCallback() {
+        const el = document.getElementById('api');
+        this.users = await el.fetch();
+      }
+    };
+  </script>
+</wcs-state>
+```
+
+> Note: `bootstrapFetch` must be included in the `bootstraps` option.
+
+### Bindings & Structural Rendering
+
+- `data-wcs` binding application (text, attribute, class, style, property)
+- `<template data-wcs="for:">` / `if:` / `elseif:` / `else:` structural rendering
+
+```html
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: .name"></li>
+  </template>
+</ul>
+<template data-wcs="if: isAdmin">
+  <div class="admin-panel">...</div>
+</template>
+```
+
+### Hydration
+
+- Automatic `<wcs-ssr>` metadata generation for `<wcs-state enable-ssr>`
+- Client-side hydration restores bindings without re-rendering
+- `<wcs-state>` without `enable-ssr` runs client-only (partial CSR)
+
+### Custom Element Waiting
+
+- Automatically awaits all custom elements with `static hasConnectedCallbackPromise = true`
+
+## What SSR Cannot Do
+
+- Execute `<script src="...">` or `<link>` in `<head>`
+- Access browser-specific APIs (localStorage, sessionStorage, navigator, etc.)
+- Render Shadow DOM (Declarative Shadow DOM not supported)
+- Register event handlers (restored via client-side hydration)
+- Load components dynamically via `<wcs-autoloader>`
+
+## HTML Splitting Pattern
+
+`renderToString` receives only the `<body>` contents. Wrap the result with `<head>` and `<script>` tags on the outside:
+
+```javascript
+// server.js
+const ssrBody = await renderToString(template, {
+  baseUrl: 'http://localhost:3001',
+});
+const page = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script type="module" src="/packages/state/dist/auto.js"></script>
+</head>
+<body>${ssrBody}</body>
+</html>`;
+```
+
+### Using Multiple Packages
+
+```javascript
+import { bootstrapState, getBindingsReady } from '@wcstack/state';
+import { bootstrapFetch } from '@wcstack/fetch';
+
+const ssrBody = await renderToString(template, {
+  baseUrl: 'http://localhost:3001',
+  bootstraps: [bootstrapState, bootstrapFetch],
+  ready: [(doc) => getBindingsReady(doc)],
+});
+```
+
 ## How It Works
 
 ### Rendering Pipeline
 
 1. **Global Setup**: Creates a happy-dom `Window` and temporarily installs browser globals (`document`, `HTMLElement`, `MutationObserver`, etc.) on `globalThis`. Disables `URL.createObjectURL` to force the base64 data URL fallback for inline scripts.
 
-2. **State Bootstrap**: Calls `bootstrapState({ ssr: true })` to register `<wcs-state>` in SSR mode.
+2. **SSR Mode**: Sets `data-wcs-server` attribute on the `<html>` element. `@wcstack/state` detects this attribute to enable SSR behavior.
 
-3. **HTML Parse & Callback**: Sets `document.body.innerHTML`, which triggers happy-dom's element lifecycle. Each `<wcs-state>` loads its data source and runs `$connectedCallback`.
+3. **Bootstrap**: Calls user-provided bootstrap functions (defaults to `bootstrapState()` if omitted).
 
-4. **Binding Resolution**: Waits for all bindings to build and apply — text interpolation, attribute mapping, list expansion, conditional evaluation.
+4. **HTML Parse & Callback**: Sets `document.body.innerHTML`, which triggers happy-dom's element lifecycle. Each `<wcs-state>` loads its data source and runs `$connectedCallback`. Awaits all custom elements with `hasConnectedCallbackPromise`.
 
-5. **Hydration Data Collection**: For each `<wcs-state enable-ssr>`:
-   - Extracts reactive data (excluding `$`-prefixed internals and functions)
-   - Captures template fragments with UUID references
-   - Collects non-attribute property bindings (e.g., `innerHTML`, `value`)
+5. **Ready**: Awaits user-provided ready functions (defaults to `getBindingsReady()`) — text interpolation, attribute mapping, list expansion, conditional evaluation.
 
-6. **Cleanup**: Restores original globals, resets SSR mode, and closes the happy-dom window.
+6. **SSR Metadata**: Each `<wcs-state enable-ssr>` automatically generates a `<wcs-ssr>` element in its `connectedCallback`.
+
+7. **Cleanup**: Restores original globals and closes the happy-dom window.
 
 ### Client-Side Hydration
 

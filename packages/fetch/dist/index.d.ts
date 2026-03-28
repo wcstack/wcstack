@@ -1,7 +1,17 @@
+interface ITagNames {
+    readonly fetch: string;
+    readonly fetchHeader: string;
+    readonly fetchBody: string;
+}
 interface IWritableTagNames {
     fetch?: string;
     fetchHeader?: string;
     fetchBody?: string;
+}
+interface IConfig {
+    readonly autoTrigger: boolean;
+    readonly triggerAttribute: string;
+    readonly tagNames: ITagNames;
 }
 interface IWritableConfig {
     autoTrigger?: boolean;
@@ -62,6 +72,8 @@ interface WcsFetchValues<T = unknown> extends WcsFetchCoreValues<T> {
 
 declare function bootstrapFetch(userConfig?: IWritableConfig): void;
 
+declare function getConfig(): IConfig;
+
 interface FetchRequestOptions {
     method?: string;
     headers?: Record<string, string>;
@@ -77,17 +89,20 @@ declare class FetchCore extends EventTarget {
     private _error;
     private _status;
     private _abortController;
+    private _promise;
     constructor(target?: EventTarget);
     get value(): any;
     get loading(): boolean;
     get error(): any;
     get status(): number;
+    get promise(): Promise<any>;
     private _setLoading;
     private _setError;
     private _setResponse;
     abort(): void;
     fetch(url: string, options?: FetchRequestOptions): Promise<any>;
+    private _doFetch;
 }
 
-export { FetchCore, bootstrapFetch };
+export { FetchCore, bootstrapFetch, getConfig };
 export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues };

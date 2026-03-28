@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { config, inSsr } from "../config";
 import { loadFromInnerScript } from "../stateLoader/loadFromInnerScript";
 import { loadFromJsonFile } from "../stateLoader/loadFromJsonFile";
 import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
@@ -6,7 +6,7 @@ import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { raiseError } from "../raiseError";
 import { BindingType, IState } from "../types";
 import { IStateElement } from "./types";
-import { setStateElementByName } from "../stateElementByName";
+import { setStateElementByName, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
 import { NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
@@ -18,6 +18,7 @@ import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/sy
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 import { getCustomElement } from "../getCustomElement";
 import { Ssr } from "./Ssr";
+import { VERSION } from "../version";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -54,6 +55,8 @@ function getStateInfo(
 }
 
 export class State extends HTMLElement implements IStateElement {
+  static hasConnectedCallbackPromise = true;
+
   private __state: IState | undefined;
   private _name: string = 'default';
   private _initialized: boolean = false;
@@ -134,7 +137,7 @@ export class State extends HTMLElement implements IStateElement {
 
   private async _initialize() {
     // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
-    const ssrState = !config.ssr ? this._loadFromSsrElement() : null;
+    const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
     try {
       if (this.hasAttribute('state')) {
         const state = this.getAttribute('state');
@@ -250,10 +253,24 @@ export class State extends HTMLElement implements IStateElement {
       this._resolveInitialize?.();
     }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
-    // config.ssr (サーバー側): レンダリング中なので実行する
-    if (!this.hasAttribute('enable-ssr') || config.ssr) {
+    // inSsr() (サーバー側): レンダリング中なので実行する
+    if (!this.hasAttribute('enable-ssr') || inSsr()) {
       await this._callStateConnectedCallback();
     }
+
+    // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成
+    if (inSsr() && this.hasAttribute('enable-ssr')) {
+      await getBindingsReady(this.rootNode);
+
+      const name = this.getAttribute('name') || 'default';
+      const stateData = Ssr.extractStateData(this);
+      const ssrEl = document.createElement(config.tagNames.ssr);
+      ssrEl.setAttribute('name', name);
+      ssrEl.setAttribute('version', VERSION);
+      Ssr.buildContent(ssrEl, stateData);
+      this.parentNode?.insertBefore(ssrEl, this);
+    }
+
     this._resolveConnectedCallback?.();
   }
 

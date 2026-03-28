@@ -1,4 +1,5 @@
 export { bootstrapFetch } from "./bootstrapFetch.js";
+export { getConfig } from "./config.js";
 export { FetchCore } from "./core/FetchCore.js";
 
 export type {

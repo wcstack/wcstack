@@ -58,6 +58,30 @@ describe("FetchCore", () => {
     expect(core.loading).toBe(false);
     expect(core.error).toBeNull();
     expect(core.status).toBe(0);
+    expect(core.promise).toBeInstanceOf(Promise);
+  });
+
+  it("promiseプロパティがfetch完了時に解決される", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ data: "test" }));
+
+    const core = new FetchCore();
+    core.fetch("/api/test");
+    const result = await core.promise;
+
+    expect(result).toEqual({ data: "test" });
+    expect(core.loading).toBe(false);
+  });
+
+  it("promiseプロパティが最新のfetchを反映する", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ call: 1 }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ call: 2 }));
+
+    const core = new FetchCore();
+    core.fetch("/api/first");
+    core.fetch("/api/second");
+    const result = await core.promise;
+
+    expect(result).toEqual({ call: 2 });
   });
 
   it("target未指定時はイベントが自身にディスパッチされる", async () => {

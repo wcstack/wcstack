@@ -1,5 +1,14 @@
 import { IConfig, IWritableConfig } from "./types.js";
 
+let _inSsrCache: boolean | null = null;
+
+export function inSsr(): boolean {
+  if (_inSsrCache !== null) return _inSsrCache;
+  const html = document.querySelector('html');
+  _inSsrCache = html ? html.hasAttribute('data-wcs-server') : false;
+  return _inSsrCache;
+}
+
 interface IInternalConfig {
   bindAttributeName: string;
   commentTextPrefix: string;
@@ -14,7 +23,6 @@ interface IInternalConfig {
   locale: string;
   debug: boolean;
   enableMustache: boolean;
-  ssr: boolean;
 }
 
 const _config: IInternalConfig = {
@@ -31,11 +39,14 @@ const _config: IInternalConfig = {
   locale: 'en',
   debug: false,
   enableMustache: true,
-  ssr: false,
 };
 
 // backward compatible export (read-only usage)
 export const config: IConfig = _config as IConfig;
+
+export function getConfig(): IConfig {
+  return config;
+}
 
 export function setConfig(partialConfig: IWritableConfig): void {
   if (partialConfig.tagNames) {
@@ -67,8 +78,5 @@ export function setConfig(partialConfig: IWritableConfig): void {
   }
   if (typeof partialConfig.enableMustache === "boolean") {
     _config.enableMustache = partialConfig.enableMustache;
-  }
-  if (typeof partialConfig.ssr === "boolean") {
-    _config.ssr = partialConfig.ssr;
   }
 }

@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { config, inSsr } from "../config";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
@@ -53,7 +53,7 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
         }
       }
     }
-    if (config.ssr) {
+    if (inSsr()) {
       const attrHandler = SSR_ATTR_PROPS[firstSegment];
       if (attrHandler) {
         // 属性で代替可能 → HTML 属性に反映

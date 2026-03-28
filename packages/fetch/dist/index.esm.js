@@ -7,7 +7,32 @@ const _config = {
         fetchBody: "wcs-fetch-body",
     },
 };
+function deepFreeze(obj) {
+    if (obj === null || typeof obj !== "object")
+        return obj;
+    Object.freeze(obj);
+    for (const key of Object.keys(obj)) {
+        deepFreeze(obj[key]);
+    }
+    return obj;
+}
+function deepClone(obj) {
+    if (obj === null || typeof obj !== "object")
+        return obj;
+    const clone = {};
+    for (const key of Object.keys(obj)) {
+        clone[key] = deepClone(obj[key]);
+    }
+    return clone;
+}
+let frozenConfig = null;
 const config = _config;
+function getConfig() {
+    if (!frozenConfig) {
+        frozenConfig = deepFreeze(deepClone(_config));
+    }
+    return frozenConfig;
+}
 function setConfig(partialConfig) {
     if (typeof partialConfig.autoTrigger === "boolean") {
         _config.autoTrigger = partialConfig.autoTrigger;
@@ -18,6 +43,7 @@ function setConfig(partialConfig) {
     if (partialConfig.tagNames) {
         Object.assign(_config.tagNames, partialConfig.tagNames);
     }
+    frozenConfig = null;
 }
 
 function raiseError(message) {
@@ -41,6 +67,7 @@ class FetchCore extends EventTarget {
     _error = null;
     _status = 0;
     _abortController = null;
+    _promise = Promise.resolve(null);
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -56,6 +83,9 @@ class FetchCore extends EventTarget {
     }
     get status() {
         return this._status;
+    }
+    get promise() {
+        return this._promise;
     }
     _setLoading(loading) {
         this._loading = loading;
@@ -89,6 +119,11 @@ class FetchCore extends EventTarget {
         if (!url) {
             raiseError("url attribute is required.");
         }
+        const p = this._doFetch(url, options);
+        this._promise = p;
+        return p;
+    }
+    async _doFetch(url, options) {
         // 進行中のリクエストをキャンセル
         this.abort();
         this._abortController = new AbortController();
@@ -151,6 +186,7 @@ class FetchCore extends EventTarget {
 }
 
 class Fetch extends HTMLElement {
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...FetchCore.wcBindable,
         properties: [
@@ -162,6 +198,7 @@ class Fetch extends HTMLElement {
     _core;
     _body = null;
     _trigger = false;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new FetchCore(this);
@@ -200,6 +237,12 @@ class Fetch extends HTMLElement {
     }
     get status() {
         return this._core.status;
+    }
+    get promise() {
+        return this._core.promise;
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     get manual() {
         return this.hasAttribute("manual");
@@ -296,7 +339,7 @@ class Fetch extends HTMLElement {
     connectedCallback() {
         this.style.display = "none";
         if (!this.manual && this.url) {
-            this.fetch();
+            this._connectedCallbackPromise = this.fetch().then(() => { });
         }
     }
     disconnectedCallback() {
@@ -376,5 +419,5 @@ function bootstrapFetch(userConfig) {
     }
 }
 
-export { FetchCore, bootstrapFetch };
+export { FetchCore, bootstrapFetch, getConfig };
 //# sourceMappingURL=index.esm.js.map

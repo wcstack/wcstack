@@ -42,6 +42,7 @@ export function installBaseUrl(baseUrl: string): () => void {
   return () => { globalThis.URL = OrigURL; };
 }
 
+/** @deprecated Use Ssr.extractStateData() from @wcstack/state instead */
 export function extractStateData(stateEl: any): Record<string, any> {
   const raw = (stateEl as any).__state;
   if (!raw || typeof raw !== 'object') return {};
@@ -54,11 +55,125 @@ export function extractStateData(stateEl: any): Record<string, any> {
   return data;
 }
 
+export type BootstrapFunction = () => void;
+export type ReadyFunction = (doc: Document) => Promise<void>;
+
 export interface RenderOptions {
   /** 相対 URL を解決するベース URL (例: "http://localhost:3001") */
   baseUrl?: string;
+  /** bootstrap 関数の配列。省略時は @wcstack/state を自動ロード */
+  bootstraps?: BootstrapFunction[];
+  /** バインディング等の非同期初期化完了を待機する関数の配列 */
+  ready?: ReadyFunction[];
 }
 
+async function loadDefaultBootstraps(): Promise<{
+  bootstraps: BootstrapFunction[];
+  ready: ReadyFunction[];
+}> {
+  const { bootstrapState, getBindingsReady } = await import('@wcstack/state');
+  return {
+    bootstraps: [bootstrapState],
+    ready: [(doc: Document) => getBindingsReady(doc as any)],
+  };
+}
+
+/**
+ * HTML 文字列を SSR レンダリングして返す。
+ *
+ * ## 入力 HTML のルール
+ * - `<body>` の中身だけを渡す（`<html>`, `<head>`, `<body>` タグは含めない）
+ * - `<script>` / `<link>` による外部リソース読み込みは実行されない
+ *   → 必要なパッケージは `options.bootstraps` で明示的に渡す
+ *
+ * ## SSR でできること
+ *
+ * ### 状態の初期化とデータ取得
+ * - `<wcs-state>` の状態ロード（json 属性, src 属性, inline `<script type="module">`）
+ * - `$connectedCallback` でのサーバーサイド fetch（API 呼び出し、DB 問い合わせ等）
+ *
+ * ```html
+ * <!-- JSON 直接指定 -->
+ * <wcs-state enable-ssr json='{"title":"Hello"}'></wcs-state>
+ *
+ * <!-- $connectedCallback で API からデータ取得 -->
+ * <!-- $connectedCallback は状態オブジェクトのメソッドとして定義し、this が state proxy -->
+ * <wcs-state enable-ssr>
+ *   <script type="module">
+ *     export default {
+ *       async $connectedCallback() {
+ *         const res = await fetch('/api/users');
+ *         this.users = await res.json();
+ *       }
+ *     };
+ *   </script>
+ * </wcs-state>
+ * ```
+ *
+ * ### wcs-fetch を使ったサーバー通信
+ * - `<wcs-fetch>` の auto-fetch（`manual` なし）はサーバーでも実行される
+ * - `manual` + `$connectedCallback` で明示的に制御する場合:
+ *
+ * ```html
+ * <wcs-fetch id="api" url="/api/users" manual></wcs-fetch>
+ * <wcs-state enable-ssr>
+ *   <script type="module">
+ *     export default {
+ *       async $connectedCallback() {
+ *         const el = document.getElementById('api');
+ *         this.users = await el.fetch();
+ *       }
+ *     };
+ *   </script>
+ * </wcs-state>
+ * ```
+ * ※ `bootstraps` に `bootstrapFetch` を含める必要あり
+ *
+ * ### バインディングと構造レンダリング
+ * - `data-wcs` バインディングの適用（text, attribute, class, style, property）
+ * - `<template data-wcs="for:">` / `if:` / `elseif:` / `else:` の構造レンダリング
+ *
+ * ```html
+ * <ul>
+ *   <template data-wcs="for: users">
+ *     <li data-wcs="textContent: .name"></li>
+ *   </template>
+ * </ul>
+ * <template data-wcs="if: isAdmin">
+ *   <div class="admin-panel">...</div>
+ * </template>
+ * ```
+ *
+ * ### ハイドレーション
+ * - `enable-ssr` 付き `<wcs-state>` の `<wcs-ssr>` メタデータ自動生成
+ * - クライアント側でのハイドレーション（再レンダリングなしでバインディング復元）
+ * - `enable-ssr` を外した `<wcs-state>` はクライアントのみで動作（部分 CSR）
+ *
+ * ### カスタム要素の待機
+ * - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
+ *
+ * ## SSR でできないこと
+ * - `<head>` 内の `<script src="...">` や `<link>` の自動実行
+ * - ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
+ * - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
+ * - イベントハンドラの登録（クライアント側のハイドレーションで復元）
+ * - `<wcs-autoloader>` による動的コンポーネント読み込み
+ *
+ * ## HTML の分割パターン
+ * ```
+ * // server.js
+ * const ssrBody = await renderToString(template, { ... });
+ * const page = `<!DOCTYPE html>
+ * <html lang="ja">
+ * <head>
+ *   <script type="module" src="/packages/state/dist/auto.js"></script>
+ * </head>
+ * <body>${ssrBody}</body>
+ * </html>`;
+ * ```
+ * `renderToString` には `<body>` の中身だけを渡し、
+ * `<head>` や `<script>` タグは外側のテンプレートで囲む。
+ */
 export async function renderToString(html: string, options?: RenderOptions): Promise<string> {
   const window = new Window();
   const restoreGlobals = installGlobals(window);
@@ -69,102 +184,41 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     ? installBaseUrl(options.baseUrl)
     : null;
 
-  const {
-    bootstrapState, getAllFragmentUUIDs, getFragmentInfoByUUID,
-    getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore,
-    getBindingsReady, VERSION,
-  } = await import('@wcstack/state');
-  bootstrapState({ ssr: true });
-  clearSsrPropertyStore();
+  // bootstrap / ready の解決
+  const hasCustomBootstraps = options?.bootstraps !== undefined;
+  const defaults = hasCustomBootstraps ? null : await loadDefaultBootstraps();
+  const bootstraps = options?.bootstraps ?? defaults!.bootstraps;
+  const readyFns = options?.ready ?? defaults?.ready ?? [];
+
+  for (const bootstrap of bootstraps) {
+    bootstrap();
+  }
 
   try {
+
+    // SSR モードを html 要素に設定
+    document.documentElement.setAttribute('data-wcs-server', '');
 
     // HTML をパース
     // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
     document.body.innerHTML = html;
 
-    // 全 <wcs-state> の $connectedCallback 完了を待機
-    const stateElements = document.querySelectorAll('wcs-state');
-    for (const stateEl of stateElements) {
-      if ('connectedCallbackPromise' in stateEl) {
-        await (stateEl as any).connectedCallbackPromise;
+    // connectedCallbackPromise プロトコル準拠の全カスタム要素の完了を待機
+    const promises: Promise<void>[] = [];
+    for (const el of document.querySelectorAll('*-*')) {
+      const ctor = el.constructor as any;
+      if (ctor.hasConnectedCallbackPromise) {
+        promises.push((el as any).connectedCallbackPromise);
       }
     }
+    await Promise.all(promises);
 
-    // buildBindings の完了を待機
-    await getBindingsReady(document as any);
-
-    // enable-ssr 属性を持つ <wcs-state> に <wcs-ssr> タグを生成
-    for (const stateEl of stateElements) {
-      if (!stateEl.hasAttribute('enable-ssr')) continue;
-
-      const name = stateEl.getAttribute('name') || 'default';
-      const stateData = extractStateData(stateEl);
-
-      const ssrEl = document.createElement('wcs-ssr');
-      ssrEl.setAttribute('name', name);
-      ssrEl.setAttribute('version', VERSION);
-
-      // 初期データ JSON
-      const jsonScript = document.createElement('script');
-      jsonScript.setAttribute('type', 'application/json');
-      jsonScript.textContent = JSON.stringify(stateData);
-      ssrEl.appendChild(jsonScript);
-
-      // UUID で管理されているテンプレートを復元して格納
-      const uuids = getAllFragmentUUIDs();
-      for (const uuid of uuids) {
-        const fragmentInfo = getFragmentInfoByUUID(uuid);
-        if (!fragmentInfo) continue;
-
-        const tpl = document.createElement('template');
-        tpl.setAttribute('id', uuid);
-
-        const bindResult = fragmentInfo.parseBindTextResult;
-        const bindText = bindResult.bindingType === 'else'
-          ? 'else:'
-          : `${bindResult.bindingType}: ${bindResult.statePathName}`;
-        tpl.setAttribute('data-wcs', bindText);
-
-        // fragment の中身をテンプレートにコピー
-        const content = fragmentInfo.fragment.cloneNode(true) as any;
-        tpl.content.appendChild(content);
-
-        ssrEl.appendChild(tpl);
-      }
-
-      // 属性で代替不可なプロパティをハイドレーション用に格納
-      const ssrNodes = getAllSsrPropertyNodes();
-      if (ssrNodes.length > 0) {
-        const propsData: Record<string, Record<string, unknown>> = {};
-        for (let i = 0; i < ssrNodes.length; i++) {
-          const node = ssrNodes[i];
-          const entries = getSsrProperties(node);
-          if (entries.length === 0) continue;
-          const id = `wcs-ssr-${i}`;
-          (node as Element).setAttribute('data-wcs-ssr-id', id);
-          const props: Record<string, unknown> = {};
-          for (const entry of entries) {
-            props[entry.propName] = entry.value;
-          }
-          propsData[id] = props;
-        }
-        if (Object.keys(propsData).length > 0) {
-          const propsScript = document.createElement('script');
-          propsScript.setAttribute('type', 'application/json');
-          propsScript.setAttribute('data-wcs-ssr-props', '');
-          propsScript.textContent = JSON.stringify(propsData);
-          ssrEl.appendChild(propsScript);
-        }
-      }
-
-      stateEl.parentNode?.insertBefore(ssrEl, stateEl);
-    }
+    // 非同期初期化の完了を待機
+    await Promise.all(readyFns.map(fn => fn(document as any)));
 
     return document.body.innerHTML;
   } finally {
     restoreBaseUrl?.();
-    bootstrapState({ ssr: false });
     restoreGlobals();
     await window.close();
   }

@@ -5,6 +5,7 @@ import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
 
 export class Fetch extends HTMLElement {
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...FetchCore.wcBindable,
     properties: [
@@ -17,6 +18,7 @@ export class Fetch extends HTMLElement {
   private _core: FetchCore;
   private _body: any = null;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
@@ -65,6 +67,14 @@ export class Fetch extends HTMLElement {
 
   get status(): number {
     return this._core.status;
+  }
+
+  get promise(): Promise<any> {
+    return this._core.promise;
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   get manual(): boolean {
@@ -178,7 +188,7 @@ export class Fetch extends HTMLElement {
   connectedCallback(): void {
     this.style.display = "none";
     if (!this.manual && this.url) {
-      this.fetch();
+      this._connectedCallbackPromise = this.fetch().then(() => {});
     }
   }
 

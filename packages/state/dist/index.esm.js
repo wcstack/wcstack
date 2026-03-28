@@ -1,3 +1,11 @@
+let _inSsrCache = null;
+function inSsr() {
+    if (_inSsrCache !== null)
+        return _inSsrCache;
+    const html = document.querySelector('html');
+    _inSsrCache = html ? html.hasAttribute('data-wcs-server') : false;
+    return _inSsrCache;
+}
 const _config = {
     bindAttributeName: 'data-wcs',
     commentTextPrefix: 'wcs-text',
@@ -12,10 +20,12 @@ const _config = {
     locale: 'en',
     debug: false,
     enableMustache: true,
-    ssr: false,
 };
 // backward compatible export (read-only usage)
 const config = _config;
+function getConfig() {
+    return config;
+}
 function setConfig(partialConfig) {
     if (partialConfig.tagNames) {
         Object.assign(_config.tagNames, partialConfig.tagNames);
@@ -47,9 +57,6 @@ function setConfig(partialConfig) {
     if (typeof partialConfig.enableMustache === "boolean") {
         _config.enableMustache = partialConfig.enableMustache;
     }
-    if (typeof partialConfig.ssr === "boolean") {
-        _config.ssr = partialConfig.ssr;
-    }
 }
 
 var version$1 = "1.5.3";
@@ -58,169 +65,8 @@ var pkg = {
 
 const VERSION = pkg.version;
 
-class Ssr extends HTMLElement {
-    _stateData = null;
-    _templates = null;
-    _hydrateProps = null;
-    get name() {
-        return this.getAttribute('name') || 'default';
-    }
-    get version() {
-        return this.getAttribute('version') || '';
-    }
-    get stateData() {
-        if (this._stateData === null) {
-            this._stateData = this._loadStateData();
-        }
-        return this._stateData;
-    }
-    get templates() {
-        if (this._templates === null) {
-            this._templates = this._loadTemplates();
-        }
-        return this._templates;
-    }
-    get hydrateProps() {
-        if (this._hydrateProps === null) {
-            this._hydrateProps = this._loadHydrateProps();
-        }
-        return this._hydrateProps;
-    }
-    getTemplate(uuid) {
-        return this.templates.get(uuid) ?? null;
-    }
-    /**
-     * サーバーの SSR バージョンとクライアントの state バージョンを検証する。
-     * メジャー・マイナーバージョンが一致すればtrue。
-     * version 属性がない場合は検証スキップ（true）。
-     */
-    verifyVersion() {
-        const serverVersion = this.version;
-        if (!serverVersion)
-            return true;
-        const serverParts = serverVersion.split('.');
-        const clientParts = VERSION.split('.');
-        // メジャー・マイナーが一致すれば互換
-        return serverParts[0] === clientParts[0] && serverParts[1] === clientParts[1];
-    }
-    setStateData(data) {
-        this._stateData = data;
-    }
-    setHydrateProps(props) {
-        this._hydrateProps = props;
-    }
-    _loadStateData() {
-        const script = this.querySelector(`script[type="application/json"]:not([data-wcs-ssr-props])`);
-        if (!script)
-            return {};
-        try {
-            return JSON.parse(script.textContent || '{}');
-        }
-        catch {
-            return {};
-        }
-    }
-    _loadTemplates() {
-        const map = new Map();
-        const templates = this.querySelectorAll('template[id]');
-        for (const tpl of templates) {
-            const id = tpl.getAttribute('id');
-            if (id) {
-                map.set(id, tpl);
-            }
-        }
-        return map;
-    }
-    _loadHydrateProps() {
-        const script = this.querySelector('script[data-wcs-ssr-props]');
-        if (!script)
-            return {};
-        try {
-            return JSON.parse(script.textContent || '{}');
-        }
-        catch {
-            return {};
-        }
-    }
-    static findByName(root, name) {
-        const tagName = config.tagNames.ssr;
-        const parentEl = root instanceof Element
-            ? root
-            : root instanceof Document
-                ? root.documentElement
-                : null;
-        if (!parentEl)
-            return null;
-        const el = parentEl.querySelector(`${tagName}[name="${name}"]`);
-        return el;
-    }
-}
-
-async function loadFromInnerScript(script, name) {
-    let scriptModule = null;
-    const uniq_comment = `\n//# sourceURL=${name}\n`;
-    if (typeof URL.createObjectURL === 'function') {
-        // Create a blob URL for the script and dynamically import it
-        const blob = new Blob([script.text + uniq_comment], { type: "application/javascript" });
-        const url = URL.createObjectURL(blob);
-        try {
-            scriptModule = await import(url);
-        }
-        finally {
-            // Clean up blob URL to prevent memory leak
-            URL.revokeObjectURL(url);
-        }
-    }
-    else {
-        // Fallback: Base64 encoding method (for test environment)
-        // Convert script to Base64 and import via data: URL
-        const b64 = btoa(String.fromCodePoint(...new TextEncoder().encode(script.text + uniq_comment)));
-        scriptModule = await import(`data:application/javascript;base64,${b64}`);
-    }
-    return (scriptModule && typeof scriptModule.default === 'object') ? scriptModule.default : {};
-}
-
 function raiseError(message) {
     throw new Error(`[@wcstack/state] ${message}`);
-}
-
-async function loadFromJsonFile(url) {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            raiseError(`Failed to fetch JSON file: ${response.statusText}`);
-        }
-        const data = await response.json();
-        return data;
-    }
-    catch (e) {
-        console.error('Failed to load JSON file:', e);
-        return {};
-    }
-}
-
-async function loadFromScriptFile(url) {
-    try {
-        const module = await import(/* @vite-ignore */ url);
-        return module.default || {};
-    }
-    catch (e) {
-        raiseError(`Failed to load script file: ${e}`);
-    }
-}
-
-function loadFromScriptJson(id) {
-    const script = document.getElementById(id);
-    if (script && script.type === 'application/json') {
-        try {
-            const data = JSON.parse(script.textContent || '{}');
-            return data;
-        }
-        catch (e) {
-            raiseError('Failed to parse JSON from script element:' + e);
-        }
-    }
-    return {};
 }
 
 const bindingPromiseByNode = new WeakMap();
@@ -1517,37 +1363,6 @@ function parseBindTextForEmbeddedNode(bindText) {
         ...stateResult,
         bindingType: 'text',
     };
-}
-
-const fragmentInfoByUUID = new Map();
-function setFragmentInfoByUUID(uuid, rootNode, fragmentInfo) {
-    if (fragmentInfo === null) {
-        fragmentInfoByUUID.delete(uuid);
-    }
-    else {
-        fragmentInfoByUUID.set(uuid, fragmentInfo);
-        const bindingPartial = fragmentInfo.parseBindTextResult;
-        const stateElement = getStateElementByName(rootNode, bindingPartial.stateName);
-        if (stateElement === null) {
-            raiseError(`State element with name "${bindingPartial.stateName}" not found for fragment info.`);
-        }
-        stateElement.setPathInfo(bindingPartial.statePathName, bindingPartial.bindingType);
-        for (const nodeInfo of fragmentInfo.nodeInfos) {
-            for (const nodeBindingPartial of nodeInfo.parseBindTextResults) {
-                const nodeStateElement = getStateElementByName(rootNode, nodeBindingPartial.stateName);
-                if (nodeStateElement === null) {
-                    raiseError(`State element with name "${nodeBindingPartial.stateName}" not found for fragment info node.`);
-                }
-                nodeStateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
-            }
-        }
-    }
-}
-function getFragmentInfoByUUID(uuid) {
-    return fragmentInfoByUUID.get(uuid) || null;
-}
-function getAllFragmentUUIDs() {
-    return Array.from(fragmentInfoByUUID.keys());
 }
 
 function getParseBindTextResults(node) {
@@ -2913,7 +2728,7 @@ function applyChangeToFor(bindingInfo, context, newValue) {
         fragment = document.createDocumentFragment();
         setRootNodeByFragment(fragment, context.rootNode);
     }
-    const ssrMode = config.ssr;
+    const ssrMode = inSsr();
     const uuid = bindingInfo.uuid ?? '';
     for (const index of diff.newIndexes) {
         let content;
@@ -3004,7 +2819,7 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
     else {
         content = contents.values().next().value;
     }
-    const ssrMode = config.ssr;
+    const ssrMode = inSsr();
     const uuid = bindingInfo.uuid ?? '';
     const keyword = bindingInfo.bindingType; // if, elseif, else
     try {
@@ -3134,7 +2949,7 @@ function applyChangeToProperty(binding, _context, newValue) {
                 }
             }
         }
-        if (config.ssr) {
+        if (inSsr()) {
             const attrHandler = SSR_ATTR_PROPS[firstSegment];
             if (attrHandler) {
                 // 属性で代替可能 → HTML 属性に反映
@@ -3210,7 +3025,7 @@ function applyChangeToText(binding, _context, newValue) {
         binding.replaceNode.nodeValue = newValue;
     }
     // SSR モード時: テキストノードの前後にコメントを挿入して境界を明示
-    if (config.ssr && !ssrWrappedNodes.has(binding.replaceNode)) {
+    if (inSsr() && !ssrWrappedNodes.has(binding.replaceNode)) {
         ssrWrappedNodes.add(binding.replaceNode);
         const parentNode = binding.replaceNode.parentNode;
         if (parentNode) {
@@ -4075,9 +3890,6 @@ async function buildBindings(root) {
 
 // ハイドレーション時にスキップするバインディングタイプ
 const STRUCTURAL_TYPES = new Set(['for', 'if', 'elseif', 'else']);
-const SSR_BLOCK_START = /^@@wcs-(for|if|elseif|else)-start:(.+)$/;
-const SSR_BLOCK_END = /^@@wcs-(for|if|elseif|else)-end:(.+)$/;
-const SSR_TEXT_START = /^@@wcs-text-start:(.+)$/;
 /**
  * SSR ブロック境界コメントを走査して、start〜end 間のノードを収集する
  */
@@ -4274,58 +4086,6 @@ function findPlaceholderComment(root, type, uuid) {
     return null;
 }
 /**
- * SSR テキストバインディングコメントを復元する。
- * <!--@@wcs-text-start:path-->text<!--@@wcs-text-end:path-->
- * → <!--@@: path--> (バインディングシステムが認識する形式)
- * start/end コメントと間のテキストノードを除去し、@@: コメントに置換。
- */
-function restoreTextBindings(root) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-    const startComments = [];
-    while (walker.nextNode()) {
-        const comment = walker.currentNode;
-        const match = SSR_TEXT_START.exec(comment.data);
-        if (match) {
-            startComments.push({ comment, path: match[1] });
-        }
-    }
-    for (const { comment, path } of startComments) {
-        // @@: path 形式のコメントを作成（parseCommentNode が認識する形式）
-        const bindComment = document.createComment(`@@: ${path}`);
-        comment.parentNode.insertBefore(bindComment, comment);
-        // start コメントを除去
-        let sibling = comment.nextSibling;
-        comment.remove();
-        // start 〜 end 間のノードを除去（テキストノード含む）
-        const endPattern = `@@wcs-text-end:${path}`;
-        while (sibling) {
-            const next = sibling.nextSibling;
-            if (sibling.nodeType === Node.COMMENT_NODE && sibling.data === endPattern) {
-                sibling.parentNode.removeChild(sibling);
-                break;
-            }
-            sibling.parentNode.removeChild(sibling);
-            sibling = next;
-        }
-    }
-}
-/**
- * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
- */
-function removeBlockBoundaryComments(root) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-    const toRemove = [];
-    while (walker.nextNode()) {
-        const comment = walker.currentNode;
-        if (SSR_BLOCK_START.test(comment.data) || SSR_BLOCK_END.test(comment.data)) {
-            toRemove.push(comment);
-        }
-    }
-    for (const comment of toRemove) {
-        comment.remove();
-    }
-}
-/**
  * <wcs-ssr> 内のテンプレートを fragmentInfoByUUID に復帰させる。
  */
 function restoreFragments(root, ssrEl) {
@@ -4378,7 +4138,8 @@ function restoreFragments(root, ssrEl) {
 }
 /**
  * SSR ハイドレーション用バインディング初期化。
- * バージョン不一致時は false を返す（呼び出し元で buildBindings にフォールバック）。
+ * バージョン不一致時は DOM をクリーンアップして false を返す
+ * （呼び出し元で buildBindings にフォールバック）。
  */
 async function hydrateBindings(root) {
     await waitForStateInitialize(root);
@@ -4388,6 +4149,7 @@ async function hydrateBindings(root) {
         const ssrEl = ssrNode;
         if (!ssrEl.verifyVersion()) {
             console.warn(`[@wcstack/state] SSR version mismatch: server="${ssrEl.version}", client="${VERSION}". Falling back to full render.`);
+            Ssr.cleanupDom(root);
             return false;
         }
     }
@@ -4399,7 +4161,7 @@ async function hydrateBindings(root) {
     const blocks = collectSsrBlocks(document.body);
     hydrateBlocks(document.body, blocks);
     // ブロック境界コメント (start/end) を除去
-    removeBlockBoundaryComments(document.body);
+    Ssr.removeBlockBoundaryComments(document.body);
     // <wcs-ssr> を一時除去（バインディング走査に含めない）
     const ssrParents = [];
     for (const el of ssrElements) {
@@ -4411,7 +4173,7 @@ async function hydrateBindings(root) {
     // 構造プレースホルダーコメント (@@wcs-for:uuid 等) は残す
     // → バインディング走査で拾われ、状態変化時の再レンダリングに使われる
     // SSR テキストバインディングを @@: 形式に復元
-    restoreTextBindings(document.body);
+    Ssr.restoreTextBindings(document.body);
     // ノードとバインディングを収集
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(document.body);
     // 収集完了したノードに data-wcs-completed 属性を付与
@@ -4501,6 +4263,11 @@ async function hydrateBindings(root) {
             }
         }
     }
+    // ハイドレーション中の重複登録防止用属性を除去
+    const completedEls = root.querySelectorAll('[data-wcs-completed]');
+    for (const el of completedEls) {
+        el.removeAttribute('data-wcs-completed');
+    }
     return true;
 }
 
@@ -4541,7 +4308,7 @@ function setStateElementByName(rootNode, name, element) {
             stateElementByNameByNode.set(rootNode, stateElementByName);
             // 初めてルートノードに登録する場合
             // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
-            const enableSsr = !config.ssr && element.hasAttribute?.('enable-ssr');
+            const enableSsr = !inSsr() && element.hasAttribute?.('enable-ssr');
             if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
                 const ready = new Promise((resolve) => {
                     queueMicrotask(async () => {
@@ -4577,6 +4344,427 @@ function setStateElementByName(rootNode, name, element) {
             console.debug(`State element registered: name="${name}"`, element);
         }
     }
+}
+
+const fragmentInfoByUUID = new Map();
+function setFragmentInfoByUUID(uuid, rootNode, fragmentInfo) {
+    if (fragmentInfo === null) {
+        fragmentInfoByUUID.delete(uuid);
+    }
+    else {
+        fragmentInfoByUUID.set(uuid, fragmentInfo);
+        const bindingPartial = fragmentInfo.parseBindTextResult;
+        const stateElement = getStateElementByName(rootNode, bindingPartial.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${bindingPartial.stateName}" not found for fragment info.`);
+        }
+        stateElement.setPathInfo(bindingPartial.statePathName, bindingPartial.bindingType);
+        for (const nodeInfo of fragmentInfo.nodeInfos) {
+            for (const nodeBindingPartial of nodeInfo.parseBindTextResults) {
+                const nodeStateElement = getStateElementByName(rootNode, nodeBindingPartial.stateName);
+                if (nodeStateElement === null) {
+                    raiseError(`State element with name "${nodeBindingPartial.stateName}" not found for fragment info node.`);
+                }
+                nodeStateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
+            }
+        }
+    }
+}
+function getFragmentInfoByUUID(uuid) {
+    return fragmentInfoByUUID.get(uuid) || null;
+}
+function getAllFragmentUUIDs() {
+    return Array.from(fragmentInfoByUUID.keys());
+}
+
+// SSR コメントパターン
+const SSR_PLACEHOLDER_COMMENT = /^@@wcs-(?:for|if|elseif|else):[^-]/;
+const SSR_BLOCK_START = /^@@wcs-(for|if|elseif|else)-start:(.+)$/;
+const SSR_BLOCK_END = /^@@wcs-(for|if|elseif|else)-end:(.+)$/;
+const SSR_TEXT_START = /^@@wcs-text-start:(.+)$/;
+class Ssr extends HTMLElement {
+    _stateData = null;
+    _templates = null;
+    _hydrateProps = null;
+    get name() {
+        return this.getAttribute('name') || 'default';
+    }
+    get version() {
+        return this.getAttribute('version') || '';
+    }
+    get stateData() {
+        if (this._stateData === null) {
+            this._stateData = this._loadStateData();
+        }
+        return this._stateData;
+    }
+    get templates() {
+        if (this._templates === null) {
+            this._templates = this._loadTemplates();
+        }
+        return this._templates;
+    }
+    get hydrateProps() {
+        if (this._hydrateProps === null) {
+            this._hydrateProps = this._loadHydrateProps();
+        }
+        return this._hydrateProps;
+    }
+    getTemplate(uuid) {
+        return this.templates.get(uuid) ?? null;
+    }
+    /**
+     * サーバーの SSR バージョンとクライアントの state バージョンを検証する。
+     * メジャー・マイナーバージョンが一致すればtrue。
+     * version 属性がない場合は検証スキップ（true）。
+     */
+    verifyVersion() {
+        const serverVersion = this.version;
+        if (!serverVersion)
+            return true;
+        const serverParts = serverVersion.split('.');
+        const clientParts = VERSION.split('.');
+        // メジャー・マイナーが一致すれば互換
+        return serverParts[0] === clientParts[0] && serverParts[1] === clientParts[1];
+    }
+    setStateData(data) {
+        this._stateData = data;
+    }
+    setHydrateProps(props) {
+        this._hydrateProps = props;
+    }
+    _loadStateData() {
+        const script = this.querySelector(`script[type="application/json"]:not([data-wcs-ssr-props])`);
+        if (!script)
+            return {};
+        try {
+            return JSON.parse(script.textContent || '{}');
+        }
+        catch {
+            return {};
+        }
+    }
+    _loadTemplates() {
+        const map = new Map();
+        const templates = this.querySelectorAll('template[id]');
+        for (const tpl of templates) {
+            const id = tpl.getAttribute('id');
+            if (id) {
+                map.set(id, tpl);
+            }
+        }
+        return map;
+    }
+    _loadHydrateProps() {
+        const script = this.querySelector('script[data-wcs-ssr-props]');
+        if (!script)
+            return {};
+        try {
+            return JSON.parse(script.textContent || '{}');
+        }
+        catch {
+            return {};
+        }
+    }
+    static findByName(root, name) {
+        const tagName = config.tagNames.ssr;
+        const parentEl = root instanceof Element
+            ? root
+            : root instanceof Document
+                ? root.documentElement
+                : null;
+        if (!parentEl)
+            return null;
+        const el = parentEl.querySelector(`${tagName}[name="${name}"]`);
+        return el;
+    }
+    /**
+     * stateData と構造テンプレート・プロパティから <wcs-ssr> の中身を構築する。
+     * server パッケージの renderToString から呼ばれる。
+     */
+    /**
+     * wcs-state 要素から $ プレフィックスや関数を除いたデータを抽出する。
+     */
+    static extractStateData(stateEl) {
+        const raw = stateEl.__state;
+        if (!raw || typeof raw !== 'object')
+            return {};
+        const data = {};
+        for (const [key, value] of Object.entries(raw)) {
+            if (!key.startsWith('$') && typeof value !== 'function') {
+                data[key] = value;
+            }
+        }
+        return data;
+    }
+    static buildContent(ssrEl, stateData) {
+        // 初期データ JSON
+        const jsonScript = document.createElement('script');
+        jsonScript.setAttribute('type', 'application/json');
+        jsonScript.textContent = JSON.stringify(stateData);
+        ssrEl.appendChild(jsonScript);
+        // UUID で管理されているテンプレートを復元して格納
+        const uuids = getAllFragmentUUIDs();
+        for (const uuid of uuids) {
+            const fragmentInfo = getFragmentInfoByUUID(uuid);
+            if (!fragmentInfo)
+                continue;
+            const tpl = document.createElement('template');
+            tpl.setAttribute('id', uuid);
+            const bindResult = fragmentInfo.parseBindTextResult;
+            const bindText = bindResult.bindingType === 'else'
+                ? 'else:'
+                : `${bindResult.bindingType}: ${bindResult.statePathName}`;
+            tpl.setAttribute(config.bindAttributeName, bindText);
+            const content = fragmentInfo.fragment.cloneNode(true);
+            tpl.content.appendChild(content);
+            ssrEl.appendChild(tpl);
+        }
+        // 属性で代替不可なプロパティをハイドレーション用に格納
+        const ssrNodes = getAllSsrPropertyNodes();
+        if (ssrNodes.length > 0) {
+            const propsData = {};
+            for (let i = 0; i < ssrNodes.length; i++) {
+                const node = ssrNodes[i];
+                const entries = getSsrProperties(node);
+                if (entries.length === 0)
+                    continue;
+                const id = `wcs-ssr-${i}`;
+                node.setAttribute('data-wcs-ssr-id', id);
+                const props = {};
+                for (const entry of entries) {
+                    props[entry.propName] = entry.value;
+                }
+                propsData[id] = props;
+            }
+            if (Object.keys(propsData).length > 0) {
+                const propsScript = document.createElement('script');
+                propsScript.setAttribute('type', 'application/json');
+                propsScript.setAttribute('data-wcs-ssr-props', '');
+                propsScript.textContent = JSON.stringify(propsData);
+                ssrEl.appendChild(propsScript);
+            }
+        }
+        clearSsrPropertyStore();
+    }
+    /**
+     * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
+     */
+    static removeBlockBoundaryComments(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const toRemove = [];
+        while (walker.nextNode()) {
+            const comment = walker.currentNode;
+            if (SSR_BLOCK_START.test(comment.data) || SSR_BLOCK_END.test(comment.data)) {
+                toRemove.push(comment);
+            }
+        }
+        for (const comment of toRemove) {
+            comment.remove();
+        }
+    }
+    /**
+     * SSR の構造プレースホルダーコメント (@@wcs-for:uuid 等) を除去する
+     */
+    static removeStructuralComments(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const toRemove = [];
+        while (walker.nextNode()) {
+            const comment = walker.currentNode;
+            if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
+                toRemove.push(comment);
+            }
+        }
+        for (const comment of toRemove) {
+            comment.remove();
+        }
+    }
+    /**
+     * SSR テキストバインディングコメントを復元する。
+     * <!--@@wcs-text-start:path-->text<!--@@wcs-text-end:path-->
+     * → <!--@@: path--> (バインディングシステムが認識する形式)
+     */
+    static restoreTextBindings(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const startComments = [];
+        while (walker.nextNode()) {
+            const comment = walker.currentNode;
+            const match = SSR_TEXT_START.exec(comment.data);
+            if (match) {
+                startComments.push({ comment, path: match[1] });
+            }
+        }
+        for (const { comment, path } of startComments) {
+            const bindComment = document.createComment(`@@: ${path}`);
+            comment.parentNode.insertBefore(bindComment, comment);
+            let sibling = comment.nextSibling;
+            comment.remove();
+            const endPattern = `@@wcs-text-end:${path}`;
+            while (sibling) {
+                const next = sibling.nextSibling;
+                if (sibling.nodeType === Node.COMMENT_NODE && sibling.data === endPattern) {
+                    sibling.parentNode.removeChild(sibling);
+                    break;
+                }
+                sibling.parentNode.removeChild(sibling);
+                sibling = next;
+            }
+        }
+    }
+    /**
+     * SSR DOM をクリーンアップし、buildBindings が動作できる状態に戻す。
+     * バージョン不一致時のフォールバック用。
+     *
+     * 1. SSR ブロック境界コメント間のレンダリング済みノードを除去
+     * 2. SSR テキストバインディングを @@: 形式に復元
+     * 3. プレースホルダーコメントを <wcs-ssr> 内のテンプレートで差し替え
+     * 4. data-wcs-ssr-id 属性を除去
+     * 5. <wcs-ssr> を除去
+     */
+    static cleanupDom(root) {
+        const body = document.body;
+        // <wcs-ssr> からテンプレート UUID マップを構築（カスタム要素未定義でも動作するよう DOM 直接走査）
+        const ssrElements = root.querySelectorAll(config.tagNames.ssr);
+        const templateByUuid = new Map();
+        for (const ssrNode of ssrElements) {
+            const templates = ssrNode.querySelectorAll('template[id]');
+            for (const tpl of templates) {
+                const id = tpl.getAttribute('id');
+                if (id) {
+                    templateByUuid.set(id, tpl);
+                }
+            }
+        }
+        // SSR ブロック境界コメント間のレンダリング済みノードと境界コメントを除去
+        const walker1 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
+        const startComments = [];
+        while (walker1.nextNode()) {
+            const comment = walker1.currentNode;
+            if (SSR_BLOCK_START.test(comment.data)) {
+                startComments.push(comment);
+            }
+        }
+        for (const startComment of startComments) {
+            const match = SSR_BLOCK_START.exec(startComment.data);
+            const type = match[1];
+            const info = match[2];
+            const endPattern = `@@wcs-${type}-end:${info}`;
+            let sibling = startComment.nextSibling;
+            while (sibling) {
+                const next = sibling.nextSibling;
+                if (sibling.nodeType === Node.COMMENT_NODE && sibling.data === endPattern) {
+                    sibling.remove();
+                    break;
+                }
+                sibling.remove();
+                sibling = next;
+            }
+            startComment.remove();
+        }
+        // SSR テキストバインディングを @@: 形式に復元
+        Ssr.restoreTextBindings(body);
+        // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替え
+        const walker2 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
+        const placeholders = [];
+        while (walker2.nextNode()) {
+            const comment = walker2.currentNode;
+            if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
+                const uuid = comment.data.split(':')[1];
+                placeholders.push({ comment, uuid });
+            }
+        }
+        for (const { comment, uuid } of placeholders) {
+            const tpl = templateByUuid.get(uuid);
+            if (tpl) {
+                const restored = document.createElement('template');
+                const bindAttr = tpl.getAttribute(config.bindAttributeName);
+                if (bindAttr)
+                    restored.setAttribute(config.bindAttributeName, bindAttr);
+                const imported = document.importNode(tpl.content, true);
+                if (imported.childNodes.length > 0) {
+                    restored.content.appendChild(imported);
+                }
+                else {
+                    for (const child of Array.from(tpl.childNodes)) {
+                        restored.content.appendChild(document.importNode(child, true));
+                    }
+                }
+                comment.parentNode.replaceChild(restored, comment);
+            }
+        }
+        // data-wcs-ssr-id 属性を除去
+        const ssrIdElements = root.querySelectorAll('[data-wcs-ssr-id]');
+        for (const el of ssrIdElements) {
+            el.removeAttribute('data-wcs-ssr-id');
+        }
+        // <wcs-ssr> を除去
+        for (const el of ssrElements) {
+            el.remove();
+        }
+    }
+}
+
+async function loadFromInnerScript(script, name) {
+    let scriptModule = null;
+    const uniq_comment = `\n//# sourceURL=${name}\n`;
+    if (typeof URL.createObjectURL === 'function') {
+        // Create a blob URL for the script and dynamically import it
+        const blob = new Blob([script.text + uniq_comment], { type: "application/javascript" });
+        const url = URL.createObjectURL(blob);
+        try {
+            scriptModule = await import(url);
+        }
+        finally {
+            // Clean up blob URL to prevent memory leak
+            URL.revokeObjectURL(url);
+        }
+    }
+    else {
+        // Fallback: Base64 encoding method (for test environment)
+        // Convert script to Base64 and import via data: URL
+        const b64 = btoa(String.fromCodePoint(...new TextEncoder().encode(script.text + uniq_comment)));
+        scriptModule = await import(`data:application/javascript;base64,${b64}`);
+    }
+    return (scriptModule && typeof scriptModule.default === 'object') ? scriptModule.default : {};
+}
+
+async function loadFromJsonFile(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            raiseError(`Failed to fetch JSON file: ${response.statusText}`);
+        }
+        const data = await response.json();
+        return data;
+    }
+    catch (e) {
+        console.error('Failed to load JSON file:', e);
+        return {};
+    }
+}
+
+async function loadFromScriptFile(url) {
+    try {
+        const module = await import(/* @vite-ignore */ url);
+        return module.default || {};
+    }
+    catch (e) {
+        raiseError(`Failed to load script file: ${e}`);
+    }
+}
+
+function loadFromScriptJson(id) {
+    const script = document.getElementById(id);
+    if (script && script.type === 'application/json') {
+        try {
+            const data = JSON.parse(script.textContent || '{}');
+            return data;
+        }
+        catch (e) {
+            raiseError('Failed to parse JSON from script element:' + e);
+        }
+    }
+    return {};
 }
 
 class LoopContextStack {
@@ -6254,6 +6442,7 @@ function getStateInfo(state) {
     };
 }
 class State extends HTMLElement {
+    static hasConnectedCallbackPromise = true;
     __state;
     _name = 'default';
     _initialized = false;
@@ -6331,7 +6520,7 @@ class State extends HTMLElement {
     }
     async _initialize() {
         // enable-ssr (クライアント側のみ): <wcs-ssr> から初期データを取得
-        const ssrState = !config.ssr ? this._loadFromSsrElement() : null;
+        const ssrState = !inSsr() ? this._loadFromSsrElement() : null;
         try {
             if (this.hasAttribute('state')) {
                 const state = this.getAttribute('state');
@@ -6452,9 +6641,20 @@ class State extends HTMLElement {
             this._resolveInitialize?.();
         }
         // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
-        // config.ssr (サーバー側): レンダリング中なので実行する
-        if (!this.hasAttribute('enable-ssr') || config.ssr) {
+        // inSsr() (サーバー側): レンダリング中なので実行する
+        if (!this.hasAttribute('enable-ssr') || inSsr()) {
             await this._callStateConnectedCallback();
+        }
+        // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成
+        if (inSsr() && this.hasAttribute('enable-ssr')) {
+            await getBindingsReady(this.rootNode);
+            const name = this.getAttribute('name') || 'default';
+            const stateData = Ssr.extractStateData(this);
+            const ssrEl = document.createElement(config.tagNames.ssr);
+            ssrEl.setAttribute('name', name);
+            ssrEl.setAttribute('version', VERSION);
+            Ssr.buildContent(ssrEl, stateData);
+            this.parentNode?.insertBefore(ssrEl, this);
         }
         this._resolveConnectedCallback?.();
     }
@@ -6699,5 +6899,5 @@ function defineState(definition) {
     return definition;
 }
 
-export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getBindingsReady, getFragmentInfoByUUID, getSsrProperties };
+export { Ssr, VERSION, bootstrapState, buildBindings, defineState, getBindingsReady, getConfig };
 //# sourceMappingURL=index.esm.js.map

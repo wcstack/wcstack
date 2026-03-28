@@ -204,24 +204,140 @@ createServer(async (req, res) => {
 }).listen(3000);
 ```
 
+## 入力 HTML のルール
+
+- `<body>` の中身だけを渡す（`<html>`, `<head>`, `<body>` タグは含めない）
+- `<script>` / `<link>` による外部リソース読み込みは実行されない
+  → 必要なパッケージは `options.bootstraps` で明示的に渡す
+
+## SSR でできること
+
+### 状態の初期化とデータ取得
+
+- `<wcs-state>` の状態ロード（json 属性, src 属性, inline `<script type="module">`）
+- `$connectedCallback` でのサーバーサイド fetch（API 呼び出し等）
+
+```html
+<!-- JSON 直接指定 -->
+<wcs-state enable-ssr json='{"title":"Hello"}'></wcs-state>
+
+<!-- $connectedCallback で API からデータ取得 -->
+<!-- $connectedCallback は状態オブジェクトのメソッドとして定義、this が state proxy -->
+<wcs-state enable-ssr>
+  <script type="module">
+    export default {
+      async $connectedCallback() {
+        const res = await fetch('/api/users');
+        this.users = await res.json();
+      }
+    };
+  </script>
+</wcs-state>
+```
+
+### wcs-fetch を使ったサーバー通信
+
+- `<wcs-fetch>` の auto-fetch（`manual` なし）はサーバーでも実行される
+- `manual` + `$connectedCallback` で明示的に制御する場合：
+
+```html
+<wcs-fetch id="api" url="/api/users" manual></wcs-fetch>
+<wcs-state enable-ssr>
+  <script type="module">
+    export default {
+      async $connectedCallback() {
+        const el = document.getElementById('api');
+        this.users = await el.fetch();
+      }
+    };
+  </script>
+</wcs-state>
+```
+
+> ※ `bootstraps` オプションに `bootstrapFetch` を含める必要あり
+
+### バインディングと構造レンダリング
+
+- `data-wcs` バインディングの適用（text, attribute, class, style, property）
+- `<template data-wcs="for:">` / `if:` / `elseif:` / `else:` の構造レンダリング
+
+```html
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: .name"></li>
+  </template>
+</ul>
+<template data-wcs="if: isAdmin">
+  <div class="admin-panel">...</div>
+</template>
+```
+
+### ハイドレーション
+
+- `enable-ssr` 付き `<wcs-state>` の `<wcs-ssr>` メタデータ自動生成
+- クライアント側でのハイドレーション（再レンダリングなしでバインディング復元）
+- `enable-ssr` を外した `<wcs-state>` はクライアントのみで動作（部分 CSR）
+
+### カスタム要素の待機
+
+- `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
+
+## SSR でできないこと
+
+- `<head>` 内の `<script src="...">` や `<link>` の自動実行
+- ブラウザ固有 API（localStorage, sessionStorage, navigator 等）
+- Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
+- イベントハンドラの登録（クライアント側のハイドレーションで復元）
+- `<wcs-autoloader>` による動的コンポーネント読み込み
+
+## HTML の分割パターン
+
+`renderToString` には `<body>` の中身だけを渡し、`<head>` や `<script>` タグは外側のテンプレートで囲む：
+
+```javascript
+// server.js
+const ssrBody = await renderToString(template, {
+  baseUrl: 'http://localhost:3001',
+});
+const page = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <script type="module" src="/packages/state/dist/auto.js"></script>
+</head>
+<body>${ssrBody}</body>
+</html>`;
+```
+
+### 複数パッケージを使う場合
+
+```javascript
+import { bootstrapState, getBindingsReady } from '@wcstack/state';
+import { bootstrapFetch } from '@wcstack/fetch';
+
+const ssrBody = await renderToString(template, {
+  baseUrl: 'http://localhost:3001',
+  bootstraps: [bootstrapState, bootstrapFetch],
+  ready: [(doc) => getBindingsReady(doc)],
+});
+```
+
 ## 仕組み
 
 ### レンダリングパイプライン
 
 1. **グローバルのセットアップ**: happy-dom の `Window` を作成し、ブラウザグローバル（`document`、`HTMLElement`、`MutationObserver` 等）を `globalThis` に一時的にインストール。`URL.createObjectURL` を無効化し、インラインスクリプトの base64 data URL フォールバックを強制。
 
-2. **状態のブートストラップ**: `bootstrapState({ ssr: true })` を呼び出し、`<wcs-state>` を SSR モードで登録。
+2. **SSR モード**: `<html>` 要素に `data-wcs-server` 属性を設定。`@wcstack/state` はこの属性を検出して SSR 動作を有効化。
 
-3. **HTML パースとコールバック**: `document.body.innerHTML` に HTML をセットすることで、happy-dom の要素ライフサイクルが発火。各 `<wcs-state>` がデータソースをロードし `$connectedCallback` を実行。
+3. **ブートストラップ**: ユーザー提供の bootstrap 関数を呼び出す（省略時は `bootstrapState()` をデフォルト使用）。
 
-4. **バインディングの解決**: すべてのバインディングの構築と適用を待機 — テキスト補間、属性マッピング、リスト展開、条件評価。
+4. **HTML パースとコールバック**: `document.body.innerHTML` に HTML をセットすることで、happy-dom の要素ライフサイクルが発火。各 `<wcs-state>` がデータソースをロードし `$connectedCallback` を実行。`hasConnectedCallbackPromise` を持つ全カスタム要素を待機。
 
-5. **ハイドレーションデータの収集**: `<wcs-state enable-ssr>` ごとに：
-   - リアクティブデータを抽出（`$` プレフィックスの内部プロパティと関数は除外）
-   - テンプレートフラグメントを UUID 参照付きでキャプチャ
-   - 属性で代替不可なプロパティバインディング（`innerHTML`、`value` 等）を収集
+5. **Ready**: ユーザー提供の ready 関数を待機（デフォルトは `getBindingsReady()`） — テキスト補間、属性マッピング、リスト展開、条件評価。
 
-6. **クリーンアップ**: 元のグローバルを復元し、SSR モードをリセットし、happy-dom ウィンドウを閉じる。
+6. **SSR メタデータ**: 各 `<wcs-state enable-ssr>` が `connectedCallback` 内で自動的に `<wcs-ssr>` 要素を生成。
+
+7. **クリーンアップ**: 元のグローバルを復元し、happy-dom ウィンドウを閉じる。
 
 ### クライアント側のハイドレーション
 

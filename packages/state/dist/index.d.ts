@@ -1,72 +1,25 @@
-interface IPathInfo {
-    readonly id: number;
-    readonly path: string;
-    readonly segments: string[];
-    readonly lastSegment: string;
-    readonly cumulativePaths: string[];
-    readonly cumulativePathSet: Set<string>;
-    readonly cumulativePathInfos: IPathInfo[];
-    readonly cumulativePathInfoSet: Set<IPathInfo>;
-    readonly parentPath: string | null;
-    readonly parentPathInfo: IPathInfo | null;
-    readonly wildcardPaths: string[];
-    readonly wildcardPathSet: Set<string>;
-    readonly indexByWildcardPath: Record<string, number>;
-    readonly wildcardPathInfos: IPathInfo[];
-    readonly wildcardPathInfoSet: Set<IPathInfo>;
-    readonly wildcardParentPaths: string[];
-    readonly wildcardParentPathSet: Set<string>;
-    readonly wildcardParentPathInfos: IPathInfo[];
-    readonly wildcardParentPathInfoSet: Set<IPathInfo>;
-    readonly wildcardPositions: number[];
-    readonly lastWildcardPath: string | null;
-    readonly lastWildcardInfo: IPathInfo | null;
-    readonly wildcardCount: number;
-}
-
-/**
- * Filter/types.ts
- *
- * Type definition file for filter functions.
- *
- * Main responsibilities:
- * - Defines types for filter functions (FilterFn) and filter functions with options (FilterWithOptionsFn)
- * - Type-safe management of filter name-to-function mappings (FilterWithOptions) and filter function arrays (Filters)
- * - Defines types for retrieving filter functions from built-in filter collections
- *
- * Design points:
- * - Type design enabling flexible filter design and extension
- * - Supports filters with options and combinations of multiple filters
- */
-type FilterFn<T = unknown> = (value: unknown) => T;
-
-type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox';
-interface IFilterInfo {
-    readonly filterName: string;
-    readonly args: string[];
-    readonly filterFn: FilterFn;
-}
-interface IBindingInfo {
-    readonly propName: string;
-    readonly propSegments: string[];
-    readonly propModifiers: string[];
-    readonly statePathName: string;
-    readonly statePathInfo: IPathInfo;
-    readonly stateName: string;
-    readonly inFilters: IFilterInfo[];
-    readonly outFilters: IFilterInfo[];
-    readonly node: Node;
-    readonly replaceNode: Node;
-    readonly bindingType: BindingType;
-    readonly uuid?: string | null;
-}
-
 interface IState {
     [key: string]: any;
+}
+interface ITagNames {
+    readonly state: string;
+    readonly ssr: string;
 }
 interface IWritableTagNames {
     state?: string;
     ssr?: string;
+}
+interface IConfig {
+    readonly bindAttributeName: string;
+    readonly commentTextPrefix: string;
+    readonly commentForPrefix: string;
+    readonly commentIfPrefix: string;
+    readonly commentElseIfPrefix: string;
+    readonly commentElsePrefix: string;
+    readonly tagNames: ITagNames;
+    readonly locale: string;
+    readonly debug: boolean;
+    readonly enableMustache: boolean;
 }
 interface IWritableConfig {
     bindAttributeName?: string;
@@ -79,10 +32,11 @@ interface IWritableConfig {
     locale?: string;
     debug?: boolean;
     enableMustache?: boolean;
-    ssr?: boolean;
 }
 
 declare function bootstrapState(config?: IWritableConfig): void;
+
+declare function getConfig(): IConfig;
 
 /**
  * 指定された rootNode のバインディング初期化が完了するまで待機する Promise を返す。
@@ -120,36 +74,43 @@ declare class Ssr extends HTMLElement implements ISsrElement {
     private _loadTemplates;
     private _loadHydrateProps;
     static findByName(root: Node, name: string): ISsrElement | null;
+    /**
+     * stateData と構造テンプレート・プロパティから <wcs-ssr> の中身を構築する。
+     * server パッケージの renderToString から呼ばれる。
+     */
+    /**
+     * wcs-state 要素から $ プレフィックスや関数を除いたデータを抽出する。
+     */
+    static extractStateData(stateEl: Element): Record<string, any>;
+    static buildContent(ssrEl: Element, stateData: Record<string, any>): void;
+    /**
+     * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
+     */
+    static removeBlockBoundaryComments(root: Node): void;
+    /**
+     * SSR の構造プレースホルダーコメント (@@wcs-for:uuid 等) を除去する
+     */
+    static removeStructuralComments(root: Node): void;
+    /**
+     * SSR テキストバインディングコメントを復元する。
+     * <!--@@wcs-text-start:path-->text<!--@@wcs-text-end:path-->
+     * → <!--@@: path--> (バインディングシステムが認識する形式)
+     */
+    static restoreTextBindings(root: Node): void;
+    /**
+     * SSR DOM をクリーンアップし、buildBindings が動作できる状態に戻す。
+     * バージョン不一致時のフォールバック用。
+     *
+     * 1. SSR ブロック境界コメント間のレンダリング済みノードを除去
+     * 2. SSR テキストバインディングを @@: 形式に復元
+     * 3. プレースホルダーコメントを <wcs-ssr> 内のテンプレートで差し替え
+     * 4. data-wcs-ssr-id 属性を除去
+     * 5. <wcs-ssr> を除去
+     */
+    static cleanupDom(root: Document): void;
 }
 
 declare function buildBindings(root: Document | ShadowRoot): Promise<void>;
-
-type ParseBindTextResult = Pick<IBindingInfo, 'propName' | 'propSegments' | 'propModifiers' | 'statePathName' | 'statePathInfo' | 'stateName' | 'inFilters' | 'outFilters' | 'bindingType' | 'uuid'>;
-
-interface IFragmentNodeInfo {
-    readonly nodePath: number[];
-    readonly parseBindTextResults: ParseBindTextResult[];
-}
-interface IFragmentInfo {
-    readonly fragment: DocumentFragment;
-    readonly parseBindTextResult: ParseBindTextResult;
-    readonly nodeInfos: IFragmentNodeInfo[];
-}
-
-declare function getFragmentInfoByUUID(uuid: string): IFragmentInfo | null;
-declare function getAllFragmentUUIDs(): string[];
-
-/**
- * SSR 時に HTML 属性で表現できないプロパティバインディングを蓄積するストア。
- * ハイドレーション時にクライアント側で復元する。
- */
-interface ISsrPropertyEntry {
-    propName: string;
-    value: unknown;
-}
-declare function getSsrProperties(node: Node): ISsrPropertyEntry[];
-declare function getAllSsrPropertyNodes(): Node[];
-declare function clearSsrPropertyStore(): void;
 
 /**
  * defineState.ts
@@ -369,5 +330,5 @@ declare function defineState<T extends Record<string, any>>(definition: T & This
 
 declare const VERSION: string;
 
-export { Ssr, VERSION, bootstrapState, buildBindings, clearSsrPropertyStore, defineState, getAllFragmentUUIDs, getAllSsrPropertyNodes, getBindingsReady, getFragmentInfoByUUID, getSsrProperties };
-export type { ISsrElement, ISsrPropertyEntry, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
+export { Ssr, VERSION, bootstrapState, buildBindings, defineState, getBindingsReady, getConfig };
+export type { ISsrElement, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

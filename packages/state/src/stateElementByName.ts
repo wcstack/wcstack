@@ -1,7 +1,7 @@
 import { buildBindings } from "./buildBindings";
 import { hydrateBindings } from "./hydrateBindings";
 import { IStateElement } from "./components/types";
-import { config } from "./config";
+import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
 
 const stateElementByNameByNode: WeakMap<Node, Map<string, IStateElement>> = new WeakMap();
@@ -45,7 +45,7 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
       stateElementByNameByNode.set(rootNode, stateElementByName);
       // 初めてルートノードに登録する場合
       // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
-      const enableSsr = !config.ssr && (element as unknown as Element).hasAttribute?.('enable-ssr');
+      const enableSsr = !inSsr() && (element as unknown as Element).hasAttribute?.('enable-ssr');
       if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
         const ready = new Promise<void>((resolve) => {
           queueMicrotask(async () => {

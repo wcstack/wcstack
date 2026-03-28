@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { config, inSsr } from "../config";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { getContentSetByNode } from "../structural/contentsByNode";
@@ -27,7 +27,7 @@ export function applyChangeToIf(
   } else {
     content = contents.values().next().value!;
   }
-  const ssrMode = config.ssr;
+  const ssrMode = inSsr();
   const uuid = bindingInfo.uuid ?? '';
   const keyword = bindingInfo.bindingType; // if, elseif, else
   try {

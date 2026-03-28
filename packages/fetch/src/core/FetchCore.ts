@@ -27,6 +27,7 @@ export class FetchCore extends EventTarget {
   private _error: any = null;
   private _status: number = 0;
   private _abortController: AbortController | null = null;
+  private _promise: Promise<any> = Promise.resolve(null);
 
   constructor(target?: EventTarget) {
     super();
@@ -47,6 +48,10 @@ export class FetchCore extends EventTarget {
 
   get status(): number {
     return this._status;
+  }
+
+  get promise(): Promise<any> {
+    return this._promise;
   }
 
   private _setLoading(loading: boolean): void {
@@ -86,6 +91,12 @@ export class FetchCore extends EventTarget {
       raiseError("url attribute is required.");
     }
 
+    const p = this._doFetch(url, options);
+    this._promise = p;
+    return p;
+  }
+
+  private async _doFetch(url: string, options: FetchRequestOptions): Promise<any> {
     // 進行中のリクエストをキャンセル
     this.abort();
 

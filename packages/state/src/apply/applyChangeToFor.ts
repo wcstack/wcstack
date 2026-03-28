@@ -2,7 +2,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
-import { config } from "../config";
+import { config, inSsr } from "../config";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
@@ -156,7 +156,7 @@ export function applyChangeToFor(
     fragment = document.createDocumentFragment();
     setRootNodeByFragment(fragment, context.rootNode);
   }
-  const ssrMode = config.ssr;
+  const ssrMode = inSsr();
   const uuid = bindingInfo.uuid ?? '';
   for(const index of diff.newIndexes) {
     let content: IContent | undefined;

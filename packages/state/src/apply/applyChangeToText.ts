@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { inSsr } from "../config";
 import { IBindingInfo } from "../binding/types";
 import { IApplyContext } from "./types";
 
@@ -9,7 +9,7 @@ export function applyChangeToText(binding: IBindingInfo, _context: IApplyContext
     binding.replaceNode.nodeValue = newValue as string;
   }
   // SSR モード時: テキストノードの前後にコメントを挿入して境界を明示
-  if (config.ssr && !ssrWrappedNodes.has(binding.replaceNode)) {
+  if (inSsr() && !ssrWrappedNodes.has(binding.replaceNode)) {
     ssrWrappedNodes.add(binding.replaceNode);
     const parentNode = binding.replaceNode.parentNode;
     if (parentNode) {

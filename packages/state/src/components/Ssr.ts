@@ -1,6 +1,8 @@
 import { config } from "../config";
 import { IState } from "../types";
 import { VERSION } from "../version";
+import { getAllFragmentUUIDs, getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
+import { getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore } from "../apply/ssrPropertyStore";
 
 export interface ISsrElement {
   readonly name: string;
@@ -129,6 +131,81 @@ export class Ssr extends HTMLElement implements ISsrElement {
     if (!parentEl) return null;
     const el = parentEl.querySelector(`${tagName}[name="${name}"]`);
     return el as ISsrElement | null;
+  }
+
+  /**
+   * stateData と構造テンプレート・プロパティから <wcs-ssr> の中身を構築する。
+   * server パッケージの renderToString から呼ばれる。
+   */
+  /**
+   * wcs-state 要素から $ プレフィックスや関数を除いたデータを抽出する。
+   */
+  static extractStateData(stateEl: Element): Record<string, any> {
+    const raw = (stateEl as any).__state;
+    if (!raw || typeof raw !== 'object') return {};
+    const data: Record<string, any> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (!key.startsWith('$') && typeof value !== 'function') {
+        data[key] = value;
+      }
+    }
+    return data;
+  }
+
+  static buildContent(ssrEl: Element, stateData: Record<string, any>): void {
+    // 初期データ JSON
+    const jsonScript = document.createElement('script');
+    jsonScript.setAttribute('type', 'application/json');
+    jsonScript.textContent = JSON.stringify(stateData);
+    ssrEl.appendChild(jsonScript);
+
+    // UUID で管理されているテンプレートを復元して格納
+    const uuids = getAllFragmentUUIDs();
+    for (const uuid of uuids) {
+      const fragmentInfo = getFragmentInfoByUUID(uuid);
+      if (!fragmentInfo) continue;
+
+      const tpl = document.createElement('template');
+      tpl.setAttribute('id', uuid);
+
+      const bindResult = fragmentInfo.parseBindTextResult;
+      const bindText = bindResult.bindingType === 'else'
+        ? 'else:'
+        : `${bindResult.bindingType}: ${bindResult.statePathName}`;
+      tpl.setAttribute(config.bindAttributeName, bindText);
+
+      const content = fragmentInfo.fragment.cloneNode(true) as DocumentFragment;
+      tpl.content.appendChild(content);
+
+      ssrEl.appendChild(tpl);
+    }
+
+    // 属性で代替不可なプロパティをハイドレーション用に格納
+    const ssrNodes = getAllSsrPropertyNodes();
+    if (ssrNodes.length > 0) {
+      const propsData: Record<string, Record<string, unknown>> = {};
+      for (let i = 0; i < ssrNodes.length; i++) {
+        const node = ssrNodes[i];
+        const entries = getSsrProperties(node);
+        if (entries.length === 0) continue;
+        const id = `wcs-ssr-${i}`;
+        (node as Element).setAttribute('data-wcs-ssr-id', id);
+        const props: Record<string, unknown> = {};
+        for (const entry of entries) {
+          props[entry.propName] = entry.value;
+        }
+        propsData[id] = props;
+      }
+      if (Object.keys(propsData).length > 0) {
+        const propsScript = document.createElement('script');
+        propsScript.setAttribute('type', 'application/json');
+        propsScript.setAttribute('data-wcs-ssr-props', '');
+        propsScript.textContent = JSON.stringify(propsData);
+        ssrEl.appendChild(propsScript);
+      }
+    }
+
+    clearSsrPropertyStore();
   }
 
   /**
