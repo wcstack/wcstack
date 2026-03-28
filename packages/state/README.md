@@ -76,6 +76,7 @@ That's it. No build, no bootstrap code, no framework.
 - **SVG support** — full binding support inside `<svg>` elements
 - **Lifecycle hooks** — `$connectedCallback` / `$disconnectedCallback` / `$updatedCallback`, plus `$stateReadyCallback` for Web Components
 - **TypeScript support** — `defineState()` for typed state definitions with dot-path autocompletion ([details](docs/define-state.md))
+- **Server-Side Rendering** — `enable-ssr` attribute + `@wcstack/server` for full SSR with automatic hydration
 - **Zero dependencies** — no runtime dependencies
 
 ## Installation
@@ -1189,6 +1190,60 @@ Paths like `users.*.name` are decomposed into:
 - **ListIndex** — runtime loop index chain
 - **StateAddress** — combination of PathInfo + ListIndex
 - **AbsoluteStateAddress** — state name + StateAddress (for cross-state references)
+
+## Server-Side Rendering
+
+`@wcstack/state` supports SSR via the companion [`@wcstack/server`](../server/) package. The same templates you write for the client render on the server — no changes needed.
+
+### Quick Setup
+
+1. Add `enable-ssr` to your `<wcs-state>` element:
+
+```html
+<wcs-state enable-ssr>
+  <script type="module">
+    export default {
+      items: [],
+      async $connectedCallback() {
+        const res = await fetch("/api/items");
+        this.items = await res.json();
+      }
+    };
+  </script>
+</wcs-state>
+<template data-wcs="for: items">
+  <div data-wcs="textContent: items.*.name"></div>
+</template>
+```
+
+2. Render on the server:
+
+```javascript
+import { renderToString } from "@wcstack/server";
+
+const html = await renderToString(template, {
+  baseUrl: "http://localhost:3000"
+});
+```
+
+That's it. The client-side `@wcstack/state` automatically detects the `<wcs-ssr>` element, restores state from the JSON snapshot, and resumes reactivity without re-rendering.
+
+### How It Works
+
+| Phase | What happens |
+|-------|-------------|
+| **Server** | `renderToString()` runs your template in happy-dom, executes `$connectedCallback` (including `fetch()`), applies all bindings, and outputs rendered HTML with a `<wcs-ssr>` element containing hydration data |
+| **Client** | `<wcs-state enable-ssr>` loads state from `<wcs-ssr>` JSON, skips `$connectedCallback`, and `hydrateBindings()` wires up reactivity on the existing DOM |
+| **Fallback** | If server/client versions mismatch, the SSR DOM is cleaned up and `buildBindings()` runs a full client-side render |
+
+### What `enable-ssr` Does
+
+| Context | Behavior |
+|---------|----------|
+| **Server** (`renderToString`) | Generates `<wcs-ssr>` with state JSON, template fragments, and property data |
+| **Client** (hydration) | Reads `<wcs-ssr>`, restores state, skips `$connectedCallback`, hydrates bindings on existing DOM |
+
+See [`@wcstack/server` README](../server/README.md) for full API documentation.
 
 ## License
 

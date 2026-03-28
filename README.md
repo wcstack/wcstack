@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Four independent packages. Zero runtime dependencies. No build step required.
+Five independent packages. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -219,6 +219,41 @@ Four independent packages. Zero runtime dependencies. No build step required.
 
 ---
 
+### What if your templates rendered on the server?
+
+[`@wcstack/server`](packages/server/) — Same HTML, server-rendered. No special syntax needed.
+
+```javascript
+import { renderToString } from "@wcstack/server";
+
+const html = await renderToString(`
+  <wcs-state enable-ssr>
+    <script type="module">
+      export default {
+        items: [],
+        async $connectedCallback() {
+          const res = await fetch("/api/items");
+          this.items = await res.json();
+        }
+      };
+    </script>
+  </wcs-state>
+  <template data-wcs="for: items">
+    <div data-wcs="textContent: items.*.name"></div>
+  </template>
+`, { baseUrl: "http://localhost:3000" });
+```
+
+- **Drop-in SSR** — add `enable-ssr` to `<wcs-state>`, call `renderToString()`. Done.
+- **Automatic hydration** — client picks up where the server left off, zero flicker
+- **Relative URL resolution** — `baseUrl` option makes `fetch("/api/...")` work on the server
+- **Version-safe fallback** — on version mismatch, DOM is cleaned up and CSR kicks in
+- **`<wcs-ssr>` hydration data** — state snapshots, templates, and properties in one element
+
+[Full documentation &rarr;](packages/server/README.md)
+
+---
+
 ## Quick Start
 
 ```html
@@ -257,7 +292,8 @@ wcstack/
 │   ├── state/         # @wcstack/state
 │   ├── router/        # @wcstack/router
 │   ├── fetch/         # @wcstack/fetch
-│   └── autoloader/    # @wcstack/autoloader
+│   ├── autoloader/    # @wcstack/autoloader
+│   └── server/        # @wcstack/server
 ```
 
 Each package is independently built, tested, and published.
