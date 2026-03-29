@@ -1,0 +1,11 @@
+{
+  "name": "wcstack-ssr-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@wcstack/server": "^0.2.4"
+  }
+}

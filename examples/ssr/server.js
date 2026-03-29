@@ -1,18 +1,10 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { renderToString } from "../../packages/server/dist/index.esm.js";
+import { renderToString } from "@wcstack/server";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const ROOT = join(__dirname, "../..");
-
-const MIME_TYPES = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-};
 
 // Mock data
 const users = [
@@ -26,18 +18,6 @@ const users = [
 function jsonResponse(res, data, status = 200) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(data));
-}
-
-async function serveFile(res, filePath) {
-  try {
-    const content = await readFile(filePath);
-    const ext = extname(filePath);
-    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
-    res.end(content);
-  } catch {
-    res.writeHead(404);
-    res.end("Not Found");
-  }
 }
 
 // --- SSR cache ---
@@ -79,7 +59,7 @@ function wrapPage(ssrBody) {
 
 ${ssrBody}
 
-<script type="module" src="/packages/state/dist/auto.js"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </body>
 </html>`;
 }
@@ -135,11 +115,6 @@ const server = createServer(async (req, res) => {
       res.end("SSR Error: " + e.message);
     }
     return;
-  }
-
-  // Static files (packages)
-  if (path.startsWith("/packages/")) {
-    return serveFile(res, join(ROOT, path));
   }
 
   res.writeHead(404);

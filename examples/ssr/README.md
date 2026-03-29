@@ -5,7 +5,9 @@ Server-Side Rendering demo using `@wcstack/state` and `@wcstack/server`.
 ## Quick Start
 
 ```bash
-node examples/ssr/server.js
+cd examples/ssr
+npm install
+npm start
 ```
 
 Open http://localhost:3001
@@ -76,6 +78,7 @@ Browser Request
 
 | File | Description |
 |---|---|
+| `package.json` | Dependencies: `@wcstack/server`, `@wcstack/state` |
 | `server.js` | Node.js server with SSR rendering and `/api/users` endpoint |
 | `template.html` | Source template with `<wcs-state enable-ssr>` and bindings |
 

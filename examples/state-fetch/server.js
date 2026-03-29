@@ -4,7 +4,6 @@ import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const ROOT = join(__dirname, "../..");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -73,11 +72,6 @@ const server = createServer(async (req, res) => {
   // Static files
   if (path === "/" || path === "/index.html") {
     return serveFile(res, join(__dirname, "index.html"));
-  }
-
-  // Serve package dist files
-  if (path.startsWith("/packages/")) {
-    return serveFile(res, join(ROOT, path));
   }
 
   res.writeHead(404);

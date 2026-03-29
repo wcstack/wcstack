@@ -5,7 +5,9 @@
 ## クイックスタート
 
 ```bash
-node examples/ssr/server.js
+cd examples/ssr
+npm install
+npm start
 ```
 
 http://localhost:3001 を開いてください。
@@ -77,6 +79,7 @@ http://localhost:3001 を開いてください。
 
 | ファイル | 説明 |
 |---|---|
+| `package.json` | 依存パッケージ: `@wcstack/server`, `@wcstack/state` |
 | `server.js` | SSR レンダリングと `/api/users` エンドポイントを持つ Node.js サーバー |
 | `template.html` | `<wcs-state enable-ssr>` とバインディングを含むソーステンプレート |
 
