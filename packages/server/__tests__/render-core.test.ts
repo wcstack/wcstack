@@ -101,6 +101,16 @@ describe('RenderCore', () => {
       expect(core.loading).toBe(false);
       spy.mockRestore();
     });
+
+    it('Error以外のエラーがErrorに変換される', async () => {
+      const spy = vi.spyOn(renderModule, 'renderToString').mockRejectedValueOnce('string error');
+      const core = new RenderCore();
+      const result = await core.render('<p>fail</p>');
+      expect(result).toBeNull();
+      expect(core.error).toBeInstanceOf(Error);
+      expect(core.error!.message).toBe('string error');
+      spy.mockRestore();
+    });
   });
 
   describe('bind() 互換性', () => {

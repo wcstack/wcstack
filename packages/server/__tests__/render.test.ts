@@ -250,3 +250,41 @@ describe('for / if レンダリング', () => {
     expect(data.users).toHaveLength(2);
   });
 });
+
+describe('bootstraps / ready オプション', () => {
+  it('bootstraps を明示的に指定してレンダリングできる', async () => {
+    const { bootstrapState, getBindingsReady } = await import('@wcstack/state');
+    const result = await renderToString(
+      `<wcs-state json='{"msg":"custom"}'></wcs-state>
+       <p data-wcs="textContent: msg"></p>`,
+      {
+        bootstraps: [bootstrapState],
+        ready: [(doc: Document) => getBindingsReady(doc as any)],
+      }
+    );
+    expect(result).toContain('>custom<');
+  });
+
+  it('ready を空配列で指定してもエラーにならない', async () => {
+    const { bootstrapState } = await import('@wcstack/state');
+    const result = await renderToString(
+      `<p>Hello</p>`,
+      {
+        bootstraps: [bootstrapState],
+        ready: [],
+      }
+    );
+    expect(result).toContain('<p>Hello</p>');
+  });
+
+  it('bootstraps 指定で ready 省略時はデフォルト ready が空になる', async () => {
+    const { bootstrapState } = await import('@wcstack/state');
+    const result = await renderToString(
+      `<p>No ready</p>`,
+      {
+        bootstraps: [bootstrapState],
+      }
+    );
+    expect(result).toContain('<p>No ready</p>');
+  });
+});
