@@ -9,6 +9,11 @@ export function inSsr(): boolean {
   return _inSsrCache;
 }
 
+/** @internal テスト用: inSsr() キャッシュをリセット */
+export function resetSsrCache(): void {
+  _inSsrCache = null;
+}
+
 interface IInternalConfig {
   bindAttributeName: string;
   commentTextPrefix: string;
