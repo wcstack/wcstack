@@ -11,8 +11,33 @@ const _config = {
     enableShadowRoot: false,
     basenameFileExtensions: [".html"]
 };
+function deepFreeze(obj) {
+    if (obj === null || typeof obj !== "object")
+        return obj;
+    Object.freeze(obj);
+    for (const key of Object.keys(obj)) {
+        deepFreeze(obj[key]);
+    }
+    return obj;
+}
+function deepClone(obj) {
+    if (obj === null || typeof obj !== "object")
+        return obj;
+    const clone = {};
+    for (const key of Object.keys(obj)) {
+        clone[key] = deepClone(obj[key]);
+    }
+    return clone;
+}
+let frozenConfig = null;
 // 後方互換のため config もエクスポート（読み取り専用として使用）
 const config = _config;
+function getConfig() {
+    if (!frozenConfig) {
+        frozenConfig = deepFreeze(deepClone(_config));
+    }
+    return frozenConfig;
+}
 function setConfig(partialConfig) {
     if (partialConfig.tagNames) {
         Object.assign(_config.tagNames, partialConfig.tagNames);
@@ -23,6 +48,7 @@ function setConfig(partialConfig) {
     if (Array.isArray(partialConfig.basenameFileExtensions)) {
         _config.basenameFileExtensions = partialConfig.basenameFileExtensions;
     }
+    frozenConfig = null;
 }
 
 function getUUID() {
@@ -1806,5 +1832,5 @@ function bootstrapRouter(config) {
     registerComponents();
 }
 
-export { RouteCore, bootstrapRouter };
+export { RouteCore, bootstrapRouter, getConfig };
 //# sourceMappingURL=index.esm.js.map

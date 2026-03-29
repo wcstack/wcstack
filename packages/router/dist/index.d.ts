@@ -1,3 +1,12 @@
+interface ITagNames {
+    readonly route: string;
+    readonly router: string;
+    readonly outlet: string;
+    readonly layout: string;
+    readonly layoutOutlet: string;
+    readonly link: string;
+    readonly head: string;
+}
 interface IWritableTagNames {
     route?: string;
     router?: string;
@@ -6,6 +15,11 @@ interface IWritableTagNames {
     layoutOutlet?: string;
     link?: string;
     head?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+    readonly enableShadowRoot: boolean;
+    readonly basenameFileExtensions: ReadonlyArray<string>;
 }
 interface IWritableConfig {
     tagNames?: IWritableTagNames;
@@ -30,6 +44,8 @@ interface IWcBindable {
  * @param config - Optional partial configuration to override defaults
  */
 declare function bootstrapRouter(config?: Partial<IWritableConfig>): void;
+
+declare function getConfig(): IConfig;
 
 interface IRouteMatchResult {
     routes: IRoute[];
@@ -154,5 +170,5 @@ declare class RouteCore extends EventTarget {
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;
 }
 
-export { RouteCore, bootstrapRouter };
+export { RouteCore, bootstrapRouter, getConfig };
 export type { IWritableConfig, IWritableTagNames, RouteParseOptions };
