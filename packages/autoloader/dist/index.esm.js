@@ -20,8 +20,33 @@ const _config = {
         autoloader: "wcs-autoloader"
     }
 };
+function deepFreeze(obj) {
+    if (obj === null || typeof obj !== "object")
+        return obj;
+    Object.freeze(obj);
+    for (const key of Object.keys(obj)) {
+        deepFreeze(obj[key]);
+    }
+    return obj;
+}
+function deepClone(obj) {
+    if (obj === null || typeof obj !== "object")
+        return obj;
+    const clone = {};
+    for (const key of Object.keys(obj)) {
+        clone[key] = deepClone(obj[key]);
+    }
+    return clone;
+}
+let frozenConfig = null;
 // 後方互換のため config もエクスポート（読み取り専用として使用）
 const config = _config;
+function getConfig() {
+    if (!frozenConfig) {
+        frozenConfig = deepFreeze(deepClone(_config));
+    }
+    return frozenConfig;
+}
 function setConfig(partialConfig) {
     if (typeof partialConfig.scanImportmap === "boolean") {
         _config.scanImportmap = partialConfig.scanImportmap;
@@ -35,6 +60,7 @@ function setConfig(partialConfig) {
     if (partialConfig.tagNames) {
         Object.assign(_config.tagNames, partialConfig.tagNames);
     }
+    frozenConfig = null;
 }
 
 const COMPONENT_KEYWORD = "@components/";
@@ -493,5 +519,5 @@ function bootstrapAutoloader(config) {
     registerComponents();
 }
 
-export { bootstrapAutoloader };
+export { bootstrapAutoloader, getConfig };
 //# sourceMappingURL=index.esm.js.map

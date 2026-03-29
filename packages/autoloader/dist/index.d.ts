@@ -3,8 +3,17 @@ interface ILoader {
     readonly postfix: string;
     readonly loader: LoaderFunction;
 }
+interface ITagNames {
+    readonly autoloader: string;
+}
 interface IWritableTagNames {
     autoloader?: string;
+}
+interface IConfig {
+    readonly scanImportmap: boolean;
+    readonly loaders: Record<string, ILoader | string>;
+    readonly observable: boolean;
+    readonly tagNames: ITagNames;
 }
 interface IWritableConfig {
     scanImportmap?: boolean;
@@ -15,5 +24,7 @@ interface IWritableConfig {
 
 declare function bootstrapAutoloader(config?: IWritableConfig): void;
 
-export { bootstrapAutoloader };
+declare function getConfig(): IConfig;
+
+export { bootstrapAutoloader, getConfig };
 export type { ILoader, IWritableConfig, IWritableTagNames, LoaderFunction };
