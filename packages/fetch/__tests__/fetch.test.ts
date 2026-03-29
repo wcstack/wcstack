@@ -965,3 +965,61 @@ describe("registerComponents", () => {
     expect(() => registerComponents()).not.toThrow();
   });
 });
+
+describe("connectedCallbackPromise プロトコル", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+    document.body.innerHTML = "";
+  });
+
+  it("static hasConnectedCallbackPromise が true", () => {
+    expect(Fetch.hasConnectedCallbackPromise).toBe(true);
+  });
+
+  it("connectedCallbackPromise が初期状態で解決済み Promise を返す", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("manual", "");
+    const result = await el.connectedCallbackPromise;
+    expect(result).toBeUndefined();
+  });
+
+  it("auto-fetch 時に connectedCallbackPromise が fetch 完了で解決される", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ data: "test" }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    document.body.appendChild(el);
+
+    await el.connectedCallbackPromise;
+    expect(el.value).toEqual({ data: "test" });
+    expect(el.loading).toBe(false);
+  });
+
+  it("manual 時は connectedCallbackPromise が即座に解決される", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    await el.connectedCallbackPromise;
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("promise プロパティが fetch の結果を返す", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ users: [] }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    el.setAttribute("manual", "");
+
+    el.fetch();
+    const result = await el.promise;
+    expect(result).toEqual({ users: [] });
+  });
+});
