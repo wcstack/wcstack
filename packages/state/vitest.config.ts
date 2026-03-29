@@ -19,10 +19,10 @@ export default defineConfig({
         'package.json',
       ],
       thresholds: {
-        statements: 98,
-        branches: 96,
+        statements: 99.5,
+        branches: 98.5,
         functions: 100,
-        lines: 98,
+        lines: 99.5,
       },
     },
   },

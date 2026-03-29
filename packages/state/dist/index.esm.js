@@ -6443,6 +6443,9 @@ function getStateInfo(state) {
 }
 class State extends HTMLElement {
     static hasConnectedCallbackPromise = true;
+    static getBindingsReady(rootNode) {
+        return getBindingsReady(rootNode);
+    }
     __state;
     _name = 'default';
     _initialized = false;

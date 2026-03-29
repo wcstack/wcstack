@@ -57,6 +57,10 @@ function getStateInfo(
 export class State extends HTMLElement implements IStateElement {
   static hasConnectedCallbackPromise = true;
 
+  static getBindingsReady(rootNode: Node): Promise<void> {
+    return getBindingsReady(rootNode);
+  }
+
   private __state: IState | undefined;
   private _name: string = 'default';
   private _initialized: boolean = false;

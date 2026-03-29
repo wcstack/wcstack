@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
-import { createContent } from '../src/structural/createContent';
+import { createContent, createContentFromNodes } from '../src/structural/createContent';
 import * as bindingsByContent from '../src/bindings/bindingsByContent.js';
 import * as contentByNode from '../src/structural/contentsByNode.js';
 import { setFragmentInfoByUUID } from '../src/structural/fragmentInfoByUUID';
@@ -316,5 +316,23 @@ describe('createContent', () => {
     content.unmount();
 
     expect(childContent.unmount).toHaveBeenCalled();
+  });
+});
+
+describe('createContentFromNodes', () => {
+  it('空配列を渡した場合 firstNode/lastNode が null になる', () => {
+    const content = createContentFromNodes([]);
+    expect(content.firstNode).toBeNull();
+    expect(content.lastNode).toBeNull();
+    expect(content.mounted).toBe(true);
+  });
+
+  it('ノード配列を渡した場合 firstNode/lastNode が設定される', () => {
+    const a = document.createElement('p');
+    const b = document.createElement('span');
+    const content = createContentFromNodes([a, b]);
+    expect(content.firstNode).toBe(a);
+    expect(content.lastNode).toBe(b);
+    expect(content.mounted).toBe(true);
   });
 });

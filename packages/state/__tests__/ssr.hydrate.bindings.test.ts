@@ -269,4 +269,157 @@ describe("hydrateBindings", () => {
     // SSR のデータが使われている（$connectedCallback で上書きされていない）
     expect(stateEl.__state.count).toBe(42);
   });
+
+  it("if/else ブロック: else 側のハイドレーションが正しく動作する", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"loggedIn":false}</script>
+        <template id="uuid-if1" data-wcs="if: loggedIn"><p class="welcome">welcome</p></template>
+        <template id="uuid-else1" data-wcs="else:"><p class="login">please login</p></template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"loggedIn":false}'></wcs-state>
+      <!--@@wcs-if:uuid-if1-->
+      <!--@@wcs-else:uuid-else1-->
+      <!--@@wcs-else-start:uuid-else1:loggedIn-->
+      <p class="login">please login</p>
+      <!--@@wcs-else-end:uuid-else1:loggedIn-->
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(document.querySelector("p.login")?.textContent).toBe("please login");
+    expect(document.querySelector("p.welcome")).toBeNull();
+  });
+
+  it("if/elseif ブロック: elseif 側のハイドレーションが正しく動作する", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"role":"editor"}</script>
+        <template id="uuid-if2" data-wcs="if: isAdmin"><p class="admin">admin</p></template>
+        <template id="uuid-elseif2" data-wcs="elseif: isEditor"><p class="editor">editor</p></template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"role":"editor"}'></wcs-state>
+      <!--@@wcs-if:uuid-if2-->
+      <!--@@wcs-elseif:uuid-elseif2-->
+      <!--@@wcs-elseif-start:uuid-elseif2:isEditor-->
+      <p class="editor">editor</p>
+      <!--@@wcs-elseif-end:uuid-elseif2:isEditor-->
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(document.querySelector("p.editor")?.textContent).toBe("editor");
+  });
+
+  it("hydrateProps: target が見つからない場合はスキップする", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"x":1}</script>
+        <script type="application/json" data-wcs-ssr-props>{"nonexistent-id":{"innerHTML":"<b>x</b>"}}</script>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"x":1}'></wcs-state>
+      <p data-wcs="textContent: x">1</p>
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // エラーにならず正常に完了
+    expect(stateEl.__state.x).toBe(1);
+  });
+
+  it("空の for ブロック（ノードなし）は正しく処理される", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"items":[]}</script>
+        <template id="uuid-empty" data-wcs="for: items"><li></li></template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"items":[]}'></wcs-state>
+      <!--@@wcs-for:uuid-empty-->
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(stateEl.__state.items).toEqual([]);
+  });
+
+  it("for ブロック内の $index バインディングがハイドレーションされる", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"items":["A","B"]}</script>
+        <template id="uuid-idx" data-wcs="for: items">
+          <li>
+            <span class="val" data-wcs="textContent: items.*"></span>
+            <span class="idx" data-wcs="textContent: $1"></span>
+          </li>
+        </template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"items":["A","B"]}'></wcs-state>
+      <!--@@wcs-for:uuid-idx-->
+      <!--@@wcs-for-start:uuid-idx:items:0-->
+      <li><span class="val">A</span><span class="idx">0</span></li>
+      <!--@@wcs-for-end:uuid-idx:items:0-->
+      <!--@@wcs-for-start:uuid-idx:items:1-->
+      <li><span class="val">B</span><span class="idx">1</span></li>
+      <!--@@wcs-for-end:uuid-idx:items:1-->
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const vals = document.querySelectorAll(".val");
+    expect(vals[0].textContent).toBe("A");
+    expect(vals[1].textContent).toBe("B");
+  });
+
+  it("for ブロックの start/end 間にノードがない場合もエラーにならない", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"items":["A"]}</script>
+        <template id="uuid-nonode" data-wcs="for: items"><li></li></template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"items":["A"]}'></wcs-state>
+      <!--@@wcs-for:uuid-nonode-->
+      <!--@@wcs-for-start:uuid-nonode:items:0-->
+      <!--@@wcs-for-end:uuid-nonode:items:0-->
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(stateEl.__state.items).toEqual(["A"]);
+  });
+
+  it("if/elseif/else chain がハイドレーションで正しく復元される", async () => {
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"status":"warning"}</script>
+        <template id="uuid-c1" data-wcs="if: isError"><p class="error">error</p></template>
+        <template id="uuid-c2" data-wcs="elseif: isWarning"><p class="warning">warning</p></template>
+        <template id="uuid-c3" data-wcs="else:"><p class="ok">ok</p></template>
+      </wcs-ssr>
+      <wcs-state enable-ssr json='{"status":"warning"}'></wcs-state>
+      <!--@@wcs-if:uuid-c1-->
+      <!--@@wcs-elseif:uuid-c2-->
+      <!--@@wcs-elseif-start:uuid-c2:isWarning-->
+      <p class="warning">warning</p>
+      <!--@@wcs-elseif-end:uuid-c2:isWarning-->
+      <!--@@wcs-else:uuid-c3-->
+    `;
+
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(document.querySelector("p.warning")?.textContent).toBe("warning");
+  });
 });

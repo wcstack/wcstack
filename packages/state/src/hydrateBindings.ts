@@ -473,3 +473,12 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
 
   return true;
 }
+
+/** @internal テスト用 */
+export const __test = {
+  collectSsrBlocks,
+  collectBindingsFromLiveNodes,
+  hydrateBlocks,
+  findPlaceholderComment,
+  restoreFragments,
+};

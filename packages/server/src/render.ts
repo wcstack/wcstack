@@ -56,27 +56,19 @@ export function extractStateData(stateEl: any): Record<string, any> {
 }
 
 export type BootstrapFunction = () => void;
-export type ReadyFunction = (doc: Document) => Promise<void>;
 
 export interface RenderOptions {
   /** 相対 URL を解決するベース URL (例: "http://localhost:3001") */
   baseUrl?: string;
   /** bootstrap 関数の配列。省略時は @wcstack/state を自動ロード */
   bootstraps?: BootstrapFunction[];
-  /** バインディング等の非同期初期化完了を待機する関数の配列 */
-  ready?: ReadyFunction[];
 }
 
-async function loadDefaultBootstraps(): Promise<{
-  bootstraps: BootstrapFunction[];
-  ready: ReadyFunction[];
-}> {
-  const { bootstrapState, getBindingsReady } = await import('@wcstack/state');
-  return {
-    bootstraps: [bootstrapState],
-    ready: [(doc: Document) => getBindingsReady(doc as any)],
-  };
+async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
+  const { bootstrapState } = await import('@wcstack/state');
+  return [bootstrapState];
 }
+
 
 /**
  * HTML 文字列を SSR レンダリングして返す。
@@ -184,11 +176,8 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     ? installBaseUrl(options.baseUrl)
     : null;
 
-  // bootstrap / ready の解決
-  const hasCustomBootstraps = options?.bootstraps !== undefined;
-  const defaults = hasCustomBootstraps ? null : await loadDefaultBootstraps();
-  const bootstraps = options?.bootstraps ?? defaults!.bootstraps;
-  const readyFns = options?.ready ?? defaults?.ready ?? [];
+  // bootstrap の解決
+  const bootstraps = options?.bootstraps ?? await loadDefaultBootstraps();
 
   for (const bootstrap of bootstraps) {
     bootstrap();
@@ -203,18 +192,24 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
     document.body.innerHTML = html;
 
-    // connectedCallbackPromise プロトコル準拠の全カスタム要素の完了を待機
-    const promises: Promise<void>[] = [];
+    // connectedCallbackPromise / getBindingsReady プロトコルを自動検出
+    const connectedPromises: Promise<void>[] = [];
+    const readyPromises: Promise<void>[] = [];
+    const readyCtors = new Set<any>();
     for (const el of document.querySelectorAll('*-*')) {
       const ctor = el.constructor as any;
       if (ctor.hasConnectedCallbackPromise) {
-        promises.push((el as any).connectedCallbackPromise);
+        connectedPromises.push((el as any).connectedCallbackPromise);
+      }
+      if (!readyCtors.has(ctor) && typeof ctor.getBindingsReady === 'function') {
+        readyCtors.add(ctor);
+        readyPromises.push(ctor.getBindingsReady(document));
       }
     }
-    await Promise.all(promises);
+    await Promise.all(connectedPromises);
 
     // 非同期初期化の完了を待機
-    await Promise.all(readyFns.map(fn => fn(document as any)));
+    await Promise.all(readyPromises);
 
     return document.body.innerHTML;
   } finally {
