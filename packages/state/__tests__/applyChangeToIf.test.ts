@@ -26,7 +26,7 @@ import { getContentSetByNode } from '../src/structural/contentsByNode';
 import { getBindingsByContent } from '../src/bindings/bindingsByContent';
 import { applyChange } from '../src/apply/applyChange';
 import { activateContent, deactivateContent } from '../src/structural/activateContent';
-import { config } from '../src/config';
+import { config, resetSsrCache } from '../src/config';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
@@ -326,6 +326,66 @@ describe('applyChangeToIf', () => {
 
     expect(consoleSpy).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+
+  it('SSRモードでuuidがundefinedの場合に空文字にフォールバックすること', () => {
+    resetSsrCache();
+    document.documentElement.setAttribute('data-wcs-server', '');
+
+    const node = document.createComment('if');
+    document.body.appendChild(node);
+    const bindingInfo = createBindingInfo(node, undefined as any);
+    bindingInfo.uuid = undefined;
+
+    const mountAfterMock = vi.fn();
+    createContentMock.mockReturnValue({
+      firstNode: null,
+      lastNode: null,
+      mounted: false,
+      mountAfter: mountAfterMock,
+      unmount: vi.fn()
+    } as any);
+    getContentSetByNodeMock.mockReturnValue(new Set());
+
+    applyChangeToIf(bindingInfo, context, true);
+
+    expect(mountAfterMock).toHaveBeenCalled();
+    const html = document.body.innerHTML;
+    expect(html).toContain('@@wcs-if-start::');
+
+    document.documentElement.removeAttribute('data-wcs-server');
+    resetSsrCache();
+    document.body.innerHTML = '';
+  });
+
+  it('SSRモードでcontent.lastNodeがnullの場合にstartCommentをフォールバックに使うこと', () => {
+    resetSsrCache();
+    document.documentElement.setAttribute('data-wcs-server', '');
+
+    const node = document.createComment('if');
+    document.body.appendChild(node);
+    const bindingInfo = createBindingInfo(node, 'test-uuid-null-lastnode');
+
+    const mountAfterMock = vi.fn();
+    createContentMock.mockReturnValue({
+      firstNode: null,
+      lastNode: null,
+      mounted: false,
+      mountAfter: mountAfterMock,
+      unmount: vi.fn()
+    } as any);
+    getContentSetByNodeMock.mockReturnValue(new Set());
+
+    applyChangeToIf(bindingInfo, context, true);
+
+    expect(mountAfterMock).toHaveBeenCalled();
+    const html = document.body.innerHTML;
+    expect(html).toContain('@@wcs-if-start:');
+    expect(html).toContain('@@wcs-if-end:');
+
+    document.documentElement.removeAttribute('data-wcs-server');
+    resetSsrCache();
+    document.body.innerHTML = '';
   });
 
   it('接続状態が変わった場合は値が同じでも再マウントされること', () => {

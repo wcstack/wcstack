@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { inSsr, getConfig, resetSsrCache } from "../src/config";
 import { Ssr } from "../src/components/Ssr";
@@ -42,6 +42,12 @@ describe("inSsr()", () => {
     document.documentElement.removeAttribute("data-wcs-server");
     resetSsrCache();
     expect(inSsr()).toBe(false);
+  });
+
+  it("html 要素が見つからない場合は false を返す", () => {
+    const spy = vi.spyOn(document, "querySelector").mockReturnValue(null);
+    expect(inSsr()).toBe(false);
+    spy.mockRestore();
   });
 });
 
@@ -418,5 +424,111 @@ describe("SSR モードでのバインディング", () => {
     await getBindingsReady(document);
 
     expect(document.querySelector("wcs-ssr")).toBeNull();
+  });
+
+  it("SSR モードで if/else ブロックの else 側にコメントマーカーが付与される", async () => {
+    document.body.innerHTML = `
+      <wcs-state json='{"loggedIn":false}'></wcs-state>
+      <template data-wcs="if: loggedIn">
+        <p>welcome</p>
+      </template>
+      <template data-wcs="else:">
+        <p>please login</p>
+      </template>
+    `;
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await getBindingsReady(document);
+
+    const html = document.body.innerHTML;
+    expect(html).toContain("@@wcs-else-start:");
+    expect(html).toContain("@@wcs-else-end:");
+    expect(document.querySelector("p")!.textContent).toBe("please login");
+  });
+
+  it("SSR モードで enable-ssr + for テンプレートが wcs-ssr に格納される", async () => {
+    document.body.innerHTML = `
+      <wcs-state enable-ssr json='{"items":[{"name":"Alice"}]}'></wcs-state>
+      <template data-wcs="for: items">
+        <li data-wcs="textContent: .name"></li>
+      </template>
+    `;
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await getBindingsReady(document);
+
+    const ssrEl = document.querySelector("wcs-ssr");
+    expect(ssrEl).not.toBeNull();
+    const tpl = ssrEl!.querySelector("template[id]");
+    expect(tpl).not.toBeNull();
+  });
+
+  it("SSR モードで value が null の場合に空文字にフォールバックされる", async () => {
+    document.body.innerHTML = `
+      <wcs-state json='{"val":null}'></wcs-state>
+      <input data-wcs="value: val" />
+    `;
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await getBindingsReady(document);
+
+    const input = document.querySelector("input");
+    expect(input!.getAttribute("value")).toBe("");
+  });
+
+  it("SSR モードで textarea の value が null の場合に空文字にフォールバックされる", async () => {
+    document.body.innerHTML = `
+      <wcs-state json='{"val":null}'></wcs-state>
+      <textarea data-wcs="value: val"></textarea>
+    `;
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await getBindingsReady(document);
+
+    const textarea = document.querySelector("textarea");
+    expect(textarea!.textContent).toBe("");
+  });
+
+  it("SSR モードで for リストにアイテムを追加すると既存アイテムにもコメントマーカーが付与される", async () => {
+    document.body.innerHTML = `
+      <wcs-state json='{"items":["A"]}'></wcs-state>
+      <ul>
+        <template data-wcs="for: items">
+          <li data-wcs="textContent: items.*"></li>
+        </template>
+      </ul>
+    `;
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await getBindingsReady(document);
+
+    // 初期レンダリング確認
+    expect(document.querySelectorAll("li").length).toBe(1);
+
+    // state API でアイテム追加（既存要素の reorder + 新規追加パスを通す）
+    await stateEl.createStateAsync("writable", async (state: any) => {
+      state.items = ["A", "B"];
+    });
+
+    const html = document.body.innerHTML;
+    expect(document.querySelectorAll("li").length).toBe(2);
+    // 既存アイテムと新規アイテムの両方にコメントマーカーがある
+    const forStartMatches = html.match(/@@wcs-for-start:/g);
+    const forEndMatches = html.match(/@@wcs-for-end:/g);
+    expect(forStartMatches!.length).toBeGreaterThanOrEqual(2);
+    expect(forEndMatches!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("State.getBindingsReady で静的メソッドからバインディング完了を待機できる", async () => {
+    const { State } = await import("../src/components/State");
+    document.body.innerHTML = `
+      <wcs-state json='{"x":1}'></wcs-state>
+      <p data-wcs="textContent: x"></p>
+    `;
+    const stateEl = document.querySelector("wcs-state") as any;
+    await stateEl.connectedCallbackPromise;
+    await State.getBindingsReady(document);
+
+    expect(document.querySelector("p")!.textContent).toBe("1");
   });
 });

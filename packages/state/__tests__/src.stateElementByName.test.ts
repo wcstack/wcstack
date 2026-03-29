@@ -4,7 +4,7 @@ vi.mock('../src/buildBindings', () => ({
   buildBindings: vi.fn().mockResolvedValue(undefined)
 }));
 
-import { getStateElementByName, setStateElementByName } from '../src/stateElementByName';
+import { getStateElementByName, setStateElementByName, getBindingsReady } from '../src/stateElementByName';
 import { buildBindings } from '../src/buildBindings';
 import { config } from '../src/config';
 
@@ -142,6 +142,14 @@ describe('stateElementByName', () => {
       await new Promise(resolve => queueMicrotask(resolve));
 
       expect(buildBindings).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getBindingsReady', () => {
+    it('未登録の rootNode に対して即座に解決する Promise を返す', async () => {
+      const node = document.createElement('div');
+      const result = await getBindingsReady(node);
+      expect(result).toBeUndefined();
     });
   });
 });

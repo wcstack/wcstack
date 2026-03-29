@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
 import { getPathInfo } from '../src/address/PathInfo';
+import { resetSsrCache } from '../src/config';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -41,5 +42,19 @@ describe('applyChangeToText', () => {
     const binding = createBinding(textNode);
     applyChangeToText(binding, dummyContext, 'world');
     expect(textNode.nodeValue).toBe('world');
+  });
+
+  it('SSRモードでparentNodeが���いテキストノードはコメントを挿入しないこと', () => {
+    resetSsrCache();
+    document.documentElement.setAttribute('data-wcs-server', '');
+
+    // DOMに追加されていないテキストノード（parentNode === null）
+    const textNode = document.createTextNode('');
+    const binding = createBinding(textNode);
+    applyChangeToText(binding, dummyContext, 'test');
+    expect(textNode.nodeValue).toBe('test');
+
+    document.documentElement.removeAttribute('data-wcs-server');
+    resetSsrCache();
   });
 });
