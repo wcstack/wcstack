@@ -54,11 +54,8 @@ function extractStateData(stateEl) {
     return data;
 }
 async function loadDefaultBootstraps() {
-    const { bootstrapState, getBindingsReady } = await import('@wcstack/state');
-    return {
-        bootstraps: [bootstrapState],
-        ready: [(doc) => getBindingsReady(doc)],
-    };
+    const { bootstrapState } = await import('@wcstack/state');
+    return [bootstrapState];
 }
 /**
  * HTML 文字列を SSR レンダリングして返す。
@@ -164,11 +161,8 @@ async function renderToString(html, options) {
     const restoreBaseUrl = options?.baseUrl
         ? installBaseUrl(options.baseUrl)
         : null;
-    // bootstrap / ready の解決
-    const hasCustomBootstraps = options?.bootstraps !== undefined;
-    const defaults = hasCustomBootstraps ? null : await loadDefaultBootstraps();
-    const bootstraps = options?.bootstraps ?? defaults.bootstraps;
-    const readyFns = options?.ready ?? defaults?.ready ?? [];
+    // bootstrap の解決
+    const bootstraps = options?.bootstraps ?? await loadDefaultBootstraps();
     for (const bootstrap of bootstraps) {
         bootstrap();
     }
@@ -178,17 +172,23 @@ async function renderToString(html, options) {
         // HTML をパース
         // connectedCallback が自動発火 → state ロード → $connectedCallback 実行
         document.body.innerHTML = html;
-        // connectedCallbackPromise プロトコル準拠の全カスタム要素の完了を待機
-        const promises = [];
+        // connectedCallbackPromise / getBindingsReady プロトコルを自動検出
+        const connectedPromises = [];
+        const readyPromises = [];
+        const readyCtors = new Set();
         for (const el of document.querySelectorAll('*-*')) {
             const ctor = el.constructor;
             if (ctor.hasConnectedCallbackPromise) {
-                promises.push(el.connectedCallbackPromise);
+                connectedPromises.push(el.connectedCallbackPromise);
+            }
+            if (!readyCtors.has(ctor) && typeof ctor.getBindingsReady === 'function') {
+                readyCtors.add(ctor);
+                readyPromises.push(ctor.getBindingsReady(document));
             }
         }
-        await Promise.all(promises);
+        await Promise.all(connectedPromises);
         // 非同期初期化の完了を待機
-        await Promise.all(readyFns.map(fn => fn(document)));
+        await Promise.all(readyPromises);
         return document.body.innerHTML;
     }
     finally {
@@ -198,7 +198,7 @@ async function renderToString(html, options) {
     }
 }
 
-var version = "0.2.3";
+var version = "0.2.4";
 var pkg = {
 	version: version};
 

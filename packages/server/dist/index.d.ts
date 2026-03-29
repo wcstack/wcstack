@@ -6,14 +6,11 @@ declare function installBaseUrl(baseUrl: string): () => void;
 /** @deprecated Use Ssr.extractStateData() from @wcstack/state instead */
 declare function extractStateData(stateEl: any): Record<string, any>;
 type BootstrapFunction = () => void;
-type ReadyFunction = (doc: Document) => Promise<void>;
 interface RenderOptions {
     /** 相対 URL を解決するベース URL (例: "http://localhost:3001") */
     baseUrl?: string;
     /** bootstrap 関数の配列。省略時は @wcstack/state を自動ロード */
     bootstraps?: BootstrapFunction[];
-    /** バインディング等の非同期初期化完了を待機する関数の配列 */
-    ready?: ReadyFunction[];
 }
 /**
  * HTML 文字列を SSR レンダリングして返す。
@@ -156,4 +153,4 @@ declare class RenderCore extends EventTarget {
 }
 
 export { GLOBALS_KEYS, RenderCore, VERSION, extractStateData, installBaseUrl, installGlobals, renderToString };
-export type { BootstrapFunction, IWcBindable, IWcBindableProperty, ReadyFunction, RenderOptions, WcsRenderValues };
+export type { BootstrapFunction, IWcBindable, IWcBindableProperty, RenderOptions, WcsRenderValues };
