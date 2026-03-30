@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Declarative Shadow DOM</title>
+  <script type="module" src="../../dist/auto.js"></script>
+</head>
+<body>
+  <my-component>
+    <template shadowrootmode="open">
+      <p>This is a declarative shadow DOM example.</p>
+      <p>{{ message }}</p>
+      <wcs-state>
+        <script type="module">
+export default {
+  message: "Hello, World!"
+};          
+        </script>
+      </wcs-state>
+    </template>
+  </my-component>
+</body>
+</html>  
