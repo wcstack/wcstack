@@ -62,16 +62,21 @@ function setterFn(name) {
     this.stateElement.createState("writable", (state) => {
       state[name] = value;
     });
-    return true;
   }
 }
 
 // 非同期は要検討
 function callFn(name) {
-  return function () {
-    this.stateElement.createState("writable", (state) => {
-      state[name]();
-    });
+  return function (...args) {
+    if (typeof state[name] === "asyncfunction") {
+      this.stateElement.createStateAsync("writable", async (state) => {
+        await state[name](...args);
+      });
+    } else if (typeof state[name] === "function") {
+      this.stateElement.createState("writable", (state) => {
+        state[name](...args);
+      });
+    }
   }
 }
 
@@ -85,7 +90,7 @@ DCC定義判定の断片
 class {
   connectedCallback() {
     // DCC定義判定
-    const parentElement = this.parent;
+    const parentElement = this.parentNode;
     const isParentShadowRoot = (parentElement instanceof ShadowRoot);
     const hasDefinition = 
       isParentShadowRoot ? parentElement.host.hasAttribute("data-wc-definition") : false;
@@ -103,7 +108,7 @@ DCCクラス例
 
 ```js
 
-const fragment = document.createFragmentDocument();
+const fragment = document.createDocumentFragment();
 fragment.innerHTML = html;
 class extends HTMlElement {
   static fragment = fragment;
@@ -113,8 +118,8 @@ class extends HTMlElement {
   }
   connectedCallback() {
     if (this.hasAttribute("data-wc-definition")) return;
-    this.attechShadow({ mode: this.constructor.shadowRootMode });
-    this.shadowRoot.innerHTML = document.importNode(this.constructor.fragment);
+    this.attachShadow({ mode: this.constructor.shadowRootMode });
+    this.shadowRoot.innerHTML = this.constructor.fragment.cloneNode(true);
   }
   get stateElement() {
     const stateElement = this.shadowRoot.querySelector("wcs-state:not([name])");
@@ -135,10 +140,8 @@ for(const [name, desc] of Objec.entries(descriptors)) {
     newDesc.value = callFn(name);
   } else {
     newDesc.get = getterFn(name);
-    newDesc.get = setterFn(name);
+    newDesc.set = setterFn(name);
   }
   Object.defineProperty(dccClass.prototype, name, newDesc);
 }
-
-
 ```
