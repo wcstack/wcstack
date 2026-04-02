@@ -25,11 +25,12 @@
       <p>This is a declarative shadow DOM example.</p>
       <p>{{ count }}</p>
       <button data-wcs="onclick: inc">inc</button>
-      <wcs-state auto-define>
+      <wcs-state>
         <script type="module">
 export default {
   count: 0,
-  inc() { this.count++ }
+  inc() { this.count++ },
+  $bindables: ["count"]
 };          
         </script>
       </wcs-state>
@@ -68,11 +69,16 @@ function setterFn(name) {
 // 非同期は要検討
 function callFn(name) {
   return function (...args) {
-    if (typeof state[name] === "asyncfunction") {
+    let func;
+    this.stateElement.createState("readonly", (state) => {
+      func = state[name];
+    })
+    if (typeof func !== "function") return;
+    if (typeof func.constructor.name === "AsyncFunction") {
       this.stateElement.createStateAsync("writable", async (state) => {
         await state[name](...args);
       });
-    } else if (typeof state[name] === "function") {
+    } else {
       this.stateElement.createState("writable", (state) => {
         state[name](...args);
       });
@@ -94,8 +100,7 @@ class {
     const isParentShadowRoot = (parentElement instanceof ShadowRoot);
     const hasDefinition = 
       isParentShadowRoot ? parentElement.host.hasAttribute("data-wc-definition") : false;
-    const hasAutoDefine = this.hasAttribut("auto-define");
-    if (isParentShadowRoot && hasDefinition && hasAutoDefine) {
+    if (isParentShadowRoot && hasDefinition) {
       // DCC定義
       // 以降処理は行わない
       return;
@@ -108,9 +113,10 @@ DCCクラス例
 
 ```js
 
+// stateElement内
 const fragment = document.createDocumentFragment();
-fragment.innerHTML = html;
-class extends HTMlElement {
+fragment.appendChild(parentElement.shadowRoot.cloneNode(true));
+class extends HTMLElement {
   static fragment = fragment;
   static shadowRootMode = shadowRootMode;
   constructor() {
@@ -119,7 +125,7 @@ class extends HTMlElement {
   connectedCallback() {
     if (this.hasAttribute("data-wc-definition")) return;
     this.attachShadow({ mode: this.constructor.shadowRootMode });
-    this.shadowRoot.innerHTML = this.constructor.fragment.cloneNode(true);
+    this.shadowRoot.appendChild(this.constructor.fragment.cloneNode(true));
   }
   get stateElement() {
     const stateElement = this.shadowRoot.querySelector("wcs-state:not([name])");
@@ -133,9 +139,9 @@ DCCクラスにgetter/setterを生やす
 
 ```js
 const dccClass = class {...}; 
-const descriptors = Object.getOwnPropertyDescriptors(object);
-for(const [name, desc] of Objec.entries(descriptors)) {
-  const newDesc = { configurable: true, enumrable: true };
+const descriptors = Object.getOwnPropertyDescriptors(stateObj);
+for(const [name, desc] of Object.entries(descriptors)) {
+  const newDesc = { configurable: true, enumerable: true };
   if (typeof desc.value === "function") {
     newDesc.value = callFn(name);
   } else {
@@ -145,3 +151,57 @@ for(const [name, desc] of Objec.entries(descriptors)) {
   Object.defineProperty(dccClass.prototype, name, newDesc);
 }
 ```
+
+wcBindableの生成
+
+```js
+const tagName = component.tagName.toLowerCase();
+const bindables = stateObj["$bindables"] ?? [];
+const wcBindable = {
+  protocol: "wc-bindable",
+  version: 1,
+  properties: []
+};
+for(const propName of bindables) {
+  const prop = {
+    name: propName,
+    event: `${tagName}:${propName}-changed`
+  }
+  wcBindable.properties.push(prop);
+}
+return wcBindable;
+```
+
+wcBindableのカスタムイベントマップ、bindableEventMap
+stateElementが持つ
+
+```js
+const bindableEventMap = {};
+for(const propName of bindables) {
+  bindableEventMap[propName] = `${tagName}:${propName}-changed`;
+}
+return bindableEventMap;
+```
+
+CustomEvent
+
+```js
+function _setByAddress(
+  target   : object, 
+  address  : IStateAddress,
+  absAddress: IAbsoluteStateAddress,
+  value    : any, 
+  receiver : any,
+  handler  : IStateHandler
+): any {
+  try {
+
+  } finally {
+    if (address.pathInfo.path in handler.stateElement.bindableEventMap) {
+      const eventName = handler.stateElement.bindableEventMap[address.pathInfo.path];
+      handler.stateElement.dispatchEvent(new CustomEvent(eventName, {
+        detail: value,
+        bubbles: true,
+      }));
+    }
+  }

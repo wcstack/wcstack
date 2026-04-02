@@ -27,3 +27,6 @@ export const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 export const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 
 export const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
+
+export const STATE_BINDABLES_NAME = "$bindables";
+export const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Declarative Curstom Components</title>
+  <script type="module" src="../../dist/auto.js"></script>
+  <style>
+:not(:defined) {
+  display: none;
+}
+[data-wc-definition] {
+  display: none;
+}
+  </style>
+</head>
+<body>
+  <my-component data-wc-definition>
+    <template shadowrootmode="closed">
+      <div>{{ count }}</div>
+      <button data-wcs="onclick: increment">Increment</button>
+      <wcs-state>
+        <script type="module">
+export default {
+  count: 0,
+  increment() {
+    this.count++;
+  },
+  $bindables: [ "count" ]
+};          
+        </script>
+      </wcs-state>
+    </template>
+  </my-component>
+
+  <my-component data-wcs="count: cnt"></my-component>
+
+  <wcs-state>
+    <script type="module">
+export default {
+  cnt: 0,
+  get cnt2() {
+    return this.cnt * 2;
+  }
+};          
+    </script>
+  </wcs-state>
+
+  <div data-wcs="textContent: cnt2"></div>
+</body>
+</html>  

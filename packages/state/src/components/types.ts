@@ -16,6 +16,7 @@ export interface IStateElement {
   readonly version: number;
   readonly rootNode: Node;
   readonly boundComponentStateProp: string | null;
+  readonly bindableEventMap: Record<string, string>;
   setPathInfo(path: string, bindingType: BindingType): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

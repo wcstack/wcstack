@@ -157,6 +157,17 @@ export function setByAddress(
         dirty: false
       });
     }
+    // DCC bindable イベントディスパッチ
+    const eventName = stateElement.bindableEventMap[address.pathInfo.path];
+    if (eventName) {
+      const rootNode = stateElement.rootNode;
+      if (rootNode instanceof ShadowRoot) {
+        rootNode.host.dispatchEvent(new CustomEvent(eventName, {
+          detail: value,
+          bubbles: true,
+        }));
+      }
+    }
   }
 }
 

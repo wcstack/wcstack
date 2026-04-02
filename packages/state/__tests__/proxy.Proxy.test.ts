@@ -71,6 +71,7 @@ function createMockStateElement(options?: {
       version += 1;
       return version;
     },
+    bindableEventMap: {},
   };
 }
 

@@ -186,6 +186,8 @@ const STATE_CONNECTED_CALLBACK_NAME = "$connectedCallback";
 const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
+const STATE_BINDABLES_NAME = "$bindables";
+const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";
 
 const _cache$4 = new Map();
 let id = 0;
@@ -4819,6 +4821,153 @@ function createLoopContextStack() {
     return new LoopContextStack();
 }
 
+function getterFn(name) {
+    return function () {
+        const stateEl = this.stateElement;
+        if (!stateEl)
+            return undefined;
+        let value;
+        try {
+            stateEl.createState("readonly", (state) => {
+                value = state[name];
+            });
+        }
+        catch {
+            return undefined;
+        }
+        return value;
+    };
+}
+function setterFn(name) {
+    return function (value) {
+        const stateEl = this.stateElement;
+        if (!stateEl)
+            return;
+        stateEl.initializePromise.then(() => {
+            stateEl.createState("writable", (state) => {
+                state[name] = value;
+            });
+        });
+    };
+}
+function callFn(name, isAsync) {
+    if (isAsync) {
+        return function (...args) {
+            const stateEl = this.stateElement;
+            if (!stateEl)
+                return;
+            return stateEl.initializePromise.then(() => {
+                return stateEl.createStateAsync("writable", async (state) => {
+                    await state[name](...args);
+                });
+            });
+        };
+    }
+    return function (...args) {
+        const stateEl = this.stateElement;
+        if (!stateEl)
+            return;
+        stateEl.initializePromise.then(() => {
+            stateEl.createState("writable", (state) => {
+                state[name](...args);
+            });
+        });
+    };
+}
+function isInternalProperty(name) {
+    return name.startsWith("$");
+}
+
+function createWcBindable(tagName, bindables) {
+    const properties = bindables.map((propName) => ({
+        name: propName,
+        event: `${tagName}:${propName}-changed`,
+    }));
+    return {
+        protocol: "wc-bindable",
+        version: 1,
+        properties,
+    };
+}
+function createBindableEventMap(tagName, bindables) {
+    const map = {};
+    for (const propName of bindables) {
+        map[propName] = `${tagName}:${propName}-changed`;
+    }
+    return map;
+}
+
+function defineDCC(hostElement, shadowRoot, state) {
+    const tagName = hostElement.tagName.toLowerCase();
+    // バリデーション
+    if (!tagName.includes("-")) {
+        raiseError(`DCC: "${tagName}" is not a valid custom element name (must contain a hyphen).`);
+    }
+    if (customElements.get(tagName)) {
+        // 既に登録済みならスキップ
+        return;
+    }
+    // ShadowRoot は cloneNode 不可のため、template 経由で内容をクローン
+    const template = document.createElement("template");
+    template.innerHTML = shadowRoot.innerHTML;
+    const shadowRootMode = shadowRoot.mode;
+    // $bindables から wcBindable + bindableEventMap を生成
+    const bindables = Array.isArray(state[STATE_BINDABLES_NAME])
+        ? state[STATE_BINDABLES_NAME]
+        : [];
+    const wcBindable = bindables.length > 0
+        ? createWcBindable(tagName, bindables)
+        : null;
+    const bindableEventMap = bindables.length > 0
+        ? createBindableEventMap(tagName, bindables)
+        : {};
+    // DCC クラス生成
+    const stateTagSelector = `${config.tagNames.state}:not([name])`;
+    const DCCElement = class extends HTMLElement {
+        static template = template;
+        static shadowRootMode = shadowRootMode;
+        static wcBindable = wcBindable;
+        static bindableEventMap = bindableEventMap;
+        _shadow = null;
+        connectedCallback() {
+            if (this.hasAttribute(DCC_DEFINITION_ATTRIBUTE))
+                return;
+            this._shadow = this.attachShadow({ mode: DCCElement.shadowRootMode });
+            this._shadow.appendChild(DCCElement.template.content.cloneNode(true));
+            // bindableEventMap の設定
+            if (Object.keys(DCCElement.bindableEventMap).length > 0) {
+                const stateEl = this._shadow.querySelector(stateTagSelector);
+                if (stateEl) {
+                    stateEl.initializePromise.then(() => {
+                        stateEl.setBindableEventMap(DCCElement.bindableEventMap);
+                    });
+                }
+            }
+        }
+        get stateElement() {
+            return this._shadow?.querySelector(stateTagSelector);
+        }
+    };
+    // state プロパティを走査して DCC クラスのプロトタイプにgetter/setter/methodを定義
+    const descriptors = Object.getOwnPropertyDescriptors(state);
+    for (const [name, desc] of Object.entries(descriptors)) {
+        if (isInternalProperty(name))
+            continue;
+        const newDesc = { configurable: true, enumerable: true };
+        if (typeof desc.value === "function") {
+            const isAsync = desc.value.constructor?.name === "AsyncFunction";
+            newDesc.value = callFn(name, isAsync);
+        }
+        else {
+            newDesc.get = getterFn(name);
+            newDesc.set = setterFn(name);
+        }
+        Object.defineProperty(DCCElement.prototype, name, newDesc);
+    }
+    // カスタム要素登録
+    customElements.define(tagName, DCCElement);
+}
+
 /**
  * Cache for resolved path information.
  * Uses Map to safely handle property names including reserved words like "constructor" and "toString".
@@ -5469,6 +5618,17 @@ function setByAddress(target, address, value, receiver, handler) {
                 value: value,
                 dirty: false
             });
+        }
+        // DCC bindable イベントディスパッチ
+        const eventName = stateElement.bindableEventMap[address.pathInfo.path];
+        if (eventName) {
+            const rootNode = stateElement.rootNode;
+            if (rootNode instanceof ShadowRoot) {
+                rootNode.host.dispatchEvent(new CustomEvent(eventName, {
+                    detail: value,
+                    bubbles: true,
+                }));
+            }
         }
     }
 }
@@ -6469,6 +6629,7 @@ class State extends HTMLElement {
     _rootNode = null;
     _boundComponent = null;
     _boundComponentStateProp = null;
+    _bindableEventMap = {};
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -6627,6 +6788,37 @@ class State extends HTMLElement {
             }
         });
     }
+    async _initializeDCC(hostElement, shadowRoot) {
+        let state;
+        try {
+            if (this.hasAttribute('src')) {
+                const src = this.getAttribute('src');
+                if (src.endsWith('.js')) {
+                    state = await loadFromScriptFile(src);
+                }
+                else {
+                    raiseError(`DCC: Unsupported src type: ${src}`);
+                }
+            }
+            else {
+                const script = this.querySelector('script[type="module"]');
+                if (script) {
+                    state = await loadFromInnerScript(script, hostElement.tagName.toLowerCase());
+                }
+                else {
+                    raiseError(`DCC: No state source found for "${hostElement.tagName.toLowerCase()}".`);
+                }
+            }
+        }
+        catch (e) {
+            raiseError(`DCC: Failed to load state: ${e}`);
+        }
+        defineDCC(hostElement, shadowRoot, state);
+        this._initialized = true;
+        this._rootNode = null; // disconnectedCallbackでのstate参照を防止
+        this._resolveInitialize?.();
+        this._resolveConnectedCallback?.();
+    }
     _callStateDisconnectedCallback() {
         this.createState("writable", (state) => {
             // stateに"$disconnectedCallback"があるか確認し、disconnectedCallbackAPIを呼び出す
@@ -6638,6 +6830,13 @@ class State extends HTMLElement {
     async connectedCallback() {
         this._rootNode = this.getRootNode();
         if (!this._initialized) {
+            // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
+            const parentNode = this.parentNode;
+            if (parentNode instanceof ShadowRoot &&
+                parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
+                await this._initializeDCC(parentNode.host, parentNode);
+                return;
+            }
             await this._initializeBindWebComponent();
             await this._initialize();
             this._initialized = true;
@@ -6706,6 +6905,12 @@ class State extends HTMLElement {
     }
     get boundComponentStateProp() {
         return this._boundComponentStateProp;
+    }
+    get bindableEventMap() {
+        return this._bindableEventMap;
+    }
+    setBindableEventMap(map) {
+        this._bindableEventMap = map;
     }
     _addDependency(map, sourcePath, targetPath) {
         const deps = map.get(sourcePath);

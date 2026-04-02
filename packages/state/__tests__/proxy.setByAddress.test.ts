@@ -61,6 +61,7 @@ function createStateElement(overrides?: Partial<any>) {
     cache: new Map(),
     staticDependency: new Map(),
     dynamicDependency: new Map(),
+    bindableEventMap: {},
     ...overrides,
   };
 }
@@ -416,5 +417,63 @@ describe('setByAddress', () => {
 
     // クリーンアップ
     setSwapInfoByAddress(parentAddress, null);
+  });
+
+  it('bindableEventMapにパスがある場合はCustomEventがディスパッチされること', () => {
+    const target = { count: 1 };
+    const address = createStateAddress(getPathInfo('count'), null);
+
+    // ShadowRootをシミュレート
+    const hostElement = document.createElement('div');
+    const shadowRoot = hostElement.attachShadow({ mode: 'open' });
+
+    const receivedEvents: CustomEvent[] = [];
+    hostElement.addEventListener('x-el:count-changed', (e) => {
+      receivedEvents.push(e as CustomEvent);
+    });
+
+    const stateElement = createStateElement({
+      bindableEventMap: { count: 'x-el:count-changed' },
+    });
+    (stateElement as any).rootNode = shadowRoot;
+    const handler = createHandler(stateElement);
+
+    setByAddress(target, address, 42, target, handler as any);
+
+    expect(receivedEvents).toHaveLength(1);
+    expect(receivedEvents[0].detail).toBe(42);
+    expect(receivedEvents[0].bubbles).toBe(true);
+  });
+
+  it('bindableEventMapにパスがない場合はCustomEventがディスパッチされないこと', () => {
+    const target = { count: 1 };
+    const address = createStateAddress(getPathInfo('count'), null);
+
+    const hostElement = document.createElement('div');
+    const dispatchSpy = vi.spyOn(hostElement, 'dispatchEvent');
+
+    const stateElement = createStateElement({
+      bindableEventMap: {},
+    });
+    const handler = createHandler(stateElement);
+
+    setByAddress(target, address, 42, target, handler as any);
+
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rootNodeがShadowRootでない場合はCustomEventがディスパッチされないこと', () => {
+    const target = { count: 1 };
+    const address = createStateAddress(getPathInfo('count'), null);
+
+    const stateElement = createStateElement({
+      bindableEventMap: { count: 'x-el:count-changed' },
+    });
+    // rootNodeはdocument（ShadowRootではない）
+    (stateElement as any).rootNode = document;
+    const handler = createHandler(stateElement);
+
+    // エラーにならずに完了する
+    setByAddress(target, address, 42, target, handler as any);
   });
 });

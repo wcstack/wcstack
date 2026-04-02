@@ -9,7 +9,8 @@ import { IStateElement } from "./types";
 import { setStateElementByName, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
+import { defineDCC } from "../dcc/defineDCC";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
@@ -84,6 +85,7 @@ export class State extends HTMLElement implements IStateElement {
   private _rootNode: Node | null = null;
   private _boundComponent: Element | null = null;
   private _boundComponentStateProp: string | null = null;
+  private _bindableEventMap: Record<string, string> = {};
 
   constructor() {
     super();
@@ -239,6 +241,34 @@ export class State extends HTMLElement implements IStateElement {
     });
   }
 
+  private async _initializeDCC(hostElement: Element, shadowRoot: ShadowRoot): Promise<void> {
+    let state: IState;
+    try {
+      if (this.hasAttribute('src')) {
+        const src = this.getAttribute('src')!;
+        if (src.endsWith('.js')) {
+          state = await loadFromScriptFile(src);
+        } else {
+          raiseError(`DCC: Unsupported src type: ${src}`);
+        }
+      } else {
+        const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
+        if (script) {
+          state = await loadFromInnerScript(script, hostElement.tagName.toLowerCase());
+        } else {
+          raiseError(`DCC: No state source found for "${hostElement.tagName.toLowerCase()}".`);
+        }
+      }
+    } catch (e) {
+      raiseError(`DCC: Failed to load state: ${e}`);
+    }
+    defineDCC(hostElement, shadowRoot, state!);
+    this._initialized = true;
+    this._rootNode = null; // disconnectedCallbackでのstate参照を防止
+    this._resolveInitialize?.();
+    this._resolveConnectedCallback?.();
+  }
+
   private _callStateDisconnectedCallback(): void {
     this.createState("writable", (state) => {
       // stateに"$disconnectedCallback"があるか確認し、disconnectedCallbackAPIを呼び出す
@@ -251,6 +281,13 @@ export class State extends HTMLElement implements IStateElement {
   async connectedCallback() {
     this._rootNode = this.getRootNode() as Node;
     if (!this._initialized) {
+      // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
+      const parentNode = this.parentNode;
+      if (parentNode instanceof ShadowRoot &&
+          parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
+        await this._initializeDCC(parentNode.host, parentNode);
+        return;
+      }
       await this._initializeBindWebComponent();
       await this._initialize();
       this._initialized = true;
@@ -335,6 +372,14 @@ export class State extends HTMLElement implements IStateElement {
 
   get boundComponentStateProp(): string | null {
     return this._boundComponentStateProp;
+  }
+
+  get bindableEventMap(): Record<string, string> {
+    return this._bindableEventMap;
+  }
+
+  setBindableEventMap(map: Record<string, string>): void {
+    this._bindableEventMap = map;
   }
 
   private _addDependency(
