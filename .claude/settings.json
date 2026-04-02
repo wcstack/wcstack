@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''description'''',''''''''\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''full_name'''',''''''''\\)\\)\")",
+      "WebFetch(domain:lit.dev)",
+      "WebFetch(domain:hybrids.js.org)",
+      "WebFetch(domain:stenciljs.com)",
+      "WebFetch(domain:minze.dev)",
+      "WebFetch(domain:atomicojs.dev)"
+    ]
+  }
+}
