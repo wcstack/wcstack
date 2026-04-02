@@ -774,6 +774,7 @@ describe("autoTrigger", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    setConfig({ autoTrigger: true });
     fetchSpy = vi.spyOn(globalThis, "fetch");
     fetchSpy.mockResolvedValue(createMockResponse({ ok: true }));
   });
@@ -876,6 +877,7 @@ describe("autoTrigger", () => {
   it("unregisterAutoTrigger後はイベントが発火しない", () => {
     registerAutoTrigger();
     unregisterAutoTrigger();
+    setConfig({ autoTrigger: false });
 
     const el = document.createElement("wcs-fetch") as Fetch;
     el.id = "my-fetch";

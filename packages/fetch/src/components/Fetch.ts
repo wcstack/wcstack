@@ -3,6 +3,7 @@ import { IWcBindable } from "../types.js";
 import { FetchCore } from "../core/FetchCore.js";
 import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
+import { registerAutoTrigger } from "../autoTrigger.js";
 
 export class Fetch extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -187,6 +188,9 @@ export class Fetch extends HTMLElement {
 
   connectedCallback(): void {
     this.style.display = "none";
+    if (config.autoTrigger) {
+      registerAutoTrigger();
+    }
     if (!this.manual && this.url) {
       this._connectedCallbackPromise = this.fetch().then(() => {});
     }
