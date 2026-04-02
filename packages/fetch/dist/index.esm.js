@@ -185,6 +185,30 @@ class FetchCore extends EventTarget {
     }
 }
 
+let registered = false;
+function handleClick(event) {
+    const target = event.target;
+    if (!(target instanceof Element))
+        return;
+    const triggerElement = target.closest(`[${config.triggerAttribute}]`);
+    if (!triggerElement)
+        return;
+    const fetchId = triggerElement.getAttribute(config.triggerAttribute);
+    if (!fetchId)
+        return;
+    const fetchElement = document.getElementById(fetchId);
+    if (!fetchElement || !(fetchElement instanceof Fetch))
+        return;
+    event.preventDefault();
+    fetchElement.fetch();
+}
+function registerAutoTrigger() {
+    if (registered)
+        return;
+    registered = true;
+    document.addEventListener("click", handleClick);
+}
+
 class Fetch extends HTMLElement {
     static hasConnectedCallbackPromise = true;
     static wcBindable = {
@@ -338,6 +362,9 @@ class Fetch extends HTMLElement {
     }
     connectedCallback() {
         this.style.display = "none";
+        if (config.autoTrigger) {
+            registerAutoTrigger();
+        }
         if (!this.manual && this.url) {
             this._connectedCallbackPromise = this.fetch().then(() => { });
         }
@@ -385,38 +412,11 @@ function registerComponents() {
     }
 }
 
-let registered = false;
-function handleClick(event) {
-    const target = event.target;
-    if (!(target instanceof Element))
-        return;
-    const triggerElement = target.closest(`[${config.triggerAttribute}]`);
-    if (!triggerElement)
-        return;
-    const fetchId = triggerElement.getAttribute(config.triggerAttribute);
-    if (!fetchId)
-        return;
-    const fetchElement = document.getElementById(fetchId);
-    if (!fetchElement || !(fetchElement instanceof Fetch))
-        return;
-    event.preventDefault();
-    fetchElement.fetch();
-}
-function registerAutoTrigger() {
-    if (registered)
-        return;
-    registered = true;
-    document.addEventListener("click", handleClick);
-}
-
 function bootstrapFetch(userConfig) {
     if (userConfig) {
         setConfig(userConfig);
     }
     registerComponents();
-    if (config.autoTrigger) {
-        registerAutoTrigger();
-    }
 }
 
 export { FetchCore, bootstrapFetch, getConfig };
