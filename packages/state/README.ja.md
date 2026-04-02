@@ -1015,6 +1015,106 @@ customElements.define("my-component", MyComponent);
 </template>
 ```
 
+## 宣言的カスタムコンポーネント (DCC)
+
+JavaScript のクラス定義なしで、**HTML だけ**でカスタム要素を定義できます。`data-wc-definition` と Declarative Shadow DOM (`<template shadowrootmode>`) を使い、リアクティブな状態を持つ再利用可能なコンポーネントをインラインで宣言します。
+
+### 基本的な定義
+
+```html
+<!-- 1. コンポーネントを定義（CSSで非表示） -->
+<my-counter data-wc-definition>
+  <template shadowrootmode="open">
+    <p>{{ count }}</p>
+    <button data-wcs="onclick: increment">+1</button>
+    <wcs-state>
+      <script type="module">
+        export default {
+          count: 0,
+          increment() { this.count++; },
+          $bindables: ["count"]
+        };
+      </script>
+    </wcs-state>
+  </template>
+</my-counter>
+
+<!-- 2. 使う — 各インスタンスが独自の状態を持つ -->
+<my-counter></my-counter>
+<my-counter></my-counter>
+```
+
+`<wcs-state>` が `data-wc-definition` 付きのホスト内にあることを検出すると：
+
+1. 状態オブジェクトをロード（`<script type="module">` または `src="*.js"`）
+2. getter/setter/メソッドをプロトタイプに定義したカスタム要素クラスを生成
+3. `customElements.define()` で登録
+
+定義要素は非表示になり、各インスタンスはテンプレートを自身の Shadow DOM にクローンして、独自の `<wcs-state>` を初期化します。
+
+### 推奨 CSS
+
+```css
+:not(:defined) { display: none; }
+[data-wc-definition] { display: none; }
+```
+
+### `$bindables` と wc-bindable プロトコル
+
+`$bindables` 配列は、変更イベント付きのコンポーネントプロパティとして公開する状態プロパティを宣言します。[wc-bindable プロトコル](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md)に準拠しています：
+
+```javascript
+export default {
+  count: 0,
+  increment() { this.count++; },
+  $bindables: ["count"]
+};
+```
+
+これにより以下が生成されます：
+
+- クラスの `static wcBindable` — フレームワークアダプタ用のプロトコルメタデータ
+- プロトタイプの getter/setter — リアクティブプロキシ経由で読み書き
+- `CustomEvent` のディスパッチ — 値が変更されるたびに `my-counter:count-changed` が発火
+
+### DCC プロパティへのバインディング
+
+他の `<wcs-state>` インスタンスから、通常の Web Component と同じように DCC プロパティにバインドできます：
+
+```html
+<my-counter data-wcs="count: parentCount"></my-counter>
+
+<wcs-state>
+  <script type="module">
+    export default { parentCount: 0 };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: parentCount"></div>
+```
+
+### Shadow Root モード
+
+`open` と `closed` の両モードに対応しています：
+
+```html
+<my-component data-wc-definition>
+  <template shadowrootmode="closed">
+    <!-- closed shadow DOM -->
+  </template>
+</my-component>
+```
+
+### 内部プロパティ
+
+`$` プレフィックス付きのプロパティは内部用で、コンポーネントのプロトタイプには公開されません：
+
+| プロパティ | 用途 |
+|----------|---------|
+| `$bindables` | 観測可能プロパティの宣言 |
+| `$connectedCallback` | ライフサイクルフック（各インスタンスで実行） |
+| `$disconnectedCallback` | クリーンアップフック |
+| `$updatedCallback` | 状態変更後に呼ばれる |
+
 ## SVG サポート
 
 全てのバインディングが `<svg>` 要素内で動作します。SVG 属性には `attr.*` を使用します：

@@ -1015,6 +1015,106 @@ customElements.define("my-component", MyComponent);
 </template>
 ```
 
+## Declarative Custom Components (DCC)
+
+Define custom elements **entirely in HTML** — no JavaScript class definition needed. Using `data-wc-definition` and Declarative Shadow DOM (`<template shadowrootmode>`), you can declare reusable components with reactive state inline.
+
+### Basic Definition
+
+```html
+<!-- 1. Define the component (hidden by CSS) -->
+<my-counter data-wc-definition>
+  <template shadowrootmode="open">
+    <p>{{ count }}</p>
+    <button data-wcs="onclick: increment">+1</button>
+    <wcs-state>
+      <script type="module">
+        export default {
+          count: 0,
+          increment() { this.count++; },
+          $bindables: ["count"]
+        };
+      </script>
+    </wcs-state>
+  </template>
+</my-counter>
+
+<!-- 2. Use it — each instance gets its own state -->
+<my-counter></my-counter>
+<my-counter></my-counter>
+```
+
+When `<wcs-state>` detects it is inside a `data-wc-definition` host, it:
+
+1. Loads the state object (from `<script type="module">` or `src="*.js"`)
+2. Generates a custom element class with getter/setter/method properties on the prototype
+3. Registers it via `customElements.define()`
+
+The definition element is hidden; each instance clones the template into its own Shadow DOM and initializes its own `<wcs-state>`.
+
+### Recommended CSS
+
+```css
+:not(:defined) { display: none; }
+[data-wc-definition] { display: none; }
+```
+
+### `$bindables` and wc-bindable Protocol
+
+The `$bindables` array declares which state properties are exposed as component properties with change events, following the [wc-bindable protocol](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md):
+
+```javascript
+export default {
+  count: 0,
+  increment() { this.count++; },
+  $bindables: ["count"]
+};
+```
+
+This generates:
+
+- `static wcBindable` on the class — protocol metadata for framework adapters
+- Getter/setter on the prototype — reads/writes go through the reactive proxy
+- `CustomEvent` dispatch — `my-counter:count-changed` fires on every mutation
+
+### Binding to DCC Properties
+
+Other `<wcs-state>` instances can bind to DCC properties just like any Web Component:
+
+```html
+<my-counter data-wcs="count: parentCount"></my-counter>
+
+<wcs-state>
+  <script type="module">
+    export default { parentCount: 0 };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: parentCount"></div>
+```
+
+### Shadow Root Mode
+
+Both `open` and `closed` modes are supported:
+
+```html
+<my-component data-wc-definition>
+  <template shadowrootmode="closed">
+    <!-- closed shadow DOM -->
+  </template>
+</my-component>
+```
+
+### Internal Properties
+
+Properties prefixed with `$` are internal and not exposed on the component prototype:
+
+| Property | Purpose |
+|----------|---------|
+| `$bindables` | Declares observable properties |
+| `$connectedCallback` | Lifecycle hook (runs on each instance) |
+| `$disconnectedCallback` | Cleanup hook |
+| `$updatedCallback` | Called after state mutations |
+
 ## SVG Support
 
 All bindings work inside `<svg>` elements. Use `attr.*` for SVG attributes:
