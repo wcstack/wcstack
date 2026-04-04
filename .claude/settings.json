@@ -7,7 +7,12 @@
       "WebFetch(domain:hybrids.js.org)",
       "WebFetch(domain:stenciljs.com)",
       "WebFetch(domain:minze.dev)",
-      "WebFetch(domain:atomicojs.dev)"
+      "WebFetch(domain:atomicojs.dev)",
+      "Bash(git log:*)",
+      "Bash(npx rollup:*)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src"
     ]
   }
 }
