@@ -181,8 +181,6 @@ class AuthCore extends EventTarget {
      * Sync authentication state from the Auth0 client.
      */
     async _syncState() {
-        if (!this._client)
-            return;
         const isAuthenticated = await this._client.isAuthenticated();
         this._setAuthenticated(isAuthenticated);
         if (isAuthenticated) {

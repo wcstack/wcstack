@@ -1,0 +1,11 @@
+{
+  "name": "wcstack-example-state-websocket",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}

@@ -9,7 +9,11 @@
       "WebFetch(domain:minze.dev)",
       "WebFetch(domain:atomicojs.dev)",
       "Bash(git log:*)",
-      "Bash(npx rollup:*)"
+      "Bash(npx rollup:*)",
+      "Bash(xargs cat:*)",
+      "Bash(timeout 3 node examples/state-websocket/server.js)",
+      "Bash(node --input-type=module -e \":*)",
+      "Bash(node -e \"console.log\\(Buffer.from\\(''b37a4f2cc0624f1690f64606cf39594db2bec4ea'',''hex''\\).toString\\(''base64''\\)\\)\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src"

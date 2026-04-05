@@ -1253,6 +1253,14 @@ function getNavigation() {
  * Container element that manages route definitions and navigation.
  */
 class Router extends HTMLElement {
+    static wcBindable = {
+        protocol: "wc-bindable",
+        version: 1,
+        properties: [
+            { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
+            { name: "path", event: "wcs-router:path-changed" },
+        ],
+    };
     static _instance = null;
     _outlet = null;
     _template = null;
@@ -1262,6 +1270,7 @@ class Router extends HTMLElement {
     _initialized = false;
     _fallbackRoute = null;
     _listeningPopState = false;
+    _navigateUrl = null;
     constructor() {
         super();
         if (Router._instance) {
@@ -1387,7 +1396,14 @@ class Router extends HTMLElement {
      * applyRoute 内で設定される値です。
      */
     set path(value) {
+        const changed = this._path !== value;
         this._path = value;
+        if (changed) {
+            this.dispatchEvent(new CustomEvent("wcs-router:path-changed", {
+                detail: value,
+                bubbles: true,
+            }));
+        }
     }
     get fallbackRoute() {
         return this._fallbackRoute;
@@ -1397,6 +1413,21 @@ class Router extends HTMLElement {
      */
     set fallbackRoute(value) {
         this._fallbackRoute = value;
+    }
+    get navigateUrl() {
+        return this._navigateUrl;
+    }
+    set navigateUrl(value) {
+        if (value === null || value === undefined || value === "")
+            return;
+        this._navigateUrl = value;
+        this.navigate(value).then(() => {
+            this._navigateUrl = null;
+            this.dispatchEvent(new CustomEvent("wcs-router:navigate-url-changed", {
+                detail: null,
+                bubbles: true,
+            }));
+        });
     }
     async navigate(path) {
         const fullPath = this._joinInternalPath(this._basename, path);
@@ -1832,5 +1863,5 @@ function bootstrapRouter(config) {
     registerComponents();
 }
 
-export { RouteCore, bootstrapRouter, getConfig };
+export { RouteCore, Router, bootstrapRouter, getConfig };
 //# sourceMappingURL=index.esm.js.map

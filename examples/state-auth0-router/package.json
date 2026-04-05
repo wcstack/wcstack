@@ -1,0 +1,11 @@
+{
+  "name": "wcstack-example-state-auth0-router",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@auth0/auth0-spa-js": "^2.8.0"
+  }
+}

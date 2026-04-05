@@ -112,6 +112,71 @@ interface IOutlet {
     lastRoutes: IRoute[];
 }
 
+/**
+ * AppRoutes - Root component for @wcstack/router
+ *
+ * Container element that manages route definitions and navigation.
+ */
+declare class Router extends HTMLElement implements IRouter {
+    static wcBindable: IWcBindable;
+    private static _instance;
+    private _outlet;
+    private _template;
+    private _routeChildNodes;
+    private _basename;
+    private _path;
+    private _initialized;
+    private _fallbackRoute;
+    private _listeningPopState;
+    private _navigateUrl;
+    constructor();
+    /**
+     * Normalize a URL pathname to a route path.
+     * - ensure leading slash
+     * - collapse multiple slashes
+     * - treat trailing file extensions (e.g. .html) as directory root
+     * - remove trailing slash except root "/"
+     */
+    private _normalizePathname;
+    /**
+     * Normalize basename.
+     * - "" or "/" -> ""
+     * - "/app/" -> "/app"
+     * - "/app/index.html" -> "/app"
+     */
+    private _normalizeBasename;
+    private _joinInternalPath;
+    private _notifyLocationChange;
+    private _getBasename;
+    static get instance(): IRouter;
+    static navigate(path: string): void;
+    get basename(): string;
+    private _getOutlet;
+    private _getTemplate;
+    get outlet(): IOutlet;
+    get template(): HTMLTemplateElement;
+    get routeChildNodes(): IRoute[];
+    get path(): string;
+    /**
+     * applyRoute 内で設定される値です。
+     */
+    set path(value: string);
+    get fallbackRoute(): IRoute | null;
+    /**
+     * Routeのfallback属性がある場合にそのルートを設定します。
+     */
+    set fallbackRoute(value: IRoute | null);
+    get navigateUrl(): string | null;
+    set navigateUrl(value: string | null);
+    navigate(path: string): Promise<void>;
+    private _onNavigateFunc;
+    private _onNavigate;
+    private _onPopState;
+    private _initialize;
+    connectedCallback(): Promise<void>;
+    disconnectedCallback(): void;
+}
+
 interface RouteParseOptions {
     isIndex?: boolean;
     isFallback?: boolean;
@@ -170,5 +235,5 @@ declare class RouteCore extends EventTarget {
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;
 }
 
-export { RouteCore, bootstrapRouter, getConfig };
+export { RouteCore, Router, bootstrapRouter, getConfig };
 export type { IWritableConfig, IWritableTagNames, RouteParseOptions };

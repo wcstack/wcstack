@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + ai demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f0f2f8;
+      --panel: rgba(255, 255, 255, 0.92);
+      --ink: #1a1a2e;
+      --muted: #5c5c7a;
+      --line: rgba(90, 90, 140, 0.15);
+      --brand: #6366f1;
+      --brand-strong: #4f46e5;
+      --accent: #ec4899;
+      --danger: #dc2626;
+      --shadow: 0 20px 50px rgba(26, 26, 46, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(99, 102, 241, 0.12), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(236, 72, 153, 0.10), transparent 30%),
+        linear-gradient(180deg, #f8f9fd 0%, var(--bg) 100%);
+    }
+
+    main {
+      width: min(760px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 32px 0 64px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 12px;
+      padding: 0 0 24px;
+    }
+
+    .eyebrow {
+      color: var(--brand);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      max-width: 600px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.7;
+    }
+
+    /* --- chat --- */
+
+    .chat-container {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 500px;
+    }
+
+    .chat-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-header h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .model-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, 0.10);
+      color: var(--brand-strong);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .chat-messages {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 300px;
+    }
+
+    .msg {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 18px;
+      line-height: 1.65;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background: var(--brand);
+      color: #fff;
+      border-bottom-right-radius: 6px;
+    }
+
+    .msg-assistant {
+      align-self: flex-start;
+      background: rgba(99, 102, 241, 0.08);
+      color: var(--ink);
+      border-bottom-left-radius: 6px;
+    }
+
+    .msg-role {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+      opacity: 0.6;
+    }
+
+    .empty-state {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+      text-align: center;
+      line-height: 1.8;
+      padding: 40px 20px;
+    }
+
+    .streaming-dot::after {
+      content: "●";
+      animation: blink 1s steps(2) infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* --- input --- */
+
+    .chat-input {
+      padding: 16px 20px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    .chat-input textarea {
+      flex: 1;
+      resize: none;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 16px;
+      font: inherit;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      background: rgba(255, 255, 255, 0.6);
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.2s;
+      min-height: 48px;
+      max-height: 160px;
+      field-sizing: content;
+    }
+
+    .chat-input textarea:focus {
+      border-color: var(--brand);
+    }
+
+    .chat-input textarea::placeholder {
+      color: var(--muted);
+      opacity: 0.6;
+    }
+
+    .send-btn {
+      appearance: none;
+      border: 0;
+      background: var(--brand);
+      color: #fff;
+      border-radius: 14px;
+      padding: 12px 20px;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.18s;
+      white-space: nowrap;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      background: var(--brand-strong);
+      transform: translateY(-1px);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* --- meta --- */
+
+    .meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 14px 20px;
+      border-top: 1px solid var(--line);
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .meta-item strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .callout {
+      border-radius: 18px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .callout strong {
+      color: var(--ink);
+    }
+
+    .error {
+      border-color: rgba(220, 38, 38, 0.22);
+      background: rgba(254, 242, 242, 0.92);
+      color: var(--danger);
+    }
+
+    @media (max-width: 640px) {
+      main { padding-top: 16px; }
+      .chat-container { border-radius: 18px; min-height: 400px; }
+    }
+  </style>
+
+  <script type="module" src="/packages/state/dist/auto.js"></script>
+  <script type="module" src="/packages/ai/dist/auto.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      const demoConfig = __DEMO_CONFIG__;
+
+      export default {
+        demoConfig,
+        userInput: "",
+        assistantText: "",
+        chatHistory: [],
+        isLoading: false,
+        isStreaming: false,
+        error: null,
+        usage: null,
+        sendRequested: false,
+        inputText: "",
+
+        get missingConfig() {
+          return !this.demoConfig.ready;
+        },
+
+        get canSend() {
+          return this.demoConfig.ready && this.inputText.trim() !== "" && !this.isLoading;
+        },
+
+        get displayMessages() {
+          return this.chatHistory.filter(m => m.role !== "system");
+        },
+
+        get hasMessages() {
+          return this.displayMessages.length > 0;
+        },
+
+
+        get showStreaming() {
+          return this.isStreaming && this.assistantText !== "";
+        },
+
+        get totalTokens() {
+          return this.usage?.totalTokens ?? 0;
+        },
+
+        get promptTokens() {
+          return this.usage?.promptTokens ?? 0;
+        },
+
+        get completionTokens() {
+          return this.usage?.completionTokens ?? 0;
+        },
+
+        get hasUsage() {
+          return this.usage !== null;
+        },
+
+        get errorMessage() {
+          if (!this.error) return "";
+          return this.error.message || this.error.body || String(this.error);
+        },
+
+        sendMessage() {
+          const text = this.inputText.trim();
+          if (!text || this.isLoading) return;
+          this.userInput = text;
+          this.inputText = "";
+          this.sendRequested = true;
+        },
+
+        handleKeydown(e) {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            this.sendMessage();
+          }
+        },
+      };
+    </script>
+  </wcs-state>
+
+  __AI_ELEMENT__
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">Local Demo</span>
+      <h1>state と ai で作る<br>ストリーミングチャット</h1>
+      <p class="lead">
+        <code>&lt;wcs-ai&gt;</code> のストリーミング出力を <code>&lt;wcs-state&gt;</code> にバインドし、
+        リアルタイムでチャット UI に反映しています。
+      </p>
+    </section>
+
+    <template data-wcs="if: missingConfig">
+      <div class="callout" style="margin-bottom: 18px;">
+        <strong>未設定です。</strong><br>
+        サーバー起動前に <code>AI_BASE_URL</code> を環境変数で渡してください。<br>
+        必要に応じて <code>AI_PROVIDER</code>・<code>AI_MODEL</code>・<code>AI_API_KEY</code> も指定できます。
+      </div>
+    </template>
+
+    <div class="chat-container">
+      <div class="chat-header">
+        <h2>Chat</h2>
+        <span class="model-badge" data-wcs="textContent: demoConfig.model"></span>
+      </div>
+
+      <div class="chat-messages">
+        <template data-wcs="if: hasMessages|not">
+          <div class="empty-state">
+            メッセージを入力して送信してください。<br>
+            AI がストリーミングで応答します。
+          </div>
+        </template>
+
+        <template data-wcs="for: displayMessages">
+          <div>
+            <template data-wcs="if: displayMessages.*.role|equals(user)">
+              <div class="msg msg-user">
+                <div class="msg-role">You</div>
+                <div data-wcs="textContent: displayMessages.*.content"></div>
+              </div>
+            </template>
+            <template data-wcs="if: displayMessages.*.role|equals(assistant)">
+              <div class="msg msg-assistant">
+                <div class="msg-role">Assistant</div>
+                <div data-wcs="textContent: displayMessages.*.content"></div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <template data-wcs="if: showStreaming">
+          <div class="msg msg-assistant">
+            <div class="msg-role">Assistant <span class="streaming-dot"></span></div>
+            <div data-wcs="textContent: assistantText"></div>
+          </div>
+        </template>
+      </div>
+
+      <template data-wcs="if: error">
+        <div class="callout error" style="margin: 0 20px 12px;">
+          <strong>Error</strong><br>
+          <span data-wcs="textContent: errorMessage"></span>
+        </div>
+      </template>
+
+      <template data-wcs="if: hasUsage">
+        <div class="meta-bar">
+          <div class="meta-item">Prompt: <strong data-wcs="textContent: promptTokens"></strong></div>
+          <div class="meta-item">Completion: <strong data-wcs="textContent: completionTokens"></strong></div>
+          <div class="meta-item">Total: <strong data-wcs="textContent: totalTokens"></strong> tokens</div>
+        </div>
+      </template>
+
+      <div class="chat-input">
+        <textarea
+          rows="1"
+          placeholder="メッセージを入力…"
+          data-wcs="value: inputText; onkeydown: handleKeydown"
+        ></textarea>
+        <button class="send-btn" data-wcs="onclick: sendMessage; disabled: canSend|not">
+          Send
+        </button>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

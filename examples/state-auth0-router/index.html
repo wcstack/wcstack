@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + auth0 + router demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3efe6;
+      --panel: rgba(255, 250, 242, 0.92);
+      --ink: #1c1917;
+      --muted: #6b6158;
+      --line: rgba(117, 98, 74, 0.18);
+      --brand: #0f766e;
+      --brand-strong: #115e59;
+      --accent: #b45309;
+      --danger: #b91c1c;
+      --shadow: 0 24px 60px rgba(28, 25, 23, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(180, 83, 9, 0.14), transparent 24%),
+        linear-gradient(180deg, #fbf8f2 0%, var(--bg) 100%);
+    }
+
+    main {
+      width: min(1040px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 40px 0 64px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 14px;
+      padding: 12px 0 28px;
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.1rem, 4.8vw, 4rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.02rem;
+      line-height: 1.7;
+    }
+
+    /* --- nav --- */
+
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 0 0;
+    }
+
+    nav a,
+    nav wcs-link a {
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--muted);
+      background: transparent;
+      transition: background 0.18s ease, color 0.18s ease;
+    }
+
+    nav a:hover { background: rgba(28, 25, 23, 0.06); color: var(--ink); }
+    nav a.active { background: var(--brand); color: #fff; }
+
+    /* --- grid / panel --- */
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      padding: 24px;
+    }
+
+    .panel h2,
+    .panel h3 {
+      margin: 0 0 14px;
+      font-size: 1.1rem;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .meta {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .meta-card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.58);
+    }
+
+    .meta-card strong {
+      display: block;
+      font-size: 0.74rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 7px;
+    }
+
+    .meta-card span {
+      display: block;
+      font-size: 0.98rem;
+      word-break: break-word;
+    }
+
+    .auth-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    button,
+    .logout-button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      cursor: pointer;
+      transition: transform 0.18s ease, opacity 0.18s ease, background 0.18s ease;
+    }
+
+    button:hover,
+    .logout-button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+      transform: none;
+    }
+
+    .primary {
+      background: var(--brand);
+      color: #fff;
+    }
+
+    .secondary,
+    .logout-button {
+      background: rgba(28, 25, 23, 0.08);
+      color: var(--ink);
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #d97706;
+      box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.12);
+    }
+
+    .dot.live {
+      background: #16a34a;
+      box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.12);
+    }
+
+    .callout {
+      border-radius: 18px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .callout strong {
+      color: var(--ink);
+    }
+
+    .error {
+      border-color: rgba(185, 28, 28, 0.22);
+      background: rgba(254, 242, 242, 0.92);
+      color: var(--danger);
+    }
+
+    .profile {
+      display: grid;
+      gap: 16px;
+    }
+
+    .profile-header {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(15, 118, 110, 0.16), rgba(180, 83, 9, 0.18));
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    .profile-header p,
+    .profile-header h3 {
+      margin: 0;
+    }
+
+    .profile-header p {
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    dl {
+      margin: 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .field {
+      padding: 13px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.58);
+      border: 1px solid var(--line);
+    }
+
+    dt {
+      margin: 0 0 6px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    dd {
+      margin: 0;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+
+    pre {
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      font-size: 0.86rem;
+      line-height: 1.55;
+      border-radius: 18px;
+      background: #18181b;
+      color: #f8fafc;
+    }
+
+    code { font-family: Consolas, "Courier New", monospace; }
+
+    .pill {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--brand-strong);
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .empty {
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+      .meta { grid-template-columns: 1fr; }
+      main { width: min(100vw - 20px, 1040px); padding-top: 24px; }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "@auth0/auth0-spa-js": "/examples/state-auth0-router/node_modules/@auth0/auth0-spa-js/dist/auth0-spa-js.production.esm.js"
+      }
+    }
+  </script>
+  <script type="module" src="/packages/state/dist/auto.js"></script>
+  <script type="module" src="/packages/auth0/dist/auto.js"></script>
+  <script type="module" src="/packages/router/dist/auto.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      const demoConfig = __DEMO_CONFIG__;
+
+      export default {
+        demoConfig,
+        authenticated: false,
+        user: null,
+        token: null,
+        loading: false,
+        error: null,
+        loginRequested: false,
+        tokenCopied: false,
+        navigateTo: null,
+
+        get avatarInitial() {
+          const source = this.user?.name || this.user?.nickname || this.user?.email || "?";
+          return source.slice(0, 1).toUpperCase();
+        },
+
+        get authStatusLabel() {
+          return this.authenticated ? "Authenticated" : "Signed out";
+        },
+
+        get loginModeLabel() {
+          return this.demoConfig.popup ? "Popup" : "Redirect";
+        },
+
+        get emailVerifiedLabel() {
+          return this.user?.email_verified ? "true" : "false";
+        },
+
+        get missingConfig() {
+          return !this.demoConfig.ready;
+        },
+
+        get canUseDemo() {
+          return this.demoConfig.ready;
+        },
+
+        get canCopyToken() {
+          return !!this.token;
+        },
+
+
+        get tokenPreview() {
+          if (!this.token) return "";
+          if (this.token.length <= 96) return this.token;
+          return `${this.token.slice(0, 48)}\n...\n${this.token.slice(-32)}`;
+        },
+
+        get errorMessage() {
+          if (!this.error) return "";
+          return this.error.message || String(this.error);
+        },
+
+        requestLogin() {
+          this.tokenCopied = false;
+          this.loginRequested = true;
+        },
+
+        async copyToken() {
+          if (!this.token || !navigator.clipboard) return;
+          await navigator.clipboard.writeText(this.token);
+          this.tokenCopied = true;
+          setTimeout(() => {
+            this.tokenCopied = false;
+          }, 1500);
+        },
+
+        goToDashboard() {
+          this.navigateTo = "/dashboard";
+        },
+
+        logout() {
+          const authEl = document.getElementById("auth");
+          if (authEl) {
+            authEl.logout({ logoutParams: { returnTo: "__RETURN_TO__" } });
+          }
+        },
+      };
+    </script>
+  </wcs-state>
+
+  __AUTH_ELEMENT__
+
+  <!-- ルートガードの設定 -->
+  <script type="module">
+    // authenticated の変化を監視してガードに利用
+    const authEl = document.getElementById("auth");
+
+    // dashboard ルートにガードハンドラを設定
+    customElements.whenDefined("wcs-route").then(() => {
+      const dashboardRoute = document.querySelector('wcs-route[path="dashboard"]');
+      if (dashboardRoute) {
+        dashboardRoute.guardHandler = async () => {
+          // wcs-auth が初期化済みか確認
+          if (authEl?.connectedCallbackPromise) {
+            await authEl.connectedCallbackPromise;
+          }
+          return authEl?.authenticated ?? false;
+        };
+      }
+    });
+  </script>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">Local Demo</span>
+      <h1>state + auth0 + router<br>で作る認証付き SPA</h1>
+      <p class="lead">
+        <code>@wcstack/router</code> のルートガードで <code>/dashboard</code> を保護し、
+        認証済みユーザーだけがアクセスできるようにしています。
+        未認証なら自動的に <code>/</code> へ戻ります。
+      </p>
+      <div class="status">
+        <span class="dot" data-wcs="class.live: authenticated"></span>
+        <span data-wcs="textContent: authStatusLabel"></span>
+      </div>
+      <nav>
+        <wcs-link to="/">Home</wcs-link>
+        <wcs-link to="/dashboard">Dashboard</wcs-link>
+      </nav>
+    </section>
+
+    <!-- ルーター定義 — navigateUrl で state からナビゲーション指示 -->
+    <wcs-router data-wcs="navigateUrl: navigateTo">
+      <template>
+        <wcs-route path="/">
+          <!-- Landing ページ -->
+          <wcs-route index>
+            <wcs-head><title>Home — wcstack auth0 demo</title></wcs-head>
+
+            <section class="panel stack">
+              <div>
+                <h2>Welcome</h2>
+                <p class="lead">
+                  このデモでは <code>&lt;wcs-auth&gt;</code> の認証状態を
+                  <code>&lt;wcs-route guard&gt;</code> で参照し、ページ単位のアクセス制御を実現しています。
+                </p>
+              </div>
+
+              <div class="meta">
+                <div class="meta-card">
+                  <strong>Domain</strong>
+                  <span data-wcs="textContent: demoConfig.domain"></span>
+                </div>
+                <div class="meta-card">
+                  <strong>Client ID</strong>
+                  <span data-wcs="textContent: demoConfig.clientId"></span>
+                </div>
+                <div class="meta-card">
+                  <strong>Audience</strong>
+                  <span data-wcs="textContent: demoConfig.audience"></span>
+                </div>
+                <div class="meta-card">
+                  <strong>Login Mode</strong>
+                  <span data-wcs="textContent: loginModeLabel"></span>
+                </div>
+              </div>
+
+              <template data-wcs="if: missingConfig">
+                <div class="callout">
+                  <strong>未設定です。</strong><br>
+                  サーバー起動前に <code>AUTH0_DOMAIN</code> と <code>AUTH0_CLIENT_ID</code> を環境変数で渡してください。<br>
+                  必要に応じて <code>AUTH0_AUDIENCE</code> と <code>AUTH0_SCOPE</code> も指定できます。
+                </div>
+              </template>
+
+              <template data-wcs="if: canUseDemo">
+                <div class="auth-actions">
+                  <template data-wcs="if: authenticated">
+                    <button class="primary" data-wcs="onclick: goToDashboard">Go to Dashboard →</button>
+                    <button class="secondary" data-wcs="onclick: logout">Sign out</button>
+                  </template>
+                  <template data-wcs="else:">
+                    <button class="primary" data-wcs="onclick: requestLogin; disabled: loading">Sign in with Auth0</button>
+                  </template>
+                </div>
+              </template>
+
+              <template data-wcs="if: loading">
+                <div class="callout">
+                  <strong>Auth0 と通信中です。</strong><br>
+                  ポップアップの完了、またはセッション確認が終わるまで少し待ってください。
+                </div>
+              </template>
+
+              <template data-wcs="if: error">
+                <div class="callout error">
+                  <strong>Authentication Error</strong><br>
+                  <span data-wcs="textContent: errorMessage"></span>
+                </div>
+              </template>
+            </section>
+          </wcs-route>
+
+          <!-- Dashboard ページ（ガード付き） -->
+          <wcs-route path="dashboard" guard="/">
+            <wcs-head><title>Dashboard — wcstack auth0 demo</title></wcs-head>
+
+            <div class="grid">
+              <section class="panel stack">
+                <div>
+                  <h2>Auth State</h2>
+                  <p class="lead">認証済みユーザーのみアクセス可能です。ルートガードが <code>authenticated</code> を確認しています。</p>
+                </div>
+
+                <div class="auth-actions">
+                  <button class="secondary" data-wcs="onclick: copyToken; disabled: canCopyToken|not">Copy token</button>
+                  <button class="secondary" data-wcs="onclick: logout">Sign out</button>
+                </div>
+
+                <template data-wcs="if: tokenCopied">
+                  <div class="pill">Access token をクリップボードへコピーしました。</div>
+                </template>
+
+                <div>
+                  <h3>Access Token</h3>
+                  <template data-wcs="if: token">
+                    <pre data-wcs="textContent: tokenPreview"></pre>
+                  </template>
+                  <template data-wcs="else:">
+                    <p class="empty">トークンを取得中です…</p>
+                  </template>
+                </div>
+              </section>
+
+              <section class="panel stack">
+                <div>
+                  <h2>User Profile</h2>
+                  <p class="lead">Auth0 から取得したプロフィール情報です。</p>
+                </div>
+
+                <div class="profile">
+                  <div class="profile-header">
+                    <div class="avatar" data-wcs="textContent: avatarInitial"></div>
+                    <div>
+                      <h3 data-wcs="textContent: user.name"></h3>
+                      <p data-wcs="textContent: user.email"></p>
+                    </div>
+                  </div>
+
+                  <dl>
+                    <div class="field">
+                      <dt>Subject</dt>
+                      <dd data-wcs="textContent: user.sub"></dd>
+                    </div>
+                    <div class="field">
+                      <dt>Nickname</dt>
+                      <dd data-wcs="textContent: user.nickname"></dd>
+                    </div>
+                    <div class="field">
+                      <dt>Email Verified</dt>
+                      <dd data-wcs="textContent: emailVerifiedLabel"></dd>
+                    </div>
+                  </dl>
+                </div>
+              </section>
+            </div>
+          </wcs-route>
+        </wcs-route>
+
+        <wcs-route fallback>
+          <wcs-head><title>Not Found — wcstack auth0 demo</title></wcs-head>
+          <section class="panel stack">
+            <h2>404 — Page Not Found</h2>
+            <p class="lead">お探しのページは見つかりませんでした。</p>
+            <div class="auth-actions">
+              <wcs-link to="/">
+                <button class="primary">Home へ戻る</button>
+              </wcs-link>
+            </div>
+          </section>
+        </wcs-route>
+      </template>
+    </wcs-router>
+
+    <wcs-outlet></wcs-outlet>
+  </main>
+</body>
+</html>

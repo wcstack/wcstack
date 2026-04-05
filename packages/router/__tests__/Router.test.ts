@@ -466,6 +466,109 @@ describe('Router', () => {
     });
   });
 
+  describe('wcBindable', () => {
+    it('wcBindableが正しく定義されていること', () => {
+      expect(Router.wcBindable.protocol).toBe('wc-bindable');
+      expect(Router.wcBindable.version).toBe(1);
+      expect(Router.wcBindable.properties).toHaveLength(2);
+      expect(Router.wcBindable.properties[0].name).toBe('navigateUrl');
+      expect(Router.wcBindable.properties[0].event).toBe('wcs-router:navigate-url-changed');
+      expect(Router.wcBindable.properties[1].name).toBe('path');
+      expect(Router.wcBindable.properties[1].event).toBe('wcs-router:path-changed');
+    });
+  });
+
+  describe('navigateUrl', () => {
+    it('navigateUrlの初期値がnullであること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      expect(router.navigateUrl).toBeNull();
+    });
+
+    it('navigateUrl設定でnavigateが呼ばれること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
+
+      router.navigateUrl = '/dashboard';
+
+      expect(navigateSpy).toHaveBeenCalledWith('/dashboard');
+      // navigate完了を待つ
+      await vi.waitFor(() => {
+        expect(router.navigateUrl).toBeNull();
+      });
+    });
+
+    it('navigate完了後にリセットイベントが発火すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
+
+      const events: any[] = [];
+      router.addEventListener('wcs-router:navigate-url-changed', (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      router.navigateUrl = '/dashboard';
+      await vi.waitFor(() => {
+        expect(events).toEqual([null]);
+      });
+    });
+
+    it('nullを設定しても何も起きないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
+
+      router.navigateUrl = null;
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
+
+    it('空文字列を設定しても何も起きないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
+
+      router.navigateUrl = '';
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('path変更イベント', () => {
+    it('pathが変更されたときにイベントが発火すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const events: string[] = [];
+      router.addEventListener('wcs-router:path-changed', (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      router.path = '/new-path';
+      expect(events).toEqual(['/new-path']);
+    });
+
+    it('同じpathを設定してもイベントが発火しないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.path = '/same';
+
+      const events: string[] = [];
+      router.addEventListener('wcs-router:path-changed', (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      router.path = '/same';
+      expect(events).toEqual([]);
+    });
+
+    it('pathイベントがバブルすること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const events: string[] = [];
+      document.body.addEventListener('wcs-router:path-changed', (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      router.path = '/bubbled';
+      expect(events).toEqual(['/bubbled']);
+      router.remove();
+    });
+  });
+
   describe('error handling', () => {
     it('ルート定義が1つもない場合、詳細なエラーを投げること', async () => {
       const router = document.createElement('wcs-router') as Router;

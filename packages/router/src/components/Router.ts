@@ -3,15 +3,25 @@ import { createOutlet, Outlet } from "./Outlet.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { IOutlet, IRoute, IRouter } from "./types.js";
+import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
 
 /**
  * AppRoutes - Root component for @wcstack/router
- * 
+ *
  * Container element that manages route definitions and navigation.
  */
 export class Router extends HTMLElement implements IRouter {
+  static wcBindable: IWcBindable = {
+    protocol: "wc-bindable",
+    version: 1,
+    properties: [
+      { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
+      { name: "path", event: "wcs-router:path-changed" },
+    ],
+  };
+
   private static _instance: IRouter | null = null;
   private _outlet: IOutlet | null = null;
   private _template: HTMLTemplateElement | null = null;
@@ -21,6 +31,7 @@ export class Router extends HTMLElement implements IRouter {
   private _initialized: boolean = false;
   private _fallbackRoute: IRoute | null = null;
   private _listeningPopState: boolean = false;
+  private _navigateUrl: string | null = null;
 
   constructor() {
     super();
@@ -158,7 +169,14 @@ export class Router extends HTMLElement implements IRouter {
    * applyRoute 内で設定される値です。
    */
   set path(value: string) {
+    const changed = this._path !== value;
     this._path = value;
+    if (changed) {
+      this.dispatchEvent(new CustomEvent("wcs-router:path-changed", {
+        detail: value,
+        bubbles: true,
+      }));
+    }
   }
 
   get fallbackRoute(): IRoute | null {
@@ -169,6 +187,22 @@ export class Router extends HTMLElement implements IRouter {
    */
   set fallbackRoute(value: IRoute | null) {
     this._fallbackRoute = value;
+  }
+
+  get navigateUrl(): string | null {
+    return this._navigateUrl;
+  }
+
+  set navigateUrl(value: string | null) {
+    if (value === null || value === undefined || value === "") return;
+    this._navigateUrl = value;
+    this.navigate(value).then(() => {
+      this._navigateUrl = null;
+      this.dispatchEvent(new CustomEvent("wcs-router:navigate-url-changed", {
+        detail: null,
+        bubbles: true,
+      }));
+    });
   }
 
   async navigate(path: string): Promise<void> {
