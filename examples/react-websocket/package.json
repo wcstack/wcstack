@@ -1,0 +1,13 @@
+{
+  "name": "wcstack-example-react-websocket",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@wc-bindable/core": "file:../../../../wc-bindable-protocol/wc-bindable-protocol/packages/core",
+    "@wc-bindable/react": "file:../../../../wc-bindable-protocol/wc-bindable-protocol/packages/react",
+    "ws": "^8.20.0"
+  }
+}

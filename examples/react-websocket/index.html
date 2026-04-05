@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>React + wcstack websocket demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef2ff;
+      --panel: rgba(255, 255, 255, 0.92);
+      --ink: #1e1b4b;
+      --muted: #6366a0;
+      --line: rgba(99, 102, 241, 0.15);
+      --brand: #6366f1;
+      --brand-strong: #4f46e5;
+      --accent: #0ea5e9;
+      --danger: #dc2626;
+      --shadow: 0 20px 50px rgba(30, 27, 75, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(99, 102, 241, 0.12), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.10), transparent 30%),
+        linear-gradient(180deg, #f5f7ff 0%, var(--bg) 100%);
+    }
+
+    main {
+      width: min(800px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 32px 0 64px;
+    }
+
+    .hero { display: grid; gap: 12px; padding: 0 0 24px; }
+
+    .eyebrow {
+      color: var(--brand);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      max-width: 640px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.7;
+    }
+
+    .tech-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tech-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid var(--line);
+    }
+
+    .tech-badge.react { background: rgba(97, 218, 251, 0.12); color: #0891b2; }
+    .tech-badge.wc { background: rgba(99, 102, 241, 0.08); color: var(--brand-strong); }
+    .tech-badge.bind { background: rgba(251, 191, 36, 0.12); color: #b45309; }
+
+    .status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 8px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #d97706;
+      box-shadow: 0 0 0 5px rgba(217, 119, 6, 0.12);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .dot.live {
+      background: #22c55e;
+      box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.15);
+    }
+
+    .stat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, 0.08);
+      color: var(--brand-strong);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel h2 { margin: 0; font-size: 1rem; }
+    .panel p.lead { font-size: 0.88rem; }
+
+    .input-row { display: flex; gap: 8px; }
+
+    input[type="text"] {
+      flex: 1;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font: inherit;
+      font-size: 0.92rem;
+      background: rgba(255, 255, 255, 0.6);
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus { border-color: var(--brand); }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.18s;
+      white-space: nowrap;
+    }
+
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-echo { background: var(--brand); color: #fff; }
+    .btn-echo:hover:not(:disabled) { background: var(--brand-strong); }
+    .btn-broadcast { background: var(--accent); color: #fff; }
+    .btn-broadcast:hover:not(:disabled) { background: #0284c7; }
+
+    .log {
+      flex: 1;
+      min-height: 240px;
+      max-height: 360px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.5);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    .log-entry {
+      padding: 6px 10px;
+      border-radius: 10px;
+      word-break: break-word;
+    }
+
+    .log-echo { background: rgba(99, 102, 241, 0.08); color: var(--brand-strong); }
+    .log-broadcast { background: rgba(14, 165, 233, 0.08); color: #0369a1; }
+    .log-connected { background: rgba(34, 197, 94, 0.12); color: #15803d; font-weight: 600; }
+
+    .log-time { font-size: 0.72rem; color: var(--muted); opacity: 0.7; }
+
+    .log-empty {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .callout {
+      border-radius: 14px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .callout code {
+      background: rgba(99, 102, 241, 0.08);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.85em;
+    }
+
+    .error {
+      border-color: rgba(220, 38, 38, 0.22);
+      background: rgba(254, 242, 242, 0.92);
+      color: var(--danger);
+    }
+
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "react":            "https://esm.sh/react@19",
+        "react/":           "https://esm.sh/react@19/",
+        "react-dom/client":  "https://esm.sh/react-dom@19/client",
+        "htm/react":        "https://esm.sh/htm@3/react",
+        "@wc-bindable/core":  "/examples/react-websocket/node_modules/@wc-bindable/core/dist/index.js",
+        "@wc-bindable/react": "/examples/react-websocket/node_modules/@wc-bindable/react/dist/index.js"
+      }
+    }
+  </script>
+
+  <!-- wcstack websocket component -->
+  <script type="module" src="/packages/websocket/dist/auto.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import { useState, useRef, useEffect, useCallback } from "react";
+    import { createRoot } from "react-dom/client";
+    import html from "htm/react";
+    import { useWcBindable } from "@wc-bindable/react";
+
+    function App() {
+      // useWcBindable automatically syncs all wc-bindable properties
+      const [wsRef, ws] = useWcBindable({
+        message: null,
+        connected: false,
+        loading: false,
+        error: null,
+      });
+
+      const elRef = useRef(null);
+      const logEndRef = useRef(null);
+
+      // Merge refs: useWcBindable's callback ref + our local ref
+      const ref = useCallback((node) => {
+        elRef.current = node;
+        wsRef(node);
+      }, [wsRef]);
+
+      const [stats, setStats] = useState(null);
+      const [messageLog, setMessageLog] = useState([]);
+      const [echoInput, setEchoInput] = useState("");
+      const [broadcastInput, setBroadcastInput] = useState("");
+      const [nickname] = useState("react-" + Math.random().toString(36).slice(2, 6));
+
+      // Process incoming messages from wc-bindable values
+      useEffect(() => {
+        const msg = ws.message;
+        if (!msg) return;
+
+        if (msg.type === "stats") {
+          setStats(msg);
+          return;
+        }
+
+        const time = msg.timestamp
+          ? new Date(msg.timestamp).toLocaleTimeString()
+          : new Date().toLocaleTimeString();
+
+        const entry = { type: msg.type || "unknown", time };
+        if (msg.type === "echo") {
+          entry.text = msg.content;
+        } else if (msg.type === "broadcast") {
+          entry.text = `[${msg.from}] ${msg.content}`;
+        } else if (msg.type === "connected") {
+          entry.text = `WebSocket connected (${msg.clients} clients)`;
+        } else {
+          entry.text = JSON.stringify(msg);
+        }
+
+        setMessageLog((prev) => [...prev, entry]);
+      }, [ws.message]);
+
+      useEffect(() => {
+        logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, [messageLog]);
+
+      const sendEcho = useCallback(() => {
+        const text = echoInput.trim();
+        if (!text || !ws.connected) return;
+        elRef.current.send = JSON.stringify({ type: "echo", content: text });
+        setEchoInput("");
+      }, [echoInput, ws.connected]);
+
+      const sendBroadcast = useCallback(() => {
+        const text = broadcastInput.trim();
+        if (!text || !ws.connected) return;
+        elRef.current.send = JSON.stringify({ type: "broadcast", content: text, from: nickname });
+        setBroadcastInput("");
+      }, [broadcastInput, ws.connected, nickname]);
+
+      const connectionLabel = ws.loading ? "Connecting…" : ws.connected ? "Connected" : "Disconnected";
+
+      return html`
+        <wcs-ws
+          ref=${ref}
+          url="__WS_URL__"
+          auto-reconnect=""
+          reconnect-interval="3000"
+          max-reconnects="10"
+        />
+
+        <main>
+          <section class="hero">
+            <span class="eyebrow">Framework Interop Demo</span>
+            <h1>React から使う${"<br/>"}wcstack WebSocket</h1>
+            <p class="lead">
+              React 19 アプリの中で <code>${"<wcs-ws>"}</code> Web Component を利用し、
+              リアルタイム通信を実現しています。フレームワークに依存しない Web 標準の力です。
+            </p>
+            <div class="tech-badges">
+              <span class="tech-badge react">React 19</span>
+              <span class="tech-badge wc">${"<wcs-ws>"} Web Component</span>
+              <span class="tech-badge bind">@wc-bindable/react</span>
+            </div>
+          </section>
+
+          <div class="status-bar">
+            <div class="status">
+              <span class="dot ${ws.connected ? "live" : ""}"></span>
+              <span>${connectionLabel}</span>
+            </div>
+            <div class="stat-badge">
+              Clients: <strong>${stats?.clients ?? "—"}</strong>
+            </div>
+            <div class="stat-badge">
+              Uptime: <strong>${stats ? stats.uptime + "s" : "—"}</strong>
+            </div>
+          </div>
+
+          ${ws.error && html`
+            <div class="callout error" style=${{ marginBottom: 14 }}>
+              <strong>Connection Error</strong><br/>
+              ${ws.error.message || String(ws.error)}
+            </div>
+          `}
+
+          <div class="grid">
+            <div class="panel">
+              <h2>Echo</h2>
+              <p class="lead">メッセージを送ると、サーバーがそのまま返します。</p>
+              <div class="input-row">
+                <input
+                  type="text"
+                  placeholder="Echo メッセージ…"
+                  value=${echoInput}
+                  onInput=${(e) => setEchoInput(e.target.value)}
+                  onKeyDown=${(e) => e.key === "Enter" && sendEcho()}
+                />
+                <button
+                  class="btn-echo"
+                  disabled=${!ws.connected || !echoInput.trim()}
+                  onClick=${sendEcho}
+                >Send</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h2>Broadcast</h2>
+              <p class="lead">全接続クライアントにメッセージを配信します。</p>
+              <div class="input-row">
+                <input
+                  type="text"
+                  placeholder="ブロードキャスト…"
+                  value=${broadcastInput}
+                  onInput=${(e) => setBroadcastInput(e.target.value)}
+                  onKeyDown=${(e) => e.key === "Enter" && sendBroadcast()}
+                />
+                <button
+                  class="btn-broadcast"
+                  disabled=${!ws.connected || !broadcastInput.trim()}
+                  onClick=${sendBroadcast}
+                >Send</button>
+              </div>
+              <div class="input-row">
+                <input
+                  type="text"
+                  placeholder="ニックネーム"
+                  value=${nickname}
+                  readOnly
+                  style=${{ maxWidth: 180 }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" style=${{ marginTop: 18 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2>Message Log</h2>
+              <button
+                style=${{ background: "rgba(0,0,0,0.06)", color: "var(--muted)", fontSize: "0.8rem", padding: "6px 12px" }}
+                onClick=${() => setMessageLog([])}
+              >Clear</button>
+            </div>
+
+            <div class="log">
+              ${messageLog.length === 0
+                ? html`<div class="log-empty">接続後にメッセージがここに表示されます。</div>`
+                : messageLog.map((entry, i) =>
+                    html`<div key=${i} class="log-entry log-${entry.type}">
+                      <span class="log-time">${entry.time}</span>${" "}
+                      ${entry.type === "echo" ? "Echo: " : ""}${entry.text}
+                    </div>`
+                  )
+              }
+              <div ref=${logEndRef} />
+            </div>
+          </div>
+
+          <div class="callout" style=${{ marginTop: 18, fontSize: "0.88rem" }}>
+            <strong>How it works:</strong> <code>@wc-bindable/react</code> の
+            <code>useWcBindable()</code> フックが <code>${"<wcs-ws>"}</code> の
+            全プロパティ（message, connected, loading, error）を自動的に React state に同期します。
+            手動の <code>addEventListener</code> は不要です。
+          </div>
+        </main>
+      `;
+    }
+
+    createRoot(document.getElementById("root")).render(html`<${App} />`);
+  </script>
+</body>
+</html>

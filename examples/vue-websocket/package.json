@@ -1,0 +1,13 @@
+{
+  "name": "wcstack-example-vue-websocket",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@wc-bindable/core": "file:../../../../wc-bindable-protocol/wc-bindable-protocol/packages/core",
+    "@wc-bindable/vue": "file:../../../../wc-bindable-protocol/wc-bindable-protocol/packages/vue",
+    "ws": "^8.20.0"
+  }
+}

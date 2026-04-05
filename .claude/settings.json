@@ -13,10 +13,17 @@
       "Bash(xargs cat:*)",
       "Bash(timeout 3 node examples/state-websocket/server.js)",
       "Bash(node --input-type=module -e \":*)",
-      "Bash(node -e \"console.log\\(Buffer.from\\(''b37a4f2cc0624f1690f64606cf39594db2bec4ea'',''hex''\\).toString\\(''base64''\\)\\)\")"
+      "Bash(node -e \"console.log\\(Buffer.from\\(''b37a4f2cc0624f1690f64606cf39594db2bec4ea'',''hex''\\).toString\\(''base64''\\)\\)\")",
+      "Bash(node examples/react-websocket/server.js)",
+      "Bash(node examples/vue-websocket/server.js)",
+      "Bash(kill %1 %2)",
+      "Bash(kill %1)",
+      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol//**)",
+      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol/**)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src"
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src",
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\examples"
     ]
   }
 }
