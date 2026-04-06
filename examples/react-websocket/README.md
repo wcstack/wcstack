@@ -5,7 +5,7 @@ The server includes a built-in Echo / Broadcast WebSocket endpoint.
 
 ## What it demonstrates
 
-**Web Components work in any framework.** The `<wcs-ws>` custom element implements the [wc-bindable protocol](https://github.com/user/wc-bindable-protocol). The `@wc-bindable/react` adapter provides a `useWcBindable()` hook that automatically syncs all bindable properties into React state — no manual `addEventListener` needed.
+**`<wcs-ws>` is a portable IO node.** It encapsulates WebSocket connection management, reconnection, and messaging inside a single, framework-agnostic Custom Element. Previously, using WebSocket in React meant choosing between a React-specific library or the raw WebSocket API. With `<wcs-ws>`, a thin adapter (`@wc-bindable/react`) is all it takes to consume the component as a **state subscription** — a unified pattern regardless of framework. The IO node itself is portable: the same `<wcs-ws>` works in Vue, plain HTML, or any other environment as-is.
 
 ### Key highlight: No async code required
 
