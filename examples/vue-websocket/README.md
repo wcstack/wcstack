@@ -7,6 +7,39 @@ The server includes a built-in Echo / Broadcast WebSocket endpoint.
 
 **Web Components work in any framework.** The `<wcs-ws>` custom element implements the [wc-bindable protocol](https://github.com/user/wc-bindable-protocol). The `@wc-bindable/vue` adapter provides a `useWcBindable()` composable that automatically syncs all bindable properties into Vue reactive state — no manual `addEventListener` needed.
 
+### Key highlight: No async code required
+
+WebSocket is inherently asynchronous, yet the application code in this demo contains **no `await`, no `Promise`, no `Suspense`, no `async` functions.**
+
+Typically, using WebSocket in Vue involves:
+
+- Managing connection lifecycle in `onMounted` / `onUnmounted` hooks
+- Subscribing to messages via `addEventListener` or `onmessage` callbacks
+- Implementing reconnection logic (timers, backoff, retry limits) by hand
+- Reflecting connection state in the UI with `Suspense` or loading state
+
+`<wcs-ws>` **encapsulates all of this inside the Web Component.** From the application's perspective, the async nature of WebSocket is completely hidden — all you do is read **synchronous reactive properties** like `ws.connected` and `ws.message`.
+
+```vue
+<script setup>
+// This is all it takes to sync WebSocket state into Vue reactive state
+const { ref: wsEl, values: ws } = useWcBindable({
+  message: null,
+  connected: false,
+  loading: false,
+  error: null,
+});
+</script>
+
+<template>
+  <!-- In the template, just read synchronous values -->
+  <p>{{ ws.connected ? 'Connected' : 'Disconnected' }}</p>
+  <p>{{ ws.message?.content }}</p>
+</template>
+```
+
+In other words, `<wcs-ws>` transforms the asynchronous WebSocket into **a state machine subscription**. Instead of dealing with an async event stream, the application simply subscribes to properties exposed by the state machine. The async complexity is absorbed by `<wcs-ws>`, and the Vue application **focuses solely on displaying synchronous values.**
+
 ## Stack
 
 | Layer | Technology |
