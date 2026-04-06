@@ -1,6 +1,7 @@
 export { bootstrapFetch } from "./bootstrapFetch.js";
 export { getConfig } from "./config.js";
 export { FetchCore } from "./core/FetchCore.js";
+export { Fetch as WcsFetch } from "./components/Fetch.js";
 
 export type {
   IWritableConfig, IWritableTagNames, WcsFetchHttpError, WcsFetchCoreValues, WcsFetchValues

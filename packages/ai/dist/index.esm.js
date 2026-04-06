@@ -325,7 +325,6 @@ class AiCore extends EventTarget {
         }));
     }
     // --- rAF batching ---
-    /* v8 ignore start */
     _scheduleFlush() {
         if (this._flushScheduled)
             return;
@@ -345,7 +344,6 @@ class AiCore extends EventTarget {
             this._flushScheduled = false;
         }
     }
-    /* v8 ignore stop */
     // --- Public API ---
     abort() {
         if (this._abortController) {
@@ -445,13 +443,11 @@ class AiCore extends EventTarget {
     }
     _removeMessage(message) {
         const idx = this._messages.indexOf(message);
-        /* v8 ignore next */
         if (idx === -1)
             return;
         this._messages.splice(idx, 1);
         this._emitMessages();
     }
-    /* v8 ignore start */
     async _processStream(body, abortController) {
         const reader = body.getReader();
         const decoder = new TextDecoder();
@@ -473,8 +469,8 @@ class AiCore extends EventTarget {
                         continue;
                     if (result.delta) {
                         this._content += result.delta;
-                        /* v8 ignore start */ if (isCurrent())
-                            this._scheduleFlush(); /* v8 ignore stop */
+                        if (isCurrent())
+                            this._scheduleFlush();
                     }
                     if (result.usage) {
                         lastUsage = this._mergeUsage(lastUsage, result.usage);
@@ -490,8 +486,8 @@ class AiCore extends EventTarget {
             reader.releaseLock();
         }
         // 後続の send() に置き換えられた場合は共有状態に触れない
-        /* v8 ignore start */ if (!isCurrent())
-            return this._content; /* v8 ignore stop */
+        if (!isCurrent())
+            return this._content;
         // 最終コンテンツを同期的にフラッシュ
         this._cancelFlush();
         this._setContent(this._content);
@@ -503,7 +499,6 @@ class AiCore extends EventTarget {
         this._setLoading(false);
         return this._content;
     }
-    /* v8 ignore stop */
     _mergeUsage(existing, incoming) {
         const merged = {
             promptTokens: incoming.promptTokens || existing?.promptTokens || 0,
@@ -730,5 +725,5 @@ function bootstrapAi(userConfig) {
     registerComponents();
 }
 
-export { AiCore, AnthropicProvider, AzureOpenAiProvider, OpenAiProvider, bootstrapAi, getConfig };
+export { AiCore, AnthropicProvider, AzureOpenAiProvider, OpenAiProvider, Ai as WcsAi, bootstrapAi, getConfig };
 //# sourceMappingURL=index.esm.js.map

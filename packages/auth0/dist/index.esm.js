@@ -551,5 +551,5 @@ function bootstrapAuth(userConfig) {
     registerComponents();
 }
 
-export { AuthCore, bootstrapAuth, getConfig };
+export { AuthCore, Auth as WcsAuth, bootstrapAuth, getConfig };
 //# sourceMappingURL=index.esm.js.map

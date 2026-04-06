@@ -3,11 +3,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "dev": "vite",
+    "build": "vite build",
+    "start": "npm run build && node server.js"
   },
   "dependencies": {
-    "@wc-bindable/core": "file:../../../../wc-bindable-protocol/wc-bindable-protocol/packages/core",
-    "@wc-bindable/react": "file:../../../../wc-bindable-protocol/wc-bindable-protocol/packages/react",
+    "@wc-bindable/core": "^0.3.0",
+    "@wc-bindable/react": "^0.3.0",
+    "@wcstack/websocket": "file:../../packages/websocket",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.5.2",
+    "vite": "^6.3.5"
   }
 }

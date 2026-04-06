@@ -104,5 +104,41 @@ declare class FetchCore extends EventTarget {
     private _doFetch;
 }
 
-export { FetchCore, bootstrapFetch, getConfig };
+declare class Fetch extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
+    static wcBindable: IWcBindable;
+    static get observedAttributes(): string[];
+    private _core;
+    private _body;
+    private _trigger;
+    private _connectedCallbackPromise;
+    constructor();
+    get url(): string;
+    set url(value: string);
+    get method(): string;
+    set method(value: string);
+    get target(): string | null;
+    set target(value: string | null);
+    get value(): any;
+    get loading(): boolean;
+    get error(): any;
+    get status(): number;
+    get promise(): Promise<any>;
+    get connectedCallbackPromise(): Promise<void>;
+    get manual(): boolean;
+    set manual(value: boolean);
+    get body(): any;
+    set body(value: any);
+    get trigger(): boolean;
+    set trigger(value: boolean);
+    private _collectHeaders;
+    private _collectBody;
+    abort(): void;
+    fetch(): Promise<any>;
+    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    connectedCallback(): void;
+    disconnectedCallback(): void;
+}
+
+export { FetchCore, Fetch as WcsFetch, bootstrapFetch, getConfig };
 export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues };

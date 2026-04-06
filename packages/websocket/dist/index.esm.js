@@ -436,5 +436,5 @@ function bootstrapWebSocket(userConfig) {
     registerComponents();
 }
 
-export { WebSocketCore, bootstrapWebSocket, getConfig };
+export { WcsWebSocket, WebSocketCore, bootstrapWebSocket, getConfig };
 //# sourceMappingURL=index.esm.js.map

@@ -7,12 +7,15 @@ The server includes a built-in Echo / Broadcast WebSocket endpoint.
 
 **Web Components work in any framework.** The `<wcs-ws>` custom element implements the [wc-bindable protocol](https://github.com/user/wc-bindable-protocol). The `@wc-bindable/react` adapter provides a `useWcBindable()` hook that automatically syncs all bindable properties into React state — no manual `addEventListener` needed.
 
-## What it uses
+## Stack
 
-- React 19 (ESM via esm.sh, no build step)
-- htm (tagged template JSX alternative)
-- `@wc-bindable/react` adapter
-- `/packages/websocket/dist/auto.js`
+| Layer | Technology |
+|-------|-----------|
+| UI | React 19 + JSX |
+| Build | Vite |
+| Adapter | `@wc-bindable/react` |
+| WebSocket | `@wcstack/websocket` (`<wcs-ws>`) |
+| Server | Node.js + ws |
 
 ## Setup
 
@@ -20,15 +23,24 @@ The server includes a built-in Echo / Broadcast WebSocket endpoint.
 # 1. Build the websocket package
 cd packages/websocket && npm run build && cd ../..
 
-# 2. Install server dependencies
-cd examples/react-websocket && npm install && cd ../..
+# 2. Install dependencies & build
+cd examples/react-websocket && npm install && npm run build && cd ../..
 
-# 3. Start the demo server
+# 3. Start the server
 node examples/react-websocket/server.js
 ```
 
 Open `http://localhost:3301`.
 Open multiple tabs to see broadcast in action.
+
+### Development mode
+
+```bash
+cd examples/react-websocket
+npm run dev
+```
+
+Vite dev server starts with HMR. WebSocket server must be started separately.
 
 ## Environment variables
 
@@ -36,11 +48,10 @@ Open multiple tabs to see broadcast in action.
 
 ## How React uses `<wcs-ws>` via @wc-bindable
 
-```js
+```jsx
 import { useWcBindable } from "@wc-bindable/react";
 
 function App() {
-  // All wc-bindable properties are automatically synced
   const [wsRef, ws] = useWcBindable({
     message: null,
     connected: false,
@@ -48,11 +59,12 @@ function App() {
     error: null,
   });
 
-  // ws.connected, ws.message, etc. are live React state
-  return html`
-    <wcs-ws ref=${wsRef} url="ws://..." auto-reconnect="" />
-    <p>Status: ${ws.connected ? "Connected" : "Disconnected"}</p>
-  `;
+  return (
+    <>
+      <wcs-ws ref={wsRef} url="ws://..." auto-reconnect="" />
+      <p>Status: {ws.connected ? "Connected" : "Disconnected"}</p>
+    </>
+  );
 }
 ```
 
@@ -67,4 +79,4 @@ Same as the [state-websocket example](../state-websocket/README.md#websocket-pro
 - Sending messages via the `send` property setter
 - `auto-reconnect` for automatic reconnection
 - Real-time client count and server uptime display
-- Fully ESM, buildless (Import Maps + esm.sh + htm)
+- Standard Vite build pipeline (JSX, bundling, minification)

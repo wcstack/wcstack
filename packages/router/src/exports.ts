@@ -2,6 +2,7 @@
 export { bootstrapRouter } from "./bootstrapRouter.js";
 export { getConfig } from "./config.js";
 export { Router } from "./components/Router.js";
+export { Route } from "./components/Route.js";
 export { RouteCore } from "./core/RouteCore.js";
 
 export type {

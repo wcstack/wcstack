@@ -450,5 +450,5 @@ function bootstrapUpload(userConfig) {
     registerComponents();
 }
 
-export { UploadCore, bootstrapUpload, getConfig };
+export { UploadCore, WcsUpload, bootstrapUpload, getConfig };
 //# sourceMappingURL=index.esm.js.map

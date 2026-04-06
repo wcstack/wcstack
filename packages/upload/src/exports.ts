@@ -1,6 +1,7 @@
 export { bootstrapUpload } from "./bootstrapUpload.js";
 export { getConfig } from "./config.js";
 export { UploadCore } from "./core/UploadCore.js";
+export { WcsUpload } from "./components/Upload.js";
 
 export type {
   IWritableConfig, IWritableTagNames, WcsUploadError, WcsUploadCoreValues, WcsUploadValues

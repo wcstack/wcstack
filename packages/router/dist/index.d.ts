@@ -177,6 +177,51 @@ declare class Router extends HTMLElement implements IRouter {
     disconnectedCallback(): void;
 }
 
+declare class Route extends HTMLElement implements IRoute {
+    static wcBindable: IWcBindable;
+    private _core;
+    private _routeParentNode;
+    private _routeChildNodes;
+    private _routerNode;
+    private _uuid;
+    private _placeHolder;
+    private _childNodeArray;
+    private _childIndex;
+    private _initialized;
+    constructor();
+    get routeParentNode(): IRoute | null;
+    get routeChildNodes(): IRoute[];
+    get routerNode(): IRouter;
+    get uuid(): string;
+    get placeHolder(): Comment;
+    get childNodeArray(): Node[];
+    get routes(): IRoute[];
+    get childIndex(): number;
+    get path(): string;
+    get name(): string;
+    get isRelative(): boolean;
+    get absolutePath(): string;
+    get segmentInfos(): ISegmentInfo[];
+    get absoluteSegmentInfos(): ISegmentInfo[];
+    get params(): Record<string, string>;
+    get typedParams(): Record<string, any>;
+    get paramNames(): string[];
+    get absoluteParamNames(): string[];
+    get weight(): number;
+    get absoluteWeight(): number;
+    get segmentCount(): number;
+    get absoluteSegmentCount(): number;
+    get fullpath(): string;
+    get guardHandler(): GuardHandler;
+    set guardHandler(value: GuardHandler);
+    setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
+    clearParams(): void;
+    shouldChange(newParams: Record<string, string>): boolean;
+    guardCheck(matchResult: IRouteMatchResult): Promise<void>;
+    testAncestorNode(ancestorNode: IRoute): boolean;
+    initialize(routerNode: IRouter, routeParentNode: IRoute | null): void;
+}
+
 interface RouteParseOptions {
     isIndex?: boolean;
     isFallback?: boolean;
@@ -235,5 +280,5 @@ declare class RouteCore extends EventTarget {
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;
 }
 
-export { RouteCore, Router, bootstrapRouter, getConfig };
+export { Route, RouteCore, Router, bootstrapRouter, getConfig };
 export type { IWritableConfig, IWritableTagNames, RouteParseOptions };

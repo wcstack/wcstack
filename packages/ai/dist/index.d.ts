@@ -127,6 +127,51 @@ declare class AiCore extends EventTarget {
     private _mergeUsage;
 }
 
+declare class Ai extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
+    static wcBindable: IWcBindable;
+    static get observedAttributes(): string[];
+    private _core;
+    private _trigger;
+    private _prompt;
+    constructor();
+    get provider(): string;
+    set provider(value: string);
+    get model(): string;
+    set model(value: string);
+    get baseUrl(): string;
+    set baseUrl(value: string);
+    get apiKey(): string;
+    set apiKey(value: string);
+    get system(): string;
+    set system(value: string);
+    get stream(): boolean;
+    set stream(value: boolean);
+    get apiVersion(): string;
+    set apiVersion(value: string);
+    get prompt(): string;
+    set prompt(value: string);
+    get temperature(): number | undefined;
+    set temperature(value: number | undefined);
+    get maxTokens(): number | undefined;
+    set maxTokens(value: number | undefined);
+    get content(): string;
+    get loading(): boolean;
+    get streaming(): boolean;
+    get error(): any;
+    get usage(): any;
+    get messages(): AiMessage[];
+    set messages(value: AiMessage[]);
+    get trigger(): boolean;
+    set trigger(value: boolean);
+    private _collectSystem;
+    send(): Promise<string | null>;
+    abort(): void;
+    connectedCallback(): void;
+    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    disconnectedCallback(): void;
+}
+
 declare class OpenAiProvider implements IAiProvider {
     buildRequest(messages: AiMessage[], options: AiRequestOptions): AiProviderRequest;
     parseResponse(data: any): {
@@ -151,5 +196,5 @@ declare class AzureOpenAiProvider extends OpenAiProvider {
     buildRequest(messages: AiMessage[], options: AiRequestOptions): AiProviderRequest;
 }
 
-export { AiCore, AnthropicProvider, AzureOpenAiProvider, OpenAiProvider, bootstrapAi, getConfig };
+export { AiCore, AnthropicProvider, AzureOpenAiProvider, OpenAiProvider, Ai as WcsAi, bootstrapAi, getConfig };
 export type { AiHttpError, AiMessage, AiProviderRequest, AiRequestOptions, AiStreamChunkResult, AiUsage, IAiProvider, IWritableConfig, IWritableTagNames, WcsAiCoreValues, WcsAiValues };

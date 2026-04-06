@@ -1863,5 +1863,5 @@ function bootstrapRouter(config) {
     registerComponents();
 }
 
-export { RouteCore, Router, bootstrapRouter, getConfig };
+export { Route, RouteCore, Router, bootstrapRouter, getConfig };
 //# sourceMappingURL=index.esm.js.map

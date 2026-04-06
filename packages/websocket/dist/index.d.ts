@@ -102,5 +102,40 @@ declare class WebSocketCore extends EventTarget {
     private _closeInternal;
 }
 
-export { WebSocketCore, bootstrapWebSocket, getConfig };
+declare class WcsWebSocket extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
+    static wcBindable: IWcBindable;
+    static get observedAttributes(): string[];
+    private _core;
+    private _trigger;
+    constructor();
+    get url(): string;
+    set url(value: string);
+    get protocols(): string;
+    set protocols(value: string);
+    get autoReconnect(): boolean;
+    set autoReconnect(value: boolean);
+    get reconnectInterval(): number;
+    set reconnectInterval(value: number);
+    get maxReconnects(): number;
+    set maxReconnects(value: number);
+    get manual(): boolean;
+    set manual(value: boolean);
+    get message(): any;
+    get connected(): boolean;
+    get loading(): boolean;
+    get error(): any;
+    get readyState(): number;
+    get trigger(): boolean;
+    set trigger(value: boolean);
+    set send(data: any);
+    connect(): void;
+    sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+    close(code?: number, reason?: string): void;
+    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    connectedCallback(): void;
+    disconnectedCallback(): void;
+}
+
+export { WcsWebSocket, WebSocketCore, bootstrapWebSocket, getConfig };
 export type { IWritableConfig, IWritableTagNames, WcsWsCoreValues, WcsWsError, WcsWsValues, WebSocketConnectOptions };

@@ -7,11 +7,15 @@ The server includes a built-in Echo / Broadcast WebSocket endpoint.
 
 **Web Components work in any framework.** The `<wcs-ws>` custom element implements the [wc-bindable protocol](https://github.com/user/wc-bindable-protocol). The `@wc-bindable/vue` adapter provides a `useWcBindable()` composable that automatically syncs all bindable properties into Vue reactive state — no manual `addEventListener` needed.
 
-## What it uses
+## Stack
 
-- Vue 3 (ESM via esm.sh, no build step)
-- `@wc-bindable/vue` adapter
-- `/packages/websocket/dist/auto.js`
+| Layer | Technology |
+|-------|-----------|
+| UI | Vue 3 + SFC (`<script setup>`) |
+| Build | Vite |
+| Adapter | `@wc-bindable/vue` |
+| WebSocket | `@wcstack/websocket` (`<wcs-ws>`) |
+| Server | Node.js + ws |
 
 ## Setup
 
@@ -19,15 +23,24 @@ The server includes a built-in Echo / Broadcast WebSocket endpoint.
 # 1. Build the websocket package
 cd packages/websocket && npm run build && cd ../..
 
-# 2. Install server dependencies
-cd examples/vue-websocket && npm install && cd ../..
+# 2. Install dependencies & build
+cd examples/vue-websocket && npm install && npm run build && cd ../..
 
-# 3. Start the demo server
+# 3. Start the server
 node examples/vue-websocket/server.js
 ```
 
 Open `http://localhost:3302`.
 Open multiple tabs to see broadcast in action.
+
+### Development mode
+
+```bash
+cd examples/vue-websocket
+npm run dev
+```
+
+Vite dev server starts with HMR. WebSocket server must be started separately.
 
 ## Environment variables
 
@@ -35,26 +48,22 @@ Open multiple tabs to see broadcast in action.
 
 ## How Vue uses `<wcs-ws>` via @wc-bindable
 
-```js
+```vue
+<script setup>
 import { useWcBindable } from "@wc-bindable/vue";
 
-setup() {
-  // All wc-bindable properties are automatically synced
-  const { ref: wsEl, values: ws } = useWcBindable({
-    message: null,
-    connected: false,
-    loading: false,
-    error: null,
-  });
+const { ref: wsEl, values: ws } = useWcBindable({
+  message: null,
+  connected: false,
+  loading: false,
+  error: null,
+});
+</script>
 
-  // ws.connected, ws.message, etc. are live Vue reactive state
-  return { wsEl, ws };
-}
-```
-
-```html
-<wcs-ws ref="wsEl" url="ws://..." auto-reconnect />
-<p>Status: {{ ws.connected ? 'Connected' : 'Disconnected' }}</p>
+<template>
+  <wcs-ws ref="wsEl" url="ws://..." auto-reconnect />
+  <p>Status: {{ ws.connected ? 'Connected' : 'Disconnected' }}</p>
+</template>
 ```
 
 ## WebSocket protocol
@@ -63,9 +72,9 @@ Same as the [state-websocket example](../state-websocket/README.md#websocket-pro
 
 ## What the demo shows
 
-- `<wcs-ws>` used directly in Vue templates
+- `<wcs-ws>` used directly in Vue SFC templates
 - Automatic property sync via `useWcBindable()` — no manual event listeners
 - Sending messages via the `send` property setter
 - `auto-reconnect` for automatic reconnection
 - Real-time client count and server uptime display
-- Fully ESM, buildless (Import Maps + esm.sh)
+- Standard Vite + Vue build pipeline (SFC, bundling, minification)

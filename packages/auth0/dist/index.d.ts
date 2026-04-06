@@ -135,5 +135,48 @@ declare class AuthCore extends EventTarget {
     getToken(options?: Record<string, any>): Promise<string | null>;
 }
 
-export { AuthCore, bootstrapAuth, getConfig };
+declare class Auth extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
+    static wcBindable: IWcBindable;
+    static get observedAttributes(): string[];
+    private _core;
+    private _trigger;
+    private _connectedCallbackPromise;
+    constructor();
+    get domain(): string;
+    set domain(value: string);
+    get clientId(): string;
+    set clientId(value: string);
+    get redirectUri(): string;
+    set redirectUri(value: string);
+    get audience(): string;
+    set audience(value: string);
+    get scope(): string;
+    set scope(value: string);
+    get cacheLocation(): "memory" | "localstorage";
+    set cacheLocation(value: "memory" | "localstorage");
+    get useRefreshTokens(): boolean;
+    set useRefreshTokens(value: boolean);
+    get popup(): boolean;
+    set popup(value: boolean);
+    get authenticated(): boolean;
+    get user(): any;
+    get token(): string | null;
+    get loading(): boolean;
+    get error(): any;
+    get client(): any;
+    get connectedCallbackPromise(): Promise<void>;
+    get trigger(): boolean;
+    set trigger(value: boolean);
+    private _buildClientOptions;
+    initialize(): Promise<void>;
+    login(options?: Record<string, any>): Promise<void>;
+    logout(options?: Record<string, any>): Promise<void>;
+    getToken(options?: Record<string, any>): Promise<string | null>;
+    connectedCallback(): void;
+    attributeChangedCallback(_name: string, _oldValue: string | null, _newValue: string | null): void;
+    disconnectedCallback(): void;
+}
+
+export { AuthCore, Auth as WcsAuth, bootstrapAuth, getConfig };
 export type { Auth0ClientOptions, IWritableConfig, IWritableTagNames, WcsAuthCoreValues, WcsAuthError, WcsAuthUser, WcsAuthValues };

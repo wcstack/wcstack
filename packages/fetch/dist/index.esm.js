@@ -419,5 +419,5 @@ function bootstrapFetch(userConfig) {
     registerComponents();
 }
 
-export { FetchCore, bootstrapFetch, getConfig };
+export { FetchCore, Fetch as WcsFetch, bootstrapFetch, getConfig };
 //# sourceMappingURL=index.esm.js.map

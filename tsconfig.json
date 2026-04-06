@@ -11,6 +11,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "inlineSources": true,
-    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx"
   }
 }

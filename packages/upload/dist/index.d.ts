@@ -86,5 +86,45 @@ declare class UploadCore extends EventTarget {
     private _doUpload;
 }
 
-export { UploadCore, bootstrapUpload, getConfig };
+declare class WcsUpload extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
+    static wcBindable: IWcBindable;
+    static get observedAttributes(): string[];
+    private _core;
+    private _files;
+    private _trigger;
+    constructor();
+    get url(): string;
+    set url(value: string);
+    get method(): string;
+    set method(value: string);
+    get fieldName(): string;
+    set fieldName(value: string);
+    get multiple(): boolean;
+    set multiple(value: boolean);
+    get maxSize(): number;
+    set maxSize(value: number);
+    get accept(): string;
+    set accept(value: string);
+    get manual(): boolean;
+    set manual(value: boolean);
+    get value(): any;
+    get loading(): boolean;
+    get progress(): number;
+    get error(): any;
+    get status(): number;
+    get promise(): Promise<any>;
+    get trigger(): boolean;
+    set trigger(value: boolean);
+    get files(): FileList | File[] | null;
+    set files(value: FileList | File[] | null);
+    private _validate;
+    abort(): void;
+    upload(): Promise<any>;
+    attributeChangedCallback(_name: string, _oldValue: string | null, _newValue: string | null): void;
+    connectedCallback(): void;
+    disconnectedCallback(): void;
+}
+
+export { UploadCore, WcsUpload, bootstrapUpload, getConfig };
 export type { IWritableConfig, IWritableTagNames, UploadRequestOptions, WcsUploadCoreValues, WcsUploadError, WcsUploadValues };

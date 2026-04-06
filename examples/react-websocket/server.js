@@ -1,70 +1,43 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
+import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "./ws.js";
 
-const exampleRoot = fileURLToPath(new URL(".", import.meta.url));
-const repoRoot = resolve(exampleRoot, "..", "..");
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const distDir = resolve(__dirname, "dist");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".map": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
 };
 
-function htmlEscape(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function resolvePath(pathname) {
-  const safePath = pathname === "/"
-    ? "/examples/react-websocket/index.html"
-    : pathname;
-  const absolute = resolve(repoRoot, `.${safePath}`);
-  if (!absolute.startsWith(repoRoot)) {
-    return null;
-  }
-  return absolute;
-}
-
-const indexPath = ["examples", "react-websocket", "index.html"].join(sep);
-
-async function serveFile(res, path, port) {
-  const filePath = resolvePath(path);
-  if (!filePath) {
+async function serveFile(res, pathname) {
+  // SPA fallback: non-file paths → index.html
+  const filePath = resolve(distDir, pathname === "/" ? "index.html" : `.${pathname}`);
+  if (!filePath.startsWith(distDir)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;
   }
 
   try {
-    let content = await readFile(filePath, "utf8");
+    const content = await readFile(filePath);
     const ext = extname(filePath);
-
-    if (ext === ".html" && filePath.endsWith(indexPath)) {
-      content = content
-        .replaceAll("__WS_URL__", htmlEscape(`ws://localhost:${port}/ws`));
-    }
-
-    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "text/plain; charset=utf-8" });
+    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
     res.end(content);
   } catch {
+    // SPA fallback
     try {
-      const binary = await readFile(filePath);
-      const ext = extname(filePath);
-      res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
-      res.end(binary);
+      const index = await readFile(resolve(distDir, "index.html"));
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(index);
     } catch {
       res.writeHead(404);
-      res.end("Not Found");
+      res.end("Not Found — run `npm run build` first");
     }
   }
 }
@@ -75,7 +48,7 @@ const port = Number(process.env.PORT || 3301);
 
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
-  await serveFile(res, url.pathname, port);
+  await serveFile(res, url.pathname);
 });
 
 const wss = new WebSocketServer(httpServer, "/ws");
