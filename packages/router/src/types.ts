@@ -7,6 +7,7 @@ export interface ITagNames {
   readonly layoutOutlet: string;
   readonly link: string;
   readonly head: string;
+  readonly guardHandler: string;
 }
 
 export interface IWritableTagNames {
@@ -17,6 +18,7 @@ export interface IWritableTagNames {
   layoutOutlet?: string;
   link?: string;
   head?: string;
+  guardHandler?: string;
 }
 
 export interface IConfig {

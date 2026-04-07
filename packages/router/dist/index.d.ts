@@ -6,6 +6,7 @@ interface ITagNames {
     readonly layoutOutlet: string;
     readonly link: string;
     readonly head: string;
+    readonly guardHandler: string;
 }
 interface IWritableTagNames {
     route?: string;
@@ -15,6 +16,7 @@ interface IWritableTagNames {
     layoutOutlet?: string;
     link?: string;
     head?: string;
+    guardHandler?: string;
 }
 interface IConfig {
     readonly tagNames: ITagNames;

@@ -425,26 +425,6 @@
 
   __AUTH_ELEMENT__
 
-  <!-- ルートガードの設定 -->
-  <script type="module">
-    // authenticated の変化を監視してガードに利用
-    const authEl = document.getElementById("auth");
-
-    // dashboard ルートにガードハンドラを設定
-    customElements.whenDefined("wcs-route").then(() => {
-      const dashboardRoute = document.querySelector('wcs-route[path="dashboard"]');
-      if (dashboardRoute) {
-        dashboardRoute.guardHandler = async () => {
-          // wcs-auth が初期化済みか確認
-          if (authEl?.connectedCallbackPromise) {
-            await authEl.connectedCallbackPromise;
-          }
-          return authEl?.authenticated ?? false;
-        };
-      }
-    });
-  </script>
-
   <main>
     <section class="hero">
       <span class="eyebrow">Local Demo</span>
@@ -538,6 +518,17 @@
 
           <!-- Dashboard ページ（ガード付き） -->
           <wcs-route path="dashboard" guard="/">
+            <wcs-guard-handler>
+              <script type="module">
+                export default async function (toPath, fromPath) {
+                  const authEl = document.getElementById("auth");
+                  if (authEl?.connectedCallbackPromise) {
+                    await authEl.connectedCallbackPromise;
+                  }
+                  return authEl?.authenticated ?? false;
+                }
+              </script>
+            </wcs-guard-handler>
             <wcs-head><title>Dashboard — wcstack auth0 demo</title></wcs-head>
 
             <div class="grid">

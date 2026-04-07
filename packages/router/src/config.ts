@@ -9,6 +9,7 @@ interface IInternalConfig {
     layoutOutlet: string;
     link: string;
     head: string;
+    guardHandler: string;
   };
   enableShadowRoot: boolean;
   basenameFileExtensions: string[];
@@ -22,7 +23,8 @@ const _config: IInternalConfig = {
     layout: "wcs-layout",
     layoutOutlet: "wcs-layout-outlet",
     link: "wcs-link",
-    head: "wcs-head"
+    head: "wcs-head",
+    guardHandler: "wcs-guard-handler"
   },
   enableShadowRoot: false,
   basenameFileExtensions: [".html"]

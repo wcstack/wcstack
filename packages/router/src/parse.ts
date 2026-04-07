@@ -3,6 +3,7 @@ import { Layout } from "./components/Layout.js";
 import { createLayoutOutlet } from "./components/LayoutOutlet.js";
 import { Route } from "./components/Route.js";
 import { config } from "./config.js";
+import { loadGuardHandler } from "./loadGuardHandler.js";
 
 
 function _duplicateCheck(routesByPath: Map<string, IRoute[]>, route: IRoute): void {
@@ -53,6 +54,15 @@ async function _parseNode(
         map.set(route.uuid, route);
         appendNode = route.placeHolder;
         element = route;
+      } else if (tagName === config.tagNames.guardHandler) {
+        if (routes.length > 0) {
+          const route = routes[routes.length - 1];
+          const script = element.querySelector('script[type="module"]');
+          if (script) {
+            loadGuardHandler(script as HTMLScriptElement, route);
+          }
+        }
+        continue;
       } else if (tagName === config.tagNames.layout) {
         const childFragment = document.createDocumentFragment();
         // Move child nodes to fragment to avoid duplication of

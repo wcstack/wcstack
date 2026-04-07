@@ -6,7 +6,8 @@ const _config = {
         layout: "wcs-layout",
         layoutOutlet: "wcs-layout-outlet",
         link: "wcs-link",
-        head: "wcs-head"
+        head: "wcs-head",
+        guardHandler: "wcs-guard-handler"
     },
     enableShadowRoot: false,
     basenameFileExtensions: [".html"]
@@ -909,6 +910,36 @@ function createLayoutOutlet() {
     return document.createElement(config.tagNames.layoutOutlet);
 }
 
+async function importModule(script) {
+    let scriptModule = null;
+    const sourceComment = `\n//# sourceURL=wcs-guard-handler\n`;
+    if (typeof URL.createObjectURL === 'function') {
+        const blob = new Blob([script.text + sourceComment], { type: "application/javascript" });
+        const url = URL.createObjectURL(blob);
+        try {
+            scriptModule = await import(url);
+        }
+        finally {
+            URL.revokeObjectURL(url);
+        }
+    }
+    else {
+        const b64 = btoa(String.fromCodePoint(...new TextEncoder().encode(script.text + sourceComment)));
+        scriptModule = await import(`data:application/javascript;base64,${b64}`);
+    }
+    if (scriptModule && typeof scriptModule.default === 'function') {
+        return scriptModule.default;
+    }
+    return null;
+}
+function loadGuardHandler(script, route) {
+    importModule(script).then(handler => {
+        if (handler) {
+            route.guardHandler = handler;
+        }
+    });
+}
+
 function _duplicateCheck(routesByPath, route) {
     let routes = routesByPath.get(route.absolutePath);
     if (!routes) {
@@ -950,6 +981,16 @@ async function _parseNode(routerNode, node, routes, map, routesByPath) {
                 map.set(route.uuid, route);
                 appendNode = route.placeHolder;
                 element = route;
+            }
+            else if (tagName === config.tagNames.guardHandler) {
+                if (routes.length > 0) {
+                    const route = routes[routes.length - 1];
+                    const script = element.querySelector('script[type="module"]');
+                    if (script) {
+                        loadGuardHandler(script, route);
+                    }
+                }
+                continue;
             }
             else if (tagName === config.tagNames.layout) {
                 const childFragment = document.createDocumentFragment();
