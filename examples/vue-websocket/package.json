@@ -12,7 +12,6 @@
     "@wc-bindable/vue": "^0.3.0",
     "@wcstack/websocket": "file:../../packages/websocket",
     "vue": "^3.5.13",
-    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",

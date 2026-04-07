@@ -1,5 +1,5 @@
 /**
- * ws wrapper. Provides a simple API for server.js.
+ * ws wrapper. Provides a simple API for demo servers.
  */
 import { WebSocketServer as WsServer } from "ws";
 

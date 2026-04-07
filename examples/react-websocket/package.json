@@ -13,7 +13,6 @@
     "@wcstack/websocket": "file:../../packages/websocket",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
