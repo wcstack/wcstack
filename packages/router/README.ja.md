@@ -141,7 +141,30 @@
 | `guardHandler` | ガード判定関数を設定 |
 
 ガード判定関数の型：
-function (toPath: string, fromPath: string): boolean | Promise<boolean>
+`(toPath: string, fromPath: string) => boolean | Promise<boolean>`
+
+#### GuardHandler(wcs-guard-handler)
+
+`<wcs-route>` の子要素として配置し、ガード判定関数を宣言的に定義します。`<script type="module">` の `default export` で判定関数を返してください。`<wcs-guard-handler>` 要素自体はパース後にDOMから除去されます。
+
+```html
+<wcs-route path="/dashboard" guard="/login">
+  <wcs-guard-handler>
+    <script type="module">
+      export default function(toPath, fromPath) {
+        return document.cookie.includes('session=');
+      }
+    </script>
+  </wcs-guard-handler>
+  <dashboard-page></dashboard-page>
+</wcs-route>
+```
+
+- `guard` 属性の値はガードがキャンセルされた場合のリダイレクト先パス
+- 判定関数が `false` を返すとナビゲーションがキャンセルされ、`guard` 属性のパスへ遷移
+- 判定関数は `Promise<boolean>` を返すことも可能（非同期チェック対応）
+- `<wcs-route>` の外に配置された `<wcs-guard-handler>` は無視される
+- `<script type="module">` がない場合、`guardHandler` は設定されない
 
 #### 型付きパラメータ
 

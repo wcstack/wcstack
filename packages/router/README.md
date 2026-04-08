@@ -141,7 +141,30 @@ Displays children when the route path matches. Match priority is static paths ov
 | `guardHandler` | Sets the guard decision function. |
 
 Guard decision function type:
-function (toPath: string, fromPath: string): boolean | Promise<boolean>
+`(toPath: string, fromPath: string) => boolean | Promise<boolean>`
+
+#### GuardHandler (wcs-guard-handler)
+
+Place as a child of `<wcs-route>` to declaratively define a guard decision function. Export the function as the `default export` from a `<script type="module">`. The `<wcs-guard-handler>` element itself is removed from the DOM after parsing.
+
+```html
+<wcs-route path="/dashboard" guard="/login">
+  <wcs-guard-handler>
+    <script type="module">
+      export default function(toPath, fromPath) {
+        return document.cookie.includes('session=');
+      }
+    </script>
+  </wcs-guard-handler>
+  <dashboard-page></dashboard-page>
+</wcs-route>
+```
+
+- The `guard` attribute value is the redirect path when the guard cancels navigation
+- If the function returns `false`, navigation is cancelled and the user is redirected to the `guard` path
+- The function can return `Promise<boolean>` for async checks
+- `<wcs-guard-handler>` placed outside a `<wcs-route>` is ignored
+- If no `<script type="module">` is present, `guardHandler` is not set
 
 #### Typed Parameters
 
