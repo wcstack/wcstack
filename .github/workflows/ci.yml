@@ -8,9 +8,6 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      state: ${{ steps.filter.outputs.state }}
-      autoloader: ${{ steps.filter.outputs.autoloader }}
-      router: ${{ steps.filter.outputs.router }}
       packages: ${{ steps.build-matrix.outputs.packages }}
     steps:
       - uses: actions/checkout@v4
@@ -27,18 +24,43 @@ jobs:
             router:
               - 'packages/router/**'
               - 'tsconfig.json'
+            fetch:
+              - 'packages/fetch/**'
+              - 'tsconfig.json'
+            websocket:
+              - 'packages/websocket/**'
+              - 'tsconfig.json'
+            ai:
+              - 'packages/ai/**'
+              - 'tsconfig.json'
+            auth0:
+              - 'packages/auth0/**'
+              - 'tsconfig.json'
+            upload:
+              - 'packages/upload/**'
+              - 'tsconfig.json'
+            server:
+              - 'packages/server/**'
+              - 'tsconfig.json'
       - id: build-matrix
+        env:
+          STATE: ${{ steps.filter.outputs.state }}
+          AUTOLOADER: ${{ steps.filter.outputs.autoloader }}
+          ROUTER: ${{ steps.filter.outputs.router }}
+          FETCH: ${{ steps.filter.outputs.fetch }}
+          WEBSOCKET: ${{ steps.filter.outputs.websocket }}
+          AI: ${{ steps.filter.outputs.ai }}
+          AUTH0: ${{ steps.filter.outputs.auth0 }}
+          UPLOAD: ${{ steps.filter.outputs.upload }}
+          SERVER: ${{ steps.filter.outputs.server }}
         run: |
           packages=()
-          if [ "${{ steps.filter.outputs.state }}" == "true" ]; then
-            packages+=("state")
-          fi
-          if [ "${{ steps.filter.outputs.autoloader }}" == "true" ]; then
-            packages+=("autoloader")
-          fi
-          if [ "${{ steps.filter.outputs.router }}" == "true" ]; then
-            packages+=("router")
-          fi
+          for pkg in state autoloader router fetch websocket ai auth0 upload server; do
+            key=$(echo "$pkg" | tr '[:lower:]' '[:upper:]')
+            if [ "${!key}" == "true" ]; then
+              packages+=("$pkg")
+            fi
+          done
           if [ ${#packages[@]} -eq 0 ]; then
             echo "packages=[]" >> "$GITHUB_OUTPUT"
           else
