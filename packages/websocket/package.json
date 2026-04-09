@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/websocket",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Declarative WebSocket component for Web Components. Framework-agnostic real-time communication via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

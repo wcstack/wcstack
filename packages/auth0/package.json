@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/auth0",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Declarative Auth0 authentication component for Web Components. Framework-agnostic auth via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

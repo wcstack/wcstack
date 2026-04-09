@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/ai",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Declarative AI inference component for Web Components. Streaming-first, multi-provider (OpenAI, Anthropic, Azure OpenAI) via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
