@@ -19,7 +19,9 @@
       "Bash(kill %1 %2)",
       "Bash(kill %1)",
       "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol//**)",
-      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol/**)"
+      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol/**)",
+      "Bash(gh run:*)",
+      "Bash(node -p 'JSON.stringify\\({name:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).name, version:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).version, private:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).private||false}\\)')"
     ],
     "additionalDirectories": [
       "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src",
