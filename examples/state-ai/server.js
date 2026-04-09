@@ -1,10 +1,9 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
+import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const exampleRoot = fileURLToPath(new URL(".", import.meta.url));
-const repoRoot = resolve(exampleRoot, "..", "..");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -48,16 +47,14 @@ function buildAiElement(config) {
 
 function resolvePath(pathname) {
   const safePath = pathname === "/"
-    ? "/examples/state-ai/index.html"
-    : pathname;
-  const absolute = resolve(repoRoot, `.${safePath}`);
-  if (!absolute.startsWith(repoRoot)) {
+    ? "index.html"
+    : pathname.replace(/^\//, "");
+  const absolute = resolve(exampleRoot, safePath);
+  if (!absolute.startsWith(exampleRoot)) {
     return null;
   }
   return absolute;
 }
-
-const indexPath = ["examples", "state-ai", "index.html"].join(sep);
 
 function injectConfig(content, _port) {
   const config = buildConfig(_port);
@@ -78,7 +75,7 @@ async function serveFile(res, path, port) {
     let content = await readFile(filePath, "utf8");
     const ext = extname(filePath);
 
-    if (ext === ".html" && filePath.endsWith(indexPath)) {
+    if (ext === ".html" && filePath.endsWith("index.html")) {
       content = injectConfig(content, port);
     }
 

@@ -1,21 +1,16 @@
 # state + ai demo
 
 `@wcstack/state` と `@wcstack/ai` を組み合わせた、ストリーミングチャットのローカルデモです。
-CDN を使わず、ローカルビルド成果物だけで動作します。
 
-## 使用するローカルパス
+## 使用パッケージ
 
-- `/packages/state/dist/auto.js`
-- `/packages/ai/dist/auto.js`
+- `@wcstack/state` — CDN (`esm.run`) 経由
+- `@wcstack/ai` — CDN (`esm.run`) 経由
 
 ## 起動手順
 
 ```bash
-# 1. デモが使うパッケージをビルド
-cd packages/state && npm run build && cd ../..
-cd packages/ai && npm run build && cd ../..
-
-# 2. AI 設定を環境変数で渡して起動
+# AI 設定を環境変数で渡して起動
 # PowerShell
 $env:AI_BASE_URL='http://localhost:11434/v1'
 $env:AI_PROVIDER='openai'

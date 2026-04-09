@@ -1,10 +1,9 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
+import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const exampleRoot = fileURLToPath(new URL(".", import.meta.url));
-const repoRoot = resolve(exampleRoot, "..", "..");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -51,16 +50,14 @@ function buildAuthElement(config) {
 
 function resolvePath(pathname) {
   const safePath = pathname === "/"
-    ? "/examples/state-auth0-router/index.html"
-    : pathname;
-  const absolute = resolve(repoRoot, `.${safePath}`);
-  if (!absolute.startsWith(repoRoot)) {
+    ? "index.html"
+    : pathname.replace(/^\//, "");
+  const absolute = resolve(exampleRoot, safePath);
+  if (!absolute.startsWith(exampleRoot)) {
     return null;
   }
   return absolute;
 }
-
-const indexPath = ["examples", "state-auth0-router", "index.html"].join(sep);
 
 function injectConfig(content, port) {
   const config = buildConfig(port);
@@ -82,7 +79,7 @@ async function serveFile(res, path, port) {
     let content = await readFile(filePath, "utf8");
     const ext = extname(filePath);
 
-    if (ext === ".html" && filePath.endsWith(indexPath)) {
+    if (ext === ".html" && filePath.endsWith("index.html")) {
       content = injectConfig(content, port);
     }
 
@@ -97,7 +94,7 @@ async function serveFile(res, path, port) {
     } catch {
       // SPA フォールバック: ファイルが見つからない場合は index.html を返す
       try {
-        const fallback = resolve(repoRoot, "examples", "state-auth0-router", "index.html");
+        const fallback = resolve(exampleRoot, "index.html");
         let content = await readFile(fallback, "utf8");
         content = injectConfig(content, port);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });

@@ -1,10 +1,9 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
+import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const exampleRoot = fileURLToPath(new URL(".", import.meta.url));
-const repoRoot = resolve(exampleRoot, "..", "..");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -51,10 +50,10 @@ function buildAuthElement(config) {
 
 function resolvePath(pathname) {
   const safePath = pathname === "/"
-    ? "/examples/state-auth0/index.html"
-    : pathname;
-  const absolute = resolve(repoRoot, `.${safePath}`);
-  if (!absolute.startsWith(repoRoot)) {
+    ? "index.html"
+    : pathname.replace(/^\//, "");
+  const absolute = resolve(exampleRoot, safePath);
+  if (!absolute.startsWith(exampleRoot)) {
     return null;
   }
   return absolute;
@@ -72,7 +71,7 @@ async function serveFile(res, path, port) {
     let content = await readFile(filePath, "utf8");
     const ext = extname(filePath);
 
-    if (ext === ".html" && filePath.endsWith(["examples", "state-auth0", "index.html"].join(sep))) {
+    if (ext === ".html" && filePath.endsWith("index.html")) {
       const config = buildConfig(port);
       content = content
         .replace("__DEMO_CONFIG__", JSON.stringify(config).replaceAll("<", "\\u003c"))

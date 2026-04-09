@@ -3,22 +3,18 @@
 `@wcstack/state` と `@wcstack/websocket` を組み合わせた、リアルタイム通信のローカルデモです。
 サーバー側に Echo / Broadcast の WebSocket エンドポイントを内蔵しています。
 
-## 使用するローカルパス
+## 使用パッケージ
 
-- `/packages/state/dist/auto.js`
-- `/packages/websocket/dist/auto.js`
+- `@wcstack/state` — CDN (`esm.run`) 経由
+- `@wcstack/websocket` — CDN (`esm.run`) 経由
 
 ## 起動手順
 
 ```bash
-# 1. デモが使うパッケージをビルド
-cd packages/state && npm run build && cd ../..
-cd packages/websocket && npm run build && cd ../..
+# 1. 共有 WebSocket サーバーの依存をインストール
+cd examples/shared/websocket && npm install && cd ../../..
 
-# 2. サーバー依存をインストール
-cd examples/state-websocket && npm install && cd ../..
-
-# 3. 起動
+# 2. 起動
 node examples/state-websocket/server.js
 ```
 

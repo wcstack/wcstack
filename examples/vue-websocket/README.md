@@ -53,8 +53,8 @@ In other words, `<wcs-ws>` transforms the asynchronous WebSocket into **a state 
 ## Setup
 
 ```bash
-# 1. Build the websocket package
-cd packages/websocket && npm run build && cd ../..
+# 1. Install shared WebSocket server dependencies
+cd examples/shared/websocket && npm install && cd ../../..
 
 # 2. Install dependencies & build
 cd examples/vue-websocket && npm install && npm run build && cd ../..
