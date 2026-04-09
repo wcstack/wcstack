@@ -1,6 +1,6 @@
 # state + auth0 + router demo
 
-A local demo combining `@wcstack/state`, `@wcstack/auth0`, and `@wcstack/router` without any CDN assets.
+A local demo combining `@wcstack/state`, `@wcstack/auth0`, and `@wcstack/router` into an authentication-guarded SPA.
 A route guard protects `/dashboard` so only authenticated users can access it.
 
 ## Routes
@@ -12,23 +12,15 @@ A route guard protects `/dashboard` so only authenticated users can access it.
 
 ## What it uses
 
-- `/packages/state/dist/auto.js`
-- `/packages/auth0/dist/auto.js`
-- `/packages/router/dist/auto.js`
-- `/examples/state-auth0-router/node_modules/@auth0/auth0-spa-js/dist/auth0-spa-js.production.esm.js`
+- `@wcstack/state` via CDN (`esm.run`)
+- `@wcstack/auth0` via CDN (`esm.run`)
+- `@wcstack/router` via CDN (`esm.run`)
+- `@auth0/auth0-spa-js` via CDN (`esm.run`, resolved through import map)
 
 ## Setup
 
 ```bash
-# 1. Build the packages used by the demo
-cd packages/state && npm run build && cd ../..
-cd packages/auth0 && npm run build && cd ../..
-cd packages/router && npm run build && cd ../..
-
-# 2. Install the local Auth0 SDK dependency used by the import map
-cd examples/state-auth0-router && npm install && cd ../..
-
-# 3. Start the demo server with your Auth0 application settings
+# Start the demo server with your Auth0 application settings
 # PowerShell
 $env:AUTH0_DOMAIN='your-tenant.us.auth0.com'
 $env:AUTH0_CLIENT_ID='your-client-id'
@@ -71,4 +63,4 @@ If you set `AUTH0_POPUP=false`, also add:
 - `authenticated`, `user`, `token`, `loading`, and `error` bound from `<wcs-auth>` into `<wcs-state>`
 - login triggered from state via `trigger`
 - SPA fallback (directly opening `/dashboard` works correctly)
-- local import map resolution for `@auth0/auth0-spa-js`
+- CDN import map resolution for `@auth0/auth0-spa-js`

@@ -1,21 +1,16 @@
 # state + ai demo
 
 A local demo combining `@wcstack/state` and `@wcstack/ai` into a streaming chat interface.
-No CDN — runs entirely on local build artifacts.
 
 ## What it uses
 
-- `/packages/state/dist/auto.js`
-- `/packages/ai/dist/auto.js`
+- `@wcstack/state` via CDN (`esm.run`)
+- `@wcstack/ai` via CDN (`esm.run`)
 
 ## Setup
 
 ```bash
-# 1. Build the packages used by the demo
-cd packages/state && npm run build && cd ../..
-cd packages/ai && npm run build && cd ../..
-
-# 2. Start the demo server with your AI settings
+# Start the demo server with your AI settings
 # PowerShell
 $env:AI_BASE_URL='http://localhost:11434/v1'
 $env:AI_PROVIDER='openai'

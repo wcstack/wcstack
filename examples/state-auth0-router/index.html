@@ -330,13 +330,13 @@
   <script type="importmap">
     {
       "imports": {
-        "@auth0/auth0-spa-js": "/examples/state-auth0-router/node_modules/@auth0/auth0-spa-js/dist/auth0-spa-js.production.esm.js"
+        "@auth0/auth0-spa-js": "https://esm.run/@auth0/auth0-spa-js"
       }
     }
   </script>
-  <script type="module" src="/packages/state/dist/auto.js"></script>
-  <script type="module" src="/packages/auth0/dist/auto.js"></script>
-  <script type="module" src="/packages/router/dist/auto.js"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/auth0/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
 </head>
 <body>
   <wcs-state>

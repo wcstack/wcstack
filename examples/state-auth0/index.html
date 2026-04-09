@@ -304,12 +304,12 @@
   <script type="importmap">
     {
       "imports": {
-        "@auth0/auth0-spa-js": "/examples/state-auth0/node_modules/@auth0/auth0-spa-js/dist/auth0-spa-js.production.esm.js"
+        "@auth0/auth0-spa-js": "https://esm.run/@auth0/auth0-spa-js"
       }
     }
   </script>
-  <script type="module" src="/packages/state/dist/auto.js"></script>
-  <script type="module" src="/packages/auth0/dist/auto.js"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/auth0/auto"></script>
 </head>
 <body>
   <wcs-state>
@@ -389,10 +389,10 @@
   <main>
     <section class="hero">
       <span class="eyebrow">Local Demo</span>
-      <h1>state と auth0 を<br>ローカル配布物でつなぐ</h1>
+      <h1>state と auth0 で作る<br>認証デモ</h1>
       <p class="lead">
-        このページは <code>/packages/state/dist/auto.js</code> と <code>/packages/auth0/dist/auto.js</code> を直接読み込みます。
-        Auth0 SDK も CDN を使わず、サンプル配下の <code>node_modules</code> を import map で解決します。
+        <code>&lt;wcs-auth&gt;</code> の認証状態を <code>&lt;wcs-state&gt;</code> にバインドし、
+        ログイン・ユーザー情報・アクセストークンをリアルタイムで UI に反映しています。
       </p>
       <div class="status">
         <span class="dot" data-wcs="class.live: authenticated"></span>

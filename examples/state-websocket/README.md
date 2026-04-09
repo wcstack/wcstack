@@ -5,20 +5,16 @@ The server includes a built-in Echo / Broadcast WebSocket endpoint.
 
 ## What it uses
 
-- `/packages/state/dist/auto.js`
-- `/packages/websocket/dist/auto.js`
+- `@wcstack/state` via CDN (`esm.run`)
+- `@wcstack/websocket` via CDN (`esm.run`)
 
 ## Setup
 
 ```bash
-# 1. Build the packages used by the demo
-cd packages/state && npm run build && cd ../..
-cd packages/websocket && npm run build && cd ../..
+# 1. Install shared WebSocket server dependencies
+cd examples/shared/websocket && npm install && cd ../../..
 
-# 2. Install server dependencies
-cd examples/state-websocket && npm install && cd ../..
-
-# 3. Start the demo server
+# 2. Start the demo server
 node examples/state-websocket/server.js
 ```
 

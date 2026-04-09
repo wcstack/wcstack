@@ -53,8 +53,8 @@ const { ref: wsEl, values: ws } = useWcBindable({
 ## 起動手順
 
 ```bash
-# 1. websocket パッケージをビルド
-cd packages/websocket && npm run build && cd ../..
+# 1. 共有 WebSocket サーバーの依存をインストール
+cd examples/shared/websocket && npm install && cd ../../..
 
 # 2. 依存インストール & ビルド
 cd examples/vue-websocket && npm install && npm run build && cd ../..
