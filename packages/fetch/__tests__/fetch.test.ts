@@ -390,8 +390,10 @@ describe("Fetch", () => {
 
     expect(result).toBeNull();
     expect(el.status).toBe(404);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].status).toBe(404);
+    // fetch開始時に null（エラークリア）、HTTPエラー時にエラーオブジェクトの2回発火
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toBeNull();
+    expect(errors[1].status).toBe(404);
   });
 
   it("ネットワークエラーを処理できる", async () => {

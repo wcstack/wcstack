@@ -104,7 +104,7 @@ export class FetchCore extends EventTarget {
     const { signal } = this._abortController;
 
     this._setLoading(true);
-    this._error = null;
+    this._setError(null);
 
     const {
       method = "GET",

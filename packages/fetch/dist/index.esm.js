@@ -129,7 +129,7 @@ class FetchCore extends EventTarget {
         this._abortController = new AbortController();
         const { signal } = this._abortController;
         this._setLoading(true);
-        this._error = null;
+        this._setError(null);
         const { method = "GET", headers = {}, body = null, contentType = null, forceText = false, } = options;
         try {
             if (contentType && !headers["Content-Type"]) {
