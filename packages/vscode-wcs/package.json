@@ -2,7 +2,7 @@
   "name": "wcstack-intellisense",
   "displayName": "WcStack IntelliSense",
   "description": "TypeScript language features for <wcs-state> inline scripts in HTML",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "publisher": "wcstack",
   "license": "MIT",
   "type": "module",
