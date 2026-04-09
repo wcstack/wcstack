@@ -167,6 +167,29 @@ describe('wcs-guard-handler', () => {
     ).rejects.toThrow('Navigation cancelled by guard.');
   });
 
+  it('default exportが関数でない場合、guardHandlerが設定されないこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const template = document.createElement('template');
+    template.innerHTML = `
+      <wcs-route path="/test" guard="/">
+        <wcs-guard-handler>
+          <script type="module">
+            export default "not a function";
+          </script>
+        </wcs-guard-handler>
+      </wcs-route>
+    `;
+    (router as any)._template = template;
+
+    await parse(router);
+    await new Promise(r => setTimeout(r, 100));
+
+    const route = router.routeChildNodes[0] as Route;
+    expect(() => route.guardHandler).toThrow();
+  });
+
   it('ルートの外にあるwcs-guard-handlerは無視されること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
