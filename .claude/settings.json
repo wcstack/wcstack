@@ -23,7 +23,8 @@
     ],
     "additionalDirectories": [
       "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src",
-      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\examples"
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\examples",
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\.github"
     ]
   }
 }

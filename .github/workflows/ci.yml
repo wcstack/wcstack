@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      state: ${{ steps.filter.outputs.state }}
+      autoloader: ${{ steps.filter.outputs.autoloader }}
+      router: ${{ steps.filter.outputs.router }}
+      packages: ${{ steps.build-matrix.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            state:
+              - 'packages/state/**'
+              - 'tsconfig.json'
+            autoloader:
+              - 'packages/autoloader/**'
+              - 'tsconfig.json'
+            router:
+              - 'packages/router/**'
+              - 'tsconfig.json'
+      - id: build-matrix
+        run: |
+          packages=()
+          if [ "${{ steps.filter.outputs.state }}" == "true" ]; then
+            packages+=("state")
+          fi
+          if [ "${{ steps.filter.outputs.autoloader }}" == "true" ]; then
+            packages+=("autoloader")
+          fi
+          if [ "${{ steps.filter.outputs.router }}" == "true" ]; then
+            packages+=("router")
+          fi
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "packages=[]" >> "$GITHUB_OUTPUT"
+          else
+            json=$(printf '%s\n' "${packages[@]}" | jq -R . | jq -sc .)
+            echo "packages=$json" >> "$GITHUB_OUTPUT"
+          fi
+
+  ci:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.packages != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.detect-changes.outputs.packages) }}
+    defaults:
+      run:
+        working-directory: packages/${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/${{ matrix.package }}/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:coverage

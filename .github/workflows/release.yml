@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: |
+            packages/state/package-lock.json
+            packages/autoloader/package-lock.json
+            packages/router/package-lock.json
+
+      # Install, build, and test all packages
+      - name: Install dependencies
+        run: |
+          for pkg in state autoloader router; do
+            echo "::group::npm ci — $pkg"
+            cd packages/$pkg && npm ci && cd ../..
+            echo "::endgroup::"
+          done
+
+      - name: Build all packages
+        run: |
+          for pkg in state autoloader router; do
+            echo "::group::build — $pkg"
+            cd packages/$pkg && npm run build && cd ../..
+            echo "::endgroup::"
+          done
+
+      - name: Test all packages
+        run: |
+          for pkg in state autoloader router; do
+            echo "::group::test — $pkg"
+            cd packages/$pkg && npm run test:coverage && cd ../..
+            echo "::endgroup::"
+          done
+
+      # Bump version in all packages
+      - name: Bump versions
+        id: bump
+        run: |
+          for pkg in state autoloader router; do
+            cd packages/$pkg
+            npm version ${{ inputs.version_type }} --no-git-tag-version
+            cd ../..
+          done
+          NEW_VERSION=$(node -p "require('./packages/state/package.json').version")
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      # Verify all packages have the same version
+      - name: Verify version consistency
+        run: |
+          expected="${{ steps.bump.outputs.version }}"
+          for pkg in state autoloader router; do
+            actual=$(node -p "require('./packages/$pkg/package.json').version")
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Version mismatch in $pkg: expected $expected, got $actual"
+              exit 1
+            fi
+          done
+          echo "All packages are at v$expected"
+
+      # Commit, tag, and push
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/*/package.json packages/*/package-lock.json
+          git commit -m "chore: bump all client packages to v${{ steps.bump.outputs.version }}"
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin main --tags
+
+      # Publish to npm
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg in state autoloader router; do
+            echo "::group::publish — @wcstack/$pkg"
+            cd packages/$pkg && npm publish --access public && cd ../..
+            echo "::endgroup::"
+          done
+
+      # Create GitHub Release
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.bump.outputs.version }}" \
+            --title "v${{ steps.bump.outputs.version }}" \
+            --generate-notes
