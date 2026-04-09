@@ -281,6 +281,7 @@ createServer(async (req, res) => {
 ### Custom Element Waiting
 
 - Automatically awaits all custom elements with `static hasConnectedCallbackPromise = true`
+- Uses a stabilization loop: after awaiting, re-scans the DOM for newly added custom elements (up to 10 iterations), ensuring elements dynamically inserted during `$connectedCallback` are also awaited
 
 ## What SSR Cannot Do
 
@@ -331,7 +332,7 @@ const ssrBody = await renderToString(template, {
 
 3. **Bootstrap**: Calls user-provided bootstrap functions (defaults to `bootstrapState()` if omitted).
 
-4. **HTML Parse & Callback**: Sets `document.body.innerHTML`, which triggers happy-dom's element lifecycle. Each `<wcs-state>` loads its data source and runs `$connectedCallback`. Awaits all custom elements with `hasConnectedCallbackPromise`.
+4. **HTML Parse & Callback**: Sets `document.body.innerHTML`, which triggers happy-dom's element lifecycle. Each `<wcs-state>` loads its data source and runs `$connectedCallback`. Awaits all custom elements with `hasConnectedCallbackPromise` via a stabilization loop — after each await, re-scans the DOM for newly added elements (up to 10 iterations).
 
 5. **Ready**: Awaits user-provided ready functions (defaults to `getBindingsReady()`) — text interpolation, attribute mapping, list expansion, conditional evaluation.
 

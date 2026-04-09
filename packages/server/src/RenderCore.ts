@@ -42,7 +42,7 @@ export class RenderCore extends EventTarget {
     }));
   }
 
-  private _setError(error: Error): void {
+  private _setError(error: Error | null): void {
     this._error = error;
     this.dispatchEvent(new CustomEvent("wcs-render:error", {
       detail: error,
@@ -51,7 +51,7 @@ export class RenderCore extends EventTarget {
 
   async render(html: string): Promise<string | null> {
     this._setLoading(true);
-    this._error = null;
+    this._setError(null);
 
     try {
       const result = await renderToString(html);
