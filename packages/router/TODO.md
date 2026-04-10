@@ -21,9 +21,12 @@
 
 ## Architecture : Multi-Router & Scalability
 
-- [ ] マルチインスタンス対応 (Multi-Router)
+- [x] マルチインスタンス対応 (Multi-Router)
   - `Router` クラスのシングルトン制限（`_instance` check）を撤廃
   - `basename` に基づくイベント無視ロジックの追加
+  - `Link` の Router 探索を `closest` + `getRootNode` ベースに変更
+  - `Router.instance` / `Router.navigate` 静的 API を削除
+  - `_getOutlet` を Router 隣接スコープに変更
   - マイクロフロントエンド対応
 
 - [x] 拡張パラメータ型定義 (Typed Parameters)

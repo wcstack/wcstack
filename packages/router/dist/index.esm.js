@@ -1307,7 +1307,6 @@ class Router extends HTMLElement {
             { name: "path", event: "wcs-router:path-changed" },
         ],
     };
-    static _instance = null;
     _outlet = null;
     _template = null;
     _routeChildNodes = [];
@@ -1319,10 +1318,6 @@ class Router extends HTMLElement {
     _navigateUrl = null;
     constructor() {
         super();
-        if (Router._instance) {
-            raiseError(`${config.tagNames.router} can only be instantiated once.`);
-        }
-        Router._instance = this;
     }
     /**
      * Normalize a URL pathname to a route path.
@@ -1396,22 +1391,21 @@ class Router extends HTMLElement {
         }
         return this._normalizeBasename(path);
     }
-    static get instance() {
-        if (!Router._instance) {
-            raiseError(`${config.tagNames.router} has not been instantiated.`);
-        }
-        return Router._instance;
-    }
-    static navigate(path) {
-        Router.instance.navigate(path);
-    }
     get basename() {
         return this._basename;
     }
     _getOutlet() {
-        let outlet = document.querySelector(config.tagNames.outlet);
-        if (!outlet) {
-            outlet = createOutlet();
+        // 自身を起点に兄弟・子孫から Outlet を探す（マルチ Router 対応）
+        const next = this.nextElementSibling;
+        if (next && next.matches(config.tagNames.outlet)) {
+            return next;
+        }
+        // なければ新規作成して自身の直後に挿入
+        const outlet = createOutlet();
+        if (this.parentNode) {
+            this.parentNode.insertBefore(outlet, this.nextSibling);
+        }
+        else {
             document.body.appendChild(outlet);
         }
         return outlet;
@@ -1487,17 +1481,29 @@ class Router extends HTMLElement {
             this._notifyLocationChange();
         }
     }
+    /**
+     * basename 配下の URL かどうかを判定する。
+     * basename が空の場合はすべての URL にマッチする。
+     */
+    _isOwnPath(fullPath) {
+        if (this._basename === "")
+            return true;
+        return fullPath === this._basename || fullPath.startsWith(this._basename + "/");
+    }
     _onNavigateFunc(navEvent) {
         if (!navEvent.canIntercept ||
             navEvent.hashChange ||
             navEvent.downloadRequest !== null) {
             return;
         }
+        const url = new URL(navEvent.destination.url);
+        const fullPath = this._normalizePathname(url.pathname);
+        // basename 配下でない URL は無視（マルチ Router 対応）
+        if (!this._isOwnPath(fullPath))
+            return;
         const routesNode = this;
         navEvent.intercept({
             handler: async () => {
-                const url = new URL(navEvent.destination.url);
-                const fullPath = routesNode._normalizePathname(url.pathname);
                 await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
             },
         });
@@ -1506,6 +1512,9 @@ class Router extends HTMLElement {
     _onPopState = async () => {
         // back/forward for environments without Navigation API
         const fullPath = this._normalizePathname(window.location.pathname);
+        // basename 配下でない URL は無視（マルチ Router 対応）
+        if (!this._isOwnPath(fullPath))
+            return;
         await applyRoute(this, this.outlet, fullPath, this._path);
         this._notifyLocationChange();
     };
@@ -1549,9 +1558,6 @@ class Router extends HTMLElement {
             window.removeEventListener("popstate", this._onPopState);
             this._listeningPopState = false;
         }
-        if (Router._instance === this) {
-            Router._instance = null;
-        }
     }
 }
 
@@ -1576,9 +1582,16 @@ class Link extends HTMLElement {
         if (this._router) {
             return this._router;
         }
-        const router = document.querySelector(config.tagNames.router);
-        if (router) {
-            return (this._router = router);
+        // DOM 祖先走査で最寄りの Router を探す（マルチ Router 対応）
+        const ancestor = this.closest(config.tagNames.router);
+        if (ancestor) {
+            return (this._router = ancestor);
+        }
+        // 祖先にない場合は ownerDocument 内の Router を探す
+        const root = this.getRootNode();
+        const found = root.querySelector?.(config.tagNames.router);
+        if (found) {
+            return (this._router = found);
         }
         raiseError(`${config.tagNames.link} is not connected to a router.`);
     }

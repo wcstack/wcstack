@@ -121,7 +121,6 @@ interface IOutlet {
  */
 declare class Router extends HTMLElement implements IRouter {
     static wcBindable: IWcBindable;
-    private static _instance;
     private _outlet;
     private _template;
     private _routeChildNodes;
@@ -150,8 +149,6 @@ declare class Router extends HTMLElement implements IRouter {
     private _joinInternalPath;
     private _notifyLocationChange;
     private _getBasename;
-    static get instance(): IRouter;
-    static navigate(path: string): void;
     get basename(): string;
     private _getOutlet;
     private _getTemplate;
@@ -171,6 +168,11 @@ declare class Router extends HTMLElement implements IRouter {
     get navigateUrl(): string | null;
     set navigateUrl(value: string | null);
     navigate(path: string): Promise<void>;
+    /**
+     * basename 配下の URL かどうかを判定する。
+     * basename が空の場合はすべての URL にマッチする。
+     */
+    private _isOwnPath;
     private _onNavigateFunc;
     private _onNavigate;
     private _onPopState;
