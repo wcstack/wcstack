@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/upload",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "description": "Declarative file upload component for Web Components. Framework-agnostic upload with progress tracking via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
