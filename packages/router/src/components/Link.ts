@@ -2,8 +2,8 @@ import { config } from "../config";
 import { getUUID } from "../getUUID";
 import { raiseError } from "../raiseError";
 import { getNavigation } from "../Navigation";
-import { Router } from "./Router";
 import { ILink } from "./types";
+import type { Router } from "./Router";
 
 export class Link extends HTMLElement implements ILink {
   static get observedAttributes(): string[] {
@@ -30,9 +30,16 @@ export class Link extends HTMLElement implements ILink {
     if (this._router) {
       return this._router;
     }
-    const router = document.querySelector<Router>(config.tagNames.router);
-    if (router) {
-      return (this._router = router);
+    // DOM 祖先走査で最寄りの Router を探す（マルチ Router 対応）
+    const ancestor = this.closest<Router>(config.tagNames.router);
+    if (ancestor) {
+      return (this._router = ancestor);
+    }
+    // 祖先にない場合は ownerDocument 内の Router を探す
+    const root = this.getRootNode() as Document | ShadowRoot;
+    const found = root.querySelector?.<Router>(config.tagNames.router);
+    if (found) {
+      return (this._router = found);
     }
     raiseError(`${config.tagNames.link} is not connected to a router.`);
   }

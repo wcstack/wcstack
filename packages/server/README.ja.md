@@ -281,6 +281,7 @@ createServer(async (req, res) => {
 ### カスタム要素の待機
 
 - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
+- 安定化ループ: await 後に DOM を再走査し、`$connectedCallback` 中に動的追加されたカスタム要素も待機（最大 10 回）
 
 ## SSR でできないこと
 
@@ -331,7 +332,7 @@ const ssrBody = await renderToString(template, {
 
 3. **ブートストラップ**: ユーザー提供の bootstrap 関数を呼び出す（省略時は `bootstrapState()` をデフォルト使用）。
 
-4. **HTML パースとコールバック**: `document.body.innerHTML` に HTML をセットすることで、happy-dom の要素ライフサイクルが発火。各 `<wcs-state>` がデータソースをロードし `$connectedCallback` を実行。`hasConnectedCallbackPromise` を持つ全カスタム要素を待機。
+4. **HTML パースとコールバック**: `document.body.innerHTML` に HTML をセットすることで、happy-dom の要素ライフサイクルが発火。各 `<wcs-state>` がデータソースをロードし `$connectedCallback` を実行。`hasConnectedCallbackPromise` を持つ全カスタム要素を安定化ループで待機 — await 後に DOM を再走査し、動的追加された要素も検出（最大 10 回）。
 
 5. **Ready**: ユーザー提供の ready 関数を待機（デフォルトは `getBindingsReady()`） — テキスト補間、属性マッピング、リスト展開、条件評価。
 

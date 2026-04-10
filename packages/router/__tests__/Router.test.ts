@@ -9,11 +9,9 @@ import './setup';
 describe('Router', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
   });
 
   afterEach(() => {
-    (Router as any)._instance = null;
     delete (window as any).navigation;
     document.head.querySelectorAll('base').forEach((base) => base.remove());
     vi.restoreAllMocks();
@@ -34,41 +32,18 @@ describe('Router', () => {
     expect(router).toBeInstanceOf(HTMLElement);
   });
 
-  it('シングルトンパターンであること', () => {
+  it('複数インスタンスを作成できること', () => {
     const router1 = document.createElement('wcs-router') as Router;
-    expect(() => {
-      document.createElement('wcs-router');
-    }).toThrow();
-  });
-
-  it('静的なinstanceプロパティでインスタンスにアクセスできること', () => {
-    const router = document.createElement('wcs-router') as Router;
-    expect(Router.instance).toBe(router);
-  });
-
-  it('インスタンス化前にinstanceにアクセスするとエラーになること', () => {
-    expect(() => {
-      Router.instance;
-    }).toThrow();
+    const router2 = document.createElement('wcs-router') as Router;
+    expect(router1).toBeInstanceOf(Router);
+    expect(router2).toBeInstanceOf(Router);
+    expect(router1).not.toBe(router2);
   });
 
   it('basenameプロパティを持つこと', () => {
     const router = document.createElement('wcs-router') as Router;
     expect(router.basename).toBeDefined();
     expect(typeof router.basename).toBe('string');
-  });
-
-  it('navigate静的メソッドを持つこと', () => {
-    expect(typeof Router.navigate).toBe('function');
-  });
-
-  it('静的navigateがインスタンスのnavigateを呼ぶこと', async () => {
-    const router = document.createElement('wcs-router') as Router;
-    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
-
-    Router.navigate('/static');
-
-    expect(navigateSpy).toHaveBeenCalledWith('/static');
   });
 
   describe('properties', () => {
@@ -209,17 +184,32 @@ describe('Router', () => {
       expect(join('/app', 'about')).toBe('/app/about');
     });
 
-    it('_getOutletが既存のOutletを返すこと', () => {
+    it('_getOutletが隣接する既存のOutletを返すこと', () => {
       const router = document.createElement('wcs-router') as Router;
       const outlet = createOutlet();
-      document.body.appendChild(outlet);
+      document.body.appendChild(router);
+      // Router の直後に Outlet を挿入
+      router.after(outlet);
 
       const found = (router as any)._getOutlet();
+      // 同一インスタンスが返されること（新規作成されないこと）
+      expect(found.tagName.toLowerCase()).toBe('wcs-outlet');
       expect(found).toBe(outlet);
     });
 
-    it('_getOutletがOutletを生成して追加すること', () => {
+    it('_getOutletがOutletを生成してRouter直後に追加すること', () => {
       const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const found = (router as any)._getOutlet();
+      expect(found.tagName.toLowerCase()).toBe('wcs-outlet');
+      expect(router.nextElementSibling).toBe(found);
+    });
+
+    it('_getOutletがparentNodeなしの場合document.bodyに追加すること', () => {
+      const router = document.createElement('wcs-router') as Router;
+      // DOMに未接続の状態で呼ぶ
+
       const found = (router as any)._getOutlet();
       expect(found.tagName.toLowerCase()).toBe('wcs-outlet');
       expect(document.body.contains(found)).toBe(true);
@@ -307,6 +297,74 @@ describe('Router', () => {
 
       await capturedHandler!.call({ _path: '/prev' });
       expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/next', '/prev');
+    });
+
+    it('basename配下でないURLはinterceptしないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/app';
+
+      const navEvent = {
+        canIntercept: true,
+        hashChange: false,
+        downloadRequest: null,
+        destination: { url: 'http://localhost/other/page' },
+        intercept: vi.fn(),
+      };
+
+      (router as any)._onNavigateFunc(navEvent);
+      expect(navEvent.intercept).not.toHaveBeenCalled();
+    });
+
+    it('basenameと完全一致するURLをinterceptすること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/app';
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+      (router as any)._path = '/prev';
+
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+      let capturedHandler: (() => Promise<void>) | null = null;
+
+      const navEvent = {
+        canIntercept: true,
+        hashChange: false,
+        downloadRequest: null,
+        destination: { url: 'http://localhost/app' },
+        intercept: ({ handler }: { handler: () => Promise<void> }) => {
+          capturedHandler = handler;
+        },
+      };
+
+      (router as any)._onNavigateFunc(navEvent);
+      expect(capturedHandler).not.toBeNull();
+
+      await capturedHandler!();
+      expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/app', '/prev');
+    });
+  });
+
+  describe('_onPopState', () => {
+    it('basename配下でないURLはapplyRouteを呼ばないこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/app';
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+      (router as any)._path = '/prev';
+
+      const applySpy = vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(undefined);
+
+      const originalLocation = window.location;
+      delete (window as any).location;
+      (window as any).location = {
+        pathname: '/other',
+        href: 'http://localhost/other',
+      };
+
+      await (router as any)._onPopState();
+
+      expect(applySpy).not.toHaveBeenCalled();
+
+      (window as any).location = originalLocation;
     });
   });
 

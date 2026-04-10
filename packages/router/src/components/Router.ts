@@ -22,7 +22,6 @@ export class Router extends HTMLElement implements IRouter {
     ],
   };
 
-  private static _instance: IRouter | null = null;
   private _outlet: IOutlet | null = null;
   private _template: HTMLTemplateElement | null = null;
   private _routeChildNodes: IRoute[] = [];
@@ -35,10 +34,6 @@ export class Router extends HTMLElement implements IRouter {
 
   constructor() {
     super();
-    if (Router._instance) {
-      raiseError(`${config.tagNames.router} can only be instantiated once.`);
-    }
-    Router._instance = this;
   }
 
   /**
@@ -115,25 +110,21 @@ export class Router extends HTMLElement implements IRouter {
     return this._normalizeBasename(path);
   }
 
-  static get instance(): IRouter {
-    if (!Router._instance) {
-      raiseError(`${config.tagNames.router} has not been instantiated.`);
-    }
-    return Router._instance;
-  }
-
-  static navigate(path: string): void {
-    Router.instance.navigate(path);
-  }
-
   get basename(): string {
     return this._basename;
   }
 
   private _getOutlet(): IOutlet {
-    let outlet = document.querySelector<Outlet>(config.tagNames.outlet);
-    if (!outlet) {
-      outlet = createOutlet();
+    // 自身を起点に兄弟・子孫から Outlet を探す（マルチ Router 対応）
+    const next = this.nextElementSibling;
+    if (next && next.matches(config.tagNames.outlet)) {
+      return next as unknown as IOutlet;
+    }
+    // なければ新規作成して自身の直後に挿入
+    const outlet = createOutlet();
+    if (this.parentNode) {
+      this.parentNode.insertBefore(outlet, this.nextSibling);
+    } else {
       document.body.appendChild(outlet);
     }
     return outlet;
@@ -217,6 +208,15 @@ export class Router extends HTMLElement implements IRouter {
     }
   }
 
+  /**
+   * basename 配下の URL かどうかを判定する。
+   * basename が空の場合はすべての URL にマッチする。
+   */
+  private _isOwnPath(fullPath: string): boolean {
+    if (this._basename === "") return true;
+    return fullPath === this._basename || fullPath.startsWith(this._basename + "/");
+  }
+
   private _onNavigateFunc(navEvent: any) {
     if (
       !navEvent.canIntercept ||
@@ -225,11 +225,13 @@ export class Router extends HTMLElement implements IRouter {
     ) {
       return;
     }
+    const url = new URL(navEvent.destination.url);
+    const fullPath = this._normalizePathname(url.pathname);
+    // basename 配下でない URL は無視（マルチ Router 対応）
+    if (!this._isOwnPath(fullPath)) return;
     const routesNode = this;
     navEvent.intercept({
       handler: async () => {
-        const url = new URL(navEvent.destination.url);
-        const fullPath = routesNode._normalizePathname(url.pathname);
         await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
       },
     });
@@ -240,6 +242,8 @@ export class Router extends HTMLElement implements IRouter {
   private _onPopState = async () => {
     // back/forward for environments without Navigation API
     const fullPath = this._normalizePathname(window.location.pathname);
+    // basename 配下でない URL は無視（マルチ Router 対応）
+    if (!this._isOwnPath(fullPath)) return;
     await applyRoute(this, this.outlet, fullPath, this._path);
     this._notifyLocationChange();
   };
@@ -290,9 +294,6 @@ export class Router extends HTMLElement implements IRouter {
     if (this._listeningPopState) {
       window.removeEventListener("popstate", this._onPopState);
       this._listeningPopState = false;
-    }
-    if (Router._instance === this) {
-      Router._instance = null;
     }
   }
 }

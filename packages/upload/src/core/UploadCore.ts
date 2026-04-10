@@ -123,7 +123,7 @@ export class UploadCore extends EventTarget {
 
     this._setLoading(true);
     this._setProgress(0);
-    this._error = null;
+    this._setError(null);
 
     const {
       method = "POST",

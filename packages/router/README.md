@@ -115,7 +115,7 @@ That's what `<wcs-router>`, `<wcs-route>`, and friends explore. One CDN import, 
 
 ### Router (wcs-router)
 
-Define routes and layout slots inside a child template tag. Only one can exist in a document. A direct child template tag is required. Outputs according to definitions to `<wcs-outlet>`.
+Define routes and layout slots inside a child template tag. A direct child template tag is required. Outputs according to definitions to `<wcs-outlet>`. Multiple routers can coexist in the same document when each has a distinct `basename`.
 
 | Attribute | Description |
 |------|------|

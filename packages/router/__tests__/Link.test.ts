@@ -7,10 +7,7 @@ describe('Link', () => {
   let originalLocation: any;
 
   beforeEach(() => {
-    while (document.body.firstChild) {
-      document.body.removeChild(document.body.firstChild);
-    }
-    (Router as any)._instance = null;
+    document.body.innerHTML = '';
     vi.clearAllMocks();
     
     // window.locationを保存してから"/"に設定
@@ -28,9 +25,7 @@ describe('Link', () => {
   });
 
   afterEach(() => {
-    while (document.body.firstChild) {
-      document.body.removeChild(document.body.firstChild);
-    }
+    document.body.innerHTML = '';
     vi.restoreAllMocks();
     
     // window.locationを復元
@@ -57,7 +52,7 @@ describe('Link', () => {
 
     const link = document.createElement('wcs-link') as Link;
     link.setAttribute('to', '/test');
-    
+
     expect(() => {
       document.body.appendChild(link);
     }).not.toThrow();
@@ -95,7 +90,7 @@ describe('Link', () => {
     it('routerが見つからない場合にエラーを投げること', () => {
       const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
-      
+
       // routerがない状態でappendChildするとconnectedCallbackでエラーが発生するため、
       // appendChild自体がエラーを投げることを期待
       expect(() => {
@@ -167,14 +162,14 @@ describe('Link', () => {
 
       // Create elements manually to ensure children are present before connection
       const div = document.createElement('div');
-      document.body.appendChild(div);
-      
+      router.appendChild(div);
+
       const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
       const span = document.createElement('span');
       span.textContent = 'Link Text';
       link.appendChild(span);
-      
+
       div.appendChild(link);
 
       const anchor = link.anchorElement;
@@ -191,7 +186,7 @@ describe('Link', () => {
       document.body.appendChild(router);
 
       const container = document.createElement('div');
-      document.body.appendChild(container);
+      router.appendChild(container);
 
       const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
@@ -353,7 +348,7 @@ describe('Link', () => {
       document.body.appendChild(router);
 
       const div = document.createElement('div');
-      document.body.appendChild(div);
+      router.appendChild(div);
       
       const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
@@ -602,15 +597,15 @@ describe('Link', () => {
         document.body.appendChild(router);
 
         const div = document.createElement('div');
-        document.body.appendChild(div);
-        
+        router.appendChild(div);
+
         const link = document.createElement('wcs-link') as Link;
         link.setAttribute('to', '/test');
         const span = document.createElement('span');
         span.textContent = 'Text';
         link.appendChild(span);
         div.appendChild(link);
-        
+
         const anchor = link.anchorElement;
         const childSpan = anchor?.querySelector('span');
         expect(childSpan).not.toBeNull();
@@ -837,6 +832,8 @@ describe('Link', () => {
 
       const link = document.createElement('wcs-link') as Link;
       link.setAttribute('to', '/test');
+      // router を手動設定（DOMに未接続でも _updateActiveState がアクセスできるように）
+      (link as any)._router = router;
 
       expect(() => {
         (link as any)._updateActiveState();

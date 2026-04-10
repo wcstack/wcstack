@@ -84,7 +84,10 @@ describe('RenderCore', () => {
       expect(result).toBeNull();
       expect(core.error).toBeInstanceOf(Error);
       expect(core.error!.message).toBe('render failed');
-      expect(handler).toHaveBeenCalledOnce();
+      // render開始時に null（エラークリア）、失敗時にエラーオブジェクトの2回発火
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect((handler.mock.calls[0][0] as CustomEvent).detail).toBeNull();
+      expect((handler.mock.calls[1][0] as CustomEvent).detail).toBeInstanceOf(Error);
       spy.mockRestore();
     });
 

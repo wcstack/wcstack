@@ -454,7 +454,8 @@ describe("WcsUpload コンポーネント", () => {
 
       const errors: any[] = [];
       el.addEventListener("wcs-upload:error", (e) => {
-        errors.push((e as CustomEvent).detail);
+        const detail = (e as CustomEvent).detail;
+        if (detail !== null) errors.push(detail);
       });
 
       // 一致するファイルはOK

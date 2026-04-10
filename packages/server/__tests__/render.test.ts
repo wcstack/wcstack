@@ -275,3 +275,71 @@ describe('bootstraps オプション', () => {
     expect(result).toContain('wcs-ssr');
   });
 });
+
+describe('安定化ループ（動的追加カスタム要素の待機）', () => {
+  it('$connectedCallback で動的に追加した wcs-state が待機される', async () => {
+    const result = await renderToString(`
+      <wcs-state enable-ssr>
+        <script type="module">
+          export default {
+            ready: false,
+            async $connectedCallback() {
+              // 動的に2つ目の wcs-state を追加
+              const el = document.createElement('wcs-state');
+              el.setAttribute('name', 'dynamic');
+              el.setAttribute('json', '{"value":"from-dynamic"}');
+              document.body.appendChild(el);
+              this.ready = true;
+            }
+          };
+        </script>
+      </wcs-state>
+      <span data-wcs="textContent: ready"></span>
+    `);
+    expect(result).toContain('>true<');
+    // 動的に追加された wcs-state が DOM に存在する
+    const doc = parseResult(result);
+    const dynamicState = doc.querySelector('wcs-state[name="dynamic"]');
+    expect(dynamicState).not.toBeNull();
+  });
+});
+
+describe('並列実行の安全性', () => {
+  it('並列に renderToString を呼んでも各結果が正しい', async () => {
+    const results = await Promise.all([
+      renderToString(`
+        <wcs-state json='{"msg":"alpha"}'></wcs-state>
+        <p data-wcs="textContent: msg"></p>
+      `),
+      renderToString(`
+        <wcs-state json='{"msg":"beta"}'></wcs-state>
+        <p data-wcs="textContent: msg"></p>
+      `),
+      renderToString(`
+        <wcs-state json='{"msg":"gamma"}'></wcs-state>
+        <p data-wcs="textContent: msg"></p>
+      `),
+    ]);
+    expect(results[0]).toContain('>alpha<');
+    expect(results[1]).toContain('>beta<');
+    expect(results[2]).toContain('>gamma<');
+  });
+
+  it('並列実行で enable-ssr のデータが混ざらない', async () => {
+    const [r1, r2] = await Promise.all([
+      renderToString(`
+        <wcs-state enable-ssr json='{"x":111}'></wcs-state>
+        <span data-wcs="textContent: x"></span>
+      `),
+      renderToString(`
+        <wcs-state enable-ssr json='{"x":222}'></wcs-state>
+        <span data-wcs="textContent: x"></span>
+      `),
+    ]);
+    expect(r1).toContain('>111<');
+    expect(r2).toContain('>222<');
+    // データが交差していないことを確認
+    expect(r1).not.toContain('222');
+    expect(r2).not.toContain('111');
+  });
+});

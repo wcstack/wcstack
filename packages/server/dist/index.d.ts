@@ -85,6 +85,7 @@ interface RenderOptions {
  *
  * ### カスタム要素の待機
  * - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
+ * - `$connectedCallback` 中に動的追加されたカスタム要素も安定化ループで検出・待機（最大 10 回）
  *
  * ## SSR でできないこと
  * - `<head>` 内の `<script src="...">` や `<link>` の自動実行

@@ -1,5 +1,28 @@
 import { Window } from 'happy-dom';
 
+/**
+ * globalThis を差し替える renderToString の並列実行を防止する Mutex。
+ * 同一 Node プロセス内で複数リクエストが同時に renderToString を呼んでも
+ * シリアライズされ、グローバル状態の衝突を防ぐ。
+ */
+class Mutex {
+  private _queue: (() => void)[] = [];
+  private _locked = false;
+
+  async acquire(): Promise<() => void> {
+    if (this._locked) {
+      await new Promise<void>(resolve => this._queue.push(resolve));
+    }
+    this._locked = true;
+    return () => {
+      this._locked = false;
+      this._queue.shift()?.();
+    };
+  }
+}
+
+const renderMutex = new Mutex();
+
 export const GLOBALS_KEYS = [
   'document', 'customElements', 'HTMLElement',
   'DocumentFragment', 'Node', 'NodeFilter', 'Comment', 'Text',
@@ -143,6 +166,7 @@ async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
  *
  * ### カスタム要素の待機
  * - `static hasConnectedCallbackPromise = true` プロトコル準拠の全カスタム要素を自動待機
+ * - `$connectedCallback` 中に動的追加されたカスタム要素も安定化ループで検出・待機（最大 10 回）
  *
  * ## SSR でできないこと
  * - `<head>` 内の `<script src="...">` や `<link>` の自動実行
@@ -167,6 +191,9 @@ async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
  * `<head>` や `<script>` タグは外側のテンプレートで囲む。
  */
 export async function renderToString(html: string, options?: RenderOptions): Promise<string> {
+  // globalThis を差し替えるため、同時に1つしか実行できない
+  const releaseMutex = await renderMutex.acquire();
+
   const window = new Window();
   const restoreGlobals = installGlobals(window);
   const document = window.document;
@@ -193,20 +220,32 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     document.body.innerHTML = html;
 
     // connectedCallbackPromise / getBindingsReady プロトコルを自動検出
-    const connectedPromises: Promise<void>[] = [];
-    const readyPromises: Promise<void>[] = [];
+    // $connectedCallback が動的にカスタム要素を追加する場合があるため、
+    // 新しい要素が見つからなくなるまで走査を繰り返す（安定化ループ）
+    const MAX_ITERATIONS = 10;
+    const awaitedElements = new WeakSet();
     const readyCtors = new Set<any>();
-    for (const el of document.querySelectorAll('*-*')) {
-      const ctor = el.constructor as any;
-      if (ctor.hasConnectedCallbackPromise) {
-        connectedPromises.push((el as any).connectedCallbackPromise);
+    const readyPromises: Promise<void>[] = [];
+
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      const connectedPromises: Promise<void>[] = [];
+
+      for (const el of document.querySelectorAll('*-*')) {
+        if (awaitedElements.has(el)) continue;
+        const ctor = el.constructor as any;
+        if (ctor.hasConnectedCallbackPromise) {
+          awaitedElements.add(el);
+          connectedPromises.push((el as any).connectedCallbackPromise);
+        }
+        if (!readyCtors.has(ctor) && typeof ctor.getBindingsReady === 'function') {
+          readyCtors.add(ctor);
+          readyPromises.push(ctor.getBindingsReady(document));
+        }
       }
-      if (!readyCtors.has(ctor) && typeof ctor.getBindingsReady === 'function') {
-        readyCtors.add(ctor);
-        readyPromises.push(ctor.getBindingsReady(document));
-      }
+
+      if (connectedPromises.length === 0) break;
+      await Promise.all(connectedPromises);
     }
-    await Promise.all(connectedPromises);
 
     // 非同期初期化の完了を待機
     await Promise.all(readyPromises);
@@ -216,5 +255,6 @@ export async function renderToString(html: string, options?: RenderOptions): Pro
     restoreBaseUrl?.();
     restoreGlobals();
     await window.close();
+    releaseMutex();
   }
 }
