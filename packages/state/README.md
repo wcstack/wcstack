@@ -1,16 +1,40 @@
 # @wcstack/state
 
-**What if HTML had reactive data binding?**
+**This is not another convenient frontend framework. It is a different lineage that rearranges the premises of frontend development.**
 
-Imagine a future where the browser natively understands state — you declare data inline, bind it to the DOM with attributes, and everything stays in sync. No virtual DOM, no compilation, no framework. Just HTML that reacts.
+Most libraries place the coupling point between UI, state, and components inside JavaScript. `@wcstack/state` does not. It assumes no virtual DOM, no compilation step, no hooks, no selectors. UI and state are connected by HTML and path strings alone.
 
-That's what `<wcs-state>` and `data-wcs` explore. One CDN import, zero dependencies, pure HTML syntax.
+That is what `<wcs-state>` and `data-wcs` explore. One CDN import, zero dependencies, pure HTML syntax. The CDN script only registers the custom element definition — nothing else happens at load time. When a `<wcs-state>` element connects to the DOM, it reads its state source, scans all `data-wcs` bindings within the same root node (`document` or `ShadowRoot`), and wires up reactivity. All initialization is driven by the element's lifecycle, not by your code.
 
-The CDN script only registers the custom element definition — nothing else happens at load time. When a `<wcs-state>` element connects to the DOM, it reads its state source, scans all `data-wcs` bindings within the same root node (`document` or `ShadowRoot`), and wires up reactivity. All initialization is driven by the element's lifecycle, not by your code.
+## What Does Not Exist Here
 
-## Design Philosophy
+The following are not missing features. **They do not exist by design.**
 
-### Path as the Universal Contract
+- APIs for pulling variables out of state into components
+- Per-element binding objects that mediate state access
+- hooks
+- selectors
+- glue code that imports reactive primitives into component code
+
+None of these exist by design.
+
+Why: this library does not put the UI-state coupling point inside JavaScript. State is not pulled into components. HTML refers to state through path strings. Elements do not own state, and state does not know elements. The only shared contract is the path.
+
+## Do Not Compare This to Existing Frameworks
+
+This is not solving the same problem as React / Vue / Solid with a different syntax. **The premises are different.**
+
+| What mainstream frameworks assume | What `@wcstack/state` assumes |
+|---|---|
+| Components are the coupling point between UI and state | Path strings are the coupling point between UI and state |
+| JavaScript is the center of rendering | HTML and the DOM are the center |
+| State is pulled into components | Paths are declared and the DOM connects to state |
+| hooks / selectors / signals express subscriptions | Attributes and paths express bindings |
+| The whole app runs inside a framework execution model | A thin reactive layer is added on top of web standards |
+
+Before making a comparison chart, understand this difference in premises. These tools may live in the same ecosystem, but they cut the problem space very differently.
+
+## First Principle: Path as the Universal Contract
 
 In every existing framework, the **component** is the coupling point between UI and state. Components import state hooks, selectors, or reactive primitives, and the binding happens inside JavaScript. No matter how cleanly you separate your state store, there is always glue code in the component that pulls state in.
 
@@ -40,6 +64,8 @@ This is complete separation of UI and state with **no JavaScript intermediary**.
 
 The path contract works like a URL in a REST API — a simple string that both sides agree on, with no shared code between them. It's the natural result of building on HTML's declarative nature rather than inventing a template language on top of JavaScript.
 
+Every feature below is a consequence of this principle. The principle comes first; the features follow from it.
+
 ## 4 Steps to Reactive HTML
 
 ```html
@@ -62,7 +88,7 @@ The path contract works like a URL in a REST API — a simple string that both s
 
 That's it. No build, no bootstrap code, no framework.
 
-## Features
+## Features Derived from This Principle
 
 - **Declarative data binding** — `data-wcs` attribute for property / text / event / structural binding
 - **Reactive Proxy** — ES Proxy-based automatic DOM updates with dependency tracking
@@ -216,7 +242,9 @@ That's the one rule: **assign to the path, and the DOM updates automatically.**
 
 ### Why `this.user.name = "Bob"` Doesn't Work
 
-`this.user.name` first reads the `user` object via `this.user` (a path read), then sets `.name` on that plain object — this is not a path assignment, so the change is not detected:
+This is not just a limitation. It is where the contract boundary becomes visible.
+
+`this.user.name` first reads the `user` object via `this.user` (a path read), then sets `.name` on that plain object — this does not go through the contract of path assignment, so the change is not detected:
 
 ```javascript
 // ✅ Path assignment — change detected
@@ -225,6 +253,8 @@ this["user.name"] = "Bob";
 // ❌ Not a path assignment — change NOT detected
 this.user.name = "Bob";
 ```
+
+It may seem more convenient to make `this.user.name = "Bob"` reactive too. But doing that would break the principle that UI and state are connected only through paths. Dependency tracking and update boundaries would become implicit and ambiguous. The visible contract boundary is the point.
 
 ### Arrays
 
