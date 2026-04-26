@@ -13,7 +13,8 @@ export function getterFn(name: string) {
       stateEl.createState("readonly", (state) => {
         value = state[name];
       });
-    } catch {
+    } catch (e) {
+      console.warn(`[@wcstack/state] DCC getter "${name}" failed:`, e);
       return undefined;
     }
     return value;
@@ -36,21 +37,24 @@ export function callFn(name: string, isAsync: boolean) {
   if (isAsync) {
     return function (this: IDCCElement, ...args: any[]) {
       const stateEl = this.stateElement;
-      if (!stateEl) return;
+      if (!stateEl) return undefined;
       return stateEl.initializePromise.then(() => {
+        let result: any;
         return stateEl.createStateAsync("writable", async (state) => {
-          await state[name](...args);
-        });
+          result = await state[name](...args);
+        }).then(() => result);
       });
     };
   }
   return function (this: IDCCElement, ...args: any[]) {
     const stateEl = this.stateElement;
-    if (!stateEl) return;
-    stateEl.initializePromise.then(() => {
+    if (!stateEl) return undefined;
+    return stateEl.initializePromise.then(() => {
+      let result: any;
       stateEl.createState("writable", (state) => {
-        state[name](...args);
+        result = state[name](...args);
       });
+      return result;
     });
   };
 }

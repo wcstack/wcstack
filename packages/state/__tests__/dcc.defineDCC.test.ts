@@ -28,11 +28,16 @@ describe('dcc/defineDCC', () => {
     expect(() => defineDCC(host, shadow, {})).toThrow('must contain a hyphen');
   });
 
-  it('既に登録済みのタグ名はスキップされること', () => {
+  it('既に登録済みのタグ名はconsole.warnで通知してスキップされること', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const tag = uniqueTag();
     customElements.define(tag, class extends HTMLElement {});
     const { host, shadow } = createHostWithShadowRoot(tag);
     expect(() => defineDCC(host, shadow, {})).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(`DCC: "${tag}" is already registered`)
+    );
+    warnSpy.mockRestore();
   });
 
   it('基本的なDCCクラスが登録されること', () => {

@@ -14,7 +14,8 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
     raiseError(`DCC: "${tagName}" is not a valid custom element name (must contain a hyphen).`);
   }
   if (customElements.get(tagName)) {
-    // 既に登録済みならスキップ
+    // 既に登録済みならスキップ（重複定義の検知のため警告は出す）
+    console.warn(`[@wcstack/state] DCC: "${tagName}" is already registered. Skipping redefinition.`);
     return;
   }
 

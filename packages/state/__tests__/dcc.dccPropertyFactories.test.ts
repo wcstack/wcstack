@@ -34,13 +34,19 @@ describe('dcc/dccPropertyFactories', () => {
       expect(result).toBeUndefined();
     });
 
-    it('createStateがエラーの場合はundefinedを返すこと', () => {
+    it('createStateがエラーの場合はconsole.warnで通知してundefinedを返すこと', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const stateElement = {
         createState: () => { throw new Error('not initialized'); },
       };
       const getter = getterFn('count');
       const result = getter.call({ stateElement } as any);
       expect(result).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('DCC getter "count" failed'),
+        expect.any(Error)
+      );
+      warnSpy.mockRestore();
     });
   });
 
@@ -81,6 +87,22 @@ describe('dcc/dccPropertyFactories', () => {
       await method.call({ stateElement } as any, 'arg1');
       expect(mockFn).toHaveBeenCalledWith('arg1');
       expect(stateElement.createStateAsync).toHaveBeenCalledWith('writable', expect.any(Function));
+    });
+
+    it('同期関数の戻り値をPromiseで返すこと', async () => {
+      const { stateElement, stateObj } = createMockElement();
+      stateObj.add = (a: number, b: number) => a + b;
+      const method = callFn('add', false);
+      const result = await method.call({ stateElement } as any, 2, 3);
+      expect(result).toBe(5);
+    });
+
+    it('非同期関数の戻り値をPromiseで返すこと', async () => {
+      const { stateElement, stateObj } = createMockElement();
+      stateObj.fetchValue = async () => 'fetched';
+      const method = callFn('fetchValue', true);
+      const result = await method.call({ stateElement } as any);
+      expect(result).toBe('fetched');
     });
 
     it('stateElementがnullの場合は何もしないこと', () => {
