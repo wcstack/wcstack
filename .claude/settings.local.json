@@ -35,7 +35,14 @@
       "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -20 \"\"{}\"\"')",
       "Bash(node -e:*)",
       "Bash(grep:*)",
-      "Bash(head -c 500 d:/git/wcstack/wcstack/packages/state/dist/index.esm.js.map)"
+      "Bash(head -c 500 d:/git/wcstack/wcstack/packages/state/dist/index.esm.js.map)",
+      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol//**)",
+      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol/**)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src",
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\examples",
+      "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\.github"
     ]
   }
 }
