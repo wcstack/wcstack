@@ -1,0 +1,19 @@
+{
+  "name": "@wcstack/poc-visual-editor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PoC: Visual editor for wcstack apps. Renders <wcs-state> and data-wcs bindings as a node graph.",
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes serve -l 5180 --no-clean-urls .",
+    "lint": "eslint src"
+  },
+  "license": "MIT",
+  "author": "mogera551",
+  "homepage": "https://wcstack.github.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wcstack/wcstack.git",
+    "directory": "packages/poc-visual-editor"
+  }
+}

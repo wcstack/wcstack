@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Form (two-way binding demo)</title>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  user: {
+    name: "Alice",
+    age: 30,
+    subscribed: true,
+    color: "blue",
+  },
+  greet() {
+    alert(`Hello, ${this.user.name}!`);
+  },
+}
+      </script>
+    </wcs-state>
+
+    <h1>Profile</h1>
+
+    <label>Name:
+      <input type="text" data-wcs="value: user.name" />
+    </label>
+
+    <label>Age:
+      <input type="number" data-wcs="valueAsNumber: user.age" />
+    </label>
+
+    <label>
+      <input type="checkbox" data-wcs="checked: user.subscribed" />
+      Subscribe to newsletter
+    </label>
+
+    <fieldset>
+      <legend>Favorite color</legend>
+      <label><input type="radio" value="red"   data-wcs="radio: user.color" /> red</label>
+      <label><input type="radio" value="green" data-wcs="radio: user.color" /> green</label>
+      <label><input type="radio" value="blue"  data-wcs="radio: user.color" /> blue</label>
+    </fieldset>
+
+    <p>Hello, <span data-wcs="textContent: user.name">{{ user.name }}</span>!</p>
+
+    <button data-wcs="onclick: greet">Greet</button>
+  </body>
+</html>

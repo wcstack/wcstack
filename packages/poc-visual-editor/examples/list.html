@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Simple List</title>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  users: [
+    { name: "Alice", age: 30 },
+    { name: "Bob", age: 25 },
+    { name: "Charlie", age: 35 }
+  ],
+  get "users.*.ageCategory"() {
+    if (this["users.*.age"] < 25) return "Young";
+    if (this["users.*.age"] < 35) return "Adult";
+    return "Senior";
+  }
+}
+      </script>
+    </wcs-state>
+
+    <template data-wcs="for: users">
+      <p>{{ .name }} ({{ .age }} years old, {{ .ageCategory }})</p>
+    </template>
+  </body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nested templates</title>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  showHeader: true,
+  groups: [
+    {
+      title: "Group A",
+      items: [
+        { name: "alpha", value: 1 },
+        { name: "beta",  value: 2 },
+      ],
+    },
+    {
+      title: "Group B",
+      items: [
+        { name: "gamma", value: 3 },
+        { name: "delta", value: 4 },
+      ],
+    },
+  ],
+}
+      </script>
+    </wcs-state>
+
+    <template data-wcs="if: showHeader">
+      <h1>Inventory</h1>
+    </template>
+
+    <template data-wcs="for: groups">
+      <section>
+        <h2>{{ .title }}</h2>
+        <template data-wcs="for: .items">
+          <p>{{ .name }} = {{ .value }}</p>
+        </template>
+      </section>
+    </template>
+  </body>
+</html>

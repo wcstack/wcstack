@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wcstack PoC Visual Editor</title>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="./src/main.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #0e0e0e;
+      color: #ddd;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      padding: 8px 16px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+    }
+    header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+    header .subtitle { color: #777; font-size: 12px; }
+    header .spacer { flex: 1; }
+    header select {
+      background: #232323;
+      color: #ddd;
+      border: 1px solid #3a3a3a;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) minmax(380px, 2fr) minmax(280px, 1fr);
+      min-height: 0;
+    }
+    .pane {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+    .pane + .pane { border-left: 1px solid #2a2a2a; }
+    .pane-header {
+      padding: 6px 12px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      color: #888;
+      text-transform: uppercase;
+    }
+    textarea {
+      flex: 1;
+      resize: none;
+      border: none;
+      outline: none;
+      background: #0e0e0e;
+      color: #d4d4d4;
+      padding: 12px;
+      font: 12px/1.55 ui-monospace, "SF Mono", Consolas, monospace;
+      tab-size: 2;
+    }
+    pve-graph,
+    pve-preview {
+      flex: 1;
+      min-height: 0;
+    }
+  </style>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      const initialSource = `<!DOCTYPE html>
+<html>
+  <head>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"><\/script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  count: 0,
+  increment() { this.count++; },
+  decrement() { this.count--; }
+};
+      <\/script>
+    </wcs-state>
+
+    <span data-wcs="class.plus: count|gt(0); class.minus: count|lt(0)">{{ count }}</span>
+    <button data-wcs="onclick: decrement">-</button>
+    <button data-wcs="onclick: increment">+</button>
+  </body>
+</html>`;
+
+      // Inline because the wcs-state script is loaded via Blob URL,
+      // which can't resolve relative imports back into this package.
+      function splitTopLevelWithPos(s, delim) {
+        const out = [];
+        let depth = 0, quote = '', pieceStart = 0;
+        for (let i = 0; i < s.length; i++) {
+          const ch = s[i];
+          if (quote) { if (ch === quote && s[i - 1] !== '\\') quote = ''; continue; }
+          if (ch === '"' || ch === "'") { quote = ch; continue; }
+          if (ch === '(') depth++;
+          else if (ch === ')') depth--;
+          else if (ch === delim && depth === 0) {
+            out.push({ text: s.slice(pieceStart, i), start: pieceStart, end: i });
+            pieceStart = i + 1;
+          }
+        }
+        out.push({ text: s.slice(pieceStart), start: pieceStart, end: s.length });
+        return out;
+      }
+
+      function deleteBindingFromSource(source, range) {
+        const value = source.slice(range.valueStart, range.valueEnd);
+        const pieces = splitTopLevelWithPos(value, ';').filter(p => p.text.trim());
+        // Re-find the matching piece by index in the unfiltered list so
+        // pieceIdx stays meaningful even if blanks exist.
+        const allPieces = splitTopLevelWithPos(value, ';');
+        if (allPieces.filter(p => p.text.trim()).length <= 1) {
+          // Only one effective binding — drop the whole `data-wcs="..."`.
+          return source.slice(0, range.attrStart) + source.slice(range.attrEnd);
+        }
+        const target = allPieces[range.pieceIdx];
+        const isLast = range.pieceIdx === allPieces.length - 1;
+        let from, to;
+        if (isLast) {
+          from = allPieces[range.pieceIdx - 1].end;  // include the preceding `;`
+          to = target.end;
+        } else {
+          from = target.start;
+          to = allPieces[range.pieceIdx + 1].start;  // include the following `;`
+          while (to < value.length && /\s/.test(value[to])) to++;
+        }
+        const newValue = value.slice(0, from) + value.slice(to);
+        return source.slice(0, range.valueStart) + newValue + source.slice(range.valueEnd);
+      }
+
+      function editFilterInSource(source, filterRange, nextRaw) {
+        let next = (nextRaw || '').trim();
+        if (next && !next.startsWith('|')) next = '|' + next;
+        return source.slice(0, filterRange.start) + next + source.slice(filterRange.end);
+      }
+
+      function rewirePathInSource(source, pathRange, newPath) {
+        return source.slice(0, pathRange.start) + newPath + source.slice(pathRange.end);
+      }
+
+      function bindingDeletionEdit(source, sr) {
+        const value = source.slice(sr.valueStart, sr.valueEnd);
+        const allPieces = splitTopLevelWithPos(value, ';');
+        const effective = allPieces.filter(p => p.text.trim());
+        if (effective.length <= 1) {
+          return { start: sr.attrStart, end: sr.attrEnd, replacement: '' };
+        }
+        const piece = allPieces[sr.pieceIdx];
+        const isLast = sr.pieceIdx === allPieces.length - 1;
+        let from, to;
+        if (isLast) {
+          from = allPieces[sr.pieceIdx - 1].end;
+          to = piece.end;
+        } else {
+          from = piece.start;
+          to = allPieces[sr.pieceIdx + 1].start;
+          while (to < value.length && /\s/.test(value[to])) to++;
+        }
+        return { start: sr.valueStart + from, end: sr.valueStart + to, replacement: '' };
+      }
+
+      // Move a wire's DOM-side endpoint to another existing port:
+      //   1. Replace target's RHS (path + filters) with moving's RHS,
+      //      keeping the target's property name intact.
+      //   2. Delete moving's binding entirely (frees up the source slot).
+      // Both edits are applied in reverse source order so positions
+      // don't shift mid-edit.
+      function rewireDomEndInSource(source, movingSR, targetSR) {
+        const movingPath = source.slice(movingSR.pathRange.start, movingSR.pathRange.end);
+        const movingFilters = movingSR.filterRange
+          ? source.slice(movingSR.filterRange.start, movingSR.filterRange.end)
+          : '';
+        const movingRhs = movingPath + movingFilters;
+
+        const targetRhsStart = targetSR.pathRange.start;
+        const targetRhsEnd = targetSR.filterRange
+          ? targetSR.filterRange.end
+          : targetSR.pathRange.end;
+
+        const edits = [
+          { start: targetRhsStart, end: targetRhsEnd, replacement: movingRhs },
+          bindingDeletionEdit(source, movingSR),
+        ].sort((a, b) => b.start - a.start);
+
+        let result = source;
+        for (const e of edits) {
+          result = result.slice(0, e.start) + e.replacement + result.slice(e.end);
+        }
+        return result;
+      }
+
+      // Append a new `; property: pathFilters` to the target component's
+      // existing data-wcs value AND delete the moving wire's binding.
+      // Used when the chosen target property does not yet exist on the
+      // target component. Edits are applied in reverse position order
+      // so neither shifts the other; the moving and target attributes
+      // are guaranteed distinct (caller skips same-component targets).
+      function appendDomBindingAndDelete(source, sampleTargetSR, property, movingSR) {
+        const movingPath = source.slice(movingSR.pathRange.start, movingSR.pathRange.end);
+        const movingFilters = movingSR.filterRange
+          ? source.slice(movingSR.filterRange.start, movingSR.filterRange.end)
+          : '';
+        const movingRhs = movingPath + movingFilters;
+
+        // Compute the new value text by editing the existing one.
+        const value = source.slice(sampleTargetSR.valueStart, sampleTargetSR.valueEnd);
+        const trimmed = value.replace(/\s+$/, '');
+        const sep = trimmed && !/;\s*$/.test(trimmed) ? '; ' : (trimmed ? ' ' : '');
+        const newValue = trimmed + sep + property + ': ' + movingRhs;
+
+        const targetEdit = {
+          start: sampleTargetSR.valueStart,
+          end: sampleTargetSR.valueEnd,
+          replacement: newValue,
+        };
+        const deleteEdit = bindingDeletionEdit(source, movingSR);
+        const edits = [targetEdit, deleteEdit].sort((a, b) => b.start - a.start);
+        let result = source;
+        for (const e of edits) {
+          result = result.slice(0, e.start) + e.replacement + result.slice(e.end);
+        }
+        return result;
+      }
+
+      // Append `; property: path` (or just `property: path` if value is
+      // empty) just inside the closing quote of the data-wcs attribute.
+      function appendBindingToValue(source, sampleSourceRange, property, path) {
+        const valueEnd = sampleSourceRange.valueEnd;
+        const value = source.slice(sampleSourceRange.valueStart, valueEnd);
+        const trimmed = value.replace(/\s+$/, '');
+        const sep = trimmed && !/;\s*$/.test(trimmed) ? '; ' : (trimmed ? ' ' : '');
+        const insertion = sep + property + ': ' + path;
+        // Insert at valueEnd, so text after closing quote is preserved.
+        // Also keep any trailing whitespace within the value untouched.
+        return source.slice(0, sampleSourceRange.valueStart)
+          + trimmed
+          + insertion
+          + source.slice(valueEnd);
+      }
+
+      export default {
+        htmlSource: initialSource,
+        handleWireDelete(event) {
+          const range = event.detail && event.detail.range;
+          if (!range) return;
+          this.htmlSource = deleteBindingFromSource(this.htmlSource, range);
+        },
+        handleFilterEdit(event) {
+          const detail = event.detail || {};
+          const range = detail.range;
+          if (!range) return;
+          const current = this.htmlSource.slice(range.start, range.end);
+          const next = window.prompt(
+            'Edit filter pipeline:\nFormat: |filter1|filter2(arg)\n(empty to remove all filters)',
+            current,
+          );
+          if (next === null) return;
+          this.htmlSource = editFilterInSource(this.htmlSource, range, next);
+        },
+        handleWireRewire(event) {
+          const detail = event.detail || {};
+          const { range, newPath } = detail;
+          if (!range || !newPath) return;
+          this.htmlSource = rewirePathInSource(this.htmlSource, range, newPath);
+        },
+        handleWireRewireDom(event) {
+          const detail = event.detail || {};
+          const { movingWire, targetWire } = detail;
+          if (!movingWire || !targetWire) return;
+          if (!movingWire.sourceRange || !movingWire.sourceRange.pathRange) return;
+          if (!targetWire.sourceRange || !targetWire.sourceRange.pathRange) return;
+          this.htmlSource = rewireDomEndInSource(
+            this.htmlSource,
+            movingWire.sourceRange,
+            targetWire.sourceRange,
+          );
+        },
+        handleWireMoveDomToComp(event) {
+          const detail = event.detail || {};
+          const { movingWire, compTag, sampleSourceRange, existingProps, suggestedProperty } = detail;
+          if (!movingWire || !movingWire.sourceRange || !movingWire.sourceRange.pathRange) return;
+          if (!sampleSourceRange) {
+            window.alert(
+              'Cannot move binding to <' + compTag + '>: it has no editable data-wcs.\n'
+              + '(PoC limitation — components driven only by mustache cannot accept new bindings yet.)'
+            );
+            return;
+          }
+          const property = window.prompt(
+            'New property on <' + compTag + '> for moved binding\n'
+            + '(examples: textContent, value, onclick, class.foo)',
+            suggestedProperty || 'textContent',
+          );
+          if (!property) return;
+          const trimmed = property.trim();
+          if (!trimmed) return;
+
+          // If the target component already has a binding for this
+          // property, replace its RHS with moving's RHS and delete
+          // moving — the "single binding per property" invariant holds.
+          const collision = (existingProps || []).find(p => p.property === trimmed);
+          if (collision) {
+            this.htmlSource = rewireDomEndInSource(
+              this.htmlSource,
+              movingWire.sourceRange,
+              collision.targetSourceRange,
+            );
+          } else {
+            this.htmlSource = appendDomBindingAndDelete(
+              this.htmlSource,
+              sampleSourceRange,
+              trimmed,
+              movingWire.sourceRange,
+            );
+          }
+        },
+        handleRewireRejected(event) {
+          const reason = (event.detail || {}).reason;
+          if (reason === 'target-not-rewriteable') {
+            window.alert(
+              'Cannot rewire to this port: it has no editable source representation\n'
+              + '(typically a mustache `{{ }}` text binding). Try a port driven by data-wcs.'
+            );
+          }
+        },
+        handleWireCreate(event) {
+          const detail = event.detail || {};
+          const { sourcePath, compTag, sampleSourceRange } = detail;
+          if (!sourcePath) return;
+          if (!sampleSourceRange) {
+            window.alert(
+              `Cannot add a binding to <${compTag}>: it has no data-wcs attribute yet.\n`
+              + `(PoC limitation — adding a new attribute requires element-tag tracking.)`
+            );
+            return;
+          }
+          const property = window.prompt(
+            `New binding from "${sourcePath}" to <${compTag}>.\n`
+            + `Property name (examples: textContent, value, onclick, class.foo):`,
+            'textContent',
+          );
+          if (!property) return;
+          const trimmed = property.trim();
+          if (!trimmed) return;
+          this.htmlSource = appendBindingToValue(
+            this.htmlSource, sampleSourceRange, trimmed, sourcePath,
+          );
+        },
+      };
+    </script>
+  </wcs-state>
+
+  <header>
+    <h1>wcstack PoC Visual Editor</h1>
+    <span class="subtitle">Stage 0 — read-only visualizer</span>
+    <span class="spacer"></span>
+    <select id="sample-loader">
+      <option value="">Load sample…</option>
+      <option value="examples/counter.html">examples/counter.html</option>
+      <option value="examples/list.html">examples/list.html</option>
+      <option value="examples/form.html">examples/form.html</option>
+      <option value="examples/nested.html">examples/nested.html</option>
+    </select>
+  </header>
+
+  <div class="layout">
+    <div class="pane">
+      <div class="pane-header">HTML source</div>
+      <textarea data-wcs="value: htmlSource" spellcheck="false"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-header">Graph</div>
+      <pve-graph data-wcs="source: htmlSource; onwire-delete: handleWireDelete; onfilter-edit: handleFilterEdit; onwire-rewire: handleWireRewire; onwire-rewire-dom: handleWireRewireDom; onwire-move-dom-to-comp: handleWireMoveDomToComp; onwire-create: handleWireCreate; onrewire-rejected: handleRewireRejected"></pve-graph>
+    </div>
+    <div class="pane">
+      <div class="pane-header">Live preview</div>
+      <pve-preview data-wcs="source: htmlSource"></pve-preview>
+    </div>
+  </div>
+</body>
+</html>

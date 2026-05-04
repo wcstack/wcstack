@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Simple Counter</title>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  count: 0,
+  increment() { this.count++; },
+  decrement() { this.count--; }
+}
+      </script>
+    </wcs-state>
+
+    <h1>
+      <span data-wcs="class.plus: count|gt(0); class.minus: count|lt(0)">{{ count }}</span>
+    </h1>
+    <button data-wcs="onclick: decrement">- Decrement</button>
+    <button data-wcs="onclick: increment">+ Increment</button>
+  </body>
+</html>
