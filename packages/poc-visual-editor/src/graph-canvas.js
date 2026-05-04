@@ -36,6 +36,10 @@ const TEMPLATE = `
   .comp-node.structural .comp-bg { fill: rgba(60, 50, 75, 0.45); stroke: #9966cc; stroke-dasharray: 4 3; }
   .comp-node.structural.has-children .comp-bg { fill: rgba(60, 50, 75, 0.32); }
   .child-separator { stroke: #555; stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.6; }
+  /* Unbound comps: compact box, dashed gray border, dim text. They
+     exist in the graph as "potential targets" the user can rewire to. */
+  .comp-node.unbound .comp-bg { fill: rgba(35, 35, 35, 0.6); stroke: #555; stroke-dasharray: 3 3; }
+  .comp-node.unbound .comp-title { fill: #999; font-size: 11px; font-weight: 500; }
   .state-title, .comp-title { fill: #fff; font: 600 13px ui-monospace, monospace; }
   .port-label { fill: #ddd; font: 11px ui-monospace, monospace; }
   .port-label.dim { fill: #666; font-style: italic; }
@@ -538,6 +542,8 @@ class PveGraph extends HTMLElement {
           : '';
         // Sample sourceRange + existing properties (so the state
         // handler can decide append vs replace without re-querying).
+        // tagSourceRange enables inserting a brand-new data-wcs
+        // attribute on a target that has none yet.
         const compWires = this._graph.wires.filter(w =>
           w.to.componentId === compId && w.sourceRange
         );
@@ -551,6 +557,7 @@ class PveGraph extends HTMLElement {
             movingWire: moving,
             compTag: comp.tag,
             sampleSourceRange: sample,
+            tagSourceRange: comp.tagSourceRange || null,
             existingProps,
             suggestedProperty,
           },
@@ -672,6 +679,23 @@ class PveGraph extends HTMLElement {
           `.comp-port-row[data-comp-id="${cssEscape(wire.to.componentId)}"][data-port-property="${cssEscape(wire.to.property)}"]`
         );
         if (cr) cr.classList.add('endpoint-selected');
+
+        // Notify the host so the textarea can highlight the matching
+        // DOM source range. Fired only when entering wire-selected
+        // (not while the wire is in MOVING modes — selection of the
+        // textarea would interfere with reading the marching wire).
+        if (sel.type === 'wire-selected' && this._graph) {
+          const comp = this._graph.components.find(c => c.id === wire.to.componentId);
+          if (comp && comp.tagSourceRange) {
+            this.dispatchEvent(new CustomEvent('wire-target-located', {
+              detail: {
+                tagStart: comp.tagSourceRange.tagStart,
+                tagEnd: comp.tagSourceRange.tagEnd,
+              },
+              bubbles: true, composed: true,
+            }));
+          }
+        }
       }
       if (sel.type === 'wire-selected') this.classList.add('has-selection');
       if (sel.type === 'moving-state') this.classList.add('moving-state');
@@ -705,18 +729,15 @@ class PveGraph extends HTMLElement {
     this._spawnGhostWire(svg, this._movingFixedEnd, this._movingFixedEnd);
 
     // In MOVING_DOM, mark every comp-node that is a valid drop target.
-    // Receivable = has at least one data-wcs binding (so we can splice
-    // its attribute) AND is not the moving wire's own component (to
-    // keep the same-component edit case out of PoC scope).
+    // Receivable = has a tagSourceRange (so we can splice / insert)
+    // AND is not the moving wire's own component (PoC keeps same-comp
+    // property renames out of scope).
     if (sel.type === 'moving-dom' && this._graph) {
       const moving = this._graph.wires[sel.wireIndex];
       if (moving) {
         for (const c of this._graph.components) {
           if (c.id === moving.to.componentId) continue;
-          const hasDataWcs = this._graph.wires.some(w =>
-            w.to.componentId === c.id && w.sourceRange
-          );
-          if (!hasDataWcs) continue;
+          if (!c.tagSourceRange) continue;
           const el = this.shadowRoot.querySelector(
             `[data-comp-id="${cssEscape(c.id)}"]`
           );
@@ -866,6 +887,7 @@ class PveGraph extends HTMLElement {
           compTag: comp.tag,
           compStructural: !!comp.structural,
           sampleSourceRange: sample,
+          tagSourceRange: comp.tagSourceRange || null,
         },
         bubbles: true,
         composed: true,

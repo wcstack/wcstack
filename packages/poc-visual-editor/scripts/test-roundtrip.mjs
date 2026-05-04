@@ -227,6 +227,28 @@ function bindingDeletionEdit(source, sr) {
   return { start: sr.valueStart + from, end: sr.valueStart + to, replacement: '' };
 }
 
+function insertNewDataWcsAndDelete(source, tagSR, property, movingSR) {
+  const movingPath = source.slice(movingSR.pathRange.start, movingSR.pathRange.end);
+  const movingFilters = movingSR.filterRange
+    ? source.slice(movingSR.filterRange.start, movingSR.filterRange.end)
+    : '';
+  const movingRhs = movingPath + movingFilters;
+  const insertText = ' data-wcs="' + property + ': ' + movingRhs + '"';
+  const insertEdit = { start: tagSR.insertPos, end: tagSR.insertPos, replacement: insertText };
+  const deleteEdit = bindingDeletionEdit(source, movingSR);
+  const edits = [insertEdit, deleteEdit].sort((a, b) => b.start - a.start);
+  let result = source;
+  for (const e of edits) {
+    result = result.slice(0, e.start) + e.replacement + result.slice(e.end);
+  }
+  return result;
+}
+
+function insertNewDataWcs(source, tagSR, property, statePath) {
+  const insertText = ' data-wcs="' + property + ': ' + statePath + '"';
+  return source.slice(0, tagSR.insertPos) + insertText + source.slice(tagSR.insertPos);
+}
+
 function appendDomBindingAndDelete(source, sampleTargetSR, property, movingSR) {
   const movingPath = source.slice(movingSR.pathRange.start, movingSR.pathRange.end);
   const movingFilters = movingSR.filterRange
@@ -373,6 +395,52 @@ for (const tc of rewireDomCases) {
     console.log('  --- after ---');
     console.log(after.split('\n').slice(15, 25).join('\n'));
     console.log('  wires after:', reparsed.wires.map(w => `${w.from.path}|${w.filters.join(',')} -> ${w.to.property}`));
+    fail++;
+  }
+}
+
+// Insert-new-data-wcs: target component has no data-wcs at all,
+// we synthesize one at the open tag.
+const insertNewAttrCases = [
+  {
+    name: 'counter.html: move decrement onclick to <h1> as `class.bold` (insert new data-wcs)',
+    file: 'examples/counter.html',
+    pickMoving: (g) => g.wires.find(w => w.from.path === 'decrement'),
+    pickTargetByTag: (g) => g.components.find(c => c.tag === 'h1' && c.tagSourceRange),
+    newProperty: 'class.bold',
+    expect: (g) => {
+      // h1 should now have a `class.bold: decrement` binding.
+      const h1Wires = g.wires.filter(w => w.to.componentId.endsWith(':h1'));
+      const has = h1Wires.some(w => w.to.property === 'class.bold' && w.from.path === 'decrement');
+      // decrement onclick wire should be gone.
+      const onclickWires = g.wires.filter(w => w.to.property === 'onclick');
+      const decrementGone = !onclickWires.some(w => w.from.path === 'decrement');
+      return has && decrementGone;
+    },
+  },
+];
+
+for (const tc of insertNewAttrCases) {
+  const src = readFileSync(resolve(root, tc.file), 'utf8');
+  const before = parseHtml(src);
+  const moving = tc.pickMoving(before);
+  const target = tc.pickTargetByTag(before);
+  if (!moving || !target) {
+    console.log(`FAIL: ${tc.name} — could not find moving / target component (target tagSourceRange?)`);
+    fail++;
+    continue;
+  }
+  const after = insertNewDataWcsAndDelete(
+    src, target.tagSourceRange, tc.newProperty, moving.sourceRange,
+  );
+  const reparsed = parseHtml(after);
+  if (tc.expect(reparsed)) {
+    console.log(`PASS: ${tc.name}`);
+    pass++;
+  } else {
+    console.log(`FAIL: ${tc.name}`);
+    console.log('  --- after ---');
+    console.log(after.split('\n').slice(15, 25).join('\n'));
     fail++;
   }
 }

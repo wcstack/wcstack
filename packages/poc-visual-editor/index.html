@@ -219,7 +219,6 @@ export default {
           : '';
         const movingRhs = movingPath + movingFilters;
 
-        // Compute the new value text by editing the existing one.
         const value = source.slice(sampleTargetSR.valueStart, sampleTargetSR.valueEnd);
         const trimmed = value.replace(/\s+$/, '');
         const sep = trimmed && !/;\s*$/.test(trimmed) ? '; ' : (trimmed ? ' ' : '');
@@ -237,6 +236,37 @@ export default {
           result = result.slice(0, e.start) + e.replacement + result.slice(e.end);
         }
         return result;
+      }
+
+      // Insert a brand-new `data-wcs="property: pathFilters"` attribute
+      // at the target's tag insertion point AND delete the moving wire's
+      // binding. Used when the target component had no data-wcs at all.
+      function insertNewDataWcsAndDelete(source, tagSR, property, movingSR) {
+        const movingPath = source.slice(movingSR.pathRange.start, movingSR.pathRange.end);
+        const movingFilters = movingSR.filterRange
+          ? source.slice(movingSR.filterRange.start, movingSR.filterRange.end)
+          : '';
+        const movingRhs = movingPath + movingFilters;
+        const insertText = ' data-wcs="' + property + ': ' + movingRhs + '"';
+        const insertEdit = {
+          start: tagSR.insertPos,
+          end: tagSR.insertPos,
+          replacement: insertText,
+        };
+        const deleteEdit = bindingDeletionEdit(source, movingSR);
+        const edits = [insertEdit, deleteEdit].sort((a, b) => b.start - a.start);
+        let result = source;
+        for (const e of edits) {
+          result = result.slice(0, e.start) + e.replacement + result.slice(e.end);
+        }
+        return result;
+      }
+
+      // For the create flow (drag from state path to a comp): insert a
+      // brand-new data-wcs attribute on the target. No deletion needed.
+      function insertNewDataWcs(source, tagSR, property, statePath) {
+        const insertText = ' data-wcs="' + property + ': ' + statePath + '"';
+        return source.slice(0, tagSR.insertPos) + insertText + source.slice(tagSR.insertPos);
       }
 
       // Append `; property: path` (or just `property: path` if value is
@@ -294,12 +324,11 @@ export default {
         },
         handleWireMoveDomToComp(event) {
           const detail = event.detail || {};
-          const { movingWire, compTag, sampleSourceRange, existingProps, suggestedProperty } = detail;
+          const { movingWire, compTag, sampleSourceRange, tagSourceRange, existingProps, suggestedProperty } = detail;
           if (!movingWire || !movingWire.sourceRange || !movingWire.sourceRange.pathRange) return;
-          if (!sampleSourceRange) {
+          if (!sampleSourceRange && !tagSourceRange) {
             window.alert(
-              'Cannot move binding to <' + compTag + '>: it has no editable data-wcs.\n'
-              + '(PoC limitation — components driven only by mustache cannot accept new bindings yet.)'
+              'Cannot move binding to <' + compTag + '>: no editable source location available.'
             );
             return;
           }
@@ -312,9 +341,10 @@ export default {
           const trimmed = property.trim();
           if (!trimmed) return;
 
-          // If the target component already has a binding for this
-          // property, replace its RHS with moving's RHS and delete
-          // moving — the "single binding per property" invariant holds.
+          // Three paths:
+          //  1) Property already bound on target → replace its RHS, delete moving
+          //  2) Target has data-wcs but not this property → append, delete moving
+          //  3) Target has no data-wcs at all → insert new attr at tag, delete moving
           const collision = (existingProps || []).find(p => p.property === trimmed);
           if (collision) {
             this.htmlSource = rewireDomEndInSource(
@@ -322,14 +352,31 @@ export default {
               movingWire.sourceRange,
               collision.targetSourceRange,
             );
-          } else {
+          } else if (sampleSourceRange) {
             this.htmlSource = appendDomBindingAndDelete(
               this.htmlSource,
               sampleSourceRange,
               trimmed,
               movingWire.sourceRange,
             );
+          } else {
+            this.htmlSource = insertNewDataWcsAndDelete(
+              this.htmlSource,
+              tagSourceRange,
+              trimmed,
+              movingWire.sourceRange,
+            );
           }
+        },
+        handleWireTargetLocated(event) {
+          const detail = event.detail || {};
+          const { tagStart, tagEnd } = detail;
+          if (typeof tagStart !== 'number' || typeof tagEnd !== 'number') return;
+          // The textarea is bound via data-wcs, query it from the document.
+          const ta = document.querySelector('textarea[data-wcs]');
+          if (!ta) return;
+          ta.focus();
+          try { ta.setSelectionRange(tagStart, tagEnd); } catch (_) { /* noop */ }
         },
         handleRewireRejected(event) {
           const reason = (event.detail || {}).reason;
@@ -342,26 +389,31 @@ export default {
         },
         handleWireCreate(event) {
           const detail = event.detail || {};
-          const { sourcePath, compTag, sampleSourceRange } = detail;
+          const { sourcePath, compTag, sampleSourceRange, tagSourceRange } = detail;
           if (!sourcePath) return;
-          if (!sampleSourceRange) {
+          if (!sampleSourceRange && !tagSourceRange) {
             window.alert(
-              `Cannot add a binding to <${compTag}>: it has no data-wcs attribute yet.\n`
-              + `(PoC limitation — adding a new attribute requires element-tag tracking.)`
+              'Cannot add a binding to <' + compTag + '>: no editable source location available.'
             );
             return;
           }
           const property = window.prompt(
-            `New binding from "${sourcePath}" to <${compTag}>.\n`
-            + `Property name (examples: textContent, value, onclick, class.foo):`,
+            'New binding from "' + sourcePath + '" to <' + compTag + '>.\n'
+            + 'Property name (examples: textContent, value, onclick, class.foo):',
             'textContent',
           );
           if (!property) return;
           const trimmed = property.trim();
           if (!trimmed) return;
-          this.htmlSource = appendBindingToValue(
-            this.htmlSource, sampleSourceRange, trimmed, sourcePath,
-          );
+          if (sampleSourceRange) {
+            this.htmlSource = appendBindingToValue(
+              this.htmlSource, sampleSourceRange, trimmed, sourcePath,
+            );
+          } else {
+            this.htmlSource = insertNewDataWcs(
+              this.htmlSource, tagSourceRange, trimmed, sourcePath,
+            );
+          }
         },
       };
     </script>
@@ -387,7 +439,7 @@ export default {
     </div>
     <div class="pane">
       <div class="pane-header">Graph</div>
-      <pve-graph data-wcs="source: htmlSource; onwire-delete: handleWireDelete; onfilter-edit: handleFilterEdit; onwire-rewire: handleWireRewire; onwire-rewire-dom: handleWireRewireDom; onwire-move-dom-to-comp: handleWireMoveDomToComp; onwire-create: handleWireCreate; onrewire-rejected: handleRewireRejected"></pve-graph>
+      <pve-graph data-wcs="source: htmlSource; onwire-delete: handleWireDelete; onfilter-edit: handleFilterEdit; onwire-rewire: handleWireRewire; onwire-rewire-dom: handleWireRewireDom; onwire-move-dom-to-comp: handleWireMoveDomToComp; onwire-create: handleWireCreate; onrewire-rejected: handleRewireRejected; onwire-target-located: handleWireTargetLocated"></pve-graph>
     </div>
     <div class="pane">
       <div class="pane-header">Live preview</div>

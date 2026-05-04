@@ -223,9 +223,11 @@ export function renderGraph(graph, svg) {
 }
 
 function renderComponent(c, svg, hasChildren) {
+  const isUnbound = c.unbound === true;
   const cls = 'comp-node'
     + (c.structural ? ' structural' : '')
-    + (hasChildren ? ' has-children' : '');
+    + (hasChildren ? ' has-children' : '')
+    + (isUnbound ? ' unbound' : '');
   const g = appendEl(svg, 'g', {
     class: cls,
     transform: `translate(${c.x}, ${c.y})`,
@@ -240,9 +242,6 @@ function renderComponent(c, svg, hasChildren) {
   const portRows = Math.max(c.ports.length, 1);
   const portsBottom = HEADER_H + portRows * ROW_H + 8;
 
-  if (c.ports.length === 0) {
-    appendText(g, 12, HEADER_H + 16, '(no ports)', { class: 'port-label dim' });
-  }
   c.ports.forEach((p, i) => {
     const py = HEADER_H + i * ROW_H + ROW_H / 2;
     const portClass = `port-${p.kind}`
@@ -292,8 +291,12 @@ function layoutComp(c, x, y, w, depth, childrenOf) {
   c.w = w;
   c.depth = depth;
 
-  const portRows = Math.max(c.ports.length, 1);
-  const ownContentH = HEADER_H + portRows * ROW_H + 8;
+  // Unbound comps render compactly: just the header bar + a couple of
+  // pixels of padding. Bound comps reserve a row per port.
+  const isUnbound = c.unbound === true;
+  const ownContentH = isUnbound
+    ? HEADER_H + 4
+    : HEADER_H + Math.max(c.ports.length, 1) * ROW_H + 8;
 
   const children = childrenOf.get(c.id) || [];
   if (!c.structural || children.length === 0) {

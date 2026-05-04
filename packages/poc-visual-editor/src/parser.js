@@ -43,6 +43,11 @@ const MUSTACHE_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
  * @property {boolean} [wildcard]     - true if the bound path contains `*`
  * @property {boolean} [invalid]      - true if the bound path could not be fully resolved (e.g. an orphan `.name`)
  *
+ * @typedef {Object} TagSourceRange
+ * @property {number} tagStart   - offset of the element's open tag `<`
+ * @property {number} tagEnd     - offset just after the open tag's `>`
+ * @property {number} insertPos  - offset right after the tag name; safe place to inject new attributes
+ *
  * @typedef {Object} ComponentNode
  * @property {string} id
  * @property {string} tag
@@ -51,6 +56,8 @@ const MUSTACHE_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
  * @property {string} [structuralKind]
  * @property {string} [scope]         - wildcard scope active on this component
  * @property {string} [parentId]      - id of nearest structural ancestor (if any)
+ * @property {TagSourceRange} [tagSourceRange] - source position of the element's open tag (for new-attribute insertion / DOM highlighting)
+ * @property {boolean} [unbound]      - true when the element has no data-wcs and no mustache bindings
  *
  * @typedef {Object} WireEnd
  * @property {string} stateId
@@ -88,8 +95,10 @@ const MUSTACHE_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
  */
 export function parseHtml(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  const maskedSource = maskScriptAndStyle(html);
   const ctx = {
     source: html,
+    maskedSource,
     states: [],
     components: [],
     wires: [],
@@ -97,6 +106,7 @@ export function parseHtml(html) {
     nextCompIdx: 0,
     attrLocations: locateDataWcsAttrs(html),
     attrLocIdx: 0,
+    sourceCursor: 0,
   };
 
   for (const el of doc.querySelectorAll('wcs-state')) {
@@ -140,6 +150,37 @@ function maskScriptAndStyle(source) {
   );
 }
 
+/**
+ * Find the next open-tag matching `expectedTag` in `maskedSource`
+ * starting at `cursor`. Tags that don't match (wrappers like <html>,
+ * <body>, or tags inside skipped subtrees we already advanced past)
+ * are skipped, up to a generous attempt cap to bound runtime.
+ *
+ * @param {string} maskedSource
+ * @param {number} cursor
+ * @param {string} expectedTag - lowercase
+ * @returns {{ tagStart: number, tagEnd: number, insertPos: number } | null}
+ */
+function findTagInSource(maskedSource, cursor, expectedTag) {
+  const re = /<([a-z][a-z0-9-]*)\b[^>]*>/gi;
+  re.lastIndex = cursor;
+  for (let attempts = 0; attempts < 256; attempts++) {
+    const m = re.exec(maskedSource);
+    if (!m) return null;
+    if (m[1].toLowerCase() === expectedTag) {
+      return {
+        tagStart: m.index,
+        tagEnd: m.index + m[0].length,
+        // Right after the tag name — safe place to insert a new
+        // attribute like ` data-wcs="..."` without disturbing existing
+        // attributes or the closing `>` / `/>`.
+        insertPos: m.index + 1 + m[1].length,
+      };
+    }
+  }
+  return null;
+}
+
 function walkChildren(parent, scope, ctx, structuralAncestorId) {
   if (!parent || !parent.childNodes) return;
   for (const node of Array.from(parent.childNodes)) {
@@ -153,6 +194,13 @@ function walkChildren(parent, scope, ctx, structuralAncestorId) {
 
 function processElement(el, scope, ctx, structuralAncestorId) {
   const tag = el.tagName.toLowerCase();
+
+  // Locate this element's open tag in source, advancing the cursor.
+  // Skip-on-mismatch handles wrapper tags DOMParser inserts (html, body)
+  // and elements inside skipped subtrees.
+  const tagLoc = findTagInSource(ctx.maskedSource, ctx.sourceCursor, tag);
+  if (tagLoc) ctx.sourceCursor = tagLoc.tagEnd;
+
   if (SKIP_TAGS.has(tag)) return;
 
   const dataWcs = el.getAttribute('data-wcs');
@@ -161,28 +209,27 @@ function processElement(el, scope, ctx, structuralAncestorId) {
     .flatMap(n => Array.from((n.textContent || '').matchAll(MUSTACHE_RE)))
     .map(m => m[1].trim());
 
-  /** @type {ComponentNode | null} */
-  let comp = null;
-  if (dataWcs || mustachesInText.length > 0) {
-    comp = {
-      id: `comp:${ctx.nextCompIdx++}:${tag}`,
-      tag,
-      ports: [],
-      structural: false,
-      structuralKind: undefined,
-      scope: scope || undefined,
-      parentId: structuralAncestorId,
-    };
-    ctx.components.push(comp);
-  }
+  // Always create a ComponentNode for every walked element so that
+  // unbound elements appear in the graph as wire targets too.
+  /** @type {ComponentNode} */
+  const comp = {
+    id: `comp:${ctx.nextCompIdx++}:${tag}`,
+    tag,
+    ports: [],
+    structural: false,
+    structuralKind: undefined,
+    scope: scope || undefined,
+    parentId: structuralAncestorId,
+    tagSourceRange: tagLoc || undefined,
+    unbound: !(dataWcs || mustachesInText.length > 0),
+  };
+  ctx.components.push(comp);
 
-  if (dataWcs && comp) {
-    // Pull the next data-wcs source location. Order matches DOM walk
-    // because both proceed in source order.
+  if (dataWcs) {
     const loc = ctx.attrLocations[ctx.attrLocIdx++];
     parseAttrBindings(el, comp, dataWcs, scope, ctx, loc);
   }
-  if (mustachesInText.length > 0 && comp) {
+  if (mustachesInText.length > 0) {
     addMustacheBindings(mustachesInText, comp, scope, ctx);
   }
 
