@@ -177,22 +177,26 @@ export function renderGraph(graph, svg) {
     if (s.paths.length === 0) {
       appendText(g, 12, HEADER_H + 16, '(no bindings reference this state)', { class: 'port-label dim' });
     }
+    const usedSet = new Set();
+    for (const w of graph.wires) {
+      if (w.from.stateId === s.id) usedSet.add(w.from.path);
+    }
+    const declaredSet = new Set(s.declaredPaths || []);
     s.paths.forEach((p, i) => {
       const py = HEADER_H + i * ROW_H + ROW_H / 2;
       const isWildcard = p.includes('*');
       const isInvalid = p.startsWith('.');
+      const isDeclaredOnly = declaredSet.has(p) && !usedSet.has(p);
       const portCls = 'port-out'
         + (isWildcard ? ' wildcard' : '')
-        + (isInvalid ? ' invalid' : '');
+        + (isInvalid ? ' invalid' : '')
+        + (isDeclaredOnly ? ' declared-only' : '');
       const labelCls = 'port-label'
         + (isWildcard ? ' wildcard' : '')
-        + (isInvalid ? ' invalid' : '');
+        + (isInvalid ? ' invalid' : '')
+        + (isDeclaredOnly ? ' declared-only' : '');
       // Wrap the row so the entire row (label + dot + gap) is a single
-      // drag source AND drop target. Without this the user has to hit
-      // a 4 px circle.
-      // data-port-x/y are absolute SVG-viewBox coordinates of the
-      // port circle; create-drag uses them as the ghost-wire origin
-      // (more reliable than recomputing via getCTM at click time).
+      // drag source AND drop target.
       const rowG = appendEl(g, 'g', {
         class: 'state-port-row',
         'data-state-id': s.id,
@@ -223,7 +227,10 @@ export function renderGraph(graph, svg) {
 }
 
 function renderComponent(c, svg, hasChildren) {
-  const isUnbound = c.unbound === true;
+  // "Unbound" = a registered slot (data-wcs="") with no actual bindings.
+  // Mustache-only and bound comps both have ports, so this only fires
+  // for empty data-wcs targets.
+  const isUnbound = !c.structural && c.ports.length === 0;
   const cls = 'comp-node'
     + (c.structural ? ' structural' : '')
     + (hasChildren ? ' has-children' : '')
@@ -255,7 +262,7 @@ function renderComponent(c, svg, hasChildren) {
       + (p.invalid ? ' invalid' : '');
     // Wrap port + label in a row group so the entire row is a click
     // target (not just the 4px circle). Mustache ports are tagged so
-    // the click handler can reject them as rewire targets.
+    // the click handler can reject them as rewire/edit targets.
     const rowG = appendEl(g, 'g', {
       class: 'comp-port-row' + (p.mustache ? ' mustache' : ''),
       'data-comp-id': c.id,
@@ -270,6 +277,20 @@ function renderComponent(c, svg, hasChildren) {
     });
     appendEl(rowG, 'circle', { cx: 0, cy: py, r: 4, class: portClass });
     appendText(rowG, 10, py + 4, label, { class: labelClass });
+
+    // Edit-property pencil icon — visible only on the wire-selected
+    // endpoint. Mustache ports don't get one (their property name is
+    // a synthetic `text:N` and not editable).
+    if (!p.mustache) {
+      const editX = c.w - 12;
+      const icon = appendEl(rowG, 'g', {
+        class: 'edit-property-icon',
+        transform: `translate(${editX}, ${py})`,
+      });
+      appendEl(icon, 'rect', { x: -8, y: -8, width: 16, height: 16, class: 'edit-icon-hit' });
+      const t = appendText(icon, 0, 4, '✎', { class: 'edit-icon-glyph', anchor: 'middle' });
+      t.setAttribute('aria-label', 'Edit property name');
+    }
   });
 
   // Separator between this container's own ports and its nested

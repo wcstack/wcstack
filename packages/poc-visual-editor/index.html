@@ -121,14 +121,16 @@ export default {
       }
 
       function deleteBindingFromSource(source, range) {
+        // Mustache binding: splice the whole `{{ ... }}` away.
+        if (range.mustache) {
+          return source.slice(0, range.mustacheStart) + source.slice(range.mustacheEnd);
+        }
         const value = source.slice(range.valueStart, range.valueEnd);
-        const pieces = splitTopLevelWithPos(value, ';').filter(p => p.text.trim());
-        // Re-find the matching piece by index in the unfiltered list so
-        // pieceIdx stays meaningful even if blanks exist.
         const allPieces = splitTopLevelWithPos(value, ';');
         if (allPieces.filter(p => p.text.trim()).length <= 1) {
-          // Only one effective binding — drop the whole `data-wcs="..."`.
-          return source.slice(0, range.attrStart) + source.slice(range.attrEnd);
+          // Last binding — empty the value but keep `data-wcs=""` so
+          // the element stays visible in the graph as a target slot.
+          return source.slice(0, range.valueStart) + source.slice(range.valueEnd);
         }
         const target = allPieces[range.pieceIdx];
         const isLast = range.pieceIdx === allPieces.length - 1;
@@ -156,11 +158,15 @@ export default {
       }
 
       function bindingDeletionEdit(source, sr) {
+        if (sr.mustache) {
+          return { start: sr.mustacheStart, end: sr.mustacheEnd, replacement: '' };
+        }
         const value = source.slice(sr.valueStart, sr.valueEnd);
         const allPieces = splitTopLevelWithPos(value, ';');
         const effective = allPieces.filter(p => p.text.trim());
         if (effective.length <= 1) {
-          return { start: sr.attrStart, end: sr.attrEnd, replacement: '' };
+          // Keep `data-wcs=""` as a target slot.
+          return { start: sr.valueStart, end: sr.valueEnd, replacement: '' };
         }
         const piece = allPieces[sr.pieceIdx];
         const isLast = sr.pieceIdx === allPieces.length - 1;
@@ -269,6 +275,36 @@ export default {
         return source.slice(0, tagSR.insertPos) + insertText + source.slice(tagSR.insertPos);
       }
 
+      // Void HTML elements cannot host a mustache (no inner content).
+      const VOID_TAGS = new Set([
+        'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+        'link', 'meta', 'source', 'track', 'wbr',
+      ]);
+
+      // Insert a `{{ inner }}` mustache right after the target's open
+      // tag (i.e., as the first chunk of inner content).
+      function insertMustache(source, tagSR, inner) {
+        const insertText = '{{ ' + inner + ' }}';
+        return source.slice(0, tagSR.tagEnd) + insertText + source.slice(tagSR.tagEnd);
+      }
+
+      // Move a binding as a mustache: insert `{{ pathFilters }}` in
+      // the target element AND delete the moving wire's binding.
+      function insertMustacheAndDelete(source, tagSR, inner, movingSR) {
+        const insertEdit = {
+          start: tagSR.tagEnd,
+          end: tagSR.tagEnd,
+          replacement: '{{ ' + inner + ' }}',
+        };
+        const deleteEdit = bindingDeletionEdit(source, movingSR);
+        const edits = [insertEdit, deleteEdit].sort((a, b) => b.start - a.start);
+        let result = source;
+        for (const e of edits) {
+          result = result.slice(0, e.start) + e.replacement + result.slice(e.end);
+        }
+        return result;
+      }
+
       // Append `; property: path` (or just `property: path` if value is
       // empty) just inside the closing quote of the data-wcs attribute.
       function appendBindingToValue(source, sampleSourceRange, property, path) {
@@ -333,15 +369,39 @@ export default {
             return;
           }
           const property = window.prompt(
-            'New property on <' + compTag + '> for moved binding\n'
+            'New property on <' + compTag + '> for moved binding.\n'
+            + 'Type "TEXT" for a mustache `{{ ... }}` text binding.\n'
             + '(examples: textContent, value, onclick, class.foo)',
             suggestedProperty || 'textContent',
           );
-          if (!property) return;
+          if (property === null) return;
           const trimmed = property.trim();
           if (!trimmed) return;
 
-          // Three paths:
+          // Special token: TEXT → create a mustache `{{ ... }}` in the
+          // target's content, carrying moving's path + filters, and
+          // delete the moving binding.
+          if (trimmed === 'TEXT') {
+            if (!tagSourceRange) {
+              window.alert('Cannot create mustache: missing tag location.');
+              return;
+            }
+            if (VOID_TAGS.has(compTag.toLowerCase())) {
+              window.alert('Cannot place mustache inside a void element <' + compTag + '>.');
+              return;
+            }
+            const src = this.htmlSource;
+            const mPath = src.slice(movingWire.sourceRange.pathRange.start, movingWire.sourceRange.pathRange.end);
+            const mFilters = movingWire.sourceRange.filterRange
+              ? src.slice(movingWire.sourceRange.filterRange.start, movingWire.sourceRange.filterRange.end)
+              : '';
+            this.htmlSource = insertMustacheAndDelete(
+              src, tagSourceRange, mPath + mFilters, movingWire.sourceRange,
+            );
+            return;
+          }
+
+          // Regular property name. Three paths:
           //  1) Property already bound on target → replace its RHS, delete moving
           //  2) Target has data-wcs but not this property → append, delete moving
           //  3) Target has no data-wcs at all → insert new attr at tag, delete moving
@@ -372,11 +432,37 @@ export default {
           const detail = event.detail || {};
           const { tagStart, tagEnd } = detail;
           if (typeof tagStart !== 'number' || typeof tagEnd !== 'number') return;
-          // The textarea is bound via data-wcs, query it from the document.
           const ta = document.querySelector('textarea[data-wcs]');
           if (!ta) return;
           ta.focus();
           try { ta.setSelectionRange(tagStart, tagEnd); } catch (_) { /* noop */ }
+          // Selection makes the element easy to spot but would be
+          // destructive on the next keystroke (typing replaces it). On
+          // the FIRST keypress, collapse the selection to a caret so
+          // editing stays non-destructive.
+          const onKey = (ev) => {
+            if (ev.ctrlKey || ev.metaKey) return;
+            if (ev.key === 'Shift' || ev.key === 'Control'
+                || ev.key === 'Alt' || ev.key === 'Meta') return;
+            try { ta.setSelectionRange(ta.selectionStart, ta.selectionStart); } catch (_) { /* noop */ }
+            ta.removeEventListener('keydown', onKey, true);
+          };
+          ta.addEventListener('keydown', onKey, true);
+        },
+        handlePropertyEdit(event) {
+          const detail = event.detail || {};
+          const { range } = detail;
+          if (!range || typeof range.start !== 'number') return;
+          const current = this.htmlSource.slice(range.start, range.end);
+          const next = window.prompt(
+            'Edit property name (and optional `#modifier`):',
+            current,
+          );
+          if (next === null) return;
+          const trimmed = next.trim();
+          if (!trimmed || trimmed === current) return;
+          this.htmlSource =
+            this.htmlSource.slice(0, range.start) + trimmed + this.htmlSource.slice(range.end);
         },
         handleRewireRejected(event) {
           const reason = (event.detail || {}).reason;
@@ -399,12 +485,27 @@ export default {
           }
           const property = window.prompt(
             'New binding from "' + sourcePath + '" to <' + compTag + '>.\n'
+            + 'Type "TEXT" for a mustache `{{ ... }}` text binding.\n'
             + 'Property name (examples: textContent, value, onclick, class.foo):',
             'textContent',
           );
-          if (!property) return;
+          if (property === null) return;
           const trimmed = property.trim();
           if (!trimmed) return;
+
+          if (trimmed === 'TEXT') {
+            if (!tagSourceRange) {
+              window.alert('Cannot create mustache: missing tag location.');
+              return;
+            }
+            if (VOID_TAGS.has(compTag.toLowerCase())) {
+              window.alert('Cannot place mustache inside a void element <' + compTag + '>.');
+              return;
+            }
+            this.htmlSource = insertMustache(this.htmlSource, tagSourceRange, sourcePath);
+            return;
+          }
+
           if (sampleSourceRange) {
             this.htmlSource = appendBindingToValue(
               this.htmlSource, sampleSourceRange, trimmed, sourcePath,
@@ -439,7 +540,7 @@ export default {
     </div>
     <div class="pane">
       <div class="pane-header">Graph</div>
-      <pve-graph data-wcs="source: htmlSource; onwire-delete: handleWireDelete; onfilter-edit: handleFilterEdit; onwire-rewire: handleWireRewire; onwire-rewire-dom: handleWireRewireDom; onwire-move-dom-to-comp: handleWireMoveDomToComp; onwire-create: handleWireCreate; onrewire-rejected: handleRewireRejected; onwire-target-located: handleWireTargetLocated"></pve-graph>
+      <pve-graph data-wcs="source: htmlSource; onwire-delete: handleWireDelete; onfilter-edit: handleFilterEdit; onwire-rewire: handleWireRewire; onwire-rewire-dom: handleWireRewireDom; onwire-move-dom-to-comp: handleWireMoveDomToComp; onwire-create: handleWireCreate; onrewire-rejected: handleRewireRejected; onwire-target-located: handleWireTargetLocated; onproperty-edit: handlePropertyEdit"></pve-graph>
     </div>
     <div class="pane">
       <div class="pane-header">Live preview</div>

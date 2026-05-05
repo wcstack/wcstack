@@ -57,20 +57,23 @@ const MUSTACHE_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
  * @property {string} [scope]         - wildcard scope active on this component
  * @property {string} [parentId]      - id of nearest structural ancestor (if any)
  * @property {TagSourceRange} [tagSourceRange] - source position of the element's open tag (for new-attribute insertion / DOM highlighting)
- * @property {boolean} [unbound]      - true when the element has no data-wcs and no mustache bindings
  *
  * @typedef {Object} WireEnd
  * @property {string} stateId
  * @property {string} path
  *
  * @typedef {Object} SourceRange
- * @property {number} attrStart   - start offset of the `data-wcs="..."` attribute (incl. leading whitespace) in source
- * @property {number} attrEnd     - end offset (exclusive)
- * @property {number} valueStart  - start of the attribute value (just after the opening quote)
- * @property {number} valueEnd    - end of the attribute value (just before the closing quote)
- * @property {number} pieceIdx    - index of this binding within the value (0-based, by `;`)
+ * @property {boolean} [mustache]  - true when the binding came from a `{{ ... }}` (not a data-wcs attribute)
+ * @property {number} [mustacheStart] - mustache: start offset of `{{`
+ * @property {number} [mustacheEnd]   - mustache: end offset just after `}}`
+ * @property {number} [attrStart]   - data-wcs: start offset of the attribute (incl. leading whitespace)
+ * @property {number} [attrEnd]     - data-wcs: end offset (exclusive)
+ * @property {number} [valueStart]  - data-wcs: start of the attribute value (just after the opening quote)
+ * @property {number} [valueEnd]    - data-wcs: end of the attribute value (just before the closing quote)
+ * @property {number} [pieceIdx]    - data-wcs: index of this binding within the value (0-based, by `;`)
  * @property {{ start: number, end: number } | null} [filterRange] - absolute source range of `|f1|f2(...)` (incl. leading `|`); null if no filters
- * @property {{ start: number, end: number } | null} [pathRange]   - absolute source range of the path text (between `:` and the first `|`/`@`)
+ * @property {{ start: number, end: number } | null} [pathRange]   - absolute source range of the path text
+ * @property {{ start: number, end: number } | null} [propertyRange] - absolute source range of the property name; null for mustache
  *
  * @typedef {Object} Wire
  * @property {WireEnd} from
@@ -106,18 +109,138 @@ export function parseHtml(html) {
     nextCompIdx: 0,
     attrLocations: locateDataWcsAttrs(html),
     attrLocIdx: 0,
+    mustacheLocations: locateMustaches(maskedSource),
+    mustacheLocIdx: 0,
     sourceCursor: 0,
   };
 
   for (const el of doc.querySelectorAll('wcs-state')) {
     const name = el.getAttribute('name') || 'default';
-    if (ctx.stateByName.has(name)) continue;
-    ensureState(name, ctx);
+    const stateNode = ensureState(name, ctx);
+    // Capture declared top-level keys from the inline state script so
+    // unused-but-defined paths still appear in the graph (more
+    // discoverable; the user can drag from them to create bindings).
+    if (!stateNode.declaredPaths) {
+      const scriptEl = el.querySelector('script');
+      const text = (scriptEl && scriptEl.textContent) || '';
+      stateNode.declaredPaths = extractStateKeys(text);
+    }
   }
 
   walkChildren(doc.body, '', ctx, undefined);
 
+  // Merge declared keys into state.paths so layout/rendering covers
+  // them too. Order: declared keys (in source order) first, then any
+  // paths that wires reference but the script didn't declare (e.g.
+  // wildcard expansions or orphan-relative paths).
+  for (const state of ctx.states) {
+    if (!state.declaredPaths || state.declaredPaths.length === 0) continue;
+    const seen = new Set();
+    const merged = [];
+    for (const p of state.declaredPaths) {
+      if (!seen.has(p)) { merged.push(p); seen.add(p); }
+    }
+    for (const p of state.paths) {
+      if (!seen.has(p)) { merged.push(p); seen.add(p); }
+    }
+    state.paths = merged;
+  }
+
   return { states: ctx.states, components: ctx.components, wires: ctx.wires };
+}
+
+/**
+ * Best-effort extraction of top-level keys from an `export default { ... }`
+ * object literal. Handles identifier keys, quoted keys (including
+ * wildcard paths like `"users.*.displayName"`), method shorthand, and
+ * `get`/`set`/`async`/`static` prefixes. Skips spread / computed
+ * properties.
+ *
+ * @param {string} scriptText
+ * @returns {string[]}
+ */
+function extractStateKeys(scriptText) {
+  if (!scriptText) return [];
+  const m = /export\s+default\s*\{/.exec(scriptText);
+  if (!m) return [];
+  const objectStart = m.index + m[0].length - 1; // position of `{`
+  const objectEnd = findMatchingBrace(scriptText, objectStart);
+  if (objectEnd === -1) return [];
+  const body = scriptText.slice(objectStart + 1, objectEnd);
+  return splitJsTopLevel(body, ',')
+    .map(piece => extractMemberKey(piece))
+    .filter(Boolean);
+}
+
+function findMatchingBrace(text, openPos) {
+  let depth = 0;
+  let quote = '';
+  for (let i = openPos; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote && text[i - 1] !== '\\') quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length - 1 && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function splitJsTopLevel(body, delim) {
+  const out = [];
+  let depth = 0;
+  let quote = '';
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (quote) {
+      if (ch === quote && body[i - 1] !== '\\') quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '/' && body[i + 1] === '/') {
+      while (i < body.length && body[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && body[i + 1] === '*') {
+      i += 2;
+      while (i < body.length - 1 && !(body[i] === '*' && body[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    if (ch === '{' || ch === '(' || ch === '[') depth++;
+    else if (ch === '}' || ch === ')' || ch === ']') depth--;
+    else if (ch === delim && depth === 0) {
+      out.push(body.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(body.slice(start));
+  return out;
+}
+
+function extractMemberKey(piece) {
+  let rest = piece.trim();
+  if (!rest) return null;
+  rest = rest.replace(/^(?:async\s+|static\s+)?(?:get\s+|set\s+)?/, '');
+  const m = /^(?:["']([^"']+)["']|([a-zA-Z_$][\w$]*))/.exec(rest);
+  if (!m) return null;
+  return m[1] || m[2];
 }
 
 /**
@@ -148,6 +271,79 @@ function maskScriptAndStyle(source) {
   return source.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, (match) =>
     match.replace(/[^\n]/g, ' ')
   );
+}
+
+/**
+ * Scan the source for `{{ ... }}` mustache occurrences and return
+ * each one's full range plus the inner path / filter sub-ranges.
+ * Script/style content is masked so embedded `{{` strings inside JS
+ * don't produce false positives.
+ *
+ * @param {string} maskedSource
+ */
+function locateMustaches(maskedSource) {
+  const re = /(\{\{\s*)([^}]+?)(\s*\}\})/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(maskedSource)) !== null) {
+    const mustacheStart = m.index;
+    const mustacheEnd = m.index + m[0].length;
+    const exprStart = m.index + m[1].length;
+    const exprEnd = exprStart + m[2].length;
+    out.push({
+      mustacheStart,
+      mustacheEnd,
+      ...findMustachePathFilter(maskedSource, exprStart, exprEnd),
+    });
+  }
+  return out;
+}
+
+function findMustachePathFilter(source, exprStart, exprEnd) {
+  // Inside the expression, find the first top-level `|` (filters) and
+  // optional `@stateName`. Path runs from exprStart to whichever
+  // delimiter comes first (or exprEnd if neither exists).
+  let depth = 0;
+  let quote = '';
+  let pathEnd = exprEnd;
+  let firstPipe = -1;
+  for (let i = exprStart; i < exprEnd; i++) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === quote && source[i - 1] !== '\\') quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if (depth === 0 && (ch === '|' || ch === '@')) {
+      pathEnd = i;
+      if (ch === '|') firstPipe = i;
+      break;
+    }
+  }
+  // If we stopped on `@`, the first `|` (if any) sits later in the expression.
+  if (firstPipe === -1) {
+    depth = 0; quote = '';
+    for (let i = pathEnd; i < exprEnd; i++) {
+      const ch = source[i];
+      if (quote) {
+        if (ch === quote && source[i - 1] !== '\\') quote = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") { quote = ch; continue; }
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      else if (depth === 0 && ch === '|') { firstPipe = i; break; }
+    }
+  }
+  // Trim the path's trailing whitespace.
+  let trimmedPathEnd = pathEnd;
+  while (trimmedPathEnd > exprStart && /\s/.test(source[trimmedPathEnd - 1])) trimmedPathEnd--;
+  return {
+    pathRange: { start: exprStart, end: trimmedPathEnd },
+    filterRange: firstPipe !== -1 ? { start: firstPipe, end: exprEnd } : null,
+  };
 }
 
 /**
@@ -204,32 +400,42 @@ function processElement(el, scope, ctx, structuralAncestorId) {
   if (SKIP_TAGS.has(tag)) return;
 
   const dataWcs = el.getAttribute('data-wcs');
+  const hasDataWcsAttr = el.hasAttribute('data-wcs');
   const directTextNodes = Array.from(el.childNodes).filter(n => n.nodeType === 3);
   const mustachesInText = directTextNodes
     .flatMap(n => Array.from((n.textContent || '').matchAll(MUSTACHE_RE)))
     .map(m => m[1].trim());
 
-  // Always create a ComponentNode for every walked element so that
-  // unbound elements appear in the graph as wire targets too.
-  /** @type {ComponentNode} */
-  const comp = {
-    id: `comp:${ctx.nextCompIdx++}:${tag}`,
-    tag,
-    ports: [],
-    structural: false,
-    structuralKind: undefined,
-    scope: scope || undefined,
-    parentId: structuralAncestorId,
-    tagSourceRange: tagLoc || undefined,
-    unbound: !(dataWcs || mustachesInText.length > 0),
-  };
-  ctx.components.push(comp);
-
-  if (dataWcs) {
-    const loc = ctx.attrLocations[ctx.attrLocIdx++];
-    parseAttrBindings(el, comp, dataWcs, scope, ctx, loc);
+  // Show only elements that the author has marked as a binding target:
+  // - has a data-wcs attribute (even empty `data-wcs=""` — an explicit
+  //   "this is a target slot" marker)
+  // - or carries mustache `{{ }}` bindings
+  // Plain DOM nodes without bindings remain invisible to keep the graph
+  // uncluttered.
+  /** @type {ComponentNode | null} */
+  let comp = null;
+  if (hasDataWcsAttr || mustachesInText.length > 0) {
+    comp = {
+      id: `comp:${ctx.nextCompIdx++}:${tag}`,
+      tag,
+      ports: [],
+      structural: false,
+      structuralKind: undefined,
+      scope: scope || undefined,
+      parentId: structuralAncestorId,
+      tagSourceRange: tagLoc || undefined,
+    };
+    ctx.components.push(comp);
   }
-  if (mustachesInText.length > 0) {
+
+  // Advance attrLocIdx for ANY data-wcs attribute (including empty ""),
+  // so the regex-side stays in sync with the DOM-side walk. parseAttr
+  // tolerates an empty value (no pieces produced).
+  if (hasDataWcsAttr && comp) {
+    const loc = ctx.attrLocations[ctx.attrLocIdx++];
+    parseAttrBindings(el, comp, dataWcs || '', scope, ctx, loc);
+  }
+  if (mustachesInText.length > 0 && comp) {
     addMustacheBindings(mustachesInText, comp, scope, ctx);
   }
 
@@ -304,6 +510,7 @@ function parseAttrBindings(el, comp, attr, scope, ctx, loc) {
             ? findFilterRange(piece.text, piece.start, loc.valueStart)
             : null,
           pathRange: findPathRange(piece.text, piece.start, loc.valueStart),
+          propertyRange: findPropertyRange(piece.text, piece.start, loc.valueStart),
         };
       }
       ctx.wires.push(wire);
@@ -321,17 +528,24 @@ function addMustacheBindings(mustaches, comp, scope, ctx) {
     const invalid = isOrphanRelative(resolved);
     comp.ports.push({
       property: portId,
-      label: 'text',
+      // Uppercase label distinguishes mustache ports from regular
+      // DOM properties at a glance. The same token is the magic
+      // input the user types in the create/move prompt to request a
+      // mustache instead of a data-wcs binding.
+      label: 'TEXT',
       kind: 'in',
       mustache: true,
       wildcard,
       invalid,
     });
 
+    // Pull the next mustache source location so the wire carries a
+    // sourceRange the editor can use for delete / rewire / filter edit.
+    const loc = ctx.mustacheLocations[ctx.mustacheLocIdx++];
     if (resolved) {
       const state = ensureState(stateName, ctx);
       if (!state.paths.includes(resolved)) state.paths.push(resolved);
-      ctx.wires.push({
+      const wire = {
         from: { stateId: state.id, path: resolved },
         to: { componentId: comp.id, property: portId },
         filters,
@@ -339,9 +553,43 @@ function addMustacheBindings(mustaches, comp, scope, ctx) {
         wildcard,
         invalid,
         raw: `{{ ${rawPath} }}`,
-      });
+      };
+      if (loc) {
+        wire.sourceRange = {
+          mustache: true,
+          mustacheStart: loc.mustacheStart,
+          mustacheEnd: loc.mustacheEnd,
+          pathRange: loc.pathRange,
+          filterRange: loc.filterRange,
+          propertyRange: null,
+        };
+      }
+      ctx.wires.push(wire);
     }
   });
+}
+
+/**
+ * Locate the property name (incl. optional `#modifier`) of a binding
+ * piece — i.e. everything before the `:`, with leading/trailing
+ * whitespace trimmed. Returns null when there's no `:` at all.
+ *
+ * @param {string} pieceText
+ * @param {number} pieceStart
+ * @param {number} valueStart
+ * @returns {{ start: number, end: number } | null}
+ */
+function findPropertyRange(pieceText, pieceStart, valueStart) {
+  const colonIdx = pieceText.indexOf(':');
+  if (colonIdx < 0) return null;
+  const before = pieceText.slice(0, colonIdx);
+  const leadingWs = before.length - before.trimStart().length;
+  let end = colonIdx;
+  while (end > leadingWs && /\s/.test(pieceText[end - 1])) end--;
+  return {
+    start: valueStart + pieceStart + leadingWs,
+    end: valueStart + pieceStart + end,
+  };
 }
 
 /**

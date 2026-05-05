@@ -207,11 +207,15 @@ for (const tc of invalidationCases) {
 }
 
 function bindingDeletionEdit(source, sr) {
+  if (sr.mustache) {
+    return { start: sr.mustacheStart, end: sr.mustacheEnd, replacement: '' };
+  }
   const value = source.slice(sr.valueStart, sr.valueEnd);
   const allPieces = splitTopLevelWithPos(value, ';');
   const effective = allPieces.filter(p => p.text.trim());
   if (effective.length <= 1) {
-    return { start: sr.attrStart, end: sr.attrEnd, replacement: '' };
+    // Keep `data-wcs=""` as a target slot rather than nuking the attr.
+    return { start: sr.valueStart, end: sr.valueEnd, replacement: '' };
   }
   const piece = allPieces[sr.pieceIdx];
   const isLast = sr.pieceIdx === allPieces.length - 1;
@@ -399,40 +403,267 @@ for (const tc of rewireDomCases) {
   }
 }
 
-// Insert-new-data-wcs: target component has no data-wcs at all,
-// we synthesize one at the open tag.
-const insertNewAttrCases = [
+function insertMustache(source, tagSR, inner) {
+  return source.slice(0, tagSR.tagEnd) + '{{ ' + inner + ' }}' + source.slice(tagSR.tagEnd);
+}
+
+function insertMustacheAndDelete(source, tagSR, inner, movingSR) {
+  const insertEdit = {
+    start: tagSR.tagEnd, end: tagSR.tagEnd, replacement: '{{ ' + inner + ' }}',
+  };
+  const deleteEdit = bindingDeletionEdit(source, movingSR);
+  const edits = [insertEdit, deleteEdit].sort((a, b) => b.start - a.start);
+  let result = source;
+  for (const e of edits) {
+    result = result.slice(0, e.start) + e.replacement + result.slice(e.end);
+  }
+  return result;
+}
+
+// Declared keys appear in state.paths even when no wire references them.
+(() => {
+  const src = `<!DOCTYPE html>
+<html><body>
+  <wcs-state><script type="module">
+export default {
+  count: 0,
+  unusedField: 'hello',
+  unusedMethod() { return 1; },
+  get "items.*.label"() { return ''; },
+};
+  <\/script></wcs-state>
+  <span data-wcs="textContent: count">0</span>
+</body></html>`;
+  const g = parseHtml(src);
+  const s = g.states[0];
+  const expectedDeclared = ['count', 'unusedField', 'unusedMethod', 'items.*.label'];
+  const missing = expectedDeclared.filter(p => !s.paths.includes(p));
+  if (missing.length === 0) {
+    console.log('PASS: state hub displays declared-only keys (count, unusedField, unusedMethod, items.*.label)');
+    pass++;
+  } else {
+    console.log('FAIL: declared keys not in state.paths:', missing);
+    console.log('  s.paths:', s.paths);
+    fail++;
+  }
+})();
+
+// TEXT-create / TEXT-move: typing "TEXT" as the property name in a
+// create or move flow should produce a `{{ ... }}` mustache instead
+// of a data-wcs binding.
+const inlineEmptyForMustache = `<!DOCTYPE html>
+<html>
+  <head><script type="module" src="https://esm.run/@wcstack/state/auto"><\/script></head>
+  <body>
+    <wcs-state><script type="module">export default { greeting: 'Hi', count: 0, inc(){ this.count++; } };<\/script></wcs-state>
+    <h2 data-wcs=""></h2>
+    <button data-wcs="onclick: inc">+</button>
+  </body>
+</html>`;
+
+(() => {
+  // create-as-TEXT: drag from `greeting` to <h2>, type TEXT
+  const before = parseHtml(inlineEmptyForMustache);
+  const h2 = before.components.find(c => c.tag === 'h2');
+  if (!h2 || !h2.tagSourceRange) {
+    console.log('FAIL: TEXT-create — h2 missing tagSourceRange');
+    fail++;
+  } else {
+    const after = insertMustache(inlineEmptyForMustache, h2.tagSourceRange, 'greeting');
+    const reparsed = parseHtml(after);
+    const w = reparsed.wires.find(w => w.from.path === 'greeting' && w.sourceRange && w.sourceRange.mustache);
+    if (w && after.includes('<h2 data-wcs="">{{ greeting }}</h2>')) {
+      console.log('PASS: inline: drag-create with property "TEXT" inserts mustache into <h2 data-wcs="">');
+      pass++;
+    } else {
+      console.log('FAIL: TEXT-create — wire missing or source malformed');
+      console.log('  --- after ---');
+      console.log(after);
+      fail++;
+    }
+  }
+})();
+
+(() => {
+  // move-as-TEXT: take the existing onclick wire and move it to <h2> as TEXT
+  const before = parseHtml(inlineEmptyForMustache);
+  const moving = before.wires.find(w => w.from.path === 'inc');
+  const h2 = before.components.find(c => c.tag === 'h2');
+  if (!moving || !h2 || !h2.tagSourceRange) {
+    console.log('FAIL: TEXT-move — missing prerequisites');
+    fail++;
+    return;
+  }
+  const movingPath = inlineEmptyForMustache.slice(
+    moving.sourceRange.pathRange.start, moving.sourceRange.pathRange.end,
+  );
+  const movingFilters = moving.sourceRange.filterRange
+    ? inlineEmptyForMustache.slice(
+        moving.sourceRange.filterRange.start, moving.sourceRange.filterRange.end,
+      )
+    : '';
+  const after = insertMustacheAndDelete(
+    inlineEmptyForMustache, h2.tagSourceRange, movingPath + movingFilters, moving.sourceRange,
+  );
+  const reparsed = parseHtml(after);
+  const newMustache = reparsed.wires.find(w => w.from.path === 'inc' && w.sourceRange && w.sourceRange.mustache);
+  const oldOnclickGone = !reparsed.wires.some(w => w.from.path === 'inc' && w.to.property === 'onclick');
+  if (newMustache && oldOnclickGone) {
+    console.log('PASS: inline: move-DOM with property "TEXT" creates mustache, deletes original binding');
+    pass++;
+  } else {
+    console.log('FAIL: TEXT-move — wire layout unexpected');
+    console.log('  --- after ---');
+    console.log(after);
+    fail++;
+  }
+})();
+
+// Mustache edits: delete, state-side rewire, filter edit.
+const inlineMustacheSrc = `<!DOCTYPE html>
+<html>
+  <head>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"><\/script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">export default { name: 'Alice', count: 0 };<\/script>
+    </wcs-state>
+    <p>Hello, {{ name }}! Count: {{ count|gt(0) }}.</p>
+  </body>
+</html>`;
+
+const mustacheDeleteCases = [
   {
-    name: 'counter.html: move decrement onclick to <h1> as `class.bold` (insert new data-wcs)',
+    name: 'inline mustache: delete `{{ name }}` wire',
+    src: inlineMustacheSrc,
+    pickWire: (g) => g.wires.find(w => w.from.path === 'name' && w.sourceRange && w.sourceRange.mustache),
+    expect: (g, after) => !after.includes('{{ name }}') && after.includes('{{ count'),
+  },
+];
+
+for (const tc of mustacheDeleteCases) {
+  const src = tc.src;
+  const before = parseHtml(src);
+  const wire = tc.pickWire(before);
+  if (!wire) {
+    console.log(`FAIL: ${tc.name} — could not find target mustache wire`);
+    fail++;
+    continue;
+  }
+  const edit = bindingDeletionEdit(src, wire.sourceRange);
+  const after = src.slice(0, edit.start) + edit.replacement + src.slice(edit.end);
+  if (tc.expect(parseHtml(after), after)) {
+    console.log(`PASS: ${tc.name}`);
+    pass++;
+  } else {
+    console.log(`FAIL: ${tc.name}`);
+    console.log('  --- after ---');
+    console.log(after);
+    fail++;
+  }
+}
+
+const mustacheRewireCases = [
+  {
+    name: 'inline mustache: state-side rewire `name` → `count`',
+    src: inlineMustacheSrc,
+    pickWire: (g) => g.wires.find(w => w.from.path === 'name' && w.sourceRange && w.sourceRange.mustache),
+    newPath: 'count',
+    expect: (after) => after.includes('{{ count }}') && !after.match(/\{\{\s*name\s*\}\}/),
+  },
+];
+
+for (const tc of mustacheRewireCases) {
+  const src = tc.src;
+  const before = parseHtml(src);
+  const wire = tc.pickWire(before);
+  if (!wire || !wire.sourceRange || !wire.sourceRange.pathRange) {
+    console.log(`FAIL: ${tc.name} — missing pathRange`);
+    fail++;
+    continue;
+  }
+  const r = wire.sourceRange.pathRange;
+  const after = src.slice(0, r.start) + tc.newPath + src.slice(r.end);
+  if (tc.expect(after)) {
+    console.log(`PASS: ${tc.name}`);
+    pass++;
+  } else {
+    console.log(`FAIL: ${tc.name}`);
+    console.log('  --- after ---');
+    console.log(after);
+    fail++;
+  }
+}
+
+const mustacheFilterCases = [
+  {
+    name: 'inline mustache: replace filter `|gt(0)` with `|ge(1)` in `{{ count|gt(0) }}`',
+    src: inlineMustacheSrc,
+    pickWire: (g) => g.wires.find(w => w.from.path === 'count' && w.sourceRange && w.sourceRange.mustache),
+    newFilter: '|ge(1)',
+    expect: (after) => after.includes('{{ count|ge(1) }}'),
+  },
+];
+
+for (const tc of mustacheFilterCases) {
+  const src = tc.src;
+  const before = parseHtml(src);
+  const wire = tc.pickWire(before);
+  if (!wire || !wire.sourceRange || !wire.sourceRange.filterRange) {
+    console.log(`FAIL: ${tc.name} — missing filterRange`);
+    fail++;
+    continue;
+  }
+  const after = editFilterInSource(src, wire.sourceRange.filterRange, tc.newFilter);
+  if (tc.expect(after)) {
+    console.log(`PASS: ${tc.name}`);
+    pass++;
+  } else {
+    console.log(`FAIL: ${tc.name}`);
+    console.log('  --- after ---');
+    console.log(after);
+    fail++;
+  }
+}
+
+// Property-name edit: rename the property of an existing binding via
+// the propertyRange splice (e.g. fix a `onclic` typo to `onclick`).
+const propertyEditCases = [
+  {
+    name: 'counter.html: rename `onclick` → `onmouseover` on decrement button',
     file: 'examples/counter.html',
-    pickMoving: (g) => g.wires.find(w => w.from.path === 'decrement'),
-    pickTargetByTag: (g) => g.components.find(c => c.tag === 'h1' && c.tagSourceRange),
-    newProperty: 'class.bold',
+    pickWire: (g) => g.wires.find(w => w.from.path === 'decrement' && w.to.property === 'onclick'),
+    newProperty: 'onmouseover',
     expect: (g) => {
-      // h1 should now have a `class.bold: decrement` binding.
-      const h1Wires = g.wires.filter(w => w.to.componentId.endsWith(':h1'));
-      const has = h1Wires.some(w => w.to.property === 'class.bold' && w.from.path === 'decrement');
-      // decrement onclick wire should be gone.
-      const onclickWires = g.wires.filter(w => w.to.property === 'onclick');
-      const decrementGone = !onclickWires.some(w => w.from.path === 'decrement');
-      return has && decrementGone;
+      const w = g.wires.find(w => w.from.path === 'decrement');
+      return w && w.to.property === 'onmouseover'
+          && !g.wires.some(x => x.to.property === 'onclick' && x.from.path === 'decrement');
+    },
+  },
+  {
+    name: 'counter.html: rename `class.plus` → `class.positive` keeping filters',
+    file: 'examples/counter.html',
+    pickWire: (g) => g.wires.find(w => w.to.property === 'class.plus'),
+    newProperty: 'class.positive',
+    expect: (g) => {
+      const w = g.wires.find(w => w.to.property === 'class.positive');
+      return w && w.filters.join(',') === 'gt(0)';
     },
   },
 ];
 
-for (const tc of insertNewAttrCases) {
+for (const tc of propertyEditCases) {
   const src = readFileSync(resolve(root, tc.file), 'utf8');
   const before = parseHtml(src);
-  const moving = tc.pickMoving(before);
-  const target = tc.pickTargetByTag(before);
-  if (!moving || !target) {
-    console.log(`FAIL: ${tc.name} — could not find moving / target component (target tagSourceRange?)`);
+  const wire = tc.pickWire(before);
+  if (!wire || !wire.sourceRange || !wire.sourceRange.propertyRange) {
+    console.log(`FAIL: ${tc.name} — could not find wire with propertyRange`);
     fail++;
     continue;
   }
-  const after = insertNewDataWcsAndDelete(
-    src, target.tagSourceRange, tc.newProperty, moving.sourceRange,
-  );
+  const r = wire.sourceRange.propertyRange;
+  const after = src.slice(0, r.start) + tc.newProperty + src.slice(r.end);
   const reparsed = parseHtml(after);
   if (tc.expect(reparsed)) {
     console.log(`PASS: ${tc.name}`);
@@ -441,6 +672,89 @@ for (const tc of insertNewAttrCases) {
     console.log(`FAIL: ${tc.name}`);
     console.log('  --- after ---');
     console.log(after.split('\n').slice(15, 25).join('\n'));
+    fail++;
+  }
+}
+
+// Insert-new-data-wcs: target component has empty data-wcs="" (just a
+// "registered slot"), we keep the attribute and append the binding.
+// Also covers: a component whose only binding was deleted earlier
+// (which now leaves data-wcs="" rather than removing the attribute).
+const inlineEmptyAttrSrc = `<!DOCTYPE html>
+<html>
+  <head>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"><\/script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">export default { count: 0, inc(){ this.count++; } };<\/script>
+    </wcs-state>
+    <h1 data-wcs="">Title</h1>
+    <button data-wcs="onclick: inc">+</button>
+  </body>
+</html>`;
+
+const insertNewAttrCases = [
+  {
+    name: 'inline: move `inc` onclick → <h1 data-wcs=""> as `class.bold` (append into empty value)',
+    src: inlineEmptyAttrSrc,
+    pickMoving: (g) => g.wires.find(w => w.from.path === 'inc'),
+    pickTargetByTag: (g) => g.components.find(c => c.tag === 'h1' && c.ports.length === 0),
+    newProperty: 'class.bold',
+    expect: (g) => {
+      const h1Wires = g.wires.filter(w => w.to.componentId.endsWith(':h1'));
+      const has = h1Wires.some(w => w.to.property === 'class.bold' && w.from.path === 'inc');
+      const onclickWires = g.wires.filter(w => w.to.property === 'onclick');
+      const incGone = !onclickWires.some(w => w.from.path === 'inc');
+      return has && incGone;
+    },
+  },
+];
+
+for (const tc of insertNewAttrCases) {
+  const src = tc.src || readFileSync(resolve(root, tc.file), 'utf8');
+  const before = parseHtml(src);
+  const moving = tc.pickMoving(before);
+  const target = tc.pickTargetByTag(before);
+  if (!moving || !target) {
+    console.log(`FAIL: ${tc.name} — could not find moving / target component`);
+    fail++;
+    continue;
+  }
+  // For empty-data-wcs targets, prefer appendDomBindingAndDelete
+  // (uses the existing valueRange to inject inside the empty quotes).
+  // For tagSourceRange-only targets (no data-wcs at all), use
+  // insertNewDataWcsAndDelete. Pick based on what the target carries.
+  const targetSampleSR = before.wires
+    .filter(w => w.to.componentId === target.id && w.sourceRange)[0]?.sourceRange
+    // Empty-attr comps have no wires; reach into the parsed attrLocations
+    // via getAttribute hack: scan source for the data-wcs attribute that
+    // matches this comp's tagSourceRange. For PoC simplicity, fall back
+    // to a regex scan.
+    || (() => {
+      const tagText = src.slice(target.tagSourceRange.tagStart, target.tagSourceRange.tagEnd);
+      const m = tagText.match(/data-wcs(\s*=\s*)(["'])([^"']*)\2/);
+      if (!m) return null;
+      const matchOffset = tagText.indexOf(m[0]);
+      const valueStart = target.tagSourceRange.tagStart + matchOffset + m[0].indexOf(m[2]) + 1;
+      return {
+        attrStart: target.tagSourceRange.tagStart + matchOffset,
+        attrEnd: target.tagSourceRange.tagStart + matchOffset + m[0].length,
+        valueStart,
+        valueEnd: valueStart + m[3].length,
+      };
+    })();
+  const after = targetSampleSR
+    ? appendDomBindingAndDelete(src, targetSampleSR, tc.newProperty, moving.sourceRange)
+    : insertNewDataWcsAndDelete(src, target.tagSourceRange, tc.newProperty, moving.sourceRange);
+  const reparsed = parseHtml(after);
+  if (tc.expect(reparsed)) {
+    console.log(`PASS: ${tc.name}`);
+    pass++;
+  } else {
+    console.log(`FAIL: ${tc.name}`);
+    console.log('  --- after ---');
+    console.log(after);
     fail++;
   }
 }

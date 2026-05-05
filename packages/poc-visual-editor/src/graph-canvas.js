@@ -49,6 +49,11 @@ const TEMPLATE = `
   .port-event { fill: #e8a23a; }
   .port-structural { fill: #9966cc; }
   .port-out.wildcard, .port-in.wildcard { fill: #b8b86a; stroke: #6a6a3a; stroke-width: 1; }
+  /* Declared-only state ports: defined in the state script but no
+     wire references them yet. Dimmer + italic to suggest "available
+     but unused", still fully draggable to create new bindings. */
+  .port-out.declared-only { fill: #555; stroke: #777; stroke-width: 1; }
+  .port-label.declared-only { fill: #888; font-style: italic; }
   /* Invalid bindings — orphan relative paths or unresolved wildcards. */
   .port-out.invalid,
   .port-in.invalid,
@@ -106,6 +111,17 @@ const TEMPLATE = `
   }
   @keyframes wire-march-fwd { to { stroke-dashoffset: -24; } }
   @keyframes wire-march-rev { to { stroke-dashoffset:  24; } }
+
+  /* Edit-property pencil icon, hidden by default; revealed only on
+     the wire-selected DOM port-row (and never on mustache ports). */
+  .edit-property-icon { display: none; }
+  :host(.has-selection) .comp-port-row.endpoint-selected:not(.mustache) .edit-property-icon {
+    display: block;
+  }
+  .edit-icon-hit { fill: transparent; pointer-events: all; cursor: text; }
+  .edit-icon-glyph { fill: #aaa; font: 12px sans-serif; pointer-events: none; }
+  .comp-port-row .edit-property-icon:hover .edit-icon-hit { fill: rgba(255, 235, 59, 0.25); }
+  .comp-port-row .edit-property-icon:hover .edit-icon-glyph { fill: #ffeb3b; }
 
   /* The wire's two endpoints (the rows in state hub and component) are
      highlighted whenever the wire is selected — they're the only valid
@@ -575,6 +591,30 @@ class PveGraph extends HTMLElement {
     if (sel && sel.type === 'wire-selected') {
       const moving = this._graph && this._graph.wires[sel.wireIndex];
       if (!moving) { this._setSelection(null); return; }
+
+      // Edit-property pencil icon takes priority over the comp-port-row
+      // it lives in, so the user can rename a property without entering
+      // MOVING_DOM mode.
+      const editIcon = e.target.closest('.edit-property-icon');
+      if (editIcon) {
+        const portRow = editIcon.closest('.comp-port-row');
+        if (portRow) {
+          const compId = portRow.getAttribute('data-comp-id');
+          const property = portRow.getAttribute('data-port-property');
+          if (compId === moving.to.componentId && property === moving.to.property
+              && moving.sourceRange && moving.sourceRange.propertyRange) {
+            this.dispatchEvent(new CustomEvent('property-edit', {
+              detail: {
+                wire: moving,
+                range: moving.sourceRange.propertyRange,
+              },
+              bubbles: true, composed: true,
+            }));
+            this._setSelection(null);
+            return;
+          }
+        }
+      }
 
       const stateRow = e.target.closest('.state-port-row');
       if (stateRow) {
