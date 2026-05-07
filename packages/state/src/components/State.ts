@@ -10,6 +10,8 @@ import { setStateElementByName, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
 import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
+import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
+import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { defineDCC } from "../dcc/defineDCC";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
@@ -111,6 +113,7 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   private set _state(value: IState) {
+    processCommandTokensDeclaration(value);
     this.__state = value;
     this._listPaths.clear();
     this._elementPaths.clear();
@@ -319,6 +322,7 @@ export class State extends HTMLElement implements IStateElement {
     if (this._rootNode !== null) {
       this._callStateDisconnectedCallback();
       setStateElementByName(this.rootNode, this._name, null);
+      clearCommandTokenRegistry(this);
       this._rootNode = null;
     }
   }
