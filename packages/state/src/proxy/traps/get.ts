@@ -20,6 +20,8 @@
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
+import { getOrCreateCommandToken } from "../../command/commandTokenRegistry";
+import { ICommandToken } from "../../command/types";
 import { INDEX_BY_INDEX_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
 import { connectedCallback } from "../apis/connectedCallback";
@@ -89,11 +91,19 @@ export function get(
         case "$trackDependency": {
           return (path: string): void => {
             return trackDependency(
-              target, 
-              prop, 
+              target,
+              prop,
               receiver,
               handler
             )(path);
+          }
+        }
+        case "$commandToken": {
+          return (name: string): ICommandToken => {
+            if (typeof name !== "string" || name.length === 0) {
+              raiseError(`$commandToken requires a non-empty string name.`);
+            }
+            return getOrCreateCommandToken(handler.stateElement, name);
           }
         }
       }

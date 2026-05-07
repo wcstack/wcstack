@@ -7,6 +7,7 @@ import { isWebComponentComplete } from "../webComponent/completeWebComponent.js"
 import { applyChangeToAttribute } from "./applyChangeToAttribute.js";
 import { applyChangeToCheckbox } from "./applyChangeToCheckbox.js";
 import { applyChangeToClass } from "./applyChangeToClass.js";
+import { applyChangeToCommand } from "./applyChangeToCommand.js";
 import { applyChangeToFor } from "./applyChangeToFor.js";
 import { applyChangeToIf } from "./applyChangeToIf.js";
 import { applyChangeToProperty } from "./applyChangeToProperty.js";
@@ -23,6 +24,7 @@ const applyChangeByFirstSegment: { [key: string]: ApplyChangeFn } = {
   "class": applyChangeToClass,
   "attr": applyChangeToAttribute,
   "style": applyChangeToStyle,
+  "command": applyChangeToCommand,
 };
 
 const applyChangeByBindingType: { [key: string]: ApplyChangeFn } = {

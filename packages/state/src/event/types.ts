@@ -10,4 +10,5 @@ export interface IWcBindable {
   readonly protocol: "wc-bindable";
   readonly version: number;
   readonly properties: IWcBindableProperty[];
+  readonly commands?: readonly string[];
 }

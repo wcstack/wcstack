@@ -395,4 +395,38 @@ describe('applyChange', () => {
     expect(select.disabled).toBe(true);
     expect(context.deferredSelectBindings).toHaveLength(0);
   });
+
+  it('commandセグメントでapplyChangeToCommandが呼ばれてsubscribeされること', async () => {
+    const { CommandToken } = await import('../src/command/CommandToken');
+    const tag = 'cmd-dispatch-target';
+    const fetchSpy = vi.fn().mockReturnValue('done');
+    if (!customElements.get(tag)) {
+      class C extends HTMLElement {
+        static wcBindable = {
+          protocol: 'wc-bindable' as const,
+          version: 1,
+          properties: [],
+          commands: ['fetch'],
+        };
+        fetch(...args: unknown[]): unknown { return fetchSpy(...args); }
+      }
+      customElements.define(tag, C);
+    }
+    const el = document.createElement(tag);
+    document.body.appendChild(el);
+    const token = new CommandToken('fetchUsers');
+    const bindingInfo: IBindingInfo = {
+      ...createBaseBindingInfo(),
+      bindingType: 'prop',
+      node: el,
+      replaceNode: el,
+      propName: 'command.fetch',
+      propSegments: ['command', 'fetch']
+    } as IBindingInfo;
+
+    getValueMock.mockReturnValue(token);
+    applyChange(bindingInfo, context);
+    token.emit('arg1');
+    expect(fetchSpy).toHaveBeenCalledWith('arg1');
+  });
 });

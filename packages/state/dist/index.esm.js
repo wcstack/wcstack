@@ -59,7 +59,7 @@ function setConfig(partialConfig) {
     }
 }
 
-var version$1 = "1.8.1";
+var version$1 = "1.8.6";
 var pkg = {
 	version: version$1};
 
@@ -187,6 +187,7 @@ const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 const STATE_BINDABLES_NAME = "$bindables";
+const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";
 
 const _cache$4 = new Map();
@@ -1988,6 +1989,117 @@ function applyChangeToClass(binding, _context, newValue) {
     element.classList.toggle(className, newValue);
 }
 
+// _subscribers は Set のため挿入順を保持する。
+// emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
+class CommandToken {
+    _name;
+    _subscribers = new Set();
+    constructor(name) {
+        this._name = name;
+    }
+    get name() {
+        return this._name;
+    }
+    get size() {
+        return this._subscribers.size;
+    }
+    subscribe(fn) {
+        this._subscribers.add(fn);
+        return () => {
+            this._subscribers.delete(fn);
+        };
+    }
+    unsubscribe(fn) {
+        return this._subscribers.delete(fn);
+    }
+    emit(...args) {
+        const results = [];
+        for (const fn of this._subscribers) {
+            results.push(fn(...args));
+        }
+        return results;
+    }
+}
+function isCommandToken(value) {
+    return value instanceof CommandToken;
+}
+
+/**
+ * command.<methodName>: <commandToken-path> バインディングの適用ハンドラ。
+ *
+ * subscribe lifecycle:
+ *   - 同一 binding に同じ token が再評価された場合は no-op。
+ *   - 異なる token が来た場合は古い subscription を解除し、新しい token に subscribe し直す。
+ *   - element は WeakRef で保持し、subscriber 経由で element を強参照しないようにする。
+ *     これにより、element が DOM から消えた後に subscriber が token._subscribers に
+ *     残っていても element 本体は GC 可能。
+ *   - emit 時に element.isConnected が false なら自動で subscription を破棄する（lazy purge）。
+ *
+ * 既知の制約:
+ *   - emit が来なければ stale subscriber は token に残り続ける（要素が GC されても subscriber 関数自体は残る）。
+ *     state インスタンスが disconnect されたタイミングで registry ごとクリアされるため、最終的には解放される。
+ *     element ライフサイクルに直接フックする手段が現状の binding 機構に無いため、能動的な purge は将来課題。
+ */
+const subscribedBindings = new WeakMap();
+function getWcBindable(element) {
+    const customTagName = getCustomElement(element);
+    if (customTagName === null) {
+        return null;
+    }
+    const customClass = customElements.get(customTagName);
+    if (typeof customClass === "undefined") {
+        raiseError(`Custom element <${customTagName}> is not defined for command binding.`);
+    }
+    const bindable = customClass.wcBindable;
+    if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
+        return bindable;
+    }
+    return null;
+}
+function applyChangeToCommand(binding, _context, newValue) {
+    if (!isCommandToken(newValue)) {
+        raiseError(`command binding requires a CommandToken value (use $commandToken or $commandTokens declaration).`);
+    }
+    const token = newValue;
+    const existing = subscribedBindings.get(binding);
+    if (existing && existing.token === token) {
+        return;
+    }
+    if (existing) {
+        existing.unsubscribe();
+        subscribedBindings.delete(binding);
+    }
+    const element = binding.node;
+    const methodName = binding.propSegments[1];
+    if (typeof methodName !== "string" || methodName.length === 0) {
+        raiseError(`command binding requires a method name (e.g., "command.fetch").`);
+    }
+    const bindable = getWcBindable(element);
+    if (bindable === null) {
+        raiseError(`command binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
+    }
+    if (!Array.isArray(bindable.commands) || !bindable.commands.includes(methodName)) {
+        raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.`);
+    }
+    const elementRef = new WeakRef(element);
+    let unsubscribe = null;
+    const subscriber = (...args) => {
+        const el = elementRef.deref();
+        if (!el || !el.isConnected) {
+            unsubscribe?.();
+            subscribedBindings.delete(binding);
+            return undefined;
+        }
+        const method = el[methodName];
+        if (typeof method !== "function") {
+            raiseError(`Method "${methodName}" is not a function on <${el.tagName.toLowerCase()}>.`);
+        }
+        return Reflect.apply(method, el, args);
+    };
+    unsubscribe = token.subscribe(subscriber);
+    subscribedBindings.set(binding, { token, unsubscribe, elementRef });
+}
+
 const _cache$1 = new WeakMap();
 const _cacheNullListIndex = new WeakMap();
 class StateAddress {
@@ -3088,6 +3200,7 @@ const applyChangeByFirstSegment = {
     "class": applyChangeToClass,
     "attr": applyChangeToAttribute,
     "style": applyChangeToStyle,
+    "command": applyChangeToCommand,
 };
 const applyChangeByBindingType = {
     "text": applyChangeToText,
@@ -4821,6 +4934,60 @@ function createLoopContextStack() {
     return new LoopContextStack();
 }
 
+/**
+ * `$commandTokens: ["a", "b", ...]` 配列宣言を処理し、
+ * state 直下に `this.$commandToken(name)` を返す getter を注入する。
+ *
+ * 対応している宣言形式は **オブジェクトリテラル** のみ。
+ * クラス本体に `static $commandTokens = [...]` を書く形式や、
+ * クラスのプロトタイプ上の同名コマンドの検出は現状サポートしない。
+ *
+ * getter は `enumerable: false` で注入するため、
+ * Object.keys / for-in / JSON.stringify には現れない。
+ */
+function processCommandTokensDeclaration(state) {
+    const declared = state[STATE_COMMAND_TOKENS_NAME];
+    if (typeof declared === "undefined") {
+        return;
+    }
+    if (!Array.isArray(declared)) {
+        raiseError(`${STATE_COMMAND_TOKENS_NAME} must be an array of strings.`);
+    }
+    for (const name of declared) {
+        if (typeof name !== "string" || name.length === 0) {
+            raiseError(`${STATE_COMMAND_TOKENS_NAME} entries must be non-empty strings.`);
+        }
+        if (name in state) {
+            raiseError(`${STATE_COMMAND_TOKENS_NAME} entry "${name}" conflicts with an existing state property.`);
+        }
+        Object.defineProperty(state, name, {
+            get() {
+                return this.$commandToken(name);
+            },
+            configurable: true,
+            enumerable: false,
+        });
+    }
+}
+
+const registryByStateElement = new WeakMap();
+function getOrCreateCommandToken(stateElement, name) {
+    let registry = registryByStateElement.get(stateElement);
+    if (typeof registry === "undefined") {
+        registry = new Map();
+        registryByStateElement.set(stateElement, registry);
+    }
+    let token = registry.get(name);
+    if (typeof token === "undefined") {
+        token = new CommandToken(name);
+        registry.set(name, token);
+    }
+    return token;
+}
+function clearCommandTokenRegistry(stateElement) {
+    registryByStateElement.delete(stateElement);
+}
+
 function getterFn(name) {
     return function () {
         const stateEl = this.stateElement;
@@ -4832,7 +4999,8 @@ function getterFn(name) {
                 value = state[name];
             });
         }
-        catch {
+        catch (e) {
+            console.warn(`[@wcstack/state] DCC getter "${name}" failed:`, e);
             return undefined;
         }
         return value;
@@ -4855,22 +5023,25 @@ function callFn(name, isAsync) {
         return function (...args) {
             const stateEl = this.stateElement;
             if (!stateEl)
-                return;
+                return undefined;
             return stateEl.initializePromise.then(() => {
+                let result;
                 return stateEl.createStateAsync("writable", async (state) => {
-                    await state[name](...args);
-                });
+                    result = await state[name](...args);
+                }).then(() => result);
             });
         };
     }
     return function (...args) {
         const stateEl = this.stateElement;
         if (!stateEl)
-            return;
-        stateEl.initializePromise.then(() => {
+            return undefined;
+        return stateEl.initializePromise.then(() => {
+            let result;
             stateEl.createState("writable", (state) => {
-                state[name](...args);
+                result = state[name](...args);
             });
+            return result;
         });
     };
 }
@@ -4904,7 +5075,8 @@ function defineDCC(hostElement, shadowRoot, state) {
         raiseError(`DCC: "${tagName}" is not a valid custom element name (must contain a hyphen).`);
     }
     if (customElements.get(tagName)) {
-        // 既に登録済みならスキップ
+        // 既に登録済みならスキップ（重複定義の検知のため警告は出す）
+        console.warn(`[@wcstack/state] DCC: "${tagName}" is already registered. Skipping redefinition.`);
         return;
     }
     // ShadowRoot は cloneNode 不可のため、template 経由で内容をクローン
@@ -6025,6 +6197,14 @@ function get(target, prop, receiver, handler) {
                         return trackDependency(target, prop, receiver, handler)(path);
                     };
                 }
+                case "$commandToken": {
+                    return (name) => {
+                        if (typeof name !== "string" || name.length === 0) {
+                            raiseError(`$commandToken requires a non-empty string name.`);
+                        }
+                        return getOrCreateCommandToken(handler.stateElement, name);
+                    };
+                }
             }
         }
         else {
@@ -6652,6 +6832,7 @@ class State extends HTMLElement {
         return this.__state;
     }
     set _state(value) {
+        processCommandTokensDeclaration(value);
         this.__state = value;
         this._listPaths.clear();
         this._elementPaths.clear();
@@ -6864,6 +7045,7 @@ class State extends HTMLElement {
         if (this._rootNode !== null) {
             this._callStateDisconnectedCallback();
             setStateElementByName(this.rootNode, this._name, null);
+            clearCommandTokenRegistry(this);
             this._rootNode = null;
         }
     }

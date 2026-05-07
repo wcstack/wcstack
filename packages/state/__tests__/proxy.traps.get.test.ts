@@ -338,4 +338,30 @@ describe('proxy/traps/get', () => {
     expect(updatedCallbackMock).toHaveBeenCalledWith(target, refs, receiver, handler);
     expect(result).toBe('updated-result');
   });
+
+  it('$commandToken は同名で同一トークンを返すこと', () => {
+    const stateElement = {} as any;
+    const handler = { stateElement } as any;
+    const fn = get({}, '$commandToken', {}, handler) as (name: string) => any;
+    const t1 = fn('fetchUsers');
+    const t2 = fn('fetchUsers');
+    expect(t1).toBe(t2);
+    expect(t1.name).toBe('fetchUsers');
+  });
+
+  it('$commandToken は異なる名前で別トークンを返すこと', () => {
+    const stateElement = {} as any;
+    const handler = { stateElement } as any;
+    const fn = get({}, '$commandToken', {}, handler) as (name: string) => any;
+    const t1 = fn('a');
+    const t2 = fn('b');
+    expect(t1).not.toBe(t2);
+  });
+
+  it('$commandToken に空文字列や非文字列を渡すとエラーになること', () => {
+    const handler = { stateElement: {} } as any;
+    const fn = get({}, '$commandToken', {}, handler) as (name: any) => any;
+    expect(() => fn('')).toThrow(/non-empty string/);
+    expect(() => fn(123 as any)).toThrow(/non-empty string/);
+  });
 });
