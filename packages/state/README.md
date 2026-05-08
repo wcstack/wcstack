@@ -96,6 +96,7 @@ That's it. No build, no bootstrap code, no framework.
 - **Built-in filters** — 40 filters for formatting, comparison, arithmetic, date, and more
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
+- **Command tokens** — invoke methods on wc-bindable custom elements from state via a pub/sub channel (`command.<method>: tokenName`)
 - **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for virtual properties at any depth in a data tree, all defined flat in one place with automatic dependency tracking and caching
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
@@ -769,6 +770,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path |
 | `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
+| `this.$commandToken(name)` | Get or create a memoized `CommandToken` by name (see [Command Token](#command-token-method-binding)) |
 | `this.$stateElement` | Access to the `IStateElement` instance |
 | `this.$1`, `this.$2`, ... | Current loop index (1-based naming, 0-based value) |
 
@@ -1043,6 +1045,122 @@ customElements.define("my-component", MyComponent);
 <template data-wcs="for: users">
   <my-component data-wcs="state.message: .name"></my-component>
 </template>
+```
+
+## Command Token (Method Binding)
+
+Property binding (`state.message: user.name`) covers data flowing into a component, but it does not cover **invoking a method on a component from state** — `<wcs-fetch>.fetch()`, `<wcs-dialog>.open()`, and so on. **Command tokens** fill that gap with a typed pub/sub channel:
+
+- The element subscribes via `command.<methodName>: <tokenPath>`
+- State emits via `this.<tokenName>.emit(...args)`
+- Arguments passed to `emit` are forwarded to the element's method
+- One token can fan out to multiple elements; the subscriber order is preserved
+
+This keeps the path contract intact: state never holds a reference to the element, and the element never imports anything from state. The token is the only shared object.
+
+### Basic Usage
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["fetchUsers", "refreshOrders"],
+
+      onClickFetch() {
+        this.fetchUsers.emit("/api/users", { method: "GET" });
+      },
+      onClickRefresh() {
+        this.refreshOrders.emit();
+      }
+    };
+  </script>
+</wcs-state>
+
+<!-- Subscribers — must be wc-bindable custom elements -->
+<wcs-fetch data-wcs="command.fetch: fetchUsers"></wcs-fetch>
+<wcs-fetch data-wcs="command.fetch: refreshOrders"></wcs-fetch>
+
+<button data-wcs="onclick: onClickFetch">Fetch users</button>
+<button data-wcs="onclick: onClickRefresh">Refresh orders</button>
+```
+
+When `onClickFetch` runs, every element subscribed to the `fetchUsers` token has its `fetch(...)` method called with the forwarded arguments.
+
+### `$commandTokens` Declaration
+
+The `$commandTokens` array declares the channels exposed at the top of state. The runtime injects a non-enumerable getter for each entry that returns the corresponding token:
+
+```javascript
+export default {
+  $commandTokens: ["fetchUsers", "refreshOrders"],
+  // → this.fetchUsers and this.refreshOrders are now CommandToken instances
+};
+```
+
+- Entries must be non-empty strings
+- A name conflicting with an existing own/inherited property (including `Object.prototype` methods like `toString`) throws an error at initialization
+- Injected getters are `enumerable: false`, so they do not appear in `Object.keys` / `for-in` / `JSON.stringify`
+
+### `$commandToken(name)` — Custom-Named Tokens
+
+When you want a different state-side name from the channel name, request a token explicitly:
+
+```javascript
+export default {
+  get cmdFetchUsers() {
+    return this.$commandToken("fetchUsers");
+  },
+  click() {
+    this.cmdFetchUsers.emit();
+  }
+};
+```
+
+`$commandToken(name)` is memoized — the same name always returns the same token instance.
+
+### `command.<methodName>:` Binding
+
+```html
+<wcs-fetch data-wcs="command.fetch: fetchUsers"></wcs-fetch>
+```
+
+| Part | Description |
+|---|---|
+| `command.` | Fixed prefix |
+| `<methodName>` | The element's method to invoke. Must be listed in `static wcBindable.commands` |
+| `<tokenPath>` | A path that resolves to a `CommandToken` (typically a name from `$commandTokens`) |
+
+Validation rules (enforced at binding time):
+
+- The element must be a custom element exposing `static wcBindable` with `protocol: "wc-bindable"` and `version: 1`
+- `methodName` must be present in `wcBindable.commands`
+- The bound value must be a `CommandToken` (assigning a non-token value throws)
+
+### Token API
+
+```typescript
+interface CommandToken {
+  readonly name: string;
+  readonly size: number;                            // current subscriber count
+  subscribe(fn: (...args) => unknown): () => void;  // returns unsubscribe
+  unsubscribe(fn: (...args) => unknown): boolean;
+  emit(...args: unknown[]): unknown[];              // returns subscriber results in subscribe order
+}
+```
+
+`emit` returns an array of return values from each subscriber (in subscribe order). For `Promise`-returning methods, wrap with `Promise.all(token.emit(...))` to await all of them.
+
+### Subscription Lifecycle
+
+- The subscriber holds the element via `WeakRef`, so a removed element can still be garbage collected even while it remains in the token's subscriber set
+- On `emit`, if the WeakRef has been collected or the element is no longer connected (`isConnected === false`), the subscription is purged automatically (lazy purge)
+- When the owning `<wcs-state>` is disconnected, the entire token registry is cleared
+
+The element's method is invoked with the arguments from `emit`:
+
+```javascript
+this.fetchUsers.emit(url, options);
+// → element.fetch(url, options) on every subscriber
 ```
 
 ## Declarative Custom Components (DCC)
