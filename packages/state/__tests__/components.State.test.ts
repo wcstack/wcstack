@@ -117,6 +117,15 @@ describe('State component', () => {
     expect(() => stateEl.createState('readonly', () => {})).toThrow(/State rootNode is not available/);
   });
 
+  it('commandTokenNamesは初期状態で空Set、setInitialState後に$commandTokens宣言を反映すること', async () => {
+    const stateEl = createStateElement();
+    expect(stateEl.commandTokenNames.size).toBe(0);
+    stateEl.setInitialState({ $commandTokens: ['fetchUsers', 'refreshOrders'] });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    expect(Array.from(stateEl.commandTokenNames)).toEqual(['fetchUsers', 'refreshOrders']);
+  });
+
   it('_stateが未初期化状態でcreateStateがエラーになること', () => {
     const stateEl = createStateElement();
     (stateEl as any)._rootNode = document;

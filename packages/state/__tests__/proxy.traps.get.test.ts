@@ -339,29 +339,62 @@ describe('proxy/traps/get', () => {
     expect(result).toBe('updated-result');
   });
 
-  it('$commandToken は同名で同一トークンを返すこと', () => {
-    const stateElement = {} as any;
+  it('$command は宣言済みトークンへ同名で同一インスタンスを返すこと', () => {
+    const stateElement = { commandTokenNames: new Set(['fetchUsers']) } as any;
     const handler = { stateElement } as any;
-    const fn = get({}, '$commandToken', {}, handler) as (name: string) => any;
-    const t1 = fn('fetchUsers');
-    const t2 = fn('fetchUsers');
+    const ns = get({}, '$command', {}, handler) as Record<string, any>;
+    const t1 = ns.fetchUsers;
+    const t2 = ns.fetchUsers;
     expect(t1).toBe(t2);
     expect(t1.name).toBe('fetchUsers');
   });
 
-  it('$commandToken は異なる名前で別トークンを返すこと', () => {
-    const stateElement = {} as any;
+  it('$command は異なる名前で別トークンを返すこと', () => {
+    const stateElement = { commandTokenNames: new Set(['a', 'b']) } as any;
     const handler = { stateElement } as any;
-    const fn = get({}, '$commandToken', {}, handler) as (name: string) => any;
-    const t1 = fn('a');
-    const t2 = fn('b');
-    expect(t1).not.toBe(t2);
+    const ns = get({}, '$command', {}, handler) as Record<string, any>;
+    expect(ns.a).not.toBe(ns.b);
   });
 
-  it('$commandToken に空文字列や非文字列を渡すとエラーになること', () => {
-    const handler = { stateElement: {} } as any;
-    const fn = get({}, '$commandToken', {}, handler) as (name: any) => any;
-    expect(() => fn('')).toThrow(/non-empty string/);
-    expect(() => fn(123 as any)).toThrow(/non-empty string/);
+  it('$command で宣言外の名前にアクセスするとundefinedを返すこと', () => {
+    const stateElement = { commandTokenNames: new Set(['known']) } as any;
+    const handler = { stateElement } as any;
+    const ns = get({}, '$command', {}, handler) as Record<string, any>;
+    expect(ns.unknown).toBeUndefined();
+  });
+
+  it('$command は state element 単位で memo 化されること', () => {
+    const stateElement = { commandTokenNames: new Set(['x']) } as any;
+    const handler = { stateElement } as any;
+    const ns1 = get({}, '$command', {}, handler);
+    const ns2 = get({}, '$command', {}, handler);
+    expect(ns1).toBe(ns2);
+  });
+
+  it('$command への代入や削除はエラーになること', () => {
+    const stateElement = { commandTokenNames: new Set(['x']) } as any;
+    const handler = { stateElement } as any;
+    const ns = get({}, '$command', {}, handler) as Record<string, any>;
+    expect(() => { ns.x = 1; }).toThrow(/read-only/);
+    expect(() => { delete ns.x; }).toThrow(/read-only/);
+  });
+
+  it('$command は in 演算子で宣言済み名前のみ true を返すこと', () => {
+    const stateElement = { commandTokenNames: new Set(['known']) } as any;
+    const handler = { stateElement } as any;
+    const ns = get({}, '$command', {}, handler) as Record<string, any>;
+    expect('known' in ns).toBe(true);
+    expect('unknown' in ns).toBe(false);
+  });
+
+  it('$command は ownKeys / getOwnPropertyDescriptor で宣言済み名前を列挙できること', () => {
+    const stateElement = { commandTokenNames: new Set(['a', 'b']) } as any;
+    const handler = { stateElement } as any;
+    const ns = get({}, '$command', {}, handler) as Record<string, any>;
+    expect(Object.keys(ns).sort()).toEqual(['a', 'b']);
+    const descA = Object.getOwnPropertyDescriptor(ns, 'a');
+    expect(descA?.enumerable).toBe(true);
+    expect(descA?.value?.name).toBe('a');
+    expect(Object.getOwnPropertyDescriptor(ns, 'unknown')).toBeUndefined();
   });
 });

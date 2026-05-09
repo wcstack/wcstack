@@ -20,9 +20,8 @@
 import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
-import { getOrCreateCommandToken } from "../../command/commandTokenRegistry";
-import { ICommandToken } from "../../command/types";
-import { INDEX_BY_INDEX_NAME } from "../../define";
+import { getCommandNamespace } from "../../command/commandNamespace";
+import { INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
 import { connectedCallback } from "../apis/connectedCallback";
 import { disconnectedCallback } from "../apis/disconnectedCallback";
@@ -98,13 +97,8 @@ export function get(
             )(path);
           }
         }
-        case "$commandToken": {
-          return (name: string): ICommandToken => {
-            if (typeof name !== "string" || name.length === 0) {
-              raiseError(`$commandToken requires a non-empty string name.`);
-            }
-            return getOrCreateCommandToken(handler.stateElement, name);
-          }
+        case STATE_COMMAND_NAMESPACE_NAME: {
+          return getCommandNamespace(handler.stateElement);
         }
       }
     } else {

@@ -770,7 +770,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path |
 | `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
-| `this.$commandToken(name)` | Get or create a memoized `CommandToken` by name (see [Command Token](#command-token-method-binding)) |
+| `this.$command.<name>` | Access a `CommandToken` declared in `$commandTokens` (see [Command Token](#command-token-method-binding)) |
 | `this.$stateElement` | Access to the `IStateElement` instance |
 | `this.$1`, `this.$2`, ... | Current loop index (1-based naming, 0-based value) |
 
@@ -1052,7 +1052,7 @@ customElements.define("my-component", MyComponent);
 Property binding (`state.message: user.name`) covers data flowing into a component, but it does not cover **invoking a method on a component from state** — `<wcs-fetch>.fetch()`, `<wcs-dialog>.open()`, and so on. **Command tokens** fill that gap with a typed pub/sub channel:
 
 - The element subscribes via `command.<methodName>: <tokenPath>`
-- State emits via `this.<tokenName>.emit(...args)`
+- State emits via `this.$command.<tokenName>.emit(...args)`
 - Arguments passed to `emit` are forwarded to the element's method
 - One token can fan out to multiple elements; the subscriber order is preserved
 
@@ -1067,10 +1067,10 @@ This keeps the path contract intact: state never holds a reference to the elemen
       $commandTokens: ["fetchUsers", "refreshOrders"],
 
       onClickFetch() {
-        this.fetchUsers.emit("/api/users", { method: "GET" });
+        this.$command.fetchUsers.emit("/api/users", { method: "GET" });
       },
       onClickRefresh() {
-        this.refreshOrders.emit();
+        this.$command.refreshOrders.emit();
       }
     };
   </script>
@@ -1088,35 +1088,23 @@ When `onClickFetch` runs, every element subscribed to the `fetchUsers` token has
 
 ### `$commandTokens` Declaration
 
-The `$commandTokens` array declares the channels exposed at the top of state. The runtime injects a non-enumerable getter for each entry that returns the corresponding token:
+The `$commandTokens` array declares the channels exposed under the `$command` namespace on state. Tokens are accessed as `this.$command.<name>` and are memoized — the same name always returns the same token instance.
 
 ```javascript
 export default {
   $commandTokens: ["fetchUsers", "refreshOrders"],
-  // → this.fetchUsers and this.refreshOrders are now CommandToken instances
-};
-```
 
-- Entries must be non-empty strings
-- A name conflicting with an existing own/inherited property (including `Object.prototype` methods like `toString`) throws an error at initialization
-- Injected getters are `enumerable: false`, so they do not appear in `Object.keys` / `for-in` / `JSON.stringify`
-
-### `$commandToken(name)` — Custom-Named Tokens
-
-When you want a different state-side name from the channel name, request a token explicitly:
-
-```javascript
-export default {
-  get cmdFetchUsers() {
-    return this.$commandToken("fetchUsers");
-  },
   click() {
-    this.cmdFetchUsers.emit();
+    this.$command.fetchUsers.emit("/api/users");
   }
 };
 ```
 
-`$commandToken(name)` is memoized — the same name always returns the same token instance.
+- Entries must be non-empty strings
+- Duplicate entries throw an error at initialization
+- The reserved name `$command` itself cannot appear in the array
+- Tokens are gathered under `$command` so they do not pollute the top-level state namespace; reactive properties with the same name as a token can coexist
+- Accessing an undeclared name on `$command` (e.g. `this.$command.typo`) throws — typos are caught at access time
 
 ### `command.<methodName>:` Binding
 
@@ -1159,7 +1147,7 @@ interface CommandToken {
 The element's method is invoked with the arguments from `emit`:
 
 ```javascript
-this.fetchUsers.emit(url, options);
+this.$command.fetchUsers.emit(url, options);
 // → element.fetch(url, options) on every subscriber
 ```
 

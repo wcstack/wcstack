@@ -12,6 +12,7 @@ import { createLoopContextStack } from "../list/loopContext";
 import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
+import { clearCommandNamespace } from "../command/commandNamespace";
 import { defineDCC } from "../dcc/defineDCC";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
@@ -88,6 +89,7 @@ export class State extends HTMLElement implements IStateElement {
   private _boundComponent: Element | null = null;
   private _boundComponentStateProp: string | null = null;
   private _bindableEventMap: Record<string, string> = {};
+  private _commandTokenNames: Set<string> = new Set<string>();
 
   constructor() {
     super();
@@ -113,7 +115,7 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   private set _state(value: IState) {
-    processCommandTokensDeclaration(value);
+    this._commandTokenNames = processCommandTokensDeclaration(value);
     this.__state = value;
     this._listPaths.clear();
     this._elementPaths.clear();
@@ -323,6 +325,7 @@ export class State extends HTMLElement implements IStateElement {
       this._callStateDisconnectedCallback();
       setStateElementByName(this.rootNode, this._name, null);
       clearCommandTokenRegistry(this);
+      clearCommandNamespace(this);
       this._rootNode = null;
     }
   }
@@ -380,6 +383,10 @@ export class State extends HTMLElement implements IStateElement {
 
   get bindableEventMap(): Record<string, string> {
     return this._bindableEventMap;
+  }
+
+  get commandTokenNames(): ReadonlySet<string> {
+    return this._commandTokenNames;
   }
 
   setBindableEventMap(map: Record<string, string>): void {

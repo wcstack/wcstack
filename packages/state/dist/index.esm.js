@@ -188,6 +188,7 @@ const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 const STATE_BINDABLES_NAME = "$bindables";
 const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
+const STATE_COMMAND_NAMESPACE_NAME = "$command";
 const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";
 
 const _cache$4 = new Map();
@@ -2030,10 +2031,14 @@ function isCommandToken(value) {
  * subscribe lifecycle:
  *   - 同一 binding に同じ token が再評価された場合は no-op。
  *   - 異なる token が来た場合は古い subscription を解除し、新しい token に subscribe し直す。
+ *     旧解除は新しい binding 妥当性検証（methodName・wcBindable.commands チェック）を
+ *     通過した後に行うため、再評価が validation で失敗しても旧購読は温存される（fail-fast）。
  *   - element は WeakRef で保持し、subscriber 経由で element を強参照しないようにする。
  *     これにより、element が DOM から消えた後に subscriber が token._subscribers に
  *     残っていても element 本体は GC 可能。
- *   - emit 時に element.isConnected が false なら自動で subscription を破棄する（lazy purge）。
+ *   - emit 時に下記いずれかなら自動で subscription を破棄する（lazy purge）:
+ *     - WeakRef.deref() が undefined（element が既に GC 済み）
+ *     - element.isConnected が false（DOM から取り外されている）
  *
  * 既知の制約:
  *   - emit が来なければ stale subscriber は token に残り続ける（要素が GC されても subscriber 関数自体は残る）。
@@ -2065,10 +2070,7 @@ function applyChangeToCommand(binding, _context, newValue) {
     if (existing && existing.token === token) {
         return;
     }
-    if (existing) {
-        existing.unsubscribe();
-        subscribedBindings.delete(binding);
-    }
+    // 新しい binding 妥当性検証は、旧 subscription を解除する前に通す（fail-fast）。
     const element = binding.node;
     const methodName = binding.propSegments[1];
     if (typeof methodName !== "string" || methodName.length === 0) {
@@ -2080,6 +2082,11 @@ function applyChangeToCommand(binding, _context, newValue) {
     }
     if (!Array.isArray(bindable.commands) || !bindable.commands.includes(methodName)) {
         raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.`);
+    }
+    // ここまで来たら旧解除して新 subscribe に切り替える。
+    if (existing) {
+        existing.unsubscribe();
+        subscribedBindings.delete(binding);
     }
     const elementRef = new WeakRef(element);
     let unsubscribe = null;
@@ -4935,20 +4942,21 @@ function createLoopContextStack() {
 }
 
 /**
- * `$commandTokens: ["a", "b", ...]` 配列宣言を処理し、
- * state 直下に `this.$commandToken(name)` を返す getter を注入する。
+ * `$commandTokens: ["a", "b", ...]` 配列宣言を解析し、宣言された名前群を Set で返す。
+ *
+ * 注入は行わず、proxy 側で `state.$command.<name>` として token を解決する設計。
+ * （以前の実装は state 直下に各名前の getter を注入していたが、リアクティブ値との
+ * 名前空間衝突を避け識別性を上げるため `$command` ネームスペース集約に切り替え。）
  *
  * 対応している宣言形式は **オブジェクトリテラル** のみ。
  * クラス本体に `static $commandTokens = [...]` を書く形式や、
  * クラスのプロトタイプ上の同名コマンドの検出は現状サポートしない。
- *
- * getter は `enumerable: false` で注入するため、
- * Object.keys / for-in / JSON.stringify には現れない。
  */
 function processCommandTokensDeclaration(state) {
+    const names = new Set();
     const declared = state[STATE_COMMAND_TOKENS_NAME];
     if (typeof declared === "undefined") {
-        return;
+        return names;
     }
     if (!Array.isArray(declared)) {
         raiseError(`${STATE_COMMAND_TOKENS_NAME} must be an array of strings.`);
@@ -4957,17 +4965,15 @@ function processCommandTokensDeclaration(state) {
         if (typeof name !== "string" || name.length === 0) {
             raiseError(`${STATE_COMMAND_TOKENS_NAME} entries must be non-empty strings.`);
         }
-        if (name in state) {
-            raiseError(`${STATE_COMMAND_TOKENS_NAME} entry "${name}" conflicts with an existing state property.`);
+        if (name === STATE_COMMAND_NAMESPACE_NAME) {
+            raiseError(`${STATE_COMMAND_TOKENS_NAME} entry "${name}" conflicts with the reserved namespace name "${STATE_COMMAND_NAMESPACE_NAME}".`);
         }
-        Object.defineProperty(state, name, {
-            get() {
-                return this.$commandToken(name);
-            },
-            configurable: true,
-            enumerable: false,
-        });
+        if (names.has(name)) {
+            raiseError(`${STATE_COMMAND_TOKENS_NAME} entry "${name}" is duplicated.`);
+        }
+        names.add(name);
     }
+    return names;
 }
 
 const registryByStateElement = new WeakMap();
@@ -4986,6 +4992,64 @@ function getOrCreateCommandToken(stateElement, name) {
 }
 function clearCommandTokenRegistry(stateElement) {
     registryByStateElement.delete(stateElement);
+}
+
+/**
+ * `state.$command` でアクセスされる command token の namespace proxy を提供する。
+ *
+ * - state element 単位で memo 化し、同一 stateElement なら同じ proxy が返る。
+ * - 宣言された名前 (`$commandTokens` に列挙されたもの) のみ token を返す。
+ *   宣言外の名前にアクセスした場合は undefined を返す。
+ *   （`constructor` / `Symbol.toPrimitive` / `then` など内部システムが触るキーで
+ *    例外を投げないため。typo は subsequent な `.emit()` 呼び出しで TypeError として
+ *    間接的に表面化する。）
+ * - token そのものの memo は `getOrCreateCommandToken` 側に集約されており、
+ *   namespace proxy は薄いゲートウェイとして振る舞う。
+ */
+const namespaceProxyByStateElement = new WeakMap();
+function getCommandNamespace(stateElement) {
+    const cached = namespaceProxyByStateElement.get(stateElement);
+    if (typeof cached !== "undefined") {
+        return cached;
+    }
+    const proxy = new Proxy(Object.create(null), {
+        get(_target, prop) {
+            if (typeof prop !== "string") {
+                return undefined;
+            }
+            if (!stateElement.commandTokenNames.has(prop)) {
+                return undefined;
+            }
+            return getOrCreateCommandToken(stateElement, prop);
+        },
+        has(_target, prop) {
+            return typeof prop === "string" && stateElement.commandTokenNames.has(prop);
+        },
+        ownKeys() {
+            return Array.from(stateElement.commandTokenNames);
+        },
+        getOwnPropertyDescriptor(_target, prop) {
+            if (typeof prop === "string" && stateElement.commandTokenNames.has(prop)) {
+                return {
+                    configurable: true,
+                    enumerable: true,
+                    value: getOrCreateCommandToken(stateElement, prop),
+                };
+            }
+            return undefined;
+        },
+        set() {
+            raiseError(`$command namespace is read-only; assigning to it is not allowed.`);
+        },
+        deleteProperty() {
+            raiseError(`$command namespace is read-only; deleting from it is not allowed.`);
+        },
+    });
+    namespaceProxyByStateElement.set(stateElement, proxy);
+    return proxy;
+}
+function clearCommandNamespace(stateElement) {
+    namespaceProxyByStateElement.delete(stateElement);
 }
 
 function getterFn(name) {
@@ -6197,13 +6261,8 @@ function get(target, prop, receiver, handler) {
                         return trackDependency(target, prop, receiver, handler)(path);
                     };
                 }
-                case "$commandToken": {
-                    return (name) => {
-                        if (typeof name !== "string" || name.length === 0) {
-                            raiseError(`$commandToken requires a non-empty string name.`);
-                        }
-                        return getOrCreateCommandToken(handler.stateElement, name);
-                    };
+                case STATE_COMMAND_NAMESPACE_NAME: {
+                    return getCommandNamespace(handler.stateElement);
                 }
             }
         }
@@ -6810,6 +6869,7 @@ class State extends HTMLElement {
     _boundComponent = null;
     _boundComponentStateProp = null;
     _bindableEventMap = {};
+    _commandTokenNames = new Set();
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -6832,7 +6892,7 @@ class State extends HTMLElement {
         return this.__state;
     }
     set _state(value) {
-        processCommandTokensDeclaration(value);
+        this._commandTokenNames = processCommandTokensDeclaration(value);
         this.__state = value;
         this._listPaths.clear();
         this._elementPaths.clear();
@@ -7046,6 +7106,7 @@ class State extends HTMLElement {
             this._callStateDisconnectedCallback();
             setStateElementByName(this.rootNode, this._name, null);
             clearCommandTokenRegistry(this);
+            clearCommandNamespace(this);
             this._rootNode = null;
         }
     }
@@ -7090,6 +7151,9 @@ class State extends HTMLElement {
     }
     get bindableEventMap() {
         return this._bindableEventMap;
+    }
+    get commandTokenNames() {
+        return this._commandTokenNames;
     }
     setBindableEventMap(map) {
         this._bindableEventMap = map;
