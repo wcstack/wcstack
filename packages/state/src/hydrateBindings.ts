@@ -247,7 +247,6 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
 }
 
 function findPlaceholderComment(root: Node, type: string, uuid: string): Comment | null {
-  const prefix = config as any;
   const keywordMap: Record<string, string> = {
     'for': config.commentForPrefix,
     'if': config.commentIfPrefix,

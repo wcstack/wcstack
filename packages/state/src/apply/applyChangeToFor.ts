@@ -2,7 +2,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
-import { config, inSsr } from "../config";
+import { inSsr } from "../config";
 import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";

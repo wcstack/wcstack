@@ -29,7 +29,7 @@ type IsPlainObject<T> =
   IsAny<T> extends true ? false :
   T extends
     | string | number | boolean | null | undefined | symbol | bigint
-    | Function | Date | RegExp | Error
+    | ((...args: any[]) => any) | Date | RegExp | Error
     | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any>
     | Promise<any> | readonly any[]
     ? false
@@ -43,7 +43,7 @@ type IsPlainObject<T> =
  * any 型のプロパティは除外せず保持する。
  */
 type DataKeys<T> = {
-  [K in keyof T & string]: IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
+  [K in keyof T & string]: IsAny<T[K]> extends true ? K : T[K] extends (...args: any[]) => any ? never : K;
 }[keyof T & string];
 
 // ============================================================

@@ -133,14 +133,14 @@ type IsAny<T> = 0 extends (1 & T) ? true : false;
  * T がドットパス再帰の対象となる「プレーンなデータオブジェクト」かどうかを判定する。
  * プリミティブ、組み込みオブジェクト (Date, Map 等)、関数、配列、any は除外。
  */
-type IsPlainObject<T> = IsAny<T> extends true ? false : T extends string | number | boolean | null | undefined | symbol | bigint | Function | Date | RegExp | Error | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any> | Promise<any> | readonly any[] ? false : T extends Record<string, any> ? true : false;
+type IsPlainObject<T> = IsAny<T> extends true ? false : T extends string | number | boolean | null | undefined | symbol | bigint | ((...args: any[]) => any) | Date | RegExp | Error | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any> | Promise<any> | readonly any[] ? false : T extends Record<string, any> ? true : false;
 /**
  * T のキーのうち、関数でないもの（データプロパティ・computed getter）を抽出する。
  * メソッド（イベントハンドラ等）はドットパスの対象外。
  * any 型のプロパティは除外せず保持する。
  */
 type DataKeys<T> = {
-    [K in keyof T & string]: IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
+    [K in keyof T & string]: IsAny<T[K]> extends true ? K : T[K] extends (...args: any[]) => any ? never : K;
 }[keyof T & string];
 /**
  * 型 T から生成される全てのドットパスの union。
