@@ -2080,7 +2080,7 @@ function applyChangeToCommand(binding, _context, newValue) {
     if (bindable === null) {
         raiseError(`command binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
     }
-    if (!Array.isArray(bindable.commands) || !bindable.commands.includes(methodName)) {
+    if (!Array.isArray(bindable.commands) || !bindable.commands.some((c) => c.name === methodName)) {
         raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.`);
     }
     // ここまで来たら旧解除して新 subscribe に切り替える。
@@ -2976,6 +2976,65 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
 }
 
 /**
+ * 要素 `element` の `propName` プロパティ書き込みに対して、
+ * wc-bindable inputs の `attribute` ミラー先属性名を返す。
+ *
+ * - wc-bindable でないネイティブ要素や、inputs 未宣言、attribute フィールド無しは null
+ * - inputs に同名宣言があっても `attribute` を持たないものはミラー対象外
+ *
+ * 戻り値の string がそのまま `setAttribute(name, value)` の name となる。
+ */
+function getInputAttributeMirror(element, propName) {
+    const customTagName = getCustomElement(element);
+    if (customTagName === null) {
+        return null;
+    }
+    const customClass = customElements.get(customTagName);
+    if (typeof customClass === "undefined") {
+        return null;
+    }
+    const bindable = customClass.wcBindable;
+    if (bindable?.protocol !== "wc-bindable" || bindable?.version !== 1) {
+        return null;
+    }
+    const inputs = bindable.inputs;
+    if (!Array.isArray(inputs)) {
+        return null;
+    }
+    for (const input of inputs) {
+        if (input.name === propName && typeof input.attribute === "string" && input.attribute.length > 0) {
+            return input.attribute;
+        }
+    }
+    return null;
+}
+/**
+ * mirror 属性値の表現を決める。
+ * - null / undefined → 属性削除
+ * - object / array → JSON.stringify (失敗時は String(value))
+ * - その他 (string / number / boolean / bigint) → String(value)
+ */
+function applyMirrorAttribute(element, attributeName, value) {
+    if (value === null || typeof value === "undefined") {
+        element.removeAttribute(attributeName);
+        return;
+    }
+    let formatted;
+    if (typeof value === "object") {
+        try {
+            formatted = JSON.stringify(value);
+        }
+        catch {
+            formatted = String(value);
+        }
+    }
+    else {
+        formatted = String(value);
+    }
+    element.setAttribute(attributeName, formatted);
+}
+
+/**
  * SSR 時に HTML 属性で表現できないプロパティバインディングを蓄積するストア。
  * ハイドレーション時にクライアント側で復元する。
  */
@@ -3067,6 +3126,23 @@ function applyChangeToProperty(binding, _context, newValue) {
                         newValue,
                         error
                     });
+                }
+            }
+            // wc-bindable inputs[].attribute ミラー。プロパティ書き込みと一緒に
+            // attributeChangedCallback / CSS attribute セレクタが反応できるよう同期する。
+            const mirrorAttr = getInputAttributeMirror(element, firstSegment);
+            if (mirrorAttr !== null) {
+                try {
+                    applyMirrorAttribute(element, mirrorAttr, newValue);
+                }
+                catch (error) {
+                    if (config.debug) {
+                        console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
+                            element,
+                            newValue,
+                            error
+                        });
+                    }
                 }
             }
         }

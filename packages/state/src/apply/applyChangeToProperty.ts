@@ -1,4 +1,5 @@
 import { config, inSsr } from "../config";
+import { applyMirrorAttribute, getInputAttributeMirror } from "../event/getInputAttributeMirror";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
@@ -41,8 +42,10 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
   if (propSegments.length === 1) {
     const firstSegment = propSegments[0];
     if ((element as any)[firstSegment] !== newValue) {
+      let propertyWriteSucceeded = false;
       try {
         (element as any)[firstSegment] = newValue;
+        propertyWriteSucceeded = true;
       } catch (error) {
         if (config.debug) {
           console.warn(`Failed to set property '${firstSegment}' on element.`, {
@@ -50,6 +53,26 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
             newValue,
             error
           });
+        }
+      }
+      // wc-bindable inputs[].attribute ミラー。プロパティ書き込みが成功したときだけ
+      // 属性へ反映する。setter が値を拒否した場合に属性だけ進んでしまうと
+      // property と attribute が乖離し、attributeChangedCallback や CSS セレクタが
+      // 実際のプロパティ値と矛盾した状態で発火するため、ここでガードする。
+      if (propertyWriteSucceeded) {
+        const mirrorAttr = getInputAttributeMirror(element, firstSegment);
+        if (mirrorAttr !== null) {
+          try {
+            applyMirrorAttribute(element, mirrorAttr, newValue);
+          } catch (error) {
+            if (config.debug) {
+              console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
+                element,
+                newValue,
+                error
+              });
+            }
+          }
         }
       }
     }

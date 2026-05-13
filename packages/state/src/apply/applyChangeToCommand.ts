@@ -73,7 +73,7 @@ export function applyChangeToCommand(binding: IBindingInfo, _context: IApplyCont
   if (bindable === null) {
     raiseError(`command binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
   }
-  if (!Array.isArray(bindable.commands) || !bindable.commands.includes(methodName)) {
+  if (!Array.isArray(bindable.commands) || !bindable.commands.some((c) => c.name === methodName)) {
     raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.`);
   }
 

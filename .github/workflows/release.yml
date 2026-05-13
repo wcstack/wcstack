@@ -90,12 +90,22 @@ jobs:
           done
           echo "All packages are at v$expected"
 
-      # Commit, tag, and push
+      # Rebuild after version bump so dist files embed the new VERSION constant
+      # (`export const VERSION = pkg.version` is bundled at build time).
+      - name: Rebuild after version bump
+        run: |
+          for pkg in state autoloader router fetch websocket ai auth0 upload server storage; do
+            echo "::group::rebuild — $pkg"
+            cd packages/$pkg && npm run build && cd ../..
+            echo "::endgroup::"
+          done
+
+      # Commit, tag, and push (include rebuilt dist so the tag's tree matches the npm tarball)
       - name: Commit and tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add packages/*/package.json packages/*/package-lock.json
+          git add packages/*/package.json packages/*/package-lock.json packages/*/dist
           git commit -m "chore: bump all packages to v${{ steps.bump.outputs.version }}"
           git tag "v${{ steps.bump.outputs.version }}"
           git push origin main --tags

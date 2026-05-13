@@ -157,4 +157,143 @@ describe('applyChangeToProperty', () => {
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
+
+  describe('wc-bindable inputs attribute mirror', () => {
+    const tagName = 'mirror-host';
+    beforeEach(() => {
+      if (!customElements.get(tagName)) {
+        class C extends HTMLElement {
+          static wcBindable = {
+            protocol: 'wc-bindable' as const,
+            version: 1 as const,
+            properties: [],
+            inputs: [
+              { name: 'data', attribute: 'data' },
+              { name: 'label', attribute: 'label-text' },
+              { name: 'noMirror' },
+            ],
+          };
+        }
+        customElements.define(tagName, C);
+      }
+    });
+
+    it('inputs[].attribute 宣言があるプロパティはミラー属性も書かれること', () => {
+      const el = document.createElement(tagName);
+      const binding = createBinding(el, ['data']);
+      applyChangeToProperty(binding, dummyContext, 'hello');
+      expect((el as any).data).toBe('hello');
+      expect(el.getAttribute('data')).toBe('hello');
+    });
+
+    it('属性名がプロパティ名と異なる場合 (kebab-case 等) も正しくミラーされること', () => {
+      const el = document.createElement(tagName);
+      const binding = createBinding(el, ['label']);
+      applyChangeToProperty(binding, dummyContext, 'タイトル');
+      expect(el.getAttribute('label-text')).toBe('タイトル');
+      expect(el.hasAttribute('label')).toBe(false);
+    });
+
+    it('inputs に attribute 宣言が無いプロパティはミラーされないこと', () => {
+      const el = document.createElement(tagName);
+      const binding = createBinding(el, ['noMirror']);
+      applyChangeToProperty(binding, dummyContext, 'x');
+      expect((el as any).noMirror).toBe('x');
+      expect(el.hasAttribute('noMirror')).toBe(false);
+    });
+
+    it('ネイティブ要素はミラー対象外 (副作用が出ないこと)', () => {
+      const el = document.createElement('div') as any;
+      const binding = createBinding(el, ['data']);
+      applyChangeToProperty(binding, dummyContext, 'x');
+      expect(el.data).toBe('x');
+      expect(el.hasAttribute('data')).toBe(false);
+    });
+
+    it('null 値ではミラー属性が削除されること', () => {
+      const el = document.createElement(tagName);
+      el.setAttribute('data', 'old');
+      const binding = createBinding(el, ['data']);
+      applyChangeToProperty(binding, dummyContext, null);
+      expect(el.hasAttribute('data')).toBe(false);
+    });
+
+    it('同値だとプロパティ書き込みもミラーも走らないこと', () => {
+      const el = document.createElement(tagName);
+      (el as any).data = 'x';
+      // 既に属性を変な値にしておき、no-op で書き換わらないことを確認
+      el.setAttribute('data', 'tampered');
+      const binding = createBinding(el, ['data']);
+      applyChangeToProperty(binding, dummyContext, 'x');
+      expect(el.getAttribute('data')).toBe('tampered');
+    });
+
+    it('object 値は JSON.stringify されてミラーされること', () => {
+      const el = document.createElement(tagName);
+      const binding = createBinding(el, ['data']);
+      applyChangeToProperty(binding, dummyContext, { x: 1 });
+      expect((el as any).data).toEqual({ x: 1 });
+      expect(el.getAttribute('data')).toBe('{"x":1}');
+    });
+
+    it('ミラー側で例外が出ても debug=false なら吞み込むこと', () => {
+      config.debug = false;
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const el = document.createElement(tagName);
+      // setAttribute を投げるようにしてミラーパスを失敗させる
+      const orig = el.setAttribute.bind(el);
+      el.setAttribute = ((name: string, value: string) => {
+        if (name === 'data') throw new Error('mirror failed');
+        return orig(name, value);
+      }) as any;
+      const binding = createBinding(el, ['data']);
+      expect(() => applyChangeToProperty(binding, dummyContext, 'v')).not.toThrow();
+      expect((el as any).data).toBe('v');
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it('ミラー側で例外が出たとき debug=true なら warn されること', () => {
+      config.debug = true;
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const el = document.createElement(tagName);
+      const orig = el.setAttribute.bind(el);
+      el.setAttribute = ((name: string, value: string) => {
+        if (name === 'data') throw new Error('mirror failed');
+        return orig(name, value);
+      }) as any;
+      const binding = createBinding(el, ['data']);
+      applyChangeToProperty(binding, dummyContext, 'v');
+      expect(spy).toHaveBeenCalled();
+      const [msg] = spy.mock.calls[0];
+      expect(msg).toMatch(/mirror attribute 'data'/);
+      spy.mockRestore();
+      config.debug = false;
+    });
+
+    it('プロパティ setter が値を拒否したときはミラー属性を更新しないこと', () => {
+      const rejectTag = 'mirror-host-rejecting';
+      if (!customElements.get(rejectTag)) {
+        class C extends HTMLElement {
+          static wcBindable = {
+            protocol: 'wc-bindable' as const,
+            version: 1 as const,
+            properties: [],
+            inputs: [{ name: 'data', attribute: 'data' }],
+          };
+          // setter が常に throw する
+          set data(_v: unknown) { throw new Error('rejected by element'); }
+          get data(): unknown { return undefined; }
+        }
+        customElements.define(rejectTag, C);
+      }
+      const el = document.createElement(rejectTag);
+      el.setAttribute('data', 'old');
+      const binding = createBinding(el, ['data']);
+      // throw は内部で吞み込まれるので例外は出ない
+      expect(() => applyChangeToProperty(binding, dummyContext, 'new')).not.toThrow();
+      // setter が拒否したので属性は old のまま (property と attribute の乖離を防ぐ)
+      expect(el.getAttribute('data')).toBe('old');
+    });
+  });
 });

@@ -406,7 +406,7 @@ describe('applyChange', () => {
           protocol: 'wc-bindable' as const,
           version: 1,
           properties: [],
-          commands: ['fetch'],
+          commands: [{ name: 'fetch' }],
         };
         fetch(...args: unknown[]): unknown { return fetchSpy(...args); }
       }

@@ -47,7 +47,7 @@ describe('applyChangeToCommand', () => {
       protocol: 'wc-bindable',
       version: 1,
       properties: [],
-      commands: ['fetch'],
+      commands: [{ name: 'fetch' }],
     });
     defineCustomElement('cmd-fetch-no-commands', null, {
       protocol: 'wc-bindable',
@@ -90,7 +90,7 @@ describe('applyChangeToCommand', () => {
           protocol: 'other' as any,
           version: 1,
           properties: [],
-          commands: ['fetch'],
+          commands: [{ name: 'fetch' }],
         };
         fetch(): void {}
       }
@@ -130,7 +130,7 @@ describe('applyChangeToCommand', () => {
           protocol: 'wc-bindable',
           version: 1,
           properties: [],
-          commands: ['fetch'],
+          commands: [{ name: 'fetch' }],
         };
         fetch(...args: unknown[]): unknown { return fn(...args); }
       }
@@ -207,7 +207,7 @@ describe('applyChangeToCommand', () => {
           protocol: 'wc-bindable',
           version: 1,
           properties: [],
-          commands: ['fetch'],
+          commands: [{ name: 'fetch' }],
         };
         fetch(): void {}
       }

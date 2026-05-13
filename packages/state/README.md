@@ -1115,15 +1115,34 @@ export default {
 | Part | Description |
 |---|---|
 | `command.` | Fixed prefix |
-| `<methodName>` | The element's method to invoke. Must be listed in `static wcBindable.commands` |
+| `<methodName>` | The element's method to invoke. The name must appear as `{ name: "<methodName>" }` in `static wcBindable.commands` |
 | `$command.<tokenName>` | Explicit namespace path that resolves to a `CommandToken`. `<tokenName>` must be a name declared in `$commandTokens` |
 
 The right-hand side must be written as `$command.<tokenName>` — the bare-name shorthand (`fetchUsers`) is not supported. Going through the `$command.` namespace makes the binding's intent explicit in the HTML and keeps the top-level state namespace free of token names.
 
+`wcBindable.commands` follows the wc-bindable v1 spec shape — an array of `{ name: string; async?: boolean }`:
+
+```javascript
+class MyFetcher extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [],
+    commands: [
+      { name: "fetch", async: true },
+      { name: "reset" },
+    ],
+  };
+  fetch(url) { /* ... */ }
+  reset()    { /* ... */ }
+}
+```
+
+> **Breaking change since v1.9.1**: the `commands` field is now an array of `{ name, async? }` objects. The earlier `commands: ["fetch"]` plain-string form is no longer accepted — bindings against such declarations throw `Command "<name>" is not declared in wcBindable.commands`. There is no legacy fallback; update the declaration to the object form.
+
 Validation rules (enforced at binding time):
 
 - The element must be a custom element exposing `static wcBindable` with `protocol: "wc-bindable"` and `version: 1`
-- `methodName` must be present in `wcBindable.commands`
+- `methodName` must appear (by `name`) in `wcBindable.commands`
 - The bound value must be a `CommandToken` (assigning a non-token value throws — for example, an undeclared name like `$command.typo` resolves to `undefined` and is rejected here)
 
 ### Token API
@@ -1152,6 +1171,50 @@ The element's method is invoked with the arguments from `emit`:
 this.$command.fetchUsers.emit(url, options);
 // → element.fetch(url, options) on every subscriber
 ```
+
+## Inputs and Attribute Mirror
+
+`wcBindable.inputs` declares one-way property inputs (state → element). When an entry sets `attribute`, the framework writes the value to that HTML attribute every time it writes the property, so `attributeChangedCallback`, CSS attribute selectors, and DevTools all stay in sync with the property value.
+
+```javascript
+class MyChip extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [],
+    inputs: [
+      { name: "data", attribute: "data" },        // property name === attribute name
+      { name: "labelText", attribute: "label-text" }, // kebab-case mirror
+      { name: "internal" },                       // no mirror, property-only
+    ],
+  };
+}
+```
+
+```html
+<my-chip data-wcs="data: chip.payload; labelText: chip.title"></my-chip>
+```
+
+When state updates the value, both the property and the attribute are written:
+
+```text
+chip.payload = { id: 1 }    → element.data = { id: 1 } and setAttribute("data", '{"id":1}')
+chip.title   = "新着"        → element.labelText = "新着" and setAttribute("label-text", "新着")
+chip.payload = null          → element.data = null and removeAttribute("data")
+```
+
+Attribute value encoding:
+
+| Value type | Mirrored attribute |
+|---|---|
+| `string` / `number` / `boolean` / `bigint` | `String(value)` |
+| `null` / `undefined` | attribute removed |
+| `object` / `array` | `JSON.stringify(value)` (falls back to `String(value)` on circular references) |
+
+Notes:
+
+- `inputs` entries **without** `attribute` are property-only — the value is written to the property but no attribute is touched
+- Mirror is best-effort: a `setAttribute` failure is swallowed (with a `debug` warning) and does not block the property write
+- Native HTML elements ignore `inputs` entirely — the mirror only activates for custom elements that expose `static wcBindable`
 
 ## Declarative Custom Components (DCC)
 

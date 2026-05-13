@@ -26,7 +26,7 @@ describe("command binding (integration)", () => {
           protocol: "wc-bindable",
           version: 1,
           properties: [],
-          commands: ["fetch"],
+          commands: [{ name: "fetch" }],
         };
         fetch(...args: unknown[]): unknown {
           return fetchSpy(...args);
