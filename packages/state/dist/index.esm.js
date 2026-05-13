@@ -59,7 +59,7 @@ function setConfig(partialConfig) {
     }
 }
 
-var version$1 = "1.9.1";
+var version$1 = "1.10.0";
 var pkg = {
 	version: version$1};
 
@@ -3116,8 +3116,10 @@ function applyChangeToProperty(binding, _context, newValue) {
     if (propSegments.length === 1) {
         const firstSegment = propSegments[0];
         if (element[firstSegment] !== newValue) {
+            let propertyWriteSucceeded = false;
             try {
                 element[firstSegment] = newValue;
+                propertyWriteSucceeded = true;
             }
             catch (error) {
                 if (config.debug) {
@@ -3128,20 +3130,24 @@ function applyChangeToProperty(binding, _context, newValue) {
                     });
                 }
             }
-            // wc-bindable inputs[].attribute ミラー。プロパティ書き込みと一緒に
-            // attributeChangedCallback / CSS attribute セレクタが反応できるよう同期する。
-            const mirrorAttr = getInputAttributeMirror(element, firstSegment);
-            if (mirrorAttr !== null) {
-                try {
-                    applyMirrorAttribute(element, mirrorAttr, newValue);
-                }
-                catch (error) {
-                    if (config.debug) {
-                        console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
-                            element,
-                            newValue,
-                            error
-                        });
+            // wc-bindable inputs[].attribute ミラー。プロパティ書き込みが成功したときだけ
+            // 属性へ反映する。setter が値を拒否した場合に属性だけ進んでしまうと
+            // property と attribute が乖離し、attributeChangedCallback や CSS セレクタが
+            // 実際のプロパティ値と矛盾した状態で発火するため、ここでガードする。
+            if (propertyWriteSucceeded) {
+                const mirrorAttr = getInputAttributeMirror(element, firstSegment);
+                if (mirrorAttr !== null) {
+                    try {
+                        applyMirrorAttribute(element, mirrorAttr, newValue);
+                    }
+                    catch (error) {
+                        if (config.debug) {
+                            console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
+                                element,
+                                newValue,
+                                error
+                            });
+                        }
                     }
                 }
             }
