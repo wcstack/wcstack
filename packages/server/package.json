@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/server",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Server-side rendering for wcstack Web Components.",
   "type": "module",
   "main": "./dist/index.esm.js",
@@ -42,7 +42,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@wcstack/state": "^1.6.0",
+    "@wcstack/state": "^1.9.1",
     "happy-dom": "^20.0.11"
   },
   "devDependencies": {
