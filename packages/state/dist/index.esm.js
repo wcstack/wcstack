@@ -59,7 +59,7 @@ function setConfig(partialConfig) {
     }
 }
 
-var version$1 = "1.8.6";
+var version$1 = "1.9.1";
 var pkg = {
 	version: version$1};
 
@@ -2063,7 +2063,7 @@ function getWcBindable(element) {
 }
 function applyChangeToCommand(binding, _context, newValue) {
     if (!isCommandToken(newValue)) {
-        raiseError(`command binding requires a CommandToken value (use $commandToken or $commandTokens declaration).`);
+        raiseError(`command binding requires a CommandToken value (use $command.<tokenName> with a name declared in $commandTokens).`);
     }
     const token = newValue;
     const existing = subscribedBindings.get(binding);
@@ -5411,6 +5411,19 @@ function checkDependency(handler, address) {
  * - finallyでキャッシュへの格納を保証
  */
 function _getByAddress(target, address, receiver, handler, stateElement) {
+    if (address.pathInfo.segments[0] === STATE_COMMAND_NAMESPACE_NAME) {
+        // $command 名前空間配下のパスは raw state を持たないため、proxy の get トラップと
+        // 同じ namespace を辿る。1セグメント目は namespace 本体、2セグメント目以降は
+        // namespace 上のキー (= 宣言済み command token 名) を順に走査する。
+        let value = getCommandNamespace(stateElement);
+        for (let i = 1; i < address.pathInfo.segments.length; i++) {
+            if (value == null) {
+                return undefined;
+            }
+            value = Reflect.get(value, address.pathInfo.segments[i]);
+        }
+        return value;
+    }
     if (address.pathInfo.path in target) {
         // getterの中で参照の可能性があるので、addressをプッシュする
         if (stateElement.getterPaths.has(address.pathInfo.path)) {
