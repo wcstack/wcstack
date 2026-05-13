@@ -146,4 +146,51 @@ describe('getByAddress', () => {
     setCacheEntryByAbsoluteStateAddress(absAddress, null);
   });
 
+  it('$command.<name> パスは command token に解決されること', () => {
+    const target = {};
+    const stateElement = createStateElement({ commandTokenNames: new Set(['fetchUser']) });
+    const address = createStateAddress(getPathInfo('$command.fetchUser'), null);
+    const handler = createHandler(stateElement);
+
+    const value = getByAddress(target, address, target, handler as any);
+    expect(value).toBeTypeOf('object');
+    expect((value as any).name).toBe('fetchUser');
+
+    // 二度目の解決でも同じトークン (memoize)
+    const value2 = getByAddress(target, address, target, handler as any);
+    expect(value2).toBe(value);
+  });
+
+  it('$command 単体パスは namespace 自体を返すこと', () => {
+    const target = {};
+    const stateElement = createStateElement({ commandTokenNames: new Set(['fetchUser']) });
+    const address = createStateAddress(getPathInfo('$command'), null);
+    const handler = createHandler(stateElement);
+
+    const ns = getByAddress(target, address, target, handler as any) as any;
+    expect(ns).toBeTypeOf('object');
+    expect(ns.fetchUser?.name).toBe('fetchUser');
+  });
+
+  it('$command.<undeclared> は undefined を返すこと', () => {
+    const target = {};
+    const stateElement = createStateElement({ commandTokenNames: new Set(['known']) });
+    const address = createStateAddress(getPathInfo('$command.unknown'), null);
+    const handler = createHandler(stateElement);
+
+    const value = getByAddress(target, address, target, handler as any);
+    expect(value).toBeUndefined();
+  });
+
+  it('$command 以下を多段で辿ったとき途中で undefined になったらそのまま undefined を返すこと', () => {
+    const target = {};
+    const stateElement = createStateElement({ commandTokenNames: new Set(['known']) });
+    // $command.unknown は undefined、その先を更に辿っても安全に undefined を返すこと
+    const address = createStateAddress(getPathInfo('$command.unknown.deeper'), null);
+    const handler = createHandler(stateElement);
+
+    const value = getByAddress(target, address, target, handler as any);
+    expect(value).toBeUndefined();
+  });
+
 });

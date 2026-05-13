@@ -53,7 +53,7 @@ function getWcBindable(element: Element): IWcBindable | null {
 
 export function applyChangeToCommand(binding: IBindingInfo, _context: IApplyContext, newValue: unknown): void {
   if (!isCommandToken(newValue)) {
-    raiseError(`command binding requires a CommandToken value (use $commandToken or $commandTokens declaration).`);
+    raiseError(`command binding requires a CommandToken value (use $command.<tokenName> with a name declared in $commandTokens).`);
   }
   const token = newValue as ICommandToken;
 

@@ -22,19 +22,33 @@ import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IStateAddress } from "../../address/types";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
+import { getCommandNamespace } from "../../command/commandNamespace";
 import { IStateElement } from "../../components/types";
-import { WILDCARD } from "../../define";
+import { STATE_COMMAND_NAMESPACE_NAME, WILDCARD } from "../../define";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
 
 function _getByAddress(
-  target   : object, 
+  target   : object,
   address  : IStateAddress,
   receiver : any,
   handler  : IStateHandler,
   stateElement: IStateElement,
 ): any {
+  if (address.pathInfo.segments[0] === STATE_COMMAND_NAMESPACE_NAME) {
+    // $command 名前空間配下のパスは raw state を持たないため、proxy の get トラップと
+    // 同じ namespace を辿る。1セグメント目は namespace 本体、2セグメント目以降は
+    // namespace 上のキー (= 宣言済み command token 名) を順に走査する。
+    let value: any = getCommandNamespace(stateElement);
+    for (let i = 1; i < address.pathInfo.segments.length; i++) {
+      if (value == null) {
+        return undefined;
+      }
+      value = Reflect.get(value, address.pathInfo.segments[i]);
+    }
+    return value;
+  }
   if (address.pathInfo.path in target) {
     // getterの中で参照の可能性があるので、addressをプッシュする
     if (stateElement.getterPaths.has(address.pathInfo.path)) {

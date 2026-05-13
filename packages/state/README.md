@@ -1051,7 +1051,7 @@ customElements.define("my-component", MyComponent);
 
 Property binding (`state.message: user.name`) covers data flowing into a component, but it does not cover **invoking a method on a component from state** — `<wcs-fetch>.fetch()`, `<wcs-dialog>.open()`, and so on. **Command tokens** fill that gap with a typed pub/sub channel:
 
-- The element subscribes via `command.<methodName>: <tokenPath>`
+- The element subscribes via `command.<methodName>: $command.<tokenName>`
 - State emits via `this.$command.<tokenName>.emit(...args)`
 - Arguments passed to `emit` are forwarded to the element's method
 - One token can fan out to multiple elements; the subscriber order is preserved
@@ -1077,8 +1077,8 @@ This keeps the path contract intact: state never holds a reference to the elemen
 </wcs-state>
 
 <!-- Subscribers — must be wc-bindable custom elements -->
-<wcs-fetch data-wcs="command.fetch: fetchUsers"></wcs-fetch>
-<wcs-fetch data-wcs="command.fetch: refreshOrders"></wcs-fetch>
+<wcs-fetch data-wcs="command.fetch: $command.fetchUsers"></wcs-fetch>
+<wcs-fetch data-wcs="command.fetch: $command.refreshOrders"></wcs-fetch>
 
 <button data-wcs="onclick: onClickFetch">Fetch users</button>
 <button data-wcs="onclick: onClickRefresh">Refresh orders</button>
@@ -1104,25 +1104,27 @@ export default {
 - Duplicate entries throw an error at initialization
 - The reserved name `$command` itself cannot appear in the array
 - Tokens are gathered under `$command` so they do not pollute the top-level state namespace; reactive properties with the same name as a token can coexist
-- Accessing an undeclared name on `$command` (e.g. `this.$command.typo`) throws — typos are caught at access time
+- Accessing an undeclared name on `$command` (e.g. `this.$command.typo`) returns `undefined`. The typo then surfaces as a `TypeError` on the subsequent `.emit()` call, or — when used as a binding right-hand side — as a "requires a CommandToken value" error at binding time
 
 ### `command.<methodName>:` Binding
 
 ```html
-<wcs-fetch data-wcs="command.fetch: fetchUsers"></wcs-fetch>
+<wcs-fetch data-wcs="command.fetch: $command.fetchUsers"></wcs-fetch>
 ```
 
 | Part | Description |
 |---|---|
 | `command.` | Fixed prefix |
 | `<methodName>` | The element's method to invoke. Must be listed in `static wcBindable.commands` |
-| `<tokenPath>` | A path that resolves to a `CommandToken` (typically a name from `$commandTokens`) |
+| `$command.<tokenName>` | Explicit namespace path that resolves to a `CommandToken`. `<tokenName>` must be a name declared in `$commandTokens` |
+
+The right-hand side must be written as `$command.<tokenName>` — the bare-name shorthand (`fetchUsers`) is not supported. Going through the `$command.` namespace makes the binding's intent explicit in the HTML and keeps the top-level state namespace free of token names.
 
 Validation rules (enforced at binding time):
 
 - The element must be a custom element exposing `static wcBindable` with `protocol: "wc-bindable"` and `version: 1`
 - `methodName` must be present in `wcBindable.commands`
-- The bound value must be a `CommandToken` (assigning a non-token value throws)
+- The bound value must be a `CommandToken` (assigning a non-token value throws — for example, an undeclared name like `$command.typo` resolves to `undefined` and is rejected here)
 
 ### Token API
 
