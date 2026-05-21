@@ -40,6 +40,27 @@ describe("FetchCore", () => {
     expect(FetchCore.wcBindable.properties[3].name).toBe("status");
   });
 
+  it("wcBindable inputsがurl/methodを宣言している", () => {
+    const inputs = FetchCore.wcBindable.inputs!;
+    expect(inputs.map((i) => i.name)).toEqual(["url", "method"]);
+    // Core は headless なので attribute ヒントは持たない
+    expect(inputs.every((i) => i.attribute === undefined)).toBe(true);
+  });
+
+  it("wcBindable commandsがfetch(async)/abortを宣言している", () => {
+    const commands = FetchCore.wcBindable.commands!;
+    expect(commands.map((c) => c.name)).toEqual(["fetch", "abort"]);
+    expect(commands.find((c) => c.name === "fetch")!.async).toBe(true);
+    expect(commands.find((c) => c.name === "abort")!.async).toBeUndefined();
+  });
+
+  it("wcBindable inputs/commandsのnameがそれぞれ一意である", () => {
+    const inputNames = FetchCore.wcBindable.inputs!.map((i) => i.name);
+    const commandNames = FetchCore.wcBindable.commands!.map((c) => c.name);
+    expect(new Set(inputNames).size).toBe(inputNames.length);
+    expect(new Set(commandNames).size).toBe(commandNames.length);
+  });
+
   it("valueのgetterがdetail.valueを返す", () => {
     const getter = FetchCore.wcBindable.properties[0].getter!;
     const event = new CustomEvent("wcs-fetch:response", { detail: { value: "test", status: 200 } });

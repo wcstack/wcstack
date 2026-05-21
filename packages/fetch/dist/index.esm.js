@@ -60,6 +60,14 @@ class FetchCore extends EventTarget {
             { name: "error", event: "wcs-fetch:error" },
             { name: "status", event: "wcs-fetch:response", getter: (e) => e.detail.status },
         ],
+        inputs: [
+            { name: "url" },
+            { name: "method" },
+        ],
+        commands: [
+            { name: "fetch", async: true },
+            { name: "abort" },
+        ],
     };
     _target;
     _value = null;
@@ -216,6 +224,19 @@ class Fetch extends HTMLElement {
         properties: [
             ...FetchCore.wcBindable.properties,
             { name: "trigger", event: "wcs-fetch:trigger-changed" },
+        ],
+        // Shell-level input surface. The Core declares only the portable `url` / `method`;
+        // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
+        // these setters already reflect to their attributes themselves, so a binding system
+        // that mirrors inputs[].attribute would set the attribute twice. `commands`
+        // (fetch / abort) are inherited unchanged from the Core via the spread above.
+        inputs: [
+            { name: "url" },
+            { name: "method" },
+            { name: "target" },
+            { name: "manual" },
+            { name: "body" },
+            { name: "trigger" },
         ],
     };
     static get observedAttributes() { return ["url"]; }

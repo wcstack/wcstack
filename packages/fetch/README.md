@@ -401,9 +401,17 @@ Example:
 
 Both `FetchCore` and `<wcs-fetch>` declare `wc-bindable-protocol` compliance, making them interoperable with any framework or component that supports the protocol.
 
+The declaration follows the full wc-bindable interface model — three independent surfaces:
+
+- **`properties`** — observable outputs that `bind()` subscribes to (`value`, `loading`, `error`, `status`, and the Shell's `trigger`)
+- **`inputs`** — the settable surface (`url`, `method`, …); declarative metadata that tooling, codegen, and remote proxying read
+- **`commands`** — invocable methods (`fetch`, `abort`); a binding system such as `@wcstack/state` can invoke them by name
+
+Per the protocol, only `properties` is interpreted by core `bind()`; `inputs` / `commands` (and the `attribute` / `async` hints) are descriptive. They do **not** create implicit two-way data flow.
+
 ### Core (`FetchCore`)
 
-`FetchCore` declares the bindable async state that any runtime can subscribe to:
+`FetchCore` declares the bindable async state that any runtime can subscribe to, plus its portable input/command surface:
 
 ```typescript
 static wcBindable = {
@@ -417,6 +425,14 @@ static wcBindable = {
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
   ],
+  inputs: [
+    { name: "url" },
+    { name: "method" },
+  ],
+  commands: [
+    { name: "fetch", async: true },
+    { name: "abort" },
+  ],
 };
 ```
 
@@ -424,7 +440,7 @@ Headless consumers call `core.fetch(url)` directly — no `trigger` needed.
 
 ### Shell (`<wcs-fetch>`)
 
-The Shell extends the Core declaration with `trigger` so binding systems can execute fetch declaratively:
+The Shell extends the Core declaration with the `trigger` output and the DOM-driven input surface; `commands` (`fetch` / `abort`) are inherited unchanged:
 
 ```typescript
 static wcBindable = {
@@ -433,8 +449,18 @@ static wcBindable = {
     ...FetchCore.wcBindable.properties,
     { name: "trigger", event: "wcs-fetch:trigger-changed" },
   ],
+  inputs: [
+    { name: "url" },
+    { name: "method" },
+    { name: "target" },
+    { name: "manual" },
+    { name: "body" },
+    { name: "trigger" },
+  ],
 };
 ```
+
+The Shell's inputs intentionally carry no `attribute` hint: each setter (`url`, `method`, `target`, `manual`) already reflects to its attribute, so a binding system that mirrors `inputs[].attribute` would set the attribute twice.
 
 ## TypeScript Types
 

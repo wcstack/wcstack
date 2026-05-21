@@ -165,6 +165,27 @@ describe("Fetch", () => {
     expect(Fetch.wcBindable.properties[4].event).toBe("wcs-fetch:trigger-changed");
   });
 
+  it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
+    const inputs = Fetch.wcBindable.inputs!;
+    expect(inputs.map((i) => i.name)).toEqual(["url", "method", "target", "manual", "body", "trigger"]);
+  });
+
+  it("wcBindable inputsはattributeヒントを持たない（setterが自己反映するため二重設定を避ける）", () => {
+    const inputs = Fetch.wcBindable.inputs!;
+    expect(inputs.every((i) => i.attribute === undefined)).toBe(true);
+  });
+
+  it("wcBindable commandsをCoreからfetch(async)/abortとして継承している", () => {
+    const commands = Fetch.wcBindable.commands!;
+    expect(commands.map((c) => c.name)).toEqual(["fetch", "abort"]);
+    expect(commands.find((c) => c.name === "fetch")!.async).toBe(true);
+  });
+
+  it("triggerはproperties（観測）とinputs（設定）の両方に現れる", () => {
+    expect(Fetch.wcBindable.properties.some((p) => p.name === "trigger")).toBe(true);
+    expect(Fetch.wcBindable.inputs!.some((i) => i.name === "trigger")).toBe(true);
+  });
+
   it("valueのgetterがdetail.valueを返す", () => {
     const getter = Fetch.wcBindable.properties[0].getter!;
     const event = new CustomEvent("wcs-fetch:response", { detail: { value: "test", status: 200 } });

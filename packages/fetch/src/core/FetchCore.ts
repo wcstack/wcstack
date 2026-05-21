@@ -19,6 +19,14 @@ export class FetchCore extends EventTarget {
       { name: "error", event: "wcs-fetch:error" },
       { name: "status", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.status },
     ],
+    inputs: [
+      { name: "url" },
+      { name: "method" },
+    ],
+    commands: [
+      { name: "fetch", async: true },
+      { name: "abort" },
+    ],
   };
 
   private _target: EventTarget;

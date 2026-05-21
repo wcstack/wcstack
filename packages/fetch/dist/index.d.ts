@@ -23,10 +23,20 @@ interface IWcBindableProperty {
     readonly event: string;
     readonly getter?: (event: Event) => any;
 }
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
+    readonly version: 1;
     readonly properties: IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
 /**
  * HTTP error returned when the server responds with a non-ok status (>= 400).
