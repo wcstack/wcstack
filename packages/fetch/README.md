@@ -158,6 +158,10 @@ external write:  false → true   No event (triggers fetch)
 auto-reset:      true  → false  Dispatches wcs-fetch:trigger-changed
 ```
 
+If `url` is empty when `true` is written (e.g. a state-driven computed url not yet
+resolved), the write is **silently ignored**: no fetch runs, `trigger` stays `false`,
+and no event fires. Set the `url` first, then write `true` again to execute.
+
 ### 4. POST with reactive body
 
 ```html
@@ -216,10 +220,15 @@ These properties represent the result of the current request and are the main HA
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `value` | `any` | Response data |
+| `value` | `any` | Response data. **Reset to `null` on HTTP error** (status >= 400) |
 | `loading` | `boolean` | `true` while a request is in flight |
 | `error` | `WcsFetchHttpError \| Error \| null` | HTTP or network error |
 | `status` | `number` | HTTP status code |
+
+> **Note:** On an HTTP error, `value` is reset to `null` and `status` carries the
+> error code. If you bind only `value` (without observing `error`), the previous
+> successful value disappears when a request fails. Bind `error` to handle the
+> failure case explicitly.
 
 ### Input / command surface
 
@@ -324,6 +333,12 @@ console.log(fetchEl.body);    // null (reset after fetch)
 
 This mode is useful for simple fragment loading, but it is separate from the main **state-driven** usage with `@wcstack/state`.
 
+> **Security note:** The response is assigned directly to `targetElement.innerHTML`
+> without sanitization. Only use `target` with fragments from a trusted endpoint
+> you control. Untrusted HTML can carry XSS payloads (e.g. event-handler
+> attributes). For untrusted or user-influenced content, bind `value` into state
+> and render through `@wcstack/state` text bindings instead.
+
 ## Optional DOM Triggering
 
 If `autoTrigger` is enabled (default), clicking an element with `data-fetchtarget` triggers the corresponding `<wcs-fetch>` element:
@@ -334,6 +349,12 @@ If `autoTrigger` is enabled (default), clicking an element with `data-fetchtarge
 ```
 
 Event delegation is used — works with dynamically added elements. The `closest()` API handles nested elements (e.g., icon inside a button).
+
+A matched click calls `event.preventDefault()` before triggering the fetch, so the
+element's default action is suppressed. This is intentional for the common case of
+firing a request without navigating. Avoid putting `data-fetchtarget` on an element
+whose default action you also want (e.g. a real `<a href>` link or a form-`submit`
+button) — the navigation/submit will be cancelled. Use a plain `<button type="button">`.
 
 If the target id does not match any element, or the matched element is not a `<wcs-fetch>`, the click is silently ignored.
 
@@ -641,7 +662,10 @@ bootstrapFetch({
 
 - `value`, `loading`, `error`, and `status` are **output state**
 - `url`, `body`, and `trigger` are **input / command surface**
-- `trigger` is intentionally one-way: writing `true` executes, reset emits completion
+- `trigger` is intentionally one-way: writing `true` executes, reset emits completion. Writing `true` while `url` is empty is silently ignored (no fetch, no event, flag stays `false`)
+- on an HTTP error (status >= 400), `value` is reset to `null` while `status` carries the error code — a `value`-only binding loses its previous value, so bind `error` to detect failures
+- on a network error (no HTTP response — DNS failure, offline, CORS, etc.), `value` is reset to `null` and `status` to `0`; `error` holds the thrown `Error`. Like HTTP errors, a previous successful value/status does not linger
+- `method="HEAD"` skips response-body reading by spec (no body); `value` stays `null` and only `status` is surfaced
 - `body` is reset to `null` after each `fetch()` call — set it again before each submission
 - `manual` is useful when execution timing should be controlled explicitly
 - HTML replace mode is optional; the primary wcstack pattern is state-driven binding

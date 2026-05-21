@@ -193,6 +193,34 @@ describe("FetchCore", () => {
     expect((init as RequestInit).body).toBeUndefined();
   });
 
+  it("HEADリクエストではボディを読まずstatusのみ取得する", async () => {
+    // HEAD レスポンスは仕様上ボディを持たない。Content-Type が json でも
+    // json() を呼ぶと空ボディの parse error になるため、ボディ読取をスキップして
+    // value=null・status のみを通知することを確認する。
+    const response = createMockResponse(null, { status: 200, contentType: "application/json" });
+    // 空ボディの HEAD で json()/text() が呼ばれていないことを検証するためにスパイ化
+    const jsonSpy = vi.spyOn(response, "json");
+    const textSpy = vi.spyOn(response, "text");
+    fetchSpy.mockResolvedValueOnce(response);
+
+    const core = new FetchCore();
+    const result = await core.fetch("/api/resource", { method: "HEAD" });
+
+    expect(result).toBeNull();
+    expect(core.value).toBeNull();
+    expect(core.status).toBe(200);
+    expect(core.error).toBeNull();
+    expect(core.loading).toBe(false);
+    // ボディは一切読まれない
+    expect(jsonSpy).not.toHaveBeenCalled();
+    expect(textSpy).not.toHaveBeenCalled();
+
+    // 送信側でも body は付かない
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).method).toBe("HEAD");
+    expect((init as RequestInit).body).toBeUndefined();
+  });
+
   it("HTTPエラーレスポンスを処理できる", async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse("Not Found", { status: 404, ok: false }));
 
@@ -212,6 +240,26 @@ describe("FetchCore", () => {
     expect(errors[1].status).toBe(404);
   });
 
+  it("HTTPエラー時もstatus観測者にwcs-fetch:responseが届く", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse("Not Found", { status: 404, ok: false }));
+
+    const core = new FetchCore();
+    const statusGetter = FetchCore.wcBindable.properties[3].getter!;
+    const valueGetter = FetchCore.wcBindable.properties[0].getter!;
+    const responses: { status: number; value: any }[] = [];
+    core.addEventListener("wcs-fetch:response", (e: Event) => {
+      responses.push({ status: statusGetter(e), value: valueGetter(e) });
+    });
+
+    await core.fetch("/api/missing");
+
+    // status 観測者は wcs-fetch:response 経由で通知を受ける。エラー時も発火する。
+    expect(responses).toHaveLength(1);
+    expect(responses[0].status).toBe(404);
+    // エラー時は value を null として通知する
+    expect(responses[0].value).toBeNull();
+  });
+
   it("ネットワークエラーを処理できる", async () => {
     fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
@@ -221,6 +269,33 @@ describe("FetchCore", () => {
     expect(result).toBeNull();
     expect(core.error).toBeInstanceOf(TypeError);
     expect(core.loading).toBe(false);
+  });
+
+  it("ネットワークエラー時はvalue/statusがリセットされる（直前の成功値が残らない）", async () => {
+    // 1回目: 成功して value/status を持たせる
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ data: "ok" }, { status: 200 }));
+    const core = new FetchCore();
+    await core.fetch("/api/first");
+    expect(core.value).toEqual({ data: "ok" });
+    expect(core.status).toBe(200);
+
+    // 2回目: ネットワークエラー。HTTP エラー経路と同様に value=null・status=0 へ
+    // リセットされ、直前の成功値が観測者に残らないことを確認する。
+    fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const statusGetter = FetchCore.wcBindable.properties[3].getter!;
+    const valueGetter = FetchCore.wcBindable.properties[0].getter!;
+    const responses: { status: number; value: any }[] = [];
+    core.addEventListener("wcs-fetch:response", (e: Event) => {
+      responses.push({ status: statusGetter(e), value: valueGetter(e) });
+    });
+
+    await core.fetch("/api/error");
+
+    expect(core.error).toBeInstanceOf(TypeError);
+    expect(core.value).toBeNull();
+    expect(core.status).toBe(0);
+    // status 観測者（wcs-fetch:response 経由）にも 0 が通知される
+    expect(responses).toEqual([{ status: 0, value: null }]);
   });
 
   it("url未指定時にエラーをスローする", async () => {
@@ -268,6 +343,97 @@ describe("FetchCore", () => {
     const [result1, result2] = await Promise.all([promise1, promise2]);
     expect(result1).toBeNull();
     expect(result2).toEqual({ call: 2 });
+  });
+
+  it("2回目のfetch()が1回目をabortしてもloadingがちらつかない", async () => {
+    // 連続 fetch では後発が先発を abort する。先発の AbortError catch が
+    // loading=false を発火すると、後発が進行中にも関わらず observer が
+    // 一瞬 loading=false を見てしまう。後発が引き継いでいる場合は先発由来の
+    // loading=false を抑制し、loading が true→true→...→false の単調な流れに
+    // なることを確認する。
+    let callCount = 0;
+    fetchSpy.mockImplementation((_url, init) => {
+      callCount++;
+      const currentCall = callCount;
+      return new Promise((resolve, reject) => {
+        (init as RequestInit).signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+        if (currentCall === 2) {
+          resolve(createMockResponse({ call: 2 }));
+        }
+      });
+    });
+
+    const core = new FetchCore();
+    const loadingEvents: boolean[] = [];
+    core.addEventListener("wcs-fetch:loading-changed", (e: Event) => {
+      loadingEvents.push((e as CustomEvent).detail);
+    });
+
+    const promise1 = core.fetch("/api/first");
+    const promise2 = core.fetch("/api/second"); // 1回目を abort する
+
+    await Promise.all([promise1, promise2]);
+
+    // 先発の abort 由来の loading=false は抑制される。
+    // loading=true（先発）→loading=true（後発）→loading=false（後発完了）の3回のみ。
+    expect(loadingEvents).toEqual([true, true, false]);
+    expect(core.loading).toBe(false);
+  });
+
+  it("1回目のabort後のfinallyが2回目のcontrollerを誤って無効化しない", async () => {
+    // 1回目: abort されると即座に reject、その finally が走るのを待ってから
+    // 2回目を abort() できることを確認する（controller の同一性チェック）。
+    const aborts: number[] = [];
+    let callCount = 0;
+    fetchSpy.mockImplementation((_url, init) => {
+      callCount++;
+      const currentCall = callCount;
+      return new Promise((_resolve, reject) => {
+        (init as RequestInit).signal?.addEventListener("abort", () => {
+          aborts.push(currentCall);
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    const core = new FetchCore();
+    const promise1 = core.fetch("/api/first");
+    const promise2 = core.fetch("/api/second"); // 1回目を abort する
+    // 1回目の reject と finally が確実に流れるまで待つ
+    await promise1;
+
+    // 2回目はまだ進行中。abort() が効くこと（同一性チェックにより controller が
+    // 1回目の finally で null 化されていないこと）を確認する。
+    core.abort();
+    const result2 = await promise2;
+
+    expect(result2).toBeNull();
+    expect(aborts).toEqual([1, 2]);
+    expect(core.loading).toBe(false);
+  });
+
+  it("呼び出し側のheadersオブジェクトを汚染しない", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const core = new FetchCore();
+    const callerHeaders: Record<string, string> = { Accept: "application/json" };
+    await core.fetch("/api/test", {
+      method: "POST",
+      headers: callerHeaders,
+      body: "data",
+      contentType: "application/json",
+    });
+
+    // contentType の注入は内部コピーに対して行われ、呼び出し側 obj は不変。
+    expect(callerHeaders).toEqual({ Accept: "application/json" });
+    expect(callerHeaders).not.toHaveProperty("Content-Type");
+    // 一方でリクエストには Content-Type が乗っている
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).headers).toEqual(
+      expect.objectContaining({ "Content-Type": "application/json", Accept: "application/json" })
+    );
   });
 
   it("Content-Typeヘッダが明示的に設定されている場合は上書きしない", async () => {

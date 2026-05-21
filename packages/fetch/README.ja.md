@@ -158,6 +158,10 @@ npm install @wcstack/fetch
 自動リセット:        true  → false  wcs-fetch:trigger-changed を発火
 ```
 
+`true` を書き込んだ時点で `url` が空の場合（state 駆動の computed url が未確定など）、
+その書き込みは **黙って無視** されます。fetch は実行されず、`trigger` は `false` のまま、
+イベントも発火しません。先に `url` を設定してから改めて `true` を書き込んでください。
+
 ### 4. リアクティブ body での POST
 
 ```html
@@ -216,10 +220,14 @@ npm install @wcstack/fetch
 
 | プロパティ | 型 | 説明 |
 |------------|------|------|
-| `value` | `any` | レスポンスデータ |
+| `value` | `any` | レスポンスデータ。**HTTP エラー時（status >= 400）は `null` にリセット** |
 | `loading` | `boolean` | リクエスト実行中は `true` |
 | `error` | `WcsFetchHttpError \| Error \| null` | HTTP またはネットワークエラー |
 | `status` | `number` | HTTP ステータスコード |
+
+> **注意:** HTTP エラー時は `value` が `null` にリセットされ、`status` にエラーコードが
+> 入ります。`error` を観測せず `value` のみをバインドしている場合、リクエスト失敗時に
+> 直前の成功値が消えます。失敗を明示的に扱うには `error` をバインドしてください。
 
 ### 入力 / コマンドサーフェス
 
@@ -324,6 +332,13 @@ console.log(fetchEl.body);    // null（fetch 後にリセット済み）
 
 このモードはシンプルなフラグメント読み込みに便利ですが、`@wcstack/state` との**ステート駆動**な利用とは別の機能です。
 
+> **セキュリティ注意:** レスポンスはサニタイズせずに `targetElement.innerHTML`
+> へ直接代入されます。`target` は自分で管理する信頼できるエンドポイントの
+> フラグメントにのみ使用してください。信頼できない HTML は XSS の温床になり得ます
+> （イベントハンドラ属性など）。信頼できない／ユーザー由来のコンテンツは、`value`
+> を state にバインドして `@wcstack/state` のテキストバインディング経由で描画して
+> ください。
+
 ## オプションの DOM トリガー
 
 `autoTrigger` が有効（デフォルト）の場合、`data-fetchtarget` 属性を持つ要素のクリックで対応する `<wcs-fetch>` が実行されます:
@@ -334,6 +349,8 @@ console.log(fetchEl.body);    // null（fetch 後にリセット済み）
 ```
 
 イベント委譲を使用しているため、動的に追加された要素でも動作します。`closest()` API により、ネストされた子要素（ボタン内のアイコン等）のクリックも検出します。
+
+一致したクリックは fetch 実行前に `event.preventDefault()` を呼ぶため、要素の既定動作は抑制されます。これは「遷移せずにリクエストを発火する」という典型ユースケースのための意図的な挙動です。既定動作も併せて行いたい要素（本物の `<a href>` リンクやフォーム送信ボタン等）には `data-fetchtarget` を付けないでください（遷移／送信がキャンセルされます）。`<button type="button">` の使用を推奨します。
 
 指定した id に一致する要素が存在しない場合、または一致した要素が `<wcs-fetch>` でない場合、クリックは無視されます（エラーは発生しません）。
 
@@ -615,7 +632,10 @@ bootstrapFetch({
 
 - `value`、`loading`、`error`、`status` は **出力ステート**
 - `url`、`body`、`trigger` は **入力 / コマンドサーフェス**
-- `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知
+- `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知。`url` が空のまま `true` を書き込んだ場合は黙って無視される（fetch なし・イベントなし・フラグは `false` のまま）
+- HTTP エラー時（status >= 400）は `value` が `null` にリセットされ、`status` にエラーコードが入る — `value` のみのバインドでは直前の値が消えるため、失敗検知には `error` をバインドする
+- ネットワークエラー時（HTTP レスポンスなし — DNS 失敗・オフライン・CORS など）は `value` が `null`、`status` が `0` にリセットされ、`error` に投げられた `Error` が入る。HTTP エラーと同様、直前の成功時の value/status は残らない
+- `method="HEAD"` は仕様上ボディを持たないためレスポンスボディの読取をスキップする。`value` は `null` のままで `status` のみ通知される
 - `body` は `fetch()` 呼び出しごとに `null` にリセット — 再送信時は毎回設定が必要
 - `manual` は実行タイミングを明示的に制御したい場合に有用
 - HTML リプレースモードはオプション。wcstack の主要パターンはステート駆動バインディング
