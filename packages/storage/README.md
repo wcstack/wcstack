@@ -12,7 +12,7 @@ When combined with `@wcstack/state`, `<wcs-storage>` can be bound directly throu
 
 This means you can express browser storage persistence declaratively in HTML, without writing `localStorage.getItem()`, `JSON.parse()`, or serialization glue code in the UI layer.
 
-`@wcstack/storage` follows the [HAWC](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/docs/articles/HAWC.md) architecture:
+`@wcstack/storage` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) architecture:
 
 - **Core** (`StorageCore`) handles storage read/write and cross-tab sync
 - **Shell** (`<wcs-storage>`) connects that state to the DOM
@@ -156,7 +156,7 @@ localStorage changes are automatically detected from other tabs:
 
 ### Output State (bindable state)
 
-Represents the current storage value and is the HAWC main surface:
+Represents the current storage value and is the CSBC main surface:
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -178,7 +178,7 @@ Controls storage operations from HTML, JS, or `@wcstack/state` bindings:
 
 ## Architecture
 
-`@wcstack/storage` follows the HAWC architecture.
+`@wcstack/storage` follows the CSBC architecture.
 
 ### Core: `StorageCore`
 
@@ -265,7 +265,17 @@ unbind();
 
 Both `StorageCore` and `<wcs-storage>` conform to the wc-bindable-protocol, enabling interop with any protocol-aware framework or component.
 
+The declaration follows the full wc-bindable interface model — three independent surfaces:
+
+- **`properties`** — observable outputs that `bind()` subscribes to (`value`, `loading`, `error`, and the Shell's `trigger`)
+- **`inputs`** — the settable surface (`key`, `type`, …); declarative metadata that tooling, codegen, and remote proxying read
+- **`commands`** — invocable methods (`load`, `save`, `remove`); a binding system such as `@wcstack/state` can invoke them by name
+
+Per the protocol, only `properties` is interpreted by core `bind()`; `inputs` / `commands` (and the `attribute` / `async` hints) are descriptive. They do **not** create implicit two-way data flow.
+
 ### Core (`StorageCore`)
+
+`StorageCore` declares the bindable state any runtime can subscribe to, plus its portable input/command surface:
 
 ```typescript
 static wcBindable = {
@@ -277,12 +287,23 @@ static wcBindable = {
     { name: "loading", event: "wcs-storage:loading-changed" },
     { name: "error",   event: "wcs-storage:error" },
   ],
+  inputs: [
+    { name: "key" },
+    { name: "type" },
+  ],
+  commands: [
+    { name: "load" },
+    { name: "save" },
+    { name: "remove" },
+  ],
 };
 ```
 
+Headless consumers call `core.load()` / `core.save(value)` directly — no `trigger` needed.
+
 ### Shell (`<wcs-storage>`)
 
-The Shell extends the Core declaration, adding trigger support for declarative storage operations from binding systems:
+The Shell extends the Core declaration with the `trigger` output and the DOM-driven input surface; `commands` (`load` / `save` / `remove`) are inherited unchanged:
 
 ```typescript
 static wcBindable = {
@@ -291,8 +312,17 @@ static wcBindable = {
     ...StorageCore.wcBindable.properties,
     { name: "trigger", event: "wcs-storage:trigger-changed" },
   ],
+  inputs: [
+    { name: "key" },
+    { name: "type" },
+    { name: "value" },
+    { name: "manual" },
+    { name: "trigger" },
+  ],
 };
 ```
+
+The Shell's inputs intentionally carry no `attribute` hint: the `key` / `type` / `manual` setters already reflect to their attributes, so a binding system that mirrors `inputs[].attribute` would set the attribute twice.
 
 ## TypeScript Types
 
@@ -338,7 +368,7 @@ Persistence looks just like any other state update.
 
 ## Framework Integration
 
-`<wcs-storage>` is HAWC + `wc-bindable-protocol`, so it works in any framework via thin `@wc-bindable/*` adapters.
+`<wcs-storage>` is CSBC + `wc-bindable-protocol`, so it works in any framework via thin `@wc-bindable/*` adapters.
 
 ### React
 
@@ -466,11 +496,18 @@ bootstrapStorage({
 
 - `value`, `loading`, `error` are **output state**
 - `key`, `type`, `trigger` are **input / command surface**
-- `trigger` is intentionally one-way: writing `true` saves, reset signals completion
+- `trigger` is intentionally one-way: writing `true` saves, reset signals completion. If the underlying `save()` throws (e.g. `key` is unset), `trigger` is still reset to `false` and the completion event still fires, so it never gets stuck in the `true` state.
 - The `value` setter auto-saves when not in `manual` mode
+- **`value` setter vs `save()` / `trigger`**: assigning `value` (non-manual) persists the *assigned* argument (write-through). `save()` and `trigger`, by contrast, persist the *current* `value` — which a prior `load()` or a cross-tab `storage` event may have updated. This means `trigger`/`save()` can write back a value that arrived from another tab.
+- **`value` in `manual` mode**: the `value` setter **stages** the value (no storage write) instead of persisting it. `el.value = x` updates the readable value (`el.value === x`) but does **not** touch storage; the actual write happens only via `save()` / `trigger`. This is what makes the `value: …` + `trigger: …` binding pair work — the bound value is staged, then committed on trigger.
+- **No echo guard on the non-manual `value` path**: only the *staging* path (the Core `value` setter, used in `manual` mode) skips a same-value `value-changed` re-dispatch. The main non-manual path (`value` setter → `save()`) is deliberately write-through: every assignment persists and re-emits `value-changed`, even when the assigned value equals the current one. This is intentional — the write-through contract above must hold, and same-tab `storage` events do not re-fire, so there is no feedback loop. In a `data-wcs="value: x"` two-way binding the echoed `value-changed` is harmless: `@wcstack/state` dedups the round-trip on its side.
+- **`save` command arity**: the headless Core takes `save(value)`, while the Shell exposes `save()` (persists the current value). Both appear under the same `commands` name `save`; the protocol's `commands` metadata is descriptive and arity-less, so this is contractual, not a protocol violation.
+- **Invalid `type`**: any `type` attribute other than `"session"` is treated as `"local"`. An invalid value (e.g. `type="foo"`) silently falls back to `local` rather than throwing.
+- **Runtime `type` change**: changing the `type` attribute after connection updates the Core's storage area for subsequent operations but does **not** re-load from the new area (only `key` changes auto-reload in non-manual mode). Re-load explicitly with `load()` if you need the value from the newly selected area.
+- **`error` shape**: on a storage failure, `error` is set to a `WcsStorageError` (`{ operation, message }`) identifying which operation (`load` / `save` / `remove`) failed. `key is required` (calling an operation with no key) is thrown synchronously, not surfaced via `error`. In practice `error` is therefore always either a `WcsStorageError` or `null`; the wider `WcsStorageError | Error | null` type is kept for forward compatibility and consistency with sibling packages.
 - JSON auto-serialization handles objects, arrays, and primitives transparently
 - Saving `null` / `undefined` removes the key from storage
-- Cross-tab sync via `storage` event works only with localStorage
+- Cross-tab sync via `storage` event works only with localStorage. The Shell binds the watcher to its current `key` / `type` on connect (and re-binds on re-attach), so cross-tab sync works even in `manual` mode where no auto-load runs. Changing the `key` attribute after connection always re-syncs the Core key, so cross-tab sync follows the new key even in `manual` mode or when the key is cleared. A successful cross-tab update also clears any stale `error` (just like `load()` / `save()` / `remove()` do at the start of a successful operation), so a fresh value never coexists with a leftover error from an earlier failure.
 - `manual` is useful when you want explicit control over save timing
 
 ## License

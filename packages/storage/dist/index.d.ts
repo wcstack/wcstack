@@ -19,10 +19,20 @@ interface IWcBindableProperty {
     readonly event: string;
     readonly getter?: (event: Event) => any;
 }
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
+    readonly version: 1;
     readonly properties: IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
 type StorageType = "local" | "session";
 /**
@@ -64,6 +74,7 @@ declare class StorageCore extends EventTarget {
     private _storageListener;
     constructor(target?: EventTarget);
     get value(): any;
+    set value(v: any);
     get loading(): boolean;
     get error(): any;
     get key(): string;
@@ -73,6 +84,7 @@ declare class StorageCore extends EventTarget {
     private _getStorage;
     private _setLoading;
     private _setError;
+    private _toStorageError;
     private _setValue;
     load(): any;
     save(value: any): void;
@@ -89,6 +101,7 @@ declare class Storage extends HTMLElement {
     private _trigger;
     private _connectedCallbackPromise;
     constructor();
+    private _syncCore;
     get key(): string;
     set key(value: string);
     get type(): StorageType;

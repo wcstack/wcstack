@@ -39,10 +39,32 @@ function setConfig(partialConfig) {
         _config.triggerAttribute = partialConfig.triggerAttribute;
     }
     if (partialConfig.tagNames) {
-        Object.assign(_config.tagNames, partialConfig.tagNames);
+        // Validate each tagNames entry individually instead of a blanket
+        // Object.assign: a non-string (e.g. { storage: undefined }) would otherwise
+        // poison the config and make customElements.define(undefined, …) throw at
+        // registration time. Mirrors the typeof guards on autoTrigger / triggerAttribute.
+        for (const [key, value] of Object.entries(partialConfig.tagNames)) {
+            if (typeof value === "string") {
+                _config.tagNames[key] = value;
+            }
+        }
     }
     frozenConfig = null;
 }
+
+// Single source of truth for the custom event names dispatched by StorageCore /
+// Storage. These names appear in two places that must stay in lock-step:
+//   1. the `wcBindable.properties[].event` declarations (consumed by bind())
+//   2. the `dispatchEvent(new CustomEvent(...))` calls that emit them
+// Hard-coding the same string literal in both places risks a silent typo that
+// makes bind() listen for an event no one ever fires. Referencing these
+// constants from both sites keeps them in sync.
+const STORAGE_EVENTS = {
+    valueChanged: "wcs-storage:value-changed",
+    loadingChanged: "wcs-storage:loading-changed",
+    error: "wcs-storage:error",
+    triggerChanged: "wcs-storage:trigger-changed",
+};
 
 function raiseError(message) {
     throw new Error(`[@wcstack/storage] ${message}`);
@@ -53,9 +75,19 @@ class StorageCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "value", event: "wcs-storage:value-changed", getter: (e) => e.detail },
-            { name: "loading", event: "wcs-storage:loading-changed" },
-            { name: "error", event: "wcs-storage:error" },
+            { name: "value", event: STORAGE_EVENTS.valueChanged, getter: (e) => e.detail },
+            { name: "loading", event: STORAGE_EVENTS.loadingChanged },
+            { name: "error", event: STORAGE_EVENTS.error },
+        ],
+        inputs: [
+            { name: "key" },
+            { name: "type" },
+        ],
+        // load / save / remove are synchronous, so none carry the `async` hint.
+        commands: [
+            { name: "load" },
+            { name: "save" },
+            { name: "remove" },
         ],
     };
     _target;
@@ -72,6 +104,20 @@ class StorageCore extends EventTarget {
     get value() {
         return this._value;
     }
+    // Set the current value *without* persisting it. Persistence happens only via
+    // save() / remove() / a cross-tab storage event. This setter exists so the
+    // Shell (manual mode) can stage a value handed in via a `value` binding and
+    // then commit it later with save()/trigger. It mirrors the value to observers
+    // through the same `value-changed` event load()/save() use (CSBC: a Core value
+    // change is observable), but it deliberately does not touch storage.
+    //
+    // Same-value writes are skipped to break a potential feedback loop:
+    // value-changed → state binding → value setter → value-changed → …
+    set value(v) {
+        if (Object.is(v, this._value))
+            return;
+        this._setValue(v);
+    }
     get loading() {
         return this._loading;
     }
@@ -82,7 +128,11 @@ class StorageCore extends EventTarget {
         return this._key;
     }
     set key(value) {
-        this._key = value;
+        // Defensive normalization for direct Core use (the Shell already passes a
+        // string via `getAttribute("key") || ""`). Coercing to String keeps a
+        // non-string assignment from poisoning the cross-tab `e.key !== _key`
+        // comparison; empty keys are still rejected at operation time.
+        this._key = String(value);
     }
     get type() {
         return this._type;
@@ -98,21 +148,29 @@ class StorageCore extends EventTarget {
     }
     _setLoading(loading) {
         this._loading = loading;
-        this._target.dispatchEvent(new CustomEvent("wcs-storage:loading-changed", {
+        this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.loadingChanged, {
             detail: loading,
             bubbles: true,
         }));
     }
     _setError(error) {
         this._error = error;
-        this._target.dispatchEvent(new CustomEvent("wcs-storage:error", {
+        this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.error, {
             detail: error,
             bubbles: true,
         }));
     }
+    // Wrap a caught storage exception into the documented WcsStorageError shape,
+    // tagging it with the failing operation so consumers know which call failed.
+    _toStorageError(operation, e) {
+        return {
+            operation,
+            message: e instanceof Error ? e.message : String(e),
+        };
+    }
     _setValue(value) {
         this._value = value;
-        this._target.dispatchEvent(new CustomEvent("wcs-storage:value-changed", {
+        this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.valueChanged, {
             detail: value,
             bubbles: true,
         }));
@@ -141,7 +199,7 @@ class StorageCore extends EventTarget {
             return this._value;
         }
         catch (e) {
-            this._setError(e);
+            this._setError(this._toStorageError("load", e));
             this._setLoading(false);
             return null;
         }
@@ -156,18 +214,24 @@ class StorageCore extends EventTarget {
             const storage = this._getStorage();
             if (value === null || value === undefined) {
                 storage.removeItem(this._key);
+                // Normalize the removed value to null (matching remove() and load() of a
+                // missing key) so saving `undefined` does not leave the getter returning
+                // `undefined`. README's serialization table documents null/undefined as
+                // "null" on read-back.
+                this._setValue(null);
             }
             else if (typeof value === "string") {
                 storage.setItem(this._key, value);
+                this._setValue(value);
             }
             else {
                 storage.setItem(this._key, JSON.stringify(value));
+                this._setValue(value);
             }
-            this._setValue(value);
             this._setLoading(false);
         }
         catch (e) {
-            this._setError(e);
+            this._setError(this._toStorageError("save", e));
             this._setLoading(false);
         }
     }
@@ -184,7 +248,7 @@ class StorageCore extends EventTarget {
             this._setLoading(false);
         }
         catch (e) {
-            this._setError(e);
+            this._setError(this._toStorageError("remove", e));
             this._setLoading(false);
         }
     }
@@ -196,6 +260,12 @@ class StorageCore extends EventTarget {
                 return;
             if (this._type === "session")
                 return;
+            // A fresh value arriving from another tab supersedes any stale error from
+            // a prior failed load/save/remove. Clearing it here keeps the sync path
+            // consistent with load()/save()/remove(), which all reset error to null at
+            // the start of a successful operation — otherwise an "error present + fresh
+            // value" inconsistency could persist after a cross-tab update.
+            this._setError(null);
             if (e.newValue === null) {
                 this._setValue(null);
             }
@@ -248,16 +318,44 @@ class Storage extends HTMLElement {
         ...StorageCore.wcBindable,
         properties: [
             ...StorageCore.wcBindable.properties,
-            { name: "trigger", event: "wcs-storage:trigger-changed" },
+            { name: "trigger", event: STORAGE_EVENTS.triggerChanged },
+        ],
+        // Shell-level input surface. The Core declares only the portable `key` / `type`;
+        // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
+        // the `key` / `type` / `manual` setters already reflect to their attributes, so a
+        // binding system that mirrors inputs[].attribute would set the attribute twice
+        // (`value` / `trigger` are not attribute-backed). `commands` (load / save / remove)
+        // are inherited unchanged from the Core via the spread above.
+        inputs: [
+            { name: "key" },
+            { name: "type" },
+            { name: "value" },
+            { name: "manual" },
+            { name: "trigger" },
         ],
     };
     static get observedAttributes() { return ["key", "type"]; }
     _core;
     _trigger = false;
+    // Storage load()/save() are synchronous, so connection work never defers.
+    // This stays an already-resolved Promise for the whole lifecycle; it exists
+    // only to satisfy the `hasConnectedCallbackPromise` protocol (consumers may
+    // `await el.connectedCallbackPromise`). connectedCallback intentionally does
+    // not reassign it — there is nothing async to wait for, unlike <wcs-fetch>.
     _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new StorageCore(this);
+    }
+    // Push the Shell's current attribute-derived key / type down into the Core.
+    // Every operation (load / save / remove / value setter) and every lifecycle
+    // hook that may run a Core operation or cross-tab sync must do this first, so
+    // the Core never acts on a stale key / type. Centralizing it here avoids the
+    // previous pattern of repeating `_core.key = …; _core.type = …;` at each call
+    // site, which risked a future call site forgetting one of the two.
+    _syncCore() {
+        this._core.key = this.key;
+        this._core.type = this.type;
     }
     get key() {
         return this.getAttribute("key") || "";
@@ -266,7 +364,11 @@ class Storage extends HTMLElement {
         this.setAttribute("key", value);
     }
     get type() {
-        return this.getAttribute("type") || "local";
+        // Normalize at the Shell boundary: any attribute value other than the
+        // exact "session" falls back to "local". This keeps an invalid attribute
+        // (e.g. type="foo") from reaching the Core's validating setter and throwing
+        // out of setAttribute / connectedCallback.
+        return this.getAttribute("type") === "session" ? "session" : "local";
     }
     set type(value) {
         this.setAttribute("type", value);
@@ -275,10 +377,22 @@ class Storage extends HTMLElement {
         return this._core.value;
     }
     set value(v) {
+        // Non-manual mode: assigning `value` auto-saves the *assigned* argument `v`
+        // (write-through). Note this differs from save()/trigger, which persist the
+        // *current* `_core.value` (which load() or a cross-tab `storage` event may
+        // have updated). See README "Design Notes" for the rationale.
+        //
+        // Manual mode: assigning `value` does NOT persist — it only stages the value
+        // into the Core (no storage write). This keeps the getter/setter consistent
+        // (`el.value = x; el.value === x`) and lets a later save()/trigger commit the
+        // staged value, so a `value: …` + `trigger: …` binding pair works as
+        // documented. The actual write still happens only via save()/trigger.
         if (!this.manual) {
-            this._core.key = this.key;
-            this._core.type = this.type;
+            this._syncCore();
             this._core.save(v);
+        }
+        else {
+            this._core.value = v;
         }
     }
     get loading() {
@@ -308,37 +422,58 @@ class Storage extends HTMLElement {
         const v = !!value;
         if (v) {
             this._trigger = true;
-            this.save();
-            this._trigger = false;
-            this.dispatchEvent(new CustomEvent("wcs-storage:trigger-changed", {
-                detail: false,
-                bubbles: true,
-            }));
+            // save() may raise (e.g. key unset). Guarantee the trigger resets to
+            // false and the completion event fires even on failure, so the trigger
+            // never gets stuck in the `true` state.
+            try {
+                this.save();
+            }
+            finally {
+                this._trigger = false;
+                this.dispatchEvent(new CustomEvent(STORAGE_EVENTS.triggerChanged, {
+                    detail: false,
+                    bubbles: true,
+                }));
+            }
         }
     }
     load() {
-        this._core.key = this.key;
-        this._core.type = this.type;
+        this._syncCore();
         return this._core.load();
     }
+    // The `save` command differs in arity between the two CSBC surfaces:
+    // - Core:  save(value)  — caller supplies the value to persist
+    // - Shell: save()       — persists the current `_core.value` (no argument)
+    // Both are exposed under the same `commands` entry name "save". The protocol
+    // `commands` list is descriptive metadata only and carries no arity, so this
+    // is not a protocol violation; the difference is contractual and documented
+    // in the README ("Design Notes").
     save() {
-        this._core.key = this.key;
-        this._core.type = this.type;
+        this._syncCore();
         this._core.save(this._core.value);
     }
     remove() {
-        this._core.key = this.key;
-        this._core.type = this.type;
+        this._syncCore();
         this._core.remove();
     }
     attributeChangedCallback(name, _oldValue, newValue) {
         if (!this.isConnected)
             return;
-        if (name === "key" && newValue && !this.manual) {
-            this.load();
+        if (name === "key") {
+            // Always keep the Core's key in sync with the attribute, regardless of
+            // mode or whether the new value is empty. The cross-tab `storage` listener
+            // compares `e.key !== _core.key`, so a stale Core key would make sync watch
+            // the wrong (old/empty) key after a runtime key change. load() (which also
+            // syncs the Core) only runs for non-manual mode with a non-empty key.
+            this._syncCore();
+            if (newValue && !this.manual) {
+                this.load();
+            }
         }
         if (name === "type") {
-            this._core.type = newValue || "local";
+            // Route through the normalizing getter so an invalid attribute value
+            // (e.g. type="foo") falls back to "local" instead of throwing.
+            this._syncCore();
         }
     }
     connectedCallback() {
@@ -349,8 +484,14 @@ class Storage extends HTMLElement {
         if (!this.manual && this.key) {
             this.load();
         }
+        // Always bind the cross-tab watcher to the Shell's current key/type before
+        // starting sync. In paths where load()/save() never run (e.g. manual mode,
+        // or key set via JS without a load), _core.key/_core.type would otherwise
+        // keep a stale/empty value and the storage listener's `e.key !== _key`
+        // check would compare against the wrong key. This also covers detach →
+        // re-attach: stale Core key from a previous session is overwritten here.
+        this._syncCore();
         this._core.startSync();
-        this._connectedCallbackPromise = Promise.resolve();
     }
     disconnectedCallback() {
         this._core.stopSync();
