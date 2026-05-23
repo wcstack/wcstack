@@ -12,7 +12,7 @@ When combined with `@wcstack/state`, `<wcs-storage>` can be bound directly throu
 
 This means you can express browser storage persistence declaratively in HTML, without writing `localStorage.getItem()`, `JSON.parse()`, or serialization glue code in the UI layer.
 
-`@wcstack/storage` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) architecture:
+`@wcstack/storage` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
 - **Core** (`StorageCore`) handles storage read/write and cross-tab sync
 - **Shell** (`<wcs-storage>`) connects that state to the DOM

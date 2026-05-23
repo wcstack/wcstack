@@ -12,7 +12,7 @@ With `@wcstack/state`, `<wcs-ws>` can be bound directly through path contracts:
 
 This means real-time communication can be expressed declaratively in HTML, without writing `new WebSocket()`, `onmessage`, or connection glue code in your UI layer.
 
-`@wcstack/websocket` follows the CSBC (Core / Shell / Binding Contract) architecture used by the current [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol):
+`@wcstack/websocket` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
 - **Core** (`WebSocketCore`) handles connection, messaging, reconnection, and async state
 - **Shell** (`<wcs-ws>`) connects that state to DOM attributes, lifecycle, and declarative commands

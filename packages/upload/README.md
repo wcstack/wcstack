@@ -13,11 +13,11 @@ With `@wcstack/state`, `<wcs-upload>` exposes a small async state surface:
 
 This means file upload can be expressed as state transitions and DOM bindings instead of ad-hoc `XMLHttpRequest` glue code.
 
-`@wcstack/upload` follows the same HAWC-style split as other wcstack I/O packages:
+`@wcstack/upload` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
 - **Core** (`UploadCore`) handles XHR upload, progress tracking, abort, and async state
-- **Shell** (`<wcs-upload>`) exposes that state as a custom element and `wc-bindable` surface
-- frameworks and binding systems consume it through `wc-bindable-protocol`
+- **Shell** (`<wcs-upload>`) exposes that state as a custom element and DOM-facing runtime surface
+- **Binding Contract** (`static wcBindable`) declares observable `properties`, writable `inputs`, and callable `commands`
 
 ## Why this exists
 

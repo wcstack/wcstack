@@ -12,11 +12,11 @@ With `@wcstack/state`, `<wcs-fetch>` can be bound directly through path contract
 
 This means async communication can be expressed declaratively in HTML, without writing `fetch()`, `async/await`, or loading/error glue code in your UI layer.
 
-`@wcstack/fetch` follows the [HAWC](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/docs/articles/HAWC.md) architecture:
+`@wcstack/fetch` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
 - **Core** (`FetchCore`) handles HTTP, abort, and async state
 - **Shell** (`<wcs-fetch>`) connects that state to the DOM
-- frameworks and binding systems consume it through [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol)
+- **Binding Contract** (`static wcBindable`) declares observable `properties`, writable `inputs`, and callable `commands`
 
 ## Why this exists
 
@@ -216,7 +216,7 @@ and no event fires. Set the `url` first, then write `true` again to execute.
 
 ### Output state (bindable async state)
 
-These properties represent the result of the current request and are the main HAWC surface:
+These properties represent the result of the current request and are the main observable surface:
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -243,7 +243,7 @@ These properties control request execution from HTML, JS, or `@wcstack/state` bi
 
 ## Architecture
 
-`@wcstack/fetch` follows the HAWC architecture.
+`@wcstack/fetch` follows the CSBC architecture.
 
 ### Core: `FetchCore`
 
@@ -253,7 +253,7 @@ It contains:
 - HTTP execution
 - abort control
 - async state transitions
-- `wc-bindable-protocol` declaration
+- `wc-bindable-protocol` declaration for observable state and callable commands
 
 It can run headlessly in any runtime that supports `EventTarget` and `fetch`.
 
@@ -265,6 +265,7 @@ It adds:
 - attribute / property mapping
 - DOM lifecycle integration
 - declarative execution helpers such as `trigger`
+- `wc-bindable-protocol` inputs for DOM-facing configuration and command properties
 
 This split keeps the async logic portable while allowing DOM-based binding systems such as `@wcstack/state` to interact with it naturally.
 
@@ -528,7 +529,7 @@ This makes async processing look like ordinary state updates.
 
 ## Framework Integration
 
-Since `<wcs-fetch>` is HAWC + `wc-bindable-protocol`, it works with any framework through thin adapters from `@wc-bindable/*`.
+Since `<wcs-fetch>` exposes a CSBC `wc-bindable-protocol` contract, it works with any framework through thin adapters from `@wc-bindable/*`.
 
 ### React
 

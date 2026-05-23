@@ -12,7 +12,7 @@ WebSocket 通信とリアクティブな状態をつなぐ **I/O ノード** で
 
 つまり、リアルタイム通信を HTML 内で宣言的に表現できます。UI レイヤーに `new WebSocket()`、`onmessage`、接続管理のグルーコードを書く必要はありません。
 
-`@wcstack/websocket` は現在の [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol) で使われる CSBC（Core / Shell / Binding Contract）アーキテクチャに従います:
+`@wcstack/websocket` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
 - **Core** (`WebSocketCore`) が接続、メッセージング、再接続、非同期状態を処理
 - **Shell** (`<wcs-ws>`) がその状態を DOM 属性、ライフサイクル、宣言的コマンドに接続

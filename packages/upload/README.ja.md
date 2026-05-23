@@ -13,11 +13,11 @@
 
 つまり、ファイルアップロードを場当たり的な `XMLHttpRequest` のグルーコードではなく、状態遷移と DOM バインディングとして扱えます。
 
-`@wcstack/upload` は wcstack の他の I/O パッケージと同様に、HAWC 的な分割に従います。
+`@wcstack/upload` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います。
 
 - **Core** (`UploadCore`) が XHR アップロード、進捗追跡、abort、非同期状態を処理
-- **Shell** (`<wcs-upload>`) がその状態をカスタム要素と `wc-bindable` サーフェスとして公開
-- フレームワークやバインディングシステムは `wc-bindable-protocol` 経由で利用
+- **Shell** (`<wcs-upload>`) がその状態をカスタム要素と DOM 向けランタイムサーフェスとして公開
+- **Binding Contract** (`static wcBindable`) が観測可能な `properties`、書き込み可能な `inputs`、呼び出し可能な `commands` を宣言
 
 ## なぜこれが存在するのか
 

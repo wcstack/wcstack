@@ -12,7 +12,7 @@
 
 つまり、ブラウザストレージの永続化を HTML 内で宣言的に表現できます。UI レイヤーに `localStorage.getItem()`、`JSON.parse()`、シリアライズのグルーコードを書く必要はありません。
 
-`@wcstack/storage` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) アーキテクチャに従います:
+`@wcstack/storage` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
 - **Core** (`StorageCore`) がストレージの読み書き、クロスタブ同期を処理
 - **Shell** (`<wcs-storage>`) がその状態を DOM に接続
