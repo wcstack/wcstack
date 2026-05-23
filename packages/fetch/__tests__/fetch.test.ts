@@ -139,11 +139,22 @@ describe("Fetch", () => {
 
   beforeEach(() => {
     fetchSpy = vi.spyOn(globalThis, "fetch");
+    // Default resolution so any stray fire-and-forget fetch (e.g. an
+    // attributeChangedCallback re-fetch scheduled after a one-shot mock is
+    // consumed) resolves to a mock instead of falling through to the real
+    // network (which would try to connect to localhost:3000 and emit an
+    // ECONNREFUSED unhandled rejection). Tests that need specific responses
+    // still override with mockResolvedValueOnce / mockResolvedValue.
+    fetchSpy.mockResolvedValue(createMockResponse({ ok: true }));
   });
 
   afterEach(() => {
-    fetchSpy.mockRestore();
+    // Detach all elements before restoring the spy. Removing a connected
+    // <wcs-fetch> fires disconnectedCallback -> abort(), so any in-flight or
+    // microtask-queued request is cancelled while the mock is still active,
+    // never reaching the real fetch after mockRestore().
     document.body.innerHTML = "";
+    fetchSpy.mockRestore();
   });
 
   it("DOM追加時に非表示になる", () => {
@@ -163,6 +174,27 @@ describe("Fetch", () => {
     expect(Fetch.wcBindable.properties[3].name).toBe("status");
     expect(Fetch.wcBindable.properties[4].name).toBe("trigger");
     expect(Fetch.wcBindable.properties[4].event).toBe("wcs-fetch:trigger-changed");
+  });
+
+  it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
+    const inputs = Fetch.wcBindable.inputs!;
+    expect(inputs.map((i) => i.name)).toEqual(["url", "method", "target", "manual", "body", "trigger"]);
+  });
+
+  it("wcBindable inputsはattributeヒントを持たない（setterが自己反映するため二重設定を避ける）", () => {
+    const inputs = Fetch.wcBindable.inputs!;
+    expect(inputs.every((i) => i.attribute === undefined)).toBe(true);
+  });
+
+  it("wcBindable commandsをCoreからfetch(async)/abortとして継承している", () => {
+    const commands = Fetch.wcBindable.commands!;
+    expect(commands.map((c) => c.name)).toEqual(["fetch", "abort"]);
+    expect(commands.find((c) => c.name === "fetch")!.async).toBe(true);
+  });
+
+  it("triggerはproperties（観測）とinputs（設定）の両方に現れる", () => {
+    expect(Fetch.wcBindable.properties.some((p) => p.name === "trigger")).toBe(true);
+    expect(Fetch.wcBindable.inputs!.some((i) => i.name === "trigger")).toBe(true);
   });
 
   it("valueのgetterがdetail.valueを返す", () => {
@@ -386,6 +418,11 @@ describe("Fetch", () => {
       errors.push((e as CustomEvent).detail);
     });
 
+    const responses: number[] = [];
+    el.addEventListener("wcs-fetch:response", (e: Event) => {
+      responses.push((e as CustomEvent).detail.status);
+    });
+
     const result = await el.fetch();
 
     expect(result).toBeNull();
@@ -394,6 +431,8 @@ describe("Fetch", () => {
     expect(errors).toHaveLength(2);
     expect(errors[0]).toBeNull();
     expect(errors[1].status).toBe(404);
+    // status はターゲットインジェクションにより Shell でも wcs-fetch:response 経由で届く
+    expect(responses).toEqual([404]);
   });
 
   it("ネットワークエラーを処理できる", async () => {
@@ -407,6 +446,25 @@ describe("Fetch", () => {
     expect(result).toBeNull();
     expect(el.error).toBeInstanceOf(TypeError);
     expect(el.loading).toBe(false);
+  });
+
+  it("ネットワークエラー時はvalue/statusがリセットされる", async () => {
+    // 1回目成功 → 2回目ネットワークエラー で直前の value/status が残らないこと
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ data: "ok" }, { status: 200 }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/first");
+    await el.fetch();
+    expect(el.value).toEqual({ data: "ok" });
+    expect(el.status).toBe(200);
+
+    fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    el.setAttribute("url", "/api/error");
+    await el.fetch();
+
+    expect(el.error).toBeInstanceOf(TypeError);
+    expect(el.value).toBeNull();
+    expect(el.status).toBe(0);
   });
 
   it("サブタグからヘッダを収集できる", async () => {
@@ -621,8 +679,52 @@ describe("Fetch", () => {
     expect(el.body).toBeNull();
   });
 
+  it("fetch()は開始時にbodyを同期リセットする（await前）", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    el.setAttribute("method", "POST");
+    el.body = { data: "first" };
+
+    const p = el.fetch();
+    // await を挟まずに同期的にリセットされている
+    expect(el.body).toBeNull();
+    await p;
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).body).toBe('{"data":"first"}');
+  });
+
+  it("進行中fetchの完了が後発のbodyを消さない", async () => {
+    let resolveFirst: ((r: Response) => void) | null = null;
+    fetchSpy.mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveFirst = resolve; }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    el.setAttribute("method", "POST");
+    el.body = { data: "first" };
+
+    const p1 = el.fetch(); // body を消費（同期リセット）し pending のまま
+    expect(el.body).toBeNull();
+
+    // 1回目が pending の間に、次回用の body を設定する
+    el.body = { data: "second" };
+
+    // 1回目を完了させる
+    resolveFirst!(createMockResponse({ ok: true }));
+    await p1;
+
+    // 1回目の完了が後発の body を消していないこと
+    expect(el.body).toEqual({ data: "second" });
+  });
+
   it("disconnectedCallbackでリクエストがキャンセルされる", async () => {
-    fetchSpy.mockImplementationOnce((_url, init) => {
+    // Persistent abortable mock: appendChild triggers an auto-fetch and the
+    // explicit fetch() below supersedes it, so BOTH requests must be abortable
+    // (mockImplementation, not Once) for disconnectedCallback's abort() to
+    // cancel the request awaited here.
+    fetchSpy.mockImplementation((_url, init) => {
       return new Promise((_resolve, reject) => {
         (init as RequestInit).signal?.addEventListener("abort", () => {
           reject(new DOMException("The operation was aborted.", "AbortError"));
@@ -754,6 +856,62 @@ describe("Fetch", () => {
     });
   });
 
+  it("url未設定でtrigger=trueを設定してもfetchは呼ばれず未捕捉rejectionも発生しない", async () => {
+    const unhandled: PromiseRejectionEvent[] = [];
+    const onUnhandled = (e: PromiseRejectionEvent): void => {
+      e.preventDefault();
+      unhandled.push(e);
+    };
+    globalThis.addEventListener("unhandledrejection", onUnhandled);
+    try {
+      // url属性なし（urlゲッターは ""）のmanual要素
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.setAttribute("manual", "");
+      document.body.appendChild(el);
+
+      const events: boolean[] = [];
+      el.addEventListener("wcs-fetch:trigger-changed", (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      el.trigger = true;
+
+      // _triggerはfalseのまま（スタックしない）／イベントは発火しない
+      expect(el.trigger).toBe(false);
+
+      // マイクロタスク/マクロタスクを消化して、漏れたrejectionがあれば捕捉する
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(events).toEqual([]);
+      expect(unhandled).toHaveLength(0);
+    } finally {
+      globalThis.removeEventListener("unhandledrejection", onUnhandled);
+    }
+  });
+
+  it("url未設定スキップ後にurlを設定するとtrigger=trueで実行できる", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ recovered: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    // url空のままtrigger=true（スキップされ_triggerはfalseのまま）
+    el.trigger = true;
+    expect(el.trigger).toBe(false);
+
+    // urlを設定して再度trigger=true（false→trueの正当な遷移）
+    el.setAttribute("url", "/api/recovered");
+    el.trigger = true;
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(el.value).toEqual({ recovered: true });
+      expect(el.trigger).toBe(false);
+    });
+  });
+
   it("name属性が空のヘッダは無視される", async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
 
@@ -782,9 +940,11 @@ describe("autoTrigger", () => {
   });
 
   afterEach(() => {
+    // Detach elements (aborting in-flight requests) before restoring the spy,
+    // so no fire-and-forget fetch reaches the real network after mockRestore().
+    document.body.innerHTML = "";
     fetchSpy.mockRestore();
     unregisterAutoTrigger();
-    document.body.innerHTML = "";
   });
 
   it("data-fetchtarget属性を持つ要素のクリックでfetchが実行される", async () => {
@@ -932,6 +1092,38 @@ describe("autoTrigger", () => {
       expect(fetchSpy).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("url未設定の対象をクリックしてもfetchは呼ばれず未捕捉rejectionも発生しない", async () => {
+    registerAutoTrigger();
+
+    const unhandled: PromiseRejectionEvent[] = [];
+    const onUnhandled = (e: PromiseRejectionEvent): void => {
+      e.preventDefault();
+      unhandled.push(e);
+    };
+    globalThis.addEventListener("unhandledrejection", onUnhandled);
+    try {
+      // url属性なし（urlゲッターは ""）の wcs-fetch を対象にする
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.id = "no-url-fetch";
+      el.setAttribute("manual", "");
+      document.body.appendChild(el);
+
+      const button = document.createElement("button");
+      button.setAttribute("data-fetchtarget", "no-url-fetch");
+      document.body.appendChild(button);
+
+      button.click();
+
+      // マイクロタスク/マクロタスクを消化して、漏れたrejectionがあれば捕捉する
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(unhandled).toHaveLength(0);
+    } finally {
+      globalThis.removeEventListener("unhandledrejection", onUnhandled);
+    }
+  });
 });
 
 describe("bootstrapFetch", () => {
@@ -975,11 +1167,16 @@ describe("connectedCallbackPromise プロトコル", () => {
 
   beforeEach(() => {
     fetchSpy = vi.spyOn(globalThis, "fetch");
+    // See the Fetch block for rationale: default resolution prevents stray
+    // fire-and-forget fetches from hitting the real network (ECONNREFUSED).
+    fetchSpy.mockResolvedValue(createMockResponse({ ok: true }));
   });
 
   afterEach(() => {
-    fetchSpy.mockRestore();
+    // Detach before restore so disconnectedCallback aborts requests while the
+    // mock is still active.
     document.body.innerHTML = "";
+    fetchSpy.mockRestore();
   });
 
   it("static hasConnectedCallbackPromise が true", () => {

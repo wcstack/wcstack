@@ -13,6 +13,19 @@ export class Fetch extends HTMLElement {
       ...FetchCore.wcBindable.properties,
       { name: "trigger", event: "wcs-fetch:trigger-changed" },
     ],
+    // Shell-level input surface. The Core declares only the portable `url` / `method`;
+    // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
+    // these setters already reflect to their attributes themselves, so a binding system
+    // that mirrors inputs[].attribute would set the attribute twice. `commands`
+    // (fetch / abort) are inherited unchanged from the Core via the spread above.
+    inputs: [
+      { name: "url" },
+      { name: "method" },
+      { name: "target" },
+      { name: "manual" },
+      { name: "body" },
+      { name: "trigger" },
+    ],
   };
   static get observedAttributes(): string[] { return ["url"]; }
 
@@ -105,6 +118,17 @@ export class Fetch extends HTMLElement {
   set trigger(value: boolean) {
     const v = !!value;
     if (v) {
+      // Skip when url is empty. fetch() is fire-and-forget here (its returned
+      // promise is intentionally only chained with .finally() to reset the flag,
+      // never .catch()'d), and FetchCore.fetch() rejects on an empty url. Without
+      // this guard that rejection — re-thrown by .finally() — surfaces as an
+      // unhandled promise rejection. Mirrors the url-less guard in autoTrigger.
+      //
+      // Leave `_trigger` false (do not set it) and emit no event: nothing ran, so
+      // surfacing a `wcs-fetch:trigger-changed` "completion" would lie to observers.
+      // Keeping the flag false also avoids stalling — once url is provided, writing
+      // `true` again is a real false→true transition that triggers the fetch.
+      if (!this.url) return;
       this._trigger = true;
       this.fetch().finally(() => {
         this._trigger = false;
@@ -129,12 +153,12 @@ export class Fetch extends HTMLElement {
     return headers;
   }
 
-  private _collectBody(): { body: BodyInit | null; contentType: string | null } {
+  private _collectBody(bodySnapshot: any): { body: BodyInit | null; contentType: string | null } {
     // JS API経由のbodyが優先
-    if (this._body !== null) {
+    if (bodySnapshot !== null) {
       return {
-        body: typeof this._body === "string" ? this._body : JSON.stringify(this._body),
-        contentType: typeof this._body === "string" ? null : "application/json",
+        body: typeof bodySnapshot === "string" ? bodySnapshot : JSON.stringify(bodySnapshot),
+        contentType: typeof bodySnapshot === "string" ? null : "application/json",
       };
     }
 
@@ -156,7 +180,13 @@ export class Fetch extends HTMLElement {
 
   async fetch(): Promise<any> {
     const headers = this._collectHeaders();
-    const { body, contentType } = this._collectBody();
+
+    // Snapshot and reset `body` synchronously, before any await. The body is a
+    // one-shot input; resetting it after the await (when another caller may have
+    // already set a new body for the next request) would silently drop that value.
+    const bodySnapshot = this._body;
+    this._body = null;
+    const { body, contentType } = this._collectBody(bodySnapshot);
 
     const result = await this._core.fetch(this.url, {
       method: this.method,
@@ -167,6 +197,10 @@ export class Fetch extends HTMLElement {
     });
 
     // HTML置換モード
+    // Security: the response is injected as raw innerHTML without sanitization.
+    // This is an opt-in convenience for trusted fragments only; the primary,
+    // recommended path is state-driven binding via @wcstack/state. Do not point
+    // `target` at an untrusted endpoint (XSS risk). See README "HTML Replace Mode".
     if (this.target && result !== null) {
       const targetElement = document.getElementById(this.target);
       if (targetElement) {
@@ -174,13 +208,15 @@ export class Fetch extends HTMLElement {
       }
     }
 
-    // bodyをリセット（一回限りの使用）
-    this._body = null;
-
     return result;
   }
 
   attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void {
+    // Re-fetch on url changes, but intentionally do NOT update
+    // `_connectedCallbackPromise`. Per the wc-bindable connectedCallbackPromise
+    // protocol that promise represents the one-shot "connect-time initialization
+    // is done" signal; it resolves once and is not re-armed for later url-driven
+    // requests. Await `promise` if you need to track a specific re-fetch.
     if (name === "url" && this.isConnected && !this.manual && newValue) {
       this.fetch();
     }
@@ -191,6 +227,7 @@ export class Fetch extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
+    // Only the initial connect-time fetch is tracked by connectedCallbackPromise.
     if (!this.manual && this.url) {
       this._connectedCallbackPromise = this.fetch().then(() => {});
     }
