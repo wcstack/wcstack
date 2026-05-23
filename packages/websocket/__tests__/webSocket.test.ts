@@ -117,8 +117,18 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(el.reconnectInterval).toBe(3000);
     });
 
+    it("reconnectInterval属性が不正な数値の場合はデフォルト値を返す", () => {
+      const el = createElement({ "reconnect-interval": "abc" });
+      expect(el.reconnectInterval).toBe(3000);
+    });
+
     it("maxReconnects属性のデフォルト値がInfinity", () => {
       const el = createElement();
+      expect(el.maxReconnects).toBe(Infinity);
+    });
+
+    it("maxReconnects属性が不正な数値の場合はデフォルト値を返す", () => {
+      const el = createElement({ "max-reconnects": "abc" });
       expect(el.maxReconnects).toBe(Infinity);
     });
 

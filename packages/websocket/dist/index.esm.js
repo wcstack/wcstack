@@ -234,6 +234,9 @@ class WebSocketCore extends EventTarget {
         }
     }
     _removeListeners() {
+        if (!this._ws) {
+            return;
+        }
         this._ws.removeEventListener("open", this._onOpen);
         this._ws.removeEventListener("message", this._onMessage);
         this._ws.removeEventListener("error", this._onError);
@@ -340,14 +343,16 @@ class WcsWebSocket extends HTMLElement {
     }
     get reconnectInterval() {
         const attr = this.getAttribute("reconnect-interval");
-        return attr ? parseInt(attr, 10) : 3000;
+        const parsed = attr ? parseInt(attr, 10) : 3000;
+        return Number.isNaN(parsed) ? 3000 : parsed;
     }
     set reconnectInterval(value) {
         this.setAttribute("reconnect-interval", String(value));
     }
     get maxReconnects() {
         const attr = this.getAttribute("max-reconnects");
-        return attr ? parseInt(attr, 10) : Infinity;
+        const parsed = attr ? parseInt(attr, 10) : Infinity;
+        return Number.isNaN(parsed) ? Infinity : parsed;
     }
     set maxReconnects(value) {
         this.setAttribute("max-reconnects", String(value));

@@ -70,7 +70,8 @@ export class WcsWebSocket extends HTMLElement {
 
   get reconnectInterval(): number {
     const attr = this.getAttribute("reconnect-interval");
-    return attr ? parseInt(attr, 10) : 3000;
+    const parsed = attr ? parseInt(attr, 10) : 3000;
+    return Number.isNaN(parsed) ? 3000 : parsed;
   }
 
   set reconnectInterval(value: number) {
@@ -79,7 +80,8 @@ export class WcsWebSocket extends HTMLElement {
 
   get maxReconnects(): number {
     const attr = this.getAttribute("max-reconnects");
-    return attr ? parseInt(attr, 10) : Infinity;
+    const parsed = attr ? parseInt(attr, 10) : Infinity;
+    return Number.isNaN(parsed) ? Infinity : parsed;
   }
 
   set maxReconnects(value: number) {
