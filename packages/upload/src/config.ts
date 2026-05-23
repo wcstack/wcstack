@@ -36,6 +36,11 @@ function deepClone<T>(obj: T): T {
 
 let frozenConfig: IConfig | null = null;
 
+// `config` は内部用のライブビュー（live view）。setConfig() の更新が即座に反映される
+// 実体 `_config` をそのまま公開しており、凍結もクローンもしていない。autoTrigger /
+// components など同パッケージ内のモジュールが最新値を読むための窓口であり、
+// 「変更不可なスナップショット」が必要な外部利用には getConfig()（凍結クローンを返す）
+// を使うこと。型が readonly なのは内部からの誤書き換えを抑止するための表明にすぎない。
 export const config: IConfig = _config as IConfig;
 
 export function getConfig(): IConfig {

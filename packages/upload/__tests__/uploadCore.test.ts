@@ -1,98 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { UploadCore } from "../src/core/UploadCore";
-
-// XMLHttpRequestモック
-class MockXMLHttpRequest {
-  static instances: MockXMLHttpRequest[] = [];
-  static resetInstances(): void {
-    MockXMLHttpRequest.instances = [];
-  }
-
-  // XHR properties
-  status = 0;
-  statusText = "";
-  responseText = "";
-  readyState = 0;
-
-  // Methods
-  open = vi.fn();
-  send = vi.fn();
-  abort = vi.fn();
-  setRequestHeader = vi.fn();
-  getResponseHeader = vi.fn().mockReturnValue(null);
-
-  // Upload target
-  upload = new EventTarget();
-
-  // Event listeners stored for simulation
-  private _listeners: Record<string, ((event: any) => void)[]> = {};
-
-  constructor() {
-    MockXMLHttpRequest.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: any) => void): void {
-    if (!this._listeners[type]) {
-      this._listeners[type] = [];
-    }
-    this._listeners[type].push(listener);
-  }
-
-  removeEventListener(type: string, listener: (event: any) => void): void {
-    if (this._listeners[type]) {
-      this._listeners[type] = this._listeners[type].filter(l => l !== listener);
-    }
-  }
-
-  // テストヘルパー
-  simulateProgress(loaded: number, total: number): void {
-    this.upload.dispatchEvent(new ProgressEvent("progress", {
-      lengthComputable: true,
-      loaded,
-      total,
-    }));
-  }
-
-  simulateProgressUncomputable(): void {
-    this.upload.dispatchEvent(new ProgressEvent("progress", {
-      lengthComputable: false,
-      loaded: 0,
-      total: 0,
-    }));
-  }
-
-  simulateLoad(status: number, responseText: string, contentType?: string): void {
-    this.status = status;
-    this.statusText = status < 400 ? "OK" : "Error";
-    this.responseText = responseText;
-    if (contentType) {
-      this.getResponseHeader.mockImplementation((name: string) => {
-        if (name === "Content-Type") return contentType;
-        return null;
-      });
-    }
-    for (const listener of this._listeners["load"] || []) {
-      listener(new Event("load"));
-    }
-  }
-
-  simulateError(): void {
-    for (const listener of this._listeners["error"] || []) {
-      listener(new Event("error"));
-    }
-  }
-
-  simulateAbort(): void {
-    for (const listener of this._listeners["abort"] || []) {
-      listener(new Event("abort"));
-    }
-  }
-}
-
-function createMockFile(name: string, size: number, type: string): File {
-  const content = new Uint8Array(size);
-  return new File([content], name, { type });
-}
+import { MockXMLHttpRequest, createMockFile } from "./helpers/mockXhr";
 
 describe("UploadCore", () => {
   let originalXHR: typeof XMLHttpRequest;
@@ -124,6 +32,27 @@ describe("UploadCore", () => {
     expect(UploadCore.wcBindable.properties[4].name).toBe("status");
   });
 
+  it("wcBindable inputsがurl/method/fieldNameを宣言している", () => {
+    const inputs = UploadCore.wcBindable.inputs!;
+    expect(inputs.map((i) => i.name)).toEqual(["url", "method", "fieldName"]);
+    // setterが自己反映するため attribute ヒントは持たない（二重設定回避）
+    expect(inputs.every((i) => i.attribute === undefined)).toBe(true);
+  });
+
+  it("wcBindable commandsがupload(async)/abortを宣言している", () => {
+    const commands = UploadCore.wcBindable.commands!;
+    expect(commands.map((c) => c.name)).toEqual(["upload", "abort"]);
+    expect(commands.find((c) => c.name === "upload")!.async).toBe(true);
+    expect(commands.find((c) => c.name === "abort")!.async).toBeUndefined();
+  });
+
+  it("wcBindable inputs/commandsのnameがそれぞれ一意である", () => {
+    const inputNames = UploadCore.wcBindable.inputs!.map((i) => i.name);
+    const commandNames = UploadCore.wcBindable.commands!.map((c) => c.name);
+    expect(new Set(inputNames).size).toBe(inputNames.length);
+    expect(new Set(commandNames).size).toBe(commandNames.length);
+  });
+
   it("初期状態が正しい", () => {
     const core = new UploadCore();
     expect(core.value).toBeNull();
@@ -140,24 +69,24 @@ describe("UploadCore", () => {
   });
 
   describe("upload", () => {
-    it("url未指定時にエラーをスローする", () => {
+    it("url未指定時にrejectする", async () => {
       const core = new UploadCore();
       const files = [createMockFile("test.txt", 100, "text/plain")];
-      expect(() => core.upload("", files)).toThrow(
+      await expect(core.upload("", files)).rejects.toThrow(
         "[@wcstack/upload] url is required."
       );
     });
 
-    it("ファイル未指定時にエラーをスローする", () => {
+    it("ファイル未指定時にrejectする", async () => {
       const core = new UploadCore();
-      expect(() => core.upload("/api/upload", [])).toThrow(
+      await expect(core.upload("/api/upload", [])).rejects.toThrow(
         "[@wcstack/upload] files are required."
       );
     });
 
-    it("ファイルがnull相当の場合にエラーをスローする", () => {
+    it("ファイルがnull相当の場合にrejectする", async () => {
       const core = new UploadCore();
-      expect(() => core.upload("/api/upload", null as any)).toThrow(
+      await expect(core.upload("/api/upload", null as any)).rejects.toThrow(
         "[@wcstack/upload] files are required."
       );
     });
@@ -246,12 +175,18 @@ describe("UploadCore", () => {
       expect(events).toEqual([0]);
     });
 
-    it("promiseプロパティを返す", () => {
+    it("promiseプロパティを返す", async () => {
       const core = new UploadCore();
       const files = [createMockFile("test.txt", 100, "text/plain")];
       const result = core.upload("/api/upload", files);
       expect(result).toBeInstanceOf(Promise);
-      expect(core.promise).toBe(result);
+      expect(core.promise).toBeInstanceOf(Promise);
+
+      // 進行中の内部 promise が公開される（成功時に同じ値で解決）
+      const xhr = MockXMLHttpRequest.instances[0];
+      xhr.simulateLoad(200, '{"ok":true}', "application/json");
+      await expect(result).resolves.toEqual({ ok: true });
+      await expect(core.promise).resolves.toEqual({ ok: true });
     });
   });
 
@@ -405,6 +340,9 @@ describe("UploadCore", () => {
         body: "File too large",
       });
       expect(core.loading).toBe(false);
+      // 命令的 getter ではエラーステータスも取得できる（バインド経路は更新されないが
+      // getter は生の XHR ステータスを反映する。README「error と response」節参照）。
+      expect(core.status).toBe(413);
     });
 
     it("ネットワークエラーを処理する", async () => {
@@ -424,6 +362,32 @@ describe("UploadCore", () => {
       expect(result).toBeNull();
       expect(core.error).toEqual({ message: "Network error" });
       expect(core.loading).toBe(false);
+    });
+
+    it("次のアップロード開始時に前回のerrorがクリアされる（FetchCoreと一貫）", async () => {
+      const core = new UploadCore();
+      const errorEvents: any[] = [];
+      core.addEventListener("wcs-upload:error", (e) => {
+        errorEvents.push((e as CustomEvent).detail);
+      });
+
+      const files = [createMockFile("test.txt", 100, "text/plain")];
+
+      // 1回目: HTTPエラーで error がセットされる
+      const promise1 = core.upload("/api/upload", files);
+      MockXMLHttpRequest.instances[0].simulateLoad(500, "Server error");
+      await promise1;
+      expect(core.error).toEqual({ status: 500, statusText: "Error", body: "Server error" });
+
+      // 2回目: 開始時点で error が null にリセットされる（_setError(null)）
+      const promise2 = core.upload("/api/upload", files);
+      expect(core.error).toBeNull();
+      expect(errorEvents[errorEvents.length - 1]).toBeNull();
+
+      // 2回目を成功させても _setResponse は error をクリアしない（開始時クリアに依存）
+      MockXMLHttpRequest.instances[1].simulateLoad(200, '{"ok":true}', "application/json");
+      await promise2;
+      expect(core.error).toBeNull();
     });
   });
 

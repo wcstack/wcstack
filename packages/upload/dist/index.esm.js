@@ -24,6 +24,11 @@ function deepClone(obj) {
     return clone;
 }
 let frozenConfig = null;
+// `config` は内部用のライブビュー（live view）。setConfig() の更新が即座に反映される
+// 実体 `_config` をそのまま公開しており、凍結もクローンもしていない。autoTrigger /
+// components など同パッケージ内のモジュールが最新値を読むための窓口であり、
+// 「変更不可なスナップショット」が必要な外部利用には getConfig()（凍結クローンを返す）
+// を使うこと。型が readonly なのは内部からの誤書き換えを抑止するための表明にすぎない。
 const config = _config;
 function getConfig() {
     if (!frozenConfig) {
@@ -58,6 +63,15 @@ class UploadCore extends EventTarget {
             { name: "progress", event: "wcs-upload:progress" },
             { name: "error", event: "wcs-upload:error" },
             { name: "status", event: "wcs-upload:response", getter: (e) => e.detail.status },
+        ],
+        inputs: [
+            { name: "url" },
+            { name: "method" },
+            { name: "fieldName" },
+        ],
+        commands: [
+            { name: "upload", async: true },
+            { name: "abort" },
         ],
     };
     _target;
@@ -122,12 +136,18 @@ class UploadCore extends EventTarget {
     }
     // --- Public API ---
     abort() {
+        // `_xhr` は send() の直前に同期で代入されるため、send 前に外部から abort が
+        // 割り込む余地はない（割り込み点となる await が存在しない）。よって XHR.abort()
+        // は常に進行中のリクエストに対して呼ばれ、abort イベントが発火して loading を
+        // 解除する。loading の解除を abort イベントハンドラに集約しているのは、
+        // ネットワークエラー/HTTP エラー/正常完了/中断のすべてで解除経路を一本化し、
+        // FetchCore.abort() と挙動を揃えるため。
         if (this._xhr) {
             this._xhr.abort();
             this._xhr = null;
         }
     }
-    upload(url, files, options = {}) {
+    async upload(url, files, options = {}) {
         if (!url) {
             raiseError("url is required.");
         }
@@ -245,7 +265,28 @@ class WcsUpload extends HTMLElement {
             { name: "trigger", event: "wcs-upload:trigger-changed" },
             { name: "files", event: "wcs-upload:files-changed" },
         ],
+        // Shell-level input surface. The Core declares only the portable `url` / `method` /
+        // `fieldName`; the Shell adds the DOM-driven settable surface. No `attribute` hints
+        // are given: the `url` / `method` / `fieldName` / `multiple` / `maxSize` / `accept` /
+        // `manual` setters already reflect to their attributes, so a binding system that
+        // mirrors inputs[].attribute would set the attribute twice (`files` / `trigger` are
+        // not attribute-backed). `commands` (upload / abort) are inherited unchanged from the
+        // Core via the spread above.
+        inputs: [
+            { name: "url" },
+            { name: "method" },
+            { name: "fieldName" },
+            { name: "multiple" },
+            { name: "maxSize" },
+            { name: "accept" },
+            { name: "manual" },
+            { name: "files" },
+            { name: "trigger" },
+        ],
     };
+    // `url` を観測するのは FetchCore のシェルと構造を揃えるためだが、upload は
+    // url 変更だけでは送信できない（files が必須）。そのため attributeChangedCallback は
+    // 意図的に何もしない。url 変更で自動送信しないことは仕様であり、テストで担保している。
     static get observedAttributes() { return ["url"]; }
     _core;
     _files = null;
@@ -286,7 +327,14 @@ class WcsUpload extends HTMLElement {
     }
     get maxSize() {
         const attr = this.getAttribute("max-size");
-        return attr ? parseInt(attr, 10) : Infinity;
+        if (attr === null) {
+            return Infinity;
+        }
+        // 不正値（NaN になる "abc" など）や負数は「制限なし」(Infinity) として扱う。
+        // NaN を返すと `size > NaN` が常に false になりサイズ検証が無言で無効化され、
+        // 負数を返すと全ファイルが拒否されるため、いずれも安全側の Infinity に丸める。
+        const n = parseInt(attr, 10);
+        return Number.isFinite(n) && n >= 0 ? n : Infinity;
     }
     set maxSize(value) {
         this.setAttribute("max-size", String(value));
@@ -332,6 +380,10 @@ class WcsUpload extends HTMLElement {
         return this._trigger;
     }
     set trigger(value) {
+        // 進行中に再度 trigger=true が来ても再入ガードはしない（FetchCore シェルと同一）。
+        // upload() → _core.upload() が先頭で既存リクエストを abort し新規開始するため、
+        // 連続トリガは「前回を中止して新しいアップロードを開始する」挙動になる。
+        // 各 upload() の settle ごとに trigger-changed(false) が 1 回発火する。
         const v = !!value;
         if (v) {
             this._trigger = true;
@@ -374,14 +426,18 @@ class WcsUpload extends HTMLElement {
                 const file = files[i];
                 const fileType = file.type.toLowerCase();
                 const fileName = file.name.toLowerCase();
+                // file.type が空文字（OS が MIME を判定できないファイル）の場合、MIME 系
+                // パターン（`image/*` / 厳密 MIME）は一致しない。その場合でも accept に
+                // 拡張子パターン（`.pdf` 等）が含まれ拡張子が一致すれば受理される。
+                // accept が MIME 系のみのときは型を確認できないため拒否する（安全側）。
                 const matched = acceptList.some(pattern => {
                     if (pattern.startsWith(".")) {
                         return fileName.endsWith(pattern);
                     }
                     if (pattern.endsWith("/*")) {
-                        return fileType.startsWith(pattern.slice(0, -1));
+                        return fileType !== "" && fileType.startsWith(pattern.slice(0, -1));
                     }
-                    return fileType === pattern;
+                    return fileType !== "" && fileType === pattern;
                 });
                 if (!matched) {
                     return { message: `File "${file.name}" does not match accepted types: ${accept}` };
@@ -396,7 +452,11 @@ class WcsUpload extends HTMLElement {
     }
     async upload() {
         const files = this._files;
-        if (!files || files.length === 0) {
+        // url 未設定は no-op(null)。Core は url 空で throw するが、Shell は url/files の
+        // ライフサイクルを所有しており「送信先が無い」を「ファイル無し」と同じ無操作として扱う。
+        // これにより set trigger / set files の fire-and-forget 経路で unhandled rejection が
+        // 発生せず、README の「upload() は全終了ケースで resolve し never reject」契約とも整合する。
+        if (!files || files.length === 0 || !this.url) {
             return null;
         }
         const validationError = this._validate(files);
@@ -424,7 +484,8 @@ class WcsUpload extends HTMLElement {
     }
     // --- Lifecycle ---
     attributeChangedCallback(_name, _oldValue, _newValue) {
-        // URL変更ではアップロードを自動実行しない（ファイルが必要なため）
+        // 意図的に空。url 変更ではアップロードを自動実行しない（files が必要なため）。
+        // observedAttributes のコメント参照。
     }
     connectedCallback() {
         this.style.display = "none";

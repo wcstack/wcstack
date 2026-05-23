@@ -19,10 +19,20 @@ interface IWcBindableProperty {
     readonly event: string;
     readonly getter?: (event: Event) => any;
 }
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
+    readonly version: 1;
     readonly properties: IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
 /**
  * Upload error object.
@@ -45,6 +55,12 @@ interface WcsUploadCoreValues<T = unknown> {
 }
 /**
  * Value types for the Shell (`<wcs-upload>`) — extends Core with `trigger` and `files`.
+ *
+ * `trigger` is a write-only command surface declared as an observable property mapped to
+ * `wcs-upload:trigger-changed`. Only the `false` reset (after an upload settles) is
+ * observable — the `true` transition (upload start) is intentionally NOT notified. This is
+ * the same pub/sub trade-off as `@wcstack/fetch`'s `trigger`: a binding system writes `true`
+ * to start and observes the single `false` edge to know the command has completed.
  */
 interface WcsUploadValues<T = unknown> extends WcsUploadCoreValues<T> {
     trigger: boolean;
