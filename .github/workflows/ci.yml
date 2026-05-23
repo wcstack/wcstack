@@ -42,6 +42,9 @@ jobs:
             server:
               - 'packages/server/**'
               - 'tsconfig.json'
+            storage:
+              - 'packages/storage/**'
+              - 'tsconfig.json'
       - id: build-matrix
         env:
           STATE: ${{ steps.filter.outputs.state }}
@@ -53,9 +56,10 @@ jobs:
           AUTH0: ${{ steps.filter.outputs.auth0 }}
           UPLOAD: ${{ steps.filter.outputs.upload }}
           SERVER: ${{ steps.filter.outputs.server }}
+          STORAGE: ${{ steps.filter.outputs.storage }}
         run: |
           packages=()
-          for pkg in state autoloader router fetch websocket ai auth0 upload server; do
+          for pkg in state autoloader router fetch websocket ai auth0 upload server storage; do
             key=$(echo "$pkg" | tr '[:lower:]' '[:upper:]')
             if [ "${!key}" == "true" ]; then
               packages+=("$pkg")
