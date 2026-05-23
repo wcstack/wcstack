@@ -106,6 +106,8 @@ npm install @wcstack/upload
 - 完了後に自動で `false` へ戻る
 - そのリセット時に `wcs-upload:trigger-changed` を発火
 
+観測できるのは `false` へのリセットのみです。`true` 遷移（アップロード開始）は `wcs-upload:trigger-changed` を発火しません。バインディングシステムは `true` を書き込んで開始し、唯一の `false` エッジを観測してコマンドの完了を知ります。これは `@wcstack/fetch` の `trigger` と同じトレードオフです。
+
 ### 3. 宣言的なトリガーターゲット
 
 自動トリガーが有効な場合、クリック可能な要素から id で `<wcs-upload>` を参照できます。
@@ -189,7 +191,7 @@ npm install @wcstack/upload
 | `url` | `string` | `""` | アップロード先エンドポイント |
 | `method` | `string` | `"POST"` | HTTP メソッド |
 | `field-name` | `string` | `"file"` | FormData のフィールド名 |
-| `multiple` | `boolean` | `false` | 複数ファイル対応を表すフラグ |
+| `multiple` | `boolean` | `false` | 複数ファイル対応を表す宣言用フラグのみ。ファイル数を強制しない（`multiple` の有無に関わらず `files` のファイルはすべて送信される） |
 | `max-size` | `number` | `Infinity` | 許容最大ファイルサイズ（byte） |
 | `accept` | `string` | `""` | 許可する MIME type または拡張子 |
 | `manual` | `boolean` | `false` | `files` 代入時の自動アップロードを無効化 |
@@ -207,11 +209,23 @@ npm install @wcstack/upload
 #### `upload()`
 
 現在の `files` を使ってアップロードを開始し、promise を返します。
-ファイル未指定またはバリデーション失敗時は `null` を返します。
+
+この promise はすべての終了ケースで **resolve** し、reject しません。
+
+- 成功 → パース済みレスポンスボディ（`value`）で resolve
+- ファイル未指定 / `url` 未指定 → `null` で resolve（no-op。リクエストは開始されずエラーも発火しない）
+- バリデーション失敗 → `null` で resolve（`wcs-upload:error` を発火）
+- HTTP エラー（status >= 400）→ `null` で resolve（エラー内容は `error` / `wcs-upload:error` で取得）
+- ネットワークエラー → `null` で resolve（エラー内容は `error` / `wcs-upload:error` で取得）
+- 中断（abort）→ `null` で resolve
+
+`null` は正常な resolve 値でもあるため、失敗判定に resolve 値を使わないでください。代わりに `error` / `status`（または `wcs-upload:error` / `wcs-upload:response` イベント）を観測します。これは `@wcstack/fetch` と同じ設計で、エラーは promise の reject ではなく状態として流れます。
+
+> ヘッドレス Core についての注記: `UploadCore.upload(url, files)` は `async` で、同期的に検出できる引数エラー（`url` 欠落・`files` が空）は `[@wcstack/upload] ...` を throw して **reject** します。Shell の `upload()` は `url` 未指定・ファイル未指定を no-op として扱い `null` を返します（Shell が `url`／ファイルのライフサイクルを所有しており「送信先無し」「ファイル無し」をエラーではなく無操作とみなすため）。これにより Shell は Core の throw に到達せず reject しません。
 
 #### `abort()`
 
-現在のリクエストを中断します。
+現在のリクエストを中断します。loading の解除はリクエストの abort 経路を通じて行われます（`@wcstack/fetch` と一貫）。
 
 ## イベント
 
@@ -231,21 +245,92 @@ npm install @wcstack/upload
 - `max-size` は指定 byte 数を超えるファイルを拒否
 - `accept` は `image/*` のような MIME 範囲、`application/pdf` のような厳密 MIME、`.pdf` のような拡張子をサポート
 
+`type` が空のファイル（OS が MIME を判定できなかったファイル）は MIME パターンと照合できません。この場合、`accept` に一致する拡張子パターン（例: `.png`）が含まれていれば受理されます。`accept` が MIME パターンのみの場合は、型を確認できないため空 type のファイルは拒否されます。
+
 バリデーションに失敗すると `wcs-upload:error` を発火し、リクエストは開始されません。
 
-## wc-bindable サーフェス
+### 状態サーフェスにおける error と response
 
-`<wcs-upload>` は次の bindable property を持つ `wcBindable` 定義を公開します。
+成功レスポンス（status 2xx）では `value` と `status` の両方が `wcs-upload:response` 経由で更新されます。HTTP エラー（status >= 400）では `error` のみが（`wcs-upload:error` 経由で）更新され、**エラー時に `status` は状態サーフェスへ伝播しません**。これは `status` が `wcs-upload:response` イベントにバインドされており、エラー時はそのイベントが発火しないためです。HTTP ステータスコードは `error` オブジェクト内（`error.status`）で取得できます。これは `@wcstack/fetch` と同じトレードオフで、エラー詳細は response/error に分散させず単一の `error` チャネルに集約します。
 
-- `value`
-- `loading`
-- `progress`
-- `error`
-- `status`
-- `trigger`
-- `files`
+> `core.status` / `el.status` を直接読むと、`413` や `500` などのエラーステータスも含め、直近レスポンスの HTTP ステータスが返ります（getter は生の XHR ステータスを反映するため）。これはバインド経路の `status`（`wcs-upload:response` 駆動）とは異なり、バインド経路はエラー時には前回値のまま据え置かれます。したがって getter を命令的に直接読むコードと `status` にバインドするコードでは、HTTP エラー後に観測値が食い違います。どちらか一方の経路に統一してください。これは `@wcstack/fetch` と同じ構造です。
 
-これにより、`@wcstack/state` を含む wc-bindable 対応システムから利用できます。
+### エラー時の progress
+
+`progress` は各アップロード開始時に `0` へリセットされ、成功時に `100` へ設定されるだけです。HTTP・ネットワーク・abort のエラー時は、**`progress` は意図的に直前の値（例: `70`）のまま据え置かれます**。これは転送がどこで止まったかを UI が示せるようにするためです。失敗の検出には `progress` ではなく `error` / `loading` を使い、古い値を表示したくない場合は `wcs-upload:error` に応じて UI 側で進捗表示をリセット / 非表示にしてください。次回の `upload()` で `progress` は再び `0` にリセットされます。
+
+## wc-bindable-protocol
+
+`UploadCore` と `<wcs-upload>` はいずれも `wc-bindable-protocol` 準拠を宣言しており、プロトコルをサポートするあらゆるフレームワークやコンポーネントと相互運用できます。
+
+宣言は wc-bindable インターフェースモデルの全体に従い、3 つの独立したサーフェスを持ちます。
+
+- **`properties`** — `bind()` が購読する観測可能な出力（`value`, `loading`, `progress`, `error`, `status`、および Shell の `trigger` / `files`）
+- **`inputs`** — 設定可能サーフェス（`url`, `method`, `fieldName`, …）。ツール・codegen・リモートプロキシが読む記述的メタデータ
+- **`commands`** — 呼び出し可能メソッド（`upload`, `abort`）。`@wcstack/state` のようなバインディングシステムが名前で呼び出せる
+
+プロトコル上、コアの `bind()` が解釈するのは `properties` のみです。`inputs` / `commands`（および `attribute` / `async` ヒント）は記述的であり、暗黙の双方向データフローを生成しません。
+
+### Core (`UploadCore`)
+
+`UploadCore` は、任意のランタイムが購読できるバインド可能な非同期状態に加え、移植可能な入力 / コマンドサーフェスを宣言します。
+
+```typescript
+static wcBindable = {
+  protocol: "wc-bindable",
+  version: 1,
+  properties: [
+    { name: "value",    event: "wcs-upload:response",
+      getter: (e) => e.detail.value },
+    { name: "loading",  event: "wcs-upload:loading-changed" },
+    { name: "progress", event: "wcs-upload:progress" },
+    { name: "error",    event: "wcs-upload:error" },
+    { name: "status",   event: "wcs-upload:response",
+      getter: (e) => e.detail.status },
+  ],
+  inputs: [
+    { name: "url" },
+    { name: "method" },
+    { name: "fieldName" },
+  ],
+  commands: [
+    { name: "upload", async: true },
+    { name: "abort" },
+  ],
+};
+```
+
+Headless 利用では `core.upload(url, files)` を直接呼び出します（`trigger` は不要）。
+
+### Shell (`<wcs-upload>`)
+
+Shell は Core の宣言を継承し、`trigger` / `files` 出力と DOM 駆動の入力サーフェスを追加します。`commands`（`upload` / `abort`）は spread でそのまま継承されます。
+
+```typescript
+static wcBindable = {
+  ...UploadCore.wcBindable,
+  properties: [
+    ...UploadCore.wcBindable.properties,
+    { name: "trigger", event: "wcs-upload:trigger-changed" },
+    { name: "files",   event: "wcs-upload:files-changed" },
+  ],
+  inputs: [
+    { name: "url" },
+    { name: "method" },
+    { name: "fieldName" },
+    { name: "multiple" },
+    { name: "maxSize" },
+    { name: "accept" },
+    { name: "manual" },
+    { name: "files" },
+    { name: "trigger" },
+  ],
+};
+```
+
+Shell の inputs は意図的に `attribute` ヒントを持ちません。属性に紐づく各 setter（`url`, `method`, `fieldName`, `multiple`, `maxSize`, `accept`, `manual`）はすでに自身で属性へ反映するため、`inputs[].attribute` をミラーするバインディングシステムが属性を二重に設定してしまうのを避けるためです。
+
+これにより、`@wcstack/state` を含むあらゆる wc-bindable 対応システムから利用できます。
 
 ## Headless API
 

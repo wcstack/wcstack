@@ -3,46 +3,7 @@ import { bootstrapUpload } from "../src/bootstrapUpload";
 import { setConfig } from "../src/config";
 import { WcsUpload } from "../src/components/Upload";
 import { registerAutoTrigger, unregisterAutoTrigger } from "../src/autoTrigger";
-
-// XMLHttpRequestモック
-class MockXMLHttpRequest {
-  static instances: MockXMLHttpRequest[] = [];
-  static resetInstances(): void {
-    MockXMLHttpRequest.instances = [];
-  }
-
-  status = 0;
-  statusText = "";
-  responseText = "";
-
-  open = vi.fn();
-  send = vi.fn();
-  abort = vi.fn();
-  setRequestHeader = vi.fn();
-  getResponseHeader = vi.fn().mockReturnValue(null);
-
-  upload = new EventTarget();
-  private _listeners: Record<string, ((event: any) => void)[]> = {};
-
-  constructor() {
-    MockXMLHttpRequest.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: any) => void): void {
-    if (!this._listeners[type]) this._listeners[type] = [];
-    this._listeners[type].push(listener);
-  }
-
-  removeEventListener(type: string, listener: (event: any) => void): void {
-    if (this._listeners[type]) {
-      this._listeners[type] = this._listeners[type].filter(l => l !== listener);
-    }
-  }
-}
-
-function createMockFile(name: string, size: number, type: string): File {
-  return new File([new Uint8Array(size)], name, { type });
-}
+import { MockXMLHttpRequest, createMockFile } from "./helpers/mockXhr";
 
 describe("autoTrigger", () => {
   let originalXHR: typeof XMLHttpRequest;
@@ -78,9 +39,11 @@ describe("autoTrigger", () => {
     document.body.appendChild(button);
 
     button.click();
-    // upload()が呼ばれるがファイルは既にnullにリセット済みのためXHRは呼ばれない場合もある
-    // ここではクリックがエラーなく処理されることを確認
-    expect(true).toBe(true);
+    // upload() が呼ばれ、files と url が揃っているため XHR が生成される
+    expect(MockXMLHttpRequest.instances).toHaveLength(1);
+    const xhr = MockXMLHttpRequest.instances[0];
+    expect(xhr.open).toHaveBeenCalledWith("POST", "/api/upload");
+    expect(xhr.send).toHaveBeenCalledTimes(1);
 
     el.remove();
     button.remove();
@@ -265,8 +228,10 @@ describe("autoTrigger", () => {
     document.body.appendChild(button);
 
     span.click();
-    // upload()が呼ばれる（closest経由でbuttonを発見）
-    expect(true).toBe(true);
+    // closest 経由で button を発見し upload() が呼ばれ XHR が生成される
+    expect(MockXMLHttpRequest.instances).toHaveLength(1);
+    const xhr = MockXMLHttpRequest.instances[0];
+    expect(xhr.open).toHaveBeenCalledWith("POST", "/api/upload");
 
     el.remove();
     button.remove();

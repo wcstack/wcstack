@@ -18,6 +18,15 @@ export class UploadCore extends EventTarget {
       { name: "error", event: "wcs-upload:error" },
       { name: "status", event: "wcs-upload:response", getter: (e: Event) => (e as CustomEvent).detail.status },
     ],
+    inputs: [
+      { name: "url" },
+      { name: "method" },
+      { name: "fieldName" },
+    ],
+    commands: [
+      { name: "upload", async: true },
+      { name: "abort" },
+    ],
   };
 
   private _target: EventTarget;
@@ -96,13 +105,19 @@ export class UploadCore extends EventTarget {
   // --- Public API ---
 
   abort(): void {
+    // `_xhr` は send() の直前に同期で代入されるため、send 前に外部から abort が
+    // 割り込む余地はない（割り込み点となる await が存在しない）。よって XHR.abort()
+    // は常に進行中のリクエストに対して呼ばれ、abort イベントが発火して loading を
+    // 解除する。loading の解除を abort イベントハンドラに集約しているのは、
+    // ネットワークエラー/HTTP エラー/正常完了/中断のすべてで解除経路を一本化し、
+    // FetchCore.abort() と挙動を揃えるため。
     if (this._xhr) {
       this._xhr.abort();
       this._xhr = null;
     }
   }
 
-  upload(url: string, files: FileList | File[], options: UploadRequestOptions = {}): Promise<any> {
+  async upload(url: string, files: FileList | File[], options: UploadRequestOptions = {}): Promise<any> {
     if (!url) {
       raiseError("url is required.");
     }

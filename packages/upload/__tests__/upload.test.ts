@@ -2,86 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bootstrapUpload } from "../src/bootstrapUpload";
 import { setConfig } from "../src/config";
 import { WcsUpload } from "../src/components/Upload";
-
-// XMLHttpRequestモック
-class MockXMLHttpRequest {
-  static instances: MockXMLHttpRequest[] = [];
-  static resetInstances(): void {
-    MockXMLHttpRequest.instances = [];
-  }
-
-  status = 0;
-  statusText = "";
-  responseText = "";
-  readyState = 0;
-
-  open = vi.fn();
-  send = vi.fn();
-  abort = vi.fn();
-  setRequestHeader = vi.fn();
-  getResponseHeader = vi.fn().mockReturnValue(null);
-
-  upload = new EventTarget();
-
-  private _listeners: Record<string, ((event: any) => void)[]> = {};
-
-  constructor() {
-    MockXMLHttpRequest.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: any) => void): void {
-    if (!this._listeners[type]) {
-      this._listeners[type] = [];
-    }
-    this._listeners[type].push(listener);
-  }
-
-  removeEventListener(type: string, listener: (event: any) => void): void {
-    if (this._listeners[type]) {
-      this._listeners[type] = this._listeners[type].filter(l => l !== listener);
-    }
-  }
-
-  simulateProgress(loaded: number, total: number): void {
-    this.upload.dispatchEvent(new ProgressEvent("progress", {
-      lengthComputable: true,
-      loaded,
-      total,
-    }));
-  }
-
-  simulateLoad(status: number, responseText: string, contentType?: string): void {
-    this.status = status;
-    this.statusText = status < 400 ? "OK" : "Error";
-    this.responseText = responseText;
-    if (contentType) {
-      this.getResponseHeader.mockImplementation((name: string) => {
-        if (name === "Content-Type") return contentType;
-        return null;
-      });
-    }
-    for (const listener of this._listeners["load"] || []) {
-      listener(new Event("load"));
-    }
-  }
-
-  simulateError(): void {
-    for (const listener of this._listeners["error"] || []) {
-      listener(new Event("error"));
-    }
-  }
-
-  simulateAbort(): void {
-    for (const listener of this._listeners["abort"] || []) {
-      listener(new Event("abort"));
-    }
-  }
-}
-
-function createMockFile(name: string, size: number, type: string): File {
-  const content = new Uint8Array(size);
-  return new File([content], name, { type });
-}
+import { MockXMLHttpRequest, createMockFile } from "./helpers/mockXhr";
 
 describe("WcsUpload コンポーネント", () => {
   let originalXHR: typeof XMLHttpRequest;
@@ -116,6 +37,31 @@ describe("WcsUpload コンポーネント", () => {
     expect(WcsUpload.wcBindable.properties).toHaveLength(7);
     const names = WcsUpload.wcBindable.properties.map(p => p.name);
     expect(names).toEqual(["value", "loading", "progress", "error", "status", "trigger", "files"]);
+  });
+
+  it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
+    const inputs = WcsUpload.wcBindable.inputs!;
+    expect(inputs.map(i => i.name)).toEqual(
+      ["url", "method", "fieldName", "multiple", "maxSize", "accept", "manual", "files", "trigger"]
+    );
+  });
+
+  it("wcBindable inputsはattributeヒントを持たない（setterが自己反映するため二重設定を避ける）", () => {
+    const inputs = WcsUpload.wcBindable.inputs!;
+    expect(inputs.every(i => i.attribute === undefined)).toBe(true);
+  });
+
+  it("wcBindable commandsをCoreからupload(async)/abortとして継承している", () => {
+    const commands = WcsUpload.wcBindable.commands!;
+    expect(commands.map(c => c.name)).toEqual(["upload", "abort"]);
+    expect(commands.find(c => c.name === "upload")!.async).toBe(true);
+  });
+
+  it("trigger/filesはproperties（観測）とinputs（設定）の両方に現れる", () => {
+    expect(WcsUpload.wcBindable.properties.some(p => p.name === "trigger")).toBe(true);
+    expect(WcsUpload.wcBindable.inputs!.some(i => i.name === "trigger")).toBe(true);
+    expect(WcsUpload.wcBindable.properties.some(p => p.name === "files")).toBe(true);
+    expect(WcsUpload.wcBindable.inputs!.some(i => i.name === "files")).toBe(true);
   });
 
   describe("属性アクセサ", () => {
@@ -169,6 +115,21 @@ describe("WcsUpload コンポーネント", () => {
       el.maxSize = 1024000;
       expect(el.maxSize).toBe(1024000);
       expect(el.getAttribute("max-size")).toBe("1024000");
+    });
+
+    it("maxSizeに不正値(NaN)が指定された場合はInfinityにフォールバックする", () => {
+      const el = createElement({ "max-size": "abc" });
+      expect(el.maxSize).toBe(Infinity);
+    });
+
+    it("maxSizeに負数が指定された場合はInfinityにフォールバックする", () => {
+      const el = createElement({ "max-size": "-1" });
+      expect(el.maxSize).toBe(Infinity);
+    });
+
+    it("maxSize=0は有効な値として保持される（全ファイル拒否）", () => {
+      const el = createElement({ "max-size": "0" });
+      expect(el.maxSize).toBe(0);
     });
 
     it("accept属性の読み書きができる", () => {
@@ -293,6 +254,31 @@ describe("WcsUpload コンポーネント", () => {
       el.remove();
     });
 
+    it("set filesのfire-and-forget自動アップロードはunhandled rejectionを起こさない", async () => {
+      // set files の auto-upload 分岐は this.upload() を await/catch せず呼ぶ。
+      // url ありかつバリデーション通過ケースで XHR が走っても、never-reject 契約により
+      // unhandled rejection は発生しないことを直接担保する（trigger 経路と同等の保証）。
+      const el = createElement({ url: "/api/upload" });
+      document.body.appendChild(el);
+
+      const rejections: unknown[] = [];
+      const onRejection = (reason: unknown): void => { rejections.push(reason); };
+      process.on("unhandledRejection", onRejection);
+
+      const files = [createMockFile("test.txt", 100, "text/plain")];
+      el.files = files;
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+
+      // XHR を中断経路で settle させても rejection は起きない
+      MockXMLHttpRequest.instances[0].simulateAbort();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await Promise.resolve();
+
+      process.off("unhandledRejection", onRejection);
+      expect(rejections).toEqual([]);
+      el.remove();
+    });
+
     it("空のファイルリストでは自動アップロードしない", () => {
       const el = createElement({ url: "/api/upload" });
       document.body.appendChild(el);
@@ -405,6 +391,34 @@ describe("WcsUpload コンポーネント", () => {
       expect(MockXMLHttpRequest.instances).toHaveLength(0);
       el.remove();
     });
+
+    it("url未設定でファイルありのtriggerはunhandled rejectionを起こさずno-opになる", async () => {
+      const el = createElement({ manual: "" });
+      document.body.appendChild(el);
+
+      const rejections: unknown[] = [];
+      const onRejection = (reason: unknown): void => { rejections.push(reason); };
+      process.on("unhandledRejection", onRejection);
+
+      const files = [createMockFile("test.txt", 100, "text/plain")];
+      el.files = files;
+
+      // set trigger 内の this.upload().finally(...) は .catch を持たないため、
+      // upload() が reject すると unhandled rejection になる。url ガードにより no-op(null)
+      // で resolve するので XHR は生成されず rejection も発生しない。
+      el.trigger = true;
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+
+      // マイクロタスク・イベントループを十分に回して未処理 rejection を捕捉
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await Promise.resolve();
+
+      process.off("unhandledRejection", onRejection);
+      expect(rejections).toEqual([]);
+      // finally で trigger が false にリセットされている
+      expect(el.trigger).toBe(false);
+      el.remove();
+    });
   });
 
   describe("バリデーション", () => {
@@ -426,6 +440,26 @@ describe("WcsUpload コンポーネント", () => {
       expect(errors).toHaveLength(1);
       expect(errors[0].message).toContain("big.txt");
       expect(errors[0].message).toContain("100");
+      el.remove();
+    });
+
+    it("max-sizeが不正値(NaN)でもサイズ検証は無言で無効化されず制限なしとして送信される", async () => {
+      const el = createElement({ url: "/api/upload", "max-size": "abc" });
+      document.body.appendChild(el);
+
+      const errors: any[] = [];
+      el.addEventListener("wcs-upload:error", (e) => {
+        const detail = (e as CustomEvent).detail;
+        if (detail !== null) errors.push(detail);
+      });
+
+      // maxSize が Infinity に丸められるため大きなファイルも拒否されず送信される
+      const files = [createMockFile("big.txt", 999999, "text/plain")];
+      el.files = files;
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      expect(errors).toHaveLength(0);
       el.remove();
     });
 
@@ -496,6 +530,46 @@ describe("WcsUpload コンポーネント", () => {
       el.remove();
     });
 
+    it("file.typeが空でも拡張子パターンに一致すれば受理する", async () => {
+      const el = createElement({ url: "/api/upload", accept: ".png,image/*" });
+      document.body.appendChild(el);
+
+      const errors: any[] = [];
+      el.addEventListener("wcs-upload:error", (e) => {
+        // アップロード開始時の error リセット（null）は除外し、検証エラーのみ収集
+        const detail = (e as CustomEvent).detail;
+        if (detail !== null) errors.push(detail);
+      });
+
+      // type は空だが拡張子 .png が一致する
+      const files = [createMockFile("photo.png", 100, "")];
+      el.files = files;
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      expect(errors).toHaveLength(0);
+      el.remove();
+    });
+
+    it("file.typeが空でMIME系のみのacceptは拒否する", async () => {
+      const el = createElement({ url: "/api/upload", accept: "image/*,image/png" });
+      document.body.appendChild(el);
+
+      const errors: any[] = [];
+      el.addEventListener("wcs-upload:error", (e) => {
+        errors.push((e as CustomEvent).detail);
+      });
+
+      // type が空かつ拡張子パターンが accept に無いので型を確認できず拒否
+      const files = [createMockFile("photo.png", 100, "")];
+      el.files = files;
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+      expect(errors).toHaveLength(1);
+      el.remove();
+    });
+
     it("バリデーション通過時はアップロードが実行される", async () => {
       const el = createElement({
         url: "/api/upload",
@@ -516,6 +590,20 @@ describe("WcsUpload コンポーネント", () => {
       const el = createElement({ url: "/api/upload", manual: "" });
       document.body.appendChild(el);
 
+      const result = await el.upload();
+      expect(result).toBeNull();
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+      el.remove();
+    });
+
+    it("url未設定時はファイルがあってもnullで解決しXHRを生成しない（rejectしない）", async () => {
+      const el = createElement({ manual: "" });
+      document.body.appendChild(el);
+
+      const files = [createMockFile("test.txt", 100, "text/plain")];
+      el.files = files;
+
+      // url が無いので Core の throw に到達せず null で resolve する（never reject 契約の維持）
       const result = await el.upload();
       expect(result).toBeNull();
       expect(MockXMLHttpRequest.instances).toHaveLength(0);
