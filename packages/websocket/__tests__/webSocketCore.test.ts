@@ -79,6 +79,8 @@ describe("WebSocketCore", () => {
     expect(WebSocketCore.wcBindable.properties[2].name).toBe("loading");
     expect(WebSocketCore.wcBindable.properties[3].name).toBe("error");
     expect(WebSocketCore.wcBindable.properties[4].name).toBe("readyState");
+    expect(WebSocketCore.wcBindable.inputs).toBeUndefined();
+    expect(WebSocketCore.wcBindable.commands?.map(command => command.name)).toEqual(["connect", "send", "close"]);
   });
 
   it("初期状態が正しい", () => {

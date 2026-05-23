@@ -24,10 +24,22 @@ export interface IWcBindableProperty {
   readonly getter?: (event: Event) => any;
 }
 
+export interface IWcBindableInput {
+  readonly name: string;
+  readonly attribute?: string;
+}
+
+export interface IWcBindableCommand {
+  readonly name: string;
+  readonly async?: boolean;
+}
+
 export interface IWcBindable {
   readonly protocol: "wc-bindable";
   readonly version: number;
   readonly properties: IWcBindableProperty[];
+  readonly inputs?: IWcBindableInput[];
+  readonly commands?: IWcBindableCommand[];
 }
 
 /**
@@ -56,4 +68,32 @@ export interface WcsWsCoreValues<T = unknown> {
 export interface WcsWsValues<T = unknown> extends WcsWsCoreValues<T> {
   trigger: boolean;
   send: unknown;
+}
+
+export interface WcsWsInputs {
+  url: string;
+  protocols: string;
+  autoReconnect: boolean;
+  reconnectInterval: number;
+  maxReconnects: number;
+  manual: boolean;
+  trigger: boolean;
+  send: unknown;
+}
+
+export interface WcsWsCoreCommands {
+  connect(url: string, options?: {
+    protocols?: string | string[];
+    autoReconnect?: boolean;
+    reconnectInterval?: number;
+    maxReconnects?: number;
+  }): void;
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+  close(code?: number, reason?: string): void;
+}
+
+export interface WcsWsCommands {
+  connect(): void;
+  sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+  close(code?: number, reason?: string): void;
 }

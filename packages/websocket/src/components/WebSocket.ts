@@ -12,6 +12,21 @@ export class WcsWebSocket extends HTMLElement {
       { name: "trigger", event: "wcs-ws:trigger-changed" },
       { name: "send", event: "wcs-ws:send-changed" },
     ],
+    inputs: [
+      { name: "url", attribute: "url" },
+      { name: "protocols", attribute: "protocols" },
+      { name: "autoReconnect", attribute: "auto-reconnect" },
+      { name: "reconnectInterval", attribute: "reconnect-interval" },
+      { name: "maxReconnects", attribute: "max-reconnects" },
+      { name: "manual", attribute: "manual" },
+      { name: "trigger" },
+      { name: "send" },
+    ],
+    commands: [
+      { name: "connect" },
+      { name: "sendMessage" },
+      { name: "close" },
+    ],
   };
   static get observedAttributes(): string[] { return ["url"]; }
 
@@ -55,7 +70,8 @@ export class WcsWebSocket extends HTMLElement {
 
   get reconnectInterval(): number {
     const attr = this.getAttribute("reconnect-interval");
-    return attr ? parseInt(attr, 10) : 3000;
+    const parsed = attr ? parseInt(attr, 10) : 3000;
+    return Number.isNaN(parsed) ? 3000 : parsed;
   }
 
   set reconnectInterval(value: number) {
@@ -64,7 +80,8 @@ export class WcsWebSocket extends HTMLElement {
 
   get maxReconnects(): number {
     const attr = this.getAttribute("max-reconnects");
-    return attr ? parseInt(attr, 10) : Infinity;
+    const parsed = attr ? parseInt(attr, 10) : Infinity;
+    return Number.isNaN(parsed) ? Infinity : parsed;
   }
 
   set maxReconnects(value: number) {

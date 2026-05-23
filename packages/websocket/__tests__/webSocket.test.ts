@@ -82,6 +82,10 @@ describe("WcsWebSocket コンポーネント", () => {
     expect(WcsWebSocket.wcBindable.properties).toHaveLength(7);
     const names = WcsWebSocket.wcBindable.properties.map(p => p.name);
     expect(names).toEqual(["message", "connected", "loading", "error", "readyState", "trigger", "send"]);
+    expect(WcsWebSocket.wcBindable.inputs?.map(input => input.name)).toEqual([
+      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "manual", "trigger", "send"
+    ]);
+    expect(WcsWebSocket.wcBindable.commands?.map(command => command.name)).toEqual(["connect", "sendMessage", "close"]);
   });
 
   describe("属性アクセサ", () => {
@@ -113,8 +117,18 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(el.reconnectInterval).toBe(3000);
     });
 
+    it("reconnectInterval属性が不正な数値の場合はデフォルト値を返す", () => {
+      const el = createElement({ "reconnect-interval": "abc" });
+      expect(el.reconnectInterval).toBe(3000);
+    });
+
     it("maxReconnects属性のデフォルト値がInfinity", () => {
       const el = createElement();
+      expect(el.maxReconnects).toBe(Infinity);
+    });
+
+    it("maxReconnects属性が不正な数値の場合はデフォルト値を返す", () => {
+      const el = createElement({ "max-reconnects": "abc" });
       expect(el.maxReconnects).toBe(Infinity);
     });
 

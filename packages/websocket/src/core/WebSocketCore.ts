@@ -19,6 +19,11 @@ export class WebSocketCore extends EventTarget {
       { name: "error", event: "wcs-ws:error" },
       { name: "readyState", event: "wcs-ws:readystate-changed" },
     ],
+    commands: [
+      { name: "connect" },
+      { name: "send" },
+      { name: "close" },
+    ],
   };
 
   private _target: EventTarget;
@@ -221,10 +226,14 @@ export class WebSocketCore extends EventTarget {
   }
 
   private _removeListeners(): void {
-    this._ws!.removeEventListener("open", this._onOpen);
-    this._ws!.removeEventListener("message", this._onMessage);
-    this._ws!.removeEventListener("error", this._onError);
-    this._ws!.removeEventListener("close", this._onClose);
+    if (!this._ws) {
+      return;
+    }
+
+    this._ws.removeEventListener("open", this._onOpen);
+    this._ws.removeEventListener("message", this._onMessage);
+    this._ws.removeEventListener("error", this._onError);
+    this._ws.removeEventListener("close", this._onClose);
   }
 
   private _closeInternal(): void {
