@@ -4,7 +4,8 @@ export { WebSocketCore } from "./core/WebSocketCore.js";
 export { WcsWebSocket } from "./components/WebSocket.js";
 
 export type {
-  IWritableConfig, IWritableTagNames, WcsWsError, WcsWsCoreValues, WcsWsValues
+  IWritableConfig, IWritableTagNames, WcsWsError, WcsWsCoreValues, WcsWsValues,
+  WcsWsInputs, WcsWsCoreCommands, WcsWsCommands
 } from "./types.js";
 
 export type {

@@ -19,6 +19,11 @@ export class WebSocketCore extends EventTarget {
       { name: "error", event: "wcs-ws:error" },
       { name: "readyState", event: "wcs-ws:readystate-changed" },
     ],
+    commands: [
+      { name: "connect" },
+      { name: "send" },
+      { name: "close" },
+    ],
   };
 
   private _target: EventTarget;

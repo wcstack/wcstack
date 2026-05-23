@@ -12,6 +12,21 @@ export class WcsWebSocket extends HTMLElement {
       { name: "trigger", event: "wcs-ws:trigger-changed" },
       { name: "send", event: "wcs-ws:send-changed" },
     ],
+    inputs: [
+      { name: "url", attribute: "url" },
+      { name: "protocols", attribute: "protocols" },
+      { name: "autoReconnect", attribute: "auto-reconnect" },
+      { name: "reconnectInterval", attribute: "reconnect-interval" },
+      { name: "maxReconnects", attribute: "max-reconnects" },
+      { name: "manual", attribute: "manual" },
+      { name: "trigger" },
+      { name: "send" },
+    ],
+    commands: [
+      { name: "connect" },
+      { name: "sendMessage" },
+      { name: "close" },
+    ],
   };
   static get observedAttributes(): string[] { return ["url"]; }
 

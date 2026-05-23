@@ -19,10 +19,20 @@ interface IWcBindableProperty {
     readonly event: string;
     readonly getter?: (event: Event) => any;
 }
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
 interface IWcBindable {
     readonly protocol: "wc-bindable";
     readonly version: number;
     readonly properties: IWcBindableProperty[];
+    readonly inputs?: IWcBindableInput[];
+    readonly commands?: IWcBindableCommand[];
 }
 /**
  * WebSocket error object.
@@ -48,6 +58,31 @@ interface WcsWsCoreValues<T = unknown> {
 interface WcsWsValues<T = unknown> extends WcsWsCoreValues<T> {
     trigger: boolean;
     send: unknown;
+}
+interface WcsWsInputs {
+    url: string;
+    protocols: string;
+    autoReconnect: boolean;
+    reconnectInterval: number;
+    maxReconnects: number;
+    manual: boolean;
+    trigger: boolean;
+    send: unknown;
+}
+interface WcsWsCoreCommands {
+    connect(url: string, options?: {
+        protocols?: string | string[];
+        autoReconnect?: boolean;
+        reconnectInterval?: number;
+        maxReconnects?: number;
+    }): void;
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+    close(code?: number, reason?: string): void;
+}
+interface WcsWsCommands {
+    connect(): void;
+    sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+    close(code?: number, reason?: string): void;
 }
 
 declare function bootstrapWebSocket(userConfig?: IWritableConfig): void;
@@ -138,4 +173,4 @@ declare class WcsWebSocket extends HTMLElement {
 }
 
 export { WcsWebSocket, WebSocketCore, bootstrapWebSocket, getConfig };
-export type { IWritableConfig, IWritableTagNames, WcsWsCoreValues, WcsWsError, WcsWsValues, WebSocketConnectOptions };
+export type { IWritableConfig, IWritableTagNames, WcsWsCommands, WcsWsCoreCommands, WcsWsCoreValues, WcsWsError, WcsWsInputs, WcsWsValues, WebSocketConnectOptions };

@@ -82,6 +82,10 @@ describe("WcsWebSocket コンポーネント", () => {
     expect(WcsWebSocket.wcBindable.properties).toHaveLength(7);
     const names = WcsWebSocket.wcBindable.properties.map(p => p.name);
     expect(names).toEqual(["message", "connected", "loading", "error", "readyState", "trigger", "send"]);
+    expect(WcsWebSocket.wcBindable.inputs?.map(input => input.name)).toEqual([
+      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "manual", "trigger", "send"
+    ]);
+    expect(WcsWebSocket.wcBindable.commands?.map(command => command.name)).toEqual(["connect", "sendMessage", "close"]);
   });
 
   describe("属性アクセサ", () => {

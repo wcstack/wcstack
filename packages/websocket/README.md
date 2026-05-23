@@ -12,11 +12,11 @@ With `@wcstack/state`, `<wcs-ws>` can be bound directly through path contracts:
 
 This means real-time communication can be expressed declaratively in HTML, without writing `new WebSocket()`, `onmessage`, or connection glue code in your UI layer.
 
-`@wcstack/websocket` follows the [HAWC](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/docs/articles/HAWC.md) architecture:
+`@wcstack/websocket` follows the CSBC (Core / Shell / Binding Contract) architecture used by the current [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol):
 
 - **Core** (`WebSocketCore`) handles connection, messaging, reconnection, and async state
-- **Shell** (`<wcs-ws>`) connects that state to the DOM
-- frameworks and binding systems consume it through [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol)
+- **Shell** (`<wcs-ws>`) connects that state to DOM attributes, lifecycle, and declarative commands
+- **Binding Contract** (`static wcBindable`) declares observable `properties`, writable `inputs`, and callable `commands`
 
 ## Why this exists
 
@@ -169,7 +169,7 @@ When the connection drops unexpectedly (close code other than 1000), `<wcs-ws>` 
 
 ### Output state (bindable async state)
 
-These properties represent the current connection state and are the main HAWC surface:
+These properties represent the current connection state and are the main observable surface:
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -192,7 +192,7 @@ These properties control connection and messaging from HTML, JS, or `@wcstack/st
 
 ## Architecture
 
-`@wcstack/websocket` follows the HAWC architecture.
+`@wcstack/websocket` follows the CSBC architecture.
 
 ### Core: `WebSocketCore`
 
@@ -203,7 +203,7 @@ It contains:
 - automatic reconnection logic
 - JSON message parsing
 - async state transitions
-- `wc-bindable-protocol` declaration
+- `wc-bindable-protocol` declaration for observable state and callable commands
 
 It can run headlessly in any runtime that supports `EventTarget` and `WebSocket`.
 
@@ -215,6 +215,7 @@ It adds:
 - attribute / property mapping
 - DOM lifecycle integration
 - declarative helpers: `trigger`, `send`
+- `wc-bindable-protocol` inputs for DOM-facing configuration and command properties
 
 This split keeps the connection logic portable while allowing DOM-based binding systems such as `@wcstack/state` to interact with it naturally.
 
@@ -328,7 +329,13 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 
 ## wc-bindable-protocol
 
-Both `WebSocketCore` and `<wcs-ws>` declare `wc-bindable-protocol` compliance, making them interoperable with any framework or component that supports the protocol.
+Both `WebSocketCore` and `<wcs-ws>` declare a `wc-bindable-protocol` contract, making them interoperable with any framework, adapter, remote proxy, or tooling layer that understands the protocol.
+
+The current contract has three independent surfaces:
+
+- `properties`: observable outputs consumed by `bind()` and framework adapters
+- `inputs`: writable interface metadata for DOM configuration and command-like properties
+- `commands`: callable methods for tools and remote-capable consumers
 
 ### Core (`WebSocketCore`)
 
@@ -345,14 +352,19 @@ static wcBindable = {
     { name: "error",      event: "wcs-ws:error" },
     { name: "readyState", event: "wcs-ws:readystate-changed" },
   ],
+  commands: [
+    { name: "connect" },
+    { name: "send" },
+    { name: "close" },
+  ],
 };
 ```
 
-Headless consumers call `core.connect(url)` directly — no `trigger` needed.
+Headless consumers call `core.connect(url)` directly — no `trigger` needed. The Core does not declare `inputs` because it does not expose settable `url` / option properties; those values are provided through the `connect()` command.
 
 ### Shell (`<wcs-ws>`)
 
-The Shell extends the Core declaration with `trigger` and `send` so binding systems can control the connection declaratively:
+The Shell extends the Core declaration with DOM-facing inputs, command properties, and HTMLElement methods so binding systems can control the connection declaratively:
 
 ```typescript
 static wcBindable = {
@@ -362,6 +374,21 @@ static wcBindable = {
     { name: "trigger", event: "wcs-ws:trigger-changed" },
     { name: "send",    event: "wcs-ws:send-changed" },
   ],
+  inputs: [
+    { name: "url", attribute: "url" },
+    { name: "protocols", attribute: "protocols" },
+    { name: "autoReconnect", attribute: "auto-reconnect" },
+    { name: "reconnectInterval", attribute: "reconnect-interval" },
+    { name: "maxReconnects", attribute: "max-reconnects" },
+    { name: "manual", attribute: "manual" },
+    { name: "trigger" },
+    { name: "send" },
+  ],
+  commands: [
+    { name: "connect" },
+    { name: "sendMessage" },
+    { name: "close" },
+  ],
 };
 ```
 
@@ -369,7 +396,8 @@ static wcBindable = {
 
 ```typescript
 import type {
-  WcsWsError, WcsWsCoreValues, WcsWsValues
+  WcsWsError, WcsWsCoreValues, WcsWsValues,
+  WcsWsInputs, WcsWsCoreCommands, WcsWsCommands
 } from "@wcstack/websocket";
 ```
 
@@ -396,6 +424,34 @@ interface WcsWsValues<T = unknown> extends WcsWsCoreValues<T> {
   trigger: boolean;
   send: unknown;
 }
+
+interface WcsWsInputs {
+  url: string;
+  protocols: string;
+  autoReconnect: boolean;
+  reconnectInterval: number;
+  maxReconnects: number;
+  manual: boolean;
+  trigger: boolean;
+  send: unknown;
+}
+
+interface WcsWsCoreCommands {
+  connect(url: string, options?: {
+    protocols?: string | string[];
+    autoReconnect?: boolean;
+    reconnectInterval?: number;
+    maxReconnects?: number;
+  }): void;
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+  close(code?: number, reason?: string): void;
+}
+
+interface WcsWsCommands {
+  connect(): void;
+  sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+  close(code?: number, reason?: string): void;
+}
 ```
 
 ## Why this works well with `@wcstack/state`
@@ -413,7 +469,7 @@ This makes real-time communication look like ordinary state updates.
 
 ## Framework Integration
 
-Since `<wcs-ws>` is HAWC + `wc-bindable-protocol`, it works with any framework through thin adapters from `@wc-bindable/*`.
+Since `<wcs-ws>` exposes a CSBC `wc-bindable-protocol` contract, it works with any framework through thin adapters from `@wc-bindable/*`.
 
 ### React
 
