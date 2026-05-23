@@ -6,6 +6,12 @@ import { Layout } from '../src/components/Layout';
 import { LayoutOutlet } from '../src/components/LayoutOutlet';
 import { Head } from '../src/components/Head';
 
+const happyDOM = (globalThis as any).happyDOM;
+if (happyDOM?.settings) {
+  happyDOM.settings.disableJavaScriptFileLoading = true;
+  happyDOM.settings.disableCSSFileLoading = true;
+}
+
 // カスタム要素を一度だけ登録
 if (!customElements.get('wcs-router')) {
   customElements.define('wcs-router', Router);

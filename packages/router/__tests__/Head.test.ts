@@ -241,19 +241,19 @@ describe('Head', () => {
 
     it('link[media]で異なるmediaが区別されること', () => {
       const screenLink = document.createElement('link');
-      screenLink.setAttribute('rel', 'stylesheet');
-      screenLink.setAttribute('href', 'screen.css');
+      screenLink.setAttribute('rel', 'canonical');
+      screenLink.setAttribute('href', 'https://example.com/screen');
       screenLink.setAttribute('media', 'screen');
       document.head.appendChild(screenLink);
       
       const printLink = document.createElement('link');
-      printLink.setAttribute('rel', 'stylesheet');
-      printLink.setAttribute('href', 'print.css');
+      printLink.setAttribute('rel', 'canonical');
+      printLink.setAttribute('href', 'https://example.com/print');
       printLink.setAttribute('media', 'print');
       document.head.appendChild(printLink);
       
       const head = document.createElement('wcs-head') as Head;
-      head.innerHTML = '<link rel="stylesheet" href="print.css" media="print">';
+      head.innerHTML = '<link rel="canonical" href="https://example.com/print" media="print">';
       container.appendChild(head);
       
       // screenは1つのまま
@@ -315,10 +315,10 @@ describe('Head', () => {
   describe('connectedCallback - その他の要素', () => {
     it('scriptタグが追加されること', () => {
       const head = document.createElement('wcs-head') as Head;
-      head.innerHTML = '<script src="test.js"></script>';
+      head.innerHTML = '<script data-test-id="head-script"></script>';
       container.appendChild(head);
       
-      const scripts = document.head.querySelectorAll('script[src="test.js"]');
+      const scripts = document.head.querySelectorAll('script[data-test-id="head-script"]');
       expect(scripts.length).toBe(1);
     });
 

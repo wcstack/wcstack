@@ -283,6 +283,12 @@ describe("WebSocketCore", () => {
       expect(core.connected).toBe(false);
       expect(core.readyState).toBe(WebSocket.CLOSED);
     });
+
+    it("接続がない場合でもlistener除去で例外にならない", () => {
+      const core = new WebSocketCore();
+
+      expect(() => (core as any)._removeListeners()).not.toThrow();
+    });
   });
 
   describe("error", () => {
