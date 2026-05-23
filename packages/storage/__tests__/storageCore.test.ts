@@ -26,6 +26,27 @@ describe("StorageCore", () => {
     expect(StorageCore.wcBindable.properties[2].name).toBe("error");
   });
 
+  it("wcBindable inputsがkey/typeを宣言している", () => {
+    const inputs = StorageCore.wcBindable.inputs!;
+    expect(inputs.map((i) => i.name)).toEqual(["key", "type"]);
+    // Core は headless なので attribute ヒントは持たない
+    expect(inputs.every((i) => i.attribute === undefined)).toBe(true);
+  });
+
+  it("wcBindable commandsがload/save/removeを宣言している", () => {
+    const commands = StorageCore.wcBindable.commands!;
+    expect(commands.map((c) => c.name)).toEqual(["load", "save", "remove"]);
+    // load / save / remove は同期メソッドなので async ヒントを持たない
+    expect(commands.every((c) => c.async === undefined)).toBe(true);
+  });
+
+  it("wcBindable inputs/commandsのnameがそれぞれ一意である", () => {
+    const inputNames = StorageCore.wcBindable.inputs!.map((i) => i.name);
+    const commandNames = StorageCore.wcBindable.commands!.map((c) => c.name);
+    expect(new Set(inputNames).size).toBe(inputNames.length);
+    expect(new Set(commandNames).size).toBe(commandNames.length);
+  });
+
   it("valueのgetterがdetailを返す", () => {
     const getter = StorageCore.wcBindable.properties[0].getter!;
     const event = new CustomEvent("wcs-storage:value-changed", { detail: { count: 1 } });
@@ -59,6 +80,13 @@ describe("StorageCore", () => {
   it("無効なstorageタイプでエラーをスローする", () => {
     const core = new StorageCore();
     expect(() => { core.type = "invalid" as any; }).toThrow('Invalid storage type: "invalid"');
+  });
+
+  it("key setterは非文字列をStringへ正規化する", () => {
+    const core = new StorageCore();
+    core.key = 123 as any;
+    expect(core.key).toBe("123");
+    expect(typeof core.key).toBe("string");
   });
 
   it("localStorageにJSONオブジェクトを保存・読み込みできる", () => {
@@ -142,6 +170,24 @@ describe("StorageCore", () => {
 
     core.save(undefined);
     expect(localStorage.getItem("undef-key")).toBeNull();
+  });
+
+  it("undefinedを保存するとvalueはundefinedではなくnullへ正規化される", () => {
+    const core = new StorageCore();
+    core.key = "undef-normalize-key";
+
+    core.save(undefined);
+    // getter は undefined ではなく null を返す（remove()/欠損キーの load() と整合）
+    expect(core.value).toBeNull();
+  });
+
+  it("nullを保存するとvalueがnullになる", () => {
+    const core = new StorageCore();
+    core.key = "null-normalize-key";
+    core.save({ data: true });
+
+    core.save(null);
+    expect(core.value).toBeNull();
   });
 
   it("存在しないキーのload()はnullを返す", () => {
@@ -245,7 +291,7 @@ describe("StorageCore", () => {
     });
 
     core.save({ large: "data" });
-    expect(core.error).toBeInstanceOf(Error);
+    expect(core.error).toEqual({ operation: "save", message: "QuotaExceededError" });
     expect(core.loading).toBe(false);
 
     Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
@@ -262,7 +308,7 @@ describe("StorageCore", () => {
     });
 
     core.remove();
-    expect(core.error).toBeInstanceOf(Error);
+    expect(core.error).toEqual({ operation: "remove", message: "SecurityError" });
     expect(core.loading).toBe(false);
 
     Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
@@ -280,8 +326,41 @@ describe("StorageCore", () => {
 
     const result = core.load();
     expect(result).toBeNull();
-    expect(core.error).toBeInstanceOf(Error);
+    expect(core.error).toEqual({ operation: "load", message: "SecurityError" });
     expect(core.loading).toBe(false);
+
+    Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
+  });
+
+  it("循環参照オブジェクトのsaveでJSON.stringifyのTypeErrorがsaveエラーとして捕捉される", () => {
+    const core = new StorageCore();
+    core.key = "circular-key";
+
+    const obj: any = {};
+    obj.self = obj; // 循環参照 → JSON.stringify が TypeError を投げる
+
+    core.save(obj);
+
+    expect(core.error.operation).toBe("save");
+    expect(core.error.message).toContain("circular");
+    expect(core.loading).toBe(false);
+    // ストレージには書き込まれない
+    expect(localStorage.getItem("circular-key")).toBeNull();
+  });
+
+  it("Error以外の値がthrowされた場合はString化してmessageに格納する", () => {
+    const core = new StorageCore();
+    core.key = "non-error-throw-key";
+
+    const original = globalThis.localStorage;
+    Object.defineProperty(globalThis, "localStorage", {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      value: { setItem: () => { throw "raw string failure"; }, removeItem: () => {}, getItem: () => null },
+      configurable: true,
+    });
+
+    core.save({ data: true });
+    expect(core.error).toEqual({ operation: "save", message: "raw string failure" });
 
     Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
   });
@@ -290,6 +369,65 @@ describe("StorageCore", () => {
     const core = new StorageCore();
     expect(core).toBeInstanceOf(EventTarget);
     expect(core).not.toBeInstanceOf(HTMLElement);
+  });
+
+  describe("value setter (staging, no persistence)", () => {
+    it("value setterは値を設定しvalue-changedを発火するがストレージへは書き込まない", () => {
+      const core = new StorageCore();
+      core.key = "stage-key";
+
+      const events: any[] = [];
+      core.addEventListener("wcs-storage:value-changed", (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      core.value = { staged: true };
+
+      expect(core.value).toEqual({ staged: true });
+      expect(events).toEqual([{ staged: true }]);
+      // ストレージには書き込まれない
+      expect(localStorage.getItem("stage-key")).toBeNull();
+    });
+
+    it("同一値の代入はvalue-changedをスキップする（フィードバックループ防止）", () => {
+      const core = new StorageCore();
+
+      const events: any[] = [];
+      core.addEventListener("wcs-storage:value-changed", (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      const obj = { same: true };
+      core.value = obj;
+      core.value = obj; // 同一参照なのでスキップ
+
+      expect(events).toHaveLength(1);
+    });
+
+    it("初期nullと同一のnull代入はスキップされる", () => {
+      const core = new StorageCore();
+
+      const events: any[] = [];
+      core.addEventListener("wcs-storage:value-changed", (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      core.value = null; // 初期値もnullなのでスキップ
+      expect(events).toHaveLength(0);
+      expect(core.value).toBeNull();
+    });
+
+    it("value setterでステージングした値をsave()でコミットできる", () => {
+      const core = new StorageCore();
+      core.key = "stage-commit-key";
+
+      core.value = { committed: false };
+      expect(localStorage.getItem("stage-commit-key")).toBeNull();
+
+      // 現在のステージング値を保存
+      core.save(core.value);
+      expect(localStorage.getItem("stage-commit-key")).toBe('{"committed":false}');
+    });
   });
 
   describe("cross-tab sync", () => {
@@ -450,6 +588,60 @@ describe("StorageCore", () => {
     it("stopSync()を未登録時に呼んでもエラーにならない", () => {
       const core = new StorageCore();
       expect(() => core.stopSync()).not.toThrow();
+    });
+
+    it("クロスタブ同期成功時に直前のerrorがnullへクリアされる", () => {
+      const core = new StorageCore();
+      core.key = "sync-error-clear-key";
+      core.type = "local";
+      core.startSync();
+
+      // 直前のloadを失敗させてerrorを残す
+      const original = globalThis.localStorage;
+      Object.defineProperty(globalThis, "localStorage", {
+        value: { getItem: () => { throw new Error("SecurityError"); }, setItem: () => {}, removeItem: () => {} },
+        configurable: true,
+      });
+      core.load();
+      Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
+      expect(core.error).toEqual({ operation: "load", message: "SecurityError" });
+
+      // 他タブからの更新が来るとerrorがクリアされ、新しいvalueが反映される
+      const event = new StorageEvent("storage", {
+        key: "sync-error-clear-key",
+        newValue: '{"fresh":true}',
+        storageArea: localStorage,
+      });
+      globalThis.dispatchEvent(event);
+
+      expect(core.error).toBeNull();
+      expect(core.value).toEqual({ fresh: true });
+
+      core.stopSync();
+    });
+
+    it("クロスタブ同期成功時にerror(null)イベントが発火する", () => {
+      const core = new StorageCore();
+      core.key = "sync-error-event-key";
+      core.type = "local";
+      core.startSync();
+
+      const errorEvents: any[] = [];
+      core.addEventListener("wcs-storage:error", (e: Event) => {
+        errorEvents.push((e as CustomEvent).detail);
+      });
+
+      const event = new StorageEvent("storage", {
+        key: "sync-error-event-key",
+        newValue: '{"x":1}',
+        storageArea: localStorage,
+      });
+      globalThis.dispatchEvent(event);
+
+      // 同期成功時にerrorがnullへリセットされたことが観測できる
+      expect(errorEvents).toEqual([null]);
+
+      core.stopSync();
     });
   });
 });

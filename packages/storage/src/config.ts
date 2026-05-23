@@ -53,7 +53,15 @@ export function setConfig(partialConfig: IWritableConfig): void {
     _config.triggerAttribute = partialConfig.triggerAttribute;
   }
   if (partialConfig.tagNames) {
-    Object.assign(_config.tagNames, partialConfig.tagNames);
+    // Validate each tagNames entry individually instead of a blanket
+    // Object.assign: a non-string (e.g. { storage: undefined }) would otherwise
+    // poison the config and make customElements.define(undefined, …) throw at
+    // registration time. Mirrors the typeof guards on autoTrigger / triggerAttribute.
+    for (const [key, value] of Object.entries(partialConfig.tagNames)) {
+      if (typeof value === "string") {
+        (_config.tagNames as Record<string, string>)[key] = value;
+      }
+    }
   }
   frozenConfig = null;
 }

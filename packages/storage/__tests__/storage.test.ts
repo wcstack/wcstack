@@ -46,6 +46,22 @@ describe("config", () => {
     setConfig({ tagNames: { storage: "wcs-storage" } });
   });
 
+  it("setConfig()でtagNamesの非文字列値は無視され既存値を保持する", () => {
+    // 指摘5: { storage: undefined } のような非文字列で汚染されると
+    // customElements.define(undefined, …) が失敗する。typeofガードで弾く。
+    setConfig({ tagNames: { storage: undefined as any } });
+    expect(config.tagNames.storage).toBe("wcs-storage");
+
+    setConfig({ tagNames: { storage: 123 as any } });
+    expect(config.tagNames.storage).toBe("wcs-storage");
+
+    // 正常な文字列は反映される
+    setConfig({ tagNames: { storage: "x-storage" } });
+    expect(config.tagNames.storage).toBe("x-storage");
+    // 元に戻す
+    setConfig({ tagNames: { storage: "wcs-storage" } });
+  });
+
   it("setConfig()でtriggerAttributeを変更できる", () => {
     setConfig({ triggerAttribute: "data-trigger" });
     expect(config.triggerAttribute).toBe("data-trigger");
@@ -93,6 +109,32 @@ describe("Storage", () => {
     expect(Storage.wcBindable.properties[3].event).toBe("wcs-storage:trigger-changed");
   });
 
+  it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
+    const inputs = Storage.wcBindable.inputs!;
+    expect(inputs.map((i) => i.name)).toEqual(["key", "type", "value", "manual", "trigger"]);
+  });
+
+  it("wcBindable inputsはattributeヒントを持たない（setterが自己反映するため二重設定を避ける）", () => {
+    const inputs = Storage.wcBindable.inputs!;
+    expect(inputs.every((i) => i.attribute === undefined)).toBe(true);
+  });
+
+  it("wcBindable commandsをCoreからload/save/removeとして継承している", () => {
+    const commands = Storage.wcBindable.commands!;
+    expect(commands.map((c) => c.name)).toEqual(["load", "save", "remove"]);
+    expect(commands.every((c) => c.async === undefined)).toBe(true);
+  });
+
+  it("valueはproperties（観測）とinputs（設定）の両方に現れる", () => {
+    expect(Storage.wcBindable.properties.some((p) => p.name === "value")).toBe(true);
+    expect(Storage.wcBindable.inputs!.some((i) => i.name === "value")).toBe(true);
+  });
+
+  it("triggerはproperties（観測）とinputs（設定）の両方に現れる", () => {
+    expect(Storage.wcBindable.properties.some((p) => p.name === "trigger")).toBe(true);
+    expect(Storage.wcBindable.inputs!.some((i) => i.name === "trigger")).toBe(true);
+  });
+
   it("key属性の取得と設定ができる", () => {
     const el = document.createElement("wcs-storage") as Storage;
     expect(el.key).toBe("");
@@ -121,6 +163,18 @@ describe("Storage", () => {
     el.manual = false;
     expect(el.manual).toBe(false);
     expect(el.hasAttribute("manual")).toBe(false);
+  });
+
+  it("config.autoTriggerがfalseのときはconnectedCallbackでregisterAutoTriggerを呼ばない", () => {
+    setConfig({ autoTrigger: false });
+    try {
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("manual", "");
+      // autoTrigger=false経路でも例外なく接続できること
+      expect(() => document.body.appendChild(el)).not.toThrow();
+    } finally {
+      setConfig({ autoTrigger: true });
+    }
   });
 
   it("connectedCallbackでkey指定時に自動読み込みされる", () => {
@@ -259,6 +313,28 @@ describe("Storage", () => {
     expect(localStorage.getItem("autosave-key")).toBe('{"autosaved":true}');
   });
 
+  it("非manualで同一valueを反復代入してもwrite-throughでvalue-changedが毎回再発火する", () => {
+    // 指摘1の最終仕様を固定: 主経路（非 manual の value セッター→save()）はライトスルー。
+    // 同値代入でも保存され value-changed が毎回発火する（ステージング経路のみ同値ガードを持つ）。
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "echo-key");
+    document.body.appendChild(el);
+
+    const events: any[] = [];
+    el.addEventListener("wcs-storage:value-changed", (e: Event) => {
+      events.push((e as CustomEvent).detail);
+    });
+
+    const v = { same: true };
+    el.value = v;
+    el.value = v; // 同一参照を再代入
+
+    // 2回とも value-changed が発火する（エコー抑止なし）
+    expect(events).toHaveLength(2);
+    // どちらも保存されている
+    expect(localStorage.getItem("echo-key")).toBe('{"same":true}');
+  });
+
   it("valueの設定時にmanualなら自動保存されない", () => {
     const el = document.createElement("wcs-storage") as Storage;
     el.setAttribute("key", "no-autosave-key");
@@ -267,6 +343,51 @@ describe("Storage", () => {
 
     el.value = { data: true };
     expect(localStorage.getItem("no-autosave-key")).toBeNull();
+  });
+
+  it("manualモードでvalue代入は読み取り値を更新する（getter/setter整合）", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "manual-stage-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    el.value = { staged: true };
+    // ストレージへは書き込まれないが、読み取り値は代入値に一致する
+    expect(el.value).toEqual({ staged: true });
+    expect(localStorage.getItem("manual-stage-key")).toBeNull();
+  });
+
+  it("manualモードでステージした値をsave()でlocalStorageへコミットできる", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "manual-stage-save-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    el.value = { theme: "dark", lang: "ja" };
+    el.save();
+
+    expect(localStorage.getItem("manual-stage-save-key")).toBe('{"theme":"dark","lang":"ja"}');
+    expect(el.value).toEqual({ theme: "dark", lang: "ja" });
+  });
+
+  it("READMEセクション2: manual + value設定 + triggerでオブジェクト全体が保存される", () => {
+    // Quick Start「2. オブジェクトの永続化と $trackDependency」の動作を再現:
+    // value: settings でオブジェクトをステージし、trigger: settingsChanged で保存。
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "app-settings");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    // @wcstack/state が value バインド経由で settings オブジェクトを渡す
+    el.value = { theme: "dark", lang: "ja" };
+    // localStorage にはまだ書き込まれていない（manual + ステージングのみ）
+    expect(localStorage.getItem("app-settings")).toBeNull();
+
+    // trigger: settingsChanged が発火 → save() がステージ値をコミット
+    el.trigger = true;
+
+    expect(localStorage.getItem("app-settings")).toBe('{"theme":"dark","lang":"ja"}');
+    expect(el.trigger).toBe(false);
   });
 
   it("triggerをtrueに設定するとsave()が実行される", () => {
@@ -302,6 +423,23 @@ describe("Storage", () => {
     expect(events).toEqual([false]);
   });
 
+  it("trigger実行時にsave()が失敗してもtriggerはfalseへ復帰しイベントが発火する", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    // keyを設定しないのでsave()内のCoreがraiseErrorをスローする
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    const events: boolean[] = [];
+    el.addEventListener("wcs-storage:trigger-changed", (e: Event) => {
+      events.push((e as CustomEvent).detail);
+    });
+
+    expect(() => { el.trigger = true; }).toThrow("[@wcstack/storage] key is required.");
+    // try/finallyによりtriggerはtrueで固着せずfalseへ復帰し、完了イベントも発火する
+    expect(el.trigger).toBe(false);
+    expect(events).toEqual([false]);
+  });
+
   it("triggerにfalseを設定しても何も起きない", () => {
     const el = document.createElement("wcs-storage") as Storage;
     el.setAttribute("key", "no-trigger-key");
@@ -325,6 +463,149 @@ describe("Storage", () => {
     expect(el.error).toBeNull();
   });
 
+  it("ストレージ例外時にerrorがShellゲッター経由で読み取れる", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "shell-error-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    // manual モードで値をステージしてから save() でコミットさせる
+    el.value = { large: "data" };
+
+    const original = globalThis.localStorage;
+    Object.defineProperty(globalThis, "localStorage", {
+      value: { setItem: () => { throw new Error("QuotaExceededError"); }, removeItem: () => {}, getItem: () => null },
+      configurable: true,
+    });
+
+    try {
+      el.save();
+      // Shell の error ゲッター経由で WcsStorageError が観測できる
+      expect(el.error).toEqual({ operation: "save", message: "QuotaExceededError" });
+      expect(el.loading).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
+    }
+  });
+
+  it("loadingのtrue→false遷移がloading-changedイベントでShell境界から観測できる", () => {
+    localStorage.setItem("loading-observe-key", '{"data":true}');
+
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "loading-observe-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    const transitions: boolean[] = [];
+    el.addEventListener("wcs-storage:loading-changed", (e: Event) => {
+      transitions.push((e as CustomEvent).detail);
+    });
+
+    el.load();
+    // load() 中に true へ、完了で false へ遷移する
+    expect(transitions).toEqual([true, false]);
+    expect(el.loading).toBe(false);
+  });
+
+  it("manualモードでもconnectedCallbackでCoreのkey/typeが現在値へ同期されcross-tab監視が効く", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "manual-sync-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    // manualではload()が走らないが、startSync前にkeyが同期されているため
+    // 他タブからのstorageイベントを受信できる
+    const event = new StorageEvent("storage", {
+      key: "manual-sync-key",
+      newValue: '{"fromOtherTab":true}',
+      storageArea: localStorage,
+    });
+    globalThis.dispatchEvent(event);
+
+    expect(el.value).toEqual({ fromOtherTab: true });
+  });
+
+  it("manualモードで接続後にkey変更するとcross-tab監視が新keyを追従する", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "manual-old-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    // 接続後に key を変更（manual なので load() は走らない）
+    el.setAttribute("key", "manual-new-key");
+
+    // 旧 key の storage イベントは無視される
+    const oldEvent = new StorageEvent("storage", {
+      key: "manual-old-key",
+      newValue: '{"stale":true}',
+      storageArea: localStorage,
+    });
+    globalThis.dispatchEvent(oldEvent);
+    expect(el.value).toBeNull();
+
+    // 新 key の storage イベントは反映される
+    const newEvent = new StorageEvent("storage", {
+      key: "manual-new-key",
+      newValue: '{"fresh":true}',
+      storageArea: localStorage,
+    });
+    globalThis.dispatchEvent(newEvent);
+    expect(el.value).toEqual({ fresh: true });
+  });
+
+  it("非manualで接続後にkeyを空へ変更するとcross-tab監視も空keyへ追従する", () => {
+    localStorage.setItem("clearable-key", '{"data":true}');
+
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "clearable-key");
+    document.body.appendChild(el);
+    expect(el.value).toEqual({ data: true });
+
+    // key を空に変更（load は走らず value は前回のまま）
+    el.setAttribute("key", "");
+    expect(el.value).toEqual({ data: true });
+
+    // 旧 key の storage イベントはもう反映されない（Core key が空へ同期済み）
+    const staleEvent = new StorageEvent("storage", {
+      key: "clearable-key",
+      newValue: '{"stale":true}',
+      storageArea: localStorage,
+    });
+    globalThis.dispatchEvent(staleEvent);
+    expect(el.value).toEqual({ data: true });
+  });
+
+  it("再attach時に古いkeyでcross-tab監視が復活しない", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "first-key");
+    document.body.appendChild(el);
+
+    // detach
+    el.remove();
+
+    // keyを変更して再attach（manualではないがloadは新keyで走る）
+    el.setAttribute("key", "second-key");
+    document.body.appendChild(el);
+
+    // 古いkeyのstorageイベントは無視される
+    const oldEvent = new StorageEvent("storage", {
+      key: "first-key",
+      newValue: '{"stale":true}',
+      storageArea: localStorage,
+    });
+    globalThis.dispatchEvent(oldEvent);
+    expect(el.value).not.toEqual({ stale: true });
+
+    // 新keyのstorageイベントは反映される
+    const newEvent = new StorageEvent("storage", {
+      key: "second-key",
+      newValue: '{"fresh":true}',
+      storageArea: localStorage,
+    });
+    globalThis.dispatchEvent(newEvent);
+    expect(el.value).toEqual({ fresh: true });
+  });
+
   it("disconnectedCallbackが呼ばれる", () => {
     const el = document.createElement("wcs-storage") as Storage;
     el.setAttribute("key", "disconnect-key");
@@ -341,6 +622,29 @@ describe("Storage", () => {
 
     el.setAttribute("type", "session");
     expect(el.type).toBe("session");
+  });
+
+  it("不正なtype属性はlocalにフォールバックし例外を投げない", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "invalid-type-key");
+    document.body.appendChild(el);
+
+    expect(() => el.setAttribute("type", "foo")).not.toThrow();
+    expect(el.type).toBe("local");
+
+    // 不正typeでも保存はlocalStorageへ行われる
+    el.value = { data: true };
+    expect(localStorage.getItem("invalid-type-key")).toBe('{"data":true}');
+  });
+
+  it("接続時に不正なtype属性があってもconnectedCallbackが例外を投げない", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "invalid-type-connect-key");
+    el.setAttribute("type", "bogus");
+    el.setAttribute("manual", "");
+
+    expect(() => document.body.appendChild(el)).not.toThrow();
+    expect(el.type).toBe("local");
   });
 
   it("connectedCallbackPromiseが解決される", async () => {
