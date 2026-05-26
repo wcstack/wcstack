@@ -94,6 +94,27 @@ src/
 - `@state`: 対象ステート名 (省略時は default)
 - `|filter`: フィルタパイプライン
 
+#### Spread (`...`)
+
+wc-bindable 対応カスタム要素に対して `...: target` で properties + inputs を一括配線:
+- `bindingType: 'spread'` として一旦パース → `bindTextParser/expandSpread.ts` で `wcBindable.properties + inputs` を読み propName ごとの個別エントリに展開
+- 後勝ちで explicit binding が spread を上書き（`config.debug` 時 `console.debug` で通知）
+- カスタム要素未登録時は `IDeferredSpreadEntry` を `customElements.whenDefined()` 待ちで保持し、登録後 `processDeferredNode` で再展開（`parseResults` を closure capture することで happy-dom の upgrade 時属性消失を回避）
+- filter は禁止、`@stateName` は伝播、右辺の `*` は途中可
+- commands と event token は spread 対象外（pub/sub 境界を明示）
+
+**Composite Profile 対応** (COMPOSITE.md / SPEC-extensions § 4):
+- composite shell は `target.constructor.wcBindable` で synthesized declaration を露出するため、spread は composite-aware なコードを持たずに透過対応
+- composed name `<sourceId>.<sourceName>` (例: `"s3.progress"`) は単一セグメントとして扱い、要素側ではフラットなプロパティキー (`element["s3.progress"]`) として書き込み
+- state path 側は `targetBase.s3.progress` の nested アクセスとして解決されるため、state を `{ s3: { progress: 0 } }` のように nested 構造で持てば自然に通る
+- Tier claim symbol (`Symbol.for("wc-bindable.composite.tiers")`) は spread では参照しない — T1 (observation) / T2 (writable inputs) は通常のプロパティ代入で透過対応、T3 / commands は spread 対象外の方針通り
+- 回帰防止テスト: `__tests__/integration.spreadComposite.test.ts`
+
+**wcBindable 未宣言の要素**:
+- `expandSpread` は即エラー (`raiseError`) で失敗させる方針
+- CSBC の契約原則: spread には wcBindable contract が必須。native HTML 要素や非対応 custom element は `value: x; checked: y` のような明示配線で個別に書く
+- 将来的に native 要素フォールバックが必要になった場合は別構文 (例: `...native: el`) として opt-in 導入する余地は残す
+
 ### Reactive Proxy
 - `StateHandler` が ES Proxy の handler として get/set/has を実装
 - get トラップで依存追跡、set トラップで変更通知
@@ -109,7 +130,7 @@ src/
 - `IResolvedAddress`: ワイルドカード解決後の実パス
 
 ### Key Types
-- `BindingType`: `'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else'`
+- `BindingType`: `'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread'`
 - `IBindingInfo`: バインディングの完全な情報 (プロパティ名、パス、フィルタ、ノード等)
 - `IListIndex`: ネストされたループのインデックス管理
 - `ILoopContext`: ループコンテキスト (elementPathInfo + listIndex)

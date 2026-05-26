@@ -1,3 +1,6 @@
+import { expandSpread, hasUnresolvedSpread } from "../bindTextParser/expandSpread";
+import { ParseBindTextResult } from "../bindTextParser/types";
+import { getCustomElement } from "../getCustomElement";
 import { raiseError } from "../raiseError";
 import { resolveNodePath } from "../structural/resolveNodePath";
 import { IFragmentNodeInfo } from "../structural/types";
@@ -10,22 +13,51 @@ import { resolveInitializedBinding } from "./initializeBindingPromiseByNode";
 
 const registeredNodeSet = new WeakSet<Node>();
 
+export interface IDeferredSpreadEntry {
+  readonly node: Node;
+  readonly tagName: string;
+  readonly parseResults: ParseBindTextResult[];
+}
+
+function processParseResultsForNode(
+  node: Node,
+  parseResults: ParseBindTextResult[],
+  options: { allowDeferred: boolean },
+): { bindings: IBindingInfo[], deferred: IDeferredSpreadEntry | null } {
+  const expanded = expandSpread(node, parseResults, { allowDeferred: options.allowDeferred });
+  if (hasUnresolvedSpread(expanded)) {
+    const tagName = node.nodeType === Node.ELEMENT_NODE
+      ? getCustomElement(node as Element)
+      : null;
+    if (tagName === null) {
+      raiseError(`Spread binding deferred but element is not a custom element.`);
+    }
+    return { bindings: [], deferred: { node, tagName, parseResults } };
+  }
+  registeredNodeSet.add(node);
+  const bindings = getBindingInfos(node, expanded);
+  setBindingsByNode(node, bindings);
+  resolveInitializedBinding(node);
+  return { bindings, deferred: null };
+}
+
 export function collectNodesAndBindingInfos(
   root: Document | Element | DocumentFragment
-): [ Node[], IBindingInfo[] ] {
+): [ Node[], IBindingInfo[], IDeferredSpreadEntry[] ] {
   const subscriberNodes = getSubscriberNodes(root);
   const allBindings: IBindingInfo[] = [];
+  const deferredSpreads: IDeferredSpreadEntry[] = [];
   for(const node of subscriberNodes) {
-    if (!registeredNodeSet.has(node)) {
-      registeredNodeSet.add(node);
-      const parseBindingTextResults = getParseBindTextResults(node);
-      const bindings = getBindingInfos(node, parseBindingTextResults);
-      setBindingsByNode(node, bindings);
-      resolveInitializedBinding(node);
-      allBindings.push(...bindings);
+    if (registeredNodeSet.has(node)) continue;
+    const parseResults = getParseBindTextResults(node);
+    const result = processParseResultsForNode(node, parseResults, { allowDeferred: true });
+    if (result.deferred !== null) {
+      deferredSpreads.push(result.deferred);
+      continue;
     }
+    allBindings.push(...result.bindings);
   }
-  return [subscriberNodes, allBindings];
+  return [subscriberNodes, allBindings, deferredSpreads];
 }
 
 export function collectNodesAndBindingInfosByFragment(
@@ -39,18 +71,27 @@ export function collectNodesAndBindingInfosByFragment(
     if (node === null) {
       raiseError(`Node not found by path [${nodeInfo.nodePath.join(', ')}] in fragment.`);
     }
-    if (!registeredNodeSet.has(node)) {
-      registeredNodeSet.add(node);
-      const bindings = getBindingInfos(node, nodeInfo.parseBindTextResults);
-      setBindingsByNode(node, bindings);
-      resolveInitializedBinding(node);
-      allBindings.push(...bindings);
-      nodes.push(node);
-    }
+    if (registeredNodeSet.has(node)) continue;
+    const result = processParseResultsForNode(node, nodeInfo.parseBindTextResults, { allowDeferred: false });
+    // deferred is impossible when allowDeferred=false (expandSpread raises instead)
+    allBindings.push(...result.bindings);
+    nodes.push(node);
   }
   return [nodes, allBindings];
 }
 
 export function unregisterNode(node: Node): void {
   registeredNodeSet.delete(node);
+}
+
+/**
+ * Re-process a deferred spread entry once the custom element class is
+ * registered. Expands the captured parseResults, installs bindings, and
+ * returns them so the caller can attach handlers and apply state values.
+ */
+export function processDeferredNode(entry: IDeferredSpreadEntry): IBindingInfo[] {
+  const { node, parseResults } = entry;
+  unregisterNode(node);
+  const result = processParseResultsForNode(node, parseResults, { allowDeferred: false });
+  return result.bindings;
 }

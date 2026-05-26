@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Spread Binding</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module">
+      // Mock wc-bindable element. In real apps this would be <wcs-fetch> etc.
+      class FakeFetch extends HTMLElement {
+        static wcBindable = {
+          protocol: "wc-bindable",
+          version: 1,
+          properties: [
+            { name: "value", event: "fake-fetch:value-changed" },
+            { name: "loading", event: "fake-fetch:loading-changed" },
+            { name: "error", event: "fake-fetch:error-changed" },
+            { name: "status", event: "fake-fetch:status-changed" },
+          ],
+          inputs: [
+            { name: "url" },
+            { name: "method" },
+          ],
+        };
+        connectedCallback() {
+          this.render();
+        }
+        attributeChangedCallback() {
+          this.render();
+        }
+        render() {
+          this.textContent = `[${this.method ?? '?'} ${this.url ?? '?'}] value=${JSON.stringify(this.value)} loading=${this.loading} status=${this.status}`;
+        }
+      }
+      Object.defineProperty(FakeFetch.prototype, 'value', {
+        set(v) { this._value = v; this.render?.(); },
+        get() { return this._value; },
+      });
+      Object.defineProperty(FakeFetch.prototype, 'loading', {
+        set(v) { this._loading = v; this.render?.(); },
+        get() { return this._loading; },
+      });
+      Object.defineProperty(FakeFetch.prototype, 'error', {
+        set(v) { this._error = v; this.render?.(); },
+        get() { return this._error; },
+      });
+      Object.defineProperty(FakeFetch.prototype, 'status', {
+        set(v) { this._status = v; this.render?.(); },
+        get() { return this._status; },
+      });
+      Object.defineProperty(FakeFetch.prototype, 'url', {
+        set(v) { this._url = v; this.render?.(); },
+        get() { return this._url; },
+      });
+      Object.defineProperty(FakeFetch.prototype, 'method', {
+        set(v) { this._method = v; this.render?.(); },
+        get() { return this._method; },
+      });
+      customElements.define('fake-fetch', FakeFetch);
+    </script>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  // 1 state slot = 1 interaction surface (CSBC style)
+  usersFetch: {
+    url: "/api/users",
+    method: "GET",
+    value: { items: [{ id: 1, name: "Alice" }] },
+    loading: false,
+    error: null,
+    status: 200,
+  },
+  // List of fetches for loop spread demo
+  storesFetches: [
+    { url: "/api/store/a", method: "GET", value: "store A data", loading: false, error: null, status: 200 },
+    { url: "/api/store/b", method: "GET", value: "store B data", loading: true, error: null, status: null },
+    { url: "/api/store/c", method: "POST", value: null, loading: false, error: "timeout", status: 504 },
+  ],
+  overriddenStatus: 418,
+}
+      </script>
+    </wcs-state>
+
+    <div class="example-container">
+      <p class="example-title">@wcstack/state — spread binding (...)</p>
+
+      <h3>Single spread</h3>
+      <p>One <code>...: usersFetch</code> wires all of properties + inputs.</p>
+      <fake-fetch data-wcs="...: usersFetch"></fake-fetch>
+
+      <h3>Spread inside a for-loop</h3>
+      <p>Each iteration spreads the current item with <code>...: storesFetches.*</code>.</p>
+      <ul>
+        <template data-wcs="for: storesFetches">
+          <li><fake-fetch data-wcs="...: storesFetches.*"></fake-fetch></li>
+        </template>
+      </ul>
+
+      <h3>Spread + explicit override (last-wins)</h3>
+      <p><code>...: usersFetch; status: overriddenStatus</code> — explicit binding wins.</p>
+      <fake-fetch data-wcs="...: usersFetch; status: overriddenStatus"></fake-fetch>
+    </div>
+  </body>
+</html>

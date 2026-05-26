@@ -380,6 +380,55 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 
 内部的にはコメントベースのバインディング（`<!--@@:expression-->`）に変換されます。
 
+### Spread バインディング (`...`)
+
+`wc-bindable` プロトコルを宣言したカスタム要素に対して、`...: target` を使うと要素の **properties + inputs を 1 行で一括配線**できます：
+
+```html
+<wcs-fetch data-wcs="...: usersFetch"></wcs-fetch>
+```
+
+```js
+export default {
+  usersFetch: {
+    url: "/api/users",
+    method: "GET",
+    value: null,
+    loading: false,
+    error: null,
+    status: null,
+  }
+}
+```
+
+ランタイムが `customClass.wcBindable.properties + inputs` を読み取り、各 name を個別バインディング（`usersFetch.value`、`usersFetch.url`、...）に展開します。
+
+**対象範囲**：spread は *データサーフェス*（properties + inputs）のみを対象とします。`commands` や event token は **対象外** — pub/sub の発火点が HTML から読めるように、明示配線を維持してください。
+
+**for ループ内**：`...: items.*`（推奨）または dot ショートカット `...: .` を使います：
+
+```html
+<template data-wcs="for: storesFetches">
+  <wcs-fetch data-wcs="...: storesFetches.*"></wcs-fetch>
+</template>
+```
+
+**後勝ち上書き** — spread の後ろに同名 prop を書くと、明示側が優先されます：
+
+```html
+<wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
+```
+
+**制約事項**：
+
+- spread 右辺へのフィルタ（`...: target|filter`）はエラー
+- 右辺パスの途中に `*` を含めても OK（例：`...: stores.*.fetch`）
+- `@stateName` 修飾子は各展開エントリへ伝播（`...: fetchX@store`）
+- カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）
+- `wcBindable` 宣言**のない**要素はエラー（明示配線で書いてください）。spread は何を展開すべきかを契約から読み取るため
+
+**Composite shell**（wc-bindable Composition Profile）はそのままサポートされます：composite shell は標準の `target.constructor.wcBindable` を通じて synthesized declaration を露出するため、`"s3.progress"` のような composed name はフラットな要素メンバーキーとして扱われます。state を composed 構造に合わせて (`{ s3: { progress: 0 } }`) 持てば、`...: pipeline` が自動的に nested state path へ展開されます。
+
 ## 構造ディレクティブ
 
 構造ディレクティブは `<template>` 要素で使用します：

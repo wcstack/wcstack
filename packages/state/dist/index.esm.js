@@ -110,58 +110,6 @@ function replaceToReplaceNode(bindingInfo) {
     node.parentNode.replaceChild(replaceNode, node);
 }
 
-function resolveNodePath(root, path) {
-    let currentNode = root;
-    if (path.length === 0)
-        return currentNode;
-    // path.reduce()だと途中でnullになる可能性があるので、
-    for (let i = 0; i < path.length; i++) {
-        currentNode = currentNode?.childNodes[path[i]] ?? null;
-        if (currentNode === null)
-            break;
-    }
-    return currentNode;
-}
-
-function getBindingInfos(node, parseBindingTextResults) {
-    const bindingInfos = [];
-    for (const parseBindingTextResult of parseBindingTextResults) {
-        if (parseBindingTextResult.bindingType !== 'text') {
-            bindingInfos.push({
-                ...parseBindingTextResult,
-                node: node,
-                replaceNode: node,
-            });
-        }
-        else {
-            const replaceNode = document.createTextNode('');
-            bindingInfos.push({
-                ...parseBindingTextResult,
-                node: node,
-                replaceNode: replaceNode,
-            });
-        }
-    }
-    return bindingInfos;
-}
-
-const bindingsByNode = new WeakMap();
-function getBindingsByNode(node) {
-    return bindingsByNode.get(node) || null;
-}
-function setBindingsByNode(node, bindings) {
-    bindingsByNode.set(node, bindings);
-}
-function addBindingByNode(node, binding) {
-    const bindings = getBindingsByNode(node);
-    if (bindings === null) {
-        setBindingsByNode(node, [binding]);
-    }
-    else {
-        bindings.push(binding);
-    }
-}
-
 const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
@@ -291,6 +239,217 @@ class PathInfo {
         this.parentPath = parentPath;
         this.parentPathInfo = parentPath ? getPattern(parentPath) : null;
         this.wildcardCount = wildcardCount;
+    }
+}
+
+const cache = new WeakMap();
+function getCustomElement(node) {
+    const cached = cache.get(node);
+    if (cached !== undefined) {
+        return cached;
+    }
+    let value = null;
+    try {
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return value;
+        }
+        const element = node;
+        const tagName = element.tagName.toLowerCase();
+        if (tagName.includes("-")) {
+            return value = tagName;
+        }
+        if (element.hasAttribute("is")) {
+            const is = element.getAttribute("is");
+            if (is.includes("-")) {
+                return value = is;
+            }
+        }
+        return value;
+    }
+    finally {
+        cache.set(node, value);
+    }
+}
+
+function isValidWcBindable(value) {
+    if (typeof value !== "object" || value === null)
+        return false;
+    const v = value;
+    return v.protocol === "wc-bindable"
+        && v.version === 1
+        && Array.isArray(v.properties);
+}
+function makeExpandedEntry(name, base, stateName) {
+    const expandedPath = `${base}.${name}`;
+    return {
+        propName: name,
+        propSegments: [name],
+        propModifiers: [],
+        statePathName: expandedPath,
+        statePathInfo: getPathInfo(expandedPath),
+        stateName,
+        inFilters: [],
+        outFilters: [],
+        bindingType: 'prop',
+    };
+}
+function dedupKey(r) {
+    switch (r.bindingType) {
+        case 'prop':
+        case 'event':
+        case 'radio':
+        case 'checkbox':
+            return `${r.bindingType}::${r.propName}`;
+        default:
+            return null;
+    }
+}
+/**
+ * Expand spread bind-text entries (`...: target`) into per-prop entries
+ * by enumerating wcBindable.properties + inputs of the element's class.
+ *
+ * Behavior:
+ * - With `allowDeferred: true` (default): if class is not yet defined, the
+ *   spread entry stays so the caller can wait via customElements.whenDefined.
+ * - With `allowDeferred: false`: raises if class is not defined.
+ * - Duplicate propName: last-wins (explicit binding overrides spread).
+ * - When config.debug, console.debug logs each override.
+ * - Mid-`*` in target path is allowed (e.g. `...: stores.*.fetch`).
+ */
+function expandSpread(node, results, options = {}) {
+    const allowDeferred = options.allowDeferred ?? true;
+    if (!results.some(r => r.bindingType === 'spread')) {
+        return results;
+    }
+    const expanded = [];
+    const spreadOrigin = new WeakSet();
+    for (const result of results) {
+        if (result.bindingType !== 'spread') {
+            expanded.push(result);
+            continue;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            raiseError(`Spread binding requires an element node.`);
+        }
+        const element = node;
+        const tagName = getCustomElement(element);
+        if (tagName === null) {
+            raiseError(`Spread binding "${result.statePathName}" requires a custom element with wcBindable, but <${element.tagName.toLowerCase()}> is not a custom element.`);
+        }
+        const customClass = customElements.get(tagName);
+        if (typeof customClass === "undefined") {
+            if (!allowDeferred) {
+                raiseError(`Spread binding "${result.statePathName}" requires <${tagName}> to be registered. Define the custom element before initializing this binding.`);
+            }
+            // Deferred: keep spread entry intact; caller retries via whenDefined.
+            expanded.push(result);
+            continue;
+        }
+        const bindable = customClass.wcBindable;
+        if (!isValidWcBindable(bindable)) {
+            raiseError(`Spread binding "${result.statePathName}" requires <${tagName}> to declare wcBindable (protocol="wc-bindable", version=1).`);
+        }
+        const targetBase = result.statePathName;
+        const stateName = result.stateName;
+        const seen = new Set();
+        for (const prop of bindable.properties) {
+            if (seen.has(prop.name))
+                continue;
+            seen.add(prop.name);
+            const entry = makeExpandedEntry(prop.name, targetBase, stateName);
+            spreadOrigin.add(entry);
+            expanded.push(entry);
+        }
+        for (const input of (bindable.inputs ?? [])) {
+            if (seen.has(input.name))
+                continue;
+            seen.add(input.name);
+            const entry = makeExpandedEntry(input.name, targetBase, stateName);
+            spreadOrigin.add(entry);
+            expanded.push(entry);
+        }
+    }
+    // Last-wins de-duplication
+    const lastIndexByKey = new Map();
+    for (let i = 0; i < expanded.length; i++) {
+        const key = dedupKey(expanded[i]);
+        if (key !== null) {
+            lastIndexByKey.set(key, i);
+        }
+    }
+    const final = [];
+    for (let i = 0; i < expanded.length; i++) {
+        const key = dedupKey(expanded[i]);
+        if (key === null) {
+            final.push(expanded[i]);
+            continue;
+        }
+        if (lastIndexByKey.get(key) === i) {
+            final.push(expanded[i]);
+        }
+        else if (config.debug && spreadOrigin.has(expanded[i])) {
+            const overrider = expanded[lastIndexByKey.get(key)];
+            const tagText = node.nodeType === Node.ELEMENT_NODE
+                ? `<${node.tagName.toLowerCase()}>`
+                : 'node';
+            console.debug(`[@wcstack/state] spread: prop "${expanded[i].propName}" of ${tagText} overridden by explicit binding (statePath: "${overrider.statePathName}").`);
+        }
+    }
+    return final;
+}
+function hasUnresolvedSpread(results) {
+    return results.some(r => r.bindingType === 'spread');
+}
+
+function resolveNodePath(root, path) {
+    let currentNode = root;
+    if (path.length === 0)
+        return currentNode;
+    // path.reduce()だと途中でnullになる可能性があるので、
+    for (let i = 0; i < path.length; i++) {
+        currentNode = currentNode?.childNodes[path[i]] ?? null;
+        if (currentNode === null)
+            break;
+    }
+    return currentNode;
+}
+
+function getBindingInfos(node, parseBindingTextResults) {
+    const bindingInfos = [];
+    for (const parseBindingTextResult of parseBindingTextResults) {
+        if (parseBindingTextResult.bindingType !== 'text') {
+            bindingInfos.push({
+                ...parseBindingTextResult,
+                node: node,
+                replaceNode: node,
+            });
+        }
+        else {
+            const replaceNode = document.createTextNode('');
+            bindingInfos.push({
+                ...parseBindingTextResult,
+                node: node,
+                replaceNode: replaceNode,
+            });
+        }
+    }
+    return bindingInfos;
+}
+
+const bindingsByNode = new WeakMap();
+function getBindingsByNode(node) {
+    return bindingsByNode.get(node) || null;
+}
+function setBindingsByNode(node, bindings) {
+    bindingsByNode.set(node, bindings);
+}
+function addBindingByNode(node, binding) {
+    const bindings = getBindingsByNode(node);
+    if (bindings === null) {
+        setBindingsByNode(node, [binding]);
+    }
+    else {
+        bindings.push(binding);
     }
 }
 
@@ -1247,6 +1406,7 @@ function parseStatePart(statePart) {
 //   elseif: statePart only (single binding for conditional rendering)
 //   for: statePart only (single binding for loop rendering)
 //   onclick: statePart, onchange: statePart etc. (event listeners)
+//   ...: statePart (spread — expand wcBindable properties+inputs of target object)
 function parseBindTextsForElement(bindText) {
     const [...bindTexts] = bindText.split(';').map(trimFn).filter(s => s.length > 0);
     const results = bindTexts.map((bindText) => {
@@ -1268,6 +1428,23 @@ function parseBindTextsForElement(bindText) {
                 inFilters: [],
                 outFilters: [],
                 bindingType: 'else',
+            };
+        }
+        else if (propPart === '...') {
+            const stateResult = parseStatePart(statePart);
+            if (stateResult.outFilters.length > 0) {
+                raiseError(`Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
+            }
+            if (stateResult.statePathName.length === 0) {
+                raiseError(`Invalid spread binding "${bindText}": spread target path is required.`);
+            }
+            return {
+                propName: '...',
+                propSegments: ['...'],
+                propModifiers: [],
+                inFilters: [],
+                ...stateResult,
+                bindingType: 'spread',
             };
         }
         else if (propPart === 'if'
@@ -1430,20 +1607,39 @@ function getSubscriberNodes(root) {
 }
 
 const registeredNodeSet = new WeakSet();
+function processParseResultsForNode(node, parseResults, options) {
+    const expanded = expandSpread(node, parseResults, { allowDeferred: options.allowDeferred });
+    if (hasUnresolvedSpread(expanded)) {
+        const tagName = node.nodeType === Node.ELEMENT_NODE
+            ? getCustomElement(node)
+            : null;
+        if (tagName === null) {
+            raiseError(`Spread binding deferred but element is not a custom element.`);
+        }
+        return { bindings: [], deferred: { node, tagName, parseResults } };
+    }
+    registeredNodeSet.add(node);
+    const bindings = getBindingInfos(node, expanded);
+    setBindingsByNode(node, bindings);
+    resolveInitializedBinding(node);
+    return { bindings, deferred: null };
+}
 function collectNodesAndBindingInfos(root) {
     const subscriberNodes = getSubscriberNodes(root);
     const allBindings = [];
+    const deferredSpreads = [];
     for (const node of subscriberNodes) {
-        if (!registeredNodeSet.has(node)) {
-            registeredNodeSet.add(node);
-            const parseBindingTextResults = getParseBindTextResults(node);
-            const bindings = getBindingInfos(node, parseBindingTextResults);
-            setBindingsByNode(node, bindings);
-            resolveInitializedBinding(node);
-            allBindings.push(...bindings);
+        if (registeredNodeSet.has(node))
+            continue;
+        const parseResults = getParseBindTextResults(node);
+        const result = processParseResultsForNode(node, parseResults, { allowDeferred: true });
+        if (result.deferred !== null) {
+            deferredSpreads.push(result.deferred);
+            continue;
         }
+        allBindings.push(...result.bindings);
     }
-    return [subscriberNodes, allBindings];
+    return [subscriberNodes, allBindings, deferredSpreads];
 }
 function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
     const nodes = [];
@@ -1453,16 +1649,28 @@ function collectNodesAndBindingInfosByFragment(root, nodeInfos) {
         if (node === null) {
             raiseError(`Node not found by path [${nodeInfo.nodePath.join(', ')}] in fragment.`);
         }
-        if (!registeredNodeSet.has(node)) {
-            registeredNodeSet.add(node);
-            const bindings = getBindingInfos(node, nodeInfo.parseBindTextResults);
-            setBindingsByNode(node, bindings);
-            resolveInitializedBinding(node);
-            allBindings.push(...bindings);
-            nodes.push(node);
-        }
+        if (registeredNodeSet.has(node))
+            continue;
+        const result = processParseResultsForNode(node, nodeInfo.parseBindTextResults, { allowDeferred: false });
+        // deferred is impossible when allowDeferred=false (expandSpread raises instead)
+        allBindings.push(...result.bindings);
+        nodes.push(node);
     }
     return [nodes, allBindings];
+}
+function unregisterNode(node) {
+    registeredNodeSet.delete(node);
+}
+/**
+ * Re-process a deferred spread entry once the custom element class is
+ * registered. Expands the captured parseResults, installs bindings, and
+ * returns them so the caller can attach handlers and apply state values.
+ */
+function processDeferredNode(entry) {
+    const { node, parseResults } = entry;
+    unregisterNode(node);
+    const result = processParseResultsForNode(node, parseResults, { allowDeferred: false });
+    return result.bindings;
 }
 
 const loopContextByNode = new WeakMap();
@@ -1542,35 +1750,6 @@ function attachEventHandler(binding) {
         bindingSet.add(binding);
     }
     return true;
-}
-
-const cache = new WeakMap();
-function getCustomElement(node) {
-    const cached = cache.get(node);
-    if (cached !== undefined) {
-        return cached;
-    }
-    let value = null;
-    try {
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-            return value;
-        }
-        const element = node;
-        const tagName = element.tagName.toLowerCase();
-        if (tagName.includes("-")) {
-            return value = tagName;
-        }
-        if (element.hasAttribute("is")) {
-            const is = element.getAttribute("is");
-            if (is.includes("-")) {
-                return value = is;
-            }
-        }
-        return value;
-    }
-    finally {
-        cache.set(node, value);
-    }
 }
 
 const CHECK_TYPES = new Set(['radio', 'checkbox']);
@@ -3665,13 +3844,7 @@ function _initializeBindings(allBindings) {
         attachCheckboxEventHandler(binding);
     }
 }
-function initializeBindings(root, parentLoopContext) {
-    const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
-    for (const node of subscriberNodes) {
-        setLoopContextByNode(node, parentLoopContext);
-    }
-    _initializeBindings(allBindings);
-    // create absolute state address and register binding infos
+function _registerAbsoluteAddresses(allBindings) {
     for (const binding of allBindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
         addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
@@ -3684,8 +3857,32 @@ function initializeBindings(root, parentLoopContext) {
             stateElement.setPathInfo(binding.statePathName, binding.bindingType);
         }
     }
+}
+function _scheduleDeferredSpreads(deferredSpreads, parentLoopContext) {
+    for (const entry of deferredSpreads) {
+        customElements.whenDefined(entry.tagName).then(() => {
+            if (!entry.node.isConnected)
+                return; // node was removed before class became ready
+            const bindings = processDeferredNode(entry);
+            if (bindings.length === 0)
+                return;
+            setLoopContextByNode(entry.node, parentLoopContext);
+            _initializeBindings(bindings);
+            _registerAbsoluteAddresses(bindings);
+            applyChangeFromBindings(bindings);
+        });
+    }
+}
+function initializeBindings(root, parentLoopContext) {
+    const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root);
+    for (const node of subscriberNodes) {
+        setLoopContextByNode(node, parentLoopContext);
+    }
+    _initializeBindings(allBindings);
+    _registerAbsoluteAddresses(allBindings);
     // apply all at once
     applyChangeFromBindings(allBindings);
+    _scheduleDeferredSpreads(deferredSpreads, parentLoopContext);
 }
 function initializeBindingsByFragment(root, nodeInfos) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
