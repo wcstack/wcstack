@@ -381,6 +381,55 @@ When `enableMustache` is `true` (default), `{{ expression }}` in text nodes is s
 
 Internally converted to comment-based bindings (`<!--@@:expression-->`).
 
+### Spread Binding (`...`)
+
+For custom elements that declare the [`wc-bindable` protocol](#wcbindable-protocol), `...: target` wires all of the element's **properties + inputs** to a single state object in one line:
+
+```html
+<wcs-fetch data-wcs="...: usersFetch"></wcs-fetch>
+```
+
+```js
+export default {
+  usersFetch: {
+    url: "/api/users",
+    method: "GET",
+    value: null,
+    loading: false,
+    error: null,
+    status: null,
+  }
+}
+```
+
+Runtime reads `customClass.wcBindable.properties + inputs` and expands each name into an individual binding (`usersFetch.value`, `usersFetch.url`, ...).
+
+**Scope**: spread covers the *data surfaces* (properties + inputs). `commands` and event tokens are intentionally **not** included — wire them explicitly so the pub/sub points remain visible in HTML.
+
+**Inside a for loop**: use `...: items.*` (recommended) or the dot shortcut `...: .`:
+
+```html
+<template data-wcs="for: storesFetches">
+  <wcs-fetch data-wcs="...: storesFetches.*"></wcs-fetch>
+</template>
+```
+
+**Last-wins override** — explicit binding after `...` overrides the spread:
+
+```html
+<wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
+```
+
+**Constraints**:
+
+- Filters on the spread target (`...: target|filter`) are rejected.
+- The right-hand path may contain `*` anywhere (e.g. `...: stores.*.fetch`).
+- `@stateName` propagates to every expanded entry (`...: fetchX@store`).
+- If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported.
+- Elements **without** a `wcBindable` declaration are rejected (write bindings explicitly). Spread requires the contract to know what to expand.
+
+**Composite shells** (wc-bindable Composition Profile) are supported transparently: a composite shell exposes its synthesized declaration through the standard `target.constructor.wcBindable` surface, and composed names like `"s3.progress"` are kept as flat element member keys. Mirror the composed structure in state (`{ s3: { progress: 0 } }`) and `...: pipeline` expands into nested state paths automatically.
+
 ## Structural Directives
 
 Structural directives use `<template>` elements:

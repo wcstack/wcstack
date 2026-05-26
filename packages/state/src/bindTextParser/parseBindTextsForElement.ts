@@ -13,6 +13,7 @@ import { trimFn } from "./utils.js";
 //   elseif: statePart only (single binding for conditional rendering)
 //   for: statePart only (single binding for loop rendering)
 //   onclick: statePart, onchange: statePart etc. (event listeners)
+//   ...: statePart (spread — expand wcBindable properties+inputs of target object)
 
 export function parseBindTextsForElement(bindText: string): ParseBindTextResult[] {
   const [ ...bindTexts ] = bindText.split(';').map(trimFn).filter(s => s.length > 0);
@@ -36,8 +37,24 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
         outFilters: [],
         bindingType: 'else',
       };
-    } else if (propPart === 'if' 
-      || propPart === 'elseif' 
+    } else if (propPart === '...') {
+      const stateResult = parseStatePart(statePart);
+      if (stateResult.outFilters.length > 0) {
+        raiseError(`Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
+      }
+      if (stateResult.statePathName.length === 0) {
+        raiseError(`Invalid spread binding "${bindText}": spread target path is required.`);
+      }
+      return {
+        propName: '...',
+        propSegments: ['...'],
+        propModifiers: [],
+        inFilters: [],
+        ...stateResult,
+        bindingType: 'spread',
+      };
+    } else if (propPart === 'if'
+      || propPart === 'elseif'
       || propPart === 'for'
       || propPart === 'radio'
       || propPart === 'checkbox'

@@ -3,7 +3,12 @@ import { IBindingInfo } from "../types";
 import { getStateElementByName } from "../stateElementByName";
 import { raiseError } from "../raiseError";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
-import { collectNodesAndBindingInfos, collectNodesAndBindingInfosByFragment } from "./collectNodesAndBindingInfos";
+import {
+  collectNodesAndBindingInfos,
+  collectNodesAndBindingInfosByFragment,
+  IDeferredSpreadEntry,
+  processDeferredNode,
+} from "./collectNodesAndBindingInfos";
 import { IFragmentNodeInfo } from "../structural/types";
 import { attachEventHandler } from "../event/handler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
@@ -38,15 +43,7 @@ function _initializeBindings(
   }
 }
 
-export function initializeBindings(
-  root: Document | DocumentFragment |Element, parentLoopContext: ILoopContext | null
-): void {
-  const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(root);
-  for(const node of subscriberNodes) {
-    setLoopContextByNode(node, parentLoopContext);
-  }
-  _initializeBindings(allBindings);
-  // create absolute state address and register binding infos
+function _registerAbsoluteAddresses(allBindings: IBindingInfo[]): void {
   for(const binding of allBindings) {
     const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
     addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
@@ -59,13 +56,44 @@ export function initializeBindings(
       stateElement.setPathInfo(binding.statePathName, binding.bindingType);
     }
   }
+}
+
+function _scheduleDeferredSpreads(
+  deferredSpreads: IDeferredSpreadEntry[],
+  parentLoopContext: ILoopContext | null,
+): void {
+  for (const entry of deferredSpreads) {
+    customElements.whenDefined(entry.tagName).then(() => {
+      if (!entry.node.isConnected) return; // node was removed before class became ready
+      const bindings = processDeferredNode(entry);
+      if (bindings.length === 0) return;
+      setLoopContextByNode(entry.node, parentLoopContext);
+      _initializeBindings(bindings);
+      _registerAbsoluteAddresses(bindings);
+      applyChangeFromBindings(bindings);
+    }).catch((error: unknown) => {
+      console.error(`[@wcstack/state] deferred spread failed for <${entry.tagName}>.`, error);
+    });
+  }
+}
+
+export function initializeBindings(
+  root: Document | DocumentFragment |Element, parentLoopContext: ILoopContext | null
+): void {
+  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root);
+  for(const node of subscriberNodes) {
+    setLoopContextByNode(node, parentLoopContext);
+  }
+  _initializeBindings(allBindings);
+  _registerAbsoluteAddresses(allBindings);
   // apply all at once
   applyChangeFromBindings(allBindings);
+  _scheduleDeferredSpreads(deferredSpreads, parentLoopContext);
 }
 
 export function initializeBindingsByFragment(
   root: DocumentFragment,
-  nodeInfos: IFragmentNodeInfo[], 
+  nodeInfos: IFragmentNodeInfo[],
 ): IInitialBindingInfo {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
   _initializeBindings(allBindings);
