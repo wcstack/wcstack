@@ -30,12 +30,6 @@ jobs:
             websocket:
               - 'packages/websocket/**'
               - 'tsconfig.json'
-            ai:
-              - 'packages/ai/**'
-              - 'tsconfig.json'
-            auth0:
-              - 'packages/auth0/**'
-              - 'tsconfig.json'
             upload:
               - 'packages/upload/**'
               - 'tsconfig.json'
@@ -52,14 +46,12 @@ jobs:
           ROUTER: ${{ steps.filter.outputs.router }}
           FETCH: ${{ steps.filter.outputs.fetch }}
           WEBSOCKET: ${{ steps.filter.outputs.websocket }}
-          AI: ${{ steps.filter.outputs.ai }}
-          AUTH0: ${{ steps.filter.outputs.auth0 }}
           UPLOAD: ${{ steps.filter.outputs.upload }}
           SERVER: ${{ steps.filter.outputs.server }}
           STORAGE: ${{ steps.filter.outputs.storage }}
         run: |
           packages=()
-          for pkg in state autoloader router fetch websocket ai auth0 upload server storage; do
+          for pkg in state autoloader router fetch websocket upload server storage; do
             key=$(echo "$pkg" | tr '[:lower:]' '[:upper:]')
             if [ "${!key}" == "true" ]; then
               packages+=("$pkg")
