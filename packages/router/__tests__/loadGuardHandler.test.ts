@@ -34,7 +34,9 @@ describe('wcs-guard-handler', () => {
 
     const route = router.routeChildNodes[0] as Route;
     // guardHandlerのPromise解決を待つ
-    await new Promise(r => setTimeout(r, 100));
+    await vi.waitFor(() => {
+      expect(() => route.guardHandler).not.toThrow();
+    });
 
     expect(route.guardHandler).toBeDefined();
     expect(typeof route.guardHandler).toBe('function');
@@ -61,7 +63,9 @@ describe('wcs-guard-handler', () => {
     await parse(router);
 
     const route = router.routeChildNodes[0] as Route;
-    await new Promise(r => setTimeout(r, 100));
+    await vi.waitFor(() => {
+      expect(() => route.guardHandler).not.toThrow();
+    });
 
     const result = await route.guardHandler('/dashboard', '/');
     expect(result).toBe(true);

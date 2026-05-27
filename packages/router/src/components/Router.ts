@@ -20,6 +20,12 @@ export class Router extends HTMLElement implements IRouter {
       { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
       { name: "path", event: "wcs-router:path-changed" },
     ],
+    inputs: [
+      { name: "basename", attribute: "basename" },
+    ],
+    commands: [
+      { name: "navigate", async: true },
+    ],
   };
 
   private _outlet: IOutlet | null = null;

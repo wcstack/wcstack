@@ -534,6 +534,18 @@ describe('Router', () => {
       expect(Router.wcBindable.properties[1].name).toBe('path');
       expect(Router.wcBindable.properties[1].event).toBe('wcs-router:path-changed');
     });
+
+    it('inputsにbasenameが宣言されていること', () => {
+      expect(Router.wcBindable.inputs).toHaveLength(1);
+      expect(Router.wcBindable.inputs![0].name).toBe('basename');
+      expect(Router.wcBindable.inputs![0].attribute).toBe('basename');
+    });
+
+    it('commandsにnavigateが宣言されていること', () => {
+      expect(Router.wcBindable.commands).toHaveLength(1);
+      expect(Router.wcBindable.commands![0].name).toBe('navigate');
+      expect(Router.wcBindable.commands![0].async).toBe(true);
+    });
   });
 
   describe('navigateUrl', () => {
