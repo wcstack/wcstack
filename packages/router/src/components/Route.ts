@@ -17,6 +17,7 @@ export class Route extends HTMLElement implements IRoute {
   private _childNodeArray: Node[] | undefined;
   private _childIndex: number = 0;
   private _initialized: boolean = false;
+  private _routes: IRoute[] | undefined;
 
   constructor() {
     super();
@@ -56,11 +57,14 @@ export class Route extends HTMLElement implements IRoute {
   }
 
   get routes(): IRoute[] {
-    if (this.routeParentNode) {
-      return this.routeParentNode.routes.concat(this);
-    } else {
-      return [this];
+    // matchRoutes / testPath のホットパスで再帰的に呼ばれるため遅延キャッシュする。
+    // initialize 後は routeParentNode が固定されるためキャッシュしても安全。
+    if (typeof this._routes === 'undefined') {
+      this._routes = this.routeParentNode
+        ? this.routeParentNode.routes.concat(this)
+        : [this];
     }
+    return this._routes;
   }
 
   get childIndex(): number {
@@ -153,6 +157,18 @@ export class Route extends HTMLElement implements IRoute {
     return this._core.guardCheck(matchResult);
   }
 
+  notifyGuardHandlerLoadFailed(): void {
+    this._core.notifyGuardHandlerLoadFailed();
+  }
+
+  /**
+   * Shell（Route）の routeParentNode を辿って祖先関係を判定する。
+   *
+   * 責務の分担:
+   * - Route（このクラス）は DOM ツリー上の親子関係（routeParentNode）を管理する。
+   * - RouteCore はパスやパラメータといった論理的な親子関係（parentCore）を管理する。
+   * DOM ツリーは Shell 層、論理ツリーは Core 層という分離のため、両者を独立に保持する。
+   */
   testAncestorNode(ancestorNode: IRoute): boolean {
     let currentNode: IRoute | null = this._routeParentNode;
     while (currentNode) {

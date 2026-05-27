@@ -24,7 +24,6 @@ describe('registerComponents', () => {
 
     // Clear the document
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
   });
 
   afterEach(() => {

@@ -1,13 +1,21 @@
 import { IRoute, IRouteMatchResult, IRouter } from "./components/types";
 import { hideRoute } from "./hideRoute";
 import { showRoute } from "./showRoute";
-import { IGuardCancel } from "./types";
+import { GuardCancel } from "./GuardCancel";
 
+/**
+ * ルートコンテンツを表示する。
+ *
+ * @returns ガードチェックを通過してコンテンツ表示が成立した場合 true、
+ *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合 false。
+ *          呼び出し側（applyRoute）は false の場合、router.path / outlet.lastRoutes を
+ *          更新しないことで「拒否されたパスでの path-changed 発火」を防ぐ。
+ */
 export async function showRouteContent(
   routerNode: IRouter,
   matchResult: IRouteMatchResult,
-  lastRoutes: IRoute[], 
-): Promise<void> {
+  lastRoutes: IRoute[],
+): Promise<boolean> {
   // Hide previous routes
   const routesSet = new Set<IRoute>(matchResult.routes);
   for (const route of lastRoutes) {
@@ -20,14 +28,14 @@ export async function showRouteContent(
       await route.guardCheck(matchResult);
     }
   } catch (e) {
-    const err = e as Error;
-    if ("fallbackPath" in err) {
-      const guardCancel = err as IGuardCancel;
-      console.warn(`Navigation cancelled: ${err.message}. Redirecting to ${guardCancel.fallbackPath}`);
+    if (e instanceof GuardCancel) {
+      console.warn(`Navigation cancelled: ${e.message}. Redirecting to ${e.fallbackPath}`);
       queueMicrotask(() => {
-        routerNode.navigate(guardCancel.fallbackPath);
+        routerNode.navigate(e.fallbackPath).catch((err) => {
+          console.error('Fallback navigation failed:', err);
+        });
       });
-      return;
+      return false;
     } else {
       throw e;
     }
@@ -39,4 +47,5 @@ export async function showRouteContent(
       force = showRoute(route, matchResult);
     }
   }
+  return true;
 }

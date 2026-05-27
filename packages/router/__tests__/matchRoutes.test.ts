@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { matchRoutes } from '../src/matchRoutes';
 import { Router } from '../src/components/Router';
 import { Route } from '../src/components/Route';
@@ -7,11 +7,6 @@ import './setup';
 describe('matchRoutes', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
-  });
-
-  afterEach(() => {
-    (Router as any)._instance = null;
   });
 
   it('matchRoutes関数が存在すること', () => {

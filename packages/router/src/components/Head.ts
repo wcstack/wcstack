@@ -8,9 +8,21 @@ const headStack: Head[] = [];
 
 /**
  * 初期の<head>内容を記憶（最初のHead接続時に保存）
+ *
+ * 設計仕様: `initialHeadCaptured` は最初の Head 接続時に一度だけ true になる。
+ * SPA ライフタイム中の初期 head 状態は、最初の Head が接続された瞬間がベースラインで、
+ * それ以降に追加された <head> 要素は「初期値」ではなく「現在の値」として扱う。
+ * テストや SPA リセットで初期値を再キャプチャしたい場合は `_resetHeadStack()` を呼ぶ。
  */
 const initialHeadValues: Map<string, Element | null> = new Map();
 let initialHeadCaptured = false;
+
+/**
+ * 要素ごとの `_getKey` 結果のキャッシュ。
+ * 初期化時/キャプチャ時に算出し、以降の `_reapplyHead` ループで再計算しないようにする。
+ * 要素の属性変更には追随しない（Head 内要素は初期化時に固定される前提）。
+ */
+const keyCache: WeakMap<Element, string> = new WeakMap();
 
 export class Head extends HTMLElement {
   private _initialized: boolean = false;
@@ -67,9 +79,22 @@ export class Head extends HTMLElement {
   }
 
   /**
-   * 要素の一意キーを生成
+   * 要素の一意キーを生成（WeakMap でキャッシュ）
    */
   private _getKey(el: Element): string {
+    const cached = keyCache.get(el);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const key = this._computeKey(el);
+    keyCache.set(el, key);
+    return key;
+  }
+
+  /**
+   * 要素の一意キーを計算（実体）
+   */
+  private _computeKey(el: Element): string {
     const tag = el.tagName.toLowerCase();
 
     if (tag === 'title') {
@@ -96,21 +121,51 @@ export class Head extends HTMLElement {
       return 'base';
     }
 
-    // script, style等はouterHTMLの先頭で識別（フォールバック）
+    if (tag === 'script') {
+      const src = el.getAttribute('src') || '';
+      const id = el.getAttribute('id') || '';
+      const type = el.getAttribute('type') || '';
+      if (src || id) {
+        return `script:${src}:${id}:${type}`;
+      }
+      // インライン script はおおまかな先頭で識別（同等性は完全一致でなく簡易判定）
+      return `script::${type}:${el.outerHTML.slice(0, 100)}`;
+    }
+
+    if (tag === 'style') {
+      const id = el.getAttribute('id') || '';
+      const media = el.getAttribute('media') || '';
+      if (id) {
+        return `style:${id}:${media}`;
+      }
+      // インライン style はおおまかな先頭で識別（同等性は完全一致でなく簡易判定）
+      return `style::${media}:${el.outerHTML.slice(0, 100)}`;
+    }
+
+    // その他要素はおおまかに識別（同等性は完全一致でなく簡易判定）
     return `${tag}:${el.outerHTML.slice(0, 100)}`;
   }
 
   /**
-   * head内で指定のキーに一致する要素を検索
+   * head 内の要素を key で引ける Map を構築する。
+   * `_reapplyHead` のループ前に一度だけ呼び出し、O(N) lookup に置き換えるためのヘルパ。
+   *
+   * 設計仕様: 同一 key の要素が複数 `document.head` 内に存在する場合は **first-wins**
+   * （DOM 順で最初の要素のみ採用）。これは `_captureInitialHead` および
+   * `initialHeadValues` の挙動とも整合する。
+   * 重複は基本的にユーザーの記述ミスだが、_getKey の粒度（href/name 等の主要属性のみ）に
+   * よる「論理的重複」もあり得るため、サイレントに first-wins とする。
+   * 厳密な重複検出が必要な場合は呼び出し側で行う。
    */
-  private _findInHead(key: string): Element | null {
-    const head = document.head;
-    for (const el of Array.from(head.children)) {
-      if (this._getKey(el) === key) {
-        return el;
+  private _buildHeadElementMap(): Map<string, Element> {
+    const map = new Map<string, Element>();
+    for (const el of Array.from(document.head.children)) {
+      const key = this._getKey(el);
+      if (!map.has(key)) {
+        map.set(key, el);
       }
     }
-    return null;
+    return map;
   }
 
   /**
@@ -143,10 +198,12 @@ export class Head extends HTMLElement {
     for (const key of initialHeadValues.keys()) {
       allKeys.add(key);
     }
-    
+
     // 現在のheadにある要素のキーも追加（管理下から外れたものを削除するため）
-    for (const child of Array.from(document.head.children)) {
-      allKeys.add(this._getKey(child));
+    // 同時に key -> Element の lookup map も構築する（O(N²) を避けるため）
+    const headElementMap = this._buildHeadElementMap();
+    for (const key of headElementMap.keys()) {
+      allKeys.add(key);
     }
 
     // 各キーについて、最も優先度の高い値を決定
@@ -172,16 +229,19 @@ export class Head extends HTMLElement {
       }
 
       // headを更新
-      const current = this._findInHead(key);
+      const current = headElementMap.get(key) ?? null;
       if (targetElement) {
         if (current) {
           current.replaceWith(targetElement);
         } else {
           document.head.appendChild(targetElement);
         }
+        // map を新しい要素に更新（後続の同 key 処理に備える）
+        headElementMap.set(key, targetElement);
       } else {
         // 初期値もスタックにもない場合は削除
         current?.remove();
+        headElementMap.delete(key);
       }
     }
   }

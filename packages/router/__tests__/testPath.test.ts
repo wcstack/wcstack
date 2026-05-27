@@ -17,7 +17,6 @@ function createRoute(path: string): Route {
 describe('testPath', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
   });
 
   it('パスが一致する場合、マッチ結果を返すこと', () => {

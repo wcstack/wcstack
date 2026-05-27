@@ -52,6 +52,7 @@ export class RouteCore extends EventTarget {
   private _guardFallbackPath: string = '';
   private _waitForSetGuardHandler: Promise<void> | null = null;
   private _resolveSetGuardHandler: (() => void) | null = null;
+  private _guardHandlerLoadFailed: boolean = false;
 
   constructor(target?: EventTarget) {
     super();
@@ -213,6 +214,14 @@ export class RouteCore extends EventTarget {
   }
 
   parsePath(path: string, options: RouteParseOptions = {}): void {
+    // 連続呼び出し時のセグメント累積を防ぐためリセット
+    this._segmentInfos = [];
+    this._absoluteSegmentInfos = undefined;
+    this._paramNames = undefined;
+    this._absoluteParamNames = undefined;
+    this._weight = undefined;
+    this._absoluteWeight = undefined;
+    this._segmentCount = undefined;
     this._path = path;
     this._name = options.name || '';
     this._isFallbackRoute = options.isFallback || false;
@@ -284,6 +293,7 @@ export class RouteCore extends EventTarget {
   }
 
   setParams(params: Record<string, string>, typedParams: Record<string, any>): void {
+    const wasActive = this._active;
     this._params = params;
     this._typedParams = typedParams;
     this._active = true;
@@ -291,12 +301,25 @@ export class RouteCore extends EventTarget {
       detail: { params, typedParams },
       bubbles: true,
     }));
+    if (!wasActive) {
+      this._target.dispatchEvent(new CustomEvent("wcs-route:active-changed", {
+        detail: true,
+        bubbles: true,
+      }));
+    }
   }
 
   clearParams(): void {
+    const wasActive = this._active;
     this._params = {};
     this._typedParams = {};
     this._active = false;
+    if (wasActive) {
+      this._target.dispatchEvent(new CustomEvent("wcs-route:active-changed", {
+        detail: false,
+        bubbles: true,
+      }));
+    }
   }
 
   shouldChange(newParams: Record<string, string>): boolean {
@@ -316,8 +339,17 @@ export class RouteCore extends EventTarget {
   }
 
   set guardHandler(value: GuardHandler) {
-    this._resolveSetGuardHandler?.();
     this._guardHandler = value;
+    this._resolveSetGuardHandler?.();
+  }
+
+  /**
+   * Guardハンドラのロードに失敗したことを通知し、guardCheck の待ちを解除する。
+   * 解除後の guardCheck は guardHandler が未設定のため fallback パスへリダイレクトする。
+   */
+  notifyGuardHandlerLoadFailed(): void {
+    this._guardHandlerLoadFailed = true;
+    this._resolveSetGuardHandler?.();
   }
 
   async guardCheck(matchResult: IRouteMatchResult): Promise<void> {
@@ -331,6 +363,9 @@ export class RouteCore extends EventTarget {
       if (!allowed) {
         throw new GuardCancel('Navigation cancelled by guard.', this._guardFallbackPath);
       }
+    } else if (this._hasGuard && this._guardHandlerLoadFailed) {
+      // guardHandler のロードに失敗した場合は fallback パスへ
+      throw new GuardCancel('Navigation cancelled: guard handler failed to load.', this._guardFallbackPath);
     }
   }
 }

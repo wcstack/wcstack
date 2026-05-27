@@ -43,8 +43,8 @@ export interface IRoute extends IRouteChildContainer {
   readonly placeHolder: Comment;
   readonly childNodeArray: Node[];
   readonly routes: IRoute[];
-  params: Record<string, string>;
-  typedParams: Record<string, any>;
+  readonly params: Record<string, string>;
+  readonly typedParams: Record<string, any>;
   readonly paramNames: string[];
   readonly absoluteParamNames: string[];
   readonly weight: number;
@@ -63,6 +63,7 @@ export interface IRoute extends IRouteChildContainer {
   testAncestorNode(ancestorNode: IRoute): boolean;
   setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
   clearParams(): void;
+  notifyGuardHandlerLoadFailed(): void;
 }
 
 export interface IRouter extends IRouteChildContainer {

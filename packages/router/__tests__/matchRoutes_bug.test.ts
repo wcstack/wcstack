@@ -9,13 +9,11 @@ describe('matchRoutes Bug Reproduction', () => {
 
     beforeEach(() => {
         document.body.innerHTML = '';
-        (Router as any)._instance = null;
         router = document.createElement('wcs-router') as Router;
         document.body.appendChild(router);
     });
 
     afterEach(() => {
-        (Router as any)._instance = null;
         document.body.innerHTML = '';
     });
 

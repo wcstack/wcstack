@@ -63,7 +63,10 @@ function getUUID() {
     });
 }
 
-function raiseError(message) {
+function raiseError(message, options) {
+    if (options && 'cause' in options) {
+        throw new Error(`[@wcstack/router] ${message}`, { cause: options.cause });
+    }
     throw new Error(`[@wcstack/router] ${message}`);
 }
 
@@ -190,6 +193,7 @@ class RouteCore extends EventTarget {
     _guardFallbackPath = '';
     _waitForSetGuardHandler = null;
     _resolveSetGuardHandler = null;
+    _guardHandlerLoadFailed = false;
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -328,6 +332,14 @@ class RouteCore extends EventTarget {
         });
     }
     parsePath(path, options = {}) {
+        // 連続呼び出し時のセグメント累積を防ぐためリセット
+        this._segmentInfos = [];
+        this._absoluteSegmentInfos = undefined;
+        this._paramNames = undefined;
+        this._absoluteParamNames = undefined;
+        this._weight = undefined;
+        this._absoluteWeight = undefined;
+        this._segmentCount = undefined;
         this._path = path;
         this._name = options.name || '';
         this._isFallbackRoute = options.isFallback || false;
@@ -397,6 +409,7 @@ class RouteCore extends EventTarget {
         }
     }
     setParams(params, typedParams) {
+        const wasActive = this._active;
         this._params = params;
         this._typedParams = typedParams;
         this._active = true;
@@ -404,11 +417,24 @@ class RouteCore extends EventTarget {
             detail: { params, typedParams },
             bubbles: true,
         }));
+        if (!wasActive) {
+            this._target.dispatchEvent(new CustomEvent("wcs-route:active-changed", {
+                detail: true,
+                bubbles: true,
+            }));
+        }
     }
     clearParams() {
+        const wasActive = this._active;
         this._params = {};
         this._typedParams = {};
         this._active = false;
+        if (wasActive) {
+            this._target.dispatchEvent(new CustomEvent("wcs-route:active-changed", {
+                detail: false,
+                bubbles: true,
+            }));
+        }
     }
     shouldChange(newParams) {
         for (const key of this.paramNames) {
@@ -425,8 +451,16 @@ class RouteCore extends EventTarget {
         return this._guardHandler;
     }
     set guardHandler(value) {
-        this._resolveSetGuardHandler?.();
         this._guardHandler = value;
+        this._resolveSetGuardHandler?.();
+    }
+    /**
+     * Guardハンドラのロードに失敗したことを通知し、guardCheck の待ちを解除する。
+     * 解除後の guardCheck は guardHandler が未設定のため fallback パスへリダイレクトする。
+     */
+    notifyGuardHandlerLoadFailed() {
+        this._guardHandlerLoadFailed = true;
+        this._resolveSetGuardHandler?.();
     }
     async guardCheck(matchResult) {
         if (this._hasGuard && this._waitForSetGuardHandler) {
@@ -439,6 +473,10 @@ class RouteCore extends EventTarget {
             if (!allowed) {
                 throw new GuardCancel('Navigation cancelled by guard.', this._guardFallbackPath);
             }
+        }
+        else if (this._hasGuard && this._guardHandlerLoadFailed) {
+            // guardHandler のロードに失敗した場合は fallback パスへ
+            throw new GuardCancel('Navigation cancelled: guard handler failed to load.', this._guardFallbackPath);
         }
     }
 }
@@ -454,6 +492,7 @@ class Route extends HTMLElement {
     _childNodeArray;
     _childIndex = 0;
     _initialized = false;
+    _routes;
     constructor() {
         super();
         this._core = new RouteCore(this);
@@ -484,12 +523,14 @@ class Route extends HTMLElement {
         return this._childNodeArray;
     }
     get routes() {
-        if (this.routeParentNode) {
-            return this.routeParentNode.routes.concat(this);
+        // matchRoutes / testPath のホットパスで再帰的に呼ばれるため遅延キャッシュする。
+        // initialize 後は routeParentNode が固定されるためキャッシュしても安全。
+        if (typeof this._routes === 'undefined') {
+            this._routes = this.routeParentNode
+                ? this.routeParentNode.routes.concat(this)
+                : [this];
         }
-        else {
-            return [this];
-        }
+        return this._routes;
     }
     get childIndex() {
         return this._childIndex;
@@ -558,6 +599,17 @@ class Route extends HTMLElement {
     async guardCheck(matchResult) {
         return this._core.guardCheck(matchResult);
     }
+    notifyGuardHandlerLoadFailed() {
+        this._core.notifyGuardHandlerLoadFailed();
+    }
+    /**
+     * Shell（Route）の routeParentNode を辿って祖先関係を判定する。
+     *
+     * 責務の分担:
+     * - Route（このクラス）は DOM ツリー上の親子関係（routeParentNode）を管理する。
+     * - RouteCore はパスやパラメータといった論理的な親子関係（parentCore）を管理する。
+     * DOM ツリーは Shell 層、論理ツリーは Core 層という分離のため、両者を独立に保持する。
+     */
     testAncestorNode(ancestorNode) {
         let currentNode = this._routeParentNode;
         while (currentNode) {
@@ -626,7 +678,6 @@ class Route extends HTMLElement {
 const cache = new Map();
 class Layout extends HTMLElement {
     _uuid = getUUID();
-    _initialized = false;
     constructor() {
         super();
     }
@@ -641,7 +692,8 @@ class Layout extends HTMLElement {
             return templateContent;
         }
         catch (error) {
-            raiseError(`${config.tagNames.layout} failed to load layout from source: ${source}, error: ${error}`);
+            // 元の例外を cause として伝播し、スタックトレースを保持する
+            raiseError(`${config.tagNames.layout} failed to load layout from source: ${source}, error: ${error}`, { cause: error });
         }
     }
     _loadTemplateFromDocument(id) {
@@ -665,8 +717,8 @@ class Layout extends HTMLElement {
                 template.innerHTML = cache.get(source) || '';
             }
             else {
+                // _loadTemplateFromSource は内部で cache.set を実行する
                 template.innerHTML = await this._loadTemplateFromSource(source) || '';
-                cache.set(source, template.innerHTML);
             }
         }
         else if (layoutId) {
@@ -695,14 +747,6 @@ class Layout extends HTMLElement {
     get name() {
         // Layout 要素が DOM に挿入されないケース（parseで置換）でも name を取れるようにする
         return this.getAttribute('name') || '';
-    }
-    _initialize() {
-        this._initialized = true;
-    }
-    connectedCallback() {
-        if (!this._initialized) {
-            this._initialize();
-        }
     }
 }
 
@@ -734,8 +778,23 @@ class Outlet extends HTMLElement {
     set lastRoutes(value) {
         this._lastRoutes = [...value];
     }
+    /**
+     * shadowRoot 有効化判定。Layout と挙動を揃え、属性で個別オーバーライド可能にする。
+     * - `enable-shadow-root` 属性あり → true
+     * - `disable-shadow-root` 属性あり → false
+     * - いずれもなし → config.enableShadowRoot を尊重
+     */
+    _resolveEnableShadowRoot() {
+        if (this.hasAttribute('enable-shadow-root')) {
+            return true;
+        }
+        if (this.hasAttribute('disable-shadow-root')) {
+            return false;
+        }
+        return config.enableShadowRoot;
+    }
     _initialize() {
-        if (config.enableShadowRoot) {
+        if (this._resolveEnableShadowRoot()) {
             this.attachShadow({ mode: 'open' });
         }
         this._initialized = true;
@@ -744,6 +803,22 @@ class Outlet extends HTMLElement {
         if (!this._initialized) {
             this._initialize();
         }
+    }
+    /**
+     * Outlet が disconnect された際の状態クリーンアップ。
+     *
+     * `_lastRoutes` をクリアすることで、再接続後の applyRoute における diff
+     * （既に show 済みのルートは show を skip する判定）が、切断中に外部から
+     * 操作された DOM と整合しなくなる事故を防ぐ。
+     *
+     * 仕様前提として Outlet は Router と一体運用される（Router が `_getOutlet()` で
+     * 自身の兄弟に Outlet を配置・参照する）。それでも単独で再接続される
+     * エッジケースに備える防衛的措置として `_lastRoutes` のみクリアする。
+     * `_initialized` と shadowRoot は維持し、再 attachShadow による
+     * InvalidStateError を回避する。
+     */
+    disconnectedCallback() {
+        this._lastRoutes = [];
     }
 }
 function createOutlet() {
@@ -779,7 +854,14 @@ function _assignParams(element, params, bindType) {
                 };
                 break;
             case "attr":
-                element.setAttribute(key, value);
+                // null/undefined は属性削除として扱う（文字列 "null"/"undefined" になる事故を防ぐ）。
+                // boolean/number は setAttribute の標準挙動に従って文字列化される。
+                if (value === null || value === undefined) {
+                    element.removeAttribute(key);
+                }
+                else {
+                    element.setAttribute(key, String(value));
+                }
                 break;
             case "":
                 element[key] = value;
@@ -798,6 +880,12 @@ function assignParams(element, params) {
     const bindType = bindTypeText;
     const customTagName = getCustomTagName(element);
     if (customTagName && customElements.get(customTagName) === undefined) {
+        // 注意: customElements.whenDefined(tag) は当該タグが define されるまで pending のままになる。
+        // element が削除されてもこの Promise は GC されず、closure に保持される element/params は
+        // 解放されない（弱い参照を持つ手段がないため）。define されないまま要素のみが大量に作られる
+        // ようなケースではリークになりうるが、通常の Web Components 利用では autoloader が
+        // 一括 define するため実用上問題にならない。明示的にキャンセルしたい場合は将来 AbortSignal を
+        // サポートすることを検討する。
         customElements.whenDefined(customTagName).then(() => {
             if (element.isConnected) {
                 // 要素が削除されていない場合のみ割り当てを行う
@@ -815,6 +903,8 @@ function assignParams(element, params) {
 class LayoutOutlet extends HTMLElement {
     _layout = null;
     _initialized = false;
+    _initializing = false;
+    _disconnectedDuringInit = false;
     _layoutChildNodes = [];
     constructor() {
         super();
@@ -833,62 +923,88 @@ class LayoutOutlet extends HTMLElement {
         return this.layout.name;
     }
     async _initialize() {
-        this._initialized = true;
-        if (this.layout.enableShadowRoot) {
-            this.attachShadow({ mode: 'open' });
-        }
-        const template = await this.layout.loadTemplate();
-        if (this.shadowRoot) {
-            this.shadowRoot.appendChild(template.content.cloneNode(true));
-            for (const childNode of Array.from(this.layout.childNodes)) {
-                this._layoutChildNodes.push(childNode);
-                this.appendChild(childNode);
+        this._initializing = true;
+        try {
+            this._initialized = true;
+            // attachShadow は冪等にする: 一度 await loadTemplate() 中に切断されると
+            // _initialized = false で戻され、再 connect 時に _initialize() が再度走るが、
+            // その時点で shadowRoot は既に存在しているため、再度 attachShadow すると
+            // InvalidStateError になる。
+            if (this.layout.enableShadowRoot && !this.shadowRoot) {
+                this.attachShadow({ mode: 'open' });
             }
-        }
-        else {
-            const fragmentForTemplate = template.content.cloneNode(true);
-            const slotElementBySlotName = new Map();
-            fragmentForTemplate.querySelectorAll('slot').forEach((slotElement) => {
-                const slotName = slotElement.getAttribute('name') || '';
-                if (!slotElementBySlotName.has(slotName)) {
-                    slotElementBySlotName.set(slotName, slotElement);
+            const template = await this.layout.loadTemplate();
+            // await 中に切断された場合は DOM 副作用を残さず、次回再接続時に再初期化させる
+            if (!this.isConnected) {
+                this._initialized = false;
+                return;
+            }
+            if (this.shadowRoot) {
+                this.shadowRoot.appendChild(template.content.cloneNode(true));
+                for (const childNode of Array.from(this.layout.childNodes)) {
+                    this._layoutChildNodes.push(childNode);
+                    this.appendChild(childNode);
                 }
-                else {
-                    console.warn(`${config.tagNames.layoutOutlet} duplicate slot name "${slotName}" in layout template.`);
-                }
-            });
-            const fragmentBySlotName = new Map();
-            const fragmentForChildNodes = document.createDocumentFragment();
-            for (const childNode of Array.from(this.layout.childNodes)) {
-                this._layoutChildNodes.push(childNode);
-                if (childNode instanceof Element) {
-                    const slotName = childNode.getAttribute('slot') || '';
-                    if (slotName.length > 0 && slotElementBySlotName.has(slotName)) {
-                        if (!fragmentBySlotName.has(slotName)) {
-                            fragmentBySlotName.set(slotName, document.createDocumentFragment());
+            }
+            else {
+                const fragmentForTemplate = template.content.cloneNode(true);
+                const slotElementBySlotName = new Map();
+                fragmentForTemplate.querySelectorAll('slot').forEach((slotElement) => {
+                    const slotName = slotElement.getAttribute('name') || '';
+                    if (!slotElementBySlotName.has(slotName)) {
+                        slotElementBySlotName.set(slotName, slotElement);
+                    }
+                    else {
+                        console.warn(`${config.tagNames.layoutOutlet} duplicate slot name "${slotName}" in layout template.`);
+                    }
+                });
+                const fragmentBySlotName = new Map();
+                const fragmentForChildNodes = document.createDocumentFragment();
+                for (const childNode of Array.from(this.layout.childNodes)) {
+                    this._layoutChildNodes.push(childNode);
+                    if (childNode instanceof Element) {
+                        const slotName = childNode.getAttribute('slot') || '';
+                        if (slotName.length > 0 && slotElementBySlotName.has(slotName)) {
+                            if (!fragmentBySlotName.has(slotName)) {
+                                fragmentBySlotName.set(slotName, document.createDocumentFragment());
+                            }
+                            fragmentBySlotName.get(slotName)?.appendChild(childNode);
+                            continue;
                         }
-                        fragmentBySlotName.get(slotName)?.appendChild(childNode);
-                        continue;
+                    }
+                    fragmentForChildNodes.appendChild(childNode);
+                }
+                for (const [slotName, slotElement] of slotElementBySlotName) {
+                    const fragment = fragmentBySlotName.get(slotName);
+                    if (fragment) {
+                        slotElement.replaceWith(fragment);
                     }
                 }
-                fragmentForChildNodes.appendChild(childNode);
-            }
-            for (const [slotName, slotElement] of slotElementBySlotName) {
-                const fragment = fragmentBySlotName.get(slotName);
-                if (fragment) {
-                    slotElement.replaceWith(fragment);
+                const defaultSlot = slotElementBySlotName.get('');
+                if (defaultSlot) {
+                    defaultSlot.replaceWith(fragmentForChildNodes);
                 }
+                this.appendChild(fragmentForTemplate);
             }
-            const defaultSlot = slotElementBySlotName.get('');
-            if (defaultSlot) {
-                defaultSlot.replaceWith(fragmentForChildNodes);
-            }
-            this.appendChild(fragmentForTemplate);
+        }
+        finally {
+            this._initializing = false;
         }
     }
     async connectedCallback() {
         if (!this._initialized) {
+            this._disconnectedDuringInit = false;
             await this._initialize();
+            // 初期化中（await 中）に切断された場合は副作用を残さない
+            if (this._disconnectedDuringInit || !this.isConnected) {
+                return;
+            }
+        }
+    }
+    disconnectedCallback() {
+        // _initialize 中（await 中）に呼ばれた場合はフラグを立てて再 connect 時に init を許可する
+        if (this._initializing) {
+            this._disconnectedDuringInit = true;
         }
     }
     assignParams(params) {
@@ -910,9 +1026,15 @@ function createLayoutOutlet() {
     return document.createElement(config.tagNames.layoutOutlet);
 }
 
-async function importModule(script) {
+async function importModule(script, route) {
     let scriptModule = null;
-    const sourceComment = `\n//# sourceURL=wcs-guard-handler\n`;
+    let firstError = null;
+    // devtools での識別用 sourceURL suffix。
+    // uuid を使う: Route インスタンスでは constructor で getUUID() により必ず設定される。
+    // partial mock 等で undefined の可能性に備えて空文字列フォールバックを置く。
+    const routeTag = route.uuid || "";
+    const sourceURL = routeTag ? `wcs-guard-handler:${routeTag}` : `wcs-guard-handler`;
+    const sourceComment = `\n//# sourceURL=${sourceURL}\n`;
     const scriptText = script.text + sourceComment;
     if (typeof URL.createObjectURL === 'function') {
         const blob = new Blob([scriptText], { type: "application/javascript" });
@@ -920,8 +1042,9 @@ async function importModule(script) {
         try {
             scriptModule = await import(url);
         }
-        catch {
+        catch (e) {
             // Blob URL import failed (e.g. happy-dom), fall through to data: URL
+            firstError = e;
         }
         finally {
             URL.revokeObjectURL(url);
@@ -930,7 +1053,16 @@ async function importModule(script) {
     if (!scriptModule) {
         // Fallback: Base64 data: URL (for test environments)
         const b64 = btoa(String.fromCodePoint(...new TextEncoder().encode(scriptText)));
-        scriptModule = await import(`data:application/javascript;base64,${b64}`);
+        try {
+            scriptModule = await import(`data:application/javascript;base64,${b64}`);
+        }
+        catch (e) {
+            // 両 import が失敗した場合、Blob URL 側の元エラーを cause として失わないように包む
+            // （Blob URL も失敗していなければ firstError は null）
+            throw new Error(`loadGuardHandler: failed to import guard script. ` +
+                `data: URL error: ${e?.message ?? String(e)}` +
+                (firstError ? `. Blob URL error: ${firstError?.message ?? String(firstError)}` : ''), { cause: firstError ?? e });
+        }
     }
     if (scriptModule && typeof scriptModule.default === 'function') {
         return scriptModule.default;
@@ -938,13 +1070,28 @@ async function importModule(script) {
     return null;
 }
 function loadGuardHandler(script, route) {
-    importModule(script).then(handler => {
+    importModule(script, route).then(handler => {
         if (handler) {
             route.guardHandler = handler;
         }
+        else {
+            // ハンドラが取得できなかった場合は guardCheck の待ちを解除する
+            route.notifyGuardHandlerLoadFailed();
+        }
+    }).catch(err => {
+        console.error('loadGuardHandler failed:', err);
+        // import 失敗時も guardCheck の待ちを解除する
+        route.notifyGuardHandlerLoadFailed();
     });
 }
 
+/**
+ * 同一の絶対パスを持つ Route が複数定義された場合に警告を出力する。
+ *
+ * 仕様: 同一 absolutePath ごとに 1 回だけ警告する（複数重複でも警告は 1 件）。
+ * これは過剰なログを避けるための意図的な設計。
+ * テストでは Vitest の console.warn spy で 1 回出力を確認する。
+ */
 function _duplicateCheck(routesByPath, route) {
     let routes = routesByPath.get(route.absolutePath);
     if (!routes) {
@@ -961,7 +1108,7 @@ function _duplicateCheck(routesByPath, route) {
         routesByPath.set(route.absolutePath, routes);
     }
 }
-async function _parseNode(routerNode, node, routes, map, routesByPath) {
+async function _parseNode(routerNode, node, routes, routesByPath) {
     const routeParentNode = routes.length > 0 ? routes[routes.length - 1] : null;
     const fragment = document.createDocumentFragment();
     const childNodes = Array.from(node.childNodes);
@@ -983,7 +1130,6 @@ async function _parseNode(routerNode, node, routes, map, routesByPath) {
                 route.initialize(routerNode, routeParentNode);
                 _duplicateCheck(routesByPath, route);
                 routes.push(route);
-                map.set(route.uuid, route);
                 appendNode = route.placeHolder;
                 element = route;
             }
@@ -998,6 +1144,11 @@ async function _parseNode(routerNode, node, routes, map, routesByPath) {
                 continue;
             }
             else if (tagName === config.tagNames.layout) {
+                // <wcs-layout> は他の case と異なり element と appendNode が別物になる。
+                // - element: cloneElement (Layout 本体)。後続の `element.innerHTML = ""; element.appendChild(children)`
+                //   で再帰結果が Layout 内に流し込まれる。Layout はそれを slot 投影に使う。
+                // - appendNode: layoutOutlet。最終的に fragment へ挿入されるのは layoutOutlet で、
+                //   layoutOutlet が element (Layout) を参照して投影を行う。
                 const childFragment = document.createDocumentFragment();
                 // Move child nodes to fragment to avoid duplication of
                 for (const childNode of Array.from(element.childNodes)) {
@@ -1012,7 +1163,7 @@ async function _parseNode(routerNode, node, routes, map, routesByPath) {
                 appendNode = layoutOutlet;
                 element = cloneElement;
             }
-            const children = await _parseNode(routerNode, element, routes, map, routesByPath);
+            const children = await _parseNode(routerNode, element, routes, routesByPath);
             element.innerHTML = "";
             element.appendChild(children);
             fragment.appendChild(appendNode);
@@ -1024,9 +1175,8 @@ async function _parseNode(routerNode, node, routes, map, routesByPath) {
     return fragment;
 }
 async function parse(routerNode) {
-    const map = new Map();
     const routesByPath = new Map();
-    const fr = await _parseNode(routerNode, routerNode.template.content, [], map, routesByPath);
+    const fr = await _parseNode(routerNode, routerNode.template.content, [], routesByPath);
     return fr;
 }
 
@@ -1114,18 +1264,16 @@ function testPath(route, path, segments) {
     return null;
 }
 
-function _matchRoutes(routerNode, routeNode, routes, normalizedPath, segments, results) {
-    const nextRoutes = routes.concat(routeNode);
+function _matchRoutes(routeNode, normalizedPath, segments, results) {
     const matchResult = testPath(routeNode, normalizedPath, segments);
     if (matchResult) {
         results.push(matchResult);
     }
     for (const childRoute of routeNode.routeChildNodes) {
-        _matchRoutes(routerNode, childRoute, nextRoutes, normalizedPath, segments, results);
+        _matchRoutes(childRoute, normalizedPath, segments, results);
     }
 }
 function matchRoutes(routerNode, normalizedPath) {
-    const routes = [];
     const topLevelRoutes = routerNode.routeChildNodes;
     const results = [];
     // セグメント配列を作成（先頭の/は除去せずにそのまま分割）
@@ -1143,7 +1291,7 @@ function matchRoutes(routerNode, normalizedPath) {
         return true;
     });
     for (const route of topLevelRoutes) {
-        _matchRoutes(routerNode, route, routes, normalizedPath, segments, results);
+        _matchRoutes(route, normalizedPath, segments, results);
     }
     results.sort((a, b) => {
         const lastRouteA = a.routes.at(-1);
@@ -1210,6 +1358,14 @@ function showRoute(route, matchResult) {
     return true;
 }
 
+/**
+ * ルートコンテンツを表示する。
+ *
+ * @returns ガードチェックを通過してコンテンツ表示が成立した場合 true、
+ *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合 false。
+ *          呼び出し側（applyRoute）は false の場合、router.path / outlet.lastRoutes を
+ *          更新しないことで「拒否されたパスでの path-changed 発火」を防ぐ。
+ */
 async function showRouteContent(routerNode, matchResult, lastRoutes) {
     // Hide previous routes
     const routesSet = new Set(matchResult.routes);
@@ -1224,14 +1380,14 @@ async function showRouteContent(routerNode, matchResult, lastRoutes) {
         }
     }
     catch (e) {
-        const err = e;
-        if ("fallbackPath" in err) {
-            const guardCancel = err;
-            console.warn(`Navigation cancelled: ${err.message}. Redirecting to ${guardCancel.fallbackPath}`);
+        if (e instanceof GuardCancel) {
+            console.warn(`Navigation cancelled: ${e.message}. Redirecting to ${e.fallbackPath}`);
             queueMicrotask(() => {
-                routerNode.navigate(guardCancel.fallbackPath);
+                routerNode.navigate(e.fallbackPath).catch((err) => {
+                    console.error('Fallback navigation failed:', err);
+                });
             });
-            return;
+            return false;
         }
         else {
             throw e;
@@ -1244,6 +1400,7 @@ async function showRouteContent(routerNode, matchResult, lastRoutes) {
             force = showRoute(route, matchResult);
         }
     }
+    return true;
 }
 
 async function applyRoute(routerNode, outlet, fullPath, lastPath) {
@@ -1276,7 +1433,11 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath) {
     }
     matchResult.lastPath = lastPath;
     const lastRoutes = outlet.lastRoutes;
-    await showRouteContent(routerNode, matchResult, lastRoutes);
+    const committed = await showRouteContent(routerNode, matchResult, lastRoutes);
+    // GuardCancel により中断された場合は state を更新しない
+    // （拒否されたパスでの wcs-router:path-changed 発火を防ぐため）
+    if (!committed)
+        return;
     // if successful, update router and outlet state
     routerNode.path = path;
     outlet.lastRoutes = matchResult.routes;
@@ -1293,6 +1454,70 @@ function getNavigation() {
     return nav;
 }
 
+// basenameFileExtensions ベースの正規表現をキャッシュ（config 変更時のみ再生成）。
+let _cachedExtensions = null;
+let _cachedExtPattern = null;
+/**
+ * config.basenameFileExtensions から拡張子削除用の正規表現を生成（キャッシュ付き）。
+ * config 変更が検知された場合のみ再生成する。
+ */
+function getExtPattern() {
+    const exts = config.basenameFileExtensions;
+    if (exts.length === 0)
+        return null;
+    if (_cachedExtensions === exts && _cachedExtPattern) {
+        return _cachedExtPattern;
+    }
+    _cachedExtensions = exts;
+    _cachedExtPattern = new RegExp(`\\/[^/]+(?:${exts.map(e => e.replace(/\./g, '\\.')).join('|')})$`, 'i');
+    return _cachedExtPattern;
+}
+/**
+ * URL pathname を route path に正規化する。
+ * - 先頭スラッシュを保証
+ * - 連続スラッシュを単一化
+ * - 末尾のファイル拡張子（例: .html）をディレクトリルートとして扱う
+ * - ルート以外の末尾スラッシュを除去
+ */
+function normalizePathname(path) {
+    let p = path || "/";
+    if (!p.startsWith("/"))
+        p = "/" + p;
+    p = p.replace(/\/{2,}/g, "/");
+    const extPattern = getExtPattern();
+    if (extPattern) {
+        p = p.replace(extPattern, "");
+    }
+    if (p === "")
+        p = "/";
+    if (p.length > 1 && p.endsWith("/"))
+        p = p.slice(0, -1);
+    return p;
+}
+/**
+ * basename を正規化する。
+ * - "" or "/" -> ""
+ * - "/app/" -> "/app"
+ * - "/app/index.html" -> "/app"
+ */
+function normalizeBasename(path) {
+    let p = path || "";
+    if (!p)
+        return "";
+    if (!p.startsWith("/"))
+        p = "/" + p;
+    p = p.replace(/\/{2,}/g, "/");
+    const extPattern = getExtPattern();
+    if (extPattern) {
+        p = p.replace(extPattern, "");
+    }
+    if (p.length > 1 && p.endsWith("/"))
+        p = p.slice(0, -1);
+    if (p === "/")
+        return "";
+    return p;
+}
+
 /**
  * AppRoutes - Root component for @wcstack/router
  *
@@ -1306,6 +1531,12 @@ class Router extends HTMLElement {
             { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
             { name: "path", event: "wcs-router:path-changed" },
         ],
+        inputs: [
+            { name: "basename", attribute: "basename" },
+        ],
+        commands: [
+            { name: "navigate", async: true },
+        ],
     };
     _outlet = null;
     _template = null;
@@ -1315,57 +1546,26 @@ class Router extends HTMLElement {
     _initialized = false;
     _fallbackRoute = null;
     _listeningPopState = false;
+    _listeningNavigate = false;
     _navigateUrl = null;
+    _disconnectedDuringInit = false;
+    _initializing = false;
     constructor() {
         super();
     }
     /**
      * Normalize a URL pathname to a route path.
-     * - ensure leading slash
-     * - collapse multiple slashes
-     * - treat trailing file extensions (e.g. .html) as directory root
-     * - remove trailing slash except root "/"
+     * 共通実装は normalizePathname.ts を参照（Link との挙動整合のため）。
      */
     _normalizePathname(_path) {
-        let path = _path || "/";
-        if (!path.startsWith("/"))
-            path = "/" + path;
-        path = path.replace(/\/{2,}/g, "/");
-        // e.g. "/app/index.html" -> "/app"
-        const exts = config.basenameFileExtensions;
-        if (exts.length > 0) {
-            const extPattern = new RegExp(`\\/[^/]+(?:${exts.map(e => e.replace(/\./g, '\\.')).join('|')})$`, 'i');
-            path = path.replace(extPattern, "");
-        }
-        if (path === "")
-            path = "/";
-        if (path.length > 1 && path.endsWith("/"))
-            path = path.slice(0, -1);
-        return path;
+        return normalizePathname(_path);
     }
     /**
      * Normalize basename.
-     * - "" or "/" -> ""
-     * - "/app/" -> "/app"
-     * - "/app/index.html" -> "/app"
+     * 共通実装は normalizePathname.ts を参照。
      */
     _normalizeBasename(_path) {
-        let path = _path || "";
-        if (!path)
-            return "";
-        if (!path.startsWith("/"))
-            path = "/" + path;
-        path = path.replace(/\/{2,}/g, "/");
-        const exts = config.basenameFileExtensions;
-        if (exts.length > 0) {
-            const extPattern = new RegExp(`\\/[^/]+(?:${exts.map(e => e.replace(/\./g, '\\.')).join('|')})$`, 'i');
-            path = path.replace(extPattern, "");
-        }
-        if (path.length > 1 && path.endsWith("/"))
-            path = path.slice(0, -1);
-        if (path === "/")
-            return "";
-        return path;
+        return normalizeBasename(_path);
     }
     _joinInternalPath(basename, to) {
         const base = this._normalizeBasename(basename);
@@ -1460,8 +1660,13 @@ class Router extends HTMLElement {
     set navigateUrl(value) {
         if (value === null || value === undefined || value === "")
             return;
+        // 既に同一 URL の navigate 中なら再起動しない
+        if (this._navigateUrl === value)
+            return;
         this._navigateUrl = value;
-        this.navigate(value).then(() => {
+        this.navigate(value).catch((err) => {
+            console.error(`${config.tagNames.router} navigate failed:`, err);
+        }).finally(() => {
             this._navigateUrl = null;
             this.dispatchEvent(new CustomEvent("wcs-router:navigate-url-changed", {
                 detail: null,
@@ -1473,7 +1678,13 @@ class Router extends HTMLElement {
         const fullPath = this._joinInternalPath(this._basename, path);
         const navigation = getNavigation();
         if (navigation?.navigate) {
-            navigation.navigate(fullPath);
+            // Navigation API は { committed, finished } を返す。
+            // finished を await することで、navigate() の Promise が
+            // 実際のナビゲーション完了まで pending となり、_navigateUrl の
+            // 二重 navigate ガード (setter 内 `if (this._navigateUrl === value)`) が
+            // 適切な時間ウィンドウで機能するようになる。
+            // Polyfill や mock 環境で undefined / 戻り値なしのケースもあるため optional chaining。
+            await navigation.navigate(fullPath)?.finished;
         }
         else {
             history.pushState(null, '', fullPath);
@@ -1504,7 +1715,13 @@ class Router extends HTMLElement {
         const routesNode = this;
         navEvent.intercept({
             handler: async () => {
-                await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
+                try {
+                    await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
+                }
+                catch (err) {
+                    console.error(`${config.tagNames.router} applyRoute failed:`, err);
+                    throw err;
+                }
             },
         });
     }
@@ -1519,41 +1736,63 @@ class Router extends HTMLElement {
         this._notifyLocationChange();
     };
     async _initialize() {
-        this._initialized = true;
-        this._basename = this._normalizeBasename(this.getAttribute("basename") || this._getBasename() || "");
-        const hasBaseTag = document.querySelector('base[href]') !== null;
-        const url = new URL(window.location.href);
-        if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
-            raiseError(`${config.tagNames.router} basename is empty, but current path is not "/".`);
+        this._initializing = true;
+        try {
+            this._basename = this._normalizeBasename(this.getAttribute("basename") || this._getBasename() || "");
+            const hasBaseTag = document.querySelector('base[href]') !== null;
+            const url = new URL(window.location.href);
+            if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
+                raiseError(`${config.tagNames.router} basename is empty, but current path is not "/".`);
+            }
+            this._outlet = this._getOutlet();
+            this._outlet.routesNode = this;
+            this._template = this._getTemplate();
+            if (!this._template) {
+                raiseError(`${config.tagNames.router} should have a <template> child element.`);
+            }
+            const fragment = await parse(this);
+            this._outlet.rootNode.appendChild(fragment);
+            if (this.routeChildNodes.length === 0) {
+                raiseError(`${config.tagNames.router} has no route definitions.`);
+            }
+            const fullPath = this._normalizePathname(window.location.pathname);
+            await applyRoute(this, this.outlet, fullPath, this._path);
+            this._notifyLocationChange();
+            this._initialized = true;
         }
-        this._outlet = this._getOutlet();
-        this._outlet.routesNode = this;
-        this._template = this._getTemplate();
-        if (!this._template) {
-            raiseError(`${config.tagNames.router} should have a <template> child element.`);
+        finally {
+            this._initializing = false;
         }
-        const fragment = await parse(this);
-        this._outlet.rootNode.appendChild(fragment);
-        if (this.routeChildNodes.length === 0) {
-            raiseError(`${config.tagNames.router} has no route definitions.`);
-        }
-        const fullPath = this._normalizePathname(window.location.pathname);
-        await applyRoute(this, this.outlet, fullPath, this._path);
-        this._notifyLocationChange();
     }
     async connectedCallback() {
         if (!this._initialized) {
+            this._disconnectedDuringInit = false;
             await this._initialize();
+            // 初期化中に disconnectedCallback が呼ばれた場合はイベントリスナを登録しない
+            if (this._disconnectedDuringInit) {
+                return;
+            }
         }
-        getNavigation()?.addEventListener("navigate", this._onNavigate);
+        const navigation = getNavigation();
+        if (navigation && !this._listeningNavigate) {
+            navigation.addEventListener("navigate", this._onNavigate);
+            this._listeningNavigate = true;
+        }
         // Fallback for browsers without Navigation API
-        if (!getNavigation()?.addEventListener && !this._listeningPopState) {
+        if (!navigation && !this._listeningPopState) {
             window.addEventListener("popstate", this._onPopState);
             this._listeningPopState = true;
         }
     }
     disconnectedCallback() {
-        getNavigation()?.removeEventListener("navigate", this._onNavigate);
+        // _initialize 中（await 中）に呼ばれた場合はフラグを立ててリスナ登録をスキップさせる
+        if (this._initializing) {
+            this._disconnectedDuringInit = true;
+        }
+        if (this._listeningNavigate) {
+            getNavigation()?.removeEventListener("navigate", this._onNavigate);
+            this._listeningNavigate = false;
+        }
         if (this._listeningPopState) {
             window.removeEventListener("popstate", this._onPopState);
             this._listeningPopState = false;
@@ -1578,6 +1817,13 @@ class Link extends HTMLElement {
     get uuid() {
         return this._uuid;
     }
+    /**
+     * 最寄りの Router を返す。
+     *
+     * 注意: この getter は DOM 走査で Router を探すため、
+     * Router がまだ upgrade されていない場合は HTMLElement として返る可能性がある。
+     * 通常は registerComponents() で Router を Link より先に upgrade することを推奨する。
+     */
     get router() {
         if (this._router) {
             return this._router;
@@ -1601,17 +1847,16 @@ class Link extends HTMLElement {
         this._path = this.getAttribute('to') || '';
         this._initialized = true;
     }
+    /**
+     * URL pathname を正規化する。Router と共通実装を使うことで
+     * basenameFileExtensions の取り扱いを揃え、active 判定の取りこぼしを防ぐ。
+     */
     _normalizePathname(path) {
-        let p = path || "/";
-        if (!p.startsWith("/"))
-            p = "/" + p;
-        p = p.replace(/\/{2,}/g, "/");
-        if (p.length > 1 && p.endsWith("/"))
-            p = p.slice(0, -1);
-        return p;
+        return normalizePathname(path);
     }
     _joinInternalPath(basename, to) {
-        const base = (basename || "").replace(/\/{2,}/g, "/").replace(/\/$/, "");
+        // Router._joinInternalPath と挙動を揃える
+        const base = normalizeBasename(basename);
         const internal = to.startsWith("/") ? to : "/" + to;
         const path = this._normalizePathname(internal);
         if (!base)
@@ -1669,6 +1914,9 @@ class Link extends HTMLElement {
                     return;
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
                     return;
+                // 動的に外部URLに変わった場合はブラウザのデフォルト挙動に委ねる
+                if (!this._path.startsWith('/'))
+                    return;
                 e.preventDefault();
                 await this.router.navigate(this._path);
                 this._updateActiveState();
@@ -1681,17 +1929,24 @@ class Link extends HTMLElement {
         getNavigation()?.removeEventListener('currententrychange', this._updateActiveState);
         window.removeEventListener('wcs:navigate', this._updateActiveState);
         window.removeEventListener('popstate', this._updateActiveState);
-        if (this._anchorElement) {
+        const anchor = this._anchorElement;
+        if (anchor) {
             if (this._onClick) {
-                this._anchorElement.removeEventListener('click', this._onClick);
+                anchor.removeEventListener('click', this._onClick);
                 this._onClick = undefined;
             }
-            this._anchorElement.remove();
+            anchor.remove();
             this._anchorElement = null;
         }
+        // anchor 配下のままだった子要素のみ取り除く（別の親に移動されていた場合に誤って strip しないため）
         for (const childNode of this._childNodeArray) {
-            childNode.parentNode?.removeChild(childNode);
+            if (anchor && childNode.parentNode === anchor) {
+                anchor.removeChild(childNode);
+            }
         }
+        // Router キャッシュをクリア。別の Router 配下に動的に移動された場合や
+        // Router 自体が入れ替わった場合に古い参照を返さないようにする。
+        this._router = null;
     }
     attributeChangedCallback(name, oldValue, newValue) {
         if (name === 'to' && oldValue !== newValue) {
@@ -1726,9 +1981,20 @@ class Link extends HTMLElement {
 const headStack = [];
 /**
  * 初期の<head>内容を記憶（最初のHead接続時に保存）
+ *
+ * 設計仕様: `initialHeadCaptured` は最初の Head 接続時に一度だけ true になる。
+ * SPA ライフタイム中の初期 head 状態は、最初の Head が接続された瞬間がベースラインで、
+ * それ以降に追加された <head> 要素は「初期値」ではなく「現在の値」として扱う。
+ * テストや SPA リセットで初期値を再キャプチャしたい場合は `_resetHeadStack()` を呼ぶ。
  */
 const initialHeadValues = new Map();
 let initialHeadCaptured = false;
+/**
+ * 要素ごとの `_getKey` 結果のキャッシュ。
+ * 初期化時/キャプチャ時に算出し、以降の `_reapplyHead` ループで再計算しないようにする。
+ * 要素の属性変更には追随しない（Head 内要素は初期化時に固定される前提）。
+ */
+const keyCache = new WeakMap();
 class Head extends HTMLElement {
     _initialized = false;
     _childElementArray = [];
@@ -1774,9 +2040,21 @@ class Head extends HTMLElement {
         return this._childElementArray;
     }
     /**
-     * 要素の一意キーを生成
+     * 要素の一意キーを生成（WeakMap でキャッシュ）
      */
     _getKey(el) {
+        const cached = keyCache.get(el);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const key = this._computeKey(el);
+        keyCache.set(el, key);
+        return key;
+    }
+    /**
+     * 要素の一意キーを計算（実体）
+     */
+    _computeKey(el) {
         const tag = el.tagName.toLowerCase();
         if (tag === 'title') {
             return 'title';
@@ -1798,20 +2076,48 @@ class Head extends HTMLElement {
         if (tag === 'base') {
             return 'base';
         }
-        // script, style等はouterHTMLの先頭で識別（フォールバック）
+        if (tag === 'script') {
+            const src = el.getAttribute('src') || '';
+            const id = el.getAttribute('id') || '';
+            const type = el.getAttribute('type') || '';
+            if (src || id) {
+                return `script:${src}:${id}:${type}`;
+            }
+            // インライン script はおおまかな先頭で識別（同等性は完全一致でなく簡易判定）
+            return `script::${type}:${el.outerHTML.slice(0, 100)}`;
+        }
+        if (tag === 'style') {
+            const id = el.getAttribute('id') || '';
+            const media = el.getAttribute('media') || '';
+            if (id) {
+                return `style:${id}:${media}`;
+            }
+            // インライン style はおおまかな先頭で識別（同等性は完全一致でなく簡易判定）
+            return `style::${media}:${el.outerHTML.slice(0, 100)}`;
+        }
+        // その他要素はおおまかに識別（同等性は完全一致でなく簡易判定）
         return `${tag}:${el.outerHTML.slice(0, 100)}`;
     }
     /**
-     * head内で指定のキーに一致する要素を検索
+     * head 内の要素を key で引ける Map を構築する。
+     * `_reapplyHead` のループ前に一度だけ呼び出し、O(N) lookup に置き換えるためのヘルパ。
+     *
+     * 設計仕様: 同一 key の要素が複数 `document.head` 内に存在する場合は **first-wins**
+     * （DOM 順で最初の要素のみ採用）。これは `_captureInitialHead` および
+     * `initialHeadValues` の挙動とも整合する。
+     * 重複は基本的にユーザーの記述ミスだが、_getKey の粒度（href/name 等の主要属性のみ）に
+     * よる「論理的重複」もあり得るため、サイレントに first-wins とする。
+     * 厳密な重複検出が必要な場合は呼び出し側で行う。
      */
-    _findInHead(key) {
-        const head = document.head;
-        for (const el of Array.from(head.children)) {
-            if (this._getKey(el) === key) {
-                return el;
+    _buildHeadElementMap() {
+        const map = new Map();
+        for (const el of Array.from(document.head.children)) {
+            const key = this._getKey(el);
+            if (!map.has(key)) {
+                map.set(key, el);
             }
         }
-        return null;
+        return map;
     }
     /**
      * 初期の<head>状態をキャプチャ
@@ -1843,8 +2149,10 @@ class Head extends HTMLElement {
             allKeys.add(key);
         }
         // 現在のheadにある要素のキーも追加（管理下から外れたものを削除するため）
-        for (const child of Array.from(document.head.children)) {
-            allKeys.add(this._getKey(child));
+        // 同時に key -> Element の lookup map も構築する（O(N²) を避けるため）
+        const headElementMap = this._buildHeadElementMap();
+        for (const key of headElementMap.keys()) {
+            allKeys.add(key);
         }
         // 各キーについて、最も優先度の高い値を決定
         for (const key of allKeys) {
@@ -1868,7 +2176,7 @@ class Head extends HTMLElement {
                 targetElement = initial.cloneNode(true);
             }
             // headを更新
-            const current = this._findInHead(key);
+            const current = headElementMap.get(key) ?? null;
             if (targetElement) {
                 if (current) {
                     current.replaceWith(targetElement);
@@ -1876,10 +2184,13 @@ class Head extends HTMLElement {
                 else {
                     document.head.appendChild(targetElement);
                 }
+                // map を新しい要素に更新（後続の同 key 処理に備える）
+                headElementMap.set(key, targetElement);
             }
             else {
                 // 初期値もスタックにもない場合は削除
                 current?.remove();
+                headElementMap.delete(key);
             }
         }
     }
@@ -1922,5 +2233,11 @@ function bootstrapRouter(config) {
     registerComponents();
 }
 
-export { Route, RouteCore, Router, bootstrapRouter, getConfig };
+var version = "1.10.4";
+var pkg = {
+	version: version};
+
+const VERSION = pkg.version;
+
+export { Route, RouteCore, Router, VERSION, bootstrapRouter, getConfig };
 //# sourceMappingURL=index.esm.js.map

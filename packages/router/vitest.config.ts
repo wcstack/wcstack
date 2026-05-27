@@ -17,6 +17,7 @@ export default defineConfig({
         'src/exports.ts',
         'src/webc.ts',
         'src/types.ts',
+        'package.json',
       ],
       thresholds: {
         statements: 100,

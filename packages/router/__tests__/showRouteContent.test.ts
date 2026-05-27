@@ -47,7 +47,6 @@ const createMatchResult = (
 describe('showRouteContent', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
     vi.clearAllMocks();
   });
 
@@ -96,6 +95,41 @@ describe('showRouteContent', () => {
     expect(route2.guardCheck).toHaveBeenCalledWith(matchResult);
   });
 
+  it('ガードキャンセル後のフォールバックnavigateが失敗した場合、エラーをログ出力すること', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const guardCancel = new GuardCancel('Guard rejected', '/fallback');
+
+    const route1 = createMockRoute({
+      guardCheck: vi.fn().mockRejectedValue(guardCancel),
+      shouldChange: vi.fn().mockReturnValue(true),
+    });
+
+    const navError = new Error('navigate failed');
+    router.navigate = vi.fn().mockRejectedValue(navError);
+
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const matchResult = createMatchResult([route1]);
+
+    await showRouteContent(router, matchResult, []);
+
+    // microtask + rejected promise の解決を待つ
+    await new Promise<void>(resolve => queueMicrotask(() => resolve()));
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    expect(router.navigate).toHaveBeenCalledWith('/fallback');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Fallback navigation failed:',
+      navError
+    );
+
+    consoleWarnSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
+
   it('ガードキャンセル時にフォールバックパスへナビゲートすること', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
@@ -107,7 +141,7 @@ describe('showRouteContent', () => {
       shouldChange: vi.fn().mockReturnValue(true),
     });
 
-    router.navigate = vi.fn();
+    router.navigate = vi.fn().mockResolvedValue(undefined);
 
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -297,5 +331,48 @@ describe('showRouteContent', () => {
     await showRouteContent(router, matchResult, []);
 
     expect(route1.setParams).toHaveBeenCalled();
+  });
+
+  it('成功時は true を返すこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('@@route:mock');
+    container.appendChild(placeholder);
+    document.body.appendChild(container);
+
+    const route1 = createMockRoute({
+      shouldChange: vi.fn().mockReturnValue(true),
+      placeHolder: placeholder,
+    });
+
+    const matchResult = createMatchResult([route1]);
+
+    const result = await showRouteContent(router, matchResult, []);
+    expect(result).toBe(true);
+  });
+
+  it('GuardCancel 捕捉時は false を返すこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const guardCancel = new GuardCancel('Guard rejected', '/fallback');
+
+    const route1 = createMockRoute({
+      guardCheck: vi.fn().mockRejectedValue(guardCancel),
+      shouldChange: vi.fn().mockReturnValue(true),
+    });
+
+    router.navigate = vi.fn().mockResolvedValue(undefined);
+
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const matchResult = createMatchResult([route1]);
+
+    const result = await showRouteContent(router, matchResult, []);
+    expect(result).toBe(false);
+
+    consoleWarnSpy.mockRestore();
   });
 });

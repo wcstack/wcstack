@@ -5,14 +5,21 @@ import { ILayout } from "./types.js";
 
 const cache = new Map<string, string>();
 
+/**
+ * Layout テンプレートキャッシュをクリアする。
+ * テストや長時間 SPA でメモリリークを避けるため、リセットしたい場合に利用する。
+ */
+export function _clearLayoutCache(): void {
+  cache.clear();
+}
+
 export class Layout extends HTMLElement implements ILayout {
   private _uuid: string = getUUID();
-  private _initialized: boolean = false;
   constructor() {
     super();
   }
 
-  private async _loadTemplateFromSource(source: string): Promise<string | null> {
+  private async _loadTemplateFromSource(source: string): Promise<string> {
     try {
       const response = await fetch(source);
       if (!response.ok) {
@@ -22,7 +29,11 @@ export class Layout extends HTMLElement implements ILayout {
       cache.set(source, templateContent);
       return templateContent;
     } catch (error) {
-      raiseError(`${config.tagNames.layout} failed to load layout from source: ${source}, error: ${error}`);
+      // 元の例外を cause として伝播し、スタックトレースを保持する
+      raiseError(
+        `${config.tagNames.layout} failed to load layout from source: ${source}, error: ${error}`,
+        { cause: error }
+      );
     }
   }
 
@@ -47,8 +58,8 @@ export class Layout extends HTMLElement implements ILayout {
       if (cache.has(source)) {
         template.innerHTML = cache.get(source) || '';
       } else {
+        // _loadTemplateFromSource は内部で cache.set を実行する
         template.innerHTML = await this._loadTemplateFromSource(source) || '';
-        cache.set(source, template.innerHTML);
       }
     } else if (layoutId) {
       const templateContent = this._loadTemplateFromDocument(layoutId);
@@ -77,15 +88,5 @@ export class Layout extends HTMLElement implements ILayout {
   get name(): string {
     // Layout 要素が DOM に挿入されないケース（parseで置換）でも name を取れるようにする
     return this.getAttribute('name') || '';
-  }
-
-  private _initialize() {
-    this._initialized = true;
-  }
-
-  connectedCallback() {
-    if (!this._initialized) {
-      this._initialize();
-    }
   }
 }

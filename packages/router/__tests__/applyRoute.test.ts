@@ -10,7 +10,6 @@ import './setup';
 describe('applyRoute', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
     vi.clearAllMocks();
   });
 
@@ -31,7 +30,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
     
     await applyRoute(router, outlet, '/app/test', '');
     
@@ -55,7 +54,7 @@ describe('applyRoute', () => {
     };
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
 
     await applyRoute(router, outlet, '/app', '/prev');
 
@@ -79,7 +78,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
     
     await applyRoute(router, outlet, '/home', '');
     
@@ -110,7 +109,7 @@ describe('applyRoute', () => {
     const outlet = document.createElement('wcs-outlet') as Outlet;
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
-    const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
 
     await applyRoute(router, outlet, '/nonexistent', '/prev');
 
@@ -135,7 +134,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
     
     await applyRoute(router, outlet, '/page', '/previous');
     
@@ -183,7 +182,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
     
     const lastPathValue = '/old-path';
     await applyRoute(router, outlet, '/current', lastPathValue);
@@ -209,7 +208,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    const showRouteContentSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    const showRouteContentSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
     
     await applyRoute(router, outlet, '/test', '');
     
@@ -232,7 +231,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
     
     // basenameは'/admin'だが、パスは'/user'で始まらない
     await applyRoute(router, outlet, '/user/profile', '');
@@ -257,10 +256,44 @@ describe('applyRoute', () => {
     };
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(undefined);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
 
     await applyRoute(router, outlet, '/appX/products', '');
 
     expect(matchRoutesModule.matchRoutes).toHaveBeenCalledWith(router, '/appX/products');
+  });
+
+  it('GuardCancel時 (showRouteContent が false を返す) は path / lastRoutes を更新しないこと', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const prevRoute = {} as Route;
+    const newRoute = {} as Route;
+    const outlet = document.createElement('wcs-outlet') as Outlet;
+    outlet.lastRoutes = [prevRoute];
+    // 初期値が設定済みであることを前提に、これらが上書きされないことを確認する
+    (router as any)._path = '/initial';
+
+    const matchResult = {
+      path: '/blocked',
+      routes: [newRoute],
+      params: {},
+      typedParams: {},
+      lastPath: ''
+    };
+
+    vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(false);
+
+    const pathChangedListener = vi.fn();
+    router.addEventListener('wcs-router:path-changed', pathChangedListener);
+
+    await applyRoute(router, outlet, '/blocked', '/initial');
+
+    // path / lastRoutes は更新されない
+    expect(router.path).toBe('/initial');
+    expect(outlet.lastRoutes).toEqual([prevRoute]);
+    // 拒否されたパスでの path-changed イベントは発火されない
+    expect(pathChangedListener).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { config } from "../config";
 import { getUUID } from "../getUUID";
 import { raiseError } from "../raiseError";
 import { getNavigation } from "../Navigation";
+import { normalizeBasename, normalizePathname } from "../normalizePathname";
 import { ILink } from "./types";
 import type { Router } from "./Router";
 
@@ -26,6 +27,13 @@ export class Link extends HTMLElement implements ILink {
     return this._uuid;
   }
   
+  /**
+   * 最寄りの Router を返す。
+   *
+   * 注意: この getter は DOM 走査で Router を探すため、
+   * Router がまだ upgrade されていない場合は HTMLElement として返る可能性がある。
+   * 通常は registerComponents() で Router を Link より先に upgrade することを推奨する。
+   */
   get router(): Router {
     if (this._router) {
       return this._router;
@@ -51,16 +59,17 @@ export class Link extends HTMLElement implements ILink {
     this._initialized = true;
   }
 
+  /**
+   * URL pathname を正規化する。Router と共通実装を使うことで
+   * basenameFileExtensions の取り扱いを揃え、active 判定の取りこぼしを防ぐ。
+   */
   private _normalizePathname(path: string): string {
-    let p = path || "/";
-    if (!p.startsWith("/")) p = "/" + p;
-    p = p.replace(/\/{2,}/g, "/");
-    if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
-    return p;
+    return normalizePathname(path);
   }
 
   private _joinInternalPath(basename: string, to: string): string {
-    const base = (basename || "").replace(/\/{2,}/g, "/").replace(/\/$/, "");
+    // Router._joinInternalPath と挙動を揃える
+    const base = normalizeBasename(basename);
     const internal = to.startsWith("/") ? to : "/" + to;
     const path = this._normalizePathname(internal);
     if (!base) return path;
@@ -114,6 +123,8 @@ export class Link extends HTMLElement implements ILink {
         if (e.defaultPrevented) return;
         if (e.button !== 0) return;
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        // 動的に外部URLに変わった場合はブラウザのデフォルト挙動に委ねる
+        if (!this._path.startsWith('/')) return;
         e.preventDefault();
         await this.router.navigate(this._path);
         this._updateActiveState();
@@ -127,17 +138,24 @@ export class Link extends HTMLElement implements ILink {
     getNavigation()?.removeEventListener('currententrychange', this._updateActiveState);
     window.removeEventListener('wcs:navigate', this._updateActiveState as EventListener);
     window.removeEventListener('popstate', this._updateActiveState as EventListener);
-    if (this._anchorElement) {
+    const anchor = this._anchorElement;
+    if (anchor) {
       if (this._onClick) {
-        this._anchorElement.removeEventListener('click', this._onClick);
+        anchor.removeEventListener('click', this._onClick);
         this._onClick = undefined;
       }
-      this._anchorElement.remove();
+      anchor.remove();
       this._anchorElement = null;
     }
+    // anchor 配下のままだった子要素のみ取り除く（別の親に移動されていた場合に誤って strip しないため）
     for(const childNode of this._childNodeArray) {
-      childNode.parentNode?.removeChild(childNode);
+      if (anchor && childNode.parentNode === anchor) {
+        anchor.removeChild(childNode);
+      }
     }
+    // Router キャッシュをクリア。別の Router 配下に動的に移動された場合や
+    // Router 自体が入れ替わった場合に古い参照を返さないようにする。
+    this._router = null;
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {

@@ -38,7 +38,10 @@ export async function applyRoute(
   }
   matchResult.lastPath = lastPath;
   const lastRoutes = outlet.lastRoutes;
-  await showRouteContent(routerNode, matchResult, lastRoutes);
+  const committed = await showRouteContent(routerNode, matchResult, lastRoutes);
+  // GuardCancel により中断された場合は state を更新しない
+  // （拒否されたパスでの wcs-router:path-changed 発火を防ぐため）
+  if (!committed) return;
   // if successful, update router and outlet state
   routerNode.path = path;
   outlet.lastRoutes = matchResult.routes;

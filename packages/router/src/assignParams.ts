@@ -20,7 +20,13 @@ function _assignParams(element: Element, params: Record<string, any>, bindType: 
         };
         break;
       case "attr":
-        element.setAttribute(key, value);
+        // null/undefined は属性削除として扱う（文字列 "null"/"undefined" になる事故を防ぐ）。
+        // boolean/number は setAttribute の標準挙動に従って文字列化される。
+        if (value === null || value === undefined) {
+          element.removeAttribute(key);
+        } else {
+          element.setAttribute(key, String(value));
+        }
         break;
       case "":
         (element as any)[key] = value;
@@ -40,6 +46,12 @@ export function assignParams(element: Element, params: Record<string, any>) {
   const bindType = bindTypeText as BindType;
   const customTagName = getCustomTagName(element);
   if (customTagName && customElements.get(customTagName) === undefined) {
+    // 注意: customElements.whenDefined(tag) は当該タグが define されるまで pending のままになる。
+    // element が削除されてもこの Promise は GC されず、closure に保持される element/params は
+    // 解放されない（弱い参照を持つ手段がないため）。define されないまま要素のみが大量に作られる
+    // ようなケースではリークになりうるが、通常の Web Components 利用では autoloader が
+    // 一括 define するため実用上問題にならない。明示的にキャンセルしたい場合は将来 AbortSignal を
+    // サポートすることを検討する。
     customElements.whenDefined(customTagName).then(() => {
       if (element.isConnected) {
         // 要素が削除されていない場合のみ割り当てを行う

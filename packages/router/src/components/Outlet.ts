@@ -34,8 +34,24 @@ export class Outlet extends HTMLElement implements IOutlet {
     this._lastRoutes = [ ...value ];
   }
 
+  /**
+   * shadowRoot 有効化判定。Layout と挙動を揃え、属性で個別オーバーライド可能にする。
+   * - `enable-shadow-root` 属性あり → true
+   * - `disable-shadow-root` 属性あり → false
+   * - いずれもなし → config.enableShadowRoot を尊重
+   */
+  private _resolveEnableShadowRoot(): boolean {
+    if (this.hasAttribute('enable-shadow-root')) {
+      return true;
+    }
+    if (this.hasAttribute('disable-shadow-root')) {
+      return false;
+    }
+    return config.enableShadowRoot;
+  }
+
   private _initialize() {
-    if (config.enableShadowRoot) {
+    if (this._resolveEnableShadowRoot()) {
       this.attachShadow({ mode: 'open' });
     }
     this._initialized = true;
@@ -45,6 +61,23 @@ export class Outlet extends HTMLElement implements IOutlet {
     if (!this._initialized) {
       this._initialize();
     }
+  }
+
+  /**
+   * Outlet が disconnect された際の状態クリーンアップ。
+   *
+   * `_lastRoutes` をクリアすることで、再接続後の applyRoute における diff
+   * （既に show 済みのルートは show を skip する判定）が、切断中に外部から
+   * 操作された DOM と整合しなくなる事故を防ぐ。
+   *
+   * 仕様前提として Outlet は Router と一体運用される（Router が `_getOutlet()` で
+   * 自身の兄弟に Outlet を配置・参照する）。それでも単独で再接続される
+   * エッジケースに備える防衛的措置として `_lastRoutes` のみクリアする。
+   * `_initialized` と shadowRoot は維持し、再 attachShadow による
+   * InvalidStateError を回避する。
+   */
+  disconnectedCallback() {
+    this._lastRoutes = [];
   }
 }
 

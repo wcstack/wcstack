@@ -43,6 +43,22 @@ describe('Outlet', () => {
       const outlet = document.createElement('wcs-outlet') as Outlet;
       expect(outlet.shadowRoot).toBeNull();
     });
+
+    it('enable-shadow-root属性がある場合、config.enableShadowRootがfalseでもshadowRootを作成すること', () => {
+      setConfig({ enableShadowRoot: false });
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      outlet.setAttribute('enable-shadow-root', '');
+      document.body.appendChild(outlet);
+      expect(outlet.shadowRoot).not.toBeNull();
+    });
+
+    it('disable-shadow-root属性がある場合、config.enableShadowRootがtrueでもshadowRootを作成しないこと', () => {
+      setConfig({ enableShadowRoot: true });
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      outlet.setAttribute('disable-shadow-root', '');
+      document.body.appendChild(outlet);
+      expect(outlet.shadowRoot).toBeNull();
+    });
   });
 
   describe('routesNode', () => {
@@ -112,6 +128,32 @@ describe('Outlet', () => {
       outlet.connectedCallback();
 
       expect(outlet.shadowRoot).toBeNull();
+    });
+  });
+
+  describe('disconnectedCallback', () => {
+    it('disconnect 時に lastRoutes をクリアすること', () => {
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      outlet.lastRoutes = [{ path: '/foo' } as any];
+      expect(outlet.lastRoutes.length).toBe(1);
+
+      document.body.appendChild(outlet);
+      document.body.removeChild(outlet);
+
+      expect(outlet.lastRoutes).toEqual([]);
+    });
+
+    it('disconnect 後の再接続で shadowRoot が二重生成されないこと', () => {
+      setConfig({ enableShadowRoot: true });
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      document.body.appendChild(outlet);
+      const firstShadow = outlet.shadowRoot;
+      expect(firstShadow).not.toBeNull();
+
+      document.body.removeChild(outlet);
+      // 再接続しても同じ shadowRoot のまま（再 attachShadow が走らないこと）
+      expect(() => document.body.appendChild(outlet)).not.toThrow();
+      expect(outlet.shadowRoot).toBe(firstShadow);
     });
   });
 

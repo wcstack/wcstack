@@ -242,6 +242,41 @@ describe('RouteCore', () => {
       expect(coreEvents).toEqual([]);
       expect(targetEvents).toEqual([true]);
     });
+
+    it('setParamsでactiveがfalse→trueになる時にactive-changedイベントが発火する', () => {
+      const target = new EventTarget();
+      const core = new RouteCore(target);
+      core.parsePath('/users/:id');
+
+      const events: boolean[] = [];
+      target.addEventListener('wcs-route:active-changed', (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      core.setParams({ id: '1' }, { id: 1 });
+      // 同じactive状態のままsetParamsしても発火しない
+      core.setParams({ id: '2' }, { id: 2 });
+
+      expect(events).toEqual([true]);
+    });
+
+    it('clearParamsでactiveがtrue→falseになる時にactive-changedイベントが発火する', () => {
+      const target = new EventTarget();
+      const core = new RouteCore(target);
+      core.parsePath('/users/:id');
+
+      const events: boolean[] = [];
+      target.addEventListener('wcs-route:active-changed', (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      core.setParams({ id: '1' }, { id: 1 });
+      core.clearParams();
+      // 既にinactive状態でclearParamsしても発火しない
+      core.clearParams();
+
+      expect(events).toEqual([true, false]);
+    });
   });
 
   describe('shouldChange', () => {
@@ -283,6 +318,16 @@ describe('RouteCore', () => {
       core.guardHandler = vi.fn().mockResolvedValue(false);
 
       await expect(core.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' })).rejects.toThrow('Navigation cancelled by guard.');
+    });
+
+    it('notifyGuardHandlerLoadFailedが呼ばれた後にguardCheckはGuardCancelをスローすること', async () => {
+      const core = new RouteCore();
+      core.parsePath('/protected', { hasGuard: true, guardFallback: '/login' });
+      core.notifyGuardHandlerLoadFailed();
+
+      await expect(
+        core.guardCheck({ path: '/protected', routes: [], params: {}, typedParams: {}, lastPath: '/' })
+      ).rejects.toThrow('Navigation cancelled: guard handler failed to load.');
     });
   });
 
