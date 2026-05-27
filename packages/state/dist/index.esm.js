@@ -59,7 +59,7 @@ function setConfig(partialConfig) {
     }
 }
 
-var version$1 = "1.10.4";
+var version$1 = "1.11.0";
 var pkg = {
 	version: version$1};
 
@@ -280,7 +280,8 @@ function isValidWcBindable(value) {
         && Array.isArray(v.properties);
 }
 function makeExpandedEntry(name, base, stateName) {
-    const expandedPath = `${base}.${name}`;
+    // Dot-relative spread keeps the loop item root (`.`) without producing `..foo`.
+    const expandedPath = base === "." ? `.${name}` : `${base}.${name}`;
     return {
         propName: name,
         propSegments: [name],
@@ -300,6 +301,8 @@ function dedupKey(r) {
         case 'radio':
         case 'checkbox':
             return `${r.bindingType}::${r.propName}`;
+        case 'spread':
+            return null;
         default:
             return null;
     }
@@ -315,6 +318,21 @@ function dedupKey(r) {
  * - Duplicate propName: last-wins (explicit binding overrides spread).
  * - When config.debug, console.debug logs each override.
  * - Mid-`*` in target path is allowed (e.g. `...: stores.*.fetch`).
+ *
+ * Composite Profile (COMPOSITE.md / SPEC-extensions § 4) support:
+ * - A composite shell exposes its synthesized declaration via the standard
+ *   `target.constructor.wcBindable` surface (§ 1 Discovery), so this function
+ *   handles it without any composite-specific code path.
+ * - Composed property names use the `<sourceId>.<sourceName>` pattern
+ *   (e.g. "s3.progress"); we keep the dotted name as a single segment so
+ *   element member access stays flat (element["s3.progress"], not nested).
+ * - The expanded state path becomes `targetBase.s3.progress`, which resolves
+ *   as nested state access — author state as `{ s3: { progress: 0 } }` to
+ *   mirror the composed structure.
+ * - Tier claim (Symbol.for("wc-bindable.composite.tiers")) is not read here;
+ *   spread covers observation (T1) and writable inputs (T2) transparently
+ *   through normal property assignment, and commands stay out of spread by
+ *   design regardless of tier.
  */
 function expandSpread(node, results, options = {}) {
     const allowDeferred = options.allowDeferred ?? true;
@@ -360,6 +378,8 @@ function expandSpread(node, results, options = {}) {
             spreadOrigin.add(entry);
             expanded.push(entry);
         }
+        // properties win over inputs when the name overlaps because they carry the
+        // full property contract (for example change events).
         for (const input of (bindable.inputs ?? [])) {
             if (seen.has(input.name))
                 continue;
@@ -3870,6 +3890,8 @@ function _scheduleDeferredSpreads(deferredSpreads, parentLoopContext) {
             _initializeBindings(bindings);
             _registerAbsoluteAddresses(bindings);
             applyChangeFromBindings(bindings);
+        }).catch((error) => {
+            console.error(`[@wcstack/state] deferred spread failed for <${entry.tagName}>.`, error);
         });
     }
 }
