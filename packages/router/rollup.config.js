@@ -1,5 +1,6 @@
 import typescript from '@rollup/plugin-typescript';
 import terser from '@rollup/plugin-terser';
+import json from '@rollup/plugin-json';
 import dts from 'rollup-plugin-dts';
 import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
@@ -35,7 +36,7 @@ export default [
       format: 'esm',
       sourcemap: true,
     },
-    plugins: [typescriptPlugin, copyAutoPlugin()],
+    plugins: [json(), typescriptPlugin, copyAutoPlugin()],
   },
   // ESM minified build
   {
@@ -46,6 +47,7 @@ export default [
       sourcemap: true,
     },
     plugins: [
+      json(),
       typescript({
         tsconfig: './tsconfig.json',
         declaration: false,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Layout } from '../src/components/Layout';
+import { Layout, _clearLayoutCache } from '../src/components/Layout';
 import './setup';
 
 describe('Layout', () => {
@@ -283,6 +283,30 @@ describe('Layout', () => {
       expect(template.innerHTML).toBe('');
       // フェッチは1回だけ呼ばれる（キャッシュが使われた）
       expect((globalThis as any).fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('_clearLayoutCacheでキャッシュをクリアできること', async () => {
+      const mockHtml = '<div>Clear cache</div>';
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(mockHtml),
+      });
+      (globalThis as any).fetch = fetchMock;
+
+      const layout1 = document.createElement('wcs-layout') as Layout;
+      layout1.setAttribute('src', '/clear-cache.html');
+      document.body.appendChild(layout1);
+      await layout1.loadTemplate();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      _clearLayoutCache();
+
+      // クリア後は再度 fetch される
+      const layout2 = document.createElement('wcs-layout') as Layout;
+      layout2.setAttribute('src', '/clear-cache.html');
+      document.body.appendChild(layout2);
+      await layout2.loadTemplate();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 });

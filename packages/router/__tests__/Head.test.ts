@@ -587,6 +587,55 @@ describe('Head', () => {
       expect((head as any)._getKey(linkEl)).toContain('link:');
     });
 
+    it('scriptがsrc/idのいずれかを持つ場合にキー判定が正規化されること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      const scriptEl = document.createElement('script');
+      scriptEl.setAttribute('src', '/test.js');
+      scriptEl.setAttribute('type', 'module');
+      const key = (head as any)._getKey(scriptEl);
+      expect(key).toBe('script:/test.js::module');
+
+      const inlineScriptWithId = document.createElement('script');
+      inlineScriptWithId.setAttribute('id', 'inline-id');
+      const key2 = (head as any)._getKey(inlineScriptWithId);
+      expect(key2).toBe('script::inline-id:');
+    });
+
+    it('インラインscriptのキー判定が outerHTML 由来であること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      const scriptEl = document.createElement('script');
+      scriptEl.textContent = "console.log('inline')";
+      const key = (head as any)._getKey(scriptEl);
+      // src も id も無い場合の fallback パス
+      expect(key.startsWith('script:::')).toBe(true);
+    });
+
+    it('styleがidを持つ場合にキー判定が正規化されること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      const styleEl = document.createElement('style');
+      styleEl.setAttribute('id', 'theme-css');
+      styleEl.setAttribute('media', 'print');
+      const key = (head as any)._getKey(styleEl);
+      expect(key).toBe('style:theme-css:print');
+    });
+
+    it('インラインstyleのキー判定が outerHTML 由来であること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      const styleEl = document.createElement('style');
+      styleEl.textContent = '.x { color: red; }';
+      const key = (head as any)._getKey(styleEl);
+      // id 無し fallback パス
+      expect(key.startsWith('style::')).toBe(true);
+    });
+
+    it('script/style以外の不明タグはoutterHTMLベースで識別すること', () => {
+      const head = document.createElement('wcs-head') as Head;
+      const noscriptEl = document.createElement('noscript');
+      noscriptEl.textContent = 'fallback';
+      const key = (head as any)._getKey(noscriptEl);
+      expect(key.startsWith('noscript:')).toBe(true);
+    });
+
     it('キーがHeadに存在しない場合の分岐が通ること', () => {
       const headWithTitle = document.createElement('wcs-head') as Head;
       headWithTitle.innerHTML = '<title>Init</title>';

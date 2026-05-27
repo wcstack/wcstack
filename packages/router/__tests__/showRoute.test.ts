@@ -19,7 +19,6 @@ function mockMatch(route: Route, params: Record<string, string> = {}): IRouteMat
 describe('showRoute', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
   });
 
   it('ノードを表示し、paramsを設定すること', () => {

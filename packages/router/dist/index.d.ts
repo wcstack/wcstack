@@ -34,10 +34,20 @@ interface IWcBindableProperty {
     readonly event: string;
     readonly getter?: (event: Event) => any;
 }
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
+    readonly version: 1;
     readonly properties: IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
 
 /**
@@ -79,8 +89,8 @@ interface IRoute extends IRouteChildContainer {
     readonly placeHolder: Comment;
     readonly childNodeArray: Node[];
     readonly routes: IRoute[];
-    params: Record<string, string>;
-    typedParams: Record<string, any>;
+    readonly params: Record<string, string>;
+    readonly typedParams: Record<string, any>;
     readonly paramNames: string[];
     readonly absoluteParamNames: string[];
     readonly weight: number;
@@ -99,6 +109,7 @@ interface IRoute extends IRouteChildContainer {
     testAncestorNode(ancestorNode: IRoute): boolean;
     setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
     clearParams(): void;
+    notifyGuardHandlerLoadFailed(): void;
 }
 interface IRouter extends IRouteChildContainer {
     readonly basename: string;
@@ -129,21 +140,19 @@ declare class Router extends HTMLElement implements IRouter {
     private _initialized;
     private _fallbackRoute;
     private _listeningPopState;
+    private _listeningNavigate;
     private _navigateUrl;
+    private _disconnectedDuringInit;
+    private _initializing;
     constructor();
     /**
      * Normalize a URL pathname to a route path.
-     * - ensure leading slash
-     * - collapse multiple slashes
-     * - treat trailing file extensions (e.g. .html) as directory root
-     * - remove trailing slash except root "/"
+     * 共通実装は normalizePathname.ts を参照（Link との挙動整合のため）。
      */
     private _normalizePathname;
     /**
      * Normalize basename.
-     * - "" or "/" -> ""
-     * - "/app/" -> "/app"
-     * - "/app/index.html" -> "/app"
+     * 共通実装は normalizePathname.ts を参照。
      */
     private _normalizeBasename;
     private _joinInternalPath;
@@ -192,6 +201,7 @@ declare class Route extends HTMLElement implements IRoute {
     private _childNodeArray;
     private _childIndex;
     private _initialized;
+    private _routes;
     constructor();
     get routeParentNode(): IRoute | null;
     get routeChildNodes(): IRoute[];
@@ -222,6 +232,15 @@ declare class Route extends HTMLElement implements IRoute {
     clearParams(): void;
     shouldChange(newParams: Record<string, string>): boolean;
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;
+    notifyGuardHandlerLoadFailed(): void;
+    /**
+     * Shell（Route）の routeParentNode を辿って祖先関係を判定する。
+     *
+     * 責務の分担:
+     * - Route（このクラス）は DOM ツリー上の親子関係（routeParentNode）を管理する。
+     * - RouteCore はパスやパラメータといった論理的な親子関係（parentCore）を管理する。
+     * DOM ツリーは Shell 層、論理ツリーは Core 層という分離のため、両者を独立に保持する。
+     */
     testAncestorNode(ancestorNode: IRoute): boolean;
     initialize(routerNode: IRouter, routeParentNode: IRoute | null): void;
 }
@@ -255,6 +274,7 @@ declare class RouteCore extends EventTarget {
     private _guardFallbackPath;
     private _waitForSetGuardHandler;
     private _resolveSetGuardHandler;
+    private _guardHandlerLoadFailed;
     constructor(target?: EventTarget);
     get parentCore(): RouteCore | null;
     set parentCore(value: RouteCore | null);
@@ -281,8 +301,15 @@ declare class RouteCore extends EventTarget {
     shouldChange(newParams: Record<string, string>): boolean;
     get guardHandler(): GuardHandler;
     set guardHandler(value: GuardHandler);
+    /**
+     * Guardハンドラのロードに失敗したことを通知し、guardCheck の待ちを解除する。
+     * 解除後の guardCheck は guardHandler が未設定のため fallback パスへリダイレクトする。
+     */
+    notifyGuardHandlerLoadFailed(): void;
     guardCheck(matchResult: IRouteMatchResult): Promise<void>;
 }
 
-export { Route, RouteCore, Router, bootstrapRouter, getConfig };
+declare const VERSION: string;
+
+export { Route, RouteCore, Router, VERSION, bootstrapRouter, getConfig };
 export type { IWritableConfig, IWritableTagNames, RouteParseOptions };

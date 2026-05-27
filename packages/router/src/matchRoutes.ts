@@ -2,25 +2,21 @@ import { IRoute, IRouteMatchResult, IRouter } from "./components/types.js";
 import { testPath } from "./testPath.js";
 
 function _matchRoutes(
-  routerNode: IRouter, 
-  routeNode: IRoute, 
-  routes: IRoute[], 
+  routeNode: IRoute,
   normalizedPath: string,
   segments: string[],
   results: IRouteMatchResult[]
 ): void {
-  const nextRoutes = routes.concat(routeNode);
   const matchResult = testPath(routeNode, normalizedPath, segments);
   if (matchResult) {
     results.push(matchResult);
   }
   for(const childRoute of routeNode.routeChildNodes) {
-    _matchRoutes(routerNode, childRoute, nextRoutes, normalizedPath, segments, results);
+    _matchRoutes(childRoute, normalizedPath, segments, results);
   }
 }
 
 export function matchRoutes(routerNode: IRouter, normalizedPath: string): IRouteMatchResult | null {
-  const routes: IRoute[] = [];
   const topLevelRoutes = routerNode.routeChildNodes;
   const results: IRouteMatchResult[] = [];
   // セグメント配列を作成（先頭の/は除去せずにそのまま分割）
@@ -36,7 +32,7 @@ export function matchRoutes(routerNode: IRouter, normalizedPath: string): IRoute
     return true;
   });
   for (const route of topLevelRoutes) {
-    _matchRoutes(routerNode, route, routes, normalizedPath, segments, results);
+    _matchRoutes(route, normalizedPath, segments, results);
   }
   results.sort((a, b) => {
     const lastRouteA = a.routes.at(-1)!;

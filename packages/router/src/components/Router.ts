@@ -1,11 +1,20 @@
 import { parse } from "../parse.js";
-import { createOutlet, Outlet } from "./Outlet.js";
+import { createOutlet } from "./Outlet.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { IOutlet, IRoute, IRouter } from "./types.js";
 import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
+import { normalizeBasename, normalizePathname } from "../normalizePathname.js";
+
+interface NavigateEventLike {
+  canIntercept: boolean;
+  hashChange: boolean;
+  downloadRequest: string | null;
+  destination: { url: string };
+  intercept: (options: { handler: () => Promise<void> }) => void;
+}
 
 /**
  * AppRoutes - Root component for @wcstack/router
@@ -36,7 +45,10 @@ export class Router extends HTMLElement implements IRouter {
   private _initialized: boolean = false;
   private _fallbackRoute: IRoute | null = null;
   private _listeningPopState: boolean = false;
+  private _listeningNavigate: boolean = false;
   private _navigateUrl: string | null = null;
+  private _disconnectedDuringInit: boolean = false;
+  private _initializing: boolean = false;
 
   constructor() {
     super();
@@ -44,51 +56,18 @@ export class Router extends HTMLElement implements IRouter {
 
   /**
    * Normalize a URL pathname to a route path.
-   * - ensure leading slash
-   * - collapse multiple slashes
-   * - treat trailing file extensions (e.g. .html) as directory root
-   * - remove trailing slash except root "/"
+   * 共通実装は normalizePathname.ts を参照（Link との挙動整合のため）。
    */
   private _normalizePathname(_path: string): string {
-    let path = _path || "/";
-    if (!path.startsWith("/")) path = "/" + path;
-    path = path.replace(/\/{2,}/g, "/");
-    // e.g. "/app/index.html" -> "/app"
-    const exts = config.basenameFileExtensions;
-    if (exts.length > 0) {
-      const extPattern = new RegExp(
-        `\\/[^/]+(?:${exts.map(e => e.replace(/\./g, '\\.')).join('|')})$`,
-        'i'
-      );
-      path = path.replace(extPattern, "");
-    }
-    if (path === "") path = "/";
-    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-    return path;
+    return normalizePathname(_path);
   }
 
   /**
    * Normalize basename.
-   * - "" or "/" -> ""
-   * - "/app/" -> "/app"
-   * - "/app/index.html" -> "/app"
+   * 共通実装は normalizePathname.ts を参照。
    */
   private _normalizeBasename(_path: string): string {
-    let path = _path || "";
-    if (!path) return "";
-    if (!path.startsWith("/")) path = "/" + path;
-    path = path.replace(/\/{2,}/g, "/");
-    const exts = config.basenameFileExtensions;
-    if (exts.length > 0) {
-      const extPattern = new RegExp(
-        `\\/[^/]+(?:${exts.map(e => e.replace(/\./g, '\\.')).join('|')})$`,
-        'i'
-      );
-      path = path.replace(extPattern, "");
-    }
-    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-    if (path === "/") return "";
-    return path;
+    return normalizeBasename(_path);
   }
 
   private _joinInternalPath(basename: string, to: string): string {
@@ -192,8 +171,12 @@ export class Router extends HTMLElement implements IRouter {
 
   set navigateUrl(value: string | null) {
     if (value === null || value === undefined || value === "") return;
+    // 既に同一 URL の navigate 中なら再起動しない
+    if (this._navigateUrl === value) return;
     this._navigateUrl = value;
-    this.navigate(value).then(() => {
+    this.navigate(value).catch((err) => {
+      console.error(`${config.tagNames.router} navigate failed:`, err);
+    }).finally(() => {
       this._navigateUrl = null;
       this.dispatchEvent(new CustomEvent("wcs-router:navigate-url-changed", {
         detail: null,
@@ -206,7 +189,13 @@ export class Router extends HTMLElement implements IRouter {
     const fullPath = this._joinInternalPath(this._basename, path);
     const navigation = getNavigation();
     if (navigation?.navigate) {
-      navigation.navigate(fullPath);
+      // Navigation API は { committed, finished } を返す。
+      // finished を await することで、navigate() の Promise が
+      // 実際のナビゲーション完了まで pending となり、_navigateUrl の
+      // 二重 navigate ガード (setter 内 `if (this._navigateUrl === value)`) が
+      // 適切な時間ウィンドウで機能するようになる。
+      // Polyfill や mock 環境で undefined / 戻り値なしのケースもあるため optional chaining。
+      await navigation.navigate(fullPath)?.finished;
     } else {
       history.pushState(null, '', fullPath);
       await applyRoute(this, this.outlet, fullPath, this._path);
@@ -223,7 +212,7 @@ export class Router extends HTMLElement implements IRouter {
     return fullPath === this._basename || fullPath.startsWith(this._basename + "/");
   }
 
-  private _onNavigateFunc(navEvent: any) {
+  private _onNavigateFunc(navEvent: NavigateEventLike) {
     if (
       !navEvent.canIntercept ||
       navEvent.hashChange ||
@@ -238,12 +227,17 @@ export class Router extends HTMLElement implements IRouter {
     const routesNode = this;
     navEvent.intercept({
       handler: async () => {
-        await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
+        try {
+          await applyRoute(routesNode, routesNode.outlet, fullPath, routesNode.path);
+        } catch (err) {
+          console.error(`${config.tagNames.router} applyRoute failed:`, err);
+          throw err;
+        }
       },
     });
   }
 
-  private _onNavigate = this._onNavigateFunc.bind(this);
+  private _onNavigate = this._onNavigateFunc.bind(this) as unknown as EventListener;
 
   private _onPopState = async () => {
     // back/forward for environments without Navigation API
@@ -255,48 +249,68 @@ export class Router extends HTMLElement implements IRouter {
   };
 
   private async _initialize(): Promise<void> {
-    this._initialized = true;
-    this._basename = this._normalizeBasename(
-      this.getAttribute("basename") || this._getBasename() || ""
-    );
-    const hasBaseTag = document.querySelector('base[href]') !== null;
-    const url = new URL(window.location.href);
-    if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
-      raiseError(`${config.tagNames.router} basename is empty, but current path is not "/".`);
-    }
+    this._initializing = true;
+    try {
+      this._basename = this._normalizeBasename(
+        this.getAttribute("basename") || this._getBasename() || ""
+      );
+      const hasBaseTag = document.querySelector('base[href]') !== null;
+      const url = new URL(window.location.href);
+      if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
+        raiseError(`${config.tagNames.router} basename is empty, but current path is not "/".`);
+      }
 
-    this._outlet = this._getOutlet();
-    this._outlet.routesNode = this;
-    this._template = this._getTemplate();
-    if (!this._template) {
-      raiseError(`${config.tagNames.router} should have a <template> child element.`);
-    }
-    const fragment = await parse(this);
-    this._outlet.rootNode.appendChild(fragment);
-    if (this.routeChildNodes.length === 0) {
-      raiseError(`${config.tagNames.router} has no route definitions.`);
-    }
+      this._outlet = this._getOutlet();
+      this._outlet.routesNode = this;
+      this._template = this._getTemplate();
+      if (!this._template) {
+        raiseError(`${config.tagNames.router} should have a <template> child element.`);
+      }
+      const fragment = await parse(this);
+      this._outlet.rootNode.appendChild(fragment);
+      if (this.routeChildNodes.length === 0) {
+        raiseError(`${config.tagNames.router} has no route definitions.`);
+      }
 
-    const fullPath = this._normalizePathname(window.location.pathname);
-    await applyRoute(this, this.outlet, fullPath, this._path);
-    this._notifyLocationChange();
-
+      const fullPath = this._normalizePathname(window.location.pathname);
+      await applyRoute(this, this.outlet, fullPath, this._path);
+      this._notifyLocationChange();
+      this._initialized = true;
+    } finally {
+      this._initializing = false;
+    }
   }
 
   async connectedCallback() {
     if (!this._initialized) {
+      this._disconnectedDuringInit = false;
       await this._initialize();
+      // 初期化中に disconnectedCallback が呼ばれた場合はイベントリスナを登録しない
+      if (this._disconnectedDuringInit) {
+        return;
+      }
     }
-    getNavigation()?.addEventListener("navigate", this._onNavigate);
+    const navigation = getNavigation();
+    if (navigation && !this._listeningNavigate) {
+      navigation.addEventListener("navigate", this._onNavigate);
+      this._listeningNavigate = true;
+    }
     // Fallback for browsers without Navigation API
-    if (!getNavigation()?.addEventListener && !this._listeningPopState) {
+    if (!navigation && !this._listeningPopState) {
       window.addEventListener("popstate", this._onPopState);
       this._listeningPopState = true;
     }
   }
 
   disconnectedCallback() {
-    getNavigation()?.removeEventListener("navigate", this._onNavigate);
+    // _initialize 中（await 中）に呼ばれた場合はフラグを立ててリスナ登録をスキップさせる
+    if (this._initializing) {
+      this._disconnectedDuringInit = true;
+    }
+    if (this._listeningNavigate) {
+      getNavigation()?.removeEventListener("navigate", this._onNavigate);
+      this._listeningNavigate = false;
+    }
     if (this._listeningPopState) {
       window.removeEventListener("popstate", this._onPopState);
       this._listeningPopState = false;

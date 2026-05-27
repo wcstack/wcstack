@@ -9,7 +9,6 @@ import './setup';
 describe('parse', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
     vi.clearAllMocks();
   });
 

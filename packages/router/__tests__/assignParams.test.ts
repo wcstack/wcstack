@@ -16,11 +16,41 @@ describe('assignParams', () => {
   it('data-bind="attr" の場合、属性として割り当てること', () => {
     const element = document.createElement('div');
     element.setAttribute('data-bind', 'attr');
-    
+
     assignParams(element, { 'data-id': '456', title: 'test title' });
-    
+
     expect(element.getAttribute('data-id')).toBe('456');
     expect(element.getAttribute('title')).toBe('test title');
+  });
+
+  it('data-bind="attr" でnullを渡した場合、属性を削除すること', () => {
+    const element = document.createElement('div');
+    element.setAttribute('data-bind', 'attr');
+    element.setAttribute('title', 'existing');
+
+    assignParams(element, { title: null as any });
+
+    expect(element.hasAttribute('title')).toBe(false);
+  });
+
+  it('data-bind="attr" でundefinedを渡した場合、属性を削除すること', () => {
+    const element = document.createElement('div');
+    element.setAttribute('data-bind', 'attr');
+    element.setAttribute('title', 'existing');
+
+    assignParams(element, { title: undefined as any });
+
+    expect(element.hasAttribute('title')).toBe(false);
+  });
+
+  it('data-bind="attr" でboolean/numberを渡した場合、setAttributeの標準挙動で文字列化されること', () => {
+    const element = document.createElement('div');
+    element.setAttribute('data-bind', 'attr');
+
+    assignParams(element, { active: true as any, count: 42 as any });
+
+    expect(element.getAttribute('active')).toBe('true');
+    expect(element.getAttribute('count')).toBe('42');
   });
 
   it('data-bind="props" の場合、propsオブジェクトに割り当てること', () => {

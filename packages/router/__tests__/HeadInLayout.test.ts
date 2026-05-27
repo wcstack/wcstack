@@ -9,7 +9,6 @@ describe('Head in Layout', () => {
 
   beforeEach(() => {
     _resetHeadStack();
-    (Router as any)._instance = null;
     document.body.innerHTML = '';
     originalTitle = document.title;
     originalHeadHTML = document.head.innerHTML;

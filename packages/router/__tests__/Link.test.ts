@@ -494,6 +494,39 @@ describe('Link', () => {
       expect(preventDefault).toHaveBeenCalled();
       expect(navigateSpy).toHaveBeenCalledWith('/test');
     });
+
+    it('動的に外部URLに変わった場合はpreventDefaultを呼ばないこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+
+      const navigateSpy = vi.fn().mockResolvedValue(undefined);
+      (router as any).navigate = navigateSpy;
+
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', '/test');
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+
+      const onClick = (link as any)._onClick as (e: MouseEvent) => void;
+      expect(onClick).toBeDefined();
+
+      // 動的に path を外部URLに変更
+      (link as any)._path = 'https://example.com';
+
+      const preventDefault = vi.fn();
+      await onClick({
+        defaultPrevented: false,
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault,
+      } as any);
+      // preventDefault も navigate も呼ばれないこと
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('private helpers', () => {

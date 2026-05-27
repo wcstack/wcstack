@@ -12,3 +12,5 @@ export type {
 export type {
   RouteParseOptions
 } from "./core/RouteCore.js";
+
+export { VERSION } from "./version.js";

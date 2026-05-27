@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Route } from '../src/components/Route';
 import { Router } from '../src/components/Router';
 import { GuardCancel } from '../src/GuardCancel';
@@ -46,9 +46,6 @@ function createRouteWithGuard(path: string, guardFallback: string): Route {
 }
 
 describe('Route', () => {
-  beforeEach(() => {
-    (Router as any)._instance = null;
-  });
 
   it('Routeクラスが存在すること', () => {
     expect(Route).toBeDefined();
@@ -255,7 +252,7 @@ describe('Route', () => {
     });
   });
 
-  describe('_checkParentNode', () => {
+  describe('_checkParentCore', () => {
     it('相対パスで親がない場合、エラーを投げること', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);

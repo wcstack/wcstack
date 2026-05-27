@@ -242,6 +242,54 @@ describe('Router', () => {
       expect(navigation.navigate).toHaveBeenCalledWith('/base/path');
     });
 
+    it('navigation.navigate が {finished} を返した場合、navigate() は finished を await すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/base';
+
+      let resolveFinished!: () => void;
+      const finishedPromise = new Promise<void>((resolve) => {
+        resolveFinished = resolve;
+      });
+      const navigateMock = vi.fn().mockReturnValue({
+        committed: Promise.resolve(),
+        finished: finishedPromise,
+      });
+      const navigation = {
+        navigate: navigateMock,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+      (window as any).navigation = navigation;
+
+      let resolved = false;
+      const navPromise = router.navigate('/path').then(() => {
+        resolved = true;
+      });
+
+      // finished 未解決の状態では navigate() も未解決
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(resolved).toBe(false);
+
+      // finished を解決すれば navigate() も解決する
+      resolveFinished();
+      await navPromise;
+      expect(resolved).toBe(true);
+    });
+
+    it('navigation.navigate が undefined を返しても navigate() は解決すること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._basename = '/base';
+      const navigation = {
+        // polyfill 等で戻り値が undefined のケース
+        navigate: vi.fn().mockReturnValue(undefined),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+      (window as any).navigation = navigation;
+
+      await expect(router.navigate('/path')).resolves.toBeUndefined();
+    });
+
     it('navigation APIがない場合、applyRouteを呼ぶこと', async () => {
       const router = document.createElement('wcs-router') as Router;
       (router as any)._basename = '/base';
@@ -340,6 +388,33 @@ describe('Router', () => {
 
       await capturedHandler!();
       expect(applySpy).toHaveBeenCalledWith(router, router.outlet, '/app', '/prev');
+    });
+
+    it('interceptハンドラ内でapplyRouteが例外を投げた場合、console.errorで通知して再スローすること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      (router as any)._outlet = createOutlet();
+      (router as any)._outlet.routesNode = router;
+      (router as any)._path = '/prev';
+
+      const applyErr = new Error('apply boom');
+      vi.spyOn(applyRouteModule, 'applyRoute').mockRejectedValue(applyErr);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      let capturedHandler: (() => Promise<void>) | null = null;
+      const navEvent = {
+        canIntercept: true,
+        hashChange: false,
+        downloadRequest: null,
+        destination: { url: 'http://localhost/next' },
+        intercept: ({ handler }: { handler: () => Promise<void> }) => {
+          capturedHandler = handler;
+        },
+      };
+
+      (router as any)._onNavigateFunc(navEvent);
+      await expect(capturedHandler!()).rejects.toThrow('apply boom');
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
     });
   });
 
@@ -464,12 +539,15 @@ describe('Router', () => {
 
     it('disconnectedCallbackでnavigateイベントを解除すること', () => {
       const router = document.createElement('wcs-router') as Router;
+      // 登録済みフラグを立てた状態で disconnect すると removeEventListener が呼ばれる
+      (router as any)._listeningNavigate = true;
       const navigation = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
       (window as any).navigation = navigation;
 
       router.disconnectedCallback();
 
       expect(navigation.removeEventListener).toHaveBeenCalledWith('navigate', (router as any)._onNavigate);
+      expect((router as any)._listeningNavigate).toBe(false);
     });
 
     it('Navigation APIがない場合にpopstateを登録すること', async () => {
@@ -495,6 +573,24 @@ describe('Router', () => {
 
       expect(removeSpy).toHaveBeenCalledWith('popstate', (router as any)._onPopState);
       expect((router as any)._listeningPopState).toBe(false);
+    });
+
+    it('_initialize中にdisconnectされた場合にリスナを登録しないこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      // _initialize の awaiter として「initializing 中に切断」を再現
+      (router as any)._initialize = vi.fn().mockImplementation(async () => {
+        (router as any)._initialized = true;
+        (router as any)._initializing = true;
+        // initialize 中に disconnectedCallback を呼ぶ
+        router.disconnectedCallback();
+      });
+      const navigation = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+      (window as any).navigation = navigation;
+
+      await router.connectedCallback();
+
+      expect(navigation.addEventListener).not.toHaveBeenCalledWith('navigate', expect.anything());
+      expect((router as any)._disconnectedDuringInit).toBe(true);
     });
   });
 
@@ -596,6 +692,42 @@ describe('Router', () => {
 
       router.navigateUrl = '';
       expect(navigateSpy).not.toHaveBeenCalled();
+    });
+
+    it('同一 navigate 中に同じ URL を再代入しても navigate を再起動しないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      // navigate を pending Promise にしてリセットを保留
+      let resolveNavigate!: () => void;
+      const navigateSpy = vi.spyOn(router, 'navigate').mockReturnValue(
+        new Promise<void>((resolve) => { resolveNavigate = resolve; })
+      );
+
+      router.navigateUrl = '/same';
+      // navigate 中（_navigateUrl === '/same'）に同値を再代入
+      router.navigateUrl = '/same';
+
+      expect(navigateSpy).toHaveBeenCalledTimes(1);
+      resolveNavigate();
+    });
+
+    it('navigateがrejectしてもnavigateUrlがクリアされ通知されること', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      vi.spyOn(router, 'navigate').mockRejectedValue(new Error('boom'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const events: any[] = [];
+      router.addEventListener('wcs-router:navigate-url-changed', (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      router.navigateUrl = '/bad';
+
+      await vi.waitFor(() => {
+        expect(router.navigateUrl).toBeNull();
+        expect(events).toEqual([null]);
+      });
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
     });
   });
 

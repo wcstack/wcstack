@@ -19,7 +19,6 @@ function mockMatch(route: Route, params: Record<string, string> = {}): IRouteMat
 describe('hideRoute', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    (Router as any)._instance = null;
   });
 
   it('ノードを非表示にし、paramsをクリアすること', () => {
