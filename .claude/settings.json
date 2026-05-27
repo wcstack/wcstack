@@ -21,5 +21,8 @@
       "Bash(gh run:*)",
       "Bash(node -p 'JSON.stringify\\({name:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).name, version:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).version, private:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).private||false}\\)')"
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   }
 }
