@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Nine independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR and optional auth SDK integration). No build step required.
+Seven independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -258,8 +258,6 @@ const html = await renderToString(`
 
 - [`@wcstack/websocket`](packages/websocket/) — Declarative real-time communication with `<wcs-websocket>` and bindable connection/message state.
 - [`@wcstack/upload`](packages/upload/) — Declarative file upload flows with progress, status, and framework-agnostic bindings.
-- [`@wcstack/auth0`](packages/auth0/) — Auth0 authentication as declarative custom elements for login/logout/session state.
-- [`@wcstack/ai`](packages/ai/) — Streaming-first LLM inference custom elements (OpenAI, Anthropic, Azure OpenAI).
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -306,12 +304,12 @@ wcstack/
 │   ├── server/        # @wcstack/server
 │   ├── websocket/     # @wcstack/websocket
 │   ├── upload/        # @wcstack/upload
-│   ├── auth0/         # @wcstack/auth0
-│   ├── ai/            # @wcstack/ai
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
 Each package is independently built, tested, and published.
+
+Examples under `examples/` track the packages that still live in this repository. The former AI/Auth0 demos moved to `@csbc-dev/ai-agent` and `@csbc-dev/auth0`, and are no longer included here. The legacy npm packages `@wcstack/ai` and `@wcstack/auth0` are deprecated.
 
 ## Development
 

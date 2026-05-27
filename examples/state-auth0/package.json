@@ -1,9 +1,0 @@
-{
-  "name": "wcstack-example-state-auth0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {}
-}
