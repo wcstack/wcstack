@@ -61,36 +61,48 @@
 <wcs-state>
   <script type="module">
     export default {
-      users: [],
-      listLoading: false,
-      selectedUser: null,
-      selectedUserId: null,
-      detailLoading: false,
-      filterRole: "",
-      newUser: { name: "", email: "", role: "viewer" },
-      postResult: null,
-      postError: null,
-      submitLoading: false,
-      refreshList: false,
+      // list 再読み込みは command token で list-fetch の fetch() を起動する (trigger は使わない)
+      $commandTokens: ["refreshList"],
 
-      get detailUrl() {
+      // 1 fetch = 1 state slot。 ...: で wcBindable の properties + inputs を一括配線するため、
+      // 各スロットは全 input (url/method/target/manual/body) を初期化しておく
+      // (未初期化だと spread が undefined を要素へ書き戻し、method="UNDEFINED" や GET+body 等で壊れる)。
+      listFetch: {
+        value: [], loading: false, error: null, status: 0,
+        method: "GET", target: null, manual: false, body: null, trigger: false,
+      },
+      detailFetch: {
+        value: null, loading: false, error: null, status: 0,
+        method: "GET", target: null, manual: false, body: null, trigger: false,
+      },
+      createFetch: {
+        url: "/api/users", method: "POST", manual: true, target: null, trigger: false,
+        body: { name: "", email: "", role: "viewer" },
+        value: null, error: null, loading: false, status: 0,
+      },
+
+      // UI 選択状態 (fetch のプロパティではないので slot の外)
+      selectedUserId: null,
+      filterRole: "",
+
+      // computed url は slot にネスト getter として置く
+      get "listFetch.url"() {
+        const role = this.filterRole;
+        return role ? "/api/users?role=" + role : "/api/users";
+      },
+      get "detailFetch.url"() {
         const id = this.selectedUserId;
         return id ? "/api/users/" + id : "";
       },
 
       selectUser() {
-        this.selectedUser = null;
-        this.selectedUserId = this["users.*.id"];
-      },
-
-      get usersUrl() {
-        const role = this.filterRole;
-        return role ? "/api/users?role=" + role : "/api/users";
+        this["detailFetch.value"] = null;
+        this.selectedUserId = this["listFetch.value.*.id"];
       },
 
       filterBy(role) {
         this.filterRole = role;
-        this.selectedUser = null;
+        this["detailFetch.value"] = null;
         this.selectedUserId = null;
       },
 
@@ -101,9 +113,9 @@
 
       $updatedCallback(names) {
         // submit完了時: フォームリセット＋リスト再読み込み
-        if (names.includes("submitLoading") && !this.submitLoading && this.postResult) {
-          this.newUser = { name: "", email: "", role: "viewer" };
-          this.refreshList = true;
+        if (names.includes("createFetch.loading") && !this["createFetch.loading"] && this["createFetch.value"]) {
+          this["createFetch.body"] = { name: "", email: "", role: "viewer" };
+          this.$command.refreshList.emit();
         }
       },
     };
@@ -113,9 +125,11 @@
 <!-- ============================================================
      Fetch Components (headless, hidden)
      ============================================================ -->
-<wcs-fetch id="list-fetch" data-wcs="value: users; loading: listLoading; url: usersUrl; trigger: refreshList"></wcs-fetch>
-<wcs-fetch id="detail-fetch" data-wcs="value: selectedUser; loading: detailLoading; url: detailUrl"></wcs-fetch>
-<wcs-fetch id="create-fetch" url="/api/users" method="POST" manual data-wcs="body: newUser; loading: submitLoading; value: postResult; error: postError">
+<wcs-fetch id="list-fetch" data-wcs="...: listFetch; command.fetch: $command.refreshList"></wcs-fetch>
+<wcs-fetch id="detail-fetch" data-wcs="...: detailFetch"></wcs-fetch>
+<!-- manual は属性で固定する: spread は url を manual より先に流すため、属性が無いと
+     createFetch.url が設定された瞬間に意図しない自動 POST が走ってしまう -->
+<wcs-fetch id="create-fetch" manual data-wcs="...: createFetch">
   <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
 </wcs-fetch>
 
@@ -132,12 +146,12 @@
     <button class="filter-btn" data-wcs="onclick: filterViewer; class.active: filterRole|eq('viewer')">Viewer</button>
   </div>
 
-  <template data-wcs="if: listLoading">
+  <template data-wcs="if: listFetch.loading">
     <div class="spinner"></div>
   </template>
 
   <ul class="user-list">
-    <template data-wcs="for: users">
+    <template data-wcs="for: listFetch.value">
       <li class="user-item" data-wcs="onclick: selectUser">
         <div>
           <span class="user-name" data-wcs="textContent: .name"></span>
@@ -155,24 +169,24 @@
 <section>
   <h2>User Detail</h2>
 
-  <template data-wcs="if: detailLoading">
+  <template data-wcs="if: detailFetch.loading">
     <div class="spinner"></div>
   </template>
 
-  <template data-wcs="if: selectedUser|truthy">
+  <template data-wcs="if: detailFetch.value|truthy">
     <dl class="detail-card">
       <dt>ID</dt>
-      <dd data-wcs="textContent: selectedUser.id"></dd>
+      <dd data-wcs="textContent: detailFetch.value.id"></dd>
       <dt>Name</dt>
-      <dd data-wcs="textContent: selectedUser.name"></dd>
+      <dd data-wcs="textContent: detailFetch.value.name"></dd>
       <dt>Email</dt>
-      <dd data-wcs="textContent: selectedUser.email"></dd>
+      <dd data-wcs="textContent: detailFetch.value.email"></dd>
       <dt>Role</dt>
-      <dd data-wcs="textContent: selectedUser.role"></dd>
+      <dd data-wcs="textContent: detailFetch.value.role"></dd>
     </dl>
   </template>
 
-  <template data-wcs="else: selectedUser">
+  <template data-wcs="else: detailFetch.value">
     <p style="color: #999;">Click a user above to see details.</p>
   </template>
 </section>
@@ -185,32 +199,32 @@
 
   <div class="form-group">
     <label>Name</label>
-    <input type="text" data-wcs="value: newUser.name" placeholder="名前を入力">
+    <input type="text" data-wcs="value: createFetch.body.name" placeholder="名前を入力">
   </div>
   <div class="form-group">
     <label>Email</label>
-    <input type="email" data-wcs="value: newUser.email" placeholder="email@example.com">
+    <input type="email" data-wcs="value: createFetch.body.email" placeholder="email@example.com">
   </div>
   <div class="form-group">
     <label>Role</label>
-    <select data-wcs="value: newUser.role">
+    <select data-wcs="value: createFetch.body.role">
       <option value="viewer">Viewer</option>
       <option value="editor">Editor</option>
       <option value="admin">Admin</option>
     </select>
   </div>
-  <template data-wcs="if: submitLoading">
+  <template data-wcs="if: createFetch.loading">
     <div class="spinner"></div>
   </template>
-  <button class="submit-btn" data-fetchtarget="create-fetch" data-wcs="disabled: submitLoading">Create</button>
+  <button class="submit-btn" data-fetchtarget="create-fetch" data-wcs="disabled: createFetch.loading">Create</button>
 
-  <template data-wcs="if: postResult">
+  <template data-wcs="if: createFetch.value">
     <div class="status-msg success">
-      Created: <span data-wcs="textContent: postResult.name"></span> (ID: <span data-wcs="textContent: postResult.id"></span>)
+      Created: <span data-wcs="textContent: createFetch.value.name"></span> (ID: <span data-wcs="textContent: createFetch.value.id"></span>)
     </div>
   </template>
 
-  <template data-wcs="if: postError">
+  <template data-wcs="if: createFetch.error">
     <div class="status-msg error">Error occurred</div>
   </template>
 </section>
