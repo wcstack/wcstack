@@ -33,34 +33,44 @@
   <wcs-state>
     <script type="module">
       export default {
-        get wsUrl() {
+        // <wcs-ws> は spread で一括配線。送信は command で sendMessage() を起動する。
+        // spread は properties + inputs を全て展開するので ws slot は全 input を初期化しておく
+        // (auto-reconnect 等の config 属性は <wcs-ws> 側に残す: spread は url を autoReconnect より
+        //  先に流すため、属性が無いと初回接続が auto-reconnect 無しで張られる)。
+        $commandTokens: ["wsSend"],
+
+        ws: {
+          connected: false, loading: false, error: null, readyState: 0,
+          trigger: false, send: null,
+          protocols: "", autoReconnect: true, reconnectInterval: 3000,
+          maxReconnects: 10, manual: false,
+        },
+        get "ws.url"() {
           const proto = location.protocol === "https:" ? "wss" : "ws";
           return `${proto}://${location.host}/ws`;
         },
+        // message は受信のたびにログへ追記する setter 付き (spread の two-way 書き戻し先)
         _lastMessage: null,
         _stats: null,
-        get lastMessage() {
+        get "ws.message"() {
           return this._lastMessage;
         },
-        set lastMessage(value) {
+        set "ws.message"(value) {
           this._lastMessage = value;
           if (value && value.type === "stats") {
             this._stats = value;
           }
           this._appendLog(value);
         },
-        isConnected: false,
-        isLoading: false,
-        wsError: null,
+
         echoInput: "",
         broadcastInput: "",
         nickname: "user-" + Math.random().toString(36).slice(2, 6),
-        outgoingMessage: null,
         messageLog: [],
 
         get connectionLabel() {
-          if (this.isLoading) return "Connecting…";
-          return this.isConnected ? "Connected" : "Disconnected";
+          if (this["ws.loading"]) return "Connecting…";
+          return this["ws.connected"] ? "Connected" : "Disconnected";
         },
 
         get hasLog() {
@@ -68,16 +78,16 @@
         },
 
         get canSendEcho() {
-          return this.isConnected && this.echoInput.trim() !== "";
+          return this["ws.connected"] && this.echoInput.trim() !== "";
         },
 
         get canSendBroadcast() {
-          return this.isConnected && this.broadcastInput.trim() !== "";
+          return this["ws.connected"] && this.broadcastInput.trim() !== "";
         },
 
         get errorMessage() {
-          if (!this.wsError) return "";
-          return this.wsError.message || String(this.wsError);
+          if (!this["ws.error"]) return "";
+          return this["ws.error"].message || String(this["ws.error"]);
         },
 
         get clientCount() {
@@ -111,15 +121,15 @@
 
         sendEcho() {
           const text = this.echoInput.trim();
-          if (!text || !this.isConnected) return;
-          this.outgoingMessage = JSON.stringify({ type: "echo", content: text });
+          if (!text || !this["ws.connected"]) return;
+          this.$command.wsSend.emit(JSON.stringify({ type: "echo", content: text }));
           this.echoInput = "";
         },
 
         sendBroadcast() {
           const text = this.broadcastInput.trim();
-          if (!text || !this.isConnected) return;
-          this.outgoingMessage = JSON.stringify({ type: "broadcast", content: text, from: this.nickname });
+          if (!text || !this["ws.connected"]) return;
+          this.$command.wsSend.emit(JSON.stringify({ type: "broadcast", content: text, from: this.nickname }));
           this.broadcastInput = "";
         },
 
@@ -150,7 +160,7 @@
     auto-reconnect
     reconnect-interval="3000"
     max-reconnects="10"
-    data-wcs="url: wsUrl; message: lastMessage; connected: isConnected; loading: isLoading; error: wsError; send: outgoingMessage"
+    data-wcs="...: ws; command.sendMessage: $command.wsSend"
   ></wcs-ws>
 
   <main>
@@ -165,7 +175,7 @@
 
     <div class="status-bar">
       <div class="status">
-        <span class="dot" data-wcs="class.live: isConnected"></span>
+        <span class="dot" data-wcs="class.live: ws.connected"></span>
         <span data-wcs="textContent: connectionLabel"></span>
       </div>
       <div class="stat-badge">
@@ -176,7 +186,7 @@
       </div>
     </div>
 
-    <template data-wcs="if: wsError">
+    <template data-wcs="if: ws.error">
       <div class="callout error" style="margin-bottom: 14px;">
         <strong>Connection Error</strong><br>
         <span data-wcs="textContent: errorMessage"></span>
