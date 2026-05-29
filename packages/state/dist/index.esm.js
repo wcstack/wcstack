@@ -1693,6 +1693,96 @@ function processDeferredNode(entry) {
     return result.bindings;
 }
 
+const _cache$3 = new WeakMap();
+const _cacheNullListIndex$1 = new WeakMap();
+class StateAddress {
+    pathInfo;
+    listIndex;
+    _parentAddress;
+    constructor(pathInfo, listIndex) {
+        this.pathInfo = pathInfo;
+        this.listIndex = listIndex;
+    }
+    get parentAddress() {
+        if (typeof this._parentAddress !== 'undefined') {
+            return this._parentAddress;
+        }
+        const parentPathInfo = this.pathInfo.parentPathInfo;
+        if (parentPathInfo === null) {
+            return null;
+        }
+        const lastSegment = this.pathInfo.segments[this.pathInfo.segments.length - 1];
+        let parentListIndex = null;
+        if (lastSegment === WILDCARD) {
+            parentListIndex = this.listIndex?.parentListIndex ?? null;
+        }
+        else {
+            parentListIndex = this.listIndex;
+        }
+        return this._parentAddress = createStateAddress(parentPathInfo, parentListIndex);
+    }
+}
+function createStateAddress(pathInfo, listIndex) {
+    if (listIndex === null) {
+        let cached = _cacheNullListIndex$1.get(pathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new StateAddress(pathInfo, null);
+        _cacheNullListIndex$1.set(pathInfo, cached);
+        return cached;
+    }
+    else {
+        let cacheByPathInfo = _cache$3.get(listIndex);
+        if (typeof cacheByPathInfo === "undefined") {
+            cacheByPathInfo = new WeakMap();
+            _cache$3.set(listIndex, cacheByPathInfo);
+        }
+        let cached = cacheByPathInfo.get(pathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new StateAddress(pathInfo, listIndex);
+        cacheByPathInfo.set(pathInfo, cached);
+        return cached;
+    }
+}
+
+// _subscribers は Set のため挿入順を保持する。
+// emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
+class CommandToken {
+    _name;
+    _subscribers = new Set();
+    constructor(name) {
+        this._name = name;
+    }
+    get name() {
+        return this._name;
+    }
+    get size() {
+        return this._subscribers.size;
+    }
+    subscribe(fn) {
+        this._subscribers.add(fn);
+        return () => {
+            this._subscribers.delete(fn);
+        };
+    }
+    unsubscribe(fn) {
+        return this._subscribers.delete(fn);
+    }
+    emit(...args) {
+        const results = [];
+        for (const fn of this._subscribers) {
+            results.push(fn(...args));
+        }
+        return results;
+    }
+}
+function isCommandToken(value) {
+    return value instanceof CommandToken;
+}
+
 const loopContextByNode = new WeakMap();
 function getLoopContextByNode(node) {
     let paramNode = node;
@@ -1721,13 +1811,18 @@ const connectedCallbackSymbol = Symbol("$$connectedCallback");
 const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
 const updatedCallbackSymbol = Symbol("$$updatedCallback");
 
+// onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
+// 右辺が $command 名前空間配下のパス（$command.<token>）のときに true。
+function isCommandTokenPath(statePathName) {
+    return statePathName.startsWith(STATE_COMMAND_NAMESPACE_NAME + ".");
+}
 const handlerByHandlerKey$3 = new Map();
 const bindingSetByHandlerKey$3 = new Map();
 function getHandlerKey$3(binding) {
     const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
     return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
 }
-const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event) => {
+const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathInfo) => (event) => {
     if (modifiers.includes('prevent'))
         event.preventDefault();
     if (modifiers.includes('stop'))
@@ -1739,13 +1834,23 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers) => (event)
         raiseError(`State element with name "${stateName}" not found for event handler.`);
     }
     const loopContext = getLoopContextByNode(node);
+    const isCommand = isCommandTokenPath(handlerName);
     stateElement.createStateAsync("writable", async (state) => {
         state[setLoopContextSymbol](loopContext, () => {
+            const indexes = loopContext?.listIndex.indexes ?? [];
+            if (isCommand) {
+                // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
+                const token = state[getByAddressSymbol](createStateAddress(statePathInfo, null));
+                if (!isCommandToken(token)) {
+                    raiseError(`Event binding "${handlerName}" did not resolve to a CommandToken. Declare the name in $commandTokens and reference it as $command.<name>.`);
+                }
+                return token.emit(event, ...indexes);
+            }
             const handler = state[handlerName];
             if (typeof handler !== "function") {
                 raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
             }
-            return Reflect.apply(handler, state, [event, ...(loopContext?.listIndex.indexes ?? [])]);
+            return Reflect.apply(handler, state, [event, ...indexes]);
         });
     });
 };
@@ -1756,7 +1861,7 @@ function attachEventHandler(binding) {
     const key = getHandlerKey$3(binding);
     let stateEventHandler = handlerByHandlerKey$3.get(key);
     if (typeof stateEventHandler === "undefined") {
-        stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers);
+        stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers, binding.statePathInfo);
         handlerByHandlerKey$3.set(key, stateEventHandler);
     }
     const eventName = binding.propName.slice(2);
@@ -1937,19 +2042,19 @@ function setLastListValueByAbsoluteStateAddress(address, value) {
     lastListValueByAbsoluteStateAddress.set(address, value);
 }
 
-const _cache$3 = new WeakMap();
+const _cache$2 = new WeakMap();
 function getAbsolutePathInfo(stateElement, pathInfo) {
-    if (_cache$3.has(stateElement)) {
-        const pathMap = _cache$3.get(stateElement);
+    if (_cache$2.has(stateElement)) {
+        const pathMap = _cache$2.get(stateElement);
         if (pathMap.has(pathInfo)) {
             return pathMap.get(pathInfo);
         }
     }
     else {
-        _cache$3.set(stateElement, new WeakMap());
+        _cache$2.set(stateElement, new WeakMap());
     }
     const absolutePathInfo = Object.freeze(new AbsolutePathInfo(stateElement, pathInfo));
-    _cache$3.get(stateElement).set(pathInfo, absolutePathInfo);
+    _cache$2.get(stateElement).set(pathInfo, absolutePathInfo);
     return absolutePathInfo;
 }
 class AbsolutePathInfo {
@@ -1970,8 +2075,8 @@ class AbsolutePathInfo {
     }
 }
 
-const _cache$2 = new WeakMap();
-const _cacheNullListIndex$1 = new WeakMap();
+const _cache$1 = new WeakMap();
+const _cacheNullListIndex = new WeakMap();
 class AbsoluteStateAddress {
     absolutePathInfo;
     listIndex;
@@ -2001,19 +2106,19 @@ class AbsoluteStateAddress {
 }
 function createAbsoluteStateAddress(absolutePathInfo, listIndex) {
     if (listIndex === null) {
-        let cached = _cacheNullListIndex$1.get(absolutePathInfo);
+        let cached = _cacheNullListIndex.get(absolutePathInfo);
         if (typeof cached !== "undefined") {
             return cached;
         }
         cached = new AbsoluteStateAddress(absolutePathInfo, null);
-        _cacheNullListIndex$1.set(absolutePathInfo, cached);
+        _cacheNullListIndex.set(absolutePathInfo, cached);
         return cached;
     }
     else {
-        let cacheByAbsolutePathInfo = _cache$2.get(listIndex);
+        let cacheByAbsolutePathInfo = _cache$1.get(listIndex);
         if (typeof cacheByAbsolutePathInfo === "undefined") {
             cacheByAbsolutePathInfo = new WeakMap();
-            _cache$2.set(listIndex, cacheByAbsolutePathInfo);
+            _cache$1.set(listIndex, cacheByAbsolutePathInfo);
         }
         let cached = cacheByAbsolutePathInfo.get(absolutePathInfo);
         if (typeof cached !== "undefined") {
@@ -2189,41 +2294,6 @@ function applyChangeToClass(binding, _context, newValue) {
     element.classList.toggle(className, newValue);
 }
 
-// _subscribers は Set のため挿入順を保持する。
-// emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
-class CommandToken {
-    _name;
-    _subscribers = new Set();
-    constructor(name) {
-        this._name = name;
-    }
-    get name() {
-        return this._name;
-    }
-    get size() {
-        return this._subscribers.size;
-    }
-    subscribe(fn) {
-        this._subscribers.add(fn);
-        return () => {
-            this._subscribers.delete(fn);
-        };
-    }
-    unsubscribe(fn) {
-        return this._subscribers.delete(fn);
-    }
-    emit(...args) {
-        const results = [];
-        for (const fn of this._subscribers) {
-            results.push(fn(...args));
-        }
-        return results;
-    }
-}
-function isCommandToken(value) {
-    return value instanceof CommandToken;
-}
-
 /**
  * command.<methodName>: <commandToken-path> バインディングの適用ハンドラ。
  *
@@ -2304,61 +2374,6 @@ function applyChangeToCommand(binding, _context, newValue) {
     };
     unsubscribe = token.subscribe(subscriber);
     subscribedBindings.set(binding, { token, unsubscribe, elementRef });
-}
-
-const _cache$1 = new WeakMap();
-const _cacheNullListIndex = new WeakMap();
-class StateAddress {
-    pathInfo;
-    listIndex;
-    _parentAddress;
-    constructor(pathInfo, listIndex) {
-        this.pathInfo = pathInfo;
-        this.listIndex = listIndex;
-    }
-    get parentAddress() {
-        if (typeof this._parentAddress !== 'undefined') {
-            return this._parentAddress;
-        }
-        const parentPathInfo = this.pathInfo.parentPathInfo;
-        if (parentPathInfo === null) {
-            return null;
-        }
-        const lastSegment = this.pathInfo.segments[this.pathInfo.segments.length - 1];
-        let parentListIndex = null;
-        if (lastSegment === WILDCARD) {
-            parentListIndex = this.listIndex?.parentListIndex ?? null;
-        }
-        else {
-            parentListIndex = this.listIndex;
-        }
-        return this._parentAddress = createStateAddress(parentPathInfo, parentListIndex);
-    }
-}
-function createStateAddress(pathInfo, listIndex) {
-    if (listIndex === null) {
-        let cached = _cacheNullListIndex.get(pathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new StateAddress(pathInfo, null);
-        _cacheNullListIndex.set(pathInfo, cached);
-        return cached;
-    }
-    else {
-        let cacheByPathInfo = _cache$1.get(listIndex);
-        if (typeof cacheByPathInfo === "undefined") {
-            cacheByPathInfo = new WeakMap();
-            _cache$1.set(listIndex, cacheByPathInfo);
-        }
-        let cached = cacheByPathInfo.get(pathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new StateAddress(pathInfo, listIndex);
-        cacheByPathInfo.set(pathInfo, cached);
-        return cached;
-    }
 }
 
 const indexBindingsByContent = new WeakMap();

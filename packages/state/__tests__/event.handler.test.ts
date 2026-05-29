@@ -3,7 +3,8 @@ import { attachEventHandler, detachEventHandler, __private__ } from '../src/even
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import { setStateElementByName } from '../src/stateElementByName';
-import { setLoopContextSymbol } from '../src/proxy/symbols';
+import { getByAddressSymbol, setLoopContextSymbol } from '../src/proxy/symbols';
+import { CommandToken } from '../src/command/CommandToken';
 
 function createBindingInfo(node: Element, overrides?: Partial<IBindingInfo>): IBindingInfo {
   return {
@@ -307,5 +308,68 @@ describe('event/handler', () => {
 
     await lastPromise;
     expect(state['handleClick-ok']).toHaveBeenCalledTimes(1);
+  });
+
+  it('onclick: $command.<name> で command token が emit され (event, ...indexes) が透過されること', async () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, {
+      statePathName: '$command.changeText',
+      statePathInfo: getPathInfo('$command.changeText'),
+    });
+
+    const token = new CommandToken('changeText');
+    const subscriber = vi.fn().mockReturnValue('done');
+    token.subscribe(subscriber);
+    const state: any = {
+      [getByAddressSymbol]: () => token,
+      [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb(),
+    };
+    let lastPromise: Promise<any> | null = null;
+    setStateElementByName(el, 'default', {
+      createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
+        lastPromise = callback(state);
+        return lastPromise as Promise<void>;
+      }
+    } as any);
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+    const event = new Event('click');
+    Object.defineProperty(event, 'target', { value: el });
+    handler(event);
+
+    await lastPromise;
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(subscriber).toHaveBeenCalledWith(event);
+  });
+
+  it('onclick: $command.<name> が CommandToken に解決されない場合はエラーになること', () => {
+    const el = document.createElement('button');
+    const addSpy = vi.spyOn(el, 'addEventListener');
+    const binding = createBindingInfo(el, {
+      statePathName: '$command.unknown',
+      statePathInfo: getPathInfo('$command.unknown'),
+    });
+
+    const state: any = {
+      [getByAddressSymbol]: () => undefined,
+      [setLoopContextSymbol]: (_ctx: any, cb: () => void) => cb(),
+    };
+    let lastPromise: Promise<any> | null = null;
+    setStateElementByName(el, 'default', {
+      createStateAsync: (_mutability: string, callback: (s: any) => Promise<void>) => {
+        lastPromise = callback(state);
+        return lastPromise as Promise<void>;
+      }
+    } as any);
+
+    attachEventHandler(binding);
+    const handler = addSpy.mock.calls[0]?.[1] as ((event: Event) => any);
+    const event = new Event('click');
+    Object.defineProperty(event, 'target', { value: el });
+    handler(event);
+    expect(lastPromise).not.toBeNull();
+    return expect(lastPromise!).rejects.toThrow(/did not resolve to a CommandToken/);
   });
 });

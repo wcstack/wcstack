@@ -1094,6 +1094,201 @@ customElements.define("my-component", MyComponent);
 </template>
 ```
 
+## Command Token（メソッドバインディング）
+
+プロパティバインディング（`state.message: user.name`）はコンポーネントへ流れ込むデータを扱いますが、**state からコンポーネントのメソッドを起動する**こと —— `<wcs-fetch>.fetch()`、`<wcs-dialog>.open()` など —— はカバーしません。**command token** は型付きの pub/sub チャネルでこの隙間を埋めます：
+
+- 要素は `command.<methodName>: $command.<tokenName>` で購読する
+- state は `this.$command.<tokenName>.emit(...args)` で emit する
+- `emit` に渡した引数はそのまま要素のメソッドへ転送される
+- 1つの token は複数の要素へファンアウトでき、subscribe 順は保持される
+
+これによりパス契約は保たれます。state は要素への参照を一切保持せず、要素も state から何もインポートしません。共有されるオブジェクトは token のみです。
+
+### 基本的な使い方
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["fetchUsers", "refreshOrders"],
+
+      onClickFetch() {
+        this.$command.fetchUsers.emit("/api/users", { method: "GET" });
+      },
+      onClickRefresh() {
+        this.$command.refreshOrders.emit();
+      }
+    };
+  </script>
+</wcs-state>
+
+<!-- 購読者 — wc-bindable なカスタム要素であること -->
+<wcs-fetch data-wcs="command.fetch: $command.fetchUsers"></wcs-fetch>
+<wcs-fetch data-wcs="command.fetch: $command.refreshOrders"></wcs-fetch>
+
+<button data-wcs="onclick: onClickFetch">Fetch users</button>
+<button data-wcs="onclick: onClickRefresh">Refresh orders</button>
+```
+
+`onClickFetch` が実行されると、`fetchUsers` token を購読しているすべての要素の `fetch(...)` メソッドが転送された引数とともに呼び出されます。
+
+### `$commandTokens` 宣言
+
+`$commandTokens` 配列は、state 上の `$command` 名前空間に公開するチャネルを宣言します。token は `this.$command.<name>` でアクセスでき、memo 化されます —— 同じ名前は常に同一の token インスタンスを返します。
+
+```javascript
+export default {
+  $commandTokens: ["fetchUsers", "refreshOrders"],
+
+  click() {
+    this.$command.fetchUsers.emit("/api/users");
+  }
+};
+```
+
+- エントリは空でない文字列であること
+- 重複するエントリは初期化時にエラーになる
+- 予約名 `$command` 自体は配列に含められない
+- token は `$command` 配下にまとめられるためトップレベルの state 名前空間を汚さない。token と同名のリアクティブプロパティが共存できる
+- `$command` 上の未宣言の名前にアクセスする（例: `this.$command.typo`）と `undefined` が返る。typo はその後の `.emit()` 呼び出しで `TypeError` として、あるいはバインディングの右辺で使った場合は「CommandToken 値が必要」エラーとしてバインディング時に表面化する
+
+### `command.<methodName>:` バインディング
+
+```html
+<wcs-fetch data-wcs="command.fetch: $command.fetchUsers"></wcs-fetch>
+```
+
+| 部位 | 説明 |
+|---|---|
+| `command.` | 固定の prefix |
+| `<methodName>` | 起動する要素のメソッド。名前は `static wcBindable.commands` に `{ name: "<methodName>" }` として現れること |
+| `$command.<tokenName>` | `CommandToken` に解決される明示的な名前空間パス。`<tokenName>` は `$commandTokens` で宣言された名前であること |
+
+右辺は `$command.<tokenName>` と書く必要があります —— ベア名の省略形（`fetchUsers`）は非対応です。`$command.` 名前空間を経由することでバインディングの意図が HTML 上で明示され、トップレベルの state 名前空間を token 名で汚さずに済みます。
+
+`wcBindable.commands` は wc-bindable v1 仕様の形 —— `{ name: string; async?: boolean }` の配列 —— に従います：
+
+```javascript
+class MyFetcher extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [],
+    commands: [
+      { name: "fetch", async: true },
+      { name: "reset" },
+    ],
+  };
+  fetch(url) { /* ... */ }
+  reset()    { /* ... */ }
+}
+```
+
+> **v1.9.1 以降の破壊的変更**: `commands` フィールドは `{ name, async? }` オブジェクトの配列になりました。以前の `commands: ["fetch"]` という素の文字列形式はもう受け付けられません —— そのような宣言に対するバインディングは `Command "<name>" is not declared in wcBindable.commands` を throw します。レガシーフォールバックはありません。宣言をオブジェクト形式に更新してください。
+
+検証ルール（バインディング時に強制）：
+
+- 要素は `protocol: "wc-bindable"` かつ `version: 1` の `static wcBindable` を公開するカスタム要素であること
+- `methodName` は `wcBindable.commands` に（`name` で）現れること
+- バインドされる値は `CommandToken` であること（token 以外の値の代入は throw する —— 例えば未宣言の名前 `$command.typo` は `undefined` に解決され、ここで拒否される）
+
+### Token API
+
+```typescript
+interface CommandToken {
+  readonly name: string;
+  readonly size: number;                            // 現在の購読者数
+  subscribe(fn: (...args) => unknown): () => void;  // unsubscribe を返す
+  unsubscribe(fn: (...args) => unknown): boolean;
+  emit(...args: unknown[]): unknown[];              // subscribe 順に購読者の戻り値を返す
+}
+```
+
+`emit` は各購読者の戻り値の配列を（subscribe 順で）返します。`Promise` を返すメソッドは `Promise.all(token.emit(...))` でラップしてすべてを待ち受けてください。
+
+### 購読のライフサイクル
+
+- 購読者は要素を `WeakRef` で保持するため、token の購読者セットに残っていても、取り外された要素はガベージコレクト可能
+- `emit` 時、WeakRef が回収済みか要素が接続されていない（`isConnected === false`）場合、購読は自動的に破棄される（lazy purge）
+- 所有する `<wcs-state>` が disconnect されると、token レジストリ全体がクリアされる
+
+要素のメソッドは `emit` の引数で呼び出されます：
+
+```javascript
+this.$command.fetchUsers.emit(url, options);
+// → すべての購読者で element.fetch(url, options)
+```
+
+### DOM イベントから command を emit する
+
+command token は state コードから emit する必要はありません。DOM イベントバインディングの右辺を、state メソッド名ではなく `$command.<name>` パスに向けることで、直接 emit できます：
+
+```html
+<button data-wcs="onclick: $command.refreshList">Refresh</button>
+```
+
+| 形式 | 右辺 | イベント時の動作 |
+|---|---|---|
+| `onclick: someMethod` | state メソッド名 | `state.someMethod(event, ...listIndexes)` |
+| `onclick: $command.someToken` | `$command.<name>` パス | `state.$command.someToken.emit(event, ...listIndexes)` |
+
+これは純粋な配線です。イベント端点を command token 端点に接続するだけで、間にロジックは入りません。`emit` の引数はハンドラ呼び出しとまったく同じく透過されます —— まず DOM の `Event`、続いて内包するリストインデックス —— なので購読者は `(event, ...listIndexes)` を受け取ります。購読者の中で必要なものをイベントから取り出してください（`event.target.value`、`event.detail` など）。
+
+- 右辺は `$command.<name>` であり、`<name>` は `$commandTokens` で宣言されていること。`CommandToken` に解決されないパス（例: typo）はイベント時に throw する。
+- 修飾子はそのまま機能する: `onclick#prevent: $command.someToken` は emit の前に `preventDefault()` を呼ぶ（`#stop` も同様）。
+- これは state が emit するのと同じ token を emit するので、`command.<method>: $command.someToken` で配線された要素の購読者は、誰がトリガを引いたかに関わらず受け取る。
+
+```html
+<!-- click が command を全購読者へファンアウトする。state メソッドは不要 -->
+<button data-wcs="onclick: $command.reset">Reset all</button>
+<my-field data-wcs="command.clear: $command.reset"></my-field>
+<my-list  data-wcs="command.reset: $command.reset"></my-list>
+```
+
+## Inputs と属性ミラー
+
+`wcBindable.inputs` は一方向のプロパティ入力（state → 要素）を宣言します。エントリに `attribute` を設定すると、フレームワークはプロパティを書き込むたびにその値を当該 HTML 属性へも書き込むため、`attributeChangedCallback`・CSS の属性セレクタ・DevTools がすべてプロパティ値と同期し続けます。
+
+```javascript
+class MyChip extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [],
+    inputs: [
+      { name: "data", attribute: "data" },        // プロパティ名 === 属性名
+      { name: "labelText", attribute: "label-text" }, // kebab-case ミラー
+      { name: "internal" },                       // ミラーなし、プロパティのみ
+    ],
+  };
+}
+```
+
+```html
+<my-chip data-wcs="data: chip.payload; labelText: chip.title"></my-chip>
+```
+
+state が値を更新すると、プロパティと属性の両方が書き込まれます：
+
+```text
+chip.payload = { id: 1 }    → element.data = { id: 1 } かつ setAttribute("data", '{"id":1}')
+chip.title   = "新着"        → element.labelText = "新着" かつ setAttribute("label-text", "新着")
+chip.payload = null          → element.data = null かつ removeAttribute("data")
+```
+
+属性値のエンコード：
+
+| 値の型 | ミラーされる属性 |
+|---|---|
+| `string` / `number` / `boolean` / `bigint` | `String(value)` |
+| `null` / `undefined` | 属性を削除 |
+| `object` / `array` | `JSON.stringify(value)`（循環参照時は `String(value)` にフォールバック） |
+
+補足：
+
+- `attribute` を**持たない** `inputs` エントリはプロパティのみ —— 値はプロパティに書き込まれるが属性には触れない
+- ミラーはベストエフォート: `setAttribute` の失敗は握りつぶされ（`debug` 警告付き）、プロパティ書き込みをブロックしない
+- ネイティブ HTML 要素は `inputs` を完全に無視する —— ミラーは `static wcBindable` を公開するカスタム要素でのみ有効になる
+
 ## 宣言的カスタムコンポーネント (DCC)
 
 JavaScript のクラス定義なしで、**HTML だけ**でカスタム要素を定義できます。`data-wc-definition` と Declarative Shadow DOM (`<template shadowrootmode>`) を使い、リアクティブな状態を持つ再利用可能なコンポーネントをインラインで宣言します。
