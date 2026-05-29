@@ -1221,6 +1221,32 @@ this.$command.fetchUsers.emit(url, options);
 // → element.fetch(url, options) on every subscriber
 ```
 
+### Emitting a Command from a DOM Event
+
+A command token does not have to be emitted from state code. A DOM event binding can emit one directly by pointing its right-hand side at a `$command.<name>` path instead of a state method name:
+
+```html
+<button data-wcs="onclick: $command.refreshList">Refresh</button>
+```
+
+| Form | Right-hand side | Behavior on event |
+|---|---|---|
+| `onclick: someMethod` | a state method name | `state.someMethod(event, ...listIndexes)` |
+| `onclick: $command.someToken` | a `$command.<name>` path | `state.$command.someToken.emit(event, ...listIndexes)` |
+
+This is pure wiring: the event endpoint is connected to a command-token endpoint, with no logic in between. The `emit` arguments are passed through exactly like a handler call — the DOM `Event` first, then any enclosing list indexes — so subscribers receive `(event, ...listIndexes)`. Inside a subscriber, pull what you need from the event (`event.target.value`, `event.detail`, …).
+
+- The right-hand side must be `$command.<name>` with `<name>` declared in `$commandTokens`. A path that does not resolve to a `CommandToken` (e.g. a typo) throws at event time.
+- Modifiers work unchanged: `onclick#prevent: $command.someToken` calls `preventDefault()` before emitting (`#stop` likewise).
+- This emits the same token the state emits, so element subscribers wired with `command.<method>: $command.someToken` receive it regardless of who pulled the trigger.
+
+```html
+<!-- click fans the command out to every subscriber, no state method needed -->
+<button data-wcs="onclick: $command.reset">Reset all</button>
+<my-field data-wcs="command.clear: $command.reset"></my-field>
+<my-list  data-wcs="command.reset: $command.reset"></my-list>
+```
+
 ## Inputs and Attribute Mirror
 
 `wcBindable.inputs` declares one-way property inputs (state → element). When an entry sets `attribute`, the framework writes the value to that HTML attribute every time it writes the property, so `attributeChangedCallback`, CSS attribute selectors, and DevTools all stay in sync with the property value.
