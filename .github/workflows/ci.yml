@@ -39,6 +39,9 @@ jobs:
             storage:
               - 'packages/storage/**'
               - 'tsconfig.json'
+            timer:
+              - 'packages/timer/**'
+              - 'tsconfig.json'
       - id: build-matrix
         env:
           STATE: ${{ steps.filter.outputs.state }}
@@ -49,9 +52,10 @@ jobs:
           UPLOAD: ${{ steps.filter.outputs.upload }}
           SERVER: ${{ steps.filter.outputs.server }}
           STORAGE: ${{ steps.filter.outputs.storage }}
+          TIMER: ${{ steps.filter.outputs.timer }}
         run: |
           packages=()
-          for pkg in state autoloader router fetch websocket upload server storage; do
+          for pkg in state autoloader router fetch websocket upload server storage timer; do
             key=$(echo "$pkg" | tr '[:lower:]' '[:upper:]')
             if [ "${!key}" == "true" ]; then
               packages+=("$pkg")
