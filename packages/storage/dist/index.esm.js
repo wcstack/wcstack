@@ -299,8 +299,14 @@ function handleClick(event) {
     const storageId = triggerElement.getAttribute(config.triggerAttribute);
     if (!storageId)
         return;
+    // Resolve the registered constructor at call time instead of importing Storage
+    // as a value. The value import created a components/Storage.ts ⇄ autoTrigger.ts
+    // cycle (Storage.connectedCallback() calls registerAutoTrigger()). instanceof
+    // against the customElements registry keeps the exact same identity guarantee
+    // — only the registered <wcs-storage> class matches — without the import cycle.
+    const StorageCtor = customElements.get(config.tagNames.storage);
     const storageElement = document.getElementById(storageId);
-    if (!storageElement || !(storageElement instanceof Storage))
+    if (!StorageCtor || !(storageElement instanceof StorageCtor))
         return;
     event.preventDefault();
     storageElement.save();

@@ -242,9 +242,16 @@ function handleClick(event) {
     const fetchId = triggerElement.getAttribute(config.triggerAttribute);
     if (!fetchId)
         return;
-    const fetchElement = document.getElementById(fetchId);
-    if (!fetchElement || !(fetchElement instanceof Fetch))
+    // Resolve the registered constructor at call time instead of importing Fetch
+    // as a value. The value import created a components/Fetch.ts ⇄ autoTrigger.ts
+    // cycle (Fetch.connectedCallback() calls registerAutoTrigger()). instanceof
+    // against the customElements registry keeps the exact same identity guarantee
+    // — only the registered <wcs-fetch> class matches — without the import cycle.
+    const FetchCtor = customElements.get(config.tagNames.fetch);
+    const el = document.getElementById(fetchId);
+    if (!FetchCtor || !(el instanceof FetchCtor))
         return;
+    const fetchElement = el;
     // Skip when the target has no url. fetch() is fire-and-forget here (its returned
     // promise is intentionally not awaited), and FetchCore.fetch() rejects synchronously
     // on an empty url. Without this guard that rejection would surface as an unhandled
