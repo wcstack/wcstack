@@ -1,9 +1,5 @@
-export type CommandSubscriber = (...args: unknown[]) => unknown;
+import { IToken, TokenSubscriber } from "../token/Token";
 
-export interface ICommandToken {
-  readonly name: string;
-  readonly size: number;
-  subscribe(fn: CommandSubscriber): () => void;
-  unsubscribe(fn: CommandSubscriber): boolean;
-  emit(...args: unknown[]): unknown[];
-}
+export type CommandSubscriber = TokenSubscriber;
+
+export type ICommandToken = IToken;

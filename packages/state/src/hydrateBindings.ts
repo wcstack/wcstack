@@ -16,6 +16,7 @@ import { raiseError } from "./raiseError";
 import { setLoopContextByNode } from "./list/loopContextByNode";
 import { replaceToReplaceNode } from "./bindings/replaceToReplaceNode";
 import { attachEventHandler } from "./event/handler";
+import { attachEventTokenHandler } from "./event/eventTokenHandler";
 import { attachTwowayEventHandler } from "./event/twowayHandler";
 import { attachRadioEventHandler } from "./event/radioHandler";
 import { attachCheckboxEventHandler } from "./event/checkboxHandler";
@@ -131,6 +132,7 @@ function collectBindingsFromLiveNodes(
   for (const binding of allBindings) {
     replaceToReplaceNode(binding);
     if (attachEventHandler(binding)) continue;
+    if (attachEventTokenHandler(binding)) continue;
     attachTwowayEventHandler(binding);
     attachRadioEventHandler(binding);
     attachCheckboxEventHandler(binding);
@@ -394,6 +396,9 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
   for (const binding of allBindings) {
     replaceToReplaceNode(binding);
     if (attachEventHandler(binding)) {
+      continue;
+    }
+    if (attachEventTokenHandler(binding)) {
       continue;
     }
     attachTwowayEventHandler(binding);

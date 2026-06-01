@@ -71,6 +71,15 @@ export function parseBindTextsForElement(bindText: string): ParseBindTextResult[
     } else {
       const stateResult = parseStatePart(statePart);
       const propResult = parsePropPart(propPart);
+      // eventToken.<prop>: <name> は要素 dispatch を state へ流す pub/sub 配線。
+      // 値適用ではないため bindingType 'event' として listener attach 経路に乗せる。
+      if (propResult.propSegments[0] === 'eventToken') {
+        return {
+          ...propResult,
+          ...stateResult,
+          bindingType: 'event',
+        };
+      }
       if (propResult.propSegments[0].startsWith('on')) {
         return {
           ...propResult,

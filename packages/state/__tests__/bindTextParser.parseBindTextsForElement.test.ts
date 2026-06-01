@@ -18,6 +18,20 @@ describe('parseBindTextsForElement', () => {
     expect(result[0].statePathName).toBe('handleClick');
   });
 
+  it('eventTokenバインディングはevent型として分類されること', () => {
+    const result = parseBindTextsForElement('eventToken.error: createFailed');
+    expect(result).toHaveLength(1);
+    expect(result[0].bindingType).toBe('event');
+    expect(result[0].propSegments).toEqual(['eventToken', 'error']);
+    expect(result[0].statePathName).toBe('createFailed');
+  });
+
+  it('eventTokenバインディングはmodifierを保持すること', () => {
+    const result = parseBindTextsForElement('eventToken.error#prevent: createFailed');
+    expect(result[0].bindingType).toBe('event');
+    expect(result[0].propModifiers).toEqual(['prevent']);
+  });
+
   it('ifバインディングをパースできること', () => {
     const result = parseBindTextsForElement('if: count');
     expect(result).toHaveLength(1);

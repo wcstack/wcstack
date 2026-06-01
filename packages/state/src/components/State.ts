@@ -13,6 +13,9 @@ import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { clearCommandNamespace } from "../command/commandNamespace";
+import { processEventTokensDeclaration } from "../event/processEventTokensDeclaration";
+import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
+import { processOnDeclaration } from "../event/processOnDeclaration";
 import { defineDCC } from "../dcc/defineDCC";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
@@ -90,6 +93,7 @@ export class State extends HTMLElement implements IStateElement {
   private _boundComponentStateProp: string | null = null;
   private _bindableEventMap: Record<string, string> = {};
   private _commandTokenNames: Set<string> = new Set<string>();
+  private _eventTokenNames: Set<string> = new Set<string>();
 
   constructor() {
     super();
@@ -116,7 +120,11 @@ export class State extends HTMLElement implements IStateElement {
 
   private set _state(value: IState) {
     this._commandTokenNames = processCommandTokensDeclaration(value);
+    this._eventTokenNames = processEventTokensDeclaration(value);
     this.__state = value;
+    // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
+    clearEventTokenRegistry(this);
+    processOnDeclaration(this, value, this._eventTokenNames);
     this._listPaths.clear();
     this._elementPaths.clear();
     this._getterPaths.clear();
@@ -326,6 +334,7 @@ export class State extends HTMLElement implements IStateElement {
       setStateElementByName(this.rootNode, this._name, null);
       clearCommandTokenRegistry(this);
       clearCommandNamespace(this);
+      clearEventTokenRegistry(this);
       this._rootNode = null;
     }
   }
@@ -387,6 +396,10 @@ export class State extends HTMLElement implements IStateElement {
 
   get commandTokenNames(): ReadonlySet<string> {
     return this._commandTokenNames;
+  }
+
+  get eventTokenNames(): ReadonlySet<string> {
+    return this._eventTokenNames;
   }
 
   setBindableEventMap(map: Record<string, string>): void {

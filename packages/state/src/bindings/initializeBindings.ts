@@ -11,6 +11,7 @@ import {
 } from "./collectNodesAndBindingInfos";
 import { IFragmentNodeInfo } from "../structural/types";
 import { attachEventHandler } from "../event/handler";
+import { attachEventTokenHandler } from "../event/eventTokenHandler";
 import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
@@ -30,6 +31,11 @@ function _initializeBindings(
 
     // event
     if (attachEventHandler(binding)) {
+      continue;
+    }
+
+    // event token (element → state)
+    if (attachEventTokenHandler(binding)) {
       continue;
     }
 

@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
+import type { IWcBindable } from "../src/event/types";
 
 beforeAll(() => {
   bootstrapState();
@@ -104,5 +105,56 @@ describe("ハイドレーション後のイベントハンドラ", () => {
 
     const span = document.querySelector("span")!;
     expect(span.textContent).toBe("1");
+  });
+
+  it("for ブロック内の eventToken が hydration 後に配線され、dispatch が $on に届く", async () => {
+    const rowTag = "ssr-evt-row";
+    if (!customElements.get(rowTag)) {
+      class C extends HTMLElement {
+        static wcBindable: IWcBindable = {
+          protocol: "wc-bindable",
+          version: 1,
+          properties: [{ name: "failed", event: "row-failed" }],
+        };
+      }
+      customElements.define(rowTag, C);
+    }
+
+    document.body.innerHTML = `
+      <wcs-ssr name="default">
+        <script type="application/json">{"items":[{"name":"Alice"},{"name":"Bob"}]}</script>
+        <template id="u0" data-wcs="for: items">
+          <${rowTag} data-wcs="eventToken.failed: rowFailed"></${rowTag}>
+        </template>
+      </wcs-ssr>
+      <wcs-state enable-ssr name="default"></wcs-state>
+      <!--@@wcs-for:u0-->
+      <!--@@wcs-for-start:u0:items:0--><${rowTag} data-wcs="eventToken.failed: rowFailed"></${rowTag}><!--@@wcs-for-end:u0:items:0-->
+      <!--@@wcs-for-start:u0:items:1--><${rowTag} data-wcs="eventToken.failed: rowFailed"></${rowTag}><!--@@wcs-for-end:u0:items:1-->
+    `;
+
+    const received: Array<{ detail: unknown; indexes: number[] }> = [];
+    const stateEl = document.querySelector("wcs-state") as any;
+    stateEl.setInitialState({
+      items: [],
+      $eventTokens: ["rowFailed"],
+      $on: {
+        rowFailed: (_s: unknown, e: Event, ...indexes: number[]) => {
+          received.push({ detail: (e as CustomEvent).detail, indexes });
+        },
+      },
+    });
+    await stateEl.connectedCallbackPromise;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const rows = document.querySelectorAll(rowTag);
+    expect(rows.length).toBe(2);
+
+    rows[1].dispatchEvent(new CustomEvent("row-failed", { detail: "boom-1" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(received).toHaveLength(1);
+    expect(received[0].detail).toBe("boom-1");
+    expect(received[0].indexes).toEqual([1]);
   });
 });

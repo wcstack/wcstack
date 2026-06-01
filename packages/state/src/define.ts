@@ -31,4 +31,6 @@ export const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 export const STATE_BINDABLES_NAME = "$bindables";
 export const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 export const STATE_COMMAND_NAMESPACE_NAME = "$command";
+export const STATE_EVENT_TOKENS_NAME = "$eventTokens";
+export const STATE_ON_NAME = "$on";
 export const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";

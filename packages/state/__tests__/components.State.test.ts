@@ -126,6 +126,15 @@ describe('State component', () => {
     expect(Array.from(stateEl.commandTokenNames)).toEqual(['fetchUsers', 'refreshOrders']);
   });
 
+  it('eventTokenNamesは初期状態で空Set、setInitialState後に$eventTokens宣言を反映すること', async () => {
+    const stateEl = createStateElement();
+    expect(stateEl.eventTokenNames.size).toBe(0);
+    stateEl.setInitialState({ $eventTokens: ['userCreated', 'createFailed'] });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+    expect(Array.from(stateEl.eventTokenNames)).toEqual(['userCreated', 'createFailed']);
+  });
+
   it('_stateが未初期化状態でcreateStateがエラーになること', () => {
     const stateEl = createStateElement();
     (stateEl as any)._rootNode = document;
