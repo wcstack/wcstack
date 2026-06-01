@@ -137,6 +137,8 @@ const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 const STATE_BINDABLES_NAME = "$bindables";
 const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 const STATE_COMMAND_NAMESPACE_NAME = "$command";
+const STATE_EVENT_TOKENS_NAME = "$eventTokens";
+const STATE_ON_NAME = "$on";
 const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";
 
 const _cache$4 = new Map();
@@ -1485,6 +1487,15 @@ function parseBindTextsForElement(bindText) {
         else {
             const stateResult = parseStatePart(statePart);
             const propResult = parsePropPart(propPart);
+            // eventToken.<prop>: <name> は要素 dispatch を state へ流す pub/sub 配線。
+            // 値適用ではないため bindingType 'event' として listener attach 経路に乗せる。
+            if (propResult.propSegments[0] === 'eventToken') {
+                return {
+                    ...propResult,
+                    ...stateResult,
+                    bindingType: 'event',
+                };
+            }
             if (propResult.propSegments[0].startsWith('on')) {
                 return {
                     ...propResult,
@@ -1748,9 +1759,14 @@ function createStateAddress(pathInfo, listIndex) {
     }
 }
 
+// command-token / event-token が共有する pub/sub プリミティブ。
 // _subscribers は Set のため挿入順を保持する。
 // emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
-class CommandToken {
+//
+// 「誰が subscribe し誰が emit するか」だけが command / event の違い:
+//   - command-token: element が subscribe / state が emit
+//   - event-token:   state(`$on`) が subscribe / element(listener) が emit
+class Token {
     _name;
     _subscribers = new Set();
     constructor(name) {
@@ -1778,6 +1794,11 @@ class CommandToken {
         }
         return results;
     }
+}
+
+// CommandToken は共有 pub/sub プリミティブ Token の薄い特化。
+// instanceof による型判別を成立させるため独立クラスとして維持する。
+class CommandToken extends Token {
 }
 function isCommandToken(value) {
     return value instanceof CommandToken;
@@ -1874,6 +1895,127 @@ function attachEventHandler(binding) {
     else {
         bindingSet.add(binding);
     }
+    return true;
+}
+
+// EventToken は共有 pub/sub プリミティブ Token の薄い特化（element→state 方向）。
+// instanceof による型判別を成立させるため独立クラスとして維持する。
+class EventToken extends Token {
+}
+
+const registryByStateElement$1 = new WeakMap();
+function getOrCreateEventToken(stateElement, name) {
+    let registry = registryByStateElement$1.get(stateElement);
+    if (typeof registry === "undefined") {
+        registry = new Map();
+        registryByStateElement$1.set(stateElement, registry);
+    }
+    let token = registry.get(name);
+    if (typeof token === "undefined") {
+        token = new EventToken(name);
+        registry.set(name, token);
+    }
+    return token;
+}
+function clearEventTokenRegistry(stateElement) {
+    registryByStateElement$1.delete(stateElement);
+}
+
+/**
+ * eventToken.<propertyName>: <eventTokenName> バインディングの attach ハンドラ。
+ *
+ * command-token の双対（element→state）。要素が dispatch する CustomEvent を受けて
+ * event-token を emit し、state 側の `$on` ハンドラ群へ pub/sub で配送する。
+ *
+ * 設計（MVP スコープ: wc-bindable カスタム要素のみ）:
+ *   - キーは生イベント名ではなく **wcBindable property 名**。実 DOM イベント名は
+ *     wcBindable.properties[].event から解決する（command-token が wcBindable.commands で
+ *     検証するのと対称。コロンを含む namespaced event 名と binding 構文の `:` 衝突も回避）。
+ *   - <prop> は wcBindable.properties に宣言されていること、<eventTokenName> は
+ *     $eventTokens に宣言されていることを attach 時に検証する（fail-fast / typo 耐性）。
+ *   - subscriber 引数規約は `(state, event, ...listIndexes)`。
+ *   - modifier `#prevent` / `#stop` は既存イベント binding と同等にサポート。
+ *
+ * token はイベント発火ごとに registry から解決する（getOrCreateEventToken）。これにより
+ * state の再 set で registry が作り直されても最新の subscriber 群へ配送できる。
+ *
+ * state element の解決と `$eventTokens` 検証は **発火時** に行う（attach 時ではない）。
+ * 構造ブロック（for/if）や SSR hydration では、binding 初期化時にノードが detached な
+ * DocumentFragment / wrapper 上にあり、その時点では element.getRootNode() から state を
+ * 解決できないため。onclick / two-way ハンドラと同じく fire-time 解決に揃えている。
+ */
+const listenerByBinding = new WeakMap();
+function getWcBindable$1(element) {
+    const customTagName = getCustomElement(element);
+    if (customTagName === null) {
+        return null;
+    }
+    // attach 側で未定義要素は whenDefined 後に再試行するため、ここに来る時点で customClass は定義済み。
+    const customClass = customElements.get(customTagName);
+    const bindable = customClass?.wcBindable;
+    if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
+        return bindable;
+    }
+    return null;
+}
+function attachEventTokenHandler(binding) {
+    if (binding.propSegments[0] !== "eventToken") {
+        return false;
+    }
+    const element = binding.node;
+    // カスタム要素が未定義なら定義後に再試行（wcBindable が必要なため）。
+    const customTagName = getCustomElement(element);
+    if (customTagName !== null && customElements.get(customTagName) === undefined) {
+        customElements.whenDefined(customTagName).then(() => {
+            attachEventTokenHandler(binding);
+        });
+        return true;
+    }
+    // 再評価で二重 attach しない。
+    if (listenerByBinding.has(binding)) {
+        return true;
+    }
+    const propertyName = binding.propSegments[1];
+    if (typeof propertyName !== "string" || propertyName.length === 0) {
+        raiseError(`eventToken binding requires a property name (e.g., "eventToken.error").`);
+    }
+    const bindable = getWcBindable$1(element);
+    if (bindable === null) {
+        raiseError(`eventToken binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
+    }
+    const propDesc = bindable.properties.find((p) => p.name === propertyName);
+    if (typeof propDesc === "undefined") {
+        raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.`);
+    }
+    const eventName = propDesc.event;
+    const tokenName = binding.statePathName;
+    const stateName = binding.stateName;
+    const modifiers = binding.propModifiers;
+    const handler = (event) => {
+        if (modifiers.includes("prevent"))
+            event.preventDefault();
+        if (modifiers.includes("stop"))
+            event.stopPropagation();
+        // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
+        const rootNode = element.getRootNode();
+        const stateElement = getStateElementByName(rootNode, stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
+        }
+        if (!stateElement.eventTokenNames.has(tokenName)) {
+            raiseError(`eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".`);
+        }
+        const loopContext = getLoopContextByNode(element);
+        stateElement.createStateAsync("writable", async (state) => {
+            state[setLoopContextSymbol](loopContext, () => {
+                const indexes = loopContext?.listIndex.indexes ?? [];
+                const token = getOrCreateEventToken(stateElement, tokenName);
+                return token.emit(state, event, ...indexes);
+            });
+        });
+    };
+    element.addEventListener(eventName, handler);
+    listenerByBinding.set(binding, { eventName, handler });
     return true;
 }
 
@@ -3871,6 +4013,10 @@ function _initializeBindings(allBindings) {
         if (attachEventHandler(binding)) {
             continue;
         }
+        // event token (element → state)
+        if (attachEventTokenHandler(binding)) {
+            continue;
+        }
         // two-way binding
         attachTwowayEventHandler(binding);
         // radio binding
@@ -4398,6 +4544,8 @@ function collectBindingsFromLiveNodes(nodes) {
         replaceToReplaceNode(binding);
         if (attachEventHandler(binding))
             continue;
+        if (attachEventTokenHandler(binding))
+            continue;
         attachTwowayEventHandler(binding);
         attachRadioEventHandler(binding);
         attachCheckboxEventHandler(binding);
@@ -4635,6 +4783,9 @@ async function hydrateBindings(root) {
     for (const binding of allBindings) {
         replaceToReplaceNode(binding);
         if (attachEventHandler(binding)) {
+            continue;
+        }
+        if (attachEventTokenHandler(binding)) {
             continue;
         }
         attachTwowayEventHandler(binding);
@@ -5366,6 +5517,67 @@ function getCommandNamespace(stateElement) {
 }
 function clearCommandNamespace(stateElement) {
     namespaceProxyByStateElement.delete(stateElement);
+}
+
+/**
+ * `$eventTokens: ["a", "b", ...]` 配列宣言を解析し、宣言された名前群を Set で返す。
+ *
+ * event-token は command-token の双対（element→state 方向）。要素が dispatch する
+ * イベントを `eventToken.<prop>: <name>` で token に流し、state 側は `$on` マップで受ける。
+ * ここで宣言された名前のみが `eventToken.X` / `$on` の有効なチャネル名になる（typo 耐性）。
+ *
+ * 対応している宣言形式は **オブジェクトリテラル** のみ。
+ */
+function processEventTokensDeclaration(state) {
+    const names = new Set();
+    const declared = state[STATE_EVENT_TOKENS_NAME];
+    if (typeof declared === "undefined") {
+        return names;
+    }
+    if (!Array.isArray(declared)) {
+        raiseError(`${STATE_EVENT_TOKENS_NAME} must be an array of strings.`);
+    }
+    for (const name of declared) {
+        if (typeof name !== "string" || name.length === 0) {
+            raiseError(`${STATE_EVENT_TOKENS_NAME} entries must be non-empty strings.`);
+        }
+        if (names.has(name)) {
+            raiseError(`${STATE_EVENT_TOKENS_NAME} entry "${name}" is duplicated.`);
+        }
+        names.add(name);
+    }
+    return names;
+}
+
+/**
+ * `$on: { <name>: (state, event, ...listIndexes) => {...} }` マップを解析し、
+ * 各ハンドラを対応する event-token に subscribe する（state 側の受信配線）。
+ *
+ * - `$on` のキーは `$eventTokens` で宣言済みでなければならない（typo 耐性）。
+ * - 各値は関数でなければならない。
+ * - 引数規約は `(state, event, ...listIndexes)`。`this` 束縛は行わず引数で state を渡すため
+ *   アロー関数で書ける（command-token の emit 規約と対称）。
+ *
+ * `$eventTokens` で宣言されたが `$on` に対応が無い token は subscriber ゼロ（emit は no-op）。
+ */
+function processOnDeclaration(stateElement, state, eventTokenNames) {
+    const declared = state[STATE_ON_NAME];
+    if (typeof declared === "undefined") {
+        return;
+    }
+    if (typeof declared !== "object" || declared === null) {
+        raiseError(`${STATE_ON_NAME} must be an object mapping event-token names to handler functions.`);
+    }
+    for (const [name, handler] of Object.entries(declared)) {
+        if (!eventTokenNames.has(name)) {
+            raiseError(`${STATE_ON_NAME} entry "${name}" is not declared in $eventTokens.`);
+        }
+        if (typeof handler !== "function") {
+            raiseError(`${STATE_ON_NAME} entry "${name}" must be a function.`);
+        }
+        const token = getOrCreateEventToken(stateElement, name);
+        token.subscribe(handler);
+    }
 }
 
 function getterFn(name) {
@@ -7199,6 +7411,7 @@ class State extends HTMLElement {
     _boundComponentStateProp = null;
     _bindableEventMap = {};
     _commandTokenNames = new Set();
+    _eventTokenNames = new Set();
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -7222,7 +7435,11 @@ class State extends HTMLElement {
     }
     set _state(value) {
         this._commandTokenNames = processCommandTokensDeclaration(value);
+        this._eventTokenNames = processEventTokensDeclaration(value);
         this.__state = value;
+        // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
+        clearEventTokenRegistry(this);
+        processOnDeclaration(this, value, this._eventTokenNames);
         this._listPaths.clear();
         this._elementPaths.clear();
         this._getterPaths.clear();
@@ -7436,6 +7653,7 @@ class State extends HTMLElement {
             setStateElementByName(this.rootNode, this._name, null);
             clearCommandTokenRegistry(this);
             clearCommandNamespace(this);
+            clearEventTokenRegistry(this);
             this._rootNode = null;
         }
     }
@@ -7483,6 +7701,9 @@ class State extends HTMLElement {
     }
     get commandTokenNames() {
         return this._commandTokenNames;
+    }
+    get eventTokenNames() {
+        return this._eventTokenNames;
     }
     setBindableEventMap(map) {
         this._bindableEventMap = map;
