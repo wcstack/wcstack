@@ -272,8 +272,15 @@ function handleClick(event) {
     const wsId = triggerElement.getAttribute(config.triggerAttribute);
     if (!wsId)
         return;
+    // Resolve the registered constructor at call time instead of importing
+    // WcsWebSocket as a value. The value import created a components/WebSocket.ts ⇄
+    // autoTrigger.ts cycle (WcsWebSocket.connectedCallback() calls
+    // registerAutoTrigger()). instanceof against the customElements registry keeps
+    // the exact same identity guarantee — only the registered <wcs-ws> class
+    // matches — without the import cycle.
+    const WsCtor = customElements.get(config.tagNames.ws);
     const wsElement = document.getElementById(wsId);
-    if (!wsElement || !(wsElement instanceof WcsWebSocket))
+    if (!WsCtor || !(wsElement instanceof WsCtor))
         return;
     event.preventDefault();
     wsElement.connect();

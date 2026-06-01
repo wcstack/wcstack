@@ -261,8 +261,14 @@ function handleClick(event) {
     const timerId = triggerElement.getAttribute(config.triggerAttribute);
     if (!timerId)
         return;
+    // Resolve the registered constructor at call time instead of importing Timer
+    // as a value. The value import created a components/Timer.ts ⇄ autoTrigger.ts
+    // cycle (Timer.connectedCallback() calls registerAutoTrigger()). instanceof
+    // against the customElements registry keeps the exact same identity guarantee
+    // — only the registered <wcs-timer> class matches — without the import cycle.
+    const TimerCtor = customElements.get(config.tagNames.timer);
     const timerElement = document.getElementById(timerId);
-    if (!timerElement || !(timerElement instanceof Timer))
+    if (!TimerCtor || !(timerElement instanceof TimerCtor))
         return;
     // Suppress the element's default action so a timer can start without
     // navigating. Intentional: do not attach data-timertarget to an element whose

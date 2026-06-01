@@ -1,5 +1,5 @@
 import { config } from "./config.js";
-import { WcsUpload } from "./components/Upload.js";
+import type { WcsUpload } from "./components/Upload.js";
 
 let registered = false;
 
@@ -13,8 +13,15 @@ function handleClick(event: Event): void {
   const uploadId = triggerElement.getAttribute(config.triggerAttribute);
   if (!uploadId) return;
 
-  const uploadElement = document.getElementById(uploadId) as WcsUpload | null;
-  if (!uploadElement || !(uploadElement instanceof WcsUpload)) return;
+  // Resolve the registered constructor at call time instead of importing WcsUpload
+  // as a value. The value import created a components/Upload.ts ⇄ autoTrigger.ts
+  // cycle (WcsUpload.connectedCallback() calls registerAutoTrigger()). instanceof
+  // against the customElements registry keeps the exact same identity guarantee
+  // — only the registered <wcs-upload> class matches — without the import cycle.
+  const UploadCtor = customElements.get(config.tagNames.upload);
+  const el = document.getElementById(uploadId);
+  if (!UploadCtor || !(el instanceof UploadCtor)) return;
+  const uploadElement = el as WcsUpload;
 
   // ファイルと URL が揃っている場合のみ既定動作を抑止
   if (uploadElement.files && uploadElement.files.length > 0 && uploadElement.url) {
