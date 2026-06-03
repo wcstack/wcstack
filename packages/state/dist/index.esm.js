@@ -1931,8 +1931,10 @@ function clearEventTokenRegistry(stateElement) {
  *   - キーは生イベント名ではなく **wcBindable property 名**。実 DOM イベント名は
  *     wcBindable.properties[].event から解決する（command-token が wcBindable.commands で
  *     検証するのと対称。コロンを含む namespaced event 名と binding 構文の `:` 衝突も回避）。
- *   - <prop> は wcBindable.properties に宣言されていること、<eventTokenName> は
- *     $eventTokens に宣言されていることを attach 時に検証する（fail-fast / typo 耐性）。
+ *   - <prop> が wcBindable.properties に宣言されていることは attach 時に検証する
+ *     （要素クラス参照のみで DOM 接続に非依存。fail-fast / typo 耐性）。
+ *   - <eventTokenName> が $eventTokens に宣言されていることは **発火時** に検証する
+ *     （state 解決が必要なため。詳細は下記の fire-time 解決の注記を参照）。
  *   - subscriber 引数規約は `(state, event, ...listIndexes)`。
  *   - modifier `#prevent` / `#stop` は既存イベント binding と同等にサポート。
  *
