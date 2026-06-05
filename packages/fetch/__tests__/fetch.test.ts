@@ -526,6 +526,34 @@ describe("Fetch", () => {
     expect((init as RequestInit).body).toBe("raw text body");
   });
 
+  it("HEADリクエストはボディを読まずstatusのみを反映する", async () => {
+    const json = vi.fn();
+    const text = vi.fn();
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+      statusText: "No Content",
+      headers: new Headers(),
+      json,
+      text,
+    } as unknown as Response);
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    el.setAttribute("method", "HEAD");
+
+    await el.fetch();
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).method).toBe("HEAD");
+    // HEADはボディを持たないため、json()/text()は呼ばずに読み取りをスキップする
+    expect(json).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+    expect(el.value).toBeNull();
+    expect(el.status).toBe(204);
+    expect(el.error).toBeNull();
+  });
+
   it("サブタグからボディを収集できる", async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
 
