@@ -1,6 +1,7 @@
 import { Fetch } from "./components/Fetch.js";
 import { FetchHeader } from "./components/FetchHeader.js";
 import { FetchBody } from "./components/FetchBody.js";
+import { InfiniteScroll } from "./components/InfiniteScroll.js";
 import { config } from "./config.js";
 
 export function registerComponents(): void {
@@ -12,5 +13,8 @@ export function registerComponents(): void {
   }
   if (!customElements.get(config.tagNames.fetchBody)) {
     customElements.define(config.tagNames.fetchBody, FetchBody);
+  }
+  if (!customElements.get(config.tagNames.infiniteScroll)) {
+    customElements.define(config.tagNames.infiniteScroll, InfiniteScroll);
   }
 }

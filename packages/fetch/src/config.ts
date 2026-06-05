@@ -7,6 +7,7 @@ interface IInternalConfig extends IConfig {
     fetch: string;
     fetchHeader: string;
     fetchBody: string;
+    infiniteScroll: string;
   };
 }
 
@@ -17,6 +18,7 @@ const _config: IInternalConfig = {
     fetch: "wcs-fetch",
     fetchHeader: "wcs-fetch-header",
     fetchBody: "wcs-fetch-body",
+    infiniteScroll: "wcs-infinite-scroll",
   },
 };
 

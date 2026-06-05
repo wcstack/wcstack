@@ -2,11 +2,13 @@ interface ITagNames {
     readonly fetch: string;
     readonly fetchHeader: string;
     readonly fetchBody: string;
+    readonly infiniteScroll: string;
 }
 interface IWritableTagNames {
     fetch?: string;
     fetchHeader?: string;
     fetchBody?: string;
+    infiniteScroll?: string;
 }
 interface IConfig {
     readonly autoTrigger: boolean;
@@ -150,5 +152,30 @@ declare class Fetch extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { FetchCore, Fetch as WcsFetch, bootstrapFetch, getConfig };
+declare class InfiniteScroll extends HTMLElement {
+    static get observedAttributes(): string[];
+    private _observer;
+    private _done;
+    get target(): string;
+    set target(value: string);
+    get root(): string | null;
+    set root(value: string | null);
+    get rootMargin(): string;
+    set rootMargin(value: string);
+    get threshold(): number;
+    set threshold(value: number);
+    get disabled(): boolean;
+    set disabled(value: boolean);
+    get once(): boolean;
+    set once(value: boolean);
+    connectedCallback(): void;
+    disconnectedCallback(): void;
+    attributeChangedCallback(): void;
+    private _observe;
+    private _disconnectObserver;
+    private _resolveRoot;
+    private _triggerFetch;
+}
+
+export { FetchCore, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig };
 export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues };

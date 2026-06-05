@@ -60,15 +60,15 @@ npm install @wcstack/fetch
       },
     };
   </script>
-
-  <wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
-
-  <ul>
-    <template data-wcs="for: users">
-      <li data-wcs="textContent: users.*.name"></li>
-    </template>
-  </ul>
 </wcs-state>
+
+<wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
+
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: users.*.name"></li>
+  </template>
+</ul>
 ```
 
 これがデフォルトモードです:
@@ -94,30 +94,30 @@ npm install @wcstack/fetch
       },
     };
   </script>
-
-  <select data-wcs="value: filterRole">
-    <option value="">すべて</option>
-    <option value="admin">Admin</option>
-    <option value="staff">Staff</option>
-  </select>
-
-  <wcs-fetch
-    data-wcs="url: usersUrl; value: users; loading: listLoading; error: listError">
-  </wcs-fetch>
-
-  <template data-wcs="if: listLoading">
-    <p>読み込み中...</p>
-  </template>
-  <template data-wcs="if: listError">
-    <p>ユーザーの読み込みに失敗しました。</p>
-  </template>
-
-  <ul>
-    <template data-wcs="for: users">
-      <li data-wcs="textContent: users.*.name"></li>
-    </template>
-  </ul>
 </wcs-state>
+
+<select data-wcs="value: filterRole">
+  <option value="">すべて</option>
+  <option value="admin">Admin</option>
+  <option value="staff">Staff</option>
+</select>
+
+<wcs-fetch
+  data-wcs="url: usersUrl; value: users; loading: listLoading; error: listError">
+</wcs-fetch>
+
+<template data-wcs="if: listLoading">
+  <p>読み込み中...</p>
+</template>
+<template data-wcs="if: listError">
+  <p>ユーザーの読み込みに失敗しました。</p>
+</template>
+
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: users.*.name"></li>
+  </template>
+</ul>
 ```
 
 ### 3. `trigger` による手動実行
@@ -136,15 +136,15 @@ npm install @wcstack/fetch
       },
     };
   </script>
-
-  <wcs-fetch
-    url="/api/users"
-    manual
-    data-wcs="trigger: shouldRefresh; value: users; loading: listLoading">
-  </wcs-fetch>
-
-  <button data-wcs="onclick: reload">更新</button>
 </wcs-state>
+
+<wcs-fetch
+  url="/api/users"
+  manual
+  data-wcs="trigger: shouldRefresh; value: users; loading: listLoading">
+</wcs-fetch>
+
+<button data-wcs="onclick: reload">更新</button>
 ```
 
 `trigger` は **単方向のコマンドサーフェス** です:
@@ -181,34 +181,85 @@ npm install @wcstack/fetch
       },
     };
   </script>
-
-  <input data-wcs="value: newUser.name" placeholder="名前">
-  <input data-wcs="value: newUser.email" placeholder="メール">
-
-  <button data-wcs="onclick: submit">作成</button>
-
-  <wcs-fetch
-    url="/api/users"
-    method="POST"
-    manual
-    data-wcs="
-      body: newUser;
-      trigger: submitRequest;
-      value: submitResult;
-      error: submitError;
-      loading: submitLoading
-    ">
-    <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
-  </wcs-fetch>
-
-  <template data-wcs="if: submitLoading">
-    <p>送信中...</p>
-  </template>
-  <template data-wcs="if: submitError">
-    <p>送信に失敗しました。</p>
-  </template>
 </wcs-state>
+
+<input data-wcs="value: newUser.name" placeholder="名前">
+<input data-wcs="value: newUser.email" placeholder="メール">
+
+<button data-wcs="onclick: submit">作成</button>
+
+<wcs-fetch
+  url="/api/users"
+  method="POST"
+  manual
+  data-wcs="
+    body: newUser;
+    trigger: submitRequest;
+    value: submitResult;
+    error: submitError;
+    loading: submitLoading
+  ">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<template data-wcs="if: submitLoading">
+  <p>送信中...</p>
+</template>
+<template data-wcs="if: submitError">
+  <p>送信に失敗しました。</p>
+</template>
 ```
+
+### 5. `<wcs-infinite-scroll>` による無限スクロール
+
+`<wcs-infinite-scroll>` は、sentinel 要素が表示領域に入ったときに既存の `<wcs-fetch>` を実行します。
+ページ番号、次の URL、レスポンスの append などは `@wcstack/state` 側で宣言し、スクロール検知だけをこのタグに任せます。
+
+動作規約:
+
+- target の `<wcs-fetch>` が `loading` 中なら重複起動しません
+- `once` は厳密な一回限りです。一度発火した後は属性を変更しても再監視しません
+- `target` の id が未解決、または対象が `<wcs-fetch>` でない場合は無診断で no-op です
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      page: 1,
+      users: [],
+      get nextUsersUrl() {
+        return "/api/users?page=" + this.page;
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-fetch
+  id="next-page-fetch"
+  manual
+  data-wcs="url: nextUsersUrl; loading: listLoading; error: listError">
+</wcs-fetch>
+
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: users.*.name"></li>
+  </template>
+</ul>
+
+<wcs-infinite-scroll
+  target="next-page-fetch"
+  root-margin="240px 0px">
+</wcs-infinite-scroll>
+```
+
+主な属性:
+
+- `target`: 実行する `<wcs-fetch>` の `id`
+- `root`: スクロールコンテナの `id`。未指定時は viewport
+- `root-margin`: 先読み距離。`IntersectionObserver` の `rootMargin`
+- `threshold`: 交差しきい値。未指定時は `0`
+- `disabled`: 監視を停止
+- `once`: 最初の実行後に監視を解除し、その後は再武装しない
 
 ## ステートサーフェス vs コマンドサーフェス
 

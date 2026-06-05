@@ -2,12 +2,14 @@ export interface ITagNames {
   readonly fetch: string;
   readonly fetchHeader: string;
   readonly fetchBody: string;
+  readonly infiniteScroll: string;
 }
 
 export interface IWritableTagNames {
   fetch?: string;
   fetchHeader?: string;
   fetchBody?: string;
+  infiniteScroll?: string;
 }
 
 export interface IConfig {

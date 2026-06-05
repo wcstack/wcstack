@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Fetch } from "../src/components/Fetch";
 import { FetchHeader } from "../src/components/FetchHeader";
 import { FetchBody } from "../src/components/FetchBody";
+import { InfiniteScroll } from "../src/components/InfiniteScroll";
 import { bootstrapFetch } from "../src/bootstrapFetch";
 import { registerComponents } from "../src/registerComponents";
 import { registerAutoTrigger, unregisterAutoTrigger } from "../src/autoTrigger";
@@ -35,6 +36,7 @@ describe("config", () => {
     expect(config.tagNames.fetch).toBe("wcs-fetch");
     expect(config.tagNames.fetchHeader).toBe("wcs-fetch-header");
     expect(config.tagNames.fetchBody).toBe("wcs-fetch-body");
+    expect(config.tagNames.infiniteScroll).toBe("wcs-infinite-scroll");
     expect(config.autoTrigger).toBe(true);
     expect(config.triggerAttribute).toBe("data-fetchtarget");
   });
@@ -927,6 +929,304 @@ describe("Fetch", () => {
 
     const [_url, init] = fetchSpy.mock.calls[0];
     expect((init as RequestInit).headers).toEqual({});
+  });
+});
+
+describe("InfiniteScroll", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let observers: MockIntersectionObserver[];
+
+  class MockIntersectionObserver implements IntersectionObserver {
+    readonly root: Element | Document | null;
+    readonly rootMargin: string;
+    readonly thresholds: ReadonlyArray<number>;
+    observedElement: Element | null = null;
+    observe = vi.fn((element: Element) => {
+      this.observedElement = element;
+    });
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+    takeRecords = vi.fn((): IntersectionObserverEntry[] => []);
+
+    constructor(
+      private readonly callback: IntersectionObserverCallback,
+      options: IntersectionObserverInit = {}
+    ) {
+      this.root = options.root ?? null;
+      this.rootMargin = options.rootMargin ?? "0px";
+      const threshold = options.threshold ?? 0;
+      this.thresholds = Array.isArray(threshold) ? threshold : [threshold];
+      observers.push(this);
+    }
+
+    trigger(isIntersecting: boolean): void {
+      this.callback([{
+        isIntersecting,
+        target: this.observedElement,
+      } as IntersectionObserverEntry], this);
+    }
+  }
+
+  beforeEach(() => {
+    observers = [];
+    vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+    fetchSpy.mockResolvedValue(createMockResponse({ page: true }));
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    fetchSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("各setterが対応する属性へ反映される", () => {
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+
+    scrollEl.target = "page-fetch";
+    scrollEl.root = "scroll-root";
+    scrollEl.rootMargin = "240px 0px";
+    scrollEl.threshold = 0.5;
+    scrollEl.disabled = true;
+    scrollEl.once = true;
+
+    expect(scrollEl.getAttribute("target")).toBe("page-fetch");
+    expect(scrollEl.getAttribute("root")).toBe("scroll-root");
+    expect(scrollEl.getAttribute("root-margin")).toBe("240px 0px");
+    expect(scrollEl.getAttribute("threshold")).toBe("0.5");
+    expect(scrollEl.hasAttribute("disabled")).toBe(true);
+    expect(scrollEl.hasAttribute("once")).toBe(true);
+
+    scrollEl.root = null;
+    scrollEl.disabled = false;
+    scrollEl.once = false;
+
+    expect(scrollEl.getAttribute("root")).toBeNull();
+    expect(scrollEl.hasAttribute("disabled")).toBe(false);
+    expect(scrollEl.hasAttribute("once")).toBe(false);
+  });
+
+  it("デフォルトgetterは未設定属性に対応する既定値を返す", () => {
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+
+    expect(scrollEl.target).toBe("");
+    expect(scrollEl.root).toBeNull();
+    expect(scrollEl.rootMargin).toBe("0px");
+    expect(scrollEl.threshold).toBe(0);
+    expect(scrollEl.disabled).toBe(false);
+    expect(scrollEl.once).toBe(false);
+  });
+
+  it("threshold属性がNaNなら0にフォールバックする", () => {
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("threshold", "not-a-number");
+
+    expect(scrollEl.threshold).toBe(0);
+  });
+
+  it("交差時にtargetのfetch()を実行する", async () => {
+    const fetchEl = document.createElement("wcs-fetch") as Fetch;
+    fetchEl.id = "page-fetch";
+    fetchEl.setAttribute("url", "/api/page/2");
+    fetchEl.setAttribute("manual", "");
+    document.body.appendChild(fetchEl);
+
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    document.body.appendChild(scrollEl);
+
+    expect(observers).toHaveLength(1);
+    expect(observers[0].observe).toHaveBeenCalledWith(scrollEl);
+
+    observers[0].trigger(true);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith("/api/page/2", expect.any(Object));
+    });
+  });
+
+  it("root指定時は対応する要素をobserver.rootに渡す", () => {
+    const rootEl = document.createElement("div");
+    rootEl.id = "scroll-root";
+    document.body.appendChild(rootEl);
+
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    scrollEl.setAttribute("root", "scroll-root");
+    document.body.appendChild(scrollEl);
+
+    expect(observers).toHaveLength(1);
+    expect(observers[0].root).toBe(rootEl);
+  });
+
+  it("未交差時はfetch()を実行しない", () => {
+    const fetchEl = document.createElement("wcs-fetch") as Fetch;
+    fetchEl.id = "page-fetch";
+    fetchEl.setAttribute("url", "/api/page/2");
+    fetchEl.setAttribute("manual", "");
+    document.body.appendChild(fetchEl);
+
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    document.body.appendChild(scrollEl);
+
+    observers[0].trigger(false);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("targetが存在しない場合は何もしない", () => {
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "missing-fetch");
+    document.body.appendChild(scrollEl);
+
+    observers[0].trigger(true);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("targetがFetchでない場合は何もしない", () => {
+    const div = document.createElement("div");
+    div.id = "not-fetch";
+    document.body.appendChild(div);
+
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "not-fetch");
+    document.body.appendChild(scrollEl);
+
+    observers[0].trigger(true);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("url未設定のtargetでも未捕捉rejectionを発生させない", async () => {
+    const unhandled: PromiseRejectionEvent[] = [];
+    const onUnhandled = (e: PromiseRejectionEvent): void => {
+      e.preventDefault();
+      unhandled.push(e);
+    };
+    globalThis.addEventListener("unhandledrejection", onUnhandled);
+
+    try {
+      const fetchEl = document.createElement("wcs-fetch") as Fetch;
+      fetchEl.id = "page-fetch";
+      fetchEl.setAttribute("manual", "");
+      document.body.appendChild(fetchEl);
+
+      const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+      scrollEl.setAttribute("target", "page-fetch");
+      document.body.appendChild(scrollEl);
+
+      observers[0].trigger(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(unhandled).toHaveLength(0);
+      expect(fetchEl.trigger).toBe(false);
+    } finally {
+      globalThis.removeEventListener("unhandledrejection", onUnhandled);
+    }
+  });
+
+  it("targetがloading中なら重複起動しない", () => {
+    const fetchEl = document.createElement("wcs-fetch") as Fetch;
+    fetchEl.id = "page-fetch";
+    fetchEl.setAttribute("url", "/api/page/2");
+    fetchEl.setAttribute("manual", "");
+    document.body.appendChild(fetchEl);
+
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    document.body.appendChild(scrollEl);
+
+    Object.defineProperty(fetchEl, "loading", {
+      configurable: true,
+      get: () => true,
+    });
+
+    observers[0].trigger(true);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("disabled属性がある場合は監視しない", () => {
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    scrollEl.setAttribute("disabled", "");
+    document.body.appendChild(scrollEl);
+
+    expect(observers).toHaveLength(0);
+  });
+
+  it("接続後の属性変更でobserverを張り直す", () => {
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    document.body.appendChild(scrollEl);
+
+    const firstObserver = observers[0];
+    scrollEl.setAttribute("root-margin", "120px 0px");
+
+    expect(firstObserver.disconnect).toHaveBeenCalledTimes(1);
+    expect(observers).toHaveLength(2);
+    expect(observers[1].rootMargin).toBe("120px 0px");
+  });
+
+  it("disabledを外すとobserverを再作成する", () => {
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    scrollEl.setAttribute("disabled", "");
+    document.body.appendChild(scrollEl);
+
+    expect(observers).toHaveLength(0);
+
+    scrollEl.disabled = false;
+
+    expect(observers).toHaveLength(1);
+    expect(observers[0].observe).toHaveBeenCalledWith(scrollEl);
+  });
+
+  it("once属性がある場合は1回実行後に監視を解除する", async () => {
+    const fetchEl = document.createElement("wcs-fetch") as Fetch;
+    fetchEl.id = "page-fetch";
+    fetchEl.setAttribute("url", "/api/page/2");
+    fetchEl.setAttribute("manual", "");
+    document.body.appendChild(fetchEl);
+
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    scrollEl.setAttribute("once", "");
+    document.body.appendChild(scrollEl);
+
+    observers[0].trigger(true);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("once発火後は属性変更しても再observeしない", async () => {
+    const fetchEl = document.createElement("wcs-fetch") as Fetch;
+    fetchEl.id = "page-fetch";
+    fetchEl.setAttribute("url", "/api/page/2");
+    fetchEl.setAttribute("manual", "");
+    document.body.appendChild(fetchEl);
+
+    const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
+    scrollEl.setAttribute("target", "page-fetch");
+    scrollEl.setAttribute("once", "");
+    document.body.appendChild(scrollEl);
+
+    observers[0].trigger(true);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    scrollEl.setAttribute("root-margin", "160px 0px");
+
+    expect(observers).toHaveLength(1);
   });
 });
 

@@ -60,15 +60,15 @@ If another request is already in flight, it aborts the previous one.
       },
     };
   </script>
-
-  <wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
-
-  <ul>
-    <template data-wcs="for: users">
-      <li data-wcs="textContent: users.*.name"></li>
-    </template>
-  </ul>
 </wcs-state>
+
+<wcs-fetch data-wcs="url: usersUrl; value: users"></wcs-fetch>
+
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: users.*.name"></li>
+  </template>
+</ul>
 ```
 
 This is the default mode:
@@ -94,30 +94,30 @@ A computed URL can drive data fetching automatically:
       },
     };
   </script>
-
-  <select data-wcs="value: filterRole">
-    <option value="">All</option>
-    <option value="admin">Admin</option>
-    <option value="staff">Staff</option>
-  </select>
-
-  <wcs-fetch
-    data-wcs="url: usersUrl; value: users; loading: listLoading; error: listError">
-  </wcs-fetch>
-
-  <template data-wcs="if: listLoading">
-    <p>Loading...</p>
-  </template>
-  <template data-wcs="if: listError">
-    <p>Failed to load users.</p>
-  </template>
-
-  <ul>
-    <template data-wcs="for: users">
-      <li data-wcs="textContent: users.*.name"></li>
-    </template>
-  </ul>
 </wcs-state>
+
+<select data-wcs="value: filterRole">
+  <option value="">All</option>
+  <option value="admin">Admin</option>
+  <option value="staff">Staff</option>
+</select>
+
+<wcs-fetch
+  data-wcs="url: usersUrl; value: users; loading: listLoading; error: listError">
+</wcs-fetch>
+
+<template data-wcs="if: listLoading">
+  <p>Loading...</p>
+</template>
+<template data-wcs="if: listError">
+  <p>Failed to load users.</p>
+</template>
+
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: users.*.name"></li>
+  </template>
+</ul>
 ```
 
 ### 3. Manual execution with `trigger`
@@ -136,15 +136,15 @@ Use `manual` when you want to prepare inputs first and execute later.
       },
     };
   </script>
-
-  <wcs-fetch
-    url="/api/users"
-    manual
-    data-wcs="trigger: shouldRefresh; value: users; loading: listLoading">
-  </wcs-fetch>
-
-  <button data-wcs="onclick: reload">Refresh</button>
 </wcs-state>
+
+<wcs-fetch
+  url="/api/users"
+  manual
+  data-wcs="trigger: shouldRefresh; value: users; loading: listLoading">
+</wcs-fetch>
+
+<button data-wcs="onclick: reload">Refresh</button>
 ```
 
 `trigger` is a **one-way command surface**:
@@ -181,34 +181,85 @@ and no event fires. Set the `url` first, then write `true` again to execute.
       },
     };
   </script>
-
-  <input data-wcs="value: newUser.name" placeholder="Name">
-  <input data-wcs="value: newUser.email" placeholder="Email">
-
-  <button data-wcs="onclick: submit">Create</button>
-
-  <wcs-fetch
-    url="/api/users"
-    method="POST"
-    manual
-    data-wcs="
-      body: newUser;
-      trigger: submitRequest;
-      value: submitResult;
-      error: submitError;
-      loading: submitLoading
-    ">
-    <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
-  </wcs-fetch>
-
-  <template data-wcs="if: submitLoading">
-    <p>Submitting...</p>
-  </template>
-  <template data-wcs="if: submitError">
-    <p>Submit failed.</p>
-  </template>
 </wcs-state>
+
+<input data-wcs="value: newUser.name" placeholder="Name">
+<input data-wcs="value: newUser.email" placeholder="Email">
+
+<button data-wcs="onclick: submit">Create</button>
+
+<wcs-fetch
+  url="/api/users"
+  method="POST"
+  manual
+  data-wcs="
+    body: newUser;
+    trigger: submitRequest;
+    value: submitResult;
+    error: submitError;
+    loading: submitLoading
+  ">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<template data-wcs="if: submitLoading">
+  <p>Submitting...</p>
+</template>
+<template data-wcs="if: submitError">
+  <p>Submit failed.</p>
+</template>
 ```
+
+### 5. Infinite scroll with `<wcs-infinite-scroll>`
+
+`<wcs-infinite-scroll>` runs an existing `<wcs-fetch>` when its sentinel element enters the viewport.
+Keep page numbers, next URLs, and response append behavior in `@wcstack/state`; this tag only owns scroll detection.
+
+Behavior rules:
+
+- it does not trigger again while the target `<wcs-fetch>` is `loading`
+- `once` is strict: after the first execution, changing attributes does not re-arm observation
+- if `target` does not resolve, or resolves to a non-`<wcs-fetch>` element, it is a silent no-op
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      page: 1,
+      users: [],
+      get nextUsersUrl() {
+        return "/api/users?page=" + this.page;
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-fetch
+  id="next-page-fetch"
+  manual
+  data-wcs="url: nextUsersUrl; loading: listLoading; error: listError">
+</wcs-fetch>
+
+<ul>
+  <template data-wcs="for: users">
+    <li data-wcs="textContent: users.*.name"></li>
+  </template>
+</ul>
+
+<wcs-infinite-scroll
+  target="next-page-fetch"
+  root-margin="240px 0px">
+</wcs-infinite-scroll>
+```
+
+Attributes:
+
+- `target`: `id` of the `<wcs-fetch>` to run
+- `root`: `id` of the scroll container. Defaults to the viewport
+- `root-margin`: preload distance. Passed to `IntersectionObserver.rootMargin`
+- `threshold`: intersection threshold. Defaults to `0`
+- `disabled`: stops observing
+- `once`: disconnects after the first execution and does not re-arm afterwards
 
 ## State Surface vs Command Surface
 

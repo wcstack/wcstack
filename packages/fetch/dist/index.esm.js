@@ -5,6 +5,7 @@ const _config = {
         fetch: "wcs-fetch",
         fetchHeader: "wcs-fetch-header",
         fetchBody: "wcs-fetch-body",
+        infiniteScroll: "wcs-infinite-scroll",
     },
 };
 function deepFreeze(obj) {
@@ -502,6 +503,118 @@ class FetchBody extends HTMLElement {
     }
 }
 
+class InfiniteScroll extends HTMLElement {
+    static get observedAttributes() {
+        return ["target", "root", "root-margin", "threshold", "disabled"];
+    }
+    _observer = null;
+    _done = false;
+    get target() {
+        return this.getAttribute("target") || "";
+    }
+    set target(value) {
+        this.setAttribute("target", value);
+    }
+    get root() {
+        return this.getAttribute("root");
+    }
+    set root(value) {
+        if (value === null) {
+            this.removeAttribute("root");
+        }
+        else {
+            this.setAttribute("root", value);
+        }
+    }
+    get rootMargin() {
+        return this.getAttribute("root-margin") || "0px";
+    }
+    set rootMargin(value) {
+        this.setAttribute("root-margin", value);
+    }
+    get threshold() {
+        const value = Number(this.getAttribute("threshold") ?? "0");
+        return Number.isFinite(value) ? value : 0;
+    }
+    set threshold(value) {
+        this.setAttribute("threshold", String(value));
+    }
+    get disabled() {
+        return this.hasAttribute("disabled");
+    }
+    set disabled(value) {
+        if (value) {
+            this.setAttribute("disabled", "");
+        }
+        else {
+            this.removeAttribute("disabled");
+        }
+    }
+    get once() {
+        return this.hasAttribute("once");
+    }
+    set once(value) {
+        if (value) {
+            this.setAttribute("once", "");
+        }
+        else {
+            this.removeAttribute("once");
+        }
+    }
+    connectedCallback() {
+        this._observe();
+    }
+    disconnectedCallback() {
+        this._disconnectObserver();
+    }
+    attributeChangedCallback() {
+        if (this.isConnected) {
+            this._observe();
+        }
+    }
+    _observe() {
+        this._disconnectObserver();
+        if (this._done || this.disabled || !this.target || typeof IntersectionObserver === "undefined") {
+            return;
+        }
+        this._observer = new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+                this._triggerFetch();
+            }
+        }, {
+            root: this._resolveRoot(),
+            rootMargin: this.rootMargin,
+            threshold: this.threshold,
+        });
+        this._observer.observe(this);
+    }
+    _disconnectObserver() {
+        if (this._observer) {
+            this._observer.disconnect();
+            this._observer = null;
+        }
+    }
+    _resolveRoot() {
+        if (!this.root)
+            return null;
+        return document.getElementById(this.root) || null;
+    }
+    _triggerFetch() {
+        const target = document.getElementById(this.target);
+        if (!(target instanceof Fetch)) {
+            return;
+        }
+        if (target.loading) {
+            return;
+        }
+        target.trigger = true;
+        if (this.once) {
+            this._done = true;
+            this._disconnectObserver();
+        }
+    }
+}
+
 function registerComponents() {
     if (!customElements.get(config.tagNames.fetch)) {
         customElements.define(config.tagNames.fetch, Fetch);
@@ -512,6 +625,9 @@ function registerComponents() {
     if (!customElements.get(config.tagNames.fetchBody)) {
         customElements.define(config.tagNames.fetchBody, FetchBody);
     }
+    if (!customElements.get(config.tagNames.infiniteScroll)) {
+        customElements.define(config.tagNames.infiniteScroll, InfiniteScroll);
+    }
 }
 
 function bootstrapFetch(userConfig) {
@@ -521,5 +637,5 @@ function bootstrapFetch(userConfig) {
     registerComponents();
 }
 
-export { FetchCore, Fetch as WcsFetch, bootstrapFetch, getConfig };
+export { FetchCore, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig };
 //# sourceMappingURL=index.esm.js.map
