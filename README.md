@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Seven independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Nine independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -177,7 +177,7 @@ Seven independent runtime packages + one tooling extension package. Zero runtime
 </template>
 ```
 
-- **HAWC pattern** — Core (`EventTarget`) / Shell (`HTMLElement`) separation
+- **CSBC architecture** — Core / Shell / Binding Contract separation
 - **wc-bindable-protocol** — works with React, Vue, Svelte, Solid via thin adapters
 - **URL observation** — auto re-fetch when bound URL changes
 - **Trigger property** — declarative fetch execution from state, no DOM refs
@@ -241,7 +241,7 @@ const html = await renderToString(`
   <template data-wcs="for: items">
     <div data-wcs="textContent: items.*.name"></div>
   </template>
-`, { baseUrl: "http://localhost:3000" });
+`);
 ```
 
 - **Drop-in SSR** — add `enable-ssr` to `<wcs-state>`, call `renderToString()`. Done.
@@ -256,8 +256,10 @@ const html = await renderToString(`
 
 ### Additional Packages
 
-- [`@wcstack/websocket`](packages/websocket/) — Declarative real-time communication with `<wcs-websocket>` and bindable connection/message state.
+- [`@wcstack/websocket`](packages/websocket/) — Declarative real-time communication with `<wcs-ws>` and bindable connection/message state.
 - [`@wcstack/upload`](packages/upload/) — Declarative file upload flows with progress, status, and framework-agnostic bindings.
+- [`@wcstack/storage`](packages/storage/) — Declarative persistence with `<wcs-storage>` for localStorage / sessionStorage state sync.
+- [`@wcstack/timer`](packages/timer/) — Declarative timers with `<wcs-timer>` for ticking, elapsed time, and state-driven polling.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -302,6 +304,8 @@ wcstack/
 │   ├── fetch/         # @wcstack/fetch
 │   ├── autoloader/    # @wcstack/autoloader
 │   ├── server/        # @wcstack/server
+│   ├── storage/       # @wcstack/storage
+│   ├── timer/         # @wcstack/timer
 │   ├── websocket/     # @wcstack/websocket
 │   ├── upload/        # @wcstack/upload
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
