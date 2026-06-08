@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Fourteen independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Fifteen independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -266,6 +266,7 @@ const html = await renderToString(`
 - [`@wcstack/broadcast`](packages/broadcast/) — Declarative cross-tab messaging with `<wcs-broadcast>` for same-origin BroadcastChannel pub/sub as bindable state.
 - [`@wcstack/worker`](packages/worker/) — Declarative Web Worker with `<wcs-worker>` for offloading work to a background thread as bindable message/error/running state.
 - [`@wcstack/sse`](packages/sse/) — Declarative Server-Sent Events with `<wcs-sse>` for one-way streaming (EventSource) as bindable message/connection state, with named-event support.
+- [`@wcstack/intersection`](packages/intersection/) — Declarative IntersectionObserver with `<wcs-intersect>` for lazy-loading, infinite scroll, and scrollspy as bindable visibility state.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -320,6 +321,7 @@ wcstack/
 │   ├── broadcast/     # @wcstack/broadcast
 │   ├── worker/        # @wcstack/worker
 │   ├── sse/           # @wcstack/sse
+│   ├── intersection/  # @wcstack/intersection
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
