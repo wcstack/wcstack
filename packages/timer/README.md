@@ -7,8 +7,11 @@ It is an **async primitive node** that turns the passage of time into reactive s
 
 With `@wcstack/state`, `<wcs-timer>` can be bound directly through path contracts:
 
-- **input / command surface**: `interval`, `once`, `repeat`, `immediate`, `trigger`
+- **input surface**: `interval`, `once`, `repeat`, `immediate`, `manual`, `trigger`
 - **output state surface**: `tick`, `elapsed`, `running`
+- **commands**: `start`, `stop`, `reset`, `pause`, `resume`
+
+> `trigger` is a momentary command-*property* (an input), not a command: a `false`→`true` write starts the timer. To start from state via the command-token protocol use `command.start:` (see [Commands](#commands)) — there is no `command.trigger`.
 
 This means recurring work can be expressed declaratively in HTML, without writing `setInterval()`, `clearInterval()`, or teardown glue in your UI layer.
 
@@ -120,11 +123,54 @@ When `<wcs-timer>` is connected to the DOM, it automatically starts an interval 
 | `pause`   | Suspend ticking, preserving the partial period and elapsed time.        |
 | `resume`  | Continue from a `pause`, honoring the remaining time of the period.     |
 
+A live `interval` change is applied immediately only while the timer is **running**. Changing `interval` while **paused** has no effect on the current period; the new value takes effect on the next `start`.
+
 State-driven invocation uses the command-token protocol:
 
 ```html
 <wcs-timer manual data-wcs="command.start: $command.beginPolling"></wcs-timer>
 ```
+
+## Optional DOM Triggering
+
+If `autoTrigger` is enabled (default), clicking an element carrying `data-timertarget="<id>"` calls `start()` on the referenced `<wcs-timer>`:
+
+```html
+<button data-timertarget="poll">Start polling</button>
+<wcs-timer id="poll" interval="5000" manual data-wcs="tick: pollNow"></wcs-timer>
+```
+
+Event delegation is used, so it also works for dynamically added elements, and `closest()` handles nested targets (e.g. an icon inside the button). A matched click calls `event.preventDefault()` before starting the timer, so the element's default action is suppressed — do not put `data-timertarget` on an element whose default action you also want (a real `<a href>` link, a form-submit button), as it will be cancelled.
+
+## Configuration
+
+`bootstrapTimer()` registers `<wcs-timer>` and optionally overrides defaults. Pass a partial config:
+
+```javascript
+import { bootstrapTimer } from "@wcstack/timer";
+
+bootstrapTimer({
+  autoTrigger: true,             // enable data-timertarget click triggering (default: true)
+  triggerAttribute: "data-timertarget", // attribute scanned for click triggering
+  tagNames: {
+    timer: "wcs-timer",          // custom element tag name
+  },
+});
+```
+
+`getConfig()` returns a deep-frozen snapshot of the current configuration:
+
+```javascript
+import { getConfig } from "@wcstack/timer";
+
+const { autoTrigger, triggerAttribute, tagNames } = getConfig();
+```
+
+| Option             | Type                 | Default            | Description                                         |
+| ------------------ | -------------------- | ------------------ | --------------------------------------------------- |
+| `autoTrigger`      | boolean              | `true`             | Enable `data-timertarget` click triggering.         |
+| `triggerAttribute` | string               | `data-timertarget` | Attribute scanned for DOM click triggering.         |
+| `tagNames.timer`   | string               | `wcs-timer`        | Custom element tag name to register.                |
 
 ## Headless usage (`TimerCore`)
 

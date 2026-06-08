@@ -36,6 +36,11 @@ function deepClone<T>(obj: T): T {
 
 let frozenConfig: IConfig | null = null;
 
+// Internal-only live handle to the mutable config. NOT part of the public API
+// (deliberately absent from exports.ts) — it is exported solely so sibling
+// modules in this package can read current settings cheaply. External consumers
+// must use getConfig() (returns a deep-frozen snapshot) / setConfig(). Mutating
+// this object directly bypasses the frozenConfig cache and is unsupported.
 export const config: IConfig = _config as IConfig;
 
 export function getConfig(): IConfig {

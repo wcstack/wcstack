@@ -11,16 +11,18 @@ export class Timer extends HTMLElement {
       ...TimerCore.wcBindable.properties,
       { name: "trigger", event: "wcs-timer:trigger-changed" },
     ],
-    // Shell-level settable surface. No `attribute` hints: these setters reflect
-    // to their attributes themselves, so a binding system that mirrors
-    // inputs[].attribute would set the attribute twice. `start` / `stop` /
-    // `reset` / `pause` / `resume` commands are inherited from the Core above.
+    // Shell-level settable surface. `attribute` is a purely descriptive hint
+    // (per SPEC-extensions.md the binding core does not act on it) naming the
+    // mirrored HTML attribute, matching <wcs-geo> / <wcs-debounce>. `trigger` is a
+    // momentary command-property with no backing attribute, so it carries no hint
+    // (same as those packages). `start` / `stop` / `reset` / `pause` / `resume`
+    // commands are inherited from the Core above.
     inputs: [
-      { name: "interval" },
-      { name: "once" },
-      { name: "repeat" },
-      { name: "immediate" },
-      { name: "manual" },
+      { name: "interval", attribute: "interval" },
+      { name: "once", attribute: "once" },
+      { name: "repeat", attribute: "repeat" },
+      { name: "immediate", attribute: "immediate" },
+      { name: "manual", attribute: "manual" },
       { name: "trigger" },
     ],
   };
@@ -38,10 +40,13 @@ export class Timer extends HTMLElement {
 
   get interval(): number {
     const attr = this.getAttribute("interval");
-    const parsed = attr ? parseInt(attr, 10) : 1000;
-    // Fall back to the 1000ms default for any invalid period — not only NaN but
-    // also 0 / negative values, which would otherwise reach setInterval as a hot
-    // loop and break resume()'s modulo arithmetic in the Core.
+    if (attr === null || attr.trim() === "") return 1000;
+    // Strict parse via Number() (unlike parseInt, "100px" -> NaN, not 100),
+    // matching <wcs-geo> / <wcs-debounce>. Fall back to the 1000ms default for any
+    // invalid period — not only NaN but also 0 / negative values, which would
+    // otherwise reach setInterval as a hot loop and break resume()'s modulo
+    // arithmetic in the Core.
+    const parsed = Number(attr);
     return (Number.isFinite(parsed) && parsed > 0) ? parsed : 1000;
   }
 
@@ -63,8 +68,14 @@ export class Timer extends HTMLElement {
 
   get repeat(): number {
     const attr = this.getAttribute("repeat");
-    const parsed = attr ? parseInt(attr, 10) : 0;
-    return Number.isNaN(parsed) ? 0 : parsed;
+    if (attr === null || attr.trim() === "") return 0;
+    // Strict parse via Number() ("3px" -> NaN, not 3), matching <wcs-geo> /
+    // <wcs-debounce>. Normalise any non-positive / non-numeric value to 0
+    // (= unlimited), mirroring the `interval` getter. Without this a negative
+    // `repeat="-3"` would leak through to start(); harmless today (Core treats
+    // `_repeat <= 0` as unlimited) but the asymmetry is a trap.
+    const parsed = Number(attr);
+    return (Number.isFinite(parsed) && parsed > 0) ? parsed : 0;
   }
 
   set repeat(value: number) {
@@ -125,6 +136,12 @@ export class Timer extends HTMLElement {
       this._trigger = true;
       this.start();
       this._trigger = false;
+      // The `trigger-changed` event reports the momentary flag returning to
+      // false, i.e. that the trigger property *changed* — it is deliberately not
+      // gated on whether start() actually began a new run. This keeps the
+      // wcBindable `trigger` property's change-notification semantics consistent
+      // (every false→true write produces exactly one change-back event), even
+      // when start() was a no-op because the timer was already running.
       this.dispatchEvent(new CustomEvent("wcs-timer:trigger-changed", {
         detail: false,
         bubbles: true,
@@ -164,12 +181,16 @@ export class Timer extends HTMLElement {
   // --- Lifecycle ---
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
-    // Live interval changes restart the underlying setInterval with the new
-    // period (count/elapsed are preserved). Only act on a real change to a
-    // running, declaratively-driven timer.
-    if (name === "interval" && oldValue !== newValue && this.isConnected && !this.manual && this.running) {
-      this._core.stop();
-      this.start();
+    // Live interval changes swap the underlying setInterval period in place.
+    // `tick` / `elapsed` and the per-run `repeat` progress are preserved — we
+    // deliberately do NOT stop()+start(), which would re-run start() and
+    // re-evaluate per-run options (re-firing `immediate` and re-baselining
+    // `repeat`). `running` alone gates this: swapping the period is orthogonal to
+    // *how* the timer was started, so a `manual` timer the user has explicitly
+    // started gets live period changes too. A non-running timer needs no swap —
+    // its next start() picks up the new attribute as plain config.
+    if (name === "interval" && oldValue !== newValue && this.isConnected && this.running) {
+      this._core.changeInterval(this.interval);
     }
   }
 
