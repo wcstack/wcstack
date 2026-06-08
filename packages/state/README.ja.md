@@ -16,7 +16,7 @@
 - selector
 - reactive primitive をコンポーネントへ引き込むための glue code
 
-None of these exist by design.
+これらはどれも、設計上存在しません。
 
 なぜなら、このライブラリでは UI と状態の結合点を JavaScript の中に置かないからです。状態を「取り出して」コンポーネントへ渡すのではなく、HTML 側がパス文字列によって状態を参照します。要素は状態を所有せず、状態も要素を知りません。両者が共有するのはパスだけです。
 
@@ -1600,7 +1600,7 @@ const html = await renderToString(template, {
 });
 ```
 
-これだけです。クライアント側の `@wcstack/state` は `<wcs-ssr>` 要素を自動検出し、JSON スナップショットから状態を復元し��再レンダリングなしでリアクティビティを再開します。
+これだけです。クライアント側の `@wcstack/state` は `<wcs-ssr>` 要素を自動検出し、JSON スナップショットから状態を復元し、再レンダリングなしでリアクティビティを再開します。
 
 ### 仕組み
 
@@ -1608,14 +1608,14 @@ const html = await renderToString(template, {
 |---------|------|
 | **サーバー** | `renderToString()` が happy-dom でテンプレートを実行、`$connectedCallback`（`fetch()` 含む）を実行し、全バインディングを適用、ハイドレーションデータを含む `<wcs-ssr>` 要素付きのレンダリング済み HTML を出力 |
 | **クライアント** | `<wcs-state enable-ssr>` が `<wcs-ssr>` の JSON から状態をロード、`$connectedCallback` をスキップ、`hydrateBindings()` が既存の DOM にリアクティビティを接続 |
-| **フォールバック** | ���ーバー/クライアントのバージョン不一致時、SSR DOM をクリーンアップして `buildBindings()` でフルクライアントサイドレンダリングを実行 |
+| **フォールバック** | サーバー/クライアントのバージョン不一致時、SSR DOM をクリーンアップして `buildBindings()` でフルクライアントサイドレンダリングを実行 |
 
 ### `enable-ssr` の動作
 
 | コンテキスト | 動作 |
 |------------|------|
 | **サーバー**（`renderToString`） | 状態 JSON、テンプレートフラグメント、プロパティデータを含む `<wcs-ssr>` を生成 |
-| **クラ��アント**（ハイドレーション） | `<wcs-ssr>` を読み取り、状態を復元、`$connectedCallback` をスキップ、既存 DOM のバイン���ィングをハイドレート |
+| **クライアント**（ハイドレーション） | `<wcs-ssr>` を読み取り、状態を復元、`$connectedCallback` をスキップ、既存 DOM のバインディングをハイドレート |
 
 API の詳細は [`@wcstack/server` README](../server/README.ja.md) を参照してください。
 

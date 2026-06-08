@@ -470,9 +470,17 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 
 `FetchCore` と `<wcs-fetch>` はどちらも wc-bindable-protocol に準拠しており、プロトコル対応の任意のフレームワークやコンポーネントと相互運用できます。
 
+宣言は wc-bindable インターフェースモデルの全体に従い、3 つの独立したサーフェスを持ちます:
+
+- **`properties`** — `bind()` がサブスクライブする観測可能な出力（`value`, `loading`, `error`, `status`、および Shell の `trigger`）
+- **`inputs`** — 設定可能なサーフェス（`url`, `method`, …）。ツールやコード生成、リモートプロキシが読み取る宣言的メタデータ
+- **`commands`** — 呼び出し可能なメソッド（`fetch`, `abort`）。`@wcstack/state` のようなバインディングシステムが名前で呼び出せる
+
+プロトコルに従い、コアの `bind()` が解釈するのは `properties` のみです。`inputs` / `commands`（および `attribute` / `async` ヒント）は記述的なものであり、暗黙の双方向データフローを生成することは**ありません**。
+
 ### Core (`FetchCore`)
 
-`FetchCore` は任意のランタイムからサブスクライブできるバインド可能な非同期状態を宣言します:
+`FetchCore` は任意のランタイムからサブスクライブできるバインド可能な非同期状態と、ポータブルな input/command サーフェスを宣言します:
 
 ```typescript
 static wcBindable = {
@@ -486,6 +494,14 @@ static wcBindable = {
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
   ],
+  inputs: [
+    { name: "url" },
+    { name: "method" },
+  ],
+  commands: [
+    { name: "fetch", async: true },
+    { name: "abort" },
+  ],
 };
 ```
 
@@ -493,7 +509,7 @@ static wcBindable = {
 
 ### Shell (`<wcs-fetch>`)
 
-Shell は Core の宣言を拡張し、バインディングシステムから宣言的に fetch を実行できるようにします:
+Shell は Core の宣言を `trigger` 出力と DOM 駆動の input サーフェスで拡張します。`commands`（`fetch` / `abort`）はそのまま継承されます:
 
 ```typescript
 static wcBindable = {
@@ -502,8 +518,18 @@ static wcBindable = {
     ...FetchCore.wcBindable.properties,
     { name: "trigger", event: "wcs-fetch:trigger-changed" },
   ],
+  inputs: [
+    { name: "url" },
+    { name: "method" },
+    { name: "target" },
+    { name: "manual" },
+    { name: "body" },
+    { name: "trigger" },
+  ],
 };
 ```
+
+Shell の inputs は意図的に `attribute` ヒントを持ちません。各セッター（`url`, `method`, `target`, `manual`）はすでに対応する属性へ反映されるため、`inputs[].attribute` をミラーするバインディングシステムでは属性が二重に設定されてしまうからです。
 
 ## TypeScript 型
 
