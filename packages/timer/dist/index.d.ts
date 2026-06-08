@@ -123,7 +123,6 @@ declare class TimerCore extends EventTarget {
     private _runStartTick;
     private _interval;
     private _repeat;
-    private _immediate;
     private _accumulatedElapsed;
     private _segmentStart;
     constructor(target?: EventTarget);
@@ -133,6 +132,7 @@ declare class TimerCore extends EventTarget {
     private _dispatchTick;
     private _setRunning;
     start(options?: TimerStartOptions): void;
+    changeInterval(interval: number): void;
     stop(): void;
     reset(): void;
     pause(): void;

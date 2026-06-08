@@ -24,6 +24,11 @@ function deepClone(obj) {
     return clone;
 }
 let frozenConfig = null;
+// Internal-only live handle to the mutable config. NOT part of the public API
+// (deliberately absent from exports.ts) — it is exported solely so sibling
+// modules in this package can read current settings cheaply. External consumers
+// must use getConfig() (returns a deep-frozen snapshot) / setConfig(). Mutating
+// this object directly bypasses the frozenConfig cache and is unsupported.
 const config = _config;
 function getConfig() {
     if (!frozenConfig) {
@@ -84,9 +89,11 @@ class TimerCore extends EventTarget {
     // completed bounded timer would stop after a single tick.
     _runStartTick = 0;
     // Timer configuration (captured on start, reused by pause/resume).
+    // `_immediate` is intentionally NOT a field: it is per-run intent consumed
+    // entirely within start() (fire once, then schedule), so it lives as a local
+    // there rather than lingering as instance state no other method reads.
     _interval = 1000;
     _repeat = 0; // 0 = unlimited
-    _immediate = false;
     // Elapsed-time bookkeeping. `_accumulatedElapsed` holds the time folded from
     // already-finished running segments; `_segmentStart` is the timestamp the
     // current running segment began (null when not running). The live elapsed is
@@ -147,8 +154,10 @@ class TimerCore extends EventTarget {
         // every start() re-establishes them from the options, defaulting to
         // "unlimited" / "no immediate fire" when omitted. This keeps a bare start()
         // after a bounded or one-shot run from silently inheriting the old bounds.
+        // `repeat` is a field (pause/resume/_fire read it across the run); `immediate`
+        // is consumed here and now, so it stays a local.
         this._repeat = (typeof options.repeat === "number" && options.repeat > 0) ? options.repeat : 0;
-        this._immediate = options.immediate === true;
+        const immediate = options.immediate === true;
         this._setRunning(true);
         this._segmentStart = Date.now();
         // Baseline this run's per-run repeat counting (set after _setRunning so a
@@ -156,12 +165,35 @@ class TimerCore extends EventTarget {
         this._runStartTick = this._tick;
         // Fire immediately on start when requested. _fire() may stop the timer (when
         // repeat is reached), so re-check _running before scheduling the interval.
-        if (this._immediate) {
+        if (immediate) {
             this._fire();
         }
         if (this._running) {
             this._timerId = setInterval(this._fire, this._interval);
         }
+    }
+    // Swap the tick period of a live timer in place, WITHOUT re-running start().
+    // Unlike stop() + start(), this leaves the per-run repeat progress in flight
+    // (`_repeat` and its `_runStartTick` baseline) untouched, so a bounded
+    // `repeat="N"` run is not re-baselined to fire N more times. It also never goes
+    // through start()'s `immediate` path, so an `immediate` timer does not fire an
+    // extra tick. Only re-arms the steady interval; pause()/resume() and reset() are
+    // unaffected. No-op when not running (interval is then plain config, captured on
+    // the next start) or when the new period is non-positive / non-finite (which
+    // would turn setInterval into a hot loop and break resume()'s modulo arithmetic).
+    changeInterval(interval) {
+        if (!this._running)
+            return;
+        if (!(typeof interval === "number" && Number.isFinite(interval) && interval > 0))
+            return;
+        if (interval === this._interval)
+            return;
+        this._interval = interval;
+        // Re-arm the steady ticking at the new period. The current period's progress
+        // is intentionally discarded (the next tick is a full new interval away),
+        // matching the boundary reset of the previous stop()+start() behaviour.
+        this._clearTimer();
+        this._timerId = setInterval(this._fire, this._interval);
     }
     stop() {
         this._clearTimer();
@@ -196,6 +228,14 @@ class TimerCore extends EventTarget {
         this._paused = false;
         this._setRunning(true);
         this._segmentStart = Date.now();
+        // Invariant: `_interval` is fixed at start() and stays constant for the whole
+        // pause/resume cycle — changeInterval() only mutates it while *running* (never
+        // while paused), so the remainder arithmetic below can safely assume the same
+        // period was in effect across the paused segment. Consequence for the Shell:
+        // because the live interval-attribute path (attributeChangedCallback ->
+        // changeInterval) is gated on `running`, an `interval` change made *while
+        // paused* is silently not applied here; it is picked up only on the next
+        // start() as plain config. This is by design — see README "Commands".
         // Resume seamlessly: a tick fires every `interval` ms of *running* time, so
         // honour the partial period consumed before the pause. Wait only the
         // remainder to the next boundary, then fall back to the steady interval.
@@ -292,16 +332,18 @@ class Timer extends HTMLElement {
             ...TimerCore.wcBindable.properties,
             { name: "trigger", event: "wcs-timer:trigger-changed" },
         ],
-        // Shell-level settable surface. No `attribute` hints: these setters reflect
-        // to their attributes themselves, so a binding system that mirrors
-        // inputs[].attribute would set the attribute twice. `start` / `stop` /
-        // `reset` / `pause` / `resume` commands are inherited from the Core above.
+        // Shell-level settable surface. `attribute` is a purely descriptive hint
+        // (per SPEC-extensions.md the binding core does not act on it) naming the
+        // mirrored HTML attribute, matching <wcs-geo> / <wcs-debounce>. `trigger` is a
+        // momentary command-property with no backing attribute, so it carries no hint
+        // (same as those packages). `start` / `stop` / `reset` / `pause` / `resume`
+        // commands are inherited from the Core above.
         inputs: [
-            { name: "interval" },
-            { name: "once" },
-            { name: "repeat" },
-            { name: "immediate" },
-            { name: "manual" },
+            { name: "interval", attribute: "interval" },
+            { name: "once", attribute: "once" },
+            { name: "repeat", attribute: "repeat" },
+            { name: "immediate", attribute: "immediate" },
+            { name: "manual", attribute: "manual" },
             { name: "trigger" },
         ],
     };
@@ -315,10 +357,14 @@ class Timer extends HTMLElement {
     // --- Attribute accessors ---
     get interval() {
         const attr = this.getAttribute("interval");
-        const parsed = attr ? parseInt(attr, 10) : 1000;
-        // Fall back to the 1000ms default for any invalid period — not only NaN but
-        // also 0 / negative values, which would otherwise reach setInterval as a hot
-        // loop and break resume()'s modulo arithmetic in the Core.
+        if (attr === null || attr.trim() === "")
+            return 1000;
+        // Strict parse via Number() (unlike parseInt, "100px" -> NaN, not 100),
+        // matching <wcs-geo> / <wcs-debounce>. Fall back to the 1000ms default for any
+        // invalid period — not only NaN but also 0 / negative values, which would
+        // otherwise reach setInterval as a hot loop and break resume()'s modulo
+        // arithmetic in the Core.
+        const parsed = Number(attr);
         return (Number.isFinite(parsed) && parsed > 0) ? parsed : 1000;
     }
     set interval(value) {
@@ -337,8 +383,15 @@ class Timer extends HTMLElement {
     }
     get repeat() {
         const attr = this.getAttribute("repeat");
-        const parsed = attr ? parseInt(attr, 10) : 0;
-        return Number.isNaN(parsed) ? 0 : parsed;
+        if (attr === null || attr.trim() === "")
+            return 0;
+        // Strict parse via Number() ("3px" -> NaN, not 3), matching <wcs-geo> /
+        // <wcs-debounce>. Normalise any non-positive / non-numeric value to 0
+        // (= unlimited), mirroring the `interval` getter. Without this a negative
+        // `repeat="-3"` would leak through to start(); harmless today (Core treats
+        // `_repeat <= 0` as unlimited) but the asymmetry is a trap.
+        const parsed = Number(attr);
+        return (Number.isFinite(parsed) && parsed > 0) ? parsed : 0;
     }
     set repeat(value) {
         this.setAttribute("repeat", String(value));
@@ -389,6 +442,12 @@ class Timer extends HTMLElement {
             this._trigger = true;
             this.start();
             this._trigger = false;
+            // The `trigger-changed` event reports the momentary flag returning to
+            // false, i.e. that the trigger property *changed* — it is deliberately not
+            // gated on whether start() actually began a new run. This keeps the
+            // wcBindable `trigger` property's change-notification semantics consistent
+            // (every false→true write produces exactly one change-back event), even
+            // when start() was a no-op because the timer was already running.
             this.dispatchEvent(new CustomEvent("wcs-timer:trigger-changed", {
                 detail: false,
                 bubbles: true,
@@ -420,12 +479,16 @@ class Timer extends HTMLElement {
     }
     // --- Lifecycle ---
     attributeChangedCallback(name, oldValue, newValue) {
-        // Live interval changes restart the underlying setInterval with the new
-        // period (count/elapsed are preserved). Only act on a real change to a
-        // running, declaratively-driven timer.
-        if (name === "interval" && oldValue !== newValue && this.isConnected && !this.manual && this.running) {
-            this._core.stop();
-            this.start();
+        // Live interval changes swap the underlying setInterval period in place.
+        // `tick` / `elapsed` and the per-run `repeat` progress are preserved — we
+        // deliberately do NOT stop()+start(), which would re-run start() and
+        // re-evaluate per-run options (re-firing `immediate` and re-baselining
+        // `repeat`). `running` alone gates this: swapping the period is orthogonal to
+        // *how* the timer was started, so a `manual` timer the user has explicitly
+        // started gets live period changes too. A non-running timer needs no swap —
+        // its next start() picks up the new attribute as plain config.
+        if (name === "interval" && oldValue !== newValue && this.isConnected && this.running) {
+            this._core.changeInterval(this.interval);
         }
     }
     connectedCallback() {

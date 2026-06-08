@@ -152,6 +152,13 @@ declare class BroadcastCore extends EventTarget {
      * Tear the Core down for a disconnected Shell: close the channel and reset the
      * error shadow silently (no dispatch on a torn-down element). A later
      * reconnect re-opens via the Shell's connectedCallback.
+     *
+     * Asymmetry by design: `_message` is deliberately NOT reset. `error` is
+     * transient connection state — a stale error from a previous channel would be
+     * misleading after a reconnect, so it is cleared. `message` is the last value
+     * received (an event payload), not connection state; it is retained as the
+     * Core's last-known datum so a binding still reads it across a disconnect/
+     * reconnect, and it is naturally overwritten by the next incoming message.
      */
     dispose(): void;
     private _onMessage;

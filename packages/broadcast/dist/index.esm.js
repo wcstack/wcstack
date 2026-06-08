@@ -24,6 +24,10 @@ function deepClone(obj) {
     return clone;
 }
 let frozenConfig = null;
+// Live reference to the mutable internal config: reads always reflect the latest
+// setConfig() call. The readonly IConfig type only blocks callers from writing
+// through it — the underlying object still changes. If you need a stable,
+// frozen snapshot that won't move under you, use getConfig() instead.
 const config = _config;
 function getConfig() {
     if (!frozenConfig) {
@@ -183,6 +187,13 @@ class BroadcastCore extends EventTarget {
      * Tear the Core down for a disconnected Shell: close the channel and reset the
      * error shadow silently (no dispatch on a torn-down element). A later
      * reconnect re-opens via the Shell's connectedCallback.
+     *
+     * Asymmetry by design: `_message` is deliberately NOT reset. `error` is
+     * transient connection state — a stale error from a previous channel would be
+     * misleading after a reconnect, so it is cleared. `message` is the last value
+     * received (an event payload), not connection state; it is retained as the
+     * Core's last-known datum so a binding still reads it across a disconnect/
+     * reconnect, and it is naturally overwritten by the next incoming message.
      */
     dispose() {
         this._closeChannel();
@@ -237,14 +248,28 @@ const TEXT_ATTRIBUTE = "data-broadcast-text";
 const FROM_ATTRIBUTE = "data-broadcast-from";
 function resolveText(triggerElement) {
     // Literal text wins when present (including an empty string — posting "" is a
-    // legitimate request).
+    // legitimate request). The `?? ""` right-hand side is defensive and
+    // unreachable: hasAttribute() just returned true, so getAttribute() cannot be
+    // null here. It exists only to satisfy the `string | null` return type — do
+    // not chase coverage on it (the DOM contract makes the null branch impossible).
     if (triggerElement.hasAttribute(TEXT_ATTRIBUTE)) {
         return triggerElement.getAttribute(TEXT_ATTRIBUTE) ?? "";
     }
     const selector = triggerElement.getAttribute(FROM_ATTRIBUTE);
     if (!selector)
         return null;
-    const source = document.querySelector(selector);
+    // A user-authored selector can be syntactically invalid (e.g. `[data-*` or a
+    // bare `:not()`), which makes querySelector throw a SyntaxError. Swallow it
+    // and treat the source as unresolvable — the same "nothing to post" path as a
+    // selector that matches no element — so one bad attribute never crashes the
+    // document-level click handler and kills autoTrigger for the whole tab.
+    let source;
+    try {
+        source = document.querySelector(selector);
+    }
+    catch {
+        return null;
+    }
     if (!source)
         return null;
     // Read a form control's `value`; fall back to text content. A bare
@@ -257,6 +282,11 @@ function resolveText(triggerElement) {
         source instanceof HTMLSelectElement) {
         return source.value;
     }
+    // `?? ""` is defensive: per the DOM spec only Document / DocumentType /
+    // Notation nodes have a null `textContent`, and querySelector only ever
+    // returns an Element (whose textContent is always a string). The branch is
+    // therefore unreachable in practice and kept solely for the `string | null`
+    // type — not worth a contrived test.
     return source.textContent ?? "";
 }
 function handleClick(event) {
@@ -376,6 +406,16 @@ class WcsBroadcast extends HTMLElement {
         }
     }
     disconnectedCallback() {
+        // Deliberately does NOT call unregisterAutoTrigger(). The autoTrigger click
+        // listener is a single process-wide document listener (registerAutoTrigger
+        // is idempotent), shared by every <wcs-broadcast> on the page — not owned by
+        // this element. Tearing it down when the last element disconnects would
+        // break a later-inserted trigger, so it is intentionally left installed for
+        // the document's lifetime (one passive listener, negligible cost). This
+        // mirrors <wcs-clipboard>, which registers but never unregisters either.
+        // unregisterAutoTrigger stays exported purely as a symmetric teardown hook
+        // for tests / advanced manual control; the production lifecycle never calls
+        // it.
         this._core.dispose();
     }
 }
