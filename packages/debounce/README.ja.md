@@ -69,6 +69,7 @@ npm install @wcstack/debounce
     export default {
       $commandTokens: ["search"],
       $eventTokens: ["searchSettled"],
+      query: "",
       $on: {
         searchSettled: (state, event) => {
           const [q] = event.detail.args; // 最後のキー入力から 300ms 後に1回だけ
