@@ -320,6 +320,57 @@ describe("TimerCore", () => {
     expect(nan.running).toBe(true);
   });
 
+  it("changeInterval: running中に周期を差し替えても repeat 進捗を維持する", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000, repeat: 3 });
+    vi.advanceTimersByTime(2000);
+    expect(core.tick).toBe(2); // 3 回中 2 回発火
+
+    core.changeInterval(500); // 残り 1 回ぶんの進捗を維持
+    vi.advanceTimersByTime(500);
+    expect(core.tick).toBe(3);
+    expect(core.running).toBe(false); // 再ベースラインされず合計 3 回で停止
+
+    vi.advanceTimersByTime(5000);
+    expect(core.tick).toBe(3);
+  });
+
+  it("changeInterval: immediate を再発火しない", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000, immediate: true });
+    expect(core.tick).toBe(1); // start 時の即時1回のみ
+
+    core.changeInterval(500);
+    expect(core.tick).toBe(1); // 周期差し替えで即時発火しない
+
+    vi.advanceTimersByTime(500);
+    expect(core.tick).toBe(2); // 新周期で進む
+  });
+
+  it("changeInterval: 非running時は何もしない", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000 });
+    core.stop();
+    core.changeInterval(200); // running でないので無視
+    core.start(); // 既定 1000ms（200 を取り込まない）
+    vi.advanceTimersByTime(200);
+    expect(core.tick).toBe(0);
+    vi.advanceTimersByTime(800);
+    expect(core.tick).toBe(1);
+  });
+
+  it("changeInterval: 不正値・同値は無視する", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000 });
+
+    core.changeInterval(0);        // 非正値 → 無視
+    core.changeInterval(-5);       // 負値 → 無視
+    core.changeInterval(Infinity); // 非有限 → 無視
+    core.changeInterval(1000);     // 同値 → 張り直さない
+    vi.advanceTimersByTime(1000);
+    expect(core.tick).toBe(1); // いずれも 1000ms 周期のまま
+  });
+
   it("start は引数省略時に既定値 (interval=1000, repeat=0) を使う", () => {
     const core = new TimerCore();
     core.start();

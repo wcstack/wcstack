@@ -50,9 +50,11 @@ export class TimerCore extends EventTarget {
   private _runStartTick: number = 0;
 
   // Timer configuration (captured on start, reused by pause/resume).
+  // `_immediate` is intentionally NOT a field: it is per-run intent consumed
+  // entirely within start() (fire once, then schedule), so it lives as a local
+  // there rather than lingering as instance state no other method reads.
   private _interval: number = 1000;
   private _repeat: number = 0;       // 0 = unlimited
-  private _immediate: boolean = false;
 
   // Elapsed-time bookkeeping. `_accumulatedElapsed` holds the time folded from
   // already-finished running segments; `_segmentStart` is the timestamp the
@@ -124,8 +126,10 @@ export class TimerCore extends EventTarget {
     // every start() re-establishes them from the options, defaulting to
     // "unlimited" / "no immediate fire" when omitted. This keeps a bare start()
     // after a bounded or one-shot run from silently inheriting the old bounds.
+    // `repeat` is a field (pause/resume/_fire read it across the run); `immediate`
+    // is consumed here and now, so it stays a local.
     this._repeat = (typeof options.repeat === "number" && options.repeat > 0) ? options.repeat : 0;
-    this._immediate = options.immediate === true;
+    const immediate = options.immediate === true;
 
     this._setRunning(true);
     this._segmentStart = Date.now();
@@ -135,12 +139,33 @@ export class TimerCore extends EventTarget {
 
     // Fire immediately on start when requested. _fire() may stop the timer (when
     // repeat is reached), so re-check _running before scheduling the interval.
-    if (this._immediate) {
+    if (immediate) {
       this._fire();
     }
     if (this._running) {
       this._timerId = setInterval(this._fire, this._interval);
     }
+  }
+
+  // Swap the tick period of a live timer in place, WITHOUT re-running start().
+  // Unlike stop() + start(), this leaves the per-run repeat progress in flight
+  // (`_repeat` and its `_runStartTick` baseline) untouched, so a bounded
+  // `repeat="N"` run is not re-baselined to fire N more times. It also never goes
+  // through start()'s `immediate` path, so an `immediate` timer does not fire an
+  // extra tick. Only re-arms the steady interval; pause()/resume() and reset() are
+  // unaffected. No-op when not running (interval is then plain config, captured on
+  // the next start) or when the new period is non-positive / non-finite (which
+  // would turn setInterval into a hot loop and break resume()'s modulo arithmetic).
+  changeInterval(interval: number): void {
+    if (!this._running) return;
+    if (!(typeof interval === "number" && Number.isFinite(interval) && interval > 0)) return;
+    if (interval === this._interval) return;
+    this._interval = interval;
+    // Re-arm the steady ticking at the new period. The current period's progress
+    // is intentionally discarded (the next tick is a full new interval away),
+    // matching the boundary reset of the previous stop()+start() behaviour.
+    this._clearTimer();
+    this._timerId = setInterval(this._fire, this._interval);
   }
 
   stop(): void {
@@ -177,6 +202,14 @@ export class TimerCore extends EventTarget {
     this._paused = false;
     this._setRunning(true);
     this._segmentStart = Date.now();
+    // Invariant: `_interval` is fixed at start() and stays constant for the whole
+    // pause/resume cycle — changeInterval() only mutates it while *running* (never
+    // while paused), so the remainder arithmetic below can safely assume the same
+    // period was in effect across the paused segment. Consequence for the Shell:
+    // because the live interval-attribute path (attributeChangedCallback ->
+    // changeInterval) is gated on `running`, an `interval` change made *while
+    // paused* is silently not applied here; it is picked up only on the next
+    // start() as plain config. This is by design — see README "Commands".
     // Resume seamlessly: a tick fires every `interval` ms of *running* time, so
     // honour the partial period consumed before the pause. Wait only the
     // remainder to the next boundary, then fall back to the steady interval.

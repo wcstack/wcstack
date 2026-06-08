@@ -158,20 +158,46 @@ describe("Timer (Shell)", () => {
     expect(el.hasAttribute("manual")).toBe(false);
   });
 
-  it("trigger=true で開始し trigger-changed を発火する", () => {
+  it("trigger=true で開始し trigger-changed をちょうど1回 detail=false で発火する", () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
 
-    let fired = false;
-    el.addEventListener("wcs-timer:trigger-changed", () => { fired = true; });
+    const details: unknown[] = [];
+    el.addEventListener("wcs-timer:trigger-changed", (e) => details.push((e as CustomEvent).detail));
 
     el.trigger = true;
     expect(el.running).toBe(true);
     expect(el.trigger).toBe(false); // モーメンタリ: 即座に false に戻る
-    expect(fired).toBe(true);
+    // ちょうど1回、detail はモーメンタリ復帰の false
+    expect(details).toEqual([false]);
 
     vi.advanceTimersByTime(1000);
     expect(el.tick).toBe(1);
+  });
+
+  it("既に running 中の trigger=true でも start は no-op だが trigger-changed は1回出る", () => {
+    // Timer.ts の不変条件: false→true の書き込みごとに必ず1回 change-back イベントが出る
+    // （start() が「既に running」で no-op になっても通知は出る）
+    const el = createTimer({ interval: "1000" });
+    document.body.appendChild(el); // 自動起動で running
+    expect(el.running).toBe(true);
+    vi.advanceTimersByTime(1000);
+    expect(el.tick).toBe(1);
+
+    const details: unknown[] = [];
+    el.addEventListener("wcs-timer:trigger-changed", (e) => details.push((e as CustomEvent).detail));
+    const startSpy = vi.spyOn((el as any)._core, "start");
+
+    el.trigger = true;
+    expect(el.trigger).toBe(false);
+    expect(el.running).toBe(true); // 変わらず稼働中
+    // Core.start は呼ばれるが running 中につき no-op（タイマーは二重に張られない）
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    expect(details).toEqual([false]); // それでも change-back は1回
+
+    // 二重に張られていないことを確認: 1000ms で 1 tick だけ進む
+    vi.advanceTimersByTime(1000);
+    expect(el.tick).toBe(2);
   });
 
   it("trigger=false は何もしない", () => {
@@ -214,6 +240,40 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(4); // 1 + 3
   });
 
+  it("immediate 稼働中の interval 変更で余分な即時 tick が出ない", () => {
+    const el = createTimer({ interval: "1000", immediate: "" });
+    document.body.appendChild(el);
+    expect(el.tick).toBe(1); // 接続時の即時1回
+    vi.advanceTimersByTime(1000);
+    expect(el.tick).toBe(2);
+
+    el.setAttribute("interval", "500"); // 周期差し替え（即時再発火しないこと）
+    expect(el.tick).toBe(2);
+
+    vi.advanceTimersByTime(500);
+    expect(el.tick).toBe(3); // 新周期で進む
+  });
+
+  it("repeat 稼働中の interval 変更で合計発火回数が変わらない", () => {
+    const el = createTimer({ interval: "1000", repeat: "3" });
+    document.body.appendChild(el);
+    vi.advanceTimersByTime(2000);
+    expect(el.tick).toBe(2); // 3 回中 2 回
+
+    el.setAttribute("interval", "500"); // 残り 1 回ぶんの進捗を維持
+    vi.advanceTimersByTime(500);
+    expect(el.tick).toBe(3);
+    expect(el.running).toBe(false); // 再ベースラインされず合計 3 回で停止
+
+    vi.advanceTimersByTime(5000);
+    expect(el.tick).toBe(3);
+  });
+
+  it("repeat の負数は 0 (無制限) に正規化される", () => {
+    const el = createTimer({ repeat: "-3" });
+    expect(el.repeat).toBe(0);
+  });
+
   it("interval 変更は非running時には張り直さない", () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
@@ -225,12 +285,55 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(0);
   });
 
-  it("同値への interval 変更は無視する", () => {
+  it("手動起動で稼働中の manual タイマーも live interval 変更を反映する", () => {
+    // manual は「起動可否」の判断であって「稼働中の周期差し替え可否」とは直交。
+    // 明示 start() で稼働中なら、manual でも周期は張り直される。
+    const el = createTimer({ interval: "1000", manual: "" });
+    document.body.appendChild(el);
+    el.start();
+    vi.advanceTimersByTime(1000);
+    expect(el.tick).toBe(1);
+
+    el.setAttribute("interval", "200");
+    vi.advanceTimersByTime(600);
+    expect(el.tick).toBe(4); // 1 + 3（新周期 200ms）
+  });
+
+  it("interval/repeat は Number() 厳密パースで単位付き文字列を弾く", () => {
+    // parseInt なら "100px" -> 100 と通るが、Number() なら NaN -> 既定へフォールバック
+    expect(createTimer({ interval: "100px" }).interval).toBe(1000);
+    expect(createTimer({ repeat: "3px" }).repeat).toBe(0);
+    // 空文字・空白のみも既定へ
+    expect(createTimer({ interval: " " }).interval).toBe(1000);
+    expect(createTimer({ repeat: "" }).repeat).toBe(0);
+    // 正常値はそのまま
+    expect(createTimer({ interval: "250" }).interval).toBe(250);
+    expect(createTimer({ repeat: "5" }).repeat).toBe(5);
+  });
+
+  it("interval 変更は changeInterval に委譲され、同値変更では委譲せず張り直さない", () => {
     const el = createTimer({ interval: "1000" });
     document.body.appendChild(el);
-    const stopSpy = vi.spyOn(el, "stop");
+    vi.advanceTimersByTime(1000);
+    expect(el.tick).toBe(1);
+
+    // attributeChangedCallback は stop()+start() ではなく changeInterval に委譲する
+    const changeSpy = vi.spyOn((el as any)._core, "changeInterval");
+
+    // 同値変更: oldValue===newValue なので attributeChangedCallback がガードし、
+    // changeInterval へ委譲されない（=タイマーは一切張り直されない）
     el.setAttribute("interval", "1000");
-    expect(stopSpy).not.toHaveBeenCalled();
+    expect(changeSpy).not.toHaveBeenCalled();
+
+    // 旧周期 (1000ms) のまま進み、余分な tick は出ない
+    vi.advanceTimersByTime(1000);
+    expect(el.tick).toBe(2);
+
+    // 非同値変更では changeInterval に新しい周期で委譲され、実際に張り直される
+    el.setAttribute("interval", "200");
+    expect(changeSpy).toHaveBeenCalledWith(200);
+    vi.advanceTimersByTime(600);
+    expect(el.tick).toBe(5); // 2 + 3（新周期 200ms で 3 回）
   });
 
   it("未接続での interval 変更は張り直さない", () => {
@@ -257,6 +360,10 @@ describe("Timer (Shell)", () => {
     expect(Timer.observedAttributes).toContain("interval");
   });
 
+  it("static hasConnectedCallbackPromise が false", () => {
+    expect(Timer.hasConnectedCallbackPromise).toBe(false);
+  });
+
   it("wcBindable に trigger プロパティと inputs が追加されている", () => {
     const props = Timer.wcBindable.properties.map((p) => p.name);
     expect(props).toContain("trigger");
@@ -264,5 +371,17 @@ describe("Timer (Shell)", () => {
 
     const inputs = (Timer.wcBindable.inputs ?? []).map((i) => i.name);
     expect(inputs).toEqual(["interval", "once", "repeat", "immediate", "manual", "trigger"]);
+
+    // 属性を持つ input には attribute ヒントを付与（geolocation/debounce と整合）。
+    // trigger はモーメンタリ命令プロパティで対応属性が無いためヒント無し。
+    const byName = Object.fromEntries((Timer.wcBindable.inputs ?? []).map((i) => [i.name, i.attribute]));
+    expect(byName).toEqual({
+      interval: "interval",
+      once: "once",
+      repeat: "repeat",
+      immediate: "immediate",
+      manual: "manual",
+      trigger: undefined,
+    });
   });
 });
