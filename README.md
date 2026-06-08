@@ -262,6 +262,7 @@ const html = await renderToString(`
 - [`@wcstack/timer`](packages/timer/) — Declarative timers with `<wcs-timer>` for ticking, elapsed time, and state-driven polling.
 - [`@wcstack/geolocation`](packages/geolocation/) — Declarative geolocation with `<wcs-geo>` for one-shot/continuous position, accuracy, and live permission state.
 - [`@wcstack/debounce`](packages/debounce/) — Declarative debounce/throttle with `<wcs-debounce>` and `<wcs-throttle>` for coalescing value and signal streams.
+- [`@wcstack/clipboard`](packages/clipboard/) — Declarative clipboard with `<wcs-clipboard>` for read/write, rich `ClipboardItem`s, copy/cut/paste monitoring, and live permission state.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -312,6 +313,7 @@ wcstack/
 │   ├── websocket/     # @wcstack/websocket
 │   ├── upload/        # @wcstack/upload
 │   ├── debounce/      # @wcstack/debounce
+│   ├── clipboard/     # @wcstack/clipboard
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
