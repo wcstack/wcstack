@@ -265,6 +265,7 @@ const html = await renderToString(`
 - [`@wcstack/clipboard`](packages/clipboard/) — Declarative clipboard with `<wcs-clipboard>` for read/write, rich `ClipboardItem`s, copy/cut/paste monitoring, and live permission state.
 - [`@wcstack/broadcast`](packages/broadcast/) — Declarative cross-tab messaging with `<wcs-broadcast>` for same-origin BroadcastChannel pub/sub as bindable state.
 - [`@wcstack/worker`](packages/worker/) — Declarative Web Worker with `<wcs-worker>` for offloading work to a background thread as bindable message/error/running state.
+- [`@wcstack/sse`](packages/sse/) — Declarative Server-Sent Events with `<wcs-sse>` for one-way streaming (EventSource) as bindable message/connection state, with named-event support.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -318,6 +319,7 @@ wcstack/
 │   ├── clipboard/     # @wcstack/clipboard
 │   ├── broadcast/     # @wcstack/broadcast
 │   ├── worker/        # @wcstack/worker
+│   ├── sse/           # @wcstack/sse
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
