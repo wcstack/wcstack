@@ -8,63 +8,50 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      packages: ${{ steps.build-matrix.outputs.packages }}
+      packages: ${{ steps.detect.outputs.packages }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
         with:
-          filters: |
-            state:
-              - 'packages/state/**'
-              - 'tsconfig.json'
-            autoloader:
-              - 'packages/autoloader/**'
-              - 'tsconfig.json'
-            router:
-              - 'packages/router/**'
-              - 'tsconfig.json'
-            fetch:
-              - 'packages/fetch/**'
-              - 'tsconfig.json'
-            websocket:
-              - 'packages/websocket/**'
-              - 'tsconfig.json'
-            upload:
-              - 'packages/upload/**'
-              - 'tsconfig.json'
-            server:
-              - 'packages/server/**'
-              - 'tsconfig.json'
-            storage:
-              - 'packages/storage/**'
-              - 'tsconfig.json'
-            timer:
-              - 'packages/timer/**'
-              - 'tsconfig.json'
-      - id: build-matrix
+          fetch-depth: 0
+      - id: detect
         env:
-          STATE: ${{ steps.filter.outputs.state }}
-          AUTOLOADER: ${{ steps.filter.outputs.autoloader }}
-          ROUTER: ${{ steps.filter.outputs.router }}
-          FETCH: ${{ steps.filter.outputs.fetch }}
-          WEBSOCKET: ${{ steps.filter.outputs.websocket }}
-          UPLOAD: ${{ steps.filter.outputs.upload }}
-          SERVER: ${{ steps.filter.outputs.server }}
-          STORAGE: ${{ steps.filter.outputs.storage }}
-          TIMER: ${{ steps.filter.outputs.timer }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          packages=()
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
-            key=$(echo "$pkg" | tr '[:lower:]' '[:upper:]')
-            if [ "${!key}" == "true" ]; then
-              packages+=("$pkg")
-            fi
+          set -euo pipefail
+
+          # Discover release-target packages: any packages/* whose package.json
+          # is scoped under @wcstack/. This auto-includes new packages and
+          # excludes non-published ones (e.g. the vscode-wcs extension).
+          all=()
+          for dir in packages/*/; do
+            [ -f "${dir}package.json" ] || continue
+            name=$(node -p "require('./${dir}package.json').name")
+            case "$name" in
+              @wcstack/*) all+=("$(basename "$dir")") ;;
+            esac
           done
-          if [ ${#packages[@]} -eq 0 ]; then
+
+          # Determine which files changed relative to the PR base.
+          git fetch origin "$BASE_REF" --depth=1 || true
+          base=$(git merge-base HEAD "origin/$BASE_REF")
+          changed=$(git diff --name-only "$base" HEAD)
+
+          # A change to the shared root tsconfig rebuilds every package.
+          if echo "$changed" | grep -qx 'tsconfig.json'; then
+            selected=("${all[@]}")
+          else
+            selected=()
+            for pkg in "${all[@]}"; do
+              if echo "$changed" | grep -qE "^packages/${pkg}/"; then
+                selected+=("$pkg")
+              fi
+            done
+          fi
+
+          if [ ${#selected[@]} -eq 0 ]; then
             echo "packages=[]" >> "$GITHUB_OUTPUT"
           else
-            json=$(printf '%s\n' "${packages[@]}" | jq -R . | jq -sc .)
+            json=$(printf '%s\n' "${selected[@]}" | jq -R . | jq -sc .)
             echo "packages=$json" >> "$GITHUB_OUTPUT"
           fi
 
