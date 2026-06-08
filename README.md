@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Ten independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Eleven independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -261,6 +261,7 @@ const html = await renderToString(`
 - [`@wcstack/storage`](packages/storage/) — Declarative persistence with `<wcs-storage>` for localStorage / sessionStorage state sync.
 - [`@wcstack/timer`](packages/timer/) — Declarative timers with `<wcs-timer>` for ticking, elapsed time, and state-driven polling.
 - [`@wcstack/geolocation`](packages/geolocation/) — Declarative geolocation with `<wcs-geo>` for one-shot/continuous position, accuracy, and live permission state.
+- [`@wcstack/debounce`](packages/debounce/) — Declarative debounce/throttle with `<wcs-debounce>` and `<wcs-throttle>` for coalescing value and signal streams.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -310,6 +311,7 @@ wcstack/
 │   ├── geolocation/   # @wcstack/geolocation
 │   ├── websocket/     # @wcstack/websocket
 │   ├── upload/        # @wcstack/upload
+│   ├── debounce/      # @wcstack/debounce
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
