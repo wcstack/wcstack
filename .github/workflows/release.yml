@@ -28,59 +28,84 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
           cache: npm
-          cache-dependency-path: |
-            packages/state/package-lock.json
-            packages/autoloader/package-lock.json
-            packages/router/package-lock.json
-            packages/fetch/package-lock.json
-            packages/websocket/package-lock.json
-            packages/upload/package-lock.json
-            packages/server/package-lock.json
-            packages/storage/package-lock.json
-            packages/timer/package-lock.json
+          cache-dependency-path: packages/*/package-lock.json
 
-      # Install, build, and test all packages
+      # Discover release-target packages: any packages/* whose package.json is
+      # scoped under @wcstack/. Auto-includes new packages; excludes the
+      # vscode-wcs extension (published separately to the VS Code Marketplace).
+      - name: Discover packages
+        id: discover
+        run: |
+          set -euo pipefail
+          pkgs=$(
+            for dir in packages/*/; do
+              [ -f "${dir}package.json" ] || continue
+              name=$(node -p "require('./${dir}package.json').name")
+              case "$name" in
+                @wcstack/*) basename "$dir" ;;
+              esac
+            done | sort | tr '\n' ' '
+          )
+          echo "Packages: $pkgs"
+          echo "list=$pkgs" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: |
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
+          for pkg in ${{ steps.discover.outputs.list }}; do
             echo "::group::npm ci — $pkg"
-            cd packages/$pkg && npm ci && cd ../..
+            (cd "packages/$pkg" && npm ci)
             echo "::endgroup::"
           done
 
       - name: Build all packages
         run: |
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
+          for pkg in ${{ steps.discover.outputs.list }}; do
             echo "::group::build — $pkg"
-            cd packages/$pkg && npm run build && cd ../..
+            (cd "packages/$pkg" && npm run build)
             echo "::endgroup::"
           done
 
       - name: Test all packages
         run: |
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
+          for pkg in ${{ steps.discover.outputs.list }}; do
             echo "::group::test — $pkg"
-            cd packages/$pkg && npm run test:coverage && cd ../..
+            (cd "packages/$pkg" && npm run test:coverage)
             echo "::endgroup::"
           done
 
-      # Bump version in all packages
+      # Compute a single unified target version: take the highest current
+      # version across all packages and apply the requested bump. Then pin
+      # every package to that exact version, pulling any lagging packages
+      # (e.g. a freshly added 1.0.0) onto the shared line.
       - name: Bump versions
         id: bump
         run: |
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
-            cd packages/$pkg
-            npm version ${{ inputs.version_type }} --no-git-tag-version
-            cd ../..
+          set -euo pipefail
+          versions=$(
+            for pkg in ${{ steps.discover.outputs.list }}; do
+              node -p "require('./packages/$pkg/package.json').version"
+            done
+          )
+          max=$(printf '%s\n' $versions | sort -V | tail -1)
+          IFS=. read -r major minor patch <<< "$max"
+          case "${{ inputs.version_type }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          target="$major.$minor.$patch"
+          echo "Bumping all packages from max $max to $target"
+          for pkg in ${{ steps.discover.outputs.list }}; do
+            (cd "packages/$pkg" && npm version "$target" --no-git-tag-version --allow-same-version)
           done
-          NEW_VERSION=$(node -p "require('./packages/state/package.json').version")
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$target" >> "$GITHUB_OUTPUT"
 
-      # Verify all packages have the same version
+      # Verify all packages now share the unified version.
       - name: Verify version consistency
         run: |
+          set -euo pipefail
           expected="${{ steps.bump.outputs.version }}"
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
+          for pkg in ${{ steps.discover.outputs.list }}; do
             actual=$(node -p "require('./packages/$pkg/package.json').version")
             if [ "$actual" != "$expected" ]; then
               echo "::error::Version mismatch in $pkg: expected $expected, got $actual"
@@ -93,9 +118,9 @@ jobs:
       # (`export const VERSION = pkg.version` is bundled at build time).
       - name: Rebuild after version bump
         run: |
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
+          for pkg in ${{ steps.discover.outputs.list }}; do
             echo "::group::rebuild — $pkg"
-            cd packages/$pkg && npm run build && cd ../..
+            (cd "packages/$pkg" && npm run build)
             echo "::endgroup::"
           done
 
@@ -112,9 +137,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for pkg in state autoloader router fetch websocket upload server storage timer; do
+          for pkg in ${{ steps.discover.outputs.list }}; do
             echo "::group::publish — @wcstack/$pkg"
-            cd packages/$pkg && npm publish --access public && cd ../..
+            (cd "packages/$pkg" && npm publish --access public)
             echo "::endgroup::"
           done
 
