@@ -63,6 +63,10 @@
     export default {
       // list 再読み込みは command token で list-fetch の fetch() を起動する (trigger は使わない)
       $commandTokens: ["refreshList"],
+      // create-fetch の応答 (wcs-fetch:response = value プロパティのイベント) を event token で受ける。
+      // 注意: wcs-fetch:response は成功専用ではなく HTTP/ネットワークエラー時にも発火する
+      // (value=null, status=エラーコード)。成功判定は $on ハンドラ側で status を見て行う。
+      $eventTokens: ["userResponded"],
 
       // 1 fetch = 1 state slot。 ...: で wcBindable の properties + inputs を一括配線するため、
       // 各スロットは全 input (url/method/target/manual/body) を初期化しておく
@@ -111,12 +115,17 @@
       filterEditor() { this.filterBy("editor"); },
       filterViewer() { this.filterBy("viewer"); },
 
-      $updatedCallback(names) {
-        // submit完了時: フォームリセット＋リスト再読み込み
-        if (names.includes("createFetch.loading") && !this["createFetch.loading"] && this["createFetch.value"]) {
-          this["createFetch.body"] = { name: "", email: "", role: "viewer" };
-          this.$command.refreshList.emit();
-        }
+      $on: {
+        // wcs-fetch:response はエラー時 (HTTP/ネットワーク) にも発火するため、成功 (2xx) に絞る。
+        // status は detail.status (FetchCore は detail:{value,status} で dispatch)。
+        // 失敗時に form をリセットするとユーザー入力が消えるので、ここでガードするのが必須。
+        userResponded: (state, event) => {
+          const status = event.detail?.status ?? 0;
+          if (status < 200 || status >= 300) return;
+          // 成功時のみ: フォームリセット＋リスト再読み込み
+          state["createFetch.body"] = { name: "", email: "", role: "viewer" };
+          state.$command.refreshList.emit();
+        },
       },
     };
   </script>
@@ -127,9 +136,10 @@
      ============================================================ -->
 <wcs-fetch id="list-fetch" data-wcs="...: listFetch; command.fetch: $command.refreshList"></wcs-fetch>
 <wcs-fetch id="detail-fetch" data-wcs="...: detailFetch"></wcs-fetch>
-<!-- manual は属性で固定する: spread は url を manual より先に流すため、属性が無いと
-     createFetch.url が設定された瞬間に意図しない自動 POST が走ってしまう -->
-<wcs-fetch id="create-fetch" manual data-wcs="...: createFetch">
+<!-- manual はスロットの manual:true で配線するだけでよい。spread は url を manual より先に
+     流すが、wcs-fetch は自動 fetch を microtask に集約し「最終状態」で判定するため、同一 tick
+     で後から書かれる manual:true が効いて意図しない自動 POST は走らない (属性ハードコード不要)。-->
+<wcs-fetch id="create-fetch" data-wcs="...: createFetch; eventToken.value: userResponded">
   <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
 </wcs-fetch>
 
