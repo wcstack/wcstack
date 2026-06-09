@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Fifteen independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Sixteen independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -267,6 +267,7 @@ const html = await renderToString(`
 - [`@wcstack/worker`](packages/worker/) — Declarative Web Worker with `<wcs-worker>` for offloading work to a background thread as bindable message/error/running state.
 - [`@wcstack/sse`](packages/sse/) — Declarative Server-Sent Events with `<wcs-sse>` for one-way streaming (EventSource) as bindable message/connection state, with named-event support.
 - [`@wcstack/intersection`](packages/intersection/) — Declarative IntersectionObserver with `<wcs-intersect>` for lazy-loading, infinite scroll, and scrollspy as bindable visibility state.
+- [`@wcstack/wakelock`](packages/wakelock/) — Declarative Screen Wake Lock with `<wcs-wakelock>` that keeps the screen awake while a bound boolean is true, re-acquiring across visibility changes.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -322,6 +323,7 @@ wcstack/
 │   ├── worker/        # @wcstack/worker
 │   ├── sse/           # @wcstack/sse
 │   ├── intersection/  # @wcstack/intersection
+│   ├── wakelock/      # @wcstack/wakelock
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
