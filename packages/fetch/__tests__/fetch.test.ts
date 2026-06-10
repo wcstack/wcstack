@@ -245,6 +245,45 @@ describe("Fetch", () => {
     expect(el.target).toBeNull();
   });
 
+  describe("setter の null/undefined 正規化（文字列化防御）", () => {
+    it("url に undefined/null を代入すると属性が削除される（'undefined' へ fetch しない）", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.url = "/api/test";
+      el.url = undefined as any;
+      expect(el.hasAttribute("url")).toBe(false);
+      expect(el.url).toBe("");
+      el.url = "/api/test";
+      el.url = null as any;
+      expect(el.hasAttribute("url")).toBe(false);
+    });
+
+    it("method に undefined/null を代入すると属性が削除されデフォルト GET に戻る", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.method = "POST";
+      el.method = undefined as any;
+      expect(el.hasAttribute("method")).toBe(false);
+      expect(el.method).toBe("GET");
+      el.method = "POST";
+      el.method = null as any;
+      expect(el.method).toBe("GET");
+    });
+
+    it("target に undefined を代入すると null と同様に属性が削除される", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.target = "result-area";
+      el.target = undefined as any;
+      expect(el.target).toBeNull();
+      expect(el.hasAttribute("target")).toBe(false);
+    });
+
+    it("body に undefined を代入すると null に正規化される（JSON body 化しない）", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.body = { name: "x" };
+      el.body = undefined;
+      expect(el.body).toBeNull();
+    });
+  });
+
   it("manual属性の取得と設定ができる", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     expect(el.manual).toBe(false);
@@ -1490,8 +1529,158 @@ describe("registerComponents", () => {
   });
 });
 
+describe("自動 fetch の microtask coalesce", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  // Flush queued microtasks: the auto-fetch microtask is enqueued first, so a
+  // microtask enqueued here resolves after it has run (and called fetch, if any).
+  const flushMicrotasks = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+    fetchSpy.mockResolvedValue(createMockResponse({ ok: true }));
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    fetchSpy.mockRestore();
+  });
+
+  it("spread 順序を再現: url を manual より先に同期書き込みしても自動実行されない", async () => {
+    // Reproduces the state-fetch spread order problem: a `...` spread applies
+    // `url` before `manual`. With synchronous fetch this fired a stray request;
+    // the coalesced microtask re-reads the final state (manual=true) and skips.
+    const el = document.createElement("wcs-fetch") as Fetch;
+    document.body.appendChild(el);
+
+    el.setAttribute("url", "/api/users"); // applied first (would auto-fetch)
+    el.setAttribute("manual", "");        // applied after, in the same tick
+
+    await flushMicrotasks();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("同一 tick の複数 url 書き込みは 1 回の fetch に集約される", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    document.body.appendChild(el);
+
+    el.setAttribute("url", "/api/a");
+    el.setAttribute("url", "/api/b");
+    el.setAttribute("url", "/api/c");
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+    // The final url wins.
+    expect(fetchSpy).toHaveBeenLastCalledWith("/api/c", expect.any(Object));
+  });
+
+  it("同値 url の再書き込みでは重複 fetch しない（same-value ガード）", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // A spread re-evaluation rewrites the same url (setAttribute fires
+    // attributeChangedCallback even for an unchanged value).
+    el.setAttribute("url", "/api/users");
+    await flushMicrotasks();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("auto-fetch 失敗後の同値 url 再書き込みは再試行しない（失敗も記録される）", async () => {
+    // _lastFetchedUrl is recorded at fetch START, success or failure. Recording
+    // only on success would let every spread re-evaluation retry while the
+    // endpoint is down — any unrelated state change would hammer it, which is
+    // exactly what the guard exists to prevent. Recovery from a transient
+    // failure is explicit: url change, remount, or fetch()/trigger/command.
+    fetchSpy.mockRejectedValueOnce(new Error("network down"));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(el.error).not.toBeNull();
+
+    // A spread re-evaluation rewrites the same url after the failure.
+    el.setAttribute("url", "/api/users");
+    await flushMicrotasks();
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // no retry
+
+    // An explicit fetch() still works as the recovery path.
+    await el.fetch();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("url が別の値に変わると same-value ガードを越えて fetch する", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    el.setAttribute("url", "/api/users?role=admin");
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("明示 fetch() は same-value ガードに関係なく実行される", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Same url, but an explicit call (e.g. a refresh command) must still fire.
+    await el.fetch();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("remount（再接続）では same-value ガードがリセットされ再 fetch する", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    el.remove();            // disconnect resets _lastFetchedUrl
+    document.body.appendChild(el); // reconnect with the same url
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("microtask 待ち中に disconnect されると fetch しない", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el); // schedules the auto-fetch microtask
+    el.remove();                   // disconnect before the microtask runs
+
+    await flushMicrotasks();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("connectedCallbackPromise プロトコル", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  // See the auto-fetch block: the connect-time deferred resolves in every exit
+  // path, so these awaits must never hang even when no fetch happens.
+  const flushMicrotasks = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
   beforeEach(() => {
     fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -1550,5 +1739,94 @@ describe("connectedCallbackPromise プロトコル", () => {
     el.fetch();
     const result = await el.promise;
     expect(result).toEqual({ users: [] });
+  });
+
+  it("connect 時に url があっても直後に manual が立てば、fetch せず promise はハングせず解決する", async () => {
+    // connectedCallback arms the deferred (url present, not manual), but `manual`
+    // is set synchronously before the microtask runs. The microtask must skip
+    // the fetch AND still resolve the armed deferred — otherwise awaiting
+    // connectedCallbackPromise would hang forever.
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+    document.body.appendChild(el); // arms deferred + schedules microtask
+    el.setAttribute("manual", "");  // applied before the microtask fires
+
+    await Promise.race([
+      el.connectedCallbackPromise,
+      flushMicrotasks().then(() => flushMicrotasks()),
+    ]);
+    await el.connectedCallbackPromise; // must already be resolved (no hang)
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("最初の microtask 発火前に同期 remove→append しても、捕捉済みの promise がハングしない", async () => {
+    // Leak guard: the first connect arms deferred(resolve1). A synchronous
+    // remove()→append() before the scheduled microtask fires re-arms with
+    // resolve2. disconnectedCallback must resolve resolve1 first, so a caller
+    // that captured the first connectedCallbackPromise never hangs.
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/test");
+
+    document.body.appendChild(el);          // arms deferred #1
+    const promise1 = el.connectedCallbackPromise;
+    el.remove();                            // must resolve deferred #1
+    document.body.appendChild(el);          // arms deferred #2
+
+    let settled = false;
+    promise1.then(() => { settled = true; });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(settled).toBe(true);
+  });
+});
+
+describe("wcs-fetch:response はエラー時にも発火する（例の成功ガードの根拠）", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+    fetchSpy.mockResolvedValue(createMockResponse({ ok: true }));
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    fetchSpy.mockRestore();
+  });
+
+  // The state-fetch example wires `eventToken.value` (= wcs-fetch:response) and
+  // must guard on status because this event is NOT success-only. These tests pin
+  // that contract so the regression cannot silently return.
+  it("HTTP エラー (4xx/5xx) でも wcs-fetch:response が value=null, status=エラーコードで発火する", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ message: "bad" }, { status: 400, ok: false }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    el.setAttribute("manual", "");
+
+    const responses: Array<{ value: any; status: number }> = [];
+    el.addEventListener("wcs-fetch:response", (e) => responses.push((e as CustomEvent).detail));
+
+    await el.fetch();
+
+    expect(responses).toHaveLength(1);
+    expect(responses[0].value).toBeNull();
+    expect(responses[0].status).toBe(400);
+  });
+
+  it("ネットワークエラーでも wcs-fetch:response が value=null, status=0 で発火する", async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError("network down"));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    el.setAttribute("manual", "");
+
+    const responses: Array<{ value: any; status: number }> = [];
+    el.addEventListener("wcs-fetch:response", (e) => responses.push((e as CustomEvent).detail));
+
+    await el.fetch();
+
+    expect(responses).toHaveLength(1);
+    expect(responses[0].value).toBeNull();
+    expect(responses[0].status).toBe(0);
   });
 });

@@ -142,6 +142,53 @@ describe("spread binding (integration)", () => {
     host.remove();
   });
 
+  it("未初期化の slot プロパティは undefined を書き戻さず要素既定値を維持すること", async () => {
+    // wcs-fetch と同型の「setter が属性へ文字列化反映する」要素。undefined が
+    // 書き込まれると method="undefined" 等の壊れた属性になる回帰を防ぐ。
+    const tag = uniqueTag("spread-uninit");
+    class FetchLikeEl extends HTMLElement {
+      static wcBindable: IWcBindable = {
+        protocol: "wc-bindable",
+        version: 1,
+        properties: [{ name: "value", event: `${tag}:value-changed` }],
+        inputs: [{ name: "url" }, { name: "method" }, { name: "manual" }],
+      };
+      get url(): string { return this.getAttribute("url") || ""; }
+      set url(v: string) { this.setAttribute("url", v); }
+      get method(): string { return (this.getAttribute("method") || "GET").toUpperCase(); }
+      set method(v: string) { this.setAttribute("method", v); }
+      get manual(): boolean { return this.hasAttribute("manual"); }
+      set manual(v: boolean) {
+        if (v) this.setAttribute("manual", "");
+        else this.removeAttribute("manual");
+      }
+    }
+    customElements.define(tag, FetchLikeEl);
+
+    const host = document.createElement(uniqueTag("spread-uninit-host"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    // slot は value しか初期化しない (url/method/manual は未定義)
+    shadowRoot.innerHTML = `
+      <${tag} id="mock" manual data-wcs="...: fetchX"></${tag}>
+      <wcs-state json='{"fetchX":{"value":"hello"}}'></wcs-state>
+    `;
+    document.body.appendChild(host);
+
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    await stateEl.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+
+    const el = shadowRoot.querySelector("#mock") as any;
+    expect(el.value).toBe("hello");
+    // undefined は書き込まれず、要素側の既定値・HTML 属性がそのまま生きる
+    expect(el.hasAttribute("url")).toBe(false);
+    expect(el.method).toBe("GET");
+    expect(el.hasAttribute("method")).toBe(false);
+    expect(el.manual).toBe(true);
+
+    host.remove();
+  });
+
   it("explicit binding が spread を上書きすること (後勝ち)", async () => {
     const tag = uniqueTag("spread-override");
     defineMockBindable(tag, [

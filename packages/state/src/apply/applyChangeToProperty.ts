@@ -37,6 +37,21 @@ const SSR_ATTR_PROPS: Record<string, (element: Element, value: unknown) => void>
 };
 
 export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyContext, newValue: unknown): void {
+  // undefined は「状態が値を持たない＝無意見」であり、書き込み自体をスキップして
+  // 要素側の既定値を生かす。書き込んでしまうと setter の文字列化で
+  // "undefined" 属性や removeAttribute が走り要素が壊れる (spread で未初期化
+  // slot を配線したときに顕在化)。明示的なクリアは null で表現する。
+  // mirror 属性 (applyMirrorAttribute) の「undefined → 属性削除」と同じ語彙。
+  if (typeof newValue === "undefined") {
+    if (config.debug) {
+      console.debug(`Skipped property write: state value is undefined.`, {
+        element: binding.node,
+        propSegments: binding.propSegments,
+        statePathName: binding.statePathName,
+      });
+    }
+    return;
+  }
   const element = binding.node as Element;
   const propSegments = binding.propSegments;
   if (propSegments.length === 1) {
