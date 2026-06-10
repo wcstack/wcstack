@@ -245,6 +245,45 @@ describe("Fetch", () => {
     expect(el.target).toBeNull();
   });
 
+  describe("setter の null/undefined 正規化（文字列化防御）", () => {
+    it("url に undefined/null を代入すると属性が削除される（'undefined' へ fetch しない）", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.url = "/api/test";
+      el.url = undefined as any;
+      expect(el.hasAttribute("url")).toBe(false);
+      expect(el.url).toBe("");
+      el.url = "/api/test";
+      el.url = null as any;
+      expect(el.hasAttribute("url")).toBe(false);
+    });
+
+    it("method に undefined/null を代入すると属性が削除されデフォルト GET に戻る", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.method = "POST";
+      el.method = undefined as any;
+      expect(el.hasAttribute("method")).toBe(false);
+      expect(el.method).toBe("GET");
+      el.method = "POST";
+      el.method = null as any;
+      expect(el.method).toBe("GET");
+    });
+
+    it("target に undefined を代入すると null と同様に属性が削除される", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.target = "result-area";
+      el.target = undefined as any;
+      expect(el.target).toBeNull();
+      expect(el.hasAttribute("target")).toBe(false);
+    });
+
+    it("body に undefined を代入すると null に正規化される（JSON body 化しない）", () => {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.body = { name: "x" };
+      el.body = undefined;
+      expect(el.body).toBeNull();
+    });
+  });
+
   it("manual属性の取得と設定ができる", () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     expect(el.manual).toBe(false);

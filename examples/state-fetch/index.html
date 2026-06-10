@@ -68,19 +68,19 @@
       // (value=null, status=エラーコード)。成功判定は $on ハンドラ側で status を見て行う。
       $eventTokens: ["userResponded"],
 
-      // 1 fetch = 1 state slot。 ...: で wcBindable の properties + inputs を一括配線するため、
-      // 各スロットは全 input (url/method/target/manual/body) を初期化しておく
-      // (未初期化だと spread が undefined を要素へ書き戻し、method="UNDEFINED" や GET+body 等で壊れる)。
+      // 1 fetch = 1 state slot。 ...: で wcBindable の properties + inputs を一括配線する。
+      // 未初期化のパス (undefined) は binder が「無意見」として書き込みをスキップし、
+      // 要素側の既定値 (method=GET、manual=false 等) がそのまま生きる。
+      // 初期化が必要なのはテンプレートが参照する出力 (value/loading/error/status) と、
+      // 既定値から変えたい input だけ。明示的にクリアしたい値は null で書く。
       listFetch: {
         value: [], loading: false, error: null, status: 0,
-        method: "GET", target: null, manual: false, body: null, trigger: false,
       },
       detailFetch: {
         value: null, loading: false, error: null, status: 0,
-        method: "GET", target: null, manual: false, body: null, trigger: false,
       },
       createFetch: {
-        url: "/api/users", method: "POST", manual: true, target: null, trigger: false,
+        url: "/api/users", method: "POST", manual: true,
         body: { name: "", email: "", role: "viewer" },
         value: null, error: null, loading: false, status: 0,
       },

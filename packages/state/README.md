@@ -420,6 +420,8 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 <wcs-fetch data-wcs="...: usersFetch; status: alternateStatus"></wcs-fetch>
 ```
 
+**`undefined` is "no opinion"** — when an expanded state path resolves to `undefined` (e.g. the slot object doesn't initialize that input), the property write is **skipped** and the element keeps its own default. You only need to initialize the paths you actually use; `usersFetch: { value: null, loading: false }` is enough even though `<wcs-fetch>` also declares `method` / `manual` / `body`. To explicitly clear a value, assign `null` — `null` is always written. (This skip applies to every property binding, not just spread; with `config.debug` each skipped write is logged via `console.debug`.)
+
 **Constraints**:
 
 - Filters on the spread target (`...: target|filter`) are rejected.

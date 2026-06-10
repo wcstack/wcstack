@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
 import { getPathInfo } from '../src/address/PathInfo';
-import { config } from '../src/config';
+import { config, resetSsrCache } from '../src/config';
+import { getSsrProperties, clearSsrPropertyStore } from '../src/apply/ssrPropertyStore';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -158,6 +159,74 @@ describe('applyChangeToProperty', () => {
     spy.mockRestore();
   });
 
+  describe('undefined はプロパティ書き込みをスキップ (state 未初期化 = 無意見)', () => {
+    it('undefined の場合はプロパティを書き込まず要素側の値を維持すること', () => {
+      const el = document.createElement('div') as any;
+      el.foo = 'element-default';
+      const binding = createBinding(el, ['foo']);
+      applyChangeToProperty(binding, dummyContext, undefined);
+      expect(el.foo).toBe('element-default');
+    });
+
+    it('null は明示クリアとして従来どおり書き込まれること', () => {
+      const el = document.createElement('div') as any;
+      el.foo = 'element-default';
+      const binding = createBinding(el, ['foo']);
+      applyChangeToProperty(binding, dummyContext, null);
+      expect(el.foo).toBeNull();
+    });
+
+    it('ネストプロパティでも undefined はスキップされること', () => {
+      const el = document.createElement('div') as any;
+      el.foo = { bar: { baz: 1 } };
+      const binding = createBinding(el, ['foo', 'bar', 'baz']);
+      applyChangeToProperty(binding, dummyContext, undefined);
+      expect(el.foo.bar.baz).toBe(1);
+    });
+
+    it('undefined の場合 debug=true なら console.debug が呼ばれること', () => {
+      config.debug = true;
+      const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const el = document.createElement('div');
+      const binding = createBinding(el, ['foo']);
+      applyChangeToProperty(binding, dummyContext, undefined);
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipped property write'),
+        expect.objectContaining({ statePathName: 'value' })
+      );
+      spy.mockRestore();
+      config.debug = false;
+    });
+
+    it('undefined の場合 debug=false なら console.debug は呼ばれないこと', () => {
+      config.debug = false;
+      const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const el = document.createElement('div');
+      const binding = createBinding(el, ['foo']);
+      applyChangeToProperty(binding, dummyContext, undefined);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it('SSR モードでも undefined はスキップされ属性・ストアに積まれないこと', () => {
+      document.documentElement.setAttribute('data-wcs-server', '');
+      resetSsrCache();
+      try {
+        const input = document.createElement('input');
+        applyChangeToProperty(createBinding(input, ['value']), dummyContext, undefined);
+        expect(input.hasAttribute('value')).toBe(false);
+
+        const el = document.createElement('div');
+        applyChangeToProperty(createBinding(el, ['custom']), dummyContext, undefined);
+        expect(getSsrProperties(el)).toEqual([]);
+      } finally {
+        document.documentElement.removeAttribute('data-wcs-server');
+        resetSsrCache();
+        clearSsrPropertyStore();
+      }
+    });
+  });
+
   describe('wc-bindable inputs attribute mirror', () => {
     const tagName = 'mirror-host';
     beforeEach(() => {
@@ -208,6 +277,16 @@ describe('applyChangeToProperty', () => {
       applyChangeToProperty(binding, dummyContext, 'x');
       expect(el.data).toBe('x');
       expect(el.hasAttribute('data')).toBe(false);
+    });
+
+    it('undefined ではプロパティもミラー属性も触らないこと', () => {
+      const el = document.createElement(tagName);
+      (el as any).data = 'kept';
+      el.setAttribute('data', 'kept');
+      const binding = createBinding(el, ['data']);
+      applyChangeToProperty(binding, dummyContext, undefined);
+      expect((el as any).data).toBe('kept');
+      expect(el.getAttribute('data')).toBe('kept');
     });
 
     it('null 値ではミラー属性が削除されること', () => {

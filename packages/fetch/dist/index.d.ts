@@ -124,6 +124,9 @@ declare class Fetch extends HTMLElement {
     private _body;
     private _trigger;
     private _connectedCallbackPromise;
+    private _autoPending;
+    private _connectResolve;
+    private _lastFetchedUrl;
     constructor();
     get url(): string;
     set url(value: string);
@@ -146,8 +149,27 @@ declare class Fetch extends HTMLElement {
     private _collectHeaders;
     private _collectBody;
     abort(): void;
+    /**
+     * Coalesce auto-fetch requests in the current task into a single microtask.
+     *
+     * Multiple synchronous input writes in the same tick — e.g. a `...` spread
+     * writing `url` before `manual` — collapse into one decision made against the
+     * FINAL element state, so the spread application order can no longer trigger a
+     * stray fetch. The microtask re-reads `isConnected` / `manual` / `url` at fire
+     * time; whatever was written last wins.
+     *
+     * Only the implicit auto-fetch (url attribute change, connect-time) is routed
+     * here. Explicit triggers — the `trigger` setter, the `fetch` command, and
+     * autoTrigger (data-fetchtarget clicks) — must fire immediately and stay on
+     * their own synchronous paths.
+     *
+     * The connect-time promise (connectedCallbackPromise) is resolved here in
+     * EVERY exit path, including the no-fetch branch, so awaiting it never hangs
+     * when the final state turns out to be manual / url-less / disconnected.
+     */
+    private _scheduleAutoFetch;
     fetch(): Promise<any>;
-    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

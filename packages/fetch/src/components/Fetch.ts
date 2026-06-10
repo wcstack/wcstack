@@ -43,12 +43,20 @@ export class Fetch extends HTMLElement {
     this._core = new FetchCore(this);
   }
 
+  // Input setters normalize null/undefined to attribute removal instead of
+  // letting setAttribute stringify them ("undefined" url would auto-fetch
+  // /undefined, "undefined" method is an invalid HTTP method). The binder
+  // already skips undefined writes; this guards direct JS assignment too.
   get url(): string {
     return this.getAttribute("url") || "";
   }
 
   set url(value: string) {
-    this.setAttribute("url", value);
+    if (value == null) {
+      this.removeAttribute("url");
+    } else {
+      this.setAttribute("url", value);
+    }
   }
 
   get method(): string {
@@ -56,7 +64,11 @@ export class Fetch extends HTMLElement {
   }
 
   set method(value: string) {
-    this.setAttribute("method", value);
+    if (value == null) {
+      this.removeAttribute("method");
+    } else {
+      this.setAttribute("method", value);
+    }
   }
 
   get target(): string | null {
@@ -64,7 +76,7 @@ export class Fetch extends HTMLElement {
   }
 
   set target(value: string | null) {
-    if (value === null) {
+    if (value == null) {
       this.removeAttribute("target");
     } else {
       this.setAttribute("target", value);
@@ -112,7 +124,9 @@ export class Fetch extends HTMLElement {
   }
 
   set body(value: any) {
-    this._body = value;
+    // Normalize undefined to null: _collectBody treats "!== null" as "body was
+    // provided", so a raw undefined would serialize as a JSON request body.
+    this._body = value ?? null;
   }
 
   get trigger(): boolean {
