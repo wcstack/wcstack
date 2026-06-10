@@ -34,10 +34,11 @@
     <script type="module">
       export default {
         // <wcs-ws> is wired all at once via spread. Sending triggers sendMessage() via a command.
-        // The spread expands all properties + inputs, so the ws slot initializes every input
-        // (keep config attributes like auto-reconnect on the <wcs-ws> element: the spread pushes
-        //  url before autoReconnect, so without the attribute the initial connection would be
-        //  established without auto-reconnect).
+        // Initializing every input is not required — uninitialized paths (undefined) are
+        // "no opinion": the binder skips the write, keeping the element's defaults.
+        // (One ordering caveat remains: the spread pushes url before autoReconnect, so keep
+        //  config attributes like auto-reconnect on the <wcs-ws> element itself — otherwise
+        //  the initial connection would be established without auto-reconnect.)
         $commandTokens: ["wsSend"],
 
         ws: {

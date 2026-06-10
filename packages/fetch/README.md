@@ -356,6 +356,15 @@ If a request is already in flight when the URL changes, the previous request is 
 
 Set the `manual` attribute to disable auto-fetch and control execution explicitly via `fetch()` or `trigger`.
 
+> **Note (since v1.13):** Auto-fetch is deferred to a microtask instead of firing
+> synchronously. Multiple input writes in the same tick (e.g. a `...:` spread
+> writing `url` and `manual` in sequence) collapse into a single decision made
+> against the final element state, and rewriting an unchanged `url` does not
+> refetch. To await the connect-time fetch, use `connectedCallbackPromise` —
+> reading `promise` synchronously right after `appendChild` returns the initial
+> resolved promise, not the auto-fetch. Explicit triggers (`fetch()`, `trigger`,
+> the `fetch` command) are unaffected and still run immediately.
+
 ## Programmatic Usage
 
 ```javascript

@@ -51,7 +51,7 @@ export class Fetch extends HTMLElement {
     return this.getAttribute("url") || "";
   }
 
-  set url(value: string) {
+  set url(value: string | null) {
     if (value == null) {
       this.removeAttribute("url");
     } else {
@@ -63,7 +63,7 @@ export class Fetch extends HTMLElement {
     return (this.getAttribute("method") || "GET").toUpperCase();
   }
 
-  set method(value: string) {
+  set method(value: string | null) {
     if (value == null) {
       this.removeAttribute("method");
     } else {

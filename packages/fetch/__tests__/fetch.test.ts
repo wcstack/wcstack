@@ -1591,6 +1591,33 @@ describe("自動 fetch の microtask coalesce", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("auto-fetch 失敗後の同値 url 再書き込みは再試行しない（失敗も記録される）", async () => {
+    // _lastFetchedUrl is recorded at fetch START, success or failure. Recording
+    // only on success would let every spread re-evaluation retry while the
+    // endpoint is down — any unrelated state change would hammer it, which is
+    // exactly what the guard exists to prevent. Recovery from a transient
+    // failure is explicit: url change, remount, or fetch()/trigger/command.
+    fetchSpy.mockRejectedValueOnce(new Error("network down"));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(el.error).not.toBeNull();
+
+    // A spread re-evaluation rewrites the same url after the failure.
+    el.setAttribute("url", "/api/users");
+    await flushMicrotasks();
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // no retry
+
+    // An explicit fetch() still works as the recovery path.
+    await el.fetch();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("url が別の値に変わると same-value ガードを越えて fetch する", async () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.setAttribute("url", "/api/users");
