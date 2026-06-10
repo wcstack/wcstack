@@ -103,10 +103,10 @@ export function App() {
       <main>
         <section className="hero">
           <span className="eyebrow">Framework Interop Demo</span>
-          <h1>React から使う<br />wcstack WebSocket</h1>
+          <h1>wcstack WebSocket<br />from React</h1>
           <p className="lead">
-            React 19 アプリの中で <code>&lt;wcs-ws&gt;</code> Web Component を利用し、
-            リアルタイム通信を実現しています。フレームワークに依存しない Web 標準の力です。
+            A React 19 app uses the <code>&lt;wcs-ws&gt;</code> Web Component for real-time
+            communication. The power of framework-agnostic web standards.
           </p>
           <div className="tech-badges">
             <span className="tech-badge react">React 19</span>
@@ -138,11 +138,11 @@ export function App() {
         <div className="grid">
           <div className="panel">
             <h2>Echo</h2>
-            <p className="lead">メッセージを送ると、サーバーがそのまま返します。</p>
+            <p className="lead">Send a message and the server echoes it back.</p>
             <div className="input-row">
               <input
                 type="text"
-                placeholder="Echo メッセージ…"
+                placeholder="Echo message…"
                 value={echoInput}
                 onChange={(e) => setEchoInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendEcho()}
@@ -157,11 +157,11 @@ export function App() {
 
           <div className="panel">
             <h2>Broadcast</h2>
-            <p className="lead">全接続クライアントにメッセージを配信します。</p>
+            <p className="lead">Deliver a message to all connected clients.</p>
             <div className="input-row">
               <input
                 type="text"
-                placeholder="ブロードキャスト…"
+                placeholder="Broadcast message…"
                 value={broadcastInput}
                 onChange={(e) => setBroadcastInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendBroadcast()}
@@ -175,7 +175,7 @@ export function App() {
             <div className="input-row">
               <input
                 type="text"
-                placeholder="ニックネーム"
+                placeholder="Nickname"
                 value={nickname}
                 readOnly
                 style={{ maxWidth: 180 }}
@@ -195,7 +195,7 @@ export function App() {
 
           <div className="log">
             {messageLog.length === 0 ? (
-              <div className="log-empty">接続後にメッセージがここに表示されます。</div>
+              <div className="log-empty">Messages will appear here after connecting.</div>
             ) : (
               messageLog.map((entry, i) => (
                 <div key={i} className={`log-entry log-${entry.type}`}>
@@ -209,10 +209,10 @@ export function App() {
         </div>
 
         <div className="callout" style={{ marginTop: 18, fontSize: "0.88rem" }}>
-          <strong>How it works:</strong> <code>@wc-bindable/react</code> の
-          <code>useWcBindable()</code> フックが <code>&lt;wcs-ws&gt;</code> の
-          全プロパティ（message, connected, loading, error）を自動的に React state に同期します。
-          手動の <code>addEventListener</code> は不要です。
+          <strong>How it works:</strong> The <code>useWcBindable()</code> hook from
+          <code>@wc-bindable/react</code> automatically syncs all properties of
+          <code>&lt;wcs-ws&gt;</code> (message, connected, loading, error) into React state.
+          No manual <code>addEventListener</code> needed.
         </div>
       </main>
     </>

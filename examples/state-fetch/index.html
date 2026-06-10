@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -61,18 +61,18 @@
 <wcs-state>
   <script type="module">
     export default {
-      // list 再読み込みは command token で list-fetch の fetch() を起動する (trigger は使わない)
+      // Reload the list by triggering list-fetch's fetch() via a command token (no trigger property)
       $commandTokens: ["refreshList"],
-      // create-fetch の応答 (wcs-fetch:response = value プロパティのイベント) を event token で受ける。
-      // 注意: wcs-fetch:response は成功専用ではなく HTTP/ネットワークエラー時にも発火する
-      // (value=null, status=エラーコード)。成功判定は $on ハンドラ側で status を見て行う。
+      // Receive create-fetch's response (wcs-fetch:response = the value property event) via an event token.
+      // Note: wcs-fetch:response is not success-only — it also fires on HTTP/network errors
+      // (value=null, status=error code). Check status in the $on handler to detect success.
       $eventTokens: ["userResponded"],
 
-      // 1 fetch = 1 state slot。 ...: で wcBindable の properties + inputs を一括配線する。
-      // 未初期化のパス (undefined) は binder が「無意見」として書き込みをスキップし、
-      // 要素側の既定値 (method=GET、manual=false 等) がそのまま生きる。
-      // 初期化が必要なのはテンプレートが参照する出力 (value/loading/error/status) と、
-      // 既定値から変えたい input だけ。明示的にクリアしたい値は null で書く。
+      // 1 fetch = 1 state slot. The ...: spread wires all wcBindable properties + inputs at once.
+      // Uninitialized paths (undefined) are treated as "no opinion" — the binder skips the write,
+      // so the element's defaults (method=GET, manual=false, etc.) stay intact.
+      // Only initialize the outputs the template reads (value/loading/error/status) and the
+      // inputs you want to change from their defaults. To clear a value explicitly, write null.
       listFetch: {
         value: [], loading: false, error: null, status: 0,
       },
@@ -85,11 +85,11 @@
         value: null, error: null, loading: false, status: 0,
       },
 
-      // UI 選択状態 (fetch のプロパティではないので slot の外)
+      // UI selection state (not fetch properties, so they live outside the slots)
       selectedUserId: null,
       filterRole: "",
 
-      // computed url は slot にネスト getter として置く
+      // Computed urls are placed in the slots as nested getters
       get "listFetch.url"() {
         const role = this.filterRole;
         return role ? "/api/users?role=" + role : "/api/users";
@@ -116,13 +116,13 @@
       filterViewer() { this.filterBy("viewer"); },
 
       $on: {
-        // wcs-fetch:response はエラー時 (HTTP/ネットワーク) にも発火するため、成功 (2xx) に絞る。
-        // status は detail.status (FetchCore は detail:{value,status} で dispatch)。
-        // 失敗時に form をリセットするとユーザー入力が消えるので、ここでガードするのが必須。
+        // wcs-fetch:response also fires on errors (HTTP/network), so narrow to success (2xx).
+        // status comes from detail.status (FetchCore dispatches detail:{value,status}).
+        // This guard is essential: resetting the form on failure would wipe the user's input.
         userResponded: (state, event) => {
           const status = event.detail?.status ?? 0;
           if (status < 200 || status >= 300) return;
-          // 成功時のみ: フォームリセット＋リスト再読み込み
+          // On success only: reset the form and reload the list
           state["createFetch.body"] = { name: "", email: "", role: "viewer" };
           state.$command.refreshList.emit();
         },
@@ -136,9 +136,10 @@
      ============================================================ -->
 <wcs-fetch id="list-fetch" data-wcs="...: listFetch; command.fetch: $command.refreshList"></wcs-fetch>
 <wcs-fetch id="detail-fetch" data-wcs="...: detailFetch"></wcs-fetch>
-<!-- manual はスロットの manual:true で配線するだけでよい。spread は url を manual より先に
-     流すが、wcs-fetch は自動 fetch を microtask に集約し「最終状態」で判定するため、同一 tick
-     で後から書かれる manual:true が効いて意図しない自動 POST は走らない (属性ハードコード不要)。-->
+<!-- Wiring manual via the slot's manual:true is enough. The spread pushes url before manual,
+     but wcs-fetch coalesces auto-fetch into a microtask and decides on the "final state", so the
+     manual:true written later in the same tick takes effect and no unintended auto POST runs
+     (no hardcoded attribute needed). -->
 <wcs-fetch id="create-fetch" data-wcs="...: createFetch; eventToken.value: userResponded">
   <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
 </wcs-fetch>
@@ -209,7 +210,7 @@
 
   <div class="form-group">
     <label>Name</label>
-    <input type="text" data-wcs="value: createFetch.body.name" placeholder="名前を入力">
+    <input type="text" data-wcs="value: createFetch.body.name" placeholder="Enter name">
   </div>
   <div class="form-group">
     <label>Email</label>

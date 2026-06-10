@@ -8,11 +8,11 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 // Mock data
 const users = [
-  { name: "田中太郎", role: "admin" },
-  { name: "佐藤花子", role: "editor" },
-  { name: "鈴木一郎", role: "viewer" },
-  { name: "高橋美咲", role: "editor" },
-  { name: "渡辺健太", role: "viewer" },
+  { name: "Alice Johnson", role: "admin" },
+  { name: "Bob Smith", role: "editor" },
+  { name: "Charlie Davis", role: "viewer" },
+  { name: "Diana Miller", role: "editor" },
+  { name: "Ethan Wilson", role: "viewer" },
 ];
 
 function jsonResponse(res, data, status = 200) {
@@ -27,7 +27,7 @@ let cachedHtml = null;
 
 function wrapPage(ssrBody) {
   return `<!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">

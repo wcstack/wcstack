@@ -14,11 +14,11 @@ const MIME_TYPES = {
 
 // Mock data
 const users = [
-  { id: 1, name: "田中太郎", email: "tanaka@example.com", role: "admin" },
-  { id: 2, name: "佐藤花子", email: "sato@example.com", role: "editor" },
-  { id: 3, name: "鈴木一郎", email: "suzuki@example.com", role: "viewer" },
-  { id: 4, name: "高橋美咲", email: "takahashi@example.com", role: "editor" },
-  { id: 5, name: "渡辺健太", email: "watanabe@example.com", role: "viewer" },
+  { id: 1, name: "Alice Johnson", email: "alice@example.com", role: "admin" },
+  { id: 2, name: "Bob Smith", email: "bob@example.com", role: "editor" },
+  { id: 3, name: "Charlie Davis", email: "charlie@example.com", role: "viewer" },
+  { id: 4, name: "Diana Miller", email: "diana@example.com", role: "editor" },
+  { id: 5, name: "Ethan Wilson", email: "ethan@example.com", role: "viewer" },
 ];
 
 function jsonResponse(res, data, status = 200) {

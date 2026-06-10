@@ -103,10 +103,10 @@ function sendBroadcast() {
   <main>
     <section class="hero">
       <span class="eyebrow">Framework Interop Demo</span>
-      <h1>Vue から使う<br>wcstack WebSocket</h1>
+      <h1>wcstack WebSocket<br>from Vue</h1>
       <p class="lead">
-        Vue 3 アプリの中で <code>&lt;wcs-ws&gt;</code> Web Component を利用し、
-        リアルタイム通信を実現しています。フレームワークに依存しない Web 標準の力です。
+        A Vue 3 app uses the <code>&lt;wcs-ws&gt;</code> Web Component for real-time
+        communication. The power of framework-agnostic web standards.
       </p>
       <div class="tech-badges">
         <span class="tech-badge vue">Vue 3</span>
@@ -136,11 +136,11 @@ function sendBroadcast() {
     <div class="grid">
       <div class="panel">
         <h2>Echo</h2>
-        <p class="lead">メッセージを送ると、サーバーがそのまま返します。</p>
+        <p class="lead">Send a message and the server echoes it back.</p>
         <div class="input-row">
           <input
             type="text"
-            placeholder="Echo メッセージ…"
+            placeholder="Echo message…"
             v-model="echoInput"
             @keydown.enter="sendEcho"
           >
@@ -154,11 +154,11 @@ function sendBroadcast() {
 
       <div class="panel">
         <h2>Broadcast</h2>
-        <p class="lead">全接続クライアントにメッセージを配信します。</p>
+        <p class="lead">Deliver a message to all connected clients.</p>
         <div class="input-row">
           <input
             type="text"
-            placeholder="ブロードキャスト…"
+            placeholder="Broadcast message…"
             v-model="broadcastInput"
             @keydown.enter="sendBroadcast"
           >
@@ -171,7 +171,7 @@ function sendBroadcast() {
         <div class="input-row">
           <input
             type="text"
-            placeholder="ニックネーム"
+            placeholder="Nickname"
             v-model="nickname"
             style="max-width: 180px;"
           >
@@ -190,7 +190,7 @@ function sendBroadcast() {
 
       <div class="log" ref="logContainer">
         <div v-if="messageLog.length === 0" class="log-empty">
-          接続後にメッセージがここに表示されます。
+          Messages will appear here after connecting.
         </div>
         <div
           v-for="(entry, i) in messageLog"
@@ -205,10 +205,10 @@ function sendBroadcast() {
     </div>
 
     <div class="callout" style="margin-top: 18px; font-size: 0.88rem;">
-      <strong>How it works:</strong> <code>@wc-bindable/vue</code> の
-      <code>useWcBindable()</code> コンポーザブルが <code>&lt;wcs-ws&gt;</code> の
-      全プロパティ（message, connected, loading, error）を自動的に Vue reactive state に同期します。
-      手動の <code>addEventListener</code> は不要です。
+      <strong>How it works:</strong> The <code>useWcBindable()</code> composable from
+      <code>@wc-bindable/vue</code> automatically syncs all properties of
+      <code>&lt;wcs-ws&gt;</code> (message, connected, loading, error) into Vue reactive state.
+      No manual <code>addEventListener</code> needed.
     </div>
   </main>
 </template>

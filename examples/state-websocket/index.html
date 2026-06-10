@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,10 +33,11 @@
   <wcs-state>
     <script type="module">
       export default {
-        // <wcs-ws> は spread で一括配線。送信は command で sendMessage() を起動する。
-        // spread は properties + inputs を全て展開するので ws slot は全 input を初期化しておく
-        // (auto-reconnect 等の config 属性は <wcs-ws> 側に残す: spread は url を autoReconnect より
-        //  先に流すため、属性が無いと初回接続が auto-reconnect 無しで張られる)。
+        // <wcs-ws> is wired all at once via spread. Sending triggers sendMessage() via a command.
+        // The spread expands all properties + inputs, so the ws slot initializes every input
+        // (keep config attributes like auto-reconnect on the <wcs-ws> element: the spread pushes
+        //  url before autoReconnect, so without the attribute the initial connection would be
+        //  established without auto-reconnect).
         $commandTokens: ["wsSend"],
 
         ws: {
@@ -49,7 +50,7 @@
           const proto = location.protocol === "https:" ? "wss" : "ws";
           return `${proto}://${location.host}/ws`;
         },
-        // message は受信のたびにログへ追記する setter 付き (spread の two-way 書き戻し先)
+        // message has a setter that appends to the log on every receive (two-way write-back target of the spread)
         _lastMessage: null,
         _stats: null,
         get "ws.message"() {
@@ -108,9 +109,9 @@
           } else if (msg.type === "broadcast") {
             entry.text = `[${msg.from}] ${msg.content}`;
           } else if (msg.type === "connected") {
-            entry.text = `WebSocket 接続完了 (${msg.clients} clients)`;
+            entry.text = `WebSocket connected (${msg.clients} clients)`;
           } else if (msg.type === "stats") {
-            // stats はログに追加しない（ステータスバーに表示）
+            // stats are not added to the log (shown in the status bar)
             return;
           } else {
             entry.text = JSON.stringify(msg);
@@ -166,10 +167,10 @@
   <main>
     <section class="hero">
       <span class="eyebrow">Local Demo</span>
-      <h1>state と websocket で作る<br>リアルタイム通信</h1>
+      <h1>Real-time communication<br>with state + websocket</h1>
       <p class="lead">
-        <code>&lt;wcs-ws&gt;</code> の接続状態・受信メッセージを <code>&lt;wcs-state&gt;</code> にバインドし、
-        Echo とブロードキャストをリアルタイムに表示しています。
+        The connection state and incoming messages of <code>&lt;wcs-ws&gt;</code> are bound to
+        <code>&lt;wcs-state&gt;</code>, displaying Echo and Broadcast in real time.
       </p>
     </section>
 
@@ -194,33 +195,33 @@
     </template>
 
     <div class="grid">
-      <!-- Echo パネル -->
+      <!-- Echo panel -->
       <div class="panel">
         <h2>Echo</h2>
-        <p class="lead">メッセージを送ると、サーバーがそのまま返します。</p>
+        <p class="lead">Send a message and the server echoes it back.</p>
         <div class="input-row">
-          <input type="text" placeholder="Echo メッセージ…"
+          <input type="text" placeholder="Echo message…"
             data-wcs="value: echoInput; onkeydown: handleEchoKeydown">
           <button class="btn-echo" data-wcs="onclick: sendEcho; disabled: canSendEcho|not">Send</button>
         </div>
       </div>
 
-      <!-- Broadcast パネル -->
+      <!-- Broadcast panel -->
       <div class="panel">
         <h2>Broadcast</h2>
-        <p class="lead">全接続クライアントにメッセージを配信します。</p>
+        <p class="lead">Deliver a message to all connected clients.</p>
         <div class="input-row">
-          <input type="text" placeholder="ブロードキャスト…"
+          <input type="text" placeholder="Broadcast message…"
             data-wcs="value: broadcastInput; onkeydown: handleBroadcastKeydown">
           <button class="btn-broadcast" data-wcs="onclick: sendBroadcast; disabled: canSendBroadcast|not">Send</button>
         </div>
         <div class="input-row">
-          <input type="text" placeholder="ニックネーム" data-wcs="value: nickname" style="max-width: 180px;">
+          <input type="text" placeholder="Nickname" data-wcs="value: nickname" style="max-width: 180px;">
         </div>
       </div>
     </div>
 
-    <!-- メッセージログ -->
+    <!-- Message log -->
     <div class="panel" style="margin-top: 18px;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h2>Message Log</h2>
@@ -231,7 +232,7 @@
       <div class="log">
         <template data-wcs="if: hasLog|not">
           <div class="log-empty">
-            接続後にメッセージがここに表示されます。
+            Messages will appear here after connecting.
           </div>
         </template>
 
