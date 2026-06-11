@@ -97,6 +97,7 @@ That's it. No build, no bootstrap code, no framework.
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
 - **Command tokens** — invoke methods on wc-bindable custom elements from state via a pub/sub channel (`command.<method>: tokenName`)
+- **Event tokens** — the dual of command tokens: receive a wc-bindable element's dispatched events in state via `eventToken.<prop>: tokenName` + the `$on` map
 - **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for virtual properties at any depth in a data tree, all defined flat in one place with automatic dependency tracking and caching
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
@@ -1248,6 +1249,150 @@ This is pure wiring: the event endpoint is connected to a command-token endpoint
 <my-field data-wcs="command.clear: $command.reset"></my-field>
 <my-list  data-wcs="command.reset: $command.reset"></my-list>
 ```
+
+## Event Token (Event Binding)
+
+Command tokens push *into* a component (state invokes a method). **Event tokens** are the exact dual — they pull *out* of a component (an element dispatches an event, state receives it). Together they cover both directions of the element ↔ state boundary, and neither side ever holds a reference to the other — the token is the only shared object.
+
+| Token | Direction | Subscribes | Emits |
+|---|---|---|---|
+| **Command token** | state → element | element (`command.<method>:`) | state (`$command.<name>.emit`) |
+| **Event token** | element → state | state (`$on`) | element (DOM event listener) |
+
+- The element wires `eventToken.<property>: <tokenName>` on a wc-bindable custom element.
+- State declares channels with `$eventTokens` and receives them with the `$on` map.
+- Subscribers are called as `(state, event, ...listIndexes)` — symmetric with the command-token emit convention.
+
+### Basic Usage
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      error: null,
+
+      $eventTokens: ["userCreated", "createFailed"],
+      $on: {
+        userCreated(state, event) {
+          state.users = state.users.concat(event.detail);
+        },
+        createFailed(state, event) {
+          state.error = event.detail;
+        }
+      }
+    };
+  </script>
+</wcs-state>
+
+<!-- Emitters — must be wc-bindable custom elements -->
+<my-form data-wcs="eventToken.created: userCreated; eventToken.error: createFailed"></my-form>
+```
+
+When `<my-form>` dispatches the DOM event mapped to its `created` property, the `userCreated` token fires and the `$on.userCreated` handler runs with `(state, event)`.
+
+### `$eventTokens` Declaration
+
+The `$eventTokens` array declares the channel names that `eventToken.<prop>:` bindings and `$on` keys may reference. Only declared names are valid (typo resistance).
+
+```javascript
+export default {
+  $eventTokens: ["userCreated", "createFailed"],
+};
+```
+
+- Entries must be non-empty strings
+- Duplicate entries throw an error at initialization
+- A token declared here but absent from `$on` simply has no subscriber — emitting it is a no-op
+
+### `$on` — Receiving on the State Side
+
+`$on` maps each event-token name to a handler. Because state is passed as the **first argument** (not via `this`), handlers can be written as either method shorthand or arrow functions — this mirrors the command-token emit convention, where `this` is likewise not bound:
+
+```javascript
+$on: {
+  // both forms work — state is always the first parameter
+  userCreated: (state, event) => { state.lastId = event.detail.id; },
+  rowFailed(state, event, ...listIndexes) {
+    const [i] = listIndexes;          // loop index when fired from inside a `for`
+    state.failedRows = state.failedRows.concat(i);
+  }
+}
+```
+
+- Every `$on` key must be declared in `$eventTokens` (otherwise an error is thrown at initialization)
+- Each value must be a function
+- The signature is `(state, event, ...listIndexes)` — the DOM `Event` first, then any enclosing loop indexes
+
+### `eventToken.<property>:` Binding
+
+```html
+<my-target data-wcs="eventToken.error: createFailed"></my-target>
+```
+
+| Part | Description |
+|---|---|
+| `eventToken.` | Fixed prefix |
+| `<property>` | A **wcBindable property name** — not a raw DOM event name. The real event name is resolved from `wcBindable.properties[].event` |
+| `<tokenName>` | A bare event-token name declared in `$eventTokens` (no `$`-namespace prefix, unlike command tokens) |
+
+The key is a property name rather than a raw event name so the binding goes through the same `wcBindable` contract that command bindings use — and so a namespaced event name (`ns:evt`) cannot collide with the binding's `:` separator. The framework looks up `properties[].event` and attaches a listener for that real event:
+
+```javascript
+class MyTarget extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [
+      { name: "error",   event: "thing-error" },     // eventToken.error → listens for "thing-error"
+      { name: "created", event: "thing-created" },
+    ],
+  };
+}
+```
+
+Validation rules:
+
+- The element must be a wc-bindable custom element (`static wcBindable`, `protocol: "wc-bindable"`, `version: 1`). A non-wc-bindable element is rejected at attach time.
+- `<property>` must appear in `wcBindable.properties` — checked at **attach time** (fail-fast; needs only the class, not DOM connection).
+- `<tokenName>` must be declared in `$eventTokens` — checked at **fire time**. State is resolved from the element's live root node when the event fires, so the binding also works inside `for` / `if` blocks and after SSR hydration, where the node may still be detached at attach time.
+- Modifiers `#prevent` / `#stop` work as on any event binding: `eventToken.error#prevent: createFailed`.
+
+### Inside a Loop
+
+When the emitter sits inside a `for` block, the enclosing loop indexes are appended after the event, exactly like an `on*` handler:
+
+```html
+<template data-wcs="for: rows">
+  <my-row data-wcs="eventToken.failed: rowFailed"></my-row>
+</template>
+```
+
+```javascript
+$on: {
+  rowFailed(state, event, ...listIndexes) {
+    const [i] = listIndexes;          // index of the row that fired
+    state.failedRows = state.failedRows.concat(i);
+  }
+}
+```
+
+### Fan-in and Chaining
+
+Multiple elements can wire the same token (`eventToken.x: shared`) — every dispatch reaches the one `$on` handler, mirroring command-token fan-out. And because an `$on` handler receives `state`, it can re-emit a command token, chaining element → state → element:
+
+```javascript
+$commandTokens: ["doRefresh"],
+$eventTokens: ["completed"],
+$on: {
+  completed(state) {
+    state.$command.doRefresh.emit();  // event in → command out
+  }
+}
+```
+
+### Token API
+
+Event tokens share the same `Token` pub/sub primitive as command tokens — `name` / `size` / `subscribe` / `unsubscribe` / `emit`, with subscribe-order preservation (see [Token API](#token-api)). The token is resolved from the registry on every event so a re-`setInitialState()` rebuild still reaches the latest `$on` subscribers. When the owning `<wcs-state>` is disconnected, the event-token registry is cleared.
 
 ## Inputs and Attribute Mirror
 
