@@ -238,6 +238,10 @@ describe("FetchCore", () => {
     expect(errors).toHaveLength(2);
     expect(errors[0]).toBeNull();
     expect(errors[1].status).toBe(404);
+    expect(errors[1].statusText).toBe("Error");
+    // The already-read response text is part of the error object, so consumers can
+    // surface the server's message (e.g. a validation reason) by binding error.body.
+    expect(errors[1].body).toBe("Not Found");
   });
 
   it("HTTPエラー時もstatus観測者にwcs-fetch:responseが届く", async () => {

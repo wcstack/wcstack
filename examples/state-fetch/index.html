@@ -153,6 +153,29 @@
       get createSucceeded() {
         return !this["createFetch.loading"] && !!this["createFetch.value"];
       },
+      // Mirror image of createSucceeded. FetchCore fills `error` on BOTH HTTP
+      // non-2xx (e.g. the 400 from the empty-name guard) AND network throws — only
+      // an aborted/superseded request leaves it null — so this one flag covers every
+      // real failure. On success `value` is set and `error` was cleared at request
+      // start, so createSucceeded / createFailed are never both true.
+      get createFailed() {
+        return !this["createFetch.loading"] && !!this["createFetch.error"];
+      },
+      // The server's validation message round-trips today: FetchCore stores the
+      // already-read response text on `error.body`, and a nested path off a fetch
+      // output binds reactively just like detailFetch.value.name does. The server
+      // sends { error: "<reason>" }; surface that reason, falling back to a generic
+      // line when the body isn't the expected JSON (e.g. a network error, whose
+      // `error` is a raw Error with no body).
+      get createErrorMessage() {
+        const err = this["createFetch.error"];
+        if (!err) return "";
+        try {
+          const reason = JSON.parse(err.body)?.error;
+          if (typeof reason === "string" && reason) return reason;
+        } catch { /* body wasn't the server's JSON shape */ }
+        return "Could not create user. Check the form and try again.";
+      },
 
       $on: {
         // wcs-fetch:response also fires on errors (HTTP/network), so narrow to success (2xx).
@@ -276,17 +299,22 @@
        from state); use the attribute for a plain button, the token from code. -->
   <button class="submit-btn" data-fetchtarget="create-fetch" data-wcs="disabled: createFetch.loading">Create</button>
 
-  <!-- createSucceeded hides this once the next submit starts (see the getter), so
-       it never overlaps the spinner. role="status" announces it to screen readers. -->
-  <template data-wcs="if: createSucceeded">
-    <div class="status-msg success" role="status">
-      Created: <span data-wcs="textContent: createFetch.value.name"></span> (ID: <span data-wcs="textContent: createFetch.value.id"></span>)
-    </div>
-  </template>
-
-  <template data-wcs="if: createFetch.error">
-    <div class="status-msg error" role="status">Could not create user. Check the form and try again.</div>
-  </template>
+  <!-- Permanent live region: role="status" (aria-live=polite) must exist in the DOM
+       from page load to announce reliably — a region mounted on-demand together with
+       its text is often missed. The success/error templates only swap content INSIDE
+       this fixed container (the same shape the search demo's status pill uses).
+       createSucceeded / createFailed are mutually exclusive (value vs error, both
+       gated on !loading), so the banners never overlap each other or the spinner. -->
+  <div role="status" aria-live="polite">
+    <template data-wcs="if: createSucceeded">
+      <div class="status-msg success">
+        Created: <span data-wcs="textContent: createFetch.value.name"></span> (ID: <span data-wcs="textContent: createFetch.value.id"></span>)
+      </div>
+    </template>
+    <template data-wcs="if: createFailed">
+      <div class="status-msg error" data-wcs="textContent: createErrorMessage"></div>
+    </template>
+  </div>
 </section>
 
 </body>
