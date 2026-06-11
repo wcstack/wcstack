@@ -129,9 +129,9 @@ declare class Fetch extends HTMLElement {
     private _lastFetchedUrl;
     constructor();
     get url(): string;
-    set url(value: string);
+    set url(value: string | null);
     get method(): string;
-    set method(value: string);
+    set method(value: string | null);
     get target(): string | null;
     set target(value: string | null);
     get value(): any;

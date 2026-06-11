@@ -2233,7 +2233,7 @@ function bootstrapRouter(config) {
     registerComponents();
 }
 
-var version = "1.12.0";
+var version = "1.12.1";
 var pkg = {
 	version: version};
 
