@@ -96,6 +96,8 @@
 - **組み込みフィルタ** — フォーマット、比較、算術、日付など 40 種類
 - **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
+- **command token** — pub/sub チャネル（`command.<method>: tokenName`）で state から wc-bindable カスタム要素のメソッドを起動
+- **event token** — command token の双対。wc-bindable 要素が dispatch するイベントを `eventToken.<prop>: tokenName` + `$on` マップで state が受信
 - **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）によるデータツリーの任意の深さへのフラットな仮想プロパティ定義、自動依存追跡・キャッシュ
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
@@ -1246,6 +1248,150 @@ command token は state コードから emit する必要はありません。DO
 <my-field data-wcs="command.clear: $command.reset"></my-field>
 <my-list  data-wcs="command.reset: $command.reset"></my-list>
 ```
+
+## Event Token（イベントバインディング）
+
+command token はコンポーネントへ *押し込み* ます（state がメソッドを起動）。**event token** はその正確な双対 —— コンポーネントから *引き出し* ます（要素がイベントを dispatch し、state が受信）。両者で要素 ↔ state 境界の双方向をカバーし、どちらの側も相手への参照を一切持ちません。共有されるのは token のみです。
+
+| Token | 方向 | 購読者 | emit する側 |
+|---|---|---|---|
+| **command token** | state → 要素 | 要素（`command.<method>:`） | state（`$command.<name>.emit`） |
+| **event token** | 要素 → state | state（`$on`） | 要素（DOM イベントリスナー） |
+
+- 要素側は wc-bindable カスタム要素に `eventToken.<property>: <tokenName>` を配線する
+- state 側は `$eventTokens` でチャネルを宣言し、`$on` マップで受信する
+- 購読者は `(state, event, ...listIndexes)` で呼び出される —— command token の emit 規約と対称
+
+### 基本的な使い方
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      users: [],
+      error: null,
+
+      $eventTokens: ["userCreated", "createFailed"],
+      $on: {
+        userCreated(state, event) {
+          state.users = state.users.concat(event.detail);
+        },
+        createFailed(state, event) {
+          state.error = event.detail;
+        }
+      }
+    };
+  </script>
+</wcs-state>
+
+<!-- emitter — wc-bindable なカスタム要素であること -->
+<my-form data-wcs="eventToken.created: userCreated; eventToken.error: createFailed"></my-form>
+```
+
+`<my-form>` が自身の `created` プロパティに対応する DOM イベントを dispatch すると、`userCreated` token が発火し、`$on.userCreated` ハンドラが `(state, event)` で実行されます。
+
+### `$eventTokens` 宣言
+
+`$eventTokens` 配列は、`eventToken.<prop>:` バインディングと `$on` キーが参照できるチャネル名を宣言します。宣言された名前のみが有効です（typo 耐性）。
+
+```javascript
+export default {
+  $eventTokens: ["userCreated", "createFailed"],
+};
+```
+
+- エントリは空でない文字列であること
+- 重複するエントリは初期化時にエラーになる
+- ここで宣言されたが `$on` に無い token は購読者ゼロ —— emit しても no-op
+
+### `$on` —— state 側での受信
+
+`$on` は各 event-token 名をハンドラに対応づけます。state は **第1引数** として渡される（`this` ではない）ため、ハンドラはメソッド省略記法でもアロー関数でも書けます —— `this` を束縛しない点は command token の emit 規約と同じです：
+
+```javascript
+$on: {
+  // どちらの形式でも可 —— state は常に第1引数
+  userCreated: (state, event) => { state.lastId = event.detail.id; },
+  rowFailed(state, event, ...listIndexes) {
+    const [i] = listIndexes;          // `for` 内から発火した場合のループインデックス
+    state.failedRows = state.failedRows.concat(i);
+  }
+}
+```
+
+- `$on` のすべてのキーは `$eventTokens` で宣言済みであること（さもなくば初期化時に throw）
+- 各値は関数であること
+- シグネチャは `(state, event, ...listIndexes)` —— まず DOM の `Event`、続いて内包するループインデックス
+
+### `eventToken.<property>:` バインディング
+
+```html
+<my-target data-wcs="eventToken.error: createFailed"></my-target>
+```
+
+| 部位 | 説明 |
+|---|---|
+| `eventToken.` | 固定の prefix |
+| `<property>` | **wcBindable プロパティ名** —— 生の DOM イベント名ではない。実イベント名は `wcBindable.properties[].event` から解決される |
+| `<tokenName>` | `$eventTokens` で宣言されたベアな event-token 名（command token と違い `$` 名前空間 prefix は付けない） |
+
+キーを生イベント名ではなくプロパティ名にすることで、command バインディングと同じ `wcBindable` 契約を経由でき、namespaced なイベント名（`ns:evt`）がバインディングの `:` 区切りと衝突しません。フレームワークは `properties[].event` を引いてその実イベントのリスナーを attach します：
+
+```javascript
+class MyTarget extends HTMLElement {
+  static wcBindable = {
+    protocol: "wc-bindable", version: 1,
+    properties: [
+      { name: "error",   event: "thing-error" },     // eventToken.error → "thing-error" を listen
+      { name: "created", event: "thing-created" },
+    ],
+  };
+}
+```
+
+検証ルール：
+
+- 要素は wc-bindable なカスタム要素であること（`static wcBindable`・`protocol: "wc-bindable"`・`version: 1`）。非 wc-bindable 要素は attach 時に拒否される。
+- `<property>` は `wcBindable.properties` に現れること —— **attach 時** に検証（fail-fast。クラス参照のみで足り、DOM 接続に非依存）。
+- `<tokenName>` は `$eventTokens` で宣言されていること —— **発火時** に検証。state はイベント発火時に要素の live root から解決されるため、attach 時にノードが detached になりうる `for` / `if` ブロック内や SSR ハイドレーション後でも機能する。
+- 修飾子 `#prevent` / `#stop` は通常のイベントバインディングと同様に機能する: `eventToken.error#prevent: createFailed`。
+
+### ループ内での使用
+
+emitter が `for` ブロック内にある場合、`on*` ハンドラと同じく、内包するループインデックスがイベントの後ろに付与されます：
+
+```html
+<template data-wcs="for: rows">
+  <my-row data-wcs="eventToken.failed: rowFailed"></my-row>
+</template>
+```
+
+```javascript
+$on: {
+  rowFailed(state, event, ...listIndexes) {
+    const [i] = listIndexes;          // 発火した行のインデックス
+    state.failedRows = state.failedRows.concat(i);
+  }
+}
+```
+
+### ファンインとチェイン
+
+複数の要素が同じ token を配線できます（`eventToken.x: shared`）—— すべての dispatch が1つの `$on` ハンドラに届き、command token のファンアウトと対称です。さらに `$on` ハンドラは `state` を受け取るため、そこから command token を再 emit して 要素 → state → 要素 のチェインを組めます：
+
+```javascript
+$commandTokens: ["doRefresh"],
+$eventTokens: ["completed"],
+$on: {
+  completed(state) {
+    state.$command.doRefresh.emit();  // event in → command out
+  }
+}
+```
+
+### Token API
+
+event token は command token と同じ `Token` pub/sub プリミティブを共有します —— `name` / `size` / `subscribe` / `unsubscribe` / `emit`、subscribe 順の保持つき（[Token API](#token-api) 参照）。token はイベントごとに registry から解決されるため、`setInitialState()` による再構築後も最新の `$on` 購読者に届きます。所有する `<wcs-state>` が disconnect されると、event-token registry はクリアされます。
 
 ## Inputs と属性ミラー
 
