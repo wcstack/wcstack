@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + fetch + debounce demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 2rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    /* Search box */
+    .search-box { position: relative; }
+    .search-box input { width: 100%; padding: 0.75rem 1rem; font-size: 1rem; border: 2px solid #ddd; border-radius: 8px; transition: border-color 0.15s; }
+    .search-box input:focus { outline: none; border-color: #3949ab; }
+    .status-line { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; font-size: 0.85rem; color: #555; min-height: 1.25rem; }
+    .status-pill { padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; }
+    .status-pill.typing { background: #fff3e0; color: #e65100; }
+    .status-pill.loading { background: #e3f2fd; color: #1565c0; }
+    .status-pill.idle { background: #e8f5e9; color: #2e7d32; }
+
+    /* Request counter — the debounce payoff */
+    .meter { display: flex; gap: 1.5rem; margin-top: 1rem; padding: 0.75rem 1rem; background: #f8f9fa; border-radius: 6px; font-size: 0.85rem; }
+    .meter b { font-size: 1.1rem; color: #3949ab; }
+    .meter .hint { color: #888; font-size: 0.8rem; }
+
+    /* Result list */
+    .result-list { list-style: none; transition: opacity 0.15s; }
+    .result-list.stale { opacity: 0.45; }
+    .result-item { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.75rem; border-bottom: 1px solid #f0f0f0; }
+    .result-item:last-child { border-bottom: none; }
+    .result-name { font-weight: 500; }
+    .cat-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; margin-left: 0.5rem; }
+    .price { color: #2e7d32; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .empty { color: #999; padding: 1rem 0; text-align: center; }
+
+    /* Spinner */
+    .spinner { display: flex; justify-content: center; padding: 1.5rem; }
+    .spinner::after { content: ''; width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #3949ab; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/debounce/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: live search</h1>
+<p class="lead">state + fetch + debounce — an incremental search that hits the API only 300ms after you stop typing.</p>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      // The raw input value. Updates on every keystroke.
+      query: "",
+      // The debounced value. <wcs-debounce> writes here after the input goes quiet.
+      debouncedQuery: "",
+      // True while the debounce timer is pending (between keystroke and settle).
+      typing: false,
+      // Counts how many requests were actually SENT to the network — the debounce payoff.
+      // We count request *starts*, not responses, on purpose (see $eventTokens below).
+      requestCount: 0,
+
+      // Count requests at launch, not on response. The `loading` property emits
+      // wcs-fetch:loading-changed(true) at the start of every request wcs-fetch sends
+      // (before any await), so this counts requests actually dispatched. Counting the
+      // `value` / wcs-fetch:response event instead would UNDER-count: when a newer
+      // search supersedes an in-flight one, wcs-fetch aborts the old request and the
+      // abort path emits no response event — so a request that went out would vanish
+      // from the tally. "requests sent" is therefore the accurate, abort-proof metric.
+      $eventTokens: ["requestStarted"],
+
+      // 1 fetch = 1 state slot. The ...: spread wires all wcBindable properties at once.
+      searchFetch: {
+        value: [], loading: false, error: null, status: 0,
+      },
+
+      // The url is derived from the debounced query. When debouncedQuery changes,
+      // this getter recomputes, wcs-fetch sees a new url and auto-fetches.
+      // Empty query -> /api/search (server returns the full catalog).
+      // De-dup note: wcs-fetch skips an auto-fetch only when the new url equals the
+      // *immediately previous* one (its same-value guard). Going "abc" -> "" -> "abc"
+      // DOES refetch, because the last fetched url ("") differs from "abc".
+      get "searchFetch.url"() {
+        const q = this.debouncedQuery.trim();
+        return q ? "/api/search?q=" + encodeURIComponent(q) : "/api/search";
+      },
+
+      // Status text shown under the search box. Reading typing / searchFetch.*
+      // registers them as reactive dependencies, so this re-renders automatically.
+      // Priority: typing > loading > idle.
+      get statusText() {
+        if (this.typing) return "Typing… (search on pause)";
+        if (this["searchFetch.loading"]) return "Searching…";
+        return this["searchFetch.value"].length + " hits";
+      },
+      // Three MUTUALLY EXCLUSIVE status flags, derived with the SAME priority as
+      // statusText (typing wins over loading). Binding one class per flag keeps the
+      // pill colour and the text in sync even while a re-typed search is mid-flight
+      // (both `typing` and `searchFetch.loading` can be true at the same time).
+      get statusTyping() {
+        return this.typing;
+      },
+      get statusLoading() {
+        return !this.typing && this["searchFetch.loading"];
+      },
+      get statusIdle() {
+        return !this.typing && !this["searchFetch.loading"];
+      },
+      get hasResults() {
+        return this["searchFetch.value"].length > 0;
+      },
+      // Spinner only on the FIRST load (no prior results). On later searches we keep
+      // the previous list and just dim it (stale-while-revalidate), so the screen
+      // never flashes empty between keystrokes.
+      get loadingFirst() {
+        return this["searchFetch.loading"] && this["searchFetch.value"].length === 0;
+      },
+      // Show the empty message only once the search has truly finished with no hits.
+      get showEmpty() {
+        return this.statusIdle && !this["searchFetch.error"] && this["searchFetch.value"].length === 0;
+      },
+      // Show the error only while not loading. wcs-fetch clears `error` at the start of
+      // every request (_setError(null) before the await), so a retry already hides this;
+      // the explicit guard makes the intent obvious and rules out any "error + spinner"
+      // overlap regardless of update batching.
+      get showError() {
+        return !!this["searchFetch.error"] && !this["searchFetch.loading"];
+      },
+
+      $on: {
+        // loading-changed carries the boolean directly in event.detail. Count only the
+        // false->true edge (a request leaving), ignore the true->false (it landing).
+        requestStarted: (state, event) => {
+          if (event.detail === true) {
+            state.requestCount = state.requestCount + 1;
+          }
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Headless nodes (no UI)
+     ============================================================ -->
+<!-- Value surface: source (query) -> value (debouncedQuery), pending -> typing.
+     wait=300 means the value only settles 300ms after the last keystroke. -->
+<wcs-debounce wait="300"
+  data-wcs="source: query; value: debouncedQuery; pending: typing"></wcs-debounce>
+
+<!-- Auto-fetches whenever searchFetch.url changes (i.e. when the debounced query changes).
+     Stale-response safety: when the url changes while a request is still in flight,
+     wcs-fetch aborts the previous request before starting the new one, and an aborted
+     request emits no response — so a slow earlier search can NEVER overwrite a newer
+     result. The server delay is randomized (150-800ms) on purpose so that out-of-order
+     completion actually happens and you can see this guarantee hold. -->
+<wcs-fetch data-wcs="...: searchFetch; eventToken.loading: requestStarted"></wcs-fetch>
+
+<!-- ============================================================
+     Search UI
+     ============================================================ -->
+<section>
+  <div class="search-box">
+    <input type="search" data-wcs="value: query" aria-label="Search products"
+      placeholder="Search by name or category (e.g. monitor, audio, ssd)" autofocus>
+    <!-- role="status" makes this an aria-live=polite region, so screen readers
+         announce "Searching…" / "N hits" as the pill text changes. -->
+    <div class="status-line" role="status">
+      <span class="status-pill"
+        data-wcs="textContent: statusText; class.typing: statusTyping; class.loading: statusLoading; class.idle: statusIdle"></span>
+    </div>
+  </div>
+
+  <div class="meter">
+    <span>API requests sent: <b data-wcs="textContent: requestCount"></b></span>
+    <span class="hint">Counts every request sent, including the initial full-catalog load — so it starts at 1. Without debounce it would grow on every keystroke.</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     Results
+     ============================================================ -->
+<section>
+  <!-- Spinner only on the first load. Decorative, so hidden from the a11y tree
+       (the status pill above already announces "Searching…"). -->
+  <template data-wcs="if: loadingFirst">
+    <div class="spinner" aria-hidden="true"></div>
+  </template>
+
+  <template data-wcs="if: showError">
+    <p class="empty">Something went wrong.</p>
+  </template>
+
+  <!-- class.stale dims the existing list while a new search is loading, so the old
+       results read as "being updated" rather than current (stale-while-revalidate). -->
+  <template data-wcs="if: hasResults">
+    <ul class="result-list" data-wcs="class.stale: searchFetch.loading">
+      <template data-wcs="for: searchFetch.value">
+        <li class="result-item">
+          <div>
+            <span class="result-name" data-wcs="textContent: .name"></span>
+            <span class="cat-badge" data-wcs="textContent: .category"></span>
+          </div>
+          <span class="price">¥<span data-wcs="textContent: .price|locale('en-US')"></span></span>
+        </li>
+      </template>
+    </ul>
+  </template>
+
+  <template data-wcs="if: showEmpty">
+    <p class="empty">No products match “<span data-wcs="textContent: debouncedQuery"></span>”.</p>
+  </template>
+</section>
+
+</body>
+</html>
