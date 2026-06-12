@@ -195,6 +195,22 @@ declare class IntersectionCore extends EventTarget {
      */
     observe(element: Element, options?: IntersectOptions): void;
     /**
+     * Force a fresh observation of `element`, even when it matches the currently
+     * observed target+options. Unlike observe() — which is idempotent and
+     * early-returns for an unchanged target+options *without* re-delivering a
+     * callback — this always tears the observer down and rebuilds it, so a new
+     * IntersectionObserver delivers an initial callback for the element's CURRENT
+     * visibility.
+     *
+     * This is the way to re-arm an edge-driven consumer (e.g. infinite scroll) after
+     * the layout changed without a visibility *transition*: IntersectionObserver only
+     * fires on a change, so appending a short page that leaves the sentinel visible
+     * yields no new callback — a bare observe() can't help (idempotent), but a
+     * reobserve() re-reads the current state. Same never-throw guarantees as
+     * observe(); `observing` stays true across a successful re-arm (no false blip).
+     */
+    reobserve(element: Element, options?: IntersectOptions): void;
+    /**
      * Stop observing `element`. A no-op if it is not the currently observed
      * element. The observer instance is torn down (single-target Core), so a later
      * observe() rebuilds it.
@@ -257,6 +273,16 @@ declare class WcsIntersect extends HTMLElement {
     set trigger(value: boolean);
     /** Re-resolve the target/root from the DOM and (re)start observing. */
     observe(): void;
+    /**
+     * Force a fresh observation: re-resolve target/root from the DOM and re-observe
+     * even when nothing changed. Unlike observe() (idempotent for an unchanged
+     * target+options), this rebuilds the observer so a new initial callback fires for
+     * the current visibility — the way to re-arm an edge-driven consumer after the
+     * layout shifted without a visibility transition (e.g. infinite scroll appended a
+     * short page that left this sentinel in view). Resolution/teardown rules match
+     * observe(): an unresolvable target tears down any stale observation.
+     */
+    reobserve(): void;
     unobserve(): void;
     disconnect(): void;
     reset(): void;

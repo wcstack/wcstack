@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: infinite scroll (wcs-infinite-scroll)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    h1 small { color: #999; font-weight: 400; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+    /* Meter — the loaded-so-far payoff */
+    .meter { display: flex; gap: 1.5rem; margin-bottom: 1.5rem; padding: 0.75rem 1rem; background: #f8f9fa; border-radius: 6px; font-size: 0.85rem; position: sticky; top: 0; z-index: 1; }
+    .meter b { font-size: 1.1rem; color: #3949ab; }
+
+    /* Item list */
+    .item-list { list-style: none; }
+    .item { display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 0.75rem; border-bottom: 1px solid #f0f0f0; }
+    .item-id { width: 2.5rem; color: #bbb; font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+    .item-name { font-weight: 500; flex: 1; }
+    .cat-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
+    .price { color: #2e7d32; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 5rem; text-align: right; }
+
+    /* Bottom states */
+    .spinner { display: flex; justify-content: center; padding: 1.5rem; }
+    .spinner::after { content: ''; width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #3949ab; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .end-msg { text-align: center; color: #999; padding: 1.5rem 0; font-size: 0.9rem; }
+    .end-msg.error { color: #c62828; }
+
+    /* The sentinel needs a real layout box. An unstyled custom element renders inline
+       by default, and with no content it collapses to 0×0 — which IntersectionObserver
+       observes unreliably (the initial intersection that fires the first page can be
+       missed, leaving the spinner stuck). A 1px block box makes the observation
+       deterministic. */
+    wcs-infinite-scroll { display: block; min-height: 1px; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- <wcs-infinite-scroll> ships inside @wcstack/fetch — no extra package needed. -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: infinite scroll <small>— &lt;wcs-infinite-scroll&gt;</small></h1>
+<p class="lead">state + fetch — <code>&lt;wcs-infinite-scroll&gt;</code> runs a <code>&lt;wcs-fetch&gt;</code> when a bottom sentinel scrolls into view. Pages accumulate in state.</p>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      pageSize: 20,
+      // `page` is the LAST page already loaded (0 = none yet). The url getter asks
+      // for page+1, so it always points at the *next* page to fetch.
+      page: 0,
+      // The accumulated feed. <wcs-fetch>.value is REPLACED on every response, so we
+      // never bind value into the list directly — we append each page here instead.
+      items: [],
+      // Set once a short page (< pageSize) comes back: that's the end of the feed.
+      noMore: false,
+
+      // We consume the response via an event token (append + advance), not as a
+      // bound `value`, so the slot only needs the outputs the template reads.
+      pageFetch: { loading: false, error: null },
+
+      // Receive each page's response. wcs-fetch:response carries { value, status }.
+      $eventTokens: ["pageArrived"],
+
+      // Always the NEXT page. <wcs-fetch> is `manual`, so rewriting this url does NOT
+      // auto-fetch — the sentinel's trigger is the only thing that fetches, page 1
+      // included (an empty list leaves the sentinel in view on load, so it fires once
+      // straight away). That `manual` is also why advancing `page` here is safe:
+      // WITHOUT it, this url change would auto-fetch the next page immediately and
+      // cascade through the entire catalog with no scrolling.
+      get "pageFetch.url"() {
+        return "/api/items?page=" + (this.page + 1) + "&limit=" + this.pageSize;
+      },
+
+      // Centered spinner: from mount until the first page lands. Derived from "no
+      // items yet" so it shows immediately — no flag to set or reset.
+      get showInitialSpinner() {
+        return this.items.length === 0 && !this.noMore && !this.showError;
+      },
+      // Bottom spinner: only for follow-up pages, so it never doubles up with the
+      // centered initial spinner (which owns the items-empty state).
+      get loadingMore() {
+        return this["pageFetch.loading"] && this.items.length > 0;
+      },
+      // Error line only when not loading (a retry hides it). wcs-fetch clears `error`
+      // at the start of every request, so this never overlaps the spinner.
+      get showError() {
+        return !!this["pageFetch.error"] && !this["pageFetch.loading"];
+      },
+      get loadedCount() {
+        return this.items.length;
+      },
+
+      $on: {
+        // Append-and-advance. This is the heart of infinite scroll: the fetch only
+        // ever holds ONE page, so accumulation lives here.
+        pageArrived: (state, event) => {
+          const status = event.detail?.status ?? 0;
+          // wcs-fetch:response also fires on HTTP/network errors (value=null). Skip
+          // those: appending null would corrupt the list and advancing `page` would
+          // silently skip a page. On failure we leave `page` put so the same url can
+          // be retried on the next scroll.
+          if (status < 200 || status >= 300) return;
+          const batch = event.detail?.value ?? [];
+          state.items = state.items.concat(batch);
+          state.page = state.page + 1;
+          // End-of-feed contract: a page shorter than pageSize is the last one.
+          if (batch.length < state.pageSize) state.noMore = true;
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Headless fetch (no UI)
+     ============================================================ -->
+<!-- `manual` is REQUIRED: the url changes every time `page` advances, and without
+     `manual` that url change would auto-fetch and double-load. The sentinel below is
+     the only thing that fires the request (it writes trigger=true on this element). -->
+<wcs-fetch id="page-fetch" manual
+  data-wcs="url: pageFetch.url; loading: pageFetch.loading; error: pageFetch.error; eventToken.value: pageArrived"></wcs-fetch>
+
+<!-- ============================================================
+     Feed
+     ============================================================ -->
+<div class="meter" role="status">
+  <span>Loaded <b data-wcs="textContent: loadedCount"></b> items</span>
+  <span>over <b data-wcs="textContent: page"></b> pages</span>
+</div>
+
+<ul class="item-list">
+  <template data-wcs="for: items">
+    <li class="item">
+      <span class="item-id" data-wcs="textContent: .id"></span>
+      <span class="item-name" data-wcs="textContent: .name"></span>
+      <span class="cat-badge" data-wcs="textContent: .category"></span>
+      <span class="price">¥<span data-wcs="textContent: .price|locale('ja-JP')"></span></span>
+    </li>
+  </template>
+</ul>
+
+<!-- Bottom states. Decorative spinner is hidden from a11y; the sticky meter above
+     is a live region that already announces the growing count. -->
+<template data-wcs="if: showInitialSpinner">
+  <div class="spinner" aria-hidden="true"></div>
+</template>
+<template data-wcs="if: loadingMore">
+  <div class="spinner" aria-hidden="true"></div>
+</template>
+<template data-wcs="if: showError">
+  <p class="end-msg error">Couldn't load. Scroll to retry.</p>
+</template>
+<template data-wcs="if: noMore">
+  <p class="end-msg">— End of list (<span data-wcs="textContent: loadedCount"></span> items) —</p>
+</template>
+
+<!-- The sentinel. When it enters the viewport (+240px preload margin) it runs
+     #page-fetch. It won't re-trigger while that fetch is `loading`, and `disabled`
+     is bound to `noMore` so it stops observing once the feed is exhausted.
+     Note: place tall-enough rows above it — IntersectionObserver only fires on a
+     visibility *change*, so a page that doesn't push this marker out of view can
+     stall (see README, "short page"). -->
+<wcs-infinite-scroll target="page-fetch" root-margin="240px 0px"
+  data-wcs="disabled: noMore"></wcs-infinite-scroll>
+
+</body>
+</html>

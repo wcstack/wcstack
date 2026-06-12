@@ -12,10 +12,14 @@
     section { margin-bottom: 2rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
 
     /* User list */
-    .user-list { list-style: none; }
-    .user-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.15s; }
+    .user-list { list-style: none; transition: opacity 0.15s; }
+    .user-list.stale { opacity: 0.45; }
+    /* Rows are <button>s so they are keyboard-focusable and Enter/Space activate
+       them; reset the native button look back to a full-width flex row. */
+    .user-item { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0.5rem 0.75rem; border: none; border-bottom: 1px solid #f0f0f0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; transition: background 0.15s; }
     .user-item:hover { background: #f8f9fa; }
-    .user-item:last-child { border-bottom: none; }
+    .user-item:focus-visible { outline: 2px solid #3949ab; outline-offset: -2px; }
+    .user-list li:last-child .user-item { border-bottom: none; }
     .user-name { font-weight: 500; }
     .user-email { color: #666; font-size: 0.875rem; }
     .role-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
@@ -94,6 +98,11 @@
         const role = this.filterRole;
         return role ? "/api/users?role=" + role : "/api/users";
       },
+      // Empty-url contract: when no user is selected (initial load, or after a
+      // filter clears the selection) this returns "". wcs-fetch treats an empty
+      // url as "no request" and suppresses the auto-fetch, so the detail pane
+      // stays idle. If it did NOT suppress, the relative "" would resolve to the
+      // page itself and the fetch would try to parse the HTML document as JSON.
       get "detailFetch.url"() {
         const id = this.selectedUserId;
         return id ? "/api/users/" + id : "";
@@ -101,6 +110,8 @@
 
       selectUser() {
         this["detailFetch.value"] = null;
+        // `*` resolves to the index of the clicked row within the `for:` loop, so
+        // listFetch.value.*.id reads the id of the user that was actually clicked.
         this.selectedUserId = this["listFetch.value.*.id"];
       },
 
@@ -110,10 +121,61 @@
         this.selectedUserId = null;
       },
 
+      // onclick binds a method by name and cannot pass arguments, so each filter
+      // button gets its own zero-arg wrapper around the shared filterBy(role).
       filterAll() { this.filterBy(""); },
       filterAdmin() { this.filterBy("admin"); },
       filterEditor() { this.filterBy("editor"); },
       filterViewer() { this.filterBy("viewer"); },
+
+      // Spinner only on the FIRST list load (no rows yet). On a filter switch we
+      // keep the previous rows and just dim them (stale-while-revalidate, see
+      // class.stale below), so the list never flashes empty between filters.
+      get listLoadingFirst() {
+        return this["listFetch.loading"] && this["listFetch.value"].length === 0;
+      },
+
+      // Detail pane has three MUTUALLY EXCLUSIVE states. Deriving them as getters
+      // (instead of overlapping if/else templates) stops the "Click a user…" hint
+      // from showing on top of the spinner while a detail request is in flight.
+      get detailLoading() {
+        return this["detailFetch.loading"];
+      },
+      get detailReady() {
+        return !this["detailFetch.loading"] && !!this["detailFetch.value"];
+      },
+      get detailIdle() {
+        return !this["detailFetch.loading"] && !this["detailFetch.value"];
+      },
+
+      // Hide the success banner while the next submit is in flight, so it can't
+      // sit alongside the create spinner (mirrors the detail-pane exclusivity).
+      get createSucceeded() {
+        return !this["createFetch.loading"] && !!this["createFetch.value"];
+      },
+      // Mirror image of createSucceeded. FetchCore fills `error` on BOTH HTTP
+      // non-2xx (e.g. the 400 from the empty-name guard) AND network throws — only
+      // an aborted/superseded request leaves it null — so this one flag covers every
+      // real failure. On success `value` is set and `error` was cleared at request
+      // start, so createSucceeded / createFailed are never both true.
+      get createFailed() {
+        return !this["createFetch.loading"] && !!this["createFetch.error"];
+      },
+      // The server's validation message round-trips today: FetchCore stores the
+      // already-read response text on `error.body`, and a nested path off a fetch
+      // output binds reactively just like detailFetch.value.name does. The server
+      // sends { error: "<reason>" }; surface that reason, falling back to a generic
+      // line when the body isn't the expected JSON (e.g. a network error, whose
+      // `error` is a raw Error with no body).
+      get createErrorMessage() {
+        const err = this["createFetch.error"];
+        if (!err) return "";
+        try {
+          const reason = JSON.parse(err.body)?.error;
+          if (typeof reason === "string" && reason) return reason;
+        } catch { /* body wasn't the server's JSON shape */ }
+        return "Could not create user. Check the form and try again.";
+      },
 
       $on: {
         // wcs-fetch:response also fires on errors (HTTP/network), so narrow to success (2xx).
@@ -157,18 +219,22 @@
     <button class="filter-btn" data-wcs="onclick: filterViewer; class.active: filterRole|eq('viewer')">Viewer</button>
   </div>
 
-  <template data-wcs="if: listFetch.loading">
-    <div class="spinner"></div>
+  <template data-wcs="if: listLoadingFirst">
+    <div class="spinner" aria-hidden="true"></div>
   </template>
 
-  <ul class="user-list">
+  <!-- class.stale dims the existing rows while a filter switch reloads, so they
+       read as "being updated" rather than current (stale-while-revalidate). -->
+  <ul class="user-list" data-wcs="class.stale: listFetch.loading">
     <template data-wcs="for: listFetch.value">
-      <li class="user-item" data-wcs="onclick: selectUser">
-        <div>
-          <span class="user-name" data-wcs="textContent: .name"></span>
-          <span class="user-email" data-wcs="textContent: .email"></span>
-        </div>
-        <span class="role-badge" data-wcs="textContent: .role"></span>
+      <li>
+        <button type="button" class="user-item" data-wcs="onclick: selectUser">
+          <div>
+            <span class="user-name" data-wcs="textContent: .name"></span>
+            <span class="user-email" data-wcs="textContent: .email"></span>
+          </div>
+          <span class="role-badge" data-wcs="textContent: .role"></span>
+        </button>
       </li>
     </template>
   </ul>
@@ -180,11 +246,11 @@
 <section>
   <h2>User Detail</h2>
 
-  <template data-wcs="if: detailFetch.loading">
-    <div class="spinner"></div>
+  <template data-wcs="if: detailLoading">
+    <div class="spinner" aria-hidden="true"></div>
   </template>
 
-  <template data-wcs="if: detailFetch.value|truthy">
+  <template data-wcs="if: detailReady">
     <dl class="detail-card">
       <dt>ID</dt>
       <dd data-wcs="textContent: detailFetch.value.id"></dd>
@@ -197,7 +263,7 @@
     </dl>
   </template>
 
-  <template data-wcs="else: detailFetch.value">
+  <template data-wcs="if: detailIdle">
     <p style="color: #999;">Click a user above to see details.</p>
   </template>
 </section>
@@ -209,35 +275,46 @@
   <h2>Create User</h2>
 
   <div class="form-group">
-    <label>Name</label>
-    <input type="text" data-wcs="value: createFetch.body.name" placeholder="Enter name">
+    <label for="create-name">Name</label>
+    <input id="create-name" type="text" data-wcs="value: createFetch.body.name" placeholder="Enter name">
   </div>
   <div class="form-group">
-    <label>Email</label>
-    <input type="email" data-wcs="value: createFetch.body.email" placeholder="email@example.com">
+    <label for="create-email">Email</label>
+    <input id="create-email" type="email" data-wcs="value: createFetch.body.email" placeholder="email@example.com">
   </div>
   <div class="form-group">
-    <label>Role</label>
-    <select data-wcs="value: createFetch.body.role">
+    <label for="create-role">Role</label>
+    <select id="create-role" data-wcs="value: createFetch.body.role">
       <option value="viewer">Viewer</option>
       <option value="editor">Editor</option>
       <option value="admin">Admin</option>
     </select>
   </div>
   <template data-wcs="if: createFetch.loading">
-    <div class="spinner"></div>
+    <div class="spinner" aria-hidden="true"></div>
   </template>
+  <!-- data-fetchtarget="create-fetch" is the autoTrigger shortcut: a click runs
+       the fetch() command on the element with that id. It's the click-driven
+       counterpart to the command token used for refreshList (which fires fetch()
+       from state); use the attribute for a plain button, the token from code. -->
   <button class="submit-btn" data-fetchtarget="create-fetch" data-wcs="disabled: createFetch.loading">Create</button>
 
-  <template data-wcs="if: createFetch.value">
-    <div class="status-msg success">
-      Created: <span data-wcs="textContent: createFetch.value.name"></span> (ID: <span data-wcs="textContent: createFetch.value.id"></span>)
-    </div>
-  </template>
-
-  <template data-wcs="if: createFetch.error">
-    <div class="status-msg error">Error occurred</div>
-  </template>
+  <!-- Permanent live region: role="status" (aria-live=polite) must exist in the DOM
+       from page load to announce reliably — a region mounted on-demand together with
+       its text is often missed. The success/error templates only swap content INSIDE
+       this fixed container (the same shape the search demo's status pill uses).
+       createSucceeded / createFailed are mutually exclusive (value vs error, both
+       gated on !loading), so the banners never overlap each other or the spinner. -->
+  <div role="status" aria-live="polite">
+    <template data-wcs="if: createSucceeded">
+      <div class="status-msg success">
+        Created: <span data-wcs="textContent: createFetch.value.name"></span> (ID: <span data-wcs="textContent: createFetch.value.id"></span>)
+      </div>
+    </template>
+    <template data-wcs="if: createFailed">
+      <div class="status-msg error" data-wcs="textContent: createErrorMessage"></div>
+    </template>
+  </div>
 </section>
 
 </body>

@@ -36,6 +36,7 @@ export class IntersectionCore extends EventTarget {
     ],
     commands: [
       { name: "observe" },
+      { name: "reobserve" },
       { name: "unobserve" },
       { name: "disconnect" },
       { name: "reset" },
@@ -144,6 +145,26 @@ export class IntersectionCore extends EventTarget {
     this._options = options;
     observer.observe(element);
     this._setObserving(true);
+  }
+
+  /**
+   * Force a fresh observation of `element`, even when it matches the currently
+   * observed target+options. Unlike observe() — which is idempotent and
+   * early-returns for an unchanged target+options *without* re-delivering a
+   * callback — this always tears the observer down and rebuilds it, so a new
+   * IntersectionObserver delivers an initial callback for the element's CURRENT
+   * visibility.
+   *
+   * This is the way to re-arm an edge-driven consumer (e.g. infinite scroll) after
+   * the layout changed without a visibility *transition*: IntersectionObserver only
+   * fires on a change, so appending a short page that leaves the sentinel visible
+   * yields no new callback — a bare observe() can't help (idempotent), but a
+   * reobserve() re-reads the current state. Same never-throw guarantees as
+   * observe(); `observing` stays true across a successful re-arm (no false blip).
+   */
+  reobserve(element: Element, options: IntersectOptions = {}): void {
+    this._teardownObserver();
+    this.observe(element, options);
   }
 
   /**
