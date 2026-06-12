@@ -312,8 +312,8 @@ class WcsIntersect extends HTMLElement {
         ],
         // Shell-level settable surface. Each input carries its mirrored `attribute`
         // hint; `trigger` has none — it is a momentary command-property, not a
-        // declarative attribute. The observe / unobserve / disconnect / reset commands
-        // are inherited from the Core via the spread above.
+        // declarative attribute. The observe / reobserve / unobserve / disconnect /
+        // reset commands are inherited from the Core via the spread above.
         inputs: [
             { name: "target", attribute: "target" },
             { name: "root", attribute: "root" },
