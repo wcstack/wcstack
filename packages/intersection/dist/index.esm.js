@@ -72,6 +72,7 @@ class IntersectionCore extends EventTarget {
         ],
         commands: [
             { name: "observe" },
+            { name: "reobserve" },
             { name: "unobserve" },
             { name: "disconnect" },
             { name: "reset" },
@@ -167,6 +168,25 @@ class IntersectionCore extends EventTarget {
         this._options = options;
         observer.observe(element);
         this._setObserving(true);
+    }
+    /**
+     * Force a fresh observation of `element`, even when it matches the currently
+     * observed target+options. Unlike observe() — which is idempotent and
+     * early-returns for an unchanged target+options *without* re-delivering a
+     * callback — this always tears the observer down and rebuilds it, so a new
+     * IntersectionObserver delivers an initial callback for the element's CURRENT
+     * visibility.
+     *
+     * This is the way to re-arm an edge-driven consumer (e.g. infinite scroll) after
+     * the layout changed without a visibility *transition*: IntersectionObserver only
+     * fires on a change, so appending a short page that leaves the sentinel visible
+     * yields no new callback — a bare observe() can't help (idempotent), but a
+     * reobserve() re-reads the current state. Same never-throw guarantees as
+     * observe(); `observing` stays true across a successful re-arm (no false blip).
+     */
+    reobserve(element, options = {}) {
+        this._teardownObserver();
+        this.observe(element, options);
     }
     /**
      * Stop observing `element`. A no-op if it is not the currently observed
@@ -427,6 +447,24 @@ class WcsIntersect extends HTMLElement {
             return;
         }
         this._core.observe(element, this._options());
+    }
+    /**
+     * Force a fresh observation: re-resolve target/root from the DOM and re-observe
+     * even when nothing changed. Unlike observe() (idempotent for an unchanged
+     * target+options), this rebuilds the observer so a new initial callback fires for
+     * the current visibility — the way to re-arm an edge-driven consumer after the
+     * layout shifted without a visibility transition (e.g. infinite scroll appended a
+     * short page that left this sentinel in view). Resolution/teardown rules match
+     * observe(): an unresolvable target tears down any stale observation.
+     */
+    reobserve() {
+        const { element, display } = this._resolveTarget();
+        this.style.display = display;
+        if (!element) {
+            this._core.disconnect();
+            return;
+        }
+        this._core.reobserve(element, this._options());
     }
     unobserve() {
         // Single-target Shell: "stop observing my target" is exactly the Core's

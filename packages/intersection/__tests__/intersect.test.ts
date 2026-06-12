@@ -237,6 +237,29 @@ describe("<wcs-intersect>", () => {
       expect(ctrl.last.disconnected).toBe(true);
     });
 
+    it("reobserve コマンドは同一対象でも observer を作り直す（冪等回避で再武装）", () => {
+      const el = makeEl({ target: "self" });
+      document.body.appendChild(el);
+      expect(ctrl.instances).toHaveLength(1);
+      el.reobserve();
+      expect(ctrl.instances).toHaveLength(2);
+      expect(ctrl.instances[0].disconnected).toBe(true);
+      expect(el.observing).toBe(true);
+    });
+
+    it("reobserve コマンドは対象が解決不能なら stale observer を片付け observing を false にする", () => {
+      const hero = document.createElement("section");
+      hero.id = "hero";
+      document.body.appendChild(hero);
+      const el = makeEl({ target: "#hero" });
+      document.body.appendChild(el);
+      expect(el.observing).toBe(true);
+      hero.remove();
+      el.reobserve(); // 再解決で null → stale observer を disconnect
+      expect(el.observing).toBe(false);
+      expect(ctrl.last.disconnected).toBe(true);
+    });
+
     it("disconnect コマンドで停止", () => {
       const el = makeEl({ target: "self" });
       document.body.appendChild(el);
@@ -399,7 +422,7 @@ describe("<wcs-intersect>", () => {
     it("commands は Core の commands をそのまま継承する（同一参照で追従漏れ防止）", () => {
       expect(WcsIntersect.wcBindable.commands).toBe(IntersectionCore.wcBindable.commands);
       const names = WcsIntersect.wcBindable.commands.map((c) => c.name);
-      expect(names).toEqual(["observe", "unobserve", "disconnect", "reset"]);
+      expect(names).toEqual(["observe", "reobserve", "unobserve", "disconnect", "reset"]);
     });
   });
 

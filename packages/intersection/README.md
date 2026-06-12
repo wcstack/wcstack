@@ -137,7 +137,8 @@ Point `target` at a section elsewhere in the document; bind `intersecting` to hi
 
 | Command       | Description |
 |---------------|-------------|
-| `observe()`   | Re-resolve `target` / `root` from the DOM and (re)start observing. |
+| `observe()`   | Re-resolve `target` / `root` from the DOM and (re)start observing. Idempotent: an unchanged target+options is a no-op (no fresh callback). |
+| `reobserve()` | Force a fresh observation even when `target` / options are unchanged — tears the observer down and rebuilds it, so a new initial callback fires for the *current* visibility. Use to re-arm an edge-driven consumer (e.g. infinite scroll) after the layout shifted without a visibility transition. `observing` stays `true` across a successful re-arm (no false blip). |
 | `unobserve()` | Stop observing the current target. |
 | `disconnect()`| Stop all observation. |
 | `reset()`     | Clear the `visible` latch so a later intersection can set it again. |
@@ -159,7 +160,7 @@ IntersectionCore.wcBindable = {
     { name: "observing", event: "wcs-intersect:observing-changed" },
   ],
   commands: [
-    { name: "observe" }, { name: "unobserve" }, { name: "disconnect" }, { name: "reset" },
+    { name: "observe" }, { name: "reobserve" }, { name: "unobserve" }, { name: "disconnect" }, { name: "reset" },
   ],
 };
 ```

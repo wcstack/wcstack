@@ -35,8 +35,8 @@ export class WcsIntersect extends HTMLElement {
     ],
     // Shell-level settable surface. Each input carries its mirrored `attribute`
     // hint; `trigger` has none — it is a momentary command-property, not a
-    // declarative attribute. The observe / unobserve / disconnect / reset commands
-    // are inherited from the Core via the spread above.
+    // declarative attribute. The observe / reobserve / unobserve / disconnect /
+    // reset commands are inherited from the Core via the spread above.
     inputs: [
       { name: "target", attribute: "target" },
       { name: "root", attribute: "root" },
@@ -193,6 +193,25 @@ export class WcsIntersect extends HTMLElement {
       return;
     }
     this._core.observe(element, this._options());
+  }
+
+  /**
+   * Force a fresh observation: re-resolve target/root from the DOM and re-observe
+   * even when nothing changed. Unlike observe() (idempotent for an unchanged
+   * target+options), this rebuilds the observer so a new initial callback fires for
+   * the current visibility — the way to re-arm an edge-driven consumer after the
+   * layout shifted without a visibility transition (e.g. infinite scroll appended a
+   * short page that left this sentinel in view). Resolution/teardown rules match
+   * observe(): an unresolvable target tears down any stale observation.
+   */
+  reobserve(): void {
+    const { element, display } = this._resolveTarget();
+    this.style.display = display;
+    if (!element) {
+      this._core.disconnect();
+      return;
+    }
+    this._core.reobserve(element, this._options());
   }
 
   unobserve(): void {

@@ -93,6 +93,42 @@ describe("IntersectionCore", () => {
     });
   });
 
+  describe("reobserve", () => {
+    it("同一要素・同一オプションでも observer を作り直し、新しいコールバックを出す（冪等回避）", () => {
+      const core = new IntersectionCore();
+      core.observe(el);
+      expect(ctrl.instances).toHaveLength(1);
+
+      core.reobserve(el);
+      expect(ctrl.instances).toHaveLength(2);
+      expect(ctrl.instances[0].disconnected).toBe(true);
+      expect(ctrl.last.observed).toContain(el);
+
+      // 作り直した observer からの交差で change が発火する
+      const onChange = vi.fn();
+      core.addEventListener("wcs-intersect:change", onChange);
+      ctrl.emit({ isIntersecting: true });
+      expect(onChange).toHaveBeenCalledOnce();
+    });
+
+    it("未監視からの reobserve は単なる observe として機能する", () => {
+      const core = new IntersectionCore();
+      core.reobserve(el);
+      expect(ctrl.instances).toHaveLength(1);
+      expect(core.observing).toBe(true);
+    });
+
+    it("成功する reobserve は observing を true のまま維持し observing-changed を再発火しない（ブリップしない）", () => {
+      const core = new IntersectionCore();
+      core.observe(el);
+      const onObserving = vi.fn();
+      core.addEventListener("wcs-intersect:observing-changed", onObserving);
+      core.reobserve(el);
+      expect(core.observing).toBe(true);
+      expect(onObserving).not.toHaveBeenCalled();
+    });
+  });
+
   describe("change / 派生プロパティ", () => {
     it("交差で entry/intersecting/ratio が更新され wcs-intersect:change が発火", () => {
       const core = new IntersectionCore();
