@@ -125,8 +125,20 @@
      ============================================================ -->
 <!-- `manual` is REQUIRED: the url changes every time `page` advances, and without
      `manual` that url change would auto-fetch and double-load. The sentinel below is
-     the only thing that fires the request (it writes trigger=true on this element). -->
-<wcs-fetch id="page-fetch" manual
+     the only thing that fires the request (it writes trigger=true on this element).
+
+     The STATIC `url` (= page 1) is what makes the first load deterministic. The
+     sentinel's trigger is a one-shot: `set trigger` drops the write silently when
+     `url` is empty (Fetch.ts), and IntersectionObserver won't re-fire while the
+     sentinel stays in view (empty list). The url binding from @wcstack/state and the
+     sentinel's initial IntersectionObserver callback land on independent async
+     pipelines with no ordering guarantee — so if the sentinel fired first it would
+     trigger against an empty url and the page would never load (spinner stuck). A
+     static page-1 url removes that race: the trigger always has a url, whoever wins.
+     `manual` keeps this static url from auto-fetching; the binding rewrites it to
+     page 2+ as `page` advances. (Demo B needs no equivalent — a no-`manual` fetch
+     self-heals via attributeChangedCallback when the bound url finally arrives.) -->
+<wcs-fetch id="page-fetch" manual url="/api/items?page=1&amp;limit=20"
   data-wcs="url: pageFetch.url; loading: pageFetch.loading; error: pageFetch.error; eventToken.value: pageArrived"></wcs-fetch>
 
 <!-- ============================================================

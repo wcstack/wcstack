@@ -197,7 +197,7 @@
 
 <!-- The sentinel. target="self" observes this element itself (display:block) with a
      240px preload margin. On enter it emits wcs-intersect:change; state turns that
-     into a page load and re-arms via observe(). No `once` — we need it repeatedly. -->
+     into a page load and re-arms via reobserve(). No `once` — we need it repeatedly. -->
 <wcs-intersect id="sentinel" target="self" root-margin="240px 0px"
   data-wcs="eventToken.intersecting: sentinelChanged; command.reobserve: $command.rearm"></wcs-intersect>
 
