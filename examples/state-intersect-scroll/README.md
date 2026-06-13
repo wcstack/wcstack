@@ -5,11 +5,13 @@ but built from the lower-level `@wcstack/intersection` primitive instead of the
 batteries-included `<wcs-infinite-scroll>`. Here the sentinel only *reports visibility*;
 **state decides** what to do with it.
 
-This version is **full-auto**: there is no `manual`, no `trigger`, and no fetch
-command. The sentinel advances a `page` number, the `<wcs-fetch>` url derives from
-`page`, and a plain auto-fetch loads each page as the url changes. The url binding
-*is* the trigger — the cleanest possible wiring, only reachable because `<wcs-intersect>`
-can write state (which `<wcs-infinite-scroll>` cannot).
+This version is **full-auto**: there is no `manual` and no `trigger`. The sentinel
+advances a `page` number, the `<wcs-fetch>` url derives from `page`, and a plain
+auto-fetch loads each page as the url changes. The url binding *is* the trigger on
+the happy path — the cleanest possible wiring, only reachable because `<wcs-intersect>`
+can write state (which `<wcs-infinite-scroll>` cannot). The one explicit `command.fetch`
+is wired solely to retry a failed page (an unchanged url can't re-trigger auto-fetch —
+see Key Points).
 
 Use this version when you want control over the trigger (custom guards, re-arming,
 reacting to `ratio`/`visible` rather than a binary enter), or to see how a generic

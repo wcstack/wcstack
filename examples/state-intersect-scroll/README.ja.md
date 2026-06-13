@@ -5,10 +5,11 @@
 プリミティブで組んだもの。ここではセンチネルは*可視性を報告するだけ*で、それをどう
 使うかは **state が決める**。
 
-この版は **full-auto**：`manual` も `trigger` も fetch コマンドも無い。センチネルが
-`page` 番号を進め、`<wcs-fetch>` の url は `page` から導出され、url が変わると素の
-auto-fetch が各ページを読む。**url のバインドそのものがトリガー**——最もシンプルな配線で、
-`<wcs-intersect>` が state に書き込めるからこそ可能（`<wcs-infinite-scroll>` では不可）。
+この版は **full-auto**：`manual` も `trigger` も無い。センチネルが `page` 番号を進め、
+`<wcs-fetch>` の url は `page` から導出され、url が変わると素の auto-fetch が各ページを読む。
+**url のバインドそのものが happy path のトリガー**——最もシンプルな配線で、`<wcs-intersect>`
+が state に書き込めるからこそ可能（`<wcs-infinite-scroll>` では不可）。唯一の明示 `command.fetch`
+は失敗ページの再試行専用に配線している（不変 url では auto-fetch を再起動できないため——ポイント参照）。
 
 トリガーを自分で制御したいとき（独自のガード、再武装、`ratio`/`visible` に反応したい等）、
 あるいは汎用の可視性プリミティブが `@wcstack/fetch` とどう組み合わさるかを見たいときに、
