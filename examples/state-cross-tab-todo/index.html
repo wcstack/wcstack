@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + storage + broadcast demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    .lead kbd { background: #eee; border-radius: 4px; padding: 1px 6px; font-size: 0.8rem; }
+    section { margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    /* This tab's identity (ephemeral) */
+    .whoami { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; }
+    .whoami .badge { font-size: 1.5rem; }
+
+    /* Live activity banner — the ephemeral (broadcast) layer */
+    .live { display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; border-radius: 8px; background: #f3e5f5; border: 1px solid #e1bee7; color: #6a1b9a; font-size: 0.9rem; min-height: 3rem; }
+    .live.silent { background: #fafafa; border-color: #eee; color: #999; }
+    .live .dot { width: 10px; height: 10px; border-radius: 50%; background: #ab47bc; flex: none; }
+    .live.silent .dot { background: #ccc; }
+    .live .count { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 0.75rem; background: #fff; border-radius: 12px; padding: 2px 10px; color: #6a1b9a; }
+
+    /* Add form */
+    .add-form { display: flex; gap: 0.5rem; }
+    .add-form input { flex: 1; padding: 0.6rem 0.85rem; font-size: 1rem; border: 2px solid #ddd; border-radius: 8px; }
+    .add-form input:focus { outline: none; border-color: #6a1b9a; }
+    .add-form button { padding: 0 1.25rem; background: #6a1b9a; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
+    .add-form button:hover { background: #4a148c; }
+
+    /* Todo list — the durable (storage) layer */
+    .todo-list { list-style: none; }
+    .todo-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 0.25rem; border-bottom: 1px solid #f0f0f0; }
+    .todo-item:last-child { border-bottom: none; }
+    .todo-item input[type=checkbox] { width: 1.1rem; height: 1.1rem; accent-color: #6a1b9a; cursor: pointer; }
+    .todo-item .text { flex: 1; }
+    .todo-item.done .text { text-decoration: line-through; color: #aaa; }
+    .todo-item .del { border: none; background: none; color: #bbb; cursor: pointer; font-size: 1rem; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    .todo-item .del:hover { background: #fce4ec; color: #c62828; }
+    .empty { color: #999; text-align: center; padding: 1.5rem 0; }
+
+    .footer { display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem; font-size: 0.85rem; color: #666; }
+    .footer button { border: 1px solid #ddd; background: white; border-radius: 6px; padding: 0.35rem 0.75rem; cursor: pointer; font-size: 0.8rem; }
+    .footer button:hover { border-color: #6a1b9a; color: #6a1b9a; }
+
+    .notice { background: #fff3e0; color: #e65100; padding: 0.6rem 0.85rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem; }
+
+    /* Two-layer explainer */
+    .layers { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.82rem; }
+    .layers .card { padding: 0.85rem 1rem; border-radius: 8px; }
+    .layers .durable { background: #e8f5e9; border: 1px solid #c8e6c9; }
+    .layers .ephemeral { background: #f3e5f5; border: 1px solid #e1bee7; }
+    .layers h3 { font-size: 0.85rem; margin-bottom: 0.35rem; }
+    .layers p { color: #555; line-height: 1.45; }
+    .layers code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/broadcast/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: cross-tab todo</h1>
+<p class="lead">
+  state + storage + broadcast. The list is <b>durable</b> — <code>&lt;wcs-storage&gt;</code> persists it
+  and (for free) mirrors it to every other tab. The activity banner is <b>ephemeral</b> —
+  <code>&lt;wcs-broadcast&gt;</code> carries live "who just did what" signals that are deliberately never stored.<br>
+  <b>Open this page in two tabs side by side</b>, then add and check off todos. Reload to prove the list survives and the banner does not.
+</p>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    // This tab's identity for the activity feed. Picked fresh on every page load
+    // and NEVER persisted — "who am I in this session" is runtime-only data, the
+    // textbook thing you put on broadcast and keep out of storage.
+    const IDENTITIES = [
+      { emoji: "🦊", name: "Fox" },    { emoji: "🐙", name: "Octopus" },
+      { emoji: "🦉", name: "Owl" },    { emoji: "🐢", name: "Turtle" },
+      { emoji: "🦋", name: "Butterfly" }, { emoji: "🐝", name: "Bee" },
+      { emoji: "🦁", name: "Lion" },   { emoji: "🐬", name: "Dolphin" },
+    ];
+    const me = IDENTITIES[Math.floor(Math.random() * IDENTITIES.length)];
+    // A 2-char suffix disambiguates two tabs that happen to roll the same animal —
+    // attribution ("which tab did this") is the whole point of the banner, so the
+    // label must be unique even on a collision (e.g. "Fox-7a" vs "Fox-3c").
+    // Pad before slicing: a small random can base-36-stringify to a short
+    // fraction (e.g. "0.5" → "0.i", trailing zeros dropped), and the degenerate
+    // Math.random() === 0 stringifies to "0" with no fraction at all — so a bare
+    // slice(2, 4) could yield 0–1 chars. The "000" tail covers every case
+    // (including 0, where "0"+"000" → slice(2,4) = "00"), so the suffix is always
+    // exactly 2 chars, keeping the collision label well-formed ("Fox-7a").
+    const meName = me.name + "-" + (Math.random().toString(36) + "000").slice(2, 4);
+    const makeId = () => Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+
+    export default {
+      // ---- DURABLE layer (storage) ----
+      // The canonical todo list. <wcs-storage> auto-loads it on connect, persists
+      // every change, and mirrors changes FROM other tabs via the native `storage`
+      // event. A fresh key loads as null, so reads go through `list` (the
+      // normalized getter) while writes assign `this.todos`. Always REPLACE this
+      // array (never mutate in place):
+      // the `value: todos` binding only fires on a parent assignment, and only then
+      // does the new array get persisted + broadcast to the storage event.
+      todos: [],
+      // <wcs-storage> surfaces a quota/serialize failure here (it never throws).
+      storageError: null,
+
+      // ---- EPHEMERAL layer (broadcast) ----
+      meEmoji: me.emoji,
+      meName: meName,
+      // The latest cross-tab action, shown as a transient banner. Null on reload:
+      // broadcast carries live events, not persisted state.
+      lastActivity: null,
+      // Count of live signals received from OTHER tabs — ephemeral proof the channel
+      // is firing. Resets to 0 on reload. (This tab never counts its own actions:
+      // BroadcastChannel self-excludes, so a post never comes back to its sender.)
+      liveCount: 0,
+      // <wcs-broadcast> surfaces "BroadcastChannel unavailable" here.
+      bcError: null,
+
+      // command-token: fires <wcs-broadcast>.post(payload) from state.
+      $commandTokens: ["announce"],
+      // event-token: routes <wcs-broadcast>'s `message` event into $on.liveSignal.
+      $eventTokens: ["liveSignal"],
+
+      draft: "",
+
+      // ---- derived ----
+      // Normalize the storage value (null on an empty key) into an array. Every
+      // template and mutation reads this, so a missing key renders as an empty list
+      // instead of crashing the `for:`.
+      get list() {
+        return Array.isArray(this.todos) ? this.todos : [];
+      },
+      get isEmpty() {
+        return this.list.length === 0;
+      },
+      get remaining() {
+        return this.list.filter((t) => !t.done).length;
+      },
+      get hasDone() {
+        return this.list.some((t) => t.done);
+      },
+      get whoami() {
+        return this.meEmoji + " " + this.meName;
+      },
+      get isSilent() {
+        return !this.lastActivity;
+      },
+      // Turn the last received signal into a sentence. Reads lastActivity, so it
+      // re-renders whenever a new live signal arrives.
+      get activityText() {
+        const a = this.lastActivity;
+        if (!a) return "Waiting for activity from other tabs… open this page in another tab.";
+        if (a.kind === "clear") return a.who + " cleared the completed todos";
+        const verb = a.kind === "add" ? "added"
+          : a.kind === "done" ? "completed"
+          : a.kind === "undone" ? "reopened"
+          : a.kind === "remove" ? "deleted"
+          : "changed";
+        return a.who + " " + verb + " “" + a.text + "”";
+      },
+
+      // ---- mutations ----
+      // Each one writes the DURABLE list (replace `todos` → persists + cross-tab
+      // syncs via storage) AND posts one EPHEMERAL signal (→ broadcast banner).
+      // The two paths are independent: other tabs update their list from storage,
+      // and flash the banner from broadcast. Neither path touches the other's data.
+      // preventDefault is done synchronously by the `onsubmit#prevent` modifier
+      // (the event handler runs the method on a writable-state microtask, which is
+      // too late to cancel the native submit from inside the method).
+      addTodo() {
+        const text = this.draft.trim();
+        if (!text) return;
+        this.todos = [...this.list, { id: makeId(), text, done: false }];
+        this.draft = "";
+        this.announce("add", text);
+      },
+      toggleTodo() {
+        const id = this["list.*.id"];
+        let toggledText = "";
+        let nowDone = false;
+        this.todos = this.list.map((t) => {
+          if (t.id !== id) return t;
+          toggledText = t.text;
+          nowDone = !t.done;
+          return { ...t, done: nowDone };
+        });
+        this.announce(nowDone ? "done" : "undone", toggledText);
+      },
+      removeTodo() {
+        const id = this["list.*.id"];
+        const gone = this.list.find((t) => t.id === id);
+        this.todos = this.list.filter((t) => t.id !== id);
+        this.announce("remove", gone ? gone.text : "");
+      },
+      clearDone() {
+        this.todos = this.list.filter((t) => !t.done);
+        this.announce("clear", "");
+      },
+
+      // Post an ephemeral signal to the OTHER tabs. Self-excluded by
+      // BroadcastChannel, so this tab never banners its own action.
+      announce(kind, text) {
+        this.$command.announce.emit({ who: this.whoami, kind, text });
+      },
+
+      $on: {
+        // A live signal from ANOTHER tab. Deliberately does NOT touch `todos` —
+        // the list is already kept current by <wcs-storage>'s cross-tab sync.
+        // Broadcast's only job here is the transient banner + counter.
+        liveSignal(state, event) {
+          state.lastActivity = event.detail;
+          state.liveCount = state.liveCount + 1;
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Headless I/O nodes (no UI)
+     ============================================================ -->
+<!-- DURABLE: two-way `value` binding. Auto-loads on connect, auto-saves on every
+     `todos` reassignment, and auto-syncs the value from other tabs (native
+     `storage` event). No `manual`, no trigger, no command — the binding is the
+     whole integration. -->
+<wcs-storage key="wcs-cross-tab-todos" type="local"
+  data-wcs="value: todos; error: storageError"></wcs-storage>
+
+<!-- EPHEMERAL: opens the channel on connect (name set, not manual). `command.post`
+     lets state push a payload (announce); `eventToken.message` delivers an incoming
+     post to $on.liveSignal. The spread surface is properties + inputs only, so
+     neither commands nor event tokens are covered — the pub/sub boundary is
+     wired explicitly. -->
+<wcs-broadcast name="wcs-cross-tab-todos"
+  data-wcs="error: bcError; command.post: $command.announce; eventToken.message: liveSignal"></wcs-broadcast>
+
+<!-- ============================================================
+     UI
+     ============================================================ -->
+<template data-wcs="if: bcError">
+  <p class="notice">This browser has no <code>BroadcastChannel</code> — the durable list still works across tabs, but live activity signals are off.</p>
+</template>
+<template data-wcs="if: storageError">
+  <p class="notice">Could not write to localStorage (it may be full or blocked). Changes won't persist.</p>
+</template>
+
+<section>
+  <div class="whoami">
+    <span class="badge" data-wcs="textContent: meEmoji"></span>
+    <span>This tab is <b data-wcs="textContent: meName"></b> — identity is per-session and never stored.</span>
+  </div>
+</section>
+
+<!-- The ephemeral broadcast layer -->
+<section>
+  <div class="live" data-wcs="class.silent: isSilent" role="status" aria-live="polite">
+    <span class="dot" aria-hidden="true"></span>
+    <span data-wcs="textContent: activityText"></span>
+    <!-- aria-hidden: the counter sits inside the aria-live region, so without
+         this a bare liveCount bump would re-announce the whole banner. Only
+         activityText should be spoken; the count is a visual delivery indicator. -->
+    <span class="count" aria-hidden="true">live: <span data-wcs="textContent: liveCount"></span></span>
+  </div>
+</section>
+
+<!-- The durable storage layer -->
+<section>
+  <form class="add-form" data-wcs="onsubmit#prevent: addTodo">
+    <input data-wcs="value: draft" placeholder="Add a todo and press Enter" aria-label="New todo" autofocus>
+    <button type="submit">Add</button>
+  </form>
+
+  <template data-wcs="if: isEmpty">
+    <p class="empty">No todos yet. Add one — it will appear in your other tabs instantly.</p>
+  </template>
+
+  <ul class="todo-list">
+    <template data-wcs="for: list">
+      <li class="todo-item" data-wcs="class.done: .done">
+        <!-- `checked#ro` = one-way (state → DOM) display only. Without `#ro`, a
+             `checked` binding on a checkbox is implicitly TWO-WAY: the browser's
+             `input` event would write `.done` back, and then our `change` handler
+             would flip it again — a double toggle that nets to "nothing happened".
+             So we make the reflection read-only and let `onchange: toggleTodo` be
+             the single writer (it also fires the broadcast announce). -->
+        <!-- Per-row aria-labels: bind the todo's own text so each control is
+             distinguishable to a screen reader (a shared "Toggle done" /
+             "Delete" gave every row the same label). The control's role still
+             conveys the action — checkbox = toggle, button = delete. -->
+        <input type="checkbox" data-wcs="checked#ro: .done; onchange: toggleTodo; attr.aria-label: .text">
+        <span class="text" data-wcs="textContent: .text"></span>
+        <button type="button" class="del" data-wcs="onclick: removeTodo; attr.aria-label: .text">✕</button>
+      </li>
+    </template>
+  </ul>
+
+  <div class="footer">
+    <span><b data-wcs="textContent: remaining"></b> remaining</span>
+    <template data-wcs="if: hasDone">
+      <button type="button" data-wcs="onclick: clearDone">Clear completed</button>
+    </template>
+  </div>
+</section>
+
+<!-- ============================================================
+     Why two packages?
+     ============================================================ -->
+<section>
+  <div class="layers">
+    <div class="card durable">
+      <h3>🟢 Durable — <code>&lt;wcs-storage&gt;</code></h3>
+      <p>The todo list itself. Persists across reloads and syncs across tabs on its own (the native <code>storage</code> event). This is shared state you want to <em>keep</em>.</p>
+    </div>
+    <div class="card ephemeral">
+      <h3>🟣 Ephemeral — <code>&lt;wcs-broadcast&gt;</code></h3>
+      <p>The "who just did what" banner and the session identity. Live signals you explicitly <em>don't</em> persist — gone on reload, and meaningless to store.</p>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
