@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: permission banner</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    section { margin-bottom: 1.25rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    button { padding: 0.5rem 1.1rem; background: #5b21b6; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #4c1d95; }
+    button:disabled { background: #c4b5fd; cursor: not-allowed; }
+    .banner { padding: 0.85rem 1.1rem; border-radius: 8px; font-size: 0.9rem; }
+    .banner.prompt { background: #fef9c3; border: 1px solid #fde047; color: #854d0e; }
+    .banner.denied { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+    .banner.unsupported { background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; }
+    .pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .pill.granted { background: #dcfce7; color: #166534; }
+    .pill.prompt { background: #fef9c3; color: #854d0e; }
+    .pill.denied { background: #fee2e2; color: #991b1b; }
+    .pill.unsupported { background: #e2e8f0; color: #475569; }
+    .coords { font-size: 1.1rem; margin-top: 0.6rem; font-variant-numeric: tabular-nums; }
+    .status { font-size: 0.8rem; color: #888; margin-top: 0.5rem; }
+    code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/geolocation/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: permission banner</h1>
+<p class="lead">
+  Two responsibilities, two elements. <code>&lt;wcs-permission&gt;</code> <b>watches</b> the
+  geolocation grant as pure state — it never calls an API, never prompts. <code>&lt;wcs-geo&gt;</code>
+  is the one that <b>asks</b> for a fix (on click, via command-token). The banner below is shown
+  purely from the watched <code>state</code>, with no <code>navigator.permissions</code> wiring in the UI.
+</p>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      // command-token: fires <wcs-geo>.getCurrentPosition() from state.
+      $commandTokens: ["locate"],
+
+      // --- bound back from <wcs-permission> (the watcher) ---
+      permState: "prompt",   // "prompt" | "granted" | "denied" | "unsupported"
+      granted: false,
+      prompt: false,
+      denied: false,
+      unsupported: false,
+
+      // --- bound back from <wcs-geo> (the acquirer) ---
+      lat: null,
+      lng: null,
+      geoLoading: false,
+
+      ask() {
+        // Asking for a fix is the feature node's job, not the permission node's.
+        this.$command.locate.emit();
+      },
+
+      // --- derived UI, computed from the watched permission state ---
+      get bannerClass() {
+        return this.permState;   // matches .banner.{prompt,denied,unsupported}
+      },
+      get bannerText() {
+        if (this.denied) return "Location is blocked. Enable it in your browser's site settings to continue.";
+        if (this.unsupported) return "The Permissions API is not available in this browser.";
+        return "This demo would like your location. Click “Locate me” to allow.";
+      },
+      get coordsText() {
+        return this.lat == null ? "—" : `${this.lat.toFixed(4)}, ${this.lng.toFixed(4)}`;
+      },
+      get statusText() {
+        if (this.geoLoading) return "Acquiring position…";
+        if (this.lat != null) return "Position acquired.";
+        return "Idle.";
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- The watcher: permission state → state. Read-only, no commands. -->
+<wcs-permission name="geolocation"
+  data-wcs="state: permState; granted: granted; prompt: prompt; denied: denied; unsupported: unsupported"></wcs-permission>
+
+<!-- The acquirer: getCurrentPosition fired from state via command-token, outputs bound back. -->
+<wcs-geo manual
+  data-wcs="command.getCurrentPosition: $command.locate; latitude: lat; longitude: lng; loading: geoLoading"></wcs-geo>
+
+<!-- Banner: shown only while NOT granted. `hidden@granted` — one boolean, straight from the watcher. -->
+<section data-wcs="hidden: granted">
+  <div class="banner" data-wcs="class.prompt: prompt; class.denied: denied; class.unsupported: unsupported">
+    <span data-wcs="textContent: bannerText"></span>
+  </div>
+</section>
+
+<section>
+  <div>
+    Permission: <span class="pill"
+      data-wcs="textContent: permState; class.granted: granted; class.prompt: prompt; class.denied: denied; class.unsupported: unsupported"></span>
+  </div>
+  <p style="margin: 0.85rem 0;">
+    <button data-wcs="onclick: ask; disabled: denied">📍 Locate me</button>
+  </p>
+  <div class="coords" data-wcs="textContent: coordsText"></div>
+  <div class="status" data-wcs="textContent: statusText"></div>
+</section>
+
+</body>
+</html>

@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Eighteen independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Twenty independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -269,6 +269,8 @@ const html = await renderToString(`
 - [`@wcstack/intersection`](packages/intersection/) — Declarative IntersectionObserver with `<wcs-intersect>` for lazy-loading, infinite scroll, and scrollspy as bindable visibility state.
 - [`@wcstack/wakelock`](packages/wakelock/) — Declarative Screen Wake Lock with `<wcs-wakelock>` that keeps the screen awake while a bound boolean is true, re-acquiring across visibility changes.
 - [`@wcstack/resize`](packages/resize/) — Declarative ResizeObserver with `<wcs-resize>` for element size, container-width probing, and size-dependent logic as bindable state.
+- [`@wcstack/speech`](packages/speech/) — Declarative speech with `<wcs-speak>` (text-to-speech as a command-token) and `<wcs-listen>` (recognition results as event-token state).
+- [`@wcstack/permission`](packages/permission/) — Declarative Permissions API monitor with `<wcs-permission>` exposing live `granted`/`denied`/`prompt` state. Read-only watcher (no commands); pairs with feature nodes like `<wcs-geo>`.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -326,6 +328,8 @@ wcstack/
 │   ├── intersection/  # @wcstack/intersection
 │   ├── wakelock/      # @wcstack/wakelock
 │   ├── resize/        # @wcstack/resize
+│   ├── speech/        # @wcstack/speech
+│   ├── permission/    # @wcstack/permission
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
