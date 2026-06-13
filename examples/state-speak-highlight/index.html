@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: speak + word highlight</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    section { margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    textarea { width: 100%; min-height: 5rem; padding: 0.75rem; font-size: 1rem; border: 2px solid #ddd; border-radius: 8px; font-family: inherit; resize: vertical; }
+    textarea:focus { outline: none; border-color: #5b21b6; }
+    .controls { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.85rem; flex-wrap: wrap; }
+    button { padding: 0.5rem 1.1rem; background: #5b21b6; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #4c1d95; }
+    button.ghost { background: white; color: #5b21b6; border: 1px solid #ddd; }
+    .stage { font-size: 1.4rem; line-height: 2; padding: 1rem 1.25rem; background: #faf8ff; border-radius: 8px; min-height: 4rem; }
+    .stage .hl { background: #fde68a; border-radius: 4px; padding: 0 2px; box-shadow: 0 0 0 2px #fde68a; }
+    .status { font-size: 0.8rem; color: #888; margin-top: 0.5rem; }
+    code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/speech/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: speak + word highlight</h1>
+<p class="lead">
+  <code>&lt;wcs-speak&gt;</code> turns text into speech as a <b>state transition</b>. Its
+  <code>charIndex</code> / <code>spokenWord</code> outputs update as each word is spoken — here they
+  drive a karaoke-style highlight, computed purely in state. No <code>speechSynthesis</code> wiring in the UI layer.
+</p>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      // command-token: fires <wcs-speak>.speak(text) / .cancel() from state.
+      $commandTokens: ["say", "stopSpeak"],
+
+      text: "The quick brown fox jumps over the lazy dog.",
+
+      // Outputs bound back from <wcs-speak>.
+      pos: null,        // charIndex of the word currently being spoken
+      word: null,       // the word currently being spoken
+      speaking: false,
+      unsupported: false,
+
+      speak() {
+        this.$command.say.emit(this.text);
+      },
+      stop() {
+        this.$command.stopSpeak.emit();
+      },
+
+      // --- karaoke slicing, derived from pos/word ---
+      get before() {
+        return this.pos == null ? this.text : this.text.slice(0, this.pos);
+      },
+      get current() {
+        return this.pos == null ? "" : (this.word ?? "");
+      },
+      get after() {
+        return this.pos == null ? "" : this.text.slice(this.pos + (this.word?.length ?? 0));
+      },
+      get statusText() {
+        if (this.unsupported) return "SpeechSynthesis is not available in this browser.";
+        return this.speaking ? "Speaking…" : "Idle.";
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- The async primitive: text → speech, with word-boundary outputs bound back to state. -->
+<wcs-speak
+  data-wcs="command.speak: $command.say; command.cancel: $command.stopSpeak; charIndex: pos; spokenWord: word; speaking: speaking; unsupported: unsupported"></wcs-speak>
+
+<section>
+  <textarea data-wcs="value: text"></textarea>
+  <div class="controls">
+    <button data-wcs="onclick: speak">▶ Speak</button>
+    <button class="ghost" data-wcs="onclick: stop">■ Stop</button>
+  </div>
+  <div class="status" data-wcs="textContent: statusText"></div>
+</section>
+
+<section>
+  <div class="stage">
+    <span data-wcs="textContent: before"></span><span class="hl" data-wcs="textContent: current"></span><span data-wcs="textContent: after"></span>
+  </div>
+</section>
+
+</body>
+</html>

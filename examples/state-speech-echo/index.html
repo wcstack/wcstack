@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: speech echo (listen ⇄ speak)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    section { margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    .controls { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    button { padding: 0.55rem 1.1rem; background: #0d9488; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #0f766e; }
+    button.ghost { background: white; color: #0d9488; border: 1px solid #ddd; }
+    button.rec { background: #dc2626; }
+    button.rec:hover { background: #b91c1c; }
+    .mic { display: inline-flex; align-items: center; gap: 0.5rem; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; }
+    .dot.on { background: #dc2626; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .transcript { font-size: 1.1rem; line-height: 1.6; min-height: 3rem; padding: 0.85rem 1rem; background: #f0fdfa; border-radius: 8px; }
+    .interim { color: #94a3b8; font-style: italic; }
+    .meta { font-size: 0.8rem; color: #888; margin-top: 0.5rem; }
+    .notice { background: #fff3e0; color: #e65100; padding: 0.6rem 0.85rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem; }
+    code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/speech/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: speech echo</h1>
+<p class="lead">
+  The two halves of <code>@wcstack/speech</code> in one loop. <code>&lt;wcs-listen&gt;</code> recognizes
+  your voice into state (<b>event-token</b>); <code>&lt;wcs-speak&gt;</code> reads it back on demand
+  (<b>command-token</b>). The echo-loop guard lives in state — <code>echoIt()</code> refuses to speak
+  while <code>listening</code> — so the synthesized audio is never re-recognized.
+  <br><b>Chrome required</b> (SpeechRecognition is vendor-prefixed). Allow the microphone when prompted.
+</p>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      // event-token side is implicit: <wcs-listen> writes finalTranscript → transcript.
+      // command-token: fires <wcs-speak>.speak(transcript) on demand.
+      $commandTokens: ["echo"],
+
+      transcript: "",
+      interim: "",
+      listening: false,
+      permission: "prompt",
+      listenUnsupported: false,
+
+      echoIt() {
+        // Echo-loop guard: refuse to speak while the mic is open, so the
+        // synthesized audio is never picked up and re-recognized. This lives
+        // here (the command-token path) because <wcs-speak>.speak() is imperative
+        // and does not honor `manual` — only the reactive `say` path does.
+        if (this.listening) return;
+        if (this.transcript.trim()) this.$command.echo.emit(this.transcript);
+      },
+      clearIt() {
+        this.transcript = "";
+        this.interim = "";
+      },
+
+      get micLabel() {
+        return this.listening ? "■ Stop" : "🎤 Start listening";
+      },
+      get hasUnsupported() {
+        return this.listenUnsupported;
+      },
+      get permissionNote() {
+        if (this.permission === "denied") return "Microphone permission denied — enable it in site settings.";
+        return "";
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- STT: voice → state. manual so it only starts on the toggle button. -->
+<wcs-listen id="mic" manual interim lang="en-US"
+  data-wcs="finalTranscript: transcript; interimTranscript: interim; listening: listening; permission: permission; unsupported: listenUnsupported"></wcs-listen>
+
+<!-- TTS: state → voice, on demand via the command-token (imperative speak()).
+     The echo-loop guard is in echoIt(), not here: speak() does not honor `manual`
+     (only the reactive `say` path does), so gating must happen before .emit(). -->
+<wcs-speak data-wcs="command.speak: $command.echo"></wcs-speak>
+
+<p class="notice" data-wcs="textContent: permissionNote"></p>
+
+<section>
+  <div class="controls">
+    <!-- DOM autoTrigger: toggles <wcs-listen>.start()/stop() -->
+    <button class="rec" data-listentarget="mic" data-wcs="textContent: micLabel"></button>
+    <button data-wcs="onclick: echoIt">🔊 Echo it back</button>
+    <button class="ghost" data-wcs="onclick: clearIt">Clear</button>
+  </div>
+  <div class="mic meta">
+    <span class="dot" data-wcs="class.on: listening"></span>
+    <span data-wcs="textContent: permission"></span>
+  </div>
+</section>
+
+<section>
+  <div class="transcript">
+    <span data-wcs="textContent: transcript"></span>
+    <span class="interim" data-wcs="textContent: interim"></span>
+  </div>
+</section>
+
+</body>
+</html>
