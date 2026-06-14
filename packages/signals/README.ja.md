@@ -188,6 +188,44 @@ bound.dispose();                // 全 property リスナを detach
 
 `descriptor` を省略すると `target.constructor.wcBindable` から読みます。`set` は未宣言の input を、`command` は未宣言(または非関数)の command を拒否します。`dispose` 後はアダプタが**不活性(inert)**になります: property signal の更新が止まり、`set`/`command` は例外を投げます(use-after-dispose)— 未宣言名の拒否と一貫した挙動です。`dispose` は冪等です。
 
+## JSX を使う(opt-in)
+
+`h` は古典的な JSX ファクトリの形なので、JSX は**使えるが同梱しない** — オプトインは利用者の選択であり、buildless 経路を抜けることを意味します(JSX はトランスパイル必須)。パッケージが出荷するのは土台(`h` + `Fragment`)のみで、`.tsx` も `jsx-runtime` 型も含みません。
+
+最小設定 — 自分の `tsconfig.json` で**classic** runtime を `h`/`Fragment` に向けます:
+
+```jsonc
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
+  }
+}
+```
+
+各 `.tsx` ファイルで両方を import し(ファクトリがスコープに無いといけない)、JSX を書きます:
+
+```tsx
+import { h, Fragment, signal, render } from "@wcstack/signals/dom";
+
+const count = signal(0);
+const view = (
+  <button onClick={() => count.set(count.peek() + 1)}>
+    count: {() => count.get()}
+  </button>
+);
+render(view, document.body);
+```
+
+引き継がれるもの / 引き継がれ**ない**ものに注意:
+
+- **リアクティブ部分は依然として thunk/signal。** `{() => count.get()}`(または signal を渡す)が対象を絞った effect を配線します — 素の `{count.get()}` は一度読むだけで更新されません。JSX は構文を変えるだけで、リアクティビティモデルは変えません。
+- **classic runtime のみ。** automatic runtime(`"jsx": "react-jsx"` + `jsxImportSource`)は**非対応**です — `./jsx-runtime` の export は存在しません(将来用に構想された未出荷の seam)。上記2つのファクトリオプション付きの `"jsx": "react"` を使ってください。
+- **大半の JSX セマンティクスは contract に無い。** `key`・`ref`・`context`・controlled input は**未実装**です。特に keyed list 再利用は無い(下の list 制限を参照)ので、`{items.map(...)}` は JSX 無しと同様に丸ごと再生成します。
+
+esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュートを含む手順書は [`docs/signals-jsx-setup.md`](../../docs/signals-jsx-setup.md) にあります。
+
 ## 注意・制限(PoC)
 
 - **buildless の単一エントリ規則。** buildless ページ(import map)では**すべて**を 1 つのエントリから import してください — `@wcstack/signals/dom` はコアを再エクスポートします。`@wcstack/signals` と `@wcstack/signals/dom` の**両方**のバンドルを読み込むと、リアクティブコアが**2 つ**生成され(追跡コンテキスト等のモジュールグローバルはバンドル単位)、境界をまたいだリアクティビティが静かに壊れます。バンドラ利用者はモジュールグラフで重複排除されるためどちらのエントリでも構いません。

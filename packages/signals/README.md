@@ -188,10 +188,48 @@ bound.dispose();                // detach all property listeners
 
 If `descriptor` is omitted, it's read from `target.constructor.wcBindable`. `set` rejects an undeclared input; `command` rejects an undeclared (or non-function) command. After `dispose`, the adapter is **inert**: the property signals stop updating and `set`/`command` throw (use-after-dispose), consistent with their undeclared-name rejection. `dispose` is idempotent.
 
+## Using JSX (opt-in)
+
+`h` is the classic JSX factory shape, so JSX is **available but not shipped** — opting in is your choice and means leaving the buildless path (JSX must be transpiled). The package ships only the substrate (`h` + `Fragment`); there is no `.tsx` and no `jsx-runtime` types.
+
+Minimal setup — point the **classic** runtime at `h`/`Fragment` in your own `tsconfig.json`:
+
+```jsonc
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
+  }
+}
+```
+
+Then import both into every `.tsx` file (the factory must be in scope) and write JSX:
+
+```tsx
+import { h, Fragment, signal, render } from "@wcstack/signals/dom";
+
+const count = signal(0);
+const view = (
+  <button onClick={() => count.set(count.peek() + 1)}>
+    count: {() => count.get()}
+  </button>
+);
+render(view, document.body);
+```
+
+Note what carries over and what does **not**:
+
+- **Reactive bits are still thunks/signals.** `{() => count.get()}` (or passing a signal) is what wires the targeted effect — a bare `{count.get()}` reads once and never updates. JSX changes the syntax, not the reactivity model.
+- **The classic runtime only.** Automatic runtime (`"jsx": "react-jsx"` + `jsxImportSource`) is **not** supported — there is no `./jsx-runtime` export (it's a planned-but-unshipped seam). Use `"jsx": "react"` with the two factory options above.
+- **Most JSX semantics are not in the contract.** `key`, `ref`, `context`, and controlled inputs are **not** implemented. In particular there is no keyed list reuse (see the list limitation below), so `{items.map(...)}` rebuilds wholesale just as it does without JSX.
+
+A step-by-step guide (esbuild / tsc / Vite setups, a verifying `.tsx` example, troubleshooting) is in [`docs/signals-jsx-setup.md`](../../docs/signals-jsx-setup.md).
+
 ## Notes & limitations (PoC)
 
 - **Buildless single-entry rule.** In a buildless page (import map), import **everything** from one entry — `@wcstack/signals/dom` re-exports the core. Loading **both** the `@wcstack/signals` and `@wcstack/signals/dom` bundles gives you **two** reactive cores (module globals like the tracking context are per-bundle) and silently breaks reactivity across the boundary. Bundler users dedupe via the module graph and may use either entry.
-- **JSX is shaped but not shipped.** `h` is the classic JSX factory; a consumer who wants JSX sets `jsxFactory: "h"` + `jsxFragmentFactory: "Fragment"` in their own tsconfig (opting into a build step). The buildless path is calling `h` directly.
+- **JSX is shaped but not shipped.** `h` is the classic JSX factory; the buildless path is calling `h` directly. Wiring JSX is opt-in (and leaves buildless) — see [Using JSX](#using-jsx-opt-in) and [`docs/signals-jsx-setup.md`](../../docs/signals-jsx-setup.md).
 - **No backpressure (stream).** The fold result *is* the buffer — demand does not flow back to the producer. Bound the fold (latest / count / window) for infinite streams; unbounded accumulation is a footgun.
 - **Cooperative cancellation.** A `ReadableStream` is force-unwound on abort via `reader.cancel()`. A plain async iterable that ignores its `AbortSignal` and parks (stalls before the next `yield`) cannot be force-unwound — honor the signal in your `source`.
 - **`setProp` has no full attribute↔property type table.** `null`/`undefined` on a DOM property are normalized to `""` (so a string prop like `id`/`src` clears, not `"null"`), but `false` is left as-is — correct for boolean props (`disabled = false`), so a reactive `false` on a *string* prop still lands as `"false"`. Pass `""` or guard in the thunk for that case; `class` is special-cased (`false` → `""`).
