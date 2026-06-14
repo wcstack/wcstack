@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: chat notifications</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    section { margin-bottom: 1.25rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    button { padding: 0.5rem 1.1rem; background: #5b21b6; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #4c1d95; }
+    button:disabled { background: #c4b5fd; cursor: not-allowed; }
+    .row { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+    .banner { padding: 0.85rem 1.1rem; border-radius: 8px; font-size: 0.9rem; }
+    .banner.prompt { background: #fef9c3; border: 1px solid #fde047; color: #854d0e; }
+    .banner.denied { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+    .banner.unsupported { background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; }
+    .pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .pill.granted { background: #dcfce7; color: #166534; }
+    .pill.prompt { background: #fef9c3; color: #854d0e; }
+    .pill.denied { background: #fee2e2; color: #991b1b; }
+    .pill.unsupported { background: #e2e8f0; color: #475569; }
+    .status { font-size: 0.85rem; color: #555; margin-top: 0.6rem; }
+    code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/notification/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: chat notifications</h1>
+<p class="lead">
+  One tag, both directions. <code>&lt;wcs-notify&gt;</code> <b>shows</b> a desktop notification when state
+  fires the <code>notify</code> <b>command-token</b>, and reports the <b>click</b> back through an
+  <b>event-token</b> — the first @wcstack node where show (state→element) and click (element→state) live
+  together. A <code>&lt;wcs-permission&gt;</code> watches the grant for the banner.
+</p>
+
+<wcs-state>
+  <script type="module">
+    let seq = 0;
+    export default {
+      // command-tokens drive the element from state.
+      $commandTokens: ["request", "notify"],
+      // event-token: the element's click flows back into state.
+      $eventTokens: ["opened"],
+
+      // bound back from <wcs-permission> (the watcher).
+      permState: "prompt",
+      granted: false,
+      prompt: false,
+      denied: false,
+      unsupported: false,
+
+      lastOpened: "—",
+
+      ask() {
+        // Self-contained: <wcs-notify> owns requestPermission via command-token.
+        this.$command.request.emit();
+      },
+
+      send() {
+        // Imperative command: fires every call, even with the same text. The
+        // positional args pass straight through to notify(title, options).
+        const id = ++seq;
+        this.$command.notify.emit(`New message #${id}`, {
+          body: `Tap to open room ${id}.`,
+          tag: `chat-${id}`,
+          data: { room: id },
+        });
+      },
+
+      $on: {
+        // event-token receiver: (state, event, ...listIndexes). The click detail
+        // carries { tag, data, action } — read the room out of data.
+        opened: (state, event) => {
+          const room = event.detail?.data?.room;
+          state.lastOpened = room == null ? "(unknown)" : `room ${room}`;
+        },
+      },
+
+      get bannerClass() { return this.permState; },
+      get bannerText() {
+        if (this.denied) return "Notifications are blocked. Enable them in your browser's site settings.";
+        if (this.unsupported) return "The Notifications API is not available in this browser.";
+        return "Allow notifications to see new-message alerts.";
+      },
+      get statusText() {
+        return `Last opened: ${this.lastOpened}`;
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- The watcher: notifications permission → state. Read-only, no commands. -->
+<wcs-permission name="notifications"
+  data-wcs="state: permState; granted: granted; prompt: prompt; denied: denied; unsupported: unsupported"></wcs-permission>
+
+<!-- The notifier: show via command-token, click back via event-token. -->
+<wcs-notify
+  data-wcs="command.request: $command.request; command.notify: $command.notify; eventToken.clicked: opened"></wcs-notify>
+
+<!-- Banner: shown only while NOT granted. `hidden@granted` — straight from the watcher. -->
+<section data-wcs="hidden: granted">
+  <div class="banner" data-wcs="class.prompt: prompt; class.denied: denied; class.unsupported: unsupported">
+    <span data-wcs="textContent: bannerText"></span>
+  </div>
+</section>
+
+<section>
+  <div>
+    Permission: <span class="pill"
+      data-wcs="textContent: permState; class.granted: granted; class.prompt: prompt; class.denied: denied; class.unsupported: unsupported"></span>
+  </div>
+  <p class="row" style="margin-top: 0.85rem;">
+    <button data-wcs="onclick: ask; disabled: granted">🔔 Allow notifications</button>
+    <button data-wcs="onclick: send; disabled: denied">💬 Simulate new message</button>
+  </p>
+  <div class="status" data-wcs="textContent: statusText"></div>
+</section>
+
+</body>
+</html>

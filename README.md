@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Twenty independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Twenty-one independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -271,6 +271,7 @@ const html = await renderToString(`
 - [`@wcstack/resize`](packages/resize/) — Declarative ResizeObserver with `<wcs-resize>` for element size, container-width probing, and size-dependent logic as bindable state.
 - [`@wcstack/speech`](packages/speech/) — Declarative speech with `<wcs-speak>` (text-to-speech as a command-token) and `<wcs-listen>` (recognition results as event-token state).
 - [`@wcstack/permission`](packages/permission/) — Declarative Permissions API monitor with `<wcs-permission>` exposing live `granted`/`denied`/`prompt` state. Read-only watcher (no commands); pairs with feature nodes like `<wcs-geo>`.
+- [`@wcstack/notification`](packages/notification/) — Declarative desktop notifications with `<wcs-notify>`: show via command-token (`notify`), click back via event-token (`clicked`) — both directions in one tag. Self-contained permission, Service Worker fallback for mobile.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -330,6 +331,7 @@ wcstack/
 │   ├── resize/        # @wcstack/resize
 │   ├── speech/        # @wcstack/speech
 │   ├── permission/    # @wcstack/permission
+│   ├── notification/  # @wcstack/notification
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
