@@ -159,9 +159,36 @@ describe("resource", () => {
 
   it("同期値を返すソースも扱える", async () => {
     const r = resource(() => "sync-value");
-    await Promise.resolve();
+    await flushAsync();
     expect(r.value.peek()).toBe("sync-value");
     expect(r.loading.peek()).toBe(false);
+  });
+
+  it("source が同期 throw しても loading が固着せず error に正規化される", async () => {
+    const r = resource(() => {
+      throw new Error("sync-boom");
+    });
+    await flushAsync();
+    expect(r.loading.peek()).toBe(false); // 固着しない
+    expect((r.error.peek() as Error).message).toBe("sync-boom");
+  });
+
+  it("二重 teardown（owner dispose と手動 dispose の重複）は無害", () => {
+    let aborts = 0;
+    let dispose!: () => void;
+    let res!: ReturnType<typeof resource<string, void>>;
+    createRoot((d) => {
+      dispose = d;
+      res = resource((_a, sig: AbortSignal) => {
+        sig.addEventListener("abort", () => aborts++);
+        return deferred<string>().promise;
+      });
+    });
+    res.dispose(); // 手動
+    dispose(); // owner 側（effect dispose + onCleanup dispose）
+    res.dispose(); // 再度手動
+    // abort は冪等。複数経路で呼ばれても in-flight 1 件分の abort で破綻しない。
+    expect(aborts).toBe(1);
   });
 
   it("createRoot 配下で生成すると dispose 時に abort される（onCleanup 連動）", () => {

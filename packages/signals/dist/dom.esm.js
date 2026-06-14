@@ -62,19 +62,59 @@ function schedule() {
     flushScheduled = true;
     queueMicrotask(flushEffects);
 }
+// Upper bound on drain iterations. A well-behaved graph settles in a handful of
+// passes; exceeding this means an effect keeps dirtying its own dependency with a
+// changing value (a reactive cycle), which would otherwise hang the page. We bail
+// loudly instead of spinning forever (docs §5-3).
+const MAX_FLUSH_ITERATIONS = 1000;
 function flushEffects() {
     flushScheduled = false;
     // Drain in a loop: an effect may, while running, dirty a signal that queues
     // further effects. Coalescing collapses multiple writes in one tick into a
     // single run per effect (docs §5-3).
+    let iterations = 0;
     while (pendingEffects.size > 0) {
+        if (++iterations > MAX_FLUSH_ITERATIONS) {
+            // Drop the runaway queue so a single bad effect cannot wedge every later
+            // flush, then surface the bug.
+            pendingEffects.clear();
+            throw new Error("flushEffects: exceeded " +
+                MAX_FLUSH_ITERATIONS +
+                " iterations — likely a reactive cycle (an effect writes a signal it depends on with an ever-changing value).");
+        }
         const batch = [...pendingEffects];
         pendingEffects.clear();
         for (const node of batch) {
             if (!node._disposed) {
-                updateIfNecessary(node);
+                // Isolate each effect: a throw from one effect's body must NOT abort the
+                // batch and silently strand its already-dequeued siblings. We hand the
+                // error to reportError (which does not re-throw, so the drain continues)
+                // and move on. updateIfNecessary guarantees the node is settled to CLEAN
+                // even on throw, so it is not left stuck DIRTY.
+                try {
+                    updateIfNecessary(node);
+                }
+                catch (err) {
+                    reportError(err);
+                }
             }
         }
+    }
+}
+// Surface an effect/computed error without breaking the flush. Called
+// synchronously from the drain loop: it delegates to the platform `reportError`
+// (dispatches a window "error" event / goes to the console without crashing) or
+// falls back to console.error. Crucially it does NOT re-throw — re-throwing would
+// abort the drain — and it does not swallow the error (that would hide the bug).
+// Re-entrancy is safe: the only re-scheduling path (markStale) defers to a
+// microtask, so reporting here cannot recurse into the running flush.
+function reportError(err) {
+    const r = globalThis.reportError;
+    if (typeof r === "function") {
+        r(err);
+    }
+    else {
+        console.error(err);
     }
 }
 /**
@@ -83,7 +123,10 @@ function flushEffects() {
  * settle on their own microtask.
  */
 function flushSync() {
-    flushScheduled = false;
+    // Do NOT touch flushScheduled here: a microtask may already be queued. Just
+    // drain. flushEffects resets the flag itself; if a queued microtask still fires
+    // afterwards it finds an empty queue and is a no-op. Touching the flag from here
+    // would let a second flushSync race the queued microtask into a double drain.
     flushEffects();
 }
 // --- marking & validation ---------------------------------------------------
@@ -109,6 +152,9 @@ function updateIfNecessary(node) {
     if (node._state === CHECK) {
         // A transitive source might have changed. Refresh computed sources; one of
         // them may set us DIRTY (via the equality check in its _update).
+        // NOTE: this scans ALL sources each validation (O(sources)); the standard
+        // pull-based scheme (Reactively/Solid) does the same. Intentional for the PoC —
+        // a future optimization could track per-source dirtiness to scan less.
         for (const source of node._sources) {
             if (source instanceof ComputedNode) {
                 updateIfNecessary(source);
@@ -118,10 +164,18 @@ function updateIfNecessary(node) {
             }
         }
     }
-    if (node._state === DIRTY) {
-        node._update();
+    // Settle to CLEAN in a finally: if _update() (a user fn / equals) throws, the
+    // node must NOT be left stuck DIRTY, otherwise every later peek/get would
+    // re-run the throwing fn forever. The error propagates to the caller (a flush
+    // isolates it per-effect; a direct get/peek surfaces it to that caller).
+    try {
+        if (node._state === DIRTY) {
+            node._update();
+        }
     }
-    node._state = CLEAN;
+    finally {
+        node._state = CLEAN;
+    }
 }
 // --- signal -----------------------------------------------------------------
 class SignalNode {
@@ -144,9 +198,10 @@ class SignalNode {
             return;
         }
         this._value = next;
-        // Copy: markStale schedules effects but does not mutate this set; the copy is
-        // defensive against future re-tracking during synchronous effect runs.
-        for (const observer of [...this._observers]) {
+        // No copy needed: markStale only schedules effects (on a microtask) and marks
+        // observers — it never runs user code synchronously, so this set is not
+        // mutated during the walk. Iterating it directly avoids a per-write allocation.
+        for (const observer of this._observers) {
             markStale(observer, DIRTY);
         }
     }
@@ -160,10 +215,17 @@ class ComputedNode {
     _fn;
     _value = undefined;
     _initialized = false;
+    _running = false;
     _equals;
     constructor(fn, equals) {
         this._fn = fn;
         this._equals = equals;
+        // Be owned by the enclosing scope (a parent effect or createRoot). When that
+        // scope tears down, untrack this computed so it is removed from its sources'
+        // observer sets — otherwise a computed created inside an effect that re-runs
+        // would leak a stale ComputedNode into each source on every run (docs §8 (d)).
+        // Lazy + no children: teardown is just untrack, no cleanup/owned to dispose.
+        registerDisposer(() => untrack(this));
     }
     get() {
         track(this);
@@ -175,14 +237,23 @@ class ComputedNode {
         return this._value;
     }
     _update() {
+        // Cycle guard: if _fn (directly or transitively) reads this computed, get()
+        // would recurse into _update and blow the stack with an opaque RangeError.
+        // Detect the self-reference and throw a clear error instead. (The effect-level
+        // MAX_FLUSH_ITERATIONS guard does not cover this synchronous self-recursion.)
+        if (this._running) {
+            throw new Error("computed: circular dependency — the computed reads itself.");
+        }
         const previous = this._value;
         untrack(this);
         const prevObserver = currentObserver;
         currentObserver = this;
+        this._running = true;
         try {
             this._value = this._fn();
         }
         finally {
+            this._running = false;
             currentObserver = prevObserver;
         }
         // Equality short-circuit: only propagate when the value actually changed.
@@ -196,6 +267,16 @@ class ComputedNode {
         else if (!this._equals(previous, this._value)) {
             for (const observer of this._observers) {
                 observer._state = DIRTY;
+                // Normally this computed is refreshed from inside flushEffects while
+                // validating an already-scheduled effect, so the observer is in the queue
+                // already. But if it is refreshed out-of-band (e.g. a `peek()` outside a
+                // flush) an effect observer could otherwise be promoted to DIRTY without
+                // being queued, and never re-run. Re-schedule defensively to keep the
+                // "DIRTY effect always runs" invariant regardless of refresh path.
+                if (observer._isEffect && !observer._disposed) {
+                    pendingEffects.add(observer);
+                    schedule();
+                }
             }
         }
     }
@@ -315,6 +396,14 @@ function resource(source, options = {}) {
     const runner = effect(() => {
         // Reading args() inside the effect is what subscribes us to its signals, so a
         // change re-runs this body — that IS the restart trigger.
+        //
+        // NOTE (effect-internal writes): this effect writes loading/error/value, which
+        // are signals OTHER effects may observe. A write that actually CHANGES the value
+        // marks those observers stale and queues them on the same flush; the drain loop
+        // then runs them in the same tick. (A same-value write — e.g. error.set(null)
+        // when error is already null — is a no-op via the equality guard and notifies
+        // nothing.) We never read these signals inside THIS effect, so we don't dirty
+        // our own dependency — no cycle. (docs §8 (a)).
         const a = (options.args ? options.args() : undefined);
         // Abort the previous request before starting the next (switchMap).
         controller?.abort();
@@ -322,7 +411,22 @@ function resource(source, options = {}) {
         controller = ac;
         loading.set(true);
         error.set(null);
-        Promise.resolve(source(a, ac.signal)).then((resolved) => {
+        // Call the source SYNCHRONOUSLY (so it receives ac.signal immediately and can
+        // wire its abort listener before any teardown), but guard it with try/catch so
+        // a synchronous throw is normalized into the same error/loading state as a
+        // rejected promise. Without the guard a sync throw would escape the effect body
+        // (and, on the initial run, the resource() call itself), leaving loading stuck
+        // true and error unset.
+        let produced;
+        try {
+            produced = source(a, ac.signal);
+        }
+        catch (err) {
+            error.set(err);
+            loading.set(false);
+            return;
+        }
+        Promise.resolve(produced).then((resolved) => {
             // Drop the result if this request was superseded/disposed: committing it
             // would let a stale response overwrite the newer request's state.
             if (ac.signal.aborted) {
@@ -378,6 +482,11 @@ function streamResource(source, options = {}) {
     const error = signal(null);
     let controller = null;
     const runner = effect(() => {
+        // NOTE (effect-internal writes): like `resource`, this effect writes
+        // value/status/error — signals other effects may observe. Those observers are
+        // queued on the same flush and run in the same tick. This effect never reads
+        // those signals, so it does not dirty its own dependency (no cycle). The async
+        // `consume` writes them later from microtasks/timers, outside this flush.
         const a = (options.args ? options.args() : undefined);
         controller?.abort();
         const ac = new AbortController();
@@ -395,10 +504,13 @@ function streamResource(source, options = {}) {
     onCleanup(dispose);
     return { value, status, error, dispose };
 }
-async function consume(source, args, signal, fold, value, status, error) {
+async function consume(source, args, signal, fold, 
+// Use the public WriteSignal type instead of re-declaring an inline subset, so
+// these stay in lockstep with the signal API (no structural drift).
+value, status, error) {
     try {
         const produced = await source(args, signal);
-        for await (const chunk of iterate(produced)) {
+        for await (const chunk of iterate(produced, signal)) {
             if (signal.aborted) {
                 return; // stale chunk from a superseded/disposed run — drop it
             }
@@ -417,14 +529,31 @@ async function consume(source, args, signal, fold, value, status, error) {
         status.set("error");
     }
 }
-function iterate(produced) {
+function iterate(produced, signal) {
     if (typeof produced[Symbol.asyncIterator] === "function") {
         return produced;
     }
-    return readableToAsyncIterable(produced);
+    // Not async-iterable: must be a ReadableStream (read via getReader). Validate so
+    // a wrong source value yields a clear error instead of an opaque "getReader is
+    // not a function" from inside the generator.
+    if (typeof produced?.getReader !== "function") {
+        throw new TypeError("streamResource: source must return an AsyncIterable or a ReadableStream (got neither).");
+    }
+    return readableToAsyncIterable(produced, signal);
 }
-async function* readableToAsyncIterable(stream) {
+async function* readableToAsyncIterable(stream, signal) {
     const reader = stream.getReader();
+    // A ReadableStream read() does NOT observe an AbortSignal on its own. Without
+    // this, a switchMap restart / dispose leaves the previous reader parked in a
+    // pending read() forever, leaking the underlying source. Cancelling on abort
+    // both releases the source AND settles the pending read() so the for-await
+    // unwinds and the finally below can release the lock. Abort is the only
+    // early-exit path for this generator (the consumer never calls .return()
+    // without aborting), so this is the sole place a non-drained stream is cancelled.
+    const onAbort = () => {
+        void reader.cancel().catch(() => { }); // tearing down; swallow a rejected cancel
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
     try {
         for (;;) {
             const { done, value } = await reader.read();
@@ -435,6 +564,7 @@ async function* readableToAsyncIterable(stream) {
         }
     }
     finally {
+        signal.removeEventListener("abort", onAbort);
         reader.releaseLock();
     }
 }
@@ -458,6 +588,10 @@ function bindNode(target, descriptor) {
     if (!desc) {
         throw new Error("bindNode: no wc-bindable descriptor provided and none found on target.constructor.wcBindable");
     }
+    // Build name → declared-entry lookups so set/command can reject names the node
+    // never declared, instead of silently writing/invoking an arbitrary property.
+    const declaredInputs = new Set((desc.inputs ?? []).map((i) => i.name));
+    const declaredCommands = new Set((desc.commands ?? []).map((c) => c.name));
     const signals = {};
     const removers = [];
     for (const prop of desc.properties) {
@@ -470,13 +604,28 @@ function bindNode(target, descriptor) {
         };
         target.addEventListener(prop.event, handler);
         removers.push(() => target.removeEventListener(prop.event, handler));
+        // Re-seed AFTER subscribing: the initial read above is a snapshot taken before
+        // the listener was attached, so a value change in that gap would be missed.
+        // Reading the property once more now closes the race (the equality guard makes
+        // it a no-op when nothing changed). Note this is the property snapshot, not a
+        // getter(event) — there is no event to derive from at bind time.
+        cell.set(readProperty(target, prop.name));
     }
     return {
         signals,
         set(name, value) {
+            if (!declaredInputs.has(name)) {
+                throw new Error(`bindNode.set: "${name}" is not a declared input on this node.`);
+            }
             target[name] = value;
         },
         command(name, ...args) {
+            if (!declaredCommands.has(name)) {
+                throw new Error(`bindNode.command: "${name}" is not a declared command on this node.`);
+            }
+            if (typeof target[name] !== "function") {
+                throw new TypeError(`bindNode.command: "${name}" is declared but not a function on the node.`);
+            }
             return target[name](...args);
         },
         dispose() {
@@ -570,11 +719,20 @@ function setProp(el, key, value) {
         return;
     }
     if (key === "class" || key === "className") {
-        el.className = value == null ? "" : String(value);
+        // Treat false like null → empty class (consistent with the attribute path's
+        // false-removes-it rule). This makes the idiomatic `() => cond && "active"`
+        // binding yield "" (not "false") when the condition is falsy.
+        el.className = value == null || value === false ? "" : String(value);
         return;
     }
     if (key in el) {
-        // Known DOM property (value, checked, disabled, id, ...).
+        // Known DOM property (value, checked, disabled, id, ...). PoC limitations:
+        //  - Assigns by JS property name, so HTML attributes whose property name
+        //    differs are NOT remapped (`for`→htmlFor, `colspan`→colSpan). Pass the JS
+        //    name or set the attribute explicitly.
+        //  - `key in el` is also true for READ-ONLY props (firstChild, childNodes, …);
+        //    assigning to those silently fails or throws. Don't bind reserved DOM names.
+        // A full attribute↔property table is out of scope for the PoC.
         el[key] = value;
         return;
     }
@@ -597,6 +755,11 @@ function setStyle(el, value) {
         el.style.cssText = value;
         return;
     }
+    // Object form: the object fully describes the style. Reset first so keys present
+    // in a previous run but absent now are removed — otherwise a reactive style that
+    // drops a key (e.g. {color,fontWeight} → {color}) would leave the stale property
+    // applied. The object is the source of truth, so wiping cssText is correct here.
+    el.style.cssText = "";
     const style = el.style;
     for (const k in value) {
         style[k] = value[k];
@@ -637,6 +800,11 @@ function appendChild(parent, child) {
  * the previous nodes are removed and the freshly-resolved nodes inserted before
  * the anchor. Using `anchor.parentNode` (not the original `parent`) keeps it
  * correct after the subtree is moved/mounted elsewhere.
+ *
+ * PRECONDITION: the Nodes returned by `accessor` are owned by this insertion point
+ * — do not move them to another parent externally. On the next run they are
+ * removed from wherever they currently are (`node.parentNode?.removeChild`), so an
+ * externally-moved node would be yanked out of its new home without warning.
  */
 function insertReactive(parent, accessor) {
     const anchor = document.createComment("");

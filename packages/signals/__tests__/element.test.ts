@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { SignalsElement, h } from "../src/dom.js";
-import { signal, flushSync, WriteSignal } from "../src/reactive.js";
+import { signal, flushSync, effect, WriteSignal } from "../src/reactive.js";
 
 // A real custom element built on the signals lifecycle base. Its render() reads a
 // signal; `renderRuns` lets us observe when reactive bindings are alive vs torn
@@ -96,5 +96,33 @@ describe("SignalsElement: ライフサイクル", () => {
   it("未 mount で disconnectedCallback を呼んでも安全", () => {
     const el = document.createElement("wcs-counter-test") as CounterElement;
     expect(() => el.disconnectedCallback()).not.toThrow();
+  });
+
+  it("render() が throw しても部分構築 effect はリークせず、後の disconnect も安全", () => {
+    const probe = signal(0);
+    let effectRuns = 0;
+    class BrokenElement extends SignalsElement {
+      protected render(): Node {
+        // 先に effect を 1 つ作ってから throw する。
+        effect(() => {
+          effectRuns++;
+          probe.get();
+        });
+        throw new Error("render-boom");
+      }
+    }
+    customElements.define("wcs-broken-test", BrokenElement);
+
+    const el = document.createElement("wcs-broken-test") as BrokenElement;
+    expect(() => document.body.appendChild(el)).toThrow(/render-boom/);
+    expect(effectRuns).toBe(1); // 初回のみ
+
+    probe.set(1);
+    flushSync();
+    expect(effectRuns).toBe(1); // createRoot が throw 時に dispose → リークしない
+
+    // 未 mount 扱いなので disconnect は安全に no-op
+    expect(() => el.disconnectedCallback()).not.toThrow();
+    el.remove();
   });
 });

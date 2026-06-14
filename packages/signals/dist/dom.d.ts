@@ -94,7 +94,12 @@ interface BoundNode {
     set(name: string, value: unknown): void;
     /** Invoke a declared command on the node. */
     command(name: string, ...args: unknown[]): unknown;
-    /** Detach all property listeners. */
+    /**
+     * Detach all property listeners. After dispose the output signals stop updating.
+     * NOTE: `set`/`command` are NOT gated by dispose — they still reach the node
+     * (they are thin forwarders, not subscriptions). Callers that need them inert
+     * after teardown should drop their reference to the BoundNode.
+     */
     dispose(): void;
 }
 type NodeTarget = EventTarget & Record<string, any>;
@@ -103,7 +108,9 @@ declare function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor)
 declare const Fragment: unique symbol;
 type Child = unknown;
 type Props = Record<string, unknown> | null;
-type Component = (props: Record<string, unknown>) => Node | Child[];
+type Component = (props: Record<string, unknown> & {
+    children?: Child[];
+}) => Node | Child[];
 declare function h(tag: string | typeof Fragment | Component, props?: Props, ...children: Child[]): Node;
 /** Append `child` into `container`, resolving fragments/arrays. */
 declare function render(child: Child, container: Node): Node;

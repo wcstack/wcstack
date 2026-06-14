@@ -31,7 +31,12 @@ export interface BoundNode {
   set(name: string, value: unknown): void;
   /** Invoke a declared command on the node. */
   command(name: string, ...args: unknown[]): unknown;
-  /** Detach all property listeners. */
+  /**
+   * Detach all property listeners. After dispose the output signals stop updating.
+   * NOTE: `set`/`command` are NOT gated by dispose — they still reach the node
+   * (they are thin forwarders, not subscriptions). Callers that need them inert
+   * after teardown should drop their reference to the BoundNode.
+   */
   dispose(): void;
 }
 
@@ -47,6 +52,11 @@ export function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor):
     throw new Error("bindNode: no wc-bindable descriptor provided and none found on target.constructor.wcBindable");
   }
 
+  // Build name → declared-entry lookups so set/command can reject names the node
+  // never declared, instead of silently writing/invoking an arbitrary property.
+  const declaredInputs = new Set((desc.inputs ?? []).map((i) => i.name));
+  const declaredCommands = new Set((desc.commands ?? []).map((c) => c.name));
+
   const signals: Record<string, WriteSignal<unknown>> = {};
   const removers: Array<() => void> = [];
 
@@ -61,14 +71,29 @@ export function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor):
     };
     target.addEventListener(prop.event, handler);
     removers.push(() => target.removeEventListener(prop.event, handler));
+    // Re-seed AFTER subscribing: the initial read above is a snapshot taken before
+    // the listener was attached, so a value change in that gap would be missed.
+    // Reading the property once more now closes the race (the equality guard makes
+    // it a no-op when nothing changed). Note this is the property snapshot, not a
+    // getter(event) — there is no event to derive from at bind time.
+    cell.set(readProperty(target, prop.name));
   }
 
   return {
     signals,
     set(name: string, value: unknown): void {
+      if (!declaredInputs.has(name)) {
+        throw new Error(`bindNode.set: "${name}" is not a declared input on this node.`);
+      }
       target[name] = value;
     },
     command(name: string, ...args: unknown[]): unknown {
+      if (!declaredCommands.has(name)) {
+        throw new Error(`bindNode.command: "${name}" is not a declared command on this node.`);
+      }
+      if (typeof target[name] !== "function") {
+        throw new TypeError(`bindNode.command: "${name}" is declared but not a function on the node.`);
+      }
       return target[name](...args);
     },
     dispose(): void {

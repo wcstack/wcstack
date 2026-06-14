@@ -24,6 +24,23 @@ describe("h: 要素と静的 props", () => {
     expect(el2.hasAttribute("style")).toBe(false);
   });
 
+  it("class に false を渡すと空文字になる（属性経路との一貫性）", () => {
+    expect((h("div", { class: false }) as HTMLElement).className).toBe("");
+    expect((h("div", { className: false }) as HTMLElement).className).toBe("");
+  });
+
+  it("style オブジェクト更新で消えたキーが残らない", () => {
+    const style = signal<Record<string, string>>({ color: "red", fontWeight: "bold" });
+    const el = h("div", { style: () => style.get() }) as HTMLElement;
+    expect(el.style.color).toBe("red");
+    expect(el.style.fontWeight).toBe("bold");
+
+    style.set({ color: "blue" }); // fontWeight を落とす
+    flushSync();
+    expect(el.style.color).toBe("blue");
+    expect(el.style.fontWeight).toBe(""); // 残留しない
+  });
+
   it("DOM プロパティ（id 等）はプロパティとして設定する", () => {
     const el = h("input", { id: "x", value: "v" }) as HTMLInputElement;
     expect(el.id).toBe("x");

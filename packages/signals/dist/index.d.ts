@@ -94,7 +94,12 @@ interface BoundNode {
     set(name: string, value: unknown): void;
     /** Invoke a declared command on the node. */
     command(name: string, ...args: unknown[]): unknown;
-    /** Detach all property listeners. */
+    /**
+     * Detach all property listeners. After dispose the output signals stop updating.
+     * NOTE: `set`/`command` are NOT gated by dispose — they still reach the node
+     * (they are thin forwarders, not subscriptions). Callers that need them inert
+     * after teardown should drop their reference to the BoundNode.
+     */
     dispose(): void;
 }
 type NodeTarget = EventTarget & Record<string, any>;

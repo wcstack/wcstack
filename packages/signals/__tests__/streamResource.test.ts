@@ -131,6 +131,22 @@ describe("streamResource", () => {
     expect(r.error.peek()).toMatchObject({ message: "boom" });
   });
 
+  it("source が同期 throw しても error/status に正規化される", async () => {
+    const r = streamResource<string>(() => {
+      throw new Error("sync-boom");
+    });
+    await flushAsync();
+    expect(r.status.peek()).toBe("error");
+    expect((r.error.peek() as Error).message).toBe("sync-boom");
+  });
+
+  it("source が AsyncIterable でも ReadableStream でもなければ明示エラー", async () => {
+    const r = streamResource<string>(() => ({ not: "a stream" }) as unknown as AsyncIterable<string>);
+    await flushAsync();
+    expect(r.status.peek()).toBe("error");
+    expect((r.error.peek() as Error).message).toMatch(/AsyncIterable or a ReadableStream/);
+  });
+
   it("abort が throw として現れても error にしない", async () => {
     const id = signal(1);
     const r = streamResource<string>(
@@ -167,6 +183,74 @@ describe("streamResource", () => {
     await flushAsync();
     // run1 は空ループ→aborted で return（done にしない）。run2 が active
     expect(r.status.peek()).toBe("active");
+  });
+
+  it("ReadableStream を未消費のまま abort すると reader.cancel() で解放する", async () => {
+    const id = signal(1);
+    let cancelled = false;
+    let released = false;
+    // 1チャンク出した後は永久に保留する ReadableStream 風（done に到達しない）。
+    const makeReadable = () =>
+      ({
+        getReader() {
+          let i = 0;
+          // Models a real reader: the parked read() stays pending until cancel(),
+          // which settles it with { done: true } (as the streams spec requires).
+          let settlePending: ((v: { done: boolean; value: unknown }) => void) | null = null;
+          return {
+            read: () =>
+              i++ === 0
+                ? Promise.resolve({ done: false, value: "first" })
+                : new Promise((resolve) => {
+                    settlePending = resolve;
+                  }),
+            // cancel settles the parked read (so the for-await unwinds) but then
+            // REJECTS — exercising the swallow in onAbort's `.catch(() => {})`
+            // (a real reader can reject cancel on an already-errored stream).
+            cancel: () => {
+              cancelled = true;
+              settlePending?.({ done: true, value: undefined });
+              return Promise.reject(new Error("cancel rejected"));
+            },
+            releaseLock: () => {
+              released = true;
+            },
+          };
+        },
+      }) as unknown as ReadableStream<string>;
+
+    streamResource<string>(() => makeReadable(), { args: () => id.get() });
+    await flushAsync();
+
+    id.set(2); // restart → 旧 run を abort（for-await を中断）
+    flushSync();
+    await flushAsync();
+
+    expect(cancelled).toBe(true); // underlying source を解放
+    expect(released).toBe(true);
+  });
+
+  it("ReadableStream が done まで消費されたら cancel は呼ばない", async () => {
+    let cancelled = false;
+    const fakeReadable = {
+      getReader() {
+        const data = ["p", "q"];
+        let i = 0;
+        return {
+          read: async () =>
+            i < data.length ? { done: false, value: data[i++] } : { done: true, value: undefined },
+          cancel: async () => {
+            cancelled = true;
+          },
+          releaseLock: () => {},
+        };
+      },
+    } as unknown as ReadableStream<string>;
+
+    const r = streamResource<string>(() => fakeReadable);
+    await flushAsync();
+    expect(r.value.peek()).toBe("q");
+    expect(cancelled).toBe(false); // 正常に drain したので cancel 不要
   });
 
   it("dispose で in-flight stream を止める（owner 連動）", async () => {

@@ -14,6 +14,12 @@ import { signal, effect, onCleanup, ReadSignal } from "./reactive.js";
 
 export interface ResourceState<T> {
   value: ReadSignal<T | undefined>;
+  // Progress is a BOOLEAN here, intentionally different from streamResource's
+  // `status` enum. A resource is single-shot (one request → resolve/reject), so
+  // its progress is binary: in-flight or not. A stream is continuous (idle →
+  // active → done/error), so it needs the enum. The "shared contract" with the
+  // state-side `$streams` adapter covers the cancel/restart SEMANTICS, not this
+  // progress representation. (docs §8 (a)).
   loading: ReadSignal<boolean>;
   error: ReadSignal<unknown>;
   /** Abort any in-flight request and stop reacting to `args` changes. */
@@ -42,6 +48,14 @@ export function resource<T, A = void>(
   const runner = effect(() => {
     // Reading args() inside the effect is what subscribes us to its signals, so a
     // change re-runs this body — that IS the restart trigger.
+    //
+    // NOTE (effect-internal writes): this effect writes loading/error/value, which
+    // are signals OTHER effects may observe. A write that actually CHANGES the value
+    // marks those observers stale and queues them on the same flush; the drain loop
+    // then runs them in the same tick. (A same-value write — e.g. error.set(null)
+    // when error is already null — is a no-op via the equality guard and notifies
+    // nothing.) We never read these signals inside THIS effect, so we don't dirty
+    // our own dependency — no cycle. (docs §8 (a)).
     const a = (options.args ? options.args() : undefined) as A;
 
     // Abort the previous request before starting the next (switchMap).
@@ -52,7 +66,22 @@ export function resource<T, A = void>(
     loading.set(true);
     error.set(null);
 
-    Promise.resolve(source(a, ac.signal)).then(
+    // Call the source SYNCHRONOUSLY (so it receives ac.signal immediately and can
+    // wire its abort listener before any teardown), but guard it with try/catch so
+    // a synchronous throw is normalized into the same error/loading state as a
+    // rejected promise. Without the guard a sync throw would escape the effect body
+    // (and, on the initial run, the resource() call itself), leaving loading stuck
+    // true and error unset.
+    let produced: Promise<T> | T;
+    try {
+      produced = source(a, ac.signal);
+    } catch (err) {
+      error.set(err);
+      loading.set(false);
+      return;
+    }
+
+    Promise.resolve(produced).then(
       (resolved) => {
         // Drop the result if this request was superseded/disposed: committing it
         // would let a stale response overwrite the newer request's state.

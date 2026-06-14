@@ -52,7 +52,11 @@ export const Fragment = Symbol("signals.Fragment");
 
 export type Child = unknown;
 export type Props = Record<string, unknown> | null;
-export type Component = (props: Record<string, unknown>) => Node | Child[];
+// h() always injects `children` into the props object it passes to a component, so
+// the parameter type makes that explicit (a component can declare `{ children }`).
+export type Component = (
+  props: Record<string, unknown> & { children?: Child[] },
+) => Node | Child[];
 
 function isReadSignal(value: unknown): value is ReadSignal<unknown> {
   return (
@@ -135,11 +139,27 @@ function setProp(el: Element, key: string, value: unknown): void {
     return;
   }
   if (key === "class" || key === "className") {
-    (el as HTMLElement).className = value == null ? "" : String(value);
+    // Treat false like null → empty class (consistent with the attribute path's
+    // false-removes-it rule). This makes the idiomatic `() => cond && "active"`
+    // binding yield "" (not "false") when the condition is falsy.
+    (el as HTMLElement).className = value == null || value === false ? "" : String(value);
     return;
   }
   if (key in el) {
-    // Known DOM property (value, checked, disabled, id, ...).
+    // Known DOM property (value, checked, disabled, id, ...). PoC limitations:
+    //  - Assigns by JS property name, so HTML attributes whose property name
+    //    differs are NOT remapped (`for`→htmlFor, `colspan`→colSpan). Pass the JS
+    //    name or set the attribute explicitly.
+    //  - `key in el` is also true for READ-ONLY props (firstChild, childNodes, …);
+    //    assigning to those silently fails or throws. Don't bind reserved DOM names.
+    //  - ASYMMETRY with the attribute path below: there, null/false REMOVE the
+    //    attribute; here the value is assigned as-is. That is correct for boolean
+    //    props (el.disabled = false), but a STRING prop (id/title/value) given a
+    //    reactive null/false becomes "null"/"false". We do NOT normalize here
+    //    because the right coercion depends on the prop's type (boolean vs string),
+    //    which needs a property table — out of scope for the PoC. Pass "" (or guard
+    //    in the thunk) when clearing a string prop.
+    // A full attribute↔property table is out of scope for the PoC.
     (el as unknown as Record<string, unknown>)[key] = value;
     return;
   }
@@ -163,6 +183,11 @@ function setStyle(el: HTMLElement, value: unknown): void {
     el.style.cssText = value;
     return;
   }
+  // Object form: the object fully describes the style. Reset first so keys present
+  // in a previous run but absent now are removed — otherwise a reactive style that
+  // drops a key (e.g. {color,fontWeight} → {color}) would leave the stale property
+  // applied. The object is the source of truth, so wiping cssText is correct here.
+  el.style.cssText = "";
   const style = el.style as unknown as Record<string, string>;
   for (const k in value as Record<string, string>) {
     style[k] = (value as Record<string, string>)[k];
@@ -207,6 +232,11 @@ function appendChild(parent: Node, child: Child): void {
  * the previous nodes are removed and the freshly-resolved nodes inserted before
  * the anchor. Using `anchor.parentNode` (not the original `parent`) keeps it
  * correct after the subtree is moved/mounted elsewhere.
+ *
+ * PRECONDITION: the Nodes returned by `accessor` are owned by this insertion point
+ * — do not move them to another parent externally. On the next run they are
+ * removed from wherever they currently are (`node.parentNode?.removeChild`), so an
+ * externally-moved node would be yanked out of its new home without warning.
  */
 function insertReactive(parent: Node, accessor: () => unknown): void {
   const anchor = document.createComment("");
@@ -252,6 +282,9 @@ export abstract class SignalsElement extends HTMLElement {
       return; // already mounted (defensive against a redundant connect)
     }
     const mount = this.getMountPoint();
+    // If render() throws, createRoot disposes any effects it built before the throw,
+    // so nothing leaks; _dispose stays null (the element is simply not mounted) and
+    // a later disconnectedCallback safely no-ops. The error propagates to the caller.
     this._dispose = createRoot((dispose) => {
       mount.appendChild(this.render());
       return dispose;

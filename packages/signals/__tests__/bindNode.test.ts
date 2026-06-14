@@ -83,6 +83,56 @@ describe("bindNode", () => {
     expect(bound.signals.value.peek()).toBeNull();
   });
 
+  it("dispose 後も set/command は node に届く（購読のみ切れる・規定挙動）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    bound.dispose();
+    // set/command は薄い転送であり購読ではないため、dispose 後も node に作用する。
+    bound.set("url", "/after");
+    expect(node.url).toBe("/after");
+    bound.command("run");
+    expect(node.ran).toEqual(["/after"]);
+  });
+
+  it("未宣言の input への set は例外を投げる", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    expect(() => bound.set("nope", 1)).toThrow(/not a declared input/);
+  });
+
+  it("未宣言の command 呼び出しは例外を投げる", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    expect(() => bound.command("nope")).toThrow(/not a declared command/);
+  });
+
+  it("宣言済みだが関数でない command は TypeError を投げる", () => {
+    const node = new FakeNode() as FakeNode & Record<string, unknown>;
+    const desc: WcBindableDescriptor = {
+      properties: [],
+      commands: [{ name: "notAFn" }],
+    };
+    (node as Record<string, unknown>).notAFn = 123; // 関数でない
+    const bound = bindNode(node, desc);
+    expect(() => bound.command("notAFn")).toThrow(TypeError);
+  });
+
+  it("購読後の再 seed で bindNode 時点のノード値を取りこぼさない", () => {
+    const node = new FakeNode();
+    node.loading = true; // bind 前にすでに値が立っている
+    const bound = bindNode(node, FakeNode.wcBindable);
+    // イベント無しでも、購読後の再 seed により現在値が反映される
+    expect(bound.signals.loading.peek()).toBe(true);
+  });
+
+  it("inputs/commands を省略した descriptor でも未宣言名は弾く", () => {
+    const node = new FakeNode();
+    const desc: WcBindableDescriptor = { properties: [] }; // inputs/commands 無し
+    const bound = bindNode(node, desc);
+    expect(() => bound.set("url", "x")).toThrow(/not a declared input/);
+    expect(() => bound.command("run")).toThrow(/not a declared command/);
+  });
+
   it("シグナル → effect で DOM 更新まで通る（エンドツーエンド）", () => {
     const node = new FakeNode();
     const bound = bindNode(node, FakeNode.wcBindable);

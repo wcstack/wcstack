@@ -118,19 +118,61 @@ function schedule(): void {
   queueMicrotask(flushEffects);
 }
 
+// Upper bound on drain iterations. A well-behaved graph settles in a handful of
+// passes; exceeding this means an effect keeps dirtying its own dependency with a
+// changing value (a reactive cycle), which would otherwise hang the page. We bail
+// loudly instead of spinning forever (docs §5-3).
+const MAX_FLUSH_ITERATIONS = 1000;
+
 function flushEffects(): void {
   flushScheduled = false;
   // Drain in a loop: an effect may, while running, dirty a signal that queues
   // further effects. Coalescing collapses multiple writes in one tick into a
   // single run per effect (docs §5-3).
+  let iterations = 0;
   while (pendingEffects.size > 0) {
+    if (++iterations > MAX_FLUSH_ITERATIONS) {
+      // Drop the runaway queue so a single bad effect cannot wedge every later
+      // flush, then surface the bug.
+      pendingEffects.clear();
+      throw new Error(
+        "flushEffects: exceeded " +
+          MAX_FLUSH_ITERATIONS +
+          " iterations — likely a reactive cycle (an effect writes a signal it depends on with an ever-changing value).",
+      );
+    }
     const batch = [...pendingEffects];
     pendingEffects.clear();
     for (const node of batch) {
       if (!node._disposed) {
-        updateIfNecessary(node);
+        // Isolate each effect: a throw from one effect's body must NOT abort the
+        // batch and silently strand its already-dequeued siblings. We hand the
+        // error to reportError (which does not re-throw, so the drain continues)
+        // and move on. updateIfNecessary guarantees the node is settled to CLEAN
+        // even on throw, so it is not left stuck DIRTY.
+        try {
+          updateIfNecessary(node);
+        } catch (err) {
+          reportError(err);
+        }
       }
     }
+  }
+}
+
+// Surface an effect/computed error without breaking the flush. Called
+// synchronously from the drain loop: it delegates to the platform `reportError`
+// (dispatches a window "error" event / goes to the console without crashing) or
+// falls back to console.error. Crucially it does NOT re-throw — re-throwing would
+// abort the drain — and it does not swallow the error (that would hide the bug).
+// Re-entrancy is safe: the only re-scheduling path (markStale) defers to a
+// microtask, so reporting here cannot recurse into the running flush.
+function reportError(err: unknown): void {
+  const r = (globalThis as { reportError?: (e: unknown) => void }).reportError;
+  if (typeof r === "function") {
+    r(err);
+  } else {
+    console.error(err);
   }
 }
 
@@ -140,7 +182,10 @@ function flushEffects(): void {
  * settle on their own microtask.
  */
 export function flushSync(): void {
-  flushScheduled = false;
+  // Do NOT touch flushScheduled here: a microtask may already be queued. Just
+  // drain. flushEffects resets the flag itself; if a queued microtask still fires
+  // afterwards it finds an empty queue and is a no-op. Touching the flag from here
+  // would let a second flushSync race the queued microtask into a double drain.
   flushEffects();
 }
 
@@ -169,6 +214,9 @@ function updateIfNecessary(node: Computation): void {
   if (node._state === CHECK) {
     // A transitive source might have changed. Refresh computed sources; one of
     // them may set us DIRTY (via the equality check in its _update).
+    // NOTE: this scans ALL sources each validation (O(sources)); the standard
+    // pull-based scheme (Reactively/Solid) does the same. Intentional for the PoC —
+    // a future optimization could track per-source dirtiness to scan less.
     for (const source of node._sources) {
       if (source instanceof ComputedNode) {
         updateIfNecessary(source);
@@ -178,10 +226,17 @@ function updateIfNecessary(node: Computation): void {
       }
     }
   }
-  if (node._state === DIRTY) {
-    node._update();
+  // Settle to CLEAN in a finally: if _update() (a user fn / equals) throws, the
+  // node must NOT be left stuck DIRTY, otherwise every later peek/get would
+  // re-run the throwing fn forever. The error propagates to the caller (a flush
+  // isolates it per-effect; a direct get/peek surfaces it to that caller).
+  try {
+    if (node._state === DIRTY) {
+      node._update();
+    }
+  } finally {
+    node._state = CLEAN;
   }
-  node._state = CLEAN;
 }
 
 // --- signal -----------------------------------------------------------------
@@ -210,9 +265,10 @@ class SignalNode<T> implements Observable, WriteSignal<T> {
       return;
     }
     this._value = next;
-    // Copy: markStale schedules effects but does not mutate this set; the copy is
-    // defensive against future re-tracking during synchronous effect runs.
-    for (const observer of [...this._observers]) {
+    // No copy needed: markStale only schedules effects (on a microtask) and marks
+    // observers — it never runs user code synchronously, so this set is not
+    // mutated during the walk. Iterating it directly avoids a per-write allocation.
+    for (const observer of this._observers) {
       markStale(observer, DIRTY);
     }
   }
@@ -228,11 +284,18 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
   private _fn: () => T;
   private _value: T | undefined = undefined;
   private _initialized = false;
+  private _running = false;
   private _equals: Equals<T>;
 
   constructor(fn: () => T, equals: Equals<T>) {
     this._fn = fn;
     this._equals = equals;
+    // Be owned by the enclosing scope (a parent effect or createRoot). When that
+    // scope tears down, untrack this computed so it is removed from its sources'
+    // observer sets — otherwise a computed created inside an effect that re-runs
+    // would leak a stale ComputedNode into each source on every run (docs §8 (d)).
+    // Lazy + no children: teardown is just untrack, no cleanup/owned to dispose.
+    registerDisposer(() => untrack(this));
   }
 
   get(): T {
@@ -247,13 +310,22 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
   }
 
   _update(): void {
+    // Cycle guard: if _fn (directly or transitively) reads this computed, get()
+    // would recurse into _update and blow the stack with an opaque RangeError.
+    // Detect the self-reference and throw a clear error instead. (The effect-level
+    // MAX_FLUSH_ITERATIONS guard does not cover this synchronous self-recursion.)
+    if (this._running) {
+      throw new Error("computed: circular dependency — the computed reads itself.");
+    }
     const previous = this._value;
     untrack(this);
     const prevObserver = currentObserver;
     currentObserver = this;
+    this._running = true;
     try {
       this._value = this._fn();
     } finally {
+      this._running = false;
       currentObserver = prevObserver;
     }
     // Equality short-circuit: only propagate when the value actually changed.
@@ -266,6 +338,16 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
     } else if (!this._equals(previous as T, this._value as T)) {
       for (const observer of this._observers) {
         observer._state = DIRTY;
+        // Normally this computed is refreshed from inside flushEffects while
+        // validating an already-scheduled effect, so the observer is in the queue
+        // already. But if it is refreshed out-of-band (e.g. a `peek()` outside a
+        // flush) an effect observer could otherwise be promoted to DIRTY without
+        // being queued, and never re-run. Re-schedule defensively to keep the
+        // "DIRTY effect always runs" invariant regardless of refresh path.
+        if (observer._isEffect && !(observer as EffectNode)._disposed) {
+          pendingEffects.add(observer as EffectNode);
+          schedule();
+        }
       }
     }
   }
@@ -347,6 +429,10 @@ export function effect(fn: () => Cleanup | void): EffectHandle {
  *
  * The root is detached: it is NOT auto-disposed by an enclosing owner. The caller
  * holds `dispose` (e.g. a custom element disposes it in disconnectedCallback).
+ *
+ * If `fn` throws, any effects/cleanups it created BEFORE the throw are disposed
+ * before the error propagates — a caller that never received `dispose` (because the
+ * call threw) cannot leak the half-built scope.
  */
 export function createRoot<T>(fn: (dispose: () => void) => T): T {
   const owner: Owner = { _owned: [] };
@@ -362,6 +448,9 @@ export function createRoot<T>(fn: (dispose: () => void) => T): T {
   currentOwner = owner;
   try {
     return fn(dispose);
+  } catch (err) {
+    dispose(); // tear down whatever fn built before it threw
+    throw err;
   } finally {
     currentOwner = prevOwner;
   }

@@ -111,6 +111,39 @@ describe("computed", () => {
     expect(c.peek()).toBe(6);
   });
 
+  it("computed の fn が throw しても DIRTY 固着せず、回復後に再計算できる", () => {
+    const a = signal(0);
+    const c = computed(() => {
+      if (a.get() === 1) {
+        throw new Error("boom");
+      }
+      return a.get() * 10;
+    });
+    expect(c.get()).toBe(0);
+    a.set(1);
+    // throw は呼び出し元に伝播する（peek/get が throw）。
+    expect(() => c.get()).toThrow(/boom/);
+    // しかし状態は CLEAN に落ちているので、固着して毎回 throw し続けることはない。
+    a.set(2);
+    expect(c.get()).toBe(20); // 回復して正常に再計算
+  });
+
+  it("computed が自分自身を get する循環は明示的な例外で検出する（スタック爆発でなく）", () => {
+    let c!: ReturnType<typeof computed<number>>;
+    c = computed(() => c.get() + 1); // 自己参照
+    // 初回計算で循環を検出。RangeError(スタックオーバーフロー)でなく分かりやすい
+    // メッセージの Error で落ちる。
+    let err: unknown;
+    try {
+      c.get();
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(RangeError);
+    expect((err as Error).message).toMatch(/circular dependency/);
+  });
+
   it("動的依存: 条件で参照しなくなった signal は再実行しない", () => {
     const cond = signal(true);
     const x = signal(1);
@@ -254,6 +287,196 @@ describe("effect", () => {
     flushSync();
     expect(mirror.peek()).toBe(7);
   });
+
+  it("バッチ内の effect が throw しても、同一バッチの他の effect は実行される（隔離）", () => {
+    const s = signal(0);
+    let goodRuns = 0;
+    // throw は reportError 経由で隔離報告される。テストでは捕捉して握りつぶす。
+    // In this env reportError falls back to console.error; spy that so the
+    // isolated error is captured (and not printed) without failing the test.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // 失敗 effect。本体で必ず throw する。
+      effect(() => {
+        s.get();
+        if (s.peek() > 0) {
+          throw new Error("boom");
+        }
+      });
+      // 正常 effect。失敗 effect と同一 signal で同一バッチに積まれる。
+      effect(() => {
+        s.get();
+        goodRuns++;
+      });
+      flushSync();
+      expect(goodRuns).toBe(1); // 初回
+
+      s.set(1); // 両 effect を同一バッチに積む。失敗 effect が throw する。
+      flushSync();
+      // 失敗 effect が throw しても正常 effect は再実行される（脱落しない）。
+      expect(goodRuns).toBe(2);
+      expect(spy).toHaveBeenCalled(); // エラーは握りつぶさず報告された
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("プラットフォームの reportError があればそちらに報告する", () => {
+    const s = signal(0);
+    const calls: unknown[] = [];
+    const g = globalThis as { reportError?: (e: unknown) => void };
+    const had = "reportError" in g;
+    const prev = g.reportError;
+    g.reportError = (e: unknown): void => {
+      calls.push(e);
+    };
+    try {
+      effect(() => {
+        s.get();
+        if (s.peek() > 0) {
+          throw new Error("boom");
+        }
+      });
+      flushSync();
+      s.set(1);
+      flushSync();
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+      expect((calls[0] as Error).message).toBe("boom");
+    } finally {
+      if (had) {
+        g.reportError = prev;
+      } else {
+        delete g.reportError;
+      }
+    }
+  });
+
+  it("throw した effect も次の依存変化でまた実行される（DIRTY 固着しない）", () => {
+    const s = signal(0);
+    const runs: number[] = [];
+    // In this env reportError falls back to console.error; spy that so the
+    // isolated error is captured (and not printed) without failing the test.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      effect(() => {
+        runs.push(s.get());
+        if (s.peek() === 1) {
+          throw new Error("boom");
+        }
+      });
+      flushSync(); // runs: [0]
+      s.set(1);
+      flushSync(); // throw するが CLEAN に落ちる
+      s.set(2);
+      flushSync(); // 再び実行される（固着していない）
+    } finally {
+      spy.mockRestore();
+    }
+    expect(runs).toEqual([0, 1, 2]);
+  });
+
+  it("循環 effect（2つの effect が互いの依存を毎回別値で書き換える）は上限で throw して暴走を止める", () => {
+    const a = signal(0);
+    const b = signal(0);
+    // A は b を読み a を毎回別値で更新、B は a を読み b を毎回別値で更新。
+    // 互いを永久に再キューし続ける収束しない循環。
+    const ha = effect(() => {
+      b.get();
+      a.set(a.peek() + 1);
+    });
+    const hb = effect(() => {
+      a.get();
+      b.set(b.peek() + 1);
+    });
+    // 暴走はフラッシュ時。上限超過で throw し、キューを破棄して止める。
+    expect(() => flushSync()).toThrow(/reactive cycle|exceeded/);
+    // キューは破棄済みなので以降のフラッシュは正常（空ドレイン）
+    expect(() => flushSync()).not.toThrow();
+    ha.dispose();
+    hb.dispose();
+  });
+
+  it("同一バッチ内で先行 effect が後続 effect の依存を書いても二重実行しない", () => {
+    // A（先に積まれる）が shared を書く。B は trig と shared 双方に依存し A と同一
+    // バッチに積まれる。A は B より先に走り、その時点で B はまだ DIRTY（キュー外）
+    // なので markStale の wasClean ガードで再キューされず、B はこのバッチで 1 回だけ
+    // 最新 shared を読んで走る（スプリアスな二重実行が起きない）。
+    const trig = signal(0);
+    const shared = signal(0);
+    const bRuns: number[] = [];
+    effect(() => {
+      trig.get();
+      shared.set(shared.peek() + 1);
+    });
+    effect(() => {
+      trig.get();
+      shared.get();
+      bRuns.push(shared.peek());
+    });
+    flushSync();
+    bRuns.length = 0;
+    trig.set(1);
+    flushSync();
+    expect(bRuns).toEqual([2]); // 1 回だけ、かつ A の書き込み後の値
+  });
+
+  it("effect 本体内から flushSync を再入呼びしても他 effect を取りこぼさず二重実行しない", () => {
+    // A は再入で flushSync を呼ぶ。外側ドレインは batch をローカル配列にスナップ
+    // ショット済みなので、内側 flushSync が pendingEffects を clear しても外側の
+    // B/C は失われない。B/C はそれぞれ 1 回だけ走る。
+    const trig = signal(0);
+    const order: string[] = [];
+    effect(() => {
+      trig.get();
+      order.push("A");
+      if (trig.peek() === 1) {
+        flushSync(); // 再入
+      }
+    });
+    effect(() => {
+      trig.get();
+      order.push("B");
+    });
+    effect(() => {
+      trig.get();
+      order.push("C");
+    });
+    flushSync();
+    order.length = 0;
+    trig.set(1);
+    flushSync();
+    const count = (x: string): number => order.filter((o) => o === x).length;
+    expect([count("A"), count("B"), count("C")]).toEqual([1, 1, 1]);
+  });
+
+  it("再入 flushSync が内側で実仕事をドレインしても外側 effect は 1 回だけ走る", () => {
+    const trig = signal(0);
+    const inner = signal(0);
+    const order: string[] = [];
+    effect(() => {
+      trig.get();
+      order.push("A");
+      if (trig.peek() === 1) {
+        inner.set(inner.peek() + 1); // D をキュー
+        flushSync(); // 内側で D をドレイン
+      }
+    });
+    effect(() => {
+      trig.get();
+      order.push("B");
+    });
+    effect(() => {
+      inner.get();
+      order.push("D");
+    });
+    flushSync();
+    order.length = 0;
+    trig.set(1);
+    flushSync();
+    const count = (x: string): number => order.filter((o) => o === x).length;
+    expect(count("B")).toBe(1); // 取りこぼし・二重なし
+    expect(count("D")).toBe(1); // 内側でドレインされた
+  });
 });
 
 describe("ownership (createRoot / onCleanup)", () => {
@@ -295,6 +518,24 @@ describe("ownership (createRoot / onCleanup)", () => {
     expect(result).toBe(42);
   });
 
+  it("createRoot の fn が throw すると、それまでに作った effect は dispose される（リークしない）", () => {
+    const a = signal(0);
+    let runs = 0;
+    expect(() =>
+      createRoot(() => {
+        effect(() => {
+          runs++;
+          a.get();
+        });
+        throw new Error("render-boom"); // effect 生成後に失敗
+      }),
+    ).toThrow(/render-boom/);
+    expect(runs).toBe(1); // 初回実行のみ
+    a.set(1);
+    flushSync();
+    expect(runs).toBe(1); // throw 時に dispose 済み → もう反応しない
+  });
+
   it("親 effect が再実行されると、前回の実行で作った子 effect は dispose される", () => {
     const outer = signal(0);
     const inner = signal(0);
@@ -322,6 +563,46 @@ describe("ownership (createRoot / onCleanup)", () => {
     inner.set(2);
     flushSync();
     expect(innerRuns).toBe(4); // 新しい子だけが反応（古い子は dispose 済みで重複しない）
+  });
+
+  it("effect 内で生成した computed は再実行で前回分が untrack され、source にリークしない", () => {
+    const src = signal(0);
+    const trigger = signal(0);
+    // src の observer 集合を覗くための内部アクセス（テスト専用）。
+    const observersOf = (s: unknown): Set<unknown> =>
+      (s as { _observers: Set<unknown> })._observers;
+
+    createRoot(() => {
+      effect(() => {
+        trigger.get(); // 再実行トリガ
+        const c = computed(() => src.get() * 2); // 実行ごとに新しい computed
+        c.get(); // 読んで src に依存を張る
+      });
+    });
+
+    const initial = observersOf(src).size;
+    // 何度も再実行させる。リークがあれば observer が単調増加する。
+    for (let i = 1; i <= 10; i++) {
+      trigger.set(i);
+      flushSync();
+    }
+    // 前回の computed が untrack されていれば、observer 数は増えない。
+    expect(observersOf(src).size).toBe(initial);
+  });
+
+  it("createRoot dispose で配下の computed も source から外れる", () => {
+    const src = signal(0);
+    const observersOf = (s: unknown): Set<unknown> =>
+      (s as { _observers: Set<unknown> })._observers;
+    let dispose!: () => void;
+    createRoot((d) => {
+      dispose = d;
+      const c = computed(() => src.get() + 1);
+      c.get();
+    });
+    expect(observersOf(src).size).toBe(1);
+    dispose();
+    expect(observersOf(src).size).toBe(0); // computed が untrack された
   });
 
   it("onCleanup は owner が無ければ no-op", () => {
@@ -405,6 +686,30 @@ describe("equality short-circuit（値等価の伝播短絡）", () => {
     n.set(3); // even→false、label "odd" → 実行
     flushSync();
     expect([runs, last]).toEqual([2, "odd"]);
+  });
+
+  it("フラッシュ外の peek で computed が変化すると、購読 effect は取り残されず再実行される", async () => {
+    // 指摘2: ComputedNode._update が観測者を DIRTY 昇格する際、キューに居ない
+    // effect が恒久的に取り残されないこと（防御的 re-schedule）の検証。
+    const a = signal(1);
+    const c = computed(() => a.get() * 2);
+    let runs = 0;
+    let seen = 0;
+    effect(() => {
+      runs++;
+      seen = c.get();
+    });
+    flushSync();
+    expect([runs, seen]).toEqual([1, 2]);
+
+    // peek で computed を「フラッシュ外」で先に再計算させる。
+    // peek 自体は markStale を通らない（依存を張らない）ため、ここで _update が
+    // effect を DIRTY に昇格する瞬間、防御的 add が無いと effect が宙に浮く。
+    a.set(5);
+    expect(c.peek()).toBe(10); // out-of-band 再計算
+    flushSync();
+    expect([runs, seen]).toEqual([2, 10]); // effect は取り残されず再実行
+    await Promise.resolve();
   });
 
   it("computed のカスタム equals で短絡できる", () => {
