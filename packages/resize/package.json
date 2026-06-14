@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/resize",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "description": "Declarative ResizeObserver component for Web Components. Framework-agnostic element-size primitive via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

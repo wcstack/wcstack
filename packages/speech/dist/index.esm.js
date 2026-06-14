@@ -26,6 +26,13 @@ function deepClone(obj) {
     return clone;
 }
 let frozenConfig = null;
+// Internal, mutable live config used by the components/autoTriggers (they read it
+// at call time so setConfig() takes effect without re-import). Typed as the
+// readonly IConfig at the export boundary — the `as IConfig` is a compile-time
+// view only and does NOT freeze the object, so this export must stay
+// package-internal (it is not re-exported from exports.ts). Public consumers get
+// the deep-frozen clone from getConfig() instead, which is the only safe
+// read-only handle.
 const config = _config;
 function getConfig() {
     if (!frozenConfig) {
@@ -79,8 +86,8 @@ class SpeakCore extends EventTarget {
             { name: "speaking", event: "wcs-speak:speaking-changed" },
             { name: "paused", event: "wcs-speak:paused-changed" },
             { name: "pending", event: "wcs-speak:pending-changed" },
-            { name: "charIndex", event: "wcs-speak:boundary", getter: (e) => e.detail.charIndex },
-            { name: "spokenWord", event: "wcs-speak:boundary", getter: (e) => e.detail.word },
+            { name: "charIndex", event: "wcs-speak:boundary", getter: (e) => e.detail?.charIndex ?? null },
+            { name: "spokenWord", event: "wcs-speak:boundary", getter: (e) => e.detail?.word ?? null },
             { name: "error", event: "wcs-speak:error" },
             { name: "unsupported", event: "wcs-speak:unsupported-changed" },
         ],
@@ -149,16 +156,39 @@ class SpeakCore extends EventTarget {
     get error() {
         return this._error;
     }
+    // Resolved once in the constructor (`_setUnsupported(!_hasApi())`) and never
+    // re-evaluated: the speechSynthesis API's presence is immutable for the
+    // lifetime of a document, so there's nothing to re-check.
     get unsupported() {
         return this._unsupported;
     }
     // --- State setters with event dispatch ---
     _setVoices(voices) {
+        // Same-value guard, like the other setters. `voiceschanged` can fire several
+        // times with an identical list (engines re-announce after warm-up); compare
+        // the normalized snapshot content so a redundant re-announcement does not
+        // re-dispatch voices-changed. A genuine list change (length or any field)
+        // still fires.
+        if (this._voicesEqual(this._voices, voices))
+            return;
         this._voices = voices;
         this._target.dispatchEvent(new CustomEvent("wcs-speak:voices-changed", {
             detail: voices,
             bubbles: true,
         }));
+    }
+    _voicesEqual(a, b) {
+        if (a.length !== b.length)
+            return false;
+        for (let i = 0; i < a.length; i++) {
+            const x = a[i];
+            const y = b[i];
+            if (x.name !== y.name || x.lang !== y.lang || x.default !== y.default
+                || x.localService !== y.localService || x.voiceURI !== y.voiceURI) {
+                return false;
+            }
+        }
+        return true;
     }
     _setSpeaking(speaking) {
         if (this._speaking === speaking)
@@ -248,9 +278,18 @@ class SpeakCore extends EventTarget {
                 utterance.voice = match;
         }
         const gen = this._gen;
+        // Per-utterance "has started" flag. The browser can fire onerror/onend
+        // *before* onstart (e.g. a `synthesis-unavailable` / `audio-busy` failure on
+        // a still-queued utterance). In that case the utterance only ever counted
+        // toward `_queued`, so the terminal handler must decrement `_queued` — not
+        // `_started` — otherwise `pending` (derived from `_queued > 0`) sticks true
+        // forever. onstart sets this flag so the terminal handler knows which counter
+        // to release.
+        let started = false;
         utterance.onstart = () => {
             if (gen !== this._gen)
                 return;
+            started = true;
             this._queued = Math.max(0, this._queued - 1);
             this._started++;
             this._setSpeaking(true);
@@ -262,8 +301,13 @@ class SpeakCore extends EventTarget {
                 return;
             try {
                 const charIndex = event.charIndex;
-                const length = event.charLength ?? 0;
-                const word = text.substring(charIndex, charIndex + length);
+                const length = event.charLength;
+                // Prefer the engine-provided word length. Some engines omit `charLength`
+                // on word boundaries; fall back to the run of non-whitespace at charIndex
+                // so `spokenWord` (the karaoke highlight) still works there.
+                const word = (typeof length === "number" && length > 0)
+                    ? text.substring(charIndex, charIndex + length)
+                    : (text.slice(charIndex).match(/^\S+/)?.[0] ?? "");
                 this._setBoundary(charIndex, word);
             }
             catch {
@@ -283,13 +327,13 @@ class SpeakCore extends EventTarget {
         utterance.onend = () => {
             if (gen !== this._gen)
                 return;
-            this._finishUtterance();
+            this._finishUtterance(started);
         };
         utterance.onerror = (event) => {
             if (gen !== this._gen)
                 return;
             this._setError(this._normalizeError(event));
-            this._finishUtterance();
+            this._finishUtterance(started);
         };
         this._setError(null);
         this._queued++;
@@ -308,6 +352,13 @@ class SpeakCore extends EventTarget {
         // Neutralize every in-flight utterance's pending callbacks before triggering
         // the native cancel (which fires "canceled" onerror/onend on each).
         this._gen++;
+        // Chrome quirk: cancelling while the engine is paused can leave the synth in
+        // a state where the *next* speak() produces no audio. Resume first so cancel
+        // happens from a running state. resume() on an idle/non-paused engine is a
+        // harmless no-op, so guarding on the tracked `_paused` flag is sufficient.
+        if (this._paused) {
+            window.speechSynthesis.resume();
+        }
         window.speechSynthesis.cancel();
         this._queued = 0;
         this._started = 0;
@@ -345,7 +396,10 @@ class SpeakCore extends EventTarget {
         this._voicesSubscribed = false;
         this._gen++;
         // Reset the queue bookkeeping silently (no dispatch on a disposed element);
-        // a reconnect starts fresh.
+        // a reconnect starts fresh. The observable snapshot (error / charIndex /
+        // spokenWord) is intentionally *kept* so a reparented element preserves its
+        // last state, mirroring GeolocationCore.dispose(). The next speak() resets
+        // error / boundary for its own lifecycle.
         this._queued = 0;
         this._started = 0;
         this._speaking = false;
@@ -356,8 +410,17 @@ class SpeakCore extends EventTarget {
         }
     }
     // --- Internal ---
-    _finishUtterance() {
-        this._started = Math.max(0, this._started - 1);
+    // `started` is the per-utterance flag set by its onstart. An utterance that
+    // ended/errored after starting releases a `_started` slot; one that never
+    // started (terminal event before onstart) releases its `_queued` slot instead,
+    // so `pending` correctly returns to false.
+    _finishUtterance(started) {
+        if (started) {
+            this._started = Math.max(0, this._started - 1);
+        }
+        else {
+            this._queued = Math.max(0, this._queued - 1);
+        }
         this._setSpeaking(this._started > 0);
         this._setPending(this._queued > 0);
         if (this._started === 0 && this._queued === 0) {
@@ -408,7 +471,16 @@ function handleClick$1(event) {
     const target = event.target;
     if (!(target instanceof Element))
         return;
-    const triggerElement = target.closest(`[${config.triggerAttribute}]`);
+    // A misconfigured triggerAttribute (e.g. one with a space) makes the attribute
+    // selector invalid and closest() throw SyntaxError; guard so a bad config
+    // disables only this shortcut rather than killing every document click handler.
+    let triggerElement;
+    try {
+        triggerElement = target.closest(`[${config.triggerAttribute}]`);
+    }
+    catch {
+        return;
+    }
     if (!triggerElement)
         return;
     const speakId = triggerElement.getAttribute(config.triggerAttribute);
@@ -428,7 +500,10 @@ function handleClick$1(event) {
     const explicit = triggerElement.getAttribute("data-speaktext");
     // textContent is always a string for an Element; the cast avoids an
     // unreachable null-coalesce branch. speak() tolerates a non-string anyway.
-    const text = explicit !== null ? explicit : triggerElement.textContent;
+    // The textContent fallback is trimmed (HTML indentation otherwise leaks leading
+    // / trailing whitespace into the utterance); an explicit data-speaktext is kept
+    // verbatim so an author can deliberately include surrounding spaces.
+    const text = explicit !== null ? explicit : triggerElement.textContent.trim();
     event.preventDefault();
     speakElement.speak(text);
 }
@@ -537,6 +612,12 @@ class WcsSpeak extends HTMLElement {
         // used to avoid a recognition echo loop while listening. A conforming binder
         // never delivers `undefined` (it skips the write), but a direct assignment
         // can, so normalize null/undefined to a no-op.
+        //
+        // ECHO-LOOP WARNING: when wiring <wcs-listen> → state → `say`, the synthesized
+        // audio will be re-recognized unless speech is muted while listening. There is
+        // no code-level interlock here (the two tags are decoupled): the consumer MUST
+        // wire it — bind `manual` to the listening flag (or gate the bound source).
+        // See README "Echo loop" and the speech-echo example.
         if (value == null)
             return;
         if (this.manual)
@@ -636,10 +717,14 @@ class WcsSpeak extends HTMLElement {
  *
  * Two phases mirror geolocation:
  * - **one-shot** (`continuous = false`) — recognize until the first `end`.
- * - **continuous** (`continuous = true`) — keep a session open and, because the
- *   browser still ends a session on silence, auto-restart it on `end`. The
- *   restart loop is bounded by `maxRestarts` so a persistent failure (e.g.
- *   `not-allowed`) cannot spin forever or exhaust quota.
+ * - **continuous** (`continuous = true`) — keep a single session open across
+ *   phrases. The browser still ends a session on silence; auto-restart bridges
+ *   that gap **but is opt-in via `maxRestarts`**: with the default `maxRestarts
+ *   = 0` a continuous session is *not* restarted on `end` (the safe default —
+ *   unbounded restart is the infinite-loop risk we guard against). Set
+ *   `maxRestarts > 0` to bridge N silences. The cap also stops a persistent
+ *   failure (e.g. `not-allowed`) from spinning forever or exhausting quota; a
+ *   real result resets the budget so only consecutive empty restarts count.
  *
  * A microphone permission gate (like geolocation's) reflects
  * `navigator.permissions.query({ name: "microphone" })`. Failures never throw —
@@ -713,6 +798,9 @@ class ListenCore extends EventTarget {
     get error() {
         return this._error;
     }
+    // Resolved once in the constructor (`_setUnsupported(!Ctor)`) and never
+    // re-evaluated: the SpeechRecognition API's presence is immutable for the
+    // lifetime of a document, so there's nothing to re-check.
     get unsupported() {
         return this._unsupported;
     }
@@ -772,7 +860,12 @@ class ListenCore extends EventTarget {
         if (this._active)
             return;
         this._continuous = options.continuous ?? false;
-        this._maxRestarts = typeof options.maxRestarts === "number" && options.maxRestarts >= 0 ? options.maxRestarts : 0;
+        // `maxRestarts` is a restart *count*, so floor any fractional input to an
+        // integer (e.g. 2.5 → 2). `_restartCount` increments by 1, so a fractional
+        // cap would otherwise compare inconsistently. Non-finite/negative → 0.
+        this._maxRestarts = typeof options.maxRestarts === "number" && options.maxRestarts >= 0
+            ? Math.floor(options.maxRestarts)
+            : 0;
         this._restartCount = 0;
         this._recognition.lang = options.lang ?? "";
         this._recognition.continuous = this._continuous;
@@ -813,6 +906,11 @@ class ListenCore extends EventTarget {
      * Shell's `disconnectedCallback`.
      */
     dispose() {
+        // Only the live subscriptions and the listening shadow are reset here. The
+        // observable snapshot (transcripts / result / error) is intentionally *kept*
+        // so a reparented element preserves its last state, mirroring how
+        // GeolocationCore.dispose() leaves `position` / `error` intact. The next
+        // start() clears the transcripts and error for its fresh session anyway.
         this._active = false;
         this._permissionSubscribed = false;
         this._permGen++;
@@ -826,6 +924,12 @@ class ListenCore extends EventTarget {
                 // ignore — teardown is best-effort.
             }
         }
+        // Reset the listening shadow silently (no dispatch on a disposed element),
+        // mirroring GeolocationCore's `_loading` reset. The abort() above neutralizes
+        // the recognizer but its `end` (which would clear listening via the setter)
+        // may not have fired yet; forcing false here means a reconnect+start's
+        // `onstart` still transitions false→true through the same-value guard, so the
+        // state never desyncs to a stale `true`.
         this._listening = false;
         if (this._permissionStatus) {
             this._permissionStatus.removeEventListener("change", this._onPermissionChange);
@@ -848,18 +952,35 @@ class ListenCore extends EventTarget {
         recognition.onerror = (event) => {
             this._setError(this._normalizeError(event));
             // Terminal errors must not be retried — they would spin the restart loop.
+            // The set is deliberately limited to the permission-class errors that can
+            // never self-recover within a session. Transient failures
+            // (`network` / `audio-capture` / `no-speech`) are intentionally *not*
+            // terminal: they are recoverable, so a continuous session restarts through
+            // them, bounded by `maxRestarts` (the cap is the guard against a persistent
+            // transient failure spinning forever).
             if (event && (event.error === "not-allowed" || event.error === "service-not-allowed")) {
                 this._active = false;
             }
         };
         recognition.onend = () => {
-            this._setListening(false);
             if (this._active && this._continuous && this._restartCount < this._maxRestarts) {
+                // Auto-restart bridges a silence-induced `end`. Keep `listening` true
+                // across the gap rather than flickering true→false→true: from the
+                // consumer's perspective the continuous session never stopped. The
+                // immediately-following start()'s `onstart` re-sets true (same-value
+                // guarded → no-op), so the flag stays steady. A genuine stop (no
+                // restart) still drops to false below.
                 this._restartCount++;
                 this._safeStart();
+                // _safeStart() clears _active if the restart threw; in that case the
+                // session is over, so reflect listening=false rather than leaving it
+                // stuck true.
+                if (!this._active)
+                    this._setListening(false);
                 return;
             }
             // No restart: the session is fully over.
+            this._setListening(false);
             this._active = false;
         };
     }
@@ -867,10 +988,17 @@ class ListenCore extends EventTarget {
         const results = event.results;
         let interim = "";
         let finalChunk = "";
+        // Per the Web Speech spec, `resultIndex` is the lowest index in `results`
+        // that changed in this event, so we only fold in `[resultIndex, length)` and
+        // accumulate finals (`this._finalTranscript + finalChunk`). This assumes the
+        // engine advances `resultIndex` past already-finalized results. A nonconforming
+        // engine that omits `resultIndex` (`?? 0`) or re-reports finalized results at
+        // index 0 on every event could double-accumulate the same final chunk; standard
+        // browser engines don't, so this is not hardened against here.
         for (let i = event.resultIndex ?? 0; i < results.length; i++) {
             const res = results[i];
-            const transcript = res[0]?.transcript ?? "";
-            if (res.isFinal) {
+            const transcript = res?.[0]?.transcript ?? "";
+            if (res?.isFinal) {
                 finalChunk += transcript;
             }
             else {
@@ -959,7 +1087,16 @@ function handleClick(event) {
     const target = event.target;
     if (!(target instanceof Element))
         return;
-    const triggerElement = target.closest(`[${config.listenTriggerAttribute}]`);
+    // A misconfigured listenTriggerAttribute (e.g. one with a space) makes the
+    // attribute selector invalid and closest() throw SyntaxError; guard so a bad
+    // config disables only this shortcut rather than killing every click handler.
+    let triggerElement;
+    try {
+        triggerElement = target.closest(`[${config.listenTriggerAttribute}]`);
+    }
+    catch {
+        return;
+    }
     if (!triggerElement)
         return;
     const listenId = triggerElement.getAttribute(config.listenTriggerAttribute);
@@ -1057,7 +1194,10 @@ class WcsListen extends HTMLElement {
         if (attr === null || attr.trim() === "")
             return 0;
         const parsed = Number(attr);
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+        // A restart *count* is an integer, so floor fractional input (e.g. 1.9 → 1)
+        // here too, keeping the getter's value identical to the effective cap the
+        // Core applies (ListenCore.start floors it as well). Non-finite/negative → 0.
+        return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
     }
     set maxRestarts(value) {
         this.setAttribute("max-restarts", String(value));
@@ -1139,6 +1279,12 @@ class WcsListen extends HTMLElement {
         }
         this._core.reinitPermission();
         if (!this.manual) {
+            // Non-blocking auto-start, mirroring <wcs-geo>: start() is fired
+            // unconditionally without first awaiting/inspecting the (async) permission
+            // state. A `denied` mic surfaces as a `not-allowed` error via the `error`
+            // property (and stops auto-restart), rather than the connect path silently
+            // suppressing the start. This keeps the permission model declarative and
+            // consistent with geolocation. Use `manual` to require an explicit start.
             this.start();
         }
     }

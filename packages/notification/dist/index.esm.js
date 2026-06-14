@@ -256,6 +256,7 @@ class NotificationCore extends EventTarget {
             return "";
         }
         if (typeof title !== "string") {
+            this._setError(this._err("invalid-title", "notify() requires a string title."));
             return "";
         }
         const tag = (typeof options.tag === "string" && options.tag !== "") ? options.tag : this._nextId();
@@ -325,6 +326,12 @@ class NotificationCore extends EventTarget {
         const api = this._api();
         if (!api) {
             this._setPermission("unsupported");
+            // Intentionally does NOT set _permissionSubscribed: there is no permission
+            // listener to tear down, so a reconnect simply re-probes (idempotent — the
+            // same-value guard suppresses any redundant dispatch and no listener is ever
+            // attached). _subscribeClicks() is re-entered too, but its own
+            // _clicksSubscribed guard short-circuits the second pass, so no transport is
+            // double-subscribed. Mirrors @wcstack/permission's unsupported path.
             return Promise.resolve();
         }
         this._permissionSubscribed = true;
@@ -547,6 +554,9 @@ function handleClick(event) {
     // optional `data-notifybody`. This keeps the click-driven shortcut declarative
     // without inventing a payload channel.
     const explicit = triggerElement.getAttribute("data-notifytitle");
+    // `Element.textContent` is spec-guaranteed non-null (only Document / DocumentType
+    // nodes return null, never an Element), so the cast is sound and lets us avoid an
+    // unreachable `?? ""` branch. `triggerElement` is always an Element here.
     const title = explicit !== null ? explicit : triggerElement.textContent.trim();
     const body = triggerElement.getAttribute("data-notifybody");
     notifyElement.notify(title, body !== null ? { body } : undefined);

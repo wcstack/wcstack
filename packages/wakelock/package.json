@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/wakelock",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "description": "Declarative Screen Wake Lock component for Web Components. Framework-agnostic, holds the screen awake while a bound state is true via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

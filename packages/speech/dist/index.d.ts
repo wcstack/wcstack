@@ -111,9 +111,9 @@ interface WcsSpeakInputs {
     voice: string;
     lang: string;
     /**
-     * Suppress the reactive `say` path (and any connect-time auto-speak). The
-     * imperative `speak` command still works. Also the hook used to mute speaking
-     * while listening, to avoid a recognition echo loop.
+     * Suppress the reactive `say` path. The imperative `speak` command still
+     * works. Also the hook used to mute speaking while listening, to avoid a
+     * recognition echo loop.
      */
     manual: boolean;
 }
@@ -270,6 +270,7 @@ declare class SpeakCore extends EventTarget {
     get error(): WcsSpeakErrorDetail | null;
     get unsupported(): boolean;
     private _setVoices;
+    private _voicesEqual;
     private _setSpeaking;
     private _setPaused;
     private _setPending;
@@ -337,13 +338,13 @@ declare class WcsSpeak extends HTMLElement {
     get volume(): number;
     set volume(value: number);
     get voice(): string;
-    set voice(value: string);
+    set voice(value: string | null);
     get lang(): string;
-    set lang(value: string);
+    set lang(value: string | null);
     get manual(): boolean;
     set manual(value: boolean);
     get say(): string;
-    set say(value: string);
+    set say(value: string | null);
     get voices(): SpeechVoiceInfo[];
     get speaking(): boolean;
     get paused(): boolean;
@@ -372,10 +373,14 @@ declare class WcsSpeak extends HTMLElement {
  *
  * Two phases mirror geolocation:
  * - **one-shot** (`continuous = false`) — recognize until the first `end`.
- * - **continuous** (`continuous = true`) — keep a session open and, because the
- *   browser still ends a session on silence, auto-restart it on `end`. The
- *   restart loop is bounded by `maxRestarts` so a persistent failure (e.g.
- *   `not-allowed`) cannot spin forever or exhaust quota.
+ * - **continuous** (`continuous = true`) — keep a single session open across
+ *   phrases. The browser still ends a session on silence; auto-restart bridges
+ *   that gap **but is opt-in via `maxRestarts`**: with the default `maxRestarts
+ *   = 0` a continuous session is *not* restarted on `end` (the safe default —
+ *   unbounded restart is the infinite-loop risk we guard against). Set
+ *   `maxRestarts > 0` to bridge N silences. The cap also stops a persistent
+ *   failure (e.g. `not-allowed`) from spinning forever or exhausting quota; a
+ *   real result resets the budget so only consecutive empty restarts count.
  *
  * A microphone permission gate (like geolocation's) reflects
  * `navigator.permissions.query({ name: "microphone" })`. Failures never throw —
@@ -458,7 +463,7 @@ declare class WcsListen extends HTMLElement {
     private _trigger;
     constructor();
     get lang(): string;
-    set lang(value: string);
+    set lang(value: string | null);
     get continuous(): boolean;
     set continuous(value: boolean);
     get interim(): boolean;
