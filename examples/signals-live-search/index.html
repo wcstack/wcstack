@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: signals + &lt;wcs-fetch&gt; demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lede { color: #666; margin-bottom: 1.5rem; font-size: 0.95rem; }
+    section { margin-bottom: 2rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #16213e; }
+
+    /* Counter (pure signals, custom element lifecycle) */
+    .counter { display: flex; align-items: center; gap: 0.75rem; }
+    .btn { width: 2.25rem; height: 2.25rem; border: 1px solid #ddd; border-radius: 6px; background: #fff; font-size: 1.1rem; cursor: pointer; }
+    .btn:hover { background: #f5f5f5; }
+    .count { font-size: 1.5rem; font-weight: 600; min-width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+    .muted { color: #888; font-size: 0.9rem; }
+
+    /* Live search (signals + real <wcs-fetch>) */
+    .search { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; }
+    .status { color: #666; font-size: 0.85rem; margin: 0.75rem 0; min-height: 1.2em; }
+    .people { list-style: none; }
+    .person { display: flex; justify-content: space-between; align-items: center; padding: 0.55rem 0.25rem; border-bottom: 1px solid #f0f0f0; }
+    .person:last-child { border-bottom: none; }
+    .name { font-weight: 500; }
+    .role { font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
+    .empty { color: #999; padding: 0.5rem 0.25rem; }
+  </style>
+
+  <!-- Map the bare specifier to the locally-built signals bundle. Buildless rule:
+       import EVERYTHING from ONE entry (the `/dom` bundle re-exports the core), so
+       the page loads a single reactive instance. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@wcstack/signals/dom": "/signals/dom.esm.js"
+    }
+  }
+  </script>
+
+  <!-- The real IO node: published @wcstack/fetch defines <wcs-fetch>. The signals
+       core consumes it through the wc-bindable protocol — it has no idea a signal
+       is behind the binding. -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+</head>
+<body>
+
+<h1>signals + &lt;wcs-fetch&gt;</h1>
+<p class="lede">
+  A buildless, signals-based reactive core driving real DOM with <code>h()</code>,
+  and consuming a real <code>&lt;wcs-fetch&gt;</code> element via the wc-bindable adapter.
+</p>
+
+<!-- ============================================================
+     Part 1 — Pure signals + custom-element lifecycle
+     (no IO; shows reactivity + createRoot mount/dispose)
+     ============================================================ -->
+<section>
+  <h2>Counter <span class="muted">— pure signals, &lt;signal-counter&gt; lifecycle</span></h2>
+  <signal-counter></signal-counter>
+</section>
+
+<!-- ============================================================
+     Part 2 — Live search over a real <wcs-fetch> IO node
+     ============================================================ -->
+<section>
+  <h2>Live people search <span class="muted">— signals ↔ &lt;wcs-fetch&gt;</span></h2>
+
+  <!-- Headless, hidden IO node. We never wire it with data-wcs (that's @wcstack/state).
+       Instead the signals adapter listens to its wc-bindable property events. -->
+  <wcs-fetch id="search-fetch"></wcs-fetch>
+
+  <div id="search-app"></div>
+</section>
+
+<script type="module">
+  import {
+    signal, computed, effect, createRoot, bindNode,
+    h, render, SignalsElement,
+  } from "@wcstack/signals/dom";
+
+  /* ---------------------------------------------------------------
+     Part 1: a custom element built on the signals lifecycle base.
+     connectedCallback mounts render() under an ownership root;
+     disconnectedCallback disposes every effect created here.
+     --------------------------------------------------------------- */
+  class SignalCounter extends SignalsElement {
+    count = signal(0);
+    doubled = computed(() => this.count.get() * 2);
+
+    render() {
+      const dec = () => this.count.set(this.count.peek() - 1);
+      const inc = () => this.count.set(this.count.peek() + 1);
+      return h("div", { class: "counter" },
+        h("button", { class: "btn", onClick: dec, "aria-label": "decrement" }, "−"),
+        h("output", { class: "count" }, () => String(this.count.get())),
+        h("button", { class: "btn", onClick: inc, "aria-label": "increment" }, "+"),
+        // `doubled` is a computed: this binding only re-runs when the doubled
+        // VALUE changes (equality short-circuit), not on every count write.
+        h("span", { class: "muted" }, () => `×2 = ${this.doubled.get()}`),
+      );
+    }
+  }
+  customElements.define("signal-counter", SignalCounter);
+
+  /* ---------------------------------------------------------------
+     Part 2: drive a real <wcs-fetch> with signals.
+     - bindNode turns the element's wc-bindable properties (value /
+       loading / error / status) into read-only signals.
+     - a `query` signal sets the element's `url`; <wcs-fetch> auto-
+       fetches on url change and re-dispatches its events, which the
+       adapter folds back into the signals. Typing fast aborts the
+       in-flight request (FetchCore cancels the superseded one).
+     --------------------------------------------------------------- */
+  await customElements.whenDefined("wcs-fetch");
+  const fetchEl = document.getElementById("search-fetch");
+  const bound = bindNode(fetchEl); // descriptor read from fetchEl.constructor.wcBindable
+
+  const query = signal("");
+  const people = computed(() => bound.signals.value.get() ?? []);
+  const count = computed(() => people.get().length);
+
+  createRoot(() => {
+    // query → url. This effect is owned by the root; it would be disposed on teardown.
+    effect(() => {
+      const q = query.get().trim();
+      bound.set("url", q ? `/api/people?q=${encodeURIComponent(q)}` : "/api/people");
+    });
+
+    const view = h("div", null,
+      h("input", {
+        class: "search",
+        type: "search",
+        placeholder: "Search people…",
+        onInput: (e) => query.set(e.target.value),
+      }),
+      h("p", { class: "status" }, () =>
+        bound.signals.loading.get() ? "Loading…" : `${count.get()} result(s)`,
+      ),
+      h("ul", { class: "people" }, () => {
+        const list = people.get();
+        if (list.length === 0 && !bound.signals.loading.get()) {
+          return h("li", { class: "empty" }, "No matches.");
+        }
+        return list.map((p) =>
+          h("li", { class: "person" },
+            h("span", { class: "name" }, p.name),
+            h("span", { class: "role" }, p.role),
+          ),
+        );
+      }),
+    );
+    render(view, document.getElementById("search-app"));
+  });
+</script>
+
+</body>
+</html>
