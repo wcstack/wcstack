@@ -83,15 +83,22 @@ describe("bindNode", () => {
     expect(bound.signals.value.peek()).toBeNull();
   });
 
-  it("dispose 後も set/command は node に届く（購読のみ切れる・規定挙動）", () => {
+  it("dispose 後の set/command は use-after-dispose 例外を投げる（アダプタは inert）", () => {
     const node = new FakeNode();
     const bound = bindNode(node, FakeNode.wcBindable);
     bound.dispose();
-    // set/command は薄い転送であり購読ではないため、dispose 後も node に作用する。
-    bound.set("url", "/after");
-    expect(node.url).toBe("/after");
-    bound.command("run");
-    expect(node.ran).toEqual(["/after"]);
+    // dispose 後はアダプタ全体が死ぬ。素通しせず例外で気付かせる。
+    expect(() => bound.set("url", "/after")).toThrow(/after dispose/);
+    expect(() => bound.command("run")).toThrow(/after dispose/);
+    expect(node.url).toBe(""); // node には一切作用していない
+    expect(node.ran).toEqual([]);
+  });
+
+  it("dispose は冪等（二度呼んでも安全）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    bound.dispose();
+    expect(() => bound.dispose()).not.toThrow();
   });
 
   it("未宣言の input への set は例外を投げる", () => {

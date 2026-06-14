@@ -32,10 +32,10 @@ export interface BoundNode {
   /** Invoke a declared command on the node. */
   command(name: string, ...args: unknown[]): unknown;
   /**
-   * Detach all property listeners. After dispose the output signals stop updating.
-   * NOTE: `set`/`command` are NOT gated by dispose — they still reach the node
-   * (they are thin forwarders, not subscriptions). Callers that need them inert
-   * after teardown should drop their reference to the BoundNode.
+   * Detach all property listeners and make the adapter inert. After dispose the
+   * output signals stop updating, and `set`/`command` throw (use-after-dispose) —
+   * the whole BoundNode is dead, consistent with how `set`/`command` already throw
+   * on undeclared names. Idempotent: calling dispose twice is a no-op.
    */
   dispose(): void;
 }
@@ -59,6 +59,7 @@ export function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor):
 
   const signals: Record<string, WriteSignal<unknown>> = {};
   const removers: Array<() => void> = [];
+  let disposed = false;
 
   for (const prop of desc.properties) {
     // Seed with the node's current value so the signal is valid before the first
@@ -82,12 +83,18 @@ export function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor):
   return {
     signals,
     set(name: string, value: unknown): void {
+      if (disposed) {
+        throw new Error(`bindNode.set: "${name}" called after dispose (the adapter is inert).`);
+      }
       if (!declaredInputs.has(name)) {
         throw new Error(`bindNode.set: "${name}" is not a declared input on this node.`);
       }
       target[name] = value;
     },
     command(name: string, ...args: unknown[]): unknown {
+      if (disposed) {
+        throw new Error(`bindNode.command: "${name}" called after dispose (the adapter is inert).`);
+      }
       if (!declaredCommands.has(name)) {
         throw new Error(`bindNode.command: "${name}" is not a declared command on this node.`);
       }
@@ -97,6 +104,10 @@ export function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor):
       return target[name](...args);
     },
     dispose(): void {
+      if (disposed) {
+        return; // idempotent
+      }
+      disposed = true;
       for (const remove of removers) {
         remove();
       }

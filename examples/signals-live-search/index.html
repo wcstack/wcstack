@@ -140,6 +140,11 @@
       h("p", { class: "status" }, () =>
         bound.signals.loading.get() ? "Loading…" : `${count.get()} result(s)`,
       ),
+      // NOTE: this reactive child rebuilds the whole <ul> body on every change —
+      // there is no keyed reuse yet (a keyed `For` is planned). That is fine here
+      // (read-only rows, no per-row input state), but for large or interactive
+      // lists the DOM-regen cost and loss of focus/input state matter. See the
+      // "Reactive children rebuild wholesale" note in packages/signals/README.md.
       h("ul", { class: "people" }, () => {
         const list = people.get();
         if (list.length === 0 && !bound.signals.loading.get()) {

@@ -152,15 +152,18 @@ function setProp(el: Element, key: string, value: unknown): void {
     //    name or set the attribute explicitly.
     //  - `key in el` is also true for READ-ONLY props (firstChild, childNodes, …);
     //    assigning to those silently fails or throws. Don't bind reserved DOM names.
-    //  - ASYMMETRY with the attribute path below: there, null/false REMOVE the
-    //    attribute; here the value is assigned as-is. That is correct for boolean
-    //    props (el.disabled = false), but a STRING prop (id/title/value) given a
-    //    reactive null/false becomes "null"/"false". We do NOT normalize here
-    //    because the right coercion depends on the prop's type (boolean vs string),
-    //    which needs a property table — out of scope for the PoC. Pass "" (or guard
-    //    in the thunk) when clearing a string prop.
-    // A full attribute↔property table is out of scope for the PoC.
-    (el as unknown as Record<string, unknown>)[key] = value;
+    //
+    // NORMALIZATION: null/undefined are coerced to "" before assignment. Without
+    // this, a STRING prop (id/title/value/src) given a reactive null/undefined
+    // lands as the literal "null"/"undefined" (e.g. img.src="null" fires a real
+    // request) — a correctness footgun, not a quirk. "" clears the prop instead.
+    // This is safe for non-string props too: boolean props coerce ""→false (same
+    // as null), numeric props coerce ""→0 (same as null) — no regression. We do
+    // NOT normalize `false`: `el.disabled = false` is the intended boolean clear.
+    // A full attribute↔property type table is still out of scope for the PoC; this
+    // only fixes the null/undefined case (the actual footgun), mirroring how
+    // `class` is special-cased above.
+    (el as unknown as Record<string, unknown>)[key] = value == null ? "" : value;
     return;
   }
   if (value == null || value === false) {

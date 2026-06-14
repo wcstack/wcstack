@@ -21,7 +21,7 @@
 ## 設計を一息で
 
 - **pull 検証型の三色マーキング**(Reactively / Solid 由来)。書き込みは直接の観測者を DIRTY、推移的な観測者を CHECK にし、effect は coalesce されたマイクロタスクで走ります。computed が**等しい**値に再計算された場合は伝播せず、下流の処理がスキップされます(equality short-circuit)。
-- **きめ細かい `h`、VDOM なし。** `h(tag, props, ...children)` は**実 DOM を一度だけ**構築します。関数/signal として渡した prop や child は対象を絞った `effect` に配線され、そのバインディングだけが更新されます。reconciler は同梱しません。
+- **きめ細かい `h`、VDOM なし。** `h(tag, props, ...children)` は**実 DOM を一度だけ**構築します。関数/signal として渡した prop や child は対象を絞った `effect` に配線され、そのバインディングだけが更新されます。**VDOM reconciler** は同梱しません — これは keyed list プリミティブが無いという意味では*ありません*(下の list 制約を参照)。key で行を再利用する `For(items, keyFn, render)` は配列 diff であって VDOM ではなく、本エントリへの追加を予定しています。
 - **所有権 = ライフサイクル。** `createRoot` や effect は、その実行中に生成されたすべての破棄処理(disposer)を集約します。サブツリーを破棄すれば、その effect・リスナ・リソースも破棄されます — リークしません。
 - **IO はノード、リアクティビティはコア。** `bindNode` は wc-bindable な要素(例: `<wcs-fetch>`)を signal に変換します。要素側はバインディングの背後に signal がいることを一切知りません。
 
@@ -165,7 +165,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` でラッパ要素なしにグループ化。 |
 | `SignalsElement` | `abstract class extends HTMLElement` | ライフサイクル基底。`render()` を実装、必要なら `getMountPoint()` を上書き。 |
 
-`setProp` のルール: `style` は文字列またはオブジェクトを受け付ける。`class` / `className` は `className` にマップ(`null`/`false` でクリア)。DOM プロパティとして存在するキーはプロパティ代入、それ以外は属性(`true` → 空属性、`null`/`false` → 削除)。
+`setProp` のルール: `style` は文字列またはオブジェクトを受け付ける。`class` / `className` は `className` にマップ(`null`/`false` でクリア)。DOM プロパティとして存在するキーはプロパティ代入(`null`/`undefined` は `""` に正規化され、`id`/`src` 等の文字列プロパティがリテラル `"null"` ではなくクリアされる)、それ以外は属性(`true` → 空属性、`null`/`false` → 削除)。
 
 ### リソース(`@wcstack/signals`)
 
@@ -186,7 +186,7 @@ bound.command("cmdName", ...args); // 宣言済み command の呼び出し
 bound.dispose();                // 全 property リスナを detach
 ```
 
-`descriptor` を省略すると `target.constructor.wcBindable` から読みます。`set` は未宣言の input を、`command` は未宣言(または非関数)の command を拒否します。`dispose` 後は property signal の更新は止まりますが、`set`/`command` は薄い転送なのでノードには届き続けます — アダプタを不活性化したければ参照を破棄してください。
+`descriptor` を省略すると `target.constructor.wcBindable` から読みます。`set` は未宣言の input を、`command` は未宣言(または非関数)の command を拒否します。`dispose` 後はアダプタが**不活性(inert)**になります: property signal の更新が止まり、`set`/`command` は例外を投げます(use-after-dispose)— 未宣言名の拒否と一貫した挙動です。`dispose` は冪等です。
 
 ## 注意・制限(PoC)
 
@@ -194,7 +194,8 @@ bound.dispose();                // 全 property リスナを detach
 - **JSX は形だけで同梱しない。** `h` は古典的な JSX ファクトリです。JSX を使いたい利用者は自分の tsconfig で `jsxFactory: "h"` + `jsxFragmentFactory: "Fragment"` を設定します(ビルドステップへのオプトイン)。buildless 経路は `h` を直接呼ぶことです。
 - **backpressure なし(stream)。** fold の結果が*そのまま*バッファです — 需要はプロデューサに伝わりません。無限ストリームには fold を有界に(latest / count / window)してください。無制限の蓄積は罠です。
 - **協調的キャンセル。** `ReadableStream` は abort 時に `reader.cancel()` で強制的に巻き戻されます。`AbortSignal` を無視して park する(次の `yield` の前で停止する)プレーンな async iterable は強制巻き戻しできません — `source` 内で signal を honor してください。
-- **`setProp` は属性↔プロパティの型テーブルを持たない。** *文字列*の DOM プロパティ(`id`, `title` 等)にリアクティブな `null`/`false` が流れると `"null"`/`"false"` になります。`""` を渡すか thunk でガードしてください。`class` は特別扱い済みです。
+- **`setProp` は完全な属性↔プロパティの型テーブルを持たない。** DOM プロパティへの `null`/`undefined` は `""` に正規化されます(`id`/`src` 等の文字列プロパティが `"null"` ではなくクリアされる)が、`false` はそのまま据え置きます — boolean プロパティ(`disabled = false`)では正しいので、*文字列*プロパティにリアクティブな `false` が流れると `"false"` になります。その場合は `""` を渡すか thunk でガードしてください。`class` は特別扱い済み(`false` → `""`)です。
+- **リアクティブ children は丸ごと再生成 — まだ keyed 再利用は無い。** 関数/signal の child は*挿入点*です: 実行のたびに以前生成した**全**ノードを除去し、新たに解決したノードを挿入します。リスト(`() => items.get().map(render)`)ではこれが任意の変更で `<ul>` 本体全体を再生成することを意味し、DOM 再生成コストはリストサイズに比例し、行ごとの UI 状態(編集中のインライン `<input>`/`<select>`、focus、scroll、selection、transition)は失われます。条件描画や小さい動的領域には十分ですが、**大きい/インタラクティブなリストの production 解ではありません**。key で diff して行を再利用/移動(focus と入力状態を保持)する keyed `For(items, keyFn, render)` を追加予定です。それまではリアクティブなリストを小さく/安定に保つか、揮発する部分が再生成サブツリーの内側に入らないよう分割してください。
 - **依存する値を(毎回変えながら)書き込む effect はループする。** 暴走フラッシュは反復回数の上限で打ち切られ、ハングせずに throw します。
 
 ## ヘッドレス利用

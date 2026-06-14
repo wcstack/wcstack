@@ -21,7 +21,7 @@ The public API is shaped after the [TC39 Signals proposal](https://github.com/tc
 ## Design in one breath
 
 - **Pull-validated three-color marking** (after Reactively / Solid). A write marks direct observers DIRTY and transitive ones CHECK; effects run on a coalesced microtask. A computed that recomputes to an *equal* value does **not** propagate — downstream work is skipped.
-- **Fine-grained `h`, no VDOM.** `h(tag, props, ...children)` builds **real DOM once**. A prop or child passed as a function/signal is wired to a targeted `effect`, so only that one binding updates. No reconciler is shipped.
+- **Fine-grained `h`, no VDOM.** `h(tag, props, ...children)` builds **real DOM once**. A prop or child passed as a function/signal is wired to a targeted `effect`, so only that one binding updates. No **VDOM reconciler** is shipped — note this is *not* the same as a keyed list primitive (see the list limitation below): a `For(items, keyFn, render)` that reuses rows by key is array-diffing, not a VDOM, and is a planned addition to this entry.
 - **Ownership = lifecycle.** `createRoot` / effects collect the disposers of everything created during their run, so tearing down a subtree disposes its effects, listeners, and resources — no leaks.
 - **IO is the node, reactivity is the core.** `bindNode` adapts a wc-bindable element (e.g. `<wcs-fetch>`) into signals. The element has no idea a signal is behind the binding.
 
@@ -165,7 +165,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` groups without a wrapper element. |
 | `SignalsElement` | `abstract class extends HTMLElement` | Lifecycle base; implement `render()`, optionally `getMountPoint()`. |
 
-`setProp` rules: `style` accepts a string or an object; `class` / `className` map to `className` (and `null`/`false` clear it); a key that exists as a DOM property is assigned as a property; otherwise it's an attribute (`true` → empty attr, `null`/`false` → removed).
+`setProp` rules: `style` accepts a string or an object; `class` / `className` map to `className` (and `null`/`false` clear it); a key that exists as a DOM property is assigned as a property (with `null`/`undefined` normalized to `""` so a string prop like `id`/`src` clears instead of landing the literal `"null"`); otherwise it's an attribute (`true` → empty attr, `null`/`false` → removed).
 
 ### Resources (`@wcstack/signals`)
 
@@ -186,7 +186,7 @@ bound.command("cmdName", ...args); // invoke a declared command
 bound.dispose();                // detach all property listeners
 ```
 
-If `descriptor` is omitted, it's read from `target.constructor.wcBindable`. `set` rejects an undeclared input; `command` rejects an undeclared (or non-function) command. After `dispose`, the property signals stop updating, but `set`/`command` are thin forwarders and still reach the node — drop your reference to make the adapter inert.
+If `descriptor` is omitted, it's read from `target.constructor.wcBindable`. `set` rejects an undeclared input; `command` rejects an undeclared (or non-function) command. After `dispose`, the adapter is **inert**: the property signals stop updating and `set`/`command` throw (use-after-dispose), consistent with their undeclared-name rejection. `dispose` is idempotent.
 
 ## Notes & limitations (PoC)
 
@@ -194,7 +194,8 @@ If `descriptor` is omitted, it's read from `target.constructor.wcBindable`. `set
 - **JSX is shaped but not shipped.** `h` is the classic JSX factory; a consumer who wants JSX sets `jsxFactory: "h"` + `jsxFragmentFactory: "Fragment"` in their own tsconfig (opting into a build step). The buildless path is calling `h` directly.
 - **No backpressure (stream).** The fold result *is* the buffer — demand does not flow back to the producer. Bound the fold (latest / count / window) for infinite streams; unbounded accumulation is a footgun.
 - **Cooperative cancellation.** A `ReadableStream` is force-unwound on abort via `reader.cancel()`. A plain async iterable that ignores its `AbortSignal` and parks (stalls before the next `yield`) cannot be force-unwound — honor the signal in your `source`.
-- **`setProp` has no attribute↔property type table.** A reactive `null`/`false` on a *string* DOM property (`id`, `title`, …) lands as `"null"`/`"false"`. Pass `""` or guard in the thunk; `class` is special-cased.
+- **`setProp` has no full attribute↔property type table.** `null`/`undefined` on a DOM property are normalized to `""` (so a string prop like `id`/`src` clears, not `"null"`), but `false` is left as-is — correct for boolean props (`disabled = false`), so a reactive `false` on a *string* prop still lands as `"false"`. Pass `""` or guard in the thunk for that case; `class` is special-cased (`false` → `""`).
+- **Reactive children rebuild wholesale — no keyed reuse yet.** A function/signal child is an *insertion point*: on each run **every** node it produced before is removed and the freshly-resolved nodes are inserted. For a list (`() => items.get().map(render)`) this means the whole `<ul>` body is regenerated on any change — DOM-regen cost grows with list size, and any per-row UI state is lost (an inline `<input>`/`<select>` being edited, focus, scroll, selection, transitions). This is fine for conditional/small dynamic regions but **is not the production answer for large or interactive lists**. A keyed `For(items, keyFn, render)` that diffs by key and reuses/moves rows (preserving focus and input state) is a planned addition; until then, keep reactive lists small or stable, or partition so the volatile bit isn't inside the rebuilt subtree.
 - **An effect that writes a value it depends on (mutating each run) loops.** A runaway flush is bounded by a hard iteration cap and throws rather than hanging.
 
 ## Headless usage

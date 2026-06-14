@@ -47,6 +47,29 @@ describe("h: 要素と静的 props", () => {
     expect(el.value).toBe("v");
   });
 
+  it("文字列 DOM プロパティに null/undefined を渡すと空文字に正規化する", () => {
+    // 正規化が無いと id="null" / src="undefined" 等で着地する落とし穴を防ぐ。
+    expect((h("div", { id: null }) as HTMLElement).id).toBe("");
+    expect((h("div", { id: undefined }) as HTMLElement).id).toBe("");
+    expect((h("input", { value: null }) as HTMLInputElement).value).toBe("");
+  });
+
+  it("正規化は boolean/numeric プロパティを壊さない", () => {
+    // null は "" に落ちるが boolean は false 相当、false はそのまま据え置き。
+    expect((h("input", { disabled: null }) as HTMLInputElement).disabled).toBe(false);
+    expect((h("input", { disabled: false }) as HTMLInputElement).disabled).toBe(false);
+    expect((h("input", { disabled: true }) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("reactive な null で文字列プロパティをクリアできる", () => {
+    const id = signal<string | null>("x");
+    const el = h("div", { id: () => id.get() }) as HTMLElement;
+    expect(el.id).toBe("x");
+    id.set(null);
+    flushSync();
+    expect(el.id).toBe(""); // "null" ではなく空文字
+  });
+
   it("真偽属性: true で空属性、false / null で除去", () => {
     const el = h("div", { "data-on": true }) as HTMLElement;
     expect(el.getAttribute("data-on")).toBe("");
