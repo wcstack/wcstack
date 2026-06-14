@@ -147,8 +147,70 @@ stream は値だけでなく pending / active / error / complete のライフサ
 
 ---
 
+## 7. wc-bindable-protocol における stream の扱い（境界の規約）
+
+§1〜§6 は **state 内部**で外部フローを fold する話（state への供給経路）。本節はその表裏、**state⇄element 境界**（wc-bindable-protocol）で stream をどう扱うかの規約。
+
+### 7-0. 結論: stream サーフェスは追加しない
+
+wc-bindable の3サーフェス（properties / commands / event-token）に **stream 専用の第4サーフェスを足してはならない**。stream は境界で既存3サーフェスに分解される。**ライブな stream ハンドル（ReadableStream 等）が binding 境界を越えること自体を禁じる。**
+
+### 7-1. なぜ stream を新サーフェスにしないか
+
+wc-bindable の境界が運ぶのは「値のスナップショット・イベント通知・メソッド呼び出し」の3つだけ。live ハンドルを流すと protocol の根幹が3つ壊れる:
+
+1. **再評価可能性（idempotency）の崩壊** — binding は再評価できなければならない（[[spread-undefined-writeback]] / spread 冪等化の系譜）。stream は **consumed-once・stateful** で、binding 張り直し時に消費済みストリームを再配達できない。値は再評価で同値を返せるが stream は返せない。**決定的**。
+2. **fan-out との非両立** — command-token / property は「1 token → N subscriber」にファンアウトする。ReadableStream は **single-consumer**。1本を複数 binding に配ると壊れる（tee の所有権・cancel 責務が宙に浮く）。
+3. **スナップショット不変条件の破壊** — property は「現在の値」を持つ。stream に現在値の概念はなく、§1 のとおり fold して初めて値になる。
+
+### 7-2. データフローとしての分解
+
+| 向き | 何を運ぶ | サーフェス |
+|---|---|---|
+| element → state | チャンク（1個ずつ） | **event-token**（`message` を per-chunk dispatch）。SSE/ws が実証 |
+| state → element | 制御（start/stop/cancel） | **command-token**（`connect`/`close`/`abort`） |
+| state → element | 畳み込んだ値 | ただの **property**（要素は stream 由来だと知らなくてよい） |
+
+畳み込む責務は**要素の外**（state 側 `$streams` / `$on`）。要素は内部でストリームを持っていても、**境界に出す前にチャンク＋ライフサイクルへ還元する**（SSE Core が `events` を1つの `message` event-token に集約しているのが実例）。
+
+### 7-3. 「command か stream か」の判定線
+
+既存フラグから自然に導ける:
+
+- **commands は1回だけ return する**（`IWcBindableCommand.async?` ＝ Promise を1つ返す）。
+- **時間軸で複数値が届くものは command の戻り値で表せない** → event-token になる。
+
+規範: **一度きりの結果＝command の戻り値 / Promise、繰り返し届くもの＝event-token。** streaming を `async command` の戻り値で表現してはならない。
+
+### 7-4. 例外: 不透明ハンドルを「まるごと」渡す場合
+
+`<video>.srcObject` への MediaStream 委譲など、要素側がリーダ/再生を回すケース。**property にしてはならない**（snapshot でなく 7-1 の3問題を踏む）。代わりに **command-token の引数として透過**する:
+
+```html
+<video-host data-wcs="command.attach: $command.setStream">
+```
+```js
+state.$command.setStream.emit(mediaStream)   // emit 引数は要素メソッドへ pass-through
+```
+
+これは [[command-token-arguments-proposal]] の「emit 引数は要素メソッドへ pass-through（MUST）」にそのまま乗る。**ハンドルは command の引数として通り、reactive property にはならない。**
+
+### 7-5. protocol への規範文言案
+
+1. wc-bindable に stream 専用サーフェスは設けない。
+2. property の値型に live stream（ReadableStream 等）を取ってはならない（再評価可能性・single-consumer・snapshot 不変条件に反する）。
+3. 繰り返し届くデータは event-token（per-chunk dispatch）で表す。command の戻り値で multi-emit を表現してはならない。
+4. ストリームの制御（start/cancel）は command-token。
+5. 不透明ハンドルを要素へ委譲する場合は command-token の引数として透過し、property にしない。
+6. フロー→値の畳み込みは state 側（`$streams` / `$on`）の責務。要素は境界に出す前にチャンク＋ライフサイクルへ還元する。
+
+> 一言で: **値は property、ハンドル/オブジェクトは command 引数、繰り返し通知は event-token。stream そのものは property の値型になれない。**
+
+---
+
 ## 関連
 
 - [[watch-hook-design]] — 逆向き（state → 監視/stream）の領域。双対として整理。
-- [[command-token-protocol]] / [[event-token-protocol]] — state⇄element の pub/sub。stream は「外部 → state」の第3の供給経路。
+- [[command-token-protocol]] / [[event-token-protocol]] — state⇄element の pub/sub。stream は「外部 → state」の第3の供給経路。§7 で境界規約を整理。
+- [[command-token-arguments-proposal]] — 不透明ハンドルを command 引数で透過する根拠（§7-4）。
 - `async-tag-candidates` — 本案の出発点（stream をタグ化する案の却下）。
