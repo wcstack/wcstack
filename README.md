@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Twenty-one independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Twenty-two independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -272,6 +272,7 @@ const html = await renderToString(`
 - [`@wcstack/speech`](packages/speech/) — Declarative speech with `<wcs-speak>` (text-to-speech as a command-token) and `<wcs-listen>` (recognition results as event-token state).
 - [`@wcstack/permission`](packages/permission/) — Declarative Permissions API monitor with `<wcs-permission>` exposing live `granted`/`denied`/`prompt` state. Read-only watcher (no commands); pairs with feature nodes like `<wcs-geo>`.
 - [`@wcstack/notification`](packages/notification/) — Declarative desktop notifications with `<wcs-notify>`: show via command-token (`notify`), click back via event-token (`clicked`) — both directions in one tag. Self-contained permission, Service Worker fallback for mobile.
+- [`@wcstack/defined`](packages/defined/) — Declarative custom-element readiness with `<wcs-defined>`: watches `whenDefined()` for a set of tags and exposes `defined`/`pending`/`missing`/`count`/`total` state, with timeout-based load-failure detection. Companion to the autoloader; what CSS `:defined` cannot do.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -332,6 +333,7 @@ wcstack/
 │   ├── speech/        # @wcstack/speech
 │   ├── permission/    # @wcstack/permission
 │   ├── notification/  # @wcstack/notification
+│   ├── defined/       # @wcstack/defined
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 

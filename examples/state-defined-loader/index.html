@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: defined loader gate</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    section { margin-bottom: 1.25rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    button { padding: 0.5rem 1.1rem; background: #5b21b6; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #4c1d95; }
+    button:disabled { background: #c4b5fd; cursor: not-allowed; }
+    .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid #ddd; border-top-color: #5b21b6; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .banner { padding: 0.85rem 1.1rem; border-radius: 8px; font-size: 0.9rem; }
+    .banner.failed { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+    .banner.ready { background: #dcfce7; border: 1px solid #86efac; color: #166534; }
+    .progress { font-size: 0.85rem; color: #666; margin-top: 0.6rem; font-variant-numeric: tabular-nums; }
+    .bar { height: 6px; background: #ede9fe; border-radius: 999px; overflow: hidden; margin-top: 0.4rem; }
+    .bar > i { display: block; height: 100%; background: #5b21b6; transition: width 0.3s; }
+    code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
+    demo-chart, demo-table { display: block; margin-top: 0.75rem; }
+  </style>
+
+  <!--
+    In a real app these tags come from an Import Map + @wcstack/autoloader
+    (@components/ prefix), and they register whenever their module finishes
+    importing. Here we simulate that timing declaratively with <wcs-timer>:
+    demo-chart "imports" successfully after a moment, demo-table "fails" (never
+    registers) until you retry — so you can see <wcs-defined> distinguish
+    "still loading" from "load failed" via its timeout. No setTimeout glue.
+  -->
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/defined/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: defined loader gate</h1>
+<p class="lead">
+  <code>&lt;wcs-defined&gt;</code> watches <code>customElements.whenDefined()</code> for a set of tags and
+  publishes readiness as state. Unlike CSS <code>:not(:defined)</code>, it adds a <b>timeout</b>: a
+  component that never registers (a failed lazy import) drops into <code>missing</code>, so you can show a
+  real "load failed" UI instead of hiding forever.
+</p>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      // --- bound back from <wcs-defined> ---
+      ready: false,        // defined: all watched tags registered
+      pending: [],         // still waiting (pre-timeout)
+      missing: [],         // timed out / undefinable → load failure
+      loaded: 0,           // count
+      total: 0,            // total
+
+      // event-token channel: the loader timer emits this once when it ticks (~1.2s).
+      $eventTokens: ["chartLoaded"],
+
+      // $on receives the timer's tick as a real event handler (no side effect in a
+      // getter). "demo-chart's import resolved" → register it, settling its
+      // whenDefined() in <wcs-defined>. Idempotent: define() runs at most once.
+      $on: {
+        chartLoaded: () => {
+          if (!customElements.get("demo-chart")) {
+            customElements.define("demo-chart", class extends HTMLElement {
+              connectedCallback() { this.textContent = "📈 demo-chart loaded"; }
+            });
+          }
+        },
+      },
+
+      get hasFailed() { return this.missing.length > 0; },
+      get isWaiting() { return !this.ready && !this.hasFailed; },
+      get progressText() { return `${this.loaded} / ${this.total} components ready`; },
+      get barWidth() { return this.total ? `${(this.loaded / this.total) * 100}%` : "0%"; },
+      get readyText() { return "All components are ready."; },
+      get failedText() { return `Failed to load: ${this.missing.join(", ")}. The page would otherwise hang on a spinner forever.`; },
+
+      // Simulate a successful late import of the failed component. Defining it now
+      // resolves its whenDefined(), so <wcs-defined> promotes it out of `missing`
+      // back into the ready count (late-promotion).
+      retry() {
+        if (!customElements.get("demo-table")) {
+          customElements.define("demo-table", class extends HTMLElement {
+            connectedCallback() { this.textContent = "📋 demo-table loaded"; }
+          });
+        }
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- The readiness gate. timeout=3000ms: if a tag has not registered by then, it
+     becomes `missing` (a load failure) instead of staying pending forever. -->
+<wcs-defined tags="demo-chart,demo-table" timeout="3000"
+  data-wcs="defined: ready; pending: pending; missing: missing; count: loaded; total: total"></wcs-defined>
+
+<!-- The simulated lazy-load clock: one tick after 1.2s. Its `tick` is routed via
+     event-token straight to the state's `$on.chartLoaded` handler, which registers
+     demo-chart. This replaces a raw setTimeout — the timing is declarative and the
+     effect is a real event handler, not a getter side effect. -->
+<wcs-timer interval="1200" once data-wcs="eventToken.tick: chartLoaded"></wcs-timer>
+
+<!-- Loading state: shown only while waiting (not ready, not failed). -->
+<section data-wcs="hidden: ready">
+  <div data-wcs="hidden: hasFailed">
+    <span class="spinner"></span>
+    <span style="margin-left:0.5rem">Loading components…</span>
+  </div>
+
+  <!-- Failure fallback: only reachable because of the timeout. -->
+  <div class="banner failed" data-wcs="hidden: isWaiting">
+    <span data-wcs="textContent: failedText"></span>
+    <p style="margin-top:0.6rem"><button data-wcs="onclick: retry">Retry loading demo-table</button></p>
+  </div>
+
+  <div class="progress" data-wcs="textContent: progressText"></div>
+  <div class="bar"><i data-wcs="style.width: barWidth"></i></div>
+</section>
+
+<!-- The gated content: shown only once every watched tag is defined. -->
+<section data-wcs="hidden: ready|not">
+  <div class="banner ready" data-wcs="textContent: readyText"></div>
+  <demo-chart></demo-chart>
+  <demo-table></demo-table>
+</section>
+
+</body>
+</html>
