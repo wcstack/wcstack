@@ -208,8 +208,38 @@ state.$command.setStream.emit(mediaStream)   // emit 引数は要素メソッド
 
 ---
 
+## 8. signals 版 `streamResource` による先行検証（2026-06-14）
+
+本案（state core の `$streams`）は proxy core への侵襲が大きく未着手だが、**反応性エンジンを差し替えた姉妹案 `@wcstack/signals`（[[signals-state-design]]）で同一セマンティクスを `streamResource` として PoC 実装し、本案の未確定論点を実機で確定した**。state の proxy と signals の cell は基盤が違うが、**adapter のセマンティクスは同一**＝ signals PoC が本案 `$streams` の実行可能な参照仕様になる。
+
+### 8-1. PoC で確定した共有契約
+
+| 論点 | 本案での状態 | signals PoC での確定 |
+|---|---|---|
+| §4-1 restart 時の value | 「initial にリセット or 直前値保持＝要決定」 | **initial にリセット**（新しい計算は初期状態から）。予測可能性を優先 |
+| §4-5 error 時の value | 「リセットしない方向（要決定）」 | **直前の fold 結果を保持**（error/status のみ更新） |
+| §4-2 fold | latest + reduce 両対応推奨 | 両対応。**既定は latest（置換）**、reduce は `initial` 必須 |
+| §4-7 source 型 | async iterable を lingua franca | 採用。**ReadableStream は `Symbol.asyncIterator` が無ければ `getReader()` フォールバック**（Safari 等の現実対応） |
+| §3 コンパニオン | status/error を fetch triad と整合 | `status: "idle"|"active"|"done"|"error"` + `error` を確定 |
+| §4-1 cancel/restart | 最難・switchMap | `source(args, signal)` に AbortSignal を渡し、依存変化で abort→reset→再起動。**stale-drop は `signal.aborted` チェックで全経路（チャンク/完了/throw）** |
+| §4-3 backpressure | 放棄を規範化 | 放棄。fold 結果がバッファ＝需要は逆流しない。**有界 fold 推奨を規範として明記** |
+| §4-4 coalesce | microtask coalesce | signal の effect スケジューラがそのまま coalesce |
+
+### 8-2. state 側で異なる/追加で要る点
+
+- **宣言の置き場所**: signals は `streamResource(source, {args, fold, initial})` を**命令的**に生成。state は `$streams` **宣言マップ**（§2）で、source が `state` を受ける。論点はパス依存追跡（依存駆動 restart）を proxy の computed 依存に乗せる部分＝ここだけ proxy core 固有で、PoC の effect 版より難所（§4-1 の「computed の async 寿命拡張」は残課題）。
+- **値の置き場所**: signals は cell。state は path-addressed な reactive プロパティ＋コンパニオン（`tokens.$status` 等の命名は本案 §3 のまま未確定）。
+- **オーナーシップ**: signals は owner ツリー（createRoot/onCleanup）で要素 disconnect 時に stream を abort（実証済み）。state は既存の binding ライフサイクルに同じ「disconnect→abort」を接続する必要がある。
+
+### 8-3. 帰結
+
+§4-1（restart リセット）と §4-5（error 保持）の二つの「要決定」は **確定**（上表）。fold 既定=latest、source=async iterable+getReader、status コンパニオン形も確定。残る本案固有の難所は**パス依存駆動の cancel/restart を proxy computed に乗せる**一点に絞られた。signals PoC のテスト（latest/reduce/initial/restart-reset/stale-drop/error-keep/abort-swallow/getReader/owner-dispose）が本案の受け入れ条件のひな型になる。
+
+---
+
 ## 関連
 
+- [[signals-state-design]] — signals 版。`streamResource` が本案 `$streams` の実行可能な参照仕様（§8）。
 - [[watch-hook-design]] — 逆向き（state → 監視/stream）の領域。双対として整理。
 - [[command-token-protocol]] / [[event-token-protocol]] — state⇄element の pub/sub。stream は「外部 → state」の第3の供給経路。§7 で境界規約を整理。
 - [[command-token-arguments-proposal]] — 不透明ハンドルを command 引数で透過する根拠（§7-4）。
