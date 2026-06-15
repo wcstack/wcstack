@@ -4,7 +4,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 // it as-is. If this passes, "any existing async-IO node plugs in via one adapter"
 // (docs/signals-state-design.md §3) is demonstrated, not just asserted.
 import { FetchCore } from "../../fetch/src/core/FetchCore.js";
-import { bindNode } from "../src/bindNode.js";
+import { bindNode, nodeSource } from "../src/bindNode.js";
 import { resource } from "../src/resource.js";
 import { signal, effect, flushSync } from "../src/reactive.js";
 import { h, render, SignalsElement } from "../src/dom.js";
@@ -118,6 +118,42 @@ describe("integration: 実 FetchCore × bindNode", () => {
     expect(r.value.peek()).toEqual({ id: 2 });
     expect(r.loading.peek()).toBe(false);
 
+    r.dispose();
+  });
+
+  it("nodeSource で cancel ブリッジを一般化（command 経由・PoC の sig→core.abort() を置換）", async () => {
+    const pending: Array<{ resolve: (v: FakeResponse) => void; signal: AbortSignal }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        return new Promise<FakeResponse>((resolve, reject) => {
+          const sig = init.signal as AbortSignal;
+          pending.push({ resolve, signal: sig });
+          sig.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        });
+      }),
+    );
+
+    const core = new FetchCore();
+    const bound = bindNode(core); // descriptor from constructor.wcBindable
+    const id = signal(1);
+    // No hand-wired bridge: nodeSource routes the resource AbortSignal through the
+    // node's declared `abort` command (which cancels FetchCore's AbortController).
+    const r = resource(
+      nodeSource(bound, (b, a: number) => b.command("fetch", `/api/${a}`) as Promise<unknown>),
+      { args: () => id.get() },
+    );
+
+    expect(pending.length).toBe(1);
+
+    id.set(2); // 依存変化 → 再起動。nodeSource の橋渡しで前リクエストが abort される
+    flushSync();
+
+    expect(pending[0].signal.aborted).toBe(true); // 実ノードの AbortSignal が aborted
+    expect(pending.length).toBe(2);
+
+    pending[1].resolve(jsonResponse({ id: 2 }));
+    await flushAsync();
     r.dispose();
   });
 

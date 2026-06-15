@@ -28,6 +28,10 @@ declare function effect(fn: () => Cleanup | void): EffectHandle;
  *
  * The root is detached: it is NOT auto-disposed by an enclosing owner. The caller
  * holds `dispose` (e.g. a custom element disposes it in disconnectedCallback).
+ *
+ * If `fn` throws, any effects/cleanups it created BEFORE the throw are disposed
+ * before the error propagates — a caller that never received `dispose` (because the
+ * call threw) cannot leak the half-built scope.
  */
 declare function createRoot<T>(fn: (dispose: () => void) => T): T;
 /**
@@ -87,23 +91,74 @@ interface WcBindableDescriptor {
         readonly name: string;
     }[];
 }
+/** Options for `on` — how each event emission folds into the stream signal. */
+interface EventStreamOptions<T, C> {
+    /** Combine the running value with each emission. Default: latest (replace). */
+    fold?: (acc: T | undefined, chunk: C) => T;
+    /** Seed value before the first emission. */
+    initial?: T;
+}
 interface BoundNode {
-    /** Output properties as read-only signals, keyed by property name. */
+    /** Output properties as read-only signals (latest value), keyed by property name. */
     readonly signals: Readonly<Record<string, ReadSignal<unknown>>>;
-    /** Write a declared input on the node. */
+    /**
+     * An event-token STREAM for a declared property's event: a read signal that folds
+     * every emission (latest by default). Unlike `signals[prop]`, it updates on EVERY
+     * emit — even when the derived value is equal — because it models occurrences, not
+     * state. The chunk per emit is `getter(event)` if the property declares one, else
+     * the property's current value.
+     */
+    on<T = unknown, C = unknown>(prop: string, options?: EventStreamOptions<T, C>): ReadSignal<T | undefined>;
+    /** Write a declared input on the node (imperative). */
     set(name: string, value: unknown): void;
-    /** Invoke a declared command on the node. */
+    /**
+     * Reactively write a declared input from a signal: an effect mirrors `source` into
+     * `node[name]`. A same-value guard (`node[name] !== v`) skips redundant writes, so
+     * a property whose write re-dispatches an event cannot feed back into an infinite
+     * loop. Returns a disposer; the effect is also torn down by `dispose()`.
+     */
+    bindInput(name: string, source: ReadSignal<unknown>): () => void;
+    /** Invoke a declared command on the node (imperative). */
     command(name: string, ...args: unknown[]): unknown;
     /**
-     * Detach all property listeners. After dispose the output signals stop updating.
-     * NOTE: `set`/`command` are NOT gated by dispose — they still reach the node
-     * (they are thin forwarders, not subscriptions). Callers that need them inert
-     * after teardown should drop their reference to the BoundNode.
+     * Command-token: invoke a declared command whenever `trigger` CHANGES. The initial
+     * value does not fire (subscribe-without-firing), so a command like `abort` is not
+     * triggered on mount. `mapArgs` shapes the call arguments from the trigger value
+     * (default: the value itself as a single argument). Returns a disposer; also torn
+     * down by `dispose()`.
+     */
+    bindCommand(name: string, trigger: ReadSignal<unknown>, mapArgs?: (value: unknown) => unknown[]): () => void;
+    /**
+     * Detach all listeners/effects and make the adapter inert. After dispose the output
+     * signals/streams stop updating and `set`/`command`/`bindInput`/`bindCommand`/`on`
+     * throw (use-after-dispose). Idempotent.
      */
     dispose(): void;
 }
 type NodeTarget = EventTarget & Record<string, any>;
 declare function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor): BoundNode;
+/**
+ * Build a `resource` source from a wc-bindable node, bridging the resource's
+ * AbortSignal to the node's cancel command (default `"abort"`) before delegating to
+ * `run`. This generalizes the PoC's hand-wired `sig → core.abort()` bridge (docs §8
+ * (e), §5-2): wrap the result in `resource({ args })` and any node that declares an
+ * abort command gets switchMap-style cancel/restart for free — an `args` change
+ * aborts the in-flight call (firing the node's abort command, which cancels its real
+ * AbortController) and starts the next.
+ *
+ * The node's own value/loading/error stay available via `bound.signals`; `resource`
+ * here is used for the cancel/restart lifecycle, not to re-derive that triad.
+ *
+ * @example
+ *   const bound = bindNode(fetchEl);
+ *   const r = resource(
+ *     nodeSource(bound, (b, id) => b.command("fetch", `/api/${id}`)),
+ *     { args: () => id.get() },
+ *   );
+ */
+declare function nodeSource<T, A = void>(bound: BoundNode, run: (node: BoundNode, args: A) => Promise<T> | T, options?: {
+    abort?: string;
+}): ResourceSource<T, A>;
 
 declare const Fragment: unique symbol;
 type Child = unknown;
@@ -114,6 +169,19 @@ type Component = (props: Record<string, unknown> & {
 declare function h(tag: string | typeof Fragment | Component, props?: Props, ...children: Child[]): Node;
 /** Append `child` into `container`, resolving fragments/arrays. */
 declare function render(child: Child, container: Node): Node;
+type ListAccessor<T> = ReadSignal<readonly T[]> | (() => readonly T[]);
+type ForEach<T> = (item: T, index: () => number) => Node;
+type IndexEach<T> = (item: () => T, index: number) => Node;
+interface ListView {
+    readonly __wcsList: true;
+    mount(parent: Node): void;
+}
+interface ForOptions<T> {
+    /** Derive a unique key per item. Default: the item value itself (identity). */
+    key?: (item: T, index: number) => unknown;
+}
+declare function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOptions<T>): ListView;
+declare function Index<T>(list: ListAccessor<T>, each: IndexEach<T>): ListView;
 declare abstract class SignalsElement extends HTMLElement {
     private _dispose;
     /** Build the view with `h` + signals. Runs inside an ownership root. */
@@ -124,5 +192,5 @@ declare abstract class SignalsElement extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { Fragment, SignalsElement, bindNode, computed, createRoot, effect, flushSync, h, onCleanup, render, resource, signal, streamResource };
-export type { BoundNode, Child, Cleanup, Component, EffectHandle, Equals, Props, ReadSignal, ResourceOptions, ResourceSource, ResourceState, StreamProducer, StreamResourceOptions, StreamResourceState, StreamSource, StreamStatus, WcBindableDescriptor, WcBindableProperty, WriteSignal };
+export { For, Fragment, Index, SignalsElement, bindNode, computed, createRoot, effect, flushSync, h, nodeSource, onCleanup, render, resource, signal, streamResource };
+export type { BoundNode, Child, Cleanup, Component, EffectHandle, Equals, EventStreamOptions, ForEach, ForOptions, IndexEach, ListAccessor, Props, ReadSignal, ResourceOptions, ResourceSource, ResourceState, StreamProducer, StreamResourceOptions, StreamResourceState, StreamSource, StreamStatus, WcBindableDescriptor, WcBindableProperty, WriteSignal };

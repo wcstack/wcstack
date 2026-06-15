@@ -30,9 +30,10 @@ export type {
   StreamStatus,
 } from "./streamResource.js";
 
-export { bindNode } from "./bindNode.js";
+export { bindNode, nodeSource } from "./bindNode.js";
 export type {
   BoundNode,
   WcBindableDescriptor,
   WcBindableProperty,
+  EventStreamOptions,
 } from "./bindNode.js";

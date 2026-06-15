@@ -30,12 +30,15 @@
     .empty { color: #999; padding: 0.5rem 0.25rem; }
   </style>
 
-  <!-- Map the bare specifier to the locally-built signals bundle. Buildless rule:
-       import EVERYTHING from ONE entry (the `/dom` bundle re-exports the core), so
-       the page loads a single reactive instance. -->
+  <!-- Map both signals entries to the locally-built bundles. Production packaging
+       (rollup code-splitting) makes the two entries import ONE shared core chunk,
+       so importing the headless core from `@wcstack/signals` AND the DOM layer from
+       `@wcstack/signals/dom` on the same page loads a SINGLE reactive instance.
+       (Pre-Phase-1 this duplicated the core and broke reactivity across the seam.) -->
   <script type="importmap">
   {
     "imports": {
+      "@wcstack/signals": "/signals/index.esm.js",
       "@wcstack/signals/dom": "/signals/dom.esm.js"
     }
   }
@@ -77,10 +80,12 @@
 </section>
 
 <script type="module">
+  // Headless reactive core from the main entry…
   import {
     signal, computed, effect, createRoot, bindNode,
-    h, render, SignalsElement,
-  } from "@wcstack/signals/dom";
+  } from "@wcstack/signals";
+  // …and the DOM layer from the /dom entry. Both share ONE core chunk (Phase 1).
+  import { h, render, For, SignalsElement } from "@wcstack/signals/dom";
 
   /* ---------------------------------------------------------------
      Part 1: a custom element built on the signals lifecycle base.
@@ -140,23 +145,23 @@
       h("p", { class: "status" }, () =>
         bound.signals.loading.get() ? "Loading…" : `${count.get()} result(s)`,
       ),
-      // NOTE: this reactive child rebuilds the whole <ul> body on every change —
-      // there is no keyed reuse yet (a keyed `For` is planned). That is fine here
-      // (read-only rows, no per-row input state), but for large or interactive
-      // lists the DOM-regen cost and loss of focus/input state matter. See the
-      // "Reactive children rebuild wholesale" note in packages/signals/README.md.
-      h("ul", { class: "people" }, () => {
-        const list = people.get();
-        if (list.length === 0 && !bound.signals.loading.get()) {
-          return h("li", { class: "empty" }, "No matches.");
-        }
-        return list.map((p) =>
+      // Empty-state line: a plain reactive child (shown only when there are no
+      // results and we're not loading).
+      h("p", { class: "empty" }, () =>
+        people.get().length === 0 && !bound.signals.loading.get() ? "No matches." : "",
+      ),
+      // Keyed list: `For` keeps one stable <li> per person id and reconciles in
+      // place — reordering/filtering moves rows instead of rebuilding the whole
+      // <ul>, preserving per-row DOM (and any future per-row input state).
+      h("ul", { class: "people" },
+        For(() => people.get(), (p) =>
           h("li", { class: "person" },
             h("span", { class: "name" }, p.name),
             h("span", { class: "role" }, p.role),
           ),
-        );
-      }),
+          { key: (p) => p.id },
+        ),
+      ),
     );
     render(view, document.getElementById("search-app"));
   });

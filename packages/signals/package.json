@@ -1,7 +1,7 @@
 {
   "name": "@wcstack/signals",
-  "version": "0.0.0",
-  "description": "PoC: signals-based lightweight reactive core with an async-IO resource and a wc-bindable → signal adapter. Zero runtime dependencies.",
+  "version": "1.13.1",
+  "description": "Signals-based lightweight reactive core with async-IO resource adapters and a wc-bindable → signal bridge for Web Components. Zero runtime dependencies.",
   "type": "module",
   "main": "./dist/index.esm.js",
   "module": "./dist/index.esm.js",
