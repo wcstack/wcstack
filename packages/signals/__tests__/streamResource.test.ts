@@ -149,7 +149,7 @@ describe("streamResource", () => {
 
   it("abort が throw として現れても error にしない", async () => {
     const id = signal(1);
-    const r = streamResource<string>(
+    const r = streamResource(
       async function* (_a: number, sig: AbortSignal) {
         yield "a";
         await new Promise<void>((_resolve, reject) => {
@@ -173,7 +173,7 @@ describe("streamResource", () => {
         return;
       },
     };
-    const r = streamResource<string>(
+    const r = streamResource(
       (a: number) => (a === 1 ? Promise.resolve(empty) : manualStream<string>().iterable),
       { args: () => id.get() },
     );
@@ -251,6 +251,116 @@ describe("streamResource", () => {
     await flushAsync();
     expect(r.value.peek()).toBe("q");
     expect(cancelled).toBe(false); // 正常に drain したので cancel 不要
+  });
+
+  it("abort 時に AsyncIterable の return() を呼ぶ（generator の finally 救済 / D3）", async () => {
+    const id = signal(1);
+    let returned = 0;
+    // signal を無視して park する AsyncIterable。1チャンク出した後、return() 待ち。
+    const makeIterable = (): AsyncIterable<string> => ({
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        let i = 0;
+        return {
+          next(): Promise<IteratorResult<string>> {
+            return i++ === 0
+              ? Promise.resolve({ done: false, value: "first" })
+              : new Promise<IteratorResult<string>>(() => {}); // 永久 park
+          },
+          return(): Promise<IteratorResult<string>> {
+            returned++;
+            return Promise.resolve({ done: true, value: undefined });
+          },
+        };
+      },
+    });
+
+    streamResource<string>(() => makeIterable(), { args: () => id.get() });
+    await flushAsync();
+
+    id.set(2); // restart → 旧 run を abort
+    flushSync();
+    await flushAsync();
+
+    expect(returned).toBe(1); // abort で return() が呼ばれ、generator の cleanup を起動
+  });
+
+  it("return() が reject/throw しても teardown は壊れない（D3 の握りつぶし）", async () => {
+    const id = signal(1);
+    let rejReturned = 0;
+    let throwReturned = 0;
+    // run1: return() が reject する iterator。run2: return() が同期 throw する iterator。
+    const rejecting: AsyncIterable<string> = {
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        let i = 0;
+        return {
+          next: () =>
+            i++ === 0
+              ? Promise.resolve({ done: false, value: "a" })
+              : new Promise<IteratorResult<string>>(() => {}),
+          return(): Promise<IteratorResult<string>> {
+            rejReturned++;
+            return Promise.reject(new Error("return rejected"));
+          },
+        };
+      },
+    };
+    const throwing: AsyncIterable<string> = {
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        let i = 0;
+        return {
+          next: () =>
+            i++ === 0
+              ? Promise.resolve({ done: false, value: "b" })
+              : new Promise<IteratorResult<string>>(() => {}),
+          return(): never {
+            throwReturned++;
+            throw new Error("return threw");
+          },
+        };
+      },
+    };
+    const map: Record<number, AsyncIterable<string>> = { 1: rejecting, 2: throwing };
+
+    const r = streamResource<string>(() => map[id.peek()], { args: () => id.get() });
+    await flushAsync();
+    id.set(2); // restart → run1 を abort（return() が reject、握りつぶす）
+    flushSync();
+    await flushAsync();
+    expect(rejReturned).toBe(1);
+
+    r.dispose(); // run2 を abort（return() が同期 throw、握りつぶす）
+    await flushAsync();
+    expect(throwReturned).toBe(1);
+    // どちらの teardown も例外を外に漏らさない（テストが完走する＝OK）。
+  });
+
+  it("source の await 中に abort されても、解決後の iterator の return() を呼ぶ（D3）", async () => {
+    const id = signal(1);
+    let returned = 0;
+    let resolveProduced!: (it: AsyncIterable<string>) => void;
+    const producedPromise = new Promise<AsyncIterable<string>>((r) => (resolveProduced = r));
+    const iterable: AsyncIterable<string> = {
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        return {
+          next: () => new Promise<IteratorResult<string>>(() => {}),
+          return(): Promise<IteratorResult<string>> {
+            returned++;
+            return Promise.resolve({ done: true, value: undefined });
+          },
+        };
+      },
+    };
+
+    streamResource(
+      (a: number) => (a === 1 ? producedPromise : manualStream<string>().iterable),
+      { args: () => id.get() },
+    );
+    id.set(2); // source(args=1) の Promise 解決前に restart → run1 を abort
+    flushSync();
+    resolveProduced(iterable); // run1 の source がようやく解決
+    await flushAsync();
+
+    expect(returned).toBe(1); // 解決後に aborted を検知し iterator を return() で解放
   });
 
   it("dispose で in-flight stream を止める（owner 連動）", async () => {

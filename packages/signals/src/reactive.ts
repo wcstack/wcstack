@@ -1,4 +1,4 @@
-// Minimal signal core (PoC).
+// Minimal signal core (v1 design notes).
 //
 // A self-contained, zero-dependency reactive primitive whose public API is
 // shaped after the TC39 Signals proposal (State / Computed / effect). The intent
@@ -18,6 +18,7 @@
 //   - dependencies are re-tracked on every run, so conditional deps are pruned.
 
 import { reportError } from "./reportError.js";
+import { isDev, warnDev } from "./dev.js";
 
 export type Cleanup = () => void;
 export type Equals<T> = (a: T, b: T) => boolean;
@@ -109,8 +110,23 @@ function disposeOwned(owner: Owner): void {
 
 // --- effect scheduling (microtask coalesce) ---------------------------------
 
-const pendingEffects = new Set<EffectNode>();
+// The queue NEW work accumulates into (markStale / a computed's DIRTY promotion add
+// here). Each drain pass takes the current queue to iterate and installs a fresh
+// empty one in its place, so effects queued WHILE draining land in the next pass.
+let pendingEffects = new Set<EffectNode>();
 let flushScheduled = false;
+
+// Double-buffer free list: rather than `[...pendingEffects]` (a Set→Array copy) per
+// pass, a drain SWAPS the live queue with a recycled empty Set and iterates that Set
+// directly. The swapped-out Set must be a fresh buffer that re-entrancy cannot
+// clobber — a nested flushSync swaps `pendingEffects` again, so the outer pass keeps
+// iterating its OWN buffer (the same isolation the old local-array copy gave). After
+// draining, the buffer is cleared and returned to the pool for reuse.
+const bufferPool: Set<EffectNode>[] = [];
+
+function takeBuffer(): Set<EffectNode> {
+  return bufferPool.pop() ?? new Set<EffectNode>();
+}
 
 function schedule(): void {
   if (flushScheduled) {
@@ -126,12 +142,31 @@ function schedule(): void {
 // loudly instead of spinning forever (docs §5-3).
 const MAX_FLUSH_ITERATIONS = 1000;
 
+// Dev-only: build a "what was still running" appendix for the cycle bail. Uses the
+// creation stack captured per effect (dev only) so the message points at WHERE the
+// looping effects were defined. Production never calls this (guarded by the dev
+// `lastBatch`), so the stack-capture cost never lands on shipped code.
+function describeCycle(batch: EffectNode[]): string {
+  const live = batch.filter((e) => !e._disposed);
+  const lines = live.map((e, i) => {
+    const where = e._devStack ? e._devStack.split("\n").slice(1, 3).join(" | ").trim() : "(no stack)";
+    return `  #${i + 1} ${where}`;
+  });
+  return (
+    `\n[wcstack/signals] dev diagnostics: ${live.length} effect(s) still re-running on the ` +
+    `final pass (likely cycle participants):\n${lines.join("\n")}`
+  );
+}
+
 function flushEffects(): void {
   flushScheduled = false;
   // Drain in a loop: an effect may, while running, dirty a signal that queues
   // further effects. Coalescing collapses multiple writes in one tick into a
   // single run per effect (docs §5-3).
   let iterations = 0;
+  // Dev-only: the effects run on the most recent pass, so a cycle bail can point at
+  // the culprits. Lazily allocated only in dev (no cost in production).
+  let lastBatch: EffectNode[] | null = null;
   while (pendingEffects.size > 0) {
     if (++iterations > MAX_FLUSH_ITERATIONS) {
       // Drop the runaway queue so a single bad effect cannot wedge every later
@@ -140,11 +175,22 @@ function flushEffects(): void {
       throw new Error(
         "flushEffects: exceeded " +
           MAX_FLUSH_ITERATIONS +
-          " iterations — likely a reactive cycle (an effect writes a signal it depends on with an ever-changing value).",
+          " iterations — likely a reactive cycle (an effect writes a signal it depends on with an ever-changing value)." +
+          (lastBatch ? describeCycle(lastBatch) : ""),
       );
     }
-    const batch = [...pendingEffects];
-    pendingEffects.clear();
+    // Swap the live queue out for a fresh empty buffer, then iterate the swapped-out
+    // Set directly (no array copy). New work queued by an effect's body lands in the
+    // new `pendingEffects` and is picked up on the next pass — same coalescing as
+    // before. `batch` is a local reference, so a re-entrant flushSync (which swaps
+    // `pendingEffects` again) cannot clobber this pass's iteration.
+    const batch = pendingEffects;
+    pendingEffects = takeBuffer();
+    if (isDev()) {
+      // Record the effects on this pass; on the FINAL (overflowing) pass these are
+      // the ones still re-queuing themselves — the cycle participants.
+      lastBatch = [...batch];
+    }
     for (const node of batch) {
       if (!node._disposed) {
         // Isolate each effect: a throw from one effect's body must NOT abort the
@@ -159,6 +205,10 @@ function flushEffects(): void {
         }
       }
     }
+    // Recycle this pass's buffer. Clear AFTER iterating so a node is never dropped
+    // mid-walk; the Set is now free for a later takeBuffer().
+    batch.clear();
+    bufferPool.push(batch);
   }
 }
 
@@ -207,7 +257,7 @@ function updateIfNecessary(node: Computation): void {
     // A transitive source might have changed. Refresh computed sources; one of
     // them may set us DIRTY (via the equality check in its _update).
     // NOTE: this scans ALL sources each validation (O(sources)); the standard
-    // pull-based scheme (Reactively/Solid) does the same. Intentional for the PoC —
+    // pull-based scheme (Reactively/Solid) does the same. Intentional for v1 —
     // a future optimization could track per-source dirtiness to scan less.
     for (const source of node._sources) {
       if (source instanceof ComputedNode) {
@@ -358,11 +408,18 @@ class EffectNode implements Computation, Owner {
   _state = DIRTY;
   _isEffect = true;
   _disposed = false;
+  // Dev-only creation stack, used to point a reactive-cycle bail at where the looping
+  // effect was defined. Captured only when dev mode is on at construction time, so
+  // production effects pay nothing for it.
+  _devStack: string | undefined = undefined;
   private _fn: () => Cleanup | void;
   private _cleanup: Cleanup | void = undefined;
 
   constructor(fn: () => Cleanup | void) {
     this._fn = fn;
+    if (isDev()) {
+      this._devStack = new Error().stack;
+    }
     // Be owned by the enclosing owner (a parent effect or a createRoot), so a
     // parent teardown disposes this effect.
     registerDisposer(() => this.dispose());
@@ -415,6 +472,18 @@ export function computed<T>(fn: () => T, equals: Equals<T> = Object.is): ReadSig
 }
 
 export function effect(fn: () => Cleanup | void): EffectHandle {
+  if (isDev() && currentOwner === null) {
+    // No enclosing owner: nothing will ever dispose this effect, so it (and the
+    // subscriptions it builds) leak. Legitimate top-level effects should be mounted
+    // under createRoot / SignalsElement and disposed on teardown. Dev-only warn.
+    warnDev(
+      "UNOWNED_EFFECT",
+      "",
+      "effect created with no owner — it will never be disposed and may leak. " +
+        "Wrap it in createRoot(dispose => …) (or a SignalsElement render()) and " +
+        "dispose on teardown.",
+    );
+  }
   return new EffectNode(fn);
 }
 
@@ -463,10 +532,29 @@ export function createRoot<T>(fn: (dispose: () => void) => T): T {
 }
 
 /**
+ * True when there is a current ownership scope (an enclosing effect or createRoot).
+ * Dev-diagnostics seam for the DOM layer to flag un-owned reactive insertions
+ * without re-implementing owner tracking. NOT part of the public API.
+ */
+export function hasOwner(): boolean {
+  return currentOwner !== null;
+}
+
+/**
  * Register a teardown callback with the current owner. Runs when the owning effect
  * re-runs or is disposed, or when the enclosing root is disposed. A no-op when
  * there is no current owner.
  */
 export function onCleanup(fn: () => void): void {
+  if (currentOwner === null) {
+    // No owner → registerDisposer drops `fn` on the floor: the cleanup never runs.
+    // Silent in production; flag it in dev so the missing teardown is visible.
+    warnDev(
+      "ORPHAN_CLEANUP",
+      "",
+      "onCleanup called with no owner — the cleanup will never run. " +
+        "Call it inside an effect, createRoot, or a SignalsElement render().",
+    );
+  }
   registerDisposer(fn);
 }

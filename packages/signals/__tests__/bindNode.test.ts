@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { bindNode, nodeSource, WcBindableDescriptor } from "../src/bindNode.js";
-import { signal, computed, effect, flushSync } from "../src/reactive.js";
+import { describe, it, expect, expectTypeOf } from "vitest";
+import { bindNode, nodeSource, WcBindableDescriptor, NodeShape } from "../src/bindNode.js";
+import { signal, computed, effect, flushSync, ReadSignal } from "../src/reactive.js";
 
 // A minimal wc-bindable-shaped node: EventTarget + properties (one with a custom
 // getter reading event.detail, one read straight off the instance), one input,
@@ -502,5 +502,105 @@ describe("nodeSource（resource×ノード cancel ブリッジ）", () => {
       g.reportError = prev;
     }
     expect((errors[0] as Error).message).toBe("boom2");
+  });
+});
+
+// D1 — typed node shape. These assertions are checked by the type-check gate
+// (`npm run typecheck` → tsc -p tsconfig.test.json). They are NOT enforced by the
+// runtime-only `tsc --noEmit` on `src`, since that excludes test files. The runtime
+// body below merely exercises the same typed API so a wrong runtime shape also fails.
+interface FakeShape extends NodeShape {
+  signals: { value: string | null; loading: boolean };
+  inputs: { url: string };
+  // A command WITH an argument, so the typed path's exact-arg checking can be pinned.
+  commands: { run: (url: string) => void };
+}
+
+describe("bindNode: 型安全な NodeShape（D1）", () => {
+  // COMPILE-TIME ONLY: never invoked. The type-check gate verifies the
+  // `@ts-expect-error` negatives (which would THROW if executed) and the positive
+  // `expectTypeOf`s without running them. Keeping these out of the runtime body avoids
+  // tripping the adapter's runtime name validation on deliberately-invalid calls.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function _typedShape(bound: ReturnType<typeof bindNode<FakeShape>>): void {
+    expectTypeOf(bound.signals.value).toEqualTypeOf<ReadSignal<string | null>>();
+    expectTypeOf(bound.signals.loading).toEqualTypeOf<ReadSignal<boolean>>();
+    // @ts-expect-error 宣言されていない property キーは型エラー
+    bound.signals.nope;
+    expectTypeOf(bound.on("value")).toEqualTypeOf<ReadSignal<(string | null) | undefined>>();
+    // @ts-expect-error url は string、number は不可
+    bound.set("url", 123);
+    // @ts-expect-error 宣言されていない input
+    bound.set("nope", 1);
+    // typed command: 正しい引数は通り、戻り型も導出される。
+    bound.command("run", "/api");
+    expectTypeOf(bound.command("run", "/api")).toEqualTypeOf<void>();
+    // @ts-expect-error typed 経路では誤った引数型を弾く（url は string、number 不可）
+    bound.command("run", 123);
+    // @ts-expect-error typed 経路では引数不足を弾く（run は url 必須）
+    bound.command("run");
+    // @ts-expect-error 宣言されていない command
+    bound.command("nope");
+    // bindCommand の mapArgs 戻り値も typed 経路では引数型に一致する必要がある。
+    bound.bindCommand("run", signal(""), (v) => [v]);
+    // @ts-expect-error mapArgs が誤った要素型を返すと弾く
+    bound.bindCommand("run", signal(0), (v) => [v]);
+  }
+
+  // COMPILE-TIME ONLY: the DEFAULT (no type argument) path must keep the pre-generic
+  // looseness. This is the exact back-compat that regressed (`never[]` args). The
+  // type-check gate fails if `command`/`bindCommand`/`set` stop accepting arbitrary
+  // args on the untyped path.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function _untypedBackCompat(target: EventTarget): void {
+    const bound = bindNode(target, { properties: [] });
+    bound.signals.anything; // 任意キー
+    expectTypeOf(bound.signals.anything).toEqualTypeOf<ReadSignal<unknown>>();
+    bound.set("any-input", 123); // 任意 input 名・任意値
+    bound.command("run"); // 引数なし
+    bound.command("run", "/api"); // 引数あり — ここが回帰していた箇所
+    bound.command("run", "/api", 1, { x: 2 }); // 複数・任意型の引数
+    bound.bindCommand("run", signal(0)); // 既定 mapArgs
+    bound.bindCommand("run", signal(0), (v) => [v, "extra"]); // 任意の mapArgs 戻り
+  }
+
+  it("signals/on/set/command が NodeShape から型付けされる（実行時は正当な呼び出しのみ）", () => {
+    const node = new FakeNode();
+    const bound = bindNode<FakeShape>(node, FakeNode.wcBindable);
+
+    // 正当な typed 呼び出しは実行時も通る。
+    bound.set("url", "/api");
+    expect(node.url).toBe("/api");
+    bound.command("run", "/api"); // FakeShape.run は url: string を取る
+    expect(node.ran).toEqual(["/api"]);
+
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "hi" }));
+    expect(bound.signals.value.peek()).toBe("hi");
+    expect(bound.signals.loading.peek()).toBe(false);
+  });
+
+  it("型引数なしでは従来どおり string キー / unknown（後方互換）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    // 型レベル: 任意 string キー・unknown 値（従来の振る舞い）。
+    expectTypeOf(bound.signals.value).toEqualTypeOf<ReadSignal<unknown>>();
+    bound.set("url", 1 as unknown); // 任意の値型が通る（後方互換）— 宣言済み input 名
+    expect(node.url).toBe(1);
+    expect(bound.signals.value.peek()).toBeNull();
+  });
+
+  it("nodeSource は typed bound でも動く（command 引数が型付く）", () => {
+    interface AbortShape extends NodeShape {
+      signals: { value: string | null };
+      commands: { run: (url: string) => Promise<string>; abort: () => void };
+    }
+    const node = new AbortableNode();
+    const bound = bindNode<AbortShape>(node, AbortableNode.wcBindable);
+    const src = nodeSource(bound, (b, url: string) => b.command("run", url));
+    const ac = new AbortController();
+    void src("/x", ac.signal);
+    expect(node.ran).toEqual(["/x"]);
+    ac.abort();
+    expect(node.aborted).toBe(1);
   });
 });

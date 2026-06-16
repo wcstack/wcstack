@@ -209,6 +209,140 @@ describe("For: keyed リスト", () => {
   });
 });
 
+describe("For: LIS ベースの最小移動 reorder", () => {
+  // Helper: build a For over a numeric key list and return the <ul> + a snapshot of
+  // the live <li> nodes keyed by their value, so a test can assert both ORDER and
+  // node IDENTITY (reuse) after a reorder, and count the actual DOM moves.
+  const build = (initial: number[]) => {
+    const list = signal<readonly number[]>(initial);
+    const ul = h(
+      "ul",
+      null,
+      For(list, (v) => h("li", null, String(v)), { key: (v) => v }),
+    ) as HTMLUListElement;
+    flushSync();
+    return { list, ul };
+  };
+
+  const order = (ul: HTMLUListElement): string[] =>
+    [...ul.querySelectorAll("li")].map((li) => li.textContent ?? "");
+
+  // Instrument insertBefore on the actual parent to count DOM moves for a single
+  // list.set + flush, then restore. Returns [movesCount].
+  const countMoves = (ul: HTMLUListElement, mutate: () => void): number => {
+    const parent = ul.querySelector("li")?.parentNode as Node | undefined;
+    const target = (parent ?? ul) as Node & { insertBefore: Node["insertBefore"] };
+    const original = target.insertBefore.bind(target);
+    let moves = 0;
+    (target as any).insertBefore = (node: Node, ref: Node | null) => {
+      moves++;
+      return original(node, ref);
+    };
+    try {
+      mutate();
+      flushSync();
+    } finally {
+      (target as any).insertBefore = original;
+    }
+    return moves;
+  };
+
+  it("全同順なら DOM 移動はゼロ", () => {
+    const { list, ul } = build([1, 2, 3, 4, 5]);
+    const before = [...ul.querySelectorAll("li")];
+    const moves = countMoves(ul, () => list.set([1, 2, 3, 4, 5]));
+    expect(moves).toBe(0);
+    expect(order(ul)).toEqual(["1", "2", "3", "4", "5"]);
+    // all nodes reused
+    [...ul.querySelectorAll("li")].forEach((li, i) => expect(li).toBe(before[i]));
+  });
+
+  it("完全逆順でも結果順は正しく、移動は最小（LIS=1要素ぶんだけ据え置き）", () => {
+    const { list, ul } = build([1, 2, 3, 4, 5]);
+    const nodes = new Map(
+      [...ul.querySelectorAll("li")].map((li) => [li.textContent, li] as const),
+    );
+    const moves = countMoves(ul, () => list.set([5, 4, 3, 2, 1]));
+    expect(order(ul)).toEqual(["5", "4", "3", "2", "1"]);
+    // Reverse: LIS over previous indices [4,3,2,1,0] has length 1, so 4 of 5 move.
+    expect(moves).toBe(4);
+    // every node reused, none rebuilt
+    [...ul.querySelectorAll("li")].forEach((li) =>
+      expect(li).toBe(nodes.get(li.textContent)),
+    );
+  });
+
+  it("先頭に1要素挿入しても既存行は1つも移動しない（インデックス全シフト耐性）", () => {
+    const { list, ul } = build([1, 2, 3, 4, 5]);
+    const existing = [...ul.querySelectorAll("li")];
+    // Insert a new head: naive reorder would shift every existing node; LIS keeps
+    // 1..5 in place and only inserts the new "0" before them → exactly 1 move.
+    const moves = countMoves(ul, () => list.set([0, 1, 2, 3, 4, 5]));
+    expect(order(ul)).toEqual(["0", "1", "2", "3", "4", "5"]);
+    expect(moves).toBe(1);
+    // existing nodes preserved (same identity, same relative order)
+    const after = [...ul.querySelectorAll("li")];
+    existing.forEach((li, i) => expect(after[i + 1]).toBe(li));
+  });
+
+  it("削除と移動の混在でも結果順が一致する", () => {
+    const { list, ul } = build([1, 2, 3, 4, 5, 6]);
+    const nodes = new Map(
+      [...ul.querySelectorAll("li")].map((li) => [li.textContent, li] as const),
+    );
+    // remove 2 and 5, and reorder the survivors.
+    list.set([6, 1, 4, 3]);
+    flushSync();
+    expect(order(ul)).toEqual(["6", "1", "4", "3"]);
+    // survivors reused
+    [...ul.querySelectorAll("li")].forEach((li) =>
+      expect(li).toBe(nodes.get(li.textContent)),
+    );
+  });
+
+  it("空 → 非空 → 空 の遷移", () => {
+    const list = signal<readonly number[]>([]);
+    const ul = h(
+      "ul",
+      null,
+      For(list, (v) => h("li", null, String(v)), { key: (v) => v }),
+    ) as HTMLUListElement;
+    flushSync();
+    expect(ul.querySelectorAll("li").length).toBe(0);
+
+    list.set([1, 2, 3]);
+    flushSync();
+    expect(order(ul)).toEqual(["1", "2", "3"]);
+
+    list.set([]);
+    flushSync();
+    expect(ul.querySelectorAll("li").length).toBe(0);
+  });
+
+  it("内部移動（中央の2要素入れ替え）でも順序一致＋移動最小", () => {
+    const { list, ul } = build([1, 2, 3, 4, 5]);
+    const nodes = new Map(
+      [...ul.querySelectorAll("li")].map((li) => [li.textContent, li] as const),
+    );
+    // swap 2 and 4 → previous indices [0,3,2,1,4]; LIS=[0,2,4] (len 3) stays put,
+    // so only the two swapped nodes move.
+    const moves = countMoves(ul, () => list.set([1, 4, 3, 2, 5]));
+    expect(order(ul)).toEqual(["1", "4", "3", "2", "5"]);
+    expect(moves).toBe(2);
+    [...ul.querySelectorAll("li")].forEach((li) =>
+      expect(li).toBe(nodes.get(li.textContent)),
+    );
+  });
+
+  it("末尾追加と内部移動の混在（新規ノードのみ挿入し既存LISは据え置き）", () => {
+    const { list, ul } = build([1, 2, 3]);
+    // move 3 to front, append new 4,5: 1,2 keep order; 3 and the new tail move/insert.
+    list.set([3, 1, 2, 4, 5]);
+    flushSync();
+    expect(order(ul)).toEqual(["3", "1", "2", "4", "5"]);
+  });
+});
+
 describe("Index: 位置キーのリスト", () => {
   it("初期描画してスロット更新で内容だけ差し替える（Node 再利用）", () => {
     const list = signal<readonly string[]>(["x", "y"]);

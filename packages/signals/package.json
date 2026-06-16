@@ -3,6 +3,7 @@
   "version": "1.13.1",
   "description": "Signals-based lightweight reactive core with async-IO resource adapters and a wc-bindable → signal bridge for Web Components. Zero runtime dependencies.",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.esm.js",
   "module": "./dist/index.esm.js",
   "types": "./dist/index.d.ts",
@@ -25,6 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "bench": "vitest bench --run",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint src"
   },
   "keywords": [
