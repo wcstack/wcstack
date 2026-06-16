@@ -1,0 +1,100 @@
+import {
+  IWcBindable, RecorderOptions, WcsMediaErrorDetail,
+} from "../types.js";
+import { RecorderCore } from "../core/RecorderCore.js";
+
+/**
+ * `<wcs-recorder>` — declarative media recording. Wraps RecorderCore and records a
+ * borrowed `MediaStream` received via the `attachStream` command (the direct
+ * channel from `<wcs-camera>`'s `stream-ready`). It never owns or stops the stream.
+ *
+ * Recording parameters (`mime-type` / `timeslice` / bitrates) are mirrored
+ * attributes. The assembled clip is published as `wcs-recorder:recorded`
+ * (`{ blob, objectURL, mimeType, duration }`) and the `blob` / `objectURL` value
+ * properties — a settled `Blob` is a value and may flow through state.
+ */
+export class WcsRecorder extends HTMLElement {
+  static wcBindable: IWcBindable = {
+    ...RecorderCore.wcBindable,
+    inputs: [
+      { name: "mimeType", attribute: "mime-type" },
+      { name: "timeslice", attribute: "timeslice" },
+      { name: "audioBitsPerSecond", attribute: "audio-bits" },
+      { name: "videoBitsPerSecond", attribute: "video-bits" },
+    ],
+    commands: RecorderCore.wcBindable.commands,
+  };
+
+  private _core: RecorderCore;
+
+  constructor() {
+    super();
+    this._core = new RecorderCore(this);
+  }
+
+  // --- Attribute accessors ---
+
+  get mimeType(): string { return this.getAttribute("mime-type") ?? ""; }
+  set mimeType(value: string) { this.setAttribute("mime-type", value); }
+
+  get timeslice(): number { return this._numberAttr("timeslice"); }
+  set timeslice(value: number) { this.setAttribute("timeslice", String(value)); }
+
+  get audioBitsPerSecond(): number { return this._numberAttr("audio-bits"); }
+  set audioBitsPerSecond(value: number) { this.setAttribute("audio-bits", String(value)); }
+
+  get videoBitsPerSecond(): number { return this._numberAttr("video-bits"); }
+  set videoBitsPerSecond(value: number) { this.setAttribute("video-bits", String(value)); }
+
+  // --- Core delegated getters ---
+
+  get recording(): boolean { return this._core.recording; }
+  get paused(): boolean { return this._core.paused; }
+  get duration(): number { return this._core.duration; }
+  get blob(): Blob | null { return this._core.blob; }
+  get objectURL(): string | null { return this._core.objectURL; }
+  get error(): WcsMediaErrorDetail | null { return this._core.error; }
+
+  // --- Commands ---
+
+  /** Borrow a stream (the direct-channel sink). */
+  attachStream(stream: MediaStream): void {
+    this._core.attachStream(stream);
+  }
+
+  start(): void {
+    this._core.start(this._options());
+  }
+
+  stop(): void { this._core.stop(); }
+  pause(): void { this._core.pause(); }
+  resume(): void { this._core.resume(); }
+
+  // --- Internal ---
+
+  private _numberAttr(name: string): number {
+    const attr = this.getAttribute(name);
+    if (attr === null || attr.trim() === "") return NaN;
+    const parsed = Number(attr);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+
+  private _options(): RecorderOptions {
+    const o: RecorderOptions = {};
+    if (this.mimeType) o.mimeType = this.mimeType;
+    if (Number.isFinite(this.timeslice)) o.timeslice = this.timeslice;
+    if (Number.isFinite(this.audioBitsPerSecond)) o.audioBitsPerSecond = this.audioBitsPerSecond;
+    if (Number.isFinite(this.videoBitsPerSecond)) o.videoBitsPerSecond = this.videoBitsPerSecond;
+    return o;
+  }
+
+  // --- Lifecycle ---
+
+  connectedCallback(): void {
+    this.style.display = "none";
+  }
+
+  disconnectedCallback(): void {
+    this._core.dispose();
+  }
+}
