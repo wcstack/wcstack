@@ -82,6 +82,11 @@ export function resource<T, A = void>(
       return;
     }
 
+    // Settle via two-arm `.then` rather than `await` + try/catch (streamResource's
+    // shape): a resource is SINGLE-SHOT — one resolve/reject lands once — so a flat
+    // resolved/rejected pair maps cleanly. A stream is a CONTINUOUS loop whose chunks
+    // and termination must share one error path, which an `await` loop in try/catch
+    // expresses; that structure would be needless here.
     Promise.resolve(produced).then(
       (resolved) => {
         // Drop the result if this request was superseded/disposed: committing it

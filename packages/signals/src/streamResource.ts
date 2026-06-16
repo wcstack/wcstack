@@ -142,11 +142,22 @@ async function consume<T, C, A>(
   // common "generator wakes up after abort" case. The ReadableStream path is fully
   // rescued via `reader.cancel()` (see `readableToAsyncIterable`).
   let iterator: AsyncIterator<C> | null = null;
+  // Guard against returning the SAME iterator twice. `onAbort` is reachable two ways:
+  // the abort listener, and the explicit call on line ~163 when abort raced the
+  // `await source(...)`. The guard keys on the iterator instance (not a plain "ran"
+  // flag): the listener firing with iterator still null must NOT consume the single
+  // real cleanup that the explicit call performs once the iterator exists. So we only
+  // mark an iterator returned once we have actually called `.return()` on it.
+  let returned: AsyncIterator<C> | null = null;
   const onAbort = (): void => {
+    if (!iterator || iterator === returned) {
+      return; // nothing to release yet, or already released this iterator
+    }
+    returned = iterator;
     // Fire the iterator's cleanup. Swallow any throw/rejection from `.return()` — we
     // are tearing down; a producer that rejects on return must not surface here.
     try {
-      void iterator?.return?.()?.then?.(undefined, () => {});
+      void iterator.return?.()?.then?.(undefined, () => {});
     } catch {
       // `.return()` threw synchronously while tearing down — ignore.
     }

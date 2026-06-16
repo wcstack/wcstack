@@ -753,4 +753,29 @@ describe("equality short-circuit（値等価の伝播短絡）", () => {
     flushSync();
     expect(runs).toBe(2);
   });
+
+  it("カスタム equals が throw しても CLEAN に確定し、毎回再評価で固まらない（例外安全性）", () => {
+    // updateIfNecessary の try-finally が、_update（equals 経由）の throw 後も
+    // _state を CLEAN にすることを文書化する。これがないと throw した node は
+    // DIRTY のまま残り、以降の get/peek が毎回 throw する関数を再実行し続ける。
+    const a = signal(1);
+    const boom = new Error("equals exploded");
+    const c = computed(
+      () => a.get(),
+      () => {
+        throw boom; // user 提供 equals が例外を投げる
+      },
+    );
+
+    expect(c.get()).toBe(1); // 初回は equals を呼ばない（前値なし）→ 正常
+
+    a.set(2); // 再計算 → equals が throw する
+    // 例外は呼び出し元へ伝播する（flush で隔離されない直接 get なので surface する）。
+    expect(() => c.peek()).toThrow(boom);
+
+    // throw 後も CLEAN に確定しているので、値の変わらない再読み取りは
+    // equals を再実行せず（DIRTY でない）throw もしない。
+    expect(() => c.peek()).not.toThrow();
+    expect(c.peek()).toBe(2);
+  });
 });

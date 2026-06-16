@@ -397,6 +397,15 @@ function insertReactive(parent: Node, accessor: () => unknown): void {
     }
     current = next;
   });
+
+  // On teardown, drop the references to the inserted Nodes. The disposed effect's
+  // closure still captures `current`; if anything retains the effect after disposal
+  // (e.g. a parent owner kept alive longer than the subtree), those Nodes would be
+  // pinned via that closure even though they have left the DOM. Clearing the array
+  // lets them be GC'd as soon as the enclosing owner tears this insertion point down.
+  onCleanup(() => {
+    current = [];
+  });
 }
 
 // --- keyed lists: For / Index (migration-plan §9-3) --------------------------
