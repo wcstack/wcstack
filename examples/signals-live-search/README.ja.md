@@ -42,10 +42,10 @@ node examples/signals-live-search/server.js
   `jsxFactory: "h"` を指定すれば JSX を乗せられる）ですが、本デモはビルドレスで `h` を直接呼びます。
 - **オーナーシップ → ライフサイクル。** `createRoot` が `render()` 中に作られた全 effect を集約し、
   カスタム要素が disconnect 時にその root を dispose。effect はリークしません。
-- **ビルドレスの単一エントリ規則。** ページは `@wcstack/signals/dom`（コアを再エクスポート）から
-  **すべて**を import します。ビルドレスで `@wcstack/signals` と `@wcstack/signals/dom` の両バンドル
-  を混ぜると反応性コアが**二重**になり（モジュールグローバルはバンドルごと）静かに壊れるため、
-  必ず一つのエントリから import します。
+- **両エントリで単一コアを共有。** ページはヘッドレスなコアを `@wcstack/signals` から、DOM 層を
+  `@wcstack/signals/dom` から import します（import map とモジュールスクリプトを参照）。本番パッケージング
+  （Rollup の code-splitting）は両エントリが import する単一の共有チャンク `core-*.esm.js` を出力するため、
+  両エントリを混ぜても反応性インスタンスは**一つ**だけ読み込まれます。（Pre-Phase-1 では各エントリが
+  コアを自前にインライン化し、モジュールグローバルが二重化して継ぎ目で反応性が壊れていましたが、現在は解消済みです。）
 
-> 本パッケージは PoC（v0.0.0）です。設計は `docs/signals-state-design.md`、実装とテストは
-> `packages/signals` を参照してください。
+> 設計は `docs/signals-state-design.md`、実装とテストは `packages/signals` を参照してください。
