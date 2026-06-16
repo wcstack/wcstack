@@ -197,6 +197,11 @@ function setProp(el: Element, key: string, value: unknown): void {
     // HTML and SVG. Treat false like null → empty class (consistent with the
     // attribute path's false-removes-it rule), so `() => cond && "active"` yields ""
     // (not "false") when the condition is falsy.
+    // STRING-ONLY: a non-null/non-false value is coerced via String(value). Array
+    // (`["a", "b"]`) and object (`{ active: true }`) class forms are NOT supported —
+    // they would stringify to "a,b" / "[object Object]". Compose the class string in
+    // the binding itself (e.g. `() => [a, b].join(" ")`) and pass a string. This keeps
+    // the core free of a class-merging convention.
     el.setAttribute("class", value == null || value === false ? "" : String(value));
     return;
   }
@@ -309,6 +314,12 @@ function appendChild(parent: Node, child: Child): void {
  * — do not move them to another parent externally. On the next run they are
  * removed from wherever they currently are (`node.parentNode?.removeChild`), so an
  * externally-moved node would be yanked out of its new home without warning.
+ *
+ * OWNERSHIP: the `effect` below is owned by the enclosing reactive scope at call
+ * time (the `currentOwner`). Used under `createRoot` / `SignalsElement` (the module
+ * header's mount contract) it is disposed on teardown. Calling `h`/`render` with a
+ * reactive child OUTSIDE any owner (no `createRoot`/`SignalsElement`) leaves this
+ * effect un-owned and therefore never cleaned up — by design, per that contract.
  */
 function insertReactive(parent: Node, accessor: () => unknown): void {
   const anchor = document.createComment("");
@@ -414,18 +425,32 @@ export function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOpt
         const next = new Map<unknown, Row>();
         const order: Node[] = [];
 
-        for (let i = 0; i < items.length; i++) {
-          const k = keys[i];
-          let row = rows.get(k);
-          if (row) {
-            if (row.idx.peek() !== i) {
-              row.idx.set(i); // position changed — refresh the index accessor
+        // Rows freshly created in THIS run (not reused from `rows`). If a later
+        // `make()` — i.e. a user `each` — throws mid-loop, the rows already built
+        // here are owned by their own detached `createRoot` and are not yet tracked
+        // in any surviving map, so they would leak. Dispose them before re-throwing,
+        // leaving the old `rows` map untouched (it is recoverable on the next run).
+        const fresh: Row[] = [];
+        try {
+          for (let i = 0; i < items.length; i++) {
+            const k = keys[i];
+            let row = rows.get(k);
+            if (row) {
+              if (row.idx.peek() !== i) {
+                row.idx.set(i); // position changed — refresh the index accessor
+              }
+            } else {
+              row = make(items[i], i);
+              fresh.push(row);
             }
-          } else {
-            row = make(items[i], i);
+            next.set(k, row);
+            order.push(row.node);
           }
-          next.set(k, row);
-          order.push(row.node);
+        } catch (err) {
+          for (const row of fresh) {
+            row.dispose();
+          }
+          throw err;
         }
 
         // Dispose rows whose key vanished. `remove()` no-ops if already detached.
@@ -501,7 +526,12 @@ export function Index<T>(list: ListAccessor<T>, each: IndexEach<T>): ListView {
             });
             rows.push({ node, dispose, item });
             // Positions never move for index keying, so append at the tail (before
-            // the anchor) in order.
+            // the anchor) in order. ORDERING CONTRACT (shared with For and the other
+            // anchored insertions): the list owns the contiguous region ENDING at its
+            // anchor comment. New rows go immediately before the anchor, so the list's
+            // own rows always stay correctly ordered and grouped, and static siblings
+            // before the anchor (or another list with its own anchor) are never
+            // disturbed. Do NOT splice unrelated nodes into the middle of this region.
             host?.insertBefore(node, anchor);
           }
         }
@@ -533,6 +563,19 @@ export function Index<T>(list: ListAccessor<T>, each: IndexEach<T>): ListView {
 // reactive ownership tree to the real DOM lifecycle — every effect, resource and
 // listener created in `render()` is torn down when the element leaves the DOM, and
 // rebuilt fresh on reconnect. Subclasses only implement `render()`.
+//
+// SCOPE (PoC, intentional constraints — drive these reactively, not via this base):
+//   - No attribute reactivity. There is no `attributeChangedCallback`/
+//     `observedAttributes` wiring: this base does NOT turn HTML attributes into
+//     signals. Feed reactive inputs as signals/props from the code that constructs
+//     the view (or have a subclass map attributes to signals itself).
+//   - Shadow DOM is opt-in and subclass-owned. The default mount point is light DOM
+//     (`this`); a subclass that wants encapsulation overrides `getMountPoint()` to
+//     return a shadow root it created (e.g. `this.attachShadow(...)` in its
+//     constructor). This base never calls attachShadow implicitly.
+//   - Mount/unmount only: render() runs once per connect and the whole subtree is
+//     disposed on disconnect — there is no partial/incremental re-render hook here
+//     (fine-grained updates come from the signals wired inside render()).
 
 export abstract class SignalsElement extends HTMLElement {
   private _dispose: (() => void) | null = null;

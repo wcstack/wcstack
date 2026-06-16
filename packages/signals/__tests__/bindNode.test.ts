@@ -425,4 +425,82 @@ describe("nodeSource（resource×ノード cancel ブリッジ）", () => {
     expect(node.halted).toBe(1);
     expect(node.aborted).toBe(0);
   });
+
+  it("dispose 済みアダプタへの abort は未処理例外にならず握りつぶす", () => {
+    const node = new AbortableNode();
+    const bound = bindNode(node, AbortableNode.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b, url: string) => b.command("run", url) as Promise<string>);
+    void src("/x", ac.signal);
+    bound.dispose(); // adapter が先に死ぬ（共有オーナーのteardown順）
+    // abort listener は bound.command を同期的に呼ぶが use-after-dispose 例外を握りつぶす
+    expect(() => ac.abort()).not.toThrow();
+    expect(node.aborted).toBe(0); // command は走らない（abort されなかった）
+  });
+
+  it("dispose 以外の abort コマンド例外は reportError へ送られabort を壊さない", () => {
+    class ThrowingAbort extends EventTarget {
+      static wcBindable: WcBindableDescriptor = {
+        properties: [{ name: "value", event: "ta:value" }],
+        commands: [{ name: "run" }, { name: "abort" }],
+      };
+      run(): Promise<void> {
+        return Promise.resolve();
+      }
+      abort(): void {
+        throw new Error("boom in abort");
+      }
+    }
+    const node = new ThrowingAbort();
+    const bound = bindNode(node, ThrowingAbort.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b) => b.command("run") as Promise<void>);
+    void src(undefined as never, ac.signal);
+
+    const reported: unknown[] = [];
+    const g = globalThis as { reportError?: (e: unknown) => void };
+    const prev = g.reportError;
+    g.reportError = (e) => reported.push(e);
+    try {
+      expect(() => ac.abort()).not.toThrow(); // abort 自体は壊れない
+    } finally {
+      g.reportError = prev;
+    }
+    expect(reported).toHaveLength(1);
+    expect((reported[0] as Error).message).toBe("boom in abort");
+  });
+
+  it("reportError が無い環境では console.error へフォールバックする", () => {
+    class ThrowingAbort2 extends EventTarget {
+      static wcBindable: WcBindableDescriptor = {
+        properties: [{ name: "value", event: "ta2:value" }],
+        commands: [{ name: "run" }, { name: "abort" }],
+      };
+      run(): Promise<void> {
+        return Promise.resolve();
+      }
+      abort(): void {
+        throw new Error("boom2");
+      }
+    }
+    const node = new ThrowingAbort2();
+    const bound = bindNode(node, ThrowingAbort2.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b) => b.command("run") as Promise<void>);
+    void src(undefined as never, ac.signal);
+
+    const g = globalThis as { reportError?: (e: unknown) => void };
+    const prev = g.reportError;
+    delete g.reportError; // reportError 不在を模す
+    const errors: unknown[] = [];
+    const origErr = console.error;
+    console.error = (e: unknown) => errors.push(e);
+    try {
+      expect(() => ac.abort()).not.toThrow();
+    } finally {
+      console.error = origErr;
+      g.reportError = prev;
+    }
+    expect((errors[0] as Error).message).toBe("boom2");
+  });
 });

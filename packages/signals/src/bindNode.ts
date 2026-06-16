@@ -20,6 +20,7 @@
 // updates, even with an equal value), folded latest-by-default.
 
 import { signal, effect, WriteSignal, ReadSignal } from "./reactive.js";
+import { reportError } from "./reportError.js";
 import type { ResourceSource } from "./resource.js";
 
 export interface WcBindableProperty {
@@ -85,6 +86,24 @@ export interface BoundNode {
 
 type NodeTarget = EventTarget & Record<string, any>;
 
+// Internal (NOT exported): the error thrown by `assertLive` when a method is called
+// after dispose. Carries a brand symbol so callers that need to distinguish a
+// post-dispose throw (e.g. nodeSource's abort bridge) can test it structurally
+// instead of matching the message string — the message is free to change without
+// silently breaking the guard. The brand survives even if a consumer's bundler
+// duplicates the class (e.g. `instanceof` across realms), since it's a Symbol on
+// the instance, not a class identity check.
+const DISPOSED_ERROR = Symbol("bindNode.disposed");
+
+class DisposedError extends Error {
+  readonly [DISPOSED_ERROR] = true;
+}
+
+/** True if `err` was thrown by `assertLive` (a use-after-dispose error). */
+function isDisposedError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as Record<symbol, unknown>)[DISPOSED_ERROR] === true;
+}
+
 function readProperty(target: NodeTarget, name: string): unknown {
   return target[name];
 }
@@ -107,7 +126,7 @@ export function bindNode(target: NodeTarget, descriptor?: WcBindableDescriptor):
 
   const assertLive = (op: string, name: string): void => {
     if (disposed) {
-      throw new Error(`bindNode.${op}: "${name}" called after dispose (the adapter is inert).`);
+      throw new DisposedError(`bindNode.${op}: "${name}" called after dispose (the adapter is inert).`);
     }
   };
 
@@ -249,7 +268,28 @@ export function nodeSource<T, A = void>(
   return (args, signal) => {
     // Honor the resource's cancel by invoking the node's abort command. `once`:
     // each resource run gets a fresh AbortSignal, so the listener fires at most once.
-    signal.addEventListener("abort", () => bound.command(abortName), { once: true });
+    //
+    // GUARD: the abort listener runs SYNCHRONOUSLY inside AbortController.abort().
+    // If `bound` was already disposed (e.g. the adapter and the resource share an
+    // owner and the adapter's disposer ran first), `command` throws assertLive —
+    // and a throw out of an abort listener surfaces as an unhandled exception during
+    // the synchronous abort() call. Swallow a post-dispose throw so teardown order is
+    // robust; report any OTHER error via the platform reporter without breaking abort.
+    signal.addEventListener(
+      "abort",
+      () => {
+        try {
+          bound.command(abortName);
+        } catch (err) {
+          // Brand-based check (not a message regex): a post-dispose throw is
+          // expected here and swallowed; any OTHER error is reported.
+          if (!isDisposedError(err)) {
+            reportError(err);
+          }
+        }
+      },
+      { once: true },
+    );
     return run(bound, args);
   };
 }

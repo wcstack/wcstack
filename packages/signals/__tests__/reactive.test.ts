@@ -605,6 +605,25 @@ describe("ownership (createRoot / onCleanup)", () => {
     expect(observersOf(src).size).toBe(0); // computed が untrack された
   });
 
+  it("createRoot は依存追跡コンテキストも切り離す（同期読みが外側 observer に漏れない）", () => {
+    const inner = signal(0);
+    let outerRuns = 0;
+    const dispose = effect(() => {
+      outerRuns++;
+      // 外側 effect の実行中に createRoot 内で inner を同期読み。createRoot が
+      // currentObserver を切らないと、この読みが外側 effect を inner の observer に
+      // 登録してしまい、inner.set で外側 effect が再実行されてしまう。
+      createRoot(() => {
+        inner.get();
+      });
+    });
+    expect(outerRuns).toBe(1);
+    inner.set(1);
+    flushSync();
+    expect(outerRuns).toBe(1); // 外側 effect は inner に追跡されていない
+    dispose.dispose();
+  });
+
   it("onCleanup は owner が無ければ no-op", () => {
     // 例外を投げないことの確認
     expect(() => onCleanup(() => {})).not.toThrow();

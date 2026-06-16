@@ -1,3 +1,20 @@
+// Internal error-reporting policy (NOT part of the public API; not re-exported
+// from exports.ts). Single source of truth for "surface an error without crashing".
+//
+// Delegates to the platform `reportError` when present — it dispatches a window
+// "error" event / logs to the console without aborting the current task — and falls
+// back to `console.error` otherwise. It NEVER re-throws (re-throwing would abort the
+// caller's drain / abort handler) and NEVER swallows silently (that would hide bugs).
+function reportError(err) {
+    const r = globalThis.reportError;
+    if (typeof r === "function") {
+        r(err);
+    }
+    else {
+        console.error(err);
+    }
+}
+
 // Minimal signal core (PoC).
 //
 // A self-contained, zero-dependency reactive primitive whose public API is
@@ -101,22 +118,11 @@ function flushEffects() {
         }
     }
 }
-// Surface an effect/computed error without breaking the flush. Called
-// synchronously from the drain loop: it delegates to the platform `reportError`
-// (dispatches a window "error" event / goes to the console without crashing) or
-// falls back to console.error. Crucially it does NOT re-throw — re-throwing would
-// abort the drain — and it does not swallow the error (that would hide the bug).
-// Re-entrancy is safe: the only re-scheduling path (markStale) defers to a
+// Effect/computed errors are surfaced via the shared `reportError` policy
+// (./reportError.ts), called synchronously from the drain loop. It does NOT
+// re-throw (that would abort the drain) and does NOT swallow (that would hide the
+// bug). Re-entrancy is safe: the only re-scheduling path (markStale) defers to a
 // microtask, so reporting here cannot recurse into the running flush.
-function reportError(err) {
-    const r = globalThis.reportError;
-    if (typeof r === "function") {
-        r(err);
-    }
-    else {
-        console.error(err);
-    }
-}
 /**
  * Synchronously flush queued effects. Provided for tests and for callers that
  * need DOM updates applied before reading the DOM back. In normal use effects
@@ -228,6 +234,10 @@ class ComputedNode {
         registerDisposer(() => untrack(this));
     }
     get() {
+        // Order matters: track BEFORE updateIfNecessary. The current observer must be
+        // registered against THIS computed regardless of whether validation recomputes —
+        // and recomputation swaps currentObserver to this node, so tracking first records
+        // the edge under the OUTER observer (the caller), not this computed's own run.
         track(this);
         updateIfNecessary(this);
         return this._value;
@@ -364,7 +374,16 @@ function createRoot(fn) {
         disposeOwned(owner);
     };
     const prevOwner = currentOwner;
+    const prevObserver = currentObserver;
     currentOwner = owner;
+    // Detach the dependency-tracking context too, not just ownership. A root is a
+    // fresh reactive boundary: signals read SYNCHRONOUSLY while `fn` builds the scope
+    // must not register the OUTER observer as their dependent (Solid's createRoot
+    // clears both owner and listener). Without this, a For/Index `each` that reads
+    // `index()`/`item()` synchronously in its body would track the outer reconcile
+    // effect against the row's idx/item signal, so reordering re-dirties the reconcile
+    // effect — a self-loop the equality/MAX_FLUSH guards only paper over.
+    currentObserver = null;
     try {
         return fn(dispose);
     }
@@ -374,6 +393,7 @@ function createRoot(fn) {
     }
     finally {
         currentOwner = prevOwner;
+        currentObserver = prevObserver;
     }
 }
 /**
@@ -604,6 +624,21 @@ async function* readableToAsyncIterable(stream, signal) {
 // `signals` is the STATE view of a property (equality-guarded — same value = no
 // update). `on` is the OCCURRENCE view of the same event (a stream — every emit
 // updates, even with an equal value), folded latest-by-default.
+// Internal (NOT exported): the error thrown by `assertLive` when a method is called
+// after dispose. Carries a brand symbol so callers that need to distinguish a
+// post-dispose throw (e.g. nodeSource's abort bridge) can test it structurally
+// instead of matching the message string — the message is free to change without
+// silently breaking the guard. The brand survives even if a consumer's bundler
+// duplicates the class (e.g. `instanceof` across realms), since it's a Symbol on
+// the instance, not a class identity check.
+const DISPOSED_ERROR = Symbol("bindNode.disposed");
+class DisposedError extends Error {
+    [DISPOSED_ERROR] = true;
+}
+/** True if `err` was thrown by `assertLive` (a use-after-dispose error). */
+function isDisposedError(err) {
+    return typeof err === "object" && err !== null && err[DISPOSED_ERROR] === true;
+}
 function readProperty(target, name) {
     return target[name];
 }
@@ -622,7 +657,7 @@ function bindNode(target, descriptor) {
     let disposed = false;
     const assertLive = (op, name) => {
         if (disposed) {
-            throw new Error(`bindNode.${op}: "${name}" called after dispose (the adapter is inert).`);
+            throw new DisposedError(`bindNode.${op}: "${name}" called after dispose (the adapter is inert).`);
         }
     };
     for (const prop of desc.properties) {
@@ -750,10 +785,28 @@ function nodeSource(bound, run, options = {}) {
     return (args, signal) => {
         // Honor the resource's cancel by invoking the node's abort command. `once`:
         // each resource run gets a fresh AbortSignal, so the listener fires at most once.
-        signal.addEventListener("abort", () => bound.command(abortName), { once: true });
+        //
+        // GUARD: the abort listener runs SYNCHRONOUSLY inside AbortController.abort().
+        // If `bound` was already disposed (e.g. the adapter and the resource share an
+        // owner and the adapter's disposer ran first), `command` throws assertLive —
+        // and a throw out of an abort listener surfaces as an unhandled exception during
+        // the synchronous abort() call. Swallow a post-dispose throw so teardown order is
+        // robust; report any OTHER error via the platform reporter without breaking abort.
+        signal.addEventListener("abort", () => {
+            try {
+                bound.command(abortName);
+            }
+            catch (err) {
+                // Brand-based check (not a message regex): a post-dispose throw is
+                // expected here and swallowed; any OTHER error is reported.
+                if (!isDisposedError(err)) {
+                    reportError(err);
+                }
+            }
+        }, { once: true });
         return run(bound, args);
     };
 }
 
 export { createRoot as a, bindNode as b, computed as c, streamResource as d, effect as e, flushSync as f, nodeSource as n, onCleanup as o, resource as r, signal as s };
-//# sourceMappingURL=core-Chxxfh3H.esm.js.map
+//# sourceMappingURL=core-COny6Gpu.esm.js.map

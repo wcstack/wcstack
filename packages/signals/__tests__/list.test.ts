@@ -85,10 +85,60 @@ describe("For: keyed リスト", () => {
     expect(after.map((li) => li.getAttribute("data-i"))).toEqual(["0", "1"]);
   });
 
+  it("each 本体で index() を同期読みしても並び替えで reconcile が暴走しない", () => {
+    // createRoot が依存追跡コンテキストを切り離すので、行構築中の同期 index() 読みが
+    // 外側の reconcile effect を idx の observer にしてしまう自己ループは起きない。
+    const list = signal<readonly Person[]>([P(1, "a"), P(2, "b"), P(3, "c")]);
+    const ul = h("ul", null,
+      For(
+        list,
+        (p, index) => {
+          // 同期読み（サンク経由でない）。
+          const snapshot = index();
+          return h("li", { "data-init": String(snapshot) }, p.name);
+        },
+        { key: (p) => p.id },
+      ),
+    ) as HTMLUListElement;
+    flushSync();
+    // 暴走せず並び替えできる（MAX_FLUSH 超過で throw しない）。
+    expect(() => {
+      list.set([P(3, "c"), P(1, "a"), P(2, "b")]);
+      flushSync();
+    }).not.toThrow();
+    expect([...ul.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["c", "a", "b"]);
+    // 行は再利用される（data-init は構築時の index 固定値のまま）。
+    expect([...ul.querySelectorAll("li")].map((li) => li.getAttribute("data-init"))).toEqual(["2", "0", "1"]);
+  });
+
   it("重複キーは初期描画で throw する", () => {
     expect(() =>
       h("ul", null, For(() => [P(1, "a"), P(1, "b")], (p) => h("li", null, p.name), { key: (p) => p.id })),
     ).toThrow(/duplicate key/);
+  });
+
+  it("each がレンダリング中に throw しても、その回に新規生成済みの行は dispose される", () => {
+    // 異常系: ユーザ提供 each が途中の行で例外を投げる。reconcile が rows=next の
+    // 入れ替え前に中断しても、その回に make() で先に生成済みの行（fresh）を確実に
+    // dispose し、デタッチされた createRoot を孤立させない。
+    const disposed: number[] = [];
+    expect(() =>
+      h("ul", null,
+        For(
+          () => [P(1, "a"), P(2, "b"), P(3, "c")],
+          (p) => {
+            if (p.id === 3) {
+              throw new Error("each boom");
+            }
+            onCleanup(() => disposed.push(p.id));
+            return h("li", null, p.name);
+          },
+          { key: (p) => p.id },
+        ),
+      ),
+    ).toThrow(/each boom/);
+    // id=1,2 は throw 前に生成済み → ロールバックで dispose 済み（onCleanup 発火）。
+    expect(disposed.sort()).toEqual([1, 2]);
   });
 
   it("key 省略時は値の同一性（identity）でキーイングする", () => {
@@ -251,5 +301,38 @@ describe("Index: 位置キーのリスト", () => {
     flushSync();
     dispose();
     expect(disposed.sort()).toEqual([0, 1]);
+  });
+
+  it("静的な兄弟と混在しても grow がアンカー直前に正しく挿入される", () => {
+    // The list shares its parent with a static header/footer and another list.
+    // Each list owns the region ending at its anchor; grow inserts before that
+    // anchor, so its own rows stay grouped and ordered without disturbing siblings.
+    const a = signal<readonly number[]>([1]);
+    const b = signal<readonly string[]>(["x"]);
+    const ul = h(
+      "ul",
+      null,
+      h("li", { id: "head" }, "HEAD"),
+      Index(a, (item) => h("li", { class: "a" }, () => String(item()))),
+      h("li", { id: "mid" }, "MID"),
+      Index(b, (item) => h("li", { class: "b" }, () => item())),
+      h("li", { id: "foot" }, "FOOT"),
+    ) as HTMLUListElement;
+    flushSync();
+
+    a.set([1, 2, 3]); // grow list A
+    b.set(["x", "y"]); // grow list B
+    flushSync();
+
+    const labels = [...ul.querySelectorAll("li")].map(
+      (li) => li.id || `${li.className}:${li.textContent}`,
+    );
+    expect(labels).toEqual([
+      "head",
+      "a:1", "a:2", "a:3",
+      "mid",
+      "b:x", "b:y",
+      "foot",
+    ]);
   });
 });

@@ -17,6 +17,8 @@
 //     NOT mark its observers DIRTY, so downstream effects/computeds skip work.
 //   - dependencies are re-tracked on every run, so conditional deps are pruned.
 
+import { reportError } from "./reportError.js";
+
 export type Cleanup = () => void;
 export type Equals<T> = (a: T, b: T) => boolean;
 
@@ -160,21 +162,11 @@ function flushEffects(): void {
   }
 }
 
-// Surface an effect/computed error without breaking the flush. Called
-// synchronously from the drain loop: it delegates to the platform `reportError`
-// (dispatches a window "error" event / goes to the console without crashing) or
-// falls back to console.error. Crucially it does NOT re-throw — re-throwing would
-// abort the drain — and it does not swallow the error (that would hide the bug).
-// Re-entrancy is safe: the only re-scheduling path (markStale) defers to a
+// Effect/computed errors are surfaced via the shared `reportError` policy
+// (./reportError.ts), called synchronously from the drain loop. It does NOT
+// re-throw (that would abort the drain) and does NOT swallow (that would hide the
+// bug). Re-entrancy is safe: the only re-scheduling path (markStale) defers to a
 // microtask, so reporting here cannot recurse into the running flush.
-function reportError(err: unknown): void {
-  const r = (globalThis as { reportError?: (e: unknown) => void }).reportError;
-  if (typeof r === "function") {
-    r(err);
-  } else {
-    console.error(err);
-  }
-}
 
 /**
  * Synchronously flush queued effects. Provided for tests and for callers that
@@ -299,6 +291,10 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
   }
 
   get(): T {
+    // Order matters: track BEFORE updateIfNecessary. The current observer must be
+    // registered against THIS computed regardless of whether validation recomputes —
+    // and recomputation swaps currentObserver to this node, so tracking first records
+    // the edge under the OUTER observer (the caller), not this computed's own run.
     track(this);
     updateIfNecessary(this);
     return this._value as T;
@@ -445,7 +441,16 @@ export function createRoot<T>(fn: (dispose: () => void) => T): T {
     disposeOwned(owner);
   };
   const prevOwner = currentOwner;
+  const prevObserver = currentObserver;
   currentOwner = owner;
+  // Detach the dependency-tracking context too, not just ownership. A root is a
+  // fresh reactive boundary: signals read SYNCHRONOUSLY while `fn` builds the scope
+  // must not register the OUTER observer as their dependent (Solid's createRoot
+  // clears both owner and listener). Without this, a For/Index `each` that reads
+  // `index()`/`item()` synchronously in its body would track the outer reconcile
+  // effect against the row's idx/item signal, so reordering re-dirties the reconcile
+  // effect — a self-loop the equality/MAX_FLUSH guards only paper over.
+  currentObserver = null;
   try {
     return fn(dispose);
   } catch (err) {
@@ -453,6 +458,7 @@ export function createRoot<T>(fn: (dispose: () => void) => T): T {
     throw err;
   } finally {
     currentOwner = prevOwner;
+    currentObserver = prevObserver;
   }
 }
 
