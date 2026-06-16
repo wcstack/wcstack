@@ -1,642 +1,7 @@
-// Minimal signal core (PoC).
-//
-// A self-contained, zero-dependency reactive primitive whose public API is
-// shaped after the TC39 Signals proposal (State / Computed / effect). The intent
-// is NOT to ship signal-polyfill as a runtime dependency, but to keep an in-house
-// implementation that can later be swapped for the native one without changing
-// call sites. See docs/signals-state-design.md §2 (the "case C" decision).
-//
-// Reactivity model: three-color marking (CLEAN / CHECK / DIRTY), pull-validated
-// (after Reactively / Solid). docs §8 (c).
-//   - A signal write marks its direct observers DIRTY and their transitive
-//     observers CHECK. Effects scheduled on the CLEAN→stale transition run on a
-//     coalesced microtask (docs §5-3).
-//   - On read/run, `updateIfNecessary` validates a CHECK node by refreshing its
-//     computed sources first; it recomputes only if a source actually changed.
-//   - EQUALITY SHORT-CIRCUIT: when a computed recomputes to an equal value it does
-//     NOT mark its observers DIRTY, so downstream effects/computeds skip work.
-//   - dependencies are re-tracked on every run, so conditional deps are pruned.
-// Node freshness. CLEAN: up to date. CHECK: a transitive source may have changed
-// — must validate before use. DIRTY: a direct source changed — must recompute.
-// Typed as `number` (not literals) on purpose: `_state` is mutated through
-// aliasing during `updateIfNecessary`, so literal narrowing would wrongly flag
-// the `=== DIRTY` re-check after a source update.
-const CLEAN = 0;
-const CHECK = 1;
-const DIRTY = 2;
-// --- tracking context -------------------------------------------------------
-let currentObserver = null;
-function track(source) {
-    if (currentObserver !== null) {
-        currentObserver._sources.add(source);
-        source._observers.add(currentObserver);
-    }
-}
-function untrack(node) {
-    for (const source of node._sources) {
-        source._observers.delete(node);
-    }
-    node._sources.clear();
-}
-let currentOwner = null;
-function registerDisposer(disposer) {
-    if (currentOwner !== null) {
-        currentOwner._owned.push(disposer);
-    }
-}
-function disposeOwned(owner) {
-    // Dispose in reverse creation order (children before parents, last-in-first-out).
-    const owned = owner._owned;
-    for (let i = owned.length - 1; i >= 0; i--) {
-        owned[i]();
-    }
-    owned.length = 0;
-}
-// --- effect scheduling (microtask coalesce) ---------------------------------
-const pendingEffects = new Set();
-let flushScheduled = false;
-function schedule() {
-    if (flushScheduled) {
-        return;
-    }
-    flushScheduled = true;
-    queueMicrotask(flushEffects);
-}
-// Upper bound on drain iterations. A well-behaved graph settles in a handful of
-// passes; exceeding this means an effect keeps dirtying its own dependency with a
-// changing value (a reactive cycle), which would otherwise hang the page. We bail
-// loudly instead of spinning forever (docs §5-3).
-const MAX_FLUSH_ITERATIONS = 1000;
-function flushEffects() {
-    flushScheduled = false;
-    // Drain in a loop: an effect may, while running, dirty a signal that queues
-    // further effects. Coalescing collapses multiple writes in one tick into a
-    // single run per effect (docs §5-3).
-    let iterations = 0;
-    while (pendingEffects.size > 0) {
-        if (++iterations > MAX_FLUSH_ITERATIONS) {
-            // Drop the runaway queue so a single bad effect cannot wedge every later
-            // flush, then surface the bug.
-            pendingEffects.clear();
-            throw new Error("flushEffects: exceeded " +
-                MAX_FLUSH_ITERATIONS +
-                " iterations — likely a reactive cycle (an effect writes a signal it depends on with an ever-changing value).");
-        }
-        const batch = [...pendingEffects];
-        pendingEffects.clear();
-        for (const node of batch) {
-            if (!node._disposed) {
-                // Isolate each effect: a throw from one effect's body must NOT abort the
-                // batch and silently strand its already-dequeued siblings. We hand the
-                // error to reportError (which does not re-throw, so the drain continues)
-                // and move on. updateIfNecessary guarantees the node is settled to CLEAN
-                // even on throw, so it is not left stuck DIRTY.
-                try {
-                    updateIfNecessary(node);
-                }
-                catch (err) {
-                    reportError(err);
-                }
-            }
-        }
-    }
-}
-// Surface an effect/computed error without breaking the flush. Called
-// synchronously from the drain loop: it delegates to the platform `reportError`
-// (dispatches a window "error" event / goes to the console without crashing) or
-// falls back to console.error. Crucially it does NOT re-throw — re-throwing would
-// abort the drain — and it does not swallow the error (that would hide the bug).
-// Re-entrancy is safe: the only re-scheduling path (markStale) defers to a
-// microtask, so reporting here cannot recurse into the running flush.
-function reportError(err) {
-    const r = globalThis.reportError;
-    if (typeof r === "function") {
-        r(err);
-    }
-    else {
-        console.error(err);
-    }
-}
-/**
- * Synchronously flush queued effects. Provided for tests and for callers that
- * need DOM updates applied before reading the DOM back. In normal use effects
- * settle on their own microtask.
- */
-function flushSync() {
-    // Do NOT touch flushScheduled here: a microtask may already be queued. Just
-    // drain. flushEffects resets the flag itself; if a queued microtask still fires
-    // afterwards it finds an empty queue and is a no-op. Touching the flag from here
-    // would let a second flushSync race the queued microtask into a double drain.
-    flushEffects();
-}
-// --- marking & validation ---------------------------------------------------
-function markStale(node, level) {
-    if (node._state < level) {
-        const wasClean = node._state === CLEAN;
-        node._state = level;
-        if (wasClean && node._isEffect) {
-            pendingEffects.add(node);
-            schedule();
-        }
-        // Observers can only become CHECK from us: they need to re-validate, but
-        // whether they truly changed depends on our recomputed value.
-        for (const observer of node._observers) {
-            markStale(observer, CHECK);
-        }
-    }
-}
-function updateIfNecessary(node) {
-    if (node._state === CLEAN) {
-        return;
-    }
-    if (node._state === CHECK) {
-        // A transitive source might have changed. Refresh computed sources; one of
-        // them may set us DIRTY (via the equality check in its _update).
-        // NOTE: this scans ALL sources each validation (O(sources)); the standard
-        // pull-based scheme (Reactively/Solid) does the same. Intentional for the PoC —
-        // a future optimization could track per-source dirtiness to scan less.
-        for (const source of node._sources) {
-            if (source instanceof ComputedNode) {
-                updateIfNecessary(source);
-                if (node._state === DIRTY) {
-                    break;
-                }
-            }
-        }
-    }
-    // Settle to CLEAN in a finally: if _update() (a user fn / equals) throws, the
-    // node must NOT be left stuck DIRTY, otherwise every later peek/get would
-    // re-run the throwing fn forever. The error propagates to the caller (a flush
-    // isolates it per-effect; a direct get/peek surfaces it to that caller).
-    try {
-        if (node._state === DIRTY) {
-            node._update();
-        }
-    }
-    finally {
-        node._state = CLEAN;
-    }
-}
-// --- signal -----------------------------------------------------------------
-class SignalNode {
-    _observers = new Set();
-    _value;
-    _equals;
-    constructor(value, equals) {
-        this._value = value;
-        this._equals = equals;
-    }
-    get() {
-        track(this);
-        return this._value;
-    }
-    peek() {
-        return this._value;
-    }
-    set(next) {
-        if (this._equals(this._value, next)) {
-            return;
-        }
-        this._value = next;
-        // No copy needed: markStale only schedules effects (on a microtask) and marks
-        // observers — it never runs user code synchronously, so this set is not
-        // mutated during the walk. Iterating it directly avoids a per-write allocation.
-        for (const observer of this._observers) {
-            markStale(observer, DIRTY);
-        }
-    }
-}
-// --- computed ---------------------------------------------------------------
-class ComputedNode {
-    _observers = new Set();
-    _sources = new Set();
-    _state = DIRTY; // never computed yet
-    _isEffect = false;
-    _fn;
-    _value = undefined;
-    _initialized = false;
-    _running = false;
-    _equals;
-    constructor(fn, equals) {
-        this._fn = fn;
-        this._equals = equals;
-        // Be owned by the enclosing scope (a parent effect or createRoot). When that
-        // scope tears down, untrack this computed so it is removed from its sources'
-        // observer sets — otherwise a computed created inside an effect that re-runs
-        // would leak a stale ComputedNode into each source on every run (docs §8 (d)).
-        // Lazy + no children: teardown is just untrack, no cleanup/owned to dispose.
-        registerDisposer(() => untrack(this));
-    }
-    get() {
-        track(this);
-        updateIfNecessary(this);
-        return this._value;
-    }
-    peek() {
-        updateIfNecessary(this);
-        return this._value;
-    }
-    _update() {
-        // Cycle guard: if _fn (directly or transitively) reads this computed, get()
-        // would recurse into _update and blow the stack with an opaque RangeError.
-        // Detect the self-reference and throw a clear error instead. (The effect-level
-        // MAX_FLUSH_ITERATIONS guard does not cover this synchronous self-recursion.)
-        if (this._running) {
-            throw new Error("computed: circular dependency — the computed reads itself.");
-        }
-        const previous = this._value;
-        untrack(this);
-        const prevObserver = currentObserver;
-        currentObserver = this;
-        this._running = true;
-        try {
-            this._value = this._fn();
-        }
-        finally {
-            this._running = false;
-            currentObserver = prevObserver;
-        }
-        // Equality short-circuit: only propagate when the value actually changed.
-        // Our observers are already CHECK (from the originating markStale); promote
-        // them to DIRTY so they recompute, otherwise leave them to settle CLEAN. Skip
-        // on the first computation: there is no prior value to compare, and a custom
-        // `equals` must not be invoked with the undefined sentinel.
-        if (!this._initialized) {
-            this._initialized = true;
-        }
-        else if (!this._equals(previous, this._value)) {
-            for (const observer of this._observers) {
-                observer._state = DIRTY;
-                // Normally this computed is refreshed from inside flushEffects while
-                // validating an already-scheduled effect, so the observer is in the queue
-                // already. But if it is refreshed out-of-band (e.g. a `peek()` outside a
-                // flush) an effect observer could otherwise be promoted to DIRTY without
-                // being queued, and never re-run. Re-schedule defensively to keep the
-                // "DIRTY effect always runs" invariant regardless of refresh path.
-                if (observer._isEffect && !observer._disposed) {
-                    pendingEffects.add(observer);
-                    schedule();
-                }
-            }
-        }
-    }
-}
-// --- effect -----------------------------------------------------------------
-class EffectNode {
-    _observers = new Set(); // effects are not observed; kept for the interface
-    _sources = new Set();
-    _owned = [];
-    _state = DIRTY;
-    _isEffect = true;
-    _disposed = false;
-    _fn;
-    _cleanup = undefined;
-    constructor(fn) {
-        this._fn = fn;
-        // Be owned by the enclosing owner (a parent effect or a createRoot), so a
-        // parent teardown disposes this effect.
-        registerDisposer(() => this.dispose());
-        updateIfNecessary(this); // initial run (state starts DIRTY)
-    }
-    _update() {
-        this._runCleanup();
-        disposeOwned(this); // tear down children created in the previous run
-        untrack(this);
-        const prevObserver = currentObserver;
-        const prevOwner = currentOwner;
-        currentObserver = this;
-        currentOwner = this; // children created during the run are owned by this effect
-        try {
-            this._cleanup = this._fn();
-        }
-        finally {
-            currentObserver = prevObserver;
-            currentOwner = prevOwner;
-        }
-    }
-    _runCleanup() {
-        if (typeof this._cleanup === "function") {
-            this._cleanup();
-            this._cleanup = undefined;
-        }
-    }
-    dispose() {
-        if (this._disposed) {
-            return;
-        }
-        this._disposed = true;
-        this._runCleanup();
-        disposeOwned(this);
-        untrack(this);
-        pendingEffects.delete(this);
-    }
-}
-// --- public API -------------------------------------------------------------
-function signal(initial, equals = Object.is) {
-    return new SignalNode(initial, equals);
-}
-function computed(fn, equals = Object.is) {
-    return new ComputedNode(fn, equals);
-}
-function effect(fn) {
-    return new EffectNode(fn);
-}
-/**
- * Run `fn` inside a fresh ownership scope and return its result. Every effect (or
- * nested cleanup) created during `fn` — directly or transitively — is owned by
- * this root; calling the `dispose` passed to `fn` tears them all down.
- *
- * The root is detached: it is NOT auto-disposed by an enclosing owner. The caller
- * holds `dispose` (e.g. a custom element disposes it in disconnectedCallback).
- */
-function createRoot(fn) {
-    const owner = { _owned: [] };
-    let disposed = false;
-    const dispose = () => {
-        if (disposed) {
-            return;
-        }
-        disposed = true;
-        disposeOwned(owner);
-    };
-    const prevOwner = currentOwner;
-    currentOwner = owner;
-    try {
-        return fn(dispose);
-    }
-    finally {
-        currentOwner = prevOwner;
-    }
-}
-/**
- * Register a teardown callback with the current owner. Runs when the owning effect
- * re-runs or is disposed, or when the enclosing root is disposed. A no-op when
- * there is no current owner.
- */
-function onCleanup(fn) {
-    registerDisposer(fn);
-}
+import { e as effect, o as onCleanup, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-CTjswQSs.esm.js';
+export { D as DisposedError, b as bindNode, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-CTjswQSs.esm.js';
 
-// Async resource (PoC).
-//
-// Adapts an async producer into a reactive `{ value, loading, error }` triad —
-// the same shape FetchCore exposes (value/loading/error). When the resource's
-// `args` (a reactive getter) change, the in-flight request is aborted and a fresh
-// one starts: dependency-driven cancel/restart, i.e. RxJS switchMap.
-//
-// This is the signals-side counterpart of the state-side `$streams` adapter
-// (docs/state-stream-type-design.md §4-1). The hard part — making sure a stale
-// response from a superseded request never lands on the new state — is handled
-// here by checking `signal.aborted` before committing any result.
-function resource(source, options = {}) {
-    const value = signal(options.initial);
-    const loading = signal(false);
-    const error = signal(null);
-    let controller = null;
-    const runner = effect(() => {
-        // Reading args() inside the effect is what subscribes us to its signals, so a
-        // change re-runs this body — that IS the restart trigger.
-        //
-        // NOTE (effect-internal writes): this effect writes loading/error/value, which
-        // are signals OTHER effects may observe. A write that actually CHANGES the value
-        // marks those observers stale and queues them on the same flush; the drain loop
-        // then runs them in the same tick. (A same-value write — e.g. error.set(null)
-        // when error is already null — is a no-op via the equality guard and notifies
-        // nothing.) We never read these signals inside THIS effect, so we don't dirty
-        // our own dependency — no cycle. (docs §8 (a)).
-        const a = (options.args ? options.args() : undefined);
-        // Abort the previous request before starting the next (switchMap).
-        controller?.abort();
-        const ac = new AbortController();
-        controller = ac;
-        loading.set(true);
-        error.set(null);
-        // Call the source SYNCHRONOUSLY (so it receives ac.signal immediately and can
-        // wire its abort listener before any teardown), but guard it with try/catch so
-        // a synchronous throw is normalized into the same error/loading state as a
-        // rejected promise. Without the guard a sync throw would escape the effect body
-        // (and, on the initial run, the resource() call itself), leaving loading stuck
-        // true and error unset.
-        let produced;
-        try {
-            produced = source(a, ac.signal);
-        }
-        catch (err) {
-            error.set(err);
-            loading.set(false);
-            return;
-        }
-        Promise.resolve(produced).then((resolved) => {
-            // Drop the result if this request was superseded/disposed: committing it
-            // would let a stale response overwrite the newer request's state.
-            if (ac.signal.aborted) {
-                return;
-            }
-            value.set(resolved);
-            loading.set(false);
-        }, (err) => {
-            if (ac.signal.aborted) {
-                return;
-            }
-            error.set(err);
-            loading.set(false);
-        });
-    });
-    const dispose = () => {
-        controller?.abort();
-        runner.dispose();
-    };
-    // Auto-dispose with the enclosing owner (createRoot / parent effect), so a
-    // resource created inside a component is aborted on unmount. No-op when there
-    // is no owner — the caller then disposes manually.
-    onCleanup(dispose);
-    return { value, loading, error, dispose };
-}
-
-// Stream resource (PoC §8 (a)). The signals-side counterpart of the state-side
-// `$streams` adapter (docs/state-stream-type-design.md).
-//
-// Adapts a continuous async flow (async iterable / ReadableStream / async
-// generator) into a single reactive value by FOLDING each chunk:
-//   - latest (default): replace — value becomes the last chunk.
-//   - reduce: accumulate — value = fold(acc, chunk), needs `initial`.
-// When the resource's `args` change, the in-flight stream is aborted and a fresh
-// one starts (switchMap), with `value` reset to `initial`.
-//
-// Deliberate non-goal: backpressure. The fold result IS the buffer; demand does
-// not flow back to the producer. Unbounded accumulation of an infinite stream is
-// a footgun — bound the fold (latest / count / last-N / window) for live streams.
-// This mirrors the state `$streams` norm and is what lets the impedance mismatch
-// be resolved honestly (state-stream §0, §4-3).
-//
-// Shared contract with state `$streams` (settled by this PoC):
-//   - source(args, signal) receives an AbortSignal; honoring it drives restart.
-//   - restart RESETS value to `initial`; error KEEPS the last value.
-//   - status companion: "idle" | "active" | "done" | "error".
-//   - async iterable is the lingua franca; a ReadableStream lacking
-//     Symbol.asyncIterator is read via getReader().
-function streamResource(source, options = {}) {
-    const fold = options.fold ?? ((_acc, chunk) => chunk);
-    const value = signal(options.initial);
-    const status = signal("idle");
-    const error = signal(null);
-    let controller = null;
-    const runner = effect(() => {
-        // NOTE (effect-internal writes): like `resource`, this effect writes
-        // value/status/error — signals other effects may observe. Those observers are
-        // queued on the same flush and run in the same tick. This effect never reads
-        // those signals, so it does not dirty its own dependency (no cycle). The async
-        // `consume` writes them later from microtasks/timers, outside this flush.
-        const a = (options.args ? options.args() : undefined);
-        controller?.abort();
-        const ac = new AbortController();
-        controller = ac;
-        // Reset for the new run: a restart starts the fold from `initial`.
-        value.set(options.initial);
-        error.set(null);
-        status.set("active");
-        void consume(source, a, ac.signal, fold, value, status, error);
-    });
-    const dispose = () => {
-        controller?.abort();
-        runner.dispose();
-    };
-    onCleanup(dispose);
-    return { value, status, error, dispose };
-}
-async function consume(source, args, signal, fold, 
-// Use the public WriteSignal type instead of re-declaring an inline subset, so
-// these stay in lockstep with the signal API (no structural drift).
-value, status, error) {
-    try {
-        const produced = await source(args, signal);
-        for await (const chunk of iterate(produced, signal)) {
-            if (signal.aborted) {
-                return; // stale chunk from a superseded/disposed run — drop it
-            }
-            value.set(fold(value.peek(), chunk));
-        }
-        if (signal.aborted) {
-            return; // stream ended but this run was aborted — don't mark done
-        }
-        status.set("done");
-    }
-    catch (e) {
-        if (signal.aborted) {
-            return; // an abort that surfaced as a throw is not an error
-        }
-        error.set(e); // keep the last folded value (do not reset)
-        status.set("error");
-    }
-}
-function iterate(produced, signal) {
-    if (typeof produced[Symbol.asyncIterator] === "function") {
-        return produced;
-    }
-    // Not async-iterable: must be a ReadableStream (read via getReader). Validate so
-    // a wrong source value yields a clear error instead of an opaque "getReader is
-    // not a function" from inside the generator.
-    if (typeof produced?.getReader !== "function") {
-        throw new TypeError("streamResource: source must return an AsyncIterable or a ReadableStream (got neither).");
-    }
-    return readableToAsyncIterable(produced, signal);
-}
-async function* readableToAsyncIterable(stream, signal) {
-    const reader = stream.getReader();
-    // A ReadableStream read() does NOT observe an AbortSignal on its own. Without
-    // this, a switchMap restart / dispose leaves the previous reader parked in a
-    // pending read() forever, leaking the underlying source. Cancelling on abort
-    // both releases the source AND settles the pending read() so the for-await
-    // unwinds and the finally below can release the lock. Abort is the only
-    // early-exit path for this generator (the consumer never calls .return()
-    // without aborting), so this is the sole place a non-drained stream is cancelled.
-    const onAbort = () => {
-        void reader.cancel().catch(() => { }); // tearing down; swallow a rejected cancel
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    try {
-        for (;;) {
-            const { done, value } = await reader.read();
-            if (done) {
-                return;
-            }
-            yield value;
-        }
-    }
-    finally {
-        signal.removeEventListener("abort", onAbort);
-        reader.releaseLock();
-    }
-}
-
-// wc-bindable → signal adapter (PoC). The crux of the design.
-//
-// Any async-IO node in wcstack speaks the wc-bindable protocol: it exposes
-//   - properties: outputs — the node dispatches `event` on change; the value is
-//                 read via `getter(event)` or the property `name`.
-//   - inputs:     settable surface — write `node[name] = value`.
-//   - commands:   invocable methods — call `node[name](...args)`.
-// The node has NO idea whether the observer behind the binding is a proxy (state)
-// or a signal. So a single adapter that turns its `properties` into signals — and
-// forwards inputs/commands — makes every existing node plug into the signal core
-// unchanged. See docs/signals-state-design.md §3.
-function readProperty(target, name) {
-    return target[name];
-}
-function bindNode(target, descriptor) {
-    const desc = descriptor ?? target.constructor.wcBindable;
-    if (!desc) {
-        throw new Error("bindNode: no wc-bindable descriptor provided and none found on target.constructor.wcBindable");
-    }
-    // Build name → declared-entry lookups so set/command can reject names the node
-    // never declared, instead of silently writing/invoking an arbitrary property.
-    const declaredInputs = new Set((desc.inputs ?? []).map((i) => i.name));
-    const declaredCommands = new Set((desc.commands ?? []).map((c) => c.name));
-    const signals = {};
-    const removers = [];
-    for (const prop of desc.properties) {
-        // Seed with the node's current value so the signal is valid before the first
-        // event fires (e.g. FetchCore.value === null at rest).
-        const cell = signal(readProperty(target, prop.name));
-        signals[prop.name] = cell;
-        const handler = (event) => {
-            cell.set(prop.getter ? prop.getter(event) : readProperty(target, prop.name));
-        };
-        target.addEventListener(prop.event, handler);
-        removers.push(() => target.removeEventListener(prop.event, handler));
-        // Re-seed AFTER subscribing: the initial read above is a snapshot taken before
-        // the listener was attached, so a value change in that gap would be missed.
-        // Reading the property once more now closes the race (the equality guard makes
-        // it a no-op when nothing changed). Note this is the property snapshot, not a
-        // getter(event) — there is no event to derive from at bind time.
-        cell.set(readProperty(target, prop.name));
-    }
-    return {
-        signals,
-        set(name, value) {
-            if (!declaredInputs.has(name)) {
-                throw new Error(`bindNode.set: "${name}" is not a declared input on this node.`);
-            }
-            target[name] = value;
-        },
-        command(name, ...args) {
-            if (!declaredCommands.has(name)) {
-                throw new Error(`bindNode.command: "${name}" is not a declared command on this node.`);
-            }
-            if (typeof target[name] !== "function") {
-                throw new TypeError(`bindNode.command: "${name}" is declared but not a function on the node.`);
-            }
-            return target[name](...args);
-        },
-        dispose() {
-            for (const remove of removers) {
-                remove();
-            }
-        },
-    };
-}
-
-// Fine-grained hyperscript (PoC). The "step before JSX" (docs §4-1).
+// Fine-grained hyperscript (v1 design notes). The "step before JSX" (docs §4-1).
 //
 // `h(tag, props, ...children)` is the classic JSX factory shape, but it does NOT
 // build a virtual DOM and re-render. It creates a REAL DOM node once; any prop or
@@ -671,7 +36,7 @@ function h(tag, props, ...children) {
         const result = tag({ ...(props ?? {}), children });
         return Array.isArray(result) ? wrapFragment(result) : result;
     }
-    const el = document.createElement(tag);
+    const el = createElement(tag);
     if (props) {
         for (const key in props) {
             bindProp(el, key, props[key]);
@@ -679,6 +44,22 @@ function h(tag, props, ...children) {
     }
     appendChildren(el, children);
     return el;
+}
+const SVG_NS = "http://www.w3.org/2000/svg";
+// Tags created in the SVG namespace. Ambiguous names shared with HTML (`a`,
+// `title`, `script`, `style`) are intentionally EXCLUDED so ordinary HTML usage is
+// not broken; an SVG `<a>` / `<title>` must be created in an explicitly-namespaced
+// way by the caller. SVG DOM props are largely read-only, so `setProp`'s
+// settable-property check routes SVG attributes through `setAttribute` for free.
+const SVG_TAGS = new Set([
+    "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+    "text", "tspan", "defs", "use", "symbol", "marker", "linearGradient",
+    "radialGradient", "stop", "clipPath", "mask", "pattern", "image", "foreignObject",
+]);
+function createElement(tag) {
+    return SVG_TAGS.has(tag)
+        ? document.createElementNS(SVG_NS, tag)
+        : document.createElement(tag);
 }
 /** Append `child` into `container`, resolving fragments/arrays. */
 function render(child, container) {
@@ -691,6 +72,59 @@ function wrapFragment(children) {
     return frag;
 }
 // --- props ------------------------------------------------------------------
+// Attribute names whose corresponding JS DOM property differs. `class` is handled
+// separately (it has reactive-falsy semantics in setProp), so it is not listed here.
+const ATTR_TO_PROP = {
+    for: "htmlFor",
+    tabindex: "tabIndex",
+    colspan: "colSpan",
+    rowspan: "rowSpan",
+    readonly: "readOnly",
+    maxlength: "maxLength",
+    minlength: "minLength",
+    contenteditable: "contentEditable",
+};
+// True only if `key` resolves to a WRITABLE property on the element or its
+// prototype chain (a data property with `writable !== false`, or an accessor with a
+// setter). `key in el` is not enough: it also matches read-only members like
+// `firstChild` / `childNodes`, whose assignment throws in strict mode. The walk
+// starts at `el` itself so own instance fields (e.g. a custom element's properties)
+// are still matched, exactly as the previous `key in el` did — just without the
+// read-only false positives.
+//
+// MEMOIZATION: the prototype-chain walk runs on every bindProp/setProp. The result
+// depends only on the element's PROTOTYPE (its class) and the key, since DOM props
+// live on the prototype — not on per-instance own fields, which this library never
+// adds dynamically per element. So cache by `(prototype, key)`: a WeakMap keyed by
+// prototype (no leak — entries die with the class) holding a Map of key→result.
+const settableCache = new WeakMap();
+function computeSettable(el, key) {
+    let obj = el;
+    while (obj !== null) {
+        const desc = Object.getOwnPropertyDescriptor(obj, key);
+        if (desc) {
+            return "set" in desc ? typeof desc.set === "function" : desc.writable !== false;
+        }
+        obj = Object.getPrototypeOf(obj);
+    }
+    return false;
+}
+function isSettableProperty(el, key) {
+    // A real Element always has a prototype (HTMLElement.prototype → … → Object), so
+    // `getPrototypeOf` is non-null here; use it as the cache key.
+    const proto = Object.getPrototypeOf(el);
+    let byKey = settableCache.get(proto);
+    if (byKey === undefined) {
+        byKey = new Map();
+        settableCache.set(proto, byKey);
+    }
+    let result = byKey.get(key);
+    if (result === undefined) {
+        result = computeSettable(el, key);
+        byKey.set(key, result);
+    }
+    return result;
+}
 function bindProp(el, key, value) {
     // Event handlers (`onClick` → "click") are special-cased BEFORE the reactive
     // check: a function here is the listener, not a thunk to track.
@@ -719,21 +153,38 @@ function setProp(el, key, value) {
         return;
     }
     if (key === "class" || key === "className") {
-        // Treat false like null → empty class (consistent with the attribute path's
-        // false-removes-it rule). This makes the idiomatic `() => cond && "active"`
-        // binding yield "" (not "false") when the condition is falsy.
-        el.className = value == null || value === false ? "" : String(value);
+        // Set the `class` ATTRIBUTE, not the `className` property. On an SVGElement
+        // `className` is a read-only `SVGAnimatedString`, so assigning it throws in
+        // strict mode (ESM is always strict) — `setAttribute("class", …)` works for both
+        // HTML and SVG. Treat false like null → empty class (consistent with the
+        // attribute path's false-removes-it rule), so `() => cond && "active"` yields ""
+        // (not "false") when the condition is falsy.
+        // STRING-ONLY: a non-null/non-false value is coerced via String(value). Array
+        // (`["a", "b"]`) and object (`{ active: true }`) class forms are NOT supported —
+        // they would stringify to "a,b" / "[object Object]". Compose the class string in
+        // the binding itself (e.g. `() => [a, b].join(" ")`) and pass a string. This keeps
+        // the core free of a class-merging convention.
+        el.setAttribute("class", value == null || value === false ? "" : String(value));
         return;
     }
-    if (key in el) {
-        // Known DOM property (value, checked, disabled, id, ...). PoC limitations:
-        //  - Assigns by JS property name, so HTML attributes whose property name
-        //    differs are NOT remapped (`for`→htmlFor, `colspan`→colSpan). Pass the JS
-        //    name or set the attribute explicitly.
-        //  - `key in el` is also true for READ-ONLY props (firstChild, childNodes, …);
-        //    assigning to those silently fails or throws. Don't bind reserved DOM names.
-        // A full attribute↔property table is out of scope for the PoC.
-        el[key] = value;
+    // Remap the handful of attribute names whose JS property differs, so `for` /
+    // `tabindex` / `colspan` etc. reach the right property instead of falling through
+    // to setAttribute (which works for some but not e.g. `htmlFor`).
+    const propKey = ATTR_TO_PROP[key] ?? key;
+    if (isSettableProperty(el, propKey)) {
+        // Known, WRITABLE DOM property (value, checked, disabled, id, htmlFor, ...).
+        // The settability check excludes read-only members (firstChild, childNodes, …)
+        // that `key in el` would wrongly accept — assigning to those throws in strict
+        // mode; we fall through to the attribute path for them instead.
+        //
+        // NORMALIZATION: null/undefined are coerced to "" before assignment. Without
+        // this, a STRING prop (id/title/value/src) given a reactive null/undefined
+        // lands as the literal "null"/"undefined" (e.g. img.src="null" fires a real
+        // request) — a correctness footgun. "" clears the prop instead. Safe for
+        // non-string props too: boolean props coerce ""→false (same as null), numeric
+        // props coerce ""→0 (same as null). We do NOT normalize `false`:
+        // `el.disabled = false` is the intended boolean clear.
+        el[propKey] = value == null ? "" : value;
         return;
     }
     if (value == null || value === false) {
@@ -761,8 +212,18 @@ function setStyle(el, value) {
     // applied. The object is the source of truth, so wiping cssText is correct here.
     el.style.cssText = "";
     const style = el.style;
-    for (const k in value) {
-        style[k] = value[k];
+    const obj = value;
+    for (const k in obj) {
+        // A key with a hyphen is either kebab-case (`font-weight`) or a CSS custom
+        // property (`--accent`). Neither works via property assignment (`style[k]` would
+        // just set an inert expando), so route them through setProperty. camelCase keys
+        // (`fontWeight`) keep the faster property path.
+        if (k.includes("-")) {
+            style.setProperty(k, obj[k]);
+        }
+        else {
+            style[k] = obj[k];
+        }
     }
 }
 // --- children ---------------------------------------------------------------
@@ -779,6 +240,12 @@ function appendChild(parent, child) {
         for (const c of child) {
             appendChild(parent, c);
         }
+        return;
+    }
+    if (isListView(child)) {
+        // A keyed list (For / Index): it manages its own anchored region with in-place
+        // reconciliation, so it does NOT go through the wholesale insertReactive path.
+        child.mount(parent);
         return;
     }
     if (child instanceof Node) {
@@ -805,13 +272,40 @@ function appendChild(parent, child) {
  * — do not move them to another parent externally. On the next run they are
  * removed from wherever they currently are (`node.parentNode?.removeChild`), so an
  * externally-moved node would be yanked out of its new home without warning.
+ *
+ * OWNERSHIP: the `effect` below is owned by the enclosing reactive scope at call
+ * time (the `currentOwner`). Used under `createRoot` / `SignalsElement` (the module
+ * header's mount contract) it is disposed on teardown. Calling `h`/`render` with a
+ * reactive child OUTSIDE any owner (no `createRoot`/`SignalsElement`) leaves this
+ * effect un-owned and therefore never cleaned up — by design, per that contract.
  */
 function insertReactive(parent, accessor) {
+    if (isDev() && !hasOwner()) {
+        // A reactive child inserted with no enclosing owner: the effect below is never
+        // disposed (the module header documents this as by-design, but it is a frequent
+        // accidental leak). Warn once in dev so the un-owned mount is visible.
+        warnDev("UNOWNED_INSERT", "", "reactive child inserted with no owner — its update effect will never be " +
+            "disposed and may leak. Mount under createRoot / SignalsElement.");
+    }
     const anchor = document.createComment("");
     parent.appendChild(anchor);
     let current = [];
     effect(() => {
-        const next = toNodes(accessor());
+        const value = accessor();
+        // FAST PATH: a plain text result that replaces a plain text result. The common
+        // reactive child is a string/number thunk (`() => \`count: ${n.get()}\``); the
+        // wholesale path would remove the old Text node, allocate a new one, and re-insert
+        // it on every change. When BOTH the previous and next renders are a single Text
+        // node, mutate the existing node's `data` in place instead — no allocation, no
+        // remove/insert, and the same DOM node identity is preserved across updates.
+        if ((typeof value === "string" || typeof value === "number") && current.length === 1) {
+            const node = current[0];
+            if (node.nodeType === 3 /* TEXT_NODE */) {
+                node.data = String(value);
+                return;
+            }
+        }
+        const next = toNodes(value);
         for (const node of current) {
             node.parentNode?.removeChild(node);
         }
@@ -824,41 +318,399 @@ function insertReactive(parent, accessor) {
         current = next;
     });
 }
-// --- custom element lifecycle (PoC §8 (e)) ----------------------------------
+function isListView(value) {
+    return typeof value === "object" && value !== null && value.__wcsList === true;
+}
+function readList(list) {
+    return isReadSignal(list) ? () => list.get() : list;
+}
+// --- LIS-based DOM reorder ---------------------------------------------------
 //
-// The exit point for ownership: a custom element that mounts a signals view under
-// `createRoot` on connect and disposes that root on disconnect. This wires the
-// reactive ownership tree to the real DOM lifecycle — every effect, resource and
-// listener created in `render()` is torn down when the element leaves the DOM, and
-// rebuilt fresh on reconnect. Subclasses only implement `render()`.
-class SignalsElement extends HTMLElement {
-    _dispose = null;
-    /** Mount target. Override to return a shadow root; default is light DOM. */
-    getMountPoint() {
-        return this;
+// `reconcileOrder` brings the live DOM under `host` (the contiguous region ending
+// at `anchor`) into `order` — the desired final node sequence — using the FEWEST
+// `insertBefore` moves, while producing EXACTLY the order a naive full re-place
+// would. The naive approach (walk and insert every out-of-place node) does up to
+// O(n) DOM moves on a full reverse or a head insert; here we instead keep the
+// largest set of reused rows that are ALREADY in the right relative order, and
+// move only the others (Solid's reconcileArrays / udomdiff idea).
+//
+// HOW: `prevOrder` is the node sequence the previous run left in the DOM. For each
+// node in the new `order`, a reused row maps to its index in `prevOrder`; a freshly
+// created row has no previous position. The longest increasing subsequence (LIS)
+// of those previous indices marks the reused rows that need NOT move (their pairwise
+// relative order is already correct). Every other node — fresh ones, and reused
+// ones outside the LIS — is inserted before its already-correct successor, walking
+// back-to-front so the "successor" reference is always a settled node or the anchor.
+/**
+ * Indices into `arr` (with value -1 meaning "no previous position") whose values
+ * form a longest strictly-increasing subsequence. Entries equal to -1 are treated
+ * as never part of the subsequence (a fresh node always moves). Classic
+ * patience-sorting LIS in O(n log n); returns the chosen indices in ascending order.
+ */
+function longestIncreasingSubsequence(arr) {
+    const n = arr.length;
+    // `tails[k]` = index (into arr) of the smallest tail of an increasing
+    // subsequence of length k+1. `prev[i]` = predecessor index, to rebuild the chain.
+    const tails = [];
+    const prev = new Array(n).fill(-1);
+    for (let i = 0; i < n; i++) {
+        const value = arr[i];
+        if (value < 0) {
+            continue; // fresh node: not eligible for the stable subsequence
+        }
+        // Binary search for the first tail whose value is >= this value, and replace it
+        // (or extend the tails when this value beats every tail).
+        let lo = 0;
+        let hi = tails.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (arr[tails[mid]] < value) {
+                lo = mid + 1;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        if (lo > 0) {
+            prev[i] = tails[lo - 1];
+        }
+        tails[lo] = i;
     }
-    connectedCallback() {
-        if (this._dispose !== null) {
-            return; // already mounted (defensive against a redundant connect)
-        }
-        const mount = this.getMountPoint();
-        this._dispose = createRoot((dispose) => {
-            mount.appendChild(this.render());
-            return dispose;
-        });
+    // Rebuild the index chain from the longest tail backwards.
+    const result = [];
+    let k = tails.length > 0 ? tails[tails.length - 1] : -1;
+    while (k >= 0) {
+        result.push(k);
+        k = prev[k];
     }
-    disconnectedCallback() {
-        if (this._dispose === null) {
-            return; // not mounted
+    result.reverse();
+    return result;
+}
+function reconcileOrder(host, anchor, order, prevOrder) {
+    const n = order.length;
+    if (n === 0) {
+        return; // nothing to place (removals already happened)
+    }
+    // Map each previous node to its previous position, so a node in `order` can look
+    // up where it used to be. A node absent from this map is FRESH (created this run,
+    // or the first run where prevOrder is empty) and is encoded as -1 — it always moves.
+    const prevIndex = new Map();
+    for (let i = 0; i < prevOrder.length; i++) {
+        prevIndex.set(prevOrder[i], i);
+    }
+    // previous-position sequence aligned to the new order. -1 marks a fresh node.
+    const seq = new Array(n);
+    for (let i = 0; i < n; i++) {
+        const p = prevIndex.get(order[i]);
+        seq[i] = p === undefined ? -1 : p;
+    }
+    // Rows whose relative order is already correct: leave them in place, move the rest.
+    const lis = longestIncreasingSubsequence(seq);
+    let lisPtr = lis.length - 1;
+    // Walk back-to-front. `ref` is the node that must follow the one being placed; it
+    // starts at the anchor (the region's tail) and becomes each placed node. A node in
+    // the LIS is the maximal already-correctly-ordered set, so it is left untouched
+    // (only adopted as the new `ref`). Every OTHER node is, by construction, out of
+    // position relative to its settled successor and is inserted before `ref` — no
+    // "is it already in place?" guard is needed (it never is, unlike the old
+    // full-walk reconciler which visited correctly-placed nodes too).
+    let ref = anchor;
+    for (let i = n - 1; i >= 0; i--) {
+        const node = order[i];
+        if (lisPtr >= 0 && lis[lisPtr] === i) {
+            lisPtr--; // stable: do not move
         }
-        this._dispose();
-        this._dispose = null;
-        const mount = this.getMountPoint();
-        while (mount.firstChild) {
-            mount.removeChild(mount.firstChild);
+        else {
+            host.insertBefore(node, ref);
         }
+        ref = node;
     }
 }
+// Dev-only key sanity check (no effect in production — guarded by `isDev()` at the
+// call site so this is never reached when dev is off). Flags the silent-failure key
+// shapes: a nullish key (NaN / null / undefined collide under SameValueZero, so two
+// such items map to one row and a row is silently dropped), and — when no explicit
+// `key` was given — a non-primitive item used as its own identity key (every render
+// gets a fresh object reference, so the row is rebuilt instead of reused, silently
+// dropping per-row state). Warns once per distinct shape (deduped in warnDev).
+function checkKeyDev(key, item, hasExplicitKey) {
+    if (key == null || (typeof key === "number" && Number.isNaN(key))) {
+        warnDev("NULLISH_KEY", String(key), "For: a key is null/undefined/NaN. Such keys collide under SameValueZero, " +
+            "so rows silently merge/drop. Provide a stable unique `key`.", { key });
+        return;
+    }
+    if (!hasExplicitKey && (typeof key === "object" || typeof key === "function")) {
+        warnDev("NON_PRIMITIVE_KEY", typeof key, "For: a non-primitive item is used as its own key (no `key` option given). " +
+            "Object identity changes across renders, so every row is rebuilt and per-row " +
+            "state is lost. Pass `{ key: item => item.id }`.", { item });
+    }
+}
+function For(list, each, options) {
+    const read = readList(list);
+    const keyOf = options?.key;
+    return {
+        __wcsList: true,
+        mount(parent) {
+            const anchor = document.createComment("for");
+            parent.appendChild(anchor);
+            let rows = new Map();
+            // The node order placed by the previous reconcile run. Empty on first run.
+            // Used to find which reused rows already sit in increasing relative order so
+            // only the rest are moved (LIS reorder, see reconcileOrder).
+            let prevOrder = [];
+            const make = (item, i) => {
+                const idx = signal(i);
+                let node;
+                const dispose = createRoot((d) => {
+                    node = each(item, () => idx.get());
+                    return d;
+                });
+                return { node, dispose, idx };
+            };
+            effect(() => {
+                const items = read() ?? [];
+                // Key-uniqueness PRE-PASS (no side effects): throwing here, before any row is
+                // created or moved, keeps a duplicate-key error from leaving half-built rows
+                // orphaned (make() runs createRoot) and the DOM mid-reorder. Keys are reused
+                // below so keyOf runs once per item.
+                const keys = [];
+                const seen = new Set();
+                const dev = isDev();
+                for (let i = 0; i < items.length; i++) {
+                    const k = keyOf ? keyOf(items[i], i) : items[i];
+                    if (dev) {
+                        checkKeyDev(k, items[i], keyOf !== undefined);
+                    }
+                    if (seen.has(k)) {
+                        if (dev) {
+                            // The throw below still halts (production behaviour unchanged); the warn
+                            // adds the offending key + a pointer to the cause so the silent
+                            // "updates stopped" symptom is diagnosable.
+                            warnDev("DUPLICATE_KEY", String(k), `For: duplicate key "${String(k)}" at index ${i} — keys must be unique. ` +
+                                "Rendering throws and the list stops updating until keys are fixed.", { key: k, index: i });
+                        }
+                        throw new Error(`For: duplicate key "${String(k)}" — keys must be unique.`);
+                    }
+                    seen.add(k);
+                    keys.push(k);
+                }
+                const next = new Map();
+                const order = [];
+                // Rows freshly created in THIS run (not reused from `rows`). If a later
+                // `make()` — i.e. a user `each` — throws mid-loop, the rows already built
+                // here are owned by their own detached `createRoot` and are not yet tracked
+                // in any surviving map, so they would leak. Dispose them before re-throwing,
+                // leaving the old `rows` map untouched (it is recoverable on the next run).
+                const fresh = [];
+                try {
+                    for (let i = 0; i < items.length; i++) {
+                        const k = keys[i];
+                        let row = rows.get(k);
+                        if (row) {
+                            if (row.idx.peek() !== i) {
+                                row.idx.set(i); // position changed — refresh the index accessor
+                            }
+                        }
+                        else {
+                            row = make(items[i], i);
+                            fresh.push(row);
+                        }
+                        next.set(k, row);
+                        order.push(row.node);
+                    }
+                }
+                catch (err) {
+                    for (const row of fresh) {
+                        row.dispose();
+                    }
+                    throw err;
+                }
+                // Dispose rows whose key vanished. `remove()` no-ops if already detached.
+                for (const [k, row] of rows) {
+                    if (!next.has(k)) {
+                        row.node.remove();
+                        row.dispose();
+                    }
+                }
+                // Reorder relative to the LIVE parent (`anchor.parentNode`, not the mount
+                // arg) so the region stays correct after being moved (e.g. built inside a
+                // Fragment, then appended elsewhere). `host` is null only if the anchor was
+                // detached without disposing this scope (a misuse) — then there is nothing
+                // to place into.
+                const host = anchor.parentNode;
+                if (host) {
+                    reconcileOrder(host, anchor, order, prevOrder);
+                }
+                // Snapshot this run's final order so the NEXT run's reconcile can detect
+                // which rows kept their relative position (the LIS basis below). Capturing
+                // the array we just placed avoids re-deriving it from the map.
+                prevOrder = order;
+                rows = next;
+            });
+            onCleanup(() => {
+                for (const row of rows.values()) {
+                    row.dispose();
+                }
+                rows.clear();
+            });
+        },
+    };
+}
+function Index(list, each) {
+    const read = readList(list);
+    return {
+        __wcsList: true,
+        mount(parent) {
+            const anchor = document.createComment("index");
+            parent.appendChild(anchor);
+            const rows = [];
+            effect(() => {
+                const items = read() ?? [];
+                // Live parent (see `For`), null only if the anchor was detached undisposed.
+                const host = anchor.parentNode;
+                for (let i = 0; i < items.length; i++) {
+                    if (i < rows.length) {
+                        // Slot reused: just push the new value into the row's item signal. The
+                        // signal's equality guard skips the update when the value is unchanged.
+                        rows[i].item.set(items[i]);
+                    }
+                    else {
+                        const item = signal(items[i]);
+                        let node;
+                        const dispose = createRoot((d) => {
+                            node = each(() => item.get(), i);
+                            return d;
+                        });
+                        rows.push({ node, dispose, item });
+                        // Positions never move for index keying, so append at the tail (before
+                        // the anchor) in order. ORDERING CONTRACT (shared with For and the other
+                        // anchored insertions): the list owns the contiguous region ENDING at its
+                        // anchor comment. New rows go immediately before the anchor, so the list's
+                        // own rows always stay correctly ordered and grouped, and static siblings
+                        // before the anchor (or another list with its own anchor) are never
+                        // disturbed. Do NOT splice unrelated nodes into the middle of this region.
+                        host?.insertBefore(node, anchor);
+                    }
+                }
+                // Trailing slots that no longer exist: dispose and drop.
+                if (items.length < rows.length) {
+                    for (let i = items.length; i < rows.length; i++) {
+                        rows[i].node.remove();
+                        rows[i].dispose();
+                    }
+                    rows.length = items.length;
+                }
+            });
+            onCleanup(() => {
+                for (const row of rows) {
+                    row.dispose();
+                }
+                rows.length = 0;
+            });
+        },
+    };
+}
+// Memoized base class. Built lazily on first access so the `./dom` module can be
+// EVALUATED in a non-DOM environment (SSR pre-pass, a worker without a DOM shim)
+// without a top-level `class … extends HTMLElement` blowing up with
+// `ReferenceError: HTMLElement is not defined`. The class body is only constructed
+// when the consumer actually reaches for the base — at which point a DOM is required
+// and its absence yields a clear, actionable error instead of a raw ReferenceError.
+let cachedBase = null;
+/**
+ * Build (once, memoized) the `SignalsElement` lifecycle base class. Resolves
+ * `HTMLElement` at CALL TIME, so importing `@wcstack/signals/dom` no longer requires
+ * a DOM at module-evaluation time — only *calling* this (or subclassing
+ * {@link SignalsElement}) does.
+ *
+ * Contract:
+ *   - The `.` entry (`@wcstack/signals`) is non-DOM: it evaluates and runs in SSR,
+ *     Node, and Web Workers with no DOM globals.
+ *   - The `./dom` entry (`@wcstack/signals/dom`) may now also be *evaluated* without a
+ *     DOM (so an SSR pre-pass that imports it for the headless re-exports does not
+ *     crash). The DOM-touching surface — `h`/`render`/`For`/`Index` and this base —
+ *     still requires DOM globals when actually used.
+ *
+ * @throws a clear `Error` (not a raw `ReferenceError`) when no `HTMLElement` global is
+ *   present, naming the offending entry so the failure is self-explanatory.
+ */
+function createSignalsElement() {
+    if (cachedBase !== null) {
+        return cachedBase;
+    }
+    if (typeof HTMLElement === "undefined") {
+        throw new Error("@wcstack/signals/dom: SignalsElement requires a DOM (HTMLElement is not defined). " +
+            "The `./dom` entry's element/render surface is browser-only; in SSR/Node/worker " +
+            "code import the headless core from `@wcstack/signals` instead, or inject a DOM " +
+            "(e.g. happy-dom) before constructing custom elements.");
+    }
+    class SignalsElementBase extends HTMLElement {
+        _dispose = null;
+        /** Mount target. Override to return a shadow root; default is light DOM. */
+        getMountPoint() {
+            return this;
+        }
+        connectedCallback() {
+            if (this._dispose !== null) {
+                return; // already mounted (defensive against a redundant connect)
+            }
+            const mount = this.getMountPoint();
+            // If render() throws, createRoot disposes any effects it built before the throw,
+            // so nothing leaks; _dispose stays null (the element is simply not mounted) and
+            // a later disconnectedCallback safely no-ops. The error propagates to the caller.
+            this._dispose = createRoot((dispose) => {
+                mount.appendChild(this.render());
+                return dispose;
+            });
+        }
+        disconnectedCallback() {
+            if (this._dispose === null) {
+                return; // not mounted
+            }
+            this._dispose();
+            this._dispose = null;
+            const mount = this.getMountPoint();
+            while (mount.firstChild) {
+                mount.removeChild(mount.firstChild);
+            }
+        }
+    }
+    cachedBase = SignalsElementBase;
+    return cachedBase;
+}
+// `SignalsElement` is the ergonomic name to `extends`. It is a lazily-resolved alias
+// for the class built by `createSignalsElement()`: a Proxy that forwards construct /
+// get / has / getPrototypeOf to the real (memoized) base, building it on first touch.
+// This keeps `class X extends SignalsElement { … }` working exactly as before WHILE
+// deferring the `HTMLElement` reference to subclass-definition time (in a real DOM),
+// instead of `./dom` module-evaluation time (which may be a non-DOM SSR pre-pass).
+//
+// BREAKING note: the value is now a Proxy, not the class object literal. Subclassing,
+// `instanceof`, and static/prototype access all still work; a consumer that relied on
+// `SignalsElement` being a *frozen* concrete class reference (uncommon) should call
+// `createSignalsElement()` to obtain the real class.
+// The Proxy target is a never-called placeholder (every operation is intercepted by a
+// trap below); it only needs to be constructable/callable so `new` / `extends` and the
+// `apply` trap engage. It is intentionally a no-op and never executed.
+/* v8 ignore next */
+const signalsElementTarget = function () { };
+const SignalsElement = new Proxy(signalsElementTarget, {
+    construct(_target, args, newTarget) {
+        return Reflect.construct(createSignalsElement(), args, newTarget);
+    },
+    get(_target, prop, receiver) {
+        return Reflect.get(createSignalsElement(), prop, receiver);
+    },
+    has(_target, prop) {
+        return Reflect.has(createSignalsElement(), prop);
+    },
+    apply() {
+        throw new TypeError("SignalsElement is a class and cannot be invoked without `new`/`extends`.");
+    },
+    getPrototypeOf() {
+        return Reflect.getPrototypeOf(createSignalsElement());
+    },
+});
 function toNodes(value) {
     const out = [];
     const visit = (v) => {
@@ -879,5 +731,5 @@ function toNodes(value) {
     return out;
 }
 
-export { Fragment, SignalsElement, bindNode, computed, createRoot, effect, flushSync, h, onCleanup, render, resource, signal, streamResource };
+export { For, Fragment, Index, SignalsElement, createRoot, createSignalsElement, effect, h, onCleanup, render, signal };
 //# sourceMappingURL=dom.esm.js.map

@@ -605,6 +605,25 @@ describe("ownership (createRoot / onCleanup)", () => {
     expect(observersOf(src).size).toBe(0); // computed が untrack された
   });
 
+  it("createRoot は依存追跡コンテキストも切り離す（同期読みが外側 observer に漏れない）", () => {
+    const inner = signal(0);
+    let outerRuns = 0;
+    const dispose = effect(() => {
+      outerRuns++;
+      // 外側 effect の実行中に createRoot 内で inner を同期読み。createRoot が
+      // currentObserver を切らないと、この読みが外側 effect を inner の observer に
+      // 登録してしまい、inner.set で外側 effect が再実行されてしまう。
+      createRoot(() => {
+        inner.get();
+      });
+    });
+    expect(outerRuns).toBe(1);
+    inner.set(1);
+    flushSync();
+    expect(outerRuns).toBe(1); // 外側 effect は inner に追跡されていない
+    dispose.dispose();
+  });
+
   it("onCleanup は owner が無ければ no-op", () => {
     // 例外を投げないことの確認
     expect(() => onCleanup(() => {})).not.toThrow();
@@ -733,5 +752,30 @@ describe("equality short-circuit（値等価の伝播短絡）", () => {
     a.set({ v: 2, meta: "z" }); // v 変化 → 実行
     flushSync();
     expect(runs).toBe(2);
+  });
+
+  it("カスタム equals が throw しても CLEAN に確定し、毎回再評価で固まらない（例外安全性）", () => {
+    // updateIfNecessary の try-finally が、_update（equals 経由）の throw 後も
+    // _state を CLEAN にすることを文書化する。これがないと throw した node は
+    // DIRTY のまま残り、以降の get/peek が毎回 throw する関数を再実行し続ける。
+    const a = signal(1);
+    const boom = new Error("equals exploded");
+    const c = computed(
+      () => a.get(),
+      () => {
+        throw boom; // user 提供 equals が例外を投げる
+      },
+    );
+
+    expect(c.get()).toBe(1); // 初回は equals を呼ばない（前値なし）→ 正常
+
+    a.set(2); // 再計算 → equals が throw する
+    // 例外は呼び出し元へ伝播する（flush で隔離されない直接 get なので surface する）。
+    expect(() => c.peek()).toThrow(boom);
+
+    // throw 後も CLEAN に確定しているので、値の変わらない再読み取りは
+    // equals を再実行せず（DIRTY でない）throw もしない。
+    expect(() => c.peek()).not.toThrow();
+    expect(c.peek()).toBe(2);
   });
 });

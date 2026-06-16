@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { bindNode, WcBindableDescriptor } from "../src/bindNode.js";
-import { effect, flushSync } from "../src/reactive.js";
+import { describe, it, expect, expectTypeOf } from "vitest";
+import { bindNode, nodeSource, WcBindableDescriptor, NodeShape } from "../src/bindNode.js";
+import { signal, computed, effect, flushSync, ReadSignal } from "../src/reactive.js";
 
 // A minimal wc-bindable-shaped node: EventTarget + properties (one with a custom
 // getter reading event.detail, one read straight off the instance), one input,
@@ -155,5 +155,452 @@ describe("bindNode", () => {
     bound.command("run");
     flushSync();
     expect(el.textContent).toBe("result:/api/z");
+  });
+});
+
+// A node with observable write/command side-effects, for the signal→element
+// surfaces (bindInput / bindCommand).
+class CountingNode extends EventTarget {
+  static wcBindable: WcBindableDescriptor = {
+    properties: [{ name: "value", event: "cn:value", getter: (e: Event) => (e as CustomEvent).detail }],
+    inputs: [{ name: "url" }],
+    commands: [{ name: "go" }],
+  };
+
+  writes = 0;
+  calls: unknown[][] = [];
+  private _url = "";
+
+  get url(): string {
+    return this._url;
+  }
+  set url(v: string) {
+    this.writes++;
+    this._url = v;
+  }
+
+  go(...args: unknown[]): void {
+    this.calls.push(args);
+  }
+}
+
+describe("bindNode.on（event-token stream）", () => {
+  it("既定 fold は latest（直近値で置換）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    const s = bound.on("value");
+    expect(s.peek()).toBeUndefined();
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "a" }));
+    expect(s.peek()).toBe("a");
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "b" }));
+    expect(s.peek()).toBe("b");
+  });
+
+  it("同値でも毎回通知する（state ではなく occurrence のストリーム）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    const s = bound.on("value");
+    let runs = 0;
+    effect(() => {
+      s.get();
+      runs++;
+    });
+    flushSync();
+    expect(runs).toBe(1);
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "x" }));
+    flushSync();
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "x" })); // 同値
+    flushSync();
+    expect(runs).toBe(3); // 同値でも 2 回の emit が両方とも通知された
+  });
+
+  it("reduce fold で畳み込める（emit ごとに集約）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    const count = bound.on<number, unknown>("value", { fold: (acc = 0) => acc + 1, initial: 0 });
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "_" }));
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "_" }));
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "_" }));
+    expect(count.peek()).toBe(3);
+  });
+
+  it("getter の無い property は値スナップショットを畳む", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    const s = bound.on("loading");
+    node.loading = true;
+    node.dispatchEvent(new CustomEvent("fake:loading-changed"));
+    expect(s.peek()).toBe(true);
+  });
+
+  it("未宣言 property の on は例外", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    expect(() => bound.on("nope")).toThrow(/not a declared property/);
+  });
+
+  it("dispose 後は on が例外、既存ストリームも更新停止", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    const s = bound.on("value");
+    bound.dispose();
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "z" }));
+    expect(s.peek()).toBeUndefined();
+    expect(() => bound.on("value")).toThrow(/after dispose/);
+  });
+});
+
+describe("bindNode.bindInput（signal → property writeback）", () => {
+  it("signal を property へ反映し、same-value では書き込まない", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    const url = signal(""); // ノードの初期 url と同値
+    bound.bindInput("url", url);
+    flushSync();
+    expect(node.writes).toBe(0); // 初期 "" === "" → 書き込みスキップ（same-value ガード）
+
+    url.set("/a");
+    flushSync();
+    expect(node.writes).toBe(1);
+    expect(node.url).toBe("/a");
+  });
+
+  it("書き戻しが無限ループしない（computed を介した echo）", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    // value signal は node の "cn:value" から、url は signal から。url を value に
+    // echo する computed を作り bindInput で戻す → same-value ガードで収束。
+    const base = signal("/a");
+    const url = computed(() => base.get());
+    bound.bindInput("url", url);
+    flushSync();
+    expect(node.url).toBe("/a");
+    const writesAfterFirst = node.writes;
+    flushSync(); // 追加の flush でも再書き込みされない
+    expect(node.writes).toBe(writesAfterFirst);
+  });
+
+  it("返り値の disposer で個別に writeback を止められる", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    const url = signal("/a");
+    const stop = bound.bindInput("url", url);
+    flushSync();
+    const writes = node.writes;
+    stop(); // adapter 全体ではなくこの binding だけ止める
+    url.set("/b");
+    flushSync();
+    expect(node.writes).toBe(writes);
+  });
+
+  it("未宣言 input の bindInput は例外", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    expect(() => bound.bindInput("nope", signal(1))).toThrow(/not a declared input/);
+  });
+
+  it("dispose で writeback effect も停止", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    const url = signal("/a");
+    bound.bindInput("url", url);
+    flushSync();
+    const writes = node.writes;
+    bound.dispose();
+    url.set("/b");
+    flushSync();
+    expect(node.writes).toBe(writes); // dispose 後は反映されない
+    expect(() => bound.bindInput("url", url)).toThrow(/after dispose/);
+  });
+});
+
+describe("bindNode.bindCommand（command-token: trigger 変化で emit）", () => {
+  it("初期値では発火せず、変化でコマンドを起動する（既定 args = [value]）", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    const trigger = signal(0);
+    bound.bindCommand("go", trigger);
+    flushSync();
+    expect(node.calls).toEqual([]); // mount では起動しない
+
+    trigger.set(1);
+    flushSync();
+    trigger.set(2);
+    flushSync();
+    expect(node.calls).toEqual([[1], [2]]);
+  });
+
+  it("返り値の disposer で個別に command 起動を止められる", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    const trigger = signal(0);
+    const stop = bound.bindCommand("go", trigger);
+    flushSync();
+    stop();
+    trigger.set(1);
+    flushSync();
+    expect(node.calls).toEqual([]);
+  });
+
+  it("mapArgs で呼び出し引数を整形できる", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    const t = signal("");
+    bound.bindCommand("go", t, (v) => [v, `${v}!`]);
+    flushSync();
+    t.set("x");
+    flushSync();
+    expect(node.calls).toEqual([["x", "x!"]]);
+  });
+
+  it("未宣言 command / 非関数 command は bind 時に例外", () => {
+    const node = new CountingNode() as CountingNode & Record<string, unknown>;
+    const bound = bindNode(node, CountingNode.wcBindable);
+    expect(() => bound.bindCommand("nope", signal(0))).toThrow(/not a declared command/);
+
+    const desc: WcBindableDescriptor = { properties: [], commands: [{ name: "notFn" }] };
+    (node as Record<string, unknown>).notFn = 123;
+    const bound2 = bindNode(node, desc);
+    expect(() => bound2.bindCommand("notFn", signal(0))).toThrow(TypeError);
+  });
+
+  it("dispose で command 起動も停止", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    const trigger = signal(0);
+    bound.bindCommand("go", trigger);
+    flushSync();
+    bound.dispose();
+    trigger.set(1);
+    flushSync();
+    expect(node.calls).toEqual([]);
+    expect(() => bound.bindCommand("go", trigger)).toThrow(/after dispose/);
+  });
+});
+
+// A node with both a start command and a cancel command, for nodeSource.
+class AbortableNode extends EventTarget {
+  static wcBindable: WcBindableDescriptor = {
+    properties: [{ name: "value", event: "an:value", getter: (e: Event) => (e as CustomEvent).detail }],
+    inputs: [{ name: "url" }],
+    commands: [{ name: "run" }, { name: "abort" }, { name: "halt" }],
+  };
+
+  ran: string[] = [];
+  aborted = 0;
+  halted = 0;
+
+  run(url: string): Promise<string> {
+    this.ran.push(url);
+    return Promise.resolve(`r:${url}`);
+  }
+  abort(): void {
+    this.aborted++;
+  }
+  halt(): void {
+    this.halted++;
+  }
+}
+
+describe("nodeSource（resource×ノード cancel ブリッジ）", () => {
+  it("source として run を呼び、AbortSignal を既定の abort コマンドへ橋渡す", () => {
+    const node = new AbortableNode();
+    const bound = bindNode(node, AbortableNode.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b, url: string) => b.command("run", url) as Promise<string>);
+    void src("/x", ac.signal);
+    expect(node.ran).toEqual(["/x"]);
+    expect(node.aborted).toBe(0);
+    ac.abort();
+    expect(node.aborted).toBe(1); // abort signal → abort command
+  });
+
+  it("abort コマンド名を上書きできる", () => {
+    const node = new AbortableNode();
+    const bound = bindNode(node, AbortableNode.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b, url: string) => b.command("run", url) as Promise<string>, { abort: "halt" });
+    void src("/y", ac.signal);
+    ac.abort();
+    expect(node.halted).toBe(1);
+    expect(node.aborted).toBe(0);
+  });
+
+  it("dispose 済みアダプタへの abort は未処理例外にならず握りつぶす", () => {
+    const node = new AbortableNode();
+    const bound = bindNode(node, AbortableNode.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b, url: string) => b.command("run", url) as Promise<string>);
+    void src("/x", ac.signal);
+    bound.dispose(); // adapter が先に死ぬ（共有オーナーのteardown順）
+    // abort listener は bound.command を同期的に呼ぶが use-after-dispose 例外を握りつぶす
+    expect(() => ac.abort()).not.toThrow();
+    expect(node.aborted).toBe(0); // command は走らない（abort されなかった）
+  });
+
+  it("dispose 以外の abort コマンド例外は reportError へ送られabort を壊さない", () => {
+    class ThrowingAbort extends EventTarget {
+      static wcBindable: WcBindableDescriptor = {
+        properties: [{ name: "value", event: "ta:value" }],
+        commands: [{ name: "run" }, { name: "abort" }],
+      };
+      run(): Promise<void> {
+        return Promise.resolve();
+      }
+      abort(): void {
+        throw new Error("boom in abort");
+      }
+    }
+    const node = new ThrowingAbort();
+    const bound = bindNode(node, ThrowingAbort.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b) => b.command("run") as Promise<void>);
+    void src(undefined as never, ac.signal);
+
+    const reported: unknown[] = [];
+    const g = globalThis as { reportError?: (e: unknown) => void };
+    const prev = g.reportError;
+    g.reportError = (e) => reported.push(e);
+    try {
+      expect(() => ac.abort()).not.toThrow(); // abort 自体は壊れない
+    } finally {
+      g.reportError = prev;
+    }
+    expect(reported).toHaveLength(1);
+    expect((reported[0] as Error).message).toBe("boom in abort");
+  });
+
+  it("reportError が無い環境では console.error へフォールバックする", () => {
+    class ThrowingAbort2 extends EventTarget {
+      static wcBindable: WcBindableDescriptor = {
+        properties: [{ name: "value", event: "ta2:value" }],
+        commands: [{ name: "run" }, { name: "abort" }],
+      };
+      run(): Promise<void> {
+        return Promise.resolve();
+      }
+      abort(): void {
+        throw new Error("boom2");
+      }
+    }
+    const node = new ThrowingAbort2();
+    const bound = bindNode(node, ThrowingAbort2.wcBindable);
+    const ac = new AbortController();
+    const src = nodeSource(bound, (b) => b.command("run") as Promise<void>);
+    void src(undefined as never, ac.signal);
+
+    const g = globalThis as { reportError?: (e: unknown) => void };
+    const prev = g.reportError;
+    delete g.reportError; // reportError 不在を模す
+    const errors: unknown[] = [];
+    const origErr = console.error;
+    console.error = (e: unknown) => errors.push(e);
+    try {
+      expect(() => ac.abort()).not.toThrow();
+    } finally {
+      console.error = origErr;
+      g.reportError = prev;
+    }
+    expect((errors[0] as Error).message).toBe("boom2");
+  });
+});
+
+// D1 — typed node shape. These assertions are checked by the type-check gate
+// (`npm run typecheck` → tsc -p tsconfig.test.json). They are NOT enforced by the
+// runtime-only `tsc --noEmit` on `src`, since that excludes test files. The runtime
+// body below merely exercises the same typed API so a wrong runtime shape also fails.
+interface FakeShape extends NodeShape {
+  signals: { value: string | null; loading: boolean };
+  inputs: { url: string };
+  // A command WITH an argument, so the typed path's exact-arg checking can be pinned.
+  commands: { run: (url: string) => void };
+}
+
+describe("bindNode: 型安全な NodeShape（D1）", () => {
+  // COMPILE-TIME ONLY: never invoked. The type-check gate verifies the
+  // `@ts-expect-error` negatives (which would THROW if executed) and the positive
+  // `expectTypeOf`s without running them. Keeping these out of the runtime body avoids
+  // tripping the adapter's runtime name validation on deliberately-invalid calls.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function _typedShape(bound: ReturnType<typeof bindNode<FakeShape>>): void {
+    expectTypeOf(bound.signals.value).toEqualTypeOf<ReadSignal<string | null>>();
+    expectTypeOf(bound.signals.loading).toEqualTypeOf<ReadSignal<boolean>>();
+    // @ts-expect-error 宣言されていない property キーは型エラー
+    bound.signals.nope;
+    expectTypeOf(bound.on("value")).toEqualTypeOf<ReadSignal<(string | null) | undefined>>();
+    // @ts-expect-error url は string、number は不可
+    bound.set("url", 123);
+    // @ts-expect-error 宣言されていない input
+    bound.set("nope", 1);
+    // typed command: 正しい引数は通り、戻り型も導出される。
+    bound.command("run", "/api");
+    expectTypeOf(bound.command("run", "/api")).toEqualTypeOf<void>();
+    // @ts-expect-error typed 経路では誤った引数型を弾く（url は string、number 不可）
+    bound.command("run", 123);
+    // @ts-expect-error typed 経路では引数不足を弾く（run は url 必須）
+    bound.command("run");
+    // @ts-expect-error 宣言されていない command
+    bound.command("nope");
+    // bindCommand の mapArgs 戻り値も typed 経路では引数型に一致する必要がある。
+    bound.bindCommand("run", signal(""), (v) => [v]);
+    // @ts-expect-error mapArgs が誤った要素型を返すと弾く
+    bound.bindCommand("run", signal(0), (v) => [v]);
+  }
+
+  // COMPILE-TIME ONLY: the DEFAULT (no type argument) path must keep the pre-generic
+  // looseness. This is the exact back-compat that regressed (`never[]` args). The
+  // type-check gate fails if `command`/`bindCommand`/`set` stop accepting arbitrary
+  // args on the untyped path.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function _untypedBackCompat(target: EventTarget): void {
+    const bound = bindNode(target, { properties: [] });
+    bound.signals.anything; // 任意キー
+    expectTypeOf(bound.signals.anything).toEqualTypeOf<ReadSignal<unknown>>();
+    bound.set("any-input", 123); // 任意 input 名・任意値
+    bound.command("run"); // 引数なし
+    bound.command("run", "/api"); // 引数あり — ここが回帰していた箇所
+    bound.command("run", "/api", 1, { x: 2 }); // 複数・任意型の引数
+    bound.bindCommand("run", signal(0)); // 既定 mapArgs
+    bound.bindCommand("run", signal(0), (v) => [v, "extra"]); // 任意の mapArgs 戻り
+  }
+
+  it("signals/on/set/command が NodeShape から型付けされる（実行時は正当な呼び出しのみ）", () => {
+    const node = new FakeNode();
+    const bound = bindNode<FakeShape>(node, FakeNode.wcBindable);
+
+    // 正当な typed 呼び出しは実行時も通る。
+    bound.set("url", "/api");
+    expect(node.url).toBe("/api");
+    bound.command("run", "/api"); // FakeShape.run は url: string を取る
+    expect(node.ran).toEqual(["/api"]);
+
+    node.dispatchEvent(new CustomEvent("fake:response", { detail: "hi" }));
+    expect(bound.signals.value.peek()).toBe("hi");
+    expect(bound.signals.loading.peek()).toBe(false);
+  });
+
+  it("型引数なしでは従来どおり string キー / unknown（後方互換）", () => {
+    const node = new FakeNode();
+    const bound = bindNode(node, FakeNode.wcBindable);
+    // 型レベル: 任意 string キー・unknown 値（従来の振る舞い）。
+    expectTypeOf(bound.signals.value).toEqualTypeOf<ReadSignal<unknown>>();
+    bound.set("url", 1 as unknown); // 任意の値型が通る（後方互換）— 宣言済み input 名
+    expect(node.url).toBe(1);
+    expect(bound.signals.value.peek()).toBeNull();
+  });
+
+  it("nodeSource は typed bound でも動く（command 引数が型付く）", () => {
+    interface AbortShape extends NodeShape {
+      signals: { value: string | null };
+      commands: { run: (url: string) => Promise<string>; abort: () => void };
+    }
+    const node = new AbortableNode();
+    const bound = bindNode<AbortShape>(node, AbortableNode.wcBindable);
+    const src = nodeSource(bound, (b, url: string) => b.command("run", url));
+    const ac = new AbortController();
+    void src("/x", ac.signal);
+    expect(node.ran).toEqual(["/x"]);
+    ac.abort();
+    expect(node.aborted).toBe(1);
   });
 });

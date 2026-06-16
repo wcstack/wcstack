@@ -59,12 +59,16 @@ const server = createServer(async (req, res) => {
       return jsonResponse(res, filtered);
     }
 
-    // Locally-built signals bundle (and its sourcemap).
-    if (path === "/signals/dom.esm.js") {
-      return serveFile(res, join(distDir, "dom.esm.js"));
-    }
-    if (path === "/signals/dom.esm.js.map") {
-      return serveFile(res, join(distDir, "dom.esm.js.map"));
+    // Locally-built signals bundle. Serve the whole dist/ under /signals/ so the
+    // page can import BOTH entries (`index` and `dom`) and let them resolve their
+    // shared `core-*.esm.js` chunk by relative path — the production packaging that
+    // guarantees a single reactive core (migration-plan Phase 1). A basename guard
+    // keeps the handler from escaping dist/.
+    if (path.startsWith("/signals/")) {
+      const name = path.slice("/signals/".length);
+      if (name && !name.includes("/") && !name.includes("..")) {
+        return serveFile(res, join(distDir, name));
+      }
     }
 
     if (path === "/" || path === "/index.html") {

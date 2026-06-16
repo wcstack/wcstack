@@ -1,6 +1,6 @@
-# 設計メモ: signals ベースの軽量状態管理（`@wcstack/signals` 仮称）
+# 設計メモ: signals ベースの軽量状態管理（`@wcstack/signals`）
 
-- **状態**: 設計検討中 + **PoC 実装済**（2026-06-14・未リリース）。本文書は論点整理と方向性のスナップショット。PoC の結果は §8 に追記。
+- **状態**: **実装完了（2026-06-16・v1.13.1）**。本実装は [signals-migration-plan.md](signals-migration-plan.md) に沿って Phase 0–4 を完了（packaging 本番化 / bindNode 3サーフェス / h ハードニング＋For・Index / resource×ノード cancel）。残るはリリース操作（`npm publish`）のみ。本文書は設計の論点整理と確定記録で、§8 が PoC 結果、§9 が本実装移行の作業記録。確定した規範・API は各 README と migration-plan を参照。
 - **対象**: `@wcstack/state` を**置き換えない**、別系統の新パッケージ。signals を反応性エンジンに据え、非同期IOノード（wc-bindable-protocol 準拠タグ群）を resource として取り込む、より標準に近い軽量・JS-first な状態管理。
 - **一言で**: 「`data-wcs` DSL + パスアドレッシング」を捨て、`Signal.State` / `Signal.Computed` を直接露出する。reactive proxy ではなく cell ベース。非同期IOノードは signal アダプタ一枚でそのまま刺さる。
 - **前提資産**: wc-bindable protocol（properties / commands / event-token）、[[command-token-protocol]] / [[event-token-protocol]]、spread/fetch の microtask coalesce、[[state-stream-type-design]]（async fold の論点を共有）、[[watch-hook-design]]。
@@ -250,6 +250,103 @@ cell ベースなので `obj.a.b` の自動追跡は無い。
 - **(c) computed 値等価の伝播短絡を実装【解決済】**: 反応性コアを push-dirty + lazy 再計算から **三色マーキング（CLEAN/CHECK/DIRTY・Reactively/Solid 系）**に置換。signal 書き込みは直接 observer を DIRTY、推移 observer を CHECK にし、`updateIfNecessary` が CHECK ノードを「computed ソースを先に refresh してから本当に変わったか検証」する pull-validate。**computed が同値に再計算されたら observer を DIRTY に上げない**ので下流 effect/computed が skip。computed にもカスタム `equals` を追加（初回計算は比較せず `_initialized` で保護）。effect 再実行が実際の値変化のみに連動するようになった（無駄実行の排除）。owner/coalesce/動的依存は不変。全既存テスト維持＋短絡テスト4件で 91 テスト 100/100/100/100。
 - **(b) 実タグ + import map の example を作成【解決済】**: `examples/signals-live-search/`（index.html / server.js / README ja・en）。実 `<wcs-fetch>`（CDN `@wcstack/fetch/auto`）を `bindNode` で signal 化し、`query` signal→url 設定→自動 fetch→signal 畳み戻し→`h` でリスト描画。加えて `SignalsElement` 継承の `<signal-counter>` で純 signals＋ライフサイクルを提示。server が未公開 signals の dist を import map で配信。**packaging の発見**: 現状ビルドは index/dom 各エントリが reactive を内包する独立バンドルなので、**buildless で両エントリを混在 import すると reactive コアが二重化**（モジュールグローバル＝tracking context がバンドルごと）し反応性が壊れる。対策として `/dom` をブラウザ用スーパセット（コア再エクスポート）化し、example は単一エントリから import。**本番化には reactive を共有 chunk にする code-splitting が要る**（PoC は inline）＝新たな次段。
 - **残る次段**: (f) 本番 packaging（rollup code-splitting で reactive を共有 chunk 化し、index/dom 混在でも単一コアにする）。PoC の機能コアは出揃った。
+
+### 既知の挙動（v1 スコープ外・規範）
+
+- **owner 破棄後の `computed` は stale を返す**。囲みスコープ（`createRoot`／親 effect）が破棄されると `computed` は sources から `untrack` され、以後は CLEAN かつ sources 空のため、ソース変化で再 dirty されず**最後の値を返し続ける**（Solid 系と同種の挙動）。破棄後に `computed` を参照する使い方は**未定義動作**とし、v1 では救済しない。破棄したスコープの signal を読み続けたい場合は、その signal を別スコープで保持すること。
+
+---
+
+## 9. PoC → 本実装 移行の作業洗い出し（2026-06-16）
+
+PoC の機能コア（reactive / resource / streamResource / bindNode / h / SignalsElement）は出揃っている。ここから「未リリースの PoC」を「出荷できる本実装」にするために必要な作業を、優先度順（**P0 ブロッカー → P1 機能欠落 → P2 仕上げ**）で棚卸しする。
+
+### 9-1. P0 — 出荷ブロッカー
+
+#### (1) packaging: reactive コアの二重化解消【唯一の本質ブロッカー・§8 (f)】
+現状 `rollup.config.js` は `index` と `dom` を**各々独立バンドル**として出力し、両方が `reactive.ts` をインライン内包する。buildless（import map）で両エントリを混在 import すると **tracking context（モジュールグローバル）がバンドルごとに別個**になり反応性が壊れる。
+
+- 現状の回避は「`/dom` をコア再エクスポートのスーパセットにし、example は単一エントリ import」という**運用回避**にすぎない。
+- 本番化には rollup の **code-splitting（`manualChunks` / 共有 chunk、または `preserveModules`）** で `reactive` を単一 chunk に切り出し、`index` / `dom` どちらを混在 import しても**単一コア**に解決する構成が必須。
+- 併せて `dom` エントリに `.esm.min.js` 出力が無い（index のみ min 生成）→ 出力の対称性も要修正。
+
+#### (2) バージョン・リリース整備
+- `package.json` の `version: "0.0.0"` / `description`（"PoC"）を更新。[[feedback_version_alignment]] に従い state/fetch/autoloader/router と**同一バージョンに揃える**。
+- ルート README への追加（既存パッケージは列挙済み・signals は未掲載）。
+
+### 9-2. P1 — 機能欠落（PoC で「手前でとどめた」部分）
+
+#### (3) bindNode が wc-bindable の3サーフェスを全部は写していない
+`bindNode.ts` は **properties（latest スナップショット）+ inputs(`set`) + commands(`command`)** のみ。§3-1 の表に対して欠けているもの:
+- **event-token（繰り返し通知）→ fold した stream signal**（§3-1 第2行）。現状は全プロパティを「最新値スナップショット」扱いで、per-emit を畳む経路が無い。`streamResource` はあるが bindNode から event-token を stream に繋ぐ糊が未実装。
+- **signal → element property への writeback effect**（§3-2「signal を購読し変化を property へ反映」）。現状は命令的 `set()` のみで、双方向の same-value ガード付き自動反映が無い。
+- **command-token（値変化 → emit）**（§3-1 第3行）。現状は命令的 `command()` のみ。
+- 記述子の型を**独自再宣言**（`WcBindableDescriptor`）しており、実体の `IWcBindable`（`protocol` / `version` / `async` / `attribute` を持つ）と**ドリフトする恐れ**。共有プロトコル型を import する形が望ましい。
+
+#### (4) resource の cancel/restart と実ノードの繋ぎ【§5-2・残論点】
+FetchCore は**外部 AbortSignal を受け取らず内部 `abort()` 依存**のため、PoC では `sig → core.abort()` のブリッジを噛ませた。本番では「resource + bindNode で IO ノードを cancel する標準パターン」（command `abort` 経由のブリッジ）を確定・一般化する。[[state-stream-type-design]] と合同で詰める。
+
+#### (5) DOM 層 (h) の本番ハードニング
+`dom.ts` の `setProp` 自身がコメントで PoC 制約を列挙:
+- 属性⇄プロパティ名のリマップ無し（`for`→`htmlFor`, `colspan`→`colSpan`）。
+- read-only プロパティへの代入ガード無し（`key in el` が `firstChild` 等にも真）。
+- SVG 名前空間（`createElementNS`）非対応。
+- **reactive children のリスト描画が naive な全削除→全挿入**（`insertReactive`）→ **9-3 のキー付きリストで解消**。
+
+### 9-3. リストとキー付き reconciliation の設計（For / Index）★
+
+P1 (5) のうちリスト描画は独立論点として切り出す。現状 `insertReactive` は配列が変わるたび「全削除 → 全挿入」で、1要素の変化でも全行 DOM を作り直し、行内 effect も全 dispose する。本番のライブリストには **keyed reconciliation** が要る。
+
+**結論: 実装可能。最難所は PoC で解決済み。**
+
+- キー付きリストの本質的難所は「**行ごとのリアクティブスコープを正しく破棄すること**」。これは owner ツリー（`createRoot` / `onCleanup` / `disposeOwned`・§8 (d)）で**既に解決済み**。行削除でその行内の effect / resource / listener が LIFO 連鎖破棄される基盤がある。
+- 残りは「配列 diff → DOM 最小操作」のみ＝枯れたアルゴリズム（Solid の `mapArray` / `reconcileArrays` 相当）。
+
+**Solid 流に2ヘルパを出す:**
+
+| ヘルパ | キー | 行の再生成 | 用途 |
+|---|---|---|---|
+| **`For`** | 値の同一性（`===` 既定 / 明示 `key` 関数） | add / move / remove のみ。中身変化では作り直さない | オブジェクト配列（主役・推奨） |
+| **`Index`** | 位置（添字） | 配列長が変わった時のみ。行には item を **signal** で渡す | プリミティブ配列・位置が安定 |
+
+使用イメージ:
+```js
+h('ul', null,
+  For(() => items.get(), (item) =>
+    h('li', null, () => item.name)   // 行は一度だけ生成、item.name 変化は fine-grained 更新
+  )
+)
+```
+
+**実装の中身（約150〜250行 + テスト・新規依存ゼロ）:**
+
+1. **アンカー方式を流用** — 既存の anchor コメントで領域を確保（`insertReactive` と同じ位置決め）。
+2. **行ごとに `createRoot`** — 各行を独立 owner 配下で生成。行が消えたらその root を dispose → 行内 effect が確実に死ぬ。
+3. **reconcile** — 旧 `key → {node, dispose}` の Map を持ち、新配列を走査して: マッチ→ノード再利用 / 新規→`createRoot` で行生成 / 消滅→root dispose + ノード除去 / 並び替え→`insertBefore` で最小移動（初期は素朴な順次 insert、後で two-ended / LIS 最適化）。
+4. **キー戦略** — 既定は値の `===`（[state の createListDiff](../packages/state/src/list/createListDiff.ts) も `===` ベース・重複値は添字配列で吸収という発想）。`key` オプションで明示も可。
+
+**state の `createListDiff` は流用しない。** 同関数は `IListIndex` / `loopContext` / パスアドレッシング / 配列参照キーの WeakMap キャッシュに密結合で、signals の cell ベース fine-grained モデルに乗らない。**アルゴリズムの考え方（indexByValue で重複値を添字配列管理、add/delete/change の集合化）だけ参考にし、signals 専用に書き起こす**。
+
+**着手順の推奨:** `For`（keyed・実用主役）から1本通し、テスト + example（[signals-live-search](../examples/signals-live-search) のリスト描画を keyed 化）まで持っていく。その後 `Index`。
+
+### 9-4. P2 — 仕上げ・確定
+
+- **(6) 公開 API の確定（TC39 整合）**: §1 サンプルは `state(0)` 表記、実装は `signal()`。最終公開名を確定（TC39 は `Signal.State` / `Signal.Computed`）。`batch()`（明示バッチ）/ `untrack()` の公開可否、ライブラリ統合用 `Watcher` 相当を出すか。
+- **(7) テスト増強**: 91 テスト 100/100/100/100 だが、**dual-entry 単一コア検証（packaging）・event-token fold・signal→property writeback・SVG・属性名リマップ・For/Index reconcile** の追加が要る。`streamResource` には example が無い。
+- **(8) ドキュメント確定**: 本書は冒頭が「設計検討中」のまま → 設計判断が出揃ったので **SPEC へ昇格**（他パッケージは SPEC.md 体裁）。README ja/en の本番化。v1 スコープ外を README に正直に明記（**SSR/hydration §5-6・深い反応性 proxy §5-4・backpressure・AsyncIterable 非協調 cancel のパーク leak**）。
+
+### 9-5. 着手順サマリ
+
+| 優先 | 項目 | 理由 |
+|---|---|---|
+| **P0-1** | rollup code-splitting で reactive 共有 chunk 化 | 唯一の本質ブロッカー。buildless で壊れる |
+| **P0-2** | version 揃え + ルート README + description | リリース体裁 |
+| **P1-3** | bindNode に event-token / writeback / 共有型 | プロトコル3サーフェス完成＝存在価値 |
+| **P1-4** | resource×ノード cancel パターン確定 | §5-2 唯一の未確定論点 |
+| **P1-5 / 9-3** | h の prop 正規化・**For/Index キー付きリスト** | 実アプリ耐性。owner は済んでおり diff のみ |
+| **P2** | API 確定 / テスト増 / SPEC 昇格 | 仕上げ |
+
+残る二大ピースは **「packaging の本番化」** と **「bindNode のプロトコル完全対応」**。リスト/キーは owner 基盤が済んでいるため diff 実装のみで到達できる。
 
 ---
 

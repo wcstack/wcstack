@@ -1,0 +1,19 @@
+{
+  // Type-check the test suite as a GATE for the type-level assertions that live in
+  // `__tests__` (`expectTypeOf`, `@ts-expect-error`). The main `tsconfig.json` excludes
+  // `**/*.test.ts`, so without this the test files were never type-checked — a
+  // back-compat break in a public type (e.g. bindNode's command args) could slip
+  // through. `npm run typecheck` runs `tsc --noEmit -p tsconfig.test.json` so a wrong
+  // type, a leftover `@ts-expect-error`, or a missing one all FAIL the build.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // No `rootDir`: the compat test imports a sibling package (../../fetch/src/...),
+    // which is fine to TYPE-CHECK (noEmit) but would trip a rootDir constraint.
+    // Test files use vitest globals (describe/it/expect/expectTypeOf via import) and the
+    // happy-dom DOM lib already provided by the base config's `lib`.
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist", ".tsc-out"]
+}

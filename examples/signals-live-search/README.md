@@ -47,11 +47,13 @@ Open http://localhost:3000 in your browser. The server serves the locally-built
   calls `h` directly.
 - **Ownership → lifecycle.** `createRoot` collects every effect created during
   `render()`; the custom element disposes that root on disconnect. No effect leaks.
-- **Buildless single-entry rule.** The page imports *everything* from
-  `@wcstack/signals/dom` (which re-exports the core). Mixing the `@wcstack/signals`
-  and `@wcstack/signals/dom` bundles in a buildless page would load **two** reactive
-  cores (module globals are per-bundle) and silently break reactivity — so import
-  from one entry.
+- **One shared core across both entries.** The page imports the headless core from
+  `@wcstack/signals` *and* the DOM layer from `@wcstack/signals/dom` (see the import
+  map and module script). The production packaging (Rollup code-splitting) emits a
+  single shared `core-*.esm.js` chunk that both entries import, so the page loads
+  **one** reactive instance even when mixing entries. (Pre-Phase-1 each entry inlined
+  its own copy of the core, which duplicated module globals and broke reactivity
+  across the seam — that is no longer the case.)
 
-> This package is a PoC (v0.0.0). See `docs/signals-state-design.md` for the design
-> and `packages/signals` for the implementation and tests.
+> See `docs/signals-state-design.md` for the design and `packages/signals` for the
+> implementation and tests.

@@ -1,4 +1,4 @@
-// Async resource (PoC).
+// Async resource (v1 design notes).
 //
 // Adapts an async producer into a reactive `{ value, loading, error }` triad —
 // the same shape FetchCore exposes (value/loading/error). When the resource's
@@ -21,6 +21,7 @@ export interface ResourceState<T> {
   // state-side `$streams` adapter covers the cancel/restart SEMANTICS, not this
   // progress representation. (docs §8 (a)).
   loading: ReadSignal<boolean>;
+  /** Last error, or `null` when there is none. Initial value is `null`; a (re)start resets it to `null`. */
   error: ReadSignal<unknown>;
   /** Abort any in-flight request and stop reacting to `args` changes. */
   dispose(): void;
@@ -81,6 +82,11 @@ export function resource<T, A = void>(
       return;
     }
 
+    // Settle via two-arm `.then` rather than `await` + try/catch (streamResource's
+    // shape): a resource is SINGLE-SHOT — one resolve/reject lands once — so a flat
+    // resolved/rejected pair maps cleanly. A stream is a CONTINUOUS loop whose chunks
+    // and termination must share one error path, which an `await` loop in try/catch
+    // expresses; that structure would be needless here.
     Promise.resolve(produced).then(
       (resolved) => {
         // Drop the result if this request was superseded/disposed: committing it
