@@ -59,13 +59,19 @@
 
       // --- bound back from the nodes (derived VALUES only) ---
       camPerm: "prompt",
+      granted: false,
+      prompt: false,
+      denied: false,
+      unsupported: false,
       camActive: false,
       camError: null,
       recording: false,
       duration: 0,
       clipUrl: null,        // object URL string (a value)
       clipFiles: null,      // [File] for <wcs-upload>
-      upStatus: "idle",
+      upLoading: false,
+      upError: null,
+      upStatus: 0,
       upProgress: 0,
 
       // --- the direct channel: live MediaStream, never stored ---
@@ -94,10 +100,16 @@
       get durationText() {
         return this.duration ? `${(this.duration / 1000).toFixed(1)}s` : "—";
       },
+      get bannerText() {
+        return "Camera is blocked — enable it in site settings.";
+      },
+      get hasClip() {
+        return !!this.clipUrl;
+      },
       get uploadText() {
-        if (this.upStatus === "uploading") return `Uploading… ${this.upProgress}%`;
-        if (this.upStatus === "success") return "Uploaded ✓";
-        if (this.upStatus === "error") return "Upload failed.";
+        if (this.upLoading) return `Uploading… ${this.upProgress}%`;
+        if (this.upError) return "Upload failed.";
+        if (this.upStatus >= 200 && this.upStatus < 300) return "Uploaded ✓";
         return this.clipFiles ? "Ready to upload." : "Record a clip first.";
       },
     };
@@ -105,11 +117,13 @@
 </wcs-state>
 
 <!-- The watcher: camera permission as pure state (read-only, no prompt). -->
-<wcs-permission name="camera" data-wcs="state: camPerm"></wcs-permission>
+<wcs-permission name="camera"
+  data-wcs="state: camPerm; granted: granted; prompt: prompt; denied: denied; unsupported: unsupported"></wcs-permission>
 
 <!-- Denied banner, shown only when blocked. -->
-<section class="banner" data-wcs="hidden: !denied; textContent: 'Camera is blocked — enable it in site settings.'"
-  style="display:none"></section>
+<template data-wcs="if: denied">
+  <section class="banner" data-wcs="textContent: bannerText"></section>
+</template>
 
 <section>
   <!-- The camera OWNS its preview <video> internally; srcObject never crosses state.
@@ -127,7 +141,7 @@
 
   <div class="row">
     <button data-wcs="onclick: startCamera; hidden: camActive">▶ Start camera</button>
-    <button class="danger" data-wcs="onclick: stopCamera; hidden: !camActive">■ Stop camera</button>
+    <button class="danger" data-wcs="onclick: stopCamera; hidden: camActive|not">■ Stop camera</button>
     <span class="pill" data-wcs="textContent: camPerm;
       class.granted: granted; class.prompt: prompt; class.denied: denied; class.unsupported: unsupported"></span>
   </div>
@@ -147,27 +161,31 @@
 
 <section>
   <div class="row">
-    <button data-wcs="onclick: record; disabled: !camActive; hidden: recording">● Record</button>
-    <button class="danger" data-wcs="onclick: stopRecording; hidden: !recording">■ Stop</button>
-    <span class="rec" data-wcs="hidden: !recording">REC</span>
+    <button data-wcs="onclick: record; disabled: camActive|not; hidden: recording">● Record</button>
+    <button class="danger" data-wcs="onclick: stopRecording; hidden: recording|not">■ Stop</button>
+    <span class="rec" data-wcs="hidden: recording|not">REC</span>
     <span class="status" data-wcs="textContent: durationText"></span>
   </div>
 </section>
 
 <!-- Playback of the recorded clip (object URL is a string value from state). -->
-<section data-wcs="hidden: !clipUrl">
-  <video class="playback" controls data-wcs="src: clipUrl"></video>
-  <div class="row">
-    <button data-wcs="onclick: upload; disabled: !clipFiles">⤴ Upload clip</button>
-    <span class="status" data-wcs="textContent: uploadText"></span>
-  </div>
-</section>
+<template data-wcs="if: hasClip">
+  <section>
+    <video class="playback" controls data-wcs="src: clipUrl"></video>
+    <div class="row">
+      <button data-wcs="onclick: upload; disabled: clipFiles|not">⤴ Upload clip</button>
+      <span class="status" data-wcs="textContent: uploadText"></span>
+    </div>
+  </section>
+</template>
 
 <!-- The recorded Blob → File flows into the existing upload node, unchanged. -->
-<wcs-upload url="https://httpbin.org/post" field-name="clip"
+<wcs-upload url="https://httpbin.org/post" field-name="clip" manual
   data-wcs="
     command.upload: $command.doUpload;
     files: clipFiles;
+    loading: upLoading;
+    error: upError;
     status: upStatus;
     progress: upProgress"></wcs-upload>
 
