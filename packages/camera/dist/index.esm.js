@@ -46,13 +46,10 @@ function hasMediaDevices() {
         && !!navigator.mediaDevices
         && typeof navigator.mediaDevices.getUserMedia === "function";
 }
-function hasMediaRecorderApi() {
-    return typeof globalThis !== "undefined"
-        && typeof globalThis.MediaRecorder === "function";
-}
 /** True when MediaRecorder is available in this environment. */
 function hasMediaRecorder() {
-    return hasMediaRecorderApi();
+    return typeof globalThis !== "undefined"
+        && typeof globalThis.MediaRecorder === "function";
 }
 /**
  * Translate a getUserMedia constraints object from the declarative
@@ -228,7 +225,8 @@ class CameraCore extends EventTarget {
             { name: "error", event: "wcs-camera:error" },
             // Direct-channel handle: event-token only — never bound as a reactive value.
             { name: "streamReady", event: "wcs-camera:stream-ready", getter: (e) => e.detail },
-            { name: "ended", event: "wcs-camera:ended" },
+            // event-token: a bare signal (detail is always null) — surface detail, not the raw Event.
+            { name: "ended", event: "wcs-camera:ended", getter: (e) => e.detail },
         ],
         commands: [
             { name: "start" },
@@ -302,8 +300,14 @@ class CameraCore extends EventTarget {
         this._devices = devices;
         this._dispatch("wcs-camera:devices-changed", devices);
     }
+    // Errors are dispatched on EVERY non-null occurrence by design — each failure is a
+    // distinct event (e.g. retrying getUserMedia and failing again must re-notify), so
+    // unlike the value setters this is not content-deduped. Only the null→null
+    // transition is collapsed (clearing an already-clear error stays silent). The guard
+    // is written on null explicitly so it does NOT depend on callers passing a fresh
+    // object: a reused/cached non-null detail would still re-notify.
     _setError(error) {
-        if (this._error === error)
+        if (error === null && this._error === null)
             return;
         this._error = error;
         this._dispatch("wcs-camera:error", error);
@@ -334,8 +338,10 @@ class CameraCore extends EventTarget {
             this._ready = this._initPermissions();
         }
         else {
-            // Already live: just track the latest constraints for the next acquire.
-            this._reconcileAudioWatcher();
+            // Already live: track the latest constraints and fold any newly-started
+            // microphone query into `ready` so awaiting observe() guarantees its initial
+            // permission state — symmetric with _initPermissions() on the first observe.
+            this._ready = this._ready.then(() => this._reconcileAudioWatcher());
         }
         return this._ready;
     }
@@ -349,7 +355,16 @@ class CameraCore extends EventTarget {
         this._desired = false;
         this._release(false);
     }
-    /** Toggle facingMode (user ↔ environment) and re-acquire if active. */
+    /**
+     * Toggle facingMode (user ↔ environment) and re-acquire if active. This is the
+     * headless, DOM-free path: it flips the Core's internal `_constraints` (the single
+     * source of truth for a standalone Core) and re-acquires while desired.
+     *
+     * Note: the `<wcs-camera>` Shell does NOT delegate to this — it keeps the DOM
+     * attributes authoritative and drives its own single re-acquire (see Camera.ts
+     * switchCamera). Both reach the same end state; the split exists because the Shell
+     * must keep its declared attributes in sync, which a Core has no notion of.
+     */
     switchCamera() {
         const next = this._constraints.facingMode === "environment" ? "user" : "environment";
         this._constraints = { ...this._constraints, facingMode: next, deviceId: undefined };
@@ -360,8 +375,15 @@ class CameraCore extends EventTarget {
     /**
      * Suspend the live stream while keeping `desired` — for page-hidden. Stops tracks
      * (clearing the hardware indicator) but remembers that the camera should resume.
+     *
+     * Bumps `_gen` to supersede any in-flight acquire: without this, an acquire that
+     * resolves *after* the page went hidden would assign `_stream` and set active —
+     * re-lighting the camera behind a no-op suspend (the stream had not been assigned
+     * yet, so the `if (_stream)` release below could not reach it). The superseded
+     * acquire stops its just-acquired orphan stream on resolve (see `_acquire`).
      */
     suspend() {
+        this._gen++;
         if (this._stream) {
             this._release(false);
         }
@@ -412,17 +434,20 @@ class CameraCore extends EventTarget {
         });
     };
     // Bring the microphone watcher in line with the latest `audio` constraint when
-    // observe() is called again on an already-live Core.
+    // observe() is called again on an already-live Core. Returns the new watcher's
+    // initial-query promise (so observe() can fold it into `ready`); resolved when
+    // nothing started.
     _reconcileAudioWatcher() {
         if (this._constraints.audio && !this._micWatcher && hasMediaDevices()) {
             this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
-            this._micWatcher.observe();
+            return this._micWatcher.observe();
         }
         else if (!this._constraints.audio && this._micWatcher) {
             this._micWatcher.dispose();
             this._micWatcher = null;
             this._setAudioPermission(null);
         }
+        return Promise.resolve();
     }
     _restart() {
         this._release(false);
@@ -433,7 +458,10 @@ class CameraCore extends EventTarget {
         const constraints = buildConstraints(this._constraints);
         const { stream, error } = await requestUserMedia(constraints);
         // Superseded by a newer acquire (rapid restart) or disposed while in flight:
-        // stop the orphan stream and bail without mutating state.
+        // stop the orphan stream and bail without mutating state. The `ended` listeners
+        // are attached only AFTER this gen check (below), so stopping the orphan here
+        // cannot fire _onTrackEnded — no spurious `ended` event / state mutation. Keep
+        // this stop strictly before listener attachment if the order is ever refactored.
         if (gen !== this._gen) {
             stopAllTracks(stream ?? null);
             return;
@@ -462,7 +490,11 @@ class CameraCore extends EventTarget {
         this._setError(null);
         // getUserMedia success is authoritative for permission.
         this._setPermission("granted");
-        if (this._constraints.audio) {
+        // Only assert mic-granted when the grant actually produced an audio track. With
+        // today's boolean `audio` this is equivalent to `_constraints.audio`, but it stays
+        // correct under a future non-mandatory `{ audio: {...} }` constraint where the
+        // browser may grant video while omitting audio.
+        if (this._constraints.audio && live.getAudioTracks().length > 0) {
             this._setAudioPermission("granted");
         }
         this._updateDeviceId(live);
@@ -535,11 +567,22 @@ class WcsCamera extends HTMLElement {
         ],
         commands: CameraCore.wcBindable.commands,
     };
+    // `autostart` and `keep-alive` are intentionally NOT observed: `autostart` is a
+    // connect-time-only acquire trigger (read once in connectedCallback; flipping it
+    // later is meaningless), and `keep-alive` is read fresh on every visibilitychange
+    // (_onVisibilityChange), so it never needs to drive a re-acquire. The observed set
+    // is exactly the constraints that reshape the requested track.
     static observedAttributes = ["facing-mode", "device-id", "audio", "width", "height"];
     _core;
     _video;
     _connectedCallbackPromise = Promise.resolve();
     _connected = false;
+    // True while switchCamera() rewrites several attributes at once. Each setAttribute /
+    // removeAttribute fires its own attributeChangedCallback synchronously; without this
+    // guard the FIRST change would re-acquire with the not-yet-updated constraints (and
+    // tear active down so the later change's re-acquire is skipped). We suppress the
+    // per-attribute re-acquire and drive a single one with the final constraints.
+    _batchingAttrs = false;
     constructor() {
         super();
         this._core = new CameraCore(this);
@@ -552,7 +595,12 @@ class WcsCamera extends HTMLElement {
         this._video.setAttribute("playsinline", "");
         this._video.setAttribute("part", "video");
         root.append(style, this._video);
-        // Bind the live handle to the preview internally — never through state.
+        // Bind the live handle to the preview internally — never through state. These
+        // self-listeners are intentionally not removed on disconnect (asymmetric with the
+        // document-level `visibilitychange` in connect/disconnectedCallback): the target
+        // is `this`, so the listeners are collected together with the element — there is
+        // no external reference to leak. The visibility listener, by contrast, lives on
+        // `document` (outlives the element) and MUST be detached.
         this.addEventListener("wcs-camera:stream-ready", this._onStreamReady);
         this.addEventListener("wcs-camera:active-changed", this._onActiveChanged);
     }
@@ -585,7 +633,34 @@ class WcsCamera extends HTMLElement {
     // --- Commands ---
     start() { this._core.start(); }
     stop() { this._core.stop(); }
-    switchCamera() { this._core.switchCamera(); }
+    /**
+     * Toggle the front/back camera by updating the DOM attributes (the single source
+     * of truth), not just the Core's internal constraints. Deliberately does NOT call
+     * `CameraCore.switchCamera()` (which would mutate the Core's constraints behind the
+     * DOM's back, leaving the declared attributes stale). `device-id` is removed because
+     * it would otherwise take precedence over `facing-mode` (see buildConstraints) —
+     * leaving it pinned would silently undo the switch on the next re-acquire. Both
+     * attribute writes are batched (see `_batchingAttrs`) so they drive exactly ONE
+     * re-acquire here, with the final constraints — never an early acquire on a
+     * half-updated state. The DOM and the live camera stay in agreement.
+     */
+    switchCamera() {
+        const next = this.facingMode === "environment" ? "user" : "environment";
+        this._batchingAttrs = true;
+        try {
+            this.removeAttribute("device-id");
+            this.setAttribute("facing-mode", next);
+        }
+        finally {
+            this._batchingAttrs = false;
+        }
+        // Sync the (now-final) constraints and re-acquire once when a stream is live —
+        // the same `active`-guarded restart attributeChangedCallback performs.
+        this._core.observe(this._constraints());
+        if (this._core.active) {
+            this._core.start();
+        }
+    }
     // --- Internal ---
     _toggleAttr(name, value) {
         if (value) {
@@ -638,9 +713,19 @@ class WcsCamera extends HTMLElement {
     attributeChangedCallback(_name, oldValue, newValue) {
         if (!this._connected || oldValue === newValue)
             return;
+        // While switchCamera() batches several attribute writes, defer to its single
+        // post-batch re-acquire — otherwise the first write would acquire on stale
+        // constraints (see `_batchingAttrs`).
+        if (this._batchingAttrs)
+            return;
         // Track the new constraints (and reconcile the microphone watcher).
         this._core.observe(this._constraints());
-        // A constraints change re-acquires (switchMap-style restart) only when active.
+        // A constraints change re-acquires (switchMap-style restart) only when a stream
+        // is actually live. `active` is the deliberate guard (not `desired`): `active`
+        // implies `desired` (a stream only goes live under desired), so re-acquiring
+        // cannot spuriously re-`desired` a stopped camera. Guarding on `active` rather
+        // than `desired` also avoids force-acquiring while suspended/hidden (desired but
+        // not active) — the visibility handler owns resume there.
         if (this._core.active) {
             this._core.start();
         }
@@ -665,6 +750,14 @@ class WcsCamera extends HTMLElement {
  * Ownership: the stream is BORROWED, never owned. The Core never stops its tracks
  * — that is the camera's job (the acquirer owns release). Stopping here would tear
  * down a stream that may still be previewing.
+ *
+ * Non-goal: the Core does NOT subscribe to the borrowed tracks' `ended` and does NOT
+ * auto-terminate a recording when the underlying stream dies (camera stop / OS
+ * revoke / switchCamera re-acquire). Reacting would mean reaching into a stream we do
+ * not own. The MediaRecorder keeps running against the now-dead source until an
+ * explicit stop(); the consumer (which owns the camera lifecycle) is responsible for
+ * stopping the recording when it tears the stream down. stop() then assembles
+ * whatever chunks were captured — never throws.
  *
  * Output: `dataavailable` chunks are collected and assembled into one `Blob` on
  * stop, published via `wcs-recorder:recorded`. The `Blob` is structured-clone
@@ -720,6 +813,8 @@ class RecorderCore extends EventTarget {
     }
     get recording() { return this._recording; }
     get paused() { return this._paused; }
+    // Finalized at stop/pause only — there is no live ticking timer, so this stays 0
+    // from start() until the first pause()/stop() (see _elapsed / onstop / onpause).
     get duration() { return this._duration; }
     get mimeType() { return this._mimeType; }
     get blob() { return this._blob; }
@@ -750,8 +845,13 @@ class RecorderCore extends EventTarget {
         this._mimeType = v;
         this._dispatch("wcs-recorder:mimetype-changed", v);
     }
+    // Errors are dispatched on EVERY non-null occurrence by design — each failure is a
+    // distinct event, so unlike the value setters this is not content-deduped. Only the
+    // null→null transition is collapsed (clearing an already-clear error stays silent).
+    // The guard is written on null explicitly so it does NOT depend on callers passing a
+    // fresh object: a reused/cached non-null detail would still re-notify.
     _setError(error) {
-        if (this._error === error)
+        if (error === null && this._error === null)
             return;
         this._error = error;
         this._dispatch("wcs-recorder:error", error);
@@ -764,6 +864,11 @@ class RecorderCore extends EventTarget {
      * Borrow a stream for recording (the direct-channel sink). Synchronous, no
      * await: the live handle is captured by reference and never stored in state.
      * Does NOT stop any previously-borrowed stream — ownership stays with the camera.
+     *
+     * Re-attaching mid-recording takes effect on the NEXT start(), not the current
+     * recording: the live MediaRecorder was already constructed around the previous
+     * stream and keeps recording it until stop(). The borrowed reference is swapped so
+     * the following start() uses the new stream.
      */
     attachStream(stream) {
         this._stream = stream;
@@ -888,6 +993,10 @@ class RecorderCore extends EventTarget {
     _assembleBlob() {
         const blob = new Blob(this._chunks, this._mimeType ? { type: this._mimeType } : undefined);
         this._chunks = [];
+        // The PREVIOUS clip's object URL is revoked here, before minting the new one — so
+        // any consumer still pointing a `<video src>` at the old URL will break once a new
+        // recording completes. Consumers must follow the latest `objectURL`/`recorded`
+        // value and not pin a stale URL. (The `blob` is unaffected — prefer flowing it.)
         this._revokeUrl();
         const objectURL = this._createUrl(blob);
         this._blob = blob;
@@ -941,6 +1050,12 @@ class RecorderCore extends EventTarget {
 class WcsRecorder extends HTMLElement {
     static wcBindable = {
         ...RecorderCore.wcBindable,
+        // `mimeType` deliberately appears on TWO surfaces: as an output `property`
+        // (inherited from RecorderCore — the browser-resolved recording type, event
+        // `mimetype-changed`) and as an `input` (the `mime-type` request attribute). They
+        // share a base name but are distinct directions: the property is read-only output
+        // (getter → Core), the input is the write-only request (setter → attribute, read
+        // back in _options()). See README "request vs. resolved".
         inputs: [
             { name: "mimeType", attribute: "mime-type" },
             { name: "timeslice", attribute: "timeslice" },
@@ -955,7 +1070,13 @@ class WcsRecorder extends HTMLElement {
         this._core = new RecorderCore(this);
     }
     // --- Attribute accessors ---
-    get mimeType() { return this.getAttribute("mime-type") ?? ""; }
+    // `mimeType` is an OUTPUT value property (the Core-resolved recording type,
+    // published via `wcs-recorder:mimetype-changed`), so the getter delegates to the
+    // Core — NOT the `mime-type` input attribute. The attribute is a *request*: the
+    // browser may pick a different type, or fill one in when none was requested, and
+    // bindings must read the actual value. The input side is read straight from the
+    // attribute in `_options()`. The setter still writes the request attribute.
+    get mimeType() { return this._core.mimeType; }
     set mimeType(value) { this.setAttribute("mime-type", value); }
     get timeslice() { return this._numberAttr("timeslice"); }
     set timeslice(value) { this.setAttribute("timeslice", String(value)); }
@@ -991,8 +1112,11 @@ class WcsRecorder extends HTMLElement {
     }
     _options() {
         const o = {};
-        if (this.mimeType)
-            o.mimeType = this.mimeType;
+        // Read the requested type from the input attribute directly — `get mimeType()` is
+        // the resolved OUTPUT value, not the request.
+        const requested = this.getAttribute("mime-type") ?? "";
+        if (requested)
+            o.mimeType = requested;
         if (Number.isFinite(this.timeslice))
             o.timeslice = this.timeslice;
         if (Number.isFinite(this.audioBitsPerSecond))

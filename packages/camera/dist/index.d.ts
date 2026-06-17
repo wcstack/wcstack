@@ -133,8 +133,21 @@ interface WcsRecordedDetail {
 interface WcsRecorderCoreValues {
     recording: boolean;
     paused: boolean;
+    /**
+     * Recorded length in ms, **finalized at stop/pause** — there is no live ticking
+     * during recording (no internal timer). It stays 0 from start() until the first
+     * pause() or stop(). For a live elapsed display, drive your own client-side timer
+     * off the `recording` flag.
+     */
     duration: number;
     mimeType: string;
+    /**
+     * The last assembled clip — **retained across a new recording**. start() does NOT
+     * clear `blob` / `objectURL`; they hold the previous clip until the next one is
+     * assembled at stop() (the old object URL is revoked then, atomically). So while a
+     * 2nd recording is in flight, `recording` is true *and* these still expose the prior
+     * clip — intentional, so a "download last clip" affordance never goes briefly empty.
+     */
     blob: Blob | null;
     objectURL: string | null;
     error: WcsMediaErrorDetail | null;
@@ -224,11 +237,26 @@ declare class CameraCore extends EventTarget {
     start(): void;
     /** Release the camera (sets desired=false), stopping all tracks. */
     stop(): void;
-    /** Toggle facingMode (user ↔ environment) and re-acquire if active. */
+    /**
+     * Toggle facingMode (user ↔ environment) and re-acquire if active. This is the
+     * headless, DOM-free path: it flips the Core's internal `_constraints` (the single
+     * source of truth for a standalone Core) and re-acquires while desired.
+     *
+     * Note: the `<wcs-camera>` Shell does NOT delegate to this — it keeps the DOM
+     * attributes authoritative and drives its own single re-acquire (see Camera.ts
+     * switchCamera). Both reach the same end state; the split exists because the Shell
+     * must keep its declared attributes in sync, which a Core has no notion of.
+     */
     switchCamera(): void;
     /**
      * Suspend the live stream while keeping `desired` — for page-hidden. Stops tracks
      * (clearing the hardware indicator) but remembers that the camera should resume.
+     *
+     * Bumps `_gen` to supersede any in-flight acquire: without this, an acquire that
+     * resolves *after* the page went hidden would assign `_stream` and set active —
+     * re-lighting the camera behind a no-op suspend (the stream had not been assigned
+     * yet, so the `if (_stream)` release below could not reach it). The superseded
+     * acquire stops its just-acquired orphan stream on resolve (see `_acquire`).
      */
     suspend(): void;
     /** Re-acquire if the camera is desired but not currently active — for page-visible. */
@@ -268,6 +296,7 @@ declare class WcsCamera extends HTMLElement {
     private _video;
     private _connectedCallbackPromise;
     private _connected;
+    private _batchingAttrs;
     constructor();
     get audio(): boolean;
     set audio(value: boolean);
@@ -293,6 +322,17 @@ declare class WcsCamera extends HTMLElement {
     get connectedCallbackPromise(): Promise<void>;
     start(): void;
     stop(): void;
+    /**
+     * Toggle the front/back camera by updating the DOM attributes (the single source
+     * of truth), not just the Core's internal constraints. Deliberately does NOT call
+     * `CameraCore.switchCamera()` (which would mutate the Core's constraints behind the
+     * DOM's back, leaving the declared attributes stale). `device-id` is removed because
+     * it would otherwise take precedence over `facing-mode` (see buildConstraints) —
+     * leaving it pinned would silently undo the switch on the next re-acquire. Both
+     * attribute writes are batched (see `_batchingAttrs`) so they drive exactly ONE
+     * re-acquire here, with the final constraints — never an early acquire on a
+     * half-updated state. The DOM and the live camera stay in agreement.
+     */
     switchCamera(): void;
     private _toggleAttr;
     private _numberAttr;
@@ -313,6 +353,14 @@ declare class WcsCamera extends HTMLElement {
  * Ownership: the stream is BORROWED, never owned. The Core never stops its tracks
  * — that is the camera's job (the acquirer owns release). Stopping here would tear
  * down a stream that may still be previewing.
+ *
+ * Non-goal: the Core does NOT subscribe to the borrowed tracks' `ended` and does NOT
+ * auto-terminate a recording when the underlying stream dies (camera stop / OS
+ * revoke / switchCamera re-acquire). Reacting would mean reaching into a stream we do
+ * not own. The MediaRecorder keeps running against the now-dead source until an
+ * explicit stop(); the consumer (which owns the camera lifecycle) is responsible for
+ * stopping the recording when it tears the stream down. stop() then assembles
+ * whatever chunks were captured — never throws.
  *
  * Output: `dataavailable` chunks are collected and assembled into one `Blob` on
  * stop, published via `wcs-recorder:recorded`. The `Blob` is structured-clone
@@ -354,6 +402,11 @@ declare class RecorderCore extends EventTarget {
      * Borrow a stream for recording (the direct-channel sink). Synchronous, no
      * await: the live handle is captured by reference and never stored in state.
      * Does NOT stop any previously-borrowed stream — ownership stays with the camera.
+     *
+     * Re-attaching mid-recording takes effect on the NEXT start(), not the current
+     * recording: the live MediaRecorder was already constructed around the previous
+     * stream and keeps recording it until stop(). The borrowed reference is swapped so
+     * the following start() uses the new stream.
      */
     attachStream(stream: MediaStream): void;
     /** Start recording the borrowed stream. Never throws — surfaces `error`. */

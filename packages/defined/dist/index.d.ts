@@ -134,6 +134,19 @@ declare class DefinedCore extends EventTarget {
     private _publishedKey;
     private _ready;
     private _resolveReady;
+    /**
+     * @param tags     Tag names to watch. If supplied, the watch starts immediately
+     *                 (headless ergonomics); omit it and drive the first watch via
+     *                 {@link observe} (the Shell does this from connectedCallback).
+     * @param mode     Aggregation mode: `"all"` (default) or `"any"`.
+     * @param timeoutMs Milliseconds before still-pending tags move to `missing`.
+     *                 `0` (default) waits forever. Negative/non-finite are not
+     *                 normalized here — pass a sane value (the Shell normalizes).
+     * @param target   Optional EventTarget that `wcs-defined:change` is dispatched
+     *                 on. Defaults to the Core itself. The Shell passes the custom
+     *                 element so events bubble from the DOM node; direct (headless)
+     *                 users normally leave it undefined and listen on the Core.
+     */
     constructor(tags?: string[], mode?: DefinedMode, timeoutMs?: number, target?: EventTarget);
     get defined(): boolean;
     get pending(): string[];

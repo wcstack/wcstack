@@ -12,6 +12,10 @@ function deepFreeze(obj) {
     }
     return obj;
 }
+// NOTE: arrays are intentionally NOT special-cased. The config shape is fixed and
+// array-free (`{ tagNames: { defined: string } }`), so an array branch would be
+// dead code that the 100% coverage gate could never exercise. If a future config
+// field becomes an array, add `Array.isArray(obj)` handling here (and a test).
 function deepClone(obj) {
     if (obj === null || typeof obj !== "object")
         return obj;
@@ -22,6 +26,13 @@ function deepClone(obj) {
     return clone;
 }
 let frozenConfig = null;
+// Two views of the SAME `_config` object, by design:
+//  - `config` (live, internal): bootstrapDefined reads the current tag name at
+//    registration time, after any setConfig() override. Not exported.
+//  - `getConfig()` (frozen, public): hands callers a deep-frozen snapshot they
+//    cannot mutate; the cache is invalidated by setConfig() so the next read
+//    re-freezes the updated values. There is no divergence — both project the
+//    same underlying `_config`.
 const config = _config;
 function getConfig() {
     if (!frozenConfig) {
@@ -101,6 +112,19 @@ class DefinedCore extends EventTarget {
     // connectedCallbackPromise so SSR can await readiness before snapshotting.
     _ready = Promise.resolve();
     _resolveReady = null;
+    /**
+     * @param tags     Tag names to watch. If supplied, the watch starts immediately
+     *                 (headless ergonomics); omit it and drive the first watch via
+     *                 {@link observe} (the Shell does this from connectedCallback).
+     * @param mode     Aggregation mode: `"all"` (default) or `"any"`.
+     * @param timeoutMs Milliseconds before still-pending tags move to `missing`.
+     *                 `0` (default) waits forever. Negative/non-finite are not
+     *                 normalized here — pass a sane value (the Shell normalizes).
+     * @param target   Optional EventTarget that `wcs-defined:change` is dispatched
+     *                 on. Defaults to the Core itself. The Shell passes the custom
+     *                 element so events bubble from the DOM node; direct (headless)
+     *                 users normally leave it undefined and listen on the Core.
+     */
     constructor(tags, mode = "all", timeoutMs = 0, target) {
         super();
         this._target = target ?? this;
@@ -200,6 +224,12 @@ class DefinedCore extends EventTarget {
                 continue;
             }
             this._pending.push(tag);
+            // Duplicate tags (e.g. ["x-a", "x-a"]) are intentionally NOT de-duplicated:
+            // each occurrence gets its own `pending` entry AND its own whenDefined().then,
+            // so a single registration fires the handler once per occurrence and each call
+            // splices exactly one entry (indexOf finds the first, leaving the rest) and
+            // bumps `count` once. total/count/pending therefore stay consistent and the
+            // invariant holds for duplicates. (Tested in "重複タグ名".)
             // whenDefined() resolves when the tag is registered. An invalid name is
             // reported as a rejected promise on current (WHATWG) implementations, but as
             // a *synchronous throw* on some legacy/polyfill implementations. Handle both
@@ -216,7 +246,19 @@ class DefinedCore extends EventTarget {
                     else {
                         // The timeout already moved this tag to `missing`; a late registration
                         // promotes it back into the defined count (decision: missing→count).
-                        this._missing.splice(this._missing.indexOf(tag), 1);
+                        // Reaching this branch guarantees the tag is in `missing` today (the
+                        // timeout is the ONLY path that removes a tag from `pending` without
+                        // counting it, and it puts the tag in `missing` — mirror of
+                        // _markInvalid's "always in pending" invariant), so indexOf never
+                        // returns -1. The `mi !== -1` guard is defensive: a future `tags`
+                        // mutation that drains `pending` by another route would otherwise make
+                        // splice(-1, 1) silently delete the LAST element of `missing`. The
+                        // `mi === -1` (false) branch is unreachable today, hence c8-ignored.
+                        const mi = this._missing.indexOf(tag);
+                        /* c8 ignore next */
+                        if (mi !== -1) {
+                            this._missing.splice(mi, 1);
+                        }
                     }
                     this._count++;
                     this._recompute();
@@ -270,9 +312,16 @@ class DefinedCore extends EventTarget {
     // with a reason. Shared by the async reject path and the sync-throw fallback.
     // The tag is guaranteed to be in `pending` when this runs — the reject fires
     // before any timeout, and the sync path runs in the same iteration that pushed
-    // it — so the unconditional splice is safe.
+    // it — so indexOf never returns -1. The `pi !== -1` guard is defensive against a
+    // future code path that could drain `pending` first: splice(-1, 1) would
+    // otherwise delete the wrong (last) element rather than no-op. The `pi === -1`
+    // (false) branch is unreachable today, hence c8-ignored.
     _markInvalid(tag) {
-        this._pending.splice(this._pending.indexOf(tag), 1);
+        const pi = this._pending.indexOf(tag);
+        /* c8 ignore next */
+        if (pi !== -1) {
+            this._pending.splice(pi, 1);
+        }
         this._missing.push(tag);
         this._appendError(`invalid custom element name: ${tag}`);
     }
@@ -344,6 +393,12 @@ class WcsDefined extends HTMLElement {
     get tags() {
         return this.getAttribute("tags") ?? "";
     }
+    // `tags` / `mode` setters pass the value straight to setAttribute: their value
+    // type is already `string` / `DefinedMode`, and the matching getter normalizes on
+    // read (mode: anything but "any" → "all"; tags: parsed/trimmed in _parseTags).
+    // Only `timeout` setter coerces (String(value)) because its value type is number,
+    // which setAttribute would otherwise stringify implicitly anyway — the explicit
+    // String() just makes the number→attribute boundary obvious.
     set tags(value) {
         this.setAttribute("tags", value);
     }
@@ -354,7 +409,12 @@ class WcsDefined extends HTMLElement {
         this.setAttribute("mode", value);
     }
     get timeout() {
-        return Number(this.getAttribute("timeout")) || 0;
+        // Normalize to a non-negative finite count of ms. `Number("abc")` → NaN and a
+        // negative value both collapse to 0 (= "wait forever"), so a malformed or
+        // negative `timeout` attribute can never silently become an infinite wait via
+        // an unexpected path; 0 is the documented no-limit sentinel.
+        const ms = Number(this.getAttribute("timeout"));
+        return Number.isFinite(ms) && ms > 0 ? ms : 0;
     }
     set timeout(value) {
         this.setAttribute("timeout", String(value));
