@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: camera → record → upload</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.6; }
+    section { margin-bottom: 1.25rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    button { padding: 0.5rem 1.1rem; background: #5b21b6; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
+    button:hover { background: #4c1d95; }
+    button:disabled { background: #c4b5fd; cursor: not-allowed; }
+    button.danger { background: #b91c1c; }
+    button.danger:hover { background: #991b1b; }
+    wcs-camera, video.playback { width: 100%; max-width: 480px; aspect-ratio: 4 / 3; background: #111; border-radius: 8px; display: block; }
+    wcs-camera::part(video) { object-fit: cover; border-radius: 8px; }
+    .row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 0.85rem; }
+    .pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .pill.granted { background: #dcfce7; color: #166534; }
+    .pill.prompt { background: #fef9c3; color: #854d0e; }
+    .pill.denied { background: #fee2e2; color: #991b1b; }
+    .pill.unsupported { background: #e2e8f0; color: #475569; }
+    .rec { display: inline-flex; align-items: center; gap: 0.4rem; color: #b91c1c; font-weight: 600; font-size: 0.85rem; }
+    .rec::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #b91c1c; animation: blink 1s steps(2) infinite; }
+    @keyframes blink { 50% { opacity: 0.2; } }
+    .status { font-size: 0.8rem; color: #888; margin-top: 0.6rem; }
+    code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; font-size: 0.85em; }
+    .banner { padding: 0.85rem 1.1rem; border-radius: 8px; font-size: 0.9rem; background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/camera/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: camera → record → upload</h1>
+<p class="lead">
+  The whole pipeline is one straight line and <b>the live <code>MediaStream</code> never touches state</b>.
+  <code>&lt;wcs-camera&gt;</code> acquires it and shows the preview; on <code>stream-ready</code> the raw
+  handle is handed to <code>&lt;wcs-recorder&gt;</code> as a transient <b>command-token argument</b>
+  (<code>$command.feedRecorder.emit(stream)</code>) — it passes through the token bus and is never stored
+  as a reactive value. Only <i>derived values</i> (permission, recording flag, the recorded
+  <code>Blob</code>, an object URL) live in state. The recorded clip becomes a <code>File</code> and flows
+  into the existing <code>&lt;wcs-upload&gt;</code> node.
+</p>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      // command-tokens: state → element method calls.
+      $commandTokens: ["camStart", "camStop", "feedRecorder", "recStart", "recStop", "doUpload"],
+      // event-tokens: element → state.
+      $eventTokens: ["gotStream", "onRecorded"],
+
+      // --- bound back from the nodes (derived VALUES only) ---
+      camPerm: "prompt",
+      granted: false,
+      prompt: false,
+      denied: false,
+      unsupported: false,
+      camActive: false,
+      camError: null,
+      recording: false,
+      duration: 0,
+      clipUrl: null,        // object URL string (a value)
+      clipFiles: null,      // [File] for <wcs-upload>
+      upLoading: false,
+      upError: null,
+      upStatus: 0,
+      upProgress: 0,
+
+      // --- the direct channel: live MediaStream, never stored ---
+      $on: {
+        // The raw handle arrives in event.detail and is forwarded straight to the
+        // recorder as a command argument. It is NOT assigned to any state path.
+        gotStream: (state, event) => state.$command.feedRecorder.emit(event.detail),
+        // The recorded clip is a settled Blob — a value — so it may live in state.
+        onRecorded: (state, event) => {
+          const { blob } = event.detail;
+          state.clipFiles = [new File([blob], `clip-${Date.now()}.webm`, { type: blob.type })];
+        },
+      },
+
+      startCamera() { this.$command.camStart.emit(); },
+      stopCamera() { this.$command.camStop.emit(); },
+      record() { this.$command.recStart.emit(); },
+      stopRecording() { this.$command.recStop.emit(); },
+      upload() { if (this.clipFiles) this.$command.doUpload.emit(); },
+
+      get camStatus() {
+        if (this.camError) return `Camera error: ${this.camError.name}`;
+        if (this.camActive) return "Camera live.";
+        return "Camera off.";
+      },
+      // NOTE: <wcs-recorder> `duration` is finalized at stop/pause — it is 0 (shown as
+      // "—") for the whole recording and only fills in once you stop. For a live
+      // ticking counter, run your own timer off the `recording` flag. We keep the
+      // finalized value here to stay declarative.
+      get durationText() {
+        return this.duration ? `${(this.duration / 1000).toFixed(1)}s` : "—";
+      },
+      get bannerText() {
+        return "Camera is blocked — enable it in site settings.";
+      },
+      get hasClip() {
+        return !!this.clipUrl;
+      },
+      get uploadText() {
+        if (this.upLoading) return `Uploading… ${this.upProgress}%`;
+        if (this.upError) return "Upload failed.";
+        if (this.upStatus >= 200 && this.upStatus < 300) return "Uploaded ✓";
+        return this.clipFiles ? "Ready to upload." : "Record a clip first.";
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- The watcher: camera permission as pure state (read-only, no prompt). -->
+<wcs-permission name="camera"
+  data-wcs="state: camPerm; granted: granted; prompt: prompt; denied: denied; unsupported: unsupported"></wcs-permission>
+
+<!-- Denied banner, shown only when blocked. -->
+<template data-wcs="if: denied">
+  <section class="banner" data-wcs="textContent: bannerText"></section>
+</template>
+
+<section>
+  <!-- The camera OWNS its preview <video> internally; srcObject never crosses state.
+       `keep-alive: recording` keeps the stream alive while recording even if the tab
+       is hidden — a declarative fix for the visibility/recording coordination. -->
+  <wcs-camera
+    data-wcs="
+      command.start: $command.camStart;
+      command.stop: $command.camStop;
+      eventToken.streamReady: gotStream;
+      active: camActive;
+      permission: camPerm;
+      error: camError;
+      keepAlive: recording"></wcs-camera>
+
+  <div class="row">
+    <button data-wcs="onclick: startCamera; hidden: camActive">▶ Start camera</button>
+    <button class="danger" data-wcs="onclick: stopCamera; hidden: camActive|not">■ Stop camera</button>
+    <span class="pill" data-wcs="textContent: camPerm;
+      class.granted: granted; class.prompt: prompt; class.denied: denied; class.unsupported: unsupported"></span>
+  </div>
+  <div class="status" data-wcs="textContent: camStatus"></div>
+</section>
+
+<!-- The recorder borrows the camera's stream via the direct channel; it never owns it. -->
+<wcs-recorder mime-type="video/webm"
+  data-wcs="
+    command.attachStream: $command.feedRecorder;
+    command.start: $command.recStart;
+    command.stop: $command.recStop;
+    recording: recording;
+    duration: duration;
+    objectURL: clipUrl;
+    eventToken.recorded: onRecorded"></wcs-recorder>
+
+<section>
+  <div class="row">
+    <button data-wcs="onclick: record; disabled: camActive|not; hidden: recording">● Record</button>
+    <button class="danger" data-wcs="onclick: stopRecording; hidden: recording|not">■ Stop</button>
+    <span class="rec" data-wcs="hidden: recording|not">REC</span>
+    <span class="status" data-wcs="textContent: durationText"></span>
+  </div>
+</section>
+
+<!-- Playback of the recorded clip (object URL is a string value from state). -->
+<template data-wcs="if: hasClip">
+  <section>
+    <video class="playback" controls data-wcs="src: clipUrl"></video>
+    <div class="row">
+      <button data-wcs="onclick: upload; disabled: clipFiles|not">⤴ Upload clip</button>
+      <span class="status" data-wcs="textContent: uploadText"></span>
+    </div>
+  </section>
+</template>
+
+<!-- The recorded Blob → File flows into the existing upload node, unchanged. -->
+<wcs-upload url="https://httpbin.org/post" field-name="clip" manual
+  data-wcs="
+    command.upload: $command.doUpload;
+    files: clipFiles;
+    loading: upLoading;
+    error: upError;
+    status: upStatus;
+    progress: upProgress"></wcs-upload>
+
+</body>
+</html>
