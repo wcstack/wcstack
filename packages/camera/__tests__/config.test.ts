@@ -23,6 +23,12 @@ describe("config / bootstrapCamera", () => {
     setConfig({ tagNames: { camera: "wcs-camera" } });
   });
 
+  it("setConfig({}) は tagNames 未指定でも安全（上書きしない・#10）", () => {
+    setConfig({}); // partialConfig.tagNames が falsy の分岐
+    expect(getConfig().tagNames.camera).toBe("wcs-camera");
+    expect(getConfig().tagNames.recorder).toBe("wcs-recorder");
+  });
+
   it("bootstrapCamera でカスタム要素が登録される", () => {
     bootstrapCamera();
     expect(customElements.get("wcs-camera")).toBeDefined();

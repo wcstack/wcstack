@@ -53,6 +53,7 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 ### Lifecycle
 
 - On `disconnectedCallback` every track is stopped (`track.stop()`), clearing the hardware indicator. Leaking a stream is the one failure mode unique to this node.
+- Moving the element in the DOM (remove → re-append) runs `disconnectedCallback` (dispose, stop tracks) then `connectedCallback` (observe again). With `autostart` it re-acquires on reconnect (and may re-prompt). To keep a stream across a move, avoid `autostart` and re-`start()` yourself, or don't detach the element.
 - A constraints change (`device-id`, `facing-mode`, `switchCamera()`) **re-acquires** (stop → new `getUserMedia`), guarded by a generation counter so a superseded acquire cannot leave an orphan stream live.
 - While the page is hidden the stream is suspended and re-acquired on return — unless `keep-alive` is set. Bind `keep-alive: recording` to keep the camera alive while recording.
 
@@ -64,11 +65,17 @@ Records a **borrowed** stream received via `attachStream` (the direct channel fr
 
 **Commands:** `attachStream(stream)`, `start()`, `stop()`, `pause()`, `resume()`.
 
-**Bindable values:** `recording`, `paused`, `duration` (ms), `mimeType`, `blob`, `objectURL`, `error`.
+**Bindable values:** `recording`, `paused`, `duration` (ms — see note below), `mimeType` (the **resolved** recording type, which may differ from the requested `mime-type` attribute or be filled in when none was requested), `blob`, `objectURL`, `error`.
 
 **Events (event-token):** `recorded` (`wcs-recorder:recorded`, detail = `{ blob, objectURL, mimeType, duration }`), `dataavailable` (only in `timeslice` mode), `error`.
 
-The assembled `Blob` is structured-clone friendly, so it *is* a value and may flow through state — for example `new File([blob], "clip.webm")` into [`@wcstack/upload`](../upload/). The object URL is managed: the previous one is revoked before a new clip and on dispose.
+> **`duration` is finalized at stop/pause, not live.** There is no internal ticking timer: `duration` stays `0` from `start()` until the first `pause()` or `stop()`. For a live elapsed counter while recording, drive your own client-side timer off the `recording` flag.
+
+> **`mimeType` has two sides — request vs. resolved.** The **input** is the `mime-type` *attribute* (what you ask the recorder to use). The **output** is the `mimeType` *bindable value* (what the browser actually picked, published via `wcs-recorder:mimetype-changed`). They share a base name by design but are distinct surfaces: bind the attribute to set the request (`mime-type` attribute / element setter), and bind the value property to read the resolved type. Don't expect reading `mimeType` to echo back what you wrote — it reflects the recording, not the request.
+
+The assembled `Blob` is structured-clone friendly, so it *is* a value and may flow through state — for example `new File([blob], "clip.webm")` into [`@wcstack/upload`](../upload/). The object URL is managed: the previous one is revoked before a new clip **and on `disconnectedCallback` (dispose)**.
+
+> **`objectURL` lifetime is bound to the recorder.** Because dispose revokes the last object URL — **and a new recording revokes the previous clip's URL before minting the next** — any `<video src>` / `<wcs-upload>` still pointing at an old URL breaks once the `<wcs-recorder>` is removed or the next clip completes. Always follow the latest `objectURL` / `recorded` value; never pin a stale one. If you hand the URL to a longer-lived consumer, either keep the recorder mounted for as long as the URL is in use, or build your own URL from the `Blob` (`URL.createObjectURL(blob)`) and own its revoke. The structured-clone-friendly **`blob`** has no such coupling — prefer flowing the `Blob` through state and minting URLs at the point of use.
 
 ## Headless cores
 

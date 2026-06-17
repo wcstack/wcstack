@@ -34,7 +34,8 @@ export class CameraCore extends EventTarget {
       { name: "error", event: "wcs-camera:error" },
       // Direct-channel handle: event-token only — never bound as a reactive value.
       { name: "streamReady", event: "wcs-camera:stream-ready", getter: (e: Event) => (e as CustomEvent).detail },
-      { name: "ended", event: "wcs-camera:ended" },
+      // event-token: a bare signal (detail is always null) — surface detail, not the raw Event.
+      { name: "ended", event: "wcs-camera:ended", getter: (e: Event) => (e as CustomEvent).detail },
     ],
     commands: [
       { name: "start" },
@@ -120,8 +121,14 @@ export class CameraCore extends EventTarget {
     this._dispatch("wcs-camera:devices-changed", devices);
   }
 
+  // Errors are dispatched on EVERY non-null occurrence by design — each failure is a
+  // distinct event (e.g. retrying getUserMedia and failing again must re-notify), so
+  // unlike the value setters this is not content-deduped. Only the null→null
+  // transition is collapsed (clearing an already-clear error stays silent). The guard
+  // is written on null explicitly so it does NOT depend on callers passing a fresh
+  // object: a reused/cached non-null detail would still re-notify.
   private _setError(error: WcsMediaErrorDetail | null): void {
-    if (this._error === error) return;
+    if (error === null && this._error === null) return;
     this._error = error;
     this._dispatch("wcs-camera:error", error);
   }
@@ -152,8 +159,10 @@ export class CameraCore extends EventTarget {
       this._subscribed = true;
       this._ready = this._initPermissions();
     } else {
-      // Already live: just track the latest constraints for the next acquire.
-      this._reconcileAudioWatcher();
+      // Already live: track the latest constraints and fold any newly-started
+      // microphone query into `ready` so awaiting observe() guarantees its initial
+      // permission state — symmetric with _initPermissions() on the first observe.
+      this._ready = this._ready.then(() => this._reconcileAudioWatcher());
     }
     return this._ready;
   }
@@ -170,7 +179,16 @@ export class CameraCore extends EventTarget {
     this._release(false);
   }
 
-  /** Toggle facingMode (user ↔ environment) and re-acquire if active. */
+  /**
+   * Toggle facingMode (user ↔ environment) and re-acquire if active. This is the
+   * headless, DOM-free path: it flips the Core's internal `_constraints` (the single
+   * source of truth for a standalone Core) and re-acquires while desired.
+   *
+   * Note: the `<wcs-camera>` Shell does NOT delegate to this — it keeps the DOM
+   * attributes authoritative and drives its own single re-acquire (see Camera.ts
+   * switchCamera). Both reach the same end state; the split exists because the Shell
+   * must keep its declared attributes in sync, which a Core has no notion of.
+   */
   switchCamera(): void {
     const next: FacingMode = this._constraints.facingMode === "environment" ? "user" : "environment";
     this._constraints = { ...this._constraints, facingMode: next, deviceId: undefined };
@@ -182,8 +200,15 @@ export class CameraCore extends EventTarget {
   /**
    * Suspend the live stream while keeping `desired` — for page-hidden. Stops tracks
    * (clearing the hardware indicator) but remembers that the camera should resume.
+   *
+   * Bumps `_gen` to supersede any in-flight acquire: without this, an acquire that
+   * resolves *after* the page went hidden would assign `_stream` and set active —
+   * re-lighting the camera behind a no-op suspend (the stream had not been assigned
+   * yet, so the `if (_stream)` release below could not reach it). The superseded
+   * acquire stops its just-acquired orphan stream on resolve (see `_acquire`).
    */
   suspend(): void {
+    this._gen++;
     if (this._stream) {
       this._release(false);
     }
@@ -239,16 +264,19 @@ export class CameraCore extends EventTarget {
   };
 
   // Bring the microphone watcher in line with the latest `audio` constraint when
-  // observe() is called again on an already-live Core.
-  private _reconcileAudioWatcher(): void {
+  // observe() is called again on an already-live Core. Returns the new watcher's
+  // initial-query promise (so observe() can fold it into `ready`); resolved when
+  // nothing started.
+  private _reconcileAudioWatcher(): Promise<void> {
     if (this._constraints.audio && !this._micWatcher && hasMediaDevices()) {
       this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
-      this._micWatcher.observe();
+      return this._micWatcher.observe();
     } else if (!this._constraints.audio && this._micWatcher) {
       this._micWatcher.dispose();
       this._micWatcher = null;
       this._setAudioPermission(null);
     }
+    return Promise.resolve();
   }
 
   private _restart(): void {
@@ -262,7 +290,10 @@ export class CameraCore extends EventTarget {
     const { stream, error } = await requestUserMedia(constraints);
 
     // Superseded by a newer acquire (rapid restart) or disposed while in flight:
-    // stop the orphan stream and bail without mutating state.
+    // stop the orphan stream and bail without mutating state. The `ended` listeners
+    // are attached only AFTER this gen check (below), so stopping the orphan here
+    // cannot fire _onTrackEnded — no spurious `ended` event / state mutation. Keep
+    // this stop strictly before listener attachment if the order is ever refactored.
     if (gen !== this._gen) {
       stopAllTracks(stream ?? null);
       return;
@@ -292,7 +323,11 @@ export class CameraCore extends EventTarget {
     this._setError(null);
     // getUserMedia success is authoritative for permission.
     this._setPermission("granted");
-    if (this._constraints.audio) {
+    // Only assert mic-granted when the grant actually produced an audio track. With
+    // today's boolean `audio` this is equivalent to `_constraints.audio`, but it stays
+    // correct under a future non-mandatory `{ audio: {...} }` constraint where the
+    // browser may grant video while omitting audio.
+    if (this._constraints.audio && live.getAudioTracks().length > 0) {
       this._setAudioPermission("granted");
     }
     this._updateDeviceId(live);

@@ -52,6 +52,20 @@ describe("<wcs-recorder> Shell", () => {
     expect(mr.options.videoBitsPerSecond).toBe(2500000);
   });
 
+  it("mime-type 未指定でも el.mimeType は録画後に Core 解決値を返す（#1/#4 出力委譲）", () => {
+    // 属性は未指定。ブラウザ既定（Fake は video/webm）が Core で解決される。
+    const el = mount(`<wcs-recorder></wcs-recorder>`);
+    // 録画前は出力値なし。
+    expect(el.mimeType).toBe("");
+    el.attachStream(new FakeMediaStream("s") as unknown as MediaStream);
+    el.start();
+    FakeMediaRecorder.instances[0].emitData(new Blob(["x"]));
+    el.stop();
+    // 属性は空のまま（request していない）だが、出力 getter は Core 解決値を返す。
+    expect(el.getAttribute("mime-type")).toBeNull();
+    expect(el.mimeType).toBe("video/webm");
+  });
+
   it("pause/resume を委譲する", () => {
     const el = mount(`<wcs-recorder></wcs-recorder>`);
     el.attachStream(new FakeMediaStream("s") as unknown as MediaStream);

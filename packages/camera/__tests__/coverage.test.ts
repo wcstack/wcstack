@@ -53,6 +53,8 @@ describe("media/getUserMedia ヘルパ", () => {
     expect(normalizeMediaError({ name: "NotFoundError" }).message).toMatch(/NotFoundError/);
     // message プロパティはあるが空 → フォールバック文言。
     expect(normalizeMediaError({ name: "X", message: "" }).message).toMatch(/X/);
+    // name が空文字 → "Error" フォールバック分岐（#9・getUserMedia.ts:44）。
+    expect(normalizeMediaError({ name: "" }).name).toBe("Error");
     expect(normalizeMediaError("boom")).toEqual({ name: "Error", message: "Media request failed." });
     expect(normalizeMediaError(null)).toEqual({ name: "Error", message: "Media request failed." });
   });
@@ -260,7 +262,11 @@ describe("Shell アクセサ網羅", () => {
   it("<wcs-recorder> の全アクセサを読み書きする", () => {
     const el = document.createElement("wcs-recorder") as WcsRecorder;
     document.body.appendChild(el);
-    el.mimeType = "video/webm"; expect(el.mimeType).toBe("video/webm");
+    // mimeType setter は request 属性を書く（入力側）。getter は Core 解決値（出力側）
+    // を返すため、録画前は "" のまま（#1）。属性は別途確認する。
+    el.mimeType = "video/webm";
+    expect(el.getAttribute("mime-type")).toBe("video/webm");
+    expect(el.mimeType).toBe("");
     el.timeslice = 200; expect(el.timeslice).toBe(200);
     el.audioBitsPerSecond = 96000; expect(el.audioBitsPerSecond).toBe(96000);
     el.videoBitsPerSecond = 1000000; expect(el.videoBitsPerSecond).toBe(1000000);
@@ -271,6 +277,9 @@ describe("Shell アクセサ網羅", () => {
     expect(el.objectURL).toBeNull();
     expect(el.error).toBeNull();
     el.setAttribute("timeslice", "");
+    expect(Number.isNaN(el.timeslice)).toBe(true);
+    // 非数値文字列は Number.isFinite が偽 → NaN フォールバック（#7・Recorder.ts:79）。
+    el.setAttribute("timeslice", "abc");
     expect(Number.isNaN(el.timeslice)).toBe(true);
   });
 });

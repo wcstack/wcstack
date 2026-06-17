@@ -190,6 +190,9 @@ export class FakeMediaRecorder {
   static supportedTypes: string[] = ["video/webm"];
   static instances: FakeMediaRecorder[] = [];
   static throwOnConstruct = false;
+  // Force the instance to report an empty `mimeType` (some real browsers leave it
+  // blank), so the Core's `recorder.mimeType || recOptions.mimeType` fallback runs.
+  static reportEmptyMimeType = false;
 
   static isTypeSupported(type: string): boolean {
     return FakeMediaRecorder.supportedTypes.includes(type);
@@ -207,7 +210,7 @@ export class FakeMediaRecorder {
     if (FakeMediaRecorder.throwOnConstruct) {
       throw Object.assign(new Error("construct failed"), { name: "NotSupportedError" });
     }
-    this.mimeType = options.mimeType ?? "video/webm";
+    this.mimeType = FakeMediaRecorder.reportEmptyMimeType ? "" : (options.mimeType ?? "video/webm");
     FakeMediaRecorder.instances.push(this);
   }
 
@@ -239,6 +242,7 @@ export function installRecorder(): { uninstall(): void } {
   recorderOriginals.MediaRecorder = g.MediaRecorder;
   FakeMediaRecorder.instances = [];
   FakeMediaRecorder.throwOnConstruct = false;
+  FakeMediaRecorder.reportEmptyMimeType = false;
   FakeMediaRecorder.supportedTypes = ["video/webm"];
   g.MediaRecorder = FakeMediaRecorder;
 

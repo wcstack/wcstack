@@ -16,6 +16,12 @@ import { RecorderCore } from "../core/RecorderCore.js";
 export class WcsRecorder extends HTMLElement {
   static wcBindable: IWcBindable = {
     ...RecorderCore.wcBindable,
+    // `mimeType` deliberately appears on TWO surfaces: as an output `property`
+    // (inherited from RecorderCore — the browser-resolved recording type, event
+    // `mimetype-changed`) and as an `input` (the `mime-type` request attribute). They
+    // share a base name but are distinct directions: the property is read-only output
+    // (getter → Core), the input is the write-only request (setter → attribute, read
+    // back in _options()). See README "request vs. resolved".
     inputs: [
       { name: "mimeType", attribute: "mime-type" },
       { name: "timeslice", attribute: "timeslice" },
@@ -34,7 +40,13 @@ export class WcsRecorder extends HTMLElement {
 
   // --- Attribute accessors ---
 
-  get mimeType(): string { return this.getAttribute("mime-type") ?? ""; }
+  // `mimeType` is an OUTPUT value property (the Core-resolved recording type,
+  // published via `wcs-recorder:mimetype-changed`), so the getter delegates to the
+  // Core — NOT the `mime-type` input attribute. The attribute is a *request*: the
+  // browser may pick a different type, or fill one in when none was requested, and
+  // bindings must read the actual value. The input side is read straight from the
+  // attribute in `_options()`. The setter still writes the request attribute.
+  get mimeType(): string { return this._core.mimeType; }
   set mimeType(value: string) { this.setAttribute("mime-type", value); }
 
   get timeslice(): number { return this._numberAttr("timeslice"); }
@@ -81,7 +93,10 @@ export class WcsRecorder extends HTMLElement {
 
   private _options(): RecorderOptions {
     const o: RecorderOptions = {};
-    if (this.mimeType) o.mimeType = this.mimeType;
+    // Read the requested type from the input attribute directly — `get mimeType()` is
+    // the resolved OUTPUT value, not the request.
+    const requested = this.getAttribute("mime-type") ?? "";
+    if (requested) o.mimeType = requested;
     if (Number.isFinite(this.timeslice)) o.timeslice = this.timeslice;
     if (Number.isFinite(this.audioBitsPerSecond)) o.audioBitsPerSecond = this.audioBitsPerSecond;
     if (Number.isFinite(this.videoBitsPerSecond)) o.videoBitsPerSecond = this.videoBitsPerSecond;

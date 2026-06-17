@@ -7,14 +7,10 @@ export function hasMediaDevices(): boolean {
     && typeof navigator.mediaDevices.getUserMedia === "function";
 }
 
-function hasMediaRecorderApi(): boolean {
-  return typeof globalThis !== "undefined"
-    && typeof (globalThis as { MediaRecorder?: unknown }).MediaRecorder === "function";
-}
-
 /** True when MediaRecorder is available in this environment. */
 export function hasMediaRecorder(): boolean {
-  return hasMediaRecorderApi();
+  return typeof globalThis !== "undefined"
+    && typeof (globalThis as { MediaRecorder?: unknown }).MediaRecorder === "function";
 }
 
 /**

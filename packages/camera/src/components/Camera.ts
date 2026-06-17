@@ -35,12 +35,23 @@ export class WcsCamera extends HTMLElement {
     commands: CameraCore.wcBindable.commands,
   };
 
+  // `autostart` and `keep-alive` are intentionally NOT observed: `autostart` is a
+  // connect-time-only acquire trigger (read once in connectedCallback; flipping it
+  // later is meaningless), and `keep-alive` is read fresh on every visibilitychange
+  // (_onVisibilityChange), so it never needs to drive a re-acquire. The observed set
+  // is exactly the constraints that reshape the requested track.
   static observedAttributes = ["facing-mode", "device-id", "audio", "width", "height"];
 
   private _core: CameraCore;
   private _video: HTMLVideoElement;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _connected: boolean = false;
+  // True while switchCamera() rewrites several attributes at once. Each setAttribute /
+  // removeAttribute fires its own attributeChangedCallback synchronously; without this
+  // guard the FIRST change would re-acquire with the not-yet-updated constraints (and
+  // tear active down so the later change's re-acquire is skipped). We suppress the
+  // per-attribute re-acquire and drive a single one with the final constraints.
+  private _batchingAttrs: boolean = false;
 
   constructor() {
     super();
@@ -54,7 +65,12 @@ export class WcsCamera extends HTMLElement {
     this._video.setAttribute("playsinline", "");
     this._video.setAttribute("part", "video");
     root.append(style, this._video);
-    // Bind the live handle to the preview internally — never through state.
+    // Bind the live handle to the preview internally — never through state. These
+    // self-listeners are intentionally not removed on disconnect (asymmetric with the
+    // document-level `visibilitychange` in connect/disconnectedCallback): the target
+    // is `this`, so the listeners are collected together with the element — there is
+    // no external reference to leak. The visibility listener, by contrast, lives on
+    // `document` (outlives the element) and MUST be detached.
     this.addEventListener("wcs-camera:stream-ready", this._onStreamReady as EventListener);
     this.addEventListener("wcs-camera:active-changed", this._onActiveChanged as EventListener);
   }
@@ -101,7 +117,34 @@ export class WcsCamera extends HTMLElement {
 
   start(): void { this._core.start(); }
   stop(): void { this._core.stop(); }
-  switchCamera(): void { this._core.switchCamera(); }
+
+  /**
+   * Toggle the front/back camera by updating the DOM attributes (the single source
+   * of truth), not just the Core's internal constraints. Deliberately does NOT call
+   * `CameraCore.switchCamera()` (which would mutate the Core's constraints behind the
+   * DOM's back, leaving the declared attributes stale). `device-id` is removed because
+   * it would otherwise take precedence over `facing-mode` (see buildConstraints) —
+   * leaving it pinned would silently undo the switch on the next re-acquire. Both
+   * attribute writes are batched (see `_batchingAttrs`) so they drive exactly ONE
+   * re-acquire here, with the final constraints — never an early acquire on a
+   * half-updated state. The DOM and the live camera stay in agreement.
+   */
+  switchCamera(): void {
+    const next: FacingMode = this.facingMode === "environment" ? "user" : "environment";
+    this._batchingAttrs = true;
+    try {
+      this.removeAttribute("device-id");
+      this.setAttribute("facing-mode", next);
+    } finally {
+      this._batchingAttrs = false;
+    }
+    // Sync the (now-final) constraints and re-acquire once when a stream is live —
+    // the same `active`-guarded restart attributeChangedCallback performs.
+    this._core.observe(this._constraints());
+    if (this._core.active) {
+      this._core.start();
+    }
+  }
 
   // --- Internal ---
 
@@ -158,9 +201,18 @@ export class WcsCamera extends HTMLElement {
 
   attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {
     if (!this._connected || oldValue === newValue) return;
+    // While switchCamera() batches several attribute writes, defer to its single
+    // post-batch re-acquire — otherwise the first write would acquire on stale
+    // constraints (see `_batchingAttrs`).
+    if (this._batchingAttrs) return;
     // Track the new constraints (and reconcile the microphone watcher).
     this._core.observe(this._constraints());
-    // A constraints change re-acquires (switchMap-style restart) only when active.
+    // A constraints change re-acquires (switchMap-style restart) only when a stream
+    // is actually live. `active` is the deliberate guard (not `desired`): `active`
+    // implies `desired` (a stream only goes live under desired), so re-acquiring
+    // cannot spuriously re-`desired` a stopped camera. Guarding on `active` rather
+    // than `desired` also avoids force-acquiring while suspended/hidden (desired but
+    // not active) — the visibility handler owns resume there.
     if (this._core.active) {
       this._core.start();
     }

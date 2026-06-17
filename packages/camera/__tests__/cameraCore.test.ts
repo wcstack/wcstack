@@ -59,6 +59,19 @@ describe("CameraCore", () => {
     expect(core.audioPermission).toBe("granted");
   });
 
+  it("audio 制約ありでも grant した stream に audio track が無ければ granted にしない（#1）", async () => {
+    const core = new CameraCore();
+    // video のみの stream（mic が付与されなかったケースを模す）。
+    media.resolveWith(new FakeMediaStream("video-only", [new FakeMediaStreamTrack("video")]));
+    await core.observe({ audio: true });
+    expect(core.audioPermission).toBe("prompt");
+    core.start();
+    await flush();
+    expect(core.active).toBe(true);
+    // audio track 不在なので audioPermission は granted に上書きされず prompt のまま。
+    expect(core.audioPermission).toBe("prompt");
+  });
+
   it("NotAllowedError で permission=denied・error 設定・active=false（never-throw）", async () => {
     const core = new CameraCore();
     media.rejectWith("NotAllowedError", "denied by user");
@@ -159,6 +172,29 @@ describe("CameraCore", () => {
     expect(core.active).toBe(false);
 
     const stream2 = new FakeMediaStream("s2");
+    media.resolveWith(stream2);
+    core.resume();
+    await flush();
+    expect(core.active).toBe(true);
+  });
+
+  it("ページ非表示中に in-flight acquire が解決しても suspend を打ち消さない（競合・回帰 #1）", async () => {
+    const core = new CameraCore();
+    const stream = new FakeMediaStream("inflight");
+    media.resolveWith(stream);
+    await core.observe({});
+
+    // start() で acquire を起動するが、解決前（_stream 未代入）に suspend する。
+    core.start();
+    core.suspend(); // page-hidden 相当。_gen を進めて in-flight acquire を supersede。
+    await flush();
+
+    // acquire の解決した stream は orphan として stop され、active は立たない。
+    expect(stream.tracks[0].stopped).toBe(true);
+    expect(core.active).toBe(false);
+
+    // desired は維持されているので resume で再取得できる。
+    const stream2 = new FakeMediaStream("resumed");
     media.resolveWith(stream2);
     core.resume();
     await flush();
@@ -293,5 +329,58 @@ describe("CameraCore", () => {
     expect(core.audioPermission).toBe("prompt");
     await core.observe({}); // audio を外す
     expect(core.audioPermission).toBeNull();
+  });
+
+  it("再 observe で audio を足すと ready 解決時に microphone の初期 query が完了している（#12）", async () => {
+    const core = new CameraCore();
+    await core.observe({}); // 最初は audio なし
+    // 再 observe で audio を追加。返り値 ready を await するだけで初期 query が確定する。
+    await core.observe({ audio: true });
+    expect(core.audioPermission).toBe("prompt"); // null ではなく初期 query 済み
+  });
+
+  it("microphone の同一 state への live change は audioPermission の同値ガードで無音", async () => {
+    const core = new CameraCore();
+    await core.observe({ audio: true });
+    expect(core.audioPermission).toBe("prompt");
+    let changes = 0;
+    core.addEventListener("wcs-camera:audio-permission-changed", () => changes++);
+    // 既に "prompt" の状態で再び "prompt" を流す → _setAudioPermission の同値 return。
+    media.control.permissionStatuses.get("microphone")!.set("prompt");
+    expect(changes).toBe(0);
+    // 別 state なら通知される（ガードが内容比較でなく値比較である確認）。
+    media.control.permissionStatuses.get("microphone")!.set("granted");
+    expect(changes).toBe(1);
+  });
+
+  it("dispose は mediaDevices が removeEventListener 非対応でも安全（#8・205）", async () => {
+    const core = new CameraCore();
+    media.resolveWith(new FakeMediaStream("s"));
+    await core.observe({});
+    core.start();
+    await flush();
+    // devicechange 解除 API が無い環境を模す → dispose の removeEventListener 分岐を踏む。
+    delete (navigator.mediaDevices as unknown as { removeEventListener?: unknown }).removeEventListener;
+    expect(() => core.dispose()).not.toThrow();
+  });
+
+  it("acquire 末尾の enumerate が dispose 後に解決しても devices を更新しない（#8・304）", async () => {
+    const core = new CameraCore();
+    media.resolveWith(new FakeMediaStream("s"));
+    // enumerateDevices を手動制御して、stream-ready の後・enumerate 解決の前に dispose を割り込ませる。
+    let release!: (devices: MediaDeviceInfo[]) => void;
+    (navigator.mediaDevices as unknown as { enumerateDevices: () => Promise<MediaDeviceInfo[]> }).enumerateDevices =
+      () => new Promise((resolve) => { release = resolve; });
+    await core.observe({});
+    core.start();
+    await flush(); // getUserMedia 解決→active=true→stream-ready、enumerate は保留中
+    expect(core.active).toBe(true);
+    core.dispose(); // _gen を進め、保留中の enumerate を supersede
+    release([
+      { deviceId: "cam-2", label: "Late", groupId: "g2", kind: "videoinput" } as MediaDeviceInfo,
+    ]);
+    await flush();
+    // gen が一致しないので _setDevices は呼ばれない。
+    expect(core.devices).toEqual([]);
   });
 });

@@ -97,6 +97,10 @@
         if (this.camActive) return "Camera live.";
         return "Camera off.";
       },
+      // NOTE: <wcs-recorder> `duration` is finalized at stop/pause — it is 0 (shown as
+      // "—") for the whole recording and only fills in once you stop. For a live
+      // ticking counter, run your own timer off the `recording` flag. We keep the
+      // finalized value here to stay declarative.
       get durationText() {
         return this.duration ? `${(this.duration / 1000).toFixed(1)}s` : "—";
       },

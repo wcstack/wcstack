@@ -157,8 +157,21 @@ export interface WcsRecordedDetail {
 export interface WcsRecorderCoreValues {
   recording: boolean;
   paused: boolean;
+  /**
+   * Recorded length in ms, **finalized at stop/pause** — there is no live ticking
+   * during recording (no internal timer). It stays 0 from start() until the first
+   * pause() or stop(). For a live elapsed display, drive your own client-side timer
+   * off the `recording` flag.
+   */
   duration: number;
   mimeType: string;
+  /**
+   * The last assembled clip — **retained across a new recording**. start() does NOT
+   * clear `blob` / `objectURL`; they hold the previous clip until the next one is
+   * assembled at stop() (the old object URL is revoked then, atomically). So while a
+   * 2nd recording is in flight, `recording` is true *and* these still expose the prior
+   * clip — intentional, so a "download last clip" affordance never goes briefly empty.
+   */
   blob: Blob | null;
   objectURL: string | null;
   error: WcsMediaErrorDetail | null;

@@ -12,6 +12,14 @@ import { hasMediaRecorder, normalizeMediaError } from "../media/getUserMedia.js"
  * — that is the camera's job (the acquirer owns release). Stopping here would tear
  * down a stream that may still be previewing.
  *
+ * Non-goal: the Core does NOT subscribe to the borrowed tracks' `ended` and does NOT
+ * auto-terminate a recording when the underlying stream dies (camera stop / OS
+ * revoke / switchCamera re-acquire). Reacting would mean reaching into a stream we do
+ * not own. The MediaRecorder keeps running against the now-dead source until an
+ * explicit stop(); the consumer (which owns the camera lifecycle) is responsible for
+ * stopping the recording when it tears the stream down. stop() then assembles
+ * whatever chunks were captured — never throws.
+ *
  * Output: `dataavailable` chunks are collected and assembled into one `Blob` on
  * stop, published via `wcs-recorder:recorded`. The `Blob` is structured-clone
  * friendly (a settled value, unlike MediaStream) so it may flow through state.
@@ -72,6 +80,8 @@ export class RecorderCore extends EventTarget {
 
   get recording(): boolean { return this._recording; }
   get paused(): boolean { return this._paused; }
+  // Finalized at stop/pause only — there is no live ticking timer, so this stays 0
+  // from start() until the first pause()/stop() (see _elapsed / onstop / onpause).
   get duration(): number { return this._duration; }
   get mimeType(): string { return this._mimeType; }
   get blob(): Blob | null { return this._blob; }
@@ -104,8 +114,13 @@ export class RecorderCore extends EventTarget {
     this._dispatch("wcs-recorder:mimetype-changed", v);
   }
 
+  // Errors are dispatched on EVERY non-null occurrence by design — each failure is a
+  // distinct event, so unlike the value setters this is not content-deduped. Only the
+  // null→null transition is collapsed (clearing an already-clear error stays silent).
+  // The guard is written on null explicitly so it does NOT depend on callers passing a
+  // fresh object: a reused/cached non-null detail would still re-notify.
   private _setError(error: WcsMediaErrorDetail | null): void {
-    if (this._error === error) return;
+    if (error === null && this._error === null) return;
     this._error = error;
     this._dispatch("wcs-recorder:error", error);
   }
@@ -120,6 +135,11 @@ export class RecorderCore extends EventTarget {
    * Borrow a stream for recording (the direct-channel sink). Synchronous, no
    * await: the live handle is captured by reference and never stored in state.
    * Does NOT stop any previously-borrowed stream — ownership stays with the camera.
+   *
+   * Re-attaching mid-recording takes effect on the NEXT start(), not the current
+   * recording: the live MediaRecorder was already constructed around the previous
+   * stream and keeps recording it until stop(). The borrowed reference is swapped so
+   * the following start() uses the new stream.
    */
   attachStream(stream: MediaStream): void {
     this._stream = stream;
@@ -245,6 +265,10 @@ export class RecorderCore extends EventTarget {
   private _assembleBlob(): void {
     const blob = new Blob(this._chunks, this._mimeType ? { type: this._mimeType } : undefined);
     this._chunks = [];
+    // The PREVIOUS clip's object URL is revoked here, before minting the new one — so
+    // any consumer still pointing a `<video src>` at the old URL will break once a new
+    // recording completes. Consumers must follow the latest `objectURL`/`recorded`
+    // value and not pin a stale URL. (The `blob` is unaffected — prefer flowing it.)
     this._revokeUrl();
     const objectURL = this._createUrl(blob);
     this._blob = blob;
