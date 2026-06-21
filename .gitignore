@@ -3,4 +3,5 @@ coverage/
 .tsc-out/
 .vscode/
 examples/*/dist/
+packages/*/examples/**/dist/
 .claude/scheduled_tasks.lock

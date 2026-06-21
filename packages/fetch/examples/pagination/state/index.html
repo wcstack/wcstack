@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack / state — pagination</title>
+
+  <link rel="stylesheet" href="/shared/style.css">
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+</head>
+<body>
+
+<!-- ============================================================
+     App State
+     ============================================================
+     One <wcs-fetch> = one state slot, wired by the ...: spread.
+     A computed itemsFetch.url getter rebuilds the URL whenever
+     `page` changes; <wcs-fetch> sees a new url and auto-fetches
+     (aborting any in-flight request first → stale-response safe). -->
+<wcs-state>
+  <script type="module">
+    export default {
+      page: 1,
+      limit: 12,
+
+      // The whole JSON body lands in itemsFetch.value. Initialise only the
+      // fields the template paths read (itemsFetch.value.items / .total /
+      // .totalPages) so they resolve from the very first render. The real
+      // response carries page/limit too, but the UI never reads them, so we
+      // leave them out to keep this seed minimal. Uninitialised inputs
+      // (method/manual/…) are "no opinion" — the binder skips them and wcs-fetch
+      // keeps its defaults.
+      itemsFetch: {
+        value: { items: [], total: 0, totalPages: 1 },
+        // status is not used by the UI here, but every demo mirrors it to show
+        // <wcs-fetch> exposes the HTTP status too.
+        loading: false, error: null, status: 0,
+      },
+
+      // Recomputes whenever page/limit change → wcs-fetch sees a new url →
+      // it auto-fetches and aborts the previous in-flight request automatically.
+      get "itemsFetch.url"() {
+        return "/api/items?page=" + this.page + "&limit=" + this.limit;
+      },
+
+      // A property name that contains a dot (the slot key "itemsFetch.value",
+      // "itemsFetch.loading", …) is a single literal key, so it is read with bracket
+      // notation: this["itemsFetch.value"]. In `data-wcs` template paths the same dotted
+      // string is a PATH instead (itemsFetch.value.items walks value → items).
+      // Null-safe: on an HTTP/network error <wcs-fetch> resets value to null, so
+      // these read through optional chaining and fall back to empty/edge values.
+      get total()        { return this["itemsFetch.value"]?.total ?? 0; },
+      get totalPages()   { return this["itemsFetch.value"]?.totalPages ?? 1; },
+      get rowCount()     { return this["itemsFetch.value"]?.items?.length ?? 0; },
+      get hasData()      { return this.rowCount > 0; },
+      // First-load spinner only: loading AND no rows yet. On a reload we keep the
+      // old rows and just dim them (class.stale below), so the list never flashes.
+      get firstLoading() { return this["itemsFetch.loading"] && !this.hasData; },
+
+      // Show the list block only when we are neither first-loading nor errored, so
+      // the spinner / error / list blocks stay mutually exclusive — exactly like the
+      // if/else-if/else in the React / Vue / Vanilla / signals demos. During a reload
+      // showList stays true (loading but data still present), so the rows persist and
+      // just dim via class.stale.
+      get showList() { return !this.firstLoading && !this["itemsFetch.error"]; },
+
+      get rangeText() {
+        if (!this.hasData) return "Loading…";
+        const start = (this.page - 1) * this.limit + 1;
+        const end = start + this.rowCount - 1;
+        return start + "–" + end + " of " + this.total; // EN DASH (U+2013)
+      },
+      get pageLabel() {
+        return this.hasData ? "Page " + this.page + " / " + this.totalPages : "";
+      },
+
+      get isFirst() { return this.page <= 1; },
+      get isLast()  { return this.page >= this.totalPages; },
+
+      // Window of page tokens as OBJECTS so the for: template binds cleanly:
+      // numbers become buttons, gaps become an ellipsis. Identical algorithm to
+      // pageWindow() in the other four demos, just shaped for declarative binding.
+      get pageTokens() {
+        const set = new Set([1, this.totalPages, this.page - 1, this.page, this.page + 1]);
+        const sorted = [...set].filter((p) => p >= 1 && p <= this.totalPages).sort((a, b) => a - b);
+        const out = [];
+        let prev = 0;
+        for (const p of sorted) {
+          if (p - prev > 1) out.push({ gap: true, label: "…", page: 0, active: false, ariaCurrent: "false" });
+          const active = p === this.page;
+          // aria-current marks the current page for screen readers. We always set the
+          // attribute (page / false) so the bound element stays structurally identical
+          // across reloads — matching the other four demos.
+          out.push({ gap: false, label: String(p), page: p, active, ariaCurrent: active ? "page" : "false" });
+          prev = p;
+        }
+        return out;
+      },
+
+      // onclick binds a method by name and can't take an argument, so the handler
+      // reads the clicked loop item via the "*" path: "pageTokens.*" resolves to
+      // the token object of the button that was actually clicked.
+      goToPage() {
+        const tok = this["pageTokens.*"];
+        if (tok && !tok.gap && tok.page !== this.page) this.page = tok.page;
+      },
+      prevPage() { if (!this.isFirst) this.page -= 1; },
+      nextPage() { if (!this.isLast)  this.page += 1; },
+    };
+  </script>
+</wcs-state>
+
+<!-- Headless fetch node. ...: itemsFetch wires every wcBindable property + input
+     (url/value/loading/error/status/…) to the itemsFetch slot in one line. -->
+<wcs-fetch id="items-fetch" data-wcs="...: itemsFetch"></wcs-fetch>
+
+<!-- ============================================================
+     UI — the exact shared DOM structure
+     ============================================================ -->
+<div class="demo">
+  <header class="demo-header">
+    <span class="demo-badge">@wcstack/state</span>
+    <h1>Pagination — wcstack / state</h1>
+    <p>Declarative &lt;wcs-fetch&gt; + data-wcs — no JS glue</p>
+  </header>
+
+  <div class="panel">
+    <div class="toolbar">
+      <span class="status" data-wcs="textContent: rangeText"></span>
+      <span class="status" data-wcs="textContent: pageLabel"></span>
+    </div>
+
+    <!-- The other four demos make spinner / error / list structurally exclusive
+         with one if/else-if/else chain. state has no `else`, so instead these are
+         three independent `if`s made mutually exclusive by their PREDICATES:
+         firstLoading and itemsFetch.error never hold together (a fresh response
+         clears error and fills value; an error clears value, so firstLoading is
+         false), and showList is defined as their NOT (!firstLoading && !error).
+         Exactly one of the three is therefore true at any time. -->
+
+    <!-- (a) first-load spinner: loading && no rows yet -->
+    <template data-wcs="if: firstLoading">
+      <div class="spinner" aria-hidden="true"></div>
+    </template>
+
+    <!-- (b) error block -->
+    <template data-wcs="if: itemsFetch.error">
+      <div class="error" role="alert">Failed to load. Try again.</div>
+    </template>
+
+    <!-- (c) the list — shown only when not first-loading and not errored, so the
+         spinner / error / list blocks are mutually exclusive like the other four
+         demos. Kept on screen during reloads, dimmed via class.stale. The list is
+         only shown once rows exist, so `loading` alone drives the stale dimming
+         (hasData is guaranteed here) — matching the other four demos. -->
+    <template data-wcs="if: showList">
+      <ul class="member-list" data-wcs="class.stale: itemsFetch.loading">
+        <template data-wcs="for: itemsFetch.value.items">
+          <li>
+            <div class="member-item">
+              <div class="member-main">
+                <span class="member-name" data-wcs="textContent: .name"></span>
+                <span class="member-email" data-wcs="textContent: .email"></span>
+              </div>
+              <div class="member-meta">
+                <span class="member-date" data-wcs="textContent: .joinedAt"></span>
+                <span class="role-badge"
+                  data-wcs="textContent: .role;
+                            class.admin: .role|eq(admin);
+                            class.editor: .role|eq(editor);
+                            class.viewer: .role|eq(viewer)"></span>
+              </div>
+            </div>
+          </li>
+        </template>
+      </ul>
+    </template>
+
+    <nav class="pagination" aria-label="Pagination">
+      <button class="page-btn" data-wcs="onclick: prevPage; disabled: isFirst">‹ Prev</button>
+      <template data-wcs="for: pageTokens">
+        <template data-wcs="if: .gap">
+          <span class="page-ellipsis">…</span>
+        </template>
+        <template data-wcs="if: .gap|not">
+          <button class="page-btn"
+            data-wcs="onclick: goToPage; textContent: .label; class.active: .active; disabled: .active; attr.aria-current: .ariaCurrent"></button>
+        </template>
+      </template>
+      <button class="page-btn" data-wcs="onclick: nextPage; disabled: isLast">Next ›</button>
+    </nav>
+  </div>
+
+  <p class="note">
+    Pure HTML wiring: a computed <code>itemsFetch.url</code> drives one
+    <code>&lt;wcs-fetch&gt;</code>, and <code>data-wcs</code> paths render the
+    result — no <code>fetch()</code>, no loading/abort glue. Changing
+    <code>page</code> rebuilds the URL, so <code>&lt;wcs-fetch&gt;</code>
+    refetches and aborts the previous request automatically. It hits the shared
+    <code>/api/items</code> server, the same endpoint the React / Vue / signals /
+    Vanilla demos use.
+  </p>
+</div>
+
+</body>
+</html>

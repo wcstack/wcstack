@@ -1,0 +1,23 @@
+{
+  "name": "wcstack-fetch-example-react-pagination",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "npm run build && node server.js"
+  },
+  "dependencies": {
+    "@wc-bindable/react": "^0.8.0",
+    "@wcstack/fetch": "^1.14.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.5.2",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5"
+  }
+}

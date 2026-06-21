@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>signals — wcstack/fetch pagination</title>
+
+  <link rel="stylesheet" href="/shared/style.css" />
+
+  <!-- Map both signals entries to the locally-built bundles served by the hub at
+       /signals-dist/ (a distinct prefix so it doesn't shadow this /signals/ page).
+       This demo imports everything from the DOM layer (`@wcstack/signals/dom`),
+       which re-exports the whole headless core (signal/computed/bindNode/…) on top
+       of the DOM helpers (h/render/For), so the single `/dom` import is enough. Both
+       entries point at bundles that share ONE internal core chunk
+       (`core-<hash>.esm.js`), so even the DOM bundle alone loads a SINGLE reactive
+       instance. The `@wcstack/signals` entry is kept mapped so you can also import
+       the bare core directly — it just isn't needed here. `@wcstack/fetch/auto`
+       (which registers <wcs-fetch>) is pulled from the CDN. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@wcstack/signals": "/signals-dist/index.esm.js",
+      "@wcstack/signals/dom": "/signals-dist/dom.esm.js",
+      "@wcstack/fetch/auto": "https://esm.run/@wcstack/fetch/auto"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<div class="demo">
+  <header class="demo-header">
+    <span class="demo-badge">@wcstack/signals</span>
+    <h1>Pagination — wcstack / signals</h1>
+    <p>Fine-grained signals binding a headless &lt;wcs-fetch&gt;</p>
+  </header>
+
+  <!-- Headless data node. bindNode() turns its wcBindable properties into signals,
+       and a reactive `url` input drives the fetch + abort. -->
+  <wcs-fetch id="fetcher"></wcs-fetch>
+
+  <!-- signals renders the reactive panel here -->
+  <div id="panel"></div>
+
+  <p class="note">
+    Fine-grained signals drive real DOM with <code>h()</code> and <code>For()</code>.
+    <code>bindNode()</code> adapts the headless <code>&lt;wcs-fetch&gt;</code> node into
+    signals (<code>value</code> / <code>loading</code> / <code>error</code>), and a
+    reactive <code>url</code> input — written back with <code>bindInput</code> — makes
+    the element refetch and abort the in-flight request on every page change, so no
+    stale response can land. Data comes from the shared <code>/api/items</code> server
+    (same endpoint as the other four demos).
+  </p>
+</div>
+
+<script type="module">
+  import "@wcstack/fetch/auto"; // registers <wcs-fetch> before we bind it
+  import { signal, computed, bindNode, h, render, For, createRoot } from "@wcstack/signals/dom";
+
+  const LIMIT = 12;
+
+  // Always show first, last and current ±1; collapse the gaps to an ellipsis.
+  function pageWindow(current, totalPages) {
+    const set = new Set([1, totalPages, current - 1, current, current + 1]);
+    const sorted = [...set].filter((p) => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+    const out = [];
+    let prev = 0;
+    for (const p of sorted) {
+      if (p - prev > 1) out.push("gap");
+      out.push(p);
+      prev = p;
+    }
+    return out; // e.g. [1, "gap", 4, 5, 6, "gap", 17]
+  }
+
+  createRoot(() => {
+    const page = signal(1);
+
+    // Adapt the headless <wcs-fetch> node into signals. bindNode discovers the
+    // wc-bindable descriptor from the element and exposes its output properties
+    // (value/loading/error/status) as read signals seeded with the node's current
+    // values (value === null at rest).
+    const bound = bindNode(document.getElementById("fetcher"));
+    const valueSig = bound.signals.value;
+    const loadingSig = bound.signals.loading;
+    const errorSig = bound.signals.error;
+    // status is not used by the UI here, but every demo mirrors it to show
+    // <wcs-fetch> exposes the HTTP status too (bindNode signals it like the rest).
+    const statusSig = bound.signals.status;
+    void statusSig; // extension point: drop `statusSig.get()` into the toolbar to show it
+
+    // Reactively write the `url` input from `page`. Each change makes <wcs-fetch>
+    // refetch and abort the previous in-flight request (switchMap-style cancel/
+    // restart, owned by the element) — no resource(), no manual AbortController.
+    const url = computed(() => "/api/items?page=" + page.get() + "&limit=" + LIMIT);
+    bound.bindInput("url", url);
+
+    const body       = computed(() => valueSig.get());
+    const items      = computed(() => (body.get() ? body.get().items : []));
+    const total      = computed(() => (body.get() ? body.get().total : 0));
+    const totalPages = computed(() => (body.get() ? body.get().totalPages : 1));
+    const loading    = computed(() => !!loadingSig.get());
+    const hasData    = computed(() => items.get().length > 0);
+    const tokens     = computed(() => pageWindow(page.get(), totalPages.get()));
+
+    const rangeText = computed(() => {
+      if (!hasData.get()) return "Loading…";
+      const start = (page.get() - 1) * LIMIT + 1;
+      const end = start + items.get().length - 1;
+      return start + "–" + end + " of " + total.get(); // EN DASH (U+2013)
+    });
+    const pageLabel = computed(() =>
+      hasData.get() ? "Page " + page.get() + " / " + totalPages.get() : "",
+    );
+
+    const isFirst = computed(() => page.get() <= 1);
+    const isLast  = computed(() => page.get() >= totalPages.get());
+
+    // Show the first-load spinner only before the first response arrives.
+    const firstLoading = computed(() => loading.get() && !hasData.get());
+
+    const go = (p) => {
+      if (p >= 1 && p <= totalPages.get() && p !== page.get()) page.set(p);
+    };
+
+    // --- The member list (built ONCE so For row state survives reloads) ---------
+    // The <ul> gets class "member-list stale" while a reload is in flight
+    // (stale-while-revalidate: keep the rows, just dim them). The list is only
+    // mounted once rows exist (panelState below), so hasData is guaranteed here
+    // and `loading` alone is enough — matching the other four demos.
+    const list = h(
+      "ul",
+      {
+        class: () => (loading.get() ? "member-list stale" : "member-list"),
+      },
+      For(
+        () => items.get(),
+        (m) =>
+          h(
+            "li",
+            null,
+            h(
+              "div",
+              { class: "member-item" },
+              h(
+                "div",
+                { class: "member-main" },
+                h("span", { class: "member-name" }, m.name),
+                h("span", { class: "member-email" }, m.email),
+              ),
+              h(
+                "div",
+                { class: "member-meta" },
+                h("span", { class: "member-date" }, m.joinedAt),
+                h("span", { class: "role-badge " + m.role }, m.role),
+              ),
+            ),
+          ),
+        { key: (m) => m.id },
+      ),
+    );
+
+    // --- State switch: spinner (first load) | error | the list ------------------
+    // A reactive child: re-runs only when firstLoading / error change. During a
+    // stale reload (loading && hasData) neither changes, so the SAME `list` node is
+    // kept mounted and its For rows are not rebuilt.
+    const panelState = () => {
+      if (firstLoading.get()) {
+        return h("div", { class: "spinner", "aria-hidden": "true" });
+      }
+      if (errorSig.get()) {
+        return h("div", { class: "error", role: "alert" }, "Failed to load. Try again.");
+      }
+      return list;
+    };
+
+    // --- Pagination controls ----------------------------------------------------
+    const pager = h(
+      "nav",
+      { class: "pagination", "aria-label": "Pagination" },
+      h(
+        "button",
+        {
+          class: "page-btn",
+          disabled: () => isFirst.get(),
+          onClick: () => go(page.peek() - 1),
+        },
+        "‹ Prev",
+      ),
+      For(
+        () => tokens.get(),
+        (tok) => {
+          if (tok === "gap") {
+            return h("span", { class: "page-ellipsis" }, "…");
+          }
+          const n = tok;
+          return h(
+            "button",
+            {
+              class: () => (n === page.get() ? "page-btn active" : "page-btn"),
+              disabled: () => n === page.get(),
+              // aria-current marks the current page for screen readers.
+              "aria-current": () => (n === page.get() ? "page" : "false"),
+              onClick: () => go(n),
+            },
+            String(n),
+          );
+        },
+        // Unique, stable keys: numbers by value, gaps by position (a window has at
+        // most two gaps, and they never share an index).
+        { key: (tok, i) => (tok === "gap" ? "gap-" + i : "page-" + tok) },
+      ),
+      h(
+        "button",
+        {
+          class: "page-btn",
+          disabled: () => isLast.get(),
+          onClick: () => go(page.peek() + 1),
+        },
+        "Next ›",
+      ),
+    );
+
+    const panel = h(
+      "div",
+      { class: "panel" },
+      h(
+        "div",
+        { class: "toolbar" },
+        h("span", { class: "status" }, () => rangeText.get()),
+        h("span", { class: "status" }, () => pageLabel.get()),
+      ),
+      panelState,
+      pager,
+    );
+
+    render(panel, document.getElementById("panel"));
+  });
+</script>
+
+</body>
+</html>

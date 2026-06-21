@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pagination, five ways — wcstack/fetch examples</title>
+  <link rel="stylesheet" href="/shared/style.css" />
+  <style>
+    .lead { color: var(--muted); font-size: 0.98rem; margin: 0.25rem 0 1.75rem; }
+    .cards { display: grid; gap: 0.9rem; grid-template-columns: 1fr; }
+    @media (min-width: 560px) { .cards { grid-template-columns: 1fr 1fr; } }
+    .card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.1rem 1.15rem;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+      transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s;
+    }
+    .card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(57, 73, 171, 0.12);
+    }
+    .card h2 { font-size: 1.05rem; margin: 0.55rem 0 0.2rem; }
+    .card p { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+    .card .port { display: inline-block; margin-top: 0.6rem; font-size: 0.74rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .run {
+      margin-top: 2rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+    }
+    .run h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+    .run p { margin: 0.4rem 0; font-size: 0.86rem; color: var(--muted); }
+    .run code, .run pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .run pre {
+      background: #1a1a2e; color: #e8e8f0; padding: 0.8rem 1rem; border-radius: 8px;
+      overflow-x: auto; font-size: 0.8rem; line-height: 1.6; margin: 0.5rem 0;
+    }
+    .run code { background: #ececf3; padding: 1px 5px; border-radius: 4px; font-size: 0.86em; }
+  </style>
+</head>
+<body>
+  <div class="demo">
+    <header class="demo-header">
+      <span class="demo-badge">@wcstack/fetch</span>
+      <h1>Pagination, five ways</h1>
+    </header>
+    <p class="lead">
+      The same paginated member list — 200 records, 12 per page, server-side latency — built five
+      times against <strong>one shared server</strong>. The data, the markup and the styling are
+      identical; only the front-end approach changes. All five drive the
+      <strong>same headless <code>&lt;wcs-fetch&gt;</code> node</strong> through the wc-bindable
+      protocol — each via a different binding layer — so the fetch, the abort and the
+      stale-response protection live in the element, and the only thing that varies is how each
+      paradigm subscribes to it. Compare how each binds the page state, the re-fetch, and the
+      cancellation of a superseded request.
+    </p>
+
+    <div class="cards">
+      <a class="card" href="/state/">
+        <span class="demo-badge">@wcstack/state</span>
+        <h2>wcstack / state</h2>
+        <p>Declarative <code>&lt;wcs-fetch&gt;</code> + <code>data-wcs</code> bindings. No JavaScript glue — the URL getter drives the fetch.</p>
+      </a>
+
+      <a class="card" href="/signals/">
+        <span class="demo-badge">@wcstack/signals</span>
+        <h2>wcstack / signals</h2>
+        <p>Fine-grained signals: <code>bindNode()</code> adapts <code>&lt;wcs-fetch&gt;</code> into signals, and the element cancels the previous page on each change.</p>
+      </a>
+
+      <a class="card" href="/vanilla/">
+        <span class="demo-badge">Vanilla JS</span>
+        <h2>Vanilla</h2>
+        <p>Hand-built DOM, driven by a headless <code>&lt;wcs-fetch&gt;</code> node that <code>@wc-bindable/core</code>'s <code>bind()</code> streams into a plain state object. The framework-free baseline.</p>
+      </a>
+
+      <a class="card" href="http://localhost:3404/" target="_blank" rel="noopener"
+         title="Start the React demo first (see 'Running the demos' below) — it serves itself on :3404.">
+        <span class="demo-badge">React</span>
+        <h2>React</h2>
+        <p><code>useState</code> + a headless <code>&lt;wcs-fetch&gt;</code> node bound with <code>@wc-bindable/react</code>'s <code>useWcBindable</code> — the element owns the fetch + abort.</p>
+        <span class="port">runs on :3404 — start it first (see below)</span>
+      </a>
+
+      <a class="card" href="http://localhost:3405/" target="_blank" rel="noopener"
+         title="Start the Vue demo first (see 'Running the demos' below) — it serves itself on :3405.">
+        <span class="demo-badge">Vue</span>
+        <h2>Vue</h2>
+        <p>Composition API + a headless <code>&lt;wcs-fetch&gt;</code> node bound with <code>@wc-bindable/vue</code>'s <code>useWcBindable</code> — the element owns the fetch + abort.</p>
+        <span class="port">runs on :3405 — start it first (see below)</span>
+      </a>
+    </div>
+
+    <div class="run">
+      <h2>Running the demos</h2>
+      <p><strong>state / signals / vanilla</strong> are buildless — this page and all three are served by the shared hub:</p>
+      <pre>node packages/fetch/examples/pagination/shared/server.js
+# open http://localhost:3400</pre>
+      <p>(The signals demo imports the locally-built <code>@wcstack/signals</code> bundle — run <code>npm install &amp;&amp; npm run build</code> in <code>packages/signals</code> first.)</p>
+      <p><strong>React / Vue</strong> use Vite, so each builds and serves itself (reusing the same <code>/api/items</code>):</p>
+      <pre>cd packages/fetch/examples/pagination/react && npm install && npm run start   # :3404
+cd packages/fetch/examples/pagination/vue   && npm install && npm run start   # :3405</pre>
+    </div>
+  </div>
+</body>
+</html>
