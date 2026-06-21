@@ -7,21 +7,19 @@
 
   <link rel="stylesheet" href="/shared/style.css" />
 
-  <!-- Map both signals entries to the locally-built bundles served by the hub at
-       /signals-dist/ (a distinct prefix so it doesn't shadow this /signals/ page).
-       This demo imports everything from the DOM layer (`@wcstack/signals/dom`),
-       which re-exports the whole headless core (signal/computed/bindNode/…) on top
-       of the DOM helpers (h/render/For), so the single `/dom` import is enough. Both
-       entries point at bundles that share ONE internal core chunk
-       (`core-<hash>.esm.js`), so even the DOM bundle alone loads a SINGLE reactive
-       instance. The `@wcstack/signals` entry is kept mapped so you can also import
-       the bare core directly — it just isn't needed here. `@wcstack/fetch/auto`
-       (which registers <wcs-fetch>) is pulled from the CDN. -->
+  <!-- Everything is pulled from the CDN — this demo is fully buildless, no local
+       bundle to build. It imports everything from the DOM layer
+       (`@wcstack/signals/dom`), which re-exports the whole headless core
+       (signal/computed/bindNode/…) on top of the DOM helpers (h/render/For), so the
+       single `/dom` import is enough. The bare `@wcstack/signals` entry is kept
+       mapped so you can also import just the core directly — it isn't needed here
+       (and on the CDN each entry is its own self-contained bundle, so import from
+       ONE entry per page). `@wcstack/fetch/auto` registers <wcs-fetch>. -->
   <script type="importmap">
   {
     "imports": {
-      "@wcstack/signals": "/signals-dist/index.esm.js",
-      "@wcstack/signals/dom": "/signals-dist/dom.esm.js",
+      "@wcstack/signals": "https://esm.run/@wcstack/signals",
+      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
       "@wcstack/fetch/auto": "https://esm.run/@wcstack/fetch/auto"
     }
   }
@@ -85,10 +83,7 @@
     const valueSig = bound.signals.value;
     const loadingSig = bound.signals.loading;
     const errorSig = bound.signals.error;
-    // status is not used by the UI here, but every demo mirrors it to show
-    // <wcs-fetch> exposes the HTTP status too (bindNode signals it like the rest).
     const statusSig = bound.signals.status;
-    void statusSig; // extension point: drop `statusSig.get()` into the toolbar to show it
 
     // Reactively write the `url` input from `page`. Each change makes <wcs-fetch>
     // refetch and abort the previous in-flight request (switchMap-style cancel/
@@ -116,6 +111,18 @@
 
     const isFirst = computed(() => page.get() <= 1);
     const isLast  = computed(() => page.get() >= totalPages.get());
+
+    // The node IS a state machine; these expose its observable state. We don't
+    // orchestrate the fetch — we read which state the node is in (idle → loading
+    // → ready / error) and the HTTP status it produced.
+    const machineInput = computed(() => "page " + page.get());
+    const machineState = computed(() =>
+      errorSig.get() ? "error" : loadingSig.get() ? "loading" : hasData.get() ? "ready" : "idle",
+    );
+    const statusLabel = computed(() => {
+      const s = statusSig.get();
+      return s ? "HTTP " + s : "—";
+    });
 
     // Show the first-load spinner only before the first response arrives.
     const firstLoading = computed(() => loading.get() && !hasData.get());
@@ -222,9 +229,22 @@
       ),
     );
 
+    // The node's state machine: input (the page we write) → current state → the
+    // HTTP status it produced. A reactive `class` thunk swaps the is-* modifier.
+    const machine = h(
+      "div",
+      { class: "machine" },
+      h("span", { class: "machine-io" }, () => machineInput.get()),
+      h("span", { class: "machine-arrow" }, "→"),
+      h("span", { class: () => "machine-state is-" + machineState.get() }, () => machineState.get()),
+      h("span", { class: "machine-arrow" }, "→"),
+      h("span", { class: "machine-io" }, () => statusLabel.get()),
+    );
+
     const panel = h(
       "div",
       { class: "panel" },
+      machine,
       h(
         "div",
         { class: "toolbar" },

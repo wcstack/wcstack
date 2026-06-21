@@ -12,42 +12,36 @@ DOM を描画し、同じスタイルシートを共有し、同じ `/api/items`
 
 ## 実行方法
 
-このデモはビルドレスで、共有の**ハブ**から配信されます。ハブはローカルビルドした
-`@wcstack/signals` のバンドル（`/signals-dist/` 配下）と `/api/items` エンドポイントも
-あわせて配信します。
+このデモは完全に buildless です。依存はすべて CDN から読み込むので、事前ビルドは要りません。
+共有の**ハブ**がページと `/api/items` エンドポイントを配信します。
 
 ```bash
-# 1. signals パッケージを一度ビルドして dist/ を用意する（ハブが /signals-dist/ にマウントする）
-cd packages/signals && npm install && npm run build && cd -
-
-# 2. ハブを起動する
 node packages/fetch/examples/pagination/shared/server.js
 ```
 
 ブラウザで <http://localhost:3400/signals/> を開きます。
 
-import map で signals の 2 つのエントリをローカルバンドルに、`@wcstack/fetch/auto`
-（`<wcs-fetch>` を登録）を CDN に割り当てています。
+import map で signals の 2 つのエントリと `@wcstack/fetch/auto`（`<wcs-fetch>` を登録）を
+すべて CDN に割り当てています。
 
 ```html
 <script type="importmap">
 {
   "imports": {
-    "@wcstack/signals": "/signals-dist/index.esm.js",
-    "@wcstack/signals/dom": "/signals-dist/dom.esm.js",
+    "@wcstack/signals": "https://esm.run/@wcstack/signals",
+    "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
     "@wcstack/fetch/auto": "https://esm.run/@wcstack/fetch/auto"
   }
 }
 </script>
 ```
 
-このデモは実際には DOM レイヤー（`@wcstack/signals/dom`）からすべてを import します。
-DOM レイヤーはヘッドレスコア（`signal` / `computed` / `bindNode` / …）を DOM ヘルパー
-（`h` / `render` / `For`）と一緒に再 export しているので、この `/dom` 1 つの import で
-足ります。どちらのエントリのバンドルも同じ内部チャンク `core-<hash>.esm.js` を取り込む
-ため、ページが読み込むリアクティブインスタンスは常に 1 つです。`@wcstack/signals`
-エントリはコアを直接 import したいとき用に割り当てを残しているだけで、ここでは
-使いません。
+このデモは DOM レイヤー（`@wcstack/signals/dom`）からすべてを import します。DOM レイヤーは
+ヘッドレスコア（`signal` / `computed` / `bindNode` / …）を DOM ヘルパー（`h` / `render` /
+`For`）と一緒に再 export しているので、この `/dom` 1 つの import で足ります（CDN 上の
+自己完結バンドル 1 つ＝リアクティブインスタンス 1 つ）。`@wcstack/signals` エントリはコアだけを
+直接 import したいとき用に割り当てを残しています。CDN では各エントリが独立したバンドルなので、
+1 ページからは 1 エントリだけを import してください。
 
 ## 注目ポイント
 

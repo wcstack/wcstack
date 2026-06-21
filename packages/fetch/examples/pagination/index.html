@@ -58,8 +58,10 @@
       <strong>same headless <code>&lt;wcs-fetch&gt;</code> node</strong> through the wc-bindable
       protocol — each via a different binding layer — so the fetch, the abort and the
       stale-response protection live in the element, and the only thing that varies is how each
-      paradigm subscribes to it. Compare how each binds the page state, the re-fetch, and the
-      cancellation of a superseded request.
+      paradigm subscribes to it. Each demo surfaces the node's state machine
+      (<code>page → state → HTTP status</code>) to make that visible: you don't orchestrate the
+      async flow, you just read which state the node is in. Compare how each binds the page state,
+      the re-fetch, and the cancellation of a superseded request.
     </p>
 
     <div class="cards">
@@ -100,10 +102,9 @@
 
     <div class="run">
       <h2>Running the demos</h2>
-      <p><strong>state / signals / vanilla</strong> are buildless — this page and all three are served by the shared hub:</p>
+      <p><strong>state / signals / vanilla</strong> are buildless — this page and all three are served by the shared hub (every dependency, including <code>@wcstack/signals</code>, loads from the CDN, so there is nothing to build):</p>
       <pre>node packages/fetch/examples/pagination/shared/server.js
 # open http://localhost:3400</pre>
-      <p>(The signals demo imports the locally-built <code>@wcstack/signals</code> bundle — run <code>npm install &amp;&amp; npm run build</code> in <code>packages/signals</code> first.)</p>
       <p><strong>React / Vue</strong> use Vite, so each builds and serves itself (reusing the same <code>/api/items</code>):</p>
       <pre>cd packages/fetch/examples/pagination/react && npm install && npm run start   # :3404
 cd packages/fetch/examples/pagination/vue   && npm install && npm run start   # :3405</pre>

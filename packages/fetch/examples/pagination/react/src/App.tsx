@@ -106,6 +106,12 @@ export function App() {
 
   const firstLoading = loading && !hasData;
 
+  // The node IS a state machine; these expose its observable state. We don't
+  // orchestrate the fetch — we read which state the node is in (idle → loading →
+  // ready / error) and the HTTP status it produced.
+  const machineState = error ? "error" : loading ? "loading" : hasData ? "ready" : "idle";
+  const statusLabel = values.status ? `HTTP ${values.status}` : "—";
+
   return (
     <div className="demo">
       <header className="demo-header">
@@ -119,6 +125,16 @@ export function App() {
       <wcs-fetch ref={bindRef} url={url} />
 
       <div className="panel">
+        {/* The node's state machine: input (the page we write) → current state →
+            the HTTP status it produced. */}
+        <div className="machine">
+          <span className="machine-io">page {page}</span>
+          <span className="machine-arrow">→</span>
+          <span className={`machine-state is-${machineState}`}>{machineState}</span>
+          <span className="machine-arrow">→</span>
+          <span className="machine-io">{statusLabel}</span>
+        </div>
+
         <div className="toolbar">
           <span className="status">{rangeText}</span>
           <span className="status">{pageLabel}</span>

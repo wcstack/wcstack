@@ -65,6 +65,20 @@
       // just dim via class.stale.
       get showList() { return !this.firstLoading && !this["itemsFetch.error"]; },
 
+      // The node IS a state machine; these expose its observable state. We don't
+      // orchestrate the fetch — we read which state the node is in (idle → loading
+      // → ready / error) and the HTTP status it produced.
+      get machineInput() { return "page " + this.page; },
+      get machineState() {
+        if (this["itemsFetch.error"]) return "error";
+        if (this["itemsFetch.loading"]) return "loading";
+        return this.hasData ? "ready" : "idle";
+      },
+      get statusLabel() {
+        const s = this["itemsFetch.status"];
+        return s ? "HTTP " + s : "—";
+      },
+
       get rangeText() {
         if (!this.hasData) return "Loading…";
         const start = (this.page - 1) * this.limit + 1;
@@ -126,6 +140,21 @@
   </header>
 
   <div class="panel">
+    <!-- The node's state machine: input (the page we write) → current state → the
+         HTTP status it produced. Pure data-wcs bindings over the same itemsFetch slot. -->
+    <div class="machine">
+      <span class="machine-io" data-wcs="textContent: machineInput"></span>
+      <span class="machine-arrow">→</span>
+      <span class="machine-state"
+        data-wcs="textContent: machineState;
+                  class.is-idle: machineState|eq(idle);
+                  class.is-loading: machineState|eq(loading);
+                  class.is-ready: machineState|eq(ready);
+                  class.is-error: machineState|eq(error)"></span>
+      <span class="machine-arrow">→</span>
+      <span class="machine-io" data-wcs="textContent: statusLabel"></span>
+    </div>
+
     <div class="toolbar">
       <span class="status" data-wcs="textContent: rangeText"></span>
       <span class="status" data-wcs="textContent: pageLabel"></span>

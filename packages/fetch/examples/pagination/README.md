@@ -7,8 +7,10 @@ times against **one shared server**. The dataset, the rendered markup and the st
 identical across all five; only the front-end approach changes. **All five drive the
 same headless `<wcs-fetch>` node** through the **wc-bindable protocol** (each via a different
 binding layer), so the fetch, the abort and the stale-response protection live in the element,
-and the only thing that varies is how each paradigm subscribes to it. It's a side-by-side look
-at how each handles three things every real paginated list needs:
+and the only thing that varies is how each paradigm subscribes to it. Each demo also surfaces the
+node's state machine — `page → state → HTTP status` — so the point is visible: you don't
+orchestrate the async flow, you read which state (idle → loading → ready / error) the node is in.
+It's a side-by-side look at how each handles three things every real paginated list needs:
 
 1. holding the current page,
 2. re-fetching when the page changes, and
@@ -17,12 +19,10 @@ at how each handles three things every real paginated list needs:
 | Demo | Approach | Build step |
 |------|----------|------------|
 | [`state/`](./state/) | `@wcstack/state` — declarative `<wcs-fetch>` + `data-wcs`, no JS glue | none (buildless) |
-| [`signals/`](./signals/) | `@wcstack/signals` — `bindNode()` adapts `<wcs-fetch>` into signals, `bindInput` writes the url | none (buildless)\* |
+| [`signals/`](./signals/) | `@wcstack/signals` — `bindNode()` adapts `<wcs-fetch>` into signals, `bindInput` writes the url | none (buildless) |
 | [`vanilla/`](./vanilla/) | Hand-built DOM + headless `<wcs-fetch>` (bound with `@wc-bindable/core`'s `bind()`) | none (buildless) |
 | [`react/`](./react/) | React 19 — `useState` + `<wcs-fetch>` (`@wc-bindable/react`'s `useWcBindable`) | Vite |
 | [`vue/`](./vue/) | Vue 3 — Composition API + `<wcs-fetch>` (`@wc-bindable/vue`'s `useWcBindable`) | Vite |
-
-\* signals imports the locally-built bundle; build `packages/signals` once first.
 
 ## The shared server
 
@@ -44,12 +44,10 @@ GET /api/items?page=<1-based>&limit=12
 ## Running
 
 **state / signals / vanilla** are buildless and served by the hub (this also serves the gallery
-at `/` and the `/api/items` endpoint):
+at `/` and the `/api/items` endpoint). Every dependency — including `@wcstack/signals` — loads
+from the CDN, so there is nothing to build first:
 
 ```bash
-# build signals once so its bundle can be served (only needed for the signals demo)
-cd packages/signals && npm install && npm run build && cd -
-
 node packages/fetch/examples/pagination/shared/server.js
 # open http://localhost:3400
 ```

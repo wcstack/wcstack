@@ -19,7 +19,7 @@
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, resolve, join, sep } from "node:path";
+import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MEMBERS, paginate } from "./data.js";
 
@@ -52,15 +52,12 @@ function sendJson(res, data, status = 200) {
  * @param {string} options.staticRoot               Absolute dir to serve files from
  * @param {string} [options.defaultFile="index.html"]  File served for "/"
  * @param {boolean} [options.spaFallback=false]      Serve defaultFile for unknown paths
- * @param {{prefix: string, dir: string}[]} [options.mounts]  Extra flat static mounts
- *        (used to serve the locally-built @wcstack/signals dist under /signals/)
  */
 export function createPaginationServer({
   port,
   staticRoot,
   defaultFile = "index.html",
   spaFallback = false,
-  mounts = [],
 }) {
   const root = resolve(staticRoot);
 
@@ -71,9 +68,7 @@ export function createPaginationServer({
       res.writeHead(200, {
         "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
         // Demo-local: serve every static file with "no-cache" so the browser
-        // revalidates and always picks up the latest edit. This matters most for
-        // the signals bundles (index.esm.js / dom.esm.js), whose names carry no
-        // content hash, so a rebuild keeps the same URL.
+        // revalidates and always picks up the latest edit while you tweak the demos.
         "Cache-Control": "no-cache",
       });
       res.end(content);
@@ -107,19 +102,6 @@ export function createPaginationServer({
         const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : DEFAULT_LIMIT;
         await new Promise((r) => setTimeout(r, API_DELAY_MS)); // simulate network latency
         return sendJson(res, paginate(MEMBERS, page, limit));
-      }
-
-      // --- Extra static mounts (e.g. the locally-built @wcstack/signals dist) ---
-      for (const m of mounts) {
-        if (path.startsWith(m.prefix)) {
-          const name = path.slice(m.prefix.length);
-          if (name && !name.includes("/") && !name.includes("..")) {
-            return serveFile(res, join(m.dir, name));
-          }
-          res.writeHead(404);
-          res.end("Not Found");
-          return;
-        }
       }
 
       // --- Static files ---
@@ -159,16 +141,9 @@ if (invokedDirectly) {
   const here = fileURLToPath(new URL(".", import.meta.url));
   // The pagination set root: packages/fetch/examples/pagination
   const setRoot = resolve(here, "..");
-  // The locally-built signals bundles live in the signals package's dist.
-  const signalsDist = resolve(here, "../../../../signals/dist");
   createPaginationServer({
     port: Number(process.env.PORT || 3400),
     staticRoot: setRoot,
     defaultFile: "index.html",
-    // Serve the signals bundles so the signals demo can import both entries
-    // (`@wcstack/signals` + `/dom`) and share one reactive core chunk.
-    // NB: prefix is /signals-dist/ (NOT /signals/) so it doesn't shadow the static
-    // route to the signals/ example directory.
-    mounts: [{ prefix: "/signals-dist/", dir: signalsDist }],
   });
 }

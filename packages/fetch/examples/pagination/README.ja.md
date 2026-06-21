@@ -6,8 +6,10 @@
 サーバー**に対して 5 通りに実装しました。データ・生成される DOM・スタイルは 5 つとも完全に同一で、
 変わるのはフロントエンドの作り方だけです。**5 つすべてが同一のヘッドレス `<wcs-fetch>` ノード**
 を **wc-bindable プロトコル**経由で駆動するので、取得・abort・古いレスポンスの破棄はすべて要素側に
-あり、違うのは「各パラダイムがその要素をどう購読するか（結線層）」だけです。実際のページネーション
-に必ず必要な次の 3 点を、各パラダイムがどう扱うかを横並びで比較できます。
+あり、違うのは「各パラダイムがその要素をどう購読するか（結線層）」だけです。各デモは要素の状態マシン
+（`page → state → HTTP status`）も表示します。非同期処理を*オーケストレーションする*のではなく、要素が
+今どの状態（idle → loading → ready / error）にあるかを*読むだけ*、という点を可視化しています。実際の
+ページネーションに必ず必要な次の 3 点を、各パラダイムがどう扱うかを横並びで比較できます。
 
 1. 現在のページを保持する
 2. ページが変わったら再取得する
@@ -16,12 +18,10 @@
 | デモ | アプローチ | ビルド |
 |------|-----------|--------|
 | [`state/`](./state/) | `@wcstack/state` — 宣言的な `<wcs-fetch>` + `data-wcs`、JS のつなぎコードなし | 不要（buildless） |
-| [`signals/`](./signals/) | `@wcstack/signals` — `bindNode()` で `<wcs-fetch>` を signals 化、`bindInput` で url 書き戻し | 不要（buildless）\* |
+| [`signals/`](./signals/) | `@wcstack/signals` — `bindNode()` で `<wcs-fetch>` を signals 化、`bindInput` で url 書き戻し | 不要（buildless） |
 | [`vanilla/`](./vanilla/) | 手書きの DOM + ヘッドレス `<wcs-fetch>`（`@wc-bindable/core` の `bind()` で購読） | 不要（buildless） |
 | [`react/`](./react/) | React 19 — `useState` + `<wcs-fetch>`（`@wc-bindable/react` の `useWcBindable`） | Vite |
 | [`vue/`](./vue/) | Vue 3 — Composition API + `<wcs-fetch>`（`@wc-bindable/vue` の `useWcBindable`） | Vite |
-
-\* signals はローカルビルド済みバンドルを読み込むため、先に `packages/signals` を一度ビルドしてください。
 
 ## 共通サーバー
 
@@ -43,12 +43,9 @@ GET /api/items?page=<1始まり>&limit=12
 ## 起動方法
 
 **state / signals / vanilla** は buildless で、ハブが配信します（`/` のギャラリーと `/api/items`
-も同じハブが提供）。
+も同じハブが提供）。`@wcstack/signals` を含む依存はすべて CDN から読み込むので、事前ビルドは不要です。
 
 ```bash
-# signals デモ用にバンドルを一度ビルド（signals デモを見る場合のみ）
-cd packages/signals && npm install && npm run build && cd -
-
 node packages/fetch/examples/pagination/shared/server.js
 # http://localhost:3400 を開く
 ```

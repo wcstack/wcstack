@@ -31,6 +31,14 @@ const loading = computed(() => values.loading);
 const hasData = computed(() => items.value.length > 0);
 const firstLoading = computed(() => loading.value && !hasData.value);
 
+// The node IS a state machine; these expose its observable state. We don't
+// orchestrate the fetch — we read which state the node is in (idle → loading →
+// ready / error) and the HTTP status it produced.
+const machineState = computed(() =>
+  values.error ? "error" : values.loading ? "loading" : hasData.value ? "ready" : "idle"
+);
+const statusLabel = computed(() => (values.status ? `HTTP ${values.status}` : "—"));
+
 const rangeText = computed(() => {
   if (!hasData.value) return "Loading…";
   const start = (page.value - 1) * LIMIT + 1;
@@ -93,6 +101,16 @@ function next() {
     <wcs-fetch ref="fetcherRef" :url="url"></wcs-fetch>
 
     <div class="panel">
+      <!-- The node's state machine: input (the page we write) → current state →
+           the HTTP status it produced. -->
+      <div class="machine">
+        <span class="machine-io">page {{ page }}</span>
+        <span class="machine-arrow">→</span>
+        <span class="machine-state" :class="`is-${machineState}`">{{ machineState }}</span>
+        <span class="machine-arrow">→</span>
+        <span class="machine-io">{{ statusLabel }}</span>
+      </div>
+
       <div class="toolbar">
         <span class="status">{{ rangeText }}</span>
         <span class="status">{{ pageLabel }}</span>

@@ -13,42 +13,37 @@ with `bindNode()`.
 
 ## How to run
 
-This demo is buildless and is served by the shared **hub**, which also serves the
-locally-built `@wcstack/signals` bundles (under `/signals-dist/`) and the `/api/items`
+This demo is fully buildless — every dependency loads from the CDN, so there is
+nothing to build first. The shared **hub** serves the page and the `/api/items`
 endpoint:
 
 ```bash
-# 1. Build the signals package once so dist/ exists (the hub mounts it at /signals-dist/)
-cd packages/signals && npm install && npm run build && cd -
-
-# 2. Start the hub
 node packages/fetch/examples/pagination/shared/server.js
 ```
 
 Then open <http://localhost:3400/signals/>.
 
-The import map maps both signals entries to those local bundles, and `@wcstack/fetch/auto`
-(which registers `<wcs-fetch>`) to the CDN:
+The import map points the signals entries and `@wcstack/fetch/auto` (which registers
+`<wcs-fetch>`) at the CDN:
 
 ```html
 <script type="importmap">
 {
   "imports": {
-    "@wcstack/signals": "/signals-dist/index.esm.js",
-    "@wcstack/signals/dom": "/signals-dist/dom.esm.js",
+    "@wcstack/signals": "https://esm.run/@wcstack/signals",
+    "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
     "@wcstack/fetch/auto": "https://esm.run/@wcstack/fetch/auto"
   }
 }
 </script>
 ```
 
-This demo actually imports everything from the DOM layer
-(`@wcstack/signals/dom`), which re-exports the whole headless core
-(`signal` / `computed` / `bindNode` / …) alongside the DOM helpers
-(`h` / `render` / `For`), so that single `/dom` import is enough. Each entry's
-bundle pulls in the same internal `core-<hash>.esm.js` chunk, so the page loads a
-single reactive instance regardless. The bare `@wcstack/signals` entry is kept
-mapped so you can also import the core directly — it just isn't needed here.
+This demo imports everything from the DOM layer (`@wcstack/signals/dom`), which
+re-exports the whole headless core (`signal` / `computed` / `bindNode` / …) alongside
+the DOM helpers (`h` / `render` / `For`), so that single `/dom` import is enough — one
+self-contained CDN bundle, one reactive instance. The bare `@wcstack/signals` entry is
+kept mapped so you can also import just the core directly; on the CDN each entry is its
+own bundle, so import from one entry per page.
 
 ## The interesting bits
 

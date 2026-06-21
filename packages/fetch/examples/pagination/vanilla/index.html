@@ -163,7 +163,7 @@
     // Render the whole panel from the current state.
     // ----------------------------------------------------------------------
     function render() {
-      const { page, data, loading, error } = state;
+      const { page, data, loading, error, status } = state;
       const items = data ? data.items : [];
       const total = data ? data.total : 0;
       const totalPages = totalPagesOf(data);
@@ -171,6 +171,21 @@
 
       const panel = document.getElementById("panel");
       panel.replaceChildren();
+
+      // The node's state machine: input (the page we write) → current state → the
+      // HTTP status it produced. We don't orchestrate the fetch; we just read which
+      // state <wcs-fetch> is in and render it.
+      const machineState = error ? "error" : loading ? "loading" : hasData ? "ready" : "idle";
+      const statusLabel = status ? "HTTP " + status : "—";
+      const machine = el("div", "machine");
+      machine.append(
+        el("span", "machine-io", "page " + page),
+        el("span", "machine-arrow", "→"),
+        el("span", "machine-state is-" + machineState, machineState),
+        el("span", "machine-arrow", "→"),
+        el("span", "machine-io", statusLabel),
+      );
+      panel.append(machine);
 
       // Toolbar.
       const toolbar = el("div", "toolbar");
@@ -224,7 +239,7 @@
         case "value": state.data = value; break;
         case "loading": state.loading = value; break;
         case "error": state.error = value; break;
-        case "status": state.status = value; break; // mirrored but unused by the UI
+        case "status": state.status = value; break; // shown in the state-machine strip
       }
       render();
     });

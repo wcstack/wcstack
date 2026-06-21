@@ -15,6 +15,13 @@
  *       <span class="demo-badge">…</span><h1>…</h1><p>…</p>
  *     </header>
  *     <div class="panel">
+ *       <div class="machine">           (the node's state machine: input → state → output)
+ *         <span class="machine-io">page 1</span>
+ *         <span class="machine-arrow">→</span>
+ *         <span class="machine-state is-ready">ready</span>   (is-idle|is-loading|is-ready|is-error)
+ *         <span class="machine-arrow">→</span>
+ *         <span class="machine-io">HTTP 200</span>
+ *       </div>
  *       <div class="toolbar">
  *         <span class="status">1–12 of 200</span>
  *         <span class="status">Page 1 / 17</span>
@@ -106,6 +113,36 @@ body {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* --- Node state machine (input → state → output) --------------------------- */
+/* Makes the headless node's observable state machine visible: the page we write
+   (input), the current state, and the HTTP status it produced (output). Every
+   demo renders this from the SAME node properties (loading / error / value /
+   status), so the only thing that differs is how each subscribes to them. */
+.machine {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.machine-arrow { color: #c4c4d0; }
+.machine-state {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #eef0fb;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+}
+.machine-state.is-idle    { background: #eef0fb; color: var(--muted); }
+.machine-state.is-loading { background: #fef3c7; color: #92400e; }
+.machine-state.is-ready   { background: #e8f7ee; color: #2e7d32; }
+.machine-state.is-error   { background: #fde8e8; color: #c0392b; }
 
 /* --- Member list ----------------------------------------------------------- */
 
