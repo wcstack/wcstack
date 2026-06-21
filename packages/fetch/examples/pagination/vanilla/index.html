@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vanilla — wcstack/fetch pagination</title>
+  <link rel="stylesheet" href="/shared/style.css" />
+
+  <!-- Resolve the wc-bindable core adapter from the CDN (buildless). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@wc-bindable/core": "https://esm.run/@wc-bindable/core"
+    }
+  }
+  </script>
+  <!-- Registers <wcs-fetch> (the headless data node). -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+</head>
+<body>
+  <div class="demo">
+    <header class="demo-header">
+      <span class="demo-badge">Vanilla JS</span>
+      <h1>Pagination — Vanilla</h1>
+      <p>Hand-rolled state + DOM, &lt;wcs-fetch&gt; via @wc-bindable/core</p>
+    </header>
+
+    <!-- Headless data node: it owns the fetch, the abort and the
+         stale-response protection. We only mirror its state below. -->
+    <wcs-fetch id="fetcher"></wcs-fetch>
+
+    <!-- The script re-renders everything inside this panel. -->
+    <div class="panel" id="panel"></div>
+
+    <p class="note">
+      The framework-free baseline: a plain <code>&lt;wcs-fetch&gt;</code> node does
+      the fetching, and <code>@wc-bindable/core</code>'s <code>bind()</code> streams
+      its <code>value</code> / <code>loading</code> / <code>error</code> into a tiny
+      <code>state</code> object that drives hand-built DOM nodes. Setting
+      <code>fetcher.url</code> refetches and aborts the previous request — no
+      <code>AbortController</code> here. It hits the same shared
+      <code>/api/items</code> server as the React, Vue,
+      <code>@wcstack/state</code> and <code>@wcstack/signals</code> demos.
+    </p>
+  </div>
+
+  <script type="module">
+    import { bind } from "@wc-bindable/core";
+
+    const LIMIT = 12;
+    const fetcher = document.getElementById("fetcher");
+
+    // ----------------------------------------------------------------------
+    // View state — a single plain object, mirrored from <wcs-fetch> by bind()
+    // and re-rendered on every change. Nothing fancy.
+    // ----------------------------------------------------------------------
+    const state = {
+      page: 1,
+      data: null,     // last { items, total, totalPages, ... }; null while errored
+      loading: false,
+      error: null,
+      // Not used by the UI here, but every demo mirrors it to show <wcs-fetch>
+      // exposes the HTTP status too.
+      status: 0,
+    };
+
+    // The single source of truth for the page count: 1 until the first response
+    // lands (or after an error clears `data`). Derived in one place so goToPage()
+    // and render() agree — matching the single derived value in the other demos.
+    function totalPagesOf(data) {
+      return data ? data.totalPages : 1;
+    }
+
+    // The window of page tokens: first, last and current ±1, gaps collapsed to
+    // an ellipsis. e.g. [1, "gap", 4, 5, 6, "gap", 17].
+    function pageWindow(current, totalPages) {
+      const set = new Set([1, totalPages, current - 1, current, current + 1]);
+      const sorted = [...set].filter((p) => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+      const out = [];
+      let prev = 0;
+      for (const p of sorted) {
+        if (p - prev > 1) out.push("gap");
+        out.push(p);
+        prev = p;
+      }
+      return out;
+    }
+
+    // Change the page by pointing <wcs-fetch> at a new URL. The element refetches
+    // and aborts any in-flight request automatically (stale-response safe), then
+    // pushes the new value/loading/error back to us through bind().
+    function goToPage(p) {
+      const totalPages = totalPagesOf(state.data);
+      if (p >= 1 && p <= totalPages && p !== state.page) {
+        state.page = p;
+        fetcher.url = "/api/items?page=" + p + "&limit=" + LIMIT;
+      }
+    }
+
+    // ----------------------------------------------------------------------
+    // Small DOM helpers — build nodes, never interpolate data into innerHTML.
+    // ----------------------------------------------------------------------
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+
+    function renderRow(item) {
+      const li = document.createElement("li");
+      const wrap = el("div", "member-item");
+
+      const main = el("div", "member-main");
+      main.append(
+        el("span", "member-name", item.name),
+        el("span", "member-email", item.email),
+      );
+
+      const meta = el("div", "member-meta");
+      meta.append(
+        el("span", "member-date", item.joinedAt),
+        el("span", "role-badge " + item.role, item.role),
+      );
+
+      wrap.append(main, meta);
+      li.append(wrap);
+      return li;
+    }
+
+    function renderPagination(page, totalPages) {
+      const nav = el("nav", "pagination");
+      nav.setAttribute("aria-label", "Pagination");
+
+      const prev = el("button", "page-btn", "‹ Prev");
+      prev.disabled = page <= 1;
+      prev.dataset.page = String(page - 1);
+      nav.append(prev);
+
+      for (const token of pageWindow(page, totalPages)) {
+        if (token === "gap") {
+          nav.append(el("span", "page-ellipsis", "…"));
+          continue;
+        }
+        const isActive = token === page;
+        const btn = el("button", "page-btn" + (isActive ? " active" : ""), String(token));
+        btn.disabled = isActive;
+        // aria-current marks the current page for screen readers.
+        btn.setAttribute("aria-current", isActive ? "page" : "false");
+        btn.dataset.page = String(token);
+        nav.append(btn);
+      }
+
+      const next = el("button", "page-btn", "Next ›");
+      next.disabled = page >= totalPages;
+      next.dataset.page = String(page + 1);
+      nav.append(next);
+
+      return nav;
+    }
+
+    // ----------------------------------------------------------------------
+    // Render the whole panel from the current state.
+    // ----------------------------------------------------------------------
+    function render() {
+      const { page, data, loading, error } = state;
+      const items = data ? data.items : [];
+      const total = data ? data.total : 0;
+      const totalPages = totalPagesOf(data);
+      const hasData = items.length > 0;
+
+      const panel = document.getElementById("panel");
+      panel.replaceChildren();
+
+      // Toolbar.
+      const toolbar = el("div", "toolbar");
+      const start = (page - 1) * LIMIT + 1;
+      const end = start + items.length - 1;
+      const rangeText = hasData
+        ? start + "–" + end + " of " + total // EN DASH (U+2013)
+        : "Loading…";
+      const pageLabel = hasData ? "Page " + page + " / " + totalPages : "";
+      toolbar.append(el("span", "status", rangeText), el("span", "status", pageLabel));
+      panel.append(toolbar);
+
+      // Exactly one of: first-load spinner / error / the list.
+      // NOTE: bind()'s initial sync (syncOn:"call") fires once with the element's
+      // resting values (loading=false, no data), so the very first render falls into
+      // the list branch and paints an empty <ul> for one frame. The url is set right
+      // after bind(), and on the next microtask <wcs-fetch> flips loading=true, so the
+      // spinner replaces that empty <ul> immediately. (All five demos share this
+      // initial loading=false → spinner transition.)
+      if (loading && !hasData) {
+        const spinner = el("div", "spinner");
+        spinner.setAttribute("aria-hidden", "true");
+        panel.append(spinner);
+      } else if (error) {
+        const errorBox = el("div", "error", "Failed to load. Try again.");
+        errorBox.setAttribute("role", "alert");
+        panel.append(errorBox);
+      } else {
+        // We only reach this branch with rows present, so hasData is guaranteed
+        // and `loading` alone decides the stale dimming — matching the other demos.
+        const ul = el("ul", "member-list" + (loading ? " stale" : ""));
+        for (const item of items) ul.append(renderRow(item));
+        panel.append(ul);
+      }
+
+      // Pagination is always shown so the user can recover from an error too.
+      panel.append(renderPagination(page, totalPages));
+    }
+
+    // ----------------------------------------------------------------------
+    // Mirror the <wcs-fetch> wcBindable properties into local state. `value` is
+    // null on an HTTP/network error, which clears the list (matching the other
+    // demos). The stale-while-revalidate behaviour rests on a <wcs-fetch>
+    // contract: while a reload is in flight the element holds the previous
+    // `value` and emits no new `value` event until the next response lands, so
+    // `state.data` (and the rendered rows) stay put and are only dimmed via the
+    // "stale" class.
+    // ----------------------------------------------------------------------
+    bind(fetcher, (name, value) => {
+      switch (name) {
+        case "value": state.data = value; break;
+        case "loading": state.loading = value; break;
+        case "error": state.error = value; break;
+        case "status": state.status = value; break; // mirrored but unused by the UI
+      }
+      render();
+    });
+
+    // ----------------------------------------------------------------------
+    // Event delegation on the panel: a single listener handles every page btn.
+    // ----------------------------------------------------------------------
+    document.getElementById("panel").addEventListener("click", (e) => {
+      const btn = e.target.closest("button.page-btn");
+      if (!btn || btn.disabled) return;
+      goToPage(Number(btn.dataset.page));
+    });
+
+    // Initial load: point <wcs-fetch> at page 1; the first-load spinner shows
+    // until it lands.
+    fetcher.url = "/api/items?page=1&limit=" + LIMIT;
+  </script>
+</body>
+</html>

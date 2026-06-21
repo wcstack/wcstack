@@ -1,0 +1,255 @@
+/*
+ * Shared styles for the pagination examples.
+ *
+ * All five demos (React / Vue / state / signals / Vanilla) render the SAME DOM
+ * structure and pull in this one stylesheet, so they look identical and the only
+ * visible difference is the code behind them.
+ *
+ *   Buildless demos link it:   <link rel="stylesheet" href="/shared/style.css">
+ *   Vite demos import it:      import "../shared/style.css";
+ *
+ * Canonical markup each demo produces:
+ *
+ *   <div class="demo">
+ *     <header class="demo-header">
+ *       <span class="demo-badge">…</span><h1>…</h1><p>…</p>
+ *     </header>
+ *     <div class="panel">
+ *       <div class="toolbar">
+ *         <span class="status">1–12 of 200</span>
+ *         <span class="status">Page 1 / 17</span>
+ *       </div>
+ *       <ul class="member-list">              (add "stale" while reloading)
+ *         <li><div class="member-item">
+ *           <div class="member-main">
+ *             <span class="member-name">…</span><span class="member-email">…</span>
+ *           </div>
+ *           <div class="member-meta">
+ *             <span class="member-date">…</span>
+ *             <span class="role-badge admin|editor|viewer">…</span>
+ *           </div>
+ *         </div></li>
+ *       </ul>
+ *       <nav class="pagination">
+ *         <button class="page-btn">‹ Prev</button>
+ *         <button class="page-btn active">1</button>
+ *         <span class="page-ellipsis">…</span>
+ *         <button class="page-btn">17</button>
+ *         <button class="page-btn">Next ›</button>
+ *       </nav>
+ *     </div>
+ *     <p class="note">…</p>
+ *   </div>
+ */
+
+:root {
+  --accent: #3949ab;
+  --accent-strong: #303f9f;
+  --ink: #1a1a2e;
+  --muted: #6b6b7b;
+  --line: #e8e8ef;
+  --bg: #f6f6fb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+.demo {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.demo-header { margin-bottom: 1.25rem; }
+
+.demo-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: #e8eaf6;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.demo-header h1 { font-size: 1.4rem; margin: 0.6rem 0 0.25rem; }
+.demo-header p { color: var(--muted); font-size: 0.92rem; margin: 0; }
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  min-height: 1.4rem;
+}
+
+.status {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Member list ----------------------------------------------------------- */
+
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 6rem;
+  transition: opacity 0.15s;
+}
+
+/* Dim the current rows while the next page loads (stale-while-revalidate),
+   so the list never flashes empty between pages. */
+.member-list.stale { opacity: 0.45; }
+
+.member-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.4rem;
+  border-bottom: 1px solid #f1f1f5;
+}
+
+.member-list li:last-child .member-item,
+.member-list > .member-item:last-child { border-bottom: none; }
+
+.member-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.member-name { font-weight: 600; }
+.member-email {
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.member-date {
+  font-size: 0.78rem;
+  color: #9a9aa8;
+  font-variant-numeric: tabular-nums;
+}
+
+.role-badge {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef0fb;
+  color: var(--accent);
+  text-transform: capitalize;
+}
+.role-badge.admin { background: #fde8e8; color: #c0392b; }
+.role-badge.editor { background: #e8f1fd; color: #2563eb; }
+.role-badge.viewer { background: #eef7ee; color: #2e7d32; }
+
+/* --- Pagination controls --------------------------------------------------- */
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 1.25rem;
+}
+
+.page-btn {
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.page-btn:hover:not(:disabled):not(.active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.page-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: default;
+}
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.page-ellipsis {
+  min-width: 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  user-select: none;
+}
+
+/* --- States ---------------------------------------------------------------- */
+
+.spinner { display: flex; justify-content: center; padding: 2rem; }
+.spinner::after {
+  content: "";
+  width: 26px;
+  height: 26px;
+  border: 3px solid #e0e0e0;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: #fce4ec;
+  color: #c62828;
+  font-size: 0.9rem;
+}
+
+.note {
+  margin-top: 1.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.note code {
+  background: #ececf3;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+.note a { color: var(--accent); }
