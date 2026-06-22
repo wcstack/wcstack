@@ -55,9 +55,45 @@ export class ResizeCore extends EventTarget {
   private _entry: WcsResizeEntry | null = null;
   private _observing: boolean = false;
 
+  // SSR: ResizeObserver delivers the initial size synchronously, so there is no
+  // asynchronous probe to await — readiness is immediate. Kept as a field so the
+  // Shell can expose it as connectedCallbackPromise uniformly with the other nodes.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
+  }
+
+  /** Resolves once the first probe settles. Synchronous here, so already resolved. */
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  /**
+   * Lifecycle entry point (§3.5). When called with no element it is an idempotent
+   * no-op that resolves once ready — resize is command-driven (the Shell resolves
+   * the target and calls observe(element)), so connect-time monitoring is started
+   * via that command, not here. The Shell backs `connectedCallbackPromise` with
+   * this no-arg form. When called with an element it delegates to the element
+   * observe command below and still returns `ready` for a uniform return shape.
+   */
+  observe(): Promise<void>;
+  observe(element: Element, options?: ResizeOptions): Promise<void>;
+  observe(element?: Element, options: ResizeOptions = {}): Promise<void> {
+    if (element) {
+      this._observeElement(element, options);
+    }
+    return this._ready;
+  }
+
+  /**
+   * Tear down the observer and invalidate the lifecycle (§3.5). Mirrors disconnect()
+   * but is the lifecycle-named counterpart the Shell calls from disconnectedCallback;
+   * a later observe() rebuilds the observer.
+   */
+  dispose(): void {
+    this.disconnect();
   }
 
   get entry(): WcsResizeEntry | null {
@@ -111,7 +147,7 @@ export class ResizeCore extends EventTarget {
    * `content-box` before giving up; both giving-up paths leave `observing` false,
    * consistent with the never-throw design of the other @wcstack sensors.
    */
-  observe(element: Element, options: ResizeOptions = {}): void {
+  private _observeElement(element: Element, options: ResizeOptions = {}): void {
     if (this._observer && this._observed === element && this._optionsEqual(this._options, options)) {
       return;
     }

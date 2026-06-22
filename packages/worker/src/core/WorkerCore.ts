@@ -58,9 +58,32 @@ export class WorkerCore extends EventTarget {
   private _restartCount: number = 0;
   private _restartTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Generation guard (§3.4): bumped on dispose() and captured at restart-timer
+  // schedule time. A restart deferred via setTimeout is the Core's only async
+  // work; if dispose() runs while it is pending, the stale timer MUST NOT
+  // re-spawn a worker on a torn-down element. _clearRestartTimer() already
+  // cancels the pending timer from inside the Core, so this guard is
+  // defense-in-depth for any path that fires the callback after invalidation.
+  private _gen = 0;
+  // SSR (§3.8): a worker is command-driven (spawned on start()), so there is no
+  // asynchronous probe to await — readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
+  }
+
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Lifecycle (§3.5). The worker is command-driven (start/post/terminate), so
+  // there is no subscription to establish up front: observe() is an idempotent
+  // no-op that resolves once ready. dispose() (below) tears down the worker,
+  // cancels any pending restart and invalidates in-flight async via _gen.
+  observe(): Promise<void> {
+    return this._ready;
   }
 
   get message(): any {
@@ -197,6 +220,9 @@ export class WorkerCore extends EventTarget {
    * overwritten by the next incoming message.
    */
   dispose(): void {
+    // §3.4: invalidate any in-flight async (a pending restart timer) before
+    // tearing down, so a stale timer that somehow fires cannot re-spawn.
+    this._gen++;
     this._clearRestartTimer();
     this._terminateWorker();
     this._error = null;
@@ -248,7 +274,11 @@ export class WorkerCore extends EventTarget {
 
   private _scheduleRestart(): void {
     this._clearRestartTimer();
+    const gen = this._gen;
     this._restartTimer = setTimeout(() => {
+      // §3.4: a dispose() between scheduling and firing bumps _gen; skip the
+      // re-spawn so a torn-down Core does not resurrect a worker.
+      if (gen !== this._gen) return;
       this._restartTimer = null;
       this._restartCount++;
       this._terminateWorker();

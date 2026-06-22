@@ -7,7 +7,6 @@ import { bootstrapFetch } from "../src/bootstrapFetch";
 import { registerComponents } from "../src/registerComponents";
 import { registerAutoTrigger, unregisterAutoTrigger } from "../src/autoTrigger";
 import { config, setConfig, getConfig } from "../src/config";
-import { raiseError } from "../src/raiseError";
 
 // registerComponents経由でカスタム要素を登録
 registerComponents();
@@ -24,12 +23,6 @@ function createMockResponse(body: any, options: { status?: number; ok?: boolean;
     text: () => Promise.resolve(typeof body === "string" ? body : JSON.stringify(body)),
   } as unknown as Response;
 }
-
-describe("raiseError", () => {
-  it("[@wcstack/fetch]プレフィックス付きのエラーをスローする", () => {
-    expect(() => raiseError("test error")).toThrow("[@wcstack/fetch] test error");
-  });
-});
 
 describe("config", () => {
   it("デフォルト設定を取得できる", () => {
@@ -394,9 +387,11 @@ describe("Fetch", () => {
     });
   });
 
-  it("url未設定時にfetch()を呼ぶとエラーをスローする", async () => {
+  it("url未設定時にfetch()を呼ぶとerrorに流しnullを返す（never-throw）", async () => {
     const el = document.createElement("wcs-fetch") as Fetch;
-    await expect(el.fetch()).rejects.toThrow("[@wcstack/fetch] url attribute is required.");
+    const result = await el.fetch();
+    expect(result).toBeNull();
+    expect(el.error).toEqual({ message: "url attribute is required." });
   });
 
   it("GETリクエストでJSONレスポンスを取得できる", async () => {

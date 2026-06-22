@@ -373,8 +373,23 @@ describe("<wcs-resize>", () => {
   });
 
   describe("Shell wcBindable / 静的契約", () => {
-    it("hasConnectedCallbackPromise は false（同期接続のため）", () => {
-      expect(WcsResize.hasConnectedCallbackPromise).toBe(false);
+    it("hasConnectedCallbackPromise は true（SSR 対応）", () => {
+      expect(WcsResize.hasConnectedCallbackPromise).toBe(true);
+    });
+
+    it("SSR: connectedCallbackPromise が解決する（同期準備のため即解決）", async () => {
+      const el = makeEl({ target: "self" });
+      document.body.appendChild(el);
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
+
+    it("disconnectedCallback で Core を dispose し監視を停止する", () => {
+      const el = makeEl({ target: "self" });
+      document.body.appendChild(el);
+      expect(el.observing).toBe(true);
+      el.remove();
+      expect(el.observing).toBe(false);
+      expect(ctrl.last.disconnected).toBe(true);
     });
 
     it("properties は Core を継承し trigger を追加する", () => {

@@ -15,6 +15,7 @@ import { registerListenAutoTrigger } from "../listenAutoTrigger.js";
  * `continuous` attribute selects the auto-restarting session phase.
  */
 export class WcsListen extends HTMLElement {
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...ListenCore.wcBindable,
     properties: [
@@ -34,10 +35,15 @@ export class WcsListen extends HTMLElement {
 
   private _core: ListenCore;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new ListenCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -186,7 +192,9 @@ export class WcsListen extends HTMLElement {
     if (config.autoTrigger) {
       registerListenAutoTrigger();
     }
-    this._core.reinitPermission();
+    // observe() (re-)establishes the permission subscription and returns the
+    // readiness promise for SSR; it wraps reinitPermission() (idempotent).
+    this._connectedCallbackPromise = this._core.observe();
     if (!this.manual) {
       // Non-blocking auto-start, mirroring <wcs-geo>: start() is fired
       // unconditionally without first awaiting/inspecting the (async) permission

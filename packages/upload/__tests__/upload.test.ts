@@ -162,6 +162,14 @@ describe("WcsUpload コンポーネント", () => {
       expect(MockXMLHttpRequest.instances).toHaveLength(0);
       el.remove();
     });
+
+    it("SSR: connectedCallbackPromise が解決し hasConnectedCallbackPromise=true", async () => {
+      const el = createElement({ url: "/api/upload" });
+      document.body.appendChild(el);
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+      expect((el.constructor as typeof WcsUpload).hasConnectedCallbackPromise).toBe(true);
+      el.remove();
+    });
   });
 
   describe("disconnectedCallback", () => {

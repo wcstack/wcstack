@@ -76,4 +76,13 @@ describe("<wcs-throttle>", () => {
     expect(el.maxWait).toBe(300);
     el.remove();
   });
+
+  it("SSR: Debounce から connectedCallbackPromise / hasConnectedCallbackPromise を継承する", async () => {
+    vi.useRealTimers();
+    const el = create({ wait: "100" });
+    document.body.appendChild(el);
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    expect((el.constructor as typeof Throttle).hasConnectedCallbackPromise).toBe(true);
+    el.remove();
+  });
 });

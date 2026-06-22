@@ -14,6 +14,7 @@ import { RecorderCore } from "../core/RecorderCore.js";
  * properties — a settled `Blob` is a value and may flow through state.
  */
 export class WcsRecorder extends HTMLElement {
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...RecorderCore.wcBindable,
     // `mimeType` deliberately appears on TWO surfaces: as an output `property`
@@ -32,10 +33,15 @@ export class WcsRecorder extends HTMLElement {
   };
 
   private _core: RecorderCore;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new RecorderCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -107,6 +113,7 @@ export class WcsRecorder extends HTMLElement {
 
   connectedCallback(): void {
     this.style.display = "none";
+    this._connectedCallbackPromise = this._core.observe();
   }
 
   disconnectedCallback(): void {

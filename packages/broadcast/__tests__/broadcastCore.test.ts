@@ -271,6 +271,24 @@ describe("BroadcastCore", () => {
     });
   });
 
+  describe("ready / observe（SSR・ライフサイクル）", () => {
+    it("ready は解決済み Promise を返す", async () => {
+      const core = new BroadcastCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe() は ready を返し、冪等に再呼び出しできる", async () => {
+      const core = new BroadcastCore();
+      await expect(core.observe()).resolves.toBeUndefined();
+      await expect(core.observe()).resolves.toBeUndefined();
+    });
+
+    it("observe() は ready と同一の Promise を返す", () => {
+      const core = new BroadcastCore();
+      expect(core.observe()).toBe(core.ready);
+    });
+  });
+
   describe("dispose", () => {
     it("チャンネルを閉じ、error を silent にリセットする", () => {
       const target = new EventTarget();
@@ -302,6 +320,50 @@ describe("BroadcastCore", () => {
         name: "InvalidStateError",
         message: "Channel is not open. Call open(name) before post().",
       });
+    });
+
+    // _gen 世代ガード（§3.4）: dispose() で _gen を進めると、teardown 後に遅れて
+    // drain した message / messageerror を stale として破棄する。dispose は listener
+    // を removeEventListener で外すため、プラットフォームで「close 直前にキューされた
+    // イベントが close 後に配送される」状況を再現するには、open() 時に登録された
+    // handler 参照を addEventListener のスパイで捕捉し、dispose 後に直接呼び出す。
+    function captureHandlers(target?: EventTarget): {
+      core: BroadcastCore;
+      onMessage: EventListener;
+      onMessageError: EventListener;
+    } {
+      const handlers: Record<string, EventListener> = {};
+      const spy = vi
+        .spyOn(FakeBroadcastChannel.prototype, "addEventListener")
+        .mockImplementation(function (this: FakeBroadcastChannel, type: string, listener: any) {
+          handlers[type] = listener as EventListener;
+          // 実際の登録も行う（既存挙動を保つ）
+          return EventTarget.prototype.addEventListener.call(this, type, listener);
+        });
+      const core = new BroadcastCore(target);
+      core.open("room");
+      spy.mockRestore();
+      // dispose で _gen を進める（listener も外れる）
+      core.dispose();
+      return { core, onMessage: handlers.message, onMessageError: handlers.messageerror };
+    }
+
+    it("dispose 後に drain した stale message は message を更新しない（_gen ガード）", () => {
+      const { core, onMessage } = captureHandlers();
+      const event = new Event("message") as Event & { data: unknown };
+      event.data = "late";
+      onMessage(event);
+      expect(core.message).toBeNull(); // stale なので _setMessage されない
+    });
+
+    it("dispose 後に drain した stale messageerror は error を書かない（_gen ガード）", () => {
+      const target = new EventTarget();
+      const events: any[] = [];
+      target.addEventListener("wcs-broadcast:error", (e) => events.push(e));
+      const { core, onMessageError } = captureHandlers(target);
+      onMessageError(new Event("messageerror"));
+      expect(core.error).toBeNull(); // dispose で null にリセット済み、再書き込みなし
+      expect(events).toHaveLength(0);
     });
   });
 

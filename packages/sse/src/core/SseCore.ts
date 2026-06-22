@@ -1,4 +1,3 @@
-import { raiseError } from "../raiseError.js";
 import { IWcBindable, SseConnectOptions, WcsSseMessage } from "../types.js";
 
 // EventSource readyState values. Hardcoded rather than read from the global
@@ -37,9 +36,41 @@ export class SseCore extends EventTarget {
   private _events: string[] = [];
   private _raw: boolean = false;
 
+  // Generation guard (§3.4): bumped on every _doConnect (new live stream) and on
+  // dispose(). The shared arrow-function listeners (_onOpen/_onMessage/_onError)
+  // capture the generation of the connection they belong to in _connGen; once
+  // dispose() (or a superseding connect()) advances _gen, a still-attached
+  // listener from a torn-down stream sees a stale _connGen and writes nothing.
+  // A boolean flag is insufficient (dispose→observe would let stale work slip
+  // through). Listeners are normally removed on close()/permanent-error, so this
+  // guard backstops the dispose() path where teardown and a late native event
+  // could otherwise race.
+  private _gen = 0;
+  private _connGen = 0;
+  // SSR (§3.8): SSE has no synchronous probe to await — readiness is immediate.
+  // The stream itself is opened on demand via connect(), not at observe() time.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
+  }
+
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Lifecycle (§3.5). SSE is command-driven: the stream is opened by connect(),
+  // not by observe(). observe() is therefore an idempotent no-op that resolves
+  // once ready; dispose() invalidates in-flight listeners (_gen++) and tears the
+  // stream down via close().
+  observe(): Promise<void> {
+    return this._ready;
+  }
+
+  dispose(): void {
+    this._gen++;
+    this._closeInternal();
   }
 
   get message(): WcsSseMessage | null {
@@ -131,8 +162,12 @@ export class SseCore extends EventTarget {
    * reconnects with the supplied options.
    */
   connect(url: string, options: SseConnectOptions = {}): void {
+    // never-throw (§3.6): 引数バリデーション失敗は例外でなく error プロパティに流し、
+    // no-op で戻る。command-token 経路からの呼び出しが例外で更新サイクルを壊さず、
+    // 「公開メソッドは throw しない」契約に揃える。
     if (!url) {
-      raiseError("url is required.");
+      this._setError(new Error("url is required."));
+      return;
     }
 
     // 同一 url で接続中(CONNECTING/OPEN)なら no-op。同じストリームへの再接続は churn
@@ -185,6 +220,9 @@ export class SseCore extends EventTarget {
     }
 
     this._es = es;
+    // この接続の世代を確定（§3.4）。以降この es のリスナはこの世代に属する。dispose()
+    // で _gen が進むとこの es のリスナは stale 判定になり状態を書かなくなる。
+    this._connGen = ++this._gen;
     // この時点の events を捕捉（再入で this._events が差し替わってもこの es の解除に使う）。
     const events = this._events;
 
@@ -210,6 +248,9 @@ export class SseCore extends EventTarget {
   }
 
   private _onOpen = (): void => {
+    // §3.4: dispose() で世代が進んだ後に届いた stale イベントは無視する（torn-down
+    // 要素への書き込み防止）。
+    if (this._connGen !== this._gen) return;
     this._setLoading(false);
     this._setConnected(true);
     this._setReadyState(SSE_OPEN);
@@ -221,6 +262,8 @@ export class SseCore extends EventTarget {
   };
 
   private _onMessage = (event: MessageEvent): void => {
+    // §3.4: dispose() 後に届いた stale メッセージは破棄する。
+    if (this._connGen !== this._gen) return;
     let data: any = event.data;
     // JSONの自動パース（raw 指定時はテキストのまま）
     if (!this._raw && typeof data === "string") {
@@ -241,6 +284,8 @@ export class SseCore extends EventTarget {
   };
 
   private _onError = (event: Event): void => {
+    // §3.4: dispose() 後に届いた stale エラーは破棄する。
+    if (this._connGen !== this._gen) return;
     // 発火元の EventSource をローカル退避してから dispatch する。_setError は
     // wcs-sse:error を同期 dispatch するため、リスナが再入的に close()/connect() を
     // 呼ぶと _closeInternal が this._es を null（または新インスタンス）に差し替え得る。

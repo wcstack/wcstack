@@ -173,13 +173,42 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("disconnectedCallback", () => {
-    it("DOM除去時に接続を閉じる", () => {
+    it("DOM除去時に接続を閉じる（dispose 経由）", () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
       MockWebSocket.instances[0].simulateOpen();
 
       el.remove();
       expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
+    });
+
+    it("DOM除去後に発火したメッセージは状態を書き換えない（dispose の _gen ガード）", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
+
+      el.remove();
+      ws.simulateMessage("late");
+      expect(el.message).toBeNull();
+    });
+  });
+
+  describe("SSR / connectedCallbackPromise", () => {
+    it("hasConnectedCallbackPromise が true である", () => {
+      expect(WcsWebSocket.hasConnectedCallbackPromise).toBe(true);
+    });
+
+    it("初期状態の connectedCallbackPromise は解決済み Promise を返す", async () => {
+      const el = createElement();
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
+
+    it("connectedCallback で connectedCallbackPromise が observe() の結果に設定される", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+      el.remove();
     });
   });
 

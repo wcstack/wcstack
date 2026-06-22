@@ -155,8 +155,17 @@ describe("<wcs-debounce> 振る舞い", () => {
     const settled: any[] = [];
     el.addEventListener("wcs-debounce:settled", (e) => settled.push((e as CustomEvent).detail.value));
     el.source = "a";
-    el.remove(); // disconnectedCallback → cancel
+    el.remove(); // disconnectedCallback → dispose
     vi.advanceTimersByTime(100);
     expect(settled).toEqual([]);
+  });
+
+  it("SSR: connectedCallbackPromise が解決し hasConnectedCallbackPromise=true", async () => {
+    vi.useRealTimers(); // Promise の解決を await するため実タイマーに戻す
+    const el = create({ wait: "100" });
+    document.body.appendChild(el);
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    expect((el.constructor as typeof Debounce).hasConnectedCallbackPromise).toBe(true);
+    el.remove();
   });
 });

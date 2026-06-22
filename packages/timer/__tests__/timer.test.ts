@@ -360,8 +360,40 @@ describe("Timer (Shell)", () => {
     expect(Timer.observedAttributes).toContain("interval");
   });
 
-  it("static hasConnectedCallbackPromise が false", () => {
-    expect(Timer.hasConnectedCallbackPromise).toBe(false);
+  it("static hasConnectedCallbackPromise が true (SSR §4.1)", () => {
+    expect(Timer.hasConnectedCallbackPromise).toBe(true);
+  });
+
+  it("connectedCallbackPromise は接続前は解決済み、接続後は observe() の結果を返す (§4.1)", async () => {
+    const el = createTimer({ interval: "1000", manual: "" });
+    // 接続前は既定の解決済み Promise
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+
+    document.body.appendChild(el);
+    // 接続後は Core.observe() に差し替わる（即時解決）
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+  });
+
+  it("接続時に Core.observe が呼ばれ connectedCallbackPromise に反映される (§3.5)", () => {
+    const el = createTimer({ interval: "1000", manual: "" });
+    const observeSpy = vi.spyOn((el as any)._core, "observe");
+    document.body.appendChild(el);
+    expect(observeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("切断時に Core.dispose が呼ばれ世代が進む (§3.5 / §4.4)", () => {
+    const el = createTimer({ interval: "1000" });
+    document.body.appendChild(el);
+    const disposeSpy = vi.spyOn((el as any)._core, "dispose");
+
+    vi.advanceTimersByTime(1000);
+    el.remove();
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+    expect(el.running).toBe(false);
+    // dispose 後はタイマーが進まない
+    vi.advanceTimersByTime(5000);
+    expect(el.tick).toBe(1);
   });
 
   it("wcBindable に trigger プロパティと inputs が追加されている", () => {

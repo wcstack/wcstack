@@ -44,6 +44,15 @@ const WEB_API_GLOBALS = [
   "ServiceWorkerRegistration", "WakeLock", "Geolocation",
 ];
 
+// Documented deviations (§4: a deviation is allowed if recorded in the package's
+// design doc). These are necessary — there is no alternative Web API — so the
+// Core legitimately touches `document` as a page-scoped Web-API event source
+// (not DOM manipulation / host-element dependency). Reported as ◇, not a fail.
+const DEVIATIONS = {
+  clipboard: { "DOM-independent": "copy/cut/paste are document-scoped Web-API events; no element-free alternative (deviation noted inline in ClipboardCore)" },
+  wakelock: { "DOM-independent": "visibilitychange / document.visibilityState are the only re-acquire signals; no alternative (deviation noted inline in WakeLockCore)" },
+};
+
 // ---- comment/string-aware blanker (preserves line numbers) ----
 // Replaces comment characters with spaces so regex content scans don't match the
 // word "throw" / "document" etc. inside prose; keeps string literals intact.
@@ -107,7 +116,10 @@ function checkCore(orig) {
   const thr = linesMatching(code, orig, /\bthrow\b|\braiseError\s*\(/);
   r["never-throw"] = { tier: "MUST", pass: thr.length === 0, lines: thr };
 
-  const isAsync = has(code, /\basync\b|\bawait\b|\.then\s*\(|:\s*Promise<|new\s+Promise\b/);
+  // Real stale-prone async only. A bare `: Promise<…>` type annotation is NOT a
+  // signal — every conformant core now declares `ready: Promise` / `observe(): Promise`,
+  // so the annotation no longer distinguishes async work from the SSR skeleton.
+  const isAsync = has(code, /\basync\b|\bawait\b|\.then\s*\(|new\s+Promise\b/);
   const guard = has(code, /\b_\w*[Gg]en\b|AbortController|AbortSignal|\bgeneration\b/);
   r["stale-async guard"] = isAsync
     ? { tier: "MUST", pass: guard, note: guard ? undefined : "async work but no _gen / AbortController" }
@@ -139,9 +151,13 @@ function checkShell(orig) {
   r["wraps new <Name>Core(this)"] = isSubclass
     ? { tier: "MUST", pass: true, note: "inherited from base shell" }
     : { tier: "MUST", pass: has(code, /new\s+\w+Core\s*\([^)]*\bthis\b[^)]*\)/) };
-  // SHOULD / SSR
-  r["hasConnectedCallbackPromise"] = { tier: "SHOULD", pass: has(code, /static\s+hasConnectedCallbackPromise\s*=\s*true/) };
-  r["connectedCallbackPromise"] = { tier: "SHOULD", pass: has(code, /connectedCallbackPromise/) };
+  // SHOULD / SSR. Subclass shells (e.g. Throttle extends Debounce) inherit these.
+  r["hasConnectedCallbackPromise"] = isSubclass
+    ? { tier: "SHOULD", pass: true, note: "inherited from base shell" }
+    : { tier: "SHOULD", pass: has(code, /static\s+hasConnectedCallbackPromise\s*=\s*true/) };
+  r["connectedCallbackPromise"] = isSubclass
+    ? { tier: "SHOULD", pass: true, note: "inherited from base shell" }
+    : { tier: "SHOULD", pass: has(code, /connectedCallbackPromise/) };
   return r;
 }
 
@@ -149,7 +165,7 @@ function checkShell(orig) {
 const tsFiles = (dir) => existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".ts")).map((f) => join(dir, f)) : [];
 
 let mustFail = 0, shouldWarn = 0, files = 0;
-const rows = [], findings = [];
+const rows = [], findings = [], deviations = [];
 
 for (const pkg of IO_NODES) {
   const cores = tsFiles(join(PKGDIR, pkg, "src", "core"));
@@ -166,6 +182,8 @@ for (const pkg of IO_NODES) {
     for (const [name, res] of Object.entries(u.rules)) {
       if (res.na) { flags.push("·"); continue; }
       if (res.pass) { flags.push("✓"); continue; }
+      const dev = DEVIATIONS[pkg]?.[name];
+      if (dev) { flags.push("◇"); deviations.push({ pkg, unit: u.name, name, reason: dev, res }); continue; }
       if (res.tier === "MUST") { flags.push("✗"); mustFail++; findings.push({ pkg, unit: u.name, sev: "MUST", name, res }); }
       else { flags.push("!"); shouldWarn++; findings.push({ pkg, unit: u.name, sev: "SHOULD", name, res }); }
     }
@@ -191,6 +209,11 @@ if (findings.length) {
   }
 }
 
+if (deviations.length) {
+  console.log("\n--- Documented deviations (◇, §4) ---");
+  for (const d of deviations) console.log(`  ◇ ${d.pkg}/${d.unit}: ${d.name} — ${d.reason}`);
+}
+
 console.log("\n" + "-".repeat(72));
-console.log(`Files checked: ${files}  |  MUST-fail: ${mustFail}  |  SHOULD-warn: ${shouldWarn}`);
+console.log(`Files checked: ${files}  |  MUST-fail: ${mustFail}  |  SHOULD-warn: ${shouldWarn}  |  deviations: ${deviations.length}`);
 if (mustFail > 0) process.exitCode = 1;

@@ -169,6 +169,12 @@ describe("<wcs-listen>", () => {
       expect(recs[0].abort).toHaveBeenCalled();
     });
 
+    it("SSR: connectedCallbackPromise が解決し hasConnectedCallbackPromise=true", async () => {
+      const el = create({ manual: "" });
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+      expect((el.constructor as typeof WcsListen).hasConnectedCallbackPromise).toBe(true);
+    });
+
     it("イベントは要素から bubble する", () => {
       const el = create({ manual: "" });
       const events: any[] = [];

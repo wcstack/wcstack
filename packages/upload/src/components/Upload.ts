@@ -4,7 +4,7 @@ import { UploadCore } from "../core/UploadCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 export class WcsUpload extends HTMLElement {
-  static hasConnectedCallbackPromise = false;
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...UploadCore.wcBindable,
     properties: [
@@ -39,10 +39,15 @@ export class WcsUpload extends HTMLElement {
   private _core: UploadCore;
   private _files: FileList | File[] | null = null;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new UploadCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -280,9 +285,10 @@ export class WcsUpload extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
+    this._connectedCallbackPromise = this._core.observe();
   }
 
   disconnectedCallback(): void {
-    this._core.abort();
+    this._core.dispose();
   }
 }

@@ -94,9 +94,12 @@ describe("SseCore", () => {
   });
 
   describe("connect", () => {
-    it("url が空なら例外", () => {
+    it("url が空なら例外を投げず error に流す（never-throw）", () => {
       const core = new SseCore();
-      expect(() => core.connect("")).toThrow(/url is required/);
+      expect(() => core.connect("")).not.toThrow();
+      expect(core.error).toBeInstanceOf(Error);
+      expect((core.error as Error).message).toMatch(/url is required/);
+      expect(MockEventSource.instances).toHaveLength(0);
     });
 
     it("EventSource を生成し loading=true・readyState=CONNECTING になる", () => {
@@ -340,6 +343,73 @@ describe("SseCore", () => {
       core.connect("/feed");
       MockEventSource.last.simulateMessage("x");
       expect(handler).toHaveBeenCalled();
+    });
+  });
+
+  describe("ライフサイクル（ready / observe / dispose）", () => {
+    it("ready は解決済み Promise を返す", async () => {
+      const core = new SseCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe() は ready を返し、冪等に再呼び出しできる", async () => {
+      const core = new SseCore();
+      await expect(core.observe()).resolves.toBeUndefined();
+      await expect(core.observe()).resolves.toBeUndefined();
+      // observe() は監視を張らない（command-driven）ため接続は生成されない。
+      expect(MockEventSource.instances).toHaveLength(0);
+    });
+
+    it("dispose() は接続を閉じ状態をリセットする", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      const es = MockEventSource.last;
+      core.dispose();
+      expect(es.close).toHaveBeenCalled();
+      expect(core.connected).toBe(false);
+      expect(core.loading).toBe(false);
+      expect(core.readyState).toBe(MockEventSource.CLOSED);
+    });
+
+    // dispose() は通常 _closeInternal でリスナを解除するため、実機で stale イベントが
+    // ハンドラに到達することはまず無い。しかし「dispose で _gen を進め、torn-down 要素へ
+    // 書き込まない」という §3.4 のガード本体（各ハンドラ冒頭の世代チェック）を直接検証する。
+    // ネイティブイベントが torn-down 後に遅延発火し、何らかの経路でハンドラが残っていた
+    // 場合の防御を、ハンドラを直接呼び出して再現する。
+    it("dispose 後の stale な open ハンドラは状態を書かない（_gen ガード）", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      core.dispose();
+      (core as any)._onOpen();
+      expect(core.connected).toBe(false);
+      expect(core.loading).toBe(false);
+    });
+
+    it("dispose 後の stale な message ハンドラは状態を書かない（_gen ガード）", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      core.dispose();
+      (core as any)._onMessage(new MessageEvent("message", { data: "late" }));
+      expect(core.message).toBeNull();
+    });
+
+    it("dispose 後の stale な error ハンドラは状態を書かない（_gen ガード）", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      core.dispose();
+      (core as any)._onError(new Event("error"));
+      expect(core.error).toBeNull();
+    });
+
+    it("dispose 後に observe → connect で監視を復活できる（boolean フラグでは救えない経路）", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      core.dispose();
+      // 復活：新しい世代で接続し直すと open が再び反映される。
+      core.observe();
+      core.connect("/feed");
+      MockEventSource.last.simulateOpen();
+      expect(core.connected).toBe(true);
     });
   });
 });

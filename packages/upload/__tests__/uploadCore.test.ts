@@ -69,26 +69,82 @@ describe("UploadCore", () => {
   });
 
   describe("upload", () => {
-    it("url未指定時にrejectする", async () => {
+    it("url未指定時はerrorに流しnullを返す（never-throw）", async () => {
       const core = new UploadCore();
       const files = [createMockFile("test.txt", 100, "text/plain")];
-      await expect(core.upload("", files)).rejects.toThrow(
-        "[@wcstack/upload] url is required."
-      );
+      const r = await core.upload("", files);
+      expect(r).toBeNull();
+      expect(core.error).toEqual({ message: "url is required." });
     });
 
-    it("ファイル未指定時にrejectする", async () => {
+    it("ファイル未指定時はerrorに流しnullを返す（never-throw）", async () => {
       const core = new UploadCore();
-      await expect(core.upload("/api/upload", [])).rejects.toThrow(
-        "[@wcstack/upload] files are required."
-      );
+      const r = await core.upload("/api/upload", []);
+      expect(r).toBeNull();
+      expect(core.error).toEqual({ message: "files are required." });
     });
 
-    it("ファイルがnull相当の場合にrejectする", async () => {
+    it("ファイルがnull相当の場合はerrorに流しnullを返す（never-throw）", async () => {
       const core = new UploadCore();
-      await expect(core.upload("/api/upload", null as any)).rejects.toThrow(
-        "[@wcstack/upload] files are required."
-      );
+      const r = await core.upload("/api/upload", null as any);
+      expect(r).toBeNull();
+      expect(core.error).toEqual({ message: "files are required." });
+    });
+
+    it("ready は解決済み Promise を返す", async () => {
+      const core = new UploadCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe() は ready を返し、冪等に再呼び出しできる", async () => {
+      const core = new UploadCore();
+      await expect(core.observe()).resolves.toBeUndefined();
+      await expect(core.observe()).resolves.toBeUndefined();
+    });
+
+    it("dispose() は進行中アップロードを abort する", () => {
+      const core = new UploadCore();
+      core.upload("/api/upload", [createMockFile("a.txt", 10, "text/plain")]);
+      const xhr = MockXMLHttpRequest.instances.at(-1)!;
+      core.dispose();
+      expect(xhr.abort).toHaveBeenCalled();
+    });
+
+    it("dispose 後に settle した stale load は状態を書かない（_gen ガード）", () => {
+      const core = new UploadCore();
+      core.upload("/api/upload", [createMockFile("a.txt", 10, "text/plain")]);
+      const xhr = MockXMLHttpRequest.instances.at(-1)!;
+      core.dispose();
+      xhr.simulateLoad(200, '{"x":1}', "application/json");
+      expect(core.value).toBeNull();
+      expect(core.status).toBe(0);
+    });
+
+    it("dispose 後に settle した stale error は状態を書かない（_gen ガード）", () => {
+      const core = new UploadCore();
+      core.upload("/api/upload", [createMockFile("a.txt", 10, "text/plain")]);
+      const xhr = MockXMLHttpRequest.instances.at(-1)!;
+      core.dispose();
+      xhr.simulateError();
+      expect(core.error).toBeNull();
+    });
+
+    it("dispose 後に settle した stale abort は loading を変えない（_gen ガード）", () => {
+      const core = new UploadCore();
+      core.upload("/api/upload", [createMockFile("a.txt", 10, "text/plain")]);
+      const xhr = MockXMLHttpRequest.instances.at(-1)!;
+      core.dispose();
+      xhr.simulateAbort();
+      expect(core.loading).toBe(true);
+    });
+
+    it("dispose 後の stale progress は progress を書かない（_gen ガード）", () => {
+      const core = new UploadCore();
+      core.upload("/api/upload", [createMockFile("a.txt", 10, "text/plain")]);
+      const xhr = MockXMLHttpRequest.instances.at(-1)!;
+      core.dispose();
+      xhr.simulateProgress(50, 100);
+      expect(core.progress).toBe(0);
     });
 
     it("FormDataを構築してXHRで送信する", () => {

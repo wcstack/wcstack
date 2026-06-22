@@ -73,6 +73,10 @@ export class RecorderCore extends EventTarget {
   // recorder's late event cannot mutate state.
   private _gen: number = 0;
 
+  // SSR: recording is command-driven (attachStream/start), so there is no
+  // asynchronous probe to await — readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
@@ -87,6 +91,7 @@ export class RecorderCore extends EventTarget {
   get blob(): Blob | null { return this._blob; }
   get objectURL(): string | null { return this._objectURL; }
   get error(): WcsMediaErrorDetail | null { return this._error; }
+  get ready(): Promise<void> { return this._ready; }
 
   // --- State setters ---
 
@@ -237,6 +242,16 @@ export class RecorderCore extends EventTarget {
     if (this._recorder && this._recorder.state === "paused") {
       this._recorder.resume();
     }
+  }
+
+  /**
+   * Establish monitoring (§3.5). Recording is command-driven — there is no listener
+   * or subscription to set up here (the borrowed stream arrives via attachStream and
+   * recording is driven by start()/stop()), so observe() is an idempotent no-op that
+   * resolves once ready. dispose() is its teardown counterpart.
+   */
+  observe(): Promise<void> {
+    return this._ready;
   }
 
   /** Stop in-flight recording, revoke the last object URL, drop the borrowed stream. */

@@ -512,4 +512,25 @@ describe("WakeLockCore", () => {
     await core.request();
     expect(wl.request).toHaveBeenCalledWith("screen");
   });
+
+  it("ready は即時 resolve する Promise を返す（同期 sink なのでプローブ無し）", async () => {
+    const core = makeCore();
+    await expect(core.ready).resolves.toBeUndefined();
+  });
+
+  it("observe() は ready（即時 resolve）を返し、冪等に同じ Promise を返す", async () => {
+    const core = makeCore();
+    const p1 = core.observe();
+    const p2 = core.observe();
+    expect(p1).toBe(core.ready);
+    expect(p2).toBe(p1); // 冪等：呼ぶたび同じ ready を返す
+    await expect(p1).resolves.toBeUndefined();
+  });
+
+  it("observe() はモニタリングを確立しない no-op（request は呼ばれない）", async () => {
+    const core = makeCore();
+    await core.observe();
+    expect(core.held).toBe(false);
+    expect(wl.request).toHaveBeenCalledTimes(0);
+  });
 });

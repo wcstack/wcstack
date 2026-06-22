@@ -16,11 +16,6 @@ export default defineConfig({
         '*.config.{js,ts,mjs}',
         'src/exports.ts',
         'src/types.ts',
-        // Intentional dead code kept for cross-package consistency (see the file's
-        // header): a never-throw design means it is imported by nothing today, so v8
-        // does not count it. Excluded explicitly so the intent is recorded and the
-        // 100% thresholds do not depend on it staying unimported.
-        'src/raiseError.ts'
       ],
       thresholds: {
         statements: 100,

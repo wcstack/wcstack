@@ -77,6 +77,13 @@ export class SpeakCore extends EventTarget {
   // does re-subscribe.
   private _voicesSubscribed: boolean = false;
 
+  // SSR: feature detection (`_setUnsupported`) and the initial `getVoices()` read
+  // are synchronous, and the `voiceschanged` subscription is established eagerly
+  // in the constructor, so there is no asynchronous probe to await before
+  // snapshotting — readiness is immediate. The Shell exposes this as
+  // connectedCallbackPromise.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
@@ -121,6 +128,11 @@ export class SpeakCore extends EventTarget {
   // lifetime of a document, so there's nothing to re-check.
   get unsupported(): boolean {
     return this._unsupported;
+  }
+
+  /** Resolves once the first probe settles (immediate — see `_ready`). */
+  get ready(): Promise<void> {
+    return this._ready;
   }
 
   // --- State setters with event dispatch ---
@@ -342,6 +354,19 @@ export class SpeakCore extends EventTarget {
     if (!this._voicesSubscribed) {
       this._initVoices();
     }
+  }
+
+  /**
+   * Establish monitoring (§3.5). Synthesis is command-driven (speak/cancel), so
+   * observe() only (re-)establishes the live `voiceschanged` subscription —
+   * idempotent via reinitVoices()'s `_voicesSubscribed` guard, so the first
+   * connect after construction does not double-subscribe while a reconnect after
+   * dispose() does. Returns the `ready` promise for SSR. Call from the Shell's
+   * connectedCallback.
+   */
+  observe(): Promise<void> {
+    this.reinitVoices();
+    return this._ready;
   }
 
   /**

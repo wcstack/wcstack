@@ -175,6 +175,19 @@ describe("WcsSse", () => {
       el.remove();
       expect(es.close).toHaveBeenCalled();
     });
+
+    it("SSR: connectedCallbackPromise が解決し hasConnectedCallbackPromise=true", async () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+      expect((el.constructor as typeof WcsSse).hasConnectedCallbackPromise).toBe(true);
+      el.remove();
+    });
+
+    it("DOM 未挿入では connectedCallbackPromise は初期の解決済み Promise", async () => {
+      const el = createEl({ url: "/feed" });
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
   });
 
   describe("attributeChangedCallback", () => {

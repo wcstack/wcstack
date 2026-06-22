@@ -372,4 +372,18 @@ describe("RecorderCore", () => {
     core.resume(); // 既に recording → state!=="paused" で guard
     expect(core.recording).toBe(true);
   });
+
+  it("ready は即時解決する（同期 probe・SSR）", async () => {
+    const core = new RecorderCore();
+    await expect(core.ready).resolves.toBeUndefined();
+  });
+
+  it("observe は command-driven の no-op で ready と同一 Promise を返す（冪等）", async () => {
+    const core = new RecorderCore();
+    const p1 = core.observe();
+    const p2 = core.observe();
+    expect(p1).toBe(core.ready);
+    expect(p2).toBe(core.ready);
+    await expect(p1).resolves.toBeUndefined();
+  });
 });

@@ -15,13 +15,14 @@ import { WakeLockCore } from "../core/WakeLockCore.js";
  * means "keep awake *while* active", not just "acquire once".
  */
 export class WcsWakeLock extends HTMLElement {
-  // SSR contract (@wcstack/server): the renderer awaits elements declaring
+  // SSR contract (§4.1/@wcstack/server): the renderer awaits elements declaring
   // `hasConnectedCallbackPromise = true` before snapshotting. The wake lock has no
-  // connect-time async fix to await (acquire is fire-and-forget and meaningless
-  // server-side), so this is `false` — same as the other synchronous sensor Shells
-  // (sse / intersection / worker). Kept (not deleted) because it is the protocol
-  // contract surface the server renderer reads via `ctor.hasConnectedCallbackPromise`.
-  static hasConnectedCallbackPromise = false;
+  // connect-time async probe to await (acquire is fire-and-forget and meaningless
+  // server-side), so `connectedCallbackPromise` is backed by the Core's no-op
+  // `observe()`, which resolves immediately. The flag is still declared `true` so
+  // the renderer reads it via `ctor.hasConnectedCallbackPromise` and the Shell
+  // participates uniformly in the SSR await protocol.
+  static hasConnectedCallbackPromise = true;
   // `active` drives request/release; `type` propagates to the Core's next acquire.
   // `manual` is intentionally excluded: it is a connect-time policy ("don't auto-
   // acquire on connect"), not a live switch.
@@ -43,10 +44,17 @@ export class WcsWakeLock extends HTMLElement {
   };
 
   private _core: WakeLockCore;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new WakeLockCore(this);
+  }
+
+  // SSR (§4.1): the renderer awaits this before snapshotting. Backed by the Core's
+  // observe() (a no-op resolving immediately for this command-driven sink).
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -122,6 +130,9 @@ export class WcsWakeLock extends HTMLElement {
     // up as a forward-compatible seam (observedAttributes + setter + this line) for
     // when the spec adds lock types; until then it carries a constant.
     this._core.type = this.type;
+    // Establish monitoring (§3.5) and expose readiness for SSR (§4.1). observe()
+    // is a no-op that resolves immediately for this command-driven sink.
+    this._connectedCallbackPromise = this._core.observe();
     if (!this.manual && this.active) {
       void this._core.request();
     }

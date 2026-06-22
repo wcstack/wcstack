@@ -4,16 +4,9 @@ import { bootstrapStorage } from "../src/bootstrapStorage";
 import { registerComponents } from "../src/registerComponents";
 import { registerAutoTrigger, unregisterAutoTrigger } from "../src/autoTrigger";
 import { config, setConfig, getConfig } from "../src/config";
-import { raiseError } from "../src/raiseError";
 
 // registerComponents経由でカスタム要素を登録
 registerComponents();
-
-describe("raiseError", () => {
-  it("[@wcstack/storage]プレフィックス付きのエラーをスローする", () => {
-    expect(() => raiseError("test error")).toThrow("[@wcstack/storage] test error");
-  });
-});
 
 describe("config", () => {
   it("デフォルト設定を取得できる", () => {
@@ -425,7 +418,7 @@ describe("Storage", () => {
 
   it("trigger実行時にsave()が失敗してもtriggerはfalseへ復帰しイベントが発火する", () => {
     const el = document.createElement("wcs-storage") as Storage;
-    // keyを設定しないのでsave()内のCoreがraiseErrorをスローする
+    // keyを設定しないのでsave()内のCoreはnever-throwでerrorへ流す（throwしない）
     el.setAttribute("manual", "");
     document.body.appendChild(el);
 
@@ -434,7 +427,9 @@ describe("Storage", () => {
       events.push((e as CustomEvent).detail);
     });
 
-    expect(() => { el.trigger = true; }).toThrow("[@wcstack/storage] key is required.");
+    // never-throw: trigger=true は例外を投げず、save() の失敗は error へ流れる
+    expect(() => { el.trigger = true; }).not.toThrow();
+    expect(el.error).toEqual({ operation: "save", message: "key is required." });
     // try/finallyによりtriggerはtrueで固着せずfalseへ復帰し、完了イベントも発火する
     expect(el.trigger).toBe(false);
     expect(events).toEqual([false]);

@@ -180,6 +180,18 @@ describe("Clipboard (Shell)", () => {
     expect(el.writePermission).toBe("granted");
   });
 
+  it("SSR: connectedCallbackPromise が解決し hasConnectedCallbackPromise=true", async () => {
+    installPermissions({ state: "granted" });
+    const el = createClipboard();
+    document.body.appendChild(el);
+
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    expect((el.constructor as typeof WcsClipboard).hasConnectedCallbackPromise).toBe(true);
+    // observe() 経由でプローブが解決し permission が反映されている
+    expect(el.readPermission).toBe("granted");
+    el.remove();
+  });
+
   it("config.autoTrigger が true なら接続時に autoTrigger を登録する", () => {
     installClipboard();
     setConfig({ autoTrigger: true });

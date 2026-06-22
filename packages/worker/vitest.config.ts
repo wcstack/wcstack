@@ -15,12 +15,7 @@ export default defineConfig({
         'dist/',
         '*.config.{js,ts,mjs}',
         'src/exports.ts',
-        'src/types.ts',
-        // Cross-package scaffolding retained for consistency but intentionally
-        // unused by WorkerCore's never-throw design (see raiseError.ts header).
-        // Not imported anywhere, so v8 never reports it today; excluding it keeps
-        // the 100% thresholds honest if coverage ever switches to `all: true`.
-        'src/raiseError.ts'
+        'src/types.ts'
       ],
       thresholds: {
         statements: 100,

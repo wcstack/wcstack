@@ -6,9 +6,10 @@ import { registerAutoTrigger } from "../autoTrigger.js";
 // Named WcsBroadcast (not `Broadcast`) to match the <wcs-clipboard> WcsClipboard
 // / <wcs-ws> WcsWebSocket convention and avoid shadowing any global.
 export class WcsBroadcast extends HTMLElement {
-  // The channel opens synchronously in connectedCallback (no async init), so no
-  // connectedCallbackPromise is needed — mirrors <wcs-ws>.
-  static hasConnectedCallbackPromise = false;
+  // SSR (§4.4): the channel opens synchronously in connectedCallback, so the
+  // Core's observe() resolves immediately; we still expose connectedCallbackPromise
+  // so a state binder can uniformly await readiness before snapshotting.
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...BroadcastCore.wcBindable,
     // Shell-level settable surface. `name` selects the channel; `manual`
@@ -28,10 +29,15 @@ export class WcsBroadcast extends HTMLElement {
   static get observedAttributes(): string[] { return ["name"]; }
 
   private _core: BroadcastCore;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new BroadcastCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -98,6 +104,9 @@ export class WcsBroadcast extends HTMLElement {
     if (!this.manual && this.name) {
       this._core.open(this.name);
     }
+    // SSR (§4.4): expose the Core's readiness as connectedCallbackPromise. The
+    // channel opens synchronously above, so observe() resolves immediately.
+    this._connectedCallbackPromise = this._core.observe();
   }
 
   disconnectedCallback(): void {

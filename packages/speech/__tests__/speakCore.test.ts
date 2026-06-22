@@ -415,6 +415,29 @@ describe("SpeakCore", () => {
     });
   });
 
+  describe("observe / ready（ライフサイクル）", () => {
+    it("ready は解決済み Promise を返す（同期プローブ）", async () => {
+      const core = new SpeakCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe() は ready を返し、購読中の再呼び出しは冪等（二重購読しない）", async () => {
+      const core = new SpeakCore();
+      expect(synth.voicesChangedListenerCount).toBe(1);
+      await expect(core.observe()).resolves.toBeUndefined();
+      await expect(core.observe()).resolves.toBeUndefined();
+      expect(synth.voicesChangedListenerCount).toBe(1);
+    });
+
+    it("observe() は dispose 後に voiceschanged 購読を復活させる", async () => {
+      const core = new SpeakCore();
+      core.dispose();
+      expect(synth.voicesChangedListenerCount).toBe(0);
+      await core.observe();
+      expect(synth.voicesChangedListenerCount).toBe(1);
+    });
+  });
+
   describe("wcBindable 宣言", () => {
     it("boundary の getter は event.detail から値を取り出す", () => {
       const props = SpeakCore.wcBindable.properties;

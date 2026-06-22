@@ -62,24 +62,32 @@ describe("StorageCore", () => {
     expect(core.type).toBe("local");
   });
 
-  it("key未指定時にload()でエラーをスローする", () => {
+  it("key未指定時のload()はthrowせずerrorへ流しnullを返す（never-throw）", () => {
     const core = new StorageCore();
-    expect(() => core.load()).toThrow("[@wcstack/storage] key is required.");
+    let result: any;
+    expect(() => { result = core.load(); }).not.toThrow();
+    expect(result).toBeNull();
+    expect(core.error).toEqual({ operation: "load", message: "key is required." });
   });
 
-  it("key未指定時にsave()でエラーをスローする", () => {
+  it("key未指定時のsave()はthrowせずerrorへ流す（never-throw）", () => {
     const core = new StorageCore();
-    expect(() => core.save({ data: "test" })).toThrow("[@wcstack/storage] key is required.");
+    expect(() => core.save({ data: "test" })).not.toThrow();
+    expect(core.error).toEqual({ operation: "save", message: "key is required." });
   });
 
-  it("key未指定時にremove()でエラーをスローする", () => {
+  it("key未指定時のremove()はthrowせずerrorへ流す（never-throw）", () => {
     const core = new StorageCore();
-    expect(() => core.remove()).toThrow("[@wcstack/storage] key is required.");
+    expect(() => core.remove()).not.toThrow();
+    expect(core.error).toEqual({ operation: "remove", message: "key is required." });
   });
 
-  it("無効なstorageタイプでエラーをスローする", () => {
+  it("無効なstorageタイプはthrowせずerrorへ流し、typeは現状維持する（never-throw）", () => {
     const core = new StorageCore();
-    expect(() => { core.type = "invalid" as any; }).toThrow('Invalid storage type: "invalid"');
+    expect(() => { core.type = "invalid" as any; }).not.toThrow();
+    expect(core.error).toEqual({ message: 'Invalid storage type: "invalid". Must be "local" or "session".' });
+    // 無効値は無視され、デフォルトの "local" が維持される
+    expect(core.type).toBe("local");
   });
 
   it("key setterは非文字列をStringへ正規化する", () => {
@@ -640,6 +648,102 @@ describe("StorageCore", () => {
 
       // 同期成功時にerrorがnullへリセットされたことが観測できる
       expect(errorEvents).toEqual([null]);
+
+      core.stopSync();
+    });
+  });
+
+  describe("ライフサイクル (ready / observe / dispose)", () => {
+    it("readyは解決済みPromiseを返す（同期アクセスのため即時ready）", async () => {
+      const core = new StorageCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe()はreadyを返し、冪等に再呼び出しできる", async () => {
+      const core = new StorageCore();
+      await expect(core.observe()).resolves.toBeUndefined();
+      await expect(core.observe()).resolves.toBeUndefined();
+    });
+
+    it("dispose()はクロスタブ同期を停止する", () => {
+      const core = new StorageCore();
+      core.key = "dispose-stop-key";
+      core.type = "local";
+      core.startSync();
+
+      core.dispose();
+
+      const events: any[] = [];
+      core.addEventListener("wcs-storage:value-changed", (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      // dispose後はリスナが解除されているのでstorageイベントは無視される
+      const event = new StorageEvent("storage", {
+        key: "dispose-stop-key",
+        newValue: '{"synced":true}',
+        storageArea: localStorage,
+      });
+      globalThis.dispatchEvent(event);
+
+      expect(events).toHaveLength(0);
+    });
+
+    it("dispose後に配送された古い世代のstorageイベントは状態を書かない（_genガード）", () => {
+      const core = new StorageCore();
+      core.key = "stale-gen-key";
+      core.type = "local";
+      core.startSync();
+
+      // dispose() より前に捕捉したリスナ参照（実装の世代ガードを直接検証するため、
+      // stopSync を回避して dispose の _gen++ だけを効かせる）
+      const listener = (core as any)._storageListener as (e: StorageEvent) => void;
+
+      // _gen のみをインクリメントして「古い世代のコールバック」を再現する
+      (core as any)._gen++;
+
+      const events: any[] = [];
+      core.addEventListener("wcs-storage:value-changed", (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      // 捕捉済みの古いリスナを直接呼んでも、世代不一致で何も書き込まれない
+      listener(new StorageEvent("storage", {
+        key: "stale-gen-key",
+        newValue: '{"stale":true}',
+        storageArea: localStorage,
+      }));
+
+      expect(events).toHaveLength(0);
+      expect(core.value).toBeNull();
+
+      core.stopSync();
+    });
+
+    it("dispose後にstartSync()で再購読できる（dispose→observe復活）", () => {
+      const core = new StorageCore();
+      core.key = "revive-key";
+      core.type = "local";
+      core.startSync();
+      core.dispose();
+
+      // 再購読
+      core.startSync();
+
+      const events: any[] = [];
+      core.addEventListener("wcs-storage:value-changed", (e: Event) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      const event = new StorageEvent("storage", {
+        key: "revive-key",
+        newValue: '{"revived":true}',
+        storageArea: localStorage,
+      });
+      globalThis.dispatchEvent(event);
+
+      expect(events).toHaveLength(1);
+      expect(core.value).toEqual({ revived: true });
 
       core.stopSync();
     });

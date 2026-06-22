@@ -39,6 +39,20 @@ export class TimerCore extends EventTarget {
   private _target: EventTarget;
   private _timerId: ReturnType<typeof setInterval> | null = null;
 
+  // Generation guard (§3.4): bumped on dispose() and at every async start
+  // (start()/resume()). A scheduled callback (setInterval/setTimeout) captures the
+  // generation live via `_gen`; a fire that was already queued when the timer was
+  // torn down — or superseded by a new run — has a stale gen and MUST NOT mutate
+  // state or dispatch on a disposed element. _clearTimer() removes the handle, but
+  // the guard is the belt-and-braces defense for a callback already in the queue.
+  private _gen = 0;
+  // Generation captured for the currently scheduled run, set at each async start
+  // (start()/resume()). A scheduled callback compares it against the live `_gen`;
+  // a stale callback (dispose() bumped `_gen` after this run was armed) bails.
+  private _runGen = 0;
+  // SSR (§3.8): the timer does no asynchronous probe, so readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
+
   private _tick: number = 0;
   private _running: boolean = false;
   private _paused: boolean = false;
@@ -78,6 +92,26 @@ export class TimerCore extends EventTarget {
 
   get running(): boolean {
     return this._running;
+  }
+
+  // SSR readiness (§3.8): resolves after the first probe. The timer is
+  // command-driven with nothing to probe, so this is an already-resolved promise.
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Lifecycle (§3.5). The timer is command-driven (start/stop/...) with no
+  // ambient subscription to establish, so observe() is an idempotent no-op that
+  // resolves once ready (mirroring UploadCore). dispose() tears the timer down —
+  // it stops any running interval and bumps the generation so a callback already
+  // queued cannot fire onto a torn-down element.
+  observe(): Promise<void> {
+    return this._ready;
+  }
+
+  dispose(): void {
+    this._gen++;
+    this.stop();
   }
 
   // --- State setters with event dispatch ---
@@ -136,6 +170,9 @@ export class TimerCore extends EventTarget {
     // Baseline this run's per-run repeat counting (set after _setRunning so a
     // re-start of a completed bounded timer fires the full N ticks again).
     this._runStartTick = this._tick;
+    // Capture this run's generation (§3.4): a scheduled fire that outlives a
+    // dispose() (which bumps `_gen`) is then recognised as stale and ignored.
+    this._runGen = ++this._gen;
 
     // Fire immediately on start when requested. _fire() may stop the timer (when
     // repeat is reached), so re-check _running before scheduling the interval.
@@ -202,6 +239,9 @@ export class TimerCore extends EventTarget {
     this._paused = false;
     this._setRunning(true);
     this._segmentStart = Date.now();
+    // New scheduled run after a pause: capture its generation (§3.4) so a
+    // post-dispose() boundary/interval callback is recognised as stale.
+    this._runGen = ++this._gen;
     // Invariant: `_interval` is fixed at start() and stays constant for the whole
     // pause/resume cycle — changeInterval() only mutates it while *running* (never
     // while paused), so the remainder arithmetic below can safely assume the same
@@ -222,6 +262,9 @@ export class TimerCore extends EventTarget {
   // --- Internal ---
 
   private _onResumeBoundary = (): void => {
+    // Stale-run guard (§3.4): a resume-boundary timeout that fires after dispose()
+    // belongs to a torn-down run — drop it without re-arming the interval.
+    if (this._runGen !== this._gen) return;
     this._timerId = null;
     this._fire();
     // _fire() may have auto-stopped the timer (repeat reached); only re-arm the
@@ -232,6 +275,9 @@ export class TimerCore extends EventTarget {
   };
 
   private _fire = (): void => {
+    // Stale-run guard (§3.4): an interval callback queued before dispose() (which
+    // bumps `_gen`) must not tick or dispatch onto a torn-down element.
+    if (this._runGen !== this._gen) return;
     this._tick++;
     this._dispatchTick();
 

@@ -93,12 +93,18 @@ export class GeolocationCore extends EventTarget {
   // this restart sequence to reconfigure a watch.)
   private _watchGen: number = 0;
 
+  // Resolves once the most recent permission probe settles (or immediately when
+  // the Permissions API is unsupported). The Shell exposes this as
+  // connectedCallbackPromise so SSR can await the first probe before snapshotting
+  // the HTML. Mirrors PermissionCore._ready.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
     // Probe the permission state up front so observers see the real value
     // (granted/denied/prompt) before the first read, then keep it live.
-    this._initPermission();
+    this._ready = this._initPermission();
   }
 
   get position(): WcsGeoPositionDetail | null {
@@ -139,6 +145,11 @@ export class GeolocationCore extends EventTarget {
 
   get permission(): GeoPermissionState {
     return this._permission;
+  }
+
+  /** Resolves once the first (or most recent) permission probe settles (§3.8). */
+  get ready(): Promise<void> {
+    return this._ready;
   }
 
   // --- State setters with event dispatch ---
@@ -318,17 +329,35 @@ export class GeolocationCore extends EventTarget {
   }
 
   /**
+   * Establish permission monitoring (§3.5). Idempotent: a no-op while a
+   * subscription is already live (so the first connect after construction does
+   * not double-subscribe), and re-subscribes after a dispose() — e.g. the Shell
+   * element was disconnected and then reconnected (reparented). Returns the
+   * `ready` promise, which resolves once the (re)established probe settles, so
+   * the Shell can expose it as connectedCallbackPromise for SSR. Position
+   * acquisition (one-shot / watch) is command-driven and the Shell drives it
+   * separately from connectedCallback.
+   */
+  observe(): Promise<void> {
+    if (!this._permissionSubscribed) {
+      this._ready = this._initPermission();
+    }
+    return this._ready;
+  }
+
+  /**
    * Re-establish the permission `change` subscription after a dispose() — e.g.
    * the Shell element was disconnected and then reconnected (reparented). No-op
    * while a subscription is already live, so the first connect after
    * construction does not double-subscribe. This keeps permission tracking
    * symmetric with position acquisition, which the Shell also revives on
    * reconnect.
+   *
+   * Retained as a thin alias of observe() for the Shell's existing reconnect
+   * path; observe() is the canonical §3.5 lifecycle entry point.
    */
   reinitPermission(): void {
-    if (!this._permissionSubscribed) {
-      this._initPermission();
-    }
+    void this.observe();
   }
 
   /**
@@ -365,7 +394,7 @@ export class GeolocationCore extends EventTarget {
     return typeof navigator !== "undefined" && !!navigator.geolocation;
   }
 
-  private _initPermission(): void {
+  private _initPermission(): Promise<void> {
     // The Permissions API is optional. When absent (or it rejects, e.g. some
     // browsers don't accept the "geolocation" name), report "unsupported" and
     // leave acquisition to fail loudly via the error property if attempted.
@@ -377,11 +406,12 @@ export class GeolocationCore extends EventTarget {
       // that lost the Permissions API now correctly notifies observers of the
       // unsupported transition instead of silently overwriting the shadow value.
       this._setPermission("unsupported");
-      return;
+      // No asynchronous probe to await: readiness is immediate.
+      return Promise.resolve();
     }
     this._permissionSubscribed = true;
     const gen = ++this._permGen;
-    navigator.permissions.query({ name: "geolocation" as PermissionName }).then(
+    return navigator.permissions.query({ name: "geolocation" as PermissionName }).then(
       (status) => {
         // Stale resolution: this query was superseded (rapid reconnect) or the
         // element was disposed while it was in flight. Drop it so only the current
