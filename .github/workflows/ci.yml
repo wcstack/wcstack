@@ -55,6 +55,19 @@ jobs:
             echo "packages=$json" >> "$GITHUB_OUTPUT"
           fi
 
+  protocol-types-sync:
+    # The wc-bindable protocol type lives once in /protocol/wc-bindable.ts and is
+    # copied into each package's src/protocol/wcBindable.ts. These live outside
+    # packages/* so the change-detection matrix above cannot catch a stale copy —
+    # this independent job fails if the generated copies drift from the source.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/sync-protocol-types.mjs --check
+
   ci:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.packages != '[]' }}

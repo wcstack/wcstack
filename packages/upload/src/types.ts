@@ -18,35 +18,10 @@ export interface IWritableConfig {
   tagNames?: IWritableTagNames;
 }
 
-// wc-bindable protocol (@wc-bindable/core, protocol version 1) for custom element binding.
-// properties: observable outputs — the element dispatches events on change, observers subscribe via bind()
-// inputs:     settable surface — declarative metadata; optional `attribute` hints the mirrored HTML attribute
-// commands:   invocable methods — declarative metadata; binding systems call the method by name
-// Per SPEC.md, core interprets only `properties`; `inputs` / `commands` and the `attribute` / `async`
-// hints are descriptive (tooling, codegen, remote proxying). See SPEC-extensions.md § Extension 1.
-export interface IWcBindableProperty {
-  readonly name: string;
-  readonly event: string;
-  readonly getter?: (event: Event) => any;
-}
-
-export interface IWcBindableInput {
-  readonly name: string;
-  readonly attribute?: string;
-}
-
-export interface IWcBindableCommand {
-  readonly name: string;
-  readonly async?: boolean;
-}
-
-export interface IWcBindable {
-  readonly protocol: "wc-bindable";
-  readonly version: 1;
-  readonly properties: IWcBindableProperty[];
-  readonly inputs?: readonly IWcBindableInput[];
-  readonly commands?: readonly IWcBindableCommand[];
-}
+// wc-bindable protocol manifest types — single source of truth in /protocol/wc-bindable.ts.
+export type {
+  IWcBindable, IWcBindableProperty, IWcBindableInput, IWcBindableCommand,
+} from "./protocol/wcBindable.js";
 
 /**
  * Upload error object.
