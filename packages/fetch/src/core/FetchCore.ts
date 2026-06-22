@@ -1,4 +1,3 @@
-import { raiseError } from "../raiseError.js";
 import { IWcBindable } from "../types.js";
 
 export interface FetchRequestOptions {
@@ -36,10 +35,33 @@ export class FetchCore extends EventTarget {
   private _status: number = 0;
   private _abortController: AbortController | null = null;
   private _promise: Promise<any> = Promise.resolve(null);
+  // Generation guard (§3.4): bumped on dispose() (and each fetch start). An
+  // in-flight request that settles after dispose / a superseding start has a
+  // stale `gen` and MUST NOT write state to a torn-down element. A boolean flag
+  // is insufficient (dispose→observe would let stale work slip through).
+  private _gen = 0;
+  // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
 
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
+  }
+
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Lifecycle (§3.5). Fetch is command-driven with no subscription to
+  // establish, so observe() is an idempotent no-op that resolves once ready;
+  // dispose() invalidates any in-flight request and aborts it.
+  observe(): Promise<void> {
+    return this._ready;
+  }
+
+  dispose(): void {
+    this._gen++;
+    this.abort();
   }
 
   get value(): any {
@@ -95,8 +117,12 @@ export class FetchCore extends EventTarget {
   }
 
   async fetch(url: string, options: FetchRequestOptions = {}): Promise<any> {
+    // never-throw (§3.6): 引数バリデーション失敗は例外ではなく error プロパティに
+    // 流し、サニタイズ値(null)を返す。command-token 経路からの呼び出しが unhandled
+    // rejection にならず、「fetch() は全終了ケースで resolve」契約とも整合する。
     if (!url) {
-      raiseError("url attribute is required.");
+      this._setError({ message: "url attribute is required." });
+      return null;
     }
 
     const p = this._doFetch(url, options);
@@ -116,6 +142,10 @@ export class FetchCore extends EventTarget {
     const ac = new AbortController();
     this._abortController = ac;
     const { signal } = ac;
+
+    // Capture the generation at async start (§3.4). A completion that runs after
+    // dispose() (which bumps _gen) is stale and must not write state.
+    const gen = ++this._gen;
 
     this._setLoading(true);
     this._setError(null);
@@ -148,6 +178,12 @@ export class FetchCore extends EventTarget {
       }
 
       const response = await globalThis.fetch(url, requestInit);
+
+      // A stale generation means dispose() (or a superseding fetch) ran while the
+      // request was in flight. Drop the result without touching torn-down state.
+      if (gen !== this._gen) {
+        return null;
+      }
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
@@ -184,17 +220,17 @@ export class FetchCore extends EventTarget {
       this._setLoading(false);
       return this._value;
     } catch (e: any) {
+      // Stale completion (dispose / superseding fetch ran during a later await
+      // such as response.json()). Drop the result without writing state.
+      if (gen !== this._gen) {
+        return null;
+      }
       if (e.name === "AbortError") {
-        // Suppress loading=false when a later request has already taken over. A
-        // subsequent fetch() aborts this one via abort() (which nulls the field) and
-        // then immediately installs its own controller, so `this._abortController` is
-        // non-null here. That newer request has already emitted loading=true and is
-        // still in flight, so emitting loading=false now would make observers see a
-        // spurious flicker. An explicit abort() leaves the field null, so that path
-        // still reports loading=false as expected.
-        if (this._abortController === null) {
-          this._setLoading(false);
-        }
+        // A matching generation means this is an explicit abort() of the current
+        // request (a superseding fetch bumps _gen and is caught by the stale guard
+        // above; dispose() likewise bumps _gen). Explicit abort clears loading so
+        // observers leave the in-flight state.
+        this._setLoading(false);
         return null;
       }
       this._setError(e);

@@ -216,6 +216,12 @@ describe("<wcs-speak>", () => {
       document.body.appendChild(el);
       expect(synth.voicesChangedListenerCount).toBe(1);
     });
+
+    it("SSR: connectedCallbackPromise が解決し hasConnectedCallbackPromise=true", async () => {
+      const el = create();
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+      expect((el.constructor as typeof WcsSpeak).hasConnectedCallbackPromise).toBe(true);
+    });
   });
 
   describe("wcBindable 宣言", () => {

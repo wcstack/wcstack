@@ -164,4 +164,21 @@ describe("WcsBroadcast", () => {
       expect(FakeBroadcastChannel.registry.get("room")!.size).toBe(0);
     });
   });
+
+  describe("SSR", () => {
+    it("hasConnectedCallbackPromise が true", () => {
+      expect((WcsBroadcast as typeof WcsBroadcast).hasConnectedCallbackPromise).toBe(true);
+    });
+
+    it("connectedCallbackPromise は接続前は解決済み", async () => {
+      const el = makeElement({ name: "room" });
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
+
+    it("接続後 connectedCallbackPromise が解決する（observe() 由来）", async () => {
+      const el = makeElement({ name: "room" });
+      document.body.appendChild(el);
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
+  });
 });

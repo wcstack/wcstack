@@ -389,8 +389,8 @@ describe("<wcs-intersect>", () => {
   });
 
   describe("Shell wcBindable / 静的契約", () => {
-    it("hasConnectedCallbackPromise は false（同期接続のため）", () => {
-      expect(WcsIntersect.hasConnectedCallbackPromise).toBe(false);
+    it("hasConnectedCallbackPromise は true（SSR 対応）", () => {
+      expect(WcsIntersect.hasConnectedCallbackPromise).toBe(true);
     });
 
     it("properties は Core を継承し trigger を追加する", () => {
@@ -423,6 +423,42 @@ describe("<wcs-intersect>", () => {
       expect(WcsIntersect.wcBindable.commands).toBe(IntersectionCore.wcBindable.commands);
       const names = WcsIntersect.wcBindable.commands.map((c) => c.name);
       expect(names).toEqual(["observe", "reobserve", "unobserve", "disconnect", "reset"]);
+    });
+  });
+
+  describe("SSR / connectedCallbackPromise", () => {
+    it("接続前は解決済みの promise を返す", async () => {
+      const el = makeEl({ target: "self" });
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
+
+    it("connectedCallback で Core の ready（即時解決）を connectedCallbackPromise に設定する", async () => {
+      const el = makeEl({ target: "self" });
+      document.body.appendChild(el);
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
+
+    it("manual でも connectedCallbackPromise は即時解決する（observe は遅延しても readiness は同期）", async () => {
+      const el = makeEl({ target: "self", manual: "" });
+      document.body.appendChild(el);
+      expect(el.observing).toBe(false);
+      await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    });
+
+    it("disconnectedCallback で Core を dispose し、切断後に届いた交差コールバックを無視する", () => {
+      const el = makeEl({ target: "self" });
+      document.body.appendChild(el);
+      expect(el.observing).toBe(true);
+      // 切断前の observer を保持してから remove → dispose で世代を無効化。
+      const stale = ctrl.last;
+      el.remove();
+      expect(el.observing).toBe(false);
+      // 切断後に古い observer が遅れて交差を配信しても状態を変えない（_gen ガード）。
+      stale.emit([
+        { isIntersecting: true, intersectionRatio: 1, time: 0, target: el } as unknown as IntersectionObserverEntry,
+      ]);
+      expect(el.visible).toBe(false);
+      expect(el.intersecting).toBe(false);
     });
   });
 

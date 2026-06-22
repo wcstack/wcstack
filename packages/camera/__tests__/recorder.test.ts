@@ -85,4 +85,11 @@ describe("<wcs-recorder> Shell", () => {
     expect(stream.tracks[0].stopped).toBe(false);
     expect(el.recording).toBe(false);
   });
+
+  it("SSR: hasConnectedCallbackPromise=true で connectedCallbackPromise が connect で解決する", async () => {
+    expect(WcsRecorder.hasConnectedCallbackPromise).toBe(true);
+    const el = mount(`<wcs-recorder></wcs-recorder>`);
+    // connectedCallback が _core.observe() を connectedCallbackPromise に格納する。
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+  });
 });

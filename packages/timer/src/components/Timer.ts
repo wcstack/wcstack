@@ -4,7 +4,7 @@ import { TimerCore } from "../core/TimerCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 export class Timer extends HTMLElement {
-  static hasConnectedCallbackPromise = false;
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...TimerCore.wcBindable,
     properties: [
@@ -30,10 +30,19 @@ export class Timer extends HTMLElement {
 
   private _core: TimerCore;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new TimerCore(this);
+  }
+
+  // SSR (§4.1/§4.4): the Shell exposes the Core's readiness so a server-side
+  // renderer can await the connect-time probe before snapshotting. The timer has
+  // no async probe (observe() resolves immediately), but the contract is uniform
+  // across IO nodes.
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -199,12 +208,17 @@ export class Timer extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
+    // Establish monitoring (§3.5). observe() is a no-op that resolves once ready;
+    // expose it as connectedCallbackPromise for SSR.
+    this._connectedCallbackPromise = this._core.observe();
     if (!this.manual) {
       this.start();
     }
   }
 
   disconnectedCallback(): void {
-    this._core.stop();
+    // dispose() stops the timer and bumps the generation so a callback already
+    // queued cannot fire onto a disconnected element (§3.5 / §4.4).
+    this._core.dispose();
   }
 }

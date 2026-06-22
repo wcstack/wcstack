@@ -99,11 +99,18 @@ describe("WebSocketCore", () => {
   });
 
   describe("connect", () => {
-    it("url未指定時にエラーをスローする", () => {
+    it("url未指定時は例外をスローせず error プロパティに流す", () => {
       const core = new WebSocketCore();
-      expect(() => core.connect("")).toThrow(
-        "[@wcstack/websocket] url is required."
-      );
+      const errors: any[] = [];
+      core.addEventListener("wcs-ws:error", (e) => {
+        errors.push((e as CustomEvent).detail);
+      });
+
+      expect(() => core.connect("")).not.toThrow();
+      expect(core.error).toEqual({ message: "url is required." });
+      expect(errors).toEqual([{ message: "url is required." }]);
+      // 接続は開始されない
+      expect(MockWebSocket.instances).toHaveLength(0);
     });
 
     it("WebSocket接続を開始する", () => {
@@ -245,11 +252,25 @@ describe("WebSocketCore", () => {
       expect(MockWebSocket.instances[0].send).toHaveBeenCalledWith("hello");
     });
 
-    it("未接続時にエラーをスローする", () => {
+    it("未接続時は例外をスローせず error プロパティに流す", () => {
       const core = new WebSocketCore();
-      expect(() => core.send("hello")).toThrow(
-        "[@wcstack/websocket] WebSocket is not connected."
-      );
+      const errors: any[] = [];
+      core.addEventListener("wcs-ws:error", (e) => {
+        errors.push((e as CustomEvent).detail);
+      });
+
+      expect(() => core.send("hello")).not.toThrow();
+      expect(core.error).toEqual({ message: "WebSocket is not connected." });
+      expect(errors).toEqual([{ message: "WebSocket is not connected." }]);
+    });
+
+    it("OPEN以外のreadyState（CONNECTING）でも送信せず error に流す", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      // simulateOpen を呼ばないため readyState は CONNECTING のまま
+      core.send("hello");
+      expect(MockWebSocket.instances[0].send).not.toHaveBeenCalled();
+      expect(core.error).toEqual({ message: "WebSocket is not connected." });
     });
   });
 
@@ -558,6 +579,122 @@ describe("WebSocketCore", () => {
 
       vi.advanceTimersByTime(100);
       expect(MockWebSocket.instances).toHaveLength(2);
+      vi.useRealTimers();
+    });
+  });
+
+  describe("ライフサイクル (ready/observe/dispose)", () => {
+    it("ready は即座に解決する Promise を返す", async () => {
+      const core = new WebSocketCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe は ready と同じ Promise を返す（no-op）", () => {
+      const core = new WebSocketCore();
+      expect(core.observe()).toBe(core.ready);
+    });
+
+    it("dispose は接続を閉じる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      core.dispose();
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
+    });
+
+    it("dispose 後に発火した open イベントは状態を書き換えない（_gen ガード）", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+
+      // dispose() は _gen を bump し close() する。close() はリスナを除去しないため、
+      // 以降に古いソケットへ発火したイベントはハンドラに届くが stale gen で握り潰される。
+      core.dispose();
+      ws.simulateOpen();
+      expect(core.connected).toBe(false);
+    });
+
+    it("dispose 後に発火した message イベントは message を書き換えない（_gen ガード）", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      core.dispose();
+      ws.simulateMessage("late");
+      expect(core.message).toBeNull();
+    });
+
+    it("dispose 後に発火した error イベントは error を書き換えない（_gen ガード）", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      core.dispose();
+      const errorBefore = core.error;
+      ws.simulateError();
+      expect(core.error).toBe(errorBefore);
+    });
+
+    it("dispose 後に発火した close イベントは状態を書き換えず再接続もしない（_gen ガード）", () => {
+      vi.useFakeTimers();
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080", {
+        autoReconnect: true,
+        reconnectInterval: 1000,
+      });
+      const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
+      expect(core.connected).toBe(true);
+
+      // dispose() は _gen を bump し close() する。mock の close() は close イベントを
+      // 発火しないため connected/readyState はこの時点で OPEN のまま残る。close はリスナを
+      // 除去しないので、ブラウザが後から close を返すケースを simulateClose で再現できる。
+      core.dispose();
+      expect(core.connected).toBe(true);
+      expect(core.readyState).toBe(WebSocket.OPEN);
+
+      ws.simulateClose(1006);
+      vi.advanceTimersByTime(1000);
+      // stale gen のため _onClose は早期 return し、状態も再接続も変わらない
+      expect(core.connected).toBe(true);
+      expect(core.readyState).toBe(WebSocket.OPEN);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
+    it("dispose で再接続タイマーがクリアされ再接続しない", () => {
+      vi.useFakeTimers();
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080", {
+        autoReconnect: true,
+        reconnectInterval: 1000,
+      });
+      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0].simulateClose(1006);
+
+      // 再接続タイマーが設定されている状態で dispose
+      core.dispose();
+
+      vi.advanceTimersByTime(1000);
+      // dispose() が close() 経由でタイマーをクリアするため再接続は発火しない
+      expect(MockWebSocket.instances).toHaveLength(1);
+      vi.useRealTimers();
+    });
+
+    it("世代が古くなった再接続タイマーは発火しても再接続しない", () => {
+      vi.useFakeTimers();
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080", {
+        autoReconnect: true,
+        reconnectInterval: 1000,
+      });
+      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0].simulateClose(1006);
+
+      // タイマー本体（gen ガード分岐）を踏むため、タイマーをクリアせずに
+      // gen だけを進める（dispose/connect はタイマーをクリアしてしまうため直接操作）
+      (core as any)._gen++;
+
+      vi.advanceTimersByTime(1000);
+      // 捕捉した gen が stale になり、タイマーコールバックは再接続せず return する
+      expect(MockWebSocket.instances).toHaveLength(1);
       vi.useRealTimers();
     });
   });

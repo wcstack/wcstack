@@ -59,6 +59,9 @@ export class DebounceCore extends EventTarget {
   private _lastCallTime: number | undefined = undefined;
   private _lastInvokeTime: number = 0;
   private _timerId: ReturnType<typeof setTimeout> | null = null;
+  // Generation stamped onto the live timer at arm time, compared in
+  // `_timerExpired` against `_gen` to drop callbacks that outlived a dispose().
+  private _timerGen: number = 0;
 
   // Last-wins pending payload. `_pendingKind === null` doubles as the "consumed /
   // empty" sentinel (lodash clears `lastArgs` in invokeFunc): a trailing edge with
@@ -73,6 +76,16 @@ export class DebounceCore extends EventTarget {
   private _lastArgs: any[] = [];
   private _pending: boolean = false;
 
+  // Generation guard (§3.4): bumped on dispose() so a timer that survives a
+  // tear-down can no longer settle into a detached element. A pending timer is
+  // also cleared by dispose() → cancel(), so the guard is defensive: it stops
+  // any callback that has already been dequeued by the host event loop from
+  // writing state after dispose().
+  private _gen = 0;
+  // SSR (§3.8): the debounce engine is purely timer-driven with no asynchronous
+  // probe to await, so readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(prefix: string = "wcs-debounce", target?: EventTarget, options?: DebounceOptions) {
     super();
     this._prefix = prefix;
@@ -80,6 +93,26 @@ export class DebounceCore extends EventTarget {
     if (options) {
       this.configure(options);
     }
+  }
+
+  // --- Lifecycle (§3.5 / §3.8) ---
+
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Debounce is command-driven (setSource / trigger schedule work on demand)
+  // with no subscription to establish, so observe() is an idempotent no-op that
+  // resolves once ready.
+  observe(): Promise<void> {
+    return this._ready;
+  }
+
+  // Tear down the pending timer and invalidate the generation so a stale timer
+  // callback cannot fire after the element is detached.
+  dispose(): void {
+    this._gen++;
+    this.cancel();
   }
 
   // --- Configuration ---
@@ -192,13 +225,13 @@ export class DebounceCore extends EventTarget {
         // same) — overwriting `_timerId` without clearing would orphan the old
         // timer and let it fire spuriously later.
         this._clearTimer();
-        this._timerId = setTimeout(this._timerExpired, this._wait);
+        this._armTimer(this._wait);
         this._invoke(now);
         return;
       }
     }
     if (this._timerId === null) {
-      this._timerId = setTimeout(this._timerExpired, this._wait);
+      this._armTimer(this._wait);
     }
   }
 
@@ -223,6 +256,10 @@ export class DebounceCore extends EventTarget {
   }
 
   private _timerExpired = (): void => {
+    // §3.4 generation guard: a timer dequeued by the host before dispose() could
+    // clear it must not settle into a torn-down element. Capture the generation
+    // when the timer is scheduled (via `_armTimer`) and bail if it is stale.
+    if (this._timerGen !== this._gen) return;
     const now = Date.now();
     if (this._shouldInvoke(now)) {
       this._trailingEdge(now);
@@ -230,12 +267,12 @@ export class DebounceCore extends EventTarget {
     }
     // Fired before the quiet period elapsed (a later call moved the deadline) —
     // re-arm for the remaining time instead of settling now.
-    this._timerId = setTimeout(this._timerExpired, this._remainingWait(now));
+    this._armTimer(this._remainingWait(now));
   };
 
   private _leadingEdge(now: number): void {
     this._lastInvokeTime = now;
-    this._timerId = setTimeout(this._timerExpired, this._wait);
+    this._armTimer(this._wait);
     if (this._leading) {
       this._invoke(now);
     }
@@ -277,6 +314,13 @@ export class DebounceCore extends EventTarget {
 
   private _dispatch(type: string, detail: any): void {
     this._target.dispatchEvent(new CustomEvent(type, { detail, bubbles: true }));
+  }
+
+  // Arm the settle timer, stamping the current generation so a callback that the
+  // host dequeues after a dispose() can detect it is stale (§3.4).
+  private _armTimer(delay: number): void {
+    this._timerGen = this._gen;
+    this._timerId = setTimeout(this._timerExpired, delay);
   }
 
   private _clearTimer(): void {

@@ -93,12 +93,32 @@ export class ClipboardCore extends EventTarget {
   // way to neutralize an in-flight op.
   private _acqGen: number = 0;
 
+  // SSR (§3.8): resolves once the first permission probe settles, so the state
+  // binder can await a real snapshot before reading. Set by _initPermissions();
+  // Promise.resolve() when the Permissions API is unsupported (no async probe).
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
     // Probe the permission states up front so observers see the real values
     // before the first read, then keep them live.
     this._initPermissions();
+  }
+
+  // SSR (§3.8): the first permission probe's settle promise.
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Lifecycle (§3.5). Clipboard reads/writes are command-driven (they need a
+  // user gesture), so observe() establishes no acquisition; it only (re)subscribes
+  // to permission `change` events — idempotent while a subscription is live, and
+  // reviving it after a dispose() (reconnect/reparent). Returns ready so the Shell
+  // can expose it as connectedCallbackPromise.
+  observe(): Promise<void> {
+    this.reinitPermission();
+    return this._ready;
   }
 
   get text(): string | null {
@@ -289,6 +309,9 @@ export class ClipboardCore extends EventTarget {
   startMonitor(): void {
     if (this._monitoring) return;
     this._setMonitoring(true);
+    // §4 deviation: document-scoped Web API; no element-free alternative.
+    // copy/cut/paste fire on `document`, so monitoring necessarily listens there
+    // rather than on a Core-owned element. Registered as an allowed deviation.
     document.addEventListener("copy", this._onCopy);
     document.addEventListener("cut", this._onCut);
     document.addEventListener("paste", this._onPaste);
@@ -409,12 +432,14 @@ export class ClipboardCore extends EventTarget {
   };
 
   private _removeMonitorListeners(): void {
+    // §4 deviation: document-scoped Web API; no element-free alternative.
     document.removeEventListener("copy", this._onCopy);
     document.removeEventListener("cut", this._onCut);
     document.removeEventListener("paste", this._onPaste);
   }
 
   private _selectionText(): string {
+    // §4 deviation: document-scoped Web API; no element-free alternative.
     const selection = document.getSelection();
     return selection ? selection.toString() : "";
   }
@@ -433,22 +458,26 @@ export class ClipboardCore extends EventTarget {
     if (typeof navigator === "undefined" || !navigator.permissions || typeof navigator.permissions.query !== "function") {
       this._setReadPermission("unsupported");
       this._setWritePermission("unsupported");
+      // No async probe: readiness is immediate (§3.8).
+      this._ready = Promise.resolve();
       return;
     }
     this._permissionSubscribed = true;
     const gen = ++this._permGen;
-    this._queryPermission(
+    const readProbe = this._queryPermission(
       "clipboard-read", gen,
       (s) => { this._readStatus = s; },
       (state) => this._setReadPermission(state),
       this._onReadChange,
     );
-    this._queryPermission(
+    const writeProbe = this._queryPermission(
       "clipboard-write", gen,
       (s) => { this._writeStatus = s; },
       (state) => this._setWritePermission(state),
       this._onWriteChange,
     );
+    // SSR (§3.8): ready resolves once both initial permission probes settle.
+    this._ready = Promise.all([readProbe, writeProbe]).then(() => undefined);
   }
 
   private _queryPermission(
@@ -457,8 +486,8 @@ export class ClipboardCore extends EventTarget {
     assignStatus: (status: PermissionStatus) => void,
     setState: (state: ClipboardPermissionState) => void,
     onChange: (event: Event) => void,
-  ): void {
-    navigator.permissions.query({ name: name as PermissionName }).then(
+  ): Promise<void> {
+    return navigator.permissions.query({ name: name as PermissionName }).then(
       (status) => {
         // Stale resolution: this query was superseded (rapid reconnect) or the
         // element was disposed while it was in flight. Drop it so only the

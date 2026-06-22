@@ -25,7 +25,7 @@ const BOX_VALUES: ReadonlyArray<ResizeBoxOption> = ["content-box", "border-box",
  * the `<wcs-resize>` host itself except in the `self` form.
  */
 export class WcsResize extends HTMLElement {
-  static hasConnectedCallbackPromise = false;
+  static hasConnectedCallbackPromise = true;
   // Only attributes that change *what or how* we observe trigger a re-observe.
   // `once` is intentionally excluded: it is evaluated at change fire time (in
   // `_onChange`), so toggling it takes effect without re-observing — and a
@@ -62,10 +62,18 @@ export class WcsResize extends HTMLElement {
 
   private _core: ResizeCore;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new ResizeCore(this);
+  }
+
+  // SSR: the state binder awaits this before snapshotting. Backed by the Core's
+  // synchronous `ready` (resize delivers the initial size synchronously, so it is
+  // already resolved); exposed for uniformity with the other @wcstack IO nodes.
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -281,11 +289,15 @@ export class WcsResize extends HTMLElement {
     if (!this.manual) {
       this.observe();
     }
+    // SSR: back connectedCallbackPromise with the Core's readiness probe. The
+    // observation itself is started above via the element-observe command; this
+    // captures the (synchronously resolved) ready promise for the state binder.
+    this._connectedCallbackPromise = this._core.observe();
   }
 
   disconnectedCallback(): void {
     this.removeEventListener("wcs-resize:change", this._onChange);
-    this._core.disconnect();
+    this._core.dispose();
   }
 
   attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {

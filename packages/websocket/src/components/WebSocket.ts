@@ -4,7 +4,7 @@ import { WebSocketCore } from "../core/WebSocketCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 export class WcsWebSocket extends HTMLElement {
-  static hasConnectedCallbackPromise = false;
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...WebSocketCore.wcBindable,
     properties: [
@@ -32,10 +32,15 @@ export class WcsWebSocket extends HTMLElement {
 
   private _core: WebSocketCore;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new WebSocketCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -187,12 +192,16 @@ export class WcsWebSocket extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
+    // observe() は command-driven node では ready を返す no-op（§3.5）。SSR は
+    // connectedCallbackPromise を await して初期スナップショットを取れる。
+    this._connectedCallbackPromise = this._core.observe();
     if (!this.manual && this.url) {
       this.connect();
     }
   }
 
   disconnectedCallback(): void {
-    this._core.close();
+    // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。
+    this._core.dispose();
   }
 }

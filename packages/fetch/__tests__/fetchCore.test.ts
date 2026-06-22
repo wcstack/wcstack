@@ -302,9 +302,91 @@ describe("FetchCore", () => {
     expect(responses).toEqual([{ status: 0, value: null }]);
   });
 
-  it("url未指定時にエラーをスローする", async () => {
+  it("url未指定時はerrorに流しnullを返す（never-throw）", async () => {
     const core = new FetchCore();
-    await expect(core.fetch("")).rejects.toThrow("[@wcstack/fetch] url attribute is required.");
+    const result = await core.fetch("");
+    expect(result).toBeNull();
+    expect(core.error).toEqual({ message: "url attribute is required." });
+    // fetch は実行されない
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("ready は解決済み Promise を返す", async () => {
+    const core = new FetchCore();
+    await expect(core.ready).resolves.toBeUndefined();
+  });
+
+  it("observe() は ready を返し、冪等に再呼び出しできる", async () => {
+    const core = new FetchCore();
+    await expect(core.observe()).resolves.toBeUndefined();
+    await expect(core.observe()).resolves.toBeUndefined();
+  });
+
+  it("dispose() は進行中のリクエストを abort する", async () => {
+    const aborted: boolean[] = [];
+    fetchSpy.mockImplementationOnce((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        (init as RequestInit).signal?.addEventListener("abort", () => {
+          aborted.push(true);
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    const core = new FetchCore();
+    const promise = core.fetch("/api/slow");
+    core.dispose();
+
+    const result = await promise;
+    expect(result).toBeNull();
+    expect(aborted).toEqual([true]);
+  });
+
+  it("dispose 後に resolve した stale レスポンスは状態を書かない（_gen ガード）", async () => {
+    // dispose() が in-flight 中に _gen を進めるため、その後に fetch が成功で
+    // resolve しても value/status/loading を書き換えないことを確認する。
+    let resolveFetch!: (r: Response) => void;
+    fetchSpy.mockImplementationOnce(() => {
+      return new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      });
+    });
+
+    const core = new FetchCore();
+    const promise = core.fetch("/api/slow");
+    expect(core.loading).toBe(true);
+
+    core.dispose(); // _gen を進める
+    // dispose 後にレスポンスが届く
+    resolveFetch(createMockResponse({ data: "stale" }, { status: 200 }));
+
+    const result = await promise;
+    expect(result).toBeNull();
+    // stale なので value/status は初期値のまま
+    expect(core.value).toBeNull();
+    expect(core.status).toBe(0);
+  });
+
+  it("dispose 後に reject した stale エラーは状態を書かない（_gen ガード/catch）", async () => {
+    // AbortError 以外の例外（response.json() 中の reject 等）が dispose 後に
+    // 起きても、stale 世代なので error を書かないことを確認する。
+    let rejectFetch!: (e: any) => void;
+    fetchSpy.mockImplementationOnce(() => {
+      return new Promise<Response>((_resolve, reject) => {
+        rejectFetch = reject;
+      });
+    });
+
+    const core = new FetchCore();
+    const promise = core.fetch("/api/slow");
+
+    core.dispose(); // _gen を進める
+    rejectFetch(new TypeError("Failed to fetch")); // AbortError ではない
+
+    const result = await promise;
+    expect(result).toBeNull();
+    // stale なので error は書かれない（dispose 後の initial 値のまま null）
+    expect(core.error).toBeNull();
   });
 
   it("abort()で進行中のリクエストをキャンセルできる", async () => {

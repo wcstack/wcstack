@@ -115,6 +115,12 @@ export class ListenCore extends EventTarget {
   private _permissionSubscribed: boolean = false;
   private _permGen: number = 0;
 
+  // SSR: feature detection (`_setUnsupported`) is synchronous and the permission
+  // `change` subscription is established eagerly in the constructor, so there is
+  // no asynchronous probe to await before snapshotting — readiness is immediate.
+  // The Shell exposes this as connectedCallbackPromise.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
@@ -156,6 +162,11 @@ export class ListenCore extends EventTarget {
   // lifetime of a document, so there's nothing to re-check.
   get unsupported(): boolean {
     return this._unsupported;
+  }
+
+  /** Resolves once the first probe settles (immediate — see `_ready`). */
+  get ready(): Promise<void> {
+    return this._ready;
   }
 
   // --- State setters with event dispatch ---
@@ -259,6 +270,19 @@ export class ListenCore extends EventTarget {
     if (!this._permissionSubscribed) {
       this._initPermission();
     }
+  }
+
+  /**
+   * Establish monitoring (§3.5). Recognition is command-driven (start/stop), so
+   * observe() only (re-)establishes the live permission subscription — idempotent
+   * via reinitPermission()'s `_permissionSubscribed` guard, so the first connect
+   * after construction does not double-subscribe while a reconnect after dispose()
+   * does. Returns the `ready` promise for SSR. Call from the Shell's
+   * connectedCallback.
+   */
+  observe(): Promise<void> {
+    this.reinitPermission();
+    return this._ready;
   }
 
   /**

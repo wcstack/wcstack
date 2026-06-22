@@ -2,10 +2,10 @@ import { IWcBindable, WcsSseMessage } from "../types.js";
 import { SseCore } from "../core/SseCore.js";
 
 export class WcsSse extends HTMLElement {
-  // wc-bindable アダプタが読む外部契約フラグ。EventSource 接続は connectedCallback で
-  // 同期的に開く（非同期初期化が無い）ため connectedCallbackPromise は不要 ＝ false。
-  // <wcs-ws> / <wcs-broadcast> と揃える。
-  static hasConnectedCallbackPromise = false;
+  // SSR (§4.1/§4.4): wc-bindable アダプタはこのフラグを見て connectedCallbackPromise を
+  // 待ってからスナップショットを取る。SSE には同期接続しか無いが、骨格を全 IO ノードで
+  // 揃えるため observe() の戻り（即解決）を connectedCallbackPromise として公開する。
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...SseCore.wcBindable,
     properties: [
@@ -31,10 +31,15 @@ export class WcsSse extends HTMLElement {
 
   private _core: SseCore;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new SseCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -179,12 +184,17 @@ export class WcsSse extends HTMLElement {
 
   connectedCallback(): void {
     this.style.display = "none";
+    // §4.4: observe() の戻り（即解決の ready）を connectedCallbackPromise として保持。
+    // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は下の
+    // connect() が行う（観測 surface の確立だけを SSR 契約として公開する）。
+    this._connectedCallbackPromise = this._core.observe();
     if (!this.manual && this.url) {
       this.connect();
     }
   }
 
   disconnectedCallback(): void {
-    this._core.close();
+    // §3.5/§4.4: dispose() は _gen を進めて進行中リスナを無効化しつつ接続を閉じる。
+    this._core.dispose();
   }
 }

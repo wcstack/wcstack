@@ -8,23 +8,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**wcstack** (Web Components Stack) is a monorepo of three TypeScript packages for building Web Components-based SPAs. The design philosophy is standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, and buildless with zero runtime dependencies.
+**wcstack** (Web Components Stack) is a monorepo of focused TypeScript packages for building Web Components-based SPAs. The design philosophy is standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, buildless, with zero runtime dependencies. Each package is a self-contained custom element (or core utility) that can be dropped onto a page via CDN/Import Map and composed like LEGO bricks.
 
 ## Monorepo Structure
 
-Each package lives under `packages/` and is independently built, tested, and published:
+Each package lives under `packages/` and is independently built, tested, versioned, and published. There is no root-level `package.json` or workspace orchestration — every package is managed on its own. All published packages currently share the same version (kept aligned on release).
 
-- **`@wcstack/autoloader`** — Automatically detects and dynamically imports undefined custom elements by scanning the DOM and Import Map entries with `@components/` prefixes. Uses MutationObserver for dynamically-added elements.
-- **`@wcstack/router`** — Declarative SPA routing via `<wcs-router>`, `<wcs-route>`, `<wcs-layout>` custom elements. Built on the Navigation API (popstate fallback). Supports typed path parameters (`:id(int)`, `:slug(slug)`, etc.), layout nesting, head management (`<wcs-head>`), and route guards.
-- **`@wcstack/state`** — Reactive state management with declarative data binding via `<wcs-state>` and `data-wcs` attributes. Features reactive proxy, computed properties, list rendering with diffing, conditional rendering, wildcard paths, and a filter pipeline.
+**Core / framework packages:**
+- **`@wcstack/state`** (`<wcs-state>`) — Reactive state management with declarative data binding via `data-wcs` attributes. Reactive proxy, computed properties, list rendering with diffing, conditional rendering, wildcard paths, filter pipeline.
+- **`@wcstack/router`** (`<wcs-router>`, `<wcs-route>`, `<wcs-layout>`) — Declarative SPA routing on the Navigation API (popstate fallback). Typed path params (`:id(int)`, `:slug(slug)`), nested layouts, head management (`<wcs-head>`), route guards, basename support.
+- **`@wcstack/autoloader`** — Auto-detects and dynamically imports undefined custom elements by scanning the DOM and Import Map entries with `@components/` prefixes. Uses MutationObserver for dynamically-added elements.
+- **`@wcstack/signals`** — Signals-based lightweight reactive core (an alternative to `state`, not a replacement) with async-IO resource adapters and a `wc-bindable` → signal bridge.
+
+**I/O node components** — declarative wrappers over a Web platform API, exposed via the `wc-bindable-protocol` so they interoperate with `state`/`signals`:
+- **`@wcstack/fetch`** (`<wcs-fetch>`) — Async data fetching
+- **`@wcstack/storage`** (`<wcs-storage>`) — localStorage / sessionStorage binding
+- **`@wcstack/upload`** (`<wcs-upload>`) — File upload with progress
+- **`@wcstack/websocket`** (`<wcs-websocket>`) — Real-time WebSocket comms
+- **`@wcstack/sse`** (`<wcs-sse>`) — Server-Sent Events (EventSource, one-way streaming)
+- **`@wcstack/broadcast`** (`<wcs-broadcast>`) — Cross-tab messaging (BroadcastChannel)
+- **`@wcstack/worker`** (`<wcs-worker>`) — Dedicated Web Worker primitive
+- **`@wcstack/timer`** (`<wcs-timer>`) — Interval / timeout primitive
+- **`@wcstack/debounce`** (`<wcs-debounce>`, `<wcs-throttle>`) — Signal coalescing
+- **`@wcstack/clipboard`** (`<wcs-clipboard>`) — Clipboard read / write
+- **`@wcstack/geolocation`** (`<wcs-geo>`) — Geolocation API
+- **`@wcstack/permission`** (`<wcs-permission>`) — Permissions API monitor
+- **`@wcstack/notification`** (`<wcs-notify>`) — Desktop notifications (Service Worker support)
+- **`@wcstack/intersection`** (`<wcs-intersect>`) — IntersectionObserver visibility
+- **`@wcstack/resize`** (`<wcs-resize>`) — ResizeObserver element-size
+- **`@wcstack/wakelock`** (`<wcs-wakelock>`) — Screen Wake Lock
+- **`@wcstack/camera`** (`<wcs-camera>`, `<wcs-recorder>`) — Camera capture + media recording (binds live `MediaStream` handles directly to elements, never through serializable state)
+- **`@wcstack/speech`** (`<wcs-speak>`, `<wcs-listen>`) — SpeechSynthesis (TTS) + SpeechRecognition (STT)
+- **`@wcstack/defined`** (`<wcs-defined>`) — Custom-element readiness gate (`customElements.whenDefined` with timeout-based load-failure detection)
+
+**Other packages:**
+- **`@wcstack/server`** — Server-side rendering for wcstack components.
+- **`packages/vscode-wcs`** (`wcstack-intellisense`) — VSCode extension providing TypeScript language features for `<wcs-state>` inline scripts in HTML. Versioned independently from the published npm packages.
 
 ## Build & Development Commands
 
-All commands run from within a specific package directory (e.g., `packages/autoloader/`):
+All commands run from within a specific package directory (e.g., `packages/state/`):
 
 ```bash
 npm run build            # Clean dist, compile TypeScript, bundle with Rollup
-npm run clean            # Remove dist/
+npm run clean            # Remove dist/ (where defined)
 npm test                 # Run tests once (vitest run)
 npm run test:watch       # Run tests in watch mode
 npm run test:coverage    # Run tests with coverage (enforces thresholds)
@@ -36,25 +63,23 @@ To run a single test file:
 npx vitest run __tests__/someFile.test.ts
 ```
 
-There is no root-level package.json or workspace orchestration — each package is managed independently.
-
 ## Build Pipeline
 
-Each package follows the same build flow: `rimraf dist` → `tsc` → `rollup -c`
+Each package follows the same build flow: `rimraf dist .tsc-out` → `tsc` → `rollup -c`
 
 Rollup produces three outputs from `src/exports.ts`:
 - `dist/index.esm.js` — ESM bundle
 - `dist/index.esm.min.js` — Minified ESM bundle (via Terser)
 - `dist/index.d.ts` — Bundled type declarations (via rollup-plugin-dts)
 
-The autoloader and router also copy pre-built bootstrap scripts from `src/auto/` to `dist/`.
+Most packages also ship a pre-built bootstrap pair (`src/auto/auto.js` and `auto.min.js`) that a Rollup `copy-auto` plugin copies into `dist/` during the build. These let a page activate the component with a single `<script>` tag (no manual registration).
 
 ## Testing
 
 - **Framework:** Vitest with happy-dom environment
 - **Test location:** `__tests__/` directory in each package, pattern `*.{test,spec}.ts`
 - **Setup file:** `__tests__/setup.ts` per package
-- **Coverage thresholds:** 100% statements, 97% branches, 100% functions, 100% lines
+- **Coverage thresholds:** roughly 100% statements / functions / lines and ~97%+ branches (each package configures its own; treat 100/97/100/100 as the baseline target)
 - Test descriptions are written in Japanese
 
 ## Linting
@@ -70,6 +95,22 @@ ESLint flat config format. Notable rules:
 Root `tsconfig.json` sets ESNext target/module with bundler module resolution, strict mode, and DOM lib types. Each package extends this and sets its own `outDir`/`rootDir`.
 
 ## Architecture Notes
+
+### Core interop protocols
+
+These protocols are how `state`/`signals` talk to I/O node components, and how custom tags bind to one another. They are the heart of the project — read the per-package `SPEC.md`/`README.md` and `docs/` before changing them.
+
+- **`wc-bindable-protocol`** — A component declares its bindable surface with `static wcBindable`, exposing `properties` (two-way bindable), `event`, and `getter`. This lets `data-wcs` (and signals' `bindNode`) wire DOM elements together without per-element glue. I/O node components implement this so they interoperate with `state`.
+- **`command-token` protocol** — `state → element` imperative command invocation: `$commandTokens` / `$command.<name>` / `command.<method>:`. Positional arguments are passed through verbatim (`Token.emit` → `Reflect.apply`); the runtime does not `await` them.
+- **`event-token` protocol** — the dual of command-token: `element → state` event dispatch. `$eventTokens` / `eventToken.<prop>: <name>` / `$on`. Keys are `wcBindable` property names.
+
+### Component package layout (I/O node pattern)
+
+Each I/O node component splits into two layers:
+- **Core** (`XxxCore.ts`, often under `core/`) — framework-agnostic logic over the platform API. Holds state, exposes `commands`, emits events. Testable without the DOM custom element.
+- **Shell** (`WcsXxx.ts` / `WcsXxxShell.ts`, often under `shell/`) — the actual custom element (`HTMLElement` subclass) that wraps Core, handles attributes/lifecycle, and declares `static wcBindable`. The Shell class is exported so adopters can subclass it.
+
+`exports.ts` is the Rollup entry; `src/auto/` holds the single-tag bootstrap.
 
 ### Autoloader Flow
 1. Parses the page's Import Map for `@components/` namespace entries
@@ -87,13 +128,23 @@ Root `tsconfig.json` sets ESNext target/module with bundler module resolution, s
 - Supports basename for sub-directory deployment
 
 ### State Reactive System
-- `State.ts` initializes state from inline JSON, `<script>` tags, or external files
+- `defineState.ts` / `bootstrapState.ts` initialize state from inline JSON, `<script>` tags, or external files
 - `proxy/` implements a reactive proxy that tracks property access and mutations
 - `binding/` handles the binding lifecycle; `bindings/` has specific handlers (value, text, html, class, style, attribute, etc.)
 - `structural/` manages `<template>` conditional and list rendering
 - `list/` provides array diffing for efficient DOM updates
-- `filters/` provides value transformation pipeline
+- `filters/` provides the value transformation pipeline
+- `command/`, `event/`, `token/`, `protocol/` implement the command-token / event-token / wc-bindable interop
 - Binding syntax: `[property][#modifier]: [path][@state][|(filter | filter(args))...]`
+
+## Examples
+
+- Root `examples/` holds cross-package demo apps (e.g. `camera-upload`, `notification-chat`, `speech-echo`, `wcs-state-todo`, `wcs-storage-broadcast`).
+- Some packages keep their own `examples/` (e.g. `fetch`, `state`) for focused, single-package demos.
+
+## Docs & Design Notes
+
+`docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `SPEC.md`/`README.md` (in ja/en) are the normative references for that package.
 
 ## Module System
 

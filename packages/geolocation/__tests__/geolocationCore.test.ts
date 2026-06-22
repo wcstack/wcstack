@@ -556,6 +556,57 @@ describe("GeolocationCore", () => {
     expect(lats).toEqual([99]);
   });
 
+  it("ready は最初の permission プローブが settle すると解決する（API 対応時）", async () => {
+    removeGeolocation();
+    installPermissions({ state: "granted" });
+    const core = new GeolocationCore();
+    // ready は query の解決を待つ promise。解決後には permission が確定している。
+    await expect(core.ready).resolves.toBeUndefined();
+    expect(core.permission).toBe("granted");
+  });
+
+  it("Permissions API 非対応なら ready は即解決する", async () => {
+    removeGeolocation();
+    removePermissions();
+    const core = new GeolocationCore();
+    // 非同期プローブが無いので ready は解決済み Promise（Promise.resolve()）。
+    await expect(core.ready).resolves.toBeUndefined();
+    expect(core.permission).toBe("unsupported");
+  });
+
+  it("observe は ready を返し、購読が生きている間は冪等（二重購読しない）", async () => {
+    removeGeolocation();
+    const status = installPermissions({ state: "prompt" });
+    const core = new GeolocationCore();
+    await flush();
+
+    const states: string[] = [];
+    core.addEventListener("wcs-geo:permission-changed", (e) => states.push((e as CustomEvent).detail));
+
+    // 既に購読済み → no-op（二重購読しない）。ready を返す。
+    await expect(core.observe()).resolves.toBeUndefined();
+    await expect(core.observe()).resolves.toBeUndefined();
+
+    status.change("denied");
+    // 二重購読なら denied が複数回流れる。単一購読なので1回。
+    expect(states).toEqual(["denied"]);
+  });
+
+  it("observe は dispose 後に change 購読を張り直す（再接続相当）", async () => {
+    removeGeolocation();
+    const status = installPermissions({ state: "prompt" });
+    const core = new GeolocationCore();
+    await flush();
+    expect(core.permission).toBe("prompt");
+
+    core.dispose();
+    await expect(core.observe()).resolves.toBeUndefined(); // 再接続: 購読を張り直す
+    await flush();
+
+    status.change("granted");
+    expect(core.permission).toBe("granted");
+  });
+
   it("wcBindable に位置系プロパティとコマンドが宣言されている", () => {
     const props = GeolocationCore.wcBindable.properties.map((p) => p.name);
     expect(props).toEqual([

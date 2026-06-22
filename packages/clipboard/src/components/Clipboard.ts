@@ -10,6 +10,7 @@ import { registerAutoTrigger } from "../autoTrigger.js";
 // DOM `Clipboard` interface (the type of `navigator.clipboard`), matching the
 // <wcs-geo> WcsGeolocation / <wcs-ws> WcsWebSocket convention.
 export class WcsClipboard extends HTMLElement {
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...ClipboardCore.wcBindable,
     // Shell-level settable surface. `monitor` mirrors its boolean attribute
@@ -29,10 +30,17 @@ export class WcsClipboard extends HTMLElement {
   };
 
   private _core: ClipboardCore;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new ClipboardCore(this);
+  }
+
+  // SSR (§4.4): the state binder awaits this before snapshotting, so the first
+  // permission probe has settled. Backed by _core.observe() (see connectedCallback).
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -131,10 +139,10 @@ export class WcsClipboard extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
-    // Revive permission tracking after a reconnect (reparenting). No-op on the
-    // first connect since the constructor already subscribed; only re-subscribes
-    // when disconnectedCallback's dispose() tore the subscription down.
-    this._core.reinitPermission();
+    // observe() revives permission tracking after a reconnect (reparenting) —
+    // a no-op on the first connect since the constructor already subscribed — and
+    // returns the readiness promise exposed as connectedCallbackPromise (§4.4).
+    this._connectedCallbackPromise = this._core.observe();
     // Unlike <wcs-geo>, there is no connect-time acquisition: reads require a
     // user gesture, so the only connect-time action is optional monitoring.
     if (this.monitor) {

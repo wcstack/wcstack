@@ -390,6 +390,80 @@ describe("TimerCore", () => {
     expect(detail).toEqual([{ count: 1, elapsed: 1000 }]);
   });
 
+  it("ready は即座に解決する Promise を返す (SSR §3.8)", async () => {
+    const core = new TimerCore();
+    await expect(core.ready).resolves.toBeUndefined();
+  });
+
+  it("observe は ready と同じ解決済み Promise を返す no-op (§3.5)", async () => {
+    const core = new TimerCore();
+    const p = core.observe();
+    expect(p).toBe(core.ready);
+    await expect(p).resolves.toBeUndefined();
+    // タイマーを起動するわけではない
+    expect(core.running).toBe(false);
+  });
+
+  it("dispose は稼働中のタイマーを停止する (§3.5)", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000 });
+    expect(core.running).toBe(true);
+
+    core.dispose();
+    expect(core.running).toBe(false);
+
+    // 停止後は進まない
+    vi.advanceTimersByTime(5000);
+    expect(core.tick).toBe(0);
+  });
+
+  it("dispose は世代を進め、すでにキューされた interval 発火を握り潰す (§3.4)", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000 });
+
+    // setInterval のコールバックを世代ガード経由で stale 化する。
+    // _clearTimer を無効化して「すでにキューされた発火」を再現する。
+    (core as any)._clearTimer = (): void => { /* タイマーを残したまま */ };
+    core.dispose(); // _gen を進める（_runGen は据え置き）
+
+    // 残ったコールバックが発火しても stale 判定で tick は増えない
+    vi.advanceTimersByTime(3000);
+    expect(core.tick).toBe(0);
+  });
+
+  it("dispose 後に到来する resume 境界コールバックは stale として無視される (§3.4)", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000 });
+    vi.advanceTimersByTime(400);
+    core.pause();
+    core.resume(); // setTimeout(_onResumeBoundary, remainder) をスケジュール
+
+    // _clearTimer を無効化し、dispose 後も境界 setTimeout が残るようにする
+    (core as any)._clearTimer = (): void => { /* タイマーを残したまま */ };
+    core.dispose(); // _gen を進める
+
+    // 残った境界コールバックが発火しても stale 判定で握り潰される
+    vi.advanceTimersByTime(5000);
+    expect(core.tick).toBe(0);
+    expect(core.running).toBe(false);
+  });
+
+  it("dispose 後に observe で再開でき、新しい run は正常に tick する", () => {
+    const core = new TimerCore();
+    core.start({ interval: 1000 });
+    core.dispose();
+
+    // observe は no-op（自動起動しない）
+    core.observe();
+    expect(core.running).toBe(false);
+
+    // 明示 start で新しい世代の run が始まり、正常に動く
+    core.start({ interval: 1000 });
+    vi.advanceTimersByTime(2000);
+    expect(core.tick).toBe(2);
+    expect(core.running).toBe(true);
+  });
+
   it("wcBindable に tick / elapsed / running と各コマンドが宣言されている", () => {
     const props = TimerCore.wcBindable.properties.map((p) => p.name);
     expect(props).toEqual(["tick", "elapsed", "running"]);

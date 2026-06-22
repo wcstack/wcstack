@@ -383,6 +383,36 @@ describe("ListenCore", () => {
     });
   });
 
+  describe("observe / ready（ライフサイクル）", () => {
+    it("ready は解決済み Promise を返す（同期プローブ）", async () => {
+      const core = new ListenCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe() は ready を返し、購読中の再呼び出しは冪等（二重購読しない）", async () => {
+      const status = installPermissions({ state: "granted" });
+      const core = new ListenCore();
+      await flush();
+      await expect(core.observe()).resolves.toBeUndefined();
+      // 冪等: 既に購読中なので再 query は走らず、change が依然反映される。
+      await expect(core.observe()).resolves.toBeUndefined();
+      status.change("denied");
+      expect(core.permission).toBe("denied");
+    });
+
+    it("observe() は dispose 後に購読を復活させる", async () => {
+      const status = installPermissions({ state: "granted" });
+      const core = new ListenCore();
+      await flush();
+      core.dispose();
+      await core.observe(); // 再購読
+      await flush();
+      expect(core.permission).toBe("granted");
+      status.change("denied");
+      expect(core.permission).toBe("denied");
+    });
+  });
+
   describe("dispose", () => {
     it("dispose で recognition を abort し listening をリセットする", () => {
       const core = new ListenCore();

@@ -18,7 +18,10 @@ import { IntersectionCore } from "../core/IntersectionCore.js";
  * only the explicit `target="self"` sentinel takes a box.
  */
 export class WcsIntersect extends HTMLElement {
-  static hasConnectedCallbackPromise = false;
+  // SSR (§4.4): the first observation is established synchronously on connect, but
+  // the Shell still exposes connectedCallbackPromise so the state binder can await
+  // it uniformly across all IO nodes before snapshotting.
+  static hasConnectedCallbackPromise = true;
   // Only attributes that change *what or how* we observe trigger a re-observe.
   // `once` is intentionally excluded: it is evaluated at intersection fire time
   // (in `_onChange`), so toggling it takes effect without re-observing — and a
@@ -53,10 +56,15 @@ export class WcsIntersect extends HTMLElement {
 
   private _core: IntersectionCore;
   private _trigger: boolean = false;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new IntersectionCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -323,11 +331,18 @@ export class WcsIntersect extends HTMLElement {
     if (!this.manual) {
       this.observe();
     }
+    // SSR (§4.4): readiness is synchronous (observation is established above), but
+    // expose the Core's ready promise as connectedCallbackPromise so the state
+    // binder can await it uniformly. `manual` defers observation but readiness is
+    // still immediate.
+    this._connectedCallbackPromise = this._core.ready;
   }
 
   disconnectedCallback(): void {
     this.removeEventListener("wcs-intersect:change", this._onChange);
-    this._core.disconnect();
+    // dispose() tears down the observer AND bumps the Core's generation so any
+    // IntersectionObserver callback still in flight is dropped (§3.4 / §4.1).
+    this._core.dispose();
   }
 
   attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {

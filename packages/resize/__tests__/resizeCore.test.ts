@@ -288,6 +288,46 @@ describe("ResizeCore", () => {
     });
   });
 
+  describe("ライフサイクル（ready / observe() / dispose）", () => {
+    it("ready は解決済み Promise を返す（同期準備）", async () => {
+      const core = new ResizeCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe() を引数なしで呼ぶと no-op で ready を返す（監視は開始しない）", async () => {
+      const core = new ResizeCore();
+      await expect(core.observe()).resolves.toBeUndefined();
+      // 要素を渡していないので observer は生成されない
+      expect(ctrl.instances).toHaveLength(0);
+      expect(core.observing).toBe(false);
+    });
+
+    it("observe(element) は要素監視コマンドに委譲し ready を返す", async () => {
+      const core = new ResizeCore();
+      await expect(core.observe(el)).resolves.toBeUndefined();
+      expect(core.observing).toBe(true);
+      expect(ctrl.last.observed).toContain(el);
+    });
+
+    it("dispose() は監視を停止し observing を false にする（disconnect と同等）", () => {
+      const core = new ResizeCore();
+      core.observe(el);
+      expect(core.observing).toBe(true);
+      core.dispose();
+      expect(core.observing).toBe(false);
+      expect(ctrl.last.disconnected).toBe(true);
+    });
+
+    it("dispose() 後に observe(element) で監視を再開できる", () => {
+      const core = new ResizeCore();
+      core.observe(el);
+      core.dispose();
+      expect(core.observing).toBe(false);
+      core.observe(el);
+      expect(core.observing).toBe(true);
+    });
+  });
+
   describe("dispatch ターゲット", () => {
     it("コンストラクタに渡した target にイベントを発火する", () => {
       const target = new EventTarget();

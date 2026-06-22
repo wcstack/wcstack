@@ -177,6 +177,22 @@ describe("<wcs-wakelock>", () => {
     wl = installWakeLock();
   });
 
+  it("hasConnectedCallbackPromise は true（SSR の await プロトコルに参加する）", () => {
+    expect(WcsWakeLock.hasConnectedCallbackPromise).toBe(true);
+  });
+
+  it("connectedCallbackPromise は接続前は即時 resolve、接続後は observe() を反映する", async () => {
+    const el = make();
+    // 接続前は既定の即時 resolve Promise。
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+
+    document.body.append(el);
+    await flush();
+    // 接続後は Core.observe() の Promise（command-driven sink なので即時 resolve）。
+    expect(el.connectedCallbackPromise).toBe((el as any)["_core"].observe());
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+  });
+
   it("wcBindable に held/error プロパティと request/release コマンドを宣言する", () => {
     const names = WcsWakeLock.wcBindable.properties.map((p) => p.name);
     expect(names).toEqual(["held", "error"]);

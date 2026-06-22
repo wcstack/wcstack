@@ -74,10 +74,26 @@ export class WakeLockCore extends EventTarget {
   private _acquiring: boolean = false;
   private _visibilityBound: boolean = false;
 
+  // SSR (§3.8): a pure sink has no asynchronous probe to await — `request()` is
+  // fire-and-forget and meaningless server-side — so readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget, type: WakeLockKind = "screen") {
     super();
     this._target = target ?? this;
     this._type = type;
+  }
+
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Lifecycle (§3.5). The wake lock is command-driven (request / release) with no
+  // ambient subscription to establish on connect, so observe() is an idempotent
+  // no-op that resolves once ready; dispose() (below) tears down the visibility
+  // listener, releases any held sentinel, and bumps _gen via release().
+  observe(): Promise<void> {
+    return this._ready;
   }
 
   get held(): boolean {
@@ -184,6 +200,8 @@ export class WakeLockCore extends EventTarget {
    */
   dispose(): void {
     if (this._visibilityBound) {
+      // §4 deviation: document-scoped Web API; no element-free alternative — the
+      // Page Visibility `visibilitychange` event is only dispatched on `document`.
       document.removeEventListener("visibilitychange", this._onVisibilityChange);
       this._visibilityBound = false;
     }
@@ -343,6 +361,8 @@ export class WakeLockCore extends EventTarget {
 
   private _ensureVisibilityListener(): void {
     if (this._visibilityBound) return;
+    // §4 deviation: document-scoped Web API; no element-free alternative — the
+    // Page Visibility `visibilitychange` event is only dispatched on `document`.
     document.addEventListener("visibilitychange", this._onVisibilityChange);
     this._visibilityBound = true;
   }
@@ -352,6 +372,8 @@ export class WakeLockCore extends EventTarget {
   }
 
   private _isVisible(): boolean {
+    // §4 deviation: document-scoped Web API; no element-free alternative —
+    // `visibilityState` lives on `document`, not on any element.
     return document.visibilityState === "visible";
   }
 

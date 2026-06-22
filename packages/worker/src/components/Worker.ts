@@ -7,9 +7,12 @@ import { registerAutoTrigger } from "../autoTrigger.js";
 // constructor and to match the <wcs-broadcast> WcsBroadcast / <wcs-ws>
 // WcsWebSocket convention.
 export class WcsWorker extends HTMLElement {
-  // The worker spawns synchronously in connectedCallback (no async init), so no
-  // connectedCallbackPromise is needed — mirrors <wcs-ws> / <wcs-broadcast>.
-  static hasConnectedCallbackPromise = false;
+  // SSR (§4.1/§4.4): expose connectedCallbackPromise backed by _core.observe()
+  // so a shell renderer can await first-connect readiness uniformly across all
+  // IO nodes. The worker still spawns synchronously in connectedCallback; the
+  // Core's observe() resolves immediately (command-driven, no async probe), so
+  // the promise is effectively already-resolved but the contract is honored.
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...WorkerCore.wcBindable,
     // Shell-level settable surface. `src` selects the script; `manual` suppresses
@@ -35,10 +38,15 @@ export class WcsWorker extends HTMLElement {
   static get observedAttributes(): string[] { return ["src"]; }
 
   private _core: WorkerCore;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new WorkerCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -181,6 +189,10 @@ export class WcsWorker extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
+    // SSR (§4.4): back connectedCallbackPromise with the Core's observe(). It
+    // resolves immediately for this command-driven node, but wiring it keeps the
+    // readiness contract uniform with the async-init IO nodes.
+    this._connectedCallbackPromise = this._core.observe();
     if (!this.manual && this.src) {
       this.start();
     }

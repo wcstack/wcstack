@@ -42,10 +42,23 @@ export class BroadcastCore extends EventTarget {
   private _name: string | null = null;
   private _message: any = null;
   private _error: WcsBroadcastErrorDetail | null = null;
+  // Generation guard (§3.4): bumped on dispose(). An incoming message /
+  // messageerror that fires after the Shell disconnected (a peer posted between
+  // disconnect and the channel actually closing, or a queued event drains late)
+  // has a stale `gen` and MUST NOT write state to a torn-down element. A boolean
+  // flag is insufficient: dispose→reconnect would let a stale event slip through.
+  private _gen = 0;
+  // SSR (§3.8): a channel opens synchronously (no asynchronous probe to await),
+  // so readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
 
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
+  }
+
+  get ready(): Promise<void> {
+    return this._ready;
   }
 
   get message(): any {
@@ -54,6 +67,17 @@ export class BroadcastCore extends EventTarget {
 
   get error(): WcsBroadcastErrorDetail | null {
     return this._error;
+  }
+
+  // --- Lifecycle (§3.5) ---
+
+  // observe() establishes monitoring. BroadcastChannel is command-driven (the
+  // Shell calls open(name) from connectedCallback / attributeChangedCallback),
+  // so there is no subscription for observe() to set up here: it is an idempotent
+  // no-op that resolves once ready. It exists for skeleton symmetry with the
+  // monitor-style nodes so a host can uniformly await observe() == ready.
+  observe(): Promise<void> {
+    return this._ready;
   }
 
   // --- State setters with event dispatch ---
@@ -107,7 +131,26 @@ export class BroadcastCore extends EventTarget {
     if (this._channel && this._name === name) return;
     this._closeChannel();
     this._setError(null);
+    // Capture the generation for this channel (§3.4). The listeners below close
+    // over `gen`; an event that fires after dispose() (which bumps _gen) is
+    // recognised as stale and dropped without writing state to a torn-down
+    // element. The handlers are stored so _closeChannel() can remove them by the
+    // same reference.
+    const gen = ++this._gen;
     const channel = new BroadcastChannel(name);
+    this._onMessage = (event: MessageEvent): void => {
+      if (gen !== this._gen) return;
+      this._setMessage(event.data);
+    };
+    // Fired when a peer posted a value this context cannot deserialize. The event
+    // carries no usable payload, so report a synthetic DataError.
+    this._onMessageError = (): void => {
+      if (gen !== this._gen) return;
+      this._setError({
+        name: "DataError",
+        message: "Failed to deserialize a message received on the channel.",
+      });
+    };
     channel.addEventListener("message", this._onMessage);
     channel.addEventListener("messageerror", this._onMessageError);
     this._channel = channel;
@@ -157,32 +200,31 @@ export class BroadcastCore extends EventTarget {
    * reconnect, and it is naturally overwritten by the next incoming message.
    */
   dispose(): void {
+    // Bump the generation first (§3.4) so any message/messageerror that drains
+    // after teardown is recognised as stale, then close the channel and reset the
+    // error shadow silently.
+    this._gen++;
     this._closeChannel();
     this._error = null;
   }
 
   // --- Internal ---
 
-  private _onMessage = (event: MessageEvent): void => {
-    this._setMessage(event.data);
-  };
-
-  // Fired when a peer posted a value this context cannot deserialize. The event
-  // carries no usable payload, so report a synthetic DataError.
-  private _onMessageError = (): void => {
-    this._setError({
-      name: "DataError",
-      message: "Failed to deserialize a message received on the channel.",
-    });
-  };
+  // Per-channel listeners, (re)created in open() so each closes over its own
+  // generation (§3.4). null while no channel is open; the real handlers are
+  // installed by open() and removed by the same reference in _closeChannel().
+  private _onMessage: ((event: MessageEvent) => void) | null = null;
+  private _onMessageError: (() => void) | null = null;
 
   private _closeChannel(): void {
     if (!this._channel) return;
-    this._channel.removeEventListener("message", this._onMessage);
-    this._channel.removeEventListener("messageerror", this._onMessageError);
+    this._channel.removeEventListener("message", this._onMessage!);
+    this._channel.removeEventListener("messageerror", this._onMessageError!);
     this._channel.close();
     this._channel = null;
     this._name = null;
+    this._onMessage = null;
+    this._onMessageError = null;
   }
 
   private _hasBroadcastChannel(): boolean {

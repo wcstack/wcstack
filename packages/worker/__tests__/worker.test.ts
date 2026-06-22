@@ -261,3 +261,15 @@ describe("WcsWorker - メタ宣言", () => {
     expect(WcsWorker.observedAttributes).toEqual(["src"]);
   });
 });
+
+describe("WcsWorker - SSR (connectedCallbackPromise)", () => {
+  it("hasConnectedCallbackPromise=true で connectedCallbackPromise が解決する", async () => {
+    const el = makeElement({ src: "w.js" });
+    expect((el.constructor as typeof WcsWorker).hasConnectedCallbackPromise).toBe(true);
+    // connect 前は既定の解決済み Promise
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+    document.body.appendChild(el);
+    // connect 後は _core.observe() で裏付けられた解決済み Promise
+    await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
+  });
+});

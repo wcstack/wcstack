@@ -287,6 +287,77 @@ describe("IntersectionCore", () => {
     });
   });
 
+  describe("ライフサイクル: ready / observe 戻り値 / dispose", () => {
+    it("ready は即時解決する（同期セットアップ、非同期プローブ無し）", async () => {
+      const core = new IntersectionCore();
+      await expect(core.ready).resolves.toBeUndefined();
+    });
+
+    it("observe は ready（即時解決の promise）を返す", async () => {
+      const core = new IntersectionCore();
+      await expect(core.observe(el)).resolves.toBeUndefined();
+    });
+
+    it("冪等な再 observe（同一対象・同一オプション）も ready を返す", async () => {
+      const core = new IntersectionCore();
+      core.observe(el);
+      await expect(core.observe(el)).resolves.toBeUndefined();
+    });
+
+    it("生成失敗（非対応環境）でも observe は ready を返す", async () => {
+      removeIntersectionObserver();
+      const core = new IntersectionCore();
+      await expect(core.observe(el)).resolves.toBeUndefined();
+      expect(core.observing).toBe(false);
+    });
+
+    it("dispose で監視を停止し observing が false になる", () => {
+      const core = new IntersectionCore();
+      core.observe(el);
+      expect(core.observing).toBe(true);
+      core.dispose();
+      expect(core.observing).toBe(false);
+      expect(ctrl.last.disconnected).toBe(true);
+    });
+
+    it("dispose 後に届いた古い observer のコールバックは状態を変えない（_gen ガード）", () => {
+      const core = new IntersectionCore();
+      core.observe(el);
+      const stale = ctrl.last; // dispose 前の observer を保持
+      core.dispose();
+      // 切断後に古い observer が交差を遅延配信しても entry/visible は変わらない。
+      stale.emit([makeEntry({ isIntersecting: true, intersectionRatio: 1, target: el })]);
+      expect(core.entry).toBeNull();
+      expect(core.visible).toBe(false);
+    });
+
+    it("別オプションで作り直す前の observer のコールバックは破棄される（stale-gen 分岐）", () => {
+      const core = new IntersectionCore();
+      core.observe(el, { rootMargin: "0px" });
+      const stale = ctrl.instances[0];
+      core.observe(el, { rootMargin: "10px" }); // teardown+rebuild で _gen を進める
+      // 古い observer からの配信は現世代と一致せず破棄される。
+      stale.emit([makeEntry({ isIntersecting: true, target: el })]);
+      expect(core.entry).toBeNull();
+      expect(core.visible).toBe(false);
+      // 新しい observer からの配信は反映される（現世代）。
+      ctrl.last.emit([makeEntry({ isIntersecting: true, target: el })]);
+      expect(core.entry).not.toBeNull();
+      expect(core.visible).toBe(true);
+    });
+
+    it("dispose 後に observe で監視を再開できる（復活）", () => {
+      const core = new IntersectionCore();
+      core.observe(el);
+      core.dispose();
+      expect(core.observing).toBe(false);
+      core.observe(el);
+      expect(core.observing).toBe(true);
+      ctrl.last.emit([makeEntry({ isIntersecting: true, target: el })]);
+      expect(core.intersecting).toBe(true);
+    });
+  });
+
   describe("wcBindable プロパティ getter", () => {
     it("intersecting / ratio の getter が change イベントから値を取り出す", () => {
       const props = IntersectionCore.wcBindable.properties;

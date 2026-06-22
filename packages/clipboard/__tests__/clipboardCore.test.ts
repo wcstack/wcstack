@@ -298,6 +298,57 @@ describe("ClipboardCore", () => {
     expect(errors).toEqual([]);
   });
 
+  // --- ready / observe (SSR ライフサイクル) ---
+
+  it("ready は Permissions API のプローブ settle 後に解決する", async () => {
+    removeClipboard();
+    installPermissions({ state: "granted" });
+    const core = new ClipboardCore();
+
+    await expect(core.ready).resolves.toBeUndefined();
+    expect(core.readPermission).toBe("granted");
+    expect(core.writePermission).toBe("granted");
+  });
+
+  it("Permissions API 非対応なら ready は即解決する（プローブ無し）", async () => {
+    removeClipboard();
+    removePermissions();
+    const core = new ClipboardCore();
+    await expect(core.ready).resolves.toBeUndefined();
+  });
+
+  it("observe() は ready を返し、purmission の change 購読を（再）確立する", async () => {
+    removeClipboard();
+    const status = installPermissions({ state: "prompt" });
+    const core = new ClipboardCore();
+
+    await expect(core.observe()).resolves.toBeUndefined();
+    await flush();
+    expect(core.readPermission).toBe("prompt");
+
+    // dispose 後の observe() で購読を張り直す（再接続相当）
+    core.dispose();
+    await expect(core.observe()).resolves.toBeUndefined();
+    await flush();
+    status.change("granted");
+    expect(core.readPermission).toBe("granted");
+  });
+
+  it("observe() は購読が生きている間は二重購読しない（冪等）", async () => {
+    removeClipboard();
+    const status = installPermissions({ state: "prompt" });
+    const core = new ClipboardCore();
+    await flush();
+
+    const states: string[] = [];
+    core.addEventListener("wcs-clipboard:read-permission-changed", (e) => states.push((e as CustomEvent).detail));
+
+    await core.observe(); // 既に購読済み → no-op（再 query しない）
+    await flush();
+    status.change("denied");
+    expect(states).toEqual(["denied"]);
+  });
+
   // --- permissions ---
 
   it("read/write permission を Permissions API から取得し change を購読する", async () => {

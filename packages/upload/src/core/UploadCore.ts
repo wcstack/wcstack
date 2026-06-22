@@ -1,4 +1,3 @@
-import { raiseError } from "../raiseError.js";
 import { IWcBindable } from "../types.js";
 
 export interface UploadRequestOptions {
@@ -37,10 +36,33 @@ export class UploadCore extends EventTarget {
   private _status: number = 0;
   private _xhr: XMLHttpRequest | null = null;
   private _promise: Promise<any> = Promise.resolve(null);
+  // Generation guard: bumped on dispose() (and each upload start). An in-flight
+  // request that settles after dispose / a superseding start has a stale `gen`
+  // and MUST NOT write state to a torn-down element. A boolean flag is
+  // insufficient (dispose→observe would let stale work slip through).
+  private _gen = 0;
+  // SSR: no asynchronous probe to await, so readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
 
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
+  }
+
+  get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  // Lifecycle (§3.5). Upload is command-driven with no subscription to
+  // establish, so observe() is an idempotent no-op that resolves once ready;
+  // dispose() invalidates any in-flight request and aborts it.
+  observe(): Promise<void> {
+    return this._ready;
+  }
+
+  dispose(): void {
+    this._gen++;
+    this.abort();
   }
 
   get value(): any {
@@ -118,11 +140,16 @@ export class UploadCore extends EventTarget {
   }
 
   async upload(url: string, files: FileList | File[], options: UploadRequestOptions = {}): Promise<any> {
+    // never-throw: 引数バリデーション失敗は例外ではなく error プロパティに流し、
+    // サニタイズ値(null)を返す。command-token 経路からの呼び出しが unhandled
+    // rejection にならず、「upload() は全終了ケースで resolve」契約とも整合する。
     if (!url) {
-      raiseError("url is required.");
+      this._setError({ message: "url is required." });
+      return null;
     }
     if (!files || files.length === 0) {
-      raiseError("files are required.");
+      this._setError({ message: "files are required." });
+      return null;
     }
 
     const p = this._doUpload(url, files, options);
@@ -151,11 +178,14 @@ export class UploadCore extends EventTarget {
       formData.append(fieldName, files[i]);
     }
 
+    const gen = ++this._gen;
+
     return new Promise<any>((resolve) => {
       const xhr = new XMLHttpRequest();
       this._xhr = xhr;
 
       xhr.upload.addEventListener("progress", (event: ProgressEvent) => {
+        if (gen !== this._gen) return;
         if (event.lengthComputable) {
           const percent = Math.round((event.loaded / event.total) * 100);
           this._setProgress(percent);
@@ -164,6 +194,7 @@ export class UploadCore extends EventTarget {
 
       xhr.addEventListener("load", () => {
         this._xhr = null;
+        if (gen !== this._gen) { resolve(null); return; }
         this._status = xhr.status;
 
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -194,6 +225,7 @@ export class UploadCore extends EventTarget {
 
       xhr.addEventListener("error", () => {
         this._xhr = null;
+        if (gen !== this._gen) { resolve(null); return; }
         this._setError({ message: "Network error" });
         this._setLoading(false);
         resolve(null);
@@ -201,6 +233,7 @@ export class UploadCore extends EventTarget {
 
       xhr.addEventListener("abort", () => {
         this._xhr = null;
+        if (gen !== this._gen) { resolve(null); return; }
         this._setLoading(false);
         resolve(null);
       });

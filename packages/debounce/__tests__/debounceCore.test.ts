@@ -313,4 +313,46 @@ describe("DebounceCore", () => {
     core.setSource("a");
     expect(settled).toEqual(["a"]); // leading で即発火
   });
+
+  // --- ライフサイクル (ready / observe / dispose) ---
+
+  it("ready は解決済み Promise を返す", async () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    await expect(core.ready).resolves.toBeUndefined();
+  });
+
+  it("observe() は ready を返し、冪等に再呼び出しできる", async () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    await expect(core.observe()).resolves.toBeUndefined();
+    await expect(core.observe()).resolves.toBeUndefined();
+  });
+
+  it("dispose() は保留中のタイマーを破棄し発火させない", () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    const settled: any[] = [];
+    core.addEventListener("wcs-debounce:settled", (e) => settled.push((e as CustomEvent).detail.value));
+
+    core.setSource("a");
+    expect(vi.getTimerCount()).toBe(1);
+    core.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(core.pending).toBe(false);
+    vi.advanceTimersByTime(100);
+    expect(settled).toEqual([]);
+  });
+
+  it("dispose 後に dequeue された stale タイマーは発火しない (_gen ガード)", () => {
+    const core = new DebounceCore("wcs-debounce", undefined, { wait: 100 });
+    const settled: any[] = [];
+    core.addEventListener("wcs-debounce:settled", (e) => settled.push((e as CustomEvent).detail.value));
+
+    core.setSource("a");
+    // dispose() がタイマーを clear する前に host が callback を dequeue した状況を再現:
+    // dispose で _gen を進めてから、保持しておいた古い callback を直接呼ぶ。
+    const expired = (core as any)._timerExpired as () => void;
+    (core as any)._gen++; // dispose 相当の世代更新（cancel は呼ばずタイマーを残す）
+    expired();            // _timerGen !== _gen で即 return する分岐
+    expect(settled).toEqual([]);
+    expect(core.value).toBeUndefined();
+  });
 });

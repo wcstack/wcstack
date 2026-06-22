@@ -337,6 +337,52 @@ describe("WorkerCore - terminate / dispose", () => {
     expect(core.error).toBeNull();
     expect(core.message).toBe("keep");
   });
+
+  it("dispose は保留中の restart タイマーをキャンセルし再生成しない", () => {
+    vi.useFakeTimers();
+    const core = new WorkerCore();
+    core.start("worker.js", { restartOnError: true, restartInterval: 1000 });
+    FakeWorker.last!.emitError({ message: "boom" });
+    core.dispose();
+    vi.advanceTimersByTime(1000);
+    expect(FakeWorker.created).toHaveLength(1);
+    expect(core.running).toBe(false);
+  });
+});
+
+describe("WorkerCore - ライフサイクル (ready / observe / dispose の _gen ガード)", () => {
+  it("ready は解決済み Promise を返す", async () => {
+    const core = new WorkerCore();
+    await expect(core.ready).resolves.toBeUndefined();
+  });
+
+  it("observe() は ready を返し、冪等に再呼び出しできる", async () => {
+    const core = new WorkerCore();
+    await expect(core.observe()).resolves.toBeUndefined();
+    await expect(core.observe()).resolves.toBeUndefined();
+  });
+
+  it("dispose は _gen をインクリメントして進行中の非同期を無効化する", () => {
+    const core = new WorkerCore();
+    const before = (core as any)._gen;
+    core.dispose();
+    expect((core as any)._gen).toBe(before + 1);
+  });
+
+  it("世代が古い restart タイマーは発火しても再生成しない（_gen ガード）", () => {
+    vi.useFakeTimers();
+    const core = new WorkerCore();
+    core.start("worker.js", { restartOnError: true, restartInterval: 1000 });
+    // restart タイマーを予約（スケジュール時の _gen を捕捉）
+    FakeWorker.last!.emitError({ message: "boom" });
+    expect(FakeWorker.created).toHaveLength(1);
+    // タイマーをキャンセルせずに _gen だけを進める（dispose 相当の世代失効を模す）
+    (core as any)._gen++;
+    vi.advanceTimersByTime(1000);
+    // 世代が一致しないため再 spawn は起きない
+    expect(FakeWorker.created).toHaveLength(1);
+    expect(core.running).toBe(true);
+  });
 });
 
 describe("WorkerCore - error 同値ガード", () => {

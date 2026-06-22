@@ -12,7 +12,7 @@ const DEFAULT_WAIT = 250;
  * subclasses this with `"wcs-throttle"` and throttle defaults.
  */
 export class Debounce extends HTMLElement {
-  static hasConnectedCallbackPromise = false;
+  static hasConnectedCallbackPromise = true;
   protected static eventPrefix = "wcs-debounce";
   static wcBindable: IWcBindable = {
     protocol: "wc-bindable",
@@ -40,10 +40,15 @@ export class Debounce extends HTMLElement {
 
   protected _core: DebounceCore;
   private _source: any = undefined;
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new DebounceCore((this.constructor as typeof Debounce).eventPrefix, this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -176,10 +181,14 @@ export class Debounce extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
+    // §4.1/§4.4 Shell SSR: expose connectedCallbackPromise backed by observe().
+    // observe() is a no-op resolving once ready (the engine is command-driven).
+    this._connectedCallbackPromise = this._core.observe();
   }
 
   disconnectedCallback(): void {
-    // Drop any in-flight timer so a detached element leaks nothing.
-    this._core.cancel();
+    // Drop any in-flight timer so a detached element leaks nothing, and bump the
+    // Core generation so a surviving timer callback cannot settle (§3.5).
+    this._core.dispose();
   }
 }

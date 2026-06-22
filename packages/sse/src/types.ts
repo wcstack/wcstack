@@ -14,29 +14,10 @@ export interface IWritableConfig {
   tagNames?: IWritableTagNames;
 }
 
-export interface IWcBindableProperty {
-  readonly name: string;
-  readonly event: string;
-  readonly getter?: (event: Event) => any;
-}
-
-export interface IWcBindableInput {
-  readonly name: string;
-  readonly attribute?: string;
-}
-
-export interface IWcBindableCommand {
-  readonly name: string;
-  readonly async?: boolean;
-}
-
-export interface IWcBindable {
-  readonly protocol: "wc-bindable";
-  readonly version: number;
-  readonly properties: IWcBindableProperty[];
-  readonly inputs?: IWcBindableInput[];
-  readonly commands?: IWcBindableCommand[];
-}
+// wc-bindable protocol manifest types — single source of truth in /protocol/wc-bindable.ts.
+export type {
+  IWcBindable, IWcBindableProperty, IWcBindableInput, IWcBindableCommand,
+} from "./protocol/wcBindable.js";
 
 /**
  * Options for `SseCore.connect()` / the headless `connect` command.

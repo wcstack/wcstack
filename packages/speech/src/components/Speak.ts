@@ -16,6 +16,7 @@ import { registerAutoTrigger } from "../autoTrigger.js";
  *   charIndex / spokenWord / error / unsupported) via delegated getters.
  */
 export class WcsSpeak extends HTMLElement {
+  static hasConnectedCallbackPromise = true;
   static wcBindable: IWcBindable = {
     ...SpeakCore.wcBindable,
     // Shell-level settable surface. `say` is a momentary reactive command-property
@@ -36,10 +37,15 @@ export class WcsSpeak extends HTMLElement {
 
   private _core: SpeakCore;
   private _say: string = "";
+  private _connectedCallbackPromise: Promise<void> = Promise.resolve();
 
   constructor() {
     super();
     this._core = new SpeakCore(this);
+  }
+
+  get connectedCallbackPromise(): Promise<void> {
+    return this._connectedCallbackPromise;
   }
 
   // --- Attribute accessors ---
@@ -213,9 +219,10 @@ export class WcsSpeak extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
-    // Revive the voiceschanged subscription after a reconnect (reparenting).
-    // No-op on the first connect since the constructor already subscribed.
-    this._core.reinitVoices();
+    // observe() revives the voiceschanged subscription after a reconnect
+    // (reparenting) and returns the readiness promise for SSR; it wraps
+    // reinitVoices() (no-op on the first connect — the constructor subscribed).
+    this._connectedCallbackPromise = this._core.observe();
   }
 
   disconnectedCallback(): void {

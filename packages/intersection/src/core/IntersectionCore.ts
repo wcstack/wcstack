@@ -56,9 +56,27 @@ export class IntersectionCore extends EventTarget {
   private _visible: boolean = false;
   private _observing: boolean = false;
 
+  // Generation guard (§3.4): bumped on dispose() and on each observe()/reobserve()
+  // teardown+rebuild. IntersectionObserver delivers its callback asynchronously off
+  // layout, so a callback can fire after the element is disposed or after a rapid
+  // disconnect→reconnect rebuilt the observer. Each observer captures the gen live at
+  // creation; a callback from a superseded/torn-down observer has a stale gen and
+  // MUST NOT write state to a torn-down element. A boolean flag is insufficient
+  // (dispose→observe would flip it back and let stale work slip through).
+  private _gen = 0;
+
+  // SSR (§3.8): IntersectionObserver setup is synchronous (no async probe to await),
+  // so readiness is immediate.
+  private _ready: Promise<void> = Promise.resolve();
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
+  }
+
+  /** Resolves immediately — there is no asynchronous probe to await (§3.8). */
+  get ready(): Promise<void> {
+    return this._ready;
   }
 
   get entry(): WcsIntersectEntry | null {
@@ -125,9 +143,9 @@ export class IntersectionCore extends EventTarget {
    * no-op — `observing` stays false, consistent with the never-throw design of
    * the other @wcstack sensors.
    */
-  observe(element: Element, options: IntersectOptions = {}): void {
+  observe(element: Element, options: IntersectOptions = {}): Promise<void> {
     if (this._observer && this._observed === element && this._optionsEqual(this._options, options)) {
-      return;
+      return this._ready;
     }
     this._teardownObserver();
     const observer = this._createObserver(options);
@@ -138,13 +156,16 @@ export class IntersectionCore extends EventTarget {
       // keep reporting true with no live observer behind it (e.g. re-observing an
       // active target with a newly-invalid rootMargin).
       this._setObserving(false);
-      return;
+      return this._ready;
     }
     this._observer = observer;
     this._observed = element;
     this._options = options;
     observer.observe(element);
     this._setObserving(true);
+    // SSR (§3.5): observe() returns the readiness promise. Observation establishment
+    // is synchronous, so this resolves immediately.
+    return this._ready;
   }
 
   /**
@@ -189,6 +210,20 @@ export class IntersectionCore extends EventTarget {
     this._setVisible(false);
   }
 
+  // --- Lifecycle (§3.5) ---
+
+  /**
+   * `observe()` (the IntersectionObserver-style command above) establishes
+   * monitoring, so there is no separate idempotent monitoring entry point — only
+   * teardown. `dispose()` invalidates any in-flight observer callback (`_gen++`)
+   * and releases the observer. A later observe() revives it (the Shell calls this
+   * from `disconnectedCallback`).
+   */
+  dispose(): void {
+    this._gen++;
+    this.disconnect();
+  }
+
   // --- Internal ---
 
   private _teardownObserver(): void {
@@ -197,16 +232,26 @@ export class IntersectionCore extends EventTarget {
       this._observer = null;
     }
     this._observed = null;
+    // Invalidate the torn-down observer's generation: its callback can still fire
+    // once asynchronously after disconnect(), and must be dropped (§3.4).
+    this._gen++;
   }
 
   private _createObserver(options: IntersectOptions): IntersectionObserver | null {
     if (typeof IntersectionObserver === "undefined") return null;
+    // Capture the generation live at creation. The callback closure below guards
+    // against deliveries from this observer after it has been superseded or
+    // disposed (a stale callback fired off layout after teardown).
+    const gen = this._gen;
     try {
-      return new IntersectionObserver(this._onIntersect, {
-        root: options.root ?? null,
-        rootMargin: options.rootMargin ?? "0px",
-        threshold: options.threshold ?? 0,
-      });
+      return new IntersectionObserver(
+        (entries) => this._onIntersect(gen, entries),
+        {
+          root: options.root ?? null,
+          rootMargin: options.rootMargin ?? "0px",
+          threshold: options.threshold ?? 0,
+        },
+      );
     } catch {
       // Invalid options (e.g. a malformed rootMargin) — surface nothing and leave
       // observing false, rather than letting the constructor throw escape.
@@ -214,7 +259,10 @@ export class IntersectionCore extends EventTarget {
     }
   }
 
-  private _onIntersect = (entries: IntersectionObserverEntry[]): void => {
+  private _onIntersect(gen: number, entries: IntersectionObserverEntry[]): void {
+    // Stale-generation guard (§3.4): drop callbacks from an observer that was torn
+    // down or disposed (e.g. a delivery that landed after disconnect/reconnect).
+    if (gen !== this._gen) return;
     for (const entry of entries) {
       const normalized = this._normalizeEntry(entry);
       this._setEntry(normalized);
@@ -223,7 +271,7 @@ export class IntersectionCore extends EventTarget {
         this._setVisible(true);
       }
     }
-  };
+  }
 
   private _normalizeEntry(entry: IntersectionObserverEntry): WcsIntersectEntry {
     return {
