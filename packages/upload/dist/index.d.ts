@@ -1,19 +1,3 @@
-interface ITagNames {
-    readonly upload: string;
-}
-interface IWritableTagNames {
-    upload?: string;
-}
-interface IConfig {
-    readonly autoTrigger: boolean;
-    readonly triggerAttribute: string;
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    autoTrigger?: boolean;
-    triggerAttribute?: string;
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -30,10 +14,28 @@ interface IWcBindableCommand {
 interface IWcBindable {
     readonly protocol: "wc-bindable";
     readonly version: 1;
-    readonly properties: IWcBindableProperty[];
+    readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly upload: string;
+}
+interface IWritableTagNames {
+    upload?: string;
+}
+interface IConfig {
+    readonly autoTrigger: boolean;
+    readonly triggerAttribute: string;
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    autoTrigger?: boolean;
+    triggerAttribute?: string;
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Upload error object.
  */
@@ -86,7 +88,12 @@ declare class UploadCore extends EventTarget {
     private _status;
     private _xhr;
     private _promise;
+    private _gen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
+    dispose(): void;
     get value(): any;
     get loading(): boolean;
     get progress(): number;
@@ -109,7 +116,9 @@ declare class WcsUpload extends HTMLElement {
     private _core;
     private _files;
     private _trigger;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get url(): string;
     set url(value: string);
     get method(): string;

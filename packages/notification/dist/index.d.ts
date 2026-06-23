@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly notify: string;
 }
@@ -14,26 +35,7 @@ interface IWritableConfig {
     autoTrigger?: boolean;
     triggerAttribute?: string;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Permission state mirroring the Permissions API `PermissionState`
  * (`"prompt"` / `"granted"` / `"denied"`) plus `"unsupported"` for environments
@@ -97,7 +99,7 @@ interface WcsNotifySwMessage {
 }
 /**
  * Value types for NotificationCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  */
 interface WcsNotifyCoreValues {
     permission: PermissionStateOrUnsupported;

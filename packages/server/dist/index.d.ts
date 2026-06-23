@@ -118,14 +118,25 @@ interface IWcBindableProperty {
     readonly event: string;
     readonly getter?: (event: Event) => any;
 }
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
 /**
  * Value types for RenderCore (headless) — the 3 async state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript

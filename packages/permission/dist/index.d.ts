@@ -1,15 +1,3 @@
-interface ITagNames {
-    readonly permission: string;
-}
-interface IWritableTagNames {
-    permission?: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -25,11 +13,25 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly permission: string;
+}
+interface IWritableTagNames {
+    permission?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Permission state mirroring the Permissions API `PermissionState`
  * (`"prompt"` / `"granted"` / `"denied"`) plus `"unsupported"` for environments
@@ -56,7 +58,7 @@ interface WcsPermissionDescriptor {
 }
 /**
  * Value types for PermissionCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript

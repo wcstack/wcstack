@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly debounce: string;
     readonly throttle: string;
@@ -16,26 +37,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Tuning options for {@link DebounceCore}. Mirrors lodash's `debounce` knobs.
  * - `wait`: quiet period (ms) the signal must be idle before a trailing fire.
@@ -66,7 +68,7 @@ interface WcsDebounceFiredDetail {
 }
 /**
  * Value types for DebounceCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  */
 interface WcsDebounceCoreValues {
     value: any;
@@ -132,13 +134,19 @@ declare class DebounceCore extends EventTarget {
     private _lastCallTime;
     private _lastInvokeTime;
     private _timerId;
+    private _timerGen;
     private _pendingKind;
     private _pendingValue;
     private _pendingArgs;
     private _value;
     private _lastArgs;
     private _pending;
+    private _gen;
+    private _ready;
     constructor(prefix?: string, target?: EventTarget, options?: DebounceOptions);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
+    dispose(): void;
     /**
      * Update the tuning knobs. The Shell calls this with the element's current
      * attributes before each schedule, so live attribute edits take effect on the
@@ -170,6 +178,7 @@ declare class DebounceCore extends EventTarget {
     private _invoke;
     private _setPending;
     private _dispatch;
+    private _armTimer;
     private _clearTimer;
 }
 
@@ -202,7 +211,9 @@ declare class Debounce extends HTMLElement {
     static wcBindable: IWcBindable;
     protected _core: DebounceCore;
     private _source;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get wait(): number;
     set wait(value: number);
     get leading(): boolean;

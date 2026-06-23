@@ -1,15 +1,3 @@
-interface ITagNames {
-    readonly intersect: string;
-}
-interface IWritableTagNames {
-    intersect?: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -25,11 +13,25 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly intersect: string;
+}
+interface IWritableTagNames {
+    intersect?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Plain snapshot of a `DOMRectReadOnly` (e.g. `boundingClientRect`,
  * `intersectionRect`, `rootBounds`). Unlike the live DOM rect, every field is a
@@ -75,7 +77,7 @@ interface IntersectOptions {
 }
 /**
  * Value types for IntersectionCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript
@@ -173,7 +175,11 @@ declare class IntersectionCore extends EventTarget {
     private _entry;
     private _visible;
     private _observing;
+    private _gen;
+    private _ready;
     constructor(target?: EventTarget);
+    /** Resolves immediately — there is no asynchronous probe to await (§3.8). */
+    get ready(): Promise<void>;
     get entry(): WcsIntersectEntry | null;
     get intersecting(): boolean;
     get ratio(): number;
@@ -193,7 +199,7 @@ declare class IntersectionCore extends EventTarget {
      * no-op — `observing` stays false, consistent with the never-throw design of
      * the other @wcstack sensors.
      */
-    observe(element: Element, options?: IntersectOptions): void;
+    observe(element: Element, options?: IntersectOptions): Promise<void>;
     /**
      * Force a fresh observation of `element`, even when it matches the currently
      * observed target+options. Unlike observe() — which is idempotent and
@@ -220,6 +226,14 @@ declare class IntersectionCore extends EventTarget {
     disconnect(): void;
     /** Clear the `visible` latch so a later intersection can set it again. */
     reset(): void;
+    /**
+     * `observe()` (the IntersectionObserver-style command above) establishes
+     * monitoring, so there is no separate idempotent monitoring entry point — only
+     * teardown. `dispose()` invalidates any in-flight observer callback (`_gen++`)
+     * and releases the observer. A later observe() revives it (the Shell calls this
+     * from `disconnectedCallback`).
+     */
+    dispose(): void;
     private _teardownObserver;
     private _createObserver;
     private _onIntersect;
@@ -251,7 +265,9 @@ declare class WcsIntersect extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _trigger;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get target(): string;
     set target(value: string);
     get root(): string;

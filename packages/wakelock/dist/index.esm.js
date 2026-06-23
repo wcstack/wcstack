@@ -96,10 +96,23 @@ class WakeLockCore extends EventTarget {
     // environment).
     _acquiring = false;
     _visibilityBound = false;
+    // SSR (§3.8): a pure sink has no asynchronous probe to await — `request()` is
+    // fire-and-forget and meaningless server-side — so readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target, type = "screen") {
         super();
         this._target = target ?? this;
         this._type = type;
+    }
+    get ready() {
+        return this._ready;
+    }
+    // Lifecycle (§3.5). The wake lock is command-driven (request / release) with no
+    // ambient subscription to establish on connect, so observe() is an idempotent
+    // no-op that resolves once ready; dispose() (below) tears down the visibility
+    // listener, releases any held sentinel, and bumps _gen via release().
+    observe() {
+        return this._ready;
     }
     get held() {
         return this._held;
@@ -197,6 +210,8 @@ class WakeLockCore extends EventTarget {
      */
     dispose() {
         if (this._visibilityBound) {
+            // §4 deviation: document-scoped Web API; no element-free alternative — the
+            // Page Visibility `visibilitychange` event is only dispatched on `document`.
             document.removeEventListener("visibilitychange", this._onVisibilityChange);
             this._visibilityBound = false;
         }
@@ -358,6 +373,8 @@ class WakeLockCore extends EventTarget {
     _ensureVisibilityListener() {
         if (this._visibilityBound)
             return;
+        // §4 deviation: document-scoped Web API; no element-free alternative — the
+        // Page Visibility `visibilitychange` event is only dispatched on `document`.
         document.addEventListener("visibilitychange", this._onVisibilityChange);
         this._visibilityBound = true;
     }
@@ -365,6 +382,8 @@ class WakeLockCore extends EventTarget {
         return navigator.wakeLock ?? null;
     }
     _isVisible() {
+        // §4 deviation: document-scoped Web API; no element-free alternative —
+        // `visibilityState` lives on `document`, not on any element.
         return document.visibilityState === "visible";
     }
     _normalizeError(e) {
@@ -386,13 +405,14 @@ class WakeLockCore extends EventTarget {
  * means "keep awake *while* active", not just "acquire once".
  */
 class WcsWakeLock extends HTMLElement {
-    // SSR contract (@wcstack/server): the renderer awaits elements declaring
+    // SSR contract (§4.1/@wcstack/server): the renderer awaits elements declaring
     // `hasConnectedCallbackPromise = true` before snapshotting. The wake lock has no
-    // connect-time async fix to await (acquire is fire-and-forget and meaningless
-    // server-side), so this is `false` — same as the other synchronous sensor Shells
-    // (sse / intersection / worker). Kept (not deleted) because it is the protocol
-    // contract surface the server renderer reads via `ctor.hasConnectedCallbackPromise`.
-    static hasConnectedCallbackPromise = false;
+    // connect-time async probe to await (acquire is fire-and-forget and meaningless
+    // server-side), so `connectedCallbackPromise` is backed by the Core's no-op
+    // `observe()`, which resolves immediately. The flag is still declared `true` so
+    // the renderer reads it via `ctor.hasConnectedCallbackPromise` and the Shell
+    // participates uniformly in the SSR await protocol.
+    static hasConnectedCallbackPromise = true;
     // `active` drives request/release; `type` propagates to the Core's next acquire.
     // `manual` is intentionally excluded: it is a connect-time policy ("don't auto-
     // acquire on connect"), not a live switch.
@@ -412,9 +432,15 @@ class WcsWakeLock extends HTMLElement {
         commands: WakeLockCore.wcBindable.commands,
     };
     _core;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new WakeLockCore(this);
+    }
+    // SSR (§4.1): the renderer awaits this before snapshotting. Backed by the Core's
+    // observe() (a no-op resolving immediately for this command-driven sink).
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get active() {
@@ -477,6 +503,9 @@ class WcsWakeLock extends HTMLElement {
         // up as a forward-compatible seam (observedAttributes + setter + this line) for
         // when the spec adds lock types; until then it carries a constant.
         this._core.type = this.type;
+        // Establish monitoring (§3.5) and expose readiness for SSR (§4.1). observe()
+        // is a no-op that resolves immediately for this command-driven sink.
+        this._connectedCallbackPromise = this._core.observe();
         if (!this.manual && this.active) {
             void this._core.request();
         }

@@ -807,6 +807,9 @@ class RecorderCore extends EventTarget {
     // dispose(); each MediaRecorder callback bails if stale so a torn-down/restarted
     // recorder's late event cannot mutate state.
     _gen = 0;
+    // SSR: recording is command-driven (attachStream/start), so there is no
+    // asynchronous probe to await — readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -820,6 +823,7 @@ class RecorderCore extends EventTarget {
     get blob() { return this._blob; }
     get objectURL() { return this._objectURL; }
     get error() { return this._error; }
+    get ready() { return this._ready; }
     // --- State setters ---
     _setRecording(v) {
         if (this._recording === v)
@@ -968,6 +972,15 @@ class RecorderCore extends EventTarget {
             this._recorder.resume();
         }
     }
+    /**
+     * Establish monitoring (§3.5). Recording is command-driven — there is no listener
+     * or subscription to set up here (the borrowed stream arrives via attachStream and
+     * recording is driven by start()/stop()), so observe() is an idempotent no-op that
+     * resolves once ready. dispose() is its teardown counterpart.
+     */
+    observe() {
+        return this._ready;
+    }
     /** Stop in-flight recording, revoke the last object URL, drop the borrowed stream. */
     dispose() {
         // Bump the generation first so the native stop()'s onstop (gen-guarded) does
@@ -1048,6 +1061,7 @@ class RecorderCore extends EventTarget {
  * properties — a settled `Blob` is a value and may flow through state.
  */
 class WcsRecorder extends HTMLElement {
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...RecorderCore.wcBindable,
         // `mimeType` deliberately appears on TWO surfaces: as an output `property`
@@ -1065,9 +1079,13 @@ class WcsRecorder extends HTMLElement {
         commands: RecorderCore.wcBindable.commands,
     };
     _core;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new RecorderCore(this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     // `mimeType` is an OUTPUT value property (the Core-resolved recording type,
@@ -1128,6 +1146,7 @@ class WcsRecorder extends HTMLElement {
     // --- Lifecycle ---
     connectedCallback() {
         this.style.display = "none";
+        this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {
         this._core.dispose();

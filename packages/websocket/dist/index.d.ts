@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly ws: string;
 }
@@ -14,26 +35,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * WebSocket error object.
  */
@@ -65,6 +67,7 @@ interface WcsWsInputs {
     autoReconnect: boolean;
     reconnectInterval: number;
     maxReconnects: number;
+    binaryType: BinaryType;
     manual: boolean;
     trigger: boolean;
     send: unknown;
@@ -75,6 +78,7 @@ interface WcsWsCoreCommands {
         autoReconnect?: boolean;
         reconnectInterval?: number;
         maxReconnects?: number;
+        binaryType?: BinaryType;
     }): void;
     send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
     close(code?: number, reason?: string): void;
@@ -94,6 +98,7 @@ interface WebSocketConnectOptions {
     autoReconnect?: boolean;
     reconnectInterval?: number;
     maxReconnects?: number;
+    binaryType?: BinaryType;
 }
 declare class WebSocketCore extends EventTarget {
     static wcBindable: IWcBindable;
@@ -111,8 +116,15 @@ declare class WebSocketCore extends EventTarget {
     private _reconnectTimer;
     private _url;
     private _protocols;
+    private _binaryType;
     private _intentionalClose;
+    private _gen;
+    private _socketGen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
+    dispose(): void;
     get message(): any;
     get connected(): boolean;
     get loading(): boolean;
@@ -143,7 +155,9 @@ declare class WcsWebSocket extends HTMLElement {
     static get observedAttributes(): string[];
     private _core;
     private _trigger;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get url(): string;
     set url(value: string);
     get protocols(): string;
@@ -154,6 +168,8 @@ declare class WcsWebSocket extends HTMLElement {
     set reconnectInterval(value: number);
     get maxReconnects(): number;
     set maxReconnects(value: number);
+    get binaryType(): BinaryType;
+    set binaryType(value: string | null);
     get manual(): boolean;
     set manual(value: boolean);
     get message(): any;

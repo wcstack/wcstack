@@ -66,10 +66,6 @@ const STORAGE_EVENTS = {
     triggerChanged: "wcs-storage:trigger-changed",
 };
 
-function raiseError(message) {
-    throw new Error(`[@wcstack/storage] ${message}`);
-}
-
 class StorageCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -97,9 +93,32 @@ class StorageCore extends EventTarget {
     _key = "";
     _type = "local";
     _storageListener = null;
+    // Generation guard: bumped on dispose(). The cross-tab `storage` listener
+    // captures the generation active when startSync() ran; a callback that fires
+    // after dispose() (or a teardown→re-setup) has a stale gen and MUST NOT write
+    // state to a torn-down element. A boolean flag is insufficient (dispose→observe
+    // would let a stale listener slip through).
+    _gen = 0;
+    // SSR: storage access is synchronous, so there is no asynchronous probe to
+    // await — readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
+    }
+    get ready() {
+        return this._ready;
+    }
+    // Lifecycle (§3.5). Storage sync is command-driven (the Shell calls startSync()
+    // from connectedCallback), so observe() is an idempotent no-op that resolves
+    // once ready; dispose() tears down the cross-tab listener and invalidates any
+    // in-flight listener callback.
+    observe() {
+        return this._ready;
+    }
+    dispose() {
+        this._gen++;
+        this.stopSync();
     }
     get value() {
         return this._value;
@@ -139,7 +158,11 @@ class StorageCore extends EventTarget {
     }
     set type(value) {
         if (value !== "local" && value !== "session") {
-            raiseError(`Invalid storage type: "${value}". Must be "local" or "session".`);
+            // never-throw: an invalid type is routed to the error property and the
+            // current type is kept (the safe default), rather than throwing out of the
+            // setter / setAttribute / connectedCallback.
+            this._setError({ message: `Invalid storage type: "${value}". Must be "local" or "session".` });
+            return;
         }
         this._type = value;
     }
@@ -177,7 +200,10 @@ class StorageCore extends EventTarget {
     }
     load() {
         if (!this._key) {
-            raiseError("key is required.");
+            // never-throw: a missing key is routed to the error property and a
+            // sanitized null is returned, rather than throwing.
+            this._setError({ operation: "load", message: "key is required." });
+            return null;
         }
         this._setLoading(true);
         this._setError(null);
@@ -206,7 +232,10 @@ class StorageCore extends EventTarget {
     }
     save(value) {
         if (!this._key) {
-            raiseError("key is required.");
+            // never-throw: a missing key is routed to the error property instead of
+            // throwing. No return value to sanitize (save returns void).
+            this._setError({ operation: "save", message: "key is required." });
+            return;
         }
         this._setLoading(true);
         this._setError(null);
@@ -237,7 +266,10 @@ class StorageCore extends EventTarget {
     }
     remove() {
         if (!this._key) {
-            raiseError("key is required.");
+            // never-throw: a missing key is routed to the error property instead of
+            // throwing. No return value to sanitize (remove returns void).
+            this._setError({ operation: "remove", message: "key is required." });
+            return;
         }
         this._setLoading(true);
         this._setError(null);
@@ -255,7 +287,15 @@ class StorageCore extends EventTarget {
     startSync() {
         if (this._storageListener)
             return;
+        // Capture the generation active when sync starts. A `storage` event that
+        // fires after dispose() (which bumps _gen and removes the listener) carries a
+        // stale gen and must not write state to a torn-down element. stopSync()
+        // already detaches the listener, but the gen guard also covers a queued event
+        // delivered between dispose()'s bump and the actual removeEventListener.
+        const gen = ++this._gen;
         this._storageListener = (e) => {
+            if (gen !== this._gen)
+                return;
             if (e.key !== this._key)
                 return;
             if (this._type === "session")

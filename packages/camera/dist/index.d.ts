@@ -1,17 +1,3 @@
-interface ITagNames {
-    readonly camera: string;
-    readonly recorder: string;
-}
-interface IWritableTagNames {
-    camera?: string;
-    recorder?: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -27,11 +13,27 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly camera: string;
+    readonly recorder: string;
+}
+interface IWritableTagNames {
+    camera?: string;
+    recorder?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Permission state for camera / microphone, mirroring the Permissions API
  * `PermissionState` plus `"unsupported"` for environments without
@@ -384,6 +386,7 @@ declare class RecorderCore extends EventTarget {
     private _timeslice;
     private _startTime;
     private _gen;
+    private _ready;
     constructor(target?: EventTarget);
     get recording(): boolean;
     get paused(): boolean;
@@ -392,6 +395,7 @@ declare class RecorderCore extends EventTarget {
     get blob(): Blob | null;
     get objectURL(): string | null;
     get error(): WcsMediaErrorDetail | null;
+    get ready(): Promise<void>;
     private _setRecording;
     private _setPaused;
     private _setDuration;
@@ -415,6 +419,13 @@ declare class RecorderCore extends EventTarget {
     stop(): void;
     pause(): void;
     resume(): void;
+    /**
+     * Establish monitoring (§3.5). Recording is command-driven — there is no listener
+     * or subscription to set up here (the borrowed stream arrives via attachStream and
+     * recording is driven by start()/stop()), so observe() is an idempotent no-op that
+     * resolves once ready. dispose() is its teardown counterpart.
+     */
+    observe(): Promise<void>;
     /** Stop in-flight recording, revoke the last object URL, drop the borrowed stream. */
     dispose(): void;
     private _assembleBlob;
@@ -436,9 +447,12 @@ declare class RecorderCore extends EventTarget {
  * properties — a settled `Blob` is a value and may flow through state.
  */
 declare class WcsRecorder extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
     static wcBindable: IWcBindable;
     private _core;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get mimeType(): string;
     set mimeType(value: string);
     get timeslice(): number;

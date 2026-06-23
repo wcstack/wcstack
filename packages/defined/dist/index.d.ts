@@ -1,15 +1,3 @@
-interface ITagNames {
-    readonly defined: string;
-}
-interface IWritableTagNames {
-    defined?: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -25,11 +13,25 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly defined: string;
+}
+interface IWritableTagNames {
+    defined?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Aggregation mode across the watched tags:
  * - `"all"` — `defined` is true only once every tag has been registered.
@@ -57,7 +59,7 @@ interface DefinedSnapshot {
 }
 /**
  * Value types for DefinedCore (headless) — the observable state properties. Use
- * with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript

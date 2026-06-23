@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly worker: string;
 }
@@ -14,26 +35,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Normalized Worker failure. `name` mirrors the underlying `DOMException.name`
  * or `Error.name`: `DataCloneError` when a posted value (or a value the worker
@@ -66,7 +68,7 @@ interface WcsWorkerStartOptions {
 }
 /**
  * Value types for WorkerCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  */
 interface WcsWorkerCoreValues {
     /**
@@ -159,7 +161,11 @@ declare class WorkerCore extends EventTarget {
     private _restartInterval;
     private _restartCount;
     private _restartTimer;
+    private _gen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
     get message(): any;
     get error(): WcsWorkerErrorDetail | null;
     get running(): boolean;
@@ -220,7 +226,9 @@ declare class WcsWorker extends HTMLElement {
     static wcBindable: IWcBindable;
     static get observedAttributes(): string[];
     private _core;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get src(): string;
     set src(value: string);
     get type(): WorkerType;

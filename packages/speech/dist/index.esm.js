@@ -125,6 +125,12 @@ class SpeakCore extends EventTarget {
     // construction does not double-subscribe, while a reconnect after dispose()
     // does re-subscribe.
     _voicesSubscribed = false;
+    // SSR: feature detection (`_setUnsupported`) and the initial `getVoices()` read
+    // are synchronous, and the `voiceschanged` subscription is established eagerly
+    // in the constructor, so there is no asynchronous probe to await before
+    // snapshotting — readiness is immediate. The Shell exposes this as
+    // connectedCallbackPromise.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -161,6 +167,10 @@ class SpeakCore extends EventTarget {
     // lifetime of a document, so there's nothing to re-check.
     get unsupported() {
         return this._unsupported;
+    }
+    /** Resolves once the first probe settles (immediate — see `_ready`). */
+    get ready() {
+        return this._ready;
     }
     // --- State setters with event dispatch ---
     _setVoices(voices) {
@@ -389,6 +399,18 @@ class SpeakCore extends EventTarget {
         }
     }
     /**
+     * Establish monitoring (§3.5). Synthesis is command-driven (speak/cancel), so
+     * observe() only (re-)establishes the live `voiceschanged` subscription —
+     * idempotent via reinitVoices()'s `_voicesSubscribed` guard, so the first
+     * connect after construction does not double-subscribe while a reconnect after
+     * dispose() does. Returns the `ready` promise for SSR. Call from the Shell's
+     * connectedCallback.
+     */
+    observe() {
+        this.reinitVoices();
+        return this._ready;
+    }
+    /**
      * Detach the live voiceschanged listener and neutralize any in-flight
      * utterance callbacks. Call from the Shell's `disconnectedCallback`.
      */
@@ -527,6 +549,7 @@ function registerAutoTrigger() {
  *   charIndex / spokenWord / error / unsupported) via delegated getters.
  */
 class WcsSpeak extends HTMLElement {
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...SpeakCore.wcBindable,
         // Shell-level settable surface. `say` is a momentary reactive command-property
@@ -546,9 +569,13 @@ class WcsSpeak extends HTMLElement {
     };
     _core;
     _say = "";
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new SpeakCore(this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get rate() {
@@ -694,9 +721,10 @@ class WcsSpeak extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
-        // Revive the voiceschanged subscription after a reconnect (reparenting).
-        // No-op on the first connect since the constructor already subscribed.
-        this._core.reinitVoices();
+        // observe() revives the voiceschanged subscription after a reconnect
+        // (reparenting) and returns the readiness promise for SSR; it wraps
+        // reinitVoices() (no-op on the first connect — the constructor subscribed).
+        this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {
         // Detach event subscriptions and neutralize in-flight utterance callbacks.
@@ -769,6 +797,11 @@ class ListenCore extends EventTarget {
     _permissionStatus = null;
     _permissionSubscribed = false;
     _permGen = 0;
+    // SSR: feature detection (`_setUnsupported`) is synchronous and the permission
+    // `change` subscription is established eagerly in the constructor, so there is
+    // no asynchronous probe to await before snapshotting — readiness is immediate.
+    // The Shell exposes this as connectedCallbackPromise.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -803,6 +836,10 @@ class ListenCore extends EventTarget {
     // lifetime of a document, so there's nothing to re-check.
     get unsupported() {
         return this._unsupported;
+    }
+    /** Resolves once the first probe settles (immediate — see `_ready`). */
+    get ready() {
+        return this._ready;
     }
     // --- State setters with event dispatch ---
     _setInterim(value) {
@@ -900,6 +937,18 @@ class ListenCore extends EventTarget {
         if (!this._permissionSubscribed) {
             this._initPermission();
         }
+    }
+    /**
+     * Establish monitoring (§3.5). Recognition is command-driven (start/stop), so
+     * observe() only (re-)establishes the live permission subscription — idempotent
+     * via reinitPermission()'s `_permissionSubscribed` guard, so the first connect
+     * after construction does not double-subscribe while a reconnect after dispose()
+     * does. Returns the `ready` promise for SSR. Call from the Shell's
+     * connectedCallback.
+     */
+    observe() {
+        this.reinitPermission();
+        return this._ready;
     }
     /**
      * Stop recognition and detach the live permission listener. Call from the
@@ -1133,6 +1182,7 @@ function registerListenAutoTrigger() {
  * `continuous` attribute selects the auto-restarting session phase.
  */
 class WcsListen extends HTMLElement {
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...ListenCore.wcBindable,
         properties: [
@@ -1151,9 +1201,13 @@ class WcsListen extends HTMLElement {
     };
     _core;
     _trigger = false;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new ListenCore(this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get lang() {
@@ -1277,7 +1331,9 @@ class WcsListen extends HTMLElement {
         if (config.autoTrigger) {
             registerListenAutoTrigger();
         }
-        this._core.reinitPermission();
+        // observe() (re-)establishes the permission subscription and returns the
+        // readiness promise for SSR; it wraps reinitPermission() (idempotent).
+        this._connectedCallbackPromise = this._core.observe();
         if (!this.manual) {
             // Non-blocking auto-start, mirroring <wcs-geo>: start() is fired
             // unconditionally without first awaiting/inspecting the (async) permission

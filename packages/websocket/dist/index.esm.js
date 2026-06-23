@@ -44,10 +44,13 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-function raiseError(message) {
-    throw new Error(`[@wcstack/websocket] ${message}`);
-}
-
+// WebSocket readyState values. Hardcoded rather than read from the global
+// WebSocket so the Core does not require WebSocket to exist at module load
+// (referencing `WebSocket.CLOSED` in a field initializer evaluates at class
+// definition time; tests inject a mock). Mirrors SseCore's SSE_CLOSED.
+const WS_CONNECTING = 0;
+const WS_OPEN = 1;
+const WS_CLOSED = 3;
 class WebSocketCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -71,7 +74,7 @@ class WebSocketCore extends EventTarget {
     _connected = false;
     _loading = false;
     _error = null;
-    _readyState = WebSocket.CLOSED;
+    _readyState = WS_CLOSED;
     // 自動再接続
     _autoReconnect = false;
     _reconnectInterval = 3000;
@@ -80,10 +83,38 @@ class WebSocketCore extends EventTarget {
     _reconnectTimer = null;
     _url = "";
     _protocols = undefined;
+    _binaryType = "blob";
     _intentionalClose = false;
+    // Generation guard (§3.4): bumped on dispose() and at every connect(). A socket
+    // event (open/message/error/close) or a scheduled reconnect that fires after
+    // dispose / a superseding connect() carries a stale `gen` and MUST NOT write
+    // state onto a torn-down element. A boolean flag is insufficient (dispose→observe
+    // would let stale work slip through).
+    _gen = 0;
+    // Generation captured when the current socket was opened. The shared socket
+    // event handlers compare it against _gen to drop events from a superseded /
+    // disposed connection.
+    _socketGen = 0;
+    // SSR (§3.8): WebSocket is command-driven with no asynchronous probe to await,
+    // so readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
+    }
+    get ready() {
+        return this._ready;
+    }
+    // Lifecycle (§3.5). WebSocket connections are command-driven (connect()), so
+    // observe() is an idempotent no-op that resolves once ready; the Shell's
+    // connectedCallback does not auto-establish a subscription here. dispose()
+    // invalidates any in-flight socket / pending reconnect and closes the socket.
+    observe() {
+        return this._ready;
+    }
+    dispose() {
+        this._gen++;
+        this.close();
     }
     get message() {
         return this._message;
@@ -138,9 +169,15 @@ class WebSocketCore extends EventTarget {
     }
     // --- Public API ---
     connect(url, options = {}) {
+        // never-throw (§3.6): 引数バリデーション失敗は例外ではなく error プロパティに
+        // 流し、サニタイズ値(なにもしない)を返す。command-token 経路（set trigger →
+        // connect()）からの呼び出しが state 更新サイクルを壊さないようにする。
         if (!url) {
-            raiseError("url is required.");
+            this._setError({ message: "url is required." });
+            return;
         }
+        // 新しい接続を開始するため世代を更新し、進行中のソケット/再接続を無効化する。
+        this._gen++;
         // 既存の接続をクローズ
         this._intentionalClose = true;
         this._closeInternal();
@@ -149,13 +186,17 @@ class WebSocketCore extends EventTarget {
         this._autoReconnect = options.autoReconnect ?? false;
         this._reconnectInterval = options.reconnectInterval ?? 3000;
         this._maxReconnects = options.maxReconnects ?? Infinity;
+        this._binaryType = options.binaryType ?? "blob";
         this._reconnectCount = 0;
         this._intentionalClose = false;
         this._doConnect();
     }
     send(data) {
-        if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
-            raiseError("WebSocket is not connected.");
+        // never-throw (§3.6): 未接続での送信は例外ではなく error に流す。set send の
+        // fire-and-forget 経路で例外が伝播するのを防ぐ。
+        if (!this._ws || this._ws.readyState !== WS_OPEN) {
+            this._setError({ message: "WebSocket is not connected." });
+            return;
         }
         this._ws.send(data);
     }
@@ -170,6 +211,10 @@ class WebSocketCore extends EventTarget {
     _doConnect() {
         this._setLoading(true);
         this._setError(null);
+        // 接続開始時点の世代を捕捉。dispose()/再 connect() 後に発火した古いソケット
+        // イベントはこの gen が stale になり、状態を書き換えない（_onOpen ほかが
+        // _socketGen と this._gen を突き合わせて判定する）。
+        this._socketGen = this._gen;
         try {
             this._ws = this._protocols
                 ? new WebSocket(this._url, this._protocols)
@@ -180,19 +225,25 @@ class WebSocketCore extends EventTarget {
             this._setError(e);
             return;
         }
-        this._setReadyState(WebSocket.CONNECTING);
+        // Binary frames default to Blob; opt into ArrayBuffer for direct byte access.
+        this._ws.binaryType = this._binaryType;
+        this._setReadyState(WS_CONNECTING);
         this._ws.addEventListener("open", this._onOpen);
         this._ws.addEventListener("message", this._onMessage);
         this._ws.addEventListener("error", this._onError);
         this._ws.addEventListener("close", this._onClose);
     }
     _onOpen = () => {
+        if (this._socketGen !== this._gen)
+            return;
         this._reconnectCount = 0;
         this._setLoading(false);
         this._setConnected(true);
-        this._setReadyState(WebSocket.OPEN);
+        this._setReadyState(WS_OPEN);
     };
     _onMessage = (event) => {
+        if (this._socketGen !== this._gen)
+            return;
         let data = event.data;
         // JSONの自動パース
         if (typeof data === "string") {
@@ -206,23 +257,31 @@ class WebSocketCore extends EventTarget {
         this._setMessage(data);
     };
     _onError = (event) => {
+        if (this._socketGen !== this._gen)
+            return;
         this._setError(event);
     };
     _onClose = (event) => {
         this._removeListeners();
         this._ws = null;
+        if (this._socketGen !== this._gen)
+            return;
         this._setConnected(false);
         this._setLoading(false);
-        this._setReadyState(WebSocket.CLOSED);
+        this._setReadyState(WS_CLOSED);
         // 異常クローズ時の自動再接続（正常終了 1000 は除外）
         if (!this._intentionalClose && this._autoReconnect && event.code !== 1000 && this._reconnectCount < this._maxReconnects) {
             this._scheduleReconnect();
         }
     };
     _scheduleReconnect() {
+        const gen = this._gen;
         this._clearReconnectTimer();
         this._reconnectTimer = setTimeout(() => {
             this._reconnectTimer = null;
+            // dispose()/再 connect() でこの再接続が無効化されていたら何もしない。
+            if (gen !== this._gen)
+                return;
             this._reconnectCount++;
             this._doConnect();
         }, this._reconnectInterval);
@@ -246,7 +305,7 @@ class WebSocketCore extends EventTarget {
         this._clearReconnectTimer();
         if (this._ws) {
             this._removeListeners();
-            if (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING) {
+            if (this._ws.readyState === WS_OPEN || this._ws.readyState === WS_CONNECTING) {
                 this._ws.close();
             }
             this._ws = null;
@@ -255,8 +314,8 @@ class WebSocketCore extends EventTarget {
         if (this._connected) {
             this._setConnected(false);
         }
-        if (this._readyState !== WebSocket.CLOSED) {
-            this._setReadyState(WebSocket.CLOSED);
+        if (this._readyState !== WS_CLOSED) {
+            this._setReadyState(WS_CLOSED);
         }
     }
 }
@@ -293,7 +352,7 @@ function registerAutoTrigger() {
 }
 
 class WcsWebSocket extends HTMLElement {
-    static hasConnectedCallbackPromise = false;
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...WebSocketCore.wcBindable,
         properties: [
@@ -307,6 +366,7 @@ class WcsWebSocket extends HTMLElement {
             { name: "autoReconnect", attribute: "auto-reconnect" },
             { name: "reconnectInterval", attribute: "reconnect-interval" },
             { name: "maxReconnects", attribute: "max-reconnects" },
+            { name: "binaryType", attribute: "binary-type" },
             { name: "manual", attribute: "manual" },
             { name: "trigger" },
             { name: "send" },
@@ -320,9 +380,13 @@ class WcsWebSocket extends HTMLElement {
     static get observedAttributes() { return ["url"]; }
     _core;
     _trigger = false;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new WebSocketCore(this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get url() {
@@ -363,6 +427,19 @@ class WcsWebSocket extends HTMLElement {
     }
     set maxReconnects(value) {
         this.setAttribute("max-reconnects", String(value));
+    }
+    // Incoming binary frame representation. Backed by the `binary-type` attribute;
+    // any value other than "arraybuffer" normalizes to the platform default "blob".
+    get binaryType() {
+        return this.getAttribute("binary-type") === "arraybuffer" ? "arraybuffer" : "blob";
+    }
+    set binaryType(value) {
+        if (value == null) {
+            this.removeAttribute("binary-type");
+        }
+        else {
+            this.setAttribute("binary-type", value);
+        }
     }
     get manual() {
         return this.hasAttribute("manual");
@@ -427,6 +504,7 @@ class WcsWebSocket extends HTMLElement {
             autoReconnect: this.autoReconnect,
             reconnectInterval: this.reconnectInterval,
             maxReconnects: this.maxReconnects,
+            binaryType: this.binaryType,
         });
     }
     sendMessage(data) {
@@ -446,12 +524,16 @@ class WcsWebSocket extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
+        // observe() は command-driven node では ready を返す no-op（§3.5）。SSR は
+        // connectedCallbackPromise を await して初期スナップショットを取れる。
+        this._connectedCallbackPromise = this._core.observe();
         if (!this.manual && this.url) {
             this.connect();
         }
     }
     disconnectedCallback() {
-        this._core.close();
+        // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。
+        this._core.dispose();
     }
 }
 

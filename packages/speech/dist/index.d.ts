@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly speak: string;
     readonly listen: string;
@@ -20,26 +41,7 @@ interface IWritableConfig {
     listenTriggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Structured-clone-friendly snapshot of a `SpeechSynthesisVoice`. The live voice
  * objects are not serializable and cannot flow through data binding, so the Core
@@ -76,7 +78,7 @@ interface SpeakOptions {
 }
 /**
  * Value types for SpeakCore (headless) — the observable state properties. Use
- * with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  */
 interface WcsSpeakCoreValues {
     voices: SpeechVoiceInfo[];
@@ -260,6 +262,7 @@ declare class SpeakCore extends EventTarget {
     private _started;
     private _gen;
     private _voicesSubscribed;
+    private _ready;
     constructor(target?: EventTarget);
     get voices(): SpeechVoiceInfo[];
     get speaking(): boolean;
@@ -269,6 +272,8 @@ declare class SpeakCore extends EventTarget {
     get spokenWord(): string | null;
     get error(): WcsSpeakErrorDetail | null;
     get unsupported(): boolean;
+    /** Resolves once the first probe settles (immediate — see `_ready`). */
+    get ready(): Promise<void>;
     private _setVoices;
     private _voicesEqual;
     private _setSpeaking;
@@ -300,6 +305,15 @@ declare class SpeakCore extends EventTarget {
      */
     reinitVoices(): void;
     /**
+     * Establish monitoring (§3.5). Synthesis is command-driven (speak/cancel), so
+     * observe() only (re-)establishes the live `voiceschanged` subscription —
+     * idempotent via reinitVoices()'s `_voicesSubscribed` guard, so the first
+     * connect after construction does not double-subscribe while a reconnect after
+     * dispose() does. Returns the `ready` promise for SSR. Call from the Shell's
+     * connectedCallback.
+     */
+    observe(): Promise<void>;
+    /**
      * Detach the live voiceschanged listener and neutralize any in-flight
      * utterance callbacks. Call from the Shell's `disconnectedCallback`.
      */
@@ -327,10 +341,13 @@ declare class SpeakCore extends EventTarget {
  *   charIndex / spokenWord / error / unsupported) via delegated getters.
  */
 declare class WcsSpeak extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
     static wcBindable: IWcBindable;
     private _core;
     private _say;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get rate(): number;
     set rate(value: number);
     get pitch(): number;
@@ -404,6 +421,7 @@ declare class ListenCore extends EventTarget {
     private _permissionStatus;
     private _permissionSubscribed;
     private _permGen;
+    private _ready;
     constructor(target?: EventTarget);
     get interimTranscript(): string;
     get finalTranscript(): string;
@@ -412,6 +430,8 @@ declare class ListenCore extends EventTarget {
     get permission(): ListenPermissionState;
     get error(): WcsListenErrorDetail | null;
     get unsupported(): boolean;
+    /** Resolves once the first probe settles (immediate — see `_ready`). */
+    get ready(): Promise<void>;
     private _setInterim;
     private _setFinal;
     private _setResult;
@@ -432,6 +452,15 @@ declare class ListenCore extends EventTarget {
      * Re-establish the permission `change` subscription after a dispose().
      */
     reinitPermission(): void;
+    /**
+     * Establish monitoring (§3.5). Recognition is command-driven (start/stop), so
+     * observe() only (re-)establishes the live permission subscription — idempotent
+     * via reinitPermission()'s `_permissionSubscribed` guard, so the first connect
+     * after construction does not double-subscribe while a reconnect after dispose()
+     * does. Returns the `ready` promise for SSR. Call from the Shell's
+     * connectedCallback.
+     */
+    observe(): Promise<void>;
     /**
      * Stop recognition and detach the live permission listener. Call from the
      * Shell's `disconnectedCallback`.
@@ -458,10 +487,13 @@ declare class ListenCore extends EventTarget {
  * `continuous` attribute selects the auto-restarting session phase.
  */
 declare class WcsListen extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
     static wcBindable: IWcBindable;
     private _core;
     private _trigger;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get lang(): string;
     set lang(value: string | null);
     get continuous(): boolean;

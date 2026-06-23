@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly timer: string;
 }
@@ -14,26 +35,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Payload carried by the `wcs-timer:tick` event.
  * `count` is the number of ticks fired since the last reset; `elapsed` is the
@@ -45,7 +47,7 @@ interface WcsTimerTickDetail {
 }
 /**
  * Value types for TimerCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript
@@ -117,6 +119,9 @@ declare class TimerCore extends EventTarget {
     static wcBindable: IWcBindable;
     private _target;
     private _timerId;
+    private _gen;
+    private _runGen;
+    private _ready;
     private _tick;
     private _running;
     private _paused;
@@ -129,6 +134,9 @@ declare class TimerCore extends EventTarget {
     get tick(): number;
     get elapsed(): number;
     get running(): boolean;
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
+    dispose(): void;
     private _dispatchTick;
     private _setRunning;
     start(options?: TimerStartOptions): void;
@@ -150,7 +158,9 @@ declare class Timer extends HTMLElement {
     static get observedAttributes(): string[];
     private _core;
     private _trigger;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get interval(): number;
     set interval(value: number);
     get once(): boolean;

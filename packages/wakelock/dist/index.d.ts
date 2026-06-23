@@ -1,15 +1,3 @@
-interface ITagNames {
-    readonly wakelock: string;
-}
-interface IWritableTagNames {
-    wakelock?: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -25,11 +13,25 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly wakelock: string;
+}
+interface IWritableTagNames {
+    wakelock?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Wake lock type. The spec currently standardizes only `"screen"`; the field
  * exists for forward compatibility with future lock types.
@@ -37,7 +39,7 @@ interface IWcBindable {
 type WakeLockKind = "screen";
 /**
  * Value types for WakeLockCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * Unlike the @wcstack sensor tags (geolocation / intersection), the wake lock is
  * a pure *sink*: a bound state drives whether the lock is held (`active`, an
@@ -127,7 +129,10 @@ declare class WakeLockCore extends EventTarget {
     private _gen;
     private _acquiring;
     private _visibilityBound;
+    private _ready;
     constructor(target?: EventTarget, type?: WakeLockKind);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
     get held(): boolean;
     get error(): Error | null;
     /** The desired intent. Read-only reflection; not a wc-bindable property (it does
@@ -228,7 +233,9 @@ declare class WcsWakeLock extends HTMLElement {
     static observedAttributes: string[];
     static wcBindable: IWcBindable;
     private _core;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get active(): boolean;
     set active(value: boolean);
     get type(): WakeLockKind;

@@ -1,15 +1,3 @@
-interface ITagNames {
-    readonly resize: string;
-}
-interface IWritableTagNames {
-    resize?: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -25,11 +13,25 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly resize: string;
+}
+interface IWritableTagNames {
+    resize?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Which box-size CSS-side ResizeObserver reports. Mirrors `ResizeObserverBoxOptions`.
  * `device-pixel-content-box` is Chromium-only; the Core falls back to `content-box`
@@ -93,7 +95,7 @@ interface ResizeOptions {
 }
 /**
  * Value types for ResizeCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript
@@ -190,7 +192,26 @@ declare class ResizeCore extends EventTarget {
     private _effectiveBox;
     private _entry;
     private _observing;
+    private _ready;
     constructor(target?: EventTarget);
+    /** Resolves once the first probe settles. Synchronous here, so already resolved. */
+    get ready(): Promise<void>;
+    /**
+     * Lifecycle entry point (§3.5). When called with no element it is an idempotent
+     * no-op that resolves once ready — resize is command-driven (the Shell resolves
+     * the target and calls observe(element)), so connect-time monitoring is started
+     * via that command, not here. The Shell backs `connectedCallbackPromise` with
+     * this no-arg form. When called with an element it delegates to the element
+     * observe command below and still returns `ready` for a uniform return shape.
+     */
+    observe(): Promise<void>;
+    observe(element: Element, options?: ResizeOptions): Promise<void>;
+    /**
+     * Tear down the observer and invalidate the lifecycle (§3.5). Mirrors disconnect()
+     * but is the lifecycle-named counterpart the Shell calls from disconnectedCallback;
+     * a later observe() rebuilds the observer.
+     */
+    dispose(): void;
     get entry(): WcsResizeEntry | null;
     get width(): number;
     get height(): number;
@@ -208,7 +229,7 @@ declare class ResizeCore extends EventTarget {
      * `content-box` before giving up; both giving-up paths leave `observing` false,
      * consistent with the never-throw design of the other @wcstack sensors.
      */
-    observe(element: Element, options?: ResizeOptions): void;
+    private _observeElement;
     /**
      * Stop observing `element`. A no-op if it is not the currently observed element.
      * The observer instance is torn down (single-target Core), so a later observe()
@@ -267,7 +288,9 @@ declare class WcsResize extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _trigger;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get target(): string;
     set target(value: string);
     get box(): string;

@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly clipboard: string;
 }
@@ -14,26 +35,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Permission state for the Clipboard API, mirroring the Permissions API
  * `PermissionState` plus `"unsupported"` for environments without
@@ -79,7 +81,7 @@ interface WcsClipboardErrorDetail {
 }
 /**
  * Value types for ClipboardCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript
@@ -167,7 +169,10 @@ declare class ClipboardCore extends EventTarget {
     private _permissionSubscribed;
     private _permGen;
     private _acqGen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
     get text(): string | null;
     get items(): WcsClipboardReadItem[] | null;
     get loading(): boolean;
@@ -255,9 +260,12 @@ declare class ClipboardCore extends EventTarget {
 }
 
 declare class WcsClipboard extends HTMLElement {
+    static hasConnectedCallbackPromise: boolean;
     static wcBindable: IWcBindable;
     private _core;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get monitor(): boolean;
     /**
      * Reflects the `monitor` boolean attribute only — it does NOT start or stop

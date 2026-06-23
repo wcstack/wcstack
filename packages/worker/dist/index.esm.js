@@ -102,9 +102,29 @@ class WorkerCore extends EventTarget {
     _restartInterval = 0;
     _restartCount = 0;
     _restartTimer = null;
+    // Generation guard (§3.4): bumped on dispose() and captured at restart-timer
+    // schedule time. A restart deferred via setTimeout is the Core's only async
+    // work; if dispose() runs while it is pending, the stale timer MUST NOT
+    // re-spawn a worker on a torn-down element. _clearRestartTimer() already
+    // cancels the pending timer from inside the Core, so this guard is
+    // defense-in-depth for any path that fires the callback after invalidation.
+    _gen = 0;
+    // SSR (§3.8): a worker is command-driven (spawned on start()), so there is no
+    // asynchronous probe to await — readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
+    }
+    get ready() {
+        return this._ready;
+    }
+    // Lifecycle (§3.5). The worker is command-driven (start/post/terminate), so
+    // there is no subscription to establish up front: observe() is an idempotent
+    // no-op that resolves once ready. dispose() (below) tears down the worker,
+    // cancels any pending restart and invalidates in-flight async via _gen.
+    observe() {
+        return this._ready;
     }
     get message() {
         return this._message;
@@ -230,6 +250,9 @@ class WorkerCore extends EventTarget {
      * overwritten by the next incoming message.
      */
     dispose() {
+        // §3.4: invalidate any in-flight async (a pending restart timer) before
+        // tearing down, so a stale timer that somehow fires cannot re-spawn.
+        this._gen++;
         this._clearRestartTimer();
         this._terminateWorker();
         this._error = null;
@@ -276,7 +299,12 @@ class WorkerCore extends EventTarget {
     };
     _scheduleRestart() {
         this._clearRestartTimer();
+        const gen = this._gen;
         this._restartTimer = setTimeout(() => {
+            // §3.4: a dispose() between scheduling and firing bumps _gen; skip the
+            // re-spawn so a torn-down Core does not resurrect a worker.
+            if (gen !== this._gen)
+                return;
             this._restartTimer = null;
             this._restartCount++;
             this._terminateWorker();
@@ -405,9 +433,12 @@ function registerAutoTrigger() {
 // constructor and to match the <wcs-broadcast> WcsBroadcast / <wcs-ws>
 // WcsWebSocket convention.
 class WcsWorker extends HTMLElement {
-    // The worker spawns synchronously in connectedCallback (no async init), so no
-    // connectedCallbackPromise is needed — mirrors <wcs-ws> / <wcs-broadcast>.
-    static hasConnectedCallbackPromise = false;
+    // SSR (§4.1/§4.4): expose connectedCallbackPromise backed by _core.observe()
+    // so a shell renderer can await first-connect readiness uniformly across all
+    // IO nodes. The worker still spawns synchronously in connectedCallback; the
+    // Core's observe() resolves immediately (command-driven, no async probe), so
+    // the promise is effectively already-resolved but the contract is honored.
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...WorkerCore.wcBindable,
         // Shell-level settable surface. `src` selects the script; `manual` suppresses
@@ -432,9 +463,13 @@ class WcsWorker extends HTMLElement {
     };
     static get observedAttributes() { return ["src"]; }
     _core;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new WorkerCore(this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get src() {
@@ -553,6 +588,10 @@ class WcsWorker extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
+        // SSR (§4.4): back connectedCallbackPromise with the Core's observe(). It
+        // resolves immediately for this command-driven node, but wiring it keeps the
+        // readiness contract uniform with the async-init IO nodes.
+        this._connectedCallbackPromise = this._core.observe();
         if (!this.manual && this.src) {
             this.start();
         }

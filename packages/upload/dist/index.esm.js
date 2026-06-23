@@ -49,10 +49,6 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-function raiseError(message) {
-    throw new Error(`[@wcstack/upload] ${message}`);
-}
-
 class UploadCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -82,9 +78,29 @@ class UploadCore extends EventTarget {
     _status = 0;
     _xhr = null;
     _promise = Promise.resolve(null);
+    // Generation guard: bumped on dispose() (and each upload start). An in-flight
+    // request that settles after dispose / a superseding start has a stale `gen`
+    // and MUST NOT write state to a torn-down element. A boolean flag is
+    // insufficient (dispose→observe would let stale work slip through).
+    _gen = 0;
+    // SSR: no asynchronous probe to await, so readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
+    }
+    get ready() {
+        return this._ready;
+    }
+    // Lifecycle (§3.5). Upload is command-driven with no subscription to
+    // establish, so observe() is an idempotent no-op that resolves once ready;
+    // dispose() invalidates any in-flight request and aborts it.
+    observe() {
+        return this._ready;
+    }
+    dispose() {
+        this._gen++;
+        this.abort();
     }
     get value() {
         return this._value;
@@ -148,11 +164,16 @@ class UploadCore extends EventTarget {
         }
     }
     async upload(url, files, options = {}) {
+        // never-throw: 引数バリデーション失敗は例外ではなく error プロパティに流し、
+        // サニタイズ値(null)を返す。command-token 経路からの呼び出しが unhandled
+        // rejection にならず、「upload() は全終了ケースで resolve」契約とも整合する。
         if (!url) {
-            raiseError("url is required.");
+            this._setError({ message: "url is required." });
+            return null;
         }
         if (!files || files.length === 0) {
-            raiseError("files are required.");
+            this._setError({ message: "files are required." });
+            return null;
         }
         const p = this._doUpload(url, files, options);
         this._promise = p;
@@ -170,10 +191,13 @@ class UploadCore extends EventTarget {
         for (let i = 0; i < files.length; i++) {
             formData.append(fieldName, files[i]);
         }
+        const gen = ++this._gen;
         return new Promise((resolve) => {
             const xhr = new XMLHttpRequest();
             this._xhr = xhr;
             xhr.upload.addEventListener("progress", (event) => {
+                if (gen !== this._gen)
+                    return;
                 if (event.lengthComputable) {
                     const percent = Math.round((event.loaded / event.total) * 100);
                     this._setProgress(percent);
@@ -181,6 +205,10 @@ class UploadCore extends EventTarget {
             });
             xhr.addEventListener("load", () => {
                 this._xhr = null;
+                if (gen !== this._gen) {
+                    resolve(null);
+                    return;
+                }
                 this._status = xhr.status;
                 if (xhr.status >= 200 && xhr.status < 300) {
                     let value = xhr.responseText;
@@ -211,12 +239,20 @@ class UploadCore extends EventTarget {
             });
             xhr.addEventListener("error", () => {
                 this._xhr = null;
+                if (gen !== this._gen) {
+                    resolve(null);
+                    return;
+                }
                 this._setError({ message: "Network error" });
                 this._setLoading(false);
                 resolve(null);
             });
             xhr.addEventListener("abort", () => {
                 this._xhr = null;
+                if (gen !== this._gen) {
+                    resolve(null);
+                    return;
+                }
                 this._setLoading(false);
                 resolve(null);
             });
@@ -264,7 +300,7 @@ function registerAutoTrigger() {
 }
 
 class WcsUpload extends HTMLElement {
-    static hasConnectedCallbackPromise = false;
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...UploadCore.wcBindable,
         properties: [
@@ -298,9 +334,13 @@ class WcsUpload extends HTMLElement {
     _core;
     _files = null;
     _trigger = false;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new UploadCore(this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get url() {
@@ -499,9 +539,10 @@ class WcsUpload extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
+        this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {
-        this._core.abort();
+        this._core.dispose();
     }
 }
 

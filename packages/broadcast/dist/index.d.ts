@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly broadcast: string;
 }
@@ -14,26 +35,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Normalized BroadcastChannel failure. `name` mirrors the `DOMException.name`
  * (e.g. `DataCloneError` when a posted value is not structured-cloneable,
@@ -47,7 +49,7 @@ interface WcsBroadcastErrorDetail {
 }
 /**
  * Value types for BroadcastCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript
@@ -126,9 +128,13 @@ declare class BroadcastCore extends EventTarget {
     private _name;
     private _message;
     private _error;
+    private _gen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
     get message(): any;
     get error(): WcsBroadcastErrorDetail | null;
+    observe(): Promise<void>;
     private _setMessage;
     private _setError;
     /**
@@ -174,7 +180,9 @@ declare class WcsBroadcast extends HTMLElement {
     static wcBindable: IWcBindable;
     static get observedAttributes(): string[];
     private _core;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get name(): string;
     set name(value: string);
     get manual(): boolean;

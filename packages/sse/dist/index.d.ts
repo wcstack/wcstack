@@ -1,15 +1,3 @@
-interface ITagNames {
-    readonly sse: string;
-}
-interface IWritableTagNames {
-    sse?: string;
-}
-interface IConfig {
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -25,11 +13,25 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly sse: string;
+}
+interface IWritableTagNames {
+    sse?: string;
+}
+interface IConfig {
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    tagNames?: IWritableTagNames;
+}
+
 /**
  * Options for `SseCore.connect()` / the headless `connect` command.
  * Single source of truth — referenced by both `SseCore.connect` and
@@ -113,7 +115,13 @@ declare class SseCore extends EventTarget {
     private _withCredentials;
     private _events;
     private _raw;
+    private _gen;
+    private _connGen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
+    dispose(): void;
     get message(): WcsSseMessage | null;
     get connected(): boolean;
     get loading(): boolean;
@@ -152,7 +160,9 @@ declare class WcsSse extends HTMLElement {
     static get observedAttributes(): string[];
     private _core;
     private _trigger;
+    private _connectedCallbackPromise;
     constructor();
+    get connectedCallbackPromise(): Promise<void>;
     get url(): string;
     set url(value: string);
     get withCredentials(): boolean;

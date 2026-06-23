@@ -1,19 +1,3 @@
-interface ITagNames {
-    readonly storage: string;
-}
-interface IWritableTagNames {
-    storage?: string;
-}
-interface IConfig {
-    readonly autoTrigger: boolean;
-    readonly triggerAttribute: string;
-    readonly tagNames: ITagNames;
-}
-interface IWritableConfig {
-    autoTrigger?: boolean;
-    triggerAttribute?: string;
-    tagNames?: IWritableTagNames;
-}
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -30,10 +14,28 @@ interface IWcBindableCommand {
 interface IWcBindable {
     readonly protocol: "wc-bindable";
     readonly version: 1;
-    readonly properties: IWcBindableProperty[];
+    readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
 }
+
+interface ITagNames {
+    readonly storage: string;
+}
+interface IWritableTagNames {
+    storage?: string;
+}
+interface IConfig {
+    readonly autoTrigger: boolean;
+    readonly triggerAttribute: string;
+    readonly tagNames: ITagNames;
+}
+interface IWritableConfig {
+    autoTrigger?: boolean;
+    triggerAttribute?: string;
+    tagNames?: IWritableTagNames;
+}
+
 type StorageType = "local" | "session";
 /**
  * Error returned when a storage operation fails.
@@ -44,7 +46,7 @@ interface WcsStorageError {
 }
 /**
  * Value types for StorageCore (headless) — the async state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  */
 interface WcsStorageCoreValues<T = unknown> {
     value: T;
@@ -72,7 +74,12 @@ declare class StorageCore extends EventTarget {
     private _key;
     private _type;
     private _storageListener;
+    private _gen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
+    dispose(): void;
     get value(): any;
     set value(v: any);
     get loading(): boolean;

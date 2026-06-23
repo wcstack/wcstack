@@ -87,9 +87,31 @@ class ResizeCore extends EventTarget {
     _effectiveBox = "content-box";
     _entry = null;
     _observing = false;
+    // SSR: ResizeObserver delivers the initial size synchronously, so there is no
+    // asynchronous probe to await — readiness is immediate. Kept as a field so the
+    // Shell can expose it as connectedCallbackPromise uniformly with the other nodes.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
+    }
+    /** Resolves once the first probe settles. Synchronous here, so already resolved. */
+    get ready() {
+        return this._ready;
+    }
+    observe(element, options = {}) {
+        if (element) {
+            this._observeElement(element, options);
+        }
+        return this._ready;
+    }
+    /**
+     * Tear down the observer and invalidate the lifecycle (§3.5). Mirrors disconnect()
+     * but is the lifecycle-named counterpart the Shell calls from disconnectedCallback;
+     * a later observe() rebuilds the observer.
+     */
+    dispose() {
+        this.disconnect();
     }
     get entry() {
         return this._entry;
@@ -135,7 +157,7 @@ class ResizeCore extends EventTarget {
      * `content-box` before giving up; both giving-up paths leave `observing` false,
      * consistent with the never-throw design of the other @wcstack sensors.
      */
-    observe(element, options = {}) {
+    _observeElement(element, options = {}) {
         if (this._observer && this._observed === element && this._optionsEqual(this._options, options)) {
             return;
         }
@@ -325,7 +347,7 @@ const BOX_VALUES = ["content-box", "border-box", "device-pixel-content-box"];
  * the `<wcs-resize>` host itself except in the `self` form.
  */
 class WcsResize extends HTMLElement {
-    static hasConnectedCallbackPromise = false;
+    static hasConnectedCallbackPromise = true;
     // Only attributes that change *what or how* we observe trigger a re-observe.
     // `once` is intentionally excluded: it is evaluated at change fire time (in
     // `_onChange`), so toggling it takes effect without re-observing — and a
@@ -360,9 +382,16 @@ class WcsResize extends HTMLElement {
     };
     _core;
     _trigger = false;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new ResizeCore(this);
+    }
+    // SSR: the state binder awaits this before snapshotting. Backed by the Core's
+    // synchronous `ready` (resize delivers the initial size synchronously, so it is
+    // already resolved); exposed for uniformity with the other @wcstack IO nodes.
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get target() {
@@ -553,10 +582,14 @@ class WcsResize extends HTMLElement {
         if (!this.manual) {
             this.observe();
         }
+        // SSR: back connectedCallbackPromise with the Core's readiness probe. The
+        // observation itself is started above via the element-observe command; this
+        // captures the (synchronously resolved) ready promise for the state binder.
+        this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {
         this.removeEventListener("wcs-resize:change", this._onChange);
-        this._core.disconnect();
+        this._core.dispose();
     }
     attributeChangedCallback(_name, oldValue, newValue) {
         // Defensive same-value guard. Per the HTML spec, an attribute change reaction is

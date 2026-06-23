@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly geo: string;
 }
@@ -14,26 +35,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: number;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: IWcBindableInput[];
-    readonly commands?: IWcBindableCommand[];
-}
+
 /**
  * Permission state for the Geolocation API, mirroring the Permissions API
  * `PermissionState` plus `"unsupported"` for environments without
@@ -93,7 +95,7 @@ interface GeoOptions {
 }
 /**
  * Value types for GeolocationCore (headless) — the observable state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript
@@ -184,6 +186,7 @@ declare class GeolocationCore extends EventTarget {
     private _permGen;
     private _acqGen;
     private _watchGen;
+    private _ready;
     constructor(target?: EventTarget);
     get position(): WcsGeoPositionDetail | null;
     get latitude(): number | null;
@@ -195,6 +198,8 @@ declare class GeolocationCore extends EventTarget {
     get loading(): boolean;
     get error(): WcsGeoErrorDetail | null;
     get permission(): GeoPermissionState;
+    /** Resolves once the first (or most recent) permission probe settles (§3.8). */
+    get ready(): Promise<void>;
     private _setPosition;
     private _setWatching;
     private _setLoading;
@@ -215,12 +220,26 @@ declare class GeolocationCore extends EventTarget {
     watch(options?: GeoOptions): void;
     clearWatch(): void;
     /**
+     * Establish permission monitoring (§3.5). Idempotent: a no-op while a
+     * subscription is already live (so the first connect after construction does
+     * not double-subscribe), and re-subscribes after a dispose() — e.g. the Shell
+     * element was disconnected and then reconnected (reparented). Returns the
+     * `ready` promise, which resolves once the (re)established probe settles, so
+     * the Shell can expose it as connectedCallbackPromise for SSR. Position
+     * acquisition (one-shot / watch) is command-driven and the Shell drives it
+     * separately from connectedCallback.
+     */
+    observe(): Promise<void>;
+    /**
      * Re-establish the permission `change` subscription after a dispose() — e.g.
      * the Shell element was disconnected and then reconnected (reparented). No-op
      * while a subscription is already live, so the first connect after
      * construction does not double-subscribe. This keeps permission tracking
      * symmetric with position acquisition, which the Shell also revives on
      * reconnect.
+     *
+     * Retained as a thin alias of observe() for the Shell's existing reconnect
+     * path; observe() is the canonical §3.5 lifecycle entry point.
      */
     reinitPermission(): void;
     /**

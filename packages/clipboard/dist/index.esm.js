@@ -126,12 +126,29 @@ class ClipboardCore extends EventTarget {
     // The Clipboard API has no AbortController, so a generation guard is the only
     // way to neutralize an in-flight op.
     _acqGen = 0;
+    // SSR (§3.8): resolves once the first permission probe settles, so the state
+    // binder can await a real snapshot before reading. Set by _initPermissions();
+    // Promise.resolve() when the Permissions API is unsupported (no async probe).
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
         // Probe the permission states up front so observers see the real values
         // before the first read, then keep them live.
         this._initPermissions();
+    }
+    // SSR (§3.8): the first permission probe's settle promise.
+    get ready() {
+        return this._ready;
+    }
+    // Lifecycle (§3.5). Clipboard reads/writes are command-driven (they need a
+    // user gesture), so observe() establishes no acquisition; it only (re)subscribes
+    // to permission `change` events — idempotent while a subscription is live, and
+    // reviving it after a dispose() (reconnect/reparent). Returns ready so the Shell
+    // can expose it as connectedCallbackPromise.
+    observe() {
+        this.reinitPermission();
+        return this._ready;
     }
     get text() {
         return this._text;
@@ -300,6 +317,9 @@ class ClipboardCore extends EventTarget {
         if (this._monitoring)
             return;
         this._setMonitoring(true);
+        // §4 deviation: document-scoped Web API; no element-free alternative.
+        // copy/cut/paste fire on `document`, so monitoring necessarily listens there
+        // rather than on a Core-owned element. Registered as an allowed deviation.
         document.addEventListener("copy", this._onCopy);
         document.addEventListener("cut", this._onCut);
         document.addEventListener("paste", this._onPaste);
@@ -411,11 +431,13 @@ class ClipboardCore extends EventTarget {
         this._setPasted(text);
     };
     _removeMonitorListeners() {
+        // §4 deviation: document-scoped Web API; no element-free alternative.
         document.removeEventListener("copy", this._onCopy);
         document.removeEventListener("cut", this._onCut);
         document.removeEventListener("paste", this._onPaste);
     }
     _selectionText() {
+        // §4 deviation: document-scoped Web API; no element-free alternative.
         const selection = document.getSelection();
         return selection ? selection.toString() : "";
     }
@@ -432,15 +454,19 @@ class ClipboardCore extends EventTarget {
         if (typeof navigator === "undefined" || !navigator.permissions || typeof navigator.permissions.query !== "function") {
             this._setReadPermission("unsupported");
             this._setWritePermission("unsupported");
+            // No async probe: readiness is immediate (§3.8).
+            this._ready = Promise.resolve();
             return;
         }
         this._permissionSubscribed = true;
         const gen = ++this._permGen;
-        this._queryPermission("clipboard-read", gen, (s) => { this._readStatus = s; }, (state) => this._setReadPermission(state), this._onReadChange);
-        this._queryPermission("clipboard-write", gen, (s) => { this._writeStatus = s; }, (state) => this._setWritePermission(state), this._onWriteChange);
+        const readProbe = this._queryPermission("clipboard-read", gen, (s) => { this._readStatus = s; }, (state) => this._setReadPermission(state), this._onReadChange);
+        const writeProbe = this._queryPermission("clipboard-write", gen, (s) => { this._writeStatus = s; }, (state) => this._setWritePermission(state), this._onWriteChange);
+        // SSR (§3.8): ready resolves once both initial permission probes settle.
+        this._ready = Promise.all([readProbe, writeProbe]).then(() => undefined);
     }
     _queryPermission(name, gen, assignStatus, setState, onChange) {
-        navigator.permissions.query({ name: name }).then((status) => {
+        return navigator.permissions.query({ name: name }).then((status) => {
             // Stale resolution: this query was superseded (rapid reconnect) or the
             // element was disposed while it was in flight. Drop it so only the
             // current subscription attaches a listener.
@@ -581,6 +607,7 @@ function registerAutoTrigger() {
 // DOM `Clipboard` interface (the type of `navigator.clipboard`), matching the
 // <wcs-geo> WcsGeolocation / <wcs-ws> WcsWebSocket convention.
 class WcsClipboard extends HTMLElement {
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...ClipboardCore.wcBindable,
         // Shell-level settable surface. `monitor` mirrors its boolean attribute
@@ -599,9 +626,15 @@ class WcsClipboard extends HTMLElement {
         commands: ClipboardCore.wcBindable.commands,
     };
     _core;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new ClipboardCore(this);
+    }
+    // SSR (§4.4): the state binder awaits this before snapshotting, so the first
+    // permission probe has settled. Backed by _core.observe() (see connectedCallback).
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get monitor() {
@@ -678,10 +711,10 @@ class WcsClipboard extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
-        // Revive permission tracking after a reconnect (reparenting). No-op on the
-        // first connect since the constructor already subscribed; only re-subscribes
-        // when disconnectedCallback's dispose() tore the subscription down.
-        this._core.reinitPermission();
+        // observe() revives permission tracking after a reconnect (reparenting) —
+        // a no-op on the first connect since the constructor already subscribed — and
+        // returns the readiness promise exposed as connectedCallbackPromise (§4.4).
+        this._connectedCallbackPromise = this._core.observe();
         // Unlike <wcs-geo>, there is no connect-time acquisition: reads require a
         // user gesture, so the only connect-time action is optional monitoring.
         if (this.monitor) {

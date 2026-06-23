@@ -122,6 +122,9 @@ class DebounceCore extends EventTarget {
     _lastCallTime = undefined;
     _lastInvokeTime = 0;
     _timerId = null;
+    // Generation stamped onto the live timer at arm time, compared in
+    // `_timerExpired` against `_gen` to drop callbacks that outlived a dispose().
+    _timerGen = 0;
     // Last-wins pending payload. `_pendingKind === null` doubles as the "consumed /
     // empty" sentinel (lodash clears `lastArgs` in invokeFunc): a trailing edge with
     // no fresh call since the last fire sees `null` and does not re-fire, which is
@@ -133,6 +136,15 @@ class DebounceCore extends EventTarget {
     _value = undefined;
     _lastArgs = [];
     _pending = false;
+    // Generation guard (§3.4): bumped on dispose() so a timer that survives a
+    // tear-down can no longer settle into a detached element. A pending timer is
+    // also cleared by dispose() → cancel(), so the guard is defensive: it stops
+    // any callback that has already been dequeued by the host event loop from
+    // writing state after dispose().
+    _gen = 0;
+    // SSR (§3.8): the debounce engine is purely timer-driven with no asynchronous
+    // probe to await, so readiness is immediate.
+    _ready = Promise.resolve();
     constructor(prefix = "wcs-debounce", target, options) {
         super();
         this._prefix = prefix;
@@ -140,6 +152,22 @@ class DebounceCore extends EventTarget {
         if (options) {
             this.configure(options);
         }
+    }
+    // --- Lifecycle (§3.5 / §3.8) ---
+    get ready() {
+        return this._ready;
+    }
+    // Debounce is command-driven (setSource / trigger schedule work on demand)
+    // with no subscription to establish, so observe() is an idempotent no-op that
+    // resolves once ready.
+    observe() {
+        return this._ready;
+    }
+    // Tear down the pending timer and invalidate the generation so a stale timer
+    // callback cannot fire after the element is detached.
+    dispose() {
+        this._gen++;
+        this.cancel();
     }
     // --- Configuration ---
     /**
@@ -240,13 +268,13 @@ class DebounceCore extends EventTarget {
                 // same) — overwriting `_timerId` without clearing would orphan the old
                 // timer and let it fire spuriously later.
                 this._clearTimer();
-                this._timerId = setTimeout(this._timerExpired, this._wait);
+                this._armTimer(this._wait);
                 this._invoke(now);
                 return;
             }
         }
         if (this._timerId === null) {
-            this._timerId = setTimeout(this._timerExpired, this._wait);
+            this._armTimer(this._wait);
         }
     }
     _shouldInvoke(now) {
@@ -267,6 +295,11 @@ class DebounceCore extends EventTarget {
             : timeWaiting;
     }
     _timerExpired = () => {
+        // §3.4 generation guard: a timer dequeued by the host before dispose() could
+        // clear it must not settle into a torn-down element. Capture the generation
+        // when the timer is scheduled (via `_armTimer`) and bail if it is stale.
+        if (this._timerGen !== this._gen)
+            return;
         const now = Date.now();
         if (this._shouldInvoke(now)) {
             this._trailingEdge(now);
@@ -274,11 +307,11 @@ class DebounceCore extends EventTarget {
         }
         // Fired before the quiet period elapsed (a later call moved the deadline) —
         // re-arm for the remaining time instead of settling now.
-        this._timerId = setTimeout(this._timerExpired, this._remainingWait(now));
+        this._armTimer(this._remainingWait(now));
     };
     _leadingEdge(now) {
         this._lastInvokeTime = now;
-        this._timerId = setTimeout(this._timerExpired, this._wait);
+        this._armTimer(this._wait);
         if (this._leading) {
             this._invoke(now);
         }
@@ -318,6 +351,12 @@ class DebounceCore extends EventTarget {
     }
     _dispatch(type, detail) {
         this._target.dispatchEvent(new CustomEvent(type, { detail, bubbles: true }));
+    }
+    // Arm the settle timer, stamping the current generation so a callback that the
+    // host dequeues after a dispose() can detect it is stale (§3.4).
+    _armTimer(delay) {
+        this._timerGen = this._gen;
+        this._timerId = setTimeout(this._timerExpired, delay);
     }
     _clearTimer() {
         if (this._timerId !== null) {
@@ -369,7 +408,7 @@ const DEFAULT_WAIT = 250;
  * subclasses this with `"wcs-throttle"` and throttle defaults.
  */
 class Debounce extends HTMLElement {
-    static hasConnectedCallbackPromise = false;
+    static hasConnectedCallbackPromise = true;
     static eventPrefix = "wcs-debounce";
     static wcBindable = {
         protocol: "wc-bindable",
@@ -396,9 +435,13 @@ class Debounce extends HTMLElement {
     };
     _core;
     _source = undefined;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new DebounceCore(this.constructor.eventPrefix, this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get wait() {
@@ -508,10 +551,14 @@ class Debounce extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
+        // §4.1/§4.4 Shell SSR: expose connectedCallbackPromise backed by observe().
+        // observe() is a no-op resolving once ready (the engine is command-driven).
+        this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {
-        // Drop any in-flight timer so a detached element leaks nothing.
-        this._core.cancel();
+        // Drop any in-flight timer so a detached element leaks nothing, and bump the
+        // Core generation so a surviving timer callback cannot settle (§3.5).
+        this._core.dispose();
     }
 }
 

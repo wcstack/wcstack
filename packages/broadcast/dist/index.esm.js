@@ -89,15 +89,36 @@ class BroadcastCore extends EventTarget {
     _name = null;
     _message = null;
     _error = null;
+    // Generation guard (§3.4): bumped on dispose(). An incoming message /
+    // messageerror that fires after the Shell disconnected (a peer posted between
+    // disconnect and the channel actually closing, or a queued event drains late)
+    // has a stale `gen` and MUST NOT write state to a torn-down element. A boolean
+    // flag is insufficient: dispose→reconnect would let a stale event slip through.
+    _gen = 0;
+    // SSR (§3.8): a channel opens synchronously (no asynchronous probe to await),
+    // so readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
+    }
+    get ready() {
+        return this._ready;
     }
     get message() {
         return this._message;
     }
     get error() {
         return this._error;
+    }
+    // --- Lifecycle (§3.5) ---
+    // observe() establishes monitoring. BroadcastChannel is command-driven (the
+    // Shell calls open(name) from connectedCallback / attributeChangedCallback),
+    // so there is no subscription for observe() to set up here: it is an idempotent
+    // no-op that resolves once ready. It exists for skeleton symmetry with the
+    // monitor-style nodes so a host can uniformly await observe() == ready.
+    observe() {
+        return this._ready;
     }
     // --- State setters with event dispatch ---
     // Deliberately NO same-value guard (unlike `error` below). A received message
@@ -148,7 +169,28 @@ class BroadcastCore extends EventTarget {
             return;
         this._closeChannel();
         this._setError(null);
+        // Capture the generation for this channel (§3.4). The listeners below close
+        // over `gen`; an event that fires after dispose() (which bumps _gen) is
+        // recognised as stale and dropped without writing state to a torn-down
+        // element. The handlers are stored so _closeChannel() can remove them by the
+        // same reference.
+        const gen = ++this._gen;
         const channel = new BroadcastChannel(name);
+        this._onMessage = (event) => {
+            if (gen !== this._gen)
+                return;
+            this._setMessage(event.data);
+        };
+        // Fired when a peer posted a value this context cannot deserialize. The event
+        // carries no usable payload, so report a synthetic DataError.
+        this._onMessageError = () => {
+            if (gen !== this._gen)
+                return;
+            this._setError({
+                name: "DataError",
+                message: "Failed to deserialize a message received on the channel.",
+            });
+        };
         channel.addEventListener("message", this._onMessage);
         channel.addEventListener("messageerror", this._onMessageError);
         this._channel = channel;
@@ -196,21 +238,19 @@ class BroadcastCore extends EventTarget {
      * reconnect, and it is naturally overwritten by the next incoming message.
      */
     dispose() {
+        // Bump the generation first (§3.4) so any message/messageerror that drains
+        // after teardown is recognised as stale, then close the channel and reset the
+        // error shadow silently.
+        this._gen++;
         this._closeChannel();
         this._error = null;
     }
     // --- Internal ---
-    _onMessage = (event) => {
-        this._setMessage(event.data);
-    };
-    // Fired when a peer posted a value this context cannot deserialize. The event
-    // carries no usable payload, so report a synthetic DataError.
-    _onMessageError = () => {
-        this._setError({
-            name: "DataError",
-            message: "Failed to deserialize a message received on the channel.",
-        });
-    };
+    // Per-channel listeners, (re)created in open() so each closes over its own
+    // generation (§3.4). null while no channel is open; the real handlers are
+    // installed by open() and removed by the same reference in _closeChannel().
+    _onMessage = null;
+    _onMessageError = null;
     _closeChannel() {
         if (!this._channel)
             return;
@@ -219,6 +259,8 @@ class BroadcastCore extends EventTarget {
         this._channel.close();
         this._channel = null;
         this._name = null;
+        this._onMessage = null;
+        this._onMessageError = null;
     }
     _hasBroadcastChannel() {
         return typeof BroadcastChannel !== "undefined";
@@ -328,9 +370,10 @@ function registerAutoTrigger() {
 // Named WcsBroadcast (not `Broadcast`) to match the <wcs-clipboard> WcsClipboard
 // / <wcs-ws> WcsWebSocket convention and avoid shadowing any global.
 class WcsBroadcast extends HTMLElement {
-    // The channel opens synchronously in connectedCallback (no async init), so no
-    // connectedCallbackPromise is needed — mirrors <wcs-ws>.
-    static hasConnectedCallbackPromise = false;
+    // SSR (§4.4): the channel opens synchronously in connectedCallback, so the
+    // Core's observe() resolves immediately; we still expose connectedCallbackPromise
+    // so a state binder can uniformly await readiness before snapshotting.
+    static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...BroadcastCore.wcBindable,
         // Shell-level settable surface. `name` selects the channel; `manual`
@@ -349,9 +392,13 @@ class WcsBroadcast extends HTMLElement {
     };
     static get observedAttributes() { return ["name"]; }
     _core;
+    _connectedCallbackPromise = Promise.resolve();
     constructor() {
         super();
         this._core = new BroadcastCore(this);
+    }
+    get connectedCallbackPromise() {
+        return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
     get name() {
@@ -404,6 +451,9 @@ class WcsBroadcast extends HTMLElement {
         if (!this.manual && this.name) {
             this._core.open(this.name);
         }
+        // SSR (§4.4): expose the Core's readiness as connectedCallbackPromise. The
+        // channel opens synchronously above, so observe() resolves immediately.
+        this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {
         // Deliberately does NOT call unregisterAutoTrigger(). The autoTrigger click

@@ -47,10 +47,6 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-function raiseError(message) {
-    throw new Error(`[@wcstack/fetch] ${message}`);
-}
-
 class FetchCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -60,6 +56,10 @@ class FetchCore extends EventTarget {
             { name: "loading", event: "wcs-fetch:loading-changed" },
             { name: "error", event: "wcs-fetch:error" },
             { name: "status", event: "wcs-fetch:response", getter: (e) => e.detail.status },
+            // Managed object URL for a `responseType: "blob"` response (null otherwise).
+            // The Core revokes the previous URL on each new response and on dispose, so
+            // a consumer can bind it straight into <img src> without lifecycle glue.
+            { name: "objectURL", event: "wcs-fetch:response", getter: (e) => e.detail.objectURL },
         ],
         inputs: [
             { name: "url" },
@@ -75,11 +75,38 @@ class FetchCore extends EventTarget {
     _loading = false;
     _error = null;
     _status = 0;
+    _objectURL = null;
     _abortController = null;
     _promise = Promise.resolve(null);
+    // Generation guard (§3.4): bumped on dispose() (and each fetch start). An
+    // in-flight request that settles after dispose / a superseding start has a
+    // stale `gen` and MUST NOT write state to a torn-down element. A boolean flag
+    // is insufficient (dispose→observe would let stale work slip through).
+    _gen = 0;
+    // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
+    _ready = Promise.resolve();
     constructor(target) {
         super();
         this._target = target ?? this;
+    }
+    get ready() {
+        return this._ready;
+    }
+    // Lifecycle (§3.5). Fetch is command-driven with no subscription to
+    // establish, so observe() is an idempotent no-op that resolves once ready;
+    // dispose() invalidates any in-flight request and aborts it.
+    observe() {
+        return this._ready;
+    }
+    dispose() {
+        this._gen++;
+        this.abort();
+        // Release any outstanding blob object URL on teardown (the other revoke point
+        // is _setResponse, which drops the previous URL when a new response arrives).
+        if (this._objectURL !== null) {
+            this._revokeObjectURL(this._objectURL);
+            this._objectURL = null;
+        }
     }
     get value() {
         return this._value;
@@ -92,6 +119,9 @@ class FetchCore extends EventTarget {
     }
     get status() {
         return this._status;
+    }
+    get objectURL() {
+        return this._objectURL;
     }
     get promise() {
         return this._promise;
@@ -110,13 +140,36 @@ class FetchCore extends EventTarget {
             bubbles: true,
         }));
     }
-    _setResponse(value, status) {
+    _setResponse(value, status, objectURL = null) {
+        // Revoke the previous blob object URL before replacing it. Any new response
+        // (success, HTTP error, or network error all funnel through here) supersedes
+        // the prior one, so the old URL is no longer needed; this plus dispose()
+        // revocation keeps blob downloads leak-free.
+        if (this._objectURL !== null) {
+            this._revokeObjectURL(this._objectURL);
+        }
+        this._objectURL = objectURL;
         this._value = value;
         this._status = status;
         this._target.dispatchEvent(new CustomEvent("wcs-fetch:response", {
-            detail: { value, status },
+            detail: { value, status, objectURL },
             bubbles: true,
         }));
+    }
+    // Object URL lifecycle for responseType: "blob". The Core owns the blob's
+    // object URL (mirrors RecorderCore) so a consumer can bind `objectURL` straight
+    // into <img src>/<a href> without managing createObjectURL/revokeObjectURL. Both
+    // helpers tolerate environments without URL.createObjectURL (SSR / headless).
+    _createObjectURL(blob) {
+        if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+            return URL.createObjectURL(blob);
+        }
+        return null;
+    }
+    _revokeObjectURL(url) {
+        if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+            URL.revokeObjectURL(url);
+        }
     }
     abort() {
         if (this._abortController) {
@@ -125,8 +178,12 @@ class FetchCore extends EventTarget {
         }
     }
     async fetch(url, options = {}) {
+        // never-throw (§3.6): 引数バリデーション失敗は例外ではなく error プロパティに
+        // 流し、サニタイズ値(null)を返す。command-token 経路からの呼び出しが unhandled
+        // rejection にならず、「fetch() は全終了ケースで resolve」契約とも整合する。
         if (!url) {
-            raiseError("url attribute is required.");
+            this._setError({ message: "url attribute is required." });
+            return null;
         }
         const p = this._doFetch(url, options);
         this._promise = p;
@@ -143,9 +200,12 @@ class FetchCore extends EventTarget {
         const ac = new AbortController();
         this._abortController = ac;
         const { signal } = ac;
+        // Capture the generation at async start (§3.4). A completion that runs after
+        // dispose() (which bumps _gen) is stale and must not write state.
+        const gen = ++this._gen;
         this._setLoading(true);
         this._setError(null);
-        const { method = "GET", body = null, contentType = null, forceText = false, } = options;
+        const { method = "GET", body = null, contentType = null, forceText = false, responseType = "auto", } = options;
         // Copy the caller's headers so the contentType injection below never mutates
         // the object passed in by a headless consumer (the Shell already builds a
         // fresh object, but direct FetchCore users may reuse theirs).
@@ -163,6 +223,11 @@ class FetchCore extends EventTarget {
                 requestInit.body = body;
             }
             const response = await globalThis.fetch(url, requestInit);
+            // A stale generation means dispose() (or a superseding fetch) ran while the
+            // request was in flight. Drop the result without touching torn-down state.
+            if (gen !== this._gen) {
+                return null;
+            }
             if (!response.ok) {
                 const errorBody = await response.text().catch(() => "");
                 const error = { status: response.status, statusText: response.statusText, body: errorBody };
@@ -182,10 +247,31 @@ class FetchCore extends EventTarget {
                 this._setResponse(null, response.status);
             }
             else if (forceText) {
+                // HTML-replace mode (the Shell sets forceText when `target` is present)
+                // always reads text and takes priority over responseType.
                 const text = await response.text();
                 this._setResponse(text, response.status);
             }
+            else if (responseType === "blob") {
+                const blob = await response.blob();
+                // Publish a managed object URL alongside the Blob so consumers can bind it
+                // directly into <img src> etc.
+                this._setResponse(blob, response.status, this._createObjectURL(blob));
+            }
+            else if (responseType === "arrayBuffer") {
+                const buffer = await response.arrayBuffer();
+                this._setResponse(buffer, response.status);
+            }
+            else if (responseType === "text") {
+                const text = await response.text();
+                this._setResponse(text, response.status);
+            }
+            else if (responseType === "json") {
+                const data = await response.json();
+                this._setResponse(data, response.status);
+            }
             else {
+                // "auto" (default): sniff Content-Type — JSON when it says so, else text.
                 const responseContentType = response.headers.get("Content-Type") || "";
                 if (responseContentType.includes("application/json")) {
                     const data = await response.json();
@@ -200,17 +286,17 @@ class FetchCore extends EventTarget {
             return this._value;
         }
         catch (e) {
+            // Stale completion (dispose / superseding fetch ran during a later await
+            // such as response.json()). Drop the result without writing state.
+            if (gen !== this._gen) {
+                return null;
+            }
             if (e.name === "AbortError") {
-                // Suppress loading=false when a later request has already taken over. A
-                // subsequent fetch() aborts this one via abort() (which nulls the field) and
-                // then immediately installs its own controller, so `this._abortController` is
-                // non-null here. That newer request has already emitted loading=true and is
-                // still in flight, so emitting loading=false now would make observers see a
-                // spurious flicker. An explicit abort() leaves the field null, so that path
-                // still reports loading=false as expected.
-                if (this._abortController === null) {
-                    this._setLoading(false);
-                }
+                // A matching generation means this is an explicit abort() of the current
+                // request (a superseding fetch bumps _gen and is caught by the stale guard
+                // above; dispose() likewise bumps _gen). Explicit abort clears loading so
+                // observers leave the in-flight state.
+                this._setLoading(false);
                 return null;
             }
             this._setError(e);
@@ -293,6 +379,7 @@ class Fetch extends HTMLElement {
             { name: "target" },
             { name: "manual" },
             { name: "body" },
+            { name: "responseType" },
             { name: "trigger" },
         ],
     };
@@ -346,6 +433,20 @@ class Fetch extends HTMLElement {
             this.setAttribute("target", value);
         }
     }
+    // Response body interpretation. Backed by the `response-type` attribute so it is
+    // settable from HTML, JS, or a binding. An unknown value falls through to the
+    // Core's "auto" branch. `target` (HTML-replace mode) overrides this.
+    get responseType() {
+        return this.getAttribute("response-type") || "auto";
+    }
+    set responseType(value) {
+        if (value == null) {
+            this.removeAttribute("response-type");
+        }
+        else {
+            this.setAttribute("response-type", value);
+        }
+    }
     get value() {
         return this._core.value;
     }
@@ -357,6 +458,9 @@ class Fetch extends HTMLElement {
     }
     get status() {
         return this._core.status;
+    }
+    get objectURL() {
+        return this._core.objectURL;
     }
     get promise() {
         return this._core.promise;
@@ -423,13 +527,32 @@ class Fetch extends HTMLElement {
         }
         return headers;
     }
+    // fetch がネイティブに扱える BodyInit か判定する。これらは JSON.stringify せず
+    // 素通しし、Content-Type をブラウザに委ねる (FormData の multipart boundary、
+    // Blob の type、URLSearchParams の application/x-www-form-urlencoded を自動付与
+    // させるため、_collectBody は contentType に null を返す)。ReadableStream は
+    // RequestInit.duplex: 'half' を要するため初版では対象外とし、従来どおり扱う。
+    _isNativeBodyInit(value) {
+        return value instanceof Blob // File は Blob のサブクラス
+            || value instanceof FormData
+            || value instanceof URLSearchParams
+            || value instanceof ArrayBuffer
+            || ArrayBuffer.isView(value); // TypedArray / DataView
+    }
     _collectBody(bodySnapshot) {
         // JS API経由のbodyが優先
         if (bodySnapshot !== null) {
-            return {
-                body: typeof bodySnapshot === "string" ? bodySnapshot : JSON.stringify(bodySnapshot),
-                contentType: typeof bodySnapshot === "string" ? null : "application/json",
-            };
+            // 文字列はそのまま。Content-Type はユーザーのヘッダ指定に委ねる。
+            if (typeof bodySnapshot === "string") {
+                return { body: bodySnapshot, contentType: null };
+            }
+            // ネイティブ BodyInit (Blob/File/FormData/URLSearchParams/ArrayBuffer/TypedArray)
+            // は素通し。Content-Type はブラウザに委ねるため null を返す。
+            if (this._isNativeBodyInit(bodySnapshot)) {
+                return { body: bodySnapshot, contentType: null };
+            }
+            // それ以外のオブジェクトは JSON 化する。
+            return { body: JSON.stringify(bodySnapshot), contentType: "application/json" };
         }
         // サブタグからbodyを取得
         const bodyElement = this.querySelector(config.tagNames.fetchBody);
@@ -501,12 +624,22 @@ class Fetch extends HTMLElement {
         const bodySnapshot = this._body;
         this._body = null;
         const { body, contentType } = this._collectBody(bodySnapshot);
+        // FormData に手動で Content-Type を付けると、ブラウザが付与するはずの multipart
+        // boundary が失われてサーバー側でパースできなくなる。ヘッダはユーザー指定を
+        // 尊重して素通しするが、この典型的な誤設定は警告する。
+        if (body instanceof FormData &&
+            Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+            console.warn("[@wcstack/fetch] A manual Content-Type header was set alongside a FormData body. " +
+                "This drops the multipart boundary the browser adds automatically; remove the " +
+                "Content-Type header (e.g. the <wcs-fetch-header>) to fix multipart uploads.");
+        }
         const result = await this._core.fetch(this.url, {
             method: this.method,
             headers,
             body,
             contentType,
             forceText: !!this.target,
+            responseType: this.responseType,
         });
         // HTML置換モード
         // Security: the response is injected as raw innerHTML without sanitization.

@@ -1,3 +1,24 @@
+interface IWcBindableProperty {
+    readonly name: string;
+    readonly event: string;
+    readonly getter?: (event: Event) => any;
+}
+interface IWcBindableInput {
+    readonly name: string;
+    readonly attribute?: string;
+}
+interface IWcBindableCommand {
+    readonly name: string;
+    readonly async?: boolean;
+}
+interface IWcBindable {
+    readonly protocol: "wc-bindable";
+    readonly version: 1;
+    readonly properties: readonly IWcBindableProperty[];
+    readonly inputs?: readonly IWcBindableInput[];
+    readonly commands?: readonly IWcBindableCommand[];
+}
+
 interface ITagNames {
     readonly fetch: string;
     readonly fetchHeader: string;
@@ -20,26 +41,7 @@ interface IWritableConfig {
     triggerAttribute?: string;
     tagNames?: IWritableTagNames;
 }
-interface IWcBindableProperty {
-    readonly name: string;
-    readonly event: string;
-    readonly getter?: (event: Event) => any;
-}
-interface IWcBindableInput {
-    readonly name: string;
-    readonly attribute?: string;
-}
-interface IWcBindableCommand {
-    readonly name: string;
-    readonly async?: boolean;
-}
-interface IWcBindable {
-    readonly protocol: "wc-bindable";
-    readonly version: 1;
-    readonly properties: IWcBindableProperty[];
-    readonly inputs?: readonly IWcBindableInput[];
-    readonly commands?: readonly IWcBindableCommand[];
-}
+
 /**
  * HTTP error returned when the server responds with a non-ok status (>= 400).
  */
@@ -50,7 +52,7 @@ interface WcsFetchHttpError {
 }
 /**
  * Value types for FetchCore (headless) — the 4 async state properties.
- * Use with `bind()` from `@wc-bindable/core` for compile-time type checking.
+ * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
  * ```typescript
@@ -64,6 +66,8 @@ interface WcsFetchCoreValues<T = unknown> {
     loading: boolean;
     error: WcsFetchHttpError | Error | null;
     status: number;
+    /** Managed object URL for a `responseType: "blob"` response; null otherwise. */
+    objectURL: string | null;
 }
 /**
  * Value types for the Shell (`<wcs-fetch>`) — extends Core with `trigger`.
@@ -86,12 +90,14 @@ declare function bootstrapFetch(userConfig?: IWritableConfig): void;
 
 declare function getConfig(): IConfig;
 
+type FetchResponseType = "auto" | "json" | "text" | "blob" | "arrayBuffer";
 interface FetchRequestOptions {
     method?: string;
     headers?: Record<string, string>;
     body?: BodyInit | null;
     contentType?: string | null;
     forceText?: boolean;
+    responseType?: FetchResponseType;
 }
 declare class FetchCore extends EventTarget {
     static wcBindable: IWcBindable;
@@ -100,17 +106,26 @@ declare class FetchCore extends EventTarget {
     private _loading;
     private _error;
     private _status;
+    private _objectURL;
     private _abortController;
     private _promise;
+    private _gen;
+    private _ready;
     constructor(target?: EventTarget);
+    get ready(): Promise<void>;
+    observe(): Promise<void>;
+    dispose(): void;
     get value(): any;
     get loading(): boolean;
     get error(): any;
     get status(): number;
+    get objectURL(): string | null;
     get promise(): Promise<any>;
     private _setLoading;
     private _setError;
     private _setResponse;
+    private _createObjectURL;
+    private _revokeObjectURL;
     abort(): void;
     fetch(url: string, options?: FetchRequestOptions): Promise<any>;
     private _doFetch;
@@ -134,10 +149,13 @@ declare class Fetch extends HTMLElement {
     set method(value: string | null);
     get target(): string | null;
     set target(value: string | null);
+    get responseType(): FetchResponseType;
+    set responseType(value: string | null);
     get value(): any;
     get loading(): boolean;
     get error(): any;
     get status(): number;
+    get objectURL(): string | null;
     get promise(): Promise<any>;
     get connectedCallbackPromise(): Promise<void>;
     get manual(): boolean;
@@ -147,6 +165,7 @@ declare class Fetch extends HTMLElement {
     get trigger(): boolean;
     set trigger(value: boolean);
     private _collectHeaders;
+    private _isNativeBodyInit;
     private _collectBody;
     abort(): void;
     /**
