@@ -33,11 +33,12 @@ describe("FetchCore", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(FetchCore.wcBindable.protocol).toBe("wc-bindable");
     expect(FetchCore.wcBindable.version).toBe(1);
-    expect(FetchCore.wcBindable.properties).toHaveLength(4);
+    expect(FetchCore.wcBindable.properties).toHaveLength(5);
     expect(FetchCore.wcBindable.properties[0].name).toBe("value");
     expect(FetchCore.wcBindable.properties[1].name).toBe("loading");
     expect(FetchCore.wcBindable.properties[2].name).toBe("error");
     expect(FetchCore.wcBindable.properties[3].name).toBe("status");
+    expect(FetchCore.wcBindable.properties[4].name).toBe("objectURL");
   });
 
   it("wcBindable inputsがurl/methodを宣言している", () => {
@@ -73,12 +74,19 @@ describe("FetchCore", () => {
     expect(getter(event)).toBe(200);
   });
 
+  it("objectURLのgetterがdetail.objectURLを返す", () => {
+    const getter = FetchCore.wcBindable.properties[4].getter!;
+    const event = new CustomEvent("wcs-fetch:response", { detail: { value: null, status: 200, objectURL: "blob:abc" } });
+    expect(getter(event)).toBe("blob:abc");
+  });
+
   it("初期状態が正しい", () => {
     const core = new FetchCore();
     expect(core.value).toBeNull();
     expect(core.loading).toBe(false);
     expect(core.error).toBeNull();
     expect(core.status).toBe(0);
+    expect(core.objectURL).toBeNull();
     expect(core.promise).toBeInstanceOf(Promise);
   });
 
@@ -300,6 +308,129 @@ describe("FetchCore", () => {
     expect(core.status).toBe(0);
     // status 観測者（wcs-fetch:response 経由）にも 0 が通知される
     expect(responses).toEqual([{ status: 0, value: null }]);
+  });
+
+  it("responseType: blob で value に Blob を入れ objectURL を生成する", async () => {
+    const blob = new Blob(["img"], { type: "image/png" });
+    fetchSpy.mockResolvedValueOnce({
+      ok: true, status: 200, statusText: "OK",
+      headers: new Headers({ "Content-Type": "image/png" }),
+      blob: () => Promise.resolve(blob),
+    } as unknown as Response);
+
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = (() => "blob:fake-1") as typeof URL.createObjectURL;
+    try {
+      const core = new FetchCore();
+      const result = await core.fetch("/api/image", { responseType: "blob" });
+      expect(result).toBe(blob);
+      expect(core.value).toBe(blob);
+      expect(core.objectURL).toBe("blob:fake-1");
+      expect(core.status).toBe(200);
+    } finally {
+      URL.createObjectURL = origCreate;
+    }
+  });
+
+  it("responseType: arrayBuffer で value に ArrayBuffer を入れ objectURL は null", async () => {
+    const buffer = new ArrayBuffer(8);
+    fetchSpy.mockResolvedValueOnce({
+      ok: true, status: 200, statusText: "OK",
+      headers: new Headers(),
+      arrayBuffer: () => Promise.resolve(buffer),
+    } as unknown as Response);
+
+    const core = new FetchCore();
+    const result = await core.fetch("/api/bin", { responseType: "arrayBuffer" });
+    expect(result).toBe(buffer);
+    expect(core.value).toBe(buffer);
+    expect(core.objectURL).toBeNull();
+  });
+
+  it("responseType: text は Content-Type が JSON でもテキストとして読む", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ a: 1 }, { contentType: "application/json" }));
+    const core = new FetchCore();
+    const result = await core.fetch("/api/x", { responseType: "text" });
+    expect(result).toBe('{"a":1}');
+  });
+
+  it("responseType: json は Content-Type に関係なく JSON として読む", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ a: 1 }, { contentType: "text/plain" }));
+    const core = new FetchCore();
+    const result = await core.fetch("/api/x", { responseType: "json" });
+    expect(result).toEqual({ a: 1 });
+  });
+
+  it("新しい blob レスポンスは前の objectURL を revoke する", async () => {
+    const revoked: string[] = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    let seq = 0;
+    URL.createObjectURL = (() => `blob:fake-${++seq}`) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = ((u: string) => { revoked.push(u); }) as typeof URL.revokeObjectURL;
+    try {
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", headers: new Headers(), blob: () => Promise.resolve(new Blob(["a"])) } as unknown as Response);
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", headers: new Headers(), blob: () => Promise.resolve(new Blob(["b"])) } as unknown as Response);
+
+      const core = new FetchCore();
+      await core.fetch("/a", { responseType: "blob" });
+      expect(core.objectURL).toBe("blob:fake-1");
+      await core.fetch("/b", { responseType: "blob" });
+      expect(core.objectURL).toBe("blob:fake-2");
+      expect(revoked).toContain("blob:fake-1");
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+
+  it("dispose() は未解放の objectURL を revoke する", async () => {
+    const revoked: string[] = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (() => "blob:fake-x") as typeof URL.createObjectURL;
+    URL.revokeObjectURL = ((u: string) => { revoked.push(u); }) as typeof URL.revokeObjectURL;
+    try {
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", headers: new Headers(), blob: () => Promise.resolve(new Blob(["a"])) } as unknown as Response);
+      const core = new FetchCore();
+      await core.fetch("/a", { responseType: "blob" });
+      expect(core.objectURL).toBe("blob:fake-x");
+      core.dispose();
+      expect(revoked).toContain("blob:fake-x");
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+
+  it("URL.createObjectURL 不在時は blob でも objectURL が null", async () => {
+    fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", headers: new Headers(), blob: () => Promise.resolve(new Blob(["a"])) } as unknown as Response);
+    const origCreate = URL.createObjectURL;
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = undefined;
+    try {
+      const core = new FetchCore();
+      await core.fetch("/a", { responseType: "blob" });
+      expect(core.objectURL).toBeNull();
+    } finally {
+      URL.createObjectURL = origCreate;
+    }
+  });
+
+  it("URL.revokeObjectURL 不在でも dispose() は失敗しない", async () => {
+    fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", headers: new Headers(), blob: () => Promise.resolve(new Blob(["a"])) } as unknown as Response);
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (() => "blob:fake-y") as typeof URL.createObjectURL;
+    try {
+      const core = new FetchCore();
+      await core.fetch("/a", { responseType: "blob" });
+      expect(core.objectURL).toBe("blob:fake-y");
+      (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = undefined;
+      expect(() => core.dispose()).not.toThrow();
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
   });
 
   it("url未指定時はerrorに流しnullを返す（never-throw）", async () => {

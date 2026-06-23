@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 import { IWcBindable } from "../types.js";
-import { FetchCore } from "../core/FetchCore.js";
+import { FetchCore, FetchResponseType } from "../core/FetchCore.js";
 import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
@@ -24,6 +24,7 @@ export class Fetch extends HTMLElement {
       { name: "target" },
       { name: "manual" },
       { name: "body" },
+      { name: "responseType" },
       { name: "trigger" },
     ],
   };
@@ -83,6 +84,21 @@ export class Fetch extends HTMLElement {
     }
   }
 
+  // Response body interpretation. Backed by the `response-type` attribute so it is
+  // settable from HTML, JS, or a binding. An unknown value falls through to the
+  // Core's "auto" branch. `target` (HTML-replace mode) overrides this.
+  get responseType(): FetchResponseType {
+    return (this.getAttribute("response-type") as FetchResponseType) || "auto";
+  }
+
+  set responseType(value: string | null) {
+    if (value == null) {
+      this.removeAttribute("response-type");
+    } else {
+      this.setAttribute("response-type", value);
+    }
+  }
+
   get value(): any {
     return this._core.value;
   }
@@ -97,6 +113,10 @@ export class Fetch extends HTMLElement {
 
   get status(): number {
     return this._core.status;
+  }
+
+  get objectURL(): string | null {
+    return this._core.objectURL;
   }
 
   get promise(): Promise<any> {
@@ -171,13 +191,33 @@ export class Fetch extends HTMLElement {
     return headers;
   }
 
+  // fetch がネイティブに扱える BodyInit か判定する。これらは JSON.stringify せず
+  // 素通しし、Content-Type をブラウザに委ねる (FormData の multipart boundary、
+  // Blob の type、URLSearchParams の application/x-www-form-urlencoded を自動付与
+  // させるため、_collectBody は contentType に null を返す)。ReadableStream は
+  // RequestInit.duplex: 'half' を要するため初版では対象外とし、従来どおり扱う。
+  private _isNativeBodyInit(value: unknown): value is BodyInit {
+    return value instanceof Blob          // File は Blob のサブクラス
+      || value instanceof FormData
+      || value instanceof URLSearchParams
+      || value instanceof ArrayBuffer
+      || ArrayBuffer.isView(value);       // TypedArray / DataView
+  }
+
   private _collectBody(bodySnapshot: any): { body: BodyInit | null; contentType: string | null } {
     // JS API経由のbodyが優先
     if (bodySnapshot !== null) {
-      return {
-        body: typeof bodySnapshot === "string" ? bodySnapshot : JSON.stringify(bodySnapshot),
-        contentType: typeof bodySnapshot === "string" ? null : "application/json",
-      };
+      // 文字列はそのまま。Content-Type はユーザーのヘッダ指定に委ねる。
+      if (typeof bodySnapshot === "string") {
+        return { body: bodySnapshot, contentType: null };
+      }
+      // ネイティブ BodyInit (Blob/File/FormData/URLSearchParams/ArrayBuffer/TypedArray)
+      // は素通し。Content-Type はブラウザに委ねるため null を返す。
+      if (this._isNativeBodyInit(bodySnapshot)) {
+        return { body: bodySnapshot, contentType: null };
+      }
+      // それ以外のオブジェクトは JSON 化する。
+      return { body: JSON.stringify(bodySnapshot), contentType: "application/json" };
     }
 
     // サブタグからbodyを取得
@@ -255,12 +295,25 @@ export class Fetch extends HTMLElement {
     this._body = null;
     const { body, contentType } = this._collectBody(bodySnapshot);
 
+    // FormData に手動で Content-Type を付けると、ブラウザが付与するはずの multipart
+    // boundary が失われてサーバー側でパースできなくなる。ヘッダはユーザー指定を
+    // 尊重して素通しするが、この典型的な誤設定は警告する。
+    if (body instanceof FormData &&
+        Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+      console.warn(
+        "[@wcstack/fetch] A manual Content-Type header was set alongside a FormData body. " +
+        "This drops the multipart boundary the browser adds automatically; remove the " +
+        "Content-Type header (e.g. the <wcs-fetch-header>) to fix multipart uploads.",
+      );
+    }
+
     const result = await this._core.fetch(this.url, {
       method: this.method,
       headers,
       body,
       contentType,
       forceText: !!this.target,
+      responseType: this.responseType,
     });
 
     // HTML置換モード

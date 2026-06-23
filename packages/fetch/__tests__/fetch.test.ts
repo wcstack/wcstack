@@ -162,18 +162,19 @@ describe("Fetch", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(Fetch.wcBindable.protocol).toBe("wc-bindable");
     expect(Fetch.wcBindable.version).toBe(1);
-    expect(Fetch.wcBindable.properties).toHaveLength(5);
+    expect(Fetch.wcBindable.properties).toHaveLength(6);
     expect(Fetch.wcBindable.properties[0].name).toBe("value");
     expect(Fetch.wcBindable.properties[1].name).toBe("loading");
     expect(Fetch.wcBindable.properties[2].name).toBe("error");
     expect(Fetch.wcBindable.properties[3].name).toBe("status");
-    expect(Fetch.wcBindable.properties[4].name).toBe("trigger");
-    expect(Fetch.wcBindable.properties[4].event).toBe("wcs-fetch:trigger-changed");
+    expect(Fetch.wcBindable.properties[4].name).toBe("objectURL");
+    expect(Fetch.wcBindable.properties[5].name).toBe("trigger");
+    expect(Fetch.wcBindable.properties[5].event).toBe("wcs-fetch:trigger-changed");
   });
 
   it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
     const inputs = Fetch.wcBindable.inputs!;
-    expect(inputs.map((i) => i.name)).toEqual(["url", "method", "target", "manual", "body", "trigger"]);
+    expect(inputs.map((i) => i.name)).toEqual(["url", "method", "target", "manual", "body", "responseType", "trigger"]);
   });
 
   it("wcBindable inputsはattributeヒントを持たない（setterが自己反映するため二重設定を避ける）", () => {
@@ -643,6 +644,140 @@ describe("Fetch", () => {
     expect((init as RequestInit).body).toBe('{"priority":"high"}');
   });
 
+  it("Blob bodyはJSON化せず素通しし、Content-Typeを付与しない", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/upload");
+    el.setAttribute("method", "POST");
+    const blob = new Blob(["binary"], { type: "application/octet-stream" });
+    el.body = blob;
+
+    await el.fetch();
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).body).toBe(blob);
+    expect((init as RequestInit).headers).not.toHaveProperty("Content-Type");
+  });
+
+  it("File body(Blobサブクラス)も素通しする", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/upload");
+    el.setAttribute("method", "POST");
+    const file = new File(["text"], "a.txt", { type: "text/plain" });
+    el.body = file;
+
+    await el.fetch();
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).body).toBe(file);
+  });
+
+  it("FormData bodyは素通しし、boundaryをブラウザに任せるためContent-Typeを付与しない", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/upload");
+    el.setAttribute("method", "POST");
+    const fd = new FormData();
+    fd.append("field", "value");
+    el.body = fd;
+
+    await el.fetch();
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).body).toBe(fd);
+    expect((init as RequestInit).headers).not.toHaveProperty("Content-Type");
+  });
+
+  it("URLSearchParams bodyを素通しする", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/form");
+    el.setAttribute("method", "POST");
+    const params = new URLSearchParams({ a: "1" });
+    el.body = params;
+
+    await el.fetch();
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).body).toBe(params);
+  });
+
+  it("ArrayBuffer bodyを素通しする", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/bin");
+    el.setAttribute("method", "POST");
+    const buffer = new ArrayBuffer(8);
+    el.body = buffer;
+
+    await el.fetch();
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).body).toBe(buffer);
+  });
+
+  it("TypedArray(Uint8Array) bodyを素通しする", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/bin");
+    el.setAttribute("method", "POST");
+    const view = new Uint8Array([1, 2, 3]);
+    el.body = view;
+
+    await el.fetch();
+
+    const [_url, init] = fetchSpy.mock.calls[0];
+    expect((init as RequestInit).body).toBe(view);
+  });
+
+  it("FormDataに手動Content-Typeを付けると警告する", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/upload");
+    el.setAttribute("method", "POST");
+    el.body = new FormData();
+
+    const headerEl = document.createElement("wcs-fetch-header") as FetchHeader;
+    headerEl.setAttribute("name", "Content-Type");
+    headerEl.setAttribute("value", "multipart/form-data");
+    el.appendChild(headerEl);
+
+    await el.fetch();
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("FormData");
+    warnSpy.mockRestore();
+  });
+
+  it("FormDataでもContent-Type以外のヘッダのみなら警告しない", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/upload");
+    el.setAttribute("method", "POST");
+    el.body = new FormData();
+
+    const headerEl = document.createElement("wcs-fetch-header") as FetchHeader;
+    headerEl.setAttribute("name", "Accept");
+    headerEl.setAttribute("value", "application/json");
+    el.appendChild(headerEl);
+
+    await el.fetch();
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it("GETリクエストではbodyを送信しない", async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
 
@@ -654,6 +789,62 @@ describe("Fetch", () => {
 
     const [_url, init] = fetchSpy.mock.calls[0];
     expect((init as RequestInit).body).toBeUndefined();
+  });
+
+  it("response-type=blob属性でBlobを取得しobjectURLを公開する", async () => {
+    const blob = new Blob(["img"], { type: "image/png" });
+    fetchSpy.mockResolvedValueOnce({
+      ok: true, status: 200, statusText: "OK",
+      headers: new Headers({ "Content-Type": "image/png" }),
+      blob: () => Promise.resolve(blob),
+    } as unknown as Response);
+
+    const origCreate = URL.createObjectURL;
+    URL.createObjectURL = (() => "blob:shell-1") as typeof URL.createObjectURL;
+    try {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.setAttribute("url", "/api/image");
+      el.setAttribute("response-type", "blob");
+
+      const result = await el.fetch();
+      expect(result).toBe(blob);
+      expect(el.value).toBe(blob);
+      expect(el.objectURL).toBe("blob:shell-1");
+    } finally {
+      URL.createObjectURL = origCreate;
+    }
+  });
+
+  it("targetが指定されるとresponse-type=blobより優先しテキストとして処理する", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse("<p>hi</p>", { contentType: "text/html" }));
+
+    const targetDiv = document.createElement("div");
+    targetDiv.id = "replace-target-blob";
+    document.body.appendChild(targetDiv);
+    try {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.setAttribute("url", "/api/partial");
+      el.setAttribute("target", "replace-target-blob");
+      el.setAttribute("response-type", "blob");
+
+      const result = await el.fetch();
+      expect(result).toBe("<p>hi</p>");
+      expect(targetDiv.innerHTML).toBe("<p>hi</p>");
+      expect(el.objectURL).toBeNull();
+    } finally {
+      targetDiv.remove();
+    }
+  });
+
+  it("responseType getter/setterがresponse-type属性に反映される", () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    expect(el.responseType).toBe("auto");
+    el.responseType = "blob";
+    expect(el.getAttribute("response-type")).toBe("blob");
+    expect(el.responseType).toBe("blob");
+    el.responseType = null;
+    expect(el.hasAttribute("response-type")).toBe(false);
+    expect(el.responseType).toBe("auto");
   });
 
   it("target属性指定時にHTMLリプレースを行う", async () => {

@@ -13,6 +13,10 @@ export interface WebSocketConnectOptions {
   autoReconnect?: boolean;
   reconnectInterval?: number;
   maxReconnects?: number;
+  // How incoming binary frames are surfaced on `message`. "blob" (the platform
+  // default) or "arraybuffer" for direct byte processing. Applied to every
+  // socket this connection spawns, including auto-reconnects.
+  binaryType?: BinaryType;
 }
 
 export class WebSocketCore extends EventTarget {
@@ -49,6 +53,7 @@ export class WebSocketCore extends EventTarget {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _url: string = "";
   private _protocols: string | string[] | undefined = undefined;
+  private _binaryType: BinaryType = "blob";
   private _intentionalClose: boolean = false;
 
   // Generation guard (§3.4): bumped on dispose() and at every connect(). A socket
@@ -172,6 +177,7 @@ export class WebSocketCore extends EventTarget {
     this._autoReconnect = options.autoReconnect ?? false;
     this._reconnectInterval = options.reconnectInterval ?? 3000;
     this._maxReconnects = options.maxReconnects ?? Infinity;
+    this._binaryType = options.binaryType ?? "blob";
     this._reconnectCount = 0;
     this._intentionalClose = false;
 
@@ -216,6 +222,9 @@ export class WebSocketCore extends EventTarget {
       this._setError(e);
       return;
     }
+
+    // Binary frames default to Blob; opt into ArrayBuffer for direct byte access.
+    this._ws.binaryType = this._binaryType;
 
     this._setReadyState(WS_CONNECTING);
 

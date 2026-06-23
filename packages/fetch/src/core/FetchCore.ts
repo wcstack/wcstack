@@ -1,11 +1,18 @@
 import { IWcBindable } from "../types.js";
 
+export type FetchResponseType = "auto" | "json" | "text" | "blob" | "arrayBuffer";
+
 export interface FetchRequestOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: BodyInit | null;
   contentType?: string | null;
   forceText?: boolean;
+  // How to read the response body. "auto" (default) sniffs Content-Type (JSON or
+  // text). "blob"/"arrayBuffer" enable binary downloads; "blob" additionally
+  // publishes a managed `objectURL`. `forceText` (HTML-replace mode) takes
+  // priority over this.
+  responseType?: FetchResponseType;
 }
 
 export class FetchCore extends EventTarget {
@@ -17,6 +24,10 @@ export class FetchCore extends EventTarget {
       { name: "loading", event: "wcs-fetch:loading-changed" },
       { name: "error", event: "wcs-fetch:error" },
       { name: "status", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.status },
+      // Managed object URL for a `responseType: "blob"` response (null otherwise).
+      // The Core revokes the previous URL on each new response and on dispose, so
+      // a consumer can bind it straight into <img src> without lifecycle glue.
+      { name: "objectURL", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.objectURL },
     ],
     inputs: [
       { name: "url" },
@@ -33,6 +44,7 @@ export class FetchCore extends EventTarget {
   private _loading: boolean = false;
   private _error: any = null;
   private _status: number = 0;
+  private _objectURL: string | null = null;
   private _abortController: AbortController | null = null;
   private _promise: Promise<any> = Promise.resolve(null);
   // Generation guard (§3.4): bumped on dispose() (and each fetch start). An
@@ -62,6 +74,12 @@ export class FetchCore extends EventTarget {
   dispose(): void {
     this._gen++;
     this.abort();
+    // Release any outstanding blob object URL on teardown (the other revoke point
+    // is _setResponse, which drops the previous URL when a new response arrives).
+    if (this._objectURL !== null) {
+      this._revokeObjectURL(this._objectURL);
+      this._objectURL = null;
+    }
   }
 
   get value(): any {
@@ -78,6 +96,10 @@ export class FetchCore extends EventTarget {
 
   get status(): number {
     return this._status;
+  }
+
+  get objectURL(): string | null {
+    return this._objectURL;
   }
 
   get promise(): Promise<any> {
@@ -100,13 +122,38 @@ export class FetchCore extends EventTarget {
     }));
   }
 
-  private _setResponse(value: any, status: number): void {
+  private _setResponse(value: any, status: number, objectURL: string | null = null): void {
+    // Revoke the previous blob object URL before replacing it. Any new response
+    // (success, HTTP error, or network error all funnel through here) supersedes
+    // the prior one, so the old URL is no longer needed; this plus dispose()
+    // revocation keeps blob downloads leak-free.
+    if (this._objectURL !== null) {
+      this._revokeObjectURL(this._objectURL);
+    }
+    this._objectURL = objectURL;
     this._value = value;
     this._status = status;
     this._target.dispatchEvent(new CustomEvent("wcs-fetch:response", {
-      detail: { value, status },
+      detail: { value, status, objectURL },
       bubbles: true,
     }));
+  }
+
+  // Object URL lifecycle for responseType: "blob". The Core owns the blob's
+  // object URL (mirrors RecorderCore) so a consumer can bind `objectURL` straight
+  // into <img src>/<a href> without managing createObjectURL/revokeObjectURL. Both
+  // helpers tolerate environments without URL.createObjectURL (SSR / headless).
+  private _createObjectURL(blob: Blob): string | null {
+    if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+      return URL.createObjectURL(blob);
+    }
+    return null;
+  }
+
+  private _revokeObjectURL(url: string): void {
+    if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+      URL.revokeObjectURL(url);
+    }
   }
 
   abort(): void {
@@ -155,6 +202,7 @@ export class FetchCore extends EventTarget {
       body = null,
       contentType = null,
       forceText = false,
+      responseType = "auto",
     } = options;
 
     // Copy the caller's headers so the contentType injection below never mutates
@@ -204,9 +252,26 @@ export class FetchCore extends EventTarget {
         // body reading entirely and surface only the status with a null value.
         this._setResponse(null, response.status);
       } else if (forceText) {
+        // HTML-replace mode (the Shell sets forceText when `target` is present)
+        // always reads text and takes priority over responseType.
         const text = await response.text();
         this._setResponse(text, response.status);
+      } else if (responseType === "blob") {
+        const blob = await response.blob();
+        // Publish a managed object URL alongside the Blob so consumers can bind it
+        // directly into <img src> etc.
+        this._setResponse(blob, response.status, this._createObjectURL(blob));
+      } else if (responseType === "arrayBuffer") {
+        const buffer = await response.arrayBuffer();
+        this._setResponse(buffer, response.status);
+      } else if (responseType === "text") {
+        const text = await response.text();
+        this._setResponse(text, response.status);
+      } else if (responseType === "json") {
+        const data = await response.json();
+        this._setResponse(data, response.status);
       } else {
+        // "auto" (default): sniff Content-Type — JSON when it says so, else text.
         const responseContentType = response.headers.get("Content-Type") || "";
         if (responseContentType.includes("application/json")) {
           const data = await response.json();
