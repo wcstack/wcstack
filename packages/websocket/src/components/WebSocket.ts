@@ -18,6 +18,7 @@ export class WcsWebSocket extends HTMLElement {
       { name: "autoReconnect", attribute: "auto-reconnect" },
       { name: "reconnectInterval", attribute: "reconnect-interval" },
       { name: "maxReconnects", attribute: "max-reconnects" },
+      { name: "binaryType", attribute: "binary-type" },
       { name: "manual", attribute: "manual" },
       { name: "trigger" },
       { name: "send" },
@@ -91,6 +92,20 @@ export class WcsWebSocket extends HTMLElement {
 
   set maxReconnects(value: number) {
     this.setAttribute("max-reconnects", String(value));
+  }
+
+  // Incoming binary frame representation. Backed by the `binary-type` attribute;
+  // any value other than "arraybuffer" normalizes to the platform default "blob".
+  get binaryType(): BinaryType {
+    return this.getAttribute("binary-type") === "arraybuffer" ? "arraybuffer" : "blob";
+  }
+
+  set binaryType(value: string | null) {
+    if (value == null) {
+      this.removeAttribute("binary-type");
+    } else {
+      this.setAttribute("binary-type", value);
+    }
   }
 
   get manual(): boolean {
@@ -168,6 +183,7 @@ export class WcsWebSocket extends HTMLElement {
       autoReconnect: this.autoReconnect,
       reconnectInterval: this.reconnectInterval,
       maxReconnects: this.maxReconnects,
+      binaryType: this.binaryType,
     });
   }
 

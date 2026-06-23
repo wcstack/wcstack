@@ -83,7 +83,7 @@ describe("WcsWebSocket コンポーネント", () => {
     const names = WcsWebSocket.wcBindable.properties.map(p => p.name);
     expect(names).toEqual(["message", "connected", "loading", "error", "readyState", "trigger", "send"]);
     expect(WcsWebSocket.wcBindable.inputs?.map(input => input.name)).toEqual([
-      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "manual", "trigger", "send"
+      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "binaryType", "manual", "trigger", "send"
     ]);
     expect(WcsWebSocket.wcBindable.commands?.map(command => command.name)).toEqual(["connect", "sendMessage", "close"]);
   });
@@ -140,6 +140,19 @@ describe("WcsWebSocket コンポーネント", () => {
       el.manual = false;
       expect(el.manual).toBe(false);
     });
+
+    it("binaryType属性の読み書き・デフォルト・正規化", () => {
+      const el = createElement();
+      expect(el.binaryType).toBe("blob");
+      el.binaryType = "arraybuffer";
+      expect(el.getAttribute("binary-type")).toBe("arraybuffer");
+      expect(el.binaryType).toBe("arraybuffer");
+      el.binaryType = "garbage";
+      expect(el.binaryType).toBe("blob");
+      el.binaryType = null;
+      expect(el.hasAttribute("binary-type")).toBe(false);
+      expect(el.binaryType).toBe("blob");
+    });
   });
 
   describe("connectedCallback", () => {
@@ -154,6 +167,20 @@ describe("WcsWebSocket コンポーネント", () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
       expect(MockWebSocket.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("接続時にソケットへbinaryTypeを反映する（既定はblob）", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      expect((MockWebSocket.instances[0] as unknown as { binaryType: string }).binaryType).toBe("blob");
+      el.remove();
+    });
+
+    it("binary-type=arraybufferを接続時にソケットへ反映する", () => {
+      const el = createElement({ url: "ws://localhost:8080", "binary-type": "arraybuffer" });
+      document.body.appendChild(el);
+      expect((MockWebSocket.instances[0] as unknown as { binaryType: string }).binaryType).toBe("arraybuffer");
       el.remove();
     });
 

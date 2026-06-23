@@ -57,6 +57,7 @@ export interface WcsWsInputs {
   autoReconnect: boolean;
   reconnectInterval: number;
   maxReconnects: number;
+  binaryType: BinaryType;
   manual: boolean;
   trigger: boolean;
   send: unknown;
@@ -68,6 +69,7 @@ export interface WcsWsCoreCommands {
     autoReconnect?: boolean;
     reconnectInterval?: number;
     maxReconnects?: number;
+    binaryType?: BinaryType;
   }): void;
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
   close(code?: number, reason?: string): void;

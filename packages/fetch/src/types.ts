@@ -54,6 +54,8 @@ export interface WcsFetchCoreValues<T = unknown> {
   loading: boolean;
   error: WcsFetchHttpError | Error | null;
   status: number;
+  /** Managed object URL for a `responseType: "blob"` response; null otherwise. */
+  objectURL: string | null;
 }
 
 /**

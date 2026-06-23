@@ -121,6 +121,18 @@ describe("WebSocketCore", () => {
       expect(MockWebSocket.instances[0].url).toBe("ws://localhost:8080");
     });
 
+    it("connectでbinaryTypeをソケットに適用する（既定はblob）", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      expect(MockWebSocket.instances[0].binaryType).toBe("blob");
+    });
+
+    it("connectでbinaryType=arraybufferをソケットに適用する", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080", { binaryType: "arraybuffer" });
+      expect(MockWebSocket.instances[0].binaryType).toBe("arraybuffer");
+    });
+
     it("接続開始時にloadingがtrueになる", () => {
       const core = new WebSocketCore();
       const events: boolean[] = [];
