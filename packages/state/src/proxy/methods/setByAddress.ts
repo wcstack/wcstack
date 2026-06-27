@@ -29,6 +29,8 @@ import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { config } from "../../config";
+import { benchFlags, benchCounters } from "../../_bench";
 
 function _setByAddress(
   target   : object, 
@@ -139,6 +141,21 @@ export function setByAddress(
     handler  : IStateHandler
 ): any {
   const stateElement = handler.stateElement;
+  // --- same-value guard (config.sameValueGuard) ---
+  // primitive 値かつ Object.is 同値なら、set / enqueue / walkDependency を丸ごとスキップ。
+  // 参照型(object/array)は in-place mutation 取りこぼし防止のため素通し（ガードしない）。
+  // benchFlags.profile が true のときだけカウンタを更新（本番ホットパスは計測コストを負わない）。
+  if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+    const oldValue = getByAddress(target, address, receiver, handler);
+    const same = Object.is(oldValue, value);
+    if (benchFlags.profile) {
+      same ? benchCounters.guardSkips++ : benchCounters.guardProceeds++;
+    }
+    if (same) {
+      return true;
+    }
+  }
+  // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);

@@ -25,6 +25,14 @@ export interface IConfig {
   readonly locale: string;
   readonly debug: boolean;
   readonly enableMustache: boolean;
+  /**
+   * 同値ガード（**既定 true**・標準的リアクティブ挙動・`setConfig({ sameValueGuard: false })` で opt-out 可）。
+   * primitive 値の set で `Object.is` 同値なら更新を no-op にする
+   * （enqueue / 依存 walk / DOM 適用 / $updatedCallback / DCC イベントを発火しない）。
+   * 参照型（object/array）は in-place mutation 取りこぼし防止のため素通し。
+   * 同値 set に副作用（同値時の $updatedCallback 等）を期待する場合は false にする。
+   */
+  readonly sameValueGuard: boolean;
 }
 
 export interface IWritableConfig {
@@ -38,4 +46,5 @@ export interface IWritableConfig {
   locale?: string;
   debug?: boolean;
   enableMustache?: boolean;
+  sameValueGuard?: boolean;
 }

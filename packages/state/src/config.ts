@@ -28,6 +28,7 @@ interface IInternalConfig {
   locale: string;
   debug: boolean;
   enableMustache: boolean;
+  sameValueGuard: boolean;
 }
 
 const _config: IInternalConfig = {
@@ -44,6 +45,7 @@ const _config: IInternalConfig = {
   locale: 'en',
   debug: false,
   enableMustache: true,
+  sameValueGuard: true,
 };
 
 // backward compatible export (read-only usage)
@@ -83,5 +85,8 @@ export function setConfig(partialConfig: IWritableConfig): void {
   }
   if (typeof partialConfig.enableMustache === "boolean") {
     _config.enableMustache = partialConfig.enableMustache;
+  }
+  if (typeof partialConfig.sameValueGuard === "boolean") {
+    _config.sameValueGuard = partialConfig.sameValueGuard;
   }
 }

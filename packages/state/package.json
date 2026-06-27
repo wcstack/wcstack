@@ -11,14 +11,19 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.esm.js"
     },
-    "./auto": "./dist/auto.min.js"
+    "./auto": "./dist/auto.min.js",
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.esm.js"
+    },
+    "./wcs-manifest.json": "./dist/wcs-manifest.json"
   },
   "files": [
     "dist"
   ],
   "scripts": {
     "clean": "rimraf dist .tsc-out",
-    "build": "rimraf dist .tsc-out && tsc && rollup -c",
+    "build": "rimraf dist .tsc-out && tsc && rollup -c && node scripts/emit-manifest.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

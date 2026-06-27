@@ -72,6 +72,14 @@ describe('setConfig', () => {
     setConfig({ enableMustache: true });
   });
 
+  it('sameValueGuardを変更できること（既定true・opt-out可）', () => {
+    expect(config.sameValueGuard).toBe(true);
+    setConfig({ sameValueGuard: false });
+    expect(config.sameValueGuard).toBe(false);
+    setConfig({ sameValueGuard: true });
+    expect(config.sameValueGuard).toBe(true);
+  });
+
   it('指定されていないプロパティは変更されないこと', () => {
     setConfig({});
     expect(config.bindAttributeName).toBe('data-wcs');

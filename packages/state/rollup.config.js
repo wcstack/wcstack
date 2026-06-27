@@ -65,4 +65,30 @@ export default [
     },
     plugins: [dts()],
   },
+  // Manifest entry (DOM 非依存・wcs-manifest.json 生成用 + 単一正本の consumable)
+  {
+    input: 'src/manifest.ts',
+    output: {
+      file: 'dist/manifest.esm.js',
+      format: 'esm',
+      sourcemap: false,
+    },
+    plugins: [
+      json(),
+      typescript({
+        tsconfig: './tsconfig.json',
+        declaration: false,
+        declarationMap: false,
+        sourceMap: false,
+      }),
+    ],
+  },
+  {
+    input: 'src/manifest.ts',
+    output: {
+      file: 'dist/manifest.d.ts',
+      format: 'esm',
+    },
+    plugins: [dts()],
+  },
 ];

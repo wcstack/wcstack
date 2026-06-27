@@ -1,3 +1,4 @@
+import { DELIMITER, FILTER_SEPARATOR, MODIFIER_SEPARATOR } from "../define";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
@@ -15,7 +16,7 @@ const cacheFilterInfos = new Map<string, IFilterInfo[]>();
 //   'onclick', 'onchange' etc. for event listeners
 
 export function parsePropPart(propPart: string): PropPartParseResult {
-  const pos = propPart.indexOf('|');
+  const pos = propPart.indexOf(FILTER_SEPARATOR);
   let propText: string = '';
   let filterTexts: string[] = [];
   let filtersText = '';
@@ -26,7 +27,7 @@ export function parsePropPart(propPart: string): PropPartParseResult {
     if (cacheFilterInfos.has(filtersText)) {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
-      filterTexts = filtersText.split('|').map(trimFn);
+      filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
       filters = parseFilters(filterTexts, "input");
       cacheFilterInfos.set(filtersText, filters);
     }
@@ -34,8 +35,8 @@ export function parsePropPart(propPart: string): PropPartParseResult {
     propText = propPart.trim();
   }
 
-  const [propName, propModifiersText] = propText.split('#').map(trimFn);
-  const propSegments = propName.split('.').map(trimFn);
+  const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR).map(trimFn);
+  const propSegments = propName.split(DELIMITER).map(trimFn);
   const propModifiers = propModifiersText
     ? propModifiersText.split(',').map(trimFn)
     : [];

@@ -14,6 +14,8 @@ import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
 import { SearchType } from "./types";
+import { benchFlags, benchCounters } from "../_bench";
+import { getCacheEntryByAbsoluteStateAddress, dirtyCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 
 const MAX_DEPENDENCY_DEPTH = 1000;
 
@@ -106,6 +108,28 @@ function _walkDependency(
       continue;
     }
     context.visited.add(address);
+
+    // --- A1-2 experiment: computed 同値短絡（プロトタイプ・フラグ背後・既定OFF） ---
+    if (
+      benchFlags.computedShortCircuit &&
+      depth > 0 &&
+      context.stateElement.getterPaths?.has(address.pathInfo.path)
+    ) {
+      const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
+      const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+      const oldEntry = getCacheEntryByAbsoluteStateAddress(absAddress);
+      const hadClean = oldEntry !== null && oldEntry.dirty === false;
+      const oldValue = hadClean ? oldEntry!.value : undefined;
+      dirtyCacheEntryByAbsoluteStateAddress(absAddress);
+      const newValue = context.stateProxy[getByAddressSymbol](address);
+      if (hadClean && Object.is(oldValue, newValue)) {
+        benchCounters.shortCircuitPrunes++;
+        continue;
+      }
+      benchCounters.shortCircuitProceeds++;
+    }
+    // --- end A1-2 experiment ---
+
     callback(address);
     const sourcePath = address.pathInfo.path;
     const nextDepth = depth + 1;

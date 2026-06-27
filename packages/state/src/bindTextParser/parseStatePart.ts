@@ -1,4 +1,5 @@
 import { getPathInfo } from "../address/PathInfo";
+import { FILTER_SEPARATOR, STATE_NAME_SEPARATOR } from "../define";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { parseFilters } from "./parseFilters";
 import { trimFn } from "./utils";
@@ -13,7 +14,7 @@ const cacheFilterInfos = new Map<string, IFilterInfo[]>();
 // stateName: optional, default is 'default'
 // filters-format: filterName or filterName(arg1,arg2)
 export function parseStatePart(statePart: string): StatePartParseResult {
-  const pos = statePart.indexOf('|');
+  const pos = statePart.indexOf(FILTER_SEPARATOR);
   let stateAndPath: string = '';
   let filterTexts: string[] = [];
   let filtersText = '';
@@ -24,14 +25,14 @@ export function parseStatePart(statePart: string): StatePartParseResult {
     if (cacheFilterInfos.has(filtersText)) {
       filters = cacheFilterInfos.get(filtersText)!;
     } else {
-      filterTexts = filtersText.split('|').map(trimFn);
+      filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
       filters = parseFilters(filterTexts, "output");
       cacheFilterInfos.set(filtersText, filters);
     }
   } else {
     stateAndPath = statePart.trim();
   }
-  const [statePathName, stateName = 'default'] = stateAndPath.split('@').map(trimFn);
+  const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
   const pathInfo = getPathInfo(statePathName);
   return {
     stateName,
