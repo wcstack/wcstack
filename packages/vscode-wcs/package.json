@@ -49,6 +49,7 @@
     "@types/node": "^25.5.0",
     "@types/vscode": "^1.110.0",
     "@vitest/coverage-v8": "^4.0.15",
+    "@wcstack/state": "file:../state",
     "esbuild": "^0.25.12",
     "vitest": "^4.1.1"
   },

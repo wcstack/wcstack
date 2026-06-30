@@ -114,6 +114,13 @@ const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
 const MAX_LOOP_DEPTH = 128;
+// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
+const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
+const PROP_VALUE_SEPARATOR = ':'; // 左辺(prop)と右辺(path)の区切り
+const MODIFIER_SEPARATOR = '#'; // prop と修飾子の区切り
+const STATE_NAME_SEPARATOR = '@'; // path と @stateName の区切り
+const FILTER_SEPARATOR = '|'; // フィルタパイプの区切り
 /**
  * stackIndexByIndexName
  * インデックス名からスタックインデックスへのマッピング
@@ -1352,7 +1359,7 @@ const cacheFilterInfos$1 = new Map();
 //   'class.className' for class names (e.g., class.active, class.hidden)
 //   'onclick', 'onchange' etc. for event listeners
 function parsePropPart(propPart) {
-    const pos = propPart.indexOf('|');
+    const pos = propPart.indexOf(FILTER_SEPARATOR);
     let propText = '';
     let filterTexts = [];
     let filtersText = '';
@@ -1364,7 +1371,7 @@ function parsePropPart(propPart) {
             filters = cacheFilterInfos$1.get(filtersText);
         }
         else {
-            filterTexts = filtersText.split('|').map(trimFn);
+            filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
             filters = parseFilters(filterTexts, "input");
             cacheFilterInfos$1.set(filtersText, filters);
         }
@@ -1372,8 +1379,8 @@ function parsePropPart(propPart) {
     else {
         propText = propPart.trim();
     }
-    const [propName, propModifiersText] = propText.split('#').map(trimFn);
-    const propSegments = propName.split('.').map(trimFn);
+    const [propName, propModifiersText] = propText.split(MODIFIER_SEPARATOR).map(trimFn);
+    const propSegments = propName.split(DELIMITER).map(trimFn);
     const propModifiers = propModifiersText
         ? propModifiersText.split(',').map(trimFn)
         : [];
@@ -1391,7 +1398,7 @@ const cacheFilterInfos = new Map();
 // stateName: optional, default is 'default'
 // filters-format: filterName or filterName(arg1,arg2)
 function parseStatePart(statePart) {
-    const pos = statePart.indexOf('|');
+    const pos = statePart.indexOf(FILTER_SEPARATOR);
     let stateAndPath = '';
     let filterTexts = [];
     let filtersText = '';
@@ -1403,7 +1410,7 @@ function parseStatePart(statePart) {
             filters = cacheFilterInfos.get(filtersText);
         }
         else {
-            filterTexts = filtersText.split('|').map(trimFn);
+            filterTexts = filtersText.split(FILTER_SEPARATOR).map(trimFn);
             filters = parseFilters(filterTexts, "output");
             cacheFilterInfos.set(filtersText, filters);
         }
@@ -1411,7 +1418,7 @@ function parseStatePart(statePart) {
     else {
         stateAndPath = statePart.trim();
     }
-    const [statePathName, stateName = 'default'] = stateAndPath.split('@').map(trimFn);
+    const [statePathName, stateName = 'default'] = stateAndPath.split(STATE_NAME_SEPARATOR).map(trimFn);
     const pathInfo = getPathInfo(statePathName);
     return {
         stateName,
@@ -1430,9 +1437,9 @@ function parseStatePart(statePart) {
 //   onclick: statePart, onchange: statePart etc. (event listeners)
 //   ...: statePart (spread — expand wcBindable properties+inputs of target object)
 function parseBindTextsForElement(bindText) {
-    const [...bindTexts] = bindText.split(';').map(trimFn).filter(s => s.length > 0);
+    const [...bindTexts] = bindText.split(BINDING_SEPARATOR).map(trimFn).filter(s => s.length > 0);
     const results = bindTexts.map((bindText) => {
-        const separatorIndex = bindText.indexOf(':');
+        const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
         if (separatorIndex === -1) {
             raiseError(`Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.`);
         }
@@ -7920,5 +7927,120 @@ function defineState(definition) {
     return definition;
 }
 
-export { Ssr, VERSION, bootstrapState, buildBindings, defineState, getBindingsReady, getConfig };
+/**
+ * filterMeta.ts — 組み込みフィルタの構造化メタデータ（単一正本・route-a A2-1）。
+ *
+ * これまで vscode-wcs（completionData.ts BUILTIN_FILTERS）が手で持っていたフィルタの
+ * 引数仕様・型・説明を、実装側（@wcstack/state）に**正本として移設**したもの。
+ * manifest.ts がこれを公開し、vscode-wcs はそれを消費して手リストを撤去できる。
+ *
+ * 完全性は __tests__/manifest.test.ts のドリフト検出が保証する
+ * （filterMeta のキー集合 == builtinFilters のキー集合）。フィルタを追加して meta を
+ * 書き忘れると CI が落ちる。
+ */
+/** 組み込みフィルタ名 → 構造化メタデータ。キー集合は builtinFilters と一致しなければならない。 */
+const builtinFilterMeta = {
+    // 比較・論理
+    eq: { description: "等しいか比較", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+    ne: { description: "異なるか比較", hasArgs: true, resultType: "boolean", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+    not: { description: "ブール値を反転", hasArgs: false, resultType: "boolean", acceptTypes: ["boolean"], minArgs: 0, maxArgs: 0 },
+    lt: { description: "より小さいか", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    le: { description: "以下か", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    gt: { description: "より大きいか", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    ge: { description: "以上か", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    // 算術
+    inc: { description: "加算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    dec: { description: "減算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    // 数値フォーマット
+    fix: { description: "固定小数点表記", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    locale: { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    // 文字列
+    uc: { description: "大文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    lc: { description: "小文字に変換", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    cap: { description: "先頭文字を大文字に", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    trim: { description: "前後の空白を削除", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    slice: { description: "部分文字列 (start[,end])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
+    substr: { description: "部分文字列 (pos,len)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
+    pad: { description: "パディング (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+    rep: { description: "繰り返し (count)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+    rev: { description: "文字順を反転", hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+    // 数値パース・丸め
+    int: { description: "整数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
+    float: { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
+    round: { description: "四捨五入", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    floor: { description: "切り下げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    ceil: { description: "切り上げ", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    percent: { description: "パーセンテージ形式", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+    // 日付・時刻
+    date: { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    time: { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    ymd: { description: "YYYY-MM-DD 形式", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+    // 真偽値・変換
+    falsy: { description: "偽値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    truthy: { description: "真値か判定", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    defaults: { description: "偽値の場合デフォルト値", hasArgs: true, resultType: "passthrough", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+    boolean: { description: "ブール値に変換", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    number: { description: "数値に変換", hasArgs: false, resultType: "number", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    string: { description: "文字列に変換", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
+    null: { description: "空文字列をnullに変換", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+};
+
+/**
+ * manifest.ts — `<wcs-state>` の構文・フィルタ・予約名を機械可読な単一正本として公開する。
+ *
+ * 目的（route-a A2-1）: vscode-wcs（wcstack-intellisense）が現在ハードコードで二重実装している
+ * 「フィルタ一覧・構文区切り・予約名」を、state 側の実装から導出した manifest に一本化し、
+ * 手作業同期によるドリフトを構造的に断つための土台。
+ *
+ * 設計:
+ * - `filters` は実装（builtinFilters の Record キー）から **自動導出**＝実装が唯一の正本。
+ * - 構文・予約名は config / define.ts の定数から導出。
+ * - 将来 `dist/wcs-manifest.json` としてビルド時に書き出し、vscode-wcs がそれを読む形に発展させる。
+ * - ドリフト検出テスト（__tests__/manifest.test.ts）が、フィルタ集合の golden と実装の一致を CI で保証する。
+ */
+/** マニフェストのバージョン（構造を変えたら上げる）。 */
+const WCS_MANIFEST_VERSION = 1;
+/** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
+function getWcsManifest() {
+    return {
+        version: WCS_MANIFEST_VERSION,
+        syntax: {
+            bindAttribute: config.bindAttributeName,
+            tagName: config.tagNames.state,
+            pathDelimiter: DELIMITER,
+            wildcard: WILDCARD,
+            delimiters: {
+                binding: BINDING_SEPARATOR,
+                propValue: PROP_VALUE_SEPARATOR,
+                modifier: MODIFIER_SEPARATOR,
+                stateName: STATE_NAME_SEPARATOR,
+                filter: FILTER_SEPARATOR,
+            },
+            // 正本 STRUCTURAL_BINDING_TYPE_SET から導出（手書きの二重定義を排除）。
+            structuralDirectives: Array.from(STRUCTURAL_BINDING_TYPE_SET),
+        },
+        // 実装（Record のキー）から自動導出。手リストを持たない＝ドリフトの構造的排除。
+        filters: Object.keys(outputBuiltinFilters),
+        filterMeta: builtinFilterMeta,
+        reservedLifecycle: [
+            STATE_CONNECTED_CALLBACK_NAME,
+            STATE_DISCONNECTED_CALLBACK_NAME,
+            STATE_UPDATED_CALLBACK_NAME,
+            WEBCOMPONENT_STATE_READY_CALLBACK_NAME,
+        ],
+        reservedStateApi: [
+            STATE_BINDABLES_NAME,
+            STATE_COMMAND_TOKENS_NAME,
+            STATE_COMMAND_NAMESPACE_NAME,
+            STATE_EVENT_TOKENS_NAME,
+            STATE_ON_NAME,
+        ],
+    };
+}
+
+export { Ssr, VERSION, WCS_MANIFEST_VERSION, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
 //# sourceMappingURL=index.esm.js.map

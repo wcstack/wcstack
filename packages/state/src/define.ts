@@ -3,6 +3,14 @@ export const WILDCARD = '*';
 export const MAX_WILDCARD_DEPTH = 128;
 export const MAX_LOOP_DEPTH = 128;
 
+// data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
+// これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
+export const BINDING_SEPARATOR = ';';     // 複数バインディングの区切り
+export const PROP_VALUE_SEPARATOR = ':';  // 左辺(prop)と右辺(path)の区切り
+export const MODIFIER_SEPARATOR = '#';    // prop と修飾子の区切り
+export const STATE_NAME_SEPARATOR = '@';  // path と @stateName の区切り
+export const FILTER_SEPARATOR = '|';      // フィルタパイプの区切り
+
 /**
  * stackIndexByIndexName
  * インデックス名からスタックインデックスへのマッピング
