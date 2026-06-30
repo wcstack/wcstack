@@ -29,6 +29,7 @@ import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
+import { config } from "../../config";
 
 function _setByAddress(
   target   : object, 
@@ -139,6 +140,17 @@ export function setByAddress(
     handler  : IStateHandler
 ): any {
   const stateElement = handler.stateElement;
+  // --- same-value guard (config.sameValueGuard・既定 ON) ---
+  // primitive 値かつ Object.is 同値なら、set / enqueue / walkDependency / DOM 適用 /
+  // $updatedCallback / DCC イベントを丸ごとスキップ（標準的なリアクティブ no-op）。
+  // 参照型(object/array)は in-place mutation 取りこぼし防止のため素通し（ガードしない）。
+  if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+    const oldValue = getByAddress(target, address, receiver, handler);
+    if (Object.is(oldValue, value)) {
+      return true;
+    }
+  }
+  // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
