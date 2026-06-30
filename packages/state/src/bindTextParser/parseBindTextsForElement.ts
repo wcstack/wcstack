@@ -1,4 +1,5 @@
 import { getPathInfo } from "../address/PathInfo.js";
+import { BINDING_SEPARATOR, PROP_VALUE_SEPARATOR } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { STRUCTURAL_BINDING_TYPE_SET } from "../structural/define.js";
 import { parsePropPart } from "./parsePropPart.js";
@@ -16,9 +17,9 @@ import { trimFn } from "./utils.js";
 //   ...: statePart (spread — expand wcBindable properties+inputs of target object)
 
 export function parseBindTextsForElement(bindText: string): ParseBindTextResult[] {
-  const [ ...bindTexts ] = bindText.split(';').map(trimFn).filter(s => s.length > 0);
+  const [ ...bindTexts ] = bindText.split(BINDING_SEPARATOR).map(trimFn).filter(s => s.length > 0);
   const results = bindTexts.map((bindText): ParseBindTextResult => {
-    const separatorIndex = bindText.indexOf(':');
+    const separatorIndex = bindText.indexOf(PROP_VALUE_SEPARATOR);
     if (separatorIndex === -1) {
       raiseError(`Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.`);
     }

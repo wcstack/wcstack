@@ -20,3 +20,8 @@ export type {
 } from "./types.js";
 
 export { VERSION } from "./version.js";
+
+export { getWcsManifest, WCS_MANIFEST_VERSION } from "./manifest.js";
+export type { IWcsManifest } from "./manifest.js";
+export { builtinFilterMeta } from "./filters/filterMeta.js";
+export type { IFilterMeta, FilterResultType, FilterArgType } from "./filters/filterMeta.js";
