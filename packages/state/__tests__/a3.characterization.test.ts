@@ -5,11 +5,9 @@
  * computed 同値短絡）を入れても、ここが緑のままなら表の挙動は保たれている、という番人。
  *  - computed チェーンの最終値
  *  - microtask coalescing（N回 set → flush 1回 → $updatedCallback 1回）
+ *  - 同値 set の no-op（same-value guard / config.sameValueGuard 既定 ON に依存）
  *  - wildcard list 依存の伝播
  *  - updatedCallback の paths 集約
- *
- * NOTE: 「同値 set の no-op」契約は same-value guard（config.sameValueGuard）に依存するため、
- *       guard を導入する変更（A1-1）と同梱する。本ファイルは guard 非依存の挙動のみを pin する。
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
@@ -76,6 +74,22 @@ describe("A3 オラクル: 反応性の観測可能な契約", () => {
     // 契約: updatedCallback は「適用された binding のパス」を報告する（set した leaf n でなく、
     // 束縛されている getter doubled）。n は DOM 未束縛なので含まれない。
     expect(calls[0]).toContain("doubled");
+    host.remove();
+  });
+
+  it("同値 set は no-op（$updatedCallback が発火しない）", async () => {
+    const calls: string[][] = [];
+    const { host, stateElement } = await mount(
+      { v: "x", $updatedCallback(paths: string[]) { calls.push(paths); } },
+      `<div data-wcs="textContent: v"></div>`,
+    );
+    calls.length = 0;
+    stateElement.createState("writable", (s: any) => { s.v = "x"; }); // 同値
+    await flush();
+    expect(calls.length).toBe(0);
+    stateElement.createState("writable", (s: any) => { s.v = "y"; }); // 変更
+    await flush();
+    expect(calls.length).toBe(1);
     host.remove();
   });
 

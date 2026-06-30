@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setByAddress } from '../src/proxy/methods/setByAddress';
+import { setConfig } from '../src/config';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
@@ -79,6 +80,10 @@ function createHandler(stateElement: any, overrides?: Partial<any>) {
 describe('setByAddress', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // これらは swap/依存伝播の白箱単体テスト。同値ガードは直交する機能なので off に固定し、
+    // ガード起因の getByAddress 追加呼び出しでモックの呼び出し列がずれないようにする
+    // （ガード自体の挙動は bench.gate0 / audit.sameValueGuard で検証済み）。
+    setConfig({ sameValueGuard: false });
   });
 
   it('既存プロパティはsetterがあればpush/popしつつ更新すること', () => {

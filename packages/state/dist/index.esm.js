@@ -20,6 +20,7 @@ const _config = {
     locale: 'en',
     debug: false,
     enableMustache: true,
+    sameValueGuard: true,
 };
 // backward compatible export (read-only usage)
 const config = _config;
@@ -56,6 +57,9 @@ function setConfig(partialConfig) {
     }
     if (typeof partialConfig.enableMustache === "boolean") {
         _config.enableMustache = partialConfig.enableMustache;
+    }
+    if (typeof partialConfig.sameValueGuard === "boolean") {
+        _config.sameValueGuard = partialConfig.sameValueGuard;
     }
 }
 
@@ -6400,6 +6404,17 @@ function _setByAddressWithSwap(target, address, absAddress, value, receiver, han
 }
 function setByAddress(target, address, value, receiver, handler) {
     const stateElement = handler.stateElement;
+    // --- same-value guard (config.sameValueGuard・既定 ON) ---
+    // primitive 値かつ Object.is 同値なら、set / enqueue / walkDependency / DOM 適用 /
+    // $updatedCallback / DCC イベントを丸ごとスキップ（標準的なリアクティブ no-op）。
+    // 参照型(object/array)は in-place mutation 取りこぼし防止のため素通し（ガードしない）。
+    if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+        const oldValue = getByAddress(target, address, receiver, handler);
+        if (Object.is(oldValue, value)) {
+            return true;
+        }
+    }
+    // --- end same-value guard ---
     const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
