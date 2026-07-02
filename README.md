@@ -271,6 +271,18 @@ const html = await renderToString(`
 - [`@wcstack/resize`](packages/resize/) — Declarative ResizeObserver with `<wcs-resize>` for element size, container-width probing, and size-dependent logic as bindable state.
 - [`@wcstack/speech`](packages/speech/) — Declarative speech with `<wcs-speak>` (text-to-speech as a command-token) and `<wcs-listen>` (recognition results as event-token state).
 - [`@wcstack/permission`](packages/permission/) — Declarative Permissions API monitor with `<wcs-permission>` exposing live `granted`/`denied`/`prompt` state. Read-only watcher (no commands); pairs with feature nodes like `<wcs-geo>`.
+- [`@wcstack/network`](packages/network/) — Declarative Network Information monitor with `<wcs-network>` exposing live `effectiveType`/`downlink`/`rtt`/`saveData` state for adaptive loading. Read-only watcher (no commands, no attributes); unsupported (Firefox/Safari) is the common case, not an edge case.
+- [`@wcstack/screen-orientation`](packages/screen-orientation/) — Declarative Screen Orientation monitor + `lock`/`unlock` commands with `<wcs-screen-orientation>` exposing `type`/`angle`/`portrait`/`landscape`. Monitoring needs no `_gen` guard (synchronous); `lock()` does (async, independent of monitoring).
+- [`@wcstack/fullscreen`](packages/fullscreen/) — Declarative Fullscreen API with `<wcs-fullscreen target="...">`, reusing `<wcs-intersect>`'s target-resolution pattern. `active` tracks whether the resolved target is the document's `fullscreenElement`.
+- [`@wcstack/picture-in-picture`](packages/picture-in-picture/) — Declarative Picture-in-Picture with `<wcs-pip target="...">` (target must be a `<video>` element). Same target-resolution pattern as `<wcs-fullscreen>`.
+- [`@wcstack/pointer-lock`](packages/pointer-lock/) — Declarative Pointer Lock with `<wcs-pointer-lock target="...">` for games/canvas UIs. `movementX`/`movementY` intentionally out of scope in v1 (pair with `@wcstack/debounce`/`@wcstack/throttle` if added later).
+- [`@wcstack/share`](packages/share/) — Declarative Web Share API with `<wcs-share>`: `share(data)` command, `value`/`loading`/`error`/`cancelled` state. `cancelled` (user dismissed the share sheet) is kept separate from `error` (a true failure).
+- [`@wcstack/eyedropper`](packages/eyedropper/) — Declarative EyeDropper API (desktop color picker) with `<wcs-eyedropper>`: `open()`/`abort()` commands, `value` as `{ sRGBHex }`. Same `value`/`loading`/`error`/`cancelled` shape as `<wcs-share>`.
+- [`@wcstack/contacts`](packages/contacts/) — Declarative Contact Picker API with `<wcs-contacts>`: `select(properties, options)` command (Android Chrome only — unsupported is the default elsewhere). `value` is always an array, even with `multiple: false`.
+- [`@wcstack/credential`](packages/credential/) — Declarative Credential Management (password/federated only — WebAuthn is explicitly out of scope) with `<wcs-credential>`: `get(options)`/`store(credential)` commands sharing one `_gen` (documented concurrency limitation).
+- [`@wcstack/idle`](packages/idle/) — Declarative Idle Detection with `<wcs-idle>`: gesture-gated `requestPermission()` + `start`/`stop`, exposing `userState`/`screenState`/`active`. Does not duplicate permission state — compose with `<wcs-permission name="idle-detection">`. Does not auto-start on connect.
+- [`@wcstack/tilt`](packages/tilt/) — Declarative Device Orientation with `<wcs-tilt>`, absorbing iOS's gesture-gated `requestPermission()` (a no-op elsewhere) so callers write one flow that works everywhere. `permissionState` is a 3-value vocabulary tracked locally (no matching Permissions API entry exists).
+- [`@wcstack/accelerometer`](packages/accelerometer/) / [`@wcstack/gyroscope`](packages/gyroscope/) / [`@wcstack/magnetometer`](packages/magnetometer/) / [`@wcstack/ambient-light-sensor`](packages/ambient-light-sensor/) — The Generic Sensor API family: `<wcs-accelerometer>`/`<wcs-gyroscope>`/`<wcs-magnetometer>` expose `x`/`y`/`z`; `<wcs-ambient-light-sensor>` exposes a single `illuminance` scalar (and has the weakest browser support — fingerprinting mitigations have disabled it in some browsers). All four compose with `<wcs-permission name="...">` rather than duplicating permission state, and need no `_gen` guard (synchronous start/stop) beyond a guarded sensor constructor call.
 - [`@wcstack/notification`](packages/notification/) — Declarative desktop notifications with `<wcs-notify>`: show via command-token (`notify`), click back via event-token (`clicked`) — both directions in one tag. Self-contained permission, Service Worker fallback for mobile.
 - [`@wcstack/defined`](packages/defined/) — Declarative custom-element readiness with `<wcs-defined>`: watches `whenDefined()` for a set of tags and exposes `defined`/`pending`/`missing`/`count`/`total` state, with timeout-based load-failure detection. Companion to the autoloader; what CSS `:defined` cannot do.
 - [`@wcstack/camera`](packages/camera/) — Declarative camera capture and recording with `<wcs-camera>` (getUserMedia + built-in preview) and `<wcs-recorder>` (MediaRecorder). The live `MediaStream` is bound straight to elements via a command-token argument and **never stored in serializable state** — only derived values (permission, recording flag, the recorded `Blob`/URL) flow through state.
@@ -334,6 +346,21 @@ wcstack/
 │   ├── resize/        # @wcstack/resize
 │   ├── speech/        # @wcstack/speech
 │   ├── permission/    # @wcstack/permission
+│   ├── network/       # @wcstack/network
+│   ├── screen-orientation/     # @wcstack/screen-orientation
+│   ├── fullscreen/             # @wcstack/fullscreen
+│   ├── picture-in-picture/     # @wcstack/picture-in-picture
+│   ├── pointer-lock/           # @wcstack/pointer-lock
+│   ├── share/                  # @wcstack/share
+│   ├── eyedropper/             # @wcstack/eyedropper
+│   ├── contacts/               # @wcstack/contacts
+│   ├── credential/             # @wcstack/credential
+│   ├── idle/                   # @wcstack/idle
+│   ├── tilt/                   # @wcstack/tilt
+│   ├── accelerometer/          # @wcstack/accelerometer
+│   ├── gyroscope/              # @wcstack/gyroscope
+│   ├── magnetometer/           # @wcstack/magnetometer
+│   ├── ambient-light-sensor/   # @wcstack/ambient-light-sensor
 │   ├── notification/  # @wcstack/notification
 │   ├── defined/       # @wcstack/defined
 │   ├── camera/        # @wcstack/camera
