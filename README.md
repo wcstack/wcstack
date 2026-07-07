@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Twenty-four independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Thirty-nine independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -364,6 +364,7 @@ wcstack/
 │   ├── notification/  # @wcstack/notification
 │   ├── defined/       # @wcstack/defined
 │   ├── camera/        # @wcstack/camera
+│   ├── signals/       # @wcstack/signals
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
@@ -378,7 +379,7 @@ Commands run from within a specific package directory (e.g., `packages/state/`):
 ```bash
 npm run build            # Clean dist, compile TypeScript, bundle with Rollup
 npm test                 # Run tests (Vitest)
-npm run test:coverage    # Coverage with 100% thresholds
+npm run test:coverage    # Coverage (100% statements/functions/lines, 97%+ branches)
 npm run lint             # ESLint
 ```
 
