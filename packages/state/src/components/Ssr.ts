@@ -27,6 +27,22 @@ export {
   SSR_TEXT_START,
 };
 
+/**
+ * script 要素へ埋め込む JSON を HTML パーサから保護する。
+ * HTML 直列化時、script の中身は生のまま出力されるため、state 値に
+ * "</script>" や "<!--" を含む文字列があると script を脱出できてしまう。
+ * "<" ">" "&" と U+2028/U+2029 を JSON の \uXXXX エスケープへ置換する
+ * (JSON.parse では元の文字列と等価に復元される)。
+ */
+function escapeJsonForScript(json: string): string {
+  return json
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 export class Ssr extends HTMLElement implements ISsrElement {
   private _stateData: IState | null = null;
   private _templates: Map<string, HTMLTemplateElement> | null = null;
@@ -156,7 +172,7 @@ export class Ssr extends HTMLElement implements ISsrElement {
     // 初期データ JSON
     const jsonScript = document.createElement('script');
     jsonScript.setAttribute('type', 'application/json');
-    jsonScript.textContent = JSON.stringify(stateData);
+    jsonScript.textContent = escapeJsonForScript(JSON.stringify(stateData));
     ssrEl.appendChild(jsonScript);
 
     // UUID で管理されているテンプレートを復元して格納
@@ -200,7 +216,7 @@ export class Ssr extends HTMLElement implements ISsrElement {
         const propsScript = document.createElement('script');
         propsScript.setAttribute('type', 'application/json');
         propsScript.setAttribute('data-wcs-ssr-props', '');
-        propsScript.textContent = JSON.stringify(propsData);
+        propsScript.textContent = escapeJsonForScript(JSON.stringify(propsData));
         ssrEl.appendChild(propsScript);
       }
     }

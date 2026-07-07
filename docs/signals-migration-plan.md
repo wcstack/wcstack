@@ -55,7 +55,7 @@ G1・G2 は**確定**（後戻りコスト大のため先行決定）。G3・G4 
 
 ## Phase 0 — リリース基盤整備（独立・随時並行）【S】【完了 2026-06-16】
 
-> 実績: `version` を `0.0.0` → **`1.13.1`**（現行リリースライン）に、`description` から "PoC" を除去。`exports`（`.` / `./dom`）は据え置き。ルート README 追加は機能確定後（Phase 5）に回す。
+> 実績: `version` を `0.0.0` → **`1.13.1`**（当時の現行リリースライン。現行は `1.15.0`）に、`description` から "PoC" を除去。`exports`（`.` / `./dom`）は据え置き。ルート README 追加は機能確定後（Phase 5）に回す。
 
 - **スコープ**: `package.json` の `version` を [[feedback_version_alignment]] に従い state/fetch/autoloader/router と同一に揃える。`description` を "PoC" 文言から本実装表現へ更新。`exports` マップの最終確認。
 - **成果物**: 更新済み `package.json`。ルート README への signals 追加（**ただし機能が固まる Phase 5 で最終文言確定**するため、ここでは枠だけ or Phase 5 に回す）。

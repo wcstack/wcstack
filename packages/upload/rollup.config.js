@@ -1,3 +1,9 @@
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /config-templates/rollup.config.js by scripts/sync-package-configs.mjs.
+// Run `node scripts/sync-package-configs.mjs` after editing the template.
+// ===========================================================================
+
 import typescript from "@rollup/plugin-typescript";
 import terser from "@rollup/plugin-terser";
 import dts from "rollup-plugin-dts";
@@ -27,6 +33,7 @@ const copyAutoPlugin = () => ({
 });
 
 export default [
+  // ESM build
   {
     input: "src/exports.ts",
     output: {
@@ -36,6 +43,7 @@ export default [
     },
     plugins: [typescriptPlugin, copyAutoPlugin()],
   },
+  // ESM minified build
   {
     input: "src/exports.ts",
     output: {
@@ -52,6 +60,7 @@ export default [
       terser(),
     ],
   },
+  // Type declarations
   {
     input: "src/exports.ts",
     output: {

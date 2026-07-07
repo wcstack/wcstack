@@ -51,7 +51,7 @@ interface WcsFetchHttpError {
     body: string;
 }
 /**
- * Value types for FetchCore (headless) — the 4 async state properties.
+ * Value types for FetchCore (headless) — the 5 async state properties.
  * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example

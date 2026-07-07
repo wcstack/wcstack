@@ -24,10 +24,18 @@ const canonicalPath = join(repoRoot, "protocol", "wc-bindable.ts");
 
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
-  // 19 async-IO node packages
+  // 34 async-IO node packages
   "broadcast", "camera", "clipboard", "debounce", "defined", "fetch",
-  "geolocation", "intersection", "notification", "permission", "resize",
+  "geolocation", "intersection", "network", "notification", "permission", "resize",
   "speech", "sse", "storage", "timer", "upload", "wakelock", "websocket", "worker",
+  // batch 1 (target-resolution) / batch 4 (minimal monitor)
+  "screen-orientation", "fullscreen", "picture-in-picture", "pointer-lock",
+  // batch 3 (thin one-shot command)
+  "share", "eyedropper", "contacts", "credential",
+  // batch 2 (gesture-gated permission)
+  "idle", "tilt",
+  // batch 5 (Generic Sensor family)
+  "accelerometer", "gyroscope", "magnetometer", "ambient-light-sensor",
   // flagship packages that also expose the protocol
   "router", "server",
   // reactive engine / consumer
@@ -41,8 +49,12 @@ const BANNER =
   "// Run `node scripts/sync-protocol-types.mjs` after editing the source.\n" +
   "// ===========================================================================\n\n";
 
+// CRLF/LF mixed checkouts (e.g. core.autocrlf=true) are tolerated for comparison;
+// writes are always LF.
+const normalize = (s) => s.replace(/\r\n/g, "\n");
+
 function expectedContent() {
-  return BANNER + readFileSync(canonicalPath, "utf8");
+  return BANNER + normalize(readFileSync(canonicalPath, "utf8"));
 }
 
 function destFor(pkg) {
@@ -56,7 +68,7 @@ function main() {
 
   for (const pkg of TARGET_PACKAGES) {
     const dest = destFor(pkg);
-    const current = existsSync(dest) ? readFileSync(dest, "utf8") : null;
+    const current = existsSync(dest) ? normalize(readFileSync(dest, "utf8")) : null;
     if (current === expected) continue;
 
     if (checkOnly) {

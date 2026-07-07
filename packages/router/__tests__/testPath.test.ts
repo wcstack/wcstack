@@ -105,18 +105,11 @@ describe('testPath', () => {
     expect(result?.params).toEqual({ '*': 'path/to/file.txt' });
   });
 
-  it('末尾スラッシュのあるパスをテストできること', () => {
-    const router = document.createElement('wcs-router') as Router;
-    document.body.appendChild(router);
-
-    const route = document.createElement('wcs-route') as Route;
-    route.setAttribute('path', '/users');
-    route.initialize(router, null);
-
-    const result = testPath(route, '/users/', ['users', '']);
-    expect(result).not.toBeNull();
-    expect(result?.path).toBe('/users/');
-  });
+  // 末尾スラッシュ (/users/) の結合テストは matchRoutes.test.ts に移設した。
+  // testPath は matchRoutes が filter 済みの segments（末尾 '' を含まない）のみを
+  // 受け取る前提のため、合成入力 ['users', ''] を直接渡す旧単体テストは実運用経路を
+  // 反映しない dead branch を緑にしていた（normalizePathname + matchRoutes の二重の
+  // 正規化で末尾 '' は本番では testPath に到達しない）。
 
   it('index属性を持つルートをテストできること', () => {
     const router = document.createElement('wcs-router') as Router;

@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/defined`（`<wcs-defined>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/defined`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Custom Elements Registry（`customElements.whenDefined(tag)` ＋ `customElements.get(tag)`）
 - **位置づけ**: 指定したカスタム要素群の **registration 完了を待ち、ロード失敗を timeout で検出する readiness ゲート**。`@wcstack/autoloader` が動的 import するコンポーネントの「準備完了 / 読み込み失敗」を宣言的に state 化するコンパニオンノード。
 - **前提資産**: permission（event-token 専用ノード＝command なし／`_permGen` 世代ガード／`unsupported` 的フォールバック／Core/Shell 分割／SSR `connectedCallbackPromise`／「1イベント・多 getter」idiom）、wakelock（boolean state の宣言的束縛＝派生 getter）、event-token プロトコル、wc-bindable protocol v1。permission を雛形に最小改変で起こす。

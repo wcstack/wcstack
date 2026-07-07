@@ -128,9 +128,11 @@ export class Storage extends HTMLElement {
     const v = !!value;
     if (v) {
       this._trigger = true;
-      // save() may raise (e.g. key unset). Guarantee the trigger resets to
-      // false and the completion event fires even on failure, so the trigger
-      // never gets stuck in the `true` state.
+      // save() is never-throw (a failure — e.g. key unset — is routed to the
+      // `error` property, not thrown), but the try/finally is kept defensively
+      // to guarantee the trigger resets to false and the completion event fires
+      // even in the unexpected event of a throw, so the trigger never gets stuck
+      // in the `true` state.
       try {
         this.save();
       } finally {

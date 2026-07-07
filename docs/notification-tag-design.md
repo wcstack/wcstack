@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/notification`（`<wcs-notify>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/notification`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Notifications API（`Notification` コンストラクタ、`Notification.requestPermission()`、`Notification.permission`、`click`/`close`/`show`/`error` イベント）。Push API（サーバ起点）は別物でスコープ外。
 - **位置づけ**: OS レベルのデスクトップ通知を宣言的に state 化する IO ノード。**command-token（表示）と event-token（クリック/クローズ）の双対が「1つのAPI・1タグ内」で完結する初の例**。
 - **前提資産**: permission（permission 二相監視・4値 state・派生 boolean getter・`_permGen` 世代ガード・unsupported・never-throw・zero-log・secure-context・Core/Shell・SSR）、speech/SpeakCore（imperative command・引数束縛 `command.<name>: <path>`・`_gen` ライフサイクルガード・dispose で in-flight を無効化）、broadcast（タブ/SW 境界越えの pub/sub）、event-token / command-token プロトコル、wc-bindable protocol v1。
@@ -144,7 +144,7 @@ lastClick: { tag, data } | null            // 直近クリックの識別子（e
 ```
 
 - commands: `notify` / `close` / `closeAll`（§1 の決定次第で `request` を追加）。
-- events: `wcs-notify:permission-changed` / `:click` / `:close` / `:show` / `:error`。
+- events: `wcs-notify:permission-change` / `:click` / `:close` / `:show` / `:error`。
 
 ### 6-b. 【新論点】permission の値が geo/permission と違う
 

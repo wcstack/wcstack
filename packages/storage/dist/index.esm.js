@@ -161,7 +161,7 @@ class StorageCore extends EventTarget {
             // never-throw: an invalid type is routed to the error property and the
             // current type is kept (the safe default), rather than throwing out of the
             // setter / setAttribute / connectedCallback.
-            this._setError({ message: `Invalid storage type: "${value}". Must be "local" or "session".` });
+            this._setError({ operation: "type", message: `Invalid storage type: "${value}". Must be "local" or "session".` });
             return;
         }
         this._type = value;
@@ -177,6 +177,13 @@ class StorageCore extends EventTarget {
         }));
     }
     _setError(error) {
+        // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
+        // so suppressing redundant null→null dispatches (every load/save/remove start
+        // clears a usually-already-null error) avoids a spurious error event per
+        // successful operation. Reference identity is sufficient: each failure builds
+        // a fresh object, and the clear path always passes null.
+        if (this._error === error)
+            return;
         this._error = error;
         this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.error, {
             detail: error,
@@ -468,9 +475,11 @@ class Storage extends HTMLElement {
         const v = !!value;
         if (v) {
             this._trigger = true;
-            // save() may raise (e.g. key unset). Guarantee the trigger resets to
-            // false and the completion event fires even on failure, so the trigger
-            // never gets stuck in the `true` state.
+            // save() is never-throw (a failure — e.g. key unset — is routed to the
+            // `error` property, not thrown), but the try/finally is kept defensively
+            // to guarantee the trigger resets to false and the completion event fires
+            // even in the unexpected event of a throw, so the trigger never gets stuck
+            // in the `true` state.
             try {
                 this.save();
             }

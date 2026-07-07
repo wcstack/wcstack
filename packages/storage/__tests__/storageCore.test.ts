@@ -85,7 +85,7 @@ describe("StorageCore", () => {
   it("無効なstorageタイプはthrowせずerrorへ流し、typeは現状維持する（never-throw）", () => {
     const core = new StorageCore();
     expect(() => { core.type = "invalid" as any; }).not.toThrow();
-    expect(core.error).toEqual({ message: 'Invalid storage type: "invalid". Must be "local" or "session".' });
+    expect(core.error).toEqual({ operation: "type", message: 'Invalid storage type: "invalid". Must be "local" or "session".' });
     // 無効値は無視され、デフォルトの "local" が維持される
     expect(core.type).toBe("local");
   });
@@ -269,8 +269,9 @@ describe("StorageCore", () => {
 
     core.load();
 
-    // loading(true), error(null), value, loading(false)
-    expect(events).toEqual(["loading", "error", "value", "loading"]);
+    // loading(true), value, loading(false)。開始時の error(null) クリアは
+    // 同値ガードで抑止される（error は既に null のため）
+    expect(events).toEqual(["loading", "value", "loading"]);
   });
 
   it("save()時にloading→value→loadingの順でイベントが発火する", () => {
@@ -284,8 +285,9 @@ describe("StorageCore", () => {
 
     core.save({ saved: true });
 
-    // loading(true), error(null), value, loading(false)
-    expect(events).toEqual(["loading", "error", "value", "loading"]);
+    // loading(true), value, loading(false)。開始時の error(null) クリアは
+    // 同値ガードで抑止される（error は既に null のため）
+    expect(events).toEqual(["loading", "value", "loading"]);
   });
 
   it("save()でストレージエラーが発生した場合にerrorが設定される", () => {
@@ -628,8 +630,9 @@ describe("StorageCore", () => {
       core.stopSync();
     });
 
-    it("クロスタブ同期成功時にerror(null)イベントが発火する", () => {
+    it("クロスタブ同期成功時に残存errorがnullへクリアされてイベント発火し、error既にnullなら同値ガードで発火しない", () => {
       const core = new StorageCore();
+      core.load(); // key 未設定 → error = { operation: "load", ... } を残存させる
       core.key = "sync-error-event-key";
       core.type = "local";
       core.startSync();
@@ -646,7 +649,16 @@ describe("StorageCore", () => {
       });
       globalThis.dispatchEvent(event);
 
-      // 同期成功時にerrorがnullへリセットされたことが観測できる
+      // 同期成功時に残存 error が null へリセットされたことが観測できる
+      expect(errorEvents).toEqual([null]);
+      expect(core.error).toBeNull();
+
+      // 2回目の同期: error は既に null → 同値ガードで再発火しない
+      globalThis.dispatchEvent(new StorageEvent("storage", {
+        key: "sync-error-event-key",
+        newValue: '{"x":2}',
+        storageArea: localStorage,
+      }));
       expect(errorEvents).toEqual([null]);
 
       core.stopSync();

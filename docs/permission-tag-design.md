@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/permission`（`<wcs-permission>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/permission`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Permissions API（`navigator.permissions.query()` ＋ `PermissionStatus` の `change` イベント）
 - **位置づけ**: ブラウザ権限状態を宣言的に state 化する**横断基盤プリミティブ**。geo / clipboard / notifications / camera 等が共通依存しうる権限監視を、単独の IO ノードとして切り出す。
 - **前提資産**: geolocation（二相＋permission 監視＋never-throw＋secure-context＋`unsupported` state＋`_permGen` 世代ガード＋Core/Shell 分割）、clipboard（permission 2系統・`_queryPermission` ヘルパ）、wakelock（boolean state の宣言的束縛＝派生 getter）、event-token / command-token プロトコル、wc-bindable protocol v1。

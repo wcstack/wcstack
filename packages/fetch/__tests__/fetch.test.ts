@@ -464,10 +464,10 @@ describe("Fetch", () => {
 
     expect(result).toBeNull();
     expect(el.status).toBe(404);
-    // fetch開始時に null（エラークリア）、HTTPエラー時にエラーオブジェクトの2回発火
-    expect(errors).toHaveLength(2);
-    expect(errors[0]).toBeNull();
-    expect(errors[1].status).toBe(404);
+    // fetch開始時の null クリアは同値ガードで抑止され（error は既に null）、
+    // HTTPエラー時のエラーオブジェクトのみ1回発火する
+    expect(errors).toHaveLength(1);
+    expect(errors[0].status).toBe(404);
     // status はターゲットインジェクションにより Shell でも wcs-fetch:response 経由で届く
     expect(responses).toEqual([404]);
   });

@@ -6,6 +6,6 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@wcstack/server": "^0.2.4"
+    "@wcstack/server": "^1.15.0"
   }
 }

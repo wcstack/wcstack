@@ -179,6 +179,7 @@ declare class WcsWebSocket extends HTMLElement {
     get readyState(): number;
     get trigger(): boolean;
     set trigger(value: boolean);
+    get send(): any;
     set send(data: any);
     connect(): void;
     sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;

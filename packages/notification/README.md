@@ -8,7 +8,7 @@ It is an **async primitive node** that turns the Notifications API into reactive
 With `@wcstack/state`, `<wcs-notify>` can be bound directly through path contracts:
 
 - **command surface**: `request`, `notify`, `close`, `closeAll`
-- **input surface**: `notice` (reactive show), `mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `require-interaction`, `silent`, `renotify`
+- **input surface**: `notice` (reactive show), `mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `require-interaction`, `silent`, `renotify`, `manual`
 - **output state surface**: `permission`, `granted`, `denied`, `prompt`, `unsupported`, `error`, `clicked`, `closed`, `shown`
 
 `@wcstack/notification` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
@@ -159,9 +159,44 @@ It relays each click over `BroadcastChannel("wcs-notify")` (primary) and `client
 ## Notes & limitations
 
 - **Notifications outlive the page.** Disconnecting `<wcs-notify>` (or calling `dispose()` on the Core) detaches its subscriptions but does **not** close open notifications — a notification is meant to persist past the page. Use `close` / `closeAll` to dismiss.
+- **`mode` is fixed at connect time.** The backend is chosen once, when the element connects (`observe(mode)`); there is no `observedAttributes` entry for `mode`. Changing the `mode` attribute on an already-connected element has no effect until you re-connect it (remove and re-insert).
+- **The SW backend does not relay `close`.** The `@wcstack/notification/sw` helper wires `notificationclick` only, not `notificationclose`. So under the `sw` backend `closed` / `wcs-notify:close` never fires (there is no cross-worker relay for close). `clicked` still works via the click relay; `closed` is a constructor-backend-only signal.
 - **Push API is out of scope.** This package wraps the Notifications API (local notifications). Server-initiated Push is a separate concern.
 - **Silent failure handling (zero-log).** Consistent with wcstack's zero-dependency philosophy, `<wcs-notify>` never logs or throws. A missing API → `permission = "unsupported"`; a not-granted permission or a show failure → the `error` property. Bind `error` / `permission` to react.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`, so the server renderer waits for the connect-time permission probe before snapshotting.
+
+## Configuration
+
+`<wcs-notify>` ships a **click autoTrigger** that is **enabled by default**. When enabled, the first `<wcs-notify>` to connect installs a single document-level `click` listener. A click on any element carrying the trigger attribute (`data-notifytarget="<id>"`) calls `notify()` on the `<wcs-notify>` with that `id`:
+
+```html
+<wcs-notify id="app-notify"></wcs-notify>
+<button data-notifytarget="app-notify" data-notifybody="You have 1 new message">
+  Notify me
+</button>
+```
+
+- The title is `data-notifytitle` if present, otherwise the trigger element's trimmed `textContent`; the body is the optional `data-notifybody`.
+- Because it is a **document-wide** click listener installed by default, disable it if you do not use the shortcut. Configuration is applied through `bootstrapNotification(userConfig?)` (which registers the element and applies the config in one call); `getConfig()` reads back the effective, deep-frozen config:
+
+```js
+import { bootstrapNotification, getConfig } from "@wcstack/notification";
+
+// Register <wcs-notify> and opt out of the document click listener:
+bootstrapNotification({ autoTrigger: false });
+// Or rename the trigger attribute:
+bootstrapNotification({ triggerAttribute: "data-notify" });
+
+getConfig(); // read the (deep-frozen) effective config
+```
+
+| Config key         | Type      | Default             | Description                                                        |
+| ------------------ | --------- | ------------------- | ----------------------------------------------------------------- |
+| `autoTrigger`      | `boolean` | `true`              | Install the document-level click listener for `data-notifytarget`. |
+| `triggerAttribute` | `string`  | `data-notifytarget` | Attribute a clickable element uses to target a `<wcs-notify>` by id. |
+| `tagNames.notify`  | `string`  | `wcs-notify`        | Custom-element tag name to register.                              |
+
+Call `setConfig()` / `bootstrapNotification()` **before** the elements connect for the change to take effect.
 
 ## Headless usage (`NotificationCore`)
 

@@ -16,7 +16,7 @@ describe('eagerLoad', () => {
     vi.restoreAllMocks();
   });
 
-  it('should define custom elements', async () => {
+  it('カスタム要素をdefineすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -39,7 +39,7 @@ describe('eagerLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('my-element', mockConstructor);
   });
 
-  it('should handle extends option', async () => {
+  it('extendsオプションを処理すること', async () => {
     const mockConstructor = class extends HTMLButtonElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -61,7 +61,7 @@ describe('eagerLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('my-button', mockConstructor, { extends: 'button' });
   });
 
-  it('should auto-detect extends from prototype', async () => {
+  it('プロトタイプからextendsを自動検出すること', async () => {
     const mockConstructor = class extends HTMLInputElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -83,7 +83,7 @@ describe('eagerLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('my-input', mockConstructor, { extends: 'input' });
   });
 
-  it('should handle loader failure', async () => {
+  it('loader失敗時はconsole.errorを出力しdefineしないこと', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn().mockRejectedValue(new Error('Load failed'))
@@ -105,7 +105,7 @@ describe('eagerLoad', () => {
     expect(customElements.define).not.toHaveBeenCalled();
   });
 
-  it('should load multiple components in parallel', async () => {
+  it('複数のコンポーネントを並列にロードすること', async () => {
     const mockConstructor1 = class extends HTMLElement {};
     const mockConstructor2 = class extends HTMLElement {};
     
@@ -141,7 +141,7 @@ describe('eagerLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('comp-2', mockConstructor2);
   });
 
-  it('should continue loading other components if one fails', async () => {
+  it('1つが失敗しても他のコンポーネントのロードを継続すること', async () => {
     const mockConstructor = class extends HTMLElement {};
     
     const mockLoader: ILoader = {
@@ -176,7 +176,7 @@ describe('eagerLoad', () => {
     expect(console.error).toHaveBeenCalled();
   });
 
-  it('should not retry failed tags', async () => {
+  it('失敗したタグをリトライしないこと', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn().mockRejectedValue(new Error('Load failed'))
@@ -198,7 +198,7 @@ describe('eagerLoad', () => {
     expect(console.error).toHaveBeenCalledTimes(1); // Only logs once
   });
 
-  it('should throw error if loader redirection is attempted', async () => {
+  it('loaderのリダイレクトが試みられた場合、エラーをthrowすること', async () => {
     const loaders = { 
         [DEFAULT_KEY]: { postfix: '.js', loader: async () => null },
         'alias': 'other' 
@@ -216,12 +216,12 @@ describe('eagerLoad', () => {
     await expect(eagerLoad(loadMap, loaders)).rejects.toThrow(/Loader redirection is not supported/);
   });
 
-  it('should execute top-level window check', async () => {
+  it('トップレベルのwindowチェックが実行されること', async () => {
     vi.resetModules();
     await import('../src/eagerload.js');
   });
 
-  it('should handle window undefined', async () => {
+  it('windowがundefinedの場合も処理できること', async () => {
     vi.resetModules();
     const originalWindow = global.window;
     vi.stubGlobal('window', undefined);
@@ -233,7 +233,7 @@ describe('eagerLoad', () => {
     }
   });
 
-  it('should handle undefined HTML classes', async () => {
+  it('HTMLクラスがundefinedの場合も処理できること', async () => {
     vi.resetModules();
     const originalButton = global.HTMLButtonElement;
     vi.stubGlobal('HTMLButtonElement', undefined);
@@ -245,7 +245,7 @@ describe('eagerLoad', () => {
     }
   });
 
-  it('should handle loader returning null', async () => {
+  it('loaderがnullを返した場合、defineしないこと', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn().mockResolvedValue(null)
@@ -267,7 +267,7 @@ describe('eagerLoad', () => {
     expect(customElements.define).not.toHaveBeenCalled();
   });
 
-  it('should skip already defined elements before loader call', async () => {
+  it('loader呼び出し前に定義済みの要素はスキップすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     // 事前にカスタムエレメントを定義
     customElements.define('pre-defined-element', mockConstructor);
@@ -294,7 +294,7 @@ describe('eagerLoad', () => {
     expect(customElements.define).toHaveBeenCalledTimes(1); // 事前定義のみ
   });
 
-  it('should skip element if defined during loader execution', async () => {
+  it('loader実行中に定義された要素はスキップすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     
     const mockLoader: ILoader = {

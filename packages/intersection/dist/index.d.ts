@@ -125,7 +125,9 @@ interface WcsIntersectInputs {
     trigger: boolean;
 }
 interface WcsIntersectCoreCommands {
-    observe(element: Element, options?: IntersectOptions): void;
+    observe(element: Element, options?: IntersectOptions): Promise<void>;
+    /** Force a fresh observation even when target+options are unchanged (rebuilds the observer). */
+    reobserve(element: Element, options?: IntersectOptions): void;
     unobserve(element: Element): void;
     disconnect(): void;
     /** Clear the `visible` latch so it can be set again by a later intersection. */
@@ -134,6 +136,8 @@ interface WcsIntersectCoreCommands {
 interface WcsIntersectCommands {
     /** Re-resolve the target/root from the DOM and (re)start observing. */
     observe(): void;
+    /** Re-resolve the target/root and force a fresh observation (rebuilds the observer). */
+    reobserve(): void;
     unobserve(): void;
     disconnect(): void;
     reset(): void;

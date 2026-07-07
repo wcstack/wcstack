@@ -161,6 +161,13 @@ export class WcsWebSocket extends HTMLElement {
     }
   }
 
+  // `send` is a write-only command surface: assigning transmits immediately.
+  // Reading always returns null (no payload is retained) — consistent with the
+  // null carried by wcs-ws:send-changed and the documented "resets to null".
+  get send(): any {
+    return null;
+  }
+
   set send(data: any) {
     if (data === null || data === undefined) return;
     const payload = typeof data === "string" ? data : JSON.stringify(data);

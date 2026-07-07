@@ -20,32 +20,32 @@ describe('resolveLoader', () => {
     'alias': 'ts'
   };
 
-  it('should resolve default loader when loaderKey is null', () => {
+  it('loaderKeyがnullの場合、デフォルトloaderを解決すること', () => {
     const result = resolveLoader('test.js', null, loaders);
     expect(result).toBe(mockLoader);
   });
 
-  it('should resolve default loader when loaderKey is empty', () => {
+  it('loaderKeyが空文字の場合、デフォルトloaderを解決すること', () => {
     const result = resolveLoader('test.js', '', loaders);
     expect(result).toBe(mockLoader);
   });
 
-  it('should resolve default loader when loaderKey is DEFAULT_KEY', () => {
+  it('loaderKeyがDEFAULT_KEYの場合、デフォルトloaderを解決すること', () => {
     const result = resolveLoader('test.js', DEFAULT_KEY, loaders);
     expect(result).toBe(mockLoader);
   });
 
-  it('should resolve specific loader by key', () => {
+  it('キー指定で特定のloaderを解決すること', () => {
     const result = resolveLoader('test.ts', 'ts', loaders);
     expect(result).toBe(tsLoader);
   });
 
-  it('should resolve loader by postfix if loaderKey is not provided', () => {
+  it('loaderKey未指定の場合、postfixからloaderを解決すること', () => {
     const result = resolveLoader('test.ts', null, loaders);
     expect(result).toBe(tsLoader);
   });
 
-  it('should prioritize longer postfix match', () => {
+  it('より長いpostfixのマッチを優先すること', () => {
     const jsxLoader: ILoader = { postfix: '.jsx', loader: async () => null };
     const xLoader: ILoader = { postfix: '.x', loader: async () => null };
     
@@ -59,12 +59,12 @@ describe('resolveLoader', () => {
     expect(result).toBe(jsxLoader);
   });
 
-  it('should fallback to default loader if postfix does not match', () => {
+  it('postfixがマッチしない場合、デフォルトloaderにフォールバックすること', () => {
     const result = resolveLoader('test.unknown', null, loaders);
     expect(result).toBe(mockLoader);
   });
 
-  it('should resolve aliased loader (string value in loaders)', () => {
+  it('エイリアスされたloader（loaders内の文字列値）を明示指定した場合、エラーをthrowすること', () => {
     // Note: The implementation handles string values in DEFAULT_KEY fallback, 
     // but throws "Loader redirection is not supported here" if explicitly requested?
     // Let's check the code:
@@ -86,7 +86,7 @@ describe('resolveLoader', () => {
     expect(() => resolveLoader('test.ts', 'alias', loaders)).toThrow("Loader redirection is not supported here");
   });
 
-  it('should handle default loader being an alias', () => {
+  it('デフォルトloaderがエイリアスの場合も解決できること', () => {
     const aliasLoaders = {
       [DEFAULT_KEY]: 'real',
       'real': mockLoader
@@ -97,7 +97,7 @@ describe('resolveLoader', () => {
     expect(result).toBe(mockLoader);
   });
 
-  it('should handle default loader being an alias (coverage for line 38)', () => {
+  it('デフォルトloaderがエイリアスの場合も解決できること（38行目のカバレッジ用）', () => {
     // This is effectively the same as above, but ensuring we hit the line
     const aliasLoaders = {
       [DEFAULT_KEY]: 'real',
@@ -107,7 +107,7 @@ describe('resolveLoader', () => {
     expect(result).toBe(mockLoader);
   });
 
-  it('should ignore recursive aliases in postfix resolution', () => {
+  it('postfix解決では再帰的なエイリアスを無視すること', () => {
     const loadersWithRecursiveAlias = {
       [DEFAULT_KEY]: mockLoader,
       'alias': 'recursive',

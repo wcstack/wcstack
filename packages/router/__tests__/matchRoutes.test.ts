@@ -62,6 +62,19 @@ describe('matchRoutes', () => {
     expect(result?.routes[0]).toBe(route2);
   });
 
+  it('末尾スラッシュ付きパス (/users/) が末尾スラッシュ無しルート (/users) にマッチすること（結合: matchRoutes の filter が末尾空セグメントを除去し、testPath の通常一致経路で解決される）', () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const route = document.createElement('wcs-route') as Route;
+    route.setAttribute('path', '/users');
+    route.initialize(router, null);
+
+    const result = matchRoutes(router, '/users/');
+    expect(result).not.toBeNull();
+    expect(result?.routes[0]).toBe(route);
+  });
+
   it('ネストされたルートをマッチできること', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);

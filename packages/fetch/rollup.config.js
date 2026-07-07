@@ -1,3 +1,9 @@
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /config-templates/rollup.config.js by scripts/sync-package-configs.mjs.
+// Run `node scripts/sync-package-configs.mjs` after editing the template.
+// ===========================================================================
+
 import typescript from "@rollup/plugin-typescript";
 import terser from "@rollup/plugin-terser";
 import dts from "rollup-plugin-dts";

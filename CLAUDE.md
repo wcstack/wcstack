@@ -24,7 +24,7 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/fetch`** (`<wcs-fetch>`) — Async data fetching
 - **`@wcstack/storage`** (`<wcs-storage>`) — localStorage / sessionStorage binding
 - **`@wcstack/upload`** (`<wcs-upload>`) — File upload with progress
-- **`@wcstack/websocket`** (`<wcs-websocket>`) — Real-time WebSocket comms
+- **`@wcstack/websocket`** (`<wcs-ws>`) — Real-time WebSocket comms
 - **`@wcstack/sse`** (`<wcs-sse>`) — Server-Sent Events (EventSource, one-way streaming)
 - **`@wcstack/broadcast`** (`<wcs-broadcast>`) — Cross-tab messaging (BroadcastChannel)
 - **`@wcstack/worker`** (`<wcs-worker>`) — Dedicated Web Worker primitive
@@ -40,6 +40,21 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/camera`** (`<wcs-camera>`, `<wcs-recorder>`) — Camera capture + media recording (binds live `MediaStream` handles directly to elements, never through serializable state)
 - **`@wcstack/speech`** (`<wcs-speak>`, `<wcs-listen>`) — SpeechSynthesis (TTS) + SpeechRecognition (STT)
 - **`@wcstack/defined`** (`<wcs-defined>`) — Custom-element readiness gate (`customElements.whenDefined` with timeout-based load-failure detection)
+- **`@wcstack/fullscreen`** (`<wcs-fullscreen>`) — Fullscreen API
+- **`@wcstack/picture-in-picture`** (`<wcs-pip>`) — Picture-in-Picture for video
+- **`@wcstack/pointer-lock`** (`<wcs-pointer-lock>`) — Pointer Lock API
+- **`@wcstack/screen-orientation`** (`<wcs-screen-orientation>`) — Screen Orientation monitor / lock
+- **`@wcstack/idle`** (`<wcs-idle>`) — Idle Detection API
+- **`@wcstack/network`** (`<wcs-network>`) — Network Information monitor
+- **`@wcstack/share`** (`<wcs-share>`) — Web Share API
+- **`@wcstack/contacts`** (`<wcs-contacts>`) — Contact Picker API
+- **`@wcstack/credential`** (`<wcs-credential>`) — Credential Management API
+- **`@wcstack/eyedropper`** (`<wcs-eyedropper>`) — EyeDropper color picker
+- **`@wcstack/tilt`** (`<wcs-tilt>`) — Device Orientation (tilt) events
+- **`@wcstack/accelerometer`** (`<wcs-accelerometer>`) — Accelerometer sensor
+- **`@wcstack/gyroscope`** (`<wcs-gyroscope>`) — Gyroscope sensor
+- **`@wcstack/magnetometer`** (`<wcs-magnetometer>`) — Magnetometer sensor
+- **`@wcstack/ambient-light-sensor`** (`<wcs-ambient-light-sensor>`) — Ambient Light sensor
 
 **Other packages:**
 - **`@wcstack/server`** — Server-side rendering for wcstack components.
@@ -98,7 +113,7 @@ Root `tsconfig.json` sets ESNext target/module with bundler module resolution, s
 
 ### Core interop protocols
 
-These protocols are how `state`/`signals` talk to I/O node components, and how custom tags bind to one another. They are the heart of the project — read the per-package `SPEC.md`/`README.md` and `docs/` before changing them.
+These protocols are how `state`/`signals` talk to I/O node components, and how custom tags bind to one another. They are the heart of the project — read the per-package `README.md` and `docs/` before changing them.
 
 - **`wc-bindable-protocol`** — A component declares its bindable surface with `static wcBindable`, exposing `properties` (two-way bindable), `event`, and `getter`. This lets `data-wcs` (and signals' `bindNode`) wire DOM elements together without per-element glue. I/O node components implement this so they interoperate with `state`.
 - **`command-token` protocol** — `state → element` imperative command invocation: `$commandTokens` / `$command.<name>` / `command.<method>:`. Positional arguments are passed through verbatim (`Token.emit` → `Reflect.apply`); the runtime does not `await` them.
@@ -139,12 +154,12 @@ Each I/O node component splits into two layers:
 
 ## Examples
 
-- Root `examples/` holds cross-package demo apps (e.g. `camera-upload`, `notification-chat`, `speech-echo`, `wcs-state-todo`, `wcs-storage-broadcast`).
+- Root `examples/` holds cross-package demo apps (e.g. `state-camera-record-upload`, `state-notification-chat`, `state-speech-echo`, `state-cross-tab-todo`, `react-websocket`, `vue-websocket`, `ssr`).
 - Some packages keep their own `examples/` (e.g. `fetch`, `state`) for focused, single-package demos.
 
 ## Docs & Design Notes
 
-`docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `SPEC.md`/`README.md` (in ja/en) are the normative references for that package.
+`docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `README.md`/`README.ja.md` are the normative references for that package.
 
 ## Module System
 

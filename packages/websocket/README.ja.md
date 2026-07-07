@@ -50,12 +50,19 @@ npm install @wcstack/websocket
 <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
 
 <wcs-state>
-  <script type="application/json">
-    {
-      "lastMessage": null,
-      "isConnected": false,
-      "isLoading": false
-    }
+  <script type="module">
+    export default {
+      lastMessage: null,
+      isConnected: false,
+      isLoading: false,
+
+      get connectionLabel() {
+        return this.isConnected ? "接続中" : "切断";
+      },
+      get lastMessageJson() {
+        return JSON.stringify(this.lastMessage, null, 2);
+      },
+    };
   </script>
 
   <wcs-ws
@@ -63,8 +70,8 @@ npm install @wcstack/websocket
     data-wcs="message: lastMessage; connected: isConnected; loading: isLoading">
   </wcs-ws>
 
-  <p data-wcs="textContent: isConnected|then('接続中','切断')"></p>
-  <pre data-wcs="textContent: lastMessage|json"></pre>
+  <p data-wcs="textContent: connectionLabel"></p>
+  <pre data-wcs="textContent: lastMessageJson"></pre>
 </wcs-state>
 ```
 
@@ -86,6 +93,9 @@ npm install @wcstack/websocket
       lastMessage: null,
       outgoing: null,
 
+      get lastMessageJson() {
+        return JSON.stringify(this.lastMessage, null, 2);
+      },
       sendChat() {
         this.outgoing = { type: "chat", content: this.chatInput };
         this.chatInput = "";
@@ -101,7 +111,7 @@ npm install @wcstack/websocket
   <input data-wcs="value: chatInput" placeholder="メッセージを入力">
   <button data-wcs="onclick: sendChat">送信</button>
 
-  <pre data-wcs="textContent: lastMessage|json"></pre>
+  <pre data-wcs="textContent: lastMessageJson"></pre>
 </wcs-state>
 ```
 
@@ -117,6 +127,9 @@ npm install @wcstack/websocket
       lastMessage: null,
       isConnected: false,
 
+      get connectionLabel() {
+        return this.isConnected ? "接続中" : "切断";
+      },
       openConnection() {
         this.shouldConnect = true;
       },
@@ -130,7 +143,7 @@ npm install @wcstack/websocket
   </wcs-ws>
 
   <button data-wcs="onclick: openConnection">接続</button>
-  <p data-wcs="textContent: isConnected|then('接続中','切断')"></p>
+  <p data-wcs="textContent: connectionLabel"></p>
 </wcs-state>
 ```
 
@@ -310,6 +323,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `auto-reconnect` | `boolean` | `false` | 自動再接続を有効化 |
 | `reconnect-interval` | `number` | `3000` | 再接続間隔（ミリ秒） |
 | `max-reconnects` | `number` | `Infinity` | 最大再接続回数 |
+| `binary-type` | `"blob" \| "arraybuffer"` | `blob` | 受信バイナリフレームを `message` でどう表現するか。`arraybuffer` 以外の値は `blob` に正規化される |
 
 | プロパティ | 型 | 説明 |
 |------------|------|------|
@@ -318,6 +332,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `loading` | `boolean` | 接続処理中は `true` |
 | `error` | `WcsWsError \| Event \| null` | エラー情報 |
 | `readyState` | `number` | WebSocket readyState 定数 |
+| `binaryType` | `"blob" \| "arraybuffer"` | バイナリフレーム表現（`binary-type` 属性を背後に持つ。既定 `blob`） |
 | `trigger` | `boolean` | `true` を設定すると接続を開始 |
 | `send` | `any` | 値を設定するとデータを送信 |
 
@@ -380,6 +395,7 @@ static wcBindable = {
     { name: "autoReconnect", attribute: "auto-reconnect" },
     { name: "reconnectInterval", attribute: "reconnect-interval" },
     { name: "maxReconnects", attribute: "max-reconnects" },
+    { name: "binaryType", attribute: "binary-type" },
     { name: "manual", attribute: "manual" },
     { name: "trigger" },
     { name: "send" },
@@ -431,6 +447,7 @@ interface WcsWsInputs {
   autoReconnect: boolean;
   reconnectInterval: number;
   maxReconnects: number;
+  binaryType: BinaryType; // "blob" | "arraybuffer"
   manual: boolean;
   trigger: boolean;
   send: unknown;
@@ -442,6 +459,7 @@ interface WcsWsCoreCommands {
     autoReconnect?: boolean;
     reconnectInterval?: number;
     maxReconnects?: number;
+    binaryType?: BinaryType;
   }): void;
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
   close(code?: number, reason?: string): void;

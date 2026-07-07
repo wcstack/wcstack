@@ -3,7 +3,7 @@ import { load } from '../src/vanilla.js';
 import { resolve } from 'path';
 
 describe('vanilla loader', () => {
-  it('should import module and return default export', async () => {
+  it('モジュールをimportしてdefault exportを返すこと', async () => {
     // Use a real file relative to this test file
     // But load() takes a path. If it's used in browser, it's URL.
     // In Node/Vitest, import() works with file paths.

@@ -445,6 +445,23 @@ describe("UploadCore", () => {
       await promise2;
       expect(core.error).toBeNull();
     });
+
+    it("error の同値ガード: error が null のままの成功アップロードでは null→null の error イベントは発火しない", async () => {
+      const core = new UploadCore();
+      const errorEvents: any[] = [];
+      core.addEventListener("wcs-upload:error", (e) => {
+        errorEvents.push((e as CustomEvent).detail);
+      });
+
+      const files = [createMockFile("test.txt", 100, "text/plain")];
+      const promise = core.upload("/api/upload", files);
+      MockXMLHttpRequest.instances[0].simulateLoad(200, '{"ok":true}', "application/json");
+      await promise;
+
+      // 開始時の _setError(null) は同値ガードで抑止される（error は初期値 null のため）
+      expect(errorEvents).toEqual([]);
+      expect(core.error).toBeNull();
+    });
   });
 
   describe("abort", () => {

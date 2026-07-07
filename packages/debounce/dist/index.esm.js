@@ -423,8 +423,16 @@ class Debounce extends HTMLElement {
         inputs: [
             { name: "source" },
             { name: "wait", attribute: "wait" },
-            { name: "leading", attribute: "leading" },
-            { name: "trailing", attribute: "trailing" },
+            // No `attribute` hint on leading / trailing: their setters already reflect
+            // to the backing attribute themselves (the fetch-Shell idiom), and — more
+            // importantly — the backing attribute is NOT the input name. `trailing`
+            // reflects to the inverted `no-trailing` (default true; a bare `trailing`
+            // attribute can't express false), and the `<wcs-throttle>` subclass reads
+            // `leading` from the inverted `no-leading` (default on). A single
+            // input-name→attribute hint can't be correct for both polarities/subclasses,
+            // so binders drive these through the property setter instead.
+            { name: "leading" },
+            { name: "trailing" },
             { name: "maxWait", attribute: "max-wait" },
         ],
         commands: [

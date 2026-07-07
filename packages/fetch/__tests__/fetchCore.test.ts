@@ -242,14 +242,35 @@ describe("FetchCore", () => {
 
     expect(result).toBeNull();
     expect(core.status).toBe(404);
-    // fetch開始時に null（エラークリア）、HTTPエラー時にエラーオブジェクトの2回発火
-    expect(errors).toHaveLength(2);
-    expect(errors[0]).toBeNull();
-    expect(errors[1].status).toBe(404);
-    expect(errors[1].statusText).toBe("Error");
+    // fetch開始時の null クリアは同値ガードで抑止され（error は既に null）、
+    // HTTPエラー時のエラーオブジェクトのみ1回発火する
+    expect(errors).toHaveLength(1);
+    expect(errors[0].status).toBe(404);
+    expect(errors[0].statusText).toBe("Error");
     // The already-read response text is part of the error object, so consumers can
     // surface the server's message (e.g. a validation reason) by binding error.body.
-    expect(errors[1].body).toBe("Not Found");
+    expect(errors[0].body).toBe("Not Found");
+  });
+
+  it("error の同値ガード: 成功フェッチでは null→null の error イベントは発火せず、エラー後の再フェッチ開始時のみ null クリアが発火する", async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse("Not Found", { status: 404, ok: false }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ ok: true }));
+
+    const core = new FetchCore();
+    const errors: any[] = [];
+    core.addEventListener("wcs-fetch:error", (e: Event) => {
+      errors.push((e as CustomEvent).detail);
+    });
+
+    await core.fetch("/api/data");    // error は初期値 null のまま → 発火しない
+    await core.fetch("/api/missing"); // HTTPエラー → エラーオブジェクトで発火
+    await core.fetch("/api/data");    // 開始時に null クリア（変化あり）→ null で発火
+
+    expect(errors).toHaveLength(2);
+    expect(errors[0].status).toBe(404);
+    expect(errors[1]).toBeNull();
+    expect(core.error).toBeNull();
   });
 
   it("HTTPエラー時もstatus観測者にwcs-fetch:responseが届く", async () => {

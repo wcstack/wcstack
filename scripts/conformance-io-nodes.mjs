@@ -27,9 +27,12 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PKGDIR = join(ROOT, "packages");
 
 const IO_NODES = [
-  "broadcast", "camera", "clipboard", "debounce", "defined", "fetch",
-  "geolocation", "intersection", "notification", "permission", "resize",
-  "speech", "sse", "storage", "timer", "upload", "wakelock", "websocket", "worker",
+  "accelerometer", "ambient-light-sensor", "broadcast", "camera", "clipboard",
+  "contacts", "credential", "debounce", "defined", "eyedropper", "fetch",
+  "fullscreen", "geolocation", "gyroscope", "idle", "intersection", "magnetometer",
+  "network", "notification", "permission", "picture-in-picture", "pointer-lock",
+  "resize", "screen-orientation", "share", "speech", "sse", "storage", "tilt",
+  "timer", "upload", "wakelock", "websocket", "worker",
 ];
 
 // Web-API globals that MUST be resolved at call time (§3.7), not cached in a
@@ -51,6 +54,9 @@ const WEB_API_GLOBALS = [
 const DEVIATIONS = {
   clipboard: { "DOM-independent": "copy/cut/paste are document-scoped Web-API events; no element-free alternative (deviation noted inline in ClipboardCore)" },
   wakelock: { "DOM-independent": "visibilitychange / document.visibilityState are the only re-acquire signals; no alternative (deviation noted inline in WakeLockCore)" },
+  fullscreen: { "DOM-independent": "fullscreenchange fires on document and document.fullscreenElement/exitFullscreen() are document-scoped; subscription on document is normative (fullscreen-tag-design.md §2/§5)" },
+  "pointer-lock": { "DOM-independent": "pointerlockchange fires on document and document.pointerLockElement/exitPointerLock() are document-scoped; same normative pattern as fullscreen (pointer-lock-tag-design.md §1/§5)" },
+  tilt: { "stale-async guard": "requestPermission()'s post-await write is a benign permissionState/error value set with no subscription/resource management to race; _gen ruled unnecessary (device-orientation-tag-design.md §4, corrected rationale)" },
 };
 
 // ---- comment/string-aware blanker (preserves line numbers) ----

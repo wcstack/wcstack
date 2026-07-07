@@ -37,7 +37,19 @@
       "Bash(grep:*)",
       "Bash(head -c 500 d:/git/wcstack/wcstack/packages/state/dist/index.esm.js.map)",
       "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol//**)",
-      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol/**)"
+      "Read(//c/Users/kikuzawa/Documents/git/wc-bindable-protocol/wc-bindable-protocol/**)",
+      "Bash(xxd protocol/wc-bindable.ts)",
+      "Bash(xxd packages/permission/src/protocol/wcBindable.ts)",
+      "Bash(find / -maxdepth 6 -iname \"share\" -type d 2>/dev/null | grep -i wcstack; find / -maxdepth 8 -iname \"eyedropper\" -type d 2>/dev/null)",
+      "Read(//d//**)",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 1\")",
+      "Bash(git status *)",
+      "Bash(npm config *)",
+      "Bash(git checkout *)",
+      "PowerShell(Remove-Item -Recurse -Force -Confirm:$false \"d:\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\pointer-lock\\\\node_modules\" -ErrorAction SilentlyContinue)",
+      "Bash(grep '\\\\.ts$')",
+      "Bash(grep -E \"\\\\.md$\")",
+      "Bash(grep -E '\\\\.\\(ts|js|json|md\\)$')"
     ],
     "additionalDirectories": [
       "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src",

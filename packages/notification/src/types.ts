@@ -40,8 +40,9 @@ export type NotificationPermissionRaw = "default" | "granted" | "denied";
  * Which API actually shows the notification.
  * - `"constructor"` — `new Notification(title, options)` (desktop only).
  * - `"sw"` — `ServiceWorkerRegistration.showNotification()` (required on mobile/Android Chrome).
- * - `"auto"` — pick SW when a registration is ready and `new Notification` is unusable,
- *   otherwise the constructor; fall back to SW if the constructor throws `TypeError`.
+ * - `"auto"` — always try the `Notification` constructor first (no registration
+ *   pre-check), and fall back to the SW backend only if the constructor throws a
+ *   `TypeError` (e.g. on mobile, where `new Notification()` is illegal).
  */
 export type NotifyBackend = "auto" | "sw" | "constructor";
 
