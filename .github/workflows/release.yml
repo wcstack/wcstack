@@ -133,14 +133,24 @@ jobs:
           git add packages/*/package.json packages/*/package-lock.json packages/*/dist
           git commit -m "chore: bump all packages to v${{ steps.bump.outputs.version }}"
 
-      # Publish to npm
+      # Publish to npm — idempotent: skip any package whose target version is
+      # already on the registry, so a run that failed partway through the loop
+      # can be safely re-run without EPUBLISH conflicts on the published half.
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          set -euo pipefail
+          target="${{ steps.bump.outputs.version }}"
           for pkg in ${{ steps.discover.outputs.list }}; do
-            echo "::group::publish — @wcstack/$pkg"
-            (cd "packages/$pkg" && npm publish --access public --provenance)
+            name=$(node -p "require('./packages/$pkg/package.json').name")
+            published=$(npm view "$name@$target" version 2>/dev/null || true)
+            if [ "$published" = "$target" ]; then
+              echo "::group::publish — $name (already at $target, skipping)"
+            else
+              echo "::group::publish — $name"
+              (cd "packages/$pkg" && npm publish --access public --provenance)
+            fi
             echo "::endgroup::"
           done
 
