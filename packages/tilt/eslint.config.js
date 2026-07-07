@@ -1,3 +1,9 @@
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /config-templates/eslint.config.js by scripts/sync-package-configs.mjs.
+// Run `node scripts/sync-package-configs.mjs` after editing the template.
+// ===========================================================================
+
 import js from '@eslint/js';
 import globals from 'globals';
 import tseslint from '@typescript-eslint/eslint-plugin';

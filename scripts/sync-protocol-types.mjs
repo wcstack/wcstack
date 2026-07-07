@@ -49,8 +49,12 @@ const BANNER =
   "// Run `node scripts/sync-protocol-types.mjs` after editing the source.\n" +
   "// ===========================================================================\n\n";
 
+// CRLF/LF mixed checkouts (e.g. core.autocrlf=true) are tolerated for comparison;
+// writes are always LF.
+const normalize = (s) => s.replace(/\r\n/g, "\n");
+
 function expectedContent() {
-  return BANNER + readFileSync(canonicalPath, "utf8");
+  return BANNER + normalize(readFileSync(canonicalPath, "utf8"));
 }
 
 function destFor(pkg) {
@@ -64,7 +68,7 @@ function main() {
 
   for (const pkg of TARGET_PACKAGES) {
     const dest = destFor(pkg);
-    const current = existsSync(dest) ? readFileSync(dest, "utf8") : null;
+    const current = existsSync(dest) ? normalize(readFileSync(dest, "utf8")) : null;
     if (current === expected) continue;
 
     if (checkOnly) {

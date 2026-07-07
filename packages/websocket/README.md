@@ -50,12 +50,19 @@ When `<wcs-ws>` is connected to the DOM with a `url`, it automatically opens a W
 <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
 
 <wcs-state>
-  <script type="application/json">
-    {
-      "lastMessage": null,
-      "isConnected": false,
-      "isLoading": false
-    }
+  <script type="module">
+    export default {
+      lastMessage: null,
+      isConnected: false,
+      isLoading: false,
+
+      get connectionLabel() {
+        return this.isConnected ? "Connected" : "Disconnected";
+      },
+      get lastMessageJson() {
+        return JSON.stringify(this.lastMessage, null, 2);
+      },
+    };
   </script>
 
   <wcs-ws
@@ -63,8 +70,8 @@ When `<wcs-ws>` is connected to the DOM with a `url`, it automatically opens a W
     data-wcs="message: lastMessage; connected: isConnected; loading: isLoading">
   </wcs-ws>
 
-  <p data-wcs="textContent: isConnected|then('Connected','Disconnected')"></p>
-  <pre data-wcs="textContent: lastMessage|json"></pre>
+  <p data-wcs="textContent: connectionLabel"></p>
+  <pre data-wcs="textContent: lastMessageJson"></pre>
 </wcs-state>
 ```
 
@@ -86,6 +93,9 @@ Use the `send` property to push data to the server. Setting `send` transmits the
       lastMessage: null,
       outgoing: null,
 
+      get lastMessageJson() {
+        return JSON.stringify(this.lastMessage, null, 2);
+      },
       sendChat() {
         this.outgoing = { type: "chat", content: this.chatInput };
         this.chatInput = "";
@@ -101,7 +111,7 @@ Use the `send` property to push data to the server. Setting `send` transmits the
   <input data-wcs="value: chatInput" placeholder="Type a message">
   <button data-wcs="onclick: sendChat">Send</button>
 
-  <pre data-wcs="textContent: lastMessage|json"></pre>
+  <pre data-wcs="textContent: lastMessageJson"></pre>
 </wcs-state>
 ```
 
@@ -117,6 +127,9 @@ Use `manual` when you want to control when the connection opens.
       lastMessage: null,
       isConnected: false,
 
+      get connectionLabel() {
+        return this.isConnected ? "Connected" : "Disconnected";
+      },
       openConnection() {
         this.shouldConnect = true;
       },
@@ -130,7 +143,7 @@ Use `manual` when you want to control when the connection opens.
   </wcs-ws>
 
   <button data-wcs="onclick: openConnection">Connect</button>
-  <p data-wcs="textContent: isConnected|then('Connected','Disconnected')"></p>
+  <p data-wcs="textContent: connectionLabel"></p>
 </wcs-state>
 ```
 

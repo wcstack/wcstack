@@ -1,0 +1,13 @@
+{
+  "name": "wcstack-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Real-browser smoke tests for the examples/ demo apps, run against the local packages/*/dist bundles.",
+  "scripts": {
+    "test": "playwright test",
+    "serve": "node serve.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

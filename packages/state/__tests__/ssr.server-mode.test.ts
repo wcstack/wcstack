@@ -139,6 +139,41 @@ describe("Ssr.buildContent()", () => {
     expect(JSON.parse(script!.textContent!)).toEqual({ count: 42, items: ["a", "b"] });
   });
 
+  it("stateData の文字列に </script> が含まれても script を脱出できない (HTML エスケープ)", () => {
+    const ssrEl = document.createElement("wcs-ssr");
+    const payload = {
+      html: '</script><img src=x onerror=alert(1)>',
+      memo: "a\u2028b\u2029c & <!--",
+    };
+    Ssr.buildContent(ssrEl, payload);
+    const script = ssrEl.querySelector('script[type="application/json"]');
+    expect(script).not.toBeNull();
+    // 直列化テキストに HTML として解釈されうる文字が残らない
+    expect(script!.textContent!).not.toContain("<");
+    expect(script!.textContent!).not.toContain(">");
+    expect(script!.textContent!).not.toContain("&");
+    expect(script!.textContent!).not.toContain("\u2028");
+    expect(script!.textContent!).not.toContain("\u2029");
+    // JSON.parse では元の値と等価に復元される
+    expect(JSON.parse(script!.textContent!)).toEqual(payload);
+  });
+
+  it("props script の値に </script> が含まれても同様にエスケープされる", () => {
+    const node = document.createElement("div");
+    addSsrProperty(node, "innerHTML", '</script><b>x</b>');
+    trackSsrPropertyNode(node);
+
+    const ssrEl = document.createElement("wcs-ssr");
+    Ssr.buildContent(ssrEl, {});
+
+    const propsScript = ssrEl.querySelector('script[data-wcs-ssr-props]');
+    expect(propsScript).not.toBeNull();
+    expect(propsScript!.textContent!).not.toContain("<");
+    const propsData = JSON.parse(propsScript!.textContent!);
+    const id = node.getAttribute("data-wcs-ssr-id")!;
+    expect(propsData[id].innerHTML).toBe('</script><b>x</b>');
+  });
+
   it("ssrPropertyStore にデータがある場合 props script を追加する", () => {
     const node = document.createElement("div");
     addSsrProperty(node, "innerHTML", "<b>rich</b>");

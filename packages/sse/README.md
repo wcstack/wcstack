@@ -49,12 +49,19 @@ When `<wcs-sse>` is connected to the DOM with a `url`, it automatically opens an
 <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
 
 <wcs-state>
-  <script type="application/json">
-    {
-      "lastMessage": null,
-      "isConnected": false,
-      "isLoading": false
-    }
+  <script type="module">
+    export default {
+      lastMessage: null,
+      isConnected: false,
+      isLoading: false,
+
+      get connectionLabel() {
+        return this.isConnected ? "Connected" : "Disconnected";
+      },
+      get lastMessageJson() {
+        return JSON.stringify(this.lastMessage, null, 2);
+      },
+    };
   </script>
 
   <wcs-sse
@@ -62,8 +69,8 @@ When `<wcs-sse>` is connected to the DOM with a `url`, it automatically opens an
     data-wcs="message: lastMessage; connected: isConnected; loading: isLoading">
   </wcs-sse>
 
-  <p data-wcs="textContent: isConnected|then('Connected','Disconnected')"></p>
-  <pre data-wcs="textContent: lastMessage|json"></pre>
+  <p data-wcs="textContent: connectionLabel"></p>
+  <pre data-wcs="textContent: lastMessageJson"></pre>
 </wcs-state>
 ```
 
@@ -131,6 +138,9 @@ Use `manual` when you want to control when the connection opens.
       lastMessage: null,
       isConnected: false,
 
+      get connectionLabel() {
+        return this.isConnected ? "Connected" : "Disconnected";
+      },
       openStream() {
         this.shouldConnect = true;
       },
@@ -144,7 +154,7 @@ Use `manual` when you want to control when the connection opens.
   </wcs-sse>
 
   <button data-wcs="onclick: openStream">Connect</button>
-  <p data-wcs="textContent: isConnected|then('Connected','Disconnected')"></p>
+  <p data-wcs="textContent: connectionLabel"></p>
 </wcs-state>
 ```
 

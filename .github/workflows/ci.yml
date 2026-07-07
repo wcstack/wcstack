@@ -56,10 +56,11 @@ jobs:
           fi
 
   protocol-types-sync:
-    # The wc-bindable protocol type lives once in /protocol/wc-bindable.ts and is
-    # copied into each package's src/protocol/wcBindable.ts. These live outside
-    # packages/* so the change-detection matrix above cannot catch a stale copy —
-    # this independent job fails if the generated copies drift from the source.
+    # Single-source files that are copied into each package live outside packages/*
+    # (protocol/wc-bindable.ts → src/protocol/wcBindable.ts, config-templates/* →
+    # rollup.config.js / eslint.config.js), so the change-detection matrix above
+    # cannot catch a stale copy — this independent job fails if any generated copy
+    # drifts from its source.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +68,7 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/sync-protocol-types.mjs --check
+      - run: node scripts/sync-package-configs.mjs --check
 
   ci:
     needs: detect-changes
