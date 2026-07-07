@@ -197,6 +197,7 @@ static wcBindable = {
 **EyeDropper** — `<wcs-eyedropper>`
 - `commands: [{name:"open", async:true}]`、引数無し、`value`は`{sRGBHex}`
 - Web Shareと寸分違わぬ形。アーキタイプの汎用性を最初に証明する候補
+- **実装時の変更**: `EyeDropper.open({signal})`がAbortSignalを受け付けるため、実装では`abort`コマンドを追加した（`commands: [{name:"open", async:true}, {name:"abort"}]`）。「寸分違わぬ形」は成立せず、同一アーキタイプでもプラットフォームAPIの形次第で`abort`の有無が分かれる最初の実例となった。詳細は[eyedropper-tag-design.md §2](./eyedropper-tag-design.md)
 
 **Contact Picker** — `<wcs-contacts>`
 - `commands: [{name:"select", async:true}]`、引数は`(properties[], {multiple})`
@@ -231,7 +232,7 @@ static wcBindable = {
 - `navigator.connection`がSafari/Firefoxで未実装 → `_api()`が`undefined`を返す前提。unsupported時は全プロパティ`null`/`false`固定
 - 全バッチ中**最も実装が軽い**。バッチ横断の最初の一手として最適
 
-**Screen Orientation** — `<wcs-orientation>`（monitor + 2 command、targetは不要=document/window全体が対象なのでバッチ1とは別枠）
+**Screen Orientation** — `<wcs-screen-orientation>`（monitor + 2 command、targetは不要=document/window全体が対象なのでバッチ1とは別枠。※実装済みタグ名は `<wcs-screen-orientation>`。event prefix は `wcs-orientation:` のまま）
 ```typescript
 static wcBindable = {
   properties: [
@@ -300,6 +301,8 @@ static wcBindable = {
 ---
 
 ## 次のアクション
+
+> （注記: 以下の着手予定は当時の計画。記載のバッチは概ね実装済み。実装済みノードは各パッケージの `docs/<name>-tag-design.md` と README を正とする。）
 
 各ノードの `docs/<name>-tag-design.md`（ガイドライン§1 MUST）は起草済み（上記バッチ概要表の「個別設計ドキュメント」列を参照。バッチ5のみ4パッケージ分を1本に統合）。**次に着手すべきは実際のコード実装**であり、追加の設計ドキュメントは不要。
 

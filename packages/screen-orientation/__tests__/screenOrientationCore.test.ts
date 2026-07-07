@@ -29,7 +29,11 @@ describe("ScreenOrientationCore", () => {
       installOrientation({ type: "landscape-primary", angle: 90 });
       const core = new ScreenOrientationCore();
       const events: any[] = [];
-      core.addEventListener("wcs-orientation:change", (e) => events.push((e as CustomEvent).detail));
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-orientation:change", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
 
       core.observe();
 
@@ -38,6 +42,8 @@ describe("ScreenOrientationCore", () => {
       expect(core.landscape).toBe(true);
       expect(core.portrait).toBe(false);
       expect(events).toEqual([{ type: "landscape-primary", angle: 90 }]);
+      // async-io-node-guidelines.md §3.3 MUST: イベントは必ず bubbles: true（族横断で共通）
+      expect(bubbles).toBe(true);
     });
 
     it("observe() は冪等 — 二重呼び出しでリスナーが二重登録されず再 dispatch もしない", () => {
@@ -159,6 +165,39 @@ describe("ScreenOrientationCore", () => {
       orientation2.change({ type: "portrait-secondary" });
       expect(core.type).toBe("portrait-secondary");
     });
+
+    it("dispose() は error をリセットしない（sticky — geolocation/wakelock/fullscreen 等と同じ族の支配的パターン）", () => {
+      const orientation = installOrientation();
+      orientation.unlock = vi.fn(() => {
+        throw new Error("boom");
+      });
+      const core = new ScreenOrientationCore();
+      core.observe();
+      core.unlock(); // error を確立する
+      expect(core.error).toBeInstanceOf(Error);
+
+      core.dispose();
+
+      expect(core.error).toBeInstanceOf(Error);
+    });
+
+    it("dispose→observe（再接続）をまたいでも error は保持される（_snapshot は再読込されるが _error は非対称に据え置かれる）", () => {
+      const orientation = installOrientation({ type: "portrait-primary" });
+      orientation.unlock = vi.fn(() => {
+        throw new Error("boom");
+      });
+      const core = new ScreenOrientationCore();
+      core.observe();
+      core.unlock();
+      expect(core.error).toBeInstanceOf(Error);
+
+      core.dispose();
+      installOrientation({ type: "landscape-primary", angle: 90 });
+      core.observe();
+
+      expect(core.type).toBe("landscape-primary"); // _snapshot は再読込される
+      expect(core.error).toBeInstanceOf(Error); // _error は据え置き（sticky）
+    });
   });
 
   describe("lock() — 対応環境", () => {
@@ -181,11 +220,31 @@ describe("ScreenOrientationCore", () => {
       orientation.lock = vi.fn(() => Promise.reject({ name: "NotSupportedError", message: "not supported" }));
       const core = new ScreenOrientationCore();
       const events: any[] = [];
-      core.addEventListener("wcs-orientation:error", (e) => events.push((e as CustomEvent).detail));
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-orientation:error", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
 
       await expect(core.lock("landscape")).resolves.toBeUndefined();
       expect(core.error).toEqual({ name: "NotSupportedError", message: "not supported" });
       expect(events).toHaveLength(1);
+      // async-io-node-guidelines.md §3.3 MUST: イベントは必ず bubbles: true（族横断で共通）
+      expect(bubbles).toBe(true);
+    });
+
+    it("失敗で確立した error は、続く成功した lock() で null にクリアされる", async () => {
+      const orientation = installOrientation();
+      orientation.lock = vi.fn(() => Promise.reject({ name: "NotSupportedError", message: "not supported" }));
+      const core = new ScreenOrientationCore();
+
+      await core.lock("landscape");
+      expect(core.error).toEqual({ name: "NotSupportedError", message: "not supported" });
+
+      orientation.lock = vi.fn(() => Promise.resolve());
+      await core.lock("portrait");
+
+      expect(core.error).toBeNull();
     });
   });
 
@@ -224,6 +283,22 @@ describe("ScreenOrientationCore", () => {
       expect(core.error).toBeInstanceOf(Error);
     });
 
+    it("失敗で確立した error は、続く成功した unlock() で null にクリアされる", () => {
+      const orientation = installOrientation();
+      orientation.unlock = vi.fn(() => {
+        throw new Error("boom");
+      });
+      const core = new ScreenOrientationCore();
+
+      core.unlock();
+      expect(core.error).toBeInstanceOf(Error);
+
+      orientation.unlock = vi.fn();
+      core.unlock();
+
+      expect(core.error).toBeNull();
+    });
+
     it("非対応環境（unlock 不在）では即 error", () => {
       const orientation = installOrientation();
       delete (orientation as any).unlock;
@@ -237,6 +312,45 @@ describe("ScreenOrientationCore", () => {
       const core = new ScreenOrientationCore();
       core.unlock();
       expect(core.error).toEqual({ message: "unsupported" });
+    });
+  });
+
+  describe("unsupported error の同値ガード（共有定数を参照するため repeated call でも再 dispatch しない）", () => {
+    it("非対応環境で lock() を連続呼び出しても error イベントは初回のみ dispatch する", async () => {
+      removeOrientation();
+      const core = new ScreenOrientationCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-orientation:error", (e) => events.push((e as CustomEvent).detail));
+
+      await core.lock("landscape");
+      await core.lock("portrait");
+
+      expect(events).toHaveLength(1);
+      expect(core.error).toEqual({ message: "unsupported" });
+    });
+
+    it("非対応環境で unlock() を連続呼び出しても error イベントは初回のみ dispatch する", () => {
+      removeOrientation();
+      const core = new ScreenOrientationCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-orientation:error", (e) => events.push((e as CustomEvent).detail));
+
+      core.unlock();
+      core.unlock();
+
+      expect(events).toHaveLength(1);
+    });
+
+    it("非対応環境で lock() の後に unlock() を呼んでも同一の unsupported 値なので再 dispatch しない", async () => {
+      removeOrientation();
+      const core = new ScreenOrientationCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-orientation:error", (e) => events.push((e as CustomEvent).detail));
+
+      await core.lock("landscape");
+      core.unlock();
+
+      expect(events).toHaveLength(1);
     });
   });
 
@@ -296,48 +410,78 @@ describe("ScreenOrientationCore", () => {
       expect(core.error).toEqual({ name: "NotSupportedError", message: "second call failed" });
     });
 
-    it("unlock() は進行中の lock() の世代を無効化する", async () => {
+    it("unlock() は進行中の lock() の世代を無効化する（stale な reject が unlock() 確立済みの error を上書きしない）", async () => {
       const orientation = installOrientation();
-      let resolveFn!: () => void;
-      orientation.lock = vi.fn(() => new Promise<void>((resolve) => { resolveFn = resolve; }));
+      let rejectFn!: (e: unknown) => void;
+      orientation.lock = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectFn = reject; }));
       const core = new ScreenOrientationCore();
 
       const p = core.lock("landscape");
       core.unlock();
-      resolveFn();
+      // unlock() 自身は成功しているので、この時点で error は null
+      expect(core.error).toBeNull();
+
+      // stale 化した lock() が後から reject しても、unlock() が確立した error(null) を
+      // 上書きしないことを確認する。resolve + null 比較では、_gen++ を欠いた変異体でも
+      // 同じ null に落ち着いてしまい弁別できないため（そもそも error が既に null なので
+      // 変異体側の再代入が観測不能）、reject で到達可能なエラー値を注入して弁別する。
+      rejectFn({ name: "NotSupportedError", message: "stale lock rejection" });
       await p;
 
-      // unlock() 自身の成功(error=null)を、stale な lock() resolve が上書きしないことを
-      // 別のエラーを注入して確認する
+      expect(core.error).toBeNull();
+    });
+
+    it("unlock() 自身の失敗は独立して error に反映される（_gen とは無関係な経路）", () => {
+      const orientation = installOrientation();
       orientation.unlock = vi.fn(() => {
         throw new Error("unlock failed");
       });
+      const core = new ScreenOrientationCore();
+
       core.unlock();
+
       expect(core.error).toBeInstanceOf(Error);
     });
   });
 
   describe("観測（monitoring）は _gen を消費しない（§6.1 の非対称性）", () => {
-    it("observe() は screen.orientation の change 購読のみで、_gen 経由の世代管理をしない（同期完結）", () => {
+    it("observe() は進行中の lock() の _gen を進めない（監視と command の世代管理が独立していることの検証）", async () => {
       const orientation = installOrientation();
+      let rejectFn!: (e: unknown) => void;
+      orientation.lock = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectFn = reject; }));
       const core = new ScreenOrientationCore();
-      // observe() は同期的に完了し、change 購読だけが行われる
-      const result = core.observe();
-      expect(result).toBeInstanceOf(Promise);
-      expect(orientation.addEventListener).toBeDefined();
+
+      const p = core.lock("landscape");
+      // lock() の in-flight 中に observe() を初回（購読パス）と再呼び出し（冪等
+      // early-return パス）の両方走らせる。どちらかが _gen を消費する変異体なら
+      // この lock() は stale 扱いになり、reject しても error は初期値 null の
+      // まま更新されない。注入エラーの「到達」を assert することで弁別する
+      // （resolve + null 比較では実装と変異体のどちらも pass してしまう）。
+      core.observe();
+      core.observe();
+      rejectFn({ name: "NotSupportedError", message: "injected after observe()" });
+      await p;
+
+      expect(core.error).toEqual({ name: "NotSupportedError", message: "injected after observe()" });
     });
   });
 
   describe("target 指定", () => {
     it("target を渡すとそこへ change/error を dispatch する", async () => {
-      installOrientation({ type: "portrait-primary" });
+      const orientation = installOrientation({ type: "portrait-primary" });
+      orientation.lock = vi.fn(() => Promise.reject({ name: "NotSupportedError", message: "not supported" }));
       const target = new EventTarget();
       const changeEvents: any[] = [];
+      const errorEvents: any[] = [];
       target.addEventListener("wcs-orientation:change", (e) => changeEvents.push((e as CustomEvent).detail));
+      target.addEventListener("wcs-orientation:error", (e) => errorEvents.push((e as CustomEvent).detail));
       const core = new ScreenOrientationCore(target);
       core.observe();
 
+      await core.lock("landscape");
+
       expect(changeEvents).toHaveLength(1);
+      expect(errorEvents).toEqual([{ name: "NotSupportedError", message: "not supported" }]);
     });
   });
 

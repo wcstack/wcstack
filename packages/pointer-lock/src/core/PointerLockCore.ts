@@ -114,11 +114,20 @@ export class PointerLockCore extends EventTarget {
    * Request pointer lock on `element`. Never-throw: a missing API or a
    * rejected promise (e.g. called outside a user-gesture context —
    * `NotAllowedError`, docs/fullscreen-tag-design.md §3) is captured into
-   * `error` rather than propagated.
+   * `error` rather than propagated. `element` may be `null` when the Shell's
+   * `target` selector did not resolve (docs/pointer-lock-tag-design.md §1
+   * defers error representation to FullscreenCore verbatim — this null-target
+   * case mirrors `FullscreenCore.requestFullscreen(null)`,
+   * docs/fullscreen-tag-design.md §6): distinct from "API is not supported"
+   * below, so a typo'd selector doesn't masquerade as an unsupported platform.
    */
-  async requestPointerLock(element: Element): Promise<void> {
+  async requestPointerLock(element: Element | null): Promise<void> {
     const gen = ++this._gen;
     this._resolvedTarget = element;
+    if (!element) {
+      this._setError({ message: "Pointer Lock target could not be resolved." });
+      return;
+    }
     const fn = this._requestPointerLockFn(element);
     if (!fn) {
       // Resolved synchronously in the same tick as the call — dispose()
@@ -172,14 +181,21 @@ export class PointerLockCore extends EventTarget {
   // the instance would pick up that Shell method instead of the native
   // platform API and recurse infinitely (Shell.requestPointerLock() ->
   // Core.requestPointerLock() -> resolves "el.requestPointerLock" -> the same
-  // Shell method again). Going through the prototype sidesteps the name
-  // collision while still allowing a subclass to legitimately override the
-  // platform method.
+  // Shell method again). Going through `Element.prototype` sidesteps the name
+  // collision — note this does NOT pick up an override on a subclass's own
+  // prototype (e.g. `WcsPointerLock.prototype`); it deliberately jumps
+  // straight to the platform-defined layer. Both the standard and legacy name
+  // are resolved the same way, for symmetry — matching FullscreenCore's
+  // `_elementFullscreenFn` (docs/fullscreen-tag-design.md §4) ONLY in that one
+  // respect. Unlike that Core, this one does not check `el`'s own properties
+  // first: there is no test-stub/per-element monkey-patch path to accommodate
+  // here (mocks.ts installs the fakes directly on `Element.prototype`), so it
+  // goes straight there for both names.
   private _requestPointerLockFn(el: Element): (() => Promise<void>) | undefined {
     const proto = Element.prototype as any;
     const standard = proto.requestPointerLock;
     if (typeof standard === "function") return standard.bind(el);
-    const legacy = proto.webkitRequestPointerLock ?? (el as any).webkitRequestPointerLock;
+    const legacy = proto.webkitRequestPointerLock;
     return typeof legacy === "function" ? legacy.bind(el) : undefined;
   }
 

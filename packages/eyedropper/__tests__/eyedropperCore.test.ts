@@ -261,6 +261,26 @@ describe("EyedropperCore", () => {
       expect(core.loading).toBe(false);
     });
 
+    it("大域排他の InvalidStateError（別インスタンスのピッカーが開いている）も error に落ちる", async () => {
+      // WICG 仕様の InvalidStateError は「別の eye dropper が既に開いている」
+      // ときの大域排他。同一 Core 内では open() 冒頭の abort() による直列化で
+      // 発生しないが、複数の Core（複数の <wcs-eyedropper> や別タブ）が並行した
+      // 実環境では2本目の open() がこれで reject される
+      // （docs/eyedropper-tag-design.md §2）。AbortError ではないため
+      // cancelled ではなく error に着地する。
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+
+      const promise = core.open();
+      pendingOpens[0].reject(new DOMException("Another eye dropper is already open.", "InvalidStateError"));
+      const result = await promise;
+
+      expect(result).toBeNull();
+      expect(core.error).toBeInstanceOf(DOMException);
+      expect(core.error.name).toBe("InvalidStateError");
+      expect(core.cancelled).toBe(false);
+    });
+
     it("name プロパティを持たない一般的な Error でも error に落ちる", async () => {
       const { pendingOpens } = installEyeDropper();
       const core = new EyedropperCore();
@@ -276,9 +296,11 @@ describe("EyedropperCore", () => {
   });
 
   describe("次回 open() でのリセット", () => {
-    it("前回 cancelled が今回成功時にリセットされる", async () => {
+    it("前回 cancelled が今回成功時にリセットされる（cancelled-changed が false で発火する）", async () => {
       const { pendingOpens } = installEyeDropper();
       const core = new EyedropperCore();
+      const cancelledEvents: boolean[] = [];
+      core.addEventListener("wcs-eyedropper:cancelled-changed", (e) => cancelledEvents.push((e as CustomEvent).detail));
 
       const p1 = core.open();
       pendingOpens[0].reject(new DOMException("The user aborted a request.", "AbortError"));
@@ -289,14 +311,21 @@ describe("EyedropperCore", () => {
       pendingOpens[1].resolve({ sRGBHex: "#000000" });
       await p2;
       expect(core.cancelled).toBe(false);
+      // リセットはプロパティ値だけでなくイベントとしても観測できること。
+      // state の twowayHandler はイベント経由でのみ値を受け取るため、
+      // _setCancelled(false) の dispatch が silent 化する退行をここで検出する。
+      expect(cancelledEvents).toEqual([true, false]);
     });
 
-    it("前回 error が今回成功時にリセットされる", async () => {
+    it("前回 error が今回成功時にリセットされる（error イベントが null で発火する）", async () => {
       const { pendingOpens } = installEyeDropper();
       const core = new EyedropperCore();
+      const errorEvents: any[] = [];
+      core.addEventListener("wcs-eyedropper:error", (e) => errorEvents.push((e as CustomEvent).detail));
 
+      const err = new DOMException("boom", "NotAllowedError");
       const p1 = core.open();
-      pendingOpens[0].reject(new DOMException("boom", "NotAllowedError"));
+      pendingOpens[0].reject(err);
       await p1;
       expect(core.error).not.toBeNull();
 
@@ -304,14 +333,21 @@ describe("EyedropperCore", () => {
       pendingOpens[1].resolve({ sRGBHex: "#000000" });
       await p2;
       expect(core.error).toBeNull();
+      // _setError(null) のリセットもイベント経由で観測できること（前掲と同じ理由）。
+      expect(errorEvents).toEqual([err, null]);
     });
 
-    it("前回 error が今回キャンセル時にもリセットされる", async () => {
+    it("前回 error が今回キャンセル時にもリセットされる（error: null と cancelled: true が発火する）", async () => {
       const { pendingOpens } = installEyeDropper();
       const core = new EyedropperCore();
+      const errorEvents: any[] = [];
+      const cancelledEvents: boolean[] = [];
+      core.addEventListener("wcs-eyedropper:error", (e) => errorEvents.push((e as CustomEvent).detail));
+      core.addEventListener("wcs-eyedropper:cancelled-changed", (e) => cancelledEvents.push((e as CustomEvent).detail));
 
+      const err = new DOMException("boom", "NotAllowedError");
       const p1 = core.open();
-      pendingOpens[0].reject(new DOMException("boom", "NotAllowedError"));
+      pendingOpens[0].reject(err);
       await p1;
       expect(core.error).not.toBeNull();
 
@@ -320,6 +356,11 @@ describe("EyedropperCore", () => {
       await p2;
       expect(core.error).toBeNull();
       expect(core.cancelled).toBe(true);
+      // リセット（error: err→null）と今回の結果（cancelled: →true）の両方が
+      // イベントとして発火していること。2回目 open() 冒頭の _setCancelled(false) は
+      // 同値（false のまま）なので発火しない。
+      expect(errorEvents).toEqual([err, null]);
+      expect(cancelledEvents).toEqual([true]);
     });
   });
 
@@ -336,6 +377,26 @@ describe("EyedropperCore", () => {
       expect(core.error).toEqual({ message: "EyeDropper API is not supported in this browser." });
       expect(core.loading).toBe(false);
       expect(loadingEvents).toEqual([]);
+    });
+
+    it("EyeDropper が関数でない truthy 値でも unsupported として即 error になる", async () => {
+      // 対応判定は typeof EyeDropper === "function"（README / docs
+      // eyedropper-tag-design.md §4・§7 の規範）。truthy かどうかの判定に
+      // 退行すると new が試みられ、try 内の TypeError として error の内容が
+      // 変わってしまう — 「関数であること」側の半分をここでピン留めする。
+      (globalThis as any).EyeDropper = {};
+      const core = new EyedropperCore();
+      const loadingEvents: boolean[] = [];
+      core.addEventListener("wcs-eyedropper:loading-changed", (e) => loadingEvents.push((e as CustomEvent).detail));
+
+      const result = await core.open();
+
+      expect(result).toBeNull();
+      expect(core.error).toEqual({ message: "EyeDropper API is not supported in this browser." });
+      expect(core.loading).toBe(false);
+      expect(loadingEvents).toEqual([]);
+
+      delete (globalThis as any).EyeDropper;
     });
   });
 
@@ -429,6 +490,22 @@ describe("EyedropperCore", () => {
       await expect(promise).resolves.toBeNull();
     });
 
+    it("name を参照できない null で reject されても throw せず resolve する（e?.name の防衛線）", async () => {
+      // 実プラットフォームの reject は常に name を持つ DOMException 等だが、
+      // never-throw 契約は「どんな値で reject されても open() 自体は throw
+      // しない」ことまで含む。catch 節の e?.name が e.name に退行すると、
+      // null からの name 参照で catch 節自体が throw し open() が reject する
+      // — その optional chaining の防衛線をここでピン留めする。
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const promise = core.open();
+      pendingOpens[0].reject(null);
+      await expect(promise).resolves.toBeNull();
+      // null は AbortError ではないため cancelled 側には落ちない。
+      expect(core.cancelled).toBe(false);
+      expect(core.loading).toBe(false);
+    });
+
     it("abort() はどの状態から呼んでも例外を投げない", () => {
       installEyeDropper();
       const core = new EyedropperCore();
@@ -444,9 +521,49 @@ describe("EyedropperCore", () => {
       const core = new EyedropperCore();
       expect(() => core.dispose()).not.toThrow();
     });
+
+    it("進行中の open() を abort する（AbortSignal 経由でピッカー自体を閉じる契約）", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+
+      const promise = core.open();
+      expect(pendingOpens[0].signal?.aborted).toBe(false);
+
+      core.dispose();
+
+      // dispose() は _gen を進めて stale 化するだけでなく abort() も呼び、
+      // signal abort でプラットフォームのピッカー自体を閉じる
+      // （EyedropperCore.dispose の契約。_gen ガードのテストとは独立に、
+      // abort() の呼び出しが実際に signal へ届いていることを直接確認する）。
+      expect(pendingOpens[0].signal?.aborted).toBe(true);
+      await expect(promise).resolves.toBeNull();
+    });
   });
 
   describe("同値ガード", () => {
+    it("進行中に重ねて open() を呼んでも2回目の loading=true は同値ガードで再発火しない", async () => {
+      // supersede 経路（open() 進行中の再 open()）。2回目の open() は冒頭の
+      // abort() で1回目を中断してから始まるが、loading は true のままなので、
+      // 2回目の _setLoading(true) は同値ガードに当たり再発火しない
+      // （ガイドライン §3.3 MUST。share の同型テストと対をなす）。
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const loadingEvents: boolean[] = [];
+      core.addEventListener("wcs-eyedropper:loading-changed", (e) => loadingEvents.push((e as CustomEvent).detail));
+
+      const p1 = core.open();
+      expect(loadingEvents).toEqual([true]);
+      const p2 = core.open(); // 内部 abort() で1回目を中断してから開始する
+      // 2回目の _setLoading(true) は同値なので追加のイベントは発火しない
+      expect(loadingEvents).toEqual([true]);
+
+      await p1; // 1回目は stale（_gen 不一致）なので loading には触れない
+      pendingOpens[1].resolve({ sRGBHex: "#0f0f0f" });
+      await p2;
+
+      expect(loadingEvents).toEqual([true, false]);
+    });
+
     it("同一参照の value が連続で解決しても wcs-eyedropper:complete は再発火しない（_setValue の同値ガード）", async () => {
       const sameResult = { sRGBHex: "#aabbcc" };
       class SameValueEyeDropper {
@@ -470,6 +587,45 @@ describe("EyedropperCore", () => {
       expect(completes).toHaveLength(1);
 
       delete (globalThis as any).EyeDropper;
+    });
+  });
+
+  describe("イベントの bubbles 契約", () => {
+    it("全4イベントが bubbles: true で発火する（祖先要素での委譲リスニング契約）", async () => {
+      // state の twowayHandler は要素直付けリスナーのため bubbles に依存しないが、
+      // Shell を祖先要素で委譲リスニングする利用者コードにとっては 4 つの
+      // _setXxx すべてが bubbles: true で dispatch することが契約になる。
+      // ここで4イベントまとめてピン留めする。
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const bubblesByEvent: Record<string, boolean[]> = {
+        "wcs-eyedropper:loading-changed": [],
+        "wcs-eyedropper:complete": [],
+        "wcs-eyedropper:error": [],
+        "wcs-eyedropper:cancelled-changed": [],
+      };
+      for (const name of Object.keys(bubblesByEvent)) {
+        core.addEventListener(name, (e) => bubblesByEvent[name].push(e.bubbles));
+      }
+
+      // error → 成功（error リセット + complete）→ AbortError（cancelled）の
+      // 順に3回 open() し、4イベントすべてを少なくとも1回ずつ発火させる。
+      const p1 = core.open();
+      pendingOpens[0].reject(new DOMException("boom", "NotAllowedError"));
+      await p1;
+
+      const p2 = core.open();
+      pendingOpens[1].resolve({ sRGBHex: "#aabbcc" });
+      await p2;
+
+      const p3 = core.open();
+      pendingOpens[2].reject(new DOMException("The user aborted a request.", "AbortError"));
+      await p3;
+
+      for (const [name, flags] of Object.entries(bubblesByEvent)) {
+        expect(flags.length, `${name} が発火していること`).toBeGreaterThan(0);
+        expect(flags.every((b) => b === true), `${name} の bubbles`).toBe(true);
+      }
     });
   });
 });

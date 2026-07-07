@@ -33,12 +33,17 @@ interface IWritableConfig {
 }
 
 /**
- * Value types for PointerLockCore (headless) — the observable state properties.
- * Use with `bind()` from a wc-bindable binding core for compile-time type checking.
+ * Value types for PointerLockCore (headless) — the Core's readable value
+ * surface. Note that only `active` is *observable* (declared in
+ * `wcBindable.properties` with a change event); `error` is an
+ * imperative-read-only getter with no event of its own — a wc-bindable
+ * binding core will never deliver it, so read it after a command settles
+ * (docs/pointer-lock-tag-design.md §2, docs/fullscreen-tag-design.md §8).
  *
  * @example
  * ```typescript
  * const core = new PointerLockCore();
+ * // bind() only ever delivers "active" — see the note above about "error".
  * bind(core, (name: keyof WcsPointerLockCoreValues, value) => { ... });
  * ```
  */
@@ -47,8 +52,9 @@ interface WcsPointerLockCoreValues {
     error: any;
 }
 /**
- * Value types for the Shell (`<wcs-pointer-lock>`) — identical observable
- * surface to the Core. The Shell additionally accepts a `target` attribute
+ * Value types for the Shell (`<wcs-pointer-lock>`) — identical value surface
+ * to the Core (same caveat: only `active` is observable). The Shell
+ * additionally accepts a `target` attribute
  * (see docs/pointer-lock-tag-design.md / docs/fullscreen-tag-design.md §1).
  */
 type WcsPointerLockValues = WcsPointerLockCoreValues;
@@ -105,9 +111,14 @@ declare class PointerLockCore extends EventTarget {
      * Request pointer lock on `element`. Never-throw: a missing API or a
      * rejected promise (e.g. called outside a user-gesture context —
      * `NotAllowedError`, docs/fullscreen-tag-design.md §3) is captured into
-     * `error` rather than propagated.
+     * `error` rather than propagated. `element` may be `null` when the Shell's
+     * `target` selector did not resolve (docs/pointer-lock-tag-design.md §1
+     * defers error representation to FullscreenCore verbatim — this null-target
+     * case mirrors `FullscreenCore.requestFullscreen(null)`,
+     * docs/fullscreen-tag-design.md §6): distinct from "API is not supported"
+     * below, so a typo'd selector doesn't masquerade as an unsupported platform.
      */
-    requestPointerLock(element: Element): Promise<void>;
+    requestPointerLock(element: Element | null): Promise<void>;
     /**
      * Exit pointer lock. Synchronous platform API (docs/pointer-lock-tag-design.md
      * §2) — returns `void`, not a `Promise`. Silent no-op when nothing is
@@ -146,7 +157,8 @@ declare class PointerLockCore extends EventTarget {
  *
  * `requestPointerLock()` requires a user-gesture context (docs/fullscreen-tag-design.md
  * §3) — the primary activation path is the command-token protocol
- * (`command.click:$command.requestPointerLock` on a button), not an
+ * (`command.requestPointerLock: $command.<token>` on `<wcs-pointer-lock>`,
+ * emitted by a button's `onclick: $command.<token>`), not an
  * autoTrigger attribute (none is provided in v1,
  * docs/pointer-lock-tag-design.md §4).
  *
@@ -166,7 +178,15 @@ declare class WcsPointerLock extends HTMLElement {
     set target(value: string);
     get active(): boolean;
     get error(): any;
-    /** Request pointer lock on the resolved target. Requires a user-gesture context. */
+    /**
+     * Resolve `target` and request pointer lock on it. Requires a user-gesture
+     * context. never-throw: an unresolvable target or an unsupported/rejected
+     * API call are both surfaced via `error`, never thrown (mirrors
+     * `<wcs-fullscreen>`'s `requestFullscreen()`, docs/fullscreen-tag-design.md
+     * §3/§6 — the Shell passes the (possibly `null`) resolved element straight
+     * through and lets the Core set `error`, rather than silently no-op'ing
+     * here).
+     */
     requestPointerLock(): Promise<void>;
     /** Exit pointer lock. Synchronous command — silent no-op if nothing is locked. */
     exitPointerLock(): void;

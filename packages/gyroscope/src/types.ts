@@ -21,7 +21,7 @@ export type {
 
 /**
  * A single `reading` sample from the Gyroscope sensor: angular velocity
- * around the x/y/z axes, in degrees per second.
+ * around the x/y/z axes, in radians per second (rad/s).
  */
 export interface WcsGyroscopeReading {
   x: number | null;

@@ -41,16 +41,23 @@ describe("Eyedropper (Shell)", () => {
     await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
   });
 
-  it("disconnectedCallback で dispose される（以後の stale resolve が状態を変えない）", async () => {
+  it("disconnectedCallback で dispose される（進行中の open() が abort され、stale な AbortError reject が状態を変えない）", async () => {
     const { pendingOpens } = installEyeDropper();
     const el = createEyedropper();
     document.body.appendChild(el);
 
     const promise = el.open();
     el.remove(); // disconnectedCallback → dispose()
-    pendingOpens[0].resolve({ sRGBHex: "#aabbcc" });
+    // dispose() は進行中の open() を abort する（切断時にピッカー自体を閉じる契約）。
+    // fake は signal abort で即座に AbortError reject するため、この時点で open() の
+    // Promise は reject 経路で settle 済み（resolve 経路の stale 判定は
+    // eyedropperCore.test.ts の signal 無視 fake を使うテストが担う）。
+    expect(pendingOpens[0].signal?.aborted).toBe(true);
 
     await promise;
+    // dispose() で _gen が進んでいるため stale 扱いとなり、AbortError reject でも
+    // cancelled は書かれない（value も初期値のまま）。
+    expect(el.cancelled).toBe(false);
     expect(el.value).toBeNull();
   });
 

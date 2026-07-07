@@ -52,17 +52,36 @@ npm install @wcstack/picture-in-picture
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/picture-in-picture/auto"></script>
 
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["popOut", "backToPage"],
+      pipActive: false,
+    };
+  </script>
+</wcs-state>
+
 <video id="player" src="/movie.mp4" controls></video>
 
-<wcs-pip target="#player" data-wcs="active: pipActive"></wcs-pip>
+<wcs-pip target="#player" data-wcs="active: pipActive; command.requestPictureInPicture: $command.popOut; command.exitPictureInPicture: $command.backToPage"></wcs-pip>
 
-<button command.click:$command.requestPictureInPicture>Pop out</button>
-<button command.click:$command.exitPictureInPicture hidden@!pipActive>Back to page</button>
+<button data-wcs="onclick: $command.popOut">Pop out</button>
+<button data-wcs="onclick: $command.backToPage; hidden: pipActive|not">Back to page</button>
 ```
+
+Neither button touches `<wcs-pip>` directly: each click emits a command token, and `<wcs-pip>` subscribes to those tokens via `command.requestPictureInPicture: $command.popOut` / `command.exitPictureInPicture: $command.backToPage` (the [command-token protocol](../state/) — the element with the command method is the *subscriber*, not the emitter). Every bound state path must be declared up front — `pipActive: false` here; binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`pipActive|not`), not a leading `!` — paths do not support prefix operators.
 
 ### 2. Wrapping the `<video>` as a child (no selector needed)
 
 ```html
+<wcs-state>
+  <script type="module">
+    export default {
+      pipActive: false,
+    };
+  </script>
+</wcs-state>
+
 <wcs-pip data-wcs="active: pipActive">
   <video src="/movie.mp4" controls></video>
 </wcs-pip>
@@ -70,9 +89,28 @@ npm install @wcstack/picture-in-picture
 
 ### 3. Reporting failures (e.g. gesture-context rejection)
 
+`error` has no dedicated event and is not `data-wcs` bindable (see "Output state" below) — read it imperatively after the command's promise settles:
+
 ```html
-<wcs-pip target="#player" data-wcs="active: pipActive; error: pipError"></wcs-pip>
-<p hidden@!pipError>Could not enter Picture-in-Picture.</p>
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["popOut"],
+      pipActive: false,
+    };
+  </script>
+</wcs-state>
+
+<wcs-pip target="#player" data-wcs="active: pipActive; command.requestPictureInPicture: $command.popOut"></wcs-pip>
+<button data-wcs="onclick: $command.popOut">Pop out</button>
+```
+
+```js
+const pip = document.querySelector("wcs-pip");
+await pip.requestPictureInPicture();
+if (pip.error) {
+  console.log("Could not enter Picture-in-Picture:", pip.error);
+}
 ```
 
 ## The `target` attribute decides what is controlled
@@ -81,22 +119,24 @@ npm install @wcstack/picture-in-picture
 |-----------------|-------------------------|-------------|--------------------------|
 | omitted         | first element child     | `contents`  | wrap a `<video>` inline  |
 | `"#player"` / sel | the matched element   | `none`      | separate control tag     |
-| `"self"`        | the element itself       | `block`     | `<wcs-pip>` doubling as the `<video>` (rare) |
+| `"self"`        | the element itself       | `block`     | **always fails** — `<wcs-pip>` itself can never be a `<video>`, so `requestPictureInPicture()` immediately errors (see "The `target` MUST resolve to a `<video>` element" above) |
 
 `display:contents` means wrapping a `<video>` child injects no box of its own. Only the explicit `target="self"` sentinel takes a box. See `packages/intersection`'s `_resolveTarget()` — this Shell reuses it verbatim (docs/fullscreen-tag-design.md §1).
+
+Unlike `@wcstack/fullscreen` (where `target="self"` is a legitimate way to fullscreen the wrapper itself, since any `Element` can be fullscreened), `target="self"` here is a structural dead end: `<wcs-pip>`'s own `tagName` is never `VIDEO`, so it always fails the `<video>`-only check and every `requestPictureInPicture()` call resolves into `error`. The mode is still accepted rather than rejected as an invalid attribute value — for parity with the shared 3-mode `_resolveTarget()` archetype — it just never does anything useful.
 
 ## Attributes
 
 | Attribute | Type   | Default     | Description |
 |-----------|--------|-------------|--------------|
-| `target`  | string | *(omitted)* | Which `<video>` to control: omitted → first child, a selector → that element, `self` → this element. Must resolve to a `<video>` element. |
+| `target`  | string | *(omitted)* | Which `<video>` to control: omitted → first child, a selector → that element, `self` → this element (always fails — see above). |
 
 ## Output state
 
 | Property | Type      | Event            | Description |
 |----------|-----------|------------------|--------------|
 | `active` | `boolean` | `wcs-pip:change` | Whether the resolved `<video>` target is currently the document's Picture-in-Picture element. |
-| `error`  | `any`     | *(none — read via getter)* | The most recent command failure (wrong tag, unsupported API, gesture-context rejection), or `null`. |
+| `error`  | `any`     | *(none — plain getter, not data-wcs bindable)* | The most recent command failure (wrong tag, unsupported API, gesture-context rejection), or `null`. |
 
 `active` is derived from comparing `document.pictureInPictureElement` against the resolved `<video>` target whenever `enterpictureinpicture`/`leavepictureinpicture` fires **on that target element** — not from a `document`-level event (see "Event subscription" below).
 
@@ -109,11 +149,7 @@ npm install @wcstack/picture-in-picture
 
 ### User gesture requirement
 
-`requestPictureInPicture()` must be called from within a user gesture (e.g. a click handler). This is a browser-level requirement `<wcs-pip>` cannot work around — see `docs/fullscreen-tag-design.md` §3 for the same constraint on Fullscreen. Prefer wiring the command directly to a click via the command-token protocol:
-
-```html
-<button command.click:$command.requestPictureInPicture>Pop out</button>
-```
+`requestPictureInPicture()` must be called from within a user gesture (e.g. a click handler). This is a browser-level requirement `<wcs-pip>` cannot work around — see `docs/fullscreen-tag-design.md` §3 for the same constraint on Fullscreen. Prefer wiring the command directly to a click via the command-token protocol (`command.requestPictureInPicture: $command.<token>` on `<wcs-pip>`, emitted by a button's `onclick: $command.<token>` — see the Quick Start above), making sure the *triggering* event itself is a genuine user gesture.
 
 Calling it from inside a `setTimeout` or deep inside a `.then()` chain loses the gesture context and the browser will reject the request — this is unrelated to wcstack and cannot be fixed at this layer.
 
@@ -170,8 +206,9 @@ core.dispose();                 // detach listeners
 - **`<video>`-only.** `target` must resolve to an `HTMLVideoElement`. Any other element is treated as unresolved: `error` is set to `{ message: "target must be a <video> element." }`, never throws.
 - **Document Picture-in-Picture API is out of scope.** See "Scope" above.
 - **Never throws.** Unsupported environments, wrong-tag targets, and gesture-context rejections are all funneled into `error`.
-- **`document.pictureInPictureElement` is a single document-wide value**, like `document.fullscreenElement`. Multiple `<wcs-pip>` instances self-filter via their own `<video>` target's `enterpictureinpicture`/`leavepictureinpicture` listeners — see "Event subscription" above.
+- **`document.pictureInPictureElement` is a single document-wide value**, like `document.fullscreenElement`. Multiple `<wcs-pip>` instances self-filter via their own `<video>` target's `enterpictureinpicture`/`leavepictureinpicture` listeners — see "Event subscription" above. Note the asymmetry, though: `exitPictureInPicture()` is **not** scoped per instance — it calls the document-global `document.exitPictureInPicture()`, so invoking it on any instance exits whatever `<video>` is currently in Picture-in-Picture, even one entered via another instance's `target` (its silent no-op check is likewise document-wide: "is anything in Picture-in-Picture", not "is *my* target in Picture-in-Picture"). This mirrors the platform API itself and `@wcstack/fullscreen`'s `exitFullscreen()` (see `docs/fullscreen-tag-design.md` §7's "scope note" alongside §2.1, and the "Multiple instances" bullet in `packages/fullscreen/README.md`).
 - **No `desired`/`actual` two-phase state** — this node exposes a single `active` boolean plus `error`, mirroring `@wcstack/fullscreen`'s simpler-than-`permission` state model.
+- **`error` has no dedicated event, and is not `data-wcs` bindable.** Like `@wcstack/fullscreen`, `error` is a plain getter with no `wcs-pip:error` event of its own, and it is not declared in `static wcBindable.properties` — a binding system has nothing to subscribe to and cannot observe it reactively. Read `element.error` imperatively after a command's promise settles (e.g. `await el.requestPictureInPicture(); if (el.error) { ... }`).
 
 ## License
 

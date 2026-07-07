@@ -66,8 +66,10 @@ describe("Credential (Shell)", () => {
     expect(el.value).toEqual(credential);
   });
 
-  it("get() が AbortError で拒否されると cancelled が true になる", async () => {
-    installGet(() => Promise.reject(new DOMException("aborted", "AbortError")));
+  it("get() が NotAllowedError（ユーザーがアカウント選択UIを閉じた）で拒否されると cancelled が true になる", async () => {
+    // The Credential Management API rejects with NotAllowedError, not
+    // AbortError, on user dismissal — see docs/credential-tag-design.md §2.
+    installGet(() => Promise.reject(new DOMException("Permission denied", "NotAllowedError")));
     const el = createCredential();
     document.body.appendChild(el);
 

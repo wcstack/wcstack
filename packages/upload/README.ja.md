@@ -221,7 +221,7 @@ npm install @wcstack/upload
 
 `null` は正常な resolve 値でもあるため、失敗判定に resolve 値を使わないでください。代わりに `error` / `status`（または `wcs-upload:error` / `wcs-upload:response` イベント）を観測します。これは `@wcstack/fetch` と同じ設計で、エラーは promise の reject ではなく状態として流れます。
 
-> ヘッドレス Core についての注記: `UploadCore.upload(url, files)` は `async` で、同期的に検出できる引数エラー（`url` 欠落・`files` が空）は `[@wcstack/upload] ...` を throw して **reject** します。Shell の `upload()` は `url` 未指定・ファイル未指定を no-op として扱い `null` を返します（Shell が `url`／ファイルのライフサイクルを所有しており「送信先無し」「ファイル無し」をエラーではなく無操作とみなすため）。これにより Shell は Core の throw に到達せず reject しません。
+> ヘッドレス Core についての注記: `UploadCore.upload(url, files)` は `async` だが **throw も reject もしない**。同期的に検出できる引数エラー（`url` 欠落・`files` が空）は `error` プロパティに素の `{ message }` オブジェクトとして載せ、`wcs-upload:error` を発火し、呼び出しは `null` で resolve する。Shell の `upload()` はこの経路に到達しない: Shell が `url`／ファイルのライフサイクルを所有しており、`url` 未指定・ファイル未指定を **サイレントな** no-op（`error` を設定せずイベントも発火しない）として扱い `null` を返す。
 
 #### `abort()`
 

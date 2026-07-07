@@ -104,12 +104,22 @@ describe("ShareCore", () => {
       expect(completes).toEqual([{ value: data }]);
     });
 
-    it("data 省略で呼んでも成功し value は null", async () => {
+    it("data 省略で呼んでも成功し value は null。complete は成功完了シグナルとして value=null でも発火する（value に同値ガード無し）", async () => {
       installShare(() => Promise.resolve());
       const core = new ShareCore();
+      const completes: any[] = [];
+      const loadingEvents: boolean[] = [];
+      core.addEventListener("wcs-share:complete", (e) => completes.push((e as CustomEvent).detail));
+      core.addEventListener("wcs-share:loading-changed", (e) => loadingEvents.push((e as CustomEvent).detail));
+
       const result = await core.share();
+
       expect(result).toBeNull();
       expect(core.value).toBeNull();
+      // value は成功完了シグナルであり同値ガードを持たないため、value=null（初期値と同値）
+      // の data-less share でも wcs-share:complete が発火する。loading も通常どおり true→false。
+      expect(completes).toEqual([{ value: null }]);
+      expect(loadingEvents).toEqual([true, false]);
     });
 
     it("進行中に重ねて share() を呼んでも2回目の loading=true は同値ガードで再発火しない", async () => {
@@ -155,6 +165,22 @@ describe("ShareCore", () => {
 
       expect(coreEvents).toEqual([]);
       expect(targetEvents).toEqual(["complete"]);
+    });
+
+    it("同一オブジェクト参照を data として渡した連続する成功 share() でも、成功完了シグナル wcs-share:complete は毎回発火する（value に同値ガード無し、clipboard/broadcast と同方針）", async () => {
+      installShare(() => Promise.resolve());
+      const core = new ShareCore();
+      const completes: any[] = [];
+      core.addEventListener("wcs-share:complete", (e) => completes.push((e as CustomEvent).detail));
+
+      const data = { url: "https://example.com" };
+      await core.share(data);
+      await core.share(data); // same reference as the first call
+
+      // 2回とも成功完了なので complete は2回発火する（value は結果イベントであり
+      // idempotent state ではない — clipboard `_setRead` / broadcast `_setMessage` と同方針）。
+      expect(completes).toEqual([{ value: data }, { value: data }]);
+      expect(core.value).toBe(data);
     });
   });
 
@@ -208,6 +234,20 @@ describe("ShareCore", () => {
       expect(result).toBeNull();
       expect(core.error).toBeInstanceOf(TypeError);
       expect(core.cancelled).toBe(false);
+    });
+
+    it("wcs-share:error が発火し detail が core.error と一致する（cancelled-changed 側の対称テスト、line 198-210 参照）", async () => {
+      installShare(() => Promise.reject(new DOMException("Permission denied", "NotAllowedError")));
+      const core = new ShareCore();
+      const errorEvents: any[] = [];
+      const cancelledEvents: boolean[] = [];
+      core.addEventListener("wcs-share:error", (e) => errorEvents.push((e as CustomEvent).detail));
+      core.addEventListener("wcs-share:cancelled-changed", (e) => cancelledEvents.push((e as CustomEvent).detail));
+
+      await core.share({ url: "https://example.com" });
+
+      expect(errorEvents).toEqual([core.error]);
+      expect(cancelledEvents).toEqual([]);
     });
   });
 
@@ -263,6 +303,20 @@ describe("ShareCore", () => {
       expect(core.loading).toBe(false);
       expect(loadingEvents).toEqual([]);
     });
+
+    it("前回 cancelled=true のまま navigator.share が消えて呼ぶと、unsupported の error は立つが cancelled はリセットされず true のまま残る（README 注記のとおり、reset ブロックより前に return するため）", async () => {
+      installShare(() => Promise.reject(new DOMException("Share canceled", "AbortError")));
+      const core = new ShareCore();
+      await core.share({ url: "https://example.com" });
+      expect(core.cancelled).toBe(true);
+
+      removeShare();
+      const result = await core.share({ url: "https://example.com" });
+
+      expect(result).toBeNull();
+      expect(core.error).toEqual({ message: "Web Share API is not supported in this browser." });
+      expect(core.cancelled).toBe(true);
+    });
   });
 
   describe("_gen 世代ガード", () => {
@@ -312,6 +366,43 @@ describe("ShareCore", () => {
     });
   });
 
+  describe("並行 share() 呼び出し（supersession は行わない）", () => {
+    it("1回目 pending 中に2回目が InvalidStateError で失敗しても、1回目の後続成功は破棄されない（§2: fetch と異なり新規呼び出しは旧呼び出しを追い越さない）", async () => {
+      let resolveFirst!: () => void;
+      let call = 0;
+      installShare(() => {
+        call += 1;
+        if (call === 1) {
+          return new Promise<void>((resolve) => { resolveFirst = resolve; });
+        }
+        return Promise.reject(new DOMException("Only one share can be active at a time", "InvalidStateError"));
+      });
+      const core = new ShareCore();
+
+      const data1 = { url: "https://example.com/1" };
+      const data2 = { url: "https://example.com/2" };
+      const p1 = core.share(data1);
+
+      const result2 = await core.share(data2);
+      expect(result2).toBeNull();
+      expect(core.error).toBeInstanceOf(DOMException);
+      expect((core.error as DOMException).name).toBe("InvalidStateError");
+      expect(core.cancelled).toBe(false);
+
+      resolveFirst();
+      const result1 = await p1;
+
+      // Regression guard: bumping `_gen` on every share() start (the bug)
+      // made the still-pending first call's captured `gen` stale by the time
+      // the second call's failure ran, so the first call's later genuine
+      // success was wrongly dropped (result/value stayed null/unset). Per
+      // docs/web-share-tag-design.md §2, share() intentionally has no
+      // fetch-style supersession — only dispose() may invalidate a call.
+      expect(result1).toEqual(data1);
+      expect(core.value).toEqual(data1);
+    });
+  });
+
   describe("never-throw", () => {
     it("share() はどの経路でも例外を投げず常に resolve する", async () => {
       installShare(() => Promise.reject(new Error("network down")));
@@ -330,6 +421,41 @@ describe("ShareCore", () => {
     it("一度も share していない dispose は安全な no-op", () => {
       const core = new ShareCore();
       expect(() => core.dispose()).not.toThrow();
+    });
+  });
+
+  describe("イベントの bubbles 契約", () => {
+    it("全4イベントが bubbles: true で発火する（祖先要素での委譲リスニング契約、eyedropper 姉妹の同型テストに倣う）", async () => {
+      // state の twowayHandler は要素直付けリスナーのため bubbles に依存しないが、
+      // Shell を祖先要素で委譲リスニングする利用者コードにとっては 4 つの
+      // _setXxx すべてが bubbles: true で dispatch することが契約になる。
+      // ここで4イベントまとめてピン留めする。
+      const fn = installShare(() => Promise.reject(new DOMException("Permission denied", "NotAllowedError")));
+      const core = new ShareCore();
+      const bubblesByEvent: Record<string, boolean[]> = {
+        "wcs-share:loading-changed": [],
+        "wcs-share:complete": [],
+        "wcs-share:error": [],
+        "wcs-share:cancelled-changed": [],
+      };
+      for (const name of Object.keys(bubblesByEvent)) {
+        core.addEventListener(name, (e) => bubblesByEvent[name].push((e as Event).bubbles));
+      }
+
+      // error（NotAllowedError）→ 成功（complete）→ AbortError（cancelled）の
+      // 順に3回 share() し、4イベントすべてを少なくとも1回ずつ発火させる。
+      await core.share({ url: "https://example.com/1" });
+
+      fn.mockResolvedValueOnce(undefined);
+      await core.share({ url: "https://example.com/2" });
+
+      fn.mockRejectedValueOnce(new DOMException("Share canceled", "AbortError"));
+      await core.share({ url: "https://example.com/3" });
+
+      for (const [name, flags] of Object.entries(bubblesByEvent)) {
+        expect(flags.length, `${name} が発火していること`).toBeGreaterThan(0);
+        expect(flags.every((b) => b === true), `${name} の bubbles`).toBe(true);
+      }
     });
   });
 });

@@ -53,7 +53,7 @@ npm install @wcstack/contacts
 | ----------- | ----------------------------- | ------------ |
 | `value`     | `wcs-contacts:complete`        | The array of picked contacts (always an array, even with `multiple: false`), or `null` before any successful selection. |
 | `loading`   | `wcs-contacts:loading-changed` | `true` while the picker dialog is open. |
-| `error`     | `wcs-contacts:error`           | A true platform failure, or `null`. |
+| `error`     | `wcs-contacts:error`           | A true platform failure (a `DOMException`/`Error` from `select()`), or the plain object `{ message: "Contact Picker API is not supported in this browser." }` on the unsupported path, or `null`. |
 | `cancelled` | `wcs-contacts:cancelled-changed` | `true` when the user dismissed the picker (kept separate from `error`). |
 
 ## Commands
@@ -69,6 +69,7 @@ npm install @wcstack/contacts
 ## Notes & limitations
 
 - **Android Chrome only.** Treat `unsupported` as the default, not an edge case.
+- **`unsupported` has no dedicated flag.** Calling `select()` when `navigator.contacts.select` is not a function immediately sets `error` to the plain object `{ message: "Contact Picker API is not supported in this browser." }` and resolves with `null` — no `_gen` is consumed, since no asynchronous work is started. This shape differs from a real failure, where `error` holds a `DOMException`/`Error`; do not assume `error instanceof Error` or `error.name` on the unsupported path.
 - **`getProperties()` is out of scope for v1** (an async pre-check for supported fields) — see `docs/contact-picker-tag-design.md` §4.
 - Shares its architecture with `@wcstack/share`/`@wcstack/eyedropper`: single `_gen` generation guard, never-throw, no `AbortController`.
 

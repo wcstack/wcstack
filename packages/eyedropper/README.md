@@ -16,7 +16,7 @@ With `@wcstack/state`, `<wcs-eyedropper>` can be bound directly through path con
 - **Shell** (`<wcs-eyedropper>`) connects that state to DOM lifecycle and the command-token protocol
 - **Binding Contract** (`static wcBindable`) declares observable `properties` and the `open`/`abort` commands
 
-## Why this exists — the same architype as `@wcstack/share`, plus `abort`
+## Why this exists — the same archetype as `@wcstack/share`, plus `abort`
 
 `<wcs-eyedropper>` shares its architecture with [`@wcstack/share`](https://www.npmjs.com/package/@wcstack/share): a state-thin, command-only node built on a simplified derivative of `FetchCore._doFetch` (see `docs/eyedropper-tag-design.md` and `docs/web-share-tag-design.md` §2) — single `_gen` generation guard, same-value-guarded private setters, never-throw try/catch.
 
@@ -45,6 +45,7 @@ npm install @wcstack/eyedropper
 <wcs-state>
   <script type="module">
     export default {
+      $commandTokens: ["open"],
       pickColor() {
         this.$command.open.emit();
       },
@@ -52,29 +53,48 @@ npm install @wcstack/eyedropper
   </script>
 </wcs-state>
 
-<wcs-eyedropper command.open="$command.open"></wcs-eyedropper>
+<wcs-eyedropper data-wcs="command.open: $command.open"></wcs-eyedropper>
 
-<button data-wcs="onclick: pickColor">Pick a color</button>
+<button id="pick-button" data-wcs="onclick: pickColor">Pick a color</button>
 ```
 
 ### 2. Reflecting the picked color, and cancelling
 
 ```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["open", "abort"],
+      pickedColor: null,
+      picking: false,
+      pickError: null,
+      // pickedColor stays null until the first successful pick, so bind the
+      // hex through a null-safe computed getter (binding a raw
+      // pickedColor.sRGBHex path would traverse into null before any pick).
+      get pickedHex() {
+        return this.pickedColor?.sRGBHex ?? "";
+      },
+      pickColor() {
+        this.$command.open.emit();
+      },
+      cancelPick() {
+        this.$command.abort.emit();
+      },
+    };
+  </script>
+</wcs-state>
+
 <wcs-eyedropper
-  command.open="$command.open"
-  command.abort="$command.abort"
-  event.value="$event.pickedColor"
-  event.loading="$event.picking"
-  event.error="$event.pickError"
+  data-wcs="command.open: $command.open; command.abort: $command.abort; value: pickedColor; loading: picking; error: pickError"
 ></wcs-eyedropper>
 
 <button data-wcs="onclick: pickColor; disabled: picking">
   Pick a color
 </button>
-<button data-wcs="onclick: cancelPick; hidden: !picking">Cancel</button>
+<button data-wcs="onclick: cancelPick; hidden: picking|not">Cancel</button>
 
-<div data-wcs="style.backgroundColor: pickedColor.sRGBHex"></div>
-<p data-wcs="hidden: !pickError">Something went wrong.</p>
+<div data-wcs="style.backgroundColor: pickedHex"></div>
+<p data-wcs="hidden: pickError|falsy">Something went wrong.</p>
 ```
 
 ### 3. Hiding the button on unsupported browsers
@@ -84,6 +104,7 @@ npm install @wcstack/eyedropper
 ```html
 <script type="module">
   const supported = typeof EyeDropper !== "undefined";
+  // #pick-button is the "Pick a color" button from example 1.
   document.querySelector("#pick-button").hidden = !supported;
   // On unsupported mobile/Firefox/Safari, offer a fallback <input type="color"> instead.
 </script>
@@ -95,8 +116,10 @@ npm install @wcstack/eyedropper
 | ----------- | ----------------------------------- | ------------ |
 | `value`     | `wcs-eyedropper:complete`           | The platform's own result object, `{ sRGBHex: string }`, used verbatim — no synthesis needed (unlike `@wcstack/share`'s `value`, which echoes the caller's input). `null` before any successful pick. |
 | `loading`   | `wcs-eyedropper:loading-changed`    | `true` while the eyedropper cursor is active (an `open()` call is in flight). |
-| `error`     | `wcs-eyedropper:error`              | A true platform failure (anything other than the picker being dismissed). `null` when there has been no failure yet, or after a reset. |
+| `error`     | `wcs-eyedropper:error`              | A true platform failure (anything other than the picker being dismissed). `null` when there has been no failure yet, or after the next `open()` call resets it. |
 | `cancelled` | `wcs-eyedropper:cancelled-changed`  | `true` when the pick did not complete — either the user pressed Escape, or the caller invoked `abort()`. Both surface as the same `AbortError` and are not distinguished. |
+
+`cancelled` and `error` are both reset (`false` / `null`) at the **start** of the next `open()` call, so a stale outcome from a previous call never lingers into the next one's result.
 
 ## Commands
 
@@ -113,6 +136,7 @@ npm install @wcstack/eyedropper
 
 - **Chromium-only, desktop-oriented.** See above. Firefox and Safari do not implement `EyeDropper` as of 2026, and it has no meaningful touch-input equivalent.
 - **`abort()` cancels an in-flight `open()`.** Both a user pressing Escape and a caller-invoked `abort()` resolve to the same `cancelled` outcome — there is no way (and no need) to distinguish them.
+- **One eyedropper at a time (platform-global).** The spec's `InvalidStateError` is a global exclusion — if another eye dropper is already open (a second `<wcs-eyedropper>` instance, or another tab), `open()` rejects with it and lands on `error` (not `cancelled`). Within a single instance this never fires: a new `open()` first aborts the previous in-flight pick.
 - **Fast `abort()` → `open()` sequences do not cross-wire `AbortController`s.** A new `open()` call aborts any previous in-flight call and issues a fresh `AbortController`; the previous call's cleanup only clears the field it still owns (mirrors `FetchCore`'s identity check).
 - **Unsupported detection.** There is no `supported` flag. `open()` checks `typeof EyeDropper === "function"` at call time and, if absent, sets `error` immediately (`_gen` is not advanced — no asynchronous work is started, and `new EyeDropper()` is never constructed).
 - **`_gen` generation guard.** An `open()` call that settles after `dispose()` (e.g. a fast disconnect while the picker is active) is stale and does not write state to a torn-down element.

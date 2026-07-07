@@ -36,34 +36,64 @@ npm install @wcstack/gyroscope
 
 ### 1. Read live angular velocity
 
+`<wcs-gyroscope>` does **not** auto-start on connect — binding alone leaves
+`x`/`y`/`z` at their initial `null`. You must fire the `start` command
+(e.g. from a button) before readings flow:
+
 ```html
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/gyroscope/auto"></script>
 
 <wcs-state>
   <script type="module">
-    export default { x: null, y: null, z: null };
+    export default {
+      $commandTokens: ["startGyro"],
+      x: null, y: null, z: null,
+    };
   </script>
 </wcs-state>
 
-<wcs-gyroscope data-wcs="x: x; y: y; z: z"></wcs-gyroscope>
+<wcs-gyroscope
+  data-wcs="x: x; y: y; z: z; command.start: $command.startGyro"
+></wcs-gyroscope>
+
+<button data-wcs="onclick: $command.startGyro">Start</button>
 <p data-wcs="textContent: x"></p>
 ```
 
+The button never touches `<wcs-gyroscope>` directly: its click emits the `startGyro` command token (`$commandTokens: ["startGyro"]` declares the name), and `<wcs-gyroscope>` subscribes to it via `command.start: $command.startGyro` (the [command-token protocol](../state/) — the element with the command method is the *subscriber*, not the emitter).
+
 ### 2. Gate on permission, then start
 
+This example also needs `@wcstack/permission` registered (alongside the
+`@wcstack/state` / `@wcstack/gyroscope` scripts from example 1), with its
+own self-contained `<wcs-state>` declaring `gyroGranted`:
+
 ```html
+<script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["startGyro"],
+      gyroGranted: false,
+    };
+  </script>
+</wcs-state>
+
 <wcs-permission name="gyroscope" data-wcs="granted: gyroGranted"></wcs-permission>
 <wcs-gyroscope data-wcs="command.start: $command.startGyro"></wcs-gyroscope>
 
-<button data-wcs="onclick: startGyro; disabled: !gyroGranted">Start</button>
+<button data-wcs="onclick: $command.startGyro; disabled: gyroGranted|not">Start</button>
 ```
+
+Every bound state path must be declared up front — binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`gyroGranted|not`), not a leading `!`.
 
 ## Attributes / Inputs
 
 | Attribute   | Type   | Default | Description |
 | ----------- | ------ | ------- | ------------ |
-| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Gyroscope` constructor. |
+| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Gyroscope` constructor. Read only when `start()` runs — changing it while already started has no effect until `stop()` + `start()` (see Notes). |
 
 ## Observable Properties (outputs)
 
@@ -80,12 +110,15 @@ npm install @wcstack/gyroscope
 
 | Command | Async | Description |
 | ------- | ----- | ------------ |
-| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. |
+| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. Idempotent while already started (a redundant call is a no-op). |
 | `stop`  | no    | Stop the sensor and detach its listeners. Safe to call when not started. |
 
 ## Notes & limitations
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
+- **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
+- **`frequency` is read only at `start()`.** There is no `attributeChangedCallback`, and `start()` is idempotent while already started (a redundant call is a no-op — see Commands above), so changing the `frequency` attribute/property on a running sensor has no effect. To apply a new sampling rate, `stop()` then `start()` again.
+- **Reparenting stops the sensor and does not resume it.** Moving a connected `<wcs-gyroscope>` element to a different parent runs `disconnectedCallback` → `connectedCallback`; since the Shell does not auto-start on connect (see Quick Start above), this is effectively a stop with no automatic restart. `x`/`y`/`z` freeze at their last sample, and no `error` is raised — the sensor stays inert until `start` is invoked again.
 - **Never call the raw `new Gyroscope(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
 - Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="gyroscope">`.
 

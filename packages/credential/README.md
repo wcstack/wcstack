@@ -61,13 +61,13 @@ npm install @wcstack/credential
 | `value`     | `wcs-credential:complete`        | The retrieved/stored credential, or `null` before any successful call. |
 | `loading`   | `wcs-credential:loading-changed` | `true` while a `get()`/`store()` call is in flight. |
 | `error`     | `wcs-credential:error`           | A true platform failure (normalized `{ name, message }`), or `null`. |
-| `cancelled` | `wcs-credential:cancelled-changed` | `true` when the user dismissed the browser's account-chooser UI. |
+| `cancelled` | `wcs-credential:cancelled-changed` | `true` when the user dismissed the browser's account-chooser UI (the Credential Management API rejects with `NotAllowedError`). Kept out of `error`. |
 
 ## Commands
 
 | Command | Async | Description |
 | ------- | ----- | ------------ |
-| `get`   | yes   | `get(options)` — `options.publicKey` is rejected as a scope violation (see above) rather than forwarded. Never-throw: AbortError → `cancelled`, everything else → `error`. |
+| `get`   | yes   | `get(options)` — `options.publicKey` is rejected as a scope violation (see above) rather than forwarded. Never-throw: `NotAllowedError` (user dismissed the account chooser) → `cancelled`, everything else → `error`. |
 | `store` | yes   | `store(credential)` — `value` echoes the input credential (`navigator.credentials.store()` itself resolves `Promise<void>`). |
 
 ## Attributes / Inputs

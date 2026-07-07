@@ -8,7 +8,7 @@ Notifications API をリアクティブな state と state 駆動のコマンド
 `@wcstack/state` と組み合わせると、`<wcs-notify>` はパス契約で直接バインドできます:
 
 - **command サーフェス**: `request`, `notify`, `close`, `closeAll`
-- **input サーフェス**: `notice`（reactive な表示）, `mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `require-interaction`, `silent`, `renotify`
+- **input サーフェス**: `notice`（reactive な表示）, `mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `require-interaction`, `silent`, `renotify`, `manual`
 - **output state サーフェス**: `permission`, `granted`, `denied`, `prompt`, `unsupported`, `error`, `clicked`, `closed`, `shown`
 
 `@wcstack/notification` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
@@ -90,6 +90,10 @@ npm install @wcstack/notification
 
 ### 4. クリックを読む
 
+```html
+<wcs-notify data-wcs="command.notify: $command.notify; eventToken.clicked: opened"></wcs-notify>
+```
+
 `clicked` / `closed` / `shown` は `{ tag, data, action }` を運びます。`tag` は通知の識別子（あなたの `options.tag`、省略時は生成された `wcs-<n>`）、`data` は `options.data` に渡した値、`action` は Service Worker のアクションボタン id（コンストラクタ経路では常に `""`）です。
 
 完全なデモは `examples/state-notification-chat` を参照。
@@ -155,9 +159,44 @@ wireNotificationClicks();
 ## 注意・制限
 
 - **通知はページより長生きする。** `<wcs-notify>` の切断（または Core の `dispose()`）は購読を解除しますが、開いている通知は**閉じません** —— 通知はページの終了後も残ることが意図です。閉じるには `close` / `closeAll` を使ってください。
+- **`mode` は接続時に固定される。** バックエンドは要素の接続時（`observe(mode)`）に一度だけ選択され、`mode` の `observedAttributes` エントリはありません。接続済みの要素で `mode` 属性を変更しても、要素を再接続（削除して再挿入）するまで効果はありません。
+- **SW バックエンドは `close` を中継しない。** `@wcstack/notification/sw` ヘルパは `notificationclick` のみを配線し、`notificationclose` は配線しません。そのため `sw` バックエンドでは `closed` / `wcs-notify:close` は発火しません（close 用のワーカー越え中継がない）。`clicked` はクリック中継で動作しますが、`closed` は constructor バックエンド限定の信号です。
 - **Push API はスコープ外。** 本パッケージは Notifications API（ローカル通知）をラップします。サーバ起点の Push は別の関心事です。
 - **サイレント失敗（zero-log）。** wcstack のゼロ依存哲学に沿い、`<wcs-notify>` は決してログ出力も throw もしません。API 不在 → `permission = "unsupported"`、未許可や表示失敗 → `error` プロパティ。`error` / `permission` をバインドして反応してください。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開するため、サーバレンダラは接続時の権限プローブが解決するまで待ってからスナップショットします。
+
+## 設定
+
+`<wcs-notify>` はクリック **autoTrigger** を同梱しており、**既定で有効**です。有効な場合、最初に接続した `<wcs-notify>` が document レベルの `click` リスナーを 1 つ設置します。トリガ属性（`data-notifytarget="<id>"`）を持つ要素をクリックすると、その `id` の `<wcs-notify>` の `notify()` が呼ばれます:
+
+```html
+<wcs-notify id="app-notify"></wcs-notify>
+<button data-notifytarget="app-notify" data-notifybody="新着メッセージが1件あります">
+  通知する
+</button>
+```
+
+- タイトルは `data-notifytitle` があればそれ、無ければトリガ要素の trim 済み `textContent`。body は任意の `data-notifybody`。
+- **document 全域**のクリックリスナーが既定で設置されるため、ショートカットを使わないなら無効化してください。設定は `bootstrapNotification(userConfig?)`（要素登録と設定適用を 1 回で行う）で適用し、`getConfig()` で実効設定（deep-frozen）を読み取れます:
+
+```js
+import { bootstrapNotification, getConfig } from "@wcstack/notification";
+
+// <wcs-notify> を登録しつつ document クリックリスナーを無効化:
+bootstrapNotification({ autoTrigger: false });
+// あるいはトリガ属性名を変更:
+bootstrapNotification({ triggerAttribute: "data-notify" });
+
+getConfig(); // deep-frozen の実効設定を読む
+```
+
+| 設定キー           | 型        | 既定                | 説明                                                               |
+| ------------------ | --------- | ------------------- | ------------------------------------------------------------------ |
+| `autoTrigger`      | `boolean` | `true`              | `data-notifytarget` 用の document レベルクリックリスナーを設置。   |
+| `triggerAttribute` | `string`  | `data-notifytarget` | クリック要素が `<wcs-notify>` を id で指すのに使う属性。            |
+| `tagNames.notify`  | `string`  | `wcs-notify`        | 登録するカスタム要素タグ名。                                        |
+
+`bootstrapNotification()` は要素が接続される**前に**呼ぶと変更が反映されます。
 
 ## ヘッドレス利用（`NotificationCore`）
 

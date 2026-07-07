@@ -15,7 +15,6 @@ import { IdleCore } from "../core/IdleCore.js";
  */
 export class WcsIdle extends HTMLElement {
   static hasConnectedCallbackPromise = true;
-  static observedAttributes = ["threshold"];
 
   static wcBindable: IWcBindable = {
     ...IdleCore.wcBindable,
@@ -36,9 +35,23 @@ export class WcsIdle extends HTMLElement {
 
   // --- Attribute accessors ---
 
+  /**
+   * Minimum idle time (ms) before `userState` becomes `"idle"`. This value is
+   * read only at `start()` time — there is no `attributeChangedCallback`
+   * (deliberately not declared in `observedAttributes`, mirroring
+   * `<wcs-gyroscope>`'s `frequency`), so mutating the attribute/property on an
+   * already-running session has no effect until the caller `stop()`s and
+   * `start()`s again.
+   */
   get threshold(): number {
     const attr = this.getAttribute("threshold");
-    const n = attr === null ? NaN : Number(attr);
+    // An absent, empty, or whitespace-only attribute all mean "no value
+    // supplied" and must fall back to the default — without this check,
+    // `Number("")`/`Number("  ")` coerce to `0` (finite), which would slip
+    // past the `Number.isFinite` fallback below and silently return `0`
+    // instead of the documented 60000ms default.
+    if (attr === null || attr.trim() === "") return 60000;
+    const n = Number(attr);
     return Number.isFinite(n) ? n : 60000;
   }
 

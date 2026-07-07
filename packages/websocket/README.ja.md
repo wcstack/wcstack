@@ -310,6 +310,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `auto-reconnect` | `boolean` | `false` | 自動再接続を有効化 |
 | `reconnect-interval` | `number` | `3000` | 再接続間隔（ミリ秒） |
 | `max-reconnects` | `number` | `Infinity` | 最大再接続回数 |
+| `binary-type` | `"blob" \| "arraybuffer"` | `blob` | 受信バイナリフレームを `message` でどう表現するか。`arraybuffer` 以外の値は `blob` に正規化される |
 
 | プロパティ | 型 | 説明 |
 |------------|------|------|
@@ -318,6 +319,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `loading` | `boolean` | 接続処理中は `true` |
 | `error` | `WcsWsError \| Event \| null` | エラー情報 |
 | `readyState` | `number` | WebSocket readyState 定数 |
+| `binaryType` | `"blob" \| "arraybuffer"` | バイナリフレーム表現（`binary-type` 属性を背後に持つ。既定 `blob`） |
 | `trigger` | `boolean` | `true` を設定すると接続を開始 |
 | `send` | `any` | 値を設定するとデータを送信 |
 
@@ -380,6 +382,7 @@ static wcBindable = {
     { name: "autoReconnect", attribute: "auto-reconnect" },
     { name: "reconnectInterval", attribute: "reconnect-interval" },
     { name: "maxReconnects", attribute: "max-reconnects" },
+    { name: "binaryType", attribute: "binary-type" },
     { name: "manual", attribute: "manual" },
     { name: "trigger" },
     { name: "send" },
@@ -431,6 +434,7 @@ interface WcsWsInputs {
   autoReconnect: boolean;
   reconnectInterval: number;
   maxReconnects: number;
+  binaryType: BinaryType; // "blob" | "arraybuffer"
   manual: boolean;
   trigger: boolean;
   send: unknown;
@@ -442,6 +446,7 @@ interface WcsWsCoreCommands {
     autoReconnect?: boolean;
     reconnectInterval?: number;
     maxReconnects?: number;
+    binaryType?: BinaryType;
   }): void;
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
   close(code?: number, reason?: string): void;

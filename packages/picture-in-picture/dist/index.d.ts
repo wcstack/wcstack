@@ -33,12 +33,17 @@ interface IWritableConfig {
 }
 
 /**
- * Value types for PipCore (headless) — the observable state properties.
- * Use with `bind()` from a wc-bindable binding core for compile-time type checking.
+ * Value types for PipCore (headless) — the Core's readable value surface.
+ * Note that only `active` is *observable* (declared in
+ * `wcBindable.properties` with a change event); `error` is an
+ * imperative-read-only getter with no event of its own — a wc-bindable
+ * binding core will never deliver it, so read it after a command settles
+ * (docs/picture-in-picture-tag-design.md, README "Notes & limitations").
  *
  * @example
  * ```typescript
  * const core = new PipCore();
+ * // bind() only ever delivers "active" — see the note above about "error".
  * bind(core, (name: keyof WcsPipCoreValues, value) => { ... });
  * ```
  */
@@ -47,9 +52,10 @@ interface WcsPipCoreValues {
     error: any;
 }
 /**
- * Value types for the Shell (`<wcs-pip>`) — identical observable surface to
- * the Core. The Shell adds the `target` input (attribute-mirrored) and no
- * additional observable properties.
+ * Value types for the Shell (`<wcs-pip>`) — identical value surface to the
+ * Core (same caveat: only `active` is observable). The Shell adds the
+ * `target` input (attribute-mirrored) and no additional observable
+ * properties.
  */
 type WcsPipValues = WcsPipCoreValues;
 

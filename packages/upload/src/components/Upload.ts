@@ -238,8 +238,9 @@ export class WcsUpload extends HTMLElement {
 
   async upload(): Promise<any> {
     const files = this._files;
-    // url 未設定は no-op(null)。Core は url 空で throw するが、Shell は url/files の
-    // ライフサイクルを所有しており「送信先が無い」を「ファイル無し」と同じ無操作として扱う。
+    // url 未設定は no-op(null)。Core は never-throw（url 空なら error プロパティに
+    // 載せて null を返す）だが、Shell は url/files のライフサイクルを所有しており
+    // 「送信先が無い」を「ファイル無し」と同じ無操作として扱い、Core を呼ぶ前に return する。
     // これにより set trigger / set files の fire-and-forget 経路で unhandled rejection が
     // 発生せず、README の「upload() は全終了ケースで resolve し never reject」契約とも整合する。
     if (!files || files.length === 0 || !this.url) {
@@ -248,10 +249,12 @@ export class WcsUpload extends HTMLElement {
 
     const validationError = this._validate(files);
     if (validationError) {
-      this.dispatchEvent(new CustomEvent("wcs-upload:error", {
-        detail: validationError,
-        bubbles: true,
-      }));
+      // Route through the Core so `el.error` (which reads _core.error) reflects
+      // the validation failure and stays sticky until the next successful upload,
+      // matching the family-wide error contract. The Core dispatches
+      // wcs-upload:error on this element (its _target), so the observable event is
+      // unchanged.
+      this._core.setError(validationError);
       return null;
     }
 

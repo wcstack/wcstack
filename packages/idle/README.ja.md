@@ -33,6 +33,11 @@ npm install @wcstack/idle
 <wcs-state>
   <script type="module">
     export default {
+      // start()前は在席とみなす: `wcs-idle:change`はstart()前は発火しないため、
+      // ここを`false`にすると実際には在席なのに初回ロード時点で常に「離席中」が
+      // 表示されてしまう(在席が単に未検知なだけ)。
+      presenceActive: true,
+      idleGranted: false,
       async enableIdleDetection() {
         const el = document.querySelector("wcs-idle");
         const result = await el.requestPermission();
@@ -45,8 +50,13 @@ npm install @wcstack/idle
 <wcs-permission name="idle-detection" data-wcs="granted: idleGranted"></wcs-permission>
 <wcs-idle threshold="60000" data-wcs="active: presenceActive"></wcs-idle>
 
+<!-- 注意: ここに `disabled: idleGranted` をバインドしてはいけません——permission の
+     許可はページロードを跨いで永続化されるため、再訪問時にボタンが最初から無効になり
+     start()（このクリックが唯一の到達経路）が二度と実行できなくなります。許可済みでの
+     再クリックは無害です: requestPermission() は即座に "granted" を返し start() に進みます。 -->
 <button data-wcs="onclick: enableIdleDetection">離席検知を有効にする</button>
-<template data-wcs="if: !presenceActive">
+<p>許可状態: <span data-wcs="textContent: idleGranted"></span></p>
+<template data-wcs="if: presenceActive|not">
   <span class="badge">離席中</span>
 </template>
 ```
@@ -78,7 +88,9 @@ npm install @wcstack/idle
 
 - **connect時に自動startしません。** 上記「なぜ存在するか」を参照。
 - **permission状態を重複実装しません。** `<wcs-permission name="idle-detection">`と合成してください。
-- Chromium限定。それ以外では`error`経由の`unsupported`が既定です。
+- **Chromium限定、かつ secure context 限定です。** Firefox と Safari は`IdleDetector`自体を実装していません。Chromiumであっても`IdleDetector`は`[SecureContext]`専用インターフェースのため、平文の`http://`（`localhost`を除く）では`window.IdleDetector`自体が`undefined`になり——非対応ブラウザと同じ`unsupported`（`error`経由）の分岐に落ちます。
+- **Permissions-Policyでゲートされます。** アイドル検知は`idle-detection`のPermissions-Policyディレクティブ（既定allowlist: `self`）に支配されます。クロスオリジンの`<iframe>`内で`<wcs-idle>`を使うには、その`<iframe>`要素に`allow="idle-detection"`が必要です——無いと`requestPermission()`/`start()`は非対応ブラウザと同様に失敗します。
+- **`stop()`/切断では`userState`/`screenState`/`active`をリセットしません。** 次に`start()`が成功するまで直近の観測値を保持します——Generic Sensor族（`<wcs-gyroscope>`等）と同じ「直近の読み取り値を保持する」挙動です。
 
 ## ヘッドレス利用（`IdleCore`）
 

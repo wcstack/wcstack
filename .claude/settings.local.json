@@ -46,7 +46,10 @@
       "Bash(git status *)",
       "Bash(npm config *)",
       "Bash(git checkout *)",
-      "PowerShell(Remove-Item -Recurse -Force -Confirm:$false \"d:\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\pointer-lock\\\\node_modules\" -ErrorAction SilentlyContinue)"
+      "PowerShell(Remove-Item -Recurse -Force -Confirm:$false \"d:\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\pointer-lock\\\\node_modules\" -ErrorAction SilentlyContinue)",
+      "Bash(grep '\\\\.ts$')",
+      "Bash(grep -E \"\\\\.md$\")",
+      "Bash(grep -E '\\\\.\\(ts|js|json|md\\)$')"
     ],
     "additionalDirectories": [
       "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src",

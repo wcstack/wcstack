@@ -348,6 +348,13 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
+    it("send getter は常に null を返す（write-only）", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      expect(el.send).toBeNull();
+      el.remove();
+    });
+
     it("send後にイベントが発火する", () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);

@@ -1,5 +1,5 @@
 /**
- * Shared Fake double for the Generic Sensor API family (AmbientLightSensor /
+ * Shared Fake double for the Generic Sensor API family (Accelerometer /
  * Gyroscope / Magnetometer / AmbientLightSensor). Parameterized by
  * `readingFields` so the same strategy covers both the x/y/z sensors and
  * AmbientLightSensor's single `illuminance` scalar

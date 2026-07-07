@@ -20,12 +20,17 @@ export type {
 } from "./protocol/wcBindable.js";
 
 /**
- * Value types for PointerLockCore (headless) — the observable state properties.
- * Use with `bind()` from a wc-bindable binding core for compile-time type checking.
+ * Value types for PointerLockCore (headless) — the Core's readable value
+ * surface. Note that only `active` is *observable* (declared in
+ * `wcBindable.properties` with a change event); `error` is an
+ * imperative-read-only getter with no event of its own — a wc-bindable
+ * binding core will never deliver it, so read it after a command settles
+ * (docs/pointer-lock-tag-design.md §2, docs/fullscreen-tag-design.md §8).
  *
  * @example
  * ```typescript
  * const core = new PointerLockCore();
+ * // bind() only ever delivers "active" — see the note above about "error".
  * bind(core, (name: keyof WcsPointerLockCoreValues, value) => { ... });
  * ```
  */
@@ -35,8 +40,9 @@ export interface WcsPointerLockCoreValues {
 }
 
 /**
- * Value types for the Shell (`<wcs-pointer-lock>`) — identical observable
- * surface to the Core. The Shell additionally accepts a `target` attribute
+ * Value types for the Shell (`<wcs-pointer-lock>`) — identical value surface
+ * to the Core (same caveat: only `active` is observable). The Shell
+ * additionally accepts a `target` attribute
  * (see docs/pointer-lock-tag-design.md / docs/fullscreen-tag-design.md §1).
  */
 export type WcsPointerLockValues = WcsPointerLockCoreValues;

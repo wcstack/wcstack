@@ -51,6 +51,10 @@ export class WcsTilt extends HTMLElement {
     return this._core.permissionState;
   }
 
+  get error(): any {
+    return this._core.error;
+  }
+
   get connectedCallbackPromise(): Promise<void> {
     return this._connectedCallbackPromise;
   }

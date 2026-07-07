@@ -136,11 +136,26 @@ class UploadCore extends EventTarget {
         }));
     }
     _setError(error) {
+        // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
+        // so suppressing redundant null→null dispatches (every upload start clears a
+        // usually-already-null error) avoids a spurious wcs-upload:error per
+        // successful upload. Reference identity is sufficient: each failure builds a
+        // fresh object, and the clear path always passes null.
+        if (this._error === error)
+            return;
         this._error = error;
         this._target.dispatchEvent(new CustomEvent("wcs-upload:error", {
             detail: error,
             bubbles: true,
         }));
+    }
+    // Surface a Shell-originated error (e.g. maxSize / accept validation, which the
+    // Core has no knowledge of) on the shared `error` property so `el.error` stays
+    // sticky and consistent with Core-originated errors — same error contract as the
+    // rest of the @wcstack IO nodes. A later successful upload() clears it via
+    // _setError(null). Dispatches wcs-upload:error like any other error transition.
+    setError(error) {
+        this._setError(error);
     }
     _setResponse(value, status) {
         this._value = value;
@@ -499,8 +514,9 @@ class WcsUpload extends HTMLElement {
     }
     async upload() {
         const files = this._files;
-        // url 未設定は no-op(null)。Core は url 空で throw するが、Shell は url/files の
-        // ライフサイクルを所有しており「送信先が無い」を「ファイル無し」と同じ無操作として扱う。
+        // url 未設定は no-op(null)。Core は never-throw（url 空なら error プロパティに
+        // 載せて null を返す）だが、Shell は url/files のライフサイクルを所有しており
+        // 「送信先が無い」を「ファイル無し」と同じ無操作として扱い、Core を呼ぶ前に return する。
         // これにより set trigger / set files の fire-and-forget 経路で unhandled rejection が
         // 発生せず、README の「upload() は全終了ケースで resolve し never reject」契約とも整合する。
         if (!files || files.length === 0 || !this.url) {
@@ -508,10 +524,12 @@ class WcsUpload extends HTMLElement {
         }
         const validationError = this._validate(files);
         if (validationError) {
-            this.dispatchEvent(new CustomEvent("wcs-upload:error", {
-                detail: validationError,
-                bubbles: true,
-            }));
+            // Route through the Core so `el.error` (which reads _core.error) reflects
+            // the validation failure and stays sticky until the next successful upload,
+            // matching the family-wide error contract. The Core dispatches
+            // wcs-upload:error on this element (its _target), so the observable event is
+            // unchanged.
+            this._core.setError(validationError);
             return null;
         }
         const result = await this._core.upload(this.url, files, {

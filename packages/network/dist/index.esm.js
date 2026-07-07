@@ -166,6 +166,8 @@ class NetworkCore extends EventTarget {
         this._snapshot = next;
         this._target.dispatchEvent(new CustomEvent("wcs-network:change", {
             detail: next,
+            // Family-wide MUST (async-io-node-guidelines.md §3.3): the event bubbles
+            // from the Shell element so document-level consumers can delegate.
             bubbles: true,
         }));
     }
@@ -181,8 +183,9 @@ class NetworkCore extends EventTarget {
  */
 class WcsNetwork extends HTMLElement {
     // SSR (§4.4): observe() completes synchronously, but the Shell still exposes
-    // connectedCallbackPromise so the state binder can await it uniformly across
-    // all IO nodes before snapshotting.
+    // connectedCallbackPromise so SSR (@wcstack/server render.ts) can await it
+    // uniformly across all IO nodes before snapshotting the HTML. Mirrors
+    // WcsPermission.connectedCallbackPromise.
     static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...NetworkCore.wcBindable,

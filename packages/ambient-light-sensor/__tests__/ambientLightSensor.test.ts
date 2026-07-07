@@ -77,6 +77,26 @@ describe("AmbientLightSensor (Shell)", () => {
     expect(el.frequency).toBeNull();
   });
 
+  it("非正値・非有限値の frequency は getter が null に正規化する（0/負値/Infinity）", () => {
+    const el = createAmbientLightSensor();
+    el.setAttribute("frequency", "0");
+    expect(el.frequency).toBeNull();
+    el.setAttribute("frequency", "-5");
+    expect(el.frequency).toBeNull();
+    el.setAttribute("frequency", "Infinity");
+    expect(el.frequency).toBeNull();
+  });
+
+  it("非有限値の frequency setter 直接セットも getter が null に正規化する（NaN/Infinity）", () => {
+    // setter は String(value) を書くだけなので getter 正規化と等価にカバーされる
+    // が、プロパティ経路の契約を明示的に固定しておく。
+    const el = createAmbientLightSensor();
+    el.frequency = NaN;
+    expect(el.frequency).toBeNull();
+    el.frequency = Infinity;
+    expect(el.frequency).toBeNull();
+  });
+
   it("frequency に null/undefined を set すると属性が除去される", () => {
     const el = createAmbientLightSensor();
     el.frequency = 30;

@@ -57,6 +57,33 @@ export function stubExitFullscreen(
   return fn;
 }
 
+/**
+ * Install `requestFullscreen` (or the legacy `webkitRequestFullscreen`) on
+ * `Element.prototype` — where the platform defines the real API — instead of
+ * on an element instance. This is how a real browser environment looks, and
+ * it exercises FullscreenCore's shadow-safe resolution (own property →
+ * Element.prototype, skipping subclass prototypes such as WcsFullscreen's own
+ * `requestFullscreen()` command method). The stub uses `this` (the call
+ * receiver) as the fullscreened element. Returns a restore function that
+ * removes the stub — always call it (try/finally).
+ */
+export function stubRequestFullscreenOnElementPrototype(
+  opts: { legacy?: boolean } & StubBehavior = {},
+): () => void {
+  const proto = Element.prototype as any;
+  const key = opts.legacy ? "webkitRequestFullscreen" : "requestFullscreen";
+  proto[key] = async function (this: Element) {
+    if (opts.rejectWith !== undefined) {
+      throw opts.rejectWith;
+    }
+    setFullscreenElement(this, { legacy: opts.legacy });
+    dispatchFullscreenChange({ legacy: opts.legacy });
+  };
+  return () => {
+    delete proto[key];
+  };
+}
+
 /** Remove both standard and legacy requestFullscreen from `element`. */
 export function removeRequestFullscreen(element: Element): void {
   delete (element as any).requestFullscreen;
@@ -127,22 +154,22 @@ function findOnfullscreenchangeOwner(): object | null {
 
 /**
  * Temporarily remove `onfullscreenchange` from wherever it actually lives on
- * `document`'s prototype chain, run `fn`, then always restore it — so a test
- * can force `_fullscreenChangeEventName()`'s legacy branch without depending
- * on a fixed prototype depth.
+ * `document`'s prototype chain, run `fn` (sync or async), then always restore
+ * it — so a test can force `_fullscreenChangeEventName()`'s legacy branch
+ * without depending on a fixed prototype depth.
  */
-export function withoutOnfullscreenchange(fn: () => void): void {
+export async function withoutOnfullscreenchange(fn: () => void | Promise<void>): Promise<void> {
   const owner = findOnfullscreenchangeOwner();
   if (!owner) {
     // Already absent (e.g. a future happy-dom without this property at all) —
     // the legacy branch is already reachable, nothing to remove/restore.
-    fn();
+    await fn();
     return;
   }
   const descriptor = Object.getOwnPropertyDescriptor(owner, "onfullscreenchange")!;
   delete (owner as any).onfullscreenchange;
   try {
-    fn();
+    await fn();
   } finally {
     Object.defineProperty(owner, "onfullscreenchange", descriptor);
   }

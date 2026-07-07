@@ -36,34 +36,64 @@ npm install @wcstack/magnetometer
 
 ### 1. Read live magnetic field
 
+`<wcs-magnetometer>` does **not** auto-start on connect — binding alone leaves
+`x`/`y`/`z` at their initial `null`. You must fire the `start` command
+(e.g. from a button) before readings flow:
+
 ```html
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/magnetometer/auto"></script>
 
 <wcs-state>
   <script type="module">
-    export default { x: null, y: null, z: null };
+    export default {
+      $commandTokens: ["startMagnet"],
+      x: null, y: null, z: null,
+    };
   </script>
 </wcs-state>
 
-<wcs-magnetometer data-wcs="x: x; y: y; z: z"></wcs-magnetometer>
+<wcs-magnetometer
+  data-wcs="x: x; y: y; z: z; command.start: $command.startMagnet"
+></wcs-magnetometer>
+
+<button data-wcs="onclick: $command.startMagnet">Start</button>
 <p data-wcs="textContent: x"></p>
 ```
 
+The button never touches `<wcs-magnetometer>` directly: its click emits the `startMagnet` command token (`$commandTokens: ["startMagnet"]` declares the name), and `<wcs-magnetometer>` subscribes to it via `command.start: $command.startMagnet` (the [command-token protocol](../state/) — the element with the command method is the *subscriber*, not the emitter).
+
 ### 2. Gate on permission, then start
 
+This example also needs `@wcstack/permission` registered (alongside the
+`@wcstack/state` / `@wcstack/magnetometer` scripts from example 1), with its
+own self-contained `<wcs-state>` declaring `magnetGranted`:
+
 ```html
+<script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["startMagnet"],
+      magnetGranted: false,
+    };
+  </script>
+</wcs-state>
+
 <wcs-permission name="magnetometer" data-wcs="granted: magnetGranted"></wcs-permission>
 <wcs-magnetometer data-wcs="command.start: $command.startMagnet"></wcs-magnetometer>
 
-<button data-wcs="onclick: startMagnet; disabled: !magnetGranted">Start</button>
+<button data-wcs="onclick: $command.startMagnet; disabled: magnetGranted|not">Start</button>
 ```
+
+Every bound state path must be declared up front — binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`magnetGranted|not`), not a leading `!`.
 
 ## Attributes / Inputs
 
 | Attribute   | Type   | Default | Description |
 | ----------- | ------ | ------- | ------------ |
-| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Magnetometer` constructor. |
+| `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Magnetometer` constructor. Read only when `start()` runs — changing it while already started has no effect until `stop()` + `start()` (see Notes). |
 
 ## Observable Properties (outputs)
 
@@ -80,12 +110,15 @@ npm install @wcstack/magnetometer
 
 | Command | Async | Description |
 | ------- | ----- | ------------ |
-| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. |
+| `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. Idempotent while already started (a redundant call is a no-op). |
 | `stop`  | no    | Stop the sensor and detach its listeners. Safe to call when not started. |
 
 ## Notes & limitations
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
+- **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
+- **`frequency` is read only at `start()`.** There is no `attributeChangedCallback`, and `start()` is idempotent while already started (a redundant call is a no-op — see Commands above), so changing the `frequency` attribute/property on a running sensor has no effect. To apply a new sampling rate, `stop()` then `start()` again.
+- **Reparenting stops the sensor and does not resume it.** Moving a connected `<wcs-magnetometer>` element to a different parent runs `disconnectedCallback` → `connectedCallback`; since the Shell does not auto-start on connect (see Quick Start above), this is effectively a stop with no automatic restart. `x`/`y`/`z` freeze at their last sample, and no `error` is raised — the sensor stays inert until `start` is invoked again.
 - **Never call the raw `new Magnetometer(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
 - Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="magnetometer">`.
 

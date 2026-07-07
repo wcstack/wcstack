@@ -35,8 +35,10 @@ interface IWritableConfig {
 /**
  * A single snapshot of `navigator.connection` (Network Information API), or the
  * unsupported default. `effectiveType`/`downlink`/`rtt`/`saveData` are `null`
- * when the API is absent (`supported === false`); `downlinkMax` and `type` are
- * intentionally not surfaced (see docs/network-tag-design.md §2).
+ * when the API is absent (`supported === false`) — and each also normalizes to
+ * `null` individually, even while `supported` is `true`, when the browser
+ * reports that field as missing or with an unexpected type; `downlinkMax` and
+ * `type` are intentionally not surfaced (see docs/network-tag-design.md §2).
  */
 interface WcsNetworkSnapshot {
     effectiveType: string | null;

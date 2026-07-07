@@ -28,6 +28,28 @@ export interface ContactsSelectOptions {
 }
 
 /**
+ * A postal address entry returned for the `"address"` contact property, mirroring
+ * the Contact Picker API's `ContactAddress` shape (MDN). Every field is optional:
+ * the platform populates only what it has, and field coverage varies by browser /
+ * OS. An index signature is kept so a future platform field does not force callers
+ * into a type assertion — consistent with the design doc's "pass the platform
+ * return value straight through to `value`" principle (docs/contact-picker-tag-design.md §3).
+ */
+export interface ContactAddress {
+  addressLine?: string[];
+  city?: string;
+  country?: string;
+  dependentLocality?: string;
+  organization?: string;
+  phone?: string;
+  postalCode?: string;
+  recipient?: string;
+  region?: string;
+  sortingCode?: string;
+  [key: string]: unknown;
+}
+
+/**
  * A single contact returned by `navigator.contacts.select()`. Every field is an
  * array (a contact can have multiple emails, phone numbers, etc.) and only the
  * fields requested via `properties` are populated.
@@ -36,7 +58,7 @@ export interface ContactInfo {
   name?: string[];
   email?: string[];
   tel?: string[];
-  address?: unknown[];
+  address?: ContactAddress[];
   icon?: Blob[];
 }
 

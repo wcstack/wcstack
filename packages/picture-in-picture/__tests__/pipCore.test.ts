@@ -218,9 +218,33 @@ describe("PipCore", () => {
       core.observe(video);
 
       const promise = core.requestPictureInPicture(video);
+      setPictureInPictureElement(video);
+      emitEnter(video);
       video.__pipResolve!();
       await promise;
 
+      expect(core.active).toBe(true);
+      expect(core.error).toBeNull();
+    });
+
+    it("成功時は enterpictureinpicture が発火しなくても active を同期する（belt-and-suspenders）", async () => {
+      // 成功パス末尾の _syncActive() の直接検証。上の成功テストは
+      // enterpictureinpicture を resolve より前に発火させるため、成功パス到達
+      // 時点で active は既に true（同値ガードで素通り）となり、_syncActive()
+      // を削除しても検出できない——ここではイベントを発火させず、
+      // pictureInPictureElement の更新 + resolve のみで active が追従すること
+      // を検証する（FullscreenCore の成功時 _applyActive() と同型）。
+      const video = makeVideo();
+      installPictureInPictureElement(null);
+      const core = new PipCore();
+      core.observe(video);
+
+      const promise = core.requestPictureInPicture(video);
+      setPictureInPictureElement(video); // イベントは発火させない
+      video.__pipResolve!();
+      await promise;
+
+      expect(core.active).toBe(true);
       expect(core.error).toBeNull();
     });
 
@@ -285,6 +309,41 @@ describe("PipCore", () => {
       await expect(promise).resolves.toBeUndefined();
       expect(core.error).toBeNull();
     });
+
+    it("observe 済みの video と異なる video へ request すると、その video を新たな追従対象として active が同期される", async () => {
+      // 直近の observe() 対象 (videoA) と異なる video (videoB) を request した
+      // ケース。request() が videoB を再 observe しないと、_video が videoA の
+      // ままになり _syncActive() の比較が常に一致せず active が false 固定に
+      // なる（回帰時に検出したいバグ）。
+      const videoA = makeVideo();
+      const videoB = makeVideo();
+      installPictureInPictureElement(null);
+      const core = new PipCore();
+      core.observe(videoA);
+
+      const removeSpyA = vi.spyOn(videoA, "removeEventListener");
+      const addSpyB = vi.spyOn(videoB, "addEventListener");
+
+      const promise = core.requestPictureInPicture(videoB);
+      setPictureInPictureElement(videoB);
+      videoB.__pipResolve!();
+      await promise;
+
+      // request() 内部で videoB へ再 observe された証拠（旧 videoA のリスナー
+      // 解除 + 新 videoB のリスナー登録）。
+      expect(removeSpyA).toHaveBeenCalledWith("enterpictureinpicture", expect.any(Function));
+      expect(addSpyB).toHaveBeenCalledWith("enterpictureinpicture", expect.any(Function));
+
+      // active は videoB を追従対象として true になる（バグ時は _video が
+      // videoA のままで false 固定になる）。
+      expect(core.active).toBe(true);
+
+      // videoB の leavepictureinpicture には引き続き追従できる（張り替え後も
+      // リスナーが有効な証拠）。
+      setPictureInPictureElement(null);
+      emitLeave(videoB);
+      expect(core.active).toBe(false);
+    });
   });
 
   describe("exitPictureInPicture()", () => {
@@ -295,6 +354,23 @@ describe("PipCore", () => {
 
       await expect(core.exitPictureInPicture()).resolves.toBeUndefined();
       expect(core.error).toBeNull();
+    });
+
+    it("進行中の requestPictureInPicture() を no-op の exitPictureInPicture() が追い越さない（error が握り潰されない）", async () => {
+      // 何も PiP でない状態での exitPictureInPicture() は silent no-op であり、
+      // 世代を進めてはならない。進めてしまうと、pending 中の request が
+      // reject したとき stale 扱いになり error が観測できなくなる。
+      const video = makeVideo();
+      installPictureInPictureElement(null);
+      const core = new PipCore();
+
+      const promise = core.requestPictureInPicture(video);
+      await core.exitPictureInPicture(); // no-op: 何も PiP ではない
+      const failure = new DOMException("Must be handling a user gesture", "NotAllowedError");
+      video.__pipReject!(failure);
+      await promise;
+
+      expect(core.error).toBe(failure);
     });
 
     it("PiP 中に exit すると成功時 error は null のまま", async () => {
@@ -308,6 +384,27 @@ describe("PipCore", () => {
       await promise;
 
       expect(core.error).toBeNull();
+    });
+
+    it("成功時は leavepictureinpicture が発火しなくても active を同期する（belt-and-suspenders）", async () => {
+      // request() 側の belt-and-suspenders テスト (line 230 付近) と対になる
+      // exit 側の検証。leavepictureinpicture を発火させず
+      // pictureInPictureElement の更新 + resolve のみで active が false に
+      // 追従することを確認する（FullscreenCore.exitFullscreen() の成功時
+      // _applyActive() と同型）。
+      const video = makeVideo();
+      installPictureInPictureElement(video);
+      const { resolve } = installExitPictureInPicture();
+      const core = new PipCore();
+      core.observe(video);
+      expect(core.active).toBe(true);
+
+      const promise = core.exitPictureInPicture();
+      setPictureInPictureElement(null); // イベントは発火させない
+      resolve();
+      await promise;
+
+      expect(core.active).toBe(false);
     });
 
     it("exitPictureInPicture が無い（unsupported）環境では silent no-op", async () => {
@@ -388,6 +485,24 @@ describe("PipCore", () => {
     it("一度も observe していない dispose は安全な no-op", () => {
       const core = new PipCore();
       expect(() => core.dispose()).not.toThrow();
+    });
+
+    it("同一 video で dispose→observe すると再購読され、active が追従する（dispose() が _video をリセットしないと、observe() の同一要素早期returnで再購読が漏れる回帰）", () => {
+      installPictureInPictureElement(null);
+      const video = makeVideo();
+      const core = new PipCore();
+      core.observe(video);
+      core.dispose();
+
+      const addSpy = vi.spyOn(video, "addEventListener");
+      core.observe(video); // dispose 前と同一の video で再 observe
+
+      expect(addSpy).toHaveBeenCalledWith("enterpictureinpicture", expect.any(Function));
+      expect(addSpy).toHaveBeenCalledWith("leavepictureinpicture", expect.any(Function));
+
+      setPictureInPictureElement(video);
+      emitEnter(video);
+      expect(core.active).toBe(true);
     });
 
     it("dispose→observe で再購読でき、新しい video の状態を反映する", () => {

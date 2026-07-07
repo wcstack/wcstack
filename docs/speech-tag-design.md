@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/speech`（`<wcs-speak>` / `<wcs-listen>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/speech`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: SpeechSynthesis（TTS / 発話）＋ SpeechRecognition（STT / 認識）
 - **位置づけ**: command-token と event-token の**双対をパッケージ単位で実証するショーケース**。加えて command-token に「引数束縛付き起動」を一級市民として導入する参照実装。
 - **前提資産**: geolocation（二相＋permission＋never-throw＋secure-context＋Core/Shell分割）、clipboard（command/event 双対）、debounce（同一パッケージ2サーフェス共存）、command-token / event-token プロトコル、wc-bindable protocol v1。

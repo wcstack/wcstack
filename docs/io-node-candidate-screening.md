@@ -1,5 +1,7 @@
 # 非同期IOノード候補スクリーニング
 
+> **注記（現況・2026-07）**: 本書は候補選定時点のスナップショットである。ここで「候補/未着手/将来」として扱う IO ノードの多くは既に `packages/` 配下に実装済み（accelerometer / ambient-light-sensor / broadcast / camera / clipboard / contacts / credential / debounce / defined / eyedropper / fetch / fullscreen / geolocation / gyroscope / idle / intersection / magnetometer / network / notification / permission / picture-in-picture / pointer-lock / resize / screen-orientation / share(web-share) / speech / sse / storage / tilt / timer / upload / wakelock / websocket / worker 等）。個別の「実装優先度」「未着手」の記述は当時の計画であり現況とは異なる。
+
 - **対象**: `@wcstack` に次の非同期IOノードを追加する際の候補選定
 - **状態**: 調査メモ（非規範）。個別ノードの実装が決まったら `docs/<name>-tag-design.md` を別途起草する（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST）。本書はその手前の「候補として妥当か」を篩い分けるための一次スクリーニング
 - **既存25パッケージ**: `fetch` / `storage` / `upload` / `websocket` / `sse` / `broadcast` / `worker` / `timer` / `debounce` / `clipboard` / `geolocation` / `permission` / `notification` / `intersection` / `resize` / `wakelock` / `camera` / `speech` / `defined` / `router` / `autoloader` / `state` / `signals` / `server` / `vscode-wcs`（2026-07-01 時点、`packages/` 実ディレクトリで確認済み）

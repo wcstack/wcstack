@@ -36,28 +36,58 @@ npm install @wcstack/accelerometer
 
 ### 1. Read live acceleration
 
+`<wcs-accelerometer>` does **not** auto-start on connect — binding alone leaves
+`x`/`y`/`z` at their initial `null`. You must fire the `start` command
+(e.g. from a button) before readings flow:
+
 ```html
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
 
 <wcs-state>
   <script type="module">
-    export default { x: null, y: null, z: null };
+    export default {
+      $commandTokens: ["startAccel"],
+      x: null, y: null, z: null,
+    };
   </script>
 </wcs-state>
 
-<wcs-accelerometer data-wcs="x: x; y: y; z: z"></wcs-accelerometer>
+<wcs-accelerometer
+  data-wcs="x: x; y: y; z: z; command.start: $command.startAccel"
+></wcs-accelerometer>
+
+<button data-wcs="onclick: $command.startAccel">Start</button>
 <p data-wcs="textContent: x"></p>
 ```
 
+The button never touches `<wcs-accelerometer>` directly: its click emits the `startAccel` command token (`$commandTokens: ["startAccel"]` declares the name), and `<wcs-accelerometer>` subscribes to it via `command.start: $command.startAccel` (the [command-token protocol](../state/) — the element with the command method is the *subscriber*, not the emitter).
+
 ### 2. Gate on permission, then start
 
+This example also needs `@wcstack/permission` registered (alongside the
+`@wcstack/state` / `@wcstack/accelerometer` scripts from example 1), with its
+own self-contained `<wcs-state>` declaring `accelGranted`:
+
 ```html
+<script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["startAccel"],
+      accelGranted: false,
+    };
+  </script>
+</wcs-state>
+
 <wcs-permission name="accelerometer" data-wcs="granted: accelGranted"></wcs-permission>
 <wcs-accelerometer data-wcs="command.start: $command.startAccel"></wcs-accelerometer>
 
-<button data-wcs="onclick: startAccel; disabled: !accelGranted">Start</button>
+<button data-wcs="onclick: $command.startAccel; disabled: accelGranted|not">Start</button>
 ```
+
+Every bound state path must be declared up front — binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`accelGranted|not`), not a leading `!`.
 
 ## Attributes / Inputs
 
@@ -86,6 +116,7 @@ npm install @wcstack/accelerometer
 ## Notes & limitations
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
+- **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
 - **Never call the raw `new Accelerometer(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
 - Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="accelerometer">`.
 

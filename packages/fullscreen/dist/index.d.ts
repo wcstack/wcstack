@@ -33,12 +33,17 @@ interface IWritableConfig {
 }
 
 /**
- * Value types for FullscreenCore (headless) — the observable state properties.
- * Use with `bind()` from a wc-bindable binding core for compile-time type checking.
+ * Value types for FullscreenCore (headless) — the Core's readable value
+ * surface. Note that only `active` is *observable* (declared in
+ * `wcBindable.properties` with a change event); `error` is an
+ * imperative-read-only getter with no event of its own — a wc-bindable
+ * binding core will never deliver it, so read it after a command settles
+ * (docs/fullscreen-tag-design.md §8, README "Notes & limitations").
  *
  * @example
  * ```typescript
  * const core = new FullscreenCore();
+ * // bind() only ever delivers "active" — see the note above about "error".
  * bind(core, (name: keyof WcsFullscreenCoreValues, value) => { ... });
  * ```
  */
@@ -48,9 +53,10 @@ interface WcsFullscreenCoreValues {
 }
 /**
  * Value types for the Shell (`<wcs-fullscreen target="...">`) — identical
- * observable surface to the Core. The Shell adds the `target` input (attribute-
- * mirrored) that resolves which element requestFullscreen()/exitFullscreen()
- * operate on (docs/fullscreen-tag-design.md §1/§9).
+ * value surface to the Core (same caveat: only `active` is observable).
+ * The Shell adds the `target` input (attribute-mirrored) that resolves which
+ * element requestFullscreen()/exitFullscreen() operate on
+ * (docs/fullscreen-tag-design.md §1/§9).
  */
 type WcsFullscreenValues = WcsFullscreenCoreValues;
 
@@ -97,8 +103,9 @@ declare class FullscreenCore extends EventTarget {
     dispose(): void;
     /**
      * Request fullscreen on `element`. never-throw (§3/§6): a missing API or a
-     * rejected promise (e.g. `NotAllowedError` from a call outside a user
-     * gesture) is caught and surfaced via `error`, never thrown. The caller
+     * rejected promise (e.g. a `TypeError` from a call outside a user
+     * gesture, per the WHATWG Fullscreen spec's transient-activation check) is
+     * caught and surfaced via `error`, never thrown. The caller
      * (Shell) is responsible for resolving `target` and for ensuring this is
      * invoked from within an actual user gesture — this Core cannot manufacture
      * one (docs/fullscreen-tag-design.md §3).
@@ -111,6 +118,7 @@ declare class FullscreenCore extends EventTarget {
      */
     exitFullscreen(): Promise<void>;
     private _requestFullscreenFn;
+    private _elementFullscreenFn;
     private _exitFullscreenFn;
     private _fullscreenElement;
     private _fullscreenChangeEventName;
@@ -137,8 +145,9 @@ declare class FullscreenCore extends EventTarget {
  *
  * `requestFullscreen()` requires an active user gesture — this element cannot
  * manufacture one. Invoke the command from within a real click handler
- * (typically via the command-token protocol, e.g.
- * `<button command.click:$command.requestFullscreen>`).
+ * (typically via the command-token protocol: this element subscribes with
+ * `command.requestFullscreen: $command.<token>`, and a button emits the
+ * token from its own click handler, e.g. `onclick: $command.<token>`).
  */
 declare class WcsFullscreen extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;

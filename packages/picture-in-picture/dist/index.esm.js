@@ -139,6 +139,17 @@ class PipCore extends EventTarget {
             this._setError({ message: "target must be a <video> element." });
             return;
         }
+        // Re-wire to `element` before issuing the platform call: a caller may
+        // request a <video> different from the one last passed to observe() (e.g.
+        // the Shell's target attribute pointed at nothing at connect time and the
+        // matching <video> was only inserted later, so no attributeChangedCallback
+        // ever re-resolved it). Without this, `_video` stays stale and
+        // `_syncActive()` below (and future enter/leave events) would never
+        // recognize `element` as this Core's target, leaving `active` permanently
+        // wrong even though the request succeeded (mirrors
+        // FullscreenCore.requestFullscreen()'s unconditional `this._resolvedTarget
+        // = element` assignment — docs/fullscreen-tag-design.md §6).
+        this.observe(element);
         const fn = this._requestPictureInPictureFn(element);
         if (!fn) {
             this._setError({ message: "Picture-in-Picture API is not supported." });
@@ -149,6 +160,7 @@ class PipCore extends EventTarget {
             if (gen !== this._gen)
                 return; // stale
             this._setError(null);
+            this._syncActive(); // belt-and-suspenders (mirrors FullscreenCore's _applyActive() on success)
         }
         catch (e) {
             if (gen !== this._gen)
@@ -162,17 +174,23 @@ class PipCore extends EventTarget {
      * Picture-in-Picture — see fullscreen-tag-design.md §7.
      */
     async exitPictureInPicture() {
-        const gen = ++this._gen;
+        // no-op checks come BEFORE the generation bump: a call that does nothing
+        // must not supersede an in-flight requestPictureInPicture() — bumping
+        // first would make the pending request's settle handling stale and
+        // silently swallow its error update (mirrors
+        // FullscreenCore.exitFullscreen()).
         if (this._pictureInPictureElement() === null)
             return; // already not in PiP: silent no-op
         const fn = this._exitPictureInPictureFn();
         if (!fn)
             return; // unsupported: silent no-op (semantically already "not in PiP")
+        const gen = ++this._gen;
         try {
             await fn();
             if (gen !== this._gen)
                 return;
             this._setError(null);
+            this._syncActive(); // belt-and-suspenders (mirrors FullscreenCore.exitFullscreen()'s success-path _applyActive()); covers a delayed/dropped leavepictureinpicture
         }
         catch (e) {
             if (gen !== this._gen)
@@ -181,6 +199,14 @@ class PipCore extends EventTarget {
         }
     }
     // --- Internal: API resolution (call-time, never cached — §3.7) ---
+    // Unlike FullscreenCore's _elementFullscreenFn(), a naive direct property
+    // lookup (`e.requestPictureInPicture`, walking the prototype chain) here is
+    // safe: it cannot recurse into the Shell's own command method,
+    // because the resolved target is validated to be a <video> element (§2)
+    // before this is called, and <wcs-pip> (the Shell) is never itself a
+    // <video>. Fullscreen's own→Element.prototype two-step resolution guards
+    // against `target="self"`/no-target resolving to the Shell element, which
+    // cannot happen here.
     _requestPictureInPictureFn(el) {
         const e = el;
         return typeof e.requestPictureInPicture === "function" ? e.requestPictureInPicture : undefined;

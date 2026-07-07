@@ -56,6 +56,24 @@ describe("NetworkCore", () => {
       expect(addSpy).toHaveBeenCalledTimes(1);
       expect(events).toHaveLength(1);
     });
+
+    it("observe() 後に購読したリスナーには初回スナップショットは届かない（現仕様の明示）", () => {
+      // wc-bindable のイベントは後から購読した相手に再送されない純 pub-sub。
+      // @wcstack/state のバインド確立(後続 microtask)より先に observe() の初回
+      // dispatch が同期発火するため、初期値が必要な消費者は要素プロパティを
+      // 直接 pull する必要がある(README「Notes & limitations」・族横断の契約)。
+      const conn = installConnection({ effectiveType: "3g" });
+      const core = new NetworkCore();
+      core.observe(); // 初回スナップショットはここで同期 dispatch 済み
+      const events: any[] = [];
+      core.addEventListener("wcs-network:change", (e) => events.push((e as CustomEvent).detail));
+
+      expect(events).toEqual([]); // 初回分は受け取れない
+      expect(core.effectiveType).toBe("3g"); // ただしプロパティの pull では読める
+
+      conn.change({ effectiveType: "2g" }); // 以後の変化は届く
+      expect(events).toHaveLength(1);
+    });
   });
 
   describe("observe() — 非対応環境", () => {
@@ -86,7 +104,9 @@ describe("NetworkCore", () => {
       expect(core.effectiveType).toBe("2g");
       expect(core.downlink).toBe(0.4);
       expect(core.rtt).toBe(900);
-      expect(events).toHaveLength(1);
+      expect(events).toEqual([
+        { effectiveType: "2g", downlink: 0.4, rtt: 900, saveData: false, supported: true },
+      ]);
     });
 
     it("同値の change 連続発火では再 dispatch しない（同値ガード）", () => {
@@ -101,6 +121,29 @@ describe("NetworkCore", () => {
       conn.dispatchEvent(new Event("change"));
 
       expect(events).toEqual([]);
+    });
+
+    it("単一フィールドのみの変更（downlink/rtt/saveData 単独）でもそれぞれ dispatch する", () => {
+      // 同値ガードが5フィールド全てを比較していることの検証。
+      // effectiveType 単独は dispose→observe テストが、supported 単独は
+      // _read() 正規化テストが実質カバーするため、残る3フィールドをここで押さえる。
+      const conn = installConnection({ effectiveType: "4g", downlink: 10, rtt: 50, saveData: false });
+      const core = new NetworkCore();
+      core.observe();
+      const events: any[] = [];
+      core.addEventListener("wcs-network:change", (e) => events.push((e as CustomEvent).detail));
+
+      conn.change({ downlink: 5 });
+      expect(events).toHaveLength(1);
+      expect(core.downlink).toBe(5);
+
+      conn.change({ rtt: 400 });
+      expect(events).toHaveLength(2);
+      expect(core.rtt).toBe(400);
+
+      conn.change({ saveData: true });
+      expect(events).toHaveLength(3);
+      expect(core.saveData).toBe(true);
     });
   });
 
@@ -176,7 +219,10 @@ describe("NetworkCore", () => {
       const core = new NetworkCore(target);
       core.observe();
 
-      expect(events).toHaveLength(1);
+      // target 経路でも detail にスナップショット全体が載ることまで確認する
+      expect(events).toEqual([
+        { effectiveType: "4g", downlink: 10, rtt: 50, saveData: false, supported: true },
+      ]);
     });
   });
 

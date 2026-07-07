@@ -22,6 +22,13 @@ function deepClone(obj) {
     return clone;
 }
 let frozenConfig = null;
+// Note: this is the live, mutable internal config. It is not part of the public
+// package exports (see exports.ts) — only `getConfig()` (a frozen snapshot) is
+// surfaced. `setConfig()` is applied internally via `bootstrapCredential()` and
+// is not re-exported from the package root, though a deep path import
+// (`.../src/config.js`) can still reach and mutate it. Accepted as-is for
+// cross-package consistency: every @wcstack package follows this same shape.
+// Use `getConfig()` for a frozen, safe read.
 const config = _config;
 function getConfig() {
     if (!frozenConfig) {
@@ -122,9 +129,16 @@ class CredentialCore extends EventTarget {
             bubbles: true,
         }));
     }
+    // Deliberately NO same-value guard (unlike error/loading/cancelled below).
+    // `value` is a success-completion signal, not idempotent state: it is written
+    // only on a successful get()/store(), and wcs-credential:complete is the *sole*
+    // success notification. store() echoes the caller's credential argument, so two
+    // consecutive successful store() calls with the same object reference are two
+    // distinct completions and must each re-fire wcs-credential:complete so an
+    // `$on`/eventToken consumer (and a `value:` binding) sees every success. This
+    // matches clipboard `_setRead` / broadcast `_setMessage`, which carve
+    // result/event values out of the §3.3 guard for the same reason.
     _setValue(value) {
-        if (this._value === value)
-            return;
         this._value = value;
         this._target.dispatchEvent(new CustomEvent("wcs-credential:complete", {
             detail: { value },
@@ -161,6 +175,19 @@ class CredentialCore extends EventTarget {
         }
         return { name: "Error", message: String(e) };
     }
+    // Classifies a get()/store() rejection as a user cancellation vs a real
+    // failure (docs/credential-tag-design.md §2/§5). For the Credential
+    // Management API the browser rejects with `NotAllowedError` when the user
+    // dismisses/declines the native account-chooser UI — this is a routine "the
+    // user did not pick" outcome, not a platform failure, so it maps to
+    // `cancelled` and is kept out of `error`. Note this is `NotAllowedError`,
+    // NOT `AbortError`: unlike Web Share/Contact Picker (whose APIs reject with
+    // `AbortError` on dismissal), credentials.get()/store() signal user refusal
+    // via `NotAllowedError`. Every other name (SecurityError, NetworkError, a
+    // programmatic signal abort, etc.) flows to `error`.
+    _isCancellation(e) {
+        return e?.name === "NotAllowedError";
+    }
     /**
      * `get(options)` — v1 scope excludes `publicKey` (WebAuthn). If present, it
      * is stripped and the call surfaces a scope-violation `error` instead of
@@ -171,7 +198,7 @@ class CredentialCore extends EventTarget {
      */
     async get(options = {}) {
         if ("publicKey" in options) {
-            this._setError({ message: "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead." });
+            this._setError({ name: "NotSupportedError", message: "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead." });
             return null;
         }
         const api = this._api();
@@ -181,6 +208,8 @@ class CredentialCore extends EventTarget {
         }
         const gen = ++this._gen;
         this._setLoading(true);
+        // Reset the previous outcome before starting a new get so a stale
+        // cancelled/error does not linger into this call's result.
         this._setError(null);
         this._setCancelled(false);
         try {
@@ -194,7 +223,7 @@ class CredentialCore extends EventTarget {
         catch (e) {
             if (gen !== this._gen)
                 return null;
-            if (e?.name === "AbortError") {
+            if (this._isCancellation(e)) {
                 this._setCancelled(true);
             }
             else {
@@ -210,8 +239,17 @@ class CredentialCore extends EventTarget {
      * `lib.dom.d.ts`) — there is no payload to read off the API, so `value` is
      * synthesized as an echo of the caller's `credential`, mirroring
      * `ShareCore.share()`'s same accommodation for `navigator.share()`.
+     *
+     * A `PublicKeyCredential` (`type === "public-key"`, WebAuthn) is rejected as a
+     * scope violation before touching the platform API — the same v1 boundary
+     * `get()` enforces on the `publicKey` option (docs/credential-tag-design.md
+     * §3.2), so this node never becomes a WebAuthn store backdoor.
      */
     async store(credential) {
+        if (credential?.type === "public-key") {
+            this._setError({ name: "NotSupportedError", message: "WebAuthn (publicKey) credentials are out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead." });
+            return null;
+        }
         const api = this._api();
         if (!api) {
             this._setError({ message: "Credential Management API is not supported in this browser." });
@@ -219,6 +257,8 @@ class CredentialCore extends EventTarget {
         }
         const gen = ++this._gen;
         this._setLoading(true);
+        // Reset the previous outcome before starting a new store so a stale
+        // cancelled/error does not linger into this call's result.
         this._setError(null);
         this._setCancelled(false);
         try {
@@ -232,7 +272,7 @@ class CredentialCore extends EventTarget {
         catch (e) {
             if (gen !== this._gen)
                 return null;
-            if (e?.name === "AbortError") {
+            if (this._isCancellation(e)) {
                 this._setCancelled(true);
             }
             else {
@@ -257,7 +297,7 @@ class WcsCredential extends HTMLElement {
     static wcBindable = {
         ...CredentialCore.wcBindable,
         inputs: [],
-        // Core の commands をそのまま継承（単一情報源）。
+        // Inherit commands from Core (single source of truth).
         commands: CredentialCore.wcBindable.commands,
     };
     _core;

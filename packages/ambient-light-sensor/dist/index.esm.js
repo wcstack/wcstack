@@ -42,11 +42,11 @@ const NULL_READING = Object.freeze({ illuminance: null });
  * the Generic Sensor API's `AmbientLightSensor` class exposed through the
  * wc-bindable protocol.
  *
- * The platform `Sensor` base class (shared by `AmbientLightSensor` / `Gyroscope` /
+ * The platform `Sensor` base class (shared by `Accelerometer` / `Gyroscope` /
  * `Magnetometer` / `AmbientLightSensor`) reports failure through an `'error'`
  * event rather than a rejected promise, so this Core can satisfy never-throw
  * (docs/async-io-node-guidelines.md §3.6) by simply forwarding that event —
- * see docs/ambient-light-sensor-tag-design.md §0. The one place a synchronous
+ * see docs/sensor-tag-design.md §0. The one place a synchronous
  * exception *can* still escape the platform API is the `AmbientLightSensor`
  * constructor itself (e.g. `SecurityError` on permission denial or a
  * feature-policy block); `_createSensor()` wraps that single call in
@@ -64,12 +64,12 @@ const NULL_READING = Object.freeze({ illuminance: null });
  *
  * No `_gen` generation guard: start()/stop() are a synchronous
  * subscribe/unsubscribe toggle with no asynchronous probe whose stale
- * resolution could race a dispose() — see docs/ambient-light-sensor-tag-design.md §1.5
+ * resolution could race a dispose() — see docs/sensor-tag-design.md §1.5
  * (the same reasoning as NetworkCore, docs/network-tag-design.md §5).
  *
  * Permissions: this Core does not query `navigator.permissions` itself.
  * Compose with `<wcs-permission name="ambient-light-sensor">` instead — see
- * docs/ambient-light-sensor-tag-design.md §"Permissions API連携".
+ * docs/sensor-tag-design.md §"2番目の決定: Permissions APIとの合成".
  */
 class AmbientLightSensorCore extends EventTarget {
     static wcBindable = {
@@ -86,7 +86,8 @@ class AmbientLightSensorCore extends EventTarget {
     _error = null;
     // The live sensor instance while started (null otherwise), kept so stop()
     // can remove its listeners precisely and so start() can detect "already
-    // started" without a separate boolean (§3.5 idempotency).
+    // started" without a separate boolean (docs/async-io-node-guidelines.md §3.5
+    // idempotency).
     _sensor = null;
     constructor(target) {
         super();
@@ -98,15 +99,16 @@ class AmbientLightSensorCore extends EventTarget {
     get error() {
         return this._error;
     }
-    /** No asynchronous probe to await: start()/stop() are synchronous (§3.8 is
-     *  satisfied trivially, mirroring NetworkCore). */
+    /** No asynchronous probe to await: start()/stop() are synchronous
+     *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
+     *  NetworkCore). */
     get ready() {
         return Promise.resolve();
     }
     // --- State setters ---
     // Deliberately NOT same-value guarded: a `reading` is a fresh sample, not a
     // settled state, so it must dispatch every time even when the values happen
-    // to repeat (docs/ambient-light-sensor-tag-design.md §1.1 / §3).
+    // to repeat (docs/sensor-tag-design.md §1.1).
     _setReading(reading) {
         this._reading = reading;
         this._target.dispatchEvent(new CustomEvent("wcs-ambient-light-sensor:reading", {
@@ -115,7 +117,11 @@ class AmbientLightSensorCore extends EventTarget {
         }));
     }
     _setError(error) {
-        // Same-value guard (by error name): error is state-like, unlike reading.
+        // Same-value guard (by error name + message): error is state-like, unlike
+        // reading — a repeated identical error (same name and message) must not
+        // redispatch. Note `error` is also STICKY: nothing calls _setError(null),
+        // so a successful (re)start does not clear a prior failure — the monitoring
+        // sensor family deliberately keeps the last observed error (docs/sensor-tag-design.md §1.5).
         if (this._error?.error === error?.error && this._error?.message === error?.message)
             return;
         this._error = error;
@@ -193,11 +199,11 @@ class AmbientLightSensorCore extends EventTarget {
     /**
      * Construct the platform `AmbientLightSensor`, guarding both non-support and a
      * synchronous constructor exception. Never calls the raw `new AmbientLightSensor(...)`
-     * anywhere else in this class — see docs/ambient-light-sensor-tag-design.md §1.5.
+     * anywhere else in this class — see docs/sensor-tag-design.md §1.5.
      *
-     * API resolution is call-time (§3.7): re-checked on every start(), never
-     * cached, so tests can install/remove the global freely and an unsupported
-     * environment is always reported correctly.
+     * API resolution is call-time (docs/async-io-node-guidelines.md §3.7):
+     * re-checked on every start(), never cached, so tests can install/remove the
+     * global freely and an unsupported environment is always reported correctly.
      */
     _createSensor(frequency) {
         const Ctor = globalThis.AmbientLightSensor;
@@ -223,7 +229,10 @@ class AmbientLightSensorCore extends EventTarget {
     };
     _onError = (event) => {
         const err = event.error;
-        this._setError({ error: err?.name ?? "error", message: err?.message ?? String(err) });
+        // Fallback is a meaningful constant, NOT String(err): a SensorErrorEvent
+        // without an `error` field would otherwise stringify `undefined` into the
+        // literal message "undefined" (aligned across the sensor family).
+        this._setError({ error: err?.name ?? "error", message: err?.message ?? "Sensor error" });
     };
 }
 
@@ -234,14 +243,18 @@ class AmbientLightSensorCore extends EventTarget {
  * Unlike `<wcs-network>` / `<wcs-permission>` (pure monitors), this Shell is a
  * bidirectional node: `start`/`stop` commands (command-token: state → element)
  * alongside the `illuminance`/`error` observable surface (event-token: element →
- * state). The `frequency` attribute is the sole configuration input, passed
- * straight through to the platform `AmbientLightSensor` constructor's `{ frequency }`
- * option (docs/ambient-light-sensor-tag-design.md §1.2) — no range validation here;
- * an out-of-range value is left to the browser/sensor to reject via `error`.
+ * state). The `frequency` attribute is the sole configuration input, forwarded
+ * to the platform `AmbientLightSensor` constructor's `{ frequency }` option
+ * (docs/sensor-tag-design.md §1.2). The getter normalizes it: a non-finite or
+ * non-positive value (NaN, 0, negative) reads back as `null` — meaning "no
+ * frequency specified" — so start() falls back to the platform default rather
+ * than forwarding a value the sensor would reject. Any positive finite value is
+ * passed through verbatim (no upper-bound clamping — an out-of-range-but-positive
+ * rate is still left to the browser/sensor to reject via `error`).
  *
  * Permission handling is intentionally NOT implemented here. Compose with
- * `<wcs-permission name="ambient-light-sensor">` instead (see README "Composing with
- * wcs-permission" and docs/ambient-light-sensor-tag-design.md).
+ * `<wcs-permission name="ambient-light-sensor">` instead (see the README's permission
+ * example, "Gate on permission, then start", and docs/sensor-tag-design.md).
  */
 class WcsAmbientLightSensor extends HTMLElement {
     static hasConnectedCallbackPromise = true;
@@ -258,7 +271,18 @@ class WcsAmbientLightSensor extends HTMLElement {
         this._core = new AmbientLightSensorCore(this);
     }
     // --- Attribute accessors ---
-    /** Sampling frequency in Hz. `null` when unset (platform default applies). */
+    /**
+     * Sampling frequency in Hz. Reads back `null` when unset, blank, or when the
+     * attribute does not parse to a positive finite number (NaN, `"0"`, negative)
+     * — in every such "no usable value" case the platform default applies.
+     *
+     * Note the deliberate set/get asymmetry: `set frequency(0)` (or any
+     * non-positive/non-finite value) still writes the attribute verbatim for
+     * transparency/inspectability, but the getter normalizes it back to `null`.
+     * A round-trip through a non-positive value therefore does NOT preserve it —
+     * that value carries no valid sampling meaning, so it is treated as "unset"
+     * on read. Only positive finite frequencies survive a set→get round-trip.
+     */
     get frequency() {
         const attr = this.getAttribute("frequency");
         if (attr === null || attr.trim() === "")
@@ -295,7 +319,7 @@ class WcsAmbientLightSensor extends HTMLElement {
     // Deliberately does NOT auto-start the sensor on connect. Unlike
     // Geolocation (whose default phase acquires a fix immediately unless
     // `manual` is set), AmbientLightSensor has no such "connect implies observing"
-    // precedent in the design doc (docs/ambient-light-sensor-tag-design.md §1.3):
+    // precedent in the design doc (docs/sensor-tag-design.md §1.3):
     // start/stop are the only commands, so connecting the element merely makes
     // it inert until a command-token `start` (or the `start()` method) is
     // invoked. This also keeps behavior predictable when composed with

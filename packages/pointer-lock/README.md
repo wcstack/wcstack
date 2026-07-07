@@ -53,26 +53,31 @@ npm install @wcstack/pointer-lock
 
 <wcs-state>
   <script type="module">
-    export default {};
+    export default {
+      $commandTokens: ["lockPointer", "unlockPointer"],
+      locked: false,
+    };
   </script>
 </wcs-state>
 
 <canvas id="scene" width="640" height="480"></canvas>
-<wcs-pointer-lock target="#scene" data-wcs="active: locked"></wcs-pointer-lock>
+<wcs-pointer-lock target="#scene"
+  data-wcs="active: locked; command.requestPointerLock: $command.lockPointer; command.exitPointerLock: $command.unlockPointer">
+</wcs-pointer-lock>
 
-<button data-wcs="command.click: $command.requestPointerLock" data-wcs-target="wcs-pointer-lock">
-  Enable mouse look
-</button>
-<button data-wcs="command.click: $command.exitPointerLock" data-wcs-target="wcs-pointer-lock" data-wcs-hidden="!locked">
-  Release
-</button>
+<button data-wcs="onclick: $command.lockPointer">Enable mouse look</button>
+<button data-wcs="hidden: locked|not; onclick: $command.unlockPointer">Release</button>
 ```
+
+The buttons never touch `<wcs-pointer-lock>` directly: their clicks emit the `lockPointer`/`unlockPointer` command tokens, and `<wcs-pointer-lock>` subscribes to them via `command.requestPointerLock: $command.lockPointer` / `command.exitPointerLock: $command.unlockPointer` (the [command-token protocol](../state/) — the element with the command method is the *subscriber*, not the emitter).
+
+Every bound state path must be declared up front — `locked: false` here; binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`locked|not`), not a leading `!` — paths do not support prefix operators.
 
 `requestPointerLock()` **requires a user-gesture context** — see below.
 
 ## User gesture requirement
 
-`Element.requestPointerLock()` rejects with `NotAllowedError` when called outside a user-gesture context (e.g. a synchronous click handler). This node cannot manufacture a gesture on your behalf: **the responsibility for calling `requestPointerLock` from within an actual user gesture belongs to the caller.** Wire the command-token protocol (`command.click: $command.requestPointerLock`) to a `<button>` click — calling it from a `setTimeout` or deep inside a `.then()` chain loses the gesture context and the call will reject, `error` will be set, but no exception will propagate (never-throw).
+`Element.requestPointerLock()` rejects with `NotAllowedError` when called outside a user-gesture context (e.g. a synchronous click handler). This node cannot manufacture a gesture on your behalf: **the responsibility for calling `requestPointerLock` from within an actual user gesture belongs to the caller.** Wire the command-token protocol (`command.requestPointerLock: $command.<token>` on `<wcs-pointer-lock>`, emitted by a button's `onclick: $command.<token>`) — calling it from a `setTimeout` or deep inside a `.then()` chain loses the gesture context and the call will reject, `error` will be set, but no exception will propagate (never-throw).
 
 ## Observable Properties (outputs)
 
@@ -80,13 +85,13 @@ npm install @wcstack/pointer-lock
 | ---------- | ---------------------------- | ------------ |
 | `active`   | `wcs-pointer-lock:change`    | `true` when `document.pointerLockElement` is this instance's resolved target, `false` otherwise. |
 
-`error` (see Commands below) is exposed as a plain getter, not as a `wcBindable` property — it only changes as a side effect of a command call, mirroring `@wcstack/fullscreen`.
+`error` (see Commands below) is exposed as a plain getter, not as a `wcBindable` property — it only changes as a side effect of a command call, mirroring `@wcstack/fullscreen`. The most recent failure is one of: a rejected promise (e.g. `NotAllowedError` for a gesture-less call), `{ message: "Pointer Lock API is not supported." }` when the platform API is missing, `{ message: "Pointer Lock target could not be resolved." }` when `target` did not resolve to an element, or `null` if the last attempt succeeded / nothing has failed yet.
 
 ## Commands
 
 | Command              | Async | Description |
 | --------------------- | ----- | ------------ |
-| `requestPointerLock`  | yes   | Calls `requestPointerLock()` on the resolved target. Never-throw: failures (including `NotAllowedError` for a missing gesture, or an unsupported API) are captured into `error`, not thrown. |
+| `requestPointerLock`  | yes   | Resolve `target` and call `requestPointerLock()` on it. Never-throw: failures (an unresolvable `target`, `NotAllowedError` for a missing gesture, or an unsupported API) are captured into `error`, not thrown. |
 | `exitPointerLock`     | **no**| Calls `document.exitPointerLock()`. **Synchronous** — unlike `@wcstack/fullscreen`'s `exitFullscreen()` (which is Promise-based), `exitPointerLock()` returns `void`. Silent no-op if nothing is currently locked or the API is unsupported. |
 
 ## Attributes / Inputs
@@ -108,7 +113,7 @@ Some older WebKit builds expose `webkitRequestPointerLock` / `webkitExitPointerL
 - **User gesture required.** See above — this is a platform constraint, not something this node can work around.
 - **`exitPointerLock()` is synchronous**, unlike `@wcstack/fullscreen`'s Promise-based `exitFullscreen()`. It carries no `_gen` generation guard of its own (only `requestPointerLock()`, being asynchronous, needs one); it is still wrapped in `try/catch` defensively so a non-conformant implementation can never throw out of it.
 - **`movementX`/`movementY` are out of scope for v1.** See above.
-- **No autoTrigger.** Because `requestPointerLock()` needs a user-gesture context, the primary activation path is the command-token protocol (`command.click: $command.requestPointerLock`) rather than a `data-*target` click shortcut.
+- **No autoTrigger.** Because `requestPointerLock()` needs a user-gesture context, the primary activation path is the command-token protocol (`command.requestPointerLock: $command.<token>` on `<wcs-pointer-lock>`) rather than a `data-*target` click shortcut.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`; since `observe()` is synchronous, this promise always settles immediately.
 
 ## Headless usage (`PointerLockCore`)

@@ -38,28 +38,58 @@ npm install @wcstack/ambient-light-sensor
 
 ### 1. Read live illuminance
 
+`<wcs-ambient-light-sensor>` does **not** auto-start on connect — binding alone
+leaves `illuminance` at its initial `null`. You must fire the `start` command
+(e.g. from a button) before readings flow:
+
 ```html
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/ambient-light-sensor/auto"></script>
 
 <wcs-state>
   <script type="module">
-    export default { illuminance: null };
+    export default {
+      $commandTokens: ["startLight"],
+      illuminance: null,
+    };
   </script>
 </wcs-state>
 
-<wcs-ambient-light-sensor data-wcs="illuminance: illuminance"></wcs-ambient-light-sensor>
+<wcs-ambient-light-sensor
+  data-wcs="illuminance: illuminance; command.start: $command.startLight"
+></wcs-ambient-light-sensor>
+
+<button data-wcs="onclick: $command.startLight">Start</button>
 <p data-wcs="textContent: illuminance"></p>
 ```
 
+The button never touches `<wcs-ambient-light-sensor>` directly: its click emits the `startLight` command token (`$commandTokens: ["startLight"]` declares the name), and `<wcs-ambient-light-sensor>` subscribes to it via `command.start: $command.startLight` (the [command-token protocol](../state/) — the element with the command method is the *subscriber*, not the emitter).
+
 ### 2. Gate on permission, then start
 
+This example also needs `@wcstack/permission` registered (alongside the
+`@wcstack/state` / `@wcstack/ambient-light-sensor` scripts from example 1), with its
+own self-contained `<wcs-state>` declaring `lightGranted`:
+
 ```html
+<script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["startLight"],
+      lightGranted: false,
+    };
+  </script>
+</wcs-state>
+
 <wcs-permission name="ambient-light-sensor" data-wcs="granted: lightGranted"></wcs-permission>
 <wcs-ambient-light-sensor data-wcs="command.start: $command.startLight"></wcs-ambient-light-sensor>
 
-<button data-wcs="onclick: startLight; disabled: !lightGranted">Start</button>
+<button data-wcs="onclick: $command.startLight; disabled: lightGranted|not">Start</button>
 ```
+
+Every bound state path must be declared up front — binding an undeclared path throws at initialization. Negation in a `data-wcs` path is done with the `|not` filter (`lightGranted|not`), not a leading `!`.
 
 ## Attributes / Inputs
 
@@ -84,6 +114,7 @@ npm install @wcstack/ambient-light-sensor
 ## Notes & limitations
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
+- **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
 - **Never call the raw `new AmbientLightSensor(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
 - Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="ambient-light-sensor">`.
 - **Confirm current browser support before adopting this package** — see "Why this exists" above.

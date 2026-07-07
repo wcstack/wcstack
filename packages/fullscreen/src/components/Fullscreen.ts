@@ -18,8 +18,9 @@ import { FullscreenCore } from "../core/FullscreenCore.js";
  *
  * `requestFullscreen()` requires an active user gesture — this element cannot
  * manufacture one. Invoke the command from within a real click handler
- * (typically via the command-token protocol, e.g.
- * `<button command.click:$command.requestFullscreen>`).
+ * (typically via the command-token protocol: this element subscribes with
+ * `command.requestFullscreen: $command.<token>`, and a button emits the
+ * token from its own click handler, e.g. `onclick: $command.<token>`).
  */
 export class WcsFullscreen extends HTMLElement {
   // SSR (§10): the fullscreenchange subscription is established synchronously
@@ -123,7 +124,6 @@ export class WcsFullscreen extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
-    this.style.display = "none";
     this._reresolve();
     this._connectedCallbackPromise = this._core.observe();
   }

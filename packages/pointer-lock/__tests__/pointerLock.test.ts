@@ -77,7 +77,7 @@ describe("PointerLock (Shell)", () => {
       expect(el.error).toBeNull();
     });
 
-    it("target が解決できない場合 requestPointerLock() は何もせず resolve する", async () => {
+    it("target が解決できない場合 requestPointerLock() は「未解決」の error を設定して resolve する（「未対応」とは別メッセージ）", async () => {
       installPointerLockDoc();
       const el = createPointerLock();
       el.target = "#does-not-exist";
@@ -85,6 +85,7 @@ describe("PointerLock (Shell)", () => {
 
       await expect(el.requestPointerLock()).resolves.toBeUndefined();
       expect(el.active).toBe(false);
+      expect(el.error).toEqual({ message: "Pointer Lock target could not be resolved." });
     });
 
     it("exitPointerLock() でロック解除される", async () => {
@@ -111,6 +112,20 @@ describe("PointerLock (Shell)", () => {
       await expect(el.requestPointerLock()).resolves.toBeUndefined();
       expect(el.error.name).toBe("NotAllowedError");
       expect(el.active).toBe(false);
+    });
+
+    it("Core が Shell 上に発火する change イベントの detail は bare boolean（{ active } 形式ではない）", async () => {
+      installPointerLockDoc();
+      const el = createPointerLock();
+      el.target = "self";
+      document.body.appendChild(el);
+      const events: unknown[] = [];
+      el.addEventListener("wcs-pointer-lock:change", (e) => events.push((e as CustomEvent).detail));
+
+      await el.requestPointerLock();
+      el.exitPointerLock();
+
+      expect(events).toEqual([true, false]);
     });
   });
 
@@ -205,6 +220,11 @@ describe("PointerLock (Shell)", () => {
       const allNames = WcsPointerLock.wcBindable.properties.map((p) => p.name);
       expect(allNames).not.toContain("movementX");
       expect(allNames).not.toContain("movementY");
+    });
+
+    it("active は getter を持たない（Shell 側の継承後も bare boolean 形状のまま固定される）", () => {
+      const prop = WcsPointerLock.wcBindable.properties.find((p) => p.name === "active")!;
+      expect(prop.getter).toBeUndefined();
     });
   });
 

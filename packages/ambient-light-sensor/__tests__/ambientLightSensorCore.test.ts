@@ -69,6 +69,36 @@ describe("AmbientLightSensorCore", () => {
       expect(() => core.start()).not.toThrow();
       expect(core.error).toEqual({ error: "error", message: "non-conformant start() throw" });
     });
+
+    it("start() throw 後は _sensor が null 復帰し、再 start() でリトライして reading が流れる", () => {
+      // start() の catch 節（AmbientLightSensorCore.ts の start() 内）が
+      // _teardownSensor() を呼び _sensor を null に戻す契約を固定する。
+      // これが無いと再 start() が「既に started」と誤判定してリトライ不能になる。
+      const core = new AmbientLightSensorCore();
+
+      // 1回目: 生成した FakeSensor の start() が同期例外を投げる非準拠実装。
+      installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const OriginalCtor = (globalThis as any)[GLOBAL_NAME];
+      (globalThis as any)[GLOBAL_NAME] = function (this: any, options?: { frequency?: number }) {
+        const sensor = new OriginalCtor(options);
+        sensor.start = () => {
+          throw "non-conformant start() throw";
+        };
+        return sensor;
+      };
+      core.start();
+      expect(core.error).toEqual({ error: "error", message: "non-conformant start() throw" });
+
+      // 2回目: 正常なコンストラクタに差し替えて再 start()。_sensor が null 復帰
+      // していれば「既に started」の早期 return を回避し、新しいセンサーを構築する。
+      const handle = installSensor(GLOBAL_NAME, { illuminance: 0 });
+      core.start();
+      expect(handle.current?.started).toBe(true);
+
+      // reading が新しいセンサーから流れる（listener が再装着されている）。
+      handle.current!.emitReading({ illuminance: 42 });
+      expect(core.illuminance).toBe(42);
+    });
   });
 
   describe("start() — 対応環境", () => {
@@ -166,6 +196,41 @@ describe("AmbientLightSensorCore", () => {
       expect(events).toHaveLength(1);
     });
 
+    it("同 name でも message が異なる error は再 dispatch される（同値ガードのキーは name+message）", () => {
+      // 同値ガード（AmbientLightSensorCore.ts の _setError 内）は name と message の
+      // 複合キーで判定する。name が同じでも message が変われば新しい error として
+      // 再 dispatch されることを固定し、ガードのキー仕様を pin する。
+      const handle = installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const core = new AmbientLightSensorCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-ambient-light-sensor:error", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      handle.current!.emitError("NotReadableError", "first");
+      handle.current!.emitError("NotReadableError", "second");
+
+      expect(events).toHaveLength(2);
+      expect(core.error).toEqual({ error: "NotReadableError", message: "second" });
+    });
+
+    it("異なる name・同一 message でも再 dispatch され error.error が更新される", () => {
+      // Mirrors the previous test in the opposite direction: the same-value
+      // guard in _setError() compares BOTH `error` (name) and `message` — a
+      // match on message alone must not suppress a redispatch when the name
+      // differs.
+      const handle = installSensor(GLOBAL_NAME, { illuminance: 0 });
+      const core = new AmbientLightSensorCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-ambient-light-sensor:error", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      handle.current!.emitError("NotReadableError", "same message");
+      handle.current!.emitError("SecurityError", "same message");
+
+      expect(events).toHaveLength(2);
+      expect(core.error).toEqual({ error: "SecurityError", message: "same message" });
+    });
+
     it("error イベントに detail が無くてもフォールバック値になる", () => {
       const handle = installSensor(GLOBAL_NAME, { illuminance: 0 });
       const core = new AmbientLightSensorCore();
@@ -173,7 +238,35 @@ describe("AmbientLightSensorCore", () => {
       core.start();
       handle.current!.dispatchEvent(new Event("error"));
 
-      expect(core.error?.error).toBe("error");
+      // The message fallback must be a meaningful constant, not the literal
+      // string "undefined" (String(undefined)) — sensor-family aligned.
+      expect(core.error).toEqual({ error: "error", message: "Sensor error" });
+    });
+
+    // Spec fix (monitoring-sensor family): unlike ScreenOrientationCore's
+    // bidirectional `lock()` command (which calls _setError(null) on success),
+    // the monitoring sensors (accelerometer/gyroscope/magnetometer/ambient-light-sensor)
+    // deliberately do NOT clear `error` on a successful (re)start. `error` here is a
+    // sticky, state-like signal reflecting the last observed failure — a `reading`
+    // after an error does not retroactively "cancel" that error. This test pins that
+    // contract so a future change cannot silently start clearing it (which would then
+    // need to be aligned across all twins). See docs/sensor-tag-design.md §1.5.
+    it("失敗→リトライ成功しても error は据え置かれる（監視系は成功時にクリアしない）", () => {
+      // First attempt: unsupported → error is set.
+      removeSensor(GLOBAL_NAME);
+      const core = new AmbientLightSensorCore();
+      core.start();
+      expect(core.error).toEqual({ error: "unsupported", message: "AmbientLightSensor is not supported" });
+
+      // Retry: the API becomes available and start() succeeds, and readings flow.
+      const handle = installSensor(GLOBAL_NAME, { illuminance: 0 });
+      core.start();
+      expect(handle.current?.started).toBe(true);
+      handle.current!.emitReading({ illuminance: 42 });
+      expect(core.illuminance).toBe(42);
+
+      // The prior error stays put — a successful start does not clear it.
+      expect(core.error).toEqual({ error: "unsupported", message: "AmbientLightSensor is not supported" });
     });
   });
 

@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/credential`（`<wcs-credential>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/credential`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Credential Management API（`navigator.credentials.get()` / `.store()`、`PasswordCredential` / `FederatedCredential`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の4本目にして最後。バッチ内で唯一「単一commandでなく2つの独立したcommand」を持つメンバーであり、バッチの中で最も複雑（実装順の最後に置かれている理由でもある）。
 - **前提資産**: `fetch`（`_doFetch`の単一`_gen`・never-throw・try/catch、[FetchCore.ts](../packages/fetch/src/core/FetchCore.ts)）、`worker`（`_normalizeError`によるDOMException正規化、[WorkerCore.ts:312-318](../packages/worker/src/core/WorkerCore.ts#L312-L318)）、バッチ3共有アーキタイプ（`value`/`loading`/`error`/`cancelled`の最小Core、[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md)バッチ3節）。
@@ -203,7 +203,7 @@ class FakeCredentialsContainer {
 
 ## 10. 実装順の推奨
 
-単一ノードのため「実装順」は内部ステップとして以下の順で進める。
+単一ノードのため「実装順」は内部ステップとして以下の順で進めた。
 
 1. **Core（`get()`まで）**: `CredentialCore`の骨格（`value`/`loading`/`error`/`cancelled`の同値ガード付きsetter、単一`_gen`、`_normalizeError`）を`FetchCore`/`WorkerCore`から移植し、`get(options)`を実装。`publicKey`キー検出によるスコープ違反の`error`化をここで確定させる。
 2. **Core（`store()`追加）**: 同じ`_gen`を共有する形で`store(credential)`を追加。§4の制限（並行呼び出しの握り潰し）を固定する回帰テストをここで書く。

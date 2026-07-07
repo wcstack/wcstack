@@ -140,6 +140,17 @@ Add the `monitor` attribute to republish document `copy` / `cut` / `paste` as re
 
 > A DOM-triggered `writeText` is fire-and-forget (its `Promise` is not awaited), but it never rejects: a failed copy surfaces through the `error` property like any other write. Bind `error` (e.g. `text: error.message@cb`) to observe autoTrigger failures.
 
+> **autoTrigger is on by default.** The first `<wcs-clipboard>` to connect installs a single **document-level `click` listener** (a click on a `data-clipboardtarget` element runs `writeText`). If you don't use the DOM shortcut, opt out via the bootstrap entry:
+>
+> ```js
+> import { bootstrapClipboard, getConfig } from "@wcstack/clipboard";
+> bootstrapClipboard({ autoTrigger: false });        // no document click listener
+> bootstrapClipboard({ triggerAttribute: "data-copy" }); // rename the trigger attribute (default: data-clipboardtarget)
+> getConfig();                                        // read the effective (deep-frozen) config
+> ```
+>
+> Call `bootstrapClipboard()` before the elements connect. (`setConfig` is internal; configure through `bootstrapClipboard`.)
+
 ## Observable Properties (outputs)
 
 | Property         | Event                                    | Description                                                            |
@@ -175,7 +186,7 @@ State-driven invocation uses the command-token protocol:
 ## Notes & limitations
 
 - **Attributes are read at connect time, not observed.** `<wcs-clipboard>` does not implement `observedAttributes` / `attributeChangedCallback`. The `monitor` attribute is read when the element connects — toggling it imperatively after connect does not start/stop monitoring by itself; call `startMonitor()` / `stopMonitor()`, or re-connect the element.
-- **No connect-time read.** Unlike `<wcs-geo>`, the clipboard cannot auto-read on connect (reads need a user gesture and permission), so there is no `connectedCallbackPromise` / SSR snapshot. The only connect-time action is optional monitoring.
+- **No connect-time read.** Unlike `<wcs-geo>`, the clipboard cannot auto-read on connect (reads need a user gesture and permission); the connect-time actions are an initial permission probe and optional monitoring. It still exposes `connectedCallbackPromise` (`hasConnectedCallbackPromise = true`) — a state binder / SSR awaits it so the initial permission snapshot has settled before binding.
 - **Reconnect re-subscribes.** Removing and re-inserting the element runs `connectedCallback` again, so permission tracking is revived and a `monitor`-attribute element restarts monitoring (matching how it tears them down on disconnect). Monitoring persistence is **attribute-driven only**: if you started monitoring imperatively with `startMonitor()` on an element *without* the `monitor` attribute, a reconnect does not restore it (the attribute is the source of truth). Add the `monitor` attribute for persistent monitoring across reparents.
 - **`copy` / `cut` text comes from the selection.** During a `copy` / `cut` event the clipboard payload is not yet readable (the browser returns an empty string for security reasons), so `copied` / `cut` report `document.getSelection().toString()` — the user's selected text. If the page installs a custom `copy` handler that overrides the payload via `clipboardData.setData(...)`, that override is **not** reflected in `copied` / `cut`. `pasted` reads `event.clipboardData.getData("text/plain")`.
 - **Silent failure handling (zero-log).** Consistent with the rest of wcstack's zero-dependency, minimal philosophy, `<wcs-clipboard>` never logs or throws for runtime failures. A failed permission query (e.g. Firefox, which has no clipboard permission names) silently falls back to `"unsupported"`. Read/write failures (denied permission, no focus, missing Clipboard API) are surfaced only through the `error` property / `wcs-clipboard:error` event — the commands resolve and never reject. Bind `error` (and the `*Permission` properties) to observe and react.

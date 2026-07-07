@@ -1,7 +1,7 @@
 # 設計メモ: `@wcstack/picture-in-picture`（`<wcs-pip target="...">`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
-- **対象 WebAPI**: Picture-in-Picture API（`HTMLVideoElement.requestPictureInPicture()` / `exitPictureInPicture()` / `document.pictureInPictureElement` / `enterpictureinpicture` / `leavepictureinpicture`）
+- **状態**: 実装済み（`packages/picture-in-picture`、`PipCore` + Shell `WcsPip`）。本文書は実装前の論点整理と決定事項のスナップショットであり、実装との差分は各節の追記で訂正済み。
+- **対象 WebAPI**: Picture-in-Picture API（`HTMLVideoElement.requestPictureInPicture()` / `document.exitPictureInPicture()` / `document.pictureInPictureElement` / `enterpictureinpicture` / `leavepictureinpicture`）。※`exitPictureInPicture()`は`HTMLVideoElement`ではなく`document`のメソッド（`PipCore._exitPictureInPictureFn()`参照）。
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ1（target解決パターン）の2本目。**[fullscreen-tag-design.md](./fullscreen-tag-design.md) と同じ基本パターン**を採用する差分ドキュメント。`target`解決の詳細な根拠・`_resolveTarget()`の転用理由・`_gen`世代ガードの考え方・`error`の扱いの是非は再導出せず、fullscreen-tag-designを参照する。
 - **前提資産**: [fullscreen-tag-design.md](./fullscreen-tag-design.md)（本ノードの基本形）、`intersection`（`_resolveTarget()`/`_safeQuery()`原典）。
 
@@ -39,6 +39,8 @@ static wcBindable: IWcBindable = {
 
 `document.pictureInPictureElement === 解決済みtarget`で`active`を判定する。fullscreenの`document.fullscreenElement`比較と一字一句同型（[fullscreen-tag-design.md §2](./fullscreen-tag-design.md#2-active状態の判定方法--決定-documentfullscreenelement--targetの都度比較)）で、`pictureinpicturechange`相当のイベント（後述§3）受信時に自身の解決済みtargetと比較する。
 
+> **実装注記（Core/Shell分割）**: 上記のwcBindable宣言は設計時の単一スケッチであり、実装では2層に分割されている。`PipCore.wcBindable`（`PipCore.ts`）は`properties`＋`commands`のみを宣言し（`inputs`なし — Coreは`target`属性を知らない）、Shell `WcsPip.wcBindable`（`Pip.ts`）が`...PipCore.wcBindable`をspreadした上で`inputs: [{ name: "target", attribute: "target" }]`を追加する。宣言内容の合成結果は上記スケッチと一致する。
+
 ---
 
 ## 2. このノード固有の制約 — **決定: targetは`<video>`要素でなければならない**
@@ -59,11 +61,13 @@ private _resolveVideoTarget(): { element: HTMLVideoElement | null; display: stri
 ```
 
 - **不一致時の扱い**: 例外を投げない（never-throw原則）。`error`プロパティに`{ message: "target must be a <video> element." }`のような情報を格納し、`element: null`として以降の解決失敗パス（fullscreenの「targetが見つからない」パスと同じ）に合流させる。
-- `requestPictureInPicture()`/`exitPictureInPicture()`のcommand呼び出し時にこの検証を通し、`<video>`でなければ即座に`error`をセットしてresolveする（gesture制約チェックより前に行ってよい——型不一致は環境非依存の恒久的なエラーであり、gesture文脈の有無とは独立した別の失敗理由）。
+- `requestPictureInPicture()`のcommand呼び出し時にこの検証を通し、`<video>`でなければ即座に`error`をセットしてresolveする（gesture制約チェックより前に行ってよい——型不一致は環境非依存の恒久的なエラーであり、gesture文脈の有無とは独立した別の失敗理由）。
+- **実装訂正（旧版の誤り）**: 旧版は`exitPictureInPicture()`でも`<video>`検証を行うとしていたが、実装（`PipCore.exitPictureInPicture()`）は**要素を引数に取らない**——`document.exitPictureInPicture()`はdocumentスコープのAPIであり検証対象のtargetが存在しない。exitは「PiP中の要素が無ければ silent no-op」（fullscreen-tag-design.md §7のミラー）であり、`<video>`検証は`requestPictureInPicture()`側のみで行う。
+- なお実装では上記スケッチの`_resolveVideoTarget()`ヘルパ（Shell側検証）ではなく、Shellは解決済み要素をそのままCoreへ渡し、Core（`PipCore.requestPictureInPicture()`）が`tagName === "VIDEO"`検証を行う形に集約された。検証の意味論（never-throw・未解決と同一扱い）は上記の決定通り。
 
 ---
 
-## 3. イベント購読先 — `document`（fullscreenchangeと同型、ただしイベント名が異なる）
+## 3. イベント購読先 — target要素自身（`enterpictureinpicture`/`leavepictureinpicture`）。fullscreenchangeの`document`購読とは逆
 
 Picture-in-Picture APIのイベントは`enterpictureinpicture`/`leavepictureinpicture`で、これは**`fullscreenchange`と違い`document`にではなく対象の`<video>`要素自身に発火する**（Fullscreenの非対称性、[fullscreen-tag-design.md §5](./fullscreen-tag-design.md#5-fullscreenchangeの購読先--決定-documentに張るtarget要素にではない)とは逆）。
 
@@ -115,10 +119,10 @@ fullscreen-tag-designのテスト観点（§11参照。3モード解決・gestur
 
 ---
 
-## 8. 実装順の推奨
+## 8. 実装順の推奨（完了状況付き）
 
-1. `PipCore`（`FullscreenCore`をコピーし、`fullscreenElement`→`pictureInPictureElement`、`document`購読→target要素購読に差し替え、`tagName === "VIDEO"`検証を追加）。
-2. Shell `<wcs-pip target="...">`（`intersection`由来の`_resolveTarget()`/`_safeQuery()`はfullscreenの実装をそのまま再利用）。
-3. Fake double（`FakeVideoElement` + `document.pictureInPictureElement`可変化）とテスト一式（§6の差分を中心に、fullscreenのテストスイートを土台に複製）。
-4. example: `<video>`プレイヤーのPiP切り替えボタン、`camera`/`recorder`パッケージとの連携（録画プレビューをPiPで見る）シナリオを目玉に。
-5. README ja/en（`<video>`限定である旨、Document Picture-in-Picture APIは対象外である旨を明記）。
+1. ✅ 完了 — `PipCore`（`FullscreenCore`をコピーし、`fullscreenElement`→`pictureInPictureElement`、`document`購読→target要素購読に差し替え、`tagName === "VIDEO"`検証を追加）。
+2. ✅ 完了 — Shell `<wcs-pip target="...">`（`intersection`由来の`_resolveTarget()`/`_safeQuery()`はfullscreenの実装をそのまま再利用）。
+3. ✅ 完了 — Fake double（`FakeVideoElement` + `document.pictureInPictureElement`可変化）とテスト一式（§6の差分を中心に、fullscreenのテストスイートを土台に複製）。
+4. ⬜ 未着手 — example: `<video>`プレイヤーのPiP切り替えボタン、`camera`/`recorder`パッケージとの連携（録画プレビューをPiPで見る）シナリオを目玉に。
+5. ✅ 完了 — README ja/en（`<video>`限定である旨、Document Picture-in-Picture APIは対象外である旨を明記）。

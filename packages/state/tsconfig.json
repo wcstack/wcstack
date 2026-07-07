@@ -6,5 +6,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*", "package.json"],
-  "exclude": ["node_modules", "dist", ".tsc-out", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", ".tsc-out", "**/*.test.ts", "src/auto/**"]
 }

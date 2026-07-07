@@ -8,7 +8,7 @@ HTTP リクエストとリアクティブな状態をつなぐ **I/O ノード**
 `@wcstack/state` と組み合わせると、`<wcs-fetch>` はパス契約を通じて直接バインドできます:
 
 - **入力 / コマンドサーフェス**: `url`, `body`, `trigger`
-- **出力ステートサーフェス**: `value`, `loading`, `error`, `status`
+- **出力ステートサーフェス**: `value`, `loading`, `error`, `status`, `objectURL`
 
 つまり、非同期通信を HTML 内で宣言的に表現できます。UI レイヤーに `fetch()`、`async/await`、loading/error のグルーコードを書く必要はありません。
 
@@ -275,6 +275,7 @@ npm install @wcstack/fetch
 | `loading` | `boolean` | リクエスト実行中は `true` |
 | `error` | `WcsFetchHttpError \| Error \| null` | HTTP またはネットワークエラー |
 | `status` | `number` | HTTP ステータスコード |
+| `objectURL` | `string \| null` | `response-type="blob"` のレスポンスに対する管理された object URL。それ以外は `null`。Core が新しいレスポンスごとと dispose 時に前の URL を revoke するため、ライフサイクル管理なしで `<img src>` に直接バインドできる |
 
 > **注意:** HTTP エラー時は `value` が `null` にリセットされ、`status` にエラーコードが
 > 入ります。`error` を観測せず `value` のみをバインドしている場合、リクエスト失敗時に
@@ -427,6 +428,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `method` | `string` | `GET` | HTTP メソッド |
 | `target` | `string` | — | HTML リプレース対象の DOM 要素 id |
 | `manual` | `boolean` | `false` | 自動実行を無効化 |
+| `response-type` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | `auto` | レスポンスボディの読み取り方。`auto` は Content-Type を推測し、`blob` は加えて管理された `objectURL` を発行する。`target`（HTML リプレース）が優先される |
 
 | プロパティ | 型 | 説明 |
 |------------|------|------|
@@ -434,6 +436,8 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `loading` | `boolean` | リクエスト実行中は `true` |
 | `error` | `WcsFetchHttpError \| Error \| null` | エラー情報 |
 | `status` | `number` | HTTP ステータスコード |
+| `objectURL` | `string \| null` | `response-type="blob"` のレスポンスに対する管理された object URL。それ以外は `null` |
+| `responseType` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | レスポンスボディの解釈（`response-type` 属性を背後に持つ） |
 | `body` | `any` | リクエストボディ（`fetch()` 後に `null` にリセット） |
 | `trigger` | `boolean` | `true` を設定すると fetch を実行 |
 | `manual` | `boolean` | 明示的実行モード |
@@ -480,7 +484,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 
 宣言は wc-bindable インターフェースモデルの全体に従い、3 つの独立したサーフェスを持ちます:
 
-- **`properties`** — `bind()` がサブスクライブする観測可能な出力（`value`, `loading`, `error`, `status`、および Shell の `trigger`）
+- **`properties`** — `bind()` がサブスクライブする観測可能な出力（`value`, `loading`, `error`, `status`, `objectURL`、および Shell の `trigger`）
 - **`inputs`** — 設定可能なサーフェス（`url`, `method`, …）。ツールやコード生成、リモートプロキシが読み取る宣言的メタデータ
 - **`commands`** — 呼び出し可能なメソッド（`fetch`, `abort`）。`@wcstack/state` のようなバインディングシステムが名前で呼び出せる
 
@@ -501,6 +505,8 @@ static wcBindable = {
     { name: "error",   event: "wcs-fetch:error" },
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
+    { name: "objectURL", event: "wcs-fetch:response",
+      getter: (e) => e.detail.objectURL },
   ],
   inputs: [
     { name: "url" },
@@ -532,12 +538,13 @@ static wcBindable = {
     { name: "target" },
     { name: "manual" },
     { name: "body" },
+    { name: "responseType" },
     { name: "trigger" },
   ],
 };
 ```
 
-Shell の inputs は意図的に `attribute` ヒントを持ちません。各セッター（`url`, `method`, `target`, `manual`）はすでに対応する属性へ反映されるため、`inputs[].attribute` をミラーするバインディングシステムでは属性が二重に設定されてしまうからです。
+Shell の inputs は意図的に `attribute` ヒントを持ちません。各セッター（`url`, `method`, `target`, `manual`, `responseType`）はすでに対応する属性へ反映されるため、`inputs[].attribute` をミラーするバインディングシステムでは属性が二重に設定されてしまうからです。
 
 ## TypeScript 型
 
@@ -555,13 +562,14 @@ interface WcsFetchHttpError {
   body: string;
 }
 
-// Core（ヘッドレス）— 4 つの非同期状態プロパティ
+// Core（ヘッドレス）— 5 つの非同期状態プロパティ
 // T のデフォルトは unknown。型引数を渡すと value が型付けされる
 interface WcsFetchCoreValues<T = unknown> {
   value: T;
   loading: boolean;
   error: WcsFetchHttpError | Error | null;
   status: number;
+  objectURL: string | null; // responseType:"blob" のレスポンスに対する管理された object URL。それ以外は null
 }
 
 // Shell（<wcs-fetch>）— Core を拡張し trigger を追加
@@ -716,8 +724,9 @@ bootstrapFetch({
 
 ## 設計メモ
 
-- `value`、`loading`、`error`、`status` は **出力ステート**
-- `url`、`body`、`trigger` は **入力 / コマンドサーフェス**
+- `value`、`loading`、`error`、`status`、`objectURL` は **出力ステート**
+- `url`、`body`、`response-type`、`trigger` は **入力 / コマンドサーフェス**
+- `response-type`（既定 `auto`）はレスポンスボディの読み取り方を選ぶ。`blob` は加えて管理された `objectURL`（新しいレスポンスごと / dispose 時に revoke）を発行する。`target`（HTML リプレースモード）が優先される
 - `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知。`url` が空のまま `true` を書き込んだ場合は黙って無視される（fetch なし・イベントなし・フラグは `false` のまま）
 - HTTP エラー時（status >= 400）は `value` が `null` にリセットされ、`status` にエラーコードが入る — `value` のみのバインドでは直前の値が消えるため、失敗検知には `error` をバインドする
 - ネットワークエラー時（HTTP レスポンスなし — DNS 失敗・オフライン・CORS など）は `value` が `null`、`status` が `0` にリセットされ、`error` に投げられた `Error` が入る。HTTP エラーと同様、直前の成功時の value/status は残らない

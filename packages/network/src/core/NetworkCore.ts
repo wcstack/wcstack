@@ -150,6 +150,8 @@ export class NetworkCore extends EventTarget {
     this._snapshot = next;
     this._target.dispatchEvent(new CustomEvent("wcs-network:change", {
       detail: next,
+      // Family-wide MUST (async-io-node-guidelines.md §3.3): the event bubbles
+      // from the Shell element so document-level consumers can delegate.
       bubbles: true,
     }));
   }

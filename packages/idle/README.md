@@ -34,6 +34,11 @@ npm install @wcstack/idle
 <wcs-state>
   <script type="module">
     export default {
+      // Assume present until told otherwise: `wcs-idle:change` never fires
+      // before start(), so a `false` default here would show "Away" on
+      // every initial load even though presence is simply unknown yet.
+      presenceActive: true,
+      idleGranted: false,
       async enableIdleDetection() {
         const el = document.querySelector("wcs-idle");
         const result = await el.requestPermission();
@@ -46,8 +51,14 @@ npm install @wcstack/idle
 <wcs-permission name="idle-detection" data-wcs="granted: idleGranted"></wcs-permission>
 <wcs-idle threshold="60000" data-wcs="active: presenceActive"></wcs-idle>
 
+<!-- Note: don't bind `disabled: idleGranted` here — the grant persists across
+     page loads, so on a revisit the button would start out disabled and start()
+     (only reachable through this click) could never run. Re-clicking when
+     already granted is harmless: requestPermission() resolves "granted"
+     immediately and start() proceeds. -->
 <button data-wcs="onclick: enableIdleDetection">Enable presence detection</button>
-<template data-wcs="if: !presenceActive">
+<p>Permission granted: <span data-wcs="textContent: idleGranted"></span></p>
+<template data-wcs="if: presenceActive|not">
   <span class="badge">Away</span>
 </template>
 ```
@@ -79,7 +90,9 @@ npm install @wcstack/idle
 
 - **Does not auto-start on connect.** See "Why this exists" above.
 - **Does not duplicate permission state.** Compose with `<wcs-permission name="idle-detection">`.
-- Chromium-only; `unsupported` (via `error`) is the default elsewhere.
+- **Chromium-only, and secure-context-only.** Firefox and Safari do not implement `IdleDetector` at all. Even in Chromium, `IdleDetector` is a `[SecureContext]`-only interface, so over plain `http://` (other than `localhost`) `window.IdleDetector` itself is `undefined` — same as an unsupported browser, this falls into the `unsupported` (via `error`) path.
+- **Permissions-Policy gate.** Idle detection is governed by the `idle-detection` Permissions-Policy directive (default allowlist: `self`). Using `<wcs-idle>` inside a cross-origin `<iframe>` requires `allow="idle-detection"` on that `<iframe>` element — otherwise `requestPermission()`/`start()` fail the same way as an unsupported browser.
+- **`stop()`/disconnect does not reset `userState`/`screenState`/`active`.** They keep their last observed value until the next successful `start()` — the same "retain the last reading" behavior as the Generic Sensor family (`<wcs-gyroscope>` et al.).
 
 ## Headless usage (`IdleCore`)
 

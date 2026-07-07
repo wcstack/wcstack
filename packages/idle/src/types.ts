@@ -32,6 +32,7 @@ export interface WcsIdleCoreValues {
   userState: IdleUserState | null;
   screenState: IdleScreenState | null;
   active: boolean;
+  error: any;
 }
 
 /**

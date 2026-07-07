@@ -62,10 +62,11 @@ export function testPath(route: IRoute, path: string, segments: string[]): IRout
       // catch-all は残り全部マッチ済み
       finalResult = true;
     } else if (i === route.absoluteSegmentInfos.length && segIndex === segments.length) {
-      // 全セグメントが消費された
-      finalResult = true;
-    } else if (i === route.absoluteSegmentInfos.length && segIndex === segments.length - 1 && segments.at(-1) === '') {
-      // 末尾スラッシュ対応: /users/ -> ['', 'users', '']
+      // 全セグメントが消費された。
+      // 末尾スラッシュ（例: /users/）は matchRoutes 側で処理済み: normalizePathname が
+      // ルート以外の末尾スラッシュを除去し、matchRoutes の filter が末尾の空セグメントを
+      // 落とすため、testPath に渡る segments に末尾 '' は含まれない。よってここで
+      // 末尾スラッシュ用の分岐は不要（trailing-slash の結合テストは matchRoutes.test.ts 参照）。
       finalResult = true;
     }
   }

@@ -40,6 +40,11 @@ const UNSUPPORTED_SNAPSHOT = Object.freeze({
     type: null,
     angle: null,
 });
+// Shared reference so the same-value guard in `_setError` (§3.3 MUST) actually
+// suppresses a redundant redispatch across repeated unsupported lock()/unlock()
+// calls. A freshly-allocated `{ message: "unsupported" }` literal at each call
+// site would compare unequal to itself by reference and defeat the guard.
+const UNSUPPORTED_ERROR = Object.freeze({ message: "unsupported" });
 /**
  * Headless Screen Orientation primitive. A thin, framework-agnostic wrapper
  * around `screen.orientation` exposed through the wc-bindable protocol.
@@ -76,7 +81,7 @@ class ScreenOrientationCore extends EventTarget {
             // never-throw (§3.6, async-io-node-guidelines): lock()/unlock() failures
             // land here instead of rejecting/throwing. Mirrors the `error` property
             // every other bidirectional IO node exposes (FetchCore, GeolocationCore,
-            // NotificationCore) so `hidden@!error` style bindings work uniformly.
+            // NotificationCore) so `hidden@error`-style bindings work uniformly.
             { name: "error", event: "wcs-orientation:error" },
         ],
         commands: [
@@ -86,6 +91,17 @@ class ScreenOrientationCore extends EventTarget {
     };
     _target;
     _snapshot = UNSUPPORTED_SNAPSHOT;
+    // Sticky by design: unlike `_snapshot` (re-read from the live platform
+    // object on every observe()), `_error` is never reset by dispose() or a
+    // later observe() — it holds the most recent lock()/unlock() failure across
+    // a disconnect/reconnect cycle and is only replaced by the next lock()/
+    // unlock() call (success clears it via `_setError(null)`; a new failure
+    // overwrites it). There is no "current value" to re-read for a command
+    // outcome the way there is for the platform's live type/angle, so nothing
+    // to resync on reconnect. This asymmetry with `_snapshot` is intentional
+    // and matches the dominant IO-node pattern: GeolocationCore, WakeLockCore,
+    // FullscreenCore, ClipboardCore, and NotificationCore all leave their error
+    // field untouched in dispose() too.
     _error = null;
     // The live ScreenOrientation object the `change` listener is attached to
     // (kept so dispose() can remove it precisely; not read for anything else).
@@ -166,9 +182,10 @@ class ScreenOrientationCore extends EventTarget {
         const gen = ++this._gen;
         const api = this._api();
         if (!api || typeof api.lock !== "function") {
-            if (gen !== this._gen)
-                return;
-            this._setError({ message: "unsupported" });
+            // No stale-generation check here: nothing asynchronous has happened yet
+            // since `gen` was captured immediately above, so `_gen` cannot have
+            // changed underneath this synchronous branch.
+            this._setError(UNSUPPORTED_ERROR);
             return;
         }
         try {
@@ -193,7 +210,7 @@ class ScreenOrientationCore extends EventTarget {
         this._gen++;
         const api = this._api();
         if (!api || typeof api.unlock !== "function") {
-            this._setError({ message: "unsupported" });
+            this._setError(UNSUPPORTED_ERROR);
             return;
         }
         try {
@@ -227,7 +244,9 @@ class ScreenOrientationCore extends EventTarget {
     // `_setError`-adjacent state fields: a repeated `null` (e.g. a second
     // successful lock()) must not redispatch. `unsupported` (§7) is reported the
     // same way as any other lock()/unlock() failure — there is no dedicated
-    // unsupported state, only `error`.
+    // unsupported state, only `error`. This guard is a `===` reference check, so
+    // repeated unsupported calls only stay deduped because both call sites pass
+    // the shared `UNSUPPORTED_ERROR` constant rather than a fresh object literal.
     _setError(error) {
         if (this._error === error)
             return;

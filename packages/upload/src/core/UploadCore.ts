@@ -108,11 +108,26 @@ export class UploadCore extends EventTarget {
   }
 
   private _setError(error: any): void {
+    // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
+    // so suppressing redundant null→null dispatches (every upload start clears a
+    // usually-already-null error) avoids a spurious wcs-upload:error per
+    // successful upload. Reference identity is sufficient: each failure builds a
+    // fresh object, and the clear path always passes null.
+    if (this._error === error) return;
     this._error = error;
     this._target.dispatchEvent(new CustomEvent("wcs-upload:error", {
       detail: error,
       bubbles: true,
     }));
+  }
+
+  // Surface a Shell-originated error (e.g. maxSize / accept validation, which the
+  // Core has no knowledge of) on the shared `error` property so `el.error` stays
+  // sticky and consistent with Core-originated errors — same error contract as the
+  // rest of the @wcstack IO nodes. A later successful upload() clears it via
+  // _setError(null). Dispatches wcs-upload:error like any other error transition.
+  setError(error: any): void {
+    this._setError(error);
   }
 
   private _setResponse(value: any, status: number): void {

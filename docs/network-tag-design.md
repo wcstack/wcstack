@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/network`（`<wcs-network>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み。本文書は実装前に行った論点整理と決定事項のスナップショットであり、実装後も設計意図の参照用に保持している。以降の `hidden@slowConnection` / `hidden@!supported` 等の `@` 表記は説明用の擬似記法であり、実際の `data-wcs` 構文ではない点に注意（`!` 否定は state に存在せず、実装では `|not` フィルタを使う。README.md/README.ja.md 参照）。
 - **対象 WebAPI**: Network Information API（`navigator.connection`、`NetworkInformation` の `change` イベント）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ4（最小monitorパターン）の1本目。バッチ内で最も実装リスクが低い候補として最初の着手対象に選定済み。
 - **前提資産**: `permission`（単一イベント→派生getter、`_permGen`世代ガード、unsupportedフォールバック、Core/Shell分離）。ただし本ノードは非同期probeを持たないため`_permGen`相当の世代ガードが**不要**という重要な差異がある（§5）。
@@ -63,13 +63,13 @@ static wcBindable: IWcBindable = {
 ```
 
 - ネイティブの`navigator.connection`は単一の`change`イベントで全フィールドの変化を通知する実装なので、Core側もこれに倣い**スナップショットを1つのCustomEventにまとめて発火**する（個別フィールドごとのイベントに分解しない）
-- `supported`（後述§5）も同じイベントに同居させ、`hidden@!supported`のような条件分岐を1本のbindingで書けるようにする
+- `supported`（後述§5）も同じイベントに同居させ、`hidden@!supported`（擬似記法。実構文は`hidden: supported|not`）のような条件分岐を1本のbindingで書けるようにする
 
 ---
 
 ## 4. 同値ガードの単位 — **決定: スナップショット全体の比較**
 
-ネイティブAPIの`change`イベントはブラウザ側が「実際に変化した時だけ」発火する契約だが、ガイドライン§3.3のMUSTを満たすため、Core側でも防御的にスナップショット全体（`{effectiveType, downlink, rtt, saveData}`）を浅い比較し、フィールド単位ではなく**丸ごと同一なら再dispatchしない**。フィールドごとの個別追跡は行わない（実装を複雑にする割に実利が薄い）。
+ネイティブAPIの`change`イベントはブラウザ側が「実際に変化した時だけ」発火する契約だが、ガイドライン§3.3のMUSTを満たすため、Core側でも防御的にスナップショット全体（`{effectiveType, downlink, rtt, saveData}`。実装では§6で追加された`supported`を含む**5フィールド**を比較）を浅い比較し、フィールド単位ではなく**丸ごと同一なら再dispatchしない**。フィールドごとの個別追跡は行わない（実装を複雑にする割に実利が薄い）。
 
 ---
 
@@ -159,5 +159,5 @@ happy-domは`navigator.connection`を持たないため全モック。
 1. `NetworkCore`（`_api()`呼び出し時解決＋スナップショット比較＋`change`購読）。`_gen`が不要な分、`permission`より実装量は小さい
 2. Shell `<wcs-network>`（属性無し、`display:none`、connect時に無条件購読）
 3. Fake double（`FakeNetworkInformation`）とテスト一式
-4. example: 「低速回線時に画像を`loading`プレースホルダーに切り替える」を目玉に。`hidden@!supported`で非対応ブラウザでは要素ごと隠す例も併記し、「常態としてのunsupported」という§0の前提を実演する
+4. example: 「低速回線時に画像を`loading`プレースホルダーに切り替える」を目玉に。`hidden@!supported`（擬似記法。実構文は`hidden: supported|not`）で非対応ブラウザでは要素ごと隠す例も併記し、「常態としてのunsupported」という§0の前提を実演する
 5. README ja/en（対応ブラウザの限定・secure-context不要・常にフォールバック前提で設計すべき旨を明記）

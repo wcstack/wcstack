@@ -97,6 +97,18 @@ describe("PointerLockCore", () => {
     });
   });
 
+  describe("requestPointerLock() — target 未解決（null）", () => {
+    it("「API 未対応」とは別のメッセージで error へ落ちる", async () => {
+      installPointerLockDoc();
+      const core = new PointerLockCore();
+
+      await core.requestPointerLock(null);
+
+      expect(core.error).toEqual({ message: "Pointer Lock target could not be resolved." });
+      expect(core.active).toBe(false);
+    });
+  });
+
   describe('target="self" 相当: Shell と同名のコマンドを持つ要素でも衝突しない', () => {
     it("要素が独自の requestPointerLock メソッドを持っていても never-throw で正しく解決される（無限再帰しない）", async () => {
       installPointerLockDoc();
@@ -269,6 +281,39 @@ describe("PointerLockCore", () => {
       await p;
 
       expect(core.error).toBeNull();
+    });
+
+    it("先発 requestPointerLock() が後発の reject 後に resolve しても、後発が設定した error を上書きしない", async () => {
+      // 成功パス側の stale ガード（`await fn()` 直後の `if (gen !== this._gen) return;`）
+      // 専用の検証。dispose 経路の2テストは
+      // どちらも dispose() が _resolvedTarget を null にするため、このガードを
+      // 削除しても _applyActive() が自然に false を返し検出できない（弱い
+      // assert）。ここでは dispose を挟まず、同一 Core 上で先発(A)が pending の
+      // まま後発(B)が reject → error 設定 → その後に A が resolve、という順序で
+      // 「A の遅い成功が B の error を誤って握り潰さないこと」を直接検証する。
+      const elA = makeElement();
+      const elB = makeElement();
+      let resolveA!: () => void;
+      installPointerLockDoc({}, function (this: Element) {
+        if (this === elA) {
+          return new Promise<void>((resolve) => {
+            resolveA = resolve;
+          });
+        }
+        return Promise.reject(new DOMException("gesture required", "NotAllowedError"));
+      });
+      const core = new PointerLockCore();
+
+      const pA = core.requestPointerLock(elA); // gen=1, pending のまま
+      await core.requestPointerLock(elB); // gen=2, 同期的に reject → error 設定
+
+      expect(core.error).toBeInstanceOf(DOMException);
+
+      resolveA();
+      await pA; // gen=1 の成功が stale として無視されるべき
+
+      expect(core.error).toBeInstanceOf(DOMException);
+      expect((core.error as DOMException).name).toBe("NotAllowedError");
     });
   });
 

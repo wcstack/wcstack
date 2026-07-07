@@ -49,6 +49,7 @@ interface WcsTiltCoreValues {
     gamma: number | null;
     absolute: boolean | null;
     permissionState: TiltPermissionState;
+    error: any;
 }
 /**
  * Value types for the Shell (`<wcs-tilt>`) — identical observable surface to
@@ -72,13 +73,21 @@ declare function getConfig(): IConfig;
  * `<wcs-permission>` — the defining asymmetry within batch2.
  *
  * No `_gen` generation guard: subscribing/unsubscribing to `deviceorientation`
- * is fully synchronous, same reasoning as `@wcstack/network`.
+ * (start/stop) is fully synchronous, so that path never needs one. This node
+ * does have an async probe — `requestPermission()` awaits the static
+ * `DeviceOrientationEvent.requestPermission()` — but its post-await write is
+ * a benign `permissionState`/`error` value set + dispatch with no
+ * subscription/resource management to race, so `_gen` is unneeded there too
+ * (docs/device-orientation-tag-design.md §4, corrected after an earlier
+ * revision mistakenly reused `@wcstack/network`'s "no async probe at all"
+ * rationale).
  */
 declare class TiltCore extends EventTarget {
     static wcBindable: IWcBindable;
     private _target;
     private _snapshot;
     private _permissionState;
+    private _error;
     private _subscribed;
     private _ready;
     constructor(target?: EventTarget);
@@ -88,10 +97,12 @@ declare class TiltCore extends EventTarget {
     get gamma(): number | null;
     get absolute(): boolean | null;
     get permissionState(): TiltPermissionState;
+    get error(): any;
     observe(): Promise<void>;
     dispose(): void;
     private _deviceOrientationEventCtor;
     private _setPermissionState;
+    private _setError;
     /**
      * Wraps iOS 13+ Safari's static, gesture-gated
      * `DeviceOrientationEvent.requestPermission()`. On platforms without this
@@ -99,6 +110,12 @@ declare class TiltCore extends EventTarget {
      * to `"granted"` immediately without querying anything — callers can write
      * one `requestPermission()` → `start()` flow that works everywhere
      * (docs/device-orientation-tag-design.md §3).
+     *
+     * never-throw (§3.6): a gesture-context rejection resolves to `"denied"`
+     * and the raw error lands in `error` instead of propagating. Mirrors
+     * `<wcs-idle>`'s `requestPermission()` (docs/idle-detection-tag-design.md
+     * §4.1) — any settled (non-throwing) outcome supersedes a stale `error`
+     * from an earlier attempt.
      */
     requestPermission(): Promise<TiltPermissionState>;
     /** Subscribe to `deviceorientation`. Idempotent — a second start() while already subscribed is a no-op. */
@@ -130,6 +147,7 @@ declare class WcsTilt extends HTMLElement {
     get gamma(): number | null;
     get absolute(): boolean | null;
     get permissionState(): TiltPermissionState;
+    get error(): any;
     get connectedCallbackPromise(): Promise<void>;
     requestPermission(): Promise<TiltPermissionState>;
     start(): void;

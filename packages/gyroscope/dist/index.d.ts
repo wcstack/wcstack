@@ -34,7 +34,7 @@ interface IWritableConfig {
 
 /**
  * A single `reading` sample from the Gyroscope sensor: angular velocity
- * around the x/y/z axes, in degrees per second.
+ * around the x/y/z axes, in radians per second (rad/s).
  */
 interface WcsGyroscopeReading {
     x: number | null;
@@ -80,11 +80,11 @@ declare function getConfig(): IConfig;
  * the Generic Sensor API's `Gyroscope` class exposed through the
  * wc-bindable protocol.
  *
- * The platform `Sensor` base class (shared by `Gyroscope` / `Gyroscope` /
+ * The platform `Sensor` base class (shared by `Accelerometer` / `Gyroscope` /
  * `Magnetometer` / `AmbientLightSensor`) reports failure through an `'error'`
  * event rather than a rejected promise, so this Core can satisfy never-throw
  * (docs/async-io-node-guidelines.md §3.6) by simply forwarding that event —
- * see docs/gyroscope-tag-design.md §0. The one place a synchronous
+ * see docs/sensor-tag-design.md §0. The one place a synchronous
  * exception *can* still escape the platform API is the `Gyroscope`
  * constructor itself (e.g. `SecurityError` on permission denial or a
  * feature-policy block); `_createSensor()` wraps that single call in
@@ -103,12 +103,12 @@ declare function getConfig(): IConfig;
  *
  * No `_gen` generation guard: start()/stop() are a synchronous
  * subscribe/unsubscribe toggle with no asynchronous probe whose stale
- * resolution could race a dispose() — see docs/gyroscope-tag-design.md §1.5
+ * resolution could race a dispose() — see docs/sensor-tag-design.md §1.5
  * (the same reasoning as NetworkCore, docs/network-tag-design.md §5).
  *
  * Permissions: this Core does not query `navigator.permissions` itself.
  * Compose with `<wcs-permission name="gyroscope">` instead — see
- * docs/gyroscope-tag-design.md §"Permissions API連携".
+ * docs/sensor-tag-design.md §"2番目の決定: Permissions APIとの合成".
  */
 declare class GyroscopeCore extends EventTarget {
     static wcBindable: IWcBindable;
@@ -121,8 +121,9 @@ declare class GyroscopeCore extends EventTarget {
     get y(): number | null;
     get z(): number | null;
     get error(): WcsGyroscopeErrorDetail | null;
-    /** No asynchronous probe to await: start()/stop() are synchronous (§3.8 is
-     *  satisfied trivially, mirroring NetworkCore). */
+    /** No asynchronous probe to await: start()/stop() are synchronous
+     *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
+     *  NetworkCore). */
     get ready(): Promise<void>;
     private _setReading;
     private _setError;
@@ -150,11 +151,12 @@ declare class GyroscopeCore extends EventTarget {
     /**
      * Construct the platform `Gyroscope`, guarding both non-support and a
      * synchronous constructor exception. Never calls the raw `new Gyroscope(...)`
-     * anywhere else in this class — see docs/gyroscope-tag-design.md §1.5.
+     * anywhere else in this class — see docs/sensor-tag-design.md §1.5.
      *
-     * API resolution is call-time (§3.7): re-checked on every start(), never
-     * cached, so tests can install/remove the global freely and an unsupported
-     * environment is always reported correctly.
+     * API resolution is call-time (docs/async-io-node-guidelines.md §3.7):
+     * re-checked on every start(), never cached, so tests can install/remove
+     * the global freely and an unsupported environment is always reported
+     * correctly.
      */
     private _createSensor;
     private _onReading;
@@ -168,14 +170,18 @@ declare class GyroscopeCore extends EventTarget {
  * Unlike `<wcs-network>` / `<wcs-permission>` (pure monitors), this Shell is a
  * bidirectional node: `start`/`stop` commands (command-token: state → element)
  * alongside the `x`/`y`/`z`/`error` observable surface (event-token: element →
- * state). The `frequency` attribute is the sole configuration input, passed
- * straight through to the platform `Gyroscope` constructor's `{ frequency }`
- * option (docs/gyroscope-tag-design.md §1.2) — no range validation here;
- * an out-of-range value is left to the browser/sensor to reject via `error`.
+ * state). The `frequency` attribute is the sole configuration input, forwarded
+ * to the platform `Gyroscope` constructor's `{ frequency }` option
+ * (docs/sensor-tag-design.md §1.2). The getter normalizes it: a non-finite or
+ * non-positive value (NaN, 0, negative) reads back as `null` — meaning "no
+ * frequency specified" — so start() falls back to the platform default rather
+ * than forwarding a value the sensor would reject. Any positive finite value is
+ * passed through verbatim (no upper-bound clamping — an out-of-range-but-positive
+ * rate is still left to the browser/sensor to reject via `error`).
  *
  * Permission handling is intentionally NOT implemented here. Compose with
- * `<wcs-permission name="gyroscope">` instead (see README "Composing with
- * wcs-permission" and docs/gyroscope-tag-design.md).
+ * `<wcs-permission name="gyroscope">` instead (see the README's permission
+ * example, "Gate on permission, then start", and docs/sensor-tag-design.md).
  */
 declare class WcsGyroscope extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
@@ -183,7 +189,25 @@ declare class WcsGyroscope extends HTMLElement {
     private _core;
     private _connectedCallbackPromise;
     constructor();
-    /** Sampling frequency in Hz. `null` when unset (platform default applies). */
+    /**
+     * Sampling frequency in Hz. Reads back `null` when unset, blank, or when the
+     * attribute does not parse to a positive finite number (NaN, `"0"`, negative)
+     * — in every such "no usable value" case the platform default applies.
+     *
+     * Note the deliberate set/get asymmetry: `set frequency(0)` (or any
+     * non-positive/non-finite value) still writes the attribute verbatim for
+     * transparency/inspectability, but the getter normalizes it back to `null`.
+     * A round-trip through a non-positive value therefore does NOT preserve it —
+     * that value carries no valid sampling meaning, so it is treated as "unset"
+     * on read. Only positive finite frequencies survive a set→get round-trip.
+     *
+     * This value is read only at `start()` time. There is no
+     * `attributeChangedCallback`, and `GyroscopeCore.start()` is idempotent
+     * while already started (a redundant call is a no-op), so setting
+     * `frequency` (attribute or property) on an already-running sensor has no
+     * effect until the caller `stop()`s and `start()`s again (see the README's
+     * "Notes & limitations").
+     */
     get frequency(): number | null;
     set frequency(value: number | null | undefined);
     get x(): number | null;

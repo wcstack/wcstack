@@ -45,6 +45,7 @@ npm install @wcstack/eyedropper
 <wcs-state>
   <script type="module">
     export default {
+      $commandTokens: ["open"],
       pickColor() {
         this.$command.open.emit();
       },
@@ -52,29 +53,48 @@ npm install @wcstack/eyedropper
   </script>
 </wcs-state>
 
-<wcs-eyedropper command.open="$command.open"></wcs-eyedropper>
+<wcs-eyedropper data-wcs="command.open: $command.open"></wcs-eyedropper>
 
-<button data-wcs="onclick: pickColor">色を拾う</button>
+<button id="pick-button" data-wcs="onclick: pickColor">色を拾う</button>
 ```
 
 ### 2. 拾った色の反映とキャンセル
 
 ```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["open", "abort"],
+      pickedColor: null,
+      picking: false,
+      pickError: null,
+      // 最初の選択が成功するまで pickedColor は null のままなので、hex 値は
+      // null 安全な computed getter 経由でバインドする（pickedColor.sRGBHex
+      // という生パスをバインドすると、選択前に null の中を辿ってしまう）。
+      get pickedHex() {
+        return this.pickedColor?.sRGBHex ?? "";
+      },
+      pickColor() {
+        this.$command.open.emit();
+      },
+      cancelPick() {
+        this.$command.abort.emit();
+      },
+    };
+  </script>
+</wcs-state>
+
 <wcs-eyedropper
-  command.open="$command.open"
-  command.abort="$command.abort"
-  event.value="$event.pickedColor"
-  event.loading="$event.picking"
-  event.error="$event.pickError"
+  data-wcs="command.open: $command.open; command.abort: $command.abort; value: pickedColor; loading: picking; error: pickError"
 ></wcs-eyedropper>
 
 <button data-wcs="onclick: pickColor; disabled: picking">
   色を拾う
 </button>
-<button data-wcs="onclick: cancelPick; hidden: !picking">キャンセル</button>
+<button data-wcs="onclick: cancelPick; hidden: picking|not">キャンセル</button>
 
-<div data-wcs="style.backgroundColor: pickedColor.sRGBHex"></div>
-<p data-wcs="hidden: !pickError">何か問題が発生しました。</p>
+<div data-wcs="style.backgroundColor: pickedHex"></div>
+<p data-wcs="hidden: pickError|falsy">何か問題が発生しました。</p>
 ```
 
 ### 3. 非対応ブラウザではボタンを隠す
@@ -84,6 +104,7 @@ npm install @wcstack/eyedropper
 ```html
 <script type="module">
   const supported = typeof EyeDropper !== "undefined";
+  // #pick-button は例1の「色を拾う」ボタン。
   document.querySelector("#pick-button").hidden = !supported;
   // 非対応のモバイル/Firefox/Safari では <input type="color"> のフォールバックを提供する。
 </script>
@@ -95,8 +116,10 @@ npm install @wcstack/eyedropper
 | ----------- | ----------------------------------- | ---- |
 | `value`     | `wcs-eyedropper:complete`           | プラットフォーム自身の戻り値オブジェクト `{ sRGBHex: string }` をそのまま使用（合成不要。`@wcstack/share` の `value` が呼び出し元の入力をエコーバックするのとは異なる）。成功した選択が一度も無ければ `null`。 |
 | `loading`   | `wcs-eyedropper:loading-changed`    | スポイトカーソルが有効な間（`open()` 呼び出しが進行中）は `true`。 |
-| `error`     | `wcs-eyedropper:error`              | 真のプラットフォーム障害（ピッカーがキャンセルされた場合を除く全て）。まだ失敗が無い場合、またはリセット後は `null`。 |
+| `error`     | `wcs-eyedropper:error`              | 真のプラットフォーム障害（ピッカーがキャンセルされた場合を除く全て）。まだ失敗が無い場合、または次の `open()` 呼び出しでリセットされた後は `null`。 |
 | `cancelled` | `wcs-eyedropper:cancelled-changed`  | 選択が完了しなかった場合に `true` — ユーザーが Escape を押した場合と、呼び出し元が `abort()` を呼んだ場合の両方。どちらも同じ `AbortError` として現れ、区別されない。 |
+
+`cancelled` と `error` はどちらも、次の `open()` 呼び出しの **開始時** にリセットされる（`false` / `null`）ため、前回の呼び出しの古い結果が次回の結果に残り続けることはありません。
 
 ## コマンド
 
@@ -113,6 +136,7 @@ npm install @wcstack/eyedropper
 
 - **Chromium 限定・デスクトップ向け。** 上記参照。2026年時点で Firefox と Safari は `EyeDropper` を実装しておらず、意味のあるタッチ入力の等価物もありません。
 - **`abort()` は進行中の `open()` を中断する。** ユーザーが Escape を押した場合も、呼び出し元が `abort()` を呼んだ場合も、同じ `cancelled` という結果に解決される — 両者を区別する方法は無く、その必要もない。
+- **同時に開けるピッカーはプラットフォーム全体で1つ。** 仕様の `InvalidStateError` は大域排他 — 別の eye dropper が既に開いている場合（2つ目の `<wcs-eyedropper>` インスタンスや別タブ）、`open()` はこのエラーで reject され、`cancelled` ではなく `error` に着地する。単一インスタンス内では発生しない — 新しい `open()` は先に前回の進行中の選択を中断するため。
 - **素早い `abort()` → `open()` の連打でも `AbortController` が混線しない。** 新しい `open()` 呼び出しは前回の進行中の呼び出しを中断し、新しい `AbortController` を発行する。前回呼び出しの後始末は、自身がまだ所有しているフィールドのみをクリアする（`FetchCore` の identity チェックと同型）。
 - **対応判定。** 専用の `supported` フラグは持たない。`open()` は呼び出し時に `typeof EyeDropper === "function"` を確認し、無ければ即座に `error` を設定する（非同期処理を開始しないため `_gen` は進めず、`new EyeDropper()` も構築されない）。
 - **`_gen` 世代ガード。** `dispose()` 後（例: ピッカーが有効な間の高速切断）に解決した `open()` 呼び出しは stale であり、破棄済みの要素へ状態を書き込まない。

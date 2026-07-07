@@ -38,9 +38,17 @@ export class ContactsCore extends EventTarget {
   private _loading: boolean = false;
   private _error: any = null;
   private _cancelled: boolean = false;
-  // Generation guard (§3.4 of the guidelines): bumped on dispose() (and each
-  // select() start). A select() that settles after dispose() has a stale
-  // `gen` and MUST NOT write state to a torn-down element. Not bumped on the
+  // Generation guard (§3.4 of the guidelines): bumped ONLY by dispose(). A
+  // select() that settles after dispose() has a stale `gen` and MUST NOT
+  // write state to a torn-down element. Unlike FetchCore/EyedropperCore,
+  // select() itself does NOT bump `_gen` on each call: the archetype
+  // (docs/web-share-tag-design.md §2, adopted verbatim by
+  // docs/contact-picker-tag-design.md §1) deliberately drops the "a new call
+  // supersedes the previous one" plumbing those cores need, because the
+  // contact picker is a single system-modal surface (a second concurrent
+  // select() rejects with InvalidStateError on its own). Bumping `_gen` per
+  // call would instead let a fast-failing second call incorrectly invalidate
+  // a still-pending first call's eventual success. Also not bumped on the
   // unsupported early-return — no asynchronous work is started, so there is
   // no generation to protect.
   private _gen = 0;
@@ -138,7 +146,9 @@ export class ContactsCore extends EventTarget {
       return null;
     }
 
-    const gen = ++this._gen;
+    // Captured, not bumped (see the `_gen` field docs above): select() does
+    // not supersede a prior in-flight call, only dispose() invalidates.
+    const gen = this._gen;
 
     this._setLoading(true);
     // Reset the previous outcome before starting a new select so a stale

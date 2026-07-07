@@ -47,8 +47,11 @@ export interface WcsCredentialCoreValues {
   // A true platform failure (anything other than the user cancelling the
   // account chooser, or a v1 scope violation such as a `publicKey` option).
   error: any;
-  // `true` when the user dismissed the browser's account-chooser UI
-  // (AbortError). Kept separate from `error`, mirroring `@wcstack/share`.
+  // `true` when the user dismissed the browser's account-chooser UI. The
+  // Credential Management API rejects with `NotAllowedError` (not `AbortError`)
+  // on user refusal — see docs/credential-tag-design.md §2. Kept separate from
+  // `error`, mirroring `@wcstack/share`'s `cancelled` (which keys off that
+  // API's own dismissal error name instead).
   cancelled: boolean;
 }
 

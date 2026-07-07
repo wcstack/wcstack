@@ -60,13 +60,13 @@ npm install @wcstack/credential
 | `value`     | `wcs-credential:complete`           | 取得/保存された資格情報、成功前は`null`。 |
 | `loading`   | `wcs-credential:loading-changed`    | `get()`/`store()`呼び出し中は`true`。 |
 | `error`     | `wcs-credential:error`              | 真のプラットフォーム失敗（正規化された`{ name, message }`）、無ければ`null`。 |
-| `cancelled` | `wcs-credential:cancelled-changed`  | ユーザーがブラウザのアカウント選択UIを閉じたら`true`。 |
+| `cancelled` | `wcs-credential:cancelled-changed`  | ユーザーがブラウザのアカウント選択UIを閉じたら`true`（Credential Management APIは`NotAllowedError`でrejectする）。`error`には含めない。 |
 
 ## コマンド
 
 | コマンド | 非同期 | 説明 |
 | -------- | ------ | ---- |
-| `get`    | はい   | `get(options)` — `options.publicKey`はスコープ違反として拒否（転送しない、上記参照）。never-throw: AbortErrorは`cancelled`へ、それ以外は`error`へ。 |
+| `get`    | はい   | `get(options)` — `options.publicKey`はスコープ違反として拒否（転送しない、上記参照）。never-throw: `NotAllowedError`（ユーザーがアカウント選択UIを閉じた）は`cancelled`へ、それ以外は`error`へ。 |
 | `store`  | はい   | `store(credential)` — `value`は入力した資格情報をそのままエコーバック（`navigator.credentials.store()`自体は`Promise<void>`でresolveするため）。 |
 
 ## 属性 / 入力

@@ -8,14 +8,18 @@ import { MagnetometerCore } from "../core/MagnetometerCore.js";
  * Unlike `<wcs-network>` / `<wcs-permission>` (pure monitors), this Shell is a
  * bidirectional node: `start`/`stop` commands (command-token: state → element)
  * alongside the `x`/`y`/`z`/`error` observable surface (event-token: element →
- * state). The `frequency` attribute is the sole configuration input, passed
- * straight through to the platform `Magnetometer` constructor's `{ frequency }`
- * option (docs/magnetometer-tag-design.md §1.2) — no range validation here;
- * an out-of-range value is left to the browser/sensor to reject via `error`.
+ * state). The `frequency` attribute is the sole configuration input, forwarded
+ * to the platform `Magnetometer` constructor's `{ frequency }` option
+ * (docs/sensor-tag-design.md §1.2). The getter normalizes it: a non-finite or
+ * non-positive value (NaN, 0, negative) reads back as `null` — meaning "no
+ * frequency specified" — so start() falls back to the platform default rather
+ * than forwarding a value the sensor would reject. Any positive finite value is
+ * passed through verbatim (no upper-bound clamping — an out-of-range-but-positive
+ * rate is still left to the browser/sensor to reject via `error`).
  *
  * Permission handling is intentionally NOT implemented here. Compose with
- * `<wcs-permission name="magnetometer">` instead (see README "Composing with
- * wcs-permission" and docs/magnetometer-tag-design.md).
+ * `<wcs-permission name="magnetometer">` instead (see the README's permission
+ * example, "Gate on permission, then start", and docs/sensor-tag-design.md).
  */
 export class WcsMagnetometer extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -37,7 +41,25 @@ export class WcsMagnetometer extends HTMLElement {
 
   // --- Attribute accessors ---
 
-  /** Sampling frequency in Hz. `null` when unset (platform default applies). */
+  /**
+   * Sampling frequency in Hz. Reads back `null` when unset, blank, or when the
+   * attribute does not parse to a positive finite number (NaN, `"0"`, negative)
+   * — in every such "no usable value" case the platform default applies.
+   *
+   * Note the deliberate set/get asymmetry: `set frequency(0)` (or any
+   * non-positive/non-finite value) still writes the attribute verbatim for
+   * transparency/inspectability, but the getter normalizes it back to `null`.
+   * A round-trip through a non-positive value therefore does NOT preserve it —
+   * that value carries no valid sampling meaning, so it is treated as "unset"
+   * on read. Only positive finite frequencies survive a set→get round-trip.
+   *
+   * This value is read only at `start()` time. There is no
+   * `attributeChangedCallback`, and `MagnetometerCore.start()` is idempotent
+   * while already started (a redundant call is a no-op), so setting
+   * `frequency` (attribute or property) on an already-running sensor has no
+   * effect until the caller `stop()`s and `start()`s again (see the README's
+   * "Notes & limitations").
+   */
   get frequency(): number | null {
     const attr = this.getAttribute("frequency");
     if (attr === null || attr.trim() === "") return null;
@@ -90,7 +112,7 @@ export class WcsMagnetometer extends HTMLElement {
   // Deliberately does NOT auto-start the sensor on connect. Unlike
   // Geolocation (whose default phase acquires a fix immediately unless
   // `manual` is set), Magnetometer has no such "connect implies observing"
-  // precedent in the design doc (docs/magnetometer-tag-design.md §1.3):
+  // precedent in the design doc (docs/sensor-tag-design.md §1.3):
   // start/stop are the only commands, so connecting the element merely makes
   // it inert until a command-token `start` (or the `start()` method) is
   // invoked. This also keeps behavior predictable when composed with
@@ -98,8 +120,8 @@ export class WcsMagnetometer extends HTMLElement {
   // typically gated on `granted`.
   connectedCallback(): void {
     this.style.display = "none";
-    // No asynchronous probe to await (§3.8); kept for SSR uniformity with
-    // other IO nodes.
+    // No asynchronous probe to await (docs/async-io-node-guidelines.md §3.8);
+    // kept for SSR uniformity with other IO nodes.
     this._connectedCallbackPromise = this._core.ready;
   }
 

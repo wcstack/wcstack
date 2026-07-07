@@ -19,7 +19,7 @@
 
 ## なぜ存在するか — 操作対象は「タグ自身」ではなく「参照先」
 
-`Element.requestFullscreen()` はfullscreen化したい要素（画像・動画・カードUIなど）に対するメソッドであり、`<wcs-fullscreen>` 自身に対するものではありません。そのため本タグは非表示の制御要素（既定で `display:none`）として存在し、`<wcs-intersect>` と全く同じ規則で `target` 属性を介して別の要素を指し示します:
+`Element.requestFullscreen()` はfullscreen化したい要素（画像・動画・カードUIなど）に対するメソッドであり、`<wcs-fullscreen>` 自身に対するものではありません。そのため本タグは非表示の制御要素（`display` はターゲット解決モードに応じて決まります — 下表参照）として存在し、`<wcs-intersect>` と全く同じ規則で `target` 属性を介して別の要素を指し示します:
 
 | `target`             | 操作対象                  | display     | 典型的な用途                |
 | --------------------- | -------------------------- | ------------ | ---------------------------- |
@@ -43,30 +43,45 @@ npm install @wcstack/fullscreen
 
 <wcs-state>
   <script type="module">
-    export default {};
+    export default {
+      $commandTokens: ["goFullscreen"],
+    };
   </script>
 </wcs-state>
 
-<wcs-fullscreen target="#hero" id="fs"></wcs-fullscreen>
+<wcs-fullscreen target="#hero" data-wcs="command.requestFullscreen: $command.goFullscreen"></wcs-fullscreen>
 <img id="hero" src="/photo.jpg">
-<button command.click:$command.requestFullscreen $for="fs">Fullscreen</button>
+<button data-wcs="onclick: $command.goFullscreen">Fullscreen</button>
 ```
+
+ボタンは `<wcs-fullscreen>` を直接操作しません。クリックで `goFullscreen` コマンドトークンをemitし、`<wcs-fullscreen>` は `command.requestFullscreen: $command.goFullscreen` でそのトークンを購読します（[command-tokenプロトコル](../state/) — コマンドメソッドを持つ要素側が購読者、emitする側はボタン）。
 
 ### 2. 動画をラップし、fullscreen中のみ終了ボタンを表示
 
 ```html
-<wcs-fullscreen data-wcs="active: isFullscreen">
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["exitFs"],
+      isFullscreen: false,
+    };
+  </script>
+</wcs-state>
+
+<wcs-fullscreen data-wcs="active: isFullscreen; command.exitFullscreen: $command.exitFs">
   <video src="/movie.mp4" controls></video>
 </wcs-fullscreen>
-<button data-wcs="hidden: !isFullscreen" command.click:$command.exitFullscreen>終了</button>
+<button data-wcs="hidden: isFullscreen|not; onclick: $command.exitFs">終了</button>
 ```
+
+バインドする state パスは事前宣言が必須です（ここでは `isFullscreen: false`。未宣言パスへのバインドは初期化時に throw します）。`data-wcs` のパスでの否定は先頭 `!` ではなく `|not` フィルタで行います（`isFullscreen|not`）— パス構文に前置演算子は存在しません。
 
 ## 観測可能プロパティ（出力）
 
 | プロパティ | イベント                | 説明 |
 | ----------- | ------------------------ | ---- |
 | `active`    | `wcs-fullscreen:change`  | `document.fullscreenElement` が**このインスタンスが解決したtarget**と一致している間 `true`、それ以外は `false`。 |
-| `error`     | *（無し — 単純なgetter）* | 直近の失敗（rejectされたPromise、または非対応APIの場合は `{ message }`）、直近の呼び出しが成功済み・まだ何も失敗していない場合は `null`。 |
+| `error`     | *（無し — 単純なgetter、data-wcsでバインド不可）* | 直近の失敗: rejectされたPromise（gesture外呼び出しなら `TypeError` 等）、プラットフォームAPI非対応なら `{ message: "Fullscreen API is not supported." }`、`target` が要素へ未解決なら `{ message: "Fullscreen target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は `null`。 |
 
 ## コマンド
 
@@ -83,11 +98,11 @@ npm install @wcstack/fullscreen
 
 ## 注意・制限
 
-- **user gesture制約。** `requestFullscreen()` は実際のuser gesture（クリックハンドラ等）内から同期的に呼ばれた場合のみ成功します。本ノードはgestureを生成できません — command-tokenプロトコル経由（`command.click:$command.requestFullscreen`）で呼び出す場合は、**起動元のイベント自体**が本物のuser gestureであることを確認してください。`setTimeout` の中やPromiseチェーンの奥深くから呼び出すと、呼び出し方法に関わらず `NotAllowedError` でrejectされます — これはブラウザレベルの制約であり、wcstack側で回避する手段はありません。
+- **user gesture制約。** `requestFullscreen()` は実際のuser gesture（クリックハンドラ等）内から同期的に呼ばれた場合のみ成功します。本ノードはgestureを生成できません — command-tokenプロトコル経由（`<wcs-fullscreen>` 側の `command.requestFullscreen: $command.<token>`、ボタン側の `onclick: $command.<token>`）で呼び出す場合は、**起動元のイベント自体**が本物のuser gestureであることを確認してください。`setTimeout` の中やPromiseチェーンの奥深くから呼び出すと、呼び出し方法に関わらず `TypeError`（WHATWG Fullscreen仕様のtransient-activationチェックによる。`NotAllowedError` ではない）でrejectされます — これはブラウザレベルの制約であり、wcstack側で回避する手段はありません。
 - **ベンダープレフィックス。** 一部の古いSafariバージョンは `webkitRequestFullscreen` / `webkitExitFullscreen` / `webkitFullscreenElement` / `webkitfullscreenchange` のみを実装しています。Coreは標準名を優先的にプローブし、**呼び出しの都度**（非キャッシュ）レガシー名にフォールバックするため、両方とも透過的にサポートされます。
-- **複数インスタンス。** `document.fullscreenElement` はdocument全体で単一の値です。異なるtargetを指す複数の `<wcs-fullscreen>` インスタンスが存在する場合、`target` が `document.fullscreenElement` と一致するインスタンスのみが `active: true` を報告し、他は正しく `false` を報告します。各インスタンスは内部で**自分自身が解決したtarget**を追跡しており、単純に「何かがfullscreenかどうか」をミラーしているわけではありません。
+- **複数インスタンス。** `document.fullscreenElement` はdocument全体で単一の値です。異なるtargetを指す複数の `<wcs-fullscreen>` インスタンスが存在する場合、`target` が `document.fullscreenElement` と一致するインスタンスのみが `active: true` を報告し、他は正しく `false` を報告します。各インスタンスは内部で**自分自身が解決したtarget**を追跡しており、単純に「何かがfullscreenかどうか」をミラーしているわけではありません。ただし非対称な点に注意: `exitFullscreen()` はインスタンス単位にスコープされて**いません** — document全体に作用する `document.exitFullscreen()` を呼ぶため、どのインスタンスから呼んでも、現在fullscreenの要素（別インスタンスの `target` がfullscreen化した要素であっても）を解除します（silent no-opの判定も同様にdocument全体の「何かがfullscreenか」であり、「自分のtargetがfullscreenか」ではありません）。これはプラットフォームAPI自体の挙動をそのまま反映したものです。
 - **`exitFullscreen()` は安全なno-op。** 何もfullscreenでない状態（またはAPI非対応）で呼び出してもエラーなくresolveします — 失敗しうる事前条件チェックではなく、べき等な「fullscreenでないことを保証する」コマンドとして扱われます。
-- **`error` に専用イベントは無い。** 大半のwcstack IOノードと異なり、`error` は専用の `wcs-fullscreen:error` イベントを持たない単純なgetterです — コマンドがsettleした後に読み取ってください（または直接バインドすれば、コマンド完了のたびに `active` と一緒に変化します）。
+- **`error` に専用イベントは無く、`data-wcs` でバインドもできない。** 大半のwcstack IOノードと異なり、`error` は専用の `wcs-fullscreen:error` イベントを持たない単純なgetterで、`static wcBindable.properties` にも宣言されていません — バインディング側が購読できる対象が無いため、リアクティブに観測することはできません。コマンドのPromiseがsettleした後、`element.error` を命令的に読み取ってください（例: `await el.requestFullscreen(); if (el.error) { ... }`）。
 - **`_gen` 世代ガード。** `dispose()` 後（または後続の呼び出しに追い越された後）にsettleした進行中の `requestFullscreen()`/`exitFullscreen()` 呼び出しは、破棄済みの状態を書き換えません。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開しますが、`fullscreenchange` の購読が同期的なため、この promise は常に即座に settle します。
 

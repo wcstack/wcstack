@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { FullscreenCore } from "../src/core/FullscreenCore";
 import {
   stubRequestFullscreen,
+  stubRequestFullscreenOnElementPrototype,
   stubExitFullscreen,
   removeRequestFullscreen,
   removeExitFullscreen,
@@ -9,6 +10,7 @@ import {
   clearFullscreenElement,
   dispatchFullscreenChange,
   resetFullscreenEnvironment,
+  withoutOnfullscreenchange,
 } from "./mocks";
 
 describe("FullscreenCore", () => {
@@ -78,20 +80,42 @@ describe("FullscreenCore", () => {
 
       expect(events).toEqual([{ active: true }]);
     });
+
+    it("error が立った状態から成功すると error が null に戻る", async () => {
+      // README の契約 "null if the last attempt succeeded" の直接検証。
+      // 他の成功テストは error が最初から null のため、成功パスの
+      // _setError(null) を削除しても検出できない（弱アサート）——先に error を
+      // 立ててから成功させ、クリアの効果そのものを検証する。
+      const el = document.createElement("div");
+      stubRequestFullscreen(el);
+      const core = new FullscreenCore();
+      core.observe();
+      await core.requestFullscreen(null); // target 未解決で error を立てる
+      expect(core.error).toEqual({ message: "Fullscreen target could not be resolved." });
+
+      await core.requestFullscreen(el);
+
+      expect(core.error).toBeNull();
+      expect(core.active).toBe(true);
+    });
   });
 
   describe("requestFullscreen() — gesture 外呼び出し想定の reject", () => {
-    it("NotAllowedError で reject しても never-throw で error に格納する", async () => {
+    it("TypeError で reject しても never-throw で error に格納する", async () => {
+      // WHATWG Fullscreen 仕様の fullscreen element ready check は、transient
+      // activation (user gesture) が無い場合 TypeError で reject する
+      // (https://fullscreen.spec.whatwg.org/) — NotAllowedError ではない。
       const el = document.createElement("div");
-      const notAllowed = new Error("Permission denied");
-      notAllowed.name = "NotAllowedError";
-      stubRequestFullscreen(el, { rejectWith: notAllowed });
+      const gestureError = new TypeError(
+        "Failed to execute 'requestFullscreen' on 'Element': API can only be initiated by a user gesture.",
+      );
+      stubRequestFullscreen(el, { rejectWith: gestureError });
       const core = new FullscreenCore();
       core.observe();
 
       await expect(core.requestFullscreen(el)).resolves.toBeUndefined();
 
-      expect(core.error).toBe(notAllowed);
+      expect(core.error).toBe(gestureError);
       expect(core.active).toBe(false);
     });
   });
@@ -108,14 +132,16 @@ describe("FullscreenCore", () => {
       expect(core.error).toEqual({ message: "Fullscreen API is not supported." });
       expect(core.active).toBe(false);
     });
+  });
 
-    it("target 要素が null（未解決）の場合も error へ落ちる", async () => {
+  describe("requestFullscreen() — target 未解決（null）", () => {
+    it("「API 未対応」とは別のメッセージで error へ落ちる", async () => {
       const core = new FullscreenCore();
       core.observe();
 
       await core.requestFullscreen(null);
 
-      expect(core.error).toEqual({ message: "Fullscreen API is not supported." });
+      expect(core.error).toEqual({ message: "Fullscreen target could not be resolved." });
       expect(core.active).toBe(false);
     });
   });
@@ -131,6 +157,92 @@ describe("FullscreenCore", () => {
 
       expect(core.active).toBe(true);
       expect(core.error).toBeNull();
+    });
+  });
+
+  describe("requestFullscreen() — API 解決のシャドウ回避（Element.prototype 直参照）", () => {
+    it("Element.prototype の標準 API で解決できる（実ブラウザ相当の配置）", async () => {
+      const restore = stubRequestFullscreenOnElementPrototype();
+      try {
+        const el = document.createElement("div");
+        const core = new FullscreenCore();
+        core.observe();
+
+        await core.requestFullscreen(el);
+
+        expect(core.active).toBe(true);
+        expect(core.error).toBeNull();
+      } finally {
+        restore();
+      }
+    });
+
+    it("Element.prototype のレガシー API のみでも解決できる（対称性）", async () => {
+      const restore = stubRequestFullscreenOnElementPrototype({ legacy: true });
+      try {
+        const el = document.createElement("div");
+        const core = new FullscreenCore();
+        core.observe();
+
+        await core.requestFullscreen(el);
+
+        expect(core.active).toBe(true);
+        expect(core.error).toBeNull();
+      } finally {
+        restore();
+      }
+    });
+
+    it("サブクラスが同名メソッドを定義していても Element.prototype の API を呼ぶ（シャドウさせない）", async () => {
+      // <wcs-fullscreen> 自身が requestFullscreen() コマンドメソッドを持つため、
+      // 素の el.requestFullscreen 参照はサブクラスのメソッドを拾って無限再帰する
+      // （target="self" のスタックオーバーフロー回帰）。Core はサブクラスの
+      // prototype を飛ばして Element.prototype を直接参照しなければならない。
+      class ShadowingElement extends HTMLElement {
+        subclassCalled = false;
+        async requestFullscreen(): Promise<void> {
+          this.subclassCalled = true;
+          throw new Error("subclass command method must not be invoked by the Core");
+        }
+      }
+      if (!customElements.get("test-shadowing-element")) {
+        customElements.define("test-shadowing-element", ShadowingElement);
+      }
+      const restore = stubRequestFullscreenOnElementPrototype();
+      try {
+        const el = document.createElement("test-shadowing-element") as ShadowingElement;
+        const core = new FullscreenCore();
+        core.observe();
+
+        await core.requestFullscreen(el);
+
+        expect(el.subclassCalled).toBe(false);
+        expect(core.active).toBe(true);
+        expect(core.error).toBeNull();
+      } finally {
+        restore();
+      }
+    });
+
+    it("インスタンス own property のスタブは Element.prototype より優先される", async () => {
+      // テスト・意図的な要素単位のモンキーパッチは own property として現れる。
+      // own → Element.prototype の順で解決することを確認する。
+      const restore = stubRequestFullscreenOnElementPrototype({
+        rejectWith: new Error("prototype stub must not win over an own property"),
+      });
+      try {
+        const el = document.createElement("div");
+        stubRequestFullscreen(el); // own property
+        const core = new FullscreenCore();
+        core.observe();
+
+        await core.requestFullscreen(el);
+
+        expect(core.active).toBe(true);
+        expect(core.error).toBeNull();
+      } finally {
+        restore();
+      }
     });
   });
 
@@ -232,6 +344,29 @@ describe("FullscreenCore", () => {
 
       expect(core.active).toBe(false);
     });
+
+    it("error が立った状態から exitFullscreen() が成功すると error が null に戻る", async () => {
+      // requestFullscreen() 側の同名テストと対になる、exit 成功パスの
+      // _setError(null) の効果検証。reject する exit で error を立ててから、
+      // 成功する exit でクリアされることを確認する。
+      const el = document.createElement("div");
+      stubRequestFullscreen(el);
+      const core = new FullscreenCore();
+      core.observe();
+      await core.requestFullscreen(el);
+      expect(core.active).toBe(true);
+
+      const failure = new Error("exit failed");
+      stubExitFullscreen({ rejectWith: failure });
+      await core.exitFullscreen();
+      expect(core.error).toBe(failure); // error が立っている
+
+      stubExitFullscreen(); // 成功する exit に差し替え
+      await core.exitFullscreen();
+
+      expect(core.error).toBeNull();
+      expect(core.active).toBe(false);
+    });
   });
 
   describe("exitFullscreen() — reject", () => {
@@ -281,6 +416,26 @@ describe("FullscreenCore", () => {
       await p;
 
       expect(core.error).toBeNull();
+    });
+
+    it("進行中の requestFullscreen() を no-op の exitFullscreen() が追い越さない（error が握り潰されない）", async () => {
+      // 何も fullscreen でない状態での exitFullscreen() は silent no-op であり、
+      // 世代を進めてはならない。進めてしまうと、pending 中の request が
+      // reject したとき stale 扱いになり error が観測できなくなる。
+      const el = document.createElement("div");
+      let rejectFn: ((e: any) => void) | undefined;
+      (el as any).requestFullscreen = () => new Promise<void>((_resolve, reject) => { rejectFn = reject; });
+      const core = new FullscreenCore();
+      core.observe();
+      clearFullscreenElement();
+
+      const p = core.requestFullscreen(el);
+      await core.exitFullscreen(); // no-op: 何も fullscreen ではない
+      const failure = new TypeError("gesture rejected");
+      rejectFn!(failure);
+      await p;
+
+      expect(core.error).toBe(failure);
     });
 
     it("dispose 後に exitFullscreen() の Promise が resolve しても状態を書き換えない", async () => {
@@ -413,17 +568,9 @@ describe("FullscreenCore", () => {
     it("標準の onfullscreenchange が無ければ webkitfullscreenchange を購読する", async () => {
       // "onfullscreenchange" は happy-dom のプロトタイプチェーン上にある own
       // property なので、document 自身に defineProperty しても `in` 演算子の
-      // 判定は変わらない。プロトタイプチェーンを遡って所有者を見つけ、一時的に
-      // 削除してからテスト後に必ず復元する。
-      let proto: any = document;
-      while (proto && !Object.prototype.hasOwnProperty.call(proto, "onfullscreenchange")) {
-        proto = Object.getPrototypeOf(proto);
-      }
-      expect(proto).toBeTruthy();
-      const descriptor = Object.getOwnPropertyDescriptor(proto, "onfullscreenchange");
-      expect(descriptor).toBeDefined();
-      delete proto.onfullscreenchange;
-      try {
+      // 判定は変わらない。withoutOnfullscreenchange ヘルパがプロトタイプ
+      // チェーンを遡って所有者から一時的に削除し、finally で必ず復元する。
+      await withoutOnfullscreenchange(async () => {
         expect("onfullscreenchange" in document).toBe(false);
 
         const el = document.createElement("div");
@@ -443,9 +590,9 @@ describe("FullscreenCore", () => {
         core.observe();
         core.dispose();
         expect(removeSpy).toHaveBeenCalledWith("webkitfullscreenchange", expect.any(Function));
-      } finally {
-        Object.defineProperty(proto, "onfullscreenchange", descriptor!);
-      }
+      });
+      // ヘルパの finally が復元済みであることを確認する。
+      expect("onfullscreenchange" in document).toBe(true);
     });
   });
 });

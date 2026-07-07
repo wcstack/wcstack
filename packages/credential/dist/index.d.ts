@@ -118,6 +118,7 @@ declare class CredentialCore extends EventTarget {
     private _setCancelled;
     private _api;
     private _normalizeError;
+    private _isCancellation;
     /**
      * `get(options)` — v1 scope excludes `publicKey` (WebAuthn). If present, it
      * is stripped and the call surfaces a scope-violation `error` instead of
@@ -135,6 +136,11 @@ declare class CredentialCore extends EventTarget {
      * `lib.dom.d.ts`) — there is no payload to read off the API, so `value` is
      * synthesized as an echo of the caller's `credential`, mirroring
      * `ShareCore.share()`'s same accommodation for `navigator.share()`.
+     *
+     * A `PublicKeyCredential` (`type === "public-key"`, WebAuthn) is rejected as a
+     * scope violation before touching the platform API — the same v1 boundary
+     * `get()` enforces on the `publicKey` option (docs/credential-tag-design.md
+     * §3.2), so this node never becomes a WebAuthn store backdoor.
      */
     store(credential: StorableCredential): Promise<Credential | null>;
 }

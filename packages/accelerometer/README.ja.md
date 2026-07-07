@@ -33,28 +33,58 @@ npm install @wcstack/accelerometer
 
 ### 1. 加速度をライブ表示
 
+`<wcs-accelerometer>`は接続時に**自動開始しません** — バインドしただけでは
+`x`/`y`/`z`は初期値`null`のままです。読み取りを流すには（例えばボタンから）
+`start`コマンドを発火する必要があります:
+
 ```html
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
 
 <wcs-state>
   <script type="module">
-    export default { x: null, y: null, z: null };
+    export default {
+      $commandTokens: ["startAccel"],
+      x: null, y: null, z: null,
+    };
   </script>
 </wcs-state>
 
-<wcs-accelerometer data-wcs="x: x; y: y; z: z"></wcs-accelerometer>
+<wcs-accelerometer
+  data-wcs="x: x; y: y; z: z; command.start: $command.startAccel"
+></wcs-accelerometer>
+
+<button data-wcs="onclick: $command.startAccel">開始</button>
 <p data-wcs="textContent: x"></p>
 ```
 
+ボタンは`<wcs-accelerometer>`に直接触れません: クリックは`startAccel`コマンドトークンを発火し（`$commandTokens: ["startAccel"]`で名前を宣言）、`<wcs-accelerometer>`は`command.start: $command.startAccel`でそれを購読します（[command-token プロトコル](../state/) — コマンドメソッドを持つ要素が*subscriber*であり、emitter ではありません）。
+
 ### 2. 権限を確認してから start する
 
+この例では`@wcstack/permission`の登録も必要です（例1の`@wcstack/state` /
+`@wcstack/accelerometer`の script に加えて）。`accelGranted`を宣言する
+独立した`<wcs-state>`を持ちます:
+
 ```html
+<script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["startAccel"],
+      accelGranted: false,
+    };
+  </script>
+</wcs-state>
+
 <wcs-permission name="accelerometer" data-wcs="granted: accelGranted"></wcs-permission>
 <wcs-accelerometer data-wcs="command.start: $command.startAccel"></wcs-accelerometer>
 
-<button data-wcs="onclick: startAccel; disabled: !accelGranted">開始</button>
+<button data-wcs="onclick: $command.startAccel; disabled: accelGranted|not">開始</button>
 ```
+
+バインドする state パスは事前にすべて宣言する必要があります — 未宣言のパスへのバインドは初期化時に例外を投げます。`data-wcs`パス内の否定は先頭`!`ではなく`|not`フィルタ(`accelGranted|not`)で行います。
 
 ## 属性 / 入力
 
@@ -83,6 +113,7 @@ npm install @wcstack/accelerometer
 ## 注意・制限
 
 - **`_gen`世代ガードは無し。** `start()`/`stop()`は同期的な購読/購読解除のトグルであり、`dispose()`とレースしうる非同期probeが存在しません（`docs/sensor-tag-design.md` §1.5）。
+- **`error`は sticky（据え置き）です。** 最後に観測した失敗（`unsupported`、`SecurityError`等）を保持し、その後の`start()`成功や`reading`受信では自動クリアされません。`stop()`＋`start()`でリトライが成功しても直前の`error`は残り続けます。必要なら利用側の state でクリア／再解釈してください。
 - **生の`new Accelerometer(...)`は唯一のガード付き構築ヘルパー以外では呼ばない。** 権限拒否・Permissions-Policyブロックは同期的に例外を投げます。
 - 権限状態（`granted`/`denied`/`prompt`）は意図的にこのノードでは重複実装していません — `<wcs-permission name="accelerometer">`と合成してください。
 

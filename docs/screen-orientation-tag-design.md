@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/screen-orientation`（`<wcs-screen-orientation>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み。本文書は実装前に行った論点整理と決定事項のスナップショットであり、実装後も設計意図の参照用に保持している。以降の `hidden@!portrait` / `hidden@!landscape` 等の `@` 表記は説明用の擬似記法であり、実際の `data-wcs` 構文ではない点に注意（`!` 否定は state に存在せず、実装では `|not` フィルタを使う。README.md/README.ja.md 参照）。
 - **対象 WebAPI**: Screen Orientation API（`screen.orientation`、`ScreenOrientation` の `change` イベント、`.type` / `.angle` / `.lock(type)` / `.unlock()`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ4（最小monitorパターン）の2本目。`Network Information`（`<wcs-network>`、[network-tag-design.md](./network-tag-design.md)）を先に実装し、その「単一イベント→派生getter」「`_gen`不要」の型を土台に、本ノードは**commandを持つ側**としてバッチ4を完結させる。
 - **前提資産**: `permission`（単一state→複数派生boolean getterの型、`_permGen`世代ガード、Core/Shell分離）、`network`（querty不要・完全同期購読という「バッチ4の薄さ」の型、`_gen`省略の判断基準）、`fetch`（単一`_gen`によるcommand側の世代ガード、[FetchCore.ts:54](../packages/fetch/src/core/FetchCore.ts#L54)・[FetchCore.ts:195](../packages/fetch/src/core/FetchCore.ts#L195)）。
@@ -67,6 +67,8 @@ static wcBindable: IWcBindable = {
 
 unsupported時（§6）は`type`が`null`になるため、`portrait`/`landscape`の getter は`e.detail.type?.startsWith(...) ?? false`のように null 安全にする。
 
+**実装注記**: 上記スニペットは`io-node-batch-implementation-plan.md`で確定済みの基本形をそのまま転記したものであり、`portrait`/`landscape`と同様に実装では`error`（event: `wcs-orientation:error`）も公開プロパティとして追加している（§5参照。`FetchCore`/`GeolocationCore`/`NotificationCore`と同型のnever-throwエラー表面化）。
+
 ---
 
 ## 3. targetは不要 — インスタンスごとの設定属性が一切不要な2番目のノード
@@ -102,6 +104,8 @@ unsupported時（§6）は`type`が`null`になるため、`portrait`/`landscape
 ---
 
 ## 5. `lock()`/`unlock()` は best-effort command — 対応が狭いことを明示する
+
+> **実装後の訂正**: 以下の「デスクトップ vs モバイル」という対比は実装前の推測であり、実装後の仕様照合で否定されている。実際には`lock()`はデスクトップ・モバイルを問わず通常タブでは reject され、フルスクリーンまたはインストール済みPWA文脈が必要（Safariはどの文脈でも`lock()`自体を実装していない）。またreject時のエラー名も、現行仕様の第一候補は`NotAllowedError`（フルスクリーン等のpre-lock条件未達）であり、`NotSupportedError`/`SecurityError`は環境依存の副次候補にすぎない。正確な制約とエラー名の扱いはREADME.md/README.ja.mdを参照。以下の本文は実装前スナップショットとして原文のまま残す。
 
 多くのデスクトップブラウザは`screen.orientation.lock()`を`NotSupportedError`でrejectする（モバイル限定、または特定のfullscreen文脈内でのみ動作する実装が一部にある。例: Chromiumはfullscreen要素が無い状態でのlockを拒否することがある）。
 
@@ -204,10 +208,10 @@ happy-domは`screen.orientation`を持たないため全モック。
 
 | 論点 | 決定 |
 |---|---|
-| §2 公開state | `type` / `angle`（バッチ計画で確定済み）に加え、派生boolean `portrait` / `landscape` を**追加**（permissionの4値パターンと同型） |
+| §2 公開state | `type` / `angle`（バッチ計画で確定済み）に加え、派生boolean `portrait` / `landscape` を**追加**（permissionの4値パターンと同型）。実装では`error`（event: `wcs-orientation:error`）も公開プロパティとして追加している（fetch/geolocation/notificationと同型、§2実装注記/§5参照） |
 | §3 target | **不要**。`network`と並びバッチ4で「インスタンス設定属性が一切不要」な2メンバー。バッチ1のtarget依存ノードと対照 |
 | §4 `lock()`引数 | `OrientationLockType`（8値union、`lib.dom.d.ts`に無いため自前定義）として型付け。実行時バリデーションはせずブラウザのrejectに委ねる |
-| §5 `lock()`の対応範囲 | best-effortコマンド。never-throwで`error`へ吸収。「モバイル文脈以外では失敗するのが普通」とREADMEに明記。`unsupported`状態にはしない |
+| §5 `lock()`の対応範囲 | best-effortコマンド。never-throwで`error`へ吸収。「モバイル文脈以外では失敗するのが普通」とREADMEに明記。`unsupported`状態にはしない（※実装後の訂正あり。正確な制約とエラー名は§5冒頭の注記およびREADMEを参照） |
 | §6 `_gen`世代ガード | **非対称**: 監視（`change`購読）は不要（`network`と同型・完全同期）。`lock()`/`unlock()`commandはCore単位の単一`_gen`が必要（`fetch`/`upload`と同型） |
 | §7 unsupported/API解決 | 呼び出し時解決（キャッシュしない）。unsupported時`type`/`angle`は`null`固定、`lock()`/`unlock()`は例外を投げず`error`("unsupported"相当)を返す |
 | §8 secure-context | 制約なし |

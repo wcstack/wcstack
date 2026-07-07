@@ -130,8 +130,9 @@ class FullscreenCore extends EventTarget {
     }
     /**
      * Request fullscreen on `element`. never-throw (§3/§6): a missing API or a
-     * rejected promise (e.g. `NotAllowedError` from a call outside a user
-     * gesture) is caught and surfaced via `error`, never thrown. The caller
+     * rejected promise (e.g. a `TypeError` from a call outside a user
+     * gesture, per the WHATWG Fullscreen spec's transient-activation check) is
+     * caught and surfaced via `error`, never thrown. The caller
      * (Shell) is responsible for resolving `target` and for ensuring this is
      * invoked from within an actual user gesture — this Core cannot manufacture
      * one (docs/fullscreen-tag-design.md §3).
@@ -139,7 +140,15 @@ class FullscreenCore extends EventTarget {
     async requestFullscreen(element) {
         const gen = ++this._gen;
         this._resolvedTarget = element;
-        const fn = element ? this._requestFullscreenFn(element) : undefined;
+        if (!element) {
+            // Distinct from "API is not supported" (below): the Shell's `target`
+            // selector did not resolve to any element (missing/typo'd selector).
+            // Conflating the two previously misled users into thinking Fullscreen
+            // itself was unsupported when only their selector was wrong.
+            this._setError({ message: "Fullscreen target could not be resolved." });
+            return;
+        }
+        const fn = this._requestFullscreenFn(element);
         if (!fn) {
             this._setError({ message: "Fullscreen API is not supported." });
             return;
@@ -163,12 +172,16 @@ class FullscreenCore extends EventTarget {
      * intent", not as errors, keeping repeated calls safe and never-throw.
      */
     async exitFullscreen() {
-        const gen = ++this._gen;
+        // no-op checks come BEFORE the generation bump: a call that does nothing
+        // must not supersede an in-flight requestFullscreen() — bumping first
+        // would make the pending request's settle handling stale and silently
+        // swallow its error/active updates.
         if (this._fullscreenElement() === null)
             return; // already not fullscreen: silent no-op
         const fn = this._exitFullscreenFn();
         if (!fn)
             return; // unsupported: silent no-op (semantically already "not fullscreen")
+        const gen = ++this._gen;
         try {
             await fn();
             if (gen !== this._gen)
@@ -186,8 +199,25 @@ class FullscreenCore extends EventTarget {
     // install/remove the standard/legacy APIs freely and lets an unsupported
     // environment be detected correctly on every call. ---
     _requestFullscreenFn(el) {
-        const e = el;
-        return e.requestFullscreen ?? e.webkitRequestFullscreen;
+        return this._elementFullscreenFn(el, "requestFullscreen")
+            ?? this._elementFullscreenFn(el, "webkitRequestFullscreen");
+    }
+    // Resolve a fullscreen method for `el` WITHOUT a naive `el[name]` lookup.
+    // A plain lookup walks the whole prototype chain — and <wcs-fullscreen>
+    // itself declares a `requestFullscreen()` *command* method, so when the
+    // resolved target is the Shell element (target="self", or target omitted
+    // with no children), the naive lookup would find the Shell's own command
+    // instead of the platform API and recurse infinitely (stack overflow).
+    // Instead: check the element's own properties (how tests install stubs —
+    // happy-dom has no Fullscreen API — and how a deliberate per-element
+    // monkey-patch would appear), then jump straight to Element.prototype,
+    // where the platform defines the real methods. Both the standard and the
+    // legacy webkit name go through this same resolution for symmetry.
+    _elementFullscreenFn(el, name) {
+        if (Object.prototype.hasOwnProperty.call(el, name)) {
+            return el[name];
+        }
+        return Element.prototype[name];
     }
     _exitFullscreenFn() {
         const d = document;
@@ -243,8 +273,9 @@ class FullscreenCore extends EventTarget {
  *
  * `requestFullscreen()` requires an active user gesture — this element cannot
  * manufacture one. Invoke the command from within a real click handler
- * (typically via the command-token protocol, e.g.
- * `<button command.click:$command.requestFullscreen>`).
+ * (typically via the command-token protocol: this element subscribes with
+ * `command.requestFullscreen: $command.<token>`, and a button emits the
+ * token from its own click handler, e.g. `onclick: $command.<token>`).
  */
 class WcsFullscreen extends HTMLElement {
     // SSR (§10): the fullscreenchange subscription is established synchronously
@@ -329,7 +360,6 @@ class WcsFullscreen extends HTMLElement {
     }
     // --- Lifecycle ---
     connectedCallback() {
-        this.style.display = "none";
         this._reresolve();
         this._connectedCallbackPromise = this._core.observe();
     }

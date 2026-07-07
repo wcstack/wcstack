@@ -11,8 +11,9 @@ import { NetworkCore } from "../core/NetworkCore.js";
  */
 export class WcsNetwork extends HTMLElement {
   // SSR (§4.4): observe() completes synchronously, but the Shell still exposes
-  // connectedCallbackPromise so the state binder can await it uniformly across
-  // all IO nodes before snapshotting.
+  // connectedCallbackPromise so SSR (@wcstack/server render.ts) can await it
+  // uniformly across all IO nodes before snapshotting the HTML. Mirrors
+  // WcsPermission.connectedCallbackPromise.
   static hasConnectedCallbackPromise = true;
 
   static wcBindable: IWcBindable = {

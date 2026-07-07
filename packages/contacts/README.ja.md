@@ -52,7 +52,7 @@ npm install @wcstack/contacts
 | ----------- | -------------------------------- | ---- |
 | `value`     | `wcs-contacts:complete`           | 選択された連絡先の配列（`multiple: false`でも常に配列）、成功前は`null`。 |
 | `loading`   | `wcs-contacts:loading-changed`    | ピッカーダイアログが開いている間`true`。 |
-| `error`     | `wcs-contacts:error`              | 真のプラットフォーム失敗、無ければ`null`。 |
+| `error`     | `wcs-contacts:error`              | 真のプラットフォーム失敗（`select()`が投げた`DOMException`/`Error`）、または unsupported 経路ではプレーンオブジェクト`{ message: "Contact Picker API is not supported in this browser." }`、無ければ`null`。 |
 | `cancelled` | `wcs-contacts:cancelled-changed`  | ユーザーがピッカーを閉じたら`true`（`error`とは分離）。 |
 
 ## コマンド
@@ -68,6 +68,7 @@ npm install @wcstack/contacts
 ## 注意・制限
 
 - **Android Chrome限定。** unsupportedを例外ケースでなく既定として扱ってください。
+- **`unsupported` 専用フラグは持たない。** `navigator.contacts.select` が関数でない状態で `select()` を呼ぶと、即座に `error` がプレーンオブジェクト `{ message: "Contact Picker API is not supported in this browser." }` になり `null` で解決します — 非同期処理を開始しないため `_gen` は消費されません。この形は実失敗（`error` に `DOMException`/`Error` が入る）とは異なるため、unsupported 経路で `error instanceof Error` や `error.name` を前提にしないでください。
 - **`getProperties()`はv1スコープ外**（対応フィールドの非同期事前確認、`docs/contact-picker-tag-design.md` §4参照）。
 - `@wcstack/share`/`@wcstack/eyedropper`とアーキタイプを共有: 単一`_gen`世代ガード、never-throw、AbortController無し。
 

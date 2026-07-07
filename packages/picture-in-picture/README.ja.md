@@ -52,17 +52,36 @@ npm install @wcstack/picture-in-picture
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/picture-in-picture/auto"></script>
 
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["popOut", "backToPage"],
+      pipActive: false,
+    };
+  </script>
+</wcs-state>
+
 <video id="player" src="/movie.mp4" controls></video>
 
-<wcs-pip target="#player" data-wcs="active: pipActive"></wcs-pip>
+<wcs-pip target="#player" data-wcs="active: pipActive; command.requestPictureInPicture: $command.popOut; command.exitPictureInPicture: $command.backToPage"></wcs-pip>
 
-<button command.click:$command.requestPictureInPicture>ポップアウト</button>
-<button command.click:$command.exitPictureInPicture hidden@!pipActive>ページに戻す</button>
+<button data-wcs="onclick: $command.popOut">ポップアウト</button>
+<button data-wcs="onclick: $command.backToPage; hidden: pipActive|not">ページに戻す</button>
 ```
+
+どちらのボタンも `<wcs-pip>` を直接触りません。クリックがコマンドトークンを emit し、`<wcs-pip>` は `command.requestPictureInPicture: $command.popOut` / `command.exitPictureInPicture: $command.backToPage` でそれらのトークンを購読します（[command-token プロトコル](../state/) — コマンドメソッドを持つ要素が emit 側ではなく *購読側* です）。バインドする state パスは事前に必ず宣言する必要があります — ここでは `pipActive: false`。未宣言パスへのバインドは初期化時に throw します。`data-wcs` パスでの否定は先頭 `!` ではなく `|not` フィルタで行います（`pipActive|not`）— パスは前置演算子をサポートしません。
 
 ### 2. `<video>` を子要素としてラップする（セレクタ不要）
 
 ```html
+<wcs-state>
+  <script type="module">
+    export default {
+      pipActive: false,
+    };
+  </script>
+</wcs-state>
+
 <wcs-pip data-wcs="active: pipActive">
   <video src="/movie.mp4" controls></video>
 </wcs-pip>
@@ -70,9 +89,28 @@ npm install @wcstack/picture-in-picture
 
 ### 3. 失敗を報告する（gesture 制約による reject 等）
 
+`error` には専用イベントが無く `data-wcs` でバインドできません（下記「出力 state」参照）— コマンドの promise が解決した後に命令的に読みます:
+
 ```html
-<wcs-pip target="#player" data-wcs="active: pipActive; error: pipError"></wcs-pip>
-<p hidden@!pipError>Picture-in-Picture に入れませんでした。</p>
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["popOut"],
+      pipActive: false,
+    };
+  </script>
+</wcs-state>
+
+<wcs-pip target="#player" data-wcs="active: pipActive; command.requestPictureInPicture: $command.popOut"></wcs-pip>
+<button data-wcs="onclick: $command.popOut">ポップアウト</button>
+```
+
+```js
+const pip = document.querySelector("wcs-pip");
+await pip.requestPictureInPicture();
+if (pip.error) {
+  console.log("Picture-in-Picture に入れませんでした:", pip.error);
+}
 ```
 
 ## `target` 属性が操作対象を決める
@@ -81,22 +119,24 @@ npm install @wcstack/picture-in-picture
 |-------------------|-------------------------|-------------|------------------------------|
 | 省略              | 最初の子要素             | `contents`  | `<video>` をインラインでラップ |
 | `"#player"` / セレクタ | マッチした要素      | `none`      | 独立した制御タグ             |
-| `"self"`          | 自分自身                 | `block`     | `<wcs-pip>` 自体が `<video>` を兼ねる（稀） |
+| `"self"`          | 自分自身                 | `block`     | **常に失敗する** — `<wcs-pip>` 自身が `<video>` になることはないため、`requestPictureInPicture()` は必ず error になる（上記「`target` は `<video>` 要素に解決されなければならない」参照） |
 
 `display:contents` は `<video>` 子要素をラップしても自身のボックスを注入しないことを意味します。明示的な `target="self"` のみがボックスを持ちます。`packages/intersection` の `_resolveTarget()` をそのまま流用しています（`docs/fullscreen-tag-design.md` §1）。
+
+`@wcstack/fullscreen`（任意の `Element` を全画面化できるため `target="self"` がラッパー自体を全画面化する正当な手段になる）と異なり、本ノードでの `target="self"` は構造的な行き止まりです: `<wcs-pip>` 自身の `tagName` が `VIDEO` になることは無いため、常に `<video>` 限定チェックに失敗し、あらゆる `requestPictureInPicture()` 呼び出しが `error` に帰結します。それでもこのモード自体は、共有する3モード `_resolveTarget()` アーキタイプとの整合のため不正な属性値として拒否はされず受理され続けますが、実用上意味を持つことはありません。
 
 ## 属性
 
 | 属性     | 型     | デフォルト   | 説明 |
 |----------|--------|--------------|------|
-| `target` | string | *(省略)*     | どの `<video>` を操作するか: 省略 → 最初の子要素、セレクタ → マッチした要素、`self` → 自分自身。`<video>` 要素に解決される必要がある。 |
+| `target` | string | *(省略)*     | どの `<video>` を操作するか: 省略 → 最初の子要素、セレクタ → マッチした要素、`self` → 自分自身（常に失敗する — 上記参照）。 |
 
 ## 出力 state
 
 | プロパティ | 型        | イベント          | 説明 |
 |------------|-----------|-------------------|------|
 | `active`   | `boolean` | `wcs-pip:change`  | 解決済みの `<video>` target が現在 document の Picture-in-Picture 要素かどうか。 |
-| `error`    | `any`     | *(無し — getter 経由で読む)* | 直近のコマンド失敗（不正なタグ・非対応API・gesture 制約による reject）、または `null`。 |
+| `error`    | `any`     | *(無し — 単なる getter、data-wcs でバインド不可)* | 直近のコマンド失敗（不正なタグ・非対応API・gesture 制約による reject）、または `null`。 |
 
 `active` は、`enterpictureinpicture`/`leavepictureinpicture` が**その対象要素自身に**発火するたびに、`document.pictureInPictureElement` と解決済み `<video>` target を比較して導出されます（`document` レベルのイベントではありません — 詳細は下記「イベント購読」参照）。
 
@@ -109,11 +149,7 @@ npm install @wcstack/picture-in-picture
 
 ### ユーザージェスチャー要件
 
-`requestPictureInPicture()` はユーザージェスチャー内（例: クリックハンドラ）から呼び出す必要があります。これはブラウザレベルの要件であり `<wcs-pip>` では回避できません — Fullscreen における同じ制約は `docs/fullscreen-tag-design.md` §3 を参照してください。command-token プロトコルでクリックへ直接配線することを推奨します:
-
-```html
-<button command.click:$command.requestPictureInPicture>ポップアウト</button>
-```
+`requestPictureInPicture()` はユーザージェスチャー内（例: クリックハンドラ）から呼び出す必要があります。これはブラウザレベルの要件であり `<wcs-pip>` では回避できません — Fullscreen における同じ制約は `docs/fullscreen-tag-design.md` §3 を参照してください。command-token プロトコルでクリックへ直接配線することを推奨します（`<wcs-pip>` 側で `command.requestPictureInPicture: $command.<token>`、ボタン側で `onclick: $command.<token>` — 上記クイックスタート参照）。その際、*トリガーとなるイベント自体*が本物のユーザージェスチャーであることを確認してください。
 
 `setTimeout` の中や `.then()` チェーンの奥から呼び出すと gesture 文脈が失われ、ブラウザがリクエストを拒否します — これは wcstack とは無関係な制約であり、このレイヤーでは修正できません。
 
@@ -170,8 +206,9 @@ core.dispose();                 // リスナーを外す
 - **`<video>` 限定。** `target` は `HTMLVideoElement` に解決される必要があります。それ以外の要素は未解決扱いになり、`error` に `{ message: "target must be a <video> element." }` がセットされます（例外は投げません）。
 - **Document Picture-in-Picture API はスコープ外。** 上記「スコープ」参照。
 - **例外を投げない。** 非対応環境・不正なタグの target・gesture 制約による reject は全て `error` に集約されます。
-- **`document.pictureInPictureElement` は document 全体で単一の値**です（`document.fullscreenElement` と同様）。複数の `<wcs-pip>` インスタンスは、自分の `<video>` target の `enterpictureinpicture`/`leavepictureinpicture` リスナーによって自己フィルタされます — 上記「イベント購読先」参照。
+- **`document.pictureInPictureElement` は document 全体で単一の値**です（`document.fullscreenElement` と同様）。複数の `<wcs-pip>` インスタンスは、自分の `<video>` target の `enterpictureinpicture`/`leavepictureinpicture` リスナーによって自己フィルタされます — 上記「イベント購読先」参照。ただし非対称な点に注意してください: `exitPictureInPicture()` はインスタンス単位にスコープされて**いません** — document全体に作用する `document.exitPictureInPicture()` を呼ぶため、どのインスタンスから呼んでも、現在 Picture-in-Picture 中の `<video>`（別インスタンスの `target` が PiP 化したものであっても）を終了させます（silent no-op の判定も同様に document 全体の「何かが PiP 中か」であり、「自分の target が PiP 中か」ではありません）。これはプラットフォーム API 自体の挙動、および `@wcstack/fullscreen` の `exitFullscreen()`（`docs/fullscreen-tag-design.md` §7 の「スコープの注意（§2.1との非対称）」、および `packages/fullscreen/README.ja.md` の「複数インスタンス」節参照）をそのまま反映したものです。
 - **`desired`/`actual` の二相 state は無し** — 本ノードは単一の `active` boolean と `error` のみを公開し、`permission` より単純な `@wcstack/fullscreen` の state モデルと同型です。
+- **`error` には専用イベントが無く、`data-wcs` でバインドできません。** `@wcstack/fullscreen` と同様、`error` は単なる getter であり、`wcs-pip:error` のような専用イベントを持たず、`static wcBindable.properties` にも宣言されていません — バインディングシステムには購読対象が無いため、リアクティブに観測できません。コマンドの promise が解決した後に `element.error` を命令的に読んでください（例: `await el.requestPictureInPicture(); if (el.error) { ... }`）。
 
 ## ライセンス
 

@@ -27,7 +27,7 @@ describe('lazyLoad', () => {
     vi.restoreAllMocks();
   });
 
-  it('should load components in the document', async () => {
+  it('ドキュメント内のコンポーネントをロードすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -55,7 +55,7 @@ describe('lazyLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('ui-button', mockConstructor);
   });
 
-  it('should handle nested components', async () => {
+  it('ネストされたコンポーネントもロードすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -85,7 +85,7 @@ describe('lazyLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('ui-button', mockConstructor);
   });
 
-  it('should handle "is" attribute', async () => {
+  it('"is"属性を処理すること', async () => {
     const mockConstructor = class extends HTMLButtonElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -113,7 +113,7 @@ describe('lazyLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('ui-button', mockConstructor, { extends: 'button' });
   });
 
-  it('should observe mutations if observable is true', async () => {
+  it('observableがtrueの場合、mutationを監視すること', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -146,7 +146,7 @@ describe('lazyLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('ui-input', mockConstructor);
   });
 
-  it('should throw error for elements without matching prefix', async () => {
+  it('マッチするprefixがない要素の場合、エラーをthrowすること', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn()
@@ -171,7 +171,7 @@ describe('lazyLoad', () => {
     expect(mockLoader.loader).not.toHaveBeenCalled();
   });
 
-  it('should handle loader failure gracefully', async () => {
+  it('loader失敗時はthrowせずconsole.errorを出力すること', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn()
@@ -199,7 +199,7 @@ describe('lazyLoad', () => {
     expect(console.error).toHaveBeenCalled();
   });
 
-  it('should traverse into shadow root', async () => {
+  it('shadow rootの中も走査すること', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn().mockResolvedValue(class extends HTMLElement {})
@@ -233,7 +233,7 @@ describe('lazyLoad', () => {
     expect(mockLoader.loader).toHaveBeenCalledWith('@components/ui/shadow-button.js');
   });
 
-  it('should handle invalid loader key', async () => {
+  it('不正なloaderキーの場合、console.errorを出力すること', async () => {
     const config = {
       loaders: { [DEFAULT_KEY]: { postfix: '.js', loader: async () => null } },
       observable: false,
@@ -258,7 +258,7 @@ describe('lazyLoad', () => {
     );
   });
 
-  it('should handle empty component name', async () => {
+  it('空のコンポーネント名の場合、console.errorを出力すること', async () => {
     const config = {
       loaders: { [DEFAULT_KEY]: { postfix: '.js', loader: async () => null } },
       observable: false,
@@ -283,7 +283,7 @@ describe('lazyLoad', () => {
     );
   });
 
-  it('should handle loader returning null', async () => {
+  it('loaderがnullを返した場合、console.errorを出力すること', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn().mockResolvedValue(null)
@@ -312,7 +312,7 @@ describe('lazyLoad', () => {
     );
   });
 
-  it('should wait when tag is already loading', async () => {
+  it('タグが既にロード中の場合は待機すること', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -346,7 +346,7 @@ describe('lazyLoad', () => {
     expect(mockLoader.loader).not.toHaveBeenCalled();
   });
 
-  it('should skip loading when element is defined before loader runs', async () => {
+  it('loader実行前に要素が定義された場合、ロードをスキップすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     const mockLoader: ILoader = {
       postfix: '.js',
@@ -386,7 +386,7 @@ describe('lazyLoad', () => {
     expect(mockLoader.loader).not.toHaveBeenCalled();
   });
 
-  it('should skip define when element is defined during loader', async () => {
+  it('loader実行中に要素が定義された場合、defineをスキップすること', async () => {
     const mockConstructor = class extends HTMLElement {};
     let definedAfterLoad = false;
     const mockLoader: ILoader = {
@@ -426,7 +426,7 @@ describe('lazyLoad', () => {
     expect(customElements.define).not.toHaveBeenCalled();
   });
 
-  it('should handle error in handlerForLazyLoad initial call', async () => {
+  it('handlerForLazyLoadの初回呼び出しでのエラーを処理すること', async () => {
     const config = {
       loaders: {},
       observable: false,
@@ -444,7 +444,7 @@ describe('lazyLoad', () => {
     await expect(handlerForLazyLoad(document, config, prefixMap)).rejects.toThrow("Failed to lazy load components");
   });
 
-  it('should return early if prefixMap is empty', async () => {
+  it('prefixMapが空の場合、早期リターンすること', async () => {
     const config = { loaders: {}, observable: false, scanImportmap: false };
     const prefixMap = {};
     // Should not throw, should not call lazyLoads (which we can't spy on easily, but we can spy on createTreeWalker)
@@ -455,7 +455,7 @@ describe('lazyLoad', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('should not re-observe already observed elements', async () => {
+  it('既に監視済みの要素を再監視しないこと', async () => {
     const mockConstructor = class extends HTMLElement {
       constructor() {
         super();
@@ -478,7 +478,7 @@ describe('lazyLoad', () => {
     await handlerForLazyLoad(document, config, prefixMap);
   });
 
-  it('should catch errors in MutationObserver callback', async () => {
+  it('MutationObserverコールバック内のエラーをcatchすること', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
       loader: vi.fn()
@@ -517,7 +517,7 @@ describe('lazyLoad', () => {
     );
   });
 
-  it('should not observe the same shadow root twice', async () => {
+  it('同じshadow rootを2回監視しないこと', async () => {
     const mockConstructor = class extends HTMLElement {
       constructor() {
         super();
@@ -550,7 +550,7 @@ describe('lazyLoad', () => {
     await handlerForLazyLoad(document, config, prefixMap);
   });
 
-  it('should observe shadow root when element becomes defined via whenDefined', async () => {
+  it('whenDefined経由で要素が定義された時にshadow rootを監視すること', async () => {
     // Restore default mocks for this test
     vi.restoreAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -596,7 +596,7 @@ describe('lazyLoad', () => {
     await new Promise(resolve => setTimeout(resolve, 100));
   });
 
-  it('should handle error in MutationObserver callback and log to console', async () => {
+  it('MutationObserverコールバック内のエラーを処理しconsoleにログ出力すること', async () => {
     // This test covers the catch block in MutationObserver callback (line 176)
     const config = {
       loaders: {},
@@ -634,7 +634,7 @@ describe('lazyLoad', () => {
     );
   });
 
-  it('should observe when root is a ShadowRoot', async () => {
+  it('rootがShadowRootの場合も監視すること', async () => {
     const originalMutationObserver = globalThis.MutationObserver;
     const observeSpy = vi.fn();
 
@@ -699,12 +699,12 @@ describe('lazyLoad', () => {
   });
 
   describe('getCustomTagInfo', () => {
-    it('should throw if element has no dash and no is attribute', () => {
+    it('ダッシュもis属性もない要素の場合、throwすること', () => {
       const el = document.createElement('div');
       expect(() => getCustomTagInfo(el)).toThrow("Custom element without a dash or 'is' attribute found");
     });
 
-    it('should throw if is attribute has no dash', () => {
+    it('is属性にダッシュがない場合、throwすること', () => {
       const el = document.createElement('div');
       el.setAttribute('is', 'span');
       expect(() => getCustomTagInfo(el)).toThrow("Custom element 'is' attribute without a dash found");

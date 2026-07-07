@@ -337,7 +337,7 @@ type StorageType = "local" | "session";
 
 // Storage operation error
 interface WcsStorageError {
-  operation: "load" | "save" | "remove";
+  operation: "load" | "save" | "remove" | "type";
   message: string;
 }
 
@@ -496,7 +496,7 @@ bootstrapStorage({
 
 - `value`, `loading`, `error` are **output state**
 - `key`, `type`, `trigger` are **input / command surface**
-- `trigger` is intentionally one-way: writing `true` saves, reset signals completion. If the underlying `save()` throws (e.g. `key` is unset), `trigger` is still reset to `false` and the completion event still fires, so it never gets stuck in the `true` state.
+- `trigger` is intentionally one-way: writing `true` saves, reset signals completion. `save()` is never-throw (a failure such as an unset `key` is routed to the `error` property, not thrown); `trigger` is reset to `false` and the completion event fires regardless, so it never gets stuck in the `true` state.
 - The `value` setter auto-saves when not in `manual` mode
 - **`value` setter vs `save()` / `trigger`**: assigning `value` (non-manual) persists the *assigned* argument (write-through). `save()` and `trigger`, by contrast, persist the *current* `value` — which a prior `load()` or a cross-tab `storage` event may have updated. This means `trigger`/`save()` can write back a value that arrived from another tab.
 - **`value` in `manual` mode**: the `value` setter **stages** the value (no storage write) instead of persisting it. `el.value = x` updates the readable value (`el.value === x`) but does **not** touch storage; the actual write happens only via `save()` / `trigger`. This is what makes the `value: …` + `trigger: …` binding pair work — the bound value is staged, then committed on trigger.
@@ -504,7 +504,7 @@ bootstrapStorage({
 - **`save` command arity**: the headless Core takes `save(value)`, while the Shell exposes `save()` (persists the current value). Both appear under the same `commands` name `save`; the protocol's `commands` metadata is descriptive and arity-less, so this is contractual, not a protocol violation.
 - **Invalid `type`**: any `type` attribute other than `"session"` is treated as `"local"`. An invalid value (e.g. `type="foo"`) silently falls back to `local` rather than throwing.
 - **Runtime `type` change**: changing the `type` attribute after connection updates the Core's storage area for subsequent operations but does **not** re-load from the new area (only `key` changes auto-reload in non-manual mode). Re-load explicitly with `load()` if you need the value from the newly selected area.
-- **`error` shape**: on a storage failure, `error` is set to a `WcsStorageError` (`{ operation, message }`) identifying which operation (`load` / `save` / `remove`) failed. `key is required` (calling an operation with no key) is thrown synchronously, not surfaced via `error`. In practice `error` is therefore always either a `WcsStorageError` or `null`; the wider `WcsStorageError | Error | null` type is kept for forward compatibility and consistency with sibling packages.
+- **`error` shape**: on a storage failure, `error` is set to a `WcsStorageError` (`{ operation, message }`) identifying which call failed (`load` / `save` / `remove`, or `type` for an invalid headless `type` assignment). Operations are **never-throw**: calling one with no key does **not** throw — it is surfaced on `error` as `{ operation, message: "key is required." }` (and dispatched as `wcs-storage:error`). In practice `error` is therefore always either a `WcsStorageError` or `null`; the wider `WcsStorageError | Error | null` type is kept for forward compatibility and consistency with sibling packages.
 - JSON auto-serialization handles objects, arrays, and primitives transparently
 - Saving `null` / `undefined` removes the key from storage
 - Cross-tab sync via `storage` event works only with localStorage. The Shell binds the watcher to its current `key` / `type` on connect (and re-binds on re-attach), so cross-tab sync works even in `manual` mode where no auto-load runs. Changing the `key` attribute after connection always re-syncs the Core key, so cross-tab sync follows the new key even in `manual` mode or when the key is cleared. A successful cross-tab update also clears any stale `error` (just like `load()` / `save()` / `remove()` do at the start of a successful operation), so a fresh value never coexists with a leftover error from an earlier failure.

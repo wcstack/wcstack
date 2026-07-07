@@ -7,7 +7,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-tilt>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: 無し
-- **出力 state サーフェス**: `alpha`、`beta`、`gamma`、`absolute`、`permissionState`
+- **出力 state サーフェス**: `alpha`、`beta`、`gamma`、`absolute`、`permissionState`、`error`
 
 ## なぜ存在するか — `@wcstack/idle`の兄弟、iOSのgesture-gateを吸収する
 
@@ -34,10 +34,15 @@ npm install @wcstack/tilt
 <wcs-state>
   <script type="module">
     export default {
+      tiltBeta: null,
+      tiltGamma: null,
       async enableTilt() {
         const el = document.querySelector("wcs-tilt");
         const result = await el.requestPermission();
         if (result === "granted") el.start();
+      },
+      get tiltTransform() {
+        return `rotate(${this.tiltBeta ?? 0}deg)`;
       },
     };
   </script>
@@ -45,8 +50,10 @@ npm install @wcstack/tilt
 
 <wcs-tilt data-wcs="beta: tiltBeta; gamma: tiltGamma"></wcs-tilt>
 <button data-wcs="onclick: enableTilt">傾き検知を有効にする</button>
-<div data-wcs="style.transform: tiltBeta|tpl('rotate(${0}deg)')"></div>
+<div data-wcs="style.transform: tiltTransform"></div>
 ```
+
+`data-wcs` が参照する全てのパス（`tiltBeta`、`tiltGamma`、`tiltTransform`、`enableTilt`）は state オブジェクトに宣言が必須です——未宣言の top-level パスはバインド初期化時に例外を投げます。`tiltTransform` は素の path getter（計算プロパティ、`@wcstack/state` の README 参照）です——`@wcstack/state` には文字列テンプレート化フィルタが無いため、CSS 文字列は getter 側で組み立てます。`tiltBeta` が変わるたびに再計算されます。
 
 ## 観測可能プロパティ（出力）
 
@@ -57,6 +64,7 @@ npm install @wcstack/tilt
 | `gamma`           | `wcs-tilt:change`             | Y軸回転。 |
 | `absolute`        | `wcs-tilt:change`             | 地磁気に対する絶対方位かどうか。ブラウザにより信頼性が異なるため実機で確認してください。 |
 | `permissionState` | `wcs-tilt:permission-changed` | `"granted"` \| `"denied"` \| `"unknown"`。 |
+| `error`           | `wcs-tilt:error`              | 直近の`requestPermission()`の失敗（gesture文脈外呼び出しのrejectなど）、無ければ`null`。never-throw: 失敗はreject/throwせず、ここに流れます。 |
 
 ## コマンド
 
@@ -75,6 +83,9 @@ npm install @wcstack/tilt
 - **connect時に自動startしません。**
 - **`@wcstack/permission`とは合成しません**（対応するPermissions APIエントリが存在しないため）——`permissionState`はローカルで追跡します。
 - `_gen`世代ガードは無し: 購読は完全に同期的です。
+- **非secure context（素のHTTP）では`deviceorientation`は一切発火しません**——ブラウザがネイティブに抑止し、`<wcs-tilt>`自身はガードを持たない（nativeの非発火を信頼する設計）ため、傾き値は`null`のまま・`wcs-tilt:change`は飛ばず・`permissionState`も（`requestPermission()`を呼ばない限り）`"unknown"`のまま変化しません。`requestPermission()`でも検出できません: gatingの無いプラットフォームではフォールバックが何も問い合わせずに`"granted"`を返します。何も起きないときは、まず配信元（HTTPS/localhost）を確認してください。
+- **Permissions-Policyでゲートされます。** `deviceorientation`イベントは`accelerometer`と`gyroscope`のPermissions-Policyディレクティブが許可されている場合にのみ発火します（既定allowlist: `self`、Device Orientation Events仕様§4準拠）。クロスオリジンの`<iframe>`内で`<wcs-tilt>`を使うには、その`<iframe>`要素に`allow="accelerometer; gyroscope"`が必要です——無いとイベントは無音のまま一切発火しません。上記の非secure originのケースと同じ失敗モードです。
+- **高頻度なイベントストリーム。** `deviceorientation`は多くのデバイスで毎秒数十回発火します。`@wcstack/state`にビルトインのdebounce/throttleフィルタは無いため、より粗い頻度に間引きたい場合は`@wcstack/debounce`のvalue surfaceで中継してください: `<wcs-tilt data-wcs="beta: tiltBeta">`のあと`<wcs-throttle wait="100" data-wcs="source: tiltBeta; value: throttledBeta"></wcs-throttle>`（詳細は`@wcstack/debounce`のREADME参照）。
 
 ## ヘッドレス利用（`TiltCore`）
 

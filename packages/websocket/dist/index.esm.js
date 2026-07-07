@@ -154,6 +154,14 @@ class WebSocketCore extends EventTarget {
         }));
     }
     _setError(error) {
+        // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
+        // so suppressing redundant null→null dispatches (every connect/send start
+        // clears a usually-already-null error) avoids a spurious wcs-ws:error per
+        // successful operation. Reference identity is sufficient: each failure builds
+        // a fresh object (or the platform's own error Event), and the clear path
+        // always passes null.
+        if (this._error === error)
+            return;
         this._error = error;
         this._target.dispatchEvent(new CustomEvent("wcs-ws:error", {
             detail: error,
@@ -483,6 +491,12 @@ class WcsWebSocket extends HTMLElement {
                 bubbles: true,
             }));
         }
+    }
+    // `send` is a write-only command surface: assigning transmits immediately.
+    // Reading always returns null (no payload is retained) — consistent with the
+    // null carried by wcs-ws:send-changed and the documented "resets to null".
+    get send() {
+        return null;
     }
     set send(data) {
         if (data === null || data === undefined)

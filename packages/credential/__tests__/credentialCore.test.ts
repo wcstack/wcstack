@@ -82,7 +82,26 @@ describe("CredentialCore", () => {
       expect(result).toBeNull();
       expect(fn).not.toHaveBeenCalled();
       expect(core.error).toEqual({
+        name: "NotSupportedError",
         message: "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead.",
+      });
+    });
+  });
+
+  describe("store() — WebAuthn(publicKey)スコープ違反", () => {
+    it("type が 'public-key' の credential は プラットフォームAPIへ転送せず即 error になる", async () => {
+      const fn = installStore(() => Promise.resolve());
+      const core = new CredentialCore();
+
+      const result = await core.store({ type: "public-key", id: "cred-1" } as any);
+
+      expect(result).toBeNull();
+      expect(fn).not.toHaveBeenCalled();
+      expect(core.value).toBeNull();
+      expect(core.loading).toBe(false);
+      expect(core.error).toEqual({
+        name: "NotSupportedError",
+        message: "WebAuthn (publicKey) credentials are out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead.",
       });
     });
   });
@@ -102,9 +121,12 @@ describe("CredentialCore", () => {
     });
   });
 
-  describe("get() — AbortError（ユーザーキャンセル）", () => {
-    it("cancelled が true になり error は変化しない", async () => {
-      installGet(() => Promise.reject(new DOMException("The user aborted a request", "AbortError")));
+  describe("get() — NotAllowedError（ユーザーキャンセル）", () => {
+    it("ユーザーがアカウント選択UIを閉じた（NotAllowedError）と cancelled が true になり error は変化しない", async () => {
+      // Credential Management API rejects with NotAllowedError (not AbortError)
+      // when the user dismisses the native account-chooser UI — see
+      // docs/credential-tag-design.md §2.
+      installGet(() => Promise.reject(new DOMException("Permission denied", "NotAllowedError")));
       const core = new CredentialCore();
 
       const result = await core.get();
@@ -116,14 +138,29 @@ describe("CredentialCore", () => {
   });
 
   describe("get() — それ以外の例外（真の失敗）", () => {
-    it("DOMException(NotAllowedError) は正規化された error になる", async () => {
-      installGet(() => Promise.reject(new DOMException("Permission denied", "NotAllowedError")));
+    it("DOMException(SecurityError) は cancelled にはならず正規化された error になる", async () => {
+      installGet(() => Promise.reject(new DOMException("Not a secure context", "SecurityError")));
       const core = new CredentialCore();
 
       const result = await core.get();
 
       expect(result).toBeNull();
-      expect(core.error).toEqual({ name: "NotAllowedError", message: "Permission denied" });
+      expect(core.error).toEqual({ name: "SecurityError", message: "Not a secure context" });
+      expect(core.cancelled).toBe(false);
+    });
+
+    it("AbortError（プログラム的 abort 等）は cancelled ではなく error に流れる（credential では AbortError はユーザーキャンセルではない）", async () => {
+      // Unlike Web Share/Contact Picker, the Credential Management API does not
+      // use AbortError to signal user dismissal; only NotAllowedError maps to
+      // cancelled (docs/credential-tag-design.md §2). A programmatic signal
+      // abort (AbortError) is therefore a real failure surfaced via `error`.
+      installGet(() => Promise.reject(new DOMException("The operation was aborted", "AbortError")));
+      const core = new CredentialCore();
+
+      const result = await core.get();
+
+      expect(result).toBeNull();
+      expect(core.error).toEqual({ name: "AbortError", message: "The operation was aborted" });
       expect(core.cancelled).toBe(false);
     });
 
@@ -151,6 +188,22 @@ describe("CredentialCore", () => {
       expect(core.value).toEqual(credential);
       expect(core.loading).toBe(false);
     });
+
+    it("同一 credential 参照で連続して store() を成功させても wcs-credential:complete は毎回発火する（value に同値ガード無し、成功完了シグナル。clipboard/broadcast と同方針）", async () => {
+      // store() は呼び出し側の credential 引数をそのまま value へ echo する。value を
+      // 参照等価ガードすると2回目の成功で complete が抑制される回帰を防ぐ。
+      const credential = { id: "user@example.com", type: "password" };
+      installStore(() => Promise.resolve()); // store() は void を resolve、value は引数を echo
+      const core = new CredentialCore();
+      const completes: any[] = [];
+      core.addEventListener("wcs-credential:complete", (e) => completes.push((e as CustomEvent).detail));
+
+      await core.store(credential as any);
+      await core.store(credential as any); // same reference as the first call
+
+      expect(completes).toEqual([{ value: credential }, { value: credential }]);
+      expect(core.value).toBe(credential);
+    });
   });
 
   describe("store() — unsupported 環境", () => {
@@ -163,13 +216,22 @@ describe("CredentialCore", () => {
     });
   });
 
-  describe("store() — AbortError / 真の失敗", () => {
-    it("AbortError は cancelled に倒れる", async () => {
-      installStore(() => Promise.reject(new DOMException("aborted", "AbortError")));
+  describe("store() — NotAllowedError（ユーザーキャンセル）/ 真の失敗", () => {
+    it("NotAllowedError は cancelled に倒れ error は変化しない", async () => {
+      // store() applies the same §2 cancellation rule as get().
+      installStore(() => Promise.reject(new DOMException("declined", "NotAllowedError")));
       const core = new CredentialCore();
       await core.store({} as any);
       expect(core.cancelled).toBe(true);
       expect(core.error).toBeNull();
+    });
+
+    it("AbortError は cancelled ではなく error に流れる", async () => {
+      installStore(() => Promise.reject(new DOMException("aborted", "AbortError")));
+      const core = new CredentialCore();
+      await core.store({} as any);
+      expect(core.cancelled).toBe(false);
+      expect(core.error).toEqual({ name: "AbortError", message: "aborted" });
     });
 
     it("それ以外は正規化された error になる", async () => {
@@ -183,7 +245,7 @@ describe("CredentialCore", () => {
   describe("次回呼び出しでのリセット", () => {
     it("前回 get() の cancelled が次回成功時にリセットされる", async () => {
       const fn = installGet(() => Promise.resolve(null));
-      fn.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+      fn.mockRejectedValueOnce(new DOMException("declined", "NotAllowedError"));
       const core = new CredentialCore();
 
       await core.get();
@@ -194,7 +256,7 @@ describe("CredentialCore", () => {
     });
 
     it("前回 get() の error が store() 成功時にリセットされる", async () => {
-      installGet(() => Promise.reject(new DOMException("boom", "NotAllowedError")));
+      installGet(() => Promise.reject(new DOMException("boom", "SecurityError")));
       const core = new CredentialCore();
       await core.get();
       expect(core.error).not.toBeNull();

@@ -1,8 +1,8 @@
 # 設計メモ: Generic Sensor族（`@wcstack/accelerometer` / `gyroscope` / `magnetometer` / `ambient-light-sensor`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/accelerometer` / `gyroscope` / `magnetometer` / `ambient-light-sensor`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Generic Sensor API のうち `Accelerometer` / `Gyroscope` / `Magnetometer` / `AmbientLightSensor`（[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ5）
-- **位置づけ**: バッチ5で決定済みの通り、この4クラスは**共通の`Sensor`基底に基づく1つのCoreアーキタイプ**を共有するため、本書は**その共有アーキタイプを1回だけ文書化する統合ドキュメント**である。**本書は将来実装される4パッケージ全ての共有設計ソースとして機能する**。実際に各パッケージ着手時に起草する `docs/accelerometer-tag-design.md` / `docs/gyroscope-tag-design.md` / `docs/magnetometer-tag-design.md` / `docs/ambient-light-sensor-tag-design.md` は、本書の§2（差分表）が示すフィールドだけを変えたほぼそのままのコピーになる想定であり、ゼロから論点整理をやり直す必要はない。これは[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST（1パッケージ1tag-design.md）を将来満たしつつ、ほぼ同一内容を4回書く無駄を今の時点で避けるための判断であり、[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ5の節で既に決定済みの前提（4パッケージに分ける・1つのCoreアーキタイプを共有する）に沿う
+- **位置づけ**: バッチ5で決定済みの通り、この4クラスは**共通の`Sensor`基底に基づく1つのCoreアーキタイプ**を共有するため、本書は**その共有アーキタイプを1回だけ文書化する統合ドキュメント**である。**本書は実装済みの4パッケージ全ての共有設計ソースとして機能する**。当初は各パッケージ着手時に `docs/accelerometer-tag-design.md` / `docs/gyroscope-tag-design.md` / `docs/magnetometer-tag-design.md` / `docs/ambient-light-sensor-tag-design.md` を個別に起草する想定だったが、最終的に個別ドキュメントは分割されず、本書1本が4パッケージ共通の設計ソースを兼ねる形に落ち着いた（各パッケージは本書の§2（差分表）が示すフィールドだけを変えたほぼ同一の内容になるため、個別ドキュメントへ複製する実益が薄かった）。これは[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST（1パッケージ1tag-design.md）の理想と、ほぼ同一内容を4回書く無駄を避ける実利とのトレードオフの結果であり、[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ5の節で決定済みの前提（4パッケージに分ける・1つのCoreアーキタイプを共有する）に沿う
 - **前提資産**: `permission`（`_permGen`世代ガード・`"unsupported"`フォールバック・Core/Shell分離・[[event-token-protocol]]専用ノードの先例）、`fetch`（`_gen`世代ガード・never-throwのtry/catch構造）、[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ2（Idle Detectionの`permission`ノード合成パターン）
 
 ---
@@ -97,6 +97,7 @@ private _createSensor(frequency?: number): Accelerometer | null {
 ```
 
   この構造は`fetch`パッケージの`_doFetch`が`try { ... } catch (e: any) { this._setError(e); }`で例外を吸収する構造（[FetchCore.ts:213-213](../packages/fetch/src/core/FetchCore.ts#L213), [FetchCore.ts:287-301](../packages/fetch/src/core/FetchCore.ts#L287-L301)）と同じ形であり、「非同期処理のtry/catch」ではなく「同期的なコンストラクタ呼び出しのtry/catch」という点だけが異なる
+- **`error`はSTICKY（成功しても直前のエラーをクリアしない）**: `_setError(null)`を呼ぶ箇所はどのCoreにも存在しない。つまり、一度`error`に値が入ると、後続の`start()`が（不支援環境が解消される等で）成功し`reading`が正常に流れ始めても、その値は自動的にはクリアされない。監視系センサー族（Accelerometer/Gyroscope/Magnetometer/AmbientLightSensor）は`error`を「直近1回の通知」ではなく「最後に観測した失敗状態」として意図的に保持し続ける設計であり、これは本節冒頭の`_gen`世代ガード不要の判断とは独立した、`_setError()`自体の実装上の決定である。再試行が成功したこと自体は`reading`イベントの到来で判別できるため、`error`側に「クリアされた」という追加のシグナルを重ねて用意する必要はない、という判断に基づく
 
 ---
 
@@ -107,7 +108,7 @@ private _createSensor(frequency?: number): Accelerometer | null {
 | 項目 | Gyroscope | Magnetometer | AmbientLightSensor |
 |---|---|---|---|
 | (a) グローバルクラス名 | `Gyroscope` | `Magnetometer` | `AmbientLightSensor` |
-| (b) readingフィールド | `x` / `y` / `z`（角速度、deg/s相当） | `x` / `y` / `z`（磁束密度、µT） | 単一スカラー `illuminance`（lux） |
+| (b) readingフィールド | `x` / `y` / `z`（角速度、rad/s） | `x` / `y` / `z`（磁束密度、µT） | 単一スカラー `illuminance`（lux） |
 | (c) permission名文字列 | `"gyroscope"` | `"magnetometer"` | `"ambient-light-sensor"` |
 | (d) タグ / パッケージ名 | `<wcs-gyroscope>` / `@wcstack/gyroscope` | `<wcs-magnetometer>` / `@wcstack/magnetometer` | `<wcs-ambient-light-sensor>` / `@wcstack/ambient-light-sensor` |
 
@@ -184,4 +185,4 @@ class FakeSensor extends EventTarget {
 3. **Magnetometer** — 同上。Gyroscopeと同型（x/y/z）なので、Gyroscopeの複製作業を再度なぞるだけで足りる
 4. **AmbientLightSensor** — 最後に着手する。**着手前に現在の対応状況（fingerprinting対策による削除・無効化の動向）を一次情報で再確認し、対応状況次第では実装優先度をさらに見送る（後続バッチに先送りする）可能性がある**という留保付きで進める
 
-各パッケージ着手時には、本書の該当箇所（Accelerometerは§1全体、他3つは§2差分表＋§1の共通部分）を移植する形で`docs/<name>-tag-design.md`を起草する（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST）。ゼロから論点整理をやり直す必要はなく、本書が「答え合わせ済みの下敷き」として機能する。
+各パッケージは、本書の該当箇所（Accelerometerは§1全体、他3つは§2差分表＋§1の共通部分）をそのまま「答え合わせ済みの下敷き」として実装された。個別の`docs/<name>-tag-design.md`は最終的に分割されず（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUSTの理想に対する上記のトレードオフ）、本書が4パッケージ共通の設計ソースを兼ねている。

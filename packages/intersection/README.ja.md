@@ -137,7 +137,8 @@ export default {
 
 | コマンド       | 説明 |
 |---------------|-------------|
-| `observe()`   | DOM から `target` / `root` を再解決し、観測を（再）開始する。 |
+| `observe()`   | DOM から `target` / `root` を再解決し、観測を（再）開始する。冪等: ターゲット + オプションが不変なら no-op（新しいコールバックは発火しない）。 |
+| `reobserve()` | ターゲット / オプションが不変でも強制的に新規観測を行う — オブザーバを破棄して作り直すため、*現在の*可視状態に対して新しい初回コールバックが発火する。可視状態の遷移を伴わずレイアウトが変化した後（例: 無限スクロールで短いページが追加された）にエッジ駆動のコンシューマを再武装するのに使う。再武装成功中も `observing` は `true` のまま（誤った瞬断が起きない）。 |
 | `unobserve()` | 現在のターゲットの観測を停止する。 |
 | `disconnect()`| すべての観測を停止する。 |
 | `reset()`     | `visible` ラッチをクリアし、後の交差が再びそれを設定できるようにする。 |
@@ -159,7 +160,7 @@ IntersectionCore.wcBindable = {
     { name: "observing", event: "wcs-intersect:observing-changed" },
   ],
   commands: [
-    { name: "observe" }, { name: "unobserve" }, { name: "disconnect" }, { name: "reset" },
+    { name: "observe" }, { name: "reobserve" }, { name: "unobserve" }, { name: "disconnect" }, { name: "reset" },
   ],
 };
 ```

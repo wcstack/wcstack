@@ -56,8 +56,10 @@ interface WcsScreenOrientationSnapshot {
 }
 /**
  * Value types for ScreenOrientationCore (headless) — the observable state
- * properties plus the derived `portrait`/`landscape` booleans. Use with
- * `bind()` from a wc-bindable binding core for compile-time type checking.
+ * properties (`type`/`angle`) plus the derived `portrait`/`landscape`
+ * booleans and the `error` surface (the last `lock()`/`unlock()` failure, or
+ * `null`). Use with `bind()` from a wc-bindable binding core for
+ * compile-time type checking.
  *
  * @example
  * ```typescript

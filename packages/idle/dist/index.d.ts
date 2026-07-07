@@ -44,6 +44,7 @@ interface WcsIdleCoreValues {
     userState: IdleUserState | null;
     screenState: IdleScreenState | null;
     active: boolean;
+    error: any;
 }
 /**
  * Value types for the Shell (`<wcs-idle>`) — identical observable surface to
@@ -127,11 +128,18 @@ declare class IdleCore extends EventTarget {
  */
 declare class WcsIdle extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
-    static observedAttributes: string[];
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
     constructor();
+    /**
+     * Minimum idle time (ms) before `userState` becomes `"idle"`. This value is
+     * read only at `start()` time — there is no `attributeChangedCallback`
+     * (deliberately not declared in `observedAttributes`, mirroring
+     * `<wcs-gyroscope>`'s `frequency`), so mutating the attribute/property on an
+     * already-running session has no effect until the caller `stop()`s and
+     * `start()`s again.
+     */
     get threshold(): number;
     set threshold(value: number);
     get userState(): IdleUserState | null;

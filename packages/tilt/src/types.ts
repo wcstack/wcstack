@@ -37,6 +37,7 @@ export interface WcsTiltCoreValues {
   gamma: number | null;
   absolute: boolean | null;
   permissionState: TiltPermissionState;
+  error: any;
 }
 
 /**

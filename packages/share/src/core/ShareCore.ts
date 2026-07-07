@@ -34,11 +34,18 @@ export class ShareCore extends EventTarget {
   private _loading: boolean = false;
   private _error: any = null;
   private _cancelled: boolean = false;
-  // Generation guard (§3.4 of the guidelines): bumped on dispose() (and each
-  // share() start). A share() that settles after dispose() has a stale `gen`
-  // and MUST NOT write state to a torn-down element. Not bumped on the
-  // unsupported early-return — no asynchronous work is started, so there is
-  // no generation to protect (docs/web-share-tag-design.md §8).
+  // Generation guard (§3.4 of the guidelines): bumped ONLY by dispose(). A
+  // share() that settles after dispose() has a stale `gen` and MUST NOT write
+  // state to a torn-down element. Unlike FetchCore/EyedropperCore, share()
+  // itself does NOT bump `_gen` on each call: docs/web-share-tag-design.md §2
+  // deliberately drops the "a new call supersedes the previous one" plumbing
+  // those cores need, because the platform allows only one open share dialog
+  // at a time (a second concurrent share() rejects with InvalidStateError on
+  // its own). Bumping `_gen` per call would instead let a fast-failing second
+  // call incorrectly invalidate a still-pending first call's eventual
+  // success. Also not bumped on the unsupported early-return — no
+  // asynchronous work is started, so there is no generation to protect
+  // (docs/web-share-tag-design.md §8).
   private _gen = 0;
   // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
@@ -89,8 +96,16 @@ export class ShareCore extends EventTarget {
     }));
   }
 
+  // Deliberately NO same-value guard (unlike error/loading/cancelled below).
+  // `value` is a success-completion signal, not idempotent state: it is written
+  // only on a successful share(), and wcs-share:complete is the *sole* success
+  // notification. Two consecutive successful shares — even with the same `data`
+  // object reference, or a data-less share echoing null when value is already
+  // null — are two distinct completions and must each re-fire wcs-share:complete
+  // so an `$on`/eventToken consumer (and a `value:` binding) sees every success.
+  // This matches clipboard `_setRead` / broadcast `_setMessage`, which carve
+  // result/event values out of the §3.3 guard for the same reason.
   private _setValue(value: WcsShareData | null): void {
-    if (this._value === value) return;
     this._value = value;
     this._target.dispatchEvent(new CustomEvent("wcs-share:complete", {
       detail: { value },
@@ -135,7 +150,9 @@ export class ShareCore extends EventTarget {
       return null;
     }
 
-    const gen = ++this._gen;
+    // Captured, not bumped (see the `_gen` field docs above): share() does
+    // not supersede a prior in-flight call, only dispose() invalidates.
+    const gen = this._gen;
 
     this._setLoading(true);
     // Reset the previous outcome before starting a new share so a stale

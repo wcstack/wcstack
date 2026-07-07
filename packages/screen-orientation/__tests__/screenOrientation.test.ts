@@ -32,6 +32,14 @@ describe("ScreenOrientation (Shell)", () => {
     expect(el.landscape).toBe(true);
   });
 
+  it("portrait-primary 接続時に el.portrait が true になる（Shell 委譲の検証）", () => {
+    installOrientation({ type: "portrait-primary", angle: 0 });
+    const el = createScreenOrientation();
+    document.body.appendChild(el);
+
+    expect(el.portrait).toBe(true);
+  });
+
   it("接続前の getter は既定値を返す", () => {
     const el = createScreenOrientation();
     expect(el.type).toBeNull();
@@ -97,6 +105,17 @@ describe("ScreenOrientation (Shell)", () => {
 
     el.unlock();
     expect(orientation.unlock).toHaveBeenCalled();
+  });
+
+  it("lock() 失敗時に el.error が非null になる（Shell 委譲の検証）", async () => {
+    const orientation = installOrientation();
+    orientation.lock = vi.fn(() => Promise.reject({ name: "NotSupportedError", message: "not supported" }));
+    const el = createScreenOrientation();
+    document.body.appendChild(el);
+
+    await el.lock("landscape");
+
+    expect(el.error).not.toBeNull();
   });
 
   it("inputs は空（属性を持たない、バッチ中最小の Shell）", () => {

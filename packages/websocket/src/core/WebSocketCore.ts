@@ -139,6 +139,13 @@ export class WebSocketCore extends EventTarget {
   }
 
   private _setError(error: any): void {
+    // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
+    // so suppressing redundant null→null dispatches (every connect/send start
+    // clears a usually-already-null error) avoids a spurious wcs-ws:error per
+    // successful operation. Reference identity is sufficient: each failure builds
+    // a fresh object (or the platform's own error Event), and the clear path
+    // always passes null.
+    if (this._error === error) return;
     this._error = error;
     this._target.dispatchEvent(new CustomEvent("wcs-ws:error", {
       detail: error,

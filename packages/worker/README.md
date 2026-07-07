@@ -123,6 +123,17 @@ The duality in one element: `post` is wired from a command-token, and an incomin
 
 The DOM trigger **always posts a string** — the literal `data-worker-text`, or the resolved element's `value` / `textContent`. It is a convenience for simple text payloads and intentionally does not parse, coerce, or structure the value. To send structured-clone data (objects, typed arrays, transferables), drive `post` via the command-token protocol (`command.post: $command.run`) or call `element.post(data, transfer?)` imperatively.
 
+> **autoTrigger is on by default.** The first `<wcs-worker>` to connect installs a single **document-level `click` listener** (a click on a `data-worker-target` element posts to the referenced worker, calling `event.preventDefault()`). If you don't use the DOM shortcut, opt out via the bootstrap entry:
+>
+> ```js
+> import { bootstrapWorker, getConfig } from "@wcstack/worker";
+> bootstrapWorker({ autoTrigger: false });      // no document click listener
+> bootstrapWorker({ triggerAttribute: "data-run" }); // rename the trigger attribute (default: data-worker-target)
+> getConfig();                                   // read the effective (deep-frozen) config
+> ```
+>
+> Call `bootstrapWorker()` before the elements connect. (`setConfig` is internal; configure through `bootstrapWorker`.)
+
 ## Observable Properties (outputs)
 
 | Property  | Event                         | Description                                                                          |

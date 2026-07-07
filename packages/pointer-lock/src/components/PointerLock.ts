@@ -18,7 +18,8 @@ import { PointerLockCore } from "../core/PointerLockCore.js";
  *
  * `requestPointerLock()` requires a user-gesture context (docs/fullscreen-tag-design.md
  * §3) — the primary activation path is the command-token protocol
- * (`command.click:$command.requestPointerLock` on a button), not an
+ * (`command.requestPointerLock: $command.<token>` on `<wcs-pointer-lock>`,
+ * emitted by a button's `onclick: $command.<token>`), not an
  * autoTrigger attribute (none is provided in v1,
  * docs/pointer-lock-tag-design.md §4).
  *
@@ -75,12 +76,17 @@ export class WcsPointerLock extends HTMLElement {
 
   // --- Commands ---
 
-  /** Request pointer lock on the resolved target. Requires a user-gesture context. */
+  /**
+   * Resolve `target` and request pointer lock on it. Requires a user-gesture
+   * context. never-throw: an unresolvable target or an unsupported/rejected
+   * API call are both surfaced via `error`, never thrown (mirrors
+   * `<wcs-fullscreen>`'s `requestFullscreen()`, docs/fullscreen-tag-design.md
+   * §3/§6 — the Shell passes the (possibly `null`) resolved element straight
+   * through and lets the Core set `error`, rather than silently no-op'ing
+   * here).
+   */
   async requestPointerLock(): Promise<void> {
     const { element } = this._resolveTarget();
-    if (!element) {
-      return;
-    }
     await this._core.requestPointerLock(element);
   }
 

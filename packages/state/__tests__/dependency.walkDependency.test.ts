@@ -25,7 +25,7 @@ function collectResult(result: ReturnType<typeof walkDependency>) {
 }
 
 describe('walkDependency', () => {
-  it('static dependency expands list indexes when list path', () => {
+  it('静的依存はリストパスの場合にリストインデックスを展開すること', () => {
     const stateProxy = createStateProxy({
       users: [{ id: 1 }, { id: 2 }],
     });
@@ -55,7 +55,7 @@ describe('walkDependency', () => {
     expect(visited).toContain('users');
   });
 
-  it('static dependency reuses last list value when present', () => {
+  it('静的依存は前回のリスト値が存在する場合それを再利用すること', () => {
     const stateProxy = createStateProxy({
       users: [{ id: 1 }, { id: 2 }],
     });
@@ -99,7 +99,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('static dependency uses cached lastValue branch', () => {
+  it('静的依存はキャッシュ済みlastValue分岐を使用すること', () => {
     const stateProxy = createStateProxy({
       users: [{ id: 1 }, { id: 2 }],
     });
@@ -144,7 +144,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('static dependency hits lastValue branch of getListIndexesByList', () => {
+  it('静的依存はgetListIndexesByListのlastValue分岐に到達すること', () => {
     const stateProxy = createStateProxy({
       users: [{ id: 1 }, { id: 2 }],
     });
@@ -189,7 +189,7 @@ describe('walkDependency', () => {
     spy.mockRestore();
   });
 
-  it('static dependency follows non-list path', () => {
+  it('静的依存は非リストパスをたどること', () => {
     const stateProxy = createStateProxy({});
     const startAddress = createStateAddress(getPathInfo('user'), null);
     const staticDependency = new Map<string, string[]>([['user', ['user.name']]]);
@@ -213,7 +213,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('static dependency with list path but non-wildcard target uses else branch', () => {
+  it('静的依存でリストパスだがターゲットが非ワイルドカードの場合はelse分岐を使用すること', () => {
     const stateProxy = createStateProxy({});
     const startAddress = createStateAddress(getPathInfo('user'), null);
     const staticDependency = new Map<string, string[]>([['user', ['user.name']]]);
@@ -237,7 +237,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('dynamic dependency carries over list index', () => {
+  it('動的依存はリストインデックスを引き継ぐこと', () => {
     const stateProxy = createStateProxy({});
     const listIndex = createListIndex(null, 1);
     const startAddress = createStateAddress(getPathInfo('products.*.price'), listIndex);
@@ -264,7 +264,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('dynamic dependency expands nested wildcards for add', () => {
+  it('動的依存はaddの場合にネストされたワイルドカードを展開すること', () => {
     const stateProxy = createStateProxy({
       'users.*.orders': [1, 2],
     });
@@ -294,7 +294,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('dynamic dependency expansion uses cached lastValue branch', () => {
+  it('動的依存の展開はキャッシュ済みlastValue分岐を使用すること', () => {
     const stateProxy = createStateProxy({
       'users.*.orders': [1, 2],
     });
@@ -335,7 +335,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('dynamic dependency hits lastValue branch of getListIndexesByList', () => {
+  it('動的依存はgetListIndexesByListのlastValue分岐に到達すること', () => {
     const stateProxy = createStateProxy({
       'users.*.orders': [1, 2],
     });
@@ -377,7 +377,7 @@ describe('walkDependency', () => {
     spy.mockRestore();
   });
 
-  it('dynamic dependency recurses when multiple wildcards remain', () => {
+  it('動的依存は複数のワイルドカードが残る場合に再帰すること', () => {
     const stateProxy = createStateProxy({
       'groups.*.teams': [1, 2],
       'groups.*.teams.*.members': [10, 11],
@@ -406,7 +406,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('dynamic dependency handles search types without throwing', () => {
+  it('動的依存は各searchタイプをthrowせずに処理すること', () => {
     const stateProxy = createStateProxy({
       'users.*.orders': [1, 2],
     });
@@ -434,7 +434,7 @@ describe('walkDependency', () => {
     }
   });
 
-  it('logs and returns empty for invalid search type', () => {
+  it('不正なsearchタイプの場合、ログを出力して空を返すこと', () => {
     const originalDebug = config.debug;
     config.debug = true;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -466,7 +466,7 @@ describe('walkDependency', () => {
     config.debug = originalDebug;
   });
 
-  it('does not log when debug is false for invalid search type', () => {
+  it('不正なsearchタイプでもdebugがfalseの場合はログを出力しないこと', () => {
     const originalDebug = config.debug;
     config.debug = false;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -498,7 +498,7 @@ describe('walkDependency', () => {
     config.debug = originalDebug;
   });
 
-  it('throws when expandable wildcard has no list index', () => {
+  it('展開対象のワイルドカードにリストインデックスがない場合、throwすること', () => {
     const stateProxy = createStateProxy({
       'users.*.orders': [1],
     });
@@ -520,7 +520,7 @@ describe('walkDependency', () => {
     )).toThrow(/Cannot expand dynamic dependency with wildcard/);
   });
 
-  it('throws when carryover wildcard has no list index', () => {
+  it('引き継ぎ対象のワイルドカードにリストインデックスがない場合、throwすること', () => {
     const stateProxy = createStateProxy({});
     const startAddress = createStateAddress(getPathInfo('users.*.name'), null);
     const dynamicDependency = new Map<string, string[]>([
@@ -540,7 +540,7 @@ describe('walkDependency', () => {
     )).toThrow(/Cannot expand dynamic dependency with wildcard/);
   });
 
-  it('dynamic dependency with no wildcards uses null listIndex', () => {
+  it('動的依存でワイルドカードがない場合はnullのlistIndexを使用すること', () => {
     const stateProxy = createStateProxy({});
     const startAddress = createStateAddress(getPathInfo('users.*.name'), createListIndex(null, 0));
     const dynamicDependency = new Map<string, string[]>([
@@ -564,7 +564,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('skips revisiting the same address', () => {
+  it('同じアドレスへの再訪問をスキップすること', () => {
     const stateProxy = createStateProxy({});
     const listIndex = createListIndex(null, 0);
     const startAddress = createStateAddress(getPathInfo('users.*.name'), listIndex);
@@ -589,7 +589,7 @@ describe('walkDependency', () => {
     ]);
   });
 
-  it('throws when dependency depth exceeds max', () => {
+  it('依存の深さが最大値を超えた場合、throwすること', () => {
     const staticDependency = new Map<string, string[]>();
     const chainLength = 1002;
     for (let i = 0; i < chainLength; i++) {
@@ -612,7 +612,7 @@ describe('walkDependency', () => {
     )).toThrow(/Maximum dependency depth/);
   });
 
-  it('static dependency with empty list skips loop body', () => {
+  it('静的依存で空リストの場合はループ本体をスキップすること', () => {
     const stateProxy = createStateProxy({
       users: [],
     });
@@ -636,7 +636,7 @@ describe('walkDependency', () => {
     expect(collectResult(result)).toEqual([]);
   });
 
-  it('dynamic dependency expansion with empty list skips loop body', () => {
+  it('動的依存の展開で空リストの場合はループ本体をスキップすること', () => {
     const stateProxy = createStateProxy({
       'users.*.orders': [],
     });
@@ -661,7 +661,7 @@ describe('walkDependency', () => {
     expect(collectResult(result)).toEqual([]);
   });
 
-  it('dynamic dependency with different wildcard paths uses null listIndex', () => {
+  it('動的依存でワイルドカードパスが異なる場合はnullのlistIndexを使用すること', () => {
     // users.*.name -> groups.*.id (no common wildcard paths)
     const stateProxy = createStateProxy({
       'groups': [{ id: 1 }, { id: 2 }],

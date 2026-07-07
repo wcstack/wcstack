@@ -71,9 +71,11 @@ class IdleCore extends EventTarget {
             // node in this batch (fetch, share, screen-orientation).
             { name: "error", event: "wcs-idle:error" },
         ],
-        inputs: [
-            { name: "threshold" },
-        ],
+        // No `inputs`: the Core has no settable `threshold` state — `threshold` is a
+        // per-call argument to `start(threshold)`, not a property/setter. The DOM-driven
+        // `threshold` input surface belongs to the Shell (which declares it and backs it
+        // with the `threshold` attribute), mirroring geolocation/intersection where the
+        // Core declares no inputs and the Shell adds them.
         commands: [
             { name: "requestPermission", async: true },
             { name: "start", async: true },
@@ -159,6 +161,10 @@ class IdleCore extends EventTarget {
         }
         try {
             const result = await Ctor.requestPermission();
+            // Symmetric with start()'s success path: any settled (non-throwing)
+            // outcome — granted or a plain "denied" — supersedes a stale error from
+            // an earlier attempt (e.g. a prior gesture-context rejection).
+            this._setError(null);
             return result === "granted" ? "granted" : "denied";
         }
         catch (e) {
@@ -192,10 +198,20 @@ class IdleCore extends EventTarget {
             this._setState(detector.userState, detector.screenState);
         }
         catch (e) {
+            // No separate AbortError check: stop()/dispose() bump `_gen` *before*
+            // calling `ac.abort()` (see stop() below), so a stop()-triggered
+            // AbortError always has a stale `gen` here and is already caught by
+            // the check above. The signal is private and never exposed, so an
+            // AbortError from any other source cannot occur.
             if (gen !== this._gen)
                 return;
-            if (e?.name === "AbortError")
-                return; // explicit stop(): silent, not an error
+            // Tear down the failed session's listener/controller (mirrors stop()):
+            // without this, the failed `_detector` stays wired to `_onChange` and a
+            // later `change` on that same (never-truly-started) instance would
+            // still write state, contradicting the error just recorded.
+            this._detector?.removeEventListener("change", this._onChange);
+            this._detector = null;
+            this._abortController = null;
             this._setError({ error: e });
         }
     }
@@ -229,7 +245,6 @@ class IdleCore extends EventTarget {
  */
 class WcsIdle extends HTMLElement {
     static hasConnectedCallbackPromise = true;
-    static observedAttributes = ["threshold"];
     static wcBindable = {
         ...IdleCore.wcBindable,
         inputs: [
@@ -245,9 +260,24 @@ class WcsIdle extends HTMLElement {
         this._core = new IdleCore(this);
     }
     // --- Attribute accessors ---
+    /**
+     * Minimum idle time (ms) before `userState` becomes `"idle"`. This value is
+     * read only at `start()` time — there is no `attributeChangedCallback`
+     * (deliberately not declared in `observedAttributes`, mirroring
+     * `<wcs-gyroscope>`'s `frequency`), so mutating the attribute/property on an
+     * already-running session has no effect until the caller `stop()`s and
+     * `start()`s again.
+     */
     get threshold() {
         const attr = this.getAttribute("threshold");
-        const n = attr === null ? NaN : Number(attr);
+        // An absent, empty, or whitespace-only attribute all mean "no value
+        // supplied" and must fall back to the default — without this check,
+        // `Number("")`/`Number("  ")` coerce to `0` (finite), which would slip
+        // past the `Number.isFinite` fallback below and silently return `0`
+        // instead of the documented 60000ms default.
+        if (attr === null || attr.trim() === "")
+            return 60000;
+        const n = Number(attr);
         return Number.isFinite(n) ? n : 60000;
     }
     set threshold(value) {

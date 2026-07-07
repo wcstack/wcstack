@@ -5,5 +5,5 @@ export { WcsContacts } from "./components/Contacts.js";
 
 export type {
   IWritableConfig, IWritableTagNames, ContactProperty, ContactsSelectOptions,
-  ContactInfo, WcsContactsCoreValues, WcsContactsValues,
+  ContactAddress, ContactInfo, WcsContactsCoreValues, WcsContactsValues,
 } from "./types.js";

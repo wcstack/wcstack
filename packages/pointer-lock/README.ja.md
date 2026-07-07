@@ -53,26 +53,31 @@ npm install @wcstack/pointer-lock
 
 <wcs-state>
   <script type="module">
-    export default {};
+    export default {
+      $commandTokens: ["lockPointer", "unlockPointer"],
+      locked: false,
+    };
   </script>
 </wcs-state>
 
 <canvas id="scene" width="640" height="480"></canvas>
-<wcs-pointer-lock target="#scene" data-wcs="active: locked"></wcs-pointer-lock>
+<wcs-pointer-lock target="#scene"
+  data-wcs="active: locked; command.requestPointerLock: $command.lockPointer; command.exitPointerLock: $command.unlockPointer">
+</wcs-pointer-lock>
 
-<button data-wcs="command.click: $command.requestPointerLock" data-wcs-target="wcs-pointer-lock">
-  マウスルックを有効化
-</button>
-<button data-wcs="command.click: $command.exitPointerLock" data-wcs-target="wcs-pointer-lock" data-wcs-hidden="!locked">
-  解除
-</button>
+<button data-wcs="onclick: $command.lockPointer">マウスルックを有効化</button>
+<button data-wcs="hidden: locked|not; onclick: $command.unlockPointer">解除</button>
 ```
+
+ボタンは`<wcs-pointer-lock>`に直接触れません。クリックが`lockPointer`/`unlockPointer`コマンドトークンを発行し、`<wcs-pointer-lock>`が`command.requestPointerLock: $command.lockPointer` / `command.exitPointerLock: $command.unlockPointer`でそれを購読します（[command-tokenプロトコル](../state/) — commandメソッドを持つ要素が*購読者*であり、発行者ではありません）。
+
+バインドするstateパスは事前にすべて宣言する必要があります — ここでは`locked: false`。未宣言パスをバインドすると初期化時に例外になります。`data-wcs`パス内の否定は先頭`!`ではなく`|not`フィルタ（`locked|not`）で行います — パスはプレフィックス演算子をサポートしません。
 
 `requestPointerLock()` は **user gesture 文脈を必須とします** — 後述。
 
 ## user gesture 制約
 
-`Element.requestPointerLock()` はuser gesture文脈（同期的なクリックハンドラ等）の外から呼ばれると `NotAllowedError` で reject します。本ノードは自らgestureを生成できません。**実際のuser gesture内から`requestPointerLock`を呼ぶ責務は呼び出し元にあります。** command-token プロトコル（`command.click: $command.requestPointerLock`）を`<button>`のクリックに配線してください — `setTimeout`内や`.then()`チェーンの奥から呼ぶとgesture文脈を失い呼び出しがrejectされますが、例外は伝播しません（never-throw、`error`に格納されます）。
+`Element.requestPointerLock()` はuser gesture文脈（同期的なクリックハンドラ等）の外から呼ばれると `NotAllowedError` で reject します。本ノードは自らgestureを生成できません。**実際のuser gesture内から`requestPointerLock`を呼ぶ責務は呼び出し元にあります。** command-token プロトコル（`<wcs-pointer-lock>`上の`command.requestPointerLock: $command.<token>`、ボタンの`onclick: $command.<token>`が発行する）を配線してください — `setTimeout`内や`.then()`チェーンの奥から呼ぶとgesture文脈を失い呼び出しがrejectされますが、例外は伝播しません（never-throw、`error`に格納されます）。
 
 ## 観測可能プロパティ（出力）
 
@@ -80,13 +85,13 @@ npm install @wcstack/pointer-lock
 | ---------- | ---------------------------- | ------------ |
 | `active`   | `wcs-pointer-lock:change`    | `document.pointerLockElement` がこのインスタンスの解決済み target と一致していれば `true`、それ以外は `false`。 |
 
-`error`（後述コマンド参照）は単純な getter として公開され、`wcBindable` の property ではありません — コマンド呼び出しの副作用としてのみ変化します（`@wcstack/fullscreen` と同型）。
+`error`（後述コマンド参照）は単純な getter として公開され、`wcBindable` の property ではありません — コマンド呼び出しの副作用としてのみ変化します（`@wcstack/fullscreen` と同型）。直近の失敗は次のいずれか: rejectされたPromise（gesture外呼び出しなら`NotAllowedError`等）、プラットフォームAPI非対応なら`{ message: "Pointer Lock API is not supported." }`、`target`が要素へ未解決なら`{ message: "Pointer Lock target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は`null`。
 
 ## コマンド
 
 | コマンド              | Async | 説明 |
 | --------------------- | ----- | ------------ |
-| `requestPointerLock`  | あり  | 解決済み target に対して `requestPointerLock()` を呼びます。never-throw: 失敗（gesture不在の`NotAllowedError`、非対応API等）は例外でなく `error` に格納されます。 |
+| `requestPointerLock`  | あり  | `target`を解決し、それに対して`requestPointerLock()`を呼びます。never-throw: 失敗（targetが未解決、gesture不在の`NotAllowedError`、非対応API等）は例外でなく `error` に格納されます。 |
 | `exitPointerLock`     | **無し** | `document.exitPointerLock()` を呼びます。**同期API** — `@wcstack/fullscreen`の`exitFullscreen()`（Promiseベース）と異なり、`exitPointerLock()`は`void`を返します。何もロックされていない、またはAPI非対応時はsilent no-opです。 |
 
 ## 属性 / 入力
@@ -108,7 +113,7 @@ npm install @wcstack/pointer-lock
 - **user gesture が必須。** 上記参照 — プラットフォームの制約であり、本ノードで回避する手段はありません。
 - **`exitPointerLock()`は同期API**、`@wcstack/fullscreen`のPromiseベースの`exitFullscreen()`とは異なります。単独の`_gen`世代ガードは持ちません（非同期の`requestPointerLock()`のみがガードを必要とします）。それでも非準拠実装が例外を投げないよう防御的に`try/catch`で包んでいます。
 - **`movementX`/`movementY`はv1ではスコープ外。** 上記参照。
-- **autoTriggerなし。** `requestPointerLock()`はuser gesture文脈を必要とするため、主な起動経路は`data-*target`のクリックショートカットではなくcommand-tokenプロトコル（`command.click: $command.requestPointerLock`）です。
+- **autoTriggerなし。** `requestPointerLock()`はuser gesture文脈を必要とするため、主な起動経路は`data-*target`のクリックショートカットではなくcommand-tokenプロトコル（`<wcs-pointer-lock>`上の`command.requestPointerLock: $command.<token>`）です。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true`を宣言し`connectedCallbackPromise`を公開します。`observe()`が同期的なため、このpromiseは常に即座にsettleします。
 
 ## ヘッドレス利用（`PointerLockCore`）

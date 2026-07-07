@@ -3,6 +3,7 @@ import { getConfig, setConfig } from "../src/config";
 
 describe("config", () => {
   beforeEach(() => {
+    // デフォルトに戻す
     setConfig({
       tagNames: { contacts: "wcs-contacts" },
     });

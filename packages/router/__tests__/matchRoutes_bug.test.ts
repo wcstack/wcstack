@@ -4,7 +4,7 @@ import { Router } from '../src/components/Router';
 import { Route } from '../src/components/Route';
 import './setup';
 
-describe('matchRoutes Bug Reproduction', () => {
+describe('matchRoutesバグ再現', () => {
     let router: Router;
 
     beforeEach(() => {
@@ -17,7 +17,7 @@ describe('matchRoutes Bug Reproduction', () => {
         document.body.innerHTML = '';
     });
 
-    it('should find nested index route even if parent matches', () => {
+    it('親がマッチする場合でもネストされたindexルートを見つけること', () => {
         // Parent: /users
         const parentRoute = document.createElement('wcs-route') as Route;
         parentRoute.setAttribute('path', '/users');

@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/share`（`<wcs-share>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`@wcstack/share` として公開済み）。本文書は実装前に行った論点整理と決定事項のスナップショットであり、実装後も設計意図の参照用に保持している。以降の `hidden@error` / `text@error.message` 等の `@` 表記は説明用の擬似記法であり、実際の `data-wcs` 構文ではない点に注意（実装では `command.share: $command.doShare` のような明示的なプロパティ名構文を使う。README.md/README.ja.md 参照）。
 - **対象 WebAPI**: Web Share API（`navigator.share(data)`、`navigator.canShare(data)`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の1本目。EyeDropper / Contact Picker / Credential Management に先立ち、**このバッチの共有アーキタイプを初めて実装で確立するノード**。既存25パッケージに前例の無い新規アーキタイプであり、本書の決定がバッチ内の後続ノードにそのまま流用される。
 - **前提資産**: `fetch`（単一`_gen`・try/catch・never-throwの`_doFetch`骨格、[FetchCore.ts](../packages/fetch/src/core/FetchCore.ts)）、`spec-proposal-command-token-arguments.md`（command-token引数の位置引数素通し規範）、[async-io-node-guidelines.md](./async-io-node-guidelines.md)（Core/Shell分離・wc-bindable・never-throw・同値ガード・`_gen`世代ガード・SSR）。
@@ -34,7 +34,7 @@
 `FetchCore._doFetch`（[FetchCore.ts:180-316](../packages/fetch/src/core/FetchCore.ts#L180-L316)）が持つ要素を仕分ける。
 
 **残すもの**:
-- **単一`_gen`世代ガード**（[FetchCore.ts:54, 195, 232, 290](../packages/fetch/src/core/FetchCore.ts#L54)）: 非同期開始時に世代番号を捕捉し（`const gen = ++this._gen`）、resolve/catch時に`gen !== this._gen`なら状態を書かず即returnする。dispose後や高速reconnect後の書き込みを防ぐ、ガイドライン§3.4のMUST。
+- **単一`_gen`世代ガード**（[FetchCore.ts:54, 195, 232, 290](../packages/fetch/src/core/FetchCore.ts#L54)）: FetchCoreでは非同期開始時に世代番号を捕捉かつ更新し（`const gen = ++this._gen`）、resolve/catch時に`gen !== this._gen`なら状態を書かず即returnする。dispose後や高速reconnect後の書き込みを防ぐ、ガイドライン§3.4のMUST。ただし本ノードでは後述のとおり呼び出しごとの追い越し（supersession）が発生しないため、`_gen`の更新（`++`）は`dispose()`時のみ行い、`share()`側は`const gen = this._gen`と捕捉するだけに留める。
 - **`_setLoading`/`_setError`的な同値ガード付きsetter**（[FetchCore.ts:109-123](../packages/fetch/src/core/FetchCore.ts#L109-L123)相当）: `_setValue`/`_setLoading`/`_setError`/`_setCancelled`をそれぞれ`CustomEvent`で`bubbles: true`発火する私有setterとして持つ。
 - **never-throwのtry/catchラップ**（[FetchCore.ts:213-315](../packages/fetch/src/core/FetchCore.ts#L213-L315)の`try { ... } catch (e) { ... }`構造）: `share()`は例外を投げず、失敗時は`_setError`（または`_setCancelled`、§3）を呼んで`null`を返す。
 - **finally不要点は簡略化**: fetchの`finally`（[FetchCore.ts:311-315](../packages/fetch/src/core/FetchCore.ts#L311-L315)）は`AbortController`の後始末のためのものなので、後述のとおりWeb Shareには対応物がない。
@@ -119,7 +119,7 @@ this.$command.doShare.emit({ title: "記事タイトル", url: location.href });
 
 [network-tag-design.md](./network-tag-design.md)は「対応/非対応の二値問題で継続的な遷移が無いAPI」に対して明示的な`supported: boolean`派生プロパティを採用した（[network-tag-design.md:98-100](./network-tag-design.md#L98-L100)）。Web Shareでも同じ判断軸で検討し、**今回は`supported`フラグを持たない**方を選ぶ。
 
-- **却下: `supported: boolean`プロパティを追加する** ~~（networkの先例に倣う）~~ — networkは「監視専用ノードで、commandが無いため`supported`が唯一のフォールバック手がかり」だった。Web Shareは逆に**commandが主役のノード**であり、`share()`を呼んだ第間に`typeof navigator.share !== "function"`を判定して`error`に落とせば、利用者が実際に得たい情報（「このボタンを押したら共有できるか」）を１アクションで得られる。事前に`supported`を問い合わせる中間ステップを増やす効用が薄い。
+- **却下: `supported: boolean`プロパティを追加する** ~~（networkの先例に倣う）~~ — networkは「監視専用ノードで、commandが無いため`supported`が唯一のフォールバック手がかり」だった。Web Shareは逆に**commandが主役のノード**であり、`share()`を呼んだ瞬間に`typeof navigator.share !== "function"`を判定して`error`に落とせば、利用者が実際に得たい情報（「このボタンを押したら共有できるか」）を１アクションで得られる。事前に`supported`を問い合わせる中間ステップを増やす効用が薄い。
 - **決定: `share()`内部でAPI解決に失敗したら即`_setError`** ✅ — ガイドライン§3.7のAPI呼び出し時解決（キャッシュ禁止）に従い、`_api()`ヘルパーで`typeof globalThis.navigator?.share === "function"`を毎回チェックする。無ければ`_setError({ message: "Web Share API is not supported in this browser." })`を発火して即`null`を返す（`navigator.share`自体を呼ばない、`_gen`も進めない＝非同期処理を開始しないため世代を消費する意味が無い）。
 - 利用者が事前にボタンを隠したい場合は`§6`の`canShare`または生の`typeof navigator.share`チェックをJS側で行う経路が残っており、宣言的に「対応可否で出し分けたい」需要は薄いと判断する。
 

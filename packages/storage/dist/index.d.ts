@@ -38,10 +38,12 @@ interface IWritableConfig {
 
 type StorageType = "local" | "session";
 /**
- * Error returned when a storage operation fails.
+ * Error returned when a storage operation fails. `operation` names the failing
+ * call: `load` / `save` / `remove`, or `type` for an invalid `type` assignment
+ * (a value other than `"local"` / `"session"`).
  */
 interface WcsStorageError {
-    operation: "load" | "save" | "remove";
+    operation: "load" | "save" | "remove" | "type";
     message: string;
 }
 /**

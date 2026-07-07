@@ -15,7 +15,7 @@ export class WcsCredential extends HTMLElement {
   static wcBindable: IWcBindable = {
     ...CredentialCore.wcBindable,
     inputs: [],
-    // Core の commands をそのまま継承（単一情報源）。
+    // Inherit commands from Core (single source of truth).
     commands: CredentialCore.wcBindable.commands,
   };
 

@@ -129,6 +129,10 @@ describe("ContactsCore", () => {
     });
 
     it("進行中に重ねて select() を呼んでも2回目の loading=true は同値ガードで再発火しない", async () => {
+      // 1呼び出し=1ピッカーが前提だが（docs/contact-picker-tag-design.md §1、
+      // ピッカーは単一システムモーダル面）、Core 自体は呼び出し回数を制限しない。
+      // 既に loading=true の最中に2回目を呼ぶと、2回目の _setLoading(true) は
+      // 同値ガードに当たり再発火しないことを確認する（§3.3 MUST）。
       let resolveFirst!: (c: any[]) => void;
       let resolveSecond!: (c: any[]) => void;
       let call = 0;
@@ -334,6 +338,43 @@ describe("ContactsCore", () => {
       const result = await promise;
       expect(result).toBeNull();
       expect(core.cancelled).toBe(false);
+    });
+  });
+
+  describe("並行 select() 呼び出し（supersession は行わない）", () => {
+    it("1回目 pending 中に2回目が InvalidStateError で失敗しても、1回目の後続成功は破棄されない（web-share §2: 新規呼び出しは旧呼び出しを追い越さない）", async () => {
+      let resolveFirst!: (contacts: any[]) => void;
+      let call = 0;
+      installSelect(() => {
+        call += 1;
+        if (call === 1) {
+          return new Promise<any[]>((resolve) => { resolveFirst = resolve; });
+        }
+        return Promise.reject(new DOMException("Contacts picker is already in use.", "InvalidStateError"));
+      });
+      const core = new ContactsCore();
+
+      const contacts1 = [{ name: ["Taro Yamada"] }];
+      const p1 = core.select(["name"]);
+
+      const result2 = await core.select(["name"]);
+      expect(result2).toBeNull();
+      expect(core.error).toBeInstanceOf(DOMException);
+      expect((core.error as DOMException).name).toBe("InvalidStateError");
+      expect(core.cancelled).toBe(false);
+
+      resolveFirst(contacts1);
+      const result1 = await p1;
+
+      // Regression guard: bumping `_gen` on every select() start (the bug)
+      // made the still-pending first call's captured `gen` stale by the time
+      // the second call's failure ran, so the first call's later genuine
+      // success was wrongly dropped (result/value stayed null/unset). Per
+      // docs/web-share-tag-design.md §2 (adopted by
+      // docs/contact-picker-tag-design.md §1), select() intentionally has no
+      // fetch-style supersession — only dispose() may invalidate a call.
+      expect(result1).toEqual(contacts1);
+      expect(core.value).toEqual(contacts1);
     });
   });
 

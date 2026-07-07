@@ -42,18 +42,24 @@ export interface WcsShareData {
  * ```
  */
 export interface WcsShareCoreValues {
-  // The success signal: an echo of the `data` object passed to the `share()`
-  // call that just completed successfully (navigator.share() itself resolves
-  // `Promise<void>`, so `value` is synthesized rather than read off the API —
-  // see docs/web-share-tag-design.md §4). `null` before any successful share.
+  /**
+   * The success signal: an echo of the `data` object passed to the `share()`
+   * call that just completed successfully (navigator.share() itself resolves
+   * `Promise<void>`, so `value` is synthesized rather than read off the API —
+   * see docs/web-share-tag-design.md §4). `null` before any successful share.
+   */
   value: WcsShareData | null;
   loading: boolean;
-  // A true platform failure (anything other than the user cancelling the
-  // share sheet). `null` when there has been no failure yet or after a reset.
+  /**
+   * A true platform failure (anything other than the user cancelling the
+   * share sheet). `null` when there has been no failure yet or after a reset.
+   */
   error: any;
-  // `true` when the user dismissed the share sheet (AbortError). Kept
-  // separate from `error` so `hidden@error`-style bindings do not react to a
-  // routine cancellation (docs/web-share-tag-design.md §3).
+  /**
+   * `true` when the user dismissed the share sheet (AbortError). Kept
+   * separate from `error` so a binding gated on `error` does not react to a
+   * routine cancellation (docs/web-share-tag-design.md §3).
+   */
   cancelled: boolean;
 }
 

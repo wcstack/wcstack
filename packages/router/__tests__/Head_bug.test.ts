@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Head, _resetHeadStack } from '../src/components/Head';
 
-describe('Head Bug Reproduction: Initial State Capture', () => {
+describe('Headバグ再現: 初期状態のキャプチャ', () => {
   beforeEach(() => {
     // Reset DOM
     document.head.innerHTML = `
@@ -17,7 +17,7 @@ describe('Head Bug Reproduction: Initial State Capture', () => {
     _resetHeadStack();
   });
 
-  it('should restore original meta tag when only the second head overrides it', () => {
+  it('2番目のheadだけが上書きしたmetaタグが元に復元されること', () => {
     // Scenario:
     // 1. Initial head has <meta name="description">
     // 2. First Head component connects (does NOT touch description)

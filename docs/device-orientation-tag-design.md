@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/tilt`（`<wcs-tilt>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/tilt`、`@wcstack/tilt`）。本文書は実装前の論点整理と決定事項のスナップショットとして書かれたが、実装後もおおむね本書の決定通り。逸脱事項: (1) §3 の擬似コードにあった `_setError` は初版実装から欠落していたが、品質レビューで是正し `error`/`wcs-tilt:error` を公開状態に追加した（§2/§9 反映済み）。(2) §10.4 の「水準器 UI」example は未作成（スコープ外、README の Quick Start が最小例を兼ねる）。
 - **対象 WebAPI**: Device Orientation API（`window` への `'deviceorientation'` イベント、`event.alpha`/`.beta`/`.gamma`/`.absolute`）。iOS 13+ Safari では加えて静的 `DeviceOrientationEvent.requestPermission()`（Promise、要 user gesture）。Device Motion（`'devicemotion'`）は同型の gesture-gate 問題を共有するが、本書は Orientation を主眼に記述する（Motion は別タグ `<wcs-motion>` として同一パターンで後続実装する想定、[io-node-candidate-implementation-notes.md](./io-node-candidate-implementation-notes.md) #6 参照）。
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ2（gesture-gated permission パターン）の2本目。`<wcs-idle>`（[idle-detection-tag-design.md](./idle-detection-tag-design.md)）と同じ「静的で user gesture 文脈が必須の `requestPermission()` command を公開する」という共有アーキタイプに乗るが、**permission 状態を自前で追跡せざるを得ない**という亜種であることが最大の特徴。
 - **前提資産**: `permission`（4値 permission state・Core/Shell 分離・never-throw・secure-context 明記）、`<wcs-idle>`（同一バッチの先行実装、gesture-gated `requestPermission()` の参照実装）。
@@ -30,7 +30,7 @@
 
 - **デバイスの傾き・向きに応じた宣言的な UI 変化**: パララックス演出、水準器アプリ、ゲームのステアリング入力、VR/AR 風の視点操作などを `alpha`/`beta`/`gamma` の束縛だけで実現する。
 - **iOS の gesture-gate を隠蔽する定型パターンの提供**: iOS 13+ Safari では明示的なユーザー操作なしに `deviceorientation` イベントを購読しても値が一切飛んでこない（無音で失敗する）。この差異を吸収し、「対応していればそのまま動く／iOS では明示ボタンが要る」という分岐を宣言的な `permissionState` 監視だけで扱えるようにする。
-- **既存ノードとの組み合わせ**: `hidden@!granted`（iOS で許可されるまでは傾き演出用の要素を隠す）、`<wcs-idle>` と並べて「gesture-gated permission パターン」の2つ目の実例として README を相互参照させる。
+- **既存ノードとの組み合わせ**: `hidden: permissionState|ne(granted)`（iOS で許可されるまでは傾き演出用の要素を隠す。`data-wcs` は `prop: path|filter` 形式——`@` はプロパティ側の否定演算子ではなく `path@stateName` の状態インスタンス指定、`!` 先頭否定は存在しない構文なので、実際に動く例は `eq`/`ne` フィルタで表す）、`<wcs-idle>` と並べて「gesture-gated permission パターン」の2つ目の実例として README を相互参照させる。
 
 ---
 
@@ -46,6 +46,7 @@ static wcBindable: IWcBindable = {
     { name: "gamma",          event: "wcs-tilt:change" },
     { name: "absolute",       event: "wcs-tilt:change" },
     { name: "permissionState", event: "wcs-tilt:permission-changed" },
+    { name: "error", event: "wcs-tilt:error" },
   ],
   inputs: [],
   commands: [
@@ -59,7 +60,8 @@ static wcBindable: IWcBindable = {
 - `alpha` / `beta` / `gamma`: ネイティブ `DeviceOrientationEvent` の同名フィールドをそのまま publish（単位は度）。3つとも同じ `wcs-tilt:change` イベントに載せ、1回の `deviceorientation` 発火につき1回だけ dispatch する（`network` の「複数フィールド→1つのイベント」という構造、[network-tag-design.md](./network-tag-design.md) §3 と同型）。
 - `absolute`: `event.absolute` の単純な boolean パススルー（§7 で詳述）。
 - `permissionState`: `"granted" | "denied" | "unknown"` の3値。**geo/permission/idle が採用する4値（`prompt`/`granted`/`denied`/`unsupported`）とは意図的に異なる語彙**にする。理由: Device Orientation の gating はブラウザによって「そもそも存在しない」（＝問い合わせる概念自体が無い）ケースが大半で、これは Permissions API の `"unsupported"`（API はあるが対象権限を認識しない）とは意味が異なる。「gating が無いのでプロンプト自体が発生しない」ことを表すのに `"unknown"` を使う（§3 で詳述、非 iOS ブラウザの既定値）。`"prompt"` は使わない——iOS で `requestPermission()` を呼ぶ前の状態を表すのに使いたくなるが、呼ぶ前は単に「まだ聞いていない」だけであり、ブラウザ側に確認可能な `"prompt"` 状態が存在するわけではないため、紛らわしさを避けて初期値も `"unknown"` に統一する。
-- `permissionState` は独立イベント `wcs-tilt:permission-changed` で publish する（`alpha`/`beta`/`gamma`/`absolute` の高頻度な `wcs-tilt:change` とは別イベント。permission 状態は低頻度で意味のある変化だけなので、混ぜると `hidden@granted` のような束縛のたびに無関係な傾き変化まで再評価されるコストが生じる）。
+- `permissionState` は独立イベント `wcs-tilt:permission-changed` で publish する（`alpha`/`beta`/`gamma`/`absolute` の高頻度な `wcs-tilt:change` とは別イベント。permission 状態は低頻度で意味のある変化だけなので、混ぜると `hidden: permissionState|eq(granted)` のような束縛のたびに無関係な傾き変化まで再評価されるコストが生じる）。
+- `error`: never-throw（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §3.6 MUST）に従い、`requestPermission()` の失敗（gesture 文脈外呼び出し等の reject）を例外で投げず `error` プロパティに流す。`<wcs-idle>` と同様、実際の失敗オブジェクトをそのまま保持し、`wcs-tilt:error` で publish する。同値ガードは参照比較（`===`）——新しい reject のたびに新規オブジェクトなので、失敗のたびに発火する（[timing-and-firing-contract.md](./timing-and-firing-contract.md) §8.4、screen-orientation §7.4 と同型）。例外なく settle した `requestPermission()`（granted / 素の denied / 非 gating 環境の即 granted）は stale な error を `null` にクリアする（idle の supersession と同じ）。§3 参照。
 
 ---
 
@@ -71,11 +73,15 @@ async requestPermission(): Promise<string> {
   if (typeof DOE?.requestPermission !== "function") {
     // gating が存在しないブラウザ（Android Chrome、デスクトップ全般など）。
     // 許可を求める概念自体が無いので、購読して構わないという意味で即 "granted" とする。
+    this._setError(null);   // settle した結果は stale な error を supersede する（idle と同じ）
     this._setPermissionState("granted");
     return "granted";
   }
   try {
     const result: string = await DOE.requestPermission();   // "granted" | "denied"
+    // 例外なく settle した結果——granted も素の "denied" も——は、
+    // 以前の試行の stale な error（gesture 文脈外 reject 等）を supersede する。
+    this._setError(null);
     this._setPermissionState(result === "granted" ? "granted" : "denied");
     return result;
   } catch (e) {
@@ -109,7 +115,8 @@ stop(): void {
 }
 ```
 
-- Device Orientation の購読は Idle Detection と異なり**完全に同期**（`addEventListener` を張るだけで、待ち合わせるべき Promise が無い）。したがって `network`（[network-tag-design.md](./network-tag-design.md) §5）と同じ理由で、**`_gen` 世代ガードは不要**。非同期 probe が一切存在しないため、stale な resolve が torn-down 要素に書き込むというレースがそもそも発生しない。
+- `start()`/`stop()` が管理する購読そのものは、Idle Detection の `start()`（`detector.start()` の await を伴う）と異なり**完全に同期**（`addEventListener` を張るだけで、待ち合わせる Promise が無い）。**この購読経路に限っては** `network`（[network-tag-design.md](./network-tag-design.md) §5）と同じ理由で `_gen` 世代ガードが不要——stale な resolve が torn-down 要素に書き込むレースがそもそも発生しない。
+- ただし本ノードは `network` と異なり、`requestPermission()`（§3）という **async な probe を実際に持つ**（`await Ctor.requestPermission()`、[TiltCore.ts](../packages/tilt/src/core/TiltCore.ts)）。それでも `_gen` を要しないのは「非同期 probe が無いから」ではなく、その post-await 書き込みが `permissionState`/`error` という**購読・リソース管理を伴わないベニンな値設定＋dispatch**に留まるため。`_gen` が守るべきなのは「stale な非同期処理の完了が、生存中のリソース（購読・`AbortController` 等）や後続の呼び出しと衝突する」ケースであり、torn-down 要素への単純な値書き込みはその衝突を起こさない（`<wcs-idle>` の `requestPermission()` と同型の扱い、[idle-detection-tag-design.md](./idle-detection-tag-design.md) §4.1／本書 §2）。**訂正（品質レビュー）**: 初版は「非同期 probe が一切存在しないため」という `network` の理由をそのまま `_gen` 不要の根拠として流用していたが、これは事実誤認だった——`requestPermission()` という非同期 probe は存在する。結論（`_gen` 不要）自体は変わらないが、根拠は上記の「post-await 書き込みが benign」に置き換える。
 - `dispose()` は `stop()` を呼ぶだけでよい。
 - `start()` 自体は「許可されていない状態で呼んでも例外にはならない」（iOS では単にイベントが飛んでこないだけ、無音の失敗）。`start()` それ自体に never-throw 上の懸念は無いが、「許可される前に呼んでも無意味」という運用上の注意点は README に明記する（§6）。
 
@@ -121,7 +128,7 @@ stop(): void {
 
 この制約は `geolocation`/`permission` と同様だが、[network-tag-design.md](./network-tag-design.md) §7 が明記した「Network Information API には secure-context 制約が無い」とは対照的である。同じ「バッチ横断で共有される薄いmonitorパターン」であっても、secure-context 要否は**API ごとに個別に確認すべき**であり、「バッチ4/5等のノードに普遍的な話ではない」ことを本書で明示しておく。新規ノードを設計する際、既存の類似ノードの secure-context 要否をそのまま転用してはならない——各 Web API の仕様を個別に確認する必要がある、という教訓をここに記録する。
 
-README には「HTTPS（または localhost）で配信されていない場合、`deviceorientation` イベントは発火しない。`permissionState` は `"unknown"` のまま変化しない」旨を明記する。
+README には「HTTPS（または localhost）で配信されていない場合、`deviceorientation` イベントは発火しない。`permissionState` は `requestPermission()` を呼ばない限り `"unknown"` のまま変化しない——ただし gating の無いプラットフォームでは、非 secure context でもフォールバック（§3、[TiltCore.ts](../packages/tilt/src/core/TiltCore.ts) の関数不在分岐）が実際には何も問い合わせずに即 `"granted"` を返すため、`requestPermission()` は secure-context の検出手段にならない」旨を明記する。**訂正（品質レビュー）**: 初版のここの指示文言は「`permissionState` は `"unknown"` のまま変化しない」と無条件に書いており実装と不一致だった（gating 無しプラットフォームでは非 secure context でも `requestPermission()` が `unknown`→`granted` に変化させることを実行実証済み）。`<wcs-motion>` を同一パターンで後続実装する際（冒頭参照、詳細は [io-node-candidate-implementation-notes.md](./io-node-candidate-implementation-notes.md) #6）は、この訂正後の条件付き文言を転写すること。
 
 ---
 
@@ -195,9 +202,9 @@ class FakeDeviceOrientationEvent extends Event {
 |---|---|
 | §0 permission 状態の追跡 | **`<wcs-tilt>` がローカルに `permissionState` を保持**（対応する Permissions API エントリが無いため合成不可） |
 | §2 `permissionState` の語彙 | 3値 `"granted" \| "denied" \| "unknown"`（geo/permission の4値とは意図的に異なる） |
-| §2 公開 state | `alpha`/`beta`/`gamma`/`absolute` を1つの `wcs-tilt:change` に、`permissionState` は別イベント `wcs-tilt:permission-changed` |
+| §2 公開 state | `alpha`/`beta`/`gamma`/`absolute` を1つの `wcs-tilt:change` に、`permissionState` は別イベント `wcs-tilt:permission-changed`、`error` は別イベント `wcs-tilt:error`（never-throw、§3.6 MUST） |
 | §3 `requestPermission` フォールバック | `typeof DeviceOrientationEvent?.requestPermission === "function"` で分岐。無ければ即 `"granted"` |
-| §4 `_gen`世代ガード | **不要**（購読が完全に同期、非同期probeが無い） |
+| §4 `_gen`世代ガード | **不要**（購読(`start`/`stop`)は完全に同期で対象外。`requestPermission()`はasync probeを実際に持つが、post-await書き込みが購読・リソース管理を伴わないbenignな値設定+dispatchに留まるため同じく不要——`network`の「async probeが一切存在しない」根拠の流用は誤りだったため§4で訂正） |
 | §5 secure context | **必須**（network とは対照的。バッチ横断で普遍的な話ではないことの実例） |
 | §6 connect 時自動 start | **しない**（`<wcs-idle>` と並行の決定）。ただし非iOSでの自動起動の是非は**未決の開いた問題**として残す |
 | §7 `absolute` | プロパティとして公開（単純パススルー、低コスト）。ただし実装時に主要ブラウザで再検証すべき |

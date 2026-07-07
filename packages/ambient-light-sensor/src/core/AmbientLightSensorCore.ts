@@ -7,11 +7,11 @@ const NULL_READING: WcsAmbientLightSensorReading = Object.freeze({ illuminance: 
  * the Generic Sensor API's `AmbientLightSensor` class exposed through the
  * wc-bindable protocol.
  *
- * The platform `Sensor` base class (shared by `AmbientLightSensor` / `Gyroscope` /
+ * The platform `Sensor` base class (shared by `Accelerometer` / `Gyroscope` /
  * `Magnetometer` / `AmbientLightSensor`) reports failure through an `'error'`
  * event rather than a rejected promise, so this Core can satisfy never-throw
  * (docs/async-io-node-guidelines.md §3.6) by simply forwarding that event —
- * see docs/ambient-light-sensor-tag-design.md §0. The one place a synchronous
+ * see docs/sensor-tag-design.md §0. The one place a synchronous
  * exception *can* still escape the platform API is the `AmbientLightSensor`
  * constructor itself (e.g. `SecurityError` on permission denial or a
  * feature-policy block); `_createSensor()` wraps that single call in
@@ -29,12 +29,12 @@ const NULL_READING: WcsAmbientLightSensorReading = Object.freeze({ illuminance: 
  *
  * No `_gen` generation guard: start()/stop() are a synchronous
  * subscribe/unsubscribe toggle with no asynchronous probe whose stale
- * resolution could race a dispose() — see docs/ambient-light-sensor-tag-design.md §1.5
+ * resolution could race a dispose() — see docs/sensor-tag-design.md §1.5
  * (the same reasoning as NetworkCore, docs/network-tag-design.md §5).
  *
  * Permissions: this Core does not query `navigator.permissions` itself.
  * Compose with `<wcs-permission name="ambient-light-sensor">` instead — see
- * docs/ambient-light-sensor-tag-design.md §"Permissions API連携".
+ * docs/sensor-tag-design.md §"2番目の決定: Permissions APIとの合成".
  */
 export class AmbientLightSensorCore extends EventTarget {
   static wcBindable: IWcBindable = {
@@ -53,7 +53,8 @@ export class AmbientLightSensorCore extends EventTarget {
 
   // The live sensor instance while started (null otherwise), kept so stop()
   // can remove its listeners precisely and so start() can detect "already
-  // started" without a separate boolean (§3.5 idempotency).
+  // started" without a separate boolean (docs/async-io-node-guidelines.md §3.5
+  // idempotency).
   private _sensor: (EventTarget & { start(): void; stop(): void }) | null = null;
 
   constructor(target?: EventTarget) {
@@ -69,8 +70,9 @@ export class AmbientLightSensorCore extends EventTarget {
     return this._error;
   }
 
-  /** No asynchronous probe to await: start()/stop() are synchronous (§3.8 is
-   *  satisfied trivially, mirroring NetworkCore). */
+  /** No asynchronous probe to await: start()/stop() are synchronous
+   *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
+   *  NetworkCore). */
   get ready(): Promise<void> {
     return Promise.resolve();
   }
@@ -79,7 +81,7 @@ export class AmbientLightSensorCore extends EventTarget {
 
   // Deliberately NOT same-value guarded: a `reading` is a fresh sample, not a
   // settled state, so it must dispatch every time even when the values happen
-  // to repeat (docs/ambient-light-sensor-tag-design.md §1.1 / §3).
+  // to repeat (docs/sensor-tag-design.md §1.1).
   private _setReading(reading: WcsAmbientLightSensorReading): void {
     this._reading = reading;
     this._target.dispatchEvent(new CustomEvent("wcs-ambient-light-sensor:reading", {
@@ -89,7 +91,11 @@ export class AmbientLightSensorCore extends EventTarget {
   }
 
   private _setError(error: WcsAmbientLightSensorErrorDetail | null): void {
-    // Same-value guard (by error name): error is state-like, unlike reading.
+    // Same-value guard (by error name + message): error is state-like, unlike
+    // reading — a repeated identical error (same name and message) must not
+    // redispatch. Note `error` is also STICKY: nothing calls _setError(null),
+    // so a successful (re)start does not clear a prior failure — the monitoring
+    // sensor family deliberately keeps the last observed error (docs/sensor-tag-design.md §1.5).
     if (this._error?.error === error?.error && this._error?.message === error?.message) return;
     this._error = error;
     this._target.dispatchEvent(new CustomEvent("wcs-ambient-light-sensor:error", {
@@ -169,11 +175,11 @@ export class AmbientLightSensorCore extends EventTarget {
   /**
    * Construct the platform `AmbientLightSensor`, guarding both non-support and a
    * synchronous constructor exception. Never calls the raw `new AmbientLightSensor(...)`
-   * anywhere else in this class — see docs/ambient-light-sensor-tag-design.md §1.5.
+   * anywhere else in this class — see docs/sensor-tag-design.md §1.5.
    *
-   * API resolution is call-time (§3.7): re-checked on every start(), never
-   * cached, so tests can install/remove the global freely and an unsupported
-   * environment is always reported correctly.
+   * API resolution is call-time (docs/async-io-node-guidelines.md §3.7):
+   * re-checked on every start(), never cached, so tests can install/remove the
+   * global freely and an unsupported environment is always reported correctly.
    */
   private _createSensor(frequency?: number): (EventTarget & { start(): void; stop(): void }) | null {
     const Ctor = (globalThis as any).AmbientLightSensor;
@@ -200,6 +206,9 @@ export class AmbientLightSensorCore extends EventTarget {
 
   private _onError = (event: Event): void => {
     const err = (event as any).error as { name?: string; message?: string } | undefined;
-    this._setError({ error: err?.name ?? "error", message: err?.message ?? String(err) });
+    // Fallback is a meaningful constant, NOT String(err): a SensorErrorEvent
+    // without an `error` field would otherwise stringify `undefined` into the
+    // literal message "undefined" (aligned across the sensor family).
+    this._setError({ error: err?.name ?? "error", message: err?.message ?? "Sensor error" });
   };
 }

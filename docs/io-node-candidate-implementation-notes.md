@@ -1,5 +1,7 @@
 # 非同期IOノード候補: 実装論点集
 
+> **注記（現況・2026-07）**: 本書は候補選定時点のスナップショットである。ここで「候補/未着手/将来」として扱う IO ノードの多くは既に `packages/` 配下に実装済み（accelerometer / ambient-light-sensor / broadcast / camera / clipboard / contacts / credential / debounce / defined / eyedropper / fetch / fullscreen / geolocation / gyroscope / idle / intersection / magnetometer / network / notification / permission / picture-in-picture / pointer-lock / resize / screen-orientation / share(web-share) / speech / sse / storage / tilt / timer / upload / wakelock / websocket / worker 等）。個別の「タグ名案」「実装論点」の記述は当時の計画であり現況とは異なる（実装済みノードは各 `docs/<name>-tag-design.md` と README を正とする）。
+
 - **対象**: [io-node-candidate-screening.md](./io-node-candidate-screening.md) でスクリーニングした各API候補について、実装に着手する場合に検討すべき論点を書き出す
 - **状態**: 調査メモ（非規範）。ここでの検討は「実装した場合にぶつかる壁」の洗い出しであり、設計決定ではない。実装着手時は改めて `docs/<name>-tag-design.md` を起草すること（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST）
 - **注記**: API仕様・ブラウザ対応状況は執筆時点の把握であり、着手時に一次情報（MDN / spec）で再検証すること

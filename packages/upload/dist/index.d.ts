@@ -103,6 +103,7 @@ declare class UploadCore extends EventTarget {
     private _setLoading;
     private _setProgress;
     private _setError;
+    setError(error: any): void;
     private _setResponse;
     abort(): void;
     upload(url: string, files: FileList | File[], options?: UploadRequestOptions): Promise<any>;

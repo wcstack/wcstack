@@ -123,6 +123,17 @@ npm install @wcstack/worker
 
 DOM トリガは**常に文字列を post します** — リテラルの `data-worker-text`、または解決された要素の `value` / `textContent`。これは単純なテキストペイロードのための利便機能であり、意図的に値のパース・型変換・構造化を行いません。structured clone データ（オブジェクト、typed array、transferable）を送るには、command-token プロトコル（`command.post: $command.run`）経由で `post` を起動するか、命令的に `element.post(data, transfer?)` を呼んでください。
 
+> **autoTrigger は既定で有効。** 最初に接続した `<wcs-worker>` が document レベルの `click` リスナーを 1 つ設置します（`data-worker-target` 要素のクリックで参照先 worker に post し、`event.preventDefault()` を呼ぶ）。DOM ショートカットを使わないなら bootstrap エントリで無効化してください:
+>
+> ```js
+> import { bootstrapWorker, getConfig } from "@wcstack/worker";
+> bootstrapWorker({ autoTrigger: false });      // document クリックリスナーを設置しない
+> bootstrapWorker({ triggerAttribute: "data-run" }); // トリガ属性名を変更（既定: data-worker-target）
+> getConfig();                                   // 実効設定（deep-frozen）を読む
+> ```
+>
+> `bootstrapWorker()` は要素が接続される前に呼んでください。（`setConfig` は内部用。設定は `bootstrapWorker` 経由で行います。）
+
 ## 観測可能なプロパティ（出力）
 
 | プロパティ | イベント                      | 説明                                                                                 |

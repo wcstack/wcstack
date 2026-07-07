@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { GyroscopeCore } from "../src/core/GyroscopeCore";
-import { installSensor, installThrowingSensor, removeSensor } from "./mocks";
+import { FakeSensor, installSensor, installThrowingSensor, removeSensor } from "./mocks";
 
 const GLOBAL_NAME = "Gyroscope";
 
@@ -71,6 +71,37 @@ describe("GyroscopeCore", () => {
       expect(() => core.start()).not.toThrow();
       expect(core.error).toEqual({ error: "error", message: "non-conformant start() throw" });
     });
+
+    it("sensor.start() が throw した後も teardown され、次の start() で新しいセンサーが構築される（dead listener も残らない）", () => {
+      // Guards against a regression that drops `this._teardownSensor();` from
+      // start()'s catch block: without it, `_sensor` would stay set to the
+      // failed instance, permanently short-circuiting every future start()
+      // via the `if (this._sensor) return;` idempotency guard at its top, and
+      // the failed instance's listeners would keep firing into this Core.
+      const constructed: FakeSensor[] = [];
+      (globalThis as any)[GLOBAL_NAME] = function (this: any, options?: { frequency?: number }) {
+        const sensor = new FakeSensor({ x: 0, y: 0, z: 0 }, options);
+        sensor.start = () => {
+          throw new Error("boom");
+        };
+        constructed.push(sensor);
+        return sensor;
+      };
+      const core = new GyroscopeCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-gyroscope:reading", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      expect(constructed).toHaveLength(1);
+
+      core.start();
+      expect(constructed).toHaveLength(2);
+
+      // The abandoned first sensor's listeners must have been detached.
+      constructed[0].emitReading({ x: 1, y: 1, z: 1 });
+      expect(events).toHaveLength(0);
+      expect(core.x).toBeNull();
+    });
   });
 
   describe("start() — 対応環境", () => {
@@ -118,7 +149,11 @@ describe("GyroscopeCore", () => {
       const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
       const core = new GyroscopeCore();
       const events: any[] = [];
-      core.addEventListener("wcs-gyroscope:reading", (e) => events.push((e as CustomEvent).detail));
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-gyroscope:reading", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
 
       core.start();
       handle.current!.emitReading({ x: 1, y: 2, z: 9.8 });
@@ -127,6 +162,7 @@ describe("GyroscopeCore", () => {
       expect(core.y).toBe(2);
       expect(core.z).toBe(9.8);
       expect(events).toEqual([{ x: 1, y: 2, z: 9.8 }]);
+      expect(bubbles).toBe(true);
     });
 
     it("同値の reading でも毎回 dispatch される（同値ガード対象外）", () => {
@@ -148,13 +184,18 @@ describe("GyroscopeCore", () => {
       const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
       const core = new GyroscopeCore();
       const events: any[] = [];
-      core.addEventListener("wcs-gyroscope:error", (e) => events.push((e as CustomEvent).detail));
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-gyroscope:error", (e) => {
+        events.push((e as CustomEvent).detail);
+        bubbles = e.bubbles;
+      });
 
       core.start();
       handle.current!.emitError("NotReadableError", "could not read from the sensor");
 
       expect(core.error).toEqual({ error: "NotReadableError", message: "could not read from the sensor" });
       expect(events).toHaveLength(1);
+      expect(bubbles).toBe(true);
     });
 
     it("同値の error は同値ガードで再 dispatch しない", () => {
@@ -170,6 +211,38 @@ describe("GyroscopeCore", () => {
       expect(events).toHaveLength(1);
     });
 
+    it("同一 name・異なる message では再 dispatch され error.message が更新される", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new GyroscopeCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-gyroscope:error", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      handle.current!.emitError("NotReadableError", "first message");
+      handle.current!.emitError("NotReadableError", "second message");
+
+      expect(events).toHaveLength(2);
+      expect(core.error).toEqual({ error: "NotReadableError", message: "second message" });
+    });
+
+    it("異なる name・同一 message でも再 dispatch され error.error が更新される", () => {
+      // Mirrors the previous test in the opposite direction: the same-value
+      // guard in _setError() compares BOTH `error` (name) and `message` — a
+      // match on message alone must not suppress a redispatch when the name
+      // differs.
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new GyroscopeCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-gyroscope:error", (e) => events.push((e as CustomEvent).detail));
+
+      core.start();
+      handle.current!.emitError("NotReadableError", "same message");
+      handle.current!.emitError("SecurityError", "same message");
+
+      expect(events).toHaveLength(2);
+      expect(core.error).toEqual({ error: "SecurityError", message: "same message" });
+    });
+
     it("error イベントに detail が無くてもフォールバック値になる", () => {
       const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
       const core = new GyroscopeCore();
@@ -177,7 +250,35 @@ describe("GyroscopeCore", () => {
       core.start();
       handle.current!.dispatchEvent(new Event("error"));
 
-      expect(core.error?.error).toBe("error");
+      // The message fallback must be a meaningful constant, not the literal
+      // string "undefined" (String(undefined)) — sensor-family aligned.
+      expect(core.error).toEqual({ error: "error", message: "Sensor error" });
+    });
+
+    // Spec fix (monitoring-sensor family): unlike ScreenOrientationCore's
+    // bidirectional `lock()` command (which calls _setError(null) on success),
+    // the monitoring sensors (accelerometer/gyroscope/magnetometer/ambient-light-sensor)
+    // deliberately do NOT clear `error` on a successful (re)start. `error` here is a
+    // sticky, state-like signal reflecting the last observed failure — a `reading`
+    // after an error does not retroactively "cancel" that error. This test pins that
+    // contract so a future change cannot silently start clearing it (which would then
+    // need to be aligned across all twins). See docs/sensor-tag-design.md §1.5.
+    it("失敗→リトライ成功しても error は据え置かれる（監視系は成功時にクリアしない）", () => {
+      // First attempt: unsupported → error is set.
+      removeSensor(GLOBAL_NAME);
+      const core = new GyroscopeCore();
+      core.start();
+      expect(core.error).toEqual({ error: "unsupported", message: "Gyroscope is not supported" });
+
+      // Retry: the API becomes available and start() succeeds, and readings flow.
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      core.start();
+      expect(handle.current?.started).toBe(true);
+      handle.current!.emitReading({ x: 1, y: 2, z: 3 });
+      expect(core.x).toBe(1);
+
+      // The prior error stays put — a successful start does not clear it.
+      expect(core.error).toEqual({ error: "unsupported", message: "Gyroscope is not supported" });
     });
   });
 

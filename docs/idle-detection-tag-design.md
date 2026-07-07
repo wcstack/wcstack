@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/idle`（`<wcs-idle>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/idle`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Idle Detection API（`new IdleDetector()`、静的 `IdleDetector.requestPermission()`、インスタンスの `.start({threshold, signal})`（Promise）、`'change'` イベント、`.userState` / `.screenState`）。
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ2（gesture-gated permission パターン）の1本目。「静的で user gesture 文脈が必須の `requestPermission()` command を公開する」という共有アーキタイプを、`<wcs-permission>` との**合成**という形で最も安く実証する候補として最初の着手対象に選定済み。
 - **前提資産**: `permission`（`_permGen` ＋ `_permissionSubscribed` による冪等 observe/dispose、4値 permission state、Core/Shell 分離、never-throw、unsupported フォールバック）、`fetch`/`upload`（単一 `_gen` ＋ `AbortController` による世代ガード）。
@@ -31,21 +31,25 @@ Idle Detection には Permissions API 上のエントリ `navigator.permissions.
 ## 1. 存在意義 — 何を解決するノードか
 
 - **離席検知による UI 状態遷移**: ユーザーが一定時間操作しない、または画面がロックされたときに、自動ログアウト・省電力表示・プレゼンス表示（チャットの「離席中」バッジ）などを宣言的に切り替える。
-- **画面ロック検知**: `screenState` の `"locked"` / `"unlocked"` を `hidden@locked` のような束縛で使い、ロック中は機微な情報の表示を止める、といったセキュリティ配慮ができる。
+- **画面ロック検知**: `screenState` の `"locked"` / `"unlocked"` を `hidden: screenState|eq(locked)` のような束縛で使い、ロック中は機微な情報の表示を止める、といったセキュリティ配慮ができる。
 - **既存ノードとの組み合わせ**: `<wcs-idle active="false">` を条件に `<wcs-timer>` を止める、`<wcs-permission name="idle-detection">` の `granted` を条件に「離席検知を有効化」ボタンの活性を出し分ける、といった構成が自然に書ける。
 
 ---
 
-## 2. 公開する state — **決定: 3プロパティに限定（4値 permission state は持たない）**
+## 2. 公開する state — **決定: userState/screenState/active の3プロパティ + never-throw の error（4値 permission state は持たない）**
 
 ```typescript
 static wcBindable: IWcBindable = {
   protocol: "wc-bindable",
   version: 1,
   properties: [
-    { name: "userState",   event: "wcs-idle:change" },
-    { name: "screenState", event: "wcs-idle:change" },
+    { name: "userState",   event: "wcs-idle:change", getter: (e) => (e as CustomEvent).detail.userState },
+    { name: "screenState", event: "wcs-idle:change", getter: (e) => (e as CustomEvent).detail.screenState },
     { name: "active",      event: "wcs-idle:change", getter: (e) => (e as CustomEvent).detail.userState === "active" },
+    // never-throw (§3.6): requestPermission()/start() failures land here
+    // instead of rejecting/throwing. Mirrors every other bidirectional IO
+    // node in this batch (fetch, share, screen-orientation).
+    { name: "error", event: "wcs-idle:error" },
   ],
   inputs: [
     { name: "threshold" },
@@ -60,7 +64,8 @@ static wcBindable: IWcBindable = {
 
 - `userState`: `"active" | "idle"`。ネイティブ `IdleDetector.userState` をそのまま publish。
 - `screenState`: `"locked" | "unlocked"`。ネイティブ `IdleDetector.screenState` をそのまま publish。
-- `active`: `userState === "active"` の派生 boolean getter。`hidden@!active`（離席中はプレゼンス表示を隠す等）のような単純束縛のための便宜プロパティ。§4.2 の「1イベント＋派生 getter」の典型適用（`permission` の4値 boolean 派生と同型、[PermissionCore.ts:27-33](../packages/permission/src/core/PermissionCore.ts#L27-L33)）。
+- `active`: `userState === "active"` の派生 boolean getter。`hidden: active|not`（離席中はプレゼンス表示を隠す等）のような単純束縛のための便宜プロパティ。§4.2 の「1イベント＋派生 getter」の典型適用(`permission` の4値 boolean 派生と同型、[PermissionCore.ts:27-33](../packages/permission/src/core/PermissionCore.ts#L27-L33))。
+- `error`: ガイドライン §3.6（never-throw MUST）に従い、`requestPermission()`/`start()` の失敗を never-throw で受け止める標準プロパティ。この3プロパティの決定（permission 4値を持たない）とは独立に、この batch の他ノード（fetch/share/screen-orientation 等）と同様に必ず持つ横断的なプロパティであり、上のコードブロックにも反映済み。
 - **`screenState` からの派生 boolean（例: `locked`）は初版では追加しない**。`userState`/`active` の2軸で足りるユースケースが大半であり、`screenState` は文字列のまま `screenState==="locked"` の filter 式で足りる。需要が明確になってから追加を検討する（除外理由を明記する程度に留める）。
 - **`granted` / `denied` / `prompt` / `unsupported` の4値は一切持たない**（§0 決定1）。permission 状態が欲しい利用者は `<wcs-permission name="idle-detection">` を併置する。
 
@@ -85,13 +90,15 @@ threshold: number   // ミリ秒単位。仕様上 60000ms（60秒）以上が M
 ### 4.1 `requestPermission` — **静的メソッドのラップ、user gesture 文脈は呼び出し元の責務**
 
 ```typescript
-async requestPermission(): Promise<string> {
+async requestPermission(): Promise<"granted" | "denied"> {
   if (typeof IdleDetector === "undefined") {
     this._setError({ message: "IdleDetector is not supported in this browser" });
-    return "unsupported";
+    return "denied";   // unsupported も "denied" に倒す（戻り値は2値のみ、§9参照）
   }
   try {
-    return await IdleDetector.requestPermission();   // "granted" | "denied"
+    const result = await IdleDetector.requestPermission();   // "granted" | "denied"
+    this._setError(null);   // 例外なく解決したら直前の error をクリア（start() 成功時との対称性）
+    return result === "granted" ? "granted" : "denied";
   } catch (e) {
     this._setError({ error: e });
     return "denied";
@@ -220,7 +227,7 @@ class FakeIdleDetector extends EventTarget {
 | 論点 | 決定 |
 |---|---|
 | §0/§2 ステータス合成 | **`<wcs-permission name="idle-detection">` に委譲**。`<wcs-idle>` は permission 4値を持たない |
-| §2 公開 state | `userState` / `screenState` / 派生 `active` の3プロパティのみ |
+| §2 公開 state | `userState` / `screenState` / 派生 `active` の3プロパティ + never-throw の `error` |
 | §3 `threshold` 範囲外 | バリデーションで弾かず、ブラウザの `TypeError` を `error` として never-throw で吸収 |
 | §4.1 `requestPermission` | 静的メソッドのラップ。gesture 文脈は呼び出し元の責務、README に明記 |
 | §4.2 `start`/`_gen` | fetch/upload と同型の単一 `_gen` ＋ Core 所有 `AbortController`、呼び出しごとに新世代 |

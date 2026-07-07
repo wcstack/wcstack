@@ -79,6 +79,47 @@ describe("Magnetometer (Shell)", () => {
     expect(el.frequency).toBeNull();
   });
 
+  it("非正値・非有限値の frequency は getter が null に正規化する（0/負値/Infinity）", () => {
+    const el = createMagnetometer();
+    el.setAttribute("frequency", "0");
+    expect(el.frequency).toBeNull();
+    el.setAttribute("frequency", "-5");
+    expect(el.frequency).toBeNull();
+    el.setAttribute("frequency", "Infinity");
+    expect(el.frequency).toBeNull();
+  });
+
+  it("空文字・空白のみの frequency 属性は getter が null を返す（早期 return 分岐）", () => {
+    const el = createMagnetometer();
+    el.setAttribute("frequency", "");
+    expect(el.frequency).toBeNull();
+    el.setAttribute("frequency", "   ");
+    expect(el.frequency).toBeNull();
+  });
+
+  it("set/get は非正値では非対称 — 属性は書かれるが getter は null（正規化仕様）", () => {
+    // set は透明性のため属性を verbatim で書くが、getter は非正値を「未指定」
+    // として null に正規化する。set→get のラウンドトリップは正の有限値のみ保存する。
+    const el = createMagnetometer();
+    el.frequency = 0;
+    expect(el.getAttribute("frequency")).toBe("0"); // attribute is written verbatim
+    expect(el.frequency).toBeNull(); // but reads back as "unset"
+
+    el.frequency = 60;
+    expect(el.getAttribute("frequency")).toBe("60");
+    expect(el.frequency).toBe(60); // positive finite value survives round-trip
+  });
+
+  it("非有限値の frequency setter 直接セットも getter が null に正規化する（NaN/Infinity）", () => {
+    // setter は String(value) を書くだけなので getter 正規化と等価にカバーされる
+    // が、プロパティ経路の契約を明示的に固定しておく。
+    const el = createMagnetometer();
+    el.frequency = NaN;
+    expect(el.frequency).toBeNull();
+    el.frequency = Infinity;
+    expect(el.frequency).toBeNull();
+  });
+
   it("frequency に null/undefined を set すると属性が除去される", () => {
     const el = createMagnetometer();
     el.frequency = 30;

@@ -30,7 +30,14 @@ const UNSUPPORTED_SNAPSHOT: WcsTiltSnapshot = Object.freeze({
  * `<wcs-permission>` — the defining asymmetry within batch2.
  *
  * No `_gen` generation guard: subscribing/unsubscribing to `deviceorientation`
- * is fully synchronous, same reasoning as `@wcstack/network`.
+ * (start/stop) is fully synchronous, so that path never needs one. This node
+ * does have an async probe — `requestPermission()` awaits the static
+ * `DeviceOrientationEvent.requestPermission()` — but its post-await write is
+ * a benign `permissionState`/`error` value set + dispatch with no
+ * subscription/resource management to race, so `_gen` is unneeded there too
+ * (docs/device-orientation-tag-design.md §4, corrected after an earlier
+ * revision mistakenly reused `@wcstack/network`'s "no async probe at all"
+ * rationale).
  */
 export class TiltCore extends EventTarget {
   static wcBindable: IWcBindable = {
@@ -42,6 +49,10 @@ export class TiltCore extends EventTarget {
       { name: "gamma", event: "wcs-tilt:change", getter: (e: Event) => (e as CustomEvent).detail.gamma },
       { name: "absolute", event: "wcs-tilt:change", getter: (e: Event) => (e as CustomEvent).detail.absolute },
       { name: "permissionState", event: "wcs-tilt:permission-changed" },
+      // never-throw (§3.6): requestPermission() failures land here instead of
+      // rejecting/throwing. Mirrors idle (same batch2) and the accelerometer
+      // family (batch5) — see docs/io-node-batch-implementation-plan.md.
+      { name: "error", event: "wcs-tilt:error" },
     ],
     commands: [
       { name: "requestPermission", async: true },
@@ -53,6 +64,7 @@ export class TiltCore extends EventTarget {
   private _target: EventTarget;
   private _snapshot: WcsTiltSnapshot = UNSUPPORTED_SNAPSHOT;
   private _permissionState: TiltPermissionState = "unknown";
+  private _error: any = null;
   private _subscribed = false;
 
   // SSR (§3.8): never auto-starts on connect, so there is no probe to await —
@@ -88,6 +100,10 @@ export class TiltCore extends EventTarget {
     return this._permissionState;
   }
 
+  get error(): any {
+    return this._error;
+  }
+
   // Lifecycle (§3.5). observe() is a synchronous no-op: like `<wcs-idle>`,
   // this Core deliberately does NOT auto-start on connect (§6) on platforms
   // that gate deviceorientation behind requestPermission().
@@ -113,6 +129,15 @@ export class TiltCore extends EventTarget {
     }));
   }
 
+  private _setError(error: any): void {
+    if (this._error === error) return;
+    this._error = error;
+    this._target.dispatchEvent(new CustomEvent("wcs-tilt:error", {
+      detail: error,
+      bubbles: true,
+    }));
+  }
+
   /**
    * Wraps iOS 13+ Safari's static, gesture-gated
    * `DeviceOrientationEvent.requestPermission()`. On platforms without this
@@ -120,20 +145,29 @@ export class TiltCore extends EventTarget {
    * to `"granted"` immediately without querying anything — callers can write
    * one `requestPermission()` → `start()` flow that works everywhere
    * (docs/device-orientation-tag-design.md §3).
+   *
+   * never-throw (§3.6): a gesture-context rejection resolves to `"denied"`
+   * and the raw error lands in `error` instead of propagating. Mirrors
+   * `<wcs-idle>`'s `requestPermission()` (docs/idle-detection-tag-design.md
+   * §4.1) — any settled (non-throwing) outcome supersedes a stale `error`
+   * from an earlier attempt.
    */
   async requestPermission(): Promise<TiltPermissionState> {
     const Ctor = this._deviceOrientationEventCtor();
     if (typeof Ctor?.requestPermission !== "function") {
+      this._setError(null);
       this._setPermissionState("granted");
       return "granted";
     }
     try {
       const result = await Ctor.requestPermission();
       const state: TiltPermissionState = result === "granted" ? "granted" : "denied";
+      this._setError(null);
       this._setPermissionState(state);
       return state;
-    } catch {
+    } catch (e) {
       // never-throw: a gesture-context rejection resolves to "denied".
+      this._setError({ error: e });
       this._setPermissionState("denied");
       return "denied";
     }

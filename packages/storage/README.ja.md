@@ -340,7 +340,7 @@ type StorageType = "local" | "session";
 
 // ストレージ操作エラー
 interface WcsStorageError {
-  operation: "load" | "save" | "remove";
+  operation: "load" | "save" | "remove" | "type";
   message: string;
 }
 
@@ -499,7 +499,7 @@ bootstrapStorage({
 
 - `value`、`loading`、`error` は **出力ステート**
 - `key`、`type`、`trigger` は **入力 / コマンドサーフェス**
-- `trigger` は意図的に単方向: `true` を書き込むと保存、リセットで完了を通知。内部の `save()` が失敗した場合（例: `key` 未設定）でも `trigger` は `false` へ復帰し完了イベントも発火するため、`true` で固着しない。
+- `trigger` は意図的に単方向: `true` を書き込むと保存、リセットで完了を通知。`save()` は never-throw（`key` 未設定などの失敗は throw せず `error` プロパティに流す）で、`trigger` は成否にかかわらず `false` へ復帰し完了イベントも発火するため、`true` で固着しない。
 - `value` セッターは `manual` でない場合に自動保存を行う
 - **`value` セッター vs `save()` / `trigger`**: `value` への代入（非 manual）は *代入された引数* を保存する（ライトスルー）。一方 `save()` と `trigger` は *現在の `value`*（直前の `load()` や他タブからの `storage` イベントで更新されうる）を保存する。このため `trigger`/`save()` は他タブ由来の値を書き戻す可能性がある。
 - **`manual` モードでの `value`**: `manual` では `value` セッターは値を**ステージング**する（ストレージへは書き込まない）。`el.value = x` で読み取り値は更新される（`el.value === x`）が、ストレージには触れず、実際の書き込みは `save()` / `trigger` でのみ行われる。これにより `value: …` + `trigger: …` のバインディング対が機能する — バインドされた値がステージングされ、トリガー時にコミットされる。
@@ -507,7 +507,7 @@ bootstrapStorage({
 - **`save` コマンドのアリティ**: ヘッドレスな Core は `save(value)`、Shell は `save()`（現在値を保存）。どちらも同じ `commands` 名 `save` に現れるが、プロトコルの `commands` メタデータは記述的でアリティを持たないため、これは契約上の差異でありプロトコル違反ではない。
 - **不正な `type`**: `"session"` 以外の `type` 属性はすべて `"local"` として扱う。不正値（例: `type="foo"`）は例外を投げず暗黙に `local` へフォールバックする。
 - **実行時の `type` 変更**: 接続後に `type` 属性を変更すると以降の操作で使うストレージ領域は切り替わるが、新しい領域から**自動で再ロードはしない**（非 manual で自動再ロードするのは `key` 変更時のみ）。新領域の値が必要なら明示的に `load()` を呼ぶこと。
-- **`error` の形状**: ストレージ失敗時、`error` には失敗した操作（`load` / `save` / `remove`）を示す `WcsStorageError`（`{ operation, message }`）が設定される。`key is required`（key 未設定での操作呼び出し）は `error` ではなく同期的に throw される。したがって実際には `error` は常に `WcsStorageError` か `null` のいずれかになる。より広い `WcsStorageError | Error | null` 型は前方互換性と兄弟パッケージとの一貫性のために維持している。
+- **`error` の形状**: ストレージ失敗時、`error` には失敗した呼び出し（`load` / `save` / `remove`、あるいはヘッドレスで不正な `type` を代入した場合の `type`）を示す `WcsStorageError`（`{ operation, message }`）が設定される。操作は **never-throw**: key 未設定での操作呼び出しは throw せず `error` に `{ operation, message: "key is required." }` として流れる（`wcs-storage:error` も発火）。したがって実際には `error` は常に `WcsStorageError` か `null` のいずれかになる。より広い `WcsStorageError | Error | null` 型は前方互換性と兄弟パッケージとの一貫性のために維持している。
 - JSON 自動シリアライズにより、オブジェクト / 配列 / プリミティブを透過的に扱える
 - `null` / `undefined` の保存はストレージからのキー削除として扱われる
 - `storage` イベントによるクロスタブ同期は localStorage でのみ動作。Shell は接続時（および再 attach 時）に監視を現在の `key` / `type` へ結びつけるため、自動ロードが走らない `manual` モードでもクロスタブ同期が機能する。接続後に `key` 属性を変更した場合も常に Core の key を再同期するため、`manual` モードや key を空にした場合でもクロスタブ同期は新しい key を追従する。クロスタブ更新が成功すると残存していた `error` もクリアされる（`load()` / `save()` / `remove()` が成功時に冒頭で error を null にするのと同様）。これにより、過去の失敗で残った error と新鮮な value が共存しない。

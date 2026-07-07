@@ -3,7 +3,7 @@ export interface PendingOpen {
   resolve: (result: { sRGBHex: string }) => void;
   /** Reject the in-flight open() call (e.g. with an AbortError or a real failure). */
   reject: (error: any) => void;
-  /** The `{signal}` options object the fake's open() was called with. */
+  /** The AbortSignal passed via the open() call's `{signal}` option (undefined when open() was called without one). */
   signal: AbortSignal | undefined;
 }
 

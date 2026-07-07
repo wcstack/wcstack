@@ -221,7 +221,7 @@ The promise **resolves** in every terminal case and never rejects:
 
 Because `null` is also a valid resolved value, do not use the resolved value to detect failure — observe `error` / `status` (or the `wcs-upload:error` / `wcs-upload:response` events) instead. This mirrors `@wcstack/fetch`, where errors flow through state rather than promise rejection.
 
-> Note on the headless Core: `UploadCore.upload(url, files)` is `async` and **rejects** synchronously-detectable argument errors (missing `url` or empty `files`) by throwing `[@wcstack/upload] ...`. The Shell's `upload()` instead returns `null` for a missing `url` or missing files (it owns the `url`/file lifecycle and treats "no destination" / "no files" as a no-op rather than an error), so the Shell never reaches the Core's throw and never rejects.
+> Note on the headless Core: `UploadCore.upload(url, files)` is `async` and **never throws / never rejects**. A synchronously-detectable argument error (missing `url` or empty `files`) is surfaced on the `error` property as a plain `{ message }` object and dispatched as `wcs-upload:error`, and the call resolves to `null`. The Shell's `upload()` never reaches this path: it owns the `url`/file lifecycle and returns `null` for a missing `url` or missing files, treating "no destination" / "no files" as a **silent** no-op (no `error` is set, no event fired).
 
 #### `abort()`
 

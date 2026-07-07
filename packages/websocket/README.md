@@ -310,6 +310,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `auto-reconnect` | `boolean` | `false` | Enable automatic reconnection |
 | `reconnect-interval` | `number` | `3000` | Reconnection delay in ms |
 | `max-reconnects` | `number` | `Infinity` | Maximum reconnection attempts |
+| `binary-type` | `"blob" \| "arraybuffer"` | `blob` | How incoming binary frames are surfaced on `message`. Any value other than `arraybuffer` normalizes to `blob` |
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -318,6 +319,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `loading` | `boolean` | `true` while connecting |
 | `error` | `WcsWsError \| Event \| null` | Error info |
 | `readyState` | `number` | WebSocket readyState constant |
+| `binaryType` | `"blob" \| "arraybuffer"` | Binary frame representation (backs the `binary-type` attribute; default `blob`) |
 | `trigger` | `boolean` | Set to `true` to open connection |
 | `send` | `any` | Set to transmit data |
 
@@ -380,6 +382,7 @@ static wcBindable = {
     { name: "autoReconnect", attribute: "auto-reconnect" },
     { name: "reconnectInterval", attribute: "reconnect-interval" },
     { name: "maxReconnects", attribute: "max-reconnects" },
+    { name: "binaryType", attribute: "binary-type" },
     { name: "manual", attribute: "manual" },
     { name: "trigger" },
     { name: "send" },
@@ -431,6 +434,7 @@ interface WcsWsInputs {
   autoReconnect: boolean;
   reconnectInterval: number;
   maxReconnects: number;
+  binaryType: BinaryType; // "blob" | "arraybuffer"
   manual: boolean;
   trigger: boolean;
   send: unknown;
@@ -442,6 +446,7 @@ interface WcsWsCoreCommands {
     autoReconnect?: boolean;
     reconnectInterval?: number;
     maxReconnects?: number;
+    binaryType?: BinaryType;
   }): void;
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
   close(code?: number, reason?: string): void;

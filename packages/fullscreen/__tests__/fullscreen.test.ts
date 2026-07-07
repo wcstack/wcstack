@@ -3,6 +3,7 @@ import { WcsFullscreen } from "../src/components/Fullscreen.js";
 import { FullscreenCore } from "../src/core/FullscreenCore.js";
 import {
   stubRequestFullscreen,
+  stubRequestFullscreenOnElementPrototype,
   stubExitFullscreen,
   removeRequestFullscreen,
   setFullscreenElement,
@@ -46,25 +47,42 @@ describe("<wcs-fullscreen>", () => {
       expect(el.active).toBe(true);
     });
 
-    it("target 省略 + 子なし → 自分自身が対象、display:block", async () => {
-      const el = makeEl();
-      stubRequestFullscreen(el);
-      document.body.appendChild(el);
+    it("target 省略 + 子なし → 自分自身が対象、display:block、コマンドで fullscreen 化できる", async () => {
+      // 対象が Shell 自身になるモード。API は実ブラウザと同じく Element.prototype
+      // に置き、Shell の requestFullscreen() コマンド経路を実際に通す
+      // （インスタンスへのスタブ直付けはコマンドメソッドをシャドウしてしまい、
+      // コマンド経路を検証できない）。
+      const restore = stubRequestFullscreenOnElementPrototype();
+      try {
+        const el = makeEl();
+        document.body.appendChild(el);
 
-      expect(el.style.display).toBe("block");
-      await el.requestFullscreen();
-      expect(el.active).toBe(true);
+        expect(el.style.display).toBe("block");
+        await el.requestFullscreen();
+        expect(el.error).toBeNull();
+        expect(el.active).toBe(true);
+      } finally {
+        restore();
+      }
     });
 
-    it('target="self" → 自分自身が対象、display:block', async () => {
-      // 注意: target="self" は Shell 自身 (WcsFullscreen) が対象になる。Shell 自身
-      // は requestFullscreen() コマンドメソッドを持つため、stubRequestFullscreen(el)
-      // で el.requestFullscreen を上書きするとコマンドメソッドを壊してしまう。
-      // display 解決のみを検証し、実際の呼び出しは別要素を使うテストで検証する。
-      const el = makeEl({ target: "self" });
-      document.body.appendChild(el);
+    it('target="self" → 自分自身が対象、display:block、コマンドで fullscreen 化できる（無限再帰しない）', async () => {
+      // 回帰テスト: Shell 自身が requestFullscreen() コマンドメソッドを持つため、
+      // Core が素の el.requestFullscreen 参照で API を解決すると Shell のコマンド
+      // を拾って無限再帰（スタックオーバーフロー）していた。Core は Element.prototype
+      // を直接参照してサブクラスのシャドウを回避しなければならない。
+      const restore = stubRequestFullscreenOnElementPrototype();
+      try {
+        const el = makeEl({ target: "self" });
+        document.body.appendChild(el);
 
-      expect(el.style.display).toBe("block");
+        expect(el.style.display).toBe("block");
+        await el.requestFullscreen();
+        expect(el.error).toBeNull();
+        expect(el.active).toBe(true);
+      } finally {
+        restore();
+      }
     });
 
     it("target=セレクタ → 参照先要素が対象、display:none", async () => {
@@ -80,13 +98,13 @@ describe("<wcs-fullscreen>", () => {
       expect(el.active).toBe(true);
     });
 
-    it("target=セレクタが未マッチ → 対象なし、display:none、requestFullscreen は error", async () => {
+    it("target=セレクタが未マッチ → 対象なし、display:none、requestFullscreen は「未解決」の error（「未対応」とは別メッセージ）", async () => {
       const el = makeEl({ target: "#missing" });
       document.body.appendChild(el);
 
       expect(el.style.display).toBe("none");
       await el.requestFullscreen();
-      expect(el.error).toEqual({ message: "Fullscreen API is not supported." });
+      expect(el.error).toEqual({ message: "Fullscreen target could not be resolved." });
     });
 
     it("target=不正セレクタ → throw せず未解決扱い（never-throw）", () => {
@@ -97,12 +115,10 @@ describe("<wcs-fullscreen>", () => {
   });
 
   describe("requestFullscreen()/exitFullscreen() コマンド", () => {
-    // Note: target="self" は _resolveTarget() が Shell 自身 (WcsFullscreen インス
-    // タンス) を返す。Shell 自身はコマンドメソッドとして requestFullscreen() を
-    // 既に持っているため、el に対して stubRequestFullscreen(el) すると Shell の
-    // コマンドメソッドそのものを上書きしてしまい、fn.call(element) が Shell の
-    // requestFullscreen() を再帰的に呼び出す無限ループになる。これを避けるため、
-    // ここでは target=セレクタで「Shellとは別の要素」を対象にする。
+    // Note: target="self" 経路（対象 = Shell 自身）は上の「target 解決と display」
+    // で Element.prototype スタブを使って検証済み。ここでは target=セレクタで
+    // 「Shell とは別の要素」を対象に、インスタンス単位のスタブで挙動の
+    // バリエーション（reject/レガシー/unsupported）を検証する。
     it("成功時に active が true になる", async () => {
       const hero = document.createElement("div");
       hero.id = "hero";
@@ -117,18 +133,21 @@ describe("<wcs-fullscreen>", () => {
       expect(el.error).toBeNull();
     });
 
-    it("gesture 外呼び出し想定の NotAllowedError で never-throw・error に格納", async () => {
+    it("gesture 外呼び出し想定の TypeError で never-throw・error に格納", async () => {
+      // WHATWG 仕様の transient-activation チェックは TypeError で reject する
+      // (NotAllowedError ではない)。
       const hero = document.createElement("div");
       hero.id = "hero";
       document.body.appendChild(hero);
-      const notAllowed = new Error("denied");
-      notAllowed.name = "NotAllowedError";
-      stubRequestFullscreen(hero, { rejectWith: notAllowed });
+      const gestureError = new TypeError(
+        "Failed to execute 'requestFullscreen' on 'Element': API can only be initiated by a user gesture.",
+      );
+      stubRequestFullscreen(hero, { rejectWith: gestureError });
       const el = makeEl({ target: "#hero" });
       document.body.appendChild(el);
 
       await expect(el.requestFullscreen()).resolves.toBeUndefined();
-      expect(el.error).toBe(notAllowed);
+      expect(el.error).toBe(gestureError);
     });
 
     it("レガシー webkitRequestFullscreen のみでも解決できる", async () => {

@@ -203,9 +203,9 @@ describe("WebSocketCore", () => {
       MockWebSocket.instances[0].simulateOpen();
 
       expect(connectedEvents).toEqual([true]);
-      // error null 通知 + loading true + loading false
       expect(loadingEvents).toEqual([true, false]);
-      expect(errorEvents).toEqual([null]);
+      // 開始時の error(null) クリアは同値ガードで抑止される（error は既に null）
+      expect(errorEvents).toEqual([]);
     });
   });
 
@@ -333,13 +333,13 @@ describe("WebSocketCore", () => {
       });
 
       core.connect("ws://localhost:8080");
-      // _doConnect で error=null 通知 + simulateError で error イベント
+      // _doConnect の error=null クリアは同値ガードで抑止され（error は既に null）、
+      // simulateError の error イベントのみ届く
       MockWebSocket.instances[0].simulateError();
 
       expect(core.error).toBeTruthy();
-      expect(errors).toHaveLength(2);
-      expect(errors[0]).toBeNull();
-      expect(errors[1]).toBeInstanceOf(Event);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toBeInstanceOf(Event);
     });
   });
 
@@ -533,9 +533,10 @@ describe("WebSocketCore", () => {
 
       core.connect("ws://localhost:8080");
       MockWebSocket.instances[0].simulateError();
-      expect(errorEvents).toHaveLength(2); // null (from _doConnect) + error event
+      // 初回接続時の null クリアは同値ガードで抑止され、error イベントのみ届く
+      expect(errorEvents).toHaveLength(1);
 
-      // 再接続時にerror=nullのイベントが発火
+      // 再接続時は error が非 null → null への変化なので null クリアが発火する
       errorEvents.length = 0;
       core.connect("ws://localhost:8080");
       expect(errorEvents[0]).toBeNull();
@@ -729,10 +730,9 @@ describe("WebSocketCore", () => {
 
       core.connect("invalid://url");
       expect(core.loading).toBe(false);
-      // error=null 通知 + コンストラクタ例外
-      expect(errors).toHaveLength(2);
-      expect(errors[0]).toBeNull();
-      expect(errors[1]).toBeInstanceOf(Error);
+      // 開始時の error=null クリアは同値ガードで抑止され、コンストラクタ例外のみ届く
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toBeInstanceOf(Error);
     });
   });
 });

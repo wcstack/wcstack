@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/contacts`（`<wcs-contacts>`）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と決定事項のスナップショット。
+- **状態**: 実装済み（`packages/contacts`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Contact Picker API（`navigator.contacts.select(properties, options)`、`navigator.contacts.getProperties()`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の3本目。同計画書は本ノードを「**複数引数command**」と「**Android Chrome限定でunsupportedがデフォルト環境になりやすい**」という2点の実証役に位置づける（同書§per-API仕様「Contact Picker」）。
 - **本書の性質**: [web-share-tag-design.md](./web-share-tag-design.md) を基本アーキタイプとする短い差分ドキュメント。`value`/`loading`/`error`/`cancelled`の4 properties構成、`cancelled`/`error`分離の根拠、`FetchCore._doFetch`簡約版というCore骨格、`abort`コマンド無し（本ノードもWeb Shareと同じくプラットフォームに中断手段が無い）は**すべてweb-share-tag-design.mdを正典として参照**し、繰り返さない。以下はContact Picker固有の事実のみを記す。

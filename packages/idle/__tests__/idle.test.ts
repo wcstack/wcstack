@@ -65,6 +65,14 @@ describe("Idle (Shell)", () => {
     expect(el.threshold).toBe(60000);
   });
 
+  it("threshold 属性が空文字/空白のときも既定値にフォールバックする（Number('')===0 の抜け穴防止）", () => {
+    const empty = createIdle({ threshold: "" });
+    expect(empty.threshold).toBe(60000);
+
+    const blank = createIdle({ threshold: "   " });
+    expect(blank.threshold).toBe(60000);
+  });
+
   it("requestPermission()/start()/stop() が Core に委譲される", async () => {
     const { instances, requestPermission } = installIdleDetector();
     const el = createIdle({ threshold: "90000" });

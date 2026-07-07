@@ -47,9 +47,11 @@ export class IdleCore extends EventTarget {
       // node in this batch (fetch, share, screen-orientation).
       { name: "error", event: "wcs-idle:error" },
     ],
-    inputs: [
-      { name: "threshold" },
-    ],
+    // No `inputs`: the Core has no settable `threshold` state — `threshold` is a
+    // per-call argument to `start(threshold)`, not a property/setter. The DOM-driven
+    // `threshold` input surface belongs to the Shell (which declares it and backs it
+    // with the `threshold` attribute), mirroring geolocation/intersection where the
+    // Core declares no inputs and the Shell adds them.
     commands: [
       { name: "requestPermission", async: true },
       { name: "start", async: true },
@@ -148,6 +150,10 @@ export class IdleCore extends EventTarget {
     }
     try {
       const result = await Ctor.requestPermission();
+      // Symmetric with start()'s success path: any settled (non-throwing)
+      // outcome — granted or a plain "denied" — supersedes a stale error from
+      // an earlier attempt (e.g. a prior gesture-context rejection).
+      this._setError(null);
       return result === "granted" ? "granted" : "denied";
     } catch (e) {
       this._setError({ error: e });
@@ -188,6 +194,13 @@ export class IdleCore extends EventTarget {
       // the check above. The signal is private and never exposed, so an
       // AbortError from any other source cannot occur.
       if (gen !== this._gen) return;
+      // Tear down the failed session's listener/controller (mirrors stop()):
+      // without this, the failed `_detector` stays wired to `_onChange` and a
+      // later `change` on that same (never-truly-started) instance would
+      // still write state, contradicting the error just recorded.
+      this._detector?.removeEventListener("change", this._onChange);
+      this._detector = null;
+      this._abortController = null;
       this._setError({ error: e });
     }
   }

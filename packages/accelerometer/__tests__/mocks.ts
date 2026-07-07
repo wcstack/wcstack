@@ -5,6 +5,12 @@
  * AmbientLightSensor's single `illuminance` scalar
  * (docs/sensor-tag-design.md §3).
  */
+// Deliberately does NOT model the real Sensor state machine: the platform
+// `activated`/`hasReading` boolean properties and the `activate` event (fired
+// once between start() and the first `reading`) are omitted because the current
+// Core never reads them — it only observes `reading`/`error` and drives
+// start()/stop(). If a future Core change starts depending on those flags, add
+// them here first so the tests exercise that path instead of silently passing.
 export class FakeSensor extends EventTarget {
   started = false;
   stopped = false;

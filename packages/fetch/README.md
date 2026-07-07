@@ -275,6 +275,7 @@ These properties represent the result of the current request and are the main ob
 | `loading` | `boolean` | `true` while a request is in flight |
 | `error` | `WcsFetchHttpError \| Error \| null` | HTTP or network error |
 | `status` | `number` | HTTP status code |
+| `objectURL` | `string \| null` | Managed object URL for a `response-type="blob"` response; `null` otherwise. The Core revokes the previous URL on each new response and on dispose, so it can be bound straight into `<img src>` |
 
 > **Note:** On an HTTP error, `value` is reset to `null` and `status` carries the
 > error code. If you bind only `value` (without observing `error`), the previous
@@ -432,6 +433,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `method` | `string` | `GET` | HTTP method |
 | `target` | `string` | — | DOM element id for HTML replace mode |
 | `manual` | `boolean` | `false` | Disable auto-fetch |
+| `response-type` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | `auto` | How to read the response body. `auto` sniffs Content-Type; `blob` additionally publishes a managed `objectURL`. `target` (HTML-replace) overrides this |
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -439,6 +441,8 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `loading` | `boolean` | `true` while request is in flight |
 | `error` | `WcsFetchHttpError \| Error \| null` | Error info |
 | `status` | `number` | HTTP status code |
+| `objectURL` | `string \| null` | Managed object URL for a `response-type="blob"` response; `null` otherwise |
+| `responseType` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | Response body interpretation (backs the `response-type` attribute) |
 | `body` | `any` | Request body (resets to `null` after `fetch()`) |
 | `trigger` | `boolean` | Set to `true` to execute fetch |
 | `manual` | `boolean` | Explicit execution mode |
@@ -485,7 +489,7 @@ Both `FetchCore` and `<wcs-fetch>` declare `wc-bindable-protocol` compliance, ma
 
 The declaration follows the full wc-bindable interface model — three independent surfaces:
 
-- **`properties`** — observable outputs that `bind()` subscribes to (`value`, `loading`, `error`, `status`, and the Shell's `trigger`)
+- **`properties`** — observable outputs that `bind()` subscribes to (`value`, `loading`, `error`, `status`, `objectURL`, and the Shell's `trigger`)
 - **`inputs`** — the settable surface (`url`, `method`, …); declarative metadata that tooling, codegen, and remote proxying read
 - **`commands`** — invocable methods (`fetch`, `abort`); a binding system such as `@wcstack/state` can invoke them by name
 
@@ -506,6 +510,8 @@ static wcBindable = {
     { name: "error",   event: "wcs-fetch:error" },
     { name: "status",  event: "wcs-fetch:response",
       getter: (e) => e.detail.status },
+    { name: "objectURL", event: "wcs-fetch:response",
+      getter: (e) => e.detail.objectURL },
   ],
   inputs: [
     { name: "url" },
@@ -537,12 +543,13 @@ static wcBindable = {
     { name: "target" },
     { name: "manual" },
     { name: "body" },
+    { name: "responseType" },
     { name: "trigger" },
   ],
 };
 ```
 
-The Shell's inputs intentionally carry no `attribute` hint: each setter (`url`, `method`, `target`, `manual`) already reflects to its attribute, so a binding system that mirrors `inputs[].attribute` would set the attribute twice.
+The Shell's inputs intentionally carry no `attribute` hint: each setter (`url`, `method`, `target`, `manual`, `responseType`) already reflects to its attribute, so a binding system that mirrors `inputs[].attribute` would set the attribute twice.
 
 ## TypeScript Types
 
@@ -560,13 +567,14 @@ interface WcsFetchHttpError {
   body: string;
 }
 
-// Core (headless) — 4 async state properties
+// Core (headless) — 5 async state properties
 // T defaults to unknown; pass a type argument for typed `value`
 interface WcsFetchCoreValues<T = unknown> {
   value: T;
   loading: boolean;
   error: WcsFetchHttpError | Error | null;
   status: number;
+  objectURL: string | null; // managed object URL for a responseType:"blob" response, else null
 }
 
 // Shell (<wcs-fetch>) — extends Core with trigger
@@ -721,8 +729,9 @@ bootstrapFetch({
 
 ## Design Notes
 
-- `value`, `loading`, `error`, and `status` are **output state**
-- `url`, `body`, and `trigger` are **input / command surface**
+- `value`, `loading`, `error`, `status`, and `objectURL` are **output state**
+- `url`, `body`, `response-type`, and `trigger` are **input / command surface**
+- `response-type` (default `auto`) selects how the response body is read; `blob` additionally publishes a managed `objectURL` (revoked on each new response / dispose). `target` (HTML-replace mode) overrides it
 - `trigger` is intentionally one-way: writing `true` executes, reset emits completion. Writing `true` while `url` is empty is silently ignored (no fetch, no event, flag stays `false`)
 - on an HTTP error (status >= 400), `value` is reset to `null` while `status` carries the error code — a `value`-only binding loses its previous value, so bind `error` to detect failures
 - on a network error (no HTTP response — DNS failure, offline, CORS, etc.), `value` is reset to `null` and `status` to `0`; `error` holds the thrown `Error`. Like HTTP errors, a previous successful value/status does not linger

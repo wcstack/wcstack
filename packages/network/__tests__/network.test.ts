@@ -74,6 +74,19 @@ describe("Network (Shell)", () => {
     expect(seen).toHaveLength(2);
   });
 
+  it("wcs-network:change は bubbles:true で祖先要素へ伝播する（guidelines §3.3 MUST）", () => {
+    installConnection({ effectiveType: "4g" });
+    const wrapper = document.createElement("div");
+    document.body.appendChild(wrapper);
+    const seen: any[] = [];
+    wrapper.addEventListener("wcs-network:change", (e) => seen.push((e as CustomEvent).detail));
+
+    wrapper.appendChild(createNetwork()); // 接続時の初回 snapshot が祖先まで bubble する
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].supported).toBe(true);
+  });
+
   it("切断で change 購読を解除し、再接続で再度反映する", () => {
     const conn = installConnection({ effectiveType: "4g" });
     const el = createNetwork();
@@ -95,5 +108,10 @@ describe("Network (Shell)", () => {
   it("inputs は空（属性を持たない、バッチ中最小の Shell）", () => {
     expect(WcsNetwork.wcBindable.inputs).toEqual([]);
     expect(WcsNetwork.wcBindable.commands).toEqual([]);
+  });
+
+  it("wcBindable: Shell は Core の5プロパティをそのまま継承する", () => {
+    const props = WcsNetwork.wcBindable.properties.map((p) => p.name);
+    expect(props).toEqual(["effectiveType", "downlink", "rtt", "saveData", "supported"]);
   });
 });

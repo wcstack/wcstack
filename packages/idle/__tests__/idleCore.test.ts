@@ -81,10 +81,21 @@ describe("IdleCore", () => {
       expect(core.error).toBeNull();
     });
 
+    it("事前に error が無い clean な成功時は wcs-idle:error を一度も発火しない（同値ガード）", async () => {
+      installIdleDetector({ requestPermission: () => Promise.resolve("granted") });
+      const core = new IdleCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-idle:error", (e) => events.push((e as CustomEvent).detail));
+      await core.requestPermission();
+      expect(core.error).toBeNull();
+      expect(events).toEqual([]);
+    });
+
     it("拒否時に 'denied' を返す", async () => {
       installIdleDetector({ requestPermission: () => Promise.resolve("denied") });
       const core = new IdleCore();
       await expect(core.requestPermission()).resolves.toBe("denied");
+      expect(core.error).toBeNull(); // 例外なしの denied は error を立てない
     });
 
     it("gesture 文脈外呼び出し等の reject は never-throw で 'denied' に倒し error に格納する", async () => {
@@ -93,6 +104,31 @@ describe("IdleCore", () => {
       const result = await core.requestPermission();
       expect(result).toBe("denied");
       expect(core.error).not.toBeNull();
+    });
+
+    it("reject 時の wcs-idle:error は { error } 形状の detail で発火する", async () => {
+      installIdleDetector({ requestPermission: () => Promise.reject(new Error("not in a user gesture")) });
+      const core = new IdleCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-idle:error", (e) => events.push((e as CustomEvent).detail));
+      await core.requestPermission();
+      expect(events).toEqual([{ error: expect.any(Error) }]);
+    });
+
+    it("直前の error がある状態で requestPermission() が成功すると error が null にクリアされる（start() との対称性）", async () => {
+      installIdleDetector({ requestPermission: () => Promise.reject(new Error("not in a user gesture")) });
+      const core = new IdleCore();
+      await core.requestPermission();
+      expect(core.error).not.toBeNull();
+
+      installIdleDetector({ requestPermission: () => Promise.resolve("granted") });
+      const events: any[] = [];
+      core.addEventListener("wcs-idle:error", (e) => events.push((e as CustomEvent).detail));
+      const result = await core.requestPermission();
+
+      expect(result).toBe("granted");
+      expect(core.error).toBeNull();
+      expect(events).toEqual([null]);
     });
 
     it("unsupported 環境（IdleDetector 不在）では即 'denied' で error に落ちる", async () => {
@@ -115,6 +151,16 @@ describe("IdleCore", () => {
       expect(core.userState).toBe("active");
       expect(core.screenState).toBe("unlocked");
       expect(core.active).toBe(true);
+    });
+
+    it("事前に error が無い clean な start() 成功時は wcs-idle:error を一度も発火しない（同値ガード）", async () => {
+      installIdleDetector();
+      const core = new IdleCore();
+      const events: any[] = [];
+      core.addEventListener("wcs-idle:error", (e) => events.push((e as CustomEvent).detail));
+      await core.start();
+      expect(core.error).toBeNull();
+      expect(events).toEqual([]);
     });
 
     it("threshold 省略時は 60000 が既定値として渡る", async () => {
@@ -144,6 +190,34 @@ describe("IdleCore", () => {
 
       instances[0].emitChange("active", "unlocked"); // 現状と同値
       expect(events).toEqual([]);
+    });
+
+    it("userState は同値のまま screenState だけ変化した場合は change が発火する（&& ガードの検証）", async () => {
+      const { instances } = installIdleDetector();
+      const core = new IdleCore();
+      await core.start(); // 既定: active/unlocked
+      const events: any[] = [];
+      core.addEventListener("wcs-idle:change", (e) => events.push((e as CustomEvent).detail));
+
+      instances[0].emitChange("active", "locked"); // userState は同値、screenState のみ変化
+      expect(events).toHaveLength(1);
+      expect(core.userState).toBe("active");
+      expect(core.screenState).toBe("locked");
+    });
+
+    it("直前に error がある状態で start() が成功すると error が null にクリアされ wcs-idle:error(detail=null) が発火する", async () => {
+      removeIdleDetector();
+      const core = new IdleCore();
+      await core.start(); // unsupported → error セット
+      expect(core.error).not.toBeNull();
+
+      installIdleDetector();
+      const events: any[] = [];
+      core.addEventListener("wcs-idle:error", (e) => events.push((e as CustomEvent).detail));
+      await core.start();
+
+      expect(core.error).toBeNull();
+      expect(events).toEqual([null]);
     });
 
     it("2回目の start() は進行中のセッションを止めてから開始する（供給過多の防止）", async () => {
@@ -179,6 +253,48 @@ describe("IdleCore", () => {
       const core = new IdleCore();
       await core.start();
       expect(core.error).toEqual({ error: undefined });
+    });
+
+    it("threshold 未満による同期的な TypeError も catch されて error に格納される（never-throw）", async () => {
+      installIdleDetector({
+        startImpl: (options: { threshold: number; signal: AbortSignal }) => {
+          if (options.threshold < 60000) {
+            throw new TypeError("threshold must be >= 60000ms"); // ブラウザ実装の同期 throw を模す
+          }
+          return Promise.resolve();
+        },
+      });
+      const core = new IdleCore();
+      await expect(core.start(1000)).resolves.toBeUndefined();
+      expect(core.error).toEqual({ error: expect.any(TypeError) });
+      expect(core.userState).toBeNull();
+    });
+
+    it("start() 失敗後は _detector のリスナーが外れ、失敗したセッションからの後発 change を無視する", async () => {
+      const { instances } = installIdleDetector({ startImpl: () => Promise.reject(new Error("boom")) });
+      const core = new IdleCore();
+      await core.start();
+      expect(core.error).not.toBeNull();
+
+      // 失敗した（=もう _detector として保持されていない）検知セッションの実体に
+      // 後から change が来ても、リスナーは既に外れているため無視される。
+      instances[0].emitChange("idle", "locked");
+      expect(core.userState).toBeNull();
+    });
+
+    it("IdleDetector のコンストラクタ自体が同期的に throw しても never-throw で error に落ちる", async () => {
+      class ThrowingIdleDetector extends EventTarget {
+        static requestPermission = vi.fn(async () => "granted" as const);
+        constructor() {
+          super();
+          throw new Error("constructor boom");
+        }
+      }
+      (globalThis as any).IdleDetector = ThrowingIdleDetector;
+
+      const core = new IdleCore();
+      await expect(core.start()).resolves.toBeUndefined();
+      expect(core.error).toEqual({ error: expect.any(Error) });
     });
   });
 

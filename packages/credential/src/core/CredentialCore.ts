@@ -96,8 +96,16 @@ export class CredentialCore extends EventTarget {
     }));
   }
 
+  // Deliberately NO same-value guard (unlike error/loading/cancelled below).
+  // `value` is a success-completion signal, not idempotent state: it is written
+  // only on a successful get()/store(), and wcs-credential:complete is the *sole*
+  // success notification. store() echoes the caller's credential argument, so two
+  // consecutive successful store() calls with the same object reference are two
+  // distinct completions and must each re-fire wcs-credential:complete so an
+  // `$on`/eventToken consumer (and a `value:` binding) sees every success. This
+  // matches clipboard `_setRead` / broadcast `_setMessage`, which carve
+  // result/event values out of the §3.3 guard for the same reason.
   private _setValue(value: Credential | null): void {
-    if (this._value === value) return;
     this._value = value;
     this._target.dispatchEvent(new CustomEvent("wcs-credential:complete", {
       detail: { value },
@@ -137,6 +145,20 @@ export class CredentialCore extends EventTarget {
     return { name: "Error", message: String(e) };
   }
 
+  // Classifies a get()/store() rejection as a user cancellation vs a real
+  // failure (docs/credential-tag-design.md §2/§5). For the Credential
+  // Management API the browser rejects with `NotAllowedError` when the user
+  // dismisses/declines the native account-chooser UI — this is a routine "the
+  // user did not pick" outcome, not a platform failure, so it maps to
+  // `cancelled` and is kept out of `error`. Note this is `NotAllowedError`,
+  // NOT `AbortError`: unlike Web Share/Contact Picker (whose APIs reject with
+  // `AbortError` on dismissal), credentials.get()/store() signal user refusal
+  // via `NotAllowedError`. Every other name (SecurityError, NetworkError, a
+  // programmatic signal abort, etc.) flows to `error`.
+  private _isCancellation(e: unknown): boolean {
+    return (e as { name?: unknown } | null)?.name === "NotAllowedError";
+  }
+
   /**
    * `get(options)` — v1 scope excludes `publicKey` (WebAuthn). If present, it
    * is stripped and the call surfaces a scope-violation `error` instead of
@@ -147,7 +169,7 @@ export class CredentialCore extends EventTarget {
    */
   async get(options: CredentialGetOptions & { publicKey?: unknown } = {}): Promise<Credential | null> {
     if ("publicKey" in options) {
-      this._setError({ message: "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead." });
+      this._setError({ name: "NotSupportedError", message: "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead." });
       return null;
     }
 
@@ -160,6 +182,8 @@ export class CredentialCore extends EventTarget {
     const gen = ++this._gen;
 
     this._setLoading(true);
+    // Reset the previous outcome before starting a new get so a stale
+    // cancelled/error does not linger into this call's result.
     this._setError(null);
     this._setCancelled(false);
 
@@ -173,7 +197,7 @@ export class CredentialCore extends EventTarget {
       return credential;
     } catch (e: any) {
       if (gen !== this._gen) return null;
-      if (e?.name === "AbortError") {
+      if (this._isCancellation(e)) {
         this._setCancelled(true);
       } else {
         this._setError(this._normalizeError(e));
@@ -189,8 +213,18 @@ export class CredentialCore extends EventTarget {
    * `lib.dom.d.ts`) — there is no payload to read off the API, so `value` is
    * synthesized as an echo of the caller's `credential`, mirroring
    * `ShareCore.share()`'s same accommodation for `navigator.share()`.
+   *
+   * A `PublicKeyCredential` (`type === "public-key"`, WebAuthn) is rejected as a
+   * scope violation before touching the platform API — the same v1 boundary
+   * `get()` enforces on the `publicKey` option (docs/credential-tag-design.md
+   * §3.2), so this node never becomes a WebAuthn store backdoor.
    */
   async store(credential: StorableCredential): Promise<Credential | null> {
+    if ((credential as { type?: unknown } | null)?.type === "public-key") {
+      this._setError({ name: "NotSupportedError", message: "WebAuthn (publicKey) credentials are out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead." });
+      return null;
+    }
+
     const api = this._api();
     if (!api) {
       this._setError({ message: "Credential Management API is not supported in this browser." });
@@ -200,6 +234,8 @@ export class CredentialCore extends EventTarget {
     const gen = ++this._gen;
 
     this._setLoading(true);
+    // Reset the previous outcome before starting a new store so a stale
+    // cancelled/error does not linger into this call's result.
     this._setError(null);
     this._setCancelled(false);
 
@@ -213,7 +249,7 @@ export class CredentialCore extends EventTarget {
       return credential;
     } catch (e: any) {
       if (gen !== this._gen) return null;
-      if (e?.name === "AbortError") {
+      if (this._isCancellation(e)) {
         this._setCancelled(true);
       } else {
         this._setError(this._normalizeError(e));

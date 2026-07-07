@@ -114,6 +114,15 @@ describe("<wcs-pip>", () => {
       await el.requestPictureInPicture();
       expect(el.error).toEqual({ message: "target must be a <video> element." });
     });
+
+    it('target="self" は <wcs-pip> 自身(tagName!==VIDEO)を指すため、request() は常に error になる（README「self は常に失敗する」の回帰）', async () => {
+      installPictureInPictureElement(null);
+      const el = makeEl({ target: "self" });
+      document.body.appendChild(el);
+
+      await expect(el.requestPictureInPicture()).resolves.toBeUndefined();
+      expect(el.error).toEqual({ message: "target must be a <video> element." });
+    });
   });
 
   describe("target 属性変更でのリスナー張り替え", () => {
@@ -156,9 +165,16 @@ describe("<wcs-pip>", () => {
       expect(addSpy).not.toHaveBeenCalled();
     });
 
-    it("未接続なら attributeChangedCallback は何もしない", () => {
+    it("未接続なら attributeChangedCallback は何もしない（_observe() 不実行を core.observe 未呼び出し/display不変で検証）", () => {
       const el = makeEl({ target: "#a" });
+      const observeSpy = vi.spyOn((el as any)._core, "observe");
+
       expect(() => el.setAttribute("target", "#b")).not.toThrow();
+
+      // isConnected ガードが無いと _observe() が実行され、core.observe() が
+      // 呼ばれ style.display も書き換わる（弱い not.toThrow() だけでは検出できない副作用）。
+      expect(observeSpy).not.toHaveBeenCalled();
+      expect(el.style.display).toBe("");
     });
   });
 
@@ -171,9 +187,12 @@ describe("<wcs-pip>", () => {
       document.body.appendChild(el);
 
       const promise = el.requestPictureInPicture();
+      setPictureInPictureElement(video);
+      emitEnter(video);
       video.__pipResolve!();
       await promise;
 
+      expect(el.active).toBe(true);
       expect(el.error).toBeNull();
     });
 
@@ -225,6 +244,46 @@ describe("<wcs-pip>", () => {
 
       expect(el.error).toBeNull();
     });
+
+    it("exitPictureInPicture() が成功すると leavepictureinpicture が発火しなくても active が false になる", async () => {
+      const video = makeVideo();
+      installPictureInPictureElement(video);
+      const { resolve } = installExitPictureInPicture();
+      const el = makeEl();
+      el.appendChild(video);
+      document.body.appendChild(el);
+      expect(el.active).toBe(true);
+
+      const promise = el.exitPictureInPicture();
+      setPictureInPictureElement(null); // leavepictureinpicture は発火させない
+      resolve();
+      await promise;
+
+      expect(el.active).toBe(false);
+    });
+
+    it("target 未解決で connect した後、動的に挿入された video への request() でも active が追従する", async () => {
+      // connect 時点では #player がまだ存在せず target 未解決（_video は
+      // null）。attribute は変更しないまま #player を後から挿入すると
+      // attributeChangedCallback は発火しないが、request() 時点で
+      // _resolveVideoTarget() が再解決した要素を Core に渡す。Core がこの
+      // 要素を再 observe しないと active が false 固定になる（回帰検証）。
+      installPictureInPictureElement(null);
+      const el = makeEl({ target: "#player" });
+      document.body.appendChild(el);
+      expect(el.active).toBe(false);
+
+      const video = makeVideo();
+      video.id = "player";
+      document.body.appendChild(video);
+
+      const promise = el.requestPictureInPicture();
+      setPictureInPictureElement(video);
+      video.__pipResolve!();
+      await promise;
+
+      expect(el.active).toBe(true);
+    });
   });
 
   describe("複数インスタンス同時存在での自己判定", () => {
@@ -263,6 +322,22 @@ describe("<wcs-pip>", () => {
       emitEnter(video);
 
       expect(el.active).toBe(false);
+    });
+
+    it("disconnect 後に同一 video を持つ要素を再接続すると再購読され、active が追従する（Core.dispose() が _video をリセットしないと再購読が漏れる回帰）", () => {
+      installPictureInPictureElement(null);
+      const video = makeVideo();
+      const el = makeEl();
+      el.appendChild(video);
+      document.body.appendChild(el);
+      el.remove(); // disconnectedCallback → core.dispose()
+
+      document.body.appendChild(el); // 再接続 → connectedCallback → 同一 video を再 observe
+
+      setPictureInPictureElement(video);
+      emitEnter(video);
+
+      expect(el.active).toBe(true);
     });
 
     it("_gen 世代ガード: disconnect 後に resolve しても error/active を書き換えない", async () => {

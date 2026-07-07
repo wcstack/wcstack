@@ -7,11 +7,11 @@ describe('importmap', () => {
       document.body.innerHTML = '';
     });
 
-    it('should return null if no importmap script exists', () => {
+    it('importmapスクリプトが存在しない場合、nullを返すこと', () => {
       expect(loadImportmap()).toBeNull();
     });
 
-    it('should return null if importmap script has no imports', () => {
+    it('importmapスクリプトにimportsがない場合、nullを返すこと', () => {
       const script = document.createElement('script');
       script.type = 'importmap';
       script.innerHTML = JSON.stringify({});
@@ -19,7 +19,7 @@ describe('importmap', () => {
       expect(loadImportmap()).toBeNull();
     });
 
-    it('should load imports from importmap script', () => {
+    it('importmapスクリプトからimportsを読み込むこと', () => {
       const script = document.createElement('script');
       script.type = 'importmap';
       script.innerHTML = JSON.stringify({
@@ -34,7 +34,7 @@ describe('importmap', () => {
       expect(result?.imports).toEqual({ 'foo': 'bar' });
     });
 
-    it('should merge multiple importmaps', () => {
+    it('複数のimportmapをマージすること', () => {
       const script1 = document.createElement('script');
       script1.type = 'importmap';
       script1.innerHTML = JSON.stringify({
@@ -60,7 +60,7 @@ describe('importmap', () => {
       });
     });
 
-    it('should throw error on invalid JSON', () => {
+    it('不正なJSONの場合、エラーをthrowすること', () => {
       const script = document.createElement('script');
       script.type = 'importmap';
       script.innerHTML = '{ invalid json }';
@@ -71,7 +71,7 @@ describe('importmap', () => {
   });
 
   describe('buildMap', () => {
-    it('should parse eager load components', () => {
+    it('eager loadのコンポーネントをパースすること', () => {
       const importmap = {
         imports: {
           '@components/my-button': './components/button.js',
@@ -106,7 +106,7 @@ describe('importmap', () => {
       });
     });
 
-    it('should parse lazy load namespaces', () => {
+    it('lazy loadの名前空間をパースすること', () => {
       const importmap = {
         imports: {
           '@components/ui/': './components/ui/',
@@ -131,7 +131,7 @@ describe('importmap', () => {
       });
     });
 
-    it('should throw error for non-component keys that look like components but are invalid', () => {
+    it('コンポーネントのように見えるが不正なキーの場合、エラーをthrowすること', () => {
       const importmap = {
         imports: {
           '@components/': './components/' // Invalid: empty prefix
@@ -141,7 +141,7 @@ describe('importmap', () => {
       expect(() => buildMap(importmap)).toThrow(/Invalid importmap key/);
     });
     
-    it('should throw error for invalid keys', () => {
+    it('不正なキーの場合、エラーをthrowすること', () => {
         // Test cases that might throw errors based on implementation
         // The current implementation throws if prefix is empty or tagName is empty
         
@@ -152,7 +152,7 @@ describe('importmap', () => {
         // "@components/|loader" -> tagNamePart is "|loader". split("|", 2) -> ["", "loader"]. tagName is empty.
         expect(() => buildMap({ imports: { '@components/|loader': './' } })).toThrow(/Invalid importmap key/);
     });
-    it('should ignore keys that do not start with @', () => {
+    it('@で始まらないキーは無視すること', () => {
       const importmap = {
         imports: {
           'lodash': './lodash.js'
@@ -163,7 +163,7 @@ describe('importmap', () => {
       expect(loadMap).toEqual({});
     });
 
-    it('should throw error for invalid key (empty tag name)', () => {
+    it('不正なキー（空のタグ名）の場合、エラーをthrowすること', () => {
       const importmap = {
         imports: {
           '@components//': './ui/'
