@@ -131,7 +131,11 @@ declare class WcsIdle extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     /**
      * Minimum idle time (ms) before `userState` becomes `"idle"`. This value is
      * read only at `start()` time — there is no `attributeChangedCallback`

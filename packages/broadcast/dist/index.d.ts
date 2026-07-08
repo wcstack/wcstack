@@ -181,7 +181,11 @@ declare class WcsBroadcast extends HTMLElement {
     static get observedAttributes(): string[];
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get name(): string;
     set name(value: string);

@@ -161,7 +161,11 @@ declare class WcsSse extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get url(): string;
     set url(value: string);

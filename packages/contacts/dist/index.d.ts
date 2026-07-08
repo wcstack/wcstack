@@ -157,7 +157,11 @@ declare class WcsContacts extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get value(): ContactInfo[] | null;
     get loading(): boolean;
     get error(): any;

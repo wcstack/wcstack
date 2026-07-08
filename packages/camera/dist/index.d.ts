@@ -299,7 +299,11 @@ declare class WcsCamera extends HTMLElement {
     private _connectedCallbackPromise;
     private _connected;
     private _batchingAttrs;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get audio(): boolean;
     set audio(value: boolean);
     get facingMode(): FacingMode;
@@ -451,7 +455,11 @@ declare class WcsRecorder extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get mimeType(): string;
     set mimeType(value: string);

@@ -263,7 +263,11 @@ declare class WcsGeolocation extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get highAccuracy(): boolean;
     set highAccuracy(value: boolean);
     get timeout(): number;

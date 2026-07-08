@@ -136,7 +136,11 @@ declare class WcsEyedropper extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get value(): WcsEyedropperData | null;
     get loading(): boolean;
     get error(): any;

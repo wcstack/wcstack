@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/defined",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "description": "Declarative custom-element readiness gate for Web Components. Waits on customElements.whenDefined with timeout-based load-failure detection via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

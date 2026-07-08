@@ -286,7 +286,11 @@ declare class WcsNotify extends HTMLElement {
     private _core;
     private _notice;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get mode(): NotifyBackend;
     set mode(value: NotifyBackend);
     get body(): string;

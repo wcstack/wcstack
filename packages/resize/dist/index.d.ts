@@ -289,8 +289,12 @@ declare class WcsResize extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get target(): string;
     set target(value: string);
     get box(): string;

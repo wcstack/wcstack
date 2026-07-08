@@ -346,8 +346,12 @@ declare class WcsSpeak extends HTMLElement {
     private _core;
     private _say;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get rate(): number;
     set rate(value: number);
     get pitch(): number;
@@ -492,8 +496,12 @@ declare class WcsListen extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get lang(): string;
     set lang(value: string | null);
     get continuous(): boolean;

@@ -118,7 +118,11 @@ declare class WcsUpload extends HTMLElement {
     private _files;
     private _trigger;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get url(): string;
     set url(value: string);

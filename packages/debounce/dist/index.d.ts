@@ -212,7 +212,11 @@ declare class Debounce extends HTMLElement {
     protected _core: DebounceCore;
     private _source;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get wait(): number;
     set wait(value: number);

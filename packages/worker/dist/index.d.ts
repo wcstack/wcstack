@@ -227,8 +227,12 @@ declare class WcsWorker extends HTMLElement {
     static get observedAttributes(): string[];
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get src(): string;
     set src(value: string);
     get type(): WorkerType;

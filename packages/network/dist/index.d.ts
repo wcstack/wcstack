@@ -117,7 +117,11 @@ declare class WcsNetwork extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get effectiveType(): string | null;
     get downlink(): number | null;
     get rtt(): number | null;

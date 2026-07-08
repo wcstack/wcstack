@@ -188,7 +188,11 @@ declare class WcsGyroscope extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     /**
      * Sampling frequency in Hz. Reads back `null` when unset, blank, or when the
      * attribute does not parse to a positive finite number (NaN, `"0"`, negative)

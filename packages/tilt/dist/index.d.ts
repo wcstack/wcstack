@@ -141,7 +141,11 @@ declare class WcsTilt extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get alpha(): number | null;
     get beta(): number | null;
     get gamma(): number | null;

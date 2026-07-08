@@ -583,6 +583,7 @@ class WcsCamera extends HTMLElement {
     // tear active down so the later change's re-acquire is skipped). We suppress the
     // per-attribute re-acquire and drive a single one with the final constraints.
     _batchingAttrs = false;
+    _internals = null;
     constructor() {
         super();
         this._core = new CameraCore(this);
@@ -603,6 +604,60 @@ class WcsCamera extends HTMLElement {
         // `document` (outlives the element) and MUST be detached.
         this.addEventListener("wcs-camera:stream-ready", this._onStreamReady);
         this.addEventListener("wcs-camera:active-changed", this._onActiveChanged);
+        this._internals = this._initInternals();
+        this._wireStates({
+            "wcs-camera:active-changed": (d) => ({ active: d === true }),
+            "wcs-camera:error": (d) => ({ error: d != null }),
+        });
+    }
+    // CSS state reflection (:state()) — debug-only snapshot getter. NOT part of
+    // wc-bindable (not a bind target); see README "CSS styling with :state()".
+    // MUST NOT return the live CustomStateSet (that would let callers write
+    // states from outside, defeating the point of :state() being read-only).
+    get debugStates() {
+        return this._internals ? [...this._internals.states] : [];
+    }
+    _initInternals() {
+        // never-throw (docs/custom-state-reflection-design.md §3.4): attachInternals is
+        // absent in happy-dom / older environments, and pre-125 Chromium rejects
+        // non-dashed state names from states.add() (probed and discarded here). Either
+        // case silently disables reflection — the component still works, it just doesn't
+        // expose :state() selectors.
+        try {
+            if (typeof this.attachInternals !== "function")
+                return null;
+            const internals = this.attachInternals();
+            internals.states.add("wcs-probe");
+            internals.states.delete("wcs-probe");
+            return internals;
+        }
+        catch {
+            return null;
+        }
+    }
+    _wireStates(map) {
+        if (this._internals === null)
+            return;
+        const states = this._internals.states;
+        for (const [event, toStates] of Object.entries(map)) {
+            this.addEventListener(event, (e) => {
+                const debug = this.hasAttribute("debug-states");
+                for (const [name, on] of Object.entries(toStates(e.detail))) {
+                    try {
+                        // 式文の三項演算子は ESLint no-unused-expressions に抵触するため if/else。
+                        if (on) {
+                            states.add(name);
+                        }
+                        else {
+                            states.delete(name);
+                        }
+                    }
+                    catch { /* never-throw */ }
+                    if (debug)
+                        this.toggleAttribute(`data-wcs-state-${name}`, on);
+                }
+            });
+        }
     }
     // --- Attribute accessors ---
     get audio() { return this.hasAttribute("audio"); }
@@ -1080,9 +1135,65 @@ class WcsRecorder extends HTMLElement {
     };
     _core;
     _connectedCallbackPromise = Promise.resolve();
+    _internals = null;
     constructor() {
         super();
         this._core = new RecorderCore(this);
+        this._internals = this._initInternals();
+        this._wireStates({
+            "wcs-recorder:recording-changed": (d) => ({ recording: d === true }),
+            "wcs-recorder:paused-changed": (d) => ({ paused: d === true }),
+            "wcs-recorder:error": (d) => ({ error: d != null }),
+        });
+    }
+    // CSS state reflection (:state()) — debug-only snapshot getter. NOT part of
+    // wc-bindable (not a bind target); see README "CSS styling with :state()".
+    // MUST NOT return the live CustomStateSet (that would let callers write
+    // states from outside, defeating the point of :state() being read-only).
+    get debugStates() {
+        return this._internals ? [...this._internals.states] : [];
+    }
+    _initInternals() {
+        // never-throw (docs/custom-state-reflection-design.md §3.4): attachInternals is
+        // absent in happy-dom / older environments, and pre-125 Chromium rejects
+        // non-dashed state names from states.add() (probed and discarded here). Either
+        // case silently disables reflection — the component still works, it just doesn't
+        // expose :state() selectors.
+        try {
+            if (typeof this.attachInternals !== "function")
+                return null;
+            const internals = this.attachInternals();
+            internals.states.add("wcs-probe");
+            internals.states.delete("wcs-probe");
+            return internals;
+        }
+        catch {
+            return null;
+        }
+    }
+    _wireStates(map) {
+        if (this._internals === null)
+            return;
+        const states = this._internals.states;
+        for (const [event, toStates] of Object.entries(map)) {
+            this.addEventListener(event, (e) => {
+                const debug = this.hasAttribute("debug-states");
+                for (const [name, on] of Object.entries(toStates(e.detail))) {
+                    try {
+                        // 式文の三項演算子は ESLint no-unused-expressions に抵触するため if/else。
+                        if (on) {
+                            states.add(name);
+                        }
+                        else {
+                            states.delete(name);
+                        }
+                    }
+                    catch { /* never-throw */ }
+                    if (debug)
+                        this.toggleAttribute(`data-wcs-state-${name}`, on);
+                }
+            });
+        }
     }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;

@@ -444,9 +444,65 @@ class Debounce extends HTMLElement {
     _core;
     _source = undefined;
     _connectedCallbackPromise = Promise.resolve();
+    _internals = null;
     constructor() {
         super();
         this._core = new DebounceCore(this.constructor.eventPrefix, this);
+        this._internals = this._initInternals();
+        // `<wcs-throttle>` extends this class without overriding the constructor, so
+        // `this.constructor` resolves to the actual subclass here too — the map key
+        // tracks whichever `eventPrefix` the instance dispatches under
+        // (docs/custom-state-reflection-design.md §3.4).
+        const prefix = this.constructor.eventPrefix;
+        this._wireStates({ [`${prefix}:pending-changed`]: (d) => ({ pending: d === true }) });
+    }
+    // CSS state reflection (:state()) — debug-only snapshot getter. NOT part of
+    // wc-bindable (not a bind target); see README "CSS styling with :state()".
+    // MUST NOT return the live CustomStateSet (that would let callers write
+    // states from outside, defeating the point of :state() being read-only).
+    get debugStates() {
+        return this._internals ? [...this._internals.states] : [];
+    }
+    _initInternals() {
+        // never-throw (async-io-node-guidelines.md §3.6): attachInternals is absent
+        // in happy-dom / older environments, and pre-125 Chromium rejects
+        // non-dashed state names from states.add() (probed and discarded here).
+        // Either case silently disables reflection — the component still works,
+        // it just doesn't expose :state() selectors.
+        try {
+            if (typeof this.attachInternals !== "function")
+                return null;
+            const internals = this.attachInternals();
+            internals.states.add("wcs-probe");
+            internals.states.delete("wcs-probe");
+            return internals;
+        }
+        catch {
+            return null;
+        }
+    }
+    _wireStates(map) {
+        if (this._internals === null)
+            return;
+        const states = this._internals.states;
+        for (const [event, toStates] of Object.entries(map)) {
+            this.addEventListener(event, (e) => {
+                const debug = this.hasAttribute("debug-states");
+                for (const [name, on] of Object.entries(toStates(e.detail))) {
+                    try {
+                        if (on) {
+                            states.add(name);
+                        }
+                        else {
+                            states.delete(name);
+                        }
+                    }
+                    catch { /* never-throw */ }
+                    if (debug)
+                        this.toggleAttribute(`data-wcs-state-${name}`, on);
+                }
+            });
+        }
     }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;

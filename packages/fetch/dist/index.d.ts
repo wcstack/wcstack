@@ -142,7 +142,11 @@ declare class Fetch extends HTMLElement {
     private _autoPending;
     private _connectResolve;
     private _lastFetchedUrl;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get url(): string;
     set url(value: string | null);
     get method(): string;

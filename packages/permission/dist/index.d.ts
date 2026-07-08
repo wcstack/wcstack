@@ -163,7 +163,11 @@ declare class WcsPermission extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get name(): string;
     set name(value: string);
     get userVisibleOnly(): boolean;

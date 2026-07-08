@@ -109,7 +109,11 @@ declare class Storage extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     private _syncCore;
     get key(): string;
     set key(value: string);

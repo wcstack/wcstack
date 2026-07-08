@@ -156,8 +156,12 @@ declare class WcsWebSocket extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get url(): string;
     set url(value: string);
     get protocols(): string;

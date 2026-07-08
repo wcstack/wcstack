@@ -157,7 +157,11 @@ declare class WcsScreenOrientation extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _internals;
     constructor();
+    get debugStates(): string[];
+    private _initInternals;
+    private _wireStates;
     get type(): WcsScreenOrientationSnapshot["type"];
     get angle(): number | null;
     get portrait(): boolean;
