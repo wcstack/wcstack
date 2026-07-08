@@ -120,6 +120,59 @@ npm install @wcstack/wakelock
 | `request()` | Mark the lock desired and acquire it (if visible & supported). Never rejects — see `error`. |
 | `release()` | Mark the lock no longer desired and release any held sentinel. |
 
+## CSS styling with `:state()`
+
+`<wcs-wakelock>` reflects two boolean output states onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `held` | `wcs-wakelock:held-changed` fires with `true` (cleared on `false`) |
+| `error` | `wcs-wakelock:error` fires with a non-`null` detail (cleared on `null`) |
+
+```css
+wcs-wakelock:state(held) ~ .awake-indicator { display: block; }
+wcs-wakelock:state(held) ~ .awake-indicator { display: none; } /* default */
+
+form:has(wcs-wakelock:state(error)) .banner { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-wakelock>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-wakelock:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["held"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto `data-wcs-state-held` / `data-wcs-state-error` attributes on the
+  element, so the Elements panel highlights them as they toggle:
+
+  ```html
+  <wcs-wakelock data-wcs="active: isPlaying" debug-states></wcs-wakelock>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attributes exist purely to make state changes visible while debugging with
+DevTools open; they are not a supported styling hook.
+
 ## Binding Contract (`wcBindable`)
 
 Both the Core and the Shell declare the [wc-bindable](https://github.com/csbc-dev) protocol.

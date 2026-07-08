@@ -126,6 +126,62 @@ npm install @wcstack/geolocation
 <wcs-geo manual data-wcs="command.getCurrentPosition: $command.locate"></wcs-geo>
 ```
 
+## `:state()` による CSS スタイリング
+
+`<wcs-geo>` は 3 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `watching` | `wcs-geo:watching-changed` が `true` で発火（`false` でクリア） |
+| `loading` | `wcs-geo:loading-changed` が `true` で発火（`false` でクリア） |
+| `error` | `wcs-geo:error` が非 `null` の detail で発火（`null` でクリア） |
+
+`permission` は反映されません。`granted` / `denied` のような派生 boolean getter
+が存在せず（v1 のスコープ外）、ステートを立てる先がないためです — 代わりに
+`permission` を直接バインドしてください。
+
+```css
+wcs-geo:state(loading) ~ .spinner { display: block; }
+wcs-geo:state(watching) ~ .stop-button { display: inline-block; }
+
+form:has(wcs-geo:state(error)) .banner { display: block; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-geo>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-geo:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["loading"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-watching` / `data-wcs-state-loading` / `data-wcs-state-error`
+  属性にミラーします。Elements パネルを開いておけば、トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-geo watch debug-states></wcs-geo>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## 注意点と制約
 
 - **属性は接続時に読み取られ、監視されない。** `<wcs-geo>` は `observedAttributes` / `attributeChangedCallback` を実装していません。オプション属性（`high-accuracy`, `timeout`, `maximum-age`, `watch`, `manual`）は要素の接続時とコマンド実行のたびに読み取られます。接続*後*に命令的に変更しても、それだけでは再取得・再監視は行われません。新しいオプションを反映するには、`getCurrentPosition()` / `clearWatch()` + `watchPosition()` を再度呼ぶか、要素を再接続してください。

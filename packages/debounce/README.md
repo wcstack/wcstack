@@ -127,6 +127,61 @@ npm install @wcstack/debounce
 | `cancel`  | Drop any pending emission without firing (getters keep values).  |
 | `flush`   | Emit any buffered payload immediately (no-op if nothing pending). |
 
+## CSS styling with `:state()`
+
+`<wcs-debounce>` / `<wcs-throttle>` reflect one boolean output state onto their
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style them directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `pending` | `wcs-debounce:pending-changed` fires with `true` (cleared on `false`) |
+
+`<wcs-throttle>` reflects the same `pending` state from its own
+`wcs-throttle:pending-changed` event (it shares the `Debounce` base class, but
+the event namespace — and therefore the wiring — tracks its own `eventPrefix`).
+
+```css
+wcs-debounce:state(pending) ~ .spinner { display: block; }
+wcs-debounce:state(pending) ~ .spinner { display: none; } /* default */
+
+wcs-throttle:state(pending) ~ .indicator { opacity: 1; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-debounce>` / `<wcs-throttle>` themselves keep
+working normally (graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint. If you need to style the
+pre-hydration gap, pair your rule with `wcs-debounce:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["pending"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto a `data-wcs-state-pending` attribute on the element, so the Elements
+  panel highlights it as it toggles:
+
+  ```html
+  <wcs-debounce wait="300" debug-states></wcs-debounce>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attribute exists purely to make state changes visible while debugging with
+DevTools open; it is not a supported styling hook.
+
 ## Optional DOM Triggering
 
 When `config.autoTrigger` is on (default), a click on an element carrying `data-debouncetarget="<id>"` fires a single coalesced `trigger()` pulse on the referenced `<wcs-debounce>` / `<wcs-throttle>` (the click's default action is suppressed).

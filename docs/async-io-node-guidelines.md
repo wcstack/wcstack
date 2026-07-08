@@ -18,6 +18,7 @@
 7. **SSR 対応**。Core は最初のプローブ完了を表す `ready` promise を持ち、Shell は `connectedCallbackPromise` として公開（`static hasConnectedCallbackPromise = true`）
 8. **API 解決は呼び出し時**。グローバル API（`navigator.x` 等）はキャッシュせず呼ぶたびに解決する（テストで差し替え可能・unsupported 環境を正しく報告）
 9. **テストカバレッジ 100 / 97+ / 100 / 100**（statements / branches / functions / lines）。テスト記述は日本語
+10. **出力状態の CSS 反映（CustomStateSet）**。boolean 出力 observable・派生 boolean getter・`error` の存在を Shell が `ElementInternals.states` に反映し `:state()` で選択可能にする。反映は Shell のみで行い Core に持ち込まない。`attachInternals` 不在環境では静かに無効化する（§4.5）
 
 ---
 
@@ -229,6 +230,17 @@ export class Wcs<Name> extends HTMLElement {
 ### 4.4 SSR
 
 `static hasConnectedCallbackPromise = true` を宣言し、`connectedCallback` で `_core.observe()` の戻り promise を `connectedCallbackPromise` として保持する。state binder 側はこれを待ってからスナップショットを取る。
+
+### 4.5 出力状態の CSS 反映（CustomStateSet / `:state()`）
+
+正本設計: `custom-state-reflection-design.md`。Shell は以下を満たすこと:
+
+- constructor で `super()` の直後・**`new Core(this)` より前**に `attachInternals()` の取得と反映リスナーの配線を行い（Core が constructor 内で同期 dispatch する初回イベントを取りこぼさないため — MUST）、**boolean 出力 observable・派生 boolean getter・`error` の存在**（イベント detail が非 null）を `ElementInternals.states` に反映する（MUST）。連続値・高頻度値・データ値・派生 getter の無い enum は反映しない（design §3.2）。状態名は property 名の kebab-case（design §3.3）
+- 反映は Shell が **constructor 登録の自己リスナー**で自分自身の `*-changed` / `:error` イベントを購読して行う。**Core には持ち込まない**（MUST NOT）。wcBindable 宣言も変更しない
+- **never-throw**: `attachInternals` 不在（happy-dom・旧環境）や非ダッシュ状態名を拒む旧 Chromium (<125) は取得時 probe で検出し、反映系全体を静かに無効化する
+- states は「最後に発火したイベントの同期写像」であり、disconnect で消さない（タイミング契約は timing-and-firing-contract §17）
+- **デバッグ観測性**: `debugStates` ゲッターは現在 on の状態名の**スナップショット配列**を返す（MUST）。live な `CustomStateSet` を返してはならない（MUST NOT — 外部書き込み経路になる）。wcBindable には載せない。`debug-states` 属性が付いた要素に限り `data-wcs-state-<name>` 属性をミラーする（既定 OFF。CSS は `:state()` に書くよう README で誘導）
+- canonical snippet・テストテンプレ（5〜8本、shim は `__tests__/helpers.ts`＋`setup.ts`）は design §3.4 / §3.6 に従う。新規ノードの tag-design doc には反映状態マップの表を1つ含めること
 
 ---
 

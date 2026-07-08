@@ -159,6 +159,58 @@ Unlike Fullscreen's `fullscreenchange` (which fires on `document`), Picture-in-P
 
 This also means multiple `<wcs-pip>` instances naturally self-filter: each instance only hears events from its own `<video>` target, so one instance entering Picture-in-Picture never flips another instance's `active` to `true` (see `docs/picture-in-picture-tag-design.md` §5).
 
+## CSS styling with `:state()`
+
+`<wcs-pip>` reflects one boolean output state onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `active` | `wcs-pip:change` fires with `detail.active === true` (cleared when it fires with `false`) |
+
+```css
+wcs-pip:state(active) ~ .back-to-page-button { display: inline-block; }
+wcs-pip:state(active) ~ .back-to-page-button { display: none; } /* default */
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+`error` is intentionally **not** reflected — it has no dedicated event (see
+"Output state" above), so there is nothing to derive a state toggle from.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-pip>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-pip:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["active"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto a `data-wcs-state-active` attribute on the element, so the Elements
+  panel highlights it as it toggles:
+
+  ```html
+  <wcs-pip target="#player" debug-states></wcs-pip>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attribute exists purely to make state changes visible while debugging with
+DevTools open; it is not a supported styling hook.
+
 ## Binding Contract (`wcBindable`)
 
 Both the Core and the Shell declare the [wc-bindable](https://github.com/csbc-dev) protocol.

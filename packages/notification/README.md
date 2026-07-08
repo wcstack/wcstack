@@ -156,6 +156,68 @@ It relays each click over `BroadcastChannel("wcs-notify")` (primary) and `client
 | `close(tag)` | Dismiss the notification(s) with `tag`.                                           |
 | `closeAll()` | Dismiss every notification this element has shown.                                |
 
+## CSS styling with `:state()`
+
+`<wcs-notify>` reflects five boolean output states onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `granted` | `wcs-notify:permission-change` fires with `"granted"` |
+| `denied` | `wcs-notify:permission-change` fires with `"denied"` |
+| `prompt` | `wcs-notify:permission-change` fires with `"prompt"` |
+| `unsupported` | `wcs-notify:permission-change` fires with `"unsupported"` |
+| `error` | `wcs-notify:error` fires with a non-`null` detail (cleared on `null`) |
+
+`granted` / `denied` / `prompt` / `unsupported` are a **mutually exclusive
+group**: each `permission-change` event sets exactly one of the four and
+clears the other three in the same pass.
+
+```css
+wcs-notify:state(denied) ~ .fallback { display: block; }
+wcs-notify:state(unsupported) ~ .fallback { display: block; }
+
+form:has(wcs-notify:state(error)) .banner { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-notify>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-notify:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["granted"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto `data-wcs-state-granted` / `data-wcs-state-denied` /
+  `data-wcs-state-prompt` / `data-wcs-state-unsupported` /
+  `data-wcs-state-error` attributes on the element, so the Elements panel
+  highlights them as they toggle:
+
+  ```html
+  <wcs-notify debug-states></wcs-notify>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attributes exist purely to make state changes visible while debugging with
+DevTools open; they are not a supported styling hook.
+
 ## Notes & limitations
 
 - **Notifications outlive the page.** Disconnecting `<wcs-notify>` (or calling `dispose()` on the Core) detaches its subscriptions but does **not** close open notifications — a notification is meant to persist past the page. Use `close` / `closeAll` to dismiss.

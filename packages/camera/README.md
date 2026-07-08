@@ -77,6 +77,67 @@ The assembled `Blob` is structured-clone friendly, so it *is* a value and may fl
 
 > **`objectURL` lifetime is bound to the recorder.** Because dispose revokes the last object URL — **and a new recording revokes the previous clip's URL before minting the next** — any `<video src>` / `<wcs-upload>` still pointing at an old URL breaks once the `<wcs-recorder>` is removed or the next clip completes. Always follow the latest `objectURL` / `recorded` value; never pin a stale one. If you hand the URL to a longer-lived consumer, either keep the recorder mounted for as long as the URL is in use, or build your own URL from the `Blob` (`URL.createObjectURL(blob)`) and own its revoke. The structured-clone-friendly **`blob`** has no such coupling — prefer flowing the `Blob` through state and minting URLs at the point of use.
 
+## CSS styling with `:state()`
+
+`<wcs-camera>` and `<wcs-recorder>` reflect their boolean output states onto
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style them directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| Element | State | On when |
+|---------|-------|---------|
+| `wcs-camera` | `active` | `wcs-camera:active-changed` fires with `true` (cleared on `false`) |
+| `wcs-camera` | `error` | `wcs-camera:error` fires with a non-`null` detail (cleared on `null`) |
+| `wcs-recorder` | `recording` | `wcs-recorder:recording-changed` fires with `true` (cleared on `false`) |
+| `wcs-recorder` | `paused` | `wcs-recorder:paused-changed` fires with `true` (cleared on `false`) |
+| `wcs-recorder` | `error` | `wcs-recorder:error` fires with a non-`null` detail (cleared on `null`) |
+
+> `permission` / `audioPermission` have no boolean derived getter today, so they
+> are not reflected (v1 scope; see docs/custom-state-reflection-design.md §7).
+> `duration` is a continuous value and is intentionally excluded.
+
+```css
+wcs-camera:state(active) ~ .live-badge     { display: block; }
+form:has(wcs-camera:state(error)) .banner  { display: block; }
+
+wcs-recorder:state(recording) ~ .rec-dot   { animation: blink 1s infinite; }
+wcs-recorder:state(paused) ~ .rec-dot      { animation: none; opacity: .4; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but the elements themselves keep working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-camera:not(:defined)` / `wcs-recorder:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["active"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto `data-wcs-state-*` attributes on the element, so the Elements panel
+  highlights them as they toggle:
+
+  ```html
+  <wcs-camera autostart debug-states></wcs-camera>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attributes exist purely to make state changes visible while debugging with
+DevTools open; they are not a supported styling hook.
+
 ## Headless cores
 
 `CameraCore` and `RecorderCore` are exported for non-DOM use (`bind()` from `@wc-bindable/core`). The Shells are thin wrappers.

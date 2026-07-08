@@ -135,6 +135,55 @@ npm install @wcstack/timer
 
 イベント委譲を使うため動的に追加された要素でも動作し、`closest()` によりネストした要素（ボタン内のアイコンなど）にも対応します。一致したクリックは `start()` の前に `event.preventDefault()` を呼ぶため、要素の既定動作は抑制されます。既定動作も必要な要素（実際の `<a href>` リンクや form 送信ボタンなど）には `data-timertarget` を付けないでください（キャンセルされます）。
 
+## `:state()` による CSS スタイリング
+
+`<wcs-timer>` は 1 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `running` | `wcs-timer:running-changed` が `true` で発火（`false` でクリア） |
+
+`<wcs-timer>` には `error` イベントが無いため、`error` ステートは反映されません。
+
+```css
+wcs-timer:state(running) ~ .indicator { color: green; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-timer>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-timer:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["running"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-running` 属性にミラーします。
+  Elements パネルを開いておけば、トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-timer interval="1000" debug-states></wcs-timer>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## 設定
 
 `bootstrapTimer()` が `<wcs-timer>` を登録し、必要に応じて既定値を上書きします。部分的な設定を渡せます。

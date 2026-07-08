@@ -321,6 +321,23 @@ One `<script>` tag. One custom element. Pure HTML. That's it.
 
 ---
 
+## Styling on component state — `:state()`
+
+Every I/O node reflects its boolean output states (`loading`, `connected`, `error`, `granted`, …) into [CustomStateSet](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet), so plain CSS can react to component state — no JavaScript required:
+
+```css
+wcs-fetch:state(loading) ~ .spinner    { display: block; }
+form:has(wcs-fetch:state(error)) .msg  { display: block; }
+wcs-ws:state(connected) ~ .indicator   { color: limegreen; }
+wcs-permission:state(denied) ~ .help   { display: block; }
+```
+
+Each package README lists its reflected states. Supported in Chrome/Edge 125+, Safari 17.4+, Firefox 126+; in older browsers the styles simply don't apply — the components keep working. States are not serialized into SSR output (combine with `wcs-x:not(:defined)` for first-paint styling).
+
+For debugging, add the `debug-states` attribute to a tag to mirror its states as `data-wcs-state-*` attributes in the DevTools Elements panel, or read the `debugStates` property. Write production CSS against `:state()`, not those attributes.
+
+---
+
 ## Project Structure
 
 ```

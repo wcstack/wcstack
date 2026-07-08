@@ -143,6 +143,61 @@ All five derive from the single `wcs-network:change` event (a full snapshot disp
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`, though since `observe()` is synchronous this promise always settles immediately.
 - **Same-value guard.** A defensive field-by-field comparison suppresses a redundant `change` dispatch if the browser were ever to fire `change` with identical values.
 
+## CSS styling with `:state()`
+
+`<wcs-network>` reflects two boolean output states onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `save-data` | `wcs-network:change` fires with `saveData === true` (off — including when `saveData` is `null`, i.e. unsupported) |
+| `supported` | `wcs-network:change` fires with `supported === true` (off when `supported === false`) |
+
+`effectiveType` / `downlink` / `rtt` are not reflected — see `docs/custom-state-reflection-design.md` §3.2 (continuous/high-frequency values are excluded from `:state()` reflection).
+
+```css
+wcs-network:state(supported) ~ .connection-badge { display: block; }
+wcs-network:not(:state(supported)) ~ .connection-badge { display: none; } /* default */
+
+form:has(wcs-network:state(save-data)) .low-res-hint { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-network>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-network:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["supported"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto `data-wcs-state-save-data` / `data-wcs-state-supported` attributes on
+  the element, so the Elements panel highlights them as they toggle:
+
+  ```html
+  <wcs-network debug-states></wcs-network>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attributes exist purely to make state changes visible while debugging with
+DevTools open; they are not a supported styling hook.
+
 ## Headless usage (`NetworkCore`)
 
 The Core has no DOM dependency and can be used directly with `bind()` from `@wc-bindable/core`:

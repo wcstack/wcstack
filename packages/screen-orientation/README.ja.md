@@ -102,6 +102,63 @@ export default {
 - **初回スナップショットはbindingに届きません。** 最初の`wcs-orientation:change`は`connectedCallback`中に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に（bindingのセットアップは後続のmicrotaskへ遅延されます。`docs/timing-and-firing-contract.md` §4.1参照）。イベントは後から購読した相手へ再送されないため、bindされたパスは**次の**向き変化からしか更新されません。初期値が重要な場合（`portrait`/`landscape`/`type`/`angle`はほぼ常にそうです）、Quick Startの例のように`$connectedCallback`で一度pullしてください。これは本パッケージ固有の癖ではなく、すべてのmonitor系ノードが共有するwc-bindableイベント契約の性質です。発火・世代管理の全体像（初回スナップショット・`lock()`の世代順序・`error`の重複排除）は`docs/timing-and-firing-contract.md` §7を参照してください。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true`を宣言。監視が同期的なため`connectedCallbackPromise`は常に即座にsettleします。
 
+## `:state()` による CSS スタイリング
+
+`<wcs-screen-orientation>` は boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `portrait` | `wcs-orientation:change` が `"portrait"` で始まる `type` で発火 |
+| `landscape` | `wcs-orientation:change` が `"landscape"` で始まる `type` で発火 |
+| `error` | `wcs-orientation:error` が非 `null` の detail で発火（`null` でクリア） |
+
+`portrait` と `landscape` は相互排他で、`type` が `null`（非対応環境）のときは
+両方 off になります。イベント名前空間は `wcs-orientation:` であり、タグ名
+`wcs-screen-orientation` とは異なる点に注意してください。`angle` は反映され
+ません（連続値のため設計上除外——`docs/custom-state-reflection-design.md` §3.2 参照）。
+
+```css
+wcs-screen-orientation:state(portrait) ~ .portrait-hint  { display: block; }
+wcs-screen-orientation:state(landscape) ~ .landscape-hint { display: block; }
+
+form:has(wcs-screen-orientation:state(error)) .banner { display: block; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-screen-orientation>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-screen-orientation:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["portrait"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-portrait` / `data-wcs-state-landscape` / `data-wcs-state-error`
+  属性にミラーします。Elements パネルを開いておけば、トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-screen-orientation debug-states></wcs-screen-orientation>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## ヘッドレス利用（`ScreenOrientationCore`）
 
 ```typescript

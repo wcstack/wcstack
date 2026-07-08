@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: :state() showcase</title>
+  <style>
+    :root {
+      --ink: #1a1a2e; --muted: #666; --line: #e0e0e0;
+      --brand: #3949ab; --brand-dark: #303f9f;
+      --danger: #c62828; --danger-bg: #fce4ec; --danger-border: #f8bbd0;
+      --ok: #16a34a; --pending: #d97706;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: var(--ink); }
+    h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+    .lead { color: var(--muted); font-size: 0.92rem; line-height: 1.6; margin-bottom: 0.75rem; }
+    .version-note {
+      display: inline-block; background: #fff3e0; color: #e65100; border: 1px solid #ffe0b2;
+      padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.8rem; margin-bottom: 1.5rem;
+    }
+
+    .global-error-banner {
+      display: none; background: var(--danger-bg); border: 1px solid var(--danger-border);
+      color: var(--danger); padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.9rem;
+    }
+
+    section.demo-card {
+      margin-bottom: 1.75rem; padding: 1.5rem; border: 1px solid var(--line); border-radius: 10px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    section.demo-card h2 { font-size: 1.1rem; margin-bottom: 0.4rem; }
+    section.demo-card p { color: var(--muted); font-size: 0.87rem; line-height: 1.55; margin-bottom: 1rem; }
+    section.demo-card code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; font-size: 0.92em; }
+
+    .btn-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    button {
+      padding: 0.5rem 1rem; border: 1px solid var(--line); border-radius: 6px;
+      background: #fff; cursor: pointer; font-size: 0.85rem;
+    }
+    button:hover { background: #f5f5f7; }
+
+    .spinner { display: none; justify-content: center; padding: 1.25rem; }
+    .spinner::after {
+      content: ''; width: 22px; height: 22px; border: 3px solid var(--line);
+      border-top-color: var(--brand); border-radius: 50%; animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-banner {
+      display: none; background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger);
+      padding: 0.65rem 0.9rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 0.75rem;
+    }
+
+    .widget-list { list-style: none; transition: opacity 0.15s; }
+    .widget-item { display: flex; justify-content: space-between; padding: 0.5rem 0.25rem; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
+    .widget-item:last-child { border-bottom: none; }
+    .stock { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .empty-hint { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0.25rem; }
+
+    .ws-card {
+      display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem;
+      border: 1px solid var(--line); border-radius: 8px; background: #fafafa;
+    }
+    .status-dot {
+      width: 12px; height: 12px; border-radius: 50%; background: #9ca3af;
+      box-shadow: 0 0 0 4px rgba(156, 163, 175, 0.15); transition: background 0.25s, box-shadow 0.25s; flex-shrink: 0;
+    }
+    .status-text { font-size: 0.88rem; color: var(--muted); }
+
+    .debug-toggle {
+      display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem;
+    }
+    .debug-toggle input { margin-top: 0.2rem; }
+
+    details.css-reveal { margin-top: 1.5rem; border: 1px solid var(--line); border-radius: 8px; padding: 0.75rem 1rem; }
+    details.css-reveal summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+    details.css-reveal pre {
+      margin-top: 0.75rem; overflow-x: auto; background: #1a1a2e; color: #e0e0e0;
+      padding: 1rem; border-radius: 6px; font-size: 0.78rem; line-height: 1.55;
+    }
+  </style>
+
+  <!--
+    ============================================================
+    THE CSS THAT MATTERS FOR THIS DEMO.
+
+    Every rule below reads a wcstack I/O node's own :state() — a
+    CustomStateSet (https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet)
+    reflected onto the element by the Shell itself. Nothing here is a
+    hand-rolled class toggle and nothing in <wcs-state>'s <script> below
+    ever reads `loading` / `error` / `connected` — nothing subscribes to
+    them in JavaScript at all. The element's own internal state IS the
+    selector.
+
+    Requires @wcstack/* v1.17.0+ — see README for details.
+    ============================================================
+  -->
+  <style id="state-css">
+    /* Section 1: <wcs-fetch> loading / error, via the sibling combinator
+       (works because .spinner / .error-banner / .widget-list are later
+       siblings of #widgets-fetch inside the same <section>). */
+    #widgets-fetch:state(loading) ~ .spinner       { display: flex; }
+    #widgets-fetch:state(loading) ~ .widget-list   { opacity: 0.35; }
+    #widgets-fetch:state(error) ~ .error-banner    { display: block; }
+
+    /* :has() lets the whole card react to a descendant's state, not just
+       later siblings of the stateful element itself. */
+    .demo-card:has(#widgets-fetch:state(error)) {
+      border-color: var(--danger-border);
+      background: var(--danger-bg);
+    }
+
+    /* Section 2: <wcs-ws> connection indicator, again via sibling combinator. */
+    #ws-conn:state(loading) ~ .ws-card .status-dot {
+      background: var(--pending);
+      box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.15);
+    }
+    #ws-conn:state(connected) ~ .ws-card .status-dot {
+      background: var(--ok);
+      box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+    }
+    #ws-conn:state(error) ~ .ws-card {
+      border-color: var(--danger-border);
+      background: var(--danger-bg);
+    }
+
+    /* :has() again — this banner sits ABOVE both <wcs-fetch> and <wcs-ws>
+       in source order (near the top of <body>, for visibility), so a
+       sibling combinator can never reach it: ~ only selects LATER
+       siblings. :has() on a common ancestor (<body>) is the only way to
+       select something that appears earlier in the document. */
+    body:has(#widgets-fetch:state(error)) .global-error-banner,
+    body:has(#ws-conn:state(error)) .global-error-banner {
+      display: block;
+    }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: :state() showcase</h1>
+<p class="lead">
+  Every wcstack I/O node reflects its boolean output (<code>loading</code>, <code>error</code>,
+  <code>connected</code>, …) onto its own element via
+  <a href="https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet">CustomStateSet</a>,
+  so plain CSS can select it with <code>:state(loading)</code> — <strong>no JavaScript
+  state-subscription code required.</strong> The spinner, error banners, and connection dot on
+  this page are driven entirely by the <code>&lt;style id="state-css"&gt;</code> block below;
+  open <em>View Source</em> or expand "Show the CSS" at the bottom of the page.
+</p>
+<p class="version-note">
+  Requires <code>@wcstack/fetch</code> / <code>@wcstack/websocket</code> v1.17.0 or later.
+  Older CDN-resolved versions still work — the components just never set their
+  <code>:state()</code>, so the selectors above silently never match.
+</p>
+
+<!-- Positioned ABOVE the headless nodes on purpose — see the :has() rule above. -->
+<div class="global-error-banner" role="alert">
+  ⚠ One of the demo nodes below reported an error. Its local banner (in its own card) has the details.
+</div>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      // command-token: state -> element (see docs/command-token-protocol.md).
+      // Used only to drive the ws demo's Disconnect / Reconnect buttons.
+      $commandTokens: ["disconnectWs", "reconnectWs"],
+
+      // ------------------------------------------------------------
+      // Section 1 (fetch). Only `url` (input) and `widgets` (the actual
+      // response DATA) are bound to <wcs-fetch> below. `loading` and
+      // `error` are never read here — the spinner, the dimmed list, and
+      // the error banner in Section 1 are 100% CSS, via :state().
+      // ------------------------------------------------------------
+      mode: "fast",
+      attempt: 0,
+      widgets: [],
+
+      get widgetsUrl() {
+        return `/api/widgets?mode=${this.mode}&attempt=${this.attempt}`;
+      },
+      get hasWidgets() {
+        return Array.isArray(this.widgets) && this.widgets.length > 0;
+      },
+
+      loadFast() { this.mode = "fast"; this.attempt++; },
+      loadSlow() { this.mode = "slow"; this.attempt++; },
+      loadFail() { this.mode = "fail"; this.attempt++; },
+
+      // ------------------------------------------------------------
+      // Section 2 (websocket). Only `url` (input) and the two commands
+      // are bound to <wcs-ws> below. `connected` / `loading` / `error`
+      // are never read — the dot color and card border in Section 2 are
+      // 100% CSS, via :state().
+      // ------------------------------------------------------------
+      get wsUrl() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        return `${proto}://${location.host}/ws`;
+      },
+      disconnectWs() { this.$command.disconnectWs.emit(); },
+      reconnectWs() { this.$command.reconnectWs.emit(); },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Section 1: Async data loading (no permission prompt — first view)
+     ============================================================ -->
+<section class="demo-card">
+  <h2>1. Async data loading — <code>&lt;wcs-fetch&gt;</code></h2>
+  <p>
+    Click a button below to hit the mock warehouse API. The spinner, the dimmed list
+    while a refetch is in flight, and the error banner are wired purely from
+    <code>:state(loading)</code> / <code>:state(error)</code> on <code>#widgets-fetch</code>.
+  </p>
+
+  <div class="btn-row">
+    <button data-wcs="onclick: loadFast">Load (fast)</button>
+    <button data-wcs="onclick: loadSlow">Load (slow, ~2.5s)</button>
+    <button data-wcs="onclick: loadFail">Load (fails)</button>
+  </div>
+
+  <!-- Headless node. Only `url` (input) and `widgets` (data) are bound. -->
+  <wcs-fetch id="widgets-fetch" data-wcs="url: widgetsUrl; value: widgets"></wcs-fetch>
+
+  <div class="spinner" aria-hidden="true"></div>
+  <div class="error-banner" role="alert">
+    Failed to load widgets from the warehouse API (simulated failure). Try "Load (fast)" again.
+  </div>
+
+  <ul class="widget-list">
+    <template data-wcs="if: hasWidgets">
+      <template data-wcs="for: widgets">
+        <li class="widget-item">
+          <span data-wcs="textContent: .name"></span>
+          <span class="stock" data-wcs="textContent: .stock"></span>
+        </li>
+      </template>
+    </template>
+    <template data-wcs="if: hasWidgets|not">
+      <li class="empty-hint">No widgets loaded yet — click a button above.</li>
+    </template>
+  </ul>
+</section>
+
+<!-- ============================================================
+     Section 2: Connection indicator (also no permission prompt)
+     ============================================================ -->
+<section class="demo-card">
+  <h2>2. Connection indicator — <code>&lt;wcs-ws&gt;</code></h2>
+  <p>
+    The dot below turns green the instant the WebSocket opens, amber while
+    connecting/reconnecting, and the card gets a red outline on error — again,
+    entirely from <code>:state(connected)</code> / <code>:state(loading)</code> /
+    <code>:state(error)</code> on <code>#ws-conn</code>.
+  </p>
+
+  <div class="btn-row">
+    <button data-wcs="onclick: disconnectWs">Disconnect</button>
+    <button data-wcs="onclick: reconnectWs">Reconnect</button>
+  </div>
+
+  <!-- Headless node. Only `url` (input) and the two commands are bound. -->
+  <wcs-ws id="ws-conn"
+    data-wcs="url: wsUrl; command.close: $command.disconnectWs; command.connect: $command.reconnectWs">
+  </wcs-ws>
+
+  <div class="ws-card">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span class="status-text">
+      This dot's color is not bound to any state path — it is pure CSS reading
+      <code>&lt;wcs-ws&gt;</code>'s own <code>:state()</code>.
+    </span>
+  </div>
+</section>
+
+<!-- ============================================================
+     Debugging aid
+     ============================================================ -->
+<section class="demo-card">
+  <h2>Inspecting the states</h2>
+  <p>
+    <code>:state()</code> is invisible in DevTools' Elements panel — there is no
+    attribute to see. Every wcstack Shell offers an opt-in <code>debug-states</code>
+    attribute that mirrors state changes onto <code>data-wcs-state-*</code> attributes
+    purely for inspection (never used for styling — write your CSS against
+    <code>:state()</code>, as above).
+  </p>
+  <label class="debug-toggle">
+    <input type="checkbox" id="debug-toggle">
+    <span>
+      Turn on <code>debug-states</code> on both nodes above, then open
+      DevTools → Elements and click the buttons: you'll see
+      <code>data-wcs-state-loading</code> / <code>data-wcs-state-error</code> /
+      <code>data-wcs-state-connected</code> toggle live on
+      <code>&lt;wcs-fetch id="widgets-fetch"&gt;</code> and
+      <code>&lt;wcs-ws id="ws-conn"&gt;</code>.
+    </span>
+  </label>
+
+  <details class="css-reveal">
+    <summary>Show the CSS (the whole point of this page)</summary>
+    <pre><code id="css-source"></code></pre>
+  </details>
+</section>
+
+<!--
+  The only two bits of plain JavaScript on this page, and neither one
+  subscribes to `loading` / `error` / `connected`:
+    1. Mirror the `debug-states` checkbox onto the demo nodes (a debug
+       opt-in attribute, unrelated to the :state() CSS above).
+    2. Copy the #state-css <style> block's own text into the <details>
+       reveal below, so the visible snippet can never drift from the
+       CSS actually in effect.
+-->
+<script>
+  document.getElementById("debug-toggle").addEventListener("change", (event) => {
+    for (const el of document.querySelectorAll("#widgets-fetch, #ws-conn")) {
+      el.toggleAttribute("debug-states", event.target.checked);
+    }
+  });
+
+  document.getElementById("css-source").textContent =
+    document.getElementById("state-css").textContent.trim();
+</script>
+
+</body>
+</html>

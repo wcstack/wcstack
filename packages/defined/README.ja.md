@@ -131,6 +131,60 @@ npm install @wcstack/defined
 
 **なし。** タグを「定義する」命令的操作は存在せず、観測のみです。`<wcs-defined>` は純粋な監視ノード（event-token のみ）です。
 
+## `:state()` による CSS スタイリング
+
+`<wcs-defined>` は 2 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `defined` | `wcs-defined:change` が `detail.defined === true` で発火（`false` でクリア） |
+| `error` | `wcs-defined:change` が非 `null` の `detail.error` で発火（`null` でクリア） |
+
+`pending` / `missing` / `count` / `total` は反映**しません** — boolean ではなく、
+カウント系の値は設計上 `:state()` 反映の対象外です（`docs/custom-state-reflection-design.md` §3.2 参照）。
+
+```css
+wcs-defined:state(defined) ~ .content  { display: block; }
+wcs-defined:state(defined) ~ .skeleton { display: none; } /* デフォルト */
+
+form:has(wcs-defined:state(error)) .banner { display: block; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-defined>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-defined:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["defined"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-defined` / `data-wcs-state-error` 属性にミラーします。
+  Elements パネルを開いておけば、トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-defined tags="my-chart,my-grid" debug-states></wcs-defined>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## 注意と制限
 
 - **単調かつ終端的。** `whenDefined()` は揺れ戻りません。一度定義されたタグは定義済みのままです。state は全タグ解決か `timeout` 発火で確定します。timeout 後に *遅れて* 登録されたタグは `missing` から `count` へ昇格します（よって `defined` は後から true に転じうる）。

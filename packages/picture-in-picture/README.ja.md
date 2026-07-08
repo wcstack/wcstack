@@ -159,6 +159,55 @@ Fullscreen の `fullscreenchange`（`document` に発火）と異なり、Pictur
 
 これにより、複数の `<wcs-pip>` インスタンスは自然に自己フィルタされます。各インスタンスは自分の `<video>` target のイベントのみを受け取るため、あるインスタンスが Picture-in-Picture に入っても他のインスタンスの `active` が誤って `true` になることはありません（`docs/picture-in-picture-tag-design.md` §5 参照）。
 
+## `:state()` による CSS スタイリング
+
+`<wcs-pip>` は 1 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `active` | `wcs-pip:change` が `detail.active === true` で発火（`false` で発火するとクリア） |
+
+```css
+wcs-pip:state(active) ~ .back-to-page-button { display: inline-block; }
+wcs-pip:state(active) ~ .back-to-page-button { display: none; } /* デフォルト */
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。`error` はあえて反映していません — 専用イベントを
+持たないため（上記「出力 state」参照）、ステートの切り替えを導出する材料がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-pip>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-pip:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["active"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-active` 属性にミラーします。Elements パネルを開いておけば、
+  トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-pip target="#player" debug-states></wcs-pip>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## Binding Contract（`wcBindable`）
 
 Core と Shell の両方が [wc-bindable](https://github.com/csbc-dev) プロトコルを宣言します。

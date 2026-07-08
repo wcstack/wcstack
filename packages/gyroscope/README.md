@@ -113,6 +113,61 @@ Every bound state path must be declared up front — binding an undeclared path 
 | `start` | no    | Construct the sensor (never-throw: a synchronous constructor exception is caught and surfaced via `error`) and begin reading. Idempotent while already started (a redundant call is a no-op). |
 | `stop`  | no    | Stop the sensor and detach its listeners. Safe to call when not started. |
 
+## CSS styling with `:state()`
+
+`<wcs-gyroscope>` reflects one boolean output state onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required. `<wcs-gyroscope>` has no
+`loading`/`connected`-style boolean output (`start`/`stop` are synchronous
+subscribe/unsubscribe toggles), so `error` is the only reflected state.
+
+| State | On when |
+|-------|---------|
+| `error` | `wcs-gyroscope:error` fires with a non-`null` detail (cleared on `null`) |
+
+```css
+wcs-gyroscope:state(error) ~ .banner { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+Note that `error` is **sticky** (see Notes & limitations below): once set, it
+stays on until the page is reloaded or you clear it yourself — a successful
+`start()` does not turn it back off.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-gyroscope>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-gyroscope:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["error"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto a `data-wcs-state-error` attribute on the element, so the Elements
+  panel highlights it as it toggles:
+
+  ```html
+  <wcs-gyroscope debug-states></wcs-gyroscope>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attribute exists purely to make state changes visible while debugging with
+DevTools open; it is not a supported styling hook.
+
 ## Notes & limitations
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.

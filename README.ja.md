@@ -321,6 +321,23 @@ const html = await renderToString(`
 
 ---
 
+## コンポーネント状態で CSS を切り替える — `:state()`
+
+全 I/O ノードは boolean の出力状態（`loading` / `connected` / `error` / `granted` など）を [CustomStateSet](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet) に反映します。JavaScript を書かずに、CSS だけでコンポーネントの状態に反応できます:
+
+```css
+wcs-fetch:state(loading) ~ .spinner    { display: block; }
+form:has(wcs-fetch:state(error)) .msg  { display: block; }
+wcs-ws:state(connected) ~ .indicator   { color: limegreen; }
+wcs-permission:state(denied) ~ .help   { display: block; }
+```
+
+各パッケージの README に反映される状態の一覧があります。対応ブラウザは Chrome/Edge 125+・Safari 17.4+・Firefox 126+。非対応ブラウザではスタイルが当たらないだけで、コンポーネントの機能は完全に動作します。SSR 出力には状態がシリアライズされません（初期描画のスタイリングには `wcs-x:not(:defined)` を併用してください）。
+
+デバッグ時はタグに `debug-states` 属性を付けると、状態が `data-wcs-state-*` 属性としてミラーされ、DevTools の Elements パネルでリアルタイムに観測できます（`debugStates` プロパティでも読めます）。本番の CSS はこの属性ではなく `:state()` に書いてください。
+
+---
+
 ## プロジェクト構成
 
 ```

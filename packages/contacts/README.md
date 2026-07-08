@@ -66,6 +66,62 @@ npm install @wcstack/contacts
 
 **None.**
 
+## CSS styling with `:state()`
+
+`<wcs-contacts>` reflects three boolean output states onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `loading` | `wcs-contacts:loading-changed` fires with `true` (cleared on `false`) |
+| `cancelled` | `wcs-contacts:cancelled-changed` fires with `true` (cleared on `false`) |
+| `error` | `wcs-contacts:error` fires with a non-`null` detail (cleared on `null`) |
+
+```css
+wcs-contacts:state(loading) ~ .spinner { display: block; }
+wcs-contacts:state(loading) ~ .spinner { display: none; } /* default */
+
+form:has(wcs-contacts:state(error)) .banner { display: block; }
+form:has(wcs-contacts:state(cancelled)) .hint { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-contacts>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-contacts:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["loading"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto `data-wcs-state-loading` / `data-wcs-state-cancelled` /
+  `data-wcs-state-error` attributes on the element, so the Elements panel
+  highlights them as they toggle:
+
+  ```html
+  <wcs-contacts debug-states></wcs-contacts>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attributes exist purely to make state changes visible while debugging with
+DevTools open; they are not a supported styling hook.
+
 ## Notes & limitations
 
 - **Android Chrome only.** Treat `unsupported` as the default, not an edge case.

@@ -142,6 +142,57 @@ If `autoTrigger` is enabled (default), clicking an element carrying `data-timert
 
 Event delegation is used, so it also works for dynamically added elements, and `closest()` handles nested targets (e.g. an icon inside the button). A matched click calls `event.preventDefault()` before starting the timer, so the element's default action is suppressed — do not put `data-timertarget` on an element whose default action you also want (a real `<a href>` link, a form-submit button), as it will be cancelled.
 
+## CSS styling with `:state()`
+
+`<wcs-timer>` reflects one boolean output state onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `running` | `wcs-timer:running-changed` fires with `true` (cleared on `false`) |
+
+`<wcs-timer>` has no `error` event, so no `error` state is reflected.
+
+```css
+wcs-timer:state(running) ~ .indicator { color: green; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-timer>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-timer:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["running"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto a `data-wcs-state-running` attribute on the element, so the Elements
+  panel highlights it as it toggles:
+
+  ```html
+  <wcs-timer interval="1000" debug-states></wcs-timer>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attribute exists purely to make state changes visible while debugging with
+DevTools open; it is not a supported styling hook.
+
 ## Configuration
 
 `bootstrapTimer()` registers `<wcs-timer>` and optionally overrides defaults. Pass a partial config:

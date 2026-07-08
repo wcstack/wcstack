@@ -96,6 +96,60 @@ Every bound state path must be declared up front — `isFullscreen: false` here;
 | ---------- | ------------ |
 | `target`   | Same 3-mode resolution as `@wcstack/intersection`'s `target`: `"self"`, a CSS selector, or omitted (first child). |
 
+## CSS styling with `:state()`
+
+`<wcs-fullscreen>` reflects one boolean output state onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `active` | `wcs-fullscreen:change` fires with `detail.active === true` (cleared when `active: false`) |
+
+`error` is **not** reflected: it has no dedicated event and is not declared in
+`static wcBindable.properties` (see "Notes & limitations" above), so there is
+nothing for `:state()` reflection to subscribe to.
+
+```css
+wcs-fullscreen:state(active) ~ .exit-hint { display: block; }
+wcs-fullscreen:state(active) ~ .exit-hint { display: none; } /* default */
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-fullscreen>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-fullscreen:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["active"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto a `data-wcs-state-active` attribute on the element, so the Elements
+  panel highlights it as it toggles:
+
+  ```html
+  <wcs-fullscreen target="#hero" debug-states></wcs-fullscreen>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attribute exists purely to make state changes visible while debugging with
+DevTools open; it is not a supported styling hook.
+
 ## Notes & limitations
 
 - **User gesture requirement.** `requestFullscreen()` only succeeds when called synchronously from within a real user gesture (e.g. a click handler). This node cannot manufacture a gesture — if you invoke `requestFullscreen` via the command-token protocol (`command.requestFullscreen: $command.<token>` on `<wcs-fullscreen>`, emitted by a button's `onclick: $command.<token>`), make sure the *triggering* event itself is a genuine user gesture. Calling it from inside a `setTimeout` or deep in a promise chain will reject with a `TypeError` (per the WHATWG Fullscreen spec's transient-activation check — not `NotAllowedError`) regardless of how it was invoked — this is a browser-level constraint, not something wcstack can work around.
