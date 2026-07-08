@@ -133,7 +133,10 @@ private _wireStates(map: Record<string, (detail: any) => Record<string, boolean>
     this.addEventListener(event, (e) => {
       const debug = this.hasAttribute("debug-states"); // §3.8 opt-in ミラー
       for (const [name, on] of Object.entries(toStates((e as CustomEvent).detail))) {
-        try { on ? states.add(name) : states.delete(name); } catch { /* never-throw */ }
+        try {
+          // 式文の三項演算子は ESLint no-unused-expressions に抵触するため if/else（パイロットで確定）
+          if (on) { states.add(name); } else { states.delete(name); }
+        } catch { /* never-throw */ }
         if (debug) this.toggleAttribute(`data-wcs-state-${name}`, on);
       }
     });
