@@ -123,6 +123,60 @@ npm install @wcstack/debounce
 | `cancel`  | 保留中の発火を捨てる（getter は前回値を保持）。            |
 | `flush`   | 保留中のペイロードを即発火（保留がなければ no-op）。       |
 
+## `:state()` による CSS スタイリング
+
+`<wcs-debounce>` / `<wcs-throttle>` は 1 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `pending` | `wcs-debounce:pending-changed` が `true` で発火（`false` でクリア） |
+
+`<wcs-throttle>` も同じ `pending` ステートを、自身の `wcs-throttle:pending-changed`
+イベントから反映します（`Debounce` 基底クラスを共有しますが、イベント名前空間 —
+ひいては配線先 — はインスタンス自身の `eventPrefix` を追跡します）。
+
+```css
+wcs-debounce:state(pending) ~ .spinner { display: block; }
+wcs-debounce:state(pending) ~ .spinner { display: none; } /* デフォルト */
+
+wcs-throttle:state(pending) ~ .indicator { opacity: 1; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-debounce>` / `<wcs-throttle>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこのステートは乗りません。ハイドレーション前の見た目を
+制御したい場合は、代わりに `wcs-debounce:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["pending"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-pending` 属性にミラーします。Elements パネルを開いておけば、
+  トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-debounce wait="300" debug-states></wcs-debounce>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## 任意の DOM トリガー
 
 `config.autoTrigger` が有効（既定）なら、`data-debouncetarget="<id>"` を持つ要素のクリックで、参照先の `<wcs-debounce>` / `<wcs-throttle>` に対し集約済みの `trigger()` を1発撃ちます（クリックの既定動作は抑制）。

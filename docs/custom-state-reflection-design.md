@@ -144,17 +144,18 @@ private _wireStates(map: Record<string, (detail: any) => Record<string, boolean>
 }
 ```
 
-constructor での利用例（fetch）:
+constructor での利用例（fetch）。**配線は `new Core(this)` より前に置く**（canonical 順序・2026-07-09 展開時に確定）: Core が constructor 内で同期 dispatch するノード（例: speech の `unsupported-changed`）では、Core 生成を先にすると初回イベントを取りこぼし `:state(unsupported)` が永久に立たない。dispatch しない Core では両順序は等価なので、新規・改修時は常に配線先行に揃える。
+（実装状況の記録: 2026-07-09 の一斉展開では fetch / speak / listen が配線先行。他の Shell は Core が constructor dispatch しないため等価な Core 先行のまま — 挙動差ゼロにつき改修時に順次揃えれば足りる）:
 
 ```ts
 constructor() {
   super();
-  this._core = new FetchCore(this);
   this._internals = this._initInternals();
   this._wireStates({
     "wcs-fetch:loading-changed": (d) => ({ loading: d === true }),
     "wcs-fetch:error":           (d) => ({ error: d != null }),
   });
+  this._core = new FetchCore(this);
 }
 ```
 

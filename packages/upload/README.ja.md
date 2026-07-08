@@ -259,6 +259,59 @@ npm install @wcstack/upload
 
 `progress` は各アップロード開始時に `0` へリセットされ、成功時に `100` へ設定されるだけです。HTTP・ネットワーク・abort のエラー時は、**`progress` は意図的に直前の値（例: `70`）のまま据え置かれます**。これは転送がどこで止まったかを UI が示せるようにするためです。失敗の検出には `progress` ではなく `error` / `loading` を使い、古い値を表示したくない場合は `wcs-upload:error` に応じて UI 側で進捗表示をリセット / 非表示にしてください。次回の `upload()` で `progress` は再び `0` にリセットされます。
 
+## `:state()` による CSS スタイリング
+
+`<wcs-upload>` は 2 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `loading` | `wcs-upload:loading-changed` が `true` で発火（`false` でクリア） |
+| `error` | `wcs-upload:error` が非 `null` の detail で発火（`null` でクリア） |
+
+`progress` は反映されません（連続値は `:state()` 反映の対象外です）。
+
+```css
+wcs-upload:state(loading) ~ .spinner { display: block; }
+wcs-upload:state(loading) ~ .spinner { display: none; } /* デフォルト */
+
+form:has(wcs-upload:state(error)) .banner { display: block; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-upload>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-upload:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["loading"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-loading` / `data-wcs-state-error` 属性にミラーします。
+  Elements パネルを開いておけば、トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-upload url="/api/upload" debug-states></wcs-upload>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## wc-bindable-protocol
 
 `UploadCore` と `<wcs-upload>` はいずれも `wc-bindable-protocol` 準拠を宣言しており、プロトコルをサポートするあらゆるフレームワークやコンポーネントと相互運用できます。

@@ -96,6 +96,57 @@ npm install @wcstack/fullscreen
 | ---------- | ---- |
 | `target`   | `@wcstack/intersection` の `target` と同じ3モード解決: `"self"`、CSSセレクタ、または省略（最初の子要素）。 |
 
+## `:state()` による CSS スタイリング
+
+`<wcs-fullscreen>` は 1 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `active` | `wcs-fullscreen:change` が `detail.active === true` で発火（`active: false` でクリア） |
+
+`error` は反映**しません**: 専用イベントを持たず、`static wcBindable.properties`
+にも宣言されていないため（上記「注意・制限」参照）、`:state()` 反映が購読できる対象がありません。
+
+```css
+wcs-fullscreen:state(active) ~ .exit-hint { display: block; }
+wcs-fullscreen:state(active) ~ .exit-hint { display: none; } /* デフォルト */
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-fullscreen>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-fullscreen:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["active"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-active` 属性にミラーします。
+  Elements パネルを開いておけば、トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-fullscreen target="#hero" debug-states></wcs-fullscreen>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## 注意・制限
 
 - **user gesture制約。** `requestFullscreen()` は実際のuser gesture（クリックハンドラ等）内から同期的に呼ばれた場合のみ成功します。本ノードはgestureを生成できません — command-tokenプロトコル経由（`<wcs-fullscreen>` 側の `command.requestFullscreen: $command.<token>`、ボタン側の `onclick: $command.<token>`）で呼び出す場合は、**起動元のイベント自体**が本物のuser gestureであることを確認してください。`setTimeout` の中やPromiseチェーンの奥深くから呼び出すと、呼び出し方法に関わらず `TypeError`（WHATWG Fullscreen仕様のtransient-activationチェックによる。`NotAllowedError` ではない）でrejectされます — これはブラウザレベルの制約であり、wcstack側で回避する手段はありません。

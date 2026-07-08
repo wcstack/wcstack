@@ -164,6 +164,79 @@ export default {
 
 ---
 
+## `:state()` による CSS スタイリング
+
+`<wcs-speak>` と `<wcs-listen>` はそれぞれ、自分自身の boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+### `<wcs-speak>`
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `speaking` | `wcs-speak:speaking-changed` が `true` で発火（`false` でクリア） |
+| `paused` | `wcs-speak:paused-changed` が `true` で発火（`false` でクリア） |
+| `pending` | `wcs-speak:pending-changed` が `true` で発火（`false` でクリア） |
+| `unsupported` | `wcs-speak:unsupported-changed` が `true` で発火（`false` でクリア） |
+| `error` | `wcs-speak:error` が非 `null` の detail で発火（`null` でクリア） |
+
+```css
+wcs-speak:state(speaking) ~ .indicator { color: green; }
+wcs-speak:state(unsupported) ~ .fallback { display: block; }
+```
+
+### `<wcs-listen>`
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `listening` | `wcs-listen:listening-changed` が `true` で発火（`false` でクリア） |
+| `unsupported` | `wcs-listen:unsupported-changed` が `true` で発火（`false` でクリア） |
+| `error` | `wcs-listen:error` が非 `null` の detail で発火（`null` でクリア） |
+
+```css
+wcs-listen:state(listening) ~ .mic-indicator { color: red; }
+form:has(wcs-listen:state(error)) .banner { display: block; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、各コンポーネント自体は通常どおり動作し続けます（graceful degradation・
+never-throw）。これは特に `<wcs-listen>` の `unsupported` ステートで意味を持ちます。
+SpeechRecognition 自体が Chrome 系のみの対応だからです（後述の「注意・制限」参照）——
+`:state(unsupported)` はまさに、それ以外のブラウザでフォールバックを表示するために使う
+セレクタです。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに
+`wcs-speak:not(:defined)` / `wcs-listen:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["speaking"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-*` 属性にミラーします。Elements パネルを開いておけば、
+  トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-speak say="Hello" debug-states></wcs-speak>
+  <wcs-listen debug-states></wcs-listen>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## 注意・制限
 
 - **セキュアコンテキスト必須。** 両 API とも HTTPS か `localhost` が必要。`<wcs-listen>` はさらにマイク permission が必要です。

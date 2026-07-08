@@ -165,6 +165,79 @@ Clicking an element with `data-listentarget="<id>"` toggles `start()` / `stop()`
 
 ---
 
+## CSS styling with `:state()`
+
+`<wcs-speak>` and `<wcs-listen>` each reflect their boolean output states onto
+their own [`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style them directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+### `<wcs-speak>`
+
+| State | On when |
+|-------|---------|
+| `speaking` | `wcs-speak:speaking-changed` fires with `true` (cleared on `false`) |
+| `paused` | `wcs-speak:paused-changed` fires with `true` (cleared on `false`) |
+| `pending` | `wcs-speak:pending-changed` fires with `true` (cleared on `false`) |
+| `unsupported` | `wcs-speak:unsupported-changed` fires with `true` (cleared on `false`) |
+| `error` | `wcs-speak:error` fires with a non-`null` detail (cleared on `null`) |
+
+```css
+wcs-speak:state(speaking) ~ .indicator { color: green; }
+wcs-speak:state(unsupported) ~ .fallback { display: block; }
+```
+
+### `<wcs-listen>`
+
+| State | On when |
+|-------|---------|
+| `listening` | `wcs-listen:listening-changed` fires with `true` (cleared on `false`) |
+| `unsupported` | `wcs-listen:unsupported-changed` fires with `true` (cleared on `false`) |
+| `error` | `wcs-listen:error` fires with a non-`null` detail (cleared on `null`) |
+
+```css
+wcs-listen:state(listening) ~ .mic-indicator { color: red; }
+form:has(wcs-listen:state(error)) .banner { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but the components keep working normally (graceful
+degradation, never-throw). This matters in particular for `<wcs-listen>`'s
+`unsupported` state, since SpeechRecognition itself is Chrome-only (see
+"Notes & limitations" below) — `:state(unsupported)` is exactly the selector
+you would use to show a fallback in every other browser.
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-speak:not(:defined)` / `wcs-listen:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["speaking"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto `data-wcs-state-*` attributes on the element, so the Elements panel
+  highlights them as they toggle:
+
+  ```html
+  <wcs-speak say="Hello" debug-states></wcs-speak>
+  <wcs-listen debug-states></wcs-listen>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attributes exist purely to make state changes visible while debugging with
+DevTools open; they are not a supported styling hook.
+
 ## Notes & limitations
 
 - **Secure context required.** Both APIs need HTTPS or `localhost`; `<wcs-listen>` additionally needs microphone permission.

@@ -42,12 +42,17 @@ export class Fetch extends HTMLElement {
 
   constructor() {
     super();
-    this._core = new FetchCore(this);
+    // State reflection is wired BEFORE the Core is constructed (canonical
+    // order): a Core that dispatches synchronously from its constructor
+    // (e.g. speech's unsupported-changed) would otherwise fire before the
+    // listeners exist. FetchCore doesn't do that, so this is equivalent here,
+    // but every Shell keeps the same order.
     this._internals = this._initInternals();
     this._wireStates({
       "wcs-fetch:loading-changed": (d) => ({ loading: d === true }),
       "wcs-fetch:error":           (d) => ({ error: d != null }),
     });
+    this._core = new FetchCore(this);
   }
 
   // CSS state reflection (:state()) — debug-only snapshot getter. NOT part of

@@ -156,6 +156,66 @@ wireNotificationClicks();
 | `close(tag)` | `tag` の通知を閉じる。                                                            |
 | `closeAll()` | この要素が表示した全通知を閉じる。                                                |
 
+## `:state()` による CSS スタイリング
+
+`<wcs-notify>` は 5 つの boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| ステート | on になる条件 |
+|----------|----------------|
+| `granted` | `wcs-notify:permission-change` が `"granted"` で発火 |
+| `denied` | `wcs-notify:permission-change` が `"denied"` で発火 |
+| `prompt` | `wcs-notify:permission-change` が `"prompt"` で発火 |
+| `unsupported` | `wcs-notify:permission-change` が `"unsupported"` で発火 |
+| `error` | `wcs-notify:error` が非 `null` の detail で発火（`null` でクリア） |
+
+`granted` / `denied` / `prompt` / `unsupported` は**相互排他群**です:
+`permission-change` イベント 1 回につき 4 つのうち 1 つだけが on になり、
+残り 3 つは同じパスで off にクリアされます。
+
+```css
+wcs-notify:state(denied) ~ .fallback { display: block; }
+wcs-notify:state(unsupported) ~ .fallback { display: block; }
+
+form:has(wcs-notify:state(error)) .banner { display: block; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、`<wcs-notify>` 自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-notify:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["granted"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-granted` / `data-wcs-state-denied` /
+  `data-wcs-state-prompt` / `data-wcs-state-unsupported` /
+  `data-wcs-state-error` 属性にミラーします。
+  Elements パネルを開いておけば、トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-notify debug-states></wcs-notify>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## 注意・制限
 
 - **通知はページより長生きする。** `<wcs-notify>` の切断（または Core の `dispose()`）は購読を解除しますが、開いている通知は**閉じません** —— 通知はページの終了後も残ることが意図です。閉じるには `close` / `closeAll` を使ってください。

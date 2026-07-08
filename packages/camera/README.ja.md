@@ -77,6 +77,66 @@ $on: {
 
 > **`objectURL` の寿命は recorder に束縛されます。** dispose が最後の object URL を revoke し、**さらに次の録画は前のクリップの URL を新規発行前に revoke する**ため、古い URL を指したままの `<video src>` / `<wcs-upload>` は `<wcs-recorder>` が外れる・次のクリップが完成した時点で壊れます。常に最新の `objectURL` / `recorded` 値を追従し、古い URL を保持しないでください。URL を寿命の長い消費側へ渡す場合は、URL を使い終わるまで recorder を接続したままにするか、`Blob` から自前で URL を作り（`URL.createObjectURL(blob)`）revoke も自分で管理してください。structured-clone 可能な **`blob`** にはこの結合がありません——`Blob` を state に流し、利用箇所で URL を生成するのが安全です。
 
+## `:state()` による CSS スタイリング
+
+`<wcs-camera>` と `<wcs-recorder>` は boolean 出力ステートを
+[`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
+に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
+`:state()` 疑似クラスで直接スタイリングできます。
+
+| 要素 | ステート | on になる条件 |
+|------|----------|----------------|
+| `wcs-camera` | `active` | `wcs-camera:active-changed` が `true` で発火（`false` でクリア） |
+| `wcs-camera` | `error` | `wcs-camera:error` が非 `null` の detail で発火（`null` でクリア） |
+| `wcs-recorder` | `recording` | `wcs-recorder:recording-changed` が `true` で発火（`false` でクリア） |
+| `wcs-recorder` | `paused` | `wcs-recorder:paused-changed` が `true` で発火（`false` でクリア） |
+| `wcs-recorder` | `error` | `wcs-recorder:error` が非 `null` の detail で発火（`null` でクリア） |
+
+> `permission` / `audioPermission` には現時点で boolean 派生 getter が無いため
+> 反映対象外です（v1 スコープ。docs/custom-state-reflection-design.md §7 参照）。
+> `duration` は連続値のため意図的に除外しています。
+
+```css
+wcs-camera:state(active) ~ .live-badge     { display: block; }
+form:has(wcs-camera:state(error)) .banner  { display: block; }
+
+wcs-recorder:state(recording) ~ .rec-dot   { animation: blink 1s infinite; }
+wcs-recorder:state(paused) ~ .rec-dot      { animation: none; opacity: .4; }
+```
+
+属性やクラスと異なり `:state()` は要素の外部から書き込めないため、この出力ステートが
+入力と混同される心配がありません。
+
+**対応ブラウザ**（新構文 `:state(x)`）: Chrome/Edge 125+、Safari 17.4+、Firefox 126+。
+非対応の環境ではステートが一切 set されないだけです — `:state()` セレクタがマッチしなく
+なりますが、各要素自体は通常どおり動作し続けます（graceful degradation・never-throw）。
+
+**SSR:** `:state()` は HTML にシリアライズできないため、サーバーレンダリングされた
+マークアップの初期ペイントにはこれらのステートは乗りません（`@wcstack/server` は無改変）。
+ハイドレーション前の見た目を制御したい場合は、代わりに `wcs-camera:not(:defined)` /
+`wcs-recorder:not(:defined)` と組み合わせてください。
+
+### デバッグ
+
+カスタムステートは DevTools の Elements パネルには表示されず、`attachInternals()`
+は同一要素に 2 回呼べないため、コンソールから直接覗く手段がありません。そのための
+デバッグ専用の補助を 2 つ用意しています:
+
+- `el.debugStates` — 現在 on になっているステート名の**スナップショット**配列
+  （例: `["active"]`）。`wc-bindable` の一部ではなく（バインド対象ではない）、
+  形状も契約として保証されません — デバッグ用途にのみ使ってください。
+- `debug-states` 属性（opt-in・既定 OFF）は、ステート変化を要素の
+  `data-wcs-state-*` 属性にミラーします。Elements パネルを開いておけば、
+  トグルのたびにハイライトされます:
+
+  ```html
+  <wcs-camera autostart debug-states></wcs-camera>
+  ```
+
+**CSS は `data-wcs-state-*` ではなく `:state()` に書いてください。** ミラーされた
+属性は、DevTools を開いた状態でステート変化を可視化するためだけのものであり、
+スタイリング用の正式なフックではありません。
+
 ## ヘッドレス Core
 
 `CameraCore` / `RecorderCore` を非 DOM 用途向けにエクスポートしています（`@wc-bindable/core` の `bind()`）。Shell は薄いラッパです。

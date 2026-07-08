@@ -103,6 +103,67 @@ In a plain tab like this, clicking the button will not actually lock anything: c
 - **The initial snapshot does not reach bindings.** The first `wcs-orientation:change` fires synchronously during `connectedCallback` — before `@wcstack/state` attaches its binding listeners (binding setup is deferred to a later microtask; see `docs/timing-and-firing-contract.md` §4.1) — and events are not replayed to late subscribers, so bound paths update only from the *next* orientation change. If the initial value matters (it does for `portrait`/`landscape`/`type`/`angle`), pull it once in `$connectedCallback` as the Quick Start example does. This is a property of the wc-bindable event contract shared by all monitor nodes, not a quirk of this package. See `docs/timing-and-firing-contract.md` §7 for the full firing/generation contract (initial snapshot, `lock()` generation ordering, `error` dedup).
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true`; since monitoring is synchronous, `connectedCallbackPromise` always settles immediately.
 
+## CSS styling with `:state()`
+
+`<wcs-screen-orientation>` reflects boolean output states onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required.
+
+| State | On when |
+|-------|---------|
+| `portrait` | `wcs-orientation:change` fires with a `type` that starts with `"portrait"` |
+| `landscape` | `wcs-orientation:change` fires with a `type` that starts with `"landscape"` |
+| `error` | `wcs-orientation:error` fires with a non-`null` detail (cleared on `null`) |
+
+`portrait` and `landscape` are mutually exclusive and both fall off when `type`
+is `null` (unsupported environment). Note the event namespace is
+`wcs-orientation:`, not the tag name `wcs-screen-orientation`; `angle` is not
+reflected (continuous value, excluded by design — see
+`docs/custom-state-reflection-design.md` §3.2).
+
+```css
+wcs-screen-orientation:state(portrait) ~ .portrait-hint  { display: block; }
+wcs-screen-orientation:state(landscape) ~ .landscape-hint { display: block; }
+
+form:has(wcs-screen-orientation:state(error)) .banner { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-screen-orientation>` itself keeps working
+normally (graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-screen-orientation:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["portrait"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto `data-wcs-state-portrait` / `data-wcs-state-landscape` /
+  `data-wcs-state-error` attributes on the element, so the Elements panel
+  highlights them as they toggle:
+
+  ```html
+  <wcs-screen-orientation debug-states></wcs-screen-orientation>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attributes exist purely to make state changes visible while debugging with
+DevTools open; they are not a supported styling hook.
+
 ## Headless usage (`ScreenOrientationCore`)
 
 ```typescript

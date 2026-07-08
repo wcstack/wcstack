@@ -146,6 +146,57 @@ State-driven invocation uses the command-token protocol:
 <wcs-broadcast name="room" data-wcs="command.post: $command.send"></wcs-broadcast>
 ```
 
+## CSS styling with `:state()`
+
+`<wcs-broadcast>` reflects one boolean output state onto its
+[`ElementInternals` `CustomStateSet`](https://developer.mozilla.org/en-US/docs/Web/API/CustomStateSet),
+so you can style it directly from CSS with the `:state()` pseudo-class — no
+`data-wcs` binding or extra class toggling required. `<wcs-broadcast>` has no
+`loading`/`connected`-style boolean output (posting and opening a channel are
+synchronous), so `error` is the only reflected state.
+
+| State | On when |
+|-------|---------|
+| `error` | `wcs-broadcast:error` fires with a non-`null` detail (cleared on `null`) |
+
+```css
+form:has(wcs-broadcast:state(error)) .banner { display: block; }
+```
+
+Unlike attributes or classes, `:state()` cannot be written from outside the
+element, so there is no risk of confusing this output state with an input.
+
+**Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
+Firefox 126+. In older browsers the states are simply never set — `:state()`
+selectors never match, but `<wcs-broadcast>` itself keeps working normally
+(graceful degradation, never-throw).
+
+**SSR**: `:state()` cannot be serialized into HTML, so server-rendered markup
+never carries these states on first paint (`@wcstack/server` is unaffected).
+If you need to style the pre-hydration gap, pair your rule with
+`wcs-broadcast:not(:defined)` instead.
+
+### Debugging
+
+Custom states are invisible in DevTools' Elements panel and `attachInternals()`
+cannot be called twice, so there is no console way to inspect them directly.
+Two debug-only aids are provided for that:
+
+- `el.debugStates` — a **snapshot** array of the currently-on state names
+  (e.g. `["error"]`). It is not part of `wc-bindable` (not a bind target)
+  and its shape is not a guaranteed contract — use it for debugging only.
+- The `debug-states` attribute (opt-in, default off) mirrors state changes
+  onto a `data-wcs-state-error` attribute on the element, so the Elements
+  panel highlights it as it toggles:
+
+  ```html
+  <wcs-broadcast name="room" debug-states></wcs-broadcast>
+  ```
+
+**Write your CSS against `:state()`, not `data-wcs-state-*`.** The mirrored
+attribute exists purely to make state changes visible while debugging with
+DevTools open; it is not a supported styling hook.
+
 ## Notes & limitations
 
 - **Self-exclusion is intentional.** A context never receives its own posts — this is the BroadcastChannel contract, not a bug. To see a round trip, have a second context (tab/iframe/worker, or a second `<wcs-broadcast>` on the same channel name) listening. Two `<wcs-broadcast name="x">` elements in the *same* tab do hear each other (they are distinct channel objects); only a single element talking to itself does not.
