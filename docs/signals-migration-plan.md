@@ -80,6 +80,7 @@ G1・G2 は**確定**（後戻りコスト大のため先行決定）。G3・G4 
 - **受け入れ基準**:
   - `@wcstack/signals` と `@wcstack/signals/dom` を**両方 import**し、一方で作った signal を他方の `effect` / `h` で購読 → DOM が更新される（= 単一コア）ことをテストで保証。
   - `examples/signals-live-search` を「単一エントリ回避」から**本来の混在 import**に戻して動作。
+    - ※後日追記（2026-07-09）: パッケージ公開後、example は CDN（esm.run）ロードに切替。CDN では各エントリが自己完結バンドルになり混在 import はコア二重化を招くため、example は再び単一 `/dom` エントリ import に戻した（ローカル npm インストールでは共有 chunk により混在 import 可のまま。受け入れ基準の担保はパッケージング回帰テスト側で継続）。
   - `dist` に index/dom 双方の min が出力される。
 - **依存**: なし（最初に着手）。
 - **リスク**: 中。buildless（import map）での chunk 解決が肝。example を実ブラウザ相当（happy-dom + server.js）で通すこと。

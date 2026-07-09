@@ -15,7 +15,8 @@ npm test
 ```
 
 静的サーバーは Playwright の `webServer` 設定 (`playwright.config.ts`) が自動起動します。
-手動でページを確認したい場合は `npm run serve` で `http://127.0.0.1:4173/examples/<name>/` を開けます。
+手動でページを確認したい場合は `npm run serve` で `http://127.0.0.1:4173/examples/<name>/`
+(パッケージ配下のデモは `/packages/<pkg>/examples/<name>/`) を開けます。
 
 各テストは共通して次を検証します:
 
@@ -42,7 +43,7 @@ examples の `index.html` は `https://esm.run/@wcstack/*` (CDN) を参照して
 
 また、examples の一部は自前の `server.js` (port 3000 固定・同時起動不可) で `/api/*` を
 提供するため、`serve.mjs` が同形のモック API (`/api/search`, `/api/users`) を最小フィクスチャで
-代替しています (レスポンス形状は `examples/*/server.js` に準拠、人工遅延なし)。
+代替しています (レスポンス形状は各デモの `server.js` に準拠、人工遅延なし)。
 
 ## 対象 / スキップ examples
 
@@ -51,26 +52,27 @@ examples の `index.html` は `https://esm.run/@wcstack/*` (CDN) を参照して
 | example | 検証内容 |
 |---|---|
 | `state-search` | state + fetch + debounce。初期全件フェッチの一覧描画、`locale` フィルタ、eventToken のリクエストカウンタ、入力 → 300ms デバウンス → 再フェッチの絞り込み |
-| `state-fetch` | state + fetch。一覧 auto-fetch、行クリック → computed url → 詳細フェッチ、manual POST → 成功バナー → command-token による一覧リロード |
+| `users-crud` (packages/fetch/examples) | state + fetch。一覧 auto-fetch、行クリック → computed url → 詳細フェッチ、manual POST → 成功バナー → command-token による一覧リロード |
 | `state-cross-tab-todo` | state + storage + broadcast。2 ページ (=2 タブ) 間で localStorage 経由のリスト同期と BroadcastChannel 経由の live シグナル |
 
-### スキップ (13)
+### スキップ (16)
 
 dist が存在しないためスキップした example はありません (vscode-wcs を除く全パッケージに dist あり)。
 スキップ理由はすべて実行環境の制約です:
 
 | example | 理由 |
 |---|---|
-| `react-websocket` / `vue-websocket` | Vite ビルド + WebSocket サーバーが必要 (CDN 参照でない) |
-| `state-websocket` | WebSocket サーバー (`server.js`) が必要 |
-| `signals-live-search` | 自前 `server.js` が import map 用ローカルパス (`/signals/*`) を配信する前提 |
+| `websocket-chat/react` / `websocket-chat/vue` | Vite ビルド + WebSocket サーバーが必要 (CDN 参照でない) |
+| `websocket-chat/vanilla` / `websocket-chat/state` / `websocket-chat/signals` | WebSocket サーバー (`shared/server.js`) が必要 |
+| `state-custom-states` | WebSocket サーバー (`/ws`) が必要 |
+| `signals-live-search` | 追加候補 (`/api/people` をモックすれば対象化可能。CDN ロード化済みだが `@wcstack/signals/dom` は `/auto` より深いサブパスのため CDN 書き換え対象外) |
 | `ssr` | サーバーサイドレンダリング構成 (静的配信モデル外) |
 | `state-camera-record-upload` | カメラデバイス + `getUserMedia` 権限が必要 |
 | `state-notification-chat` | Notification 権限 + OS 通知が必要 |
 | `state-permission-banner` | Geolocation 権限が必要 |
-| `state-speak-highlight` / `state-speech-echo` | SpeechSynthesis / SpeechRecognition (headless では音声環境なし) |
-| `state-defined-loader` | 追加候補 (API 不要の静的構成。未対象なだけで技術的障害なし) |
-| `state-infinite-scroll` / `state-intersect-scroll` | 追加候補 (各 `server.js` の API をモックすれば対象化可能) |
+| `speak-highlight` / `speech-echo` (packages/speech/examples) | SpeechSynthesis / SpeechRecognition (headless では音声環境なし) |
+| `defined-loader` (packages/defined/examples) | 追加候補 (API 不要の静的構成。未対象なだけで技術的障害なし) |
+| `infinite-scroll` (packages/fetch/examples) / `state-intersect-scroll` | 追加候補 (各 `server.js` の API をモックすれば対象化可能) |
 
 ## CI
 

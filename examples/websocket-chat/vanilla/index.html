@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: vanilla + websocket demo</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f1ec;
+      --bg-top: #faf8f4;
+      --panel: rgba(255, 255, 255, 0.92);
+      --ink: #2b2118;
+      --muted: #6e6254;
+      --line: rgba(146, 100, 40, 0.15);
+      --brand: #d97706;
+      --brand-strong: #b45309;
+      --accent: #0ea5e9;
+      --danger: #dc2626;
+      --shadow: 0 20px 50px rgba(43, 33, 24, 0.10);
+      --grad-a: rgba(217, 119, 6, 0.12);
+      --grad-b: rgba(14, 165, 233, 0.10);
+      --dot-live: #d97706;
+      --dot-live-glow: rgba(217, 119, 6, 0.15);
+      --stat-bg: rgba(217, 119, 6, 0.08);
+      --log-echo-bg: rgba(217, 119, 6, 0.08);
+      --code-bg: rgba(217, 119, 6, 0.08);
+    }
+  </style>
+
+  <!-- Resolve the wc-bindable core adapter from the CDN (buildless). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@wc-bindable/core": "https://esm.run/@wc-bindable/core"
+    }
+  }
+  </script>
+  <!-- Registers <wcs-ws> (the headless WebSocket node). -->
+  <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
+</head>
+<body>
+  <!-- Headless IO node: it owns the socket, the reconnection and the JSON
+       parsing. Config attributes stay on the element; the script below only
+       mirrors its outputs and calls sendMessage(). -->
+  <wcs-ws
+    id="ws"
+    auto-reconnect
+    reconnect-interval="3000"
+    max-reconnects="10"
+  ></wcs-ws>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">Vanilla JS</span>
+      <h1>Real-time communication<br>with vanilla JS + &lt;wcs-ws&gt;</h1>
+      <p class="lead">
+        The framework-free baseline: <code>@wc-bindable/core</code>'s <code>bind()</code>
+        streams the connection state and incoming messages of <code>&lt;wcs-ws&gt;</code>
+        into a plain object that drives hand-built DOM — no engine, no build step.
+      </p>
+    </section>
+
+    <div class="status-bar">
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="conn-label">Connecting…</span>
+      </div>
+      <div class="stat-badge">
+        Clients: <strong id="clients">—</strong>
+      </div>
+      <div class="stat-badge">
+        Uptime: <strong id="uptime">—</strong>
+      </div>
+    </div>
+
+    <div class="callout error" id="error-box" hidden style="margin-bottom: 14px;">
+      <strong>Connection Error</strong><br>
+      <span id="error-text"></span>
+    </div>
+
+    <div class="grid">
+      <!-- Echo panel -->
+      <div class="panel">
+        <h2>Echo</h2>
+        <p class="lead">Send a message and the server echoes it back.</p>
+        <div class="input-row">
+          <input type="text" id="echo-input" placeholder="Echo message…">
+          <button class="btn-echo" id="echo-send" disabled>Send</button>
+        </div>
+      </div>
+
+      <!-- Broadcast panel -->
+      <div class="panel">
+        <h2>Broadcast</h2>
+        <p class="lead">Deliver a message to all connected clients.</p>
+        <div class="input-row">
+          <input type="text" id="broadcast-input" placeholder="Broadcast message…">
+          <button class="btn-broadcast" id="broadcast-send" disabled>Send</button>
+        </div>
+        <div class="input-row">
+          <input type="text" id="nickname" placeholder="Nickname" style="max-width: 180px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Message log -->
+    <div class="panel" style="margin-top: 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Message Log</h2>
+        <button style="background: rgba(0,0,0,0.06); color: var(--muted); font-size: 0.8rem; padding: 6px 12px;"
+          id="clear-log">Clear</button>
+      </div>
+
+      <div class="log" id="log">
+        <div class="log-empty" id="log-empty">
+          Messages will appear here after connecting.
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { bind } from "@wc-bindable/core";
+
+    const ws = document.getElementById("ws");
+
+    // ----------------------------------------------------------------------
+    // View state — a single plain object, mirrored from <wcs-ws> by bind()
+    // and pushed into the DOM by the small render helpers below.
+    // ----------------------------------------------------------------------
+    const state = {
+      connected: false,
+      loading: false,
+      error: null,
+      stats: null, // last { clients, uptime } server heartbeat
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function renderStatus() {
+      $("dot").classList.toggle("live", state.connected);
+      $("conn-label").textContent = state.loading
+        ? "Connecting…"
+        : state.connected ? "Connected" : "Disconnected";
+      $("clients").textContent = state.stats ? String(state.stats.clients) : "—";
+      $("uptime").textContent = state.stats ? state.stats.uptime + "s" : "—";
+      $("error-box").hidden = !state.error;
+      if (state.error) {
+        $("error-text").textContent = state.error.message || String(state.error);
+      }
+      renderSendButtons();
+    }
+
+    // Send buttons need BOTH a live connection and a non-empty input, so they
+    // re-render on connection changes and on every keystroke.
+    function renderSendButtons() {
+      $("echo-send").disabled = !state.connected || $("echo-input").value.trim() === "";
+      $("broadcast-send").disabled = !state.connected || $("broadcast-input").value.trim() === "";
+    }
+
+    // Build log entries with createElement/textContent — never interpolate
+    // received data into innerHTML.
+    function appendLog(msg) {
+      const cls = { echo: "log-echo", broadcast: "log-broadcast", connected: "log-connected" }[msg.type];
+      let text;
+      if (msg.type === "echo") {
+        text = "Echo: " + msg.content;
+      } else if (msg.type === "broadcast") {
+        text = `[${msg.from}] ${msg.content}`;
+      } else if (msg.type === "connected") {
+        text = `WebSocket connected (${msg.clients} clients)`;
+      } else {
+        text = JSON.stringify(msg);
+      }
+
+      const entry = document.createElement("div");
+      entry.className = "log-entry " + (cls || "log-stats");
+      const time = document.createElement("span");
+      time.className = "log-time";
+      time.textContent = new Date(msg.timestamp || Date.now()).toLocaleTimeString() + " ";
+      entry.append(time, document.createTextNode(text));
+
+      $("log-empty")?.remove();
+      const log = $("log");
+      log.append(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // ----------------------------------------------------------------------
+    // Mirror the <wcs-ws> wcBindable properties into local state. `message`
+    // arrives already JSON-parsed (the element does that); `stats` heartbeats
+    // update the badges instead of the log, matching the other variants.
+    // ----------------------------------------------------------------------
+    bind(ws, (name, value) => {
+      switch (name) {
+        case "connected": state.connected = value; break;
+        case "loading": state.loading = value; break;
+        case "error": state.error = value; break;
+        case "message":
+          if (!value) return;
+          if (value.type === "stats") {
+            state.stats = value;
+            break;
+          }
+          appendLog(value);
+          return; // log-only messages don't change the status bar
+      }
+      renderStatus();
+    });
+
+    // ----------------------------------------------------------------------
+    // Sending goes through the element's public command, sendMessage(). The
+    // node refuses silently when the socket is not OPEN, but the buttons are
+    // disabled in that case anyway.
+    // ----------------------------------------------------------------------
+    function sendEcho() {
+      const input = $("echo-input");
+      const text = input.value.trim();
+      if (!text || !state.connected) return;
+      ws.sendMessage(JSON.stringify({ type: "echo", content: text }));
+      input.value = "";
+      renderSendButtons();
+    }
+
+    function sendBroadcast() {
+      const input = $("broadcast-input");
+      const text = input.value.trim();
+      if (!text || !state.connected) return;
+      ws.sendMessage(JSON.stringify({
+        type: "broadcast",
+        content: text,
+        from: $("nickname").value.trim() || "anonymous",
+      }));
+      input.value = "";
+      renderSendButtons();
+    }
+
+    $("echo-send").addEventListener("click", sendEcho);
+    $("broadcast-send").addEventListener("click", sendBroadcast);
+    for (const [id, send] of [["echo-input", sendEcho], ["broadcast-input", sendBroadcast]]) {
+      $(id).addEventListener("input", renderSendButtons);
+      $(id).addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          send();
+        }
+      });
+    }
+    $("clear-log").addEventListener("click", () => {
+      const log = $("log");
+      log.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "log-empty";
+      empty.id = "log-empty";
+      empty.textContent = "Messages will appear here after connecting.";
+      log.append(empty);
+    });
+
+    // Random default nickname, like the other variants.
+    $("nickname").value = "user-" + Math.random().toString(36).slice(2, 6);
+
+    // Connect last: setting `url` starts the connection (bind() is already
+    // watching, so the loading → connected transitions all reach the UI).
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws.url = `${proto}://${location.host}/ws`;
+  </script>
+</body>
+</html>

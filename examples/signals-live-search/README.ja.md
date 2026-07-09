@@ -1,24 +1,19 @@
 # signals + &lt;wcs-fetch&gt; デモ
 
-実験的パッケージ **`@wcstack/signals`** のデモ。ビルドレスで signals ベースの反応性
+**`@wcstack/signals`** パッケージのデモ。ビルドレスで signals ベースの反応性
 コア（TC39 Signals 形・ランタイム依存ゼロ）が、fine-grained な `h()` で実 DOM を駆動し、
 さらに実在の `<wcs-fetch>` IO ノードを wc-bindable アダプタ経由で消費します。
 
 ## はじめに
 
-`@wcstack/signals` は未公開なので、先にローカルでビルドしてからサーバを起動します。
-`@wcstack/fetch` は CDN（[esm.run](https://esm.run)）から読み込みます。
+完全ビルドレス: `@wcstack/signals` も `@wcstack/fetch` も CDN
+（[esm.run](https://esm.run)）から読み込みます。
 
 ```bash
-# 1. signals バンドルをビルド（初回のみ）
-cd packages/signals && npm install && npm run build && cd -
-
-# 2. デモを起動
 node examples/signals-live-search/server.js
 ```
 
-ブラウザで http://localhost:3000 を開きます。サーバはローカルビルドした
-`packages/signals/dist/dom.esm.js` を `/signals/dom.esm.js` で配信し、import map で解決します。
+ブラウザで http://localhost:3000 を開きます。
 
 ## 見どころ
 
@@ -42,10 +37,11 @@ node examples/signals-live-search/server.js
   `jsxFactory: "h"` を指定すれば JSX を乗せられる）ですが、本デモはビルドレスで `h` を直接呼びます。
 - **オーナーシップ → ライフサイクル。** `createRoot` が `render()` 中に作られた全 effect を集約し、
   カスタム要素が disconnect 時にその root を dispose。effect はリークしません。
-- **両エントリで単一コアを共有。** ページはヘッドレスなコアを `@wcstack/signals` から、DOM 層を
-  `@wcstack/signals/dom` から import します（import map とモジュールスクリプトを参照）。本番パッケージング
-  （Rollup の code-splitting）は両エントリが import する単一の共有チャンク `core-*.esm.js` を出力するため、
-  両エントリを混ぜても反応性インスタンスは**一つ**だけ読み込まれます。（Pre-Phase-1 では各エントリが
-  コアを自前にインライン化し、モジュールグローバルが二重化して継ぎ目で反応性が壊れていましたが、現在は解消済みです。）
+- **CDN ではページごとに 1 エントリ。** ページはヘッドレスなコアも DOM 層も、すべて単一の
+  `@wcstack/signals/dom` エントリから import します（このエントリはコア全体を再エクスポート）。
+  CDN では各エントリがコアを内蔵した自己完結バンドルになるため、`@wcstack/signals` と
+  `@wcstack/signals/dom` を 1 ページで混在 import すると反応性インスタンスが二重化し、
+  継ぎ目で反応性が壊れます。（ローカルの npm インストールにはこの制約はありません:
+  Rollup の code-splitting により両エントリは共有チャンク `core-*.esm.js` を 1 つだけ読み込みます。）
 
 > 設計は `docs/signals-state-design.md`、実装とテストは `packages/signals` を参照してください。

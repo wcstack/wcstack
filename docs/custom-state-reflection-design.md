@@ -286,7 +286,7 @@ this._wireStates({ [`${prefix}:pending-changed`]: (d) => ({ pending: d === true 
 1. `Fetch.ts` に §3.4 テンプレ適用（`loading` / `error`）
 2. `__tests__/setup.ts` shim ＋ `helpers` の `getStates()` ＋ テストテンプレ 5 本（§3.6）
 3. guidelines §0-10 / §4.5、timing-contract 横断節を起草（規範はパイロットと同時に固める）
-4. 実ブラウザ E2E: 既存 example（state-fetch 系）に `:state(loading)` スピナーを追加し、Chrome / Safari / Firefox で目視確認
+4. 実ブラウザ E2E: 既存 example（packages/fetch/examples/users-crud 系）に `:state(loading)` スピナーを追加し、Chrome / Safari / Firefox で目視確認
 - 完了条件: fetch のカバレッジ 100/97+/100/100 維持・E2E 目視 OK・テンプレの最終形確定
 
 ### Phase 2 — 標準テンプレ組の一斉展開（29 タグ、3 バッチ、各 2〜4時間）
