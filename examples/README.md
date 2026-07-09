@@ -19,6 +19,7 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 | Demo | Combines | Run | URL |
 |------|----------|-----|-----|
 | [`websocket-chat/`](websocket-chat/) | websocket × 5 stacks (vanilla / state / signals / React / Vue) | see its [README](websocket-chat/README.md) | :3300–:3305 |
+| [`router-spa/`](router-spa/) | router + fetch + state (SPA catalog: URL ⇄ state bridge) | `node examples/router-spa/server.js` | :3000 |
 | [`state-camera-record-upload/`](state-camera-record-upload/) | camera + permission + upload + state | any static server (secure context) | — |
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js` (open 2 tabs) | :3000 |
 | [`state-custom-states/`](state-custom-states/) | fetch + websocket + state (`:state()` showcase) | `node examples/state-custom-states/server.js` (needs the [websocket-chat shared install](websocket-chat/README.md#setup)) | :3303 |
@@ -26,7 +27,9 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | any static server | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | any static server | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
+| [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + timer + wakelock + state (sensor game) | any static server (secure context) | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
+| [`signals-tilt-maze/`](signals-tilt-maze/) | signals × the same 4 sensor nodes as `state-tilt-maze` (core swap comparison) | any static server (secure context) | — |
 | [`ssr/`](ssr/) | @wcstack/server (SSR + hydration) | `cd examples/ssr && npm install && node server.js` | :3001 |
 
 Demos marked "any static server" have no backend at all — any way of serving
