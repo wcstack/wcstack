@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: tilt ball maze</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+    /* HUD */
+    .hud { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem; color: #555; }
+    .hud .time { font-variant-numeric: tabular-nums; font-weight: 600; color: #3949ab; min-width: 4.5rem; }
+    .chip { padding: 2px 10px; border-radius: 12px; background: #e8eaf6; color: #3949ab; font-size: 0.75rem; }
+    .hud button { margin-left: auto; padding: 0.3rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.8rem; }
+    .hud button:hover { background: #f0f0f0; }
+    /* :state() showcase — the chip lights up while <wcs-timer> is actually ticking. */
+    .loop-chip { background: #eceff1; color: #90a4ae; }
+    body:has(wcs-timer:state(running)) .loop-chip { background: #e8f5e9; color: #2e7d32; }
+
+    /* Board — fixed 320x320 logical px, same space as the physics */
+    .board { position: relative; width: 320px; height: 320px; margin: 0 auto; background: #f8f9fa; border: 4px solid #3949ab; border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .wall { position: absolute; background: #3949ab; border-radius: 3px; }
+    .hole { position: absolute; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #37474f, #0d1117 70%); }
+    .goal { position: absolute; border-radius: 6px; background: #e8f5e9; border: 2px dashed #2e7d32; }
+    .goal::after { content: '⚑'; display: flex; justify-content: center; align-items: center; height: 100%; color: #2e7d32; font-size: 0.8rem; }
+    .ball { position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #ef9a9a, #c62828 70%); box-shadow: 0 2px 4px rgba(0,0,0,0.35); will-change: transform; }
+
+    /* Overlays (start / clear / fell) */
+    .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 0.75rem; background: rgba(255,255,255,0.88); text-align: center; padding: 1rem; }
+    .overlay h2 { font-size: 1.2rem; color: #16213e; }
+    .overlay p { font-size: 0.8rem; color: #555; }
+    .overlay button { padding: 0.5rem 1.25rem; border: none; border-radius: 6px; background: #3949ab; color: white; font-size: 0.95rem; cursor: pointer; }
+    .overlay button:hover { background: #303f9f; }
+
+    .notes { margin-top: 1.5rem; font-size: 0.8rem; color: #888; }
+    .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: tilt ball maze</h1>
+<p class="lead">tilt + accelerometer + timer + wakelock + state — tilt your phone to roll the ball to the flag. Even the game loop is a declarative tag.</p>
+
+<!-- ============================================================
+     App State — maze data, physics, and page logic
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    // Physics runs against these plain constants (no proxy overhead in the hot
+    // loop); the state exposes the same arrays for rendering.
+    const BOARD = 320;
+    const R = 10;                       // ball radius
+    const START = { x: 30, y: 30 };
+    const GOAL = { x: 284, y: 282, w: 24, h: 24 };   // keep in sync with the .goal div below
+    const WALLS = [
+      { x: 60,  y: 0,  w: 12, h: 250 },
+      { x: 130, y: 70, w: 12, h: 250 },
+      { x: 200, y: 0,  w: 12, h: 250 },
+      { x: 260, y: 70, w: 12, h: 250 },
+    ].map((w) => ({ ...w, css: `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px` }));
+    const HOLES = [
+      { x: 20,  y: 140, r: 11 },
+      { x: 112, y: 180, r: 11 },
+      { x: 152, y: 120, r: 11 },
+      { x: 248, y: 180, r: 11 },
+    ].map((h) => ({ ...h, css: `left:${h.x - h.r}px;top:${h.y - h.r}px;width:${h.r * 2}px;height:${h.r * 2}px` }));
+
+    const TILT_MAX = 30;                // degrees mapped to full acceleration
+    const ACCEL = 14;                   // px/s^2 per degree of tilt
+    const V_MAX = 260;                  // px/s — keeps one 40ms step under the 12px wall thickness (no tunneling)
+    const BOUNCE = -0.25;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    function hitsWall(cx, cy) {
+      for (const w of WALLS) {
+        const nx = clamp(cx, w.x, w.x + w.w);
+        const ny = clamp(cy, w.y, w.y + w.h);
+        const dx = cx - nx, dy = cy - ny;
+        if (dx * dx + dy * dy < R * R) return true;
+      }
+      return false;
+    }
+
+    export default {
+      // rendering data
+      walls: WALLS,
+      holes: HOLES,
+
+      // game phase: idle -> playing -> clear | fell (shake or button to retry)
+      phase: "idle",
+
+      // sensor inputs (written by the I/O nodes)
+      tiltBeta: null, tiltGamma: null, tiltPermission: "unknown", tiltError: null,
+      accelX: null, accelY: null, accelZ: null, accelError: null,
+
+      // pointer-drag fallback tilt (desktop / denied sensors)
+      simBeta: 0, simGamma: 0, dragging: false,
+
+      // ball state (velocities are unbound working values, declared for clarity)
+      ballX: START.x, ballY: START.y, vx: 0, vy: 0,
+      timeMs: 0, startedAt: 0, lastT: 0, lastShake: 0,
+
+      wakelockHeld: false,
+
+      // One command token fans out to every sensor-enabling command — the
+      // subscriptions are declared on the I/O nodes below (command.* bindings).
+      $commandTokens: ["startSensors"],
+
+      // The <wcs-timer> tick arrives as an event token and drives one physics step.
+      $eventTokens: ["frameTick"],
+      $on: {
+        frameTick: (state) => state.step(),
+      },
+
+      // --- derived ------------------------------------------------------
+      get isIdle() { return this.phase === "idle"; },
+      get isPlaying() { return this.phase === "playing"; },
+      get isClear() { return this.phase === "clear"; },
+      get isFell() { return this.phase === "fell"; },
+      // The device sensor takes over as soon as it produces a reading;
+      // until then (desktop, denied permission) the drag values drive the game.
+      get sensorActive() { return this.tiltBeta !== null; },
+      get effBeta() {
+        const v = this.dragging || !this.sensorActive ? this.simBeta : this.tiltBeta;
+        return clamp(v, -TILT_MAX, TILT_MAX);
+      },
+      get effGamma() {
+        const v = this.dragging || !this.sensorActive ? this.simGamma : this.tiltGamma;
+        return clamp(v, -TILT_MAX, TILT_MAX);
+      },
+      get ballTransform() { return `translate(${this.ballX}px, ${this.ballY}px)`; },
+      get timeText() { return (this.timeMs / 1000).toFixed(1) + " s"; },
+      get controlText() {
+        if (this.sensorActive) return "control: device tilt";
+        if (this.tiltPermission === "denied") return "control: drag (tilt permission denied)";
+        return "control: drag the board";
+      },
+      get wakeText() { return this.wakelockHeld ? "screen: kept awake" : "screen: normal"; },
+
+      // --- game loop (one step per <wcs-timer> tick) ---------------------
+      step() {
+        const now = performance.now();
+        const dt = clamp((now - (this.lastT || now)) / 1000, 0, 0.04);
+        this.lastT = now;
+
+        // Shake to restart — |accel| far from gravity (~9.8 m/s^2) means a jolt.
+        if (this.accelX !== null && this.phase !== "idle" && now - this.lastShake > 1200) {
+          const mag = Math.hypot(this.accelX, this.accelY, this.accelZ);
+          if (Math.abs(mag - 9.81) > 15) {
+            this.lastShake = now;
+            this.restart();
+            return;
+          }
+        }
+
+        if (this.phase !== "playing") return;
+        this.timeMs = now - this.startedAt;
+
+        // Let go of the pointer -> the simulated board levels back out.
+        if (!this.dragging && !this.sensorActive) {
+          this.simBeta *= 0.92;
+          this.simGamma *= 0.92;
+        }
+
+        // integrate velocity from the effective tilt
+        this.vx = clamp((this.vx + ACCEL * this.effGamma * dt) * Math.exp(-1.2 * dt), -V_MAX, V_MAX);
+        this.vy = clamp((this.vy + ACCEL * this.effBeta * dt) * Math.exp(-1.2 * dt), -V_MAX, V_MAX);
+
+        // axis-separated movement: border clamp + wall stop with a soft bounce
+        let nx = clamp(this.ballX + this.vx * dt, R, BOARD - R);
+        if (hitsWall(nx, this.ballY)) { nx = this.ballX; this.vx *= BOUNCE; }
+        let ny = clamp(this.ballY + this.vy * dt, R, BOARD - R);
+        if (hitsWall(nx, ny)) { ny = this.ballY; this.vy *= BOUNCE; }
+        this.ballX = nx;
+        this.ballY = ny;
+
+        // hole check (circle vs circle)
+        for (const h of HOLES) {
+          if (Math.hypot(nx - h.x, ny - h.y) < h.r) {
+            this.phase = "fell";
+            return;
+          }
+        }
+        // goal check (ball center inside the flag square)
+        if (nx >= GOAL.x && nx <= GOAL.x + GOAL.w && ny >= GOAL.y && ny <= GOAL.y + GOAL.h) {
+          this.phase = "clear";
+        }
+      },
+
+      // --- actions --------------------------------------------------------
+      // Sensor enabling via the command-token protocol: emitting one token
+      // fires every subscribed command in declaration order —
+      // tilt.requestPermission() (synchronously in this click's gesture
+      // context, as iOS requires), tilt.start(), accel.start(). No DOM
+      // queries in state; the wiring lives on the elements themselves.
+      // start() without waiting for the permission is safe: the iOS gate is
+      // on event DISPATCH, not on listener registration, so an ungranted
+      // subscription is simply silent (and on every other platform
+      // requestPermission() resolves "granted" immediately). Both sensors
+      // are best-effort — on failure the drag fallback plays on.
+      startGame() {
+        this.$command.startSensors.emit();
+        this.restart();
+      },
+      restart() {
+        this.ballX = START.x; this.ballY = START.y;
+        this.vx = 0; this.vy = 0;
+        this.simBeta = 0; this.simGamma = 0;
+        this.timeMs = 0;
+        this.startedAt = performance.now();
+        this.phase = "playing";
+      },
+
+      // --- pointer-drag fallback ------------------------------------------
+      dragStart(e) {
+        // Only while playing: outside that phase an overlay covers the board,
+        // and capturing the pointer here would retarget the click away from
+        // the overlay's button.
+        if (this.phase !== "playing") return;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        this.dragging = true;
+        this.dragMove(e);
+      },
+      dragMove(e) {
+        if (!this.dragging) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        this.simGamma = clamp(((e.clientX - rect.left) / rect.width - 0.5) * 80, -TILT_MAX, TILT_MAX);
+        this.simBeta = clamp(((e.clientY - rect.top) / rect.height - 0.5) * 80, -TILT_MAX, TILT_MAX);
+      },
+      dragEnd() {
+        this.dragging = false;
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Headless I/O nodes
+     ============================================================ -->
+<!-- Neither sensor auto-starts: the Start button's gesture emits the
+     startSensors command token (iOS requires the gesture for tilt), and each
+     command.* binding below subscribes one element method to it. -->
+<wcs-tilt data-wcs="beta: tiltBeta; gamma: tiltGamma; permissionState: tiltPermission; error: tiltError;
+                    command.requestPermission: $command.startSensors; command.start: $command.startSensors"></wcs-tilt>
+<wcs-accelerometer data-wcs="x: accelX; y: accelY; z: accelZ; error: accelError;
+                             command.start: $command.startSensors"></wcs-accelerometer>
+
+<!-- The game loop: a 16ms declarative interval. Each tick fires the frameTick
+     event token, and $on runs one physics step. -->
+<wcs-timer interval="16" data-wcs="eventToken.tick: frameTick"></wcs-timer>
+
+<!-- "Keep the screen awake WHILE playing" — one bound boolean, auto re-acquire
+     across tab switches is handled inside the node. -->
+<wcs-wakelock data-wcs="active: isPlaying; held: wakelockHeld"></wcs-wakelock>
+
+<!-- ============================================================
+     HUD
+     ============================================================ -->
+<div class="hud" role="status">
+  <span class="time" data-wcs="textContent: timeText"></span>
+  <span class="chip" data-wcs="textContent: controlText"></span>
+  <span class="chip" data-wcs="textContent: wakeText"></span>
+  <span class="chip loop-chip">game loop</span>
+  <button type="button" data-wcs="onclick: restart">Reset</button>
+</div>
+
+<!-- ============================================================
+     Board — physics space and CSS space are the same 320x320 px
+     ============================================================ -->
+<div class="board" data-wcs="onpointerdown: dragStart; onpointermove: dragMove; onpointerup: dragEnd; onpointercancel: dragEnd">
+  <template data-wcs="for: walls">
+    <div class="wall" data-wcs="attr.style: .css"></div>
+  </template>
+  <template data-wcs="for: holes">
+    <div class="hole" data-wcs="attr.style: .css"></div>
+  </template>
+  <!-- keep in sync with the GOAL constant in the state script -->
+  <div class="goal" style="left:284px;top:282px;width:24px;height:24px"></div>
+  <div class="ball" data-wcs="style.transform: ballTransform"></div>
+
+  <template data-wcs="if: isIdle">
+    <div class="overlay">
+      <h2>Tilt Ball Maze</h2>
+      <p>Tilt your phone to roll the ball to the flag ⚑.<br>
+        Avoid the holes. Shake to restart.<br>
+        No sensors? Drag on the board instead.</p>
+      <button type="button" data-wcs="onclick: startGame">Start</button>
+    </div>
+  </template>
+
+  <template data-wcs="if: isClear">
+    <div class="overlay">
+      <h2>🎉 Goal!</h2>
+      <p>Cleared in <b data-wcs="textContent: timeText"></b> — shake for another run.</p>
+      <button type="button" data-wcs="onclick: restart">Play again</button>
+    </div>
+  </template>
+
+  <template data-wcs="if: isFell">
+    <div class="overlay">
+      <h2>💀 Down the hole</h2>
+      <p>Shake the device (or press the button) to retry.</p>
+      <button type="button" data-wcs="onclick: restart">Retry</button>
+    </div>
+  </template>
+</div>
+
+<ul class="notes">
+  <li>Sensors need a secure context: localhost works; on a phone use HTTPS (or <code>adb reverse</code>).</li>
+  <li>iOS grants tilt via the Start button's tap (gesture-gated permission, absorbed by <code>&lt;wcs-tilt&gt;</code>).</li>
+  <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (Chromium/Android); elsewhere the Retry button covers it.</li>
+  <li>Desktop: drag the board, or emulate orientation in DevTools &gt; Sensors.</li>
+</ul>
+
+</body>
+</html>

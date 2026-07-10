@@ -50,7 +50,7 @@ const products = [
   { id: 5, name: "Portable SSD 1TB", category: "storage", price: 13800 },
 ];
 
-// examples/state-fetch — list / detail / create.
+// packages/fetch/examples/users-crud — list / detail / create.
 const users = [
   { id: 1, name: "Alice Johnson", email: "alice@example.com", role: "admin" },
   { id: 2, name: "Bob Smith", email: "bob@example.com", role: "editor" },

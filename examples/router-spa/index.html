@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Required for deep links: without it the router derives its basename from
+       document.baseURI, which on a direct load of /products/3 would be the deep
+       path itself. <base href="/"> pins the app root (README §1.1). -->
+  <base href="/">
+  <title>wcstack: router + state + fetch demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 2rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    /* Top navigation — wcs-link renders an <a> and toggles .active on it */
+    .top-nav { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding: 0.75rem 1rem; background: #f8f9fa; border-radius: 8px; }
+    .top-nav a { color: #555; text-decoration: none; font-size: 0.9rem; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    .top-nav a:hover { background: #eceff1; }
+    .top-nav a.active { color: #3949ab; font-weight: 600; background: #e8eaf6; }
+    .path-chip { margin-left: auto; font-size: 0.75rem; color: #888; }
+    .path-chip code { background: #eceff1; padding: 2px 8px; border-radius: 10px; color: #37474f; }
+
+    /* Product list — each row is a real button (keyboard reachable) */
+    .product-list { list-style: none; }
+    .product-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem; font: inherit; text-align: left; background: none; border: none; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+    .product-item:hover { background: #f5f6ff; }
+    li:last-child .product-item { border-bottom: none; }
+    .product-name { font-weight: 500; }
+    .cat-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; background: #e8eaf6; color: #3949ab; }
+    .price { margin-left: auto; color: #2e7d32; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* Detail page */
+    .back { padding: 0.375rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.875rem; margin-bottom: 1rem; }
+    .back:hover { background: #f0f0f0; }
+    .product-detail h2 { display: inline-block; margin-right: 0.5rem; }
+    .product-detail .price { font-size: 1.25rem; display: block; margin: 0.75rem 0; }
+    .product-detail .description { color: #555; margin-bottom: 0.75rem; }
+    .stock { font-size: 0.85rem; color: #666; }
+
+    /* Static pages stamped by the router (About / 404) */
+    .page h2 { margin-bottom: 0.75rem; }
+    .page p { color: #555; font-size: 0.9rem; margin-bottom: 0.75rem; }
+
+    .empty { color: #999; padding: 1rem 0; text-align: center; }
+    .spinner { display: flex; justify-content: center; padding: 1.5rem; }
+    .spinner::after { content: ''; width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #3949ab; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: SPA product catalog</h1>
+<p class="lead">router + state + fetch — the URL is just another piece of reactive state, bridged over the wc-bindable protocol.</p>
+
+<!-- ============================================================
+     Navigation (always in the DOM)
+     ============================================================ -->
+<nav class="top-nav" aria-label="Main">
+  <wcs-link to="/">Products</wcs-link>
+  <wcs-link to="/about">About</wcs-link>
+  <!-- Live proof that the URL flows into state: this chip re-renders on every navigation. -->
+  <span class="path-chip">path = <code data-wcs="textContent: path"></code></span>
+</nav>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      // Current route path, two-way bound to <wcs-router>. Seeding it from
+      // location.pathname makes deep links (/products/3) render correctly even
+      // if the router resolves the initial route before this binding attaches.
+      path: location.pathname,
+      // Write a path here to navigate programmatically: the two-way binding
+      // pushes it into <wcs-router>.navigateUrl, whose setter runs navigate()
+      // and resets itself to null when the navigation finishes.
+      navigateUrl: null,
+
+      // 1 fetch = 1 state slot (same pattern as the state-search example).
+      productsFetch: { value: [], loading: false, error: null, status: 0 },
+      productFetch: { value: null, loading: false, error: null, status: 0 },
+
+      // --- URL -> page derivation -------------------------------------
+      // The router already matched :productId(int) to stamp the right
+      // <wcs-head>; this regex is the same int-only contract on the state side.
+      get productId() {
+        const m = this.path.match(/^\/products\/(\d+)$/);
+        return m ? Number(m[1]) : null;
+      },
+      get isList() {
+        return this.path === "/" || this.path === "";
+      },
+      get isDetail() {
+        return this.productId !== null;
+      },
+
+      // Detail URL derived from the path. Off the detail page this returns
+      // undefined, and undefined is never written to the element (write-skip
+      // semantics) — so <wcs-fetch> keeps its last url and stays quiet.
+      // Re-visiting the same product therefore does NOT refetch (same-value
+      // guard): the cached value is shown instantly.
+      get "productFetch.url"() {
+        return this.productId ? "/api/products/" + this.productId : undefined;
+      },
+
+      // --- List page flags --------------------------------------------
+      get listError() {
+        return !!this["productsFetch.error"] && !this["productsFetch.loading"];
+      },
+
+      // --- Detail page flags -------------------------------------------
+      // Ready only when the loaded product matches the CURRENT url, so
+      // navigating A -> B never flashes A's data while B is in flight.
+      get detailReady() {
+        const p = this["productFetch.value"];
+        return this.isDetail && p !== null && p.id === this.productId;
+      },
+      get detailLoading() {
+        return this.isDetail && !this.detailReady && this["productFetch.loading"];
+      },
+      // /products/999 matches the int route, but the API answers 404.
+      get detailNotFound() {
+        return this.isDetail && this["productFetch.status"] === 404 && !this["productFetch.loading"];
+      },
+      get detailError() {
+        return this.isDetail && !!this["productFetch.error"] && !this["productFetch.loading"]
+          && this["productFetch.status"] !== 404;
+      },
+
+      // --- Actions (state -> router navigation) ------------------------
+      openProduct() {
+        this.navigateUrl = "/products/" + this["productsFetch.value.*.id"];
+      },
+      goToProducts() {
+        this.navigateUrl = "/";
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Router — owns the URL, history, per-page <title> and the
+     static pages (About / 404). The wc-bindable two-way binding
+     is the whole bridge: path (router -> state) and navigateUrl
+     (state -> router).
+     ============================================================ -->
+<wcs-router data-wcs="path: path; navigateUrl: navigateUrl">
+  <template>
+    <wcs-route path="/">
+      <wcs-head><title>Products — wcstack router-spa</title></wcs-head>
+    </wcs-route>
+
+    <!-- Typed parameter: /products/abc fails the (int) constraint and falls
+         through to the fallback route below. -->
+    <wcs-route path="/products/:productId(int)">
+      <wcs-head><title>Product detail — wcstack router-spa</title></wcs-head>
+    </wcs-route>
+
+    <!-- A fully static page lives happily INSIDE the route: the router stamps
+         these nodes into <wcs-outlet> when the path matches. -->
+    <wcs-route path="/about">
+      <wcs-head><title>About — wcstack router-spa</title></wcs-head>
+      <section class="page">
+        <h2>About this demo</h2>
+        <p>This page is <b>stamped by the router</b> — its content is written statically inside
+          <code>&lt;wcs-route path="/about"&gt;</code> and needs no state at all.</p>
+        <p>The product pages work the other way around: their DOM lives in
+          <code>&lt;template data-wcs="if: ..."&gt;</code> blocks <b>rendered by state</b>, and the router
+          only tells state where we are, through a two-way <code>path</code> binding on
+          <code>&lt;wcs-router&gt;</code>. Each side does what it is best at.</p>
+      </section>
+    </wcs-route>
+
+    <wcs-route fallback>
+      <wcs-head><title>Not found — wcstack router-spa</title></wcs-head>
+      <section class="page">
+        <h2>404 — Nothing routes here</h2>
+        <p>No route matches this path. Typed parameters count too: <code>/products/abc</code> lands
+          here because <code>:productId(int)</code> only accepts integers.</p>
+        <p><wcs-link to="/">Back to the products</wcs-link></p>
+      </section>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+
+<!-- ============================================================
+     Headless fetch nodes
+     ============================================================ -->
+<!-- The catalog: a fixed url fetched once at load. -->
+<wcs-fetch url="/api/products" data-wcs="...: productsFetch"></wcs-fetch>
+<!-- The detail: its url is derived from the route path (see the getter),
+     so navigation is what triggers the fetch. -->
+<wcs-fetch data-wcs="...: productFetch"></wcs-fetch>
+
+<!-- ============================================================
+     List page (state-rendered)
+     ============================================================ -->
+<template data-wcs="if: isList">
+  <section aria-label="Product list">
+    <h2>Products (<span data-wcs="textContent: productsFetch.value.length"></span>)</h2>
+
+    <template data-wcs="if: productsFetch.loading">
+      <div class="spinner" aria-hidden="true"></div>
+    </template>
+
+    <template data-wcs="if: listError">
+      <p class="empty">Failed to load the catalog.</p>
+    </template>
+
+    <ul class="product-list">
+      <template data-wcs="for: productsFetch.value">
+        <li>
+          <button type="button" class="product-item" data-wcs="onclick: openProduct; attr.aria-label: .name">
+            <span class="product-name" data-wcs="textContent: .name"></span>
+            <span class="cat-badge" data-wcs="textContent: .category"></span>
+            <span class="price">¥<span data-wcs="textContent: .price|locale('ja-JP')"></span></span>
+          </button>
+        </li>
+      </template>
+    </ul>
+  </section>
+</template>
+
+<!-- ============================================================
+     Detail page (state-rendered)
+     ============================================================ -->
+<template data-wcs="if: isDetail">
+  <section aria-label="Product detail">
+    <button type="button" class="back" data-wcs="onclick: goToProducts">&larr; Back to products</button>
+
+    <template data-wcs="if: detailLoading">
+      <div class="spinner" aria-hidden="true"></div>
+    </template>
+
+    <template data-wcs="if: detailNotFound">
+      <p class="empty">Product not found — the route matched, but the API says 404.</p>
+    </template>
+
+    <template data-wcs="if: detailError">
+      <p class="empty">Something went wrong.</p>
+    </template>
+
+    <template data-wcs="if: detailReady">
+      <article class="product-detail">
+        <h2 data-wcs="textContent: productFetch.value.name"></h2>
+        <span class="cat-badge" data-wcs="textContent: productFetch.value.category"></span>
+        <span class="price">¥<span data-wcs="textContent: productFetch.value.price|locale('ja-JP')"></span></span>
+        <p class="description" data-wcs="textContent: productFetch.value.description"></p>
+        <p class="stock">In stock: <b data-wcs="textContent: productFetch.value.stock"></b></p>
+      </article>
+    </template>
+  </section>
+</template>
+
+</body>
+</html>

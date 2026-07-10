@@ -24,8 +24,8 @@ effect).
 Each package loads from the CDN ([esm.run](https://esm.run)), so no local build is required.
 
 ```bash
-# 1. Install the shared WebSocket server's dependency (once — shared with examples/state-websocket)
-cd examples/shared/websocket && npm install && cd ../../..
+# 1. Install the shared WebSocket server's dependency (once — shared with examples/websocket-chat)
+cd examples/websocket-chat/shared && npm install && cd ../../..
 
 # 2. Start
 node examples/state-custom-states/server.js
@@ -83,7 +83,7 @@ The port can be overridden with the `PORT` environment variable (default `3303`)
   `@wcstack/server` never carries these states on first paint. Pair a rule with
   `wcs-fetch:not(:defined)` if you need to style that pre-hydration gap.
 - **Reusing the `ws` dependency**: this demo's WebSocket server adds no new dependency — like
-  `examples/state-websocket`, it reuses the shared helper under `examples/shared/websocket/`
+  `examples/websocket-chat`, it reuses the shared helper under `examples/websocket-chat/shared/`
   (where the `ws` package is already installed).
 
 ## Related docs

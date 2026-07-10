@@ -1,25 +1,20 @@
 # signals + &lt;wcs-fetch&gt; demo
 
-A demo of the experimental **`@wcstack/signals`** package — a buildless, signals-based
+A demo of the **`@wcstack/signals`** package — a buildless, signals-based
 reactive core (TC39-Signals-shaped, zero runtime deps). It drives real DOM with a
 fine-grained `h()` and consumes a real `<wcs-fetch>` IO node through the
 wc-bindable adapter.
 
 ## Getting Started
 
-`@wcstack/signals` is unpublished, so build it locally first, then run the server.
-`@wcstack/fetch` still loads from a CDN ([esm.run](https://esm.run)).
+Fully buildless: both `@wcstack/signals` and `@wcstack/fetch` load from a CDN
+([esm.run](https://esm.run)).
 
 ```bash
-# 1. build the signals bundle (one-time)
-cd packages/signals && npm install && npm run build && cd -
-
-# 2. run the demo
 node examples/signals-live-search/server.js
 ```
 
-Open http://localhost:3000 in your browser. The server serves the locally-built
-`packages/signals/dist/dom.esm.js` at `/signals/dom.esm.js` (mapped via an import map).
+Open http://localhost:3000 in your browser.
 
 ## What it shows
 
@@ -47,13 +42,13 @@ Open http://localhost:3000 in your browser. The server serves the locally-built
   calls `h` directly.
 - **Ownership → lifecycle.** `createRoot` collects every effect created during
   `render()`; the custom element disposes that root on disconnect. No effect leaks.
-- **One shared core across both entries.** The page imports the headless core from
-  `@wcstack/signals` *and* the DOM layer from `@wcstack/signals/dom` (see the import
-  map and module script). The production packaging (Rollup code-splitting) emits a
-  single shared `core-*.esm.js` chunk that both entries import, so the page loads
-  **one** reactive instance even when mixing entries. (Pre-Phase-1 each entry inlined
-  its own copy of the core, which duplicated module globals and broke reactivity
-  across the seam — that is no longer the case.)
+- **One entry per page on the CDN.** The page imports *everything* — headless core
+  and DOM layer — from the single `@wcstack/signals/dom` entry (it re-exports the
+  whole core). On the CDN each entry is a self-contained bundle with its own copy of
+  the core, so mixing `@wcstack/signals` and `@wcstack/signals/dom` imports on one
+  page would load two reactive instances and break reactivity across the seam.
+  (A local npm install doesn't have this constraint: Rollup code-splitting gives both
+  entries one shared `core-*.esm.js` chunk.)
 
 > See `docs/signals-state-design.md` for the design and `packages/signals` for the
 > implementation and tests.

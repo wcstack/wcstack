@@ -1,0 +1,9 @@
+{
+  "name": "wcstack-example-websocket-chat-state",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}

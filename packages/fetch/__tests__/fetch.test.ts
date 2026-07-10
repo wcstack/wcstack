@@ -1733,7 +1733,7 @@ describe("自動 fetch の microtask coalesce", () => {
   });
 
   it("spread 順序を再現: url を manual より先に同期書き込みしても自動実行されない", async () => {
-    // Reproduces the state-fetch spread order problem: a `...` spread applies
+    // Reproduces the users-crud example (packages/fetch/examples) spread order problem: a `...` spread applies
     // `url` before `manual`. With synchronous fetch this fired a stray request;
     // the coalesced microtask re-reads the final state (manual=true) and skips.
     const el = document.createElement("wcs-fetch") as Fetch;
@@ -1979,7 +1979,7 @@ describe("wcs-fetch:response はエラー時にも発火する（例の成功ガ
     fetchSpy.mockRestore();
   });
 
-  // The state-fetch example wires `eventToken.value` (= wcs-fetch:response) and
+  // The users-crud example (packages/fetch/examples) wires `eventToken.value` (= wcs-fetch:response) and
   // must guard on status because this event is NOT success-only. These tests pin
   // that contract so the regression cannot silently return.
   it("HTTP エラー (4xx/5xx) でも wcs-fetch:response が value=null, status=エラーコードで発火する", async () => {
