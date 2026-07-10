@@ -105,6 +105,13 @@ interface RafStartOptions {
  * (async-io-node-guidelines §3.7); tests inject a fake that pumps frames with
  * explicit timestamps (the `dt` contract is timestamp-derived, so tests must
  * control the clock, not just the callback order).
+ *
+ * Contract: `request()` MUST return a non-null handle. The core uses `null`
+ * as its internal "not armed" sentinel, so a scheduler returning literal
+ * `null` would silently corrupt the handle bookkeeping (re-entrancy guards
+ * and cancel tracking). Native rAF returns a long, so this only concerns
+ * custom scheduler injections — return a number, object, or any other
+ * non-nullish token.
  */
 interface RafScheduler {
     request(callback: (timestamp: number) => void): unknown;
@@ -126,8 +133,12 @@ interface RafScheduler {
  *
  * - **dt describes continuous running only.** The first frame after `start()`,
  *   `resume()`, or a visibility interruption reports `dt = 0` — a value that
- *   spans an interruption never reaches observers. There is deliberately NO
- *   upper clamp: how to treat a slow frame is the consumer's domain decision.
+ *   spans an interruption never reaches observers. Like `suspended`, the
+ *   visibility boundary is only detected once observe() has subscribed to
+ *   `visibilitychange`; a headless setup that skips observe() will see the
+ *   raw spanning delta on the first frame after a hidden gap. There is
+ *   deliberately NO upper clamp: how to treat a slow frame is the consumer's
+ *   domain decision.
  * - **elapsed is Σdt (active time).** Because interruption-spanning deltas are
  *   normalized to 0, summing dt yields exactly the time frames were actually
  *   being delivered — no separate segment bookkeeping is needed, and hidden /
@@ -146,8 +157,8 @@ declare class RafCore extends EventTarget {
     private _target;
     private _injectedScheduler;
     private _handle;
+    private _globalScheduler;
     private _gen;
-    private _runGen;
     private _ready;
     private _tick;
     private _dt;
@@ -180,6 +191,7 @@ declare class RafCore extends EventTarget {
     private _frame;
     private _onVisibilityChange;
     private _resolveScheduler;
+    private _requestFrame;
     private _clearHandle;
 }
 

@@ -68,6 +68,8 @@ npm install @wcstack/raf
 <wcs-raf once data-wcs="tick: afterNextPaint"></wcs-raf>
 ```
 
+補足: 自動 start された `once` フレームは接続の約 1 フレーム後に一度だけ発火し、再発火しません。state 自体を非同期ロードする構成（`<wcs-state src="...">` 等）ではバインディングの attach がこの唯一の tick より遅れ、永久に取りこぼす可能性があります。その構成では `manual` にして state 準備後にコマンド / trigger で起動するか、state をインラインにしてください（同一タスク内の attach は必ず間に合います）。
+
 ### 3. 有限フレーム
 
 `repeat="N"` は N フレームで停止します（`running` が `false` になります）。
@@ -112,7 +114,12 @@ state からの起動は command-token プロトコルで:
 
 ## DOM トリガー（オプション）
 
-`autoTrigger`（既定 on）が有効なら、`data-raftarget="<id>"` を持つ要素のクリックで対象 `<wcs-raf>` の `start()` が呼ばれます。マッチしたクリックは `event.preventDefault()` されます。
+`autoTrigger`（既定 on）が有効なら、`data-raftarget="<id>"` を持つ要素のクリックで対象 `<wcs-raf>` の `start()` が呼ばれます。マッチしたクリックは `event.preventDefault()` されます — デフォルトアクションも活かしたい要素（実リンク・submit ボタン等）には `data-raftarget` を付けないでください。
+
+```html
+<button data-raftarget="loop">Start</button>
+<wcs-raf id="loop" manual data-wcs="eventToken.tick: frame"></wcs-raf>
+```
 
 ## `:state()` による CSS スタイリング
 
@@ -146,7 +153,7 @@ const core = new RafCore();
 core.addEventListener("wcs-raf:tick", (e) => {
   console.log((e as CustomEvent).detail); // { count, elapsed, dt, timestamp }
 });
-core.observe();  // visibilitychange を購読（`suspended` を駆動）
+core.observe();  // visibilitychange を購読（`suspended` と hidden 跨ぎの dt=0 正規化の両方を駆動）
 core.start();
 // 後で:
 core.dispose();

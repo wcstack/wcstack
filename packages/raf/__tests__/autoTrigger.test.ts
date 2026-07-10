@@ -42,24 +42,49 @@ describe("autoTrigger", () => {
     expect(el.running).toBe(true);
   });
 
-  it("存在しないIDの場合は何もしない", () => {
+  it("マッチしたクリックは preventDefault される（README の契約）", () => {
     registerAutoTrigger();
+    const el = appendRaf("r5");
+
+    const button = document.createElement("button");
+    button.setAttribute("data-raftarget", "r5");
+    document.body.appendChild(button);
+
+    const event = new Event("click", { bubbles: true, cancelable: true });
+    button.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(el.running).toBe(true);
+  });
+
+  it("存在しないIDの場合は何もしない（番兵は start されず preventDefault もされない）", () => {
+    registerAutoTrigger();
+    const sentinel = appendRaf("sentinel");
     const button = document.createElement("button");
     button.setAttribute("data-raftarget", "nonexistent");
     document.body.appendChild(button);
-    expect(() => button.click()).not.toThrow();
+
+    const event = new Event("click", { bubbles: true, cancelable: true });
+    expect(() => button.dispatchEvent(event)).not.toThrow();
+    expect(sentinel.running).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
   });
 
-  it("空の triggerAttribute 値の場合は何もしない", () => {
+  it("空の triggerAttribute 値の場合は何もしない（番兵は start されず preventDefault もされない）", () => {
     registerAutoTrigger();
+    const sentinel = appendRaf("sentinel");
     const button = document.createElement("button");
     button.setAttribute("data-raftarget", "");
     document.body.appendChild(button);
-    expect(() => button.click()).not.toThrow();
+
+    const event = new Event("click", { bubbles: true, cancelable: true });
+    expect(() => button.dispatchEvent(event)).not.toThrow();
+    expect(sentinel.running).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
   });
 
-  it("wcs-raf 以外の要素では発火しない", () => {
+  it("wcs-raf 以外の要素では発火しない（番兵は start されず preventDefault もされない）", () => {
     registerAutoTrigger();
+    const sentinel = appendRaf("sentinel");
     const div = document.createElement("div");
     div.setAttribute("id", "not-raf");
     document.body.appendChild(div);
@@ -67,7 +92,11 @@ describe("autoTrigger", () => {
     const button = document.createElement("button");
     button.setAttribute("data-raftarget", "not-raf");
     document.body.appendChild(button);
-    expect(() => button.click()).not.toThrow();
+
+    const event = new Event("click", { bubbles: true, cancelable: true });
+    expect(() => button.dispatchEvent(event)).not.toThrow();
+    expect(sentinel.running).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("unregisterAutoTrigger でリスナーが解除される", () => {

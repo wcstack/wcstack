@@ -186,6 +186,8 @@ describe("RafCore: start / stop / reset", () => {
     expect(core.elapsed).toBe(0);
     expect(core.dt).toBe(0);
     expect(core.running).toBe(false);
+    // reset は予約済みフレームも取り消す（stop と同じく _clearHandle 経由）
+    expect(scheduler.pending).toBe(0);
     expect(ticks[ticks.length - 1]).toEqual({ count: 0, elapsed: 0, dt: 0, timestamp: 0 });
   });
 
@@ -267,6 +269,51 @@ describe("RafCore: repeat（有限フレーム）", () => {
     core.start({ repeat: Number.NaN });
     scheduler.pump(2000);
     expect(core.running).toBe(true);
+    core.stop();
+    // 境界値 0 は「無制限」既定値契約の要（正規化条件 `> 0` の境界そのもの）
+    core.start({ repeat: 0 });
+    scheduler.pump(3000);
+    scheduler.pump(3016);
+    expect(core.running).toBe(true);
+  });
+
+  it("最終フレームの tick リスナー内の同期 pause() は残存せず、後の resume() は no-op（N 超過なし）", () => {
+    const { core, scheduler } = createCore();
+    core.addEventListener("wcs-raf:tick", () => {
+      if (core.tick === 2) core.pause();
+    });
+    core.start({ repeat: 2 });
+    scheduler.pump(1000);
+    scheduler.pump(1016);
+    expect(core.tick).toBe(2);
+    expect(core.running).toBe(false);
+    // repeat 完了は stop() と同じ後始末（_paused クリア）— run は完走済みなので
+    // resume() は受理されず、N+1 フレーム目は配送されない。
+    core.resume();
+    expect(core.running).toBe(false);
+    expect(scheduler.pending).toBe(0);
+    scheduler.pump(2000);
+    expect(core.tick).toBe(2);
+  });
+
+  it("最終フレームの tick リスナー内の同期 pause()→resume() でも完走が優先され、ゴーストフレームが残らない", () => {
+    const { core, scheduler } = createCore();
+    core.addEventListener("wcs-raf:tick", () => {
+      if (core.tick === 2) {
+        core.pause();
+        core.resume();
+      }
+    });
+    core.start({ repeat: 2 });
+    scheduler.pump(1000);
+    scheduler.pump(1016);
+    // resume() は同一 run の続行（repeat 残数を引き継ぐ）なので、規定 N に達した
+    // 完了判定が勝つ。resume() が予約したフレームも cancel され、N+1 は出ない。
+    expect(core.tick).toBe(2);
+    expect(core.running).toBe(false);
+    expect(scheduler.pending).toBe(0);
+    scheduler.pump(2000);
+    expect(core.tick).toBe(2);
   });
 });
 
@@ -344,6 +391,93 @@ describe("RafCore: pause / resume", () => {
     expect(scheduler.pending).toBe(1);
     core.stop();
   });
+
+  it("running-changed リスナー内の同期 stop() は start() のゴーストフレーム予約を防ぐ", () => {
+    const { core, scheduler } = createCore();
+    core.addEventListener("wcs-raf:running-changed", () => core.stop(), { once: true });
+    core.start();
+    // start() 自身の running-changed 発火中に stop() されたので、フレームは
+    // 一切予約されないまま running は false に戻る。
+    expect(core.running).toBe(false);
+    expect(scheduler.pending).toBe(0);
+    // 予約が残っていないので、次の start() は素直に 1 本だけ予約する
+    // （ゴーストが残っていれば二重予約になっていたはず）。
+    core.start();
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(1000);
+    expect(core.tick).toBe(1);
+    core.stop();
+  });
+
+  it("running-changed リスナー内の同期 dispose() は start() のゴーストフレームの予約・発火を防ぐ（§3.4）", () => {
+    const { core, scheduler } = createCore();
+    const ticks = collectTicks(core);
+    core.addEventListener("wcs-raf:running-changed", () => core.dispose(), { once: true });
+    core.start();
+    expect(scheduler.pending).toBe(0);
+    scheduler.pump(1000);
+    expect(core.tick).toBe(0);
+    expect(ticks).toEqual([]);
+  });
+
+  it("running-changed リスナー内の同期 stop() は resume() のゴーストフレーム予約も防ぐ", () => {
+    const { core, scheduler } = createCore();
+    core.start();
+    scheduler.pump(1000);
+    core.pause();
+    core.addEventListener("wcs-raf:running-changed", () => core.stop(), { once: true });
+    core.resume();
+    expect(core.running).toBe(false);
+    expect(scheduler.pending).toBe(0);
+  });
+
+  it("running-changed(true) リスナー内の同期 stop()→start() 再起動でもフレームループが二重化しない", () => {
+    const { core, scheduler } = createCore();
+    let restarted = false;
+    core.addEventListener("wcs-raf:running-changed", (e) => {
+      // 外側 start() の running-changed(true) 発火中にだけ再起動する
+      // （内側 start() の再発火では再入しない）。
+      if ((e as CustomEvent).detail === true && !restarted) {
+        restarted = true;
+        core.stop();
+        core.start();
+      }
+    });
+    core.start();
+    expect(core.running).toBe(true);
+    // リスナー内の start() が予約した 1 本だけ（外側 start() は _handle を
+    // 上書きして 2 本目を積まない）。
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(1000);
+    expect(core.tick).toBe(1);
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(1016);
+    expect(core.tick).toBe(2);
+    expect(scheduler.pending).toBe(1);
+    core.stop();
+  });
+
+  it("running-changed(true) リスナー内の同期 stop()→start() でも resume() のループが二重化しない", () => {
+    const { core, scheduler } = createCore();
+    core.start();
+    scheduler.pump(1000);
+    core.pause();
+    let restarted = false;
+    core.addEventListener("wcs-raf:running-changed", (e) => {
+      if ((e as CustomEvent).detail === true && !restarted) {
+        restarted = true;
+        core.stop();
+        core.start();
+      }
+    });
+    core.resume();
+    expect(core.running).toBe(true);
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(2000);
+    expect(core.tick).toBe(2);
+    expect(scheduler.pending).toBe(1);
+    core.stop();
+  });
 });
 
 describe("RafCore: suspended（G2 二相）", () => {
@@ -352,6 +486,21 @@ describe("RafCore: suspended（G2 二相）", () => {
     core.start();
     setVisibility("hidden");
     expect(core.suspended).toBe(false);
+    core.dispose();
+  });
+
+  it("hidden 中の start()→observe() 順でも、購読確立時点で suspended に反映される", () => {
+    const { core } = createCore();
+    const suspendeds = collectBooleans(core, "wcs-raf:suspended-changed");
+    setVisibility("hidden");
+    core.start();
+    // observe() 前は visibility が見えないので false のまま（上のテストと同じ）
+    expect(core.suspended).toBe(false);
+    // observe() は購読確立と同時に現在の visibility を同期する — 次の
+    // visibilitychange を待たずに suspended=true を報告する。
+    core.observe();
+    expect(core.suspended).toBe(true);
+    expect(suspendeds).toEqual([true]);
     core.dispose();
   });
 
@@ -428,6 +577,22 @@ describe("RafCore: suspended（G2 二相）", () => {
     spy.mockRestore();
     core.dispose();
   });
+
+  it("document 不在環境（SSR プリパス / worker）では observe() は no-op になる", async () => {
+    const { core } = createCore();
+    vi.stubGlobal("document", undefined);
+    try {
+      await expect(core.observe()).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // 購読は確立されていないので、document 復元後の hidden にも追随しない
+    // （suspended は文書どおり false のまま）。
+    core.start();
+    setVisibility("hidden");
+    expect(core.suspended).toBe(false);
+    core.dispose();
+  });
 });
 
 describe("RafCore: dispose / _gen 世代ガード", () => {
@@ -463,7 +628,7 @@ describe("RafCore: dispose / _gen 世代ガード", () => {
 
   it("stop→start の乗り替えでは旧予約が cancel され、フレームは二重にならない", () => {
     // JS は単一スレッドなので、フレーム発火前の同期的な stop() の cancel は
-    // 常に成功する（「dequeue 済みで cancel 不能」は dispose 経路のみの想定）。
+    // 通常必ず成功する。cancel が効かない非準拠スケジューラは次のテストで扱う。
     const { core, scheduler } = createCore();
     core.start();
     core.stop();
@@ -471,6 +636,35 @@ describe("RafCore: dispose / _gen 世代ガード", () => {
     expect(scheduler.pending).toBe(1);
     scheduler.pump(1000);
     expect(core.tick).toBe(1);
+    core.stop();
+  });
+
+  it("dispose() → 再 start() 後も、cancel が効かなかった stale フレームは発火しない（§3.4）", () => {
+    const { core, scheduler } = createCore({ ignoreCancel: true });
+    core.start();
+    core.dispose();
+    core.start();
+    // 破棄前の予約（cancel 無視で残存）と新 run の予約の両方が届くが、stale 側
+    // は arm 時に閉包捕捉した世代で弁別され、新 run の _handle 簿記を壊さない
+    // （live 読みの世代比較では再 start の再同期で通過してしまい、以後毎フレーム
+    // 2 本の恒久ループになる）。
+    scheduler.pump(1000);
+    expect(core.tick).toBe(1);
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(1016);
+    expect(core.tick).toBe(2);
+    expect(scheduler.pending).toBe(1);
+    core.stop();
+  });
+
+  it("cancel が効かないスケジューラでも stop()→start() 乗り替えで stale フレームは発火しない", () => {
+    const { core, scheduler } = createCore({ ignoreCancel: true });
+    core.start();
+    core.stop();
+    core.start();
+    scheduler.pump(1000);
+    expect(core.tick).toBe(1);
+    expect(scheduler.pending).toBe(1);
     core.stop();
   });
 });

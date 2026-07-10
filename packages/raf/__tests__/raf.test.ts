@@ -65,6 +65,32 @@ describe("Raf: 登録と接続", () => {
     scheduler.pump(2000);
     expect(el.tick).toBe(1);
   });
+
+  it("remove → 再 appendChild で loop が再開し、suspended も追随し、初回 dt は 0 になる", () => {
+    const el = createRaf();
+    scheduler.pump(1000);
+    scheduler.pump(1016);
+    expect(el.tick).toBe(2);
+    expect(el.dt).toBe(16);
+    el.remove();
+    expect(el.running).toBe(false);
+    expect(scheduler.pending).toBe(0);
+
+    document.body.appendChild(el);
+    expect(el.running).toBe(true);
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(9000);
+    // tick/elapsed は dispose() をまたいで保持され、初回フレームの dt は
+    // 中断を跨がない（G3）。
+    expect(el.tick).toBe(3);
+    expect(el.dt).toBe(0);
+
+    // suspended も再接続時の observe() 経由で visibility に追随し直す。
+    setVisibility("hidden");
+    expect(el.suspended).toBe(true);
+    setVisibility("visible");
+    expect(el.suspended).toBe(false);
+  });
 });
 
 describe("Raf: フレームと委譲 getter", () => {

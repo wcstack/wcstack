@@ -68,6 +68,8 @@ When `<wcs-raf>` is connected to the DOM, it automatically starts a frame loop. 
 <wcs-raf once data-wcs="tick: afterNextPaint"></wcs-raf>
 ```
 
+Note: the auto-started `once` frame fires about one frame after connect, exactly once — it is never re-fired. If the state itself loads asynchronously (e.g. `<wcs-state src="...">`), its binding may attach after that single tick and miss it permanently. In that setup use `manual` and start via a command / trigger once the state is ready, or keep the state inline (same-task attach is always in time).
+
 ### 3. Bounded frames
 
 `repeat="N"` fires `N` frames and then stops (`running` becomes `false`).
@@ -152,7 +154,7 @@ const core = new RafCore();
 core.addEventListener("wcs-raf:tick", (e) => {
   console.log((e as CustomEvent).detail); // { count, elapsed, dt, timestamp }
 });
-core.observe();  // subscribes visibilitychange (drives `suspended`)
+core.observe();  // subscribes visibilitychange (drives `suspended` AND the dt=0 normalization across hidden gaps)
 core.start();
 // later:
 core.dispose();

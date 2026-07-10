@@ -10,6 +10,13 @@ export interface RafStartOptions {
  * (async-io-node-guidelines §3.7); tests inject a fake that pumps frames with
  * explicit timestamps (the `dt` contract is timestamp-derived, so tests must
  * control the clock, not just the callback order).
+ *
+ * Contract: `request()` MUST return a non-null handle. The core uses `null`
+ * as its internal "not armed" sentinel, so a scheduler returning literal
+ * `null` would silently corrupt the handle bookkeeping (re-entrancy guards
+ * and cancel tracking). Native rAF returns a long, so this only concerns
+ * custom scheduler injections — return a number, object, or any other
+ * non-nullish token.
  */
 export interface RafScheduler {
   request(callback: (timestamp: number) => void): unknown;
@@ -32,8 +39,12 @@ export interface RafScheduler {
  *
  * - **dt describes continuous running only.** The first frame after `start()`,
  *   `resume()`, or a visibility interruption reports `dt = 0` — a value that
- *   spans an interruption never reaches observers. There is deliberately NO
- *   upper clamp: how to treat a slow frame is the consumer's domain decision.
+ *   spans an interruption never reaches observers. Like `suspended`, the
+ *   visibility boundary is only detected once observe() has subscribed to
+ *   `visibilitychange`; a headless setup that skips observe() will see the
+ *   raw spanning delta on the first frame after a hidden gap. There is
+ *   deliberately NO upper clamp: how to treat a slow frame is the consumer's
+ *   domain decision.
  * - **elapsed is Σdt (active time).** Because interruption-spanning deltas are
  *   normalized to 0, summing dt yields exactly the time frames were actually
  *   being delivered — no separate segment bookkeeping is needed, and hidden /
@@ -71,14 +82,27 @@ export class RafCore extends EventTarget {
   private _injectedScheduler: RafScheduler | null;
   private _handle: unknown = null;
 
-  // Generation guard (§3.4): bumped on dispose() and at every scheduled run
-  // (start()/resume()). A frame callback captures the generation live via
-  // `_gen`; a frame that was already queued when the node was torn down — or
-  // superseded by a new run — has a stale gen and MUST NOT mutate state or
-  // dispatch on a disposed element. _clearHandle() cancels the handle, but the
-  // guard is the belt-and-braces defense for a callback already in flight.
+  // Lazily-created wrapper around the global rAF pair, cached so the hot
+  // frame-reschedule path (_frame, once per delivered frame) does not
+  // allocate a new object + closures every call. `request`/`cancel` still
+  // dereference `globalThis.requestAnimationFrame` / `cancelAnimationFrame`
+  // live on every invocation (they are not snapshotted here), so call-time
+  // resolution (§3.7) is unchanged — only the wrapper object itself is
+  // reused once the global functions are first found present.
+  private _globalScheduler: RafScheduler | null = null;
+
+  // Generation guard (§3.4): a monotonic arming counter. Bumped when a run is
+  // armed (start()/resume()), when an armed handle is cancelled
+  // (_clearHandle()) and on dispose(). _requestFrame() captures the value in
+  // each request's closure and drops the frame if it no longer matches the
+  // live field when it fires. cancel() is best-effort against a non-compliant
+  // scheduler; the captured generation is the guarantee — a stale callback can
+  // neither mutate state, dispatch on a torn-down element, nor corrupt a
+  // newer run's `_handle` bookkeeping. A live-field comparison (the previous
+  // `_runGen` scheme) could not survive a dispose() → start() round trip: the
+  // new start() re-synced the pair and let the stale callback through,
+  // permanently doubling the frame loop.
   private _gen = 0;
-  private _runGen = 0;
   // SSR (§3.8): there is no asynchronous probe, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
 
@@ -148,6 +172,12 @@ export class RafCore extends EventTarget {
     if (this._visibilityDoc === null && typeof document !== "undefined") {
       this._visibilityDoc = document;
       document.addEventListener("visibilitychange", this._onVisibilityChange);
+      // Sync `suspended` to the visibility state at subscription time: with a
+      // start()-before-observe() ordering (headless Core usage) the document
+      // may already be hidden, and waiting for the next visibilitychange
+      // would report suspended=false until then. Same-value guarded, so the
+      // common visible-at-observe case dispatches nothing.
+      this._updateSuspended();
     }
     return this._ready;
   }
@@ -224,16 +254,36 @@ export class RafCore extends EventTarget {
     // inheriting the old bounds.
     this._repeat = (typeof options.repeat === "number" && options.repeat > 0) ? options.repeat : 0;
 
+    // New arming generation (§3.4): invalidates any callback still in flight
+    // from a previous run (e.g. one whose cancel() a non-compliant scheduler
+    // ignored). Bumped BEFORE the running-changed dispatch below, so that a
+    // re-entrant restart from a listener arms with the newest generation —
+    // the re-entrancy guard then keeps this outer call from arming (and
+    // bumping) on top of it.
+    this._gen++;
+
     this._setRunning(true);
     // Baseline this run's per-run repeat counting (set after _setRunning so a
     // re-start of a completed bounded run fires the full N frames again).
     this._runStartTick = this._tick;
     // G3: the first frame of a run reports dt = 0.
     this._lastTs = null;
-    // Capture this run's generation (§3.4).
-    this._runGen = ++this._gen;
 
-    this._handle = scheduler.request(this._frame);
+    // Re-entrancy guard: _setRunning(true) just dispatched running-changed
+    // synchronously, and a listener may have changed the world from inside it.
+    // - `!_running`: the listener called stop()/pause()/dispose(). Without
+    //   this check a "ghost" frame would still be scheduled for an
+    //   already-stopped run — it would either tick once while running stays
+    //   false, or leave an uncancellable handle behind.
+    // - `_handle !== null`: the listener restarted the loop itself
+    //   (stop()→start()); the inner start() already armed the new run, and
+    //   requesting again here would overwrite `_handle` (losing the inner
+    //   handle, never cancelled) and stack a permanent second frame loop.
+    //   On the normal path `_handle` is always null here — every transition
+    //   to `_running === false` clears it — so non-null can only mean a
+    //   re-entrant listener already scheduled the run for us.
+    if (!this._running || this._handle !== null) return;
+    this._requestFrame(scheduler);
   }
 
   stop(): void {
@@ -271,21 +321,28 @@ export class RafCore extends EventTarget {
     const scheduler = this._resolveScheduler();
     if (scheduler === null) return;
     this._paused = false;
+    // New arming generation (§3.4), bumped before the running-changed
+    // dispatch for the same re-entrancy reason as start().
+    this._gen++;
     this._setRunning(true);
     // G3: the first frame after a pause reports dt = 0 (elapsed therefore does
     // not count the paused period — the "active time" contract).
     this._lastTs = null;
-    // New scheduled run after a pause: capture its generation (§3.4).
-    this._runGen = ++this._gen;
-    this._handle = scheduler.request(this._frame);
+
+    // Re-entrancy guard, for the same reasons as start() (see the comment
+    // there): a running-changed listener may have synchronously stopped this
+    // node — or restarted it, leaving `_handle` already armed — from inside
+    // _setRunning(true) above.
+    if (!this._running || this._handle !== null) return;
+    this._requestFrame(scheduler);
   }
 
   // --- Internal ---
 
   private _frame = (timestamp: number): void => {
-    // Stale-run guard (§3.4): a frame queued before dispose() (which bumps
-    // `_gen`) must not tick or dispatch onto a torn-down element.
-    if (this._runGen !== this._gen) return;
+    // Reached only through _requestFrame's generation-checked closure (§3.4):
+    // a stale callback — disposed, cancelled by a non-compliant scheduler, or
+    // superseded by a newer run — never gets here.
     this._handle = null;
 
     // dt: delta to the previous frame within this continuous run; 0 when this
@@ -302,7 +359,18 @@ export class RafCore extends EventTarget {
     // (repeat=0 runs forever). Counted per-run via `_runStartTick`, so a
     // re-start after a completed bounded run fires N frames again. `once` is
     // expressed by the Shell as repeat=1.
+    //
+    // The cleanup mirrors stop() exactly, because a tick listener may have
+    // synchronously paused — or paused and resumed — DURING the final frame's
+    // dispatch above. The run's budget is exhausted either way, so clear the
+    // pause (a later resume() must be a no-op, not an N+1th frame) and cancel
+    // any handle a re-entrant resume() armed (it would otherwise survive as a
+    // ghost frame and tick past the budget). On the normal path both are
+    // already clear (no-ops). A stop()→start() restart is NOT affected: the
+    // new run re-baselines `_runStartTick`, so this branch is not taken.
     if (this._repeat > 0 && (this._tick - this._runStartTick) >= this._repeat) {
+      this._clearHandle();
+      this._paused = false;
       this._setRunning(false);
       return;
     }
@@ -311,12 +379,13 @@ export class RafCore extends EventTarget {
     // synchronously during the dispatch above, or already scheduled a new run
     // itself (a synchronous stop()→start() / pause()→resume() restart leaves
     // _handle non-null; re-requesting on top of it would stack a permanent
-    // second frame loop. The _gen guard cannot catch this: start() syncs
-    // _runGen to the new generation, and this shared callback reads it live).
+    // second frame loop. The generation guard cannot catch this: a tail
+    // request here would capture the restart's own — current — generation
+    // and produce a second equally-valid loop).
     if (this._running && this._handle === null) {
       const scheduler = this._resolveScheduler();
       if (scheduler !== null) {
-        this._handle = scheduler.request(this._frame);
+        this._requestFrame(scheduler);
       }
     }
   };
@@ -337,19 +406,44 @@ export class RafCore extends EventTarget {
       requestAnimationFrame?: (cb: (ts: number) => void) => unknown;
       cancelAnimationFrame?: (handle: unknown) => void;
     };
+    // The availability check itself still runs on every call (§3.7: resolved
+    // at call time, not cached across an absence/presence flip).
     if (typeof g.requestAnimationFrame !== "function" || typeof g.cancelAnimationFrame !== "function") {
       return null;
     }
-    return {
-      request: (cb) => g.requestAnimationFrame!(cb),
-      cancel: (handle) => g.cancelAnimationFrame!(handle),
-    };
+    if (this._globalScheduler === null) {
+      // `g` is just a typed alias for `globalThis` (not a snapshot), so these
+      // closures keep dereferencing the live global functions even though the
+      // wrapper object itself is created only once.
+      this._globalScheduler = {
+        request: (cb) => g.requestAnimationFrame!(cb),
+        cancel: (handle) => g.cancelAnimationFrame!(handle),
+      };
+    }
+    return this._globalScheduler;
+  }
+
+  // Arm the next frame (§3.4). The callback closes over the generation
+  // current at request time and re-checks it against the live `_gen` when the
+  // frame arrives; a callback that outlived its run bails here. See the
+  // `_gen` field comment for why this must be a per-request capture and not a
+  // live-field comparison.
+  private _requestFrame(scheduler: RafScheduler): void {
+    const gen = this._gen;
+    this._handle = scheduler.request((timestamp: number) => {
+      if (gen !== this._gen) return;
+      this._frame(timestamp);
+    });
   }
 
   private _clearHandle(): void {
     if (this._handle !== null) {
       this._resolveScheduler()?.cancel(this._handle);
       this._handle = null;
+      // Invalidate the cancelled callback's captured generation as well:
+      // cancel() is best-effort against a non-compliant scheduler, the
+      // generation is the guarantee (§3.4).
+      this._gen++;
     }
   }
 }
