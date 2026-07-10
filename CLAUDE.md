@@ -154,8 +154,10 @@ Each I/O node component splits into two layers:
 
 ## Examples
 
-- Root `examples/` holds cross-package demo apps (e.g. `state-camera-record-upload`, `state-notification-chat`, `state-speech-echo`, `state-cross-tab-todo`, `react-websocket`, `vue-websocket`, `ssr`).
-- Some packages keep their own `examples/` (e.g. `fetch`, `state`) for focused, single-package demos.
+- Root `examples/` holds cross-package demo apps only (e.g. `state-camera-record-upload`, `state-notification-chat`, `state-cross-tab-todo`, `ssr`) plus `websocket-chat/` — one chat scenario implemented in five stacks (vanilla / state / signals / React / Vue) on one shared WebSocket server. See `examples/README.md` for the full list and ports.
+- `examples/shared/server.js` is the shared static-file + JSON API core; each demo's `server.js` is a thin file declaring only its own routes. `websocket-chat/shared/` keeps its own self-contained server (needs the `ws` dependency).
+- Single-package demos live in that package's own `examples/` (e.g. `fetch` has `pagination` / `users-crud` / `infinite-scroll`, `speech` has `speech-echo` / `speak-highlight`, `defined` has `defined-loader`, `state` has its basics).
+- All state-based demos load packages via CDN one-liners (`https://esm.run/@wcstack/<pkg>/auto`); signals demos import from the single `@wcstack/signals/dom` CDN entry (mixing `.`/`.dom` entries on one CDN page duplicates the reactive core).
 
 ## Docs & Design Notes
 

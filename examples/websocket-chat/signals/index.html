@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: signals + websocket demo</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f2f0f7;
+      --bg-top: #f8f6fc;
+      --panel: rgba(255, 255, 255, 0.92);
+      --ink: #221a33;
+      --muted: #5f5673;
+      --line: rgba(109, 70, 200, 0.15);
+      --brand: #7c3aed;
+      --brand-strong: #6d28d9;
+      --accent: #0ea5e9;
+      --danger: #dc2626;
+      --shadow: 0 20px 50px rgba(34, 26, 51, 0.10);
+      --grad-a: rgba(124, 58, 237, 0.12);
+      --grad-b: rgba(14, 165, 233, 0.10);
+      --dot-live: #7c3aed;
+      --dot-live-glow: rgba(124, 58, 237, 0.15);
+      --stat-bg: rgba(124, 58, 237, 0.08);
+      --log-echo-bg: rgba(124, 58, 237, 0.08);
+      --code-bg: rgba(124, 58, 237, 0.08);
+    }
+  </style>
+
+  <!-- Everything comes from the CDN — fully buildless. The DOM layer
+       (`@wcstack/signals/dom`) re-exports the whole headless core
+       (signal/computed/effect/bindNode/…) on top of the DOM helpers
+       (h/render/For), so the single `/dom` import is enough.
+       `@wcstack/websocket/auto` registers <wcs-ws>. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
+      "@wcstack/websocket/auto": "https://esm.run/@wcstack/websocket/auto"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- Headless IO node. bindNode() adapts its wcBindable properties into
+       signals; config attributes stay on the element. -->
+  <wcs-ws
+    id="ws"
+    auto-reconnect
+    reconnect-interval="3000"
+    max-reconnects="10"
+  ></wcs-ws>
+
+  <main>
+    <section class="hero">
+      <span class="eyebrow">@wcstack/signals</span>
+      <h1>Real-time communication<br>with signals + &lt;wcs-ws&gt;</h1>
+      <p class="lead">
+        <code>bindNode()</code> adapts the headless <code>&lt;wcs-ws&gt;</code> node into
+        signals (<code>connected</code> / <code>message</code> / <code>error</code>), and
+        fine-grained <code>h()</code> / <code>For()</code> views render the chat —
+        no proxy state, no virtual DOM.
+      </p>
+    </section>
+
+    <!-- signals renders the reactive app here -->
+    <div id="app"></div>
+  </main>
+
+  <script type="module">
+    import "@wcstack/websocket/auto"; // registers <wcs-ws> before we bind it
+    import { signal, computed, effect, bindNode, h, render, For, createRoot } from "@wcstack/signals/dom";
+
+    createRoot(() => {
+      const wsEl = document.getElementById("ws");
+
+      // Adapt the headless <wcs-ws> node into signals. bindNode discovers the
+      // wc-bindable descriptor and exposes the outputs as read signals.
+      const bound = bindNode(wsEl);
+      const connected = bound.signals.connected;
+      const loading = bound.signals.loading;
+      const error = bound.signals.error;
+      const message = bound.signals.message;
+
+      // Connect by writing the `url` input reactively (the element owns the
+      // socket lifecycle, including auto-reconnect).
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const url = computed(() => `${proto}://${location.host}/ws`);
+      bound.bindInput("url", url);
+
+      // --- Local view state ---------------------------------------------------
+      const echoInput = signal("");
+      const broadcastInput = signal("");
+      const nickname = signal("user-" + Math.random().toString(36).slice(2, 6));
+      const log = signal([]); // [{ id, type, time, text }]
+      const stats = signal(null); // last { clients, uptime } heartbeat
+      let nextLogId = 1;
+
+      // Route each incoming message: stats heartbeats update the badges, the
+      // rest is appended to the log. `message` arrives already JSON-parsed.
+      effect(() => {
+        const msg = message.get();
+        if (!msg) return;
+        if (msg.type === "stats") {
+          stats.set(msg);
+          return;
+        }
+        let text;
+        if (msg.type === "echo") {
+          text = "Echo: " + msg.content;
+        } else if (msg.type === "broadcast") {
+          text = `[${msg.from}] ${msg.content}`;
+        } else if (msg.type === "connected") {
+          text = `WebSocket connected (${msg.clients} clients)`;
+        } else {
+          text = JSON.stringify(msg);
+        }
+        const time = new Date(msg.timestamp || Date.now()).toLocaleTimeString();
+        log.set([...log.peek(), { id: nextLogId++, type: msg.type, time, text }]);
+      });
+
+      // --- Derived view values ------------------------------------------------
+      const connectionLabel = computed(() =>
+        loading.get() ? "Connecting…" : connected.get() ? "Connected" : "Disconnected",
+      );
+      const clientCount = computed(() => (stats.get() ? String(stats.get().clients) : "—"));
+      const serverUptime = computed(() => (stats.get() ? stats.get().uptime + "s" : "—"));
+      const errorMessage = computed(() => {
+        const err = error.get();
+        return err ? err.message || String(err) : "";
+      });
+      const canSendEcho = computed(() => connected.get() && echoInput.get().trim() !== "");
+      const canSendBroadcast = computed(() => connected.get() && broadcastInput.get().trim() !== "");
+      const hasLog = computed(() => log.get().length > 0);
+
+      // --- Actions -------------------------------------------------------------
+      // Sending goes through the element's public command, sendMessage().
+      const sendEcho = () => {
+        const text = echoInput.peek().trim();
+        if (!text || !connected.peek()) return;
+        wsEl.sendMessage(JSON.stringify({ type: "echo", content: text }));
+        echoInput.set("");
+      };
+      const sendBroadcast = () => {
+        const text = broadcastInput.peek().trim();
+        if (!text || !connected.peek()) return;
+        wsEl.sendMessage(JSON.stringify({
+          type: "broadcast",
+          content: text,
+          from: nickname.peek().trim() || "anonymous",
+        }));
+        broadcastInput.set("");
+      };
+      const onEnter = (send) => (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          send();
+        }
+      };
+
+      // --- Views ---------------------------------------------------------------
+      const statusBar = h(
+        "div",
+        { class: "status-bar" },
+        h(
+          "div",
+          { class: "status" },
+          h("span", { class: () => (connected.get() ? "dot live" : "dot") }),
+          h("span", null, () => connectionLabel.get()),
+        ),
+        h("div", { class: "stat-badge" }, "Clients: ", h("strong", null, () => clientCount.get())),
+        h("div", { class: "stat-badge" }, "Uptime: ", h("strong", null, () => serverUptime.get())),
+      );
+
+      // Reactive child: swaps between nothing and the error callout.
+      const errorView = () =>
+        error.get()
+          ? h(
+              "div",
+              { class: "callout error", style: "margin-bottom: 14px;" },
+              h("strong", null, "Connection Error"),
+              h("br"),
+              h("span", null, () => errorMessage.get()),
+            )
+          : null;
+
+      const echoPanel = h(
+        "div",
+        { class: "panel" },
+        h("h2", null, "Echo"),
+        h("p", { class: "lead" }, "Send a message and the server echoes it back."),
+        h(
+          "div",
+          { class: "input-row" },
+          h("input", {
+            type: "text",
+            placeholder: "Echo message…",
+            value: () => echoInput.get(),
+            onInput: (e) => echoInput.set(e.target.value),
+            onKeydown: onEnter(sendEcho),
+          }),
+          h("button", { class: "btn-echo", disabled: () => !canSendEcho.get(), onClick: sendEcho }, "Send"),
+        ),
+      );
+
+      const broadcastPanel = h(
+        "div",
+        { class: "panel" },
+        h("h2", null, "Broadcast"),
+        h("p", { class: "lead" }, "Deliver a message to all connected clients."),
+        h(
+          "div",
+          { class: "input-row" },
+          h("input", {
+            type: "text",
+            placeholder: "Broadcast message…",
+            value: () => broadcastInput.get(),
+            onInput: (e) => broadcastInput.set(e.target.value),
+            onKeydown: onEnter(sendBroadcast),
+          }),
+          h("button", { class: "btn-broadcast", disabled: () => !canSendBroadcast.get(), onClick: sendBroadcast }, "Send"),
+        ),
+        h(
+          "div",
+          { class: "input-row" },
+          h("input", {
+            type: "text",
+            placeholder: "Nickname",
+            style: "max-width: 180px;",
+            value: () => nickname.get(),
+            onInput: (e) => nickname.set(e.target.value),
+          }),
+        ),
+      );
+
+      const logPanel = h(
+        "div",
+        { class: "panel", style: "margin-top: 18px;" },
+        h(
+          "div",
+          { style: "display: flex; justify-content: space-between; align-items: center;" },
+          h("h2", null, "Message Log"),
+          h(
+            "button",
+            {
+              style: "background: rgba(0,0,0,0.06); color: var(--muted); font-size: 0.8rem; padding: 6px 12px;",
+              onClick: () => log.set([]),
+            },
+            "Clear",
+          ),
+        ),
+        h(
+          "div",
+          { class: "log" },
+          // Reactive child: the placeholder unmounts once the first entry lands.
+          () => (hasLog.get() ? null : h("div", { class: "log-empty" }, "Messages will appear here after connecting.")),
+          For(
+            () => log.get(),
+            (entry) =>
+              h(
+                "div",
+                {
+                  class:
+                    "log-entry " +
+                    ({ echo: "log-echo", broadcast: "log-broadcast", connected: "log-connected" }[entry.type] || "log-stats"),
+                },
+                h("span", { class: "log-time" }, entry.time + " "),
+                entry.text,
+              ),
+            { key: (entry) => entry.id },
+          ),
+        ),
+      );
+
+      render(
+        h("div", null, statusBar, errorView, h("div", { class: "grid" }, echoPanel, broadcastPanel), logPanel),
+        document.getElementById("app"),
+      );
+    });
+  </script>
+</body>
+</html>

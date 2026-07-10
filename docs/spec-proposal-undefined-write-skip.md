@@ -22,7 +22,7 @@ wc-bindable は「要素が宣言し（`static wcBindable`）、binder が配線
 
 ## 2. 実際に起きた故障（evidence）
 
-wcstack の examples/state-fetch で顕在化した。`<wcs-fetch>` は inputs として `url / method / target / manual / body / trigger` を宣言し、setter は属性へ自己反映する（`inputs[].attribute` ヒントの存在が示す通り、**属性反映 setter は wc-bindable 要素のごく普通の実装パターン**である）。state slot が一部の input を初期化していないと、spread が `undefined` を書き込み、`setAttribute` の文字列化を経て以下の実害になった:
+wcstack の packages/fetch/examples/users-crud（旧 examples/state-fetch） で顕在化した。`<wcs-fetch>` は inputs として `url / method / target / manual / body / trigger` を宣言し、setter は属性へ自己反映する（`inputs[].attribute` ヒントの存在が示す通り、**属性反映 setter は wc-bindable 要素のごく普通の実装パターン**である）。state slot が一部の input を初期化していないと、spread が `undefined` を書き込み、`setAttribute` の文字列化を経て以下の実害になった:
 
 | input | `el.x = undefined` の結果 |
 |---|---|
@@ -97,7 +97,7 @@ element holding the last written value. To clear, write `null`.
 
 - **binder**: `@wcstack/state` — `applyChangeToProperty` の冒頭で `typeof newValue === "undefined"` なら書き込み・属性ミラー・SSR 反映のすべてをスキップ。debug 設定時は `console.debug` でスキップを通知。テスト 1457 本通過（undefined スキップ／null 回帰／ミラー非接触／SSR／「属性反映 setter を持つ要素を一部初期化 slot で spread 配線」の統合回帰テストを含む）。
 - **要素側防御（SHOULD の実例）**: `@wcstack/fetch` — `url` / `method` / `target` setter は `value == null` で `removeAttribute`、`body` setter は `value ?? null` に正規化。テスト 151 本通過。
-- **E2E**: examples/state-fetch を「全 input 初期化なし」の slot に書き換えた上で、実ブラウザ（Chromium/Playwright）で 16/16 チェック通過 — `undefined` を含むリクエストゼロ、意図しない自動 POST ゼロ、HTML の `manual` 属性維持、一覧/詳細/フィルタ/POST 作成の全動作確認。
+- **E2E**: packages/fetch/examples/users-crud（旧 examples/state-fetch） を「全 input 初期化なし」の slot に書き換えた上で、実ブラウザ（Chromium/Playwright）で 16/16 チェック通過 — `undefined` を含むリクエストゼロ、意図しない自動 POST ゼロ、HTML の `manual` 属性維持、一覧/詳細/フィルタ/POST 作成の全動作確認。
 
 ## 7. この提案が成立すると何が変わるか
 

@@ -102,7 +102,7 @@ npm install @wcstack/defined
 <span data-wcs="textContent: progress"></span>
 ```
 
-See `examples/state-defined-loader` for the full demo (readiness gate + timeout failure + late promotion).
+See `examples/defined-loader` for the full demo (readiness gate + timeout failure + late promotion).
 
 ## Attributes / Inputs
 

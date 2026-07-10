@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: signals tilt ball maze</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+    /* HUD */
+    .hud { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; font-size: 0.85rem; color: #555; }
+    .hud .time { font-variant-numeric: tabular-nums; font-weight: 600; color: #3949ab; min-width: 4.5rem; }
+    .chip { padding: 2px 10px; border-radius: 12px; background: #e8eaf6; color: #3949ab; font-size: 0.75rem; }
+    .hud button { margin-left: auto; padding: 0.3rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.8rem; }
+    .hud button:hover { background: #f0f0f0; }
+    /* :state() works identically here — it's CSS, not a binding, so the reactive
+       core doesn't matter. Lights up while <wcs-timer> is actually ticking. */
+    .loop-chip { background: #eceff1; color: #90a4ae; }
+    body:has(wcs-timer:state(running)) .loop-chip { background: #e8f5e9; color: #2e7d32; }
+
+    /* Board — fixed 320x320 logical px, same space as the physics */
+    .board { position: relative; width: 320px; height: 320px; margin: 0 auto; background: #f8f9fa; border: 4px solid #3949ab; border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .wall { position: absolute; background: #3949ab; border-radius: 3px; }
+    .hole { position: absolute; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #37474f, #0d1117 70%); }
+    .goal { position: absolute; border-radius: 6px; background: #e8f5e9; border: 2px dashed #2e7d32; }
+    .goal::after { content: '⚑'; display: flex; justify-content: center; align-items: center; height: 100%; color: #2e7d32; font-size: 0.8rem; }
+    .ball { position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #ef9a9a, #c62828 70%); box-shadow: 0 2px 4px rgba(0,0,0,0.35); will-change: transform; }
+
+    /* Overlays (start / clear / fell) */
+    .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 0.75rem; background: rgba(255,255,255,0.88); text-align: center; padding: 1rem; }
+    .overlay h2 { font-size: 1.2rem; color: #16213e; }
+    .overlay p { font-size: 0.8rem; color: #555; }
+    .overlay button { padding: 0.5rem 1.25rem; border: none; border-radius: 6px; background: #3949ab; color: white; font-size: 0.95rem; cursor: pointer; }
+    .overlay button:hover { background: #303f9f; }
+
+    .notes { margin-top: 1.5rem; font-size: 0.8rem; color: #888; }
+    .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
+  </style>
+
+  <!-- Single /dom entry = single reactive instance (see signals-live-search). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom"
+    }
+  }
+  </script>
+
+  <!-- The SAME unmodified I/O nodes as the state version of this demo
+       (examples/state-tilt-maze). Only the reactive core behind them changes. -->
+  <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: tilt ball maze <span style="font-size:0.9rem;color:#3949ab">(signals edition)</span></h1>
+<p class="lead">The same game as <code>examples/state-tilt-maze</code>, same four I/O nodes — but the reactive core is
+  <code>@wcstack/signals</code>: hot-loop values are plain variables, and only what the DOM shows is a signal.</p>
+
+<!-- Headless I/O nodes: no data-wcs anywhere — the signals adapter (bindNode)
+     consumes their wc-bindable surface directly. -->
+<wcs-tilt id="tilt"></wcs-tilt>
+<wcs-accelerometer id="accel"></wcs-accelerometer>
+<wcs-timer id="loop" interval="16"></wcs-timer>
+<wcs-wakelock id="wake"></wcs-wakelock>
+
+<div id="app"></div>
+
+<ul class="notes">
+  <li>Sensors need a secure context: localhost works; on a phone use HTTPS (or <code>adb reverse</code>).</li>
+  <li>iOS grants tilt via the Start button's tap (gesture-gated permission, absorbed by <code>&lt;wcs-tilt&gt;</code>).</li>
+  <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (Chromium/Android); elsewhere the Retry button covers it.</li>
+  <li>Desktop: drag the board, or emulate orientation in DevTools &gt; Sensors.</li>
+</ul>
+
+<script type="module">
+  import { signal, computed, effect, createRoot, bindNode, h, render } from "@wcstack/signals/dom";
+
+  // --- maze data (identical to the state version) -------------------------
+  const BOARD = 320;
+  const R = 10;
+  const START = { x: 30, y: 30 };
+  const GOAL = { x: 284, y: 282, w: 24, h: 24 };
+  const WALLS = [
+    { x: 60,  y: 0,  w: 12, h: 250 },
+    { x: 130, y: 70, w: 12, h: 250 },
+    { x: 200, y: 0,  w: 12, h: 250 },
+    { x: 260, y: 70, w: 12, h: 250 },
+  ];
+  const HOLES = [
+    { x: 20,  y: 140, r: 11 },
+    { x: 112, y: 180, r: 11 },
+    { x: 152, y: 120, r: 11 },
+    { x: 248, y: 180, r: 11 },
+  ];
+  const TILT_MAX = 30;
+  const ACCEL = 14;
+  const V_MAX = 260;
+  const BOUNCE = -0.25;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  function hitsWall(cx, cy) {
+    for (const w of WALLS) {
+      const nx = clamp(cx, w.x, w.x + w.w);
+      const ny = clamp(cy, w.y, w.y + w.h);
+      const dx = cx - nx, dy = cy - ny;
+      if (dx * dx + dy * dy < R * R) return true;
+    }
+    return false;
+  }
+
+  // --- bind the unmodified I/O nodes -----------------------------------------
+  await Promise.all(["wcs-tilt", "wcs-accelerometer", "wcs-timer", "wcs-wakelock"]
+    .map((t) => customElements.whenDefined(t)));
+  const tilt = bindNode(document.getElementById("tilt"));
+  const accel = bindNode(document.getElementById("accel"));
+  const loop = bindNode(document.getElementById("loop"));
+  const wake = bindNode(document.getElementById("wake"));
+
+  // --- reactive state: ONLY what the DOM renders --------------------------
+  const phase = signal("idle");              // idle | playing | clear | fell
+  const pos = signal({ x: START.x, y: START.y });
+  const timeMs = signal(0);
+
+  // --- hot-loop state: plain variables (never touch the reactive graph) ---
+  let vx = 0, vy = 0;
+  let simBeta = 0, simGamma = 0, dragging = false;
+  let lastT = 0, lastShake = 0, startedAt = 0;
+
+  // --- derived values -------------------------------------------------------
+  const sensorActive = computed(() => tilt.signals.beta.get() !== null);
+  const timeText = computed(() => (timeMs.get() / 1000).toFixed(1) + " s");
+  const controlText = computed(() => {
+    if (sensorActive.get()) return "control: device tilt";
+    if (tilt.signals.permissionState.get() === "denied") return "control: drag (tilt permission denied)";
+    return "control: drag the board";
+  });
+  const wakeText = computed(() => (wake.signals.held.get() ? "screen: kept awake" : "screen: normal"));
+
+  // --- one physics step per <wcs-timer> tick ------------------------------
+  // Everything inside reads via peek(): the driving effect depends ONLY on the
+  // tick signal, and the step never accidentally subscribes to what it reads.
+  function step() {
+    const now = performance.now();
+    const dt = clamp((now - (lastT || now)) / 1000, 0, 0.04);
+    lastT = now;
+
+    // shake to restart: |accel| far from gravity means a jolt
+    const ax = accel.signals.x.peek();
+    if (ax !== null && phase.peek() !== "idle" && now - lastShake > 1200) {
+      const mag = Math.hypot(ax, accel.signals.y.peek(), accel.signals.z.peek());
+      if (Math.abs(mag - 9.81) > 15) {
+        lastShake = now;
+        restart();
+        return;
+      }
+    }
+
+    if (phase.peek() !== "playing") return;
+    timeMs.set(now - startedAt);
+
+    const sensor = tilt.signals.beta.peek() !== null;
+    if (!dragging && !sensor) {
+      simBeta *= 0.92;
+      simGamma *= 0.92;
+    }
+    const effBeta = clamp(dragging || !sensor ? simBeta : tilt.signals.beta.peek(), -TILT_MAX, TILT_MAX);
+    const effGamma = clamp(dragging || !sensor ? simGamma : tilt.signals.gamma.peek(), -TILT_MAX, TILT_MAX);
+
+    vx = clamp((vx + ACCEL * effGamma * dt) * Math.exp(-1.2 * dt), -V_MAX, V_MAX);
+    vy = clamp((vy + ACCEL * effBeta * dt) * Math.exp(-1.2 * dt), -V_MAX, V_MAX);
+
+    const p = pos.peek();
+    let nx = clamp(p.x + vx * dt, R, BOARD - R);
+    if (hitsWall(nx, p.y)) { nx = p.x; vx *= BOUNCE; }
+    let ny = clamp(p.y + vy * dt, R, BOARD - R);
+    if (hitsWall(nx, ny)) { ny = p.y; vy *= BOUNCE; }
+    pos.set({ x: nx, y: ny });
+
+    for (const hle of HOLES) {
+      if (Math.hypot(nx - hle.x, ny - hle.y) < hle.r) {
+        phase.set("fell");
+        return;
+      }
+    }
+    if (nx >= GOAL.x && nx <= GOAL.x + GOAL.w && ny >= GOAL.y && ny <= GOAL.y + GOAL.h) {
+      phase.set("clear");
+    }
+  }
+
+  // --- actions ----------------------------------------------------------------
+  function startGame() {
+    // The bridge's command surface — the state version fires the same three
+    // calls by emitting one command token (its command.* bindings fan out).
+    // start() without awaiting the permission is safe: the iOS gate is on
+    // event DISPATCH, not on listener registration, so an ungranted
+    // subscription is simply silent until the user grants.
+    tilt.command("requestPermission");
+    tilt.command("start");
+    accel.command("start");
+    restart();
+  }
+  function restart() {
+    vx = 0; vy = 0; simBeta = 0; simGamma = 0;
+    pos.set({ x: START.x, y: START.y });
+    timeMs.set(0);
+    startedAt = performance.now();
+    phase.set("playing");
+  }
+
+  // --- pointer-drag fallback ---------------------------------------------------
+  // Gated on "playing": pointer capture retargets the derived click, so capturing
+  // on an overlay would eat its button's click (same gotcha as the state version).
+  function dragStart(e) {
+    if (phase.peek() !== "playing") return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dragging = true;
+    dragMove(e);
+  }
+  function dragMove(e) {
+    if (!dragging) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    simGamma = clamp(((e.clientX - rect.left) / rect.width - 0.5) * 80, -TILT_MAX, TILT_MAX);
+    simBeta = clamp(((e.clientY - rect.top) / rect.height - 0.5) * 80, -TILT_MAX, TILT_MAX);
+  }
+  function dragEnd() {
+    dragging = false;
+  }
+
+  // --- overlays (rebuilt per phase flip; each build is owned & disposed) ------
+  const overlay = () => {
+    const p = phase.get();
+    if (p === "playing") return null;
+    if (p === "idle") {
+      return h("div", { class: "overlay" },
+        h("h2", null, "Tilt Ball Maze"),
+        h("p", null, "Tilt your phone to roll the ball to the flag ⚑.", h("br"),
+          "Avoid the holes. Shake to restart.", h("br"),
+          "No sensors? Drag on the board instead."),
+        h("button", { type: "button", onClick: startGame }, "Start"),
+      );
+    }
+    if (p === "clear") {
+      return h("div", { class: "overlay" },
+        h("h2", null, "🎉 Goal!"),
+        h("p", null, "Cleared in ", h("b", null, timeText), " — shake for another run."),
+        h("button", { type: "button", onClick: restart }, "Play again"),
+      );
+    }
+    return h("div", { class: "overlay" },
+      h("h2", null, "💀 Down the hole"),
+      h("p", null, "Shake the device (or press the button) to retry."),
+      h("button", { type: "button", onClick: restart }, "Retry"),
+    );
+  };
+
+  // --- mount --------------------------------------------------------------------
+  createRoot(() => {
+    // the game loop: this effect depends on exactly one signal — the timer tick
+    effect(() => {
+      loop.signals.tick.get();
+      step();
+    });
+
+    // "keep the screen awake while playing" — signal → input, one line
+    effect(() => wake.set("active", phase.get() === "playing"));
+
+    const view = h("div", null,
+      h("div", { class: "hud", role: "status" },
+        h("span", { class: "time" }, timeText),
+        h("span", { class: "chip" }, controlText),
+        h("span", { class: "chip" }, wakeText),
+        h("span", { class: "chip loop-chip" }, "game loop"),
+        h("button", { type: "button", onClick: restart }, "Reset"),
+      ),
+      h("div", {
+        class: "board",
+        onPointerDown: dragStart,
+        onPointerMove: dragMove,
+        onPointerUp: dragEnd,
+        onPointerCancel: dragEnd,
+      },
+        WALLS.map((w) => h("div", { class: "wall", style: `left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px` })),
+        HOLES.map((hl) => h("div", { class: "hole", style: `left:${hl.x - hl.r}px;top:${hl.y - hl.r}px;width:${hl.r * 2}px;height:${hl.r * 2}px` })),
+        h("div", { class: "goal", style: `left:${GOAL.x}px;top:${GOAL.y}px;width:${GOAL.w}px;height:${GOAL.h}px` }),
+        // fine-grained: ONE style binding re-runs per frame, nothing else
+        h("div", { class: "ball", style: () => `transform: translate(${pos.get().x}px, ${pos.get().y}px)` }),
+        overlay,
+      ),
+    );
+    render(view, document.getElementById("app"));
+  });
+</script>
+
+</body>
+</html>

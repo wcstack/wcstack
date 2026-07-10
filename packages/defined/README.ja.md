@@ -102,7 +102,7 @@ npm install @wcstack/defined
 <span data-wcs="textContent: progress"></span>
 ```
 
-完全なデモは `examples/state-defined-loader` を参照（readiness ゲート + timeout 失敗 + 遅延昇格）。
+完全なデモは `examples/defined-loader` を参照（readiness ゲート + timeout 失敗 + 遅延昇格）。
 
 ## 属性 / 入力
 

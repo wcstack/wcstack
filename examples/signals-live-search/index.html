@@ -30,16 +30,17 @@
     .empty { color: #999; padding: 0.5rem 0.25rem; }
   </style>
 
-  <!-- Map both signals entries to the locally-built bundles. Production packaging
-       (rollup code-splitting) makes the two entries import ONE shared core chunk,
-       so importing the headless core from `@wcstack/signals` AND the DOM layer from
-       `@wcstack/signals/dom` on the same page loads a SINGLE reactive instance.
-       (Pre-Phase-1 this duplicated the core and broke reactivity across the seam.) -->
+  <!-- Fully buildless: signals comes straight from the CDN. On the CDN each
+       entry is its own self-contained bundle (no shared core chunk), so the
+       page imports EVERYTHING from the single `/dom` entry — it re-exports the
+       whole headless core (signal/computed/effect/bindNode/…) on top of the
+       DOM helpers, which guarantees a single reactive instance. (Importing
+       `@wcstack/signals` AND `@wcstack/signals/dom` from the CDN on one page
+       would duplicate the core and break reactivity across the seam.) -->
   <script type="importmap">
   {
     "imports": {
-      "@wcstack/signals": "/signals/index.esm.js",
-      "@wcstack/signals/dom": "/signals/dom.esm.js"
+      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom"
     }
   }
   </script>
@@ -80,12 +81,13 @@
 </section>
 
 <script type="module">
-  // Headless reactive core from the main entry…
+  // One entry for everything: /dom re-exports the headless core (signal,
+  // computed, effect, …) alongside the DOM helpers, so a single CDN import
+  // yields a single reactive instance.
   import {
     signal, computed, effect, createRoot, bindNode,
-  } from "@wcstack/signals";
-  // …and the DOM layer from the /dom entry. Both share ONE core chunk (Phase 1).
-  import { h, render, For, SignalsElement } from "@wcstack/signals/dom";
+    h, render, For, SignalsElement,
+  } from "@wcstack/signals/dom";
 
   /* ---------------------------------------------------------------
      Part 1: a custom element built on the signals lifecycle base.
