@@ -1,6 +1,6 @@
 # 設計メモ: state に「stream 型」を追加する案（`$streams` adapter）
 
-- **状態**: 設計検討中（未実装）。本文書は実装前の論点整理と方向性のスナップショット。
+- **状態**: 論点整理フェーズ完了（2026-07-11）。§4 の未決論点はすべて決定済み — 決定レコードと実装設計は [state-streams-design.md](./state-streams-design.md) を参照（A-1=args 分離 / A-2=updater drain フック / A-3=eager / B=State 単位 abort / C=`$streamStatus` 名前空間）。本文書は背景・論点の出自・境界規約（§7）・signals PoC 契約（§8）の記録として維持する。
 - **対象**: `@wcstack/state` の core（reactive proxy / computed / 更新サイクル）への拡張。周辺パッケージのタグと違い、**proxy core に触れる core 拡張**である点に注意。
 - **一言で**: 外部の連続フロー（ReadableStream / async iterable / async generator など）を、**畳み込み（fold）して単一の reactive プロパティに適合（adapt）させる**プリミティブを state に足す。汎用 Streams パイプラインではない。
 - **前提資産**: computed（getter）、filter pipeline、[[command-token-protocol]] / [[event-token-protocol]]、`$watch`（[[watch-hook-design]]、設計のみ）、spread/fetch で導入した microtask coalesce、wc-bindable protocol。
