@@ -106,8 +106,9 @@ constructor(target?: EventTarget, scheduler?: { request(cb): unknown; cancel(han
   - dt: 初回 = 0 / 連続フレームの差分 / stop→start 跨ぎ 0 / pause→resume 跨ぎ 0 /
     hidden→visible 跨ぎ 0（G3 の 4 境界すべて）
   - elapsed: Σdt に一致・中断中は増えない（アクティブ時間）・reset で 0
-  - suspended: hidden/visible 遷移で発火・同値ガード・pause/stop 中は false・
-    hidden 中に pump しても tick が出ない
+  - suspended: hidden/visible 遷移で発火・同値ガード・pause/stop 中は false
+    （hidden 中の tick 抑止は Core では行わない — hidden 中の handle は放置し、
+    配送停止はブラウザ任せとする方式を採用。設計 §4 参照）
   - repeat / once（=repeat 1 糖衣）境界、再 start で残数リセット（_runStartTick）
   - trigger の false→true エッジ / manual / autoTrigger（data-raftarget）
   - `_gen`: dispose 後の stale コールバックが状態変異も dispatch もしない

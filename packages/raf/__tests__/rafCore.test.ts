@@ -197,6 +197,28 @@ describe("RafCore: start / stop / reset", () => {
     expect(core.running).toBe(false);
     expect(scheduler.pending).toBe(0);
   });
+
+  it("tick リスナー内の同期 stop()→start() でフレームループが二重化しない", () => {
+    const { core, scheduler } = createCore();
+    core.addEventListener("wcs-raf:tick", () => {
+      if (core.tick === 1) {
+        core.stop();
+        core.start();
+      }
+    });
+    core.start();
+    scheduler.pump(1000);
+    // リスナーの start() が予約した 1 本だけ（外側の _frame は再予約しない）
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(1016);
+    expect(core.tick).toBe(2);
+    // 新しい run の意味論も維持: リスタート後の初回フレームは dt 0（G3）
+    expect(core.dt).toBe(0);
+    scheduler.pump(1032);
+    expect(core.tick).toBe(3);
+    expect(scheduler.pending).toBe(1);
+    core.stop();
+  });
 });
 
 describe("RafCore: repeat（有限フレーム）", () => {
@@ -304,16 +326,33 @@ describe("RafCore: pause / resume", () => {
     scheduler.pump(2000);
     expect(core.dt).toBe(0);
   });
+
+  it("tick リスナー内の同期 pause()→resume() でもフレームループが二重化しない", () => {
+    const { core, scheduler } = createCore();
+    core.addEventListener("wcs-raf:tick", () => {
+      if (core.tick === 1) {
+        core.pause();
+        core.resume();
+      }
+    });
+    core.start();
+    scheduler.pump(1000);
+    expect(scheduler.pending).toBe(1);
+    scheduler.pump(1016);
+    scheduler.pump(1032);
+    expect(core.tick).toBe(3);
+    expect(scheduler.pending).toBe(1);
+    core.stop();
+  });
 });
 
 describe("RafCore: suspended（G2 二相）", () => {
   it("observe() 前は hidden でも suspended にならない", () => {
-    const { core, scheduler } = createCore();
+    const { core } = createCore();
     core.start();
     setVisibility("hidden");
     expect(core.suspended).toBe(false);
     core.dispose();
-    void scheduler;
   });
 
   it("running 中に hidden で suspended true、visible で false（イベント発火）", () => {

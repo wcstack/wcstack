@@ -78,12 +78,11 @@ describe("Raf: フレームと委譲 getter", () => {
   });
 
   it("wcs-raf:tick は要素からバブルする", () => {
-    const el = createRaf();
+    createRaf();
     const details: unknown[] = [];
     document.body.addEventListener("wcs-raf:tick", (e) => details.push((e as CustomEvent).detail));
     scheduler.pump(1000);
     expect(details).toEqual([{ count: 1, elapsed: 0, dt: 0, timestamp: 1000 }]);
-    void el;
   });
 
   it("suspended は接続時の observe() 経由で visibility に追随する", () => {

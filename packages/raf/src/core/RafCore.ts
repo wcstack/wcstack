@@ -308,8 +308,12 @@ export class RafCore extends EventTarget {
     }
 
     // Re-request the next frame — unless a tick listener stopped the loop
-    // synchronously during the dispatch above.
-    if (this._running) {
+    // synchronously during the dispatch above, or already scheduled a new run
+    // itself (a synchronous stop()→start() / pause()→resume() restart leaves
+    // _handle non-null; re-requesting on top of it would stack a permanent
+    // second frame loop. The _gen guard cannot catch this: start() syncs
+    // _runGen to the new generation, and this shared callback reads it live).
+    if (this._running && this._handle === null) {
       const scheduler = this._resolveScheduler();
       if (scheduler !== null) {
         this._handle = scheduler.request(this._frame);
