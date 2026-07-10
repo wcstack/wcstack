@@ -27,7 +27,7 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | any static server | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | any static server | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
-| [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + timer + wakelock + state (sensor game) | any static server (secure context) | — |
+| [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + state (sensor game) | any static server (secure context) | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × the same 4 sensor nodes as `state-tilt-maze` (core swap comparison) | any static server (secure context) | — |
 | [`ssr/`](ssr/) | @wcstack/server (SSR + hydration) | `cd examples/ssr && npm install && node server.js` | :3001 |

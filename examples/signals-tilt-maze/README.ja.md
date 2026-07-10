@@ -2,7 +2,7 @@
 
 [`examples/state-tilt-maze`](../state-tilt-maze/) と**同じゲーム**です — 同じ迷路、
 同じ物理、同じ 4 つの無改変 I/O ノード（`<wcs-tilt>` / `<wcs-accelerometer>` /
-`<wcs-timer>` / `<wcs-wakelock>`）。入れ替わったのはただひとつ、リアクティブ
+`<wcs-raf>` / `<wcs-wakelock>`）。入れ替わったのはただひとつ、リアクティブ
 コアが `@wcstack/state` ではなく **`@wcstack/signals`** である点だけです。
 
 それがこのデモの主題です。I/O 層は wc-bindable を話すだけで、背後でどの
@@ -28,7 +28,7 @@ npx serve examples/signals-tilt-maze
 |---|---|---|
 | I/O ノードへの配線 | `data-wcs` 属性（宣言的 DSL） | JS で `bindNode(el)`（`signals` / `set` / `command`） |
 | ゲーム tick | event-token → `$on.frameTick` | `effect(() => { loop.signals.tick.get(); step(); })` |
-| ホットループの値（`vx`, `lastT`…） | state プロパティ（proxy を通る） | **素の JS 変数** — リアクティブグラフに一切触れない |
+| ホットループの値（`vx`, `shakeCooldown`…） | state プロパティ（proxy を通る） | **素の JS 変数** — リアクティブグラフに一切触れない |
 | 描画に効く値 | バインドされた全パス | signal はちょうど 3 つ: `phase` / `pos` / `timeMs` |
 | レンダリング | HTML テンプレート + 構造 `if:`/`for:` | `h()` — 実 DOM を一度構築、バインディング単位の effect |
 | 毎フレームの DOM 仕事 | バインド済みパスごとのパイプライン更新 | `style` effect **1 個**だけ再実行（`transform: translate(...)`） |

@@ -1,6 +1,11 @@
 # @wcstack/raf 実装計画 (rAF Implementation Plan)
 
-- Status: **計画策定済み・実装未着手**
+- Status: **実装完了（2026-07-10）** — Phase 1〜6 完了（テスト 90 本 100/100/100/100、
+  迷路デモ 2 版の移行 + 実ブラウザ 24/24 合格、契約 §18 追補済み）。残りは Phase 7
+  （リリース時の注意）のみ。実装で判明した計画からの逸脱: (1) 迷路の startGame に
+  whenDefined ゲートを追加（emit 前に要素定義を待つ — 遅延 command 購読は emit を
+  リプレイしないため）、(2) 描画反映は「同一フレーム」でなく「+1 フレーム」が実測
+  （raf 固有でなく state のイベント駆動書き込み一般。§18.4）。
 - 設計: [raf-tag-design.md](raf-tag-design.md)（G1/G2/G3 決定済み 2026-07-10）
 - 決定サマリ: **独立パッケージ `@wcstack/raf` / `<wcs-raf>`**（G1=A）、
   **`running`/`suspended` 二相 + アクティブ時間 elapsed**（G2）、

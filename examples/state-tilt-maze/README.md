@@ -1,4 +1,4 @@
-# tilt + accelerometer + timer + wakelock demo (ball maze)
+# tilt + accelerometer + raf + wakelock demo (ball maze)
 
 The classic wooden labyrinth toy, as a wcstack composite: tilt your phone to
 roll a ball past four holes to the flag. Five packages, and each one has a
@@ -12,7 +12,7 @@ real job — **including the game loop, which is a declarative tag**.
 | Package | Role |
 |---|---|
 | `@wcstack/tilt` | `beta` / `gamma` become the gravity vector |
-| `@wcstack/timer` | `<wcs-timer interval="16">` drives one physics step per tick |
+| `@wcstack/raf` | `<wcs-raf>` drives one physics step per frame, shipping a first-class `dt` |
 | `@wcstack/accelerometer` | shake detection (\|accel\| far from 9.8 m/s²) → restart |
 | `@wcstack/wakelock` | screen stays awake *while* `phase === "playing"` |
 | `@wcstack/state` | physics, collision, phases, and every pixel of rendering |
@@ -39,7 +39,7 @@ npx serve examples/state-tilt-maze
 <wcs-tilt> ──beta/gamma──▶ state.tiltBeta/tiltGamma ─┐
 pointer drag ──▶ state.simBeta/simGamma ─────────────┤ get effBeta/effGamma
                                                      ▼
-<wcs-timer interval="16"> ──eventToken.tick──▶ $on.frameTick ─▶ step()
+<wcs-raf> ──eventToken.tick (detail.dt)──▶ $on.frameTick ─▶ step(dt)
                                                      │  integrate velocity,
                                                      │  collide, hole/goal check
                                                      ▼
@@ -51,12 +51,14 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD chi
 
 ## Key Points
 
-- **The game loop is declarative.** `<wcs-timer interval="16">` emits its
-  `tick` as an event token (`eventToken.tick: frameTick`), and `$on.frameTick`
-  runs one `step()`. No `requestAnimationFrame`, no `setInterval`, no teardown
-  — remove the tag and the loop is gone. The HUD's "game loop" chip is styled
-  via `wcs-timer:state(running)` (the CustomStateSet reflection added in
-  1.17.0), with zero bindings.
+- **The game loop is declarative — and vsync-aligned.** `<wcs-raf>` emits
+  every browser frame as an event token (`eventToken.tick: frameTick`), and
+  `$on.frameTick` runs one `step(detail.dt)`. The node ships the frame delta
+  as a first-class output, and `dt` is `0` across start/restart and
+  tab-visibility boundaries — the game keeps no clock bookkeeping at all, and
+  a backgrounded tab can never teleport the ball. The HUD's "game loop" chip
+  is pure CSS: green via `wcs-raf:state(running)`, amber via
+  `wcs-raf:state(suspended)` while a hidden tab starves the loop.
 - **Sensors are just input nodes.** The physics only ever reads
   `effBeta` / `effGamma` getters. The device sensor and the pointer-drag
   fallback write *different* state paths, and the getters pick a source —
@@ -66,11 +68,13 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD chi
   emits one `$command.startSensors` token, and the elements subscribe their
   own methods to it in HTML (`command.requestPermission` + `command.start` on
   `<wcs-tilt>`, `command.start` on `<wcs-accelerometer>`) — state touches no
-  DOM. The emit runs synchronously in the click's gesture context, which is
-  what iOS's permission gate requires; firing `start()` without awaiting the
-  permission is safe because that gate is on event *dispatch*, not listener
-  registration — an ungranted subscription is simply silent (and every other
-  platform resolves `"granted"` immediately).
+  DOM. The emit runs in the click's gesture context (after a `whenDefined`
+  gate — command subscriptions are deferred until the element is defined, and
+  an emit fired before that has no subscribers; user activation is a time
+  window, so the await keeps iOS's permission gate satisfied). Firing
+  `start()` without awaiting the permission is safe because that gate is on
+  event *dispatch*, not listener registration — an ungranted subscription is
+  simply silent (and every other platform resolves `"granted"` immediately).
 - **Shake detection is a derived signal.** `<wcs-accelerometer>` just streams
   `x/y/z`; `step()` computes `|accel|` and treats a large deviation from
   gravity (9.81 m/s²) as a shake, with a 1.2s cooldown. On desktop the sensor

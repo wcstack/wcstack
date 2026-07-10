@@ -17,9 +17,11 @@
     .hud button { margin-left: auto; padding: 0.3rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.8rem; }
     .hud button:hover { background: #f0f0f0; }
     /* :state() works identically here — it's CSS, not a binding, so the reactive
-       core doesn't matter. Lights up while <wcs-timer> is actually ticking. */
+       core doesn't matter. Green while <wcs-raf> is running, amber while the
+       loop is starved (tab hidden -> rAF fully stops). */
     .loop-chip { background: #eceff1; color: #90a4ae; }
-    body:has(wcs-timer:state(running)) .loop-chip { background: #e8f5e9; color: #2e7d32; }
+    body:has(wcs-raf:state(running)) .loop-chip { background: #e8f5e9; color: #2e7d32; }
+    body:has(wcs-raf:state(suspended)) .loop-chip { background: #fff3e0; color: #e65100; }
 
     /* Board — fixed 320x320 logical px, same space as the physics */
     .board { position: relative; width: 320px; height: 320px; margin: 0 auto; background: #f8f9fa; border: 4px solid #3949ab; border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -53,7 +55,7 @@
        (examples/state-tilt-maze). Only the reactive core behind them changes. -->
   <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
-  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
 </head>
 <body>
@@ -66,7 +68,7 @@
      consumes their wc-bindable surface directly. -->
 <wcs-tilt id="tilt"></wcs-tilt>
 <wcs-accelerometer id="accel"></wcs-accelerometer>
-<wcs-timer id="loop" interval="16"></wcs-timer>
+<wcs-raf id="loop"></wcs-raf>
 <wcs-wakelock id="wake"></wcs-wakelock>
 
 <div id="app"></div>
@@ -115,7 +117,7 @@
   }
 
   // --- bind the unmodified I/O nodes -----------------------------------------
-  await Promise.all(["wcs-tilt", "wcs-accelerometer", "wcs-timer", "wcs-wakelock"]
+  await Promise.all(["wcs-tilt", "wcs-accelerometer", "wcs-raf", "wcs-wakelock"]
     .map((t) => customElements.whenDefined(t)));
   const tilt = bindNode(document.getElementById("tilt"));
   const accel = bindNode(document.getElementById("accel"));
@@ -130,7 +132,7 @@
   // --- hot-loop state: plain variables (never touch the reactive graph) ---
   let vx = 0, vy = 0;
   let simBeta = 0, simGamma = 0, dragging = false;
-  let lastT = 0, lastShake = 0, startedAt = 0;
+  let shakeCooldown = 0;
 
   // --- derived values -------------------------------------------------------
   const sensorActive = computed(() => tilt.signals.beta.get() !== null);
@@ -142,27 +144,31 @@
   });
   const wakeText = computed(() => (wake.signals.held.get() ? "screen: kept awake" : "screen: normal"));
 
-  // --- one physics step per <wcs-timer> tick ------------------------------
+  // --- one physics step per <wcs-raf> frame ---------------------------------
   // Everything inside reads via peek(): the driving effect depends ONLY on the
   // tick signal, and the step never accidentally subscribes to what it reads.
-  function step() {
-    const now = performance.now();
-    const dt = clamp((now - (lastT || now)) / 1000, 0, 0.04);
-    lastT = now;
+  // dtMs comes straight from the node (loop.signals.dt): 0 across
+  // start/restart and tab-visibility boundaries, so a backgrounded tab can
+  // never teleport the ball. The only dt handling left here is the upper
+  // bound — a domain decision (V_MAX x dt must stay under the 12px wall
+  // thickness), not clock bookkeeping.
+  function step(dtMs) {
+    shakeCooldown = Math.max(0, shakeCooldown - dtMs);
 
     // shake to restart: |accel| far from gravity means a jolt
     const ax = accel.signals.x.peek();
-    if (ax !== null && phase.peek() !== "idle" && now - lastShake > 1200) {
+    if (ax !== null && phase.peek() !== "idle" && shakeCooldown === 0) {
       const mag = Math.hypot(ax, accel.signals.y.peek(), accel.signals.z.peek());
       if (Math.abs(mag - 9.81) > 15) {
-        lastShake = now;
+        shakeCooldown = 1200;
         restart();
         return;
       }
     }
 
     if (phase.peek() !== "playing") return;
-    timeMs.set(now - startedAt);
+    timeMs.set(timeMs.peek() + dtMs);
+    const dt = Math.min(dtMs, 40) / 1000;
 
     const sensor = tilt.signals.beta.peek() !== null;
     if (!dragging && !sensor) {
@@ -209,7 +215,6 @@
     vx = 0; vy = 0; simBeta = 0; simGamma = 0;
     pos.set({ x: START.x, y: START.y });
     timeMs.set(0);
-    startedAt = performance.now();
     phase.set("playing");
   }
 
@@ -261,10 +266,12 @@
 
   // --- mount --------------------------------------------------------------------
   createRoot(() => {
-    // the game loop: this effect depends on exactly one signal — the timer tick
+    // the game loop: this effect depends on exactly one signal — the frame tick.
+    // dt rides along via peek() (reading it with get() would be redundant:
+    // both update from the same wcs-raf:tick event).
     effect(() => {
       loop.signals.tick.get();
-      step();
+      step(loop.signals.dt.peek() ?? 0);
     });
 
     // "keep the screen awake while playing" — signal → input, one line

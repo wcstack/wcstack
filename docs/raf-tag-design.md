@@ -1,6 +1,6 @@
 # wcs-raf（フレームソースノード）設計論点 (rAF Tag Design Notes)
 
-- Status: **設計確定（2026-07-10 G1/G2/G3 決定済み）→ 実装計画は [raf-impl-plan.md](raf-impl-plan.md)**
+- Status: **実装完了（2026-07-10・受け入れ検証済み・未リリース）** — 計画と実施記録は [raf-impl-plan.md](raf-impl-plan.md)、実測タイミング契約は timing-and-firing-contract.md §18
 - 起点: examples/state-tilt-maze / signals-tilt-maze で `<wcs-timer interval="16">` を
   ゲームループに流用した際、(1) setInterval が vsync に揃わない、(2) dt を利用側で
   自前計算・クランプする必要がある、の 2 点が判明したこと。

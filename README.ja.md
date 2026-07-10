@@ -260,6 +260,7 @@ const html = await renderToString(`
 - [`@wcstack/upload`](packages/upload/) — ファイルアップロードを宣言的に記述し、進捗・状態管理をフレームワーク非依存で提供。
 - [`@wcstack/storage`](packages/storage/) — `<wcs-storage>` で localStorage / sessionStorage と状態を宣言的に同期。
 - [`@wcstack/timer`](packages/timer/) — `<wcs-timer>` で時刻経過やポーリングを宣言的な状態変化として扱う。
+- [`@wcstack/raf`](packages/raf/) — `<wcs-raf>` で requestAnimationFrame を宣言的に。フレーム tick・一級の `dt`・非表示タブの `suspended` 出力。
 - [`@wcstack/geolocation`](packages/geolocation/) — `<wcs-geo>` で位置情報を宣言的に扱い、単発/継続取得、精度、ライブな権限状態を提供。
 - [`@wcstack/debounce`](packages/debounce/) — `<wcs-debounce>` と `<wcs-throttle>` で値・シグナルのストリームをまとめる debounce/throttle を宣言的に。
 - [`@wcstack/clipboard`](packages/clipboard/) — `<wcs-clipboard>` でクリップボードの読み書き、リッチな `ClipboardItem`、copy/cut/paste 監視、ライブな権限状態を宣言的に。
@@ -350,6 +351,7 @@ wcstack/
 │   ├── server/        # @wcstack/server
 │   ├── storage/       # @wcstack/storage
 │   ├── timer/         # @wcstack/timer
+│   ├── raf/           # @wcstack/raf
 │   ├── geolocation/   # @wcstack/geolocation
 │   ├── websocket/     # @wcstack/websocket
 │   ├── upload/        # @wcstack/upload

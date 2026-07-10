@@ -1,4 +1,4 @@
-# tilt + accelerometer + timer + wakelock デモ（ボール迷路）
+# tilt + accelerometer + raf + wakelock デモ（ボール迷路）
 
 木製の迷路おもちゃ、あれの wcstack 版です。スマホを傾けてボールを転がし、
 4 つの穴を避けて旗までたどり着く。5 パッケージすべてに本物の役割があり、
@@ -11,7 +11,7 @@
 | パッケージ | 役割 |
 |---|---|
 | `@wcstack/tilt` | `beta` / `gamma` が重力ベクトルになる |
-| `@wcstack/timer` | `<wcs-timer interval="16">` が 1 tick = 1 物理ステップを駆動 |
+| `@wcstack/raf` | `<wcs-raf>` が 1 フレーム = 1 物理ステップを駆動（一級の `dt` 付き） |
 | `@wcstack/accelerometer` | シェイク検出（\|accel\| が 9.8 m/s² から大きく乖離）→ リスタート |
 | `@wcstack/wakelock` | `phase === "playing"` の**あいだだけ**画面を消灯させない |
 | `@wcstack/state` | 物理・衝突・フェーズ管理・描画のすべて |
@@ -38,7 +38,7 @@ npx serve examples/state-tilt-maze
 <wcs-tilt> ──beta/gamma──▶ state.tiltBeta/tiltGamma ─┐
 ポインタドラッグ ──▶ state.simBeta/simGamma ─────────┤ get effBeta/effGamma
                                                      ▼
-<wcs-timer interval="16"> ──eventToken.tick──▶ $on.frameTick ─▶ step()
+<wcs-raf> ──eventToken.tick (detail.dt)──▶ $on.frameTick ─▶ step(dt)
                                                      │  速度積分・衝突判定・
                                                      │  穴/ゴール判定
                                                      ▼
@@ -50,12 +50,14 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD チ
 
 ## 押さえどころ
 
-- **ゲームループが宣言的。** `<wcs-timer interval="16">` の `tick` を
-  event token（`eventToken.tick: frameTick`）で受け、`$on.frameTick` が
-  `step()` を 1 回実行します。`requestAnimationFrame` も `setInterval` も
-  後始末コードもありません — タグを外せばループも消えます。HUD の
-  「game loop」チップは `wcs-timer:state(running)`（1.17.0 の CustomStateSet
-  反映）だけで点灯し、バインディングはゼロです。
+- **ゲームループが宣言的 — しかも vsync 整合。** `<wcs-raf>` がブラウザの
+  フレームを event token（`eventToken.tick: frameTick`）として配り、
+  `$on.frameTick` が `step(detail.dt)` を 1 回実行します。フレーム差分 `dt`
+  はノードの一級出力で、start/リスタート/タブ可視性の境界では `0` —
+  ゲーム側に時計の簿記が一切なく、バックグラウンドのタブがボールを
+  テレポートさせることもありません。HUD の「game loop」チップは純 CSS:
+  `wcs-raf:state(running)` で緑、非表示タブでループが枯渇すると
+  `wcs-raf:state(suspended)` でアンバーになります。
 - **センサーはただの入力ノード。** 物理は `effBeta` / `effGamma` getter しか
   読みません。実センサーとドラッグフォールバックは**別々の** state パスに
   書き込み、getter がソースを選ぶだけ — 入力を差し替えても下流は何も
@@ -65,11 +67,14 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD チ
   `$command.startSensors` トークンを 1 回 emit するだけ。各要素は自分の
   メソッドを HTML 側で購読しています（`<wcs-tilt>` に
   `command.requestPermission` + `command.start`、`<wcs-accelerometer>` に
-  `command.start`）— state は DOM に一切触れません。emit はクリックの
-  ジェスチャ文脈で同期実行されるので iOS の許可ゲートを満たします。許可を
-  await せずに `start()` を撃っても安全です: ゲートはイベント**配送**側に
-  あってリスナー登録側には無いため、未許可の購読はただ沈黙するだけです
-  （それ以外の環境では `requestPermission()` が即 `"granted"` を返します）。
+  `command.start`）— state は DOM に一切触れません。emit の前に
+  `whenDefined` ゲートを挟んでいます（command 購読は要素定義まで遅延され、
+  それより早い emit は購読者ゼロで空撃ちになるため。user activation は
+  時間窓なので、この await を挟んでも iOS の許可ゲートは満たされます）。
+  許可を await せずに `start()` を撃っても安全です: ゲートはイベント
+  **配送**側にあってリスナー登録側には無いため、未許可の購読はただ沈黙
+  するだけです（それ以外の環境では `requestPermission()` が即 `"granted"`
+  を返します）。
 - **シェイクは導出シグナル。** `<wcs-accelerometer>` は `x/y/z` を流すだけ。
   `step()` が `|accel|` を計算し、重力（9.81 m/s²）からの大きな乖離を
   シェイクとみなします（クールダウン 1.2 秒）。デスクトップではセンサーが
