@@ -260,6 +260,7 @@ const html = await renderToString(`
 - [`@wcstack/upload`](packages/upload/) — Declarative file upload flows with progress, status, and framework-agnostic bindings.
 - [`@wcstack/storage`](packages/storage/) — Declarative persistence with `<wcs-storage>` for localStorage / sessionStorage state sync.
 - [`@wcstack/timer`](packages/timer/) — Declarative timers with `<wcs-timer>` for ticking, elapsed time, and state-driven polling.
+- [`@wcstack/raf`](packages/raf/) — Declarative requestAnimationFrame with `<wcs-raf>`: frame ticks, first-class `dt`, and a `suspended` output for hidden tabs.
 - [`@wcstack/geolocation`](packages/geolocation/) — Declarative geolocation with `<wcs-geo>` for one-shot/continuous position, accuracy, and live permission state.
 - [`@wcstack/debounce`](packages/debounce/) — Declarative debounce/throttle with `<wcs-debounce>` and `<wcs-throttle>` for coalescing value and signal streams.
 - [`@wcstack/clipboard`](packages/clipboard/) — Declarative clipboard with `<wcs-clipboard>` for read/write, rich `ClipboardItem`s, copy/cut/paste monitoring, and live permission state.
@@ -350,6 +351,7 @@ wcstack/
 │   ├── server/        # @wcstack/server
 │   ├── storage/       # @wcstack/storage
 │   ├── timer/         # @wcstack/timer
+│   ├── raf/           # @wcstack/raf
 │   ├── geolocation/   # @wcstack/geolocation
 │   ├── websocket/     # @wcstack/websocket
 │   ├── upload/        # @wcstack/upload

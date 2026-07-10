@@ -357,3 +357,27 @@ Shell は constructor（= upgrade 時）で自分自身の `*-changed` / `:error
 `attachInternals` 不在（テスト環境 happy-dom を含む）・非ダッシュ状態名を拒む旧 Chromium（<125）では、取得時 probe により反映系全体が no-op になる。機能・イベント・プロパティは一切影響を受けない。`debug-states` 属性ミラー（`data-wcs-state-*`）も同時に無効になる（states の表示であって代替サーフェスではない）。
 
 > **残課題**: monitor 系ノードの契約節は §7〜§16 で全て執筆済み（2026-07-06）。新しい非同期プリミティブタグを足すときは §6 の指針どおり、実装を読み直した上で本書に1節追加すること（実装で確認できない断定を書かない）。
+
+---
+
+## 18. @wcstack/raf — フレーム配送と描画反映の契約（2026-07-10・一部は実測）
+
+対象: `RafCore.start()` のフレームループ、`dt` の正規化、`suspended` 二相、および「rAF 源にすると描画に揃うのか」の実測結果。設計は `raf-tag-design.md`（G1/G2/G3 決定済み）。
+
+### 18.1 `tick` は rAF コールバックで毎フレーム発火（同値ガード無し・reading 型）
+時刻源はコールバック引数の `DOMHighResTimeStamp` のみ（`performance.now()` は混ぜない）。detail は `{ count, elapsed, dt, timestamp }` で、`tick`/`elapsed`/`dt` は同一イベントからの派生 getter（guidelines §4.2）。`reset()` の通知 tick は フレームではないため `timestamp = 0`。`running`/`suspended` は同値ガード付き。
+
+### 18.2 `dt` は「連続稼働中のフレーム間隔」のみを表す（G3）
+`start()` / `resume()` / `visibilitychange`（両エッジ）で `_lastTs` を破棄し、次に届いたフレームの `dt` は 0。**中断を跨いだ差分は観測者に届かない**。上限クランプはしない — 遅いフレームの扱いは利用側のドメイン判断（迷路デモは `Math.min(dt, 40)` を物理側に置く）。`elapsed` は Σdt なので、この正規化により自動的に「アクティブ時間」になる（segment 簿記は存在しない）。
+
+### 18.3 `running` / `suspended` は desired / actual の二相（§15 wakelock と同型）
+非表示タブで rAF は**完全停止**する（setInterval の ~1Hz スロットルと異なる）。`running` は start 済みの意図で、非表示中も true のまま。`suspended` は「running かつ hidden」の導出で、`observe()`（Shell の connect）が購読する `visibilitychange` が駆動する。observe() 前・document 不在環境では常に false。stop/pause は意図が消えるので suspended も即 false。実ブラウザ検証済み: 合成 visibilitychange で `suspended` true/false・`:state(suspended)` の CSS マッチまで確認（headless Chromium）。
+
+### 18.4 【実測】tick 由来の state 書き込みの DOM 反映は「次フレームまで」— ちょうど 1 フレームの描画遅延
+測定（headless Chromium・`<wcs-raf>` → `eventToken.tick` → `$on` で counter を加算 → `textContent` バインド）:
+- tick の dispatch と同一タスク内（microtask ドレイン後の `setTimeout(0)` 時点）では DOM は**前フレームの値**（100 回中 100 回）。
+- 次フレームの rAF コールバック時点では反映済み（100 回中 ≥99）。
+
+つまり `wcs-raf` の tick は vsync に揃うが、`@wcstack/state` の event → `$on` → updater パイプラインを通った描画反映は**ちょうど 1 フレーム遅れる**。updater 自体は `queueMicrotask`（§4 の通り）だが、上流のどこかにタスク境界が存在することを意味する（未特定 — state 側の調査候補。同一フレーム flush にできれば全 I/O ノードのイベント駆動更新から 1 フレームの視覚遅延が消える）。
+
+帰結: (1) これは raf 固有ではなく、event-token / two-way 経由の書き込み一般の特性（旧 `<wcs-timer interval="16">` ループでも同じだった＝raf 移行による退行ではない）。(2) dt ベースの物理・ロジックの正しさには影響しない。視覚遅延 +1 フレーム（~16.7ms）のみ。(3) 検証方法: examples の迷路デモに対する Playwright プローブ（tick リスナーから `setTimeout(0)` で DOM を読む／次フレームで読む）。

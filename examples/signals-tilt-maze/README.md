@@ -2,7 +2,7 @@
 
 The same labyrinth game as [`examples/state-tilt-maze`](../state-tilt-maze/) —
 same maze, same physics, same four unmodified I/O nodes (`<wcs-tilt>`,
-`<wcs-accelerometer>`, `<wcs-timer>`, `<wcs-wakelock>`) — with one thing
+`<wcs-accelerometer>`, `<wcs-raf>`, `<wcs-wakelock>`) — with one thing
 swapped: the reactive core is **`@wcstack/signals`** instead of
 `@wcstack/state`.
 
@@ -29,7 +29,7 @@ as the [state version](../state-tilt-maze/README.md#getting-started).
 |---|---|---|
 | Wiring to I/O nodes | `data-wcs` attributes (declarative DSL) | `bindNode(el)` in JS (`signals` / `set` / `command`) |
 | Game tick | event-token → `$on.frameTick` | `effect(() => { loop.signals.tick.get(); step(); })` |
-| Hot-loop values (`vx`, `lastT`, …) | state properties (go through the proxy) | **plain JS variables** — never touch the reactive graph |
+| Hot-loop values (`vx`, `shakeCooldown`, …) | state properties (go through the proxy) | **plain JS variables** — never touch the reactive graph |
 | Render-relevant values | every bound path | exactly three signals: `phase`, `pos`, `timeMs` |
 | Rendering | HTML templates + structural `if:`/`for:` | `h()` — real DOM built once, per-binding effects |
 | Per-frame DOM work | binding pipeline update per bound path | **one** `style` effect re-runs (`transform: translate(...)`) |

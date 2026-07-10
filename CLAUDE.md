@@ -29,6 +29,7 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/broadcast`** (`<wcs-broadcast>`) — Cross-tab messaging (BroadcastChannel)
 - **`@wcstack/worker`** (`<wcs-worker>`) — Dedicated Web Worker primitive
 - **`@wcstack/timer`** (`<wcs-timer>`) — Interval / timeout primitive
+- **`@wcstack/raf`** (`<wcs-raf>`) — requestAnimationFrame frame-source primitive (first-class `dt`, `suspended` two-phase output)
 - **`@wcstack/debounce`** (`<wcs-debounce>`, `<wcs-throttle>`) — Signal coalescing
 - **`@wcstack/clipboard`** (`<wcs-clipboard>`) — Clipboard read / write
 - **`@wcstack/geolocation`** (`<wcs-geo>`) — Geolocation API

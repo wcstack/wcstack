@@ -16,9 +16,11 @@
     .chip { padding: 2px 10px; border-radius: 12px; background: #e8eaf6; color: #3949ab; font-size: 0.75rem; }
     .hud button { margin-left: auto; padding: 0.3rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; background: white; cursor: pointer; font-size: 0.8rem; }
     .hud button:hover { background: #f0f0f0; }
-    /* :state() showcase — the chip lights up while <wcs-timer> is actually ticking. */
+    /* :state() showcase — the chip lights up while <wcs-raf> is actually running,
+       and turns amber while the loop is starved (tab hidden -> rAF fully stops). */
     .loop-chip { background: #eceff1; color: #90a4ae; }
-    body:has(wcs-timer:state(running)) .loop-chip { background: #e8f5e9; color: #2e7d32; }
+    body:has(wcs-raf:state(running)) .loop-chip { background: #e8f5e9; color: #2e7d32; }
+    body:has(wcs-raf:state(suspended)) .loop-chip { background: #fff3e0; color: #e65100; }
 
     /* Board — fixed 320x320 logical px, same space as the physics */
     .board { position: relative; width: 320px; height: 320px; margin: 0 auto; background: #f8f9fa; border: 4px solid #3949ab; border-radius: 8px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -42,13 +44,13 @@
   <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
-  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
 </head>
 <body>
 
 <h1>wcstack: tilt ball maze</h1>
-<p class="lead">tilt + accelerometer + timer + wakelock + state — tilt your phone to roll the ball to the flag. Even the game loop is a declarative tag.</p>
+<p class="lead">tilt + accelerometer + raf + wakelock + state — tilt your phone to roll the ball to the flag. Even the game loop is a declarative tag.</p>
 
 <!-- ============================================================
      App State — maze data, physics, and page logic
@@ -107,7 +109,7 @@
 
       // ball state (velocities are unbound working values, declared for clarity)
       ballX: START.x, ballY: START.y, vx: 0, vy: 0,
-      timeMs: 0, startedAt: 0, lastT: 0, lastShake: 0,
+      timeMs: 0, shakeCooldown: 0,
 
       wakelockHeld: false,
 
@@ -115,10 +117,12 @@
       // subscriptions are declared on the I/O nodes below (command.* bindings).
       $commandTokens: ["startSensors"],
 
-      // The <wcs-timer> tick arrives as an event token and drives one physics step.
+      // The <wcs-raf> frame arrives as an event token and drives one physics
+      // step. detail.dt is the node's first-class frame delta — no clock
+      // bookkeeping in the game code.
       $eventTokens: ["frameTick"],
       $on: {
-        frameTick: (state) => state.step(),
+        frameTick: (state, event) => state.step(event.detail.dt),
       },
 
       // --- derived ------------------------------------------------------
@@ -146,24 +150,28 @@
       },
       get wakeText() { return this.wakelockHeld ? "screen: kept awake" : "screen: normal"; },
 
-      // --- game loop (one step per <wcs-timer> tick) ---------------------
-      step() {
-        const now = performance.now();
-        const dt = clamp((now - (this.lastT || now)) / 1000, 0, 0.04);
-        this.lastT = now;
+      // --- game loop (one step per <wcs-raf> frame) -----------------------
+      // dtMs comes straight from the node (detail.dt): it is 0 across
+      // start/restart and tab-visibility boundaries, so a backgrounded tab can
+      // never teleport the ball. The only dt handling left here is the upper
+      // bound — a domain decision (V_MAX x dt must stay under the 12px wall
+      // thickness), not clock bookkeeping.
+      step(dtMs) {
+        this.shakeCooldown = Math.max(0, this.shakeCooldown - dtMs);
 
         // Shake to restart — |accel| far from gravity (~9.8 m/s^2) means a jolt.
-        if (this.accelX !== null && this.phase !== "idle" && now - this.lastShake > 1200) {
+        if (this.accelX !== null && this.phase !== "idle" && this.shakeCooldown === 0) {
           const mag = Math.hypot(this.accelX, this.accelY, this.accelZ);
           if (Math.abs(mag - 9.81) > 15) {
-            this.lastShake = now;
+            this.shakeCooldown = 1200;
             this.restart();
             return;
           }
         }
 
         if (this.phase !== "playing") return;
-        this.timeMs = now - this.startedAt;
+        this.timeMs += dtMs;
+        const dt = Math.min(dtMs, 40) / 1000;
 
         // Let go of the pointer -> the simulated board levels back out.
         if (!this.dragging && !this.sensorActive) {
@@ -199,15 +207,22 @@
       // --- actions --------------------------------------------------------
       // Sensor enabling via the command-token protocol: emitting one token
       // fires every subscribed command in declaration order —
-      // tilt.requestPermission() (synchronously in this click's gesture
-      // context, as iOS requires), tilt.start(), accel.start(). No DOM
-      // queries in state; the wiring lives on the elements themselves.
+      // tilt.requestPermission() (in this click's gesture context, as iOS
+      // requires), tilt.start(), accel.start(). No DOM queries in state; the
+      // wiring lives on the elements themselves.
       // start() without waiting for the permission is safe: the iOS gate is
       // on event DISPATCH, not on listener registration, so an ungranted
       // subscription is simply silent (and on every other platform
       // requestPermission() resolves "granted" immediately). Both sensors
       // are best-effort — on failure the drag fallback plays on.
-      startGame() {
+      // The whenDefined gate closes a slow-CDN race: command.* subscriptions
+      // are deferred until the custom element is defined, and an emit() fired
+      // before that has no subscribers (tokens are not replayed). Awaiting is
+      // gesture-safe — user activation is a time window, not the synchronous
+      // task, so requestPermission still runs inside it.
+      async startGame() {
+        await Promise.all(["wcs-tilt", "wcs-accelerometer"]
+          .map((t) => customElements.whenDefined(t)));
         this.$command.startSensors.emit();
         this.restart();
       },
@@ -216,7 +231,6 @@
         this.vx = 0; this.vy = 0;
         this.simBeta = 0; this.simGamma = 0;
         this.timeMs = 0;
-        this.startedAt = performance.now();
         this.phase = "playing";
       },
 
@@ -254,9 +268,10 @@
 <wcs-accelerometer data-wcs="x: accelX; y: accelY; z: accelZ; error: accelError;
                              command.start: $command.startSensors"></wcs-accelerometer>
 
-<!-- The game loop: a 16ms declarative interval. Each tick fires the frameTick
-     event token, and $on runs one physics step. -->
-<wcs-timer interval="16" data-wcs="eventToken.tick: frameTick"></wcs-timer>
+<!-- The game loop: the browser's own frames, as a tag. Each frame fires the
+     frameTick event token (detail carries the first-class dt), and $on runs
+     one physics step — vsync-aligned, no interval to tune. -->
+<wcs-raf data-wcs="eventToken.tick: frameTick"></wcs-raf>
 
 <!-- "Keep the screen awake WHILE playing" — one bound boolean, auto re-acquire
      across tab switches is handled inside the node. -->
