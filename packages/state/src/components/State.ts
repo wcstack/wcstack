@@ -6,7 +6,7 @@ import { loadFromScriptJson } from "../stateLoader/loadFromScriptJson";
 import { raiseError } from "../raiseError";
 import { BindingType, IState } from "../types";
 import { IStateElement } from "./types";
-import { setStateElementByName, getBindingsReady } from "../stateElementByName";
+import { setStateElementByName, getStateElementByName, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
 import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
@@ -16,6 +16,9 @@ import { clearCommandNamespace } from "../command/commandNamespace";
 import { processEventTokensDeclaration } from "../event/processEventTokensDeclaration";
 import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
 import { processOnDeclaration } from "../event/processOnDeclaration";
+import { processStreamsDeclaration } from "../stream/processStreamsDeclaration";
+import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
+import { startStreams } from "../stream/streamRuntime";
 import { defineDCC } from "../dcc/defineDCC";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
@@ -94,6 +97,7 @@ export class State extends HTMLElement implements IStateElement {
   private _bindableEventMap: Record<string, string> = {};
   private _commandTokenNames: Set<string> = new Set<string>();
   private _eventTokenNames: Set<string> = new Set<string>();
+  private _dcc: boolean = false;
 
   constructor() {
     super();
@@ -128,6 +132,9 @@ export class State extends HTMLElement implements IStateElement {
     this._listPaths.clear();
     this._elementPaths.clear();
     this._getterPaths.clear();
+    // 再 set 時の残骸が $streams の衝突検査（processStreamsDeclaration）に
+    // 偽陽性で命中しないよう getterPaths と対称にクリアする。
+    this._setterPaths.clear();
     this._pathSet.clear();
     const stateInfo = getStateInfo(value);
     for(const path of stateInfo.getterPaths) {
@@ -135,6 +142,17 @@ export class State extends HTMLElement implements IStateElement {
     }
     for(const path of stateInfo.setterPaths) {
       this._setterPaths.add(path);
+    }
+    // $streams: 再 set 時の二重起動防止のため旧 stream を abort ＋ registry 全削除してから
+    // 新宣言をパースする（clearEventTokenRegistry → processOnDeclaration と同じ再配線パターン）。
+    // getterPaths / setterPaths の収集後であること（宣言バリデーションが衝突検査で参照する）。
+    clearStreamRegistry(this);
+    processStreamsDeclaration(this, value);
+    // 接続中の再 set（S13）は新宣言で即再起動する。
+    // 初回（_initialize 中）は _initialized が false なのでここでは起動されず、
+    // connectedCallback 側の startStreams（$connectedCallback 完了後）が担う。
+    if (this._initialized && this._rootNode !== null && !inSsr()) {
+      startStreams(this);
     }
     this._resolveLoading?.();
   }
@@ -276,6 +294,7 @@ export class State extends HTMLElement implements IStateElement {
       raiseError(`DCC: Failed to load state: ${e}`);
     }
     defineDCC(hostElement, shadowRoot, state!);
+    this._dcc = true;
     this._initialized = true;
     this._rootNode = null; // disconnectedCallbackでのstate参照を防止
     this._resolveInitialize?.();
@@ -305,6 +324,11 @@ export class State extends HTMLElement implements IStateElement {
       await this._initialize();
       this._initialized = true;
       this._resolveInitialize?.();
+    } else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
+      // 再接続（disconnect で名前登録が解除された後の再 connect）: 登録を復元する。
+      // createState が rootNode 経由でこの要素を解決できるようにするために必要
+      // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
+      setStateElementByName(this._rootNode, this._name, this);
     }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
     // inSsr() (サーバー側): レンダリング中なので実行する
@@ -325,6 +349,19 @@ export class State extends HTMLElement implements IStateElement {
       this.parentNode?.insertBefore(ssrEl, this);
     }
 
+    // $streams の eager 起動（$connectedCallback 完了後、設計書 §2-3）。
+    // inSsr() 時は起動しない（SSR 出力には initial が乗る、§7-1）。
+    // enable-ssr のクライアント側は $connectedCallback をスキップしても起動する
+    // （stream はシリアライズ不能なランタイム副作用のため）。
+    // _rootNode ガード: $connectedCallback の await 中に切断された場合は起動しない。
+    // ガードなしだと startStream 内の createState が rootNode 解決（disconnectedCallback
+    // で null 化済み）の raiseError で throw し、connectedCallbackPromise が永遠に
+    // 未解決になる。「未接続の entry は restart しない」設計書 §3-2 とも整合し、
+    // _state セッター側の startStreams 前ガード（_rootNode !== null）と対称。
+    if (!inSsr() && this._rootNode !== null) {
+      startStreams(this);
+    }
+
     this._resolveConnectedCallback?.();
   }
 
@@ -335,6 +372,9 @@ export class State extends HTMLElement implements IStateElement {
       clearCommandTokenRegistry(this);
       clearCommandNamespace(this);
       clearEventTokenRegistry(this);
+      // stream は abort のみで registry は保持する（再接続時に同じ宣言から
+      // initial で再起動できる、設計書 §5-1 / §5-2）。
+      abortAllStreams(this);
       this._rootNode = null;
     }
   }
