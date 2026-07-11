@@ -23,6 +23,7 @@ import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { resetSsrCache } from "../src/config";
 import { getStreamEntries } from "../src/stream/streamRegistry";
+import { startStreams } from "../src/stream/streamRuntime";
 import type { IState } from "../src/types";
 import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
 
@@ -452,6 +453,33 @@ describe("$streams State ライフサイクル統合", () => {
 
     expect(updatedLog.length).toBeGreaterThanOrEqual(1);
     expect(updatedLog[0]).toContain("tokens"); // 通常の更新として paths に載る（§4-4）
+    host.remove();
+  });
+
+  it("§3-2: eager 起動（startStreams）での args throw は error 正規化されず loud fail すること（drain restart 経路との対比）", async () => {
+    const m = makeManualAsyncGenerator<string>();
+    const boom = new Error("eager boom");
+    let shouldThrow = false;
+    const { host, stateEl } = await connectHost("", {
+      p: 1,
+      $streams: {
+        tokens: {
+          source: () => m.iterable,
+          args: (s: IState) => {
+            if (shouldThrow) throw boom;
+            return s.p;
+          },
+        },
+      },
+    });
+    expect(getStreamEntries(stateEl).get("tokens")!.status).toBe("active");
+
+    // eager 経路（connect 時と同じ startStreams 直呼び）は try/catch で飲まれず throw が伝播する。
+    // drain restart 経路での error 正規化（§3-2 規範 3）との対比は stream.restart.test.ts が固定。
+    // 将来 startStreams に error 正規化が混入するリグレッションをここで検出する。
+    shouldThrow = true;
+    expect(() => startStreams(stateEl)).toThrow("eager boom");
+
     host.remove();
   });
 });

@@ -10,6 +10,7 @@
  */
 
 import type { IStateElement } from "../components/types";
+import { deleteActiveStateElement } from "./activeStateElements";
 import { invalidateLastNotified } from "./lastNotified";
 import type { IStreamEntry } from "./types";
 
@@ -43,6 +44,10 @@ export function getStreamEntries(stateElement: IStateElement): Map<string, IStre
  * 通知値と同値判定されて skip され、DOM が恒久的に陳腐化する（設計書 §4-3）。
  */
 export function abortAllStreams(stateElement: IStateElement): void {
+  // 依存駆動 restart の対象から外す（切断済み stateElement は restart しない、
+  // 設計書 §3-2。add 側は startStreams — stream/activeStateElements.ts の
+  // リーク防止不変条件を参照）。registry の有無に関わらず必ず外す。
+  deleteActiveStateElement(stateElement);
   const entries = registryByStateElement.get(stateElement);
   if (typeof entries === "undefined") {
     return;
@@ -61,6 +66,9 @@ export function abortAllStreams(stateElement: IStateElement): void {
  */
 export function clearStreamRegistry(stateElement: IStateElement): void {
   abortAllStreams(stateElement);
+  // abortAllStreams が既に delete 済みだが、「clear = 全削除でも必ず restart 対象から
+  // 外れる」不変条件を将来の abortAllStreams の変更から独立に保証するため明示的に呼ぶ。
+  deleteActiveStateElement(stateElement);
   registryByStateElement.delete(stateElement);
 }
 

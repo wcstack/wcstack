@@ -26,6 +26,7 @@ import { getCommandNamespace } from "../../command/commandNamespace";
 import { IStateElement } from "../../components/types";
 import { STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME, WILDCARD } from "../../define";
 import { raiseError } from "../../raiseError";
+import { collectStreamDependency } from "../../stream/argsTrace";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
@@ -127,6 +128,8 @@ export function getByAddress(
   handler  : IStateHandler
 ): any {
   checkDependency(handler, address);
+  // $streams の args トレース中のみ絶対アドレスを捕捉（collector 非活性なら即 return）
+  collectStreamDependency(handler.stateElement, address);
   const stateElement = handler.stateElement;
   const cacheable = address.pathInfo.wildcardCount > 0 || 
                     stateElement.getterPaths.has(address.pathInfo.path);
