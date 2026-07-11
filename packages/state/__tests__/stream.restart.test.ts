@@ -665,4 +665,120 @@ describe("$streams 依存駆動 restart（Phase C）", () => {
 
     host.remove();
   });
+
+  it("restart 中の source が同一要素の _state を同期再 set した場合、収集済みの旧 entry は restart されないこと（孤児 consume run の防止）", async () => {
+    // hits 実行ループの activeStateElements.has() チェックだけでは、同期再 set
+    // （clearStreamRegistry → startStreams で要素が Set に再 add される）を素通しする。
+    // entry の identity 再検証がないと、registry から到達不能になった旧 entry が
+    // restart され、abortAllStreams でも abort できない孤児 consume run がリークする。
+    const sourceX2 = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    const sourceY2 = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    const sourceY = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    let stateElRef: State | null = null;
+    let xCalls = 0;
+    const sourceX = vi.fn(() => {
+      xCalls++;
+      if (xCalls >= 2) {
+        // 2 回目（依存駆動 restart）の同期プレフィックスで同一要素を同期再 set する
+        stateElRef!.setInitialState({
+          t: 0,
+          $streams: {
+            x: { args: (s: IState) => s.t, source: sourceX2 },
+            y: { args: (s: IState) => s.t, source: sourceY2 },
+          },
+        });
+      }
+      return makeManualAsyncGenerator<string>().iterable;
+    });
+    const raw: IState = {
+      t: 0,
+      $streams: {
+        x: { args: (s: IState) => s.t, source: sourceX },
+        y: { args: (s: IState) => s.t, source: sourceY },
+      },
+    };
+    const { host, stateEl } = await connectHost("", raw);
+    stateElRef = stateEl;
+    const oldEntryY = getStreamEntries(stateEl).get("y")!;
+    expect(sourceX).toHaveBeenCalledTimes(1);
+    expect(sourceY).toHaveBeenCalledTimes(1);
+
+    // t の書き込みで x・y の両 entry が同一 batch で hit → x の restart 中に再 set が走る
+    writeState(stateEl, (s) => {
+      s.t = 1;
+    });
+    await flushAsync();
+
+    // 再 set 内の startStreams で新宣言は 1 回ずつ起動する
+    expect(sourceX2).toHaveBeenCalledTimes(1);
+    expect(sourceY2).toHaveBeenCalledTimes(1);
+    // 旧 y entry は registry から置換済みのため restart されない（identity 再検証）。
+    // これが素通しされると sourceY が 2 回目に呼ばれ、registry 到達不能な孤児 run になる。
+    expect(sourceY).toHaveBeenCalledTimes(1);
+    expect(oldEntryY.controller).toBeNull(); // clearStreamRegistry が abort → null にしたまま
+    expect(getStreamEntries(stateEl).get("y")).not.toBe(oldEntryY);
+
+    // 新宣言側の依存駆動 restart は正常に機能する（ガードの副作用がない）
+    writeState(stateEl, (s) => {
+      s.t = 2;
+    });
+    await flushAsync();
+    expect(sourceX2).toHaveBeenCalledTimes(2);
+    expect(sourceY2).toHaveBeenCalledTimes(2);
+    expect(sourceY).toHaveBeenCalledTimes(1);
+
+    host.remove();
+  });
+
+  it("restart 中の args が自ホストを同期切断してから throw しても、drain リスナー外へ例外が漏れず後続 entry の restart が継続すること", async () => {
+    // hits 実行前の active 再チェックは startStream 実行中（args 内）の自己切断を
+    // ガードできない。catch 内の error 正規化（updateStreamStatus → createState）が
+    // rootNode 不在で再 throw すると、notifyUpdateBatchListeners を突き抜けて
+    // 同一 batch の後続 hits の restart がスキップされる（§3-2 規範 3 の穴）。
+    let hostA: HTMLElement | null = null;
+    let argsCalls = 0;
+    const sourceA = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    const sourceB = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    const rawA: IState = {
+      t: 0,
+      $streams: {
+        x: {
+          args: (s: IState) => {
+            argsCalls++;
+            if (argsCalls >= 2) {
+              // 2 回目（restart）の trace で自ホストを同期切断してから throw する
+              hostA?.remove();
+              throw new Error("self-destruct");
+            }
+            return s.t;
+          },
+          source: sourceA,
+        },
+      },
+    };
+    const rawB: IState = { u: 0, $streams: { y: { args: (s: IState) => s.u, source: sourceB } } };
+    const a = await connectHost("", rawA); // 先に接続 = hits 実行順で A が先行
+    const b = await connectHost("", rawB);
+    hostA = a.host;
+    const entryX = getStreamEntries(a.stateEl).get("x")!;
+    expect(sourceB).toHaveBeenCalledTimes(1);
+
+    // 同一 tick に両方の依存を書く → 同一 batch で x（A）・y（B）の両方が hit
+    writeState(a.stateEl, (s) => {
+      s.t = 1;
+    });
+    writeState(b.stateEl, (s) => {
+      s.u = 1;
+    });
+    await flushAsync();
+
+    // A の args throw + 自己切断でも、後続の B の restart は継続する
+    expect(sourceB).toHaveBeenCalledTimes(2);
+    // 切断済み要素の entry は error に汚染されない（abortAllStreams の idle のまま、§5-1）
+    expect(getActiveStateElements().has(a.stateEl)).toBe(false);
+    expect(entryX.status).toBe("idle");
+    expect(entryX.error).toBeNull();
+
+    b.host.remove();
+  });
 });

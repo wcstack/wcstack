@@ -226,7 +226,7 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 
 - **Eager start** — streams start when the `<wcs-state>` element connects, **after** `$connectedCallback` completes (so `args` can read values you initialized there). There is no lazy mode.
 - **Disconnect** — all streams are aborted; status returns to `idle`. The declaration is kept.
-- **Reconnect** — streams restart **from `initial`**. There is no "resume where it left off".
+- **Reconnect** — streams restart **from `initial`**. There is no "resume where it left off". Known limitation: if **another state element with the same name** was registered on the same root while this one was disconnected, reconnection fails with the same "already registered" error as a duplicate first connect (duplicate names on one root are an error condition to begin with).
 - **Re-setting the state object** — old streams are aborted and their registry discarded; the new declaration is parsed and (if connected) started immediately. No double-starts.
 - **SSR** — the declaration is parsed and value properties are materialized with `initial`, but streams **do not start**; server output shows `initial`. On an `enable-ssr` page the client side starts streams normally — a stream is a runtime side effect, not serializable state.
 

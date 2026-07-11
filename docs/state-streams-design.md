@@ -134,7 +134,7 @@ interface IStreamEntry {
 再接続（DOM 移動等で disconnect → connect）時は `connectedCallback` の `startStreams` が再び走り、**initial から再開**する（restart と同一セマンティクス。「切断前の続きから」は保証しない）。
 
 実装補足（Phase A で確定）:
-- disconnect 時に `stateElementByName` の名前登録が解除され再接続で復元されない既存バグがあり、再接続セマンティクスが原理的に成立しなかったため、`connectedCallback` に「initialized 済みかつ未登録なら再登録」の分岐を追加した（DCC 経路は除外）。
+- disconnect 時に `stateElementByName` の名前登録が解除され再接続で復元されない既存バグがあり、再接続セマンティクスが原理的に成立しなかったため、`connectedCallback` に「initialized 済みかつ登録済みが自分でなければ再登録」の分岐を追加した（DCC 経路は除外）。既知の制限: 切断中に同名の別 state 要素が同じルートに登録されると、再接続の再登録は初回接続の同名重複と同じ `already registered` raiseError で失敗する（同名重複自体が既存のエラー条件で、失敗態様は一貫。衝突した要素は「接続済み・未登録」に陥り次の切断で throw する後続破綻があるため、graceful degradation は §11 の残課題）。
 - `connectedCallback` 側の `startStreams` は `_rootNode !== null` ガード必須（`$connectedCallback` の await 中に切断されると `createState` の rootNode 解決で throw し `connectedCallbackPromise` が未解決のままになる）。`_state` セッター側のガードと対称。
 
 ---
@@ -394,6 +394,7 @@ happy-dom + vitest（既存パターン）。fake source ヘルパ（手動 reso
 3. **signals への逆輸入**: fold throw 時の producer abort（§3-3）は signals `streamResource` にも適用すべき明確化。別 PR。
 4. **リリース**: 挙動追加のため次リリースは minor bump（他パッケージとのバージョン揃え運用に従う）。
 5. **consumeSource の suspendedStart 硬化**: source の await 中に abort され、解決値が `Symbol.asyncIterator` を持たない生 ReadableStream だった場合、未起動 generator への `return()` は本体（`getReader()` / finally）を実行せずに完了するため `reader.cancel()` に到達しない（signals 原本と同一挙動・協調キャンセル契約 MUST が担保線）。「aborted-after-await かつ生 ReadableStream なら `produced.cancel?.()` を直呼び」の硬化を、§11-3 の逆輸入とセットで検討。
+6. **再接続の同名衝突の graceful degradation**: 切断中に同名の別 state 要素が登録された場合の再接続失敗（§2-3 実装補足）は raiseError で loud fail するが、衝突した要素が「接続済み・未登録」に陥り次の切断で同期 throw する後続破綻がある。console.error + スキップ等への軟化を検討（外部レビュー 2026-07-11 指摘 1 の検証で発見）。
 
 ---
 

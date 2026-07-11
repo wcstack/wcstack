@@ -163,13 +163,18 @@ export function updateStreamStatus(
  * - hit は収集してから一括で restart する（イテレーション中の registry 変更を避ける。
  *   entry ごとに最初の hit で break するため「1 drain につき 1 entry 最大 1 restart」
  *   もここで自然に成立する — 同一 tick 内の複数依存書き込みは 1 restart に畳まれる）。
- * - hits の実行時にも activeStateElements を再チェックする: 先行 restart の source は
- *   consumeSource の同期プレフィックスで同期実行されるため、そこで他の stateElement
- *   （や自分自身のホスト）が同期切断されると、収集済み hits に切断済み要素が残る。
- *   切断済み要素へ startStream すると createState が rootNode 不在で throw し、
- *   catch 内の updateStreamStatus も同じ理由で再 throw して drain リスナー外へ漏れる
- *   （§3-2「未接続の stateElement の entry は restart しない」・§5-1「切断後は idle」
- *   の両方に違反する）ため、実行時点で active でない要素はスキップする。
+ * - hits の実行時にも active ＋ entry identity を再チェックする: 先行 restart の
+ *   source / args は consumeSource / traceArgs の同期プレフィックスで同期実行される
+ *   ため、そこで (a) 他の stateElement（や自分自身のホスト）の同期切断、(b) 同一要素の
+ *   _state 同期再 set（clearStreamRegistry → startStreams で Set に再 add される）が
+ *   起こり得る。(a) は切断済み要素への startStream が rootNode 不在で throw する経路、
+ *   (b) は registry から置換済みの旧 entry を restart して到達不能な孤児 consume run を
+ *   リークする経路（§3-2「未接続の stateElement の entry は restart しない」・
+ *   §5-1「切断後は idle」に違反）で、いずれも「entry が現行 registry の live entry で
+ *   あること」の再検証で skip する。startStream **実行中**の自己切断・再 set は事前
+ *   チェックではガードできないため、catch 側でも同じ再検証を行ってから error に
+ *   正規化する（切断済みでの正規化は createState が再 throw して drain リスナー外へ
+ *   漏れ、後続 hits の restart を巻き添えにするため）。
  * - restart（startStream）は entry ごとに try/catch し、throw（args のユーザー例外・
  *   Promise 同期契約違反等）は controller.abort() → status="error"・$streamError 格納
  *   に正規化する（§3-2 規範 3）。updater の drain を壊さず、他 entry の restart も
@@ -197,16 +202,33 @@ function restartStreamsOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>):
     }
   }
   for (const { stateElement, entry } of hits) {
-    // 先行 restart の source 同期実行が他要素を切断し得るため、実行時に再チェック
-    // （live な Set ビューなので同期切断が即時反映される。モジュールヘッダ参照）
-    if (!activeStateElements.has(stateElement)) {
+    // 先行 restart の source / args 同期実行は他要素の切断や同一要素の _state 同期再 set を
+    // 行い得るため、実行時に再チェックする（live な Set / registry ビューで即時反映）:
+    // - 切断済み要素は skip（§3-2「未接続の stateElement の entry は restart しない」）
+    // - entry が現行 registry のものでなければ skip — 同期再 set で置換された旧 entry を
+    //   restart すると、registry から到達不能なため abortAllStreams でも止められない
+    //   孤児 consume run がリークする
+    if (
+      !activeStateElements.has(stateElement) ||
+      getStreamEntries(stateElement).get(entry.name) !== entry
+    ) {
       continue;
     }
     try {
       startStream(stateElement, entry);
     } catch (e) {
       entry.controller?.abort();
-      updateStreamStatus(stateElement, entry, "error", e);
+      // startStream 実行中（args / source の同期プレフィックス）の自己切断・同期再 set は
+      // 上の再チェックではガードできない。切断済みだと updateStreamStatus の createState が
+      // rootNode 不在で再 throw して drain リスナー外へ漏れる（後続 hits の restart を
+      // 巻き添えにする）ため、entry がまだ現行の live entry である場合のみ error に
+      // 正規化する（切断済みなら abortAllStreams が idle に戻し済み。§3-2 規範 3 / §5-1）。
+      if (
+        activeStateElements.has(stateElement) &&
+        getStreamEntries(stateElement).get(entry.name) === entry
+      ) {
+        updateStreamStatus(stateElement, entry, "error", e);
+      }
     }
   }
 }

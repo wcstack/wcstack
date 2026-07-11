@@ -147,7 +147,7 @@ describe("$streams State ライフサイクル統合", () => {
     }
   });
 
-  it("S3: 1 tick に複数チャンク → fold は全チャンクに順に適用され、binding は最終値を表示すること（flush 粒度は設計書 §6-1 と乖離・特性化）", async () => {
+  it("S3: 1 tick に複数チャンク → fold は全チャンクに順に適用され、binding は最終値を表示すること（チャンクごとに 1 drain — §6-1 改定契約の特性化）", async () => {
     const m = makeManualAsyncGenerator<string>();
     const fold = vi.fn((acc: unknown, chunk: unknown) => `${acc}${chunk}`);
     const updatedLog: string[][] = [];
