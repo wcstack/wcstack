@@ -2,8 +2,8 @@
  * stream.namespaceResolution.test.ts
  *
  * `$streamStatus` / `$streamError` の解決経路の統合テスト（B-2）。
- * 実 `<wcs-state>` 要素を happy-dom で connect する流儀は stream.lifecycle.test.ts の
- * connectHost パターンを流用。
+ * 実 `<wcs-state>` 要素を happy-dom で connect する流儀は helpers/streamTestUtils.ts の
+ * connectHost（makeConnectHost）を共用。
  *
  * 検証する解決経路（docs/state-streams-design.md §4-2）:
  * - JS 直接アクセス: get トラップの namespace case（state.$streamStatus.tokens）
@@ -20,35 +20,14 @@ import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import type { IState } from "../src/types";
 import type { IStateProxy } from "../src/proxy/types";
-import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
+import { makeManualAsyncGenerator, makeManualFailableSource } from "./helpers/fakeStreamSources";
+import { flushAsync, makeConnectHost } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
-/** マイクロタスクを出し切る（updater の drain と consume ループの双方を進める） */
-const flushAsync = () => new Promise<void>((r) => setTimeout(r, 0));
-
-let hostSeq = 0;
-
-/**
- * ShadowRoot 内に <wcs-state> と任意のマークアップを持つホストを組み立てて接続する。
- * ShadowRoot 単位で state 名前空間と binding 構築が閉じるため、テスト間で干渉しない。
- */
-async function connectHost(markup: string, initialState: IState): Promise<{
-  host: HTMLElement;
-  shadowRoot: ShadowRoot;
-  stateEl: State;
-}> {
-  const host = document.createElement(`stream-ns-host-${++hostSeq}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = `${markup}<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initialState);
-  await stateEl.connectedCallbackPromise;
-  return { host, shadowRoot, stateEl };
-}
+const connectHost = makeConnectHost("stream-ns-host");
 
 /** tokens ストリーム 1 本だけ持つ最小 state 宣言 */
 function makeTokensState(): { raw: IState } {
@@ -141,6 +120,70 @@ describe("$streamStatus / $streamError の解決経路統合", () => {
     expect(() => {
       stateEl.createState("writable", (s: IStateProxy) => {
         s["$streamError.tokens"] = "x";
+      });
+    }).toThrow(/\$streamError namespace is read-only/);
+
+    host.remove();
+  });
+
+  it("§4-2 既知の許容: 現在値と同値の primitive / null の dotted 代入は sameValueGuard が先に評価されるため raiseError せず黙って no-op になること（特性化）", async () => {
+    const { raw } = makeTokensState();
+    const { host, stateEl } = await connectHost("", raw);
+
+    // 現在値は status="active" / error=null（起動直後）。setByAddress の
+    // sameValueGuard（既定 ON）は親走査（namespace proxy への Reflect.set →
+    // raiseError）より先に評価されるため、現在値と同値の代入は書き込み防御に
+    // 到達せず黙って no-op になる（設計正本 §4-2 の既知の許容 — registry/DOM の
+    // 破壊は起きず、誤用診断が遅延するのみ。防御は値が変わる書き込みで発火する。
+    // ガードの対象は primitive / null のみ — 同値でもオブジェクト値は素通りして
+    // raiseError する（次の特性化を参照）。
+    // 将来この許容を潰す場合はこの特性化と §4-2 を同時に更新すること）。
+    expect(() => {
+      stateEl.createState("writable", (s: IStateProxy) => {
+        s["$streamStatus.tokens"] = "active";
+        s["$streamError.tokens"] = null;
+      });
+    }).not.toThrow();
+
+    // no-op であること: registry の正本は変化せず読み取り値も不変
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      expect(s["$streamStatus.tokens"]).toBe("active");
+      expect(s["$streamError.tokens"]).toBeNull();
+    });
+
+    host.remove();
+  });
+
+  it("§4-2 既知の許容の限定: 同値でもオブジェクト値（同一 Error インスタンス）の代入は sameValueGuard 対象外のため raiseError すること（特性化）", async () => {
+    // sameValueGuard は primitive / null のみ対象（setByAddress のガード条件
+    // `value === null || typeof value !== "object"`）。$streamError の現在値が
+    // Error オブジェクトのとき、同一インスタンスの再代入はガードを素通りして
+    // 親走査 → namespace proxy の書き込み防御に到達する（既知の許容は
+    // 「同値かつ primitive / null」に限る — 設計正本 §4-2）。
+    const m = makeManualFailableSource<string>();
+    const failure = new Error("boom");
+    const raw: IState = {
+      $streams: {
+        tokens: {
+          source: () => m.iterable,
+          fold: (acc: unknown, chunk: unknown) => `${acc}${chunk}`,
+          initial: "",
+        },
+      },
+    };
+    const { host, stateEl } = await connectHost("", raw);
+
+    m.fail(failure);
+    await flushAsync();
+
+    // 前提: 現在値が Error インスタンスである
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      expect(s["$streamError.tokens"]).toBe(failure);
+    });
+
+    expect(() => {
+      stateEl.createState("writable", (s: IStateProxy) => {
+        s["$streamError.tokens"] = failure; // 現在値と同一インスタンスでも throw
       });
     }).toThrow(/\$streamError namespace is read-only/);
 

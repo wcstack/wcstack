@@ -5,7 +5,7 @@
  * end-to-end 統合テスト（B-3）。updateStreamStatus の $postUpdate が updater を
  * 経由して実際の binding 更新・$updatedCallback・computed 再計算に到達することを
  * 固定する。実 `<wcs-state>` を happy-dom で connect する流儀は
- * stream.lifecycle.test.ts の connectHost / flushAsync / waitFor パターンを流用。
+ * helpers/streamTestUtils.ts の connectHost（makeConnectHost）/ flushAsync / waitFor を共用。
  *
  * 受け入れ ID（docs/state-streams-design.md §10-2 / §4-3 / §4-4）:
  * - S9:       $streamStatus.<name> の binding が status 遷移（active → done / error）に追従
@@ -30,7 +30,8 @@ import { getStreamEntries } from "../src/stream/streamRegistry";
 import { updateStreamStatus } from "../src/stream/streamRuntime";
 import type { IState } from "../src/types";
 import type { IStateProxy } from "../src/proxy/types";
-import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
+import { makeManualAsyncGenerator, makeManualFailableSource } from "./helpers/fakeStreamSources";
+import { flushAsync, waitFor, makeConnectHost } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
@@ -40,89 +41,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** マイクロタスクを出し切る（updater の drain と consume ループの双方を進める） */
-const flushAsync = () => new Promise<void>((r) => setTimeout(r, 0));
-
-/** 条件成立までマクロタスクを進める（再接続の connectedCallback 完了待ちなど） */
-async function waitFor(cond: () => boolean, tries = 20): Promise<void> {
-  for (let i = 0; i < tries && !cond(); i++) {
-    await flushAsync();
-  }
-}
-
-let hostSeq = 0;
-
-/**
- * ShadowRoot 内に <wcs-state> と任意のマークアップを持つホストを組み立てて接続する。
- * ShadowRoot 単位で state 名前空間と binding 構築が閉じるため、テスト間で干渉しない。
- */
-async function connectHost(markup: string, initialState: IState): Promise<{
-  host: HTMLElement;
-  shadowRoot: ShadowRoot;
-  stateEl: State;
-}> {
-  const host = document.createElement(`stream-cp-host-${++hostSeq}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = `${markup}<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initialState);
-  await stateEl.connectedCallbackPromise;
-  return { host, shadowRoot, stateEl };
-}
-
-/**
- * 手動駆動の失敗可能な async iterable: push でチャンク供給、fail で reject 終端。
- * makeManualAsyncGenerator（正常終端専用）の error 終端版。
- * consumeSource は next() を逐次 await するため、pending は常に高々 1 つ。
- */
-function makeManualFailableSource<C>(): {
-  iterable: AsyncIterable<C>;
-  push: (c: C) => void;
-  fail: (e: unknown) => void;
-} {
-  const chunks: C[] = [];
-  let waiting: { resolve: (r: IteratorResult<C>) => void; reject: (e: unknown) => void } | null = null;
-  let failure: { error: unknown } | null = null;
-  const settle = (): void => {
-    if (waiting === null) {
-      return;
-    }
-    if (chunks.length > 0) {
-      const w = waiting;
-      waiting = null;
-      w.resolve({ done: false, value: chunks.shift() as C });
-      return;
-    }
-    if (failure !== null) {
-      const w = waiting;
-      waiting = null;
-      w.reject(failure.error);
-    }
-  };
-  const iterable: AsyncIterable<C> = {
-    [Symbol.asyncIterator](): AsyncIterator<C> {
-      return {
-        next: (): Promise<IteratorResult<C>> =>
-          new Promise<IteratorResult<C>>((resolve, reject) => {
-            waiting = { resolve, reject };
-            settle();
-          }),
-      };
-    },
-  };
-  return {
-    iterable,
-    push: (c: C): void => {
-      chunks.push(c);
-      settle();
-    },
-    fail: (e: unknown): void => {
-      failure = { error: e };
-      settle();
-    },
-  };
-}
+const connectHost = makeConnectHost("stream-cp-host");
 
 const concatFold = (acc: unknown, chunk: unknown) => `${acc}${chunk}`;
 

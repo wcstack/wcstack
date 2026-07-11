@@ -3,7 +3,7 @@
  *
  * `$streams` の依存駆動 cancel/restart（Phase C の核心・C-3）の統合テスト。
  * 実 `<wcs-state>` を happy-dom で connect する connectHost 流儀
- * （stream.lifecycle.test.ts と同型）＋ fakeStreamSources。
+ * （helpers/streamTestUtils.ts の makeConnectHost）＋ fakeStreamSources。
  *
  * 受け入れ ID（docs/state-streams-design.md §3-2 / §10）:
  * - P5:  依存パス書き込み → 旧 run abort・値 initial リセット・新 args で張り直し・
@@ -25,34 +25,13 @@ import { getActiveStateElements } from "../src/stream/activeStateElements";
 import { getStreamEntries } from "../src/stream/streamRegistry";
 import type { IState } from "../src/types";
 import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
+import { flushAsync, makeConnectHost } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
-/** マイクロタスクを出し切る（updater の drain・consume ループ・restart 連鎖の全てを進める） */
-const flushAsync = () => new Promise<void>((r) => setTimeout(r, 0));
-
-let hostSeq = 0;
-
-/**
- * ShadowRoot 内に <wcs-state> と任意のマークアップを持つホストを組み立てて接続する。
- * ShadowRoot 単位で state 名前空間と binding 構築が閉じるため、テスト間で干渉しない。
- */
-async function connectHost(markup: string, initialState: IState): Promise<{
-  host: HTMLElement;
-  shadowRoot: ShadowRoot;
-  stateEl: State;
-}> {
-  const host = document.createElement(`stream-restart-host-${++hostSeq}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = `${markup}<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initialState);
-  await stateEl.connectedCallbackPromise;
-  return { host, shadowRoot, stateEl };
-}
+const connectHost = makeConnectHost("stream-restart-host");
 
 /** writable proxy 経由で state を書き換える（外部からの依存パス書き込みを模す） */
 function writeState(stateEl: State, mutate: (s: IState) => void): void {

@@ -70,6 +70,7 @@ export default {
   - **フラットなプロパティ名のみ**。`.`（DELIMITER）や `*`（WILDCARD）を含む名前はエラー（第 1 段スコープ外）。
   - getter / setter として宣言済みのパスと衝突しないこと（`getterPaths` / `setterPaths` を検査）。
   - `$` で始まらないこと（予約名前空間との衝突防止）。
+  - **Object.prototype の継承名でないこと**（`__proto__` / `constructor` / `toString` 等。判定は `name in Object.prototype`）。own key でなくても `name in state` が真になるため実体化（§1-3）が skip され、起動時の initial リセット（proxy 経由 `Reflect.set`）が継承 setter に化ける — 特に `__proto__` は state の prototype を差し替え、継承キーの `bindableEventMap[path]` 誤 hit と併せて接続経路を不透明に破壊するため、宣言時に一律拒否する（外部レビュー 2026-07-12 指摘 2）。なおオブジェクトリテラルの `__proto__:` キーは prototype 指定構文で own key にならず、宣言としては黙って無視される（`Object.entries` に現れないため検出不能）。
 - `source` は関数であること。`fold` は（あれば）関数であること。`fold` があるのに `initial` が無ければエラー。
 - `args` は（あれば）関数であること。評価結果が Promise ならエラー（同期契約）。
 
@@ -136,6 +137,8 @@ interface IStreamEntry {
 実装補足（Phase A で確定）:
 - disconnect 時に `stateElementByName` の名前登録が解除され再接続で復元されない既存バグがあり、再接続セマンティクスが原理的に成立しなかったため、`connectedCallback` に「initialized 済みかつ登録済みが自分でなければ再登録」の分岐を追加した（DCC 経路は除外）。既知の制限: 切断中に同名の別 state 要素が同じルートに登録されると、再接続の再登録は初回接続の同名重複と同じ `already registered` raiseError で失敗する（同名重複自体が既存のエラー条件で、失敗態様は一貫。衝突した要素は「接続済み・未登録」に陥り次の切断で throw する後続破綻があるため、graceful degradation は §11 の残課題）。
 - `connectedCallback` 側の `startStreams` は `_rootNode !== null` ガード必須（`$connectedCallback` の await 中に切断されると `createState` の rootNode 解決で throw し `connectedCallbackPromise` が未解決のままになる）。`_state` セッター側のガードと対称。
+- `_rootNode` ガードだけでは「await 中の切断 → **即再接続**」（DOM 移動・router remount 相当）を防げない: 新 connect が `_rootNode` を再設定済みのため陳腐化した旧 connect の再開がガードを素通りし、旧・新の双方が `startStreams` を実行して同一の再接続に対し source が二重起動する（旧 connect 側の起動は新 connect の `$connectedCallback` 完了を待たず、S1 の順序保証も一時的に破る）。connect 世代カウンタ `_connectGeneration`（`connectedCallback` 冒頭でインクリメントして捕捉し、末尾の `startStreams` 前に一致を検査）で陳腐 connect からの起動を skip する（特性化: `stream.lifecycle.test.ts` S12 補3。外部レビュー 2026-07-12 指摘 1）。
+- `$connectedCallback` 実行中にユーザーコードが `setInitialState` を呼んだ場合（connect 処理と接続中再 set の同居）、`_state` セッター側の `startStreams`（`_initialized && _rootNode !== null` が真）が新宣言を即起動する。セッター起動時の connect 世代を記録する `_streamsStartedGeneration`（世代が進めば不一致となり自然に無効化 — サイクル単位のフラグリセット相当）で `connectedCallback` 末尾の `startStreams` を skip し、同一 connect 内で新宣言の source が 2 回起動する冗長（1 回目は即 abort — switchMap 意味論で状態は壊れないが副作用を持つ source が 2 回発火）を防ぐ（特性化: `stream.lifecycle.test.ts` S13 補3）。
 
 ---
 
@@ -211,7 +214,7 @@ state 固有の差分:
 1. **binding パス解決**: `getByAddress` の `$command` namespace 分岐（`_getByAddress` 冒頭）の直後に、第 1 セグメントが `$streamStatus` / `$streamError` の場合の分岐を追加。registry から現在値を返す。これで `data-wcs="textContent: $streamStatus.tokens"` が既存の binding 機構でそのまま解決される（`$command.<name>` を右辺に書ける既存前例と同型）。
 2. **JS からの直接アクセス**: proxy get トラップの switch に `STATE_STREAM_STATUS_NAMESPACE_NAME` / `STATE_STREAM_ERROR_NAMESPACE_NAME` の case を追加し、`commandNamespace` と対称の **read-only namespace proxy** を返す（`set` / `deleteProperty` は raiseError、`ownKeys` は宣言済み stream 名）。
 
-書き込み防御は自然に成立する: two-way binding 等で `$streamStatus.tokens` への set が走ると、`setByAddress` の親走査が namespace proxy に到達し `Reflect.set` が raiseError で落ちる。既知の許容: `sameValueGuard`（既定 ON）が親走査より先に評価されるため、**現在値と同値**の代入は raiseError せず黙って no-op になる（防御は値が変わる書き込みで発火。registry/DOM の破壊は起きず、誤用診断が遅延するのみ）。
+書き込み防御は自然に成立する: two-way binding 等で `$streamStatus.tokens` への set が走ると、`setByAddress` の親走査が namespace proxy に到達し `Reflect.set` が raiseError で落ちる。既知の許容: `sameValueGuard`（既定 ON）が親走査より先に評価されるため、**現在値と同値の primitive（または null）** の代入は raiseError せず黙って no-op になる（ガードの対象は primitive / null のみ — オブジェクト値はガードを素通りするため、`$streamError` が保持する Error インスタンスそのものの再代入でも raiseError する。registry/DOM の破壊は起きず、誤用診断が遅延するのみ）。
 
 ### 4-3. 反映経路（reactive 化）
 
@@ -225,6 +228,8 @@ status / error の変化時、runtime は registry を書き換えたうえで *
 **通知 dedup の基準（Phase B で確定）**: same-value 判定は entry フィールドとの比較ではなく「**最後に通知した観測値**」（stateElement 寿命の WeakMap）に対して行う。entry は再 set（`clearStreamRegistry` → 再生成）で作り直されるため、entry 比較では「error 表示中に再 set → 新 entry は error=null で誕生 → null→null と誤判定して通知が落ち、DOM に旧 error が残る」。dedup 状態を観測層（stateElement 単位）に置くことで、再 set・再接続を跨いだ陳腐化を正しく検出する。
 
 **無通知ミューテーションとの同期（Phase B レビューで確定）**: `abortAllStreams`（§5-1）は registry entry を通知なしで `idle` / `null` に直接ミューテーションするため、台帳と registry が乖離する。binding / computed の fresh 読みは通知がなくても他パスの drain で走り、再接続ウィンドウ内に registry の `idle` を描画し得る。そのまま restart の `updateStreamStatus("active")` を台帳（切断前の `active`）との同値判定で skip すると DOM が恒久的に陳腐化するため、abortAllStreams はミューテーションと同時に台帳のうちミューテーション後の値と一致しないフィールドを「観測値不確定」として無効化し、次回の通知 dedup を強制解除する（`stream/lastNotified.ts`）。一致しているフィールド（例: error が `null` のまま）は dedup を維持し、余計な通知は出さない。
+
+**台帳の prune（外部レビュー 2026-07-12 指摘 3）**: 台帳は stateElement 寿命で生存するが、再 set 跨ぎ dedup が必要なのは**同名エントリのみ**。旧宣言にしか存在しない名前のエントリは以後どの通知経路からも参照されないため、再 set（`processStreamsDeclaration` — 新宣言を知っている唯一の位置）で新宣言に無い名前を prune する（`$streams` 無し宣言への再 set は全削除）。放置すると再 set のたびに異なる stream 名を使うステートで台帳が単調増加する。既知の許容: prune 後に同名を**再宣言**した場合、dedup は基準値 { idle, null } からやり直しになる（宣言削除時の binding 陳腐化が §4-4 の既知エッジである以上、削除を挟んだ再宣言は新規宣言と同じ扱い。§4-4 の「同名入れ替え」= 1 回の再 set で同名が新宣言にも居るケースは prune 対象外で、従来どおり正しく追従する）。
 
 ### 4-4. 観測保証
 
@@ -279,7 +284,10 @@ binding / 構造（`deactivateContent`）単位の細粒度停止・再開は第
 
 ### 7-2. DCC（`data-wc-definition`）
 
-`_initializeDCC` 経路は `_state` セッターを通らないため、**第 1 段では DCC 内の `$streams` は未サポート**（宣言があっても無視される）。対応する場合は defineDCC 側の状態初期化に同じパース＋起動を接続する後続課題とする。
+未サポートなのは **DCC 定義要素の `_initializeDCC` 経路のみ**（2026-07-11 精密化）:
+
+- **定義ホスト**（`data-wc-definition` を持つ要素）内の `<wcs-state>` は `_initializeDCC` 経路で `_state` セッターを通らないため、`$streams` 宣言はパース（registry 登録・値プロパティ実体化）も起動もされない（宣言があっても無視される）。定義要素側で宣言を扱う場合は defineDCC 側の状態初期化に同じパース＋起動を接続する後続課題とする。
+- **DCC インスタンス内の `<wcs-state>` は通常経路で起動する**: defineDCC が template 化した定義を各インスタンスの ShadowRoot に clone するため、インスタンス側の `<wcs-state>` は通常の `_initialize` → `_state` セッター（`processStreamsDeclaration`）→ `connectedCallback` の `startStreams` を通り、`$streams` はインスタンスごとに独立して起動・切断される（特性化: `__tests__/stream.dcc.test.ts`）。
 
 ### 7-3. wc-bindable 境界
 
@@ -295,7 +303,7 @@ binding / 構造（`deactivateContent`）単位の細粒度停止・再開は第
 4. 自動再接続（再試行は依存の叩き直し）。
 5. lazy 起動（将来 `lazy: true` オプションの余地のみ残す）。
 6. binding / 構造単位の細粒度停止。
-7. DCC 内の `$streams`。
+7. DCC **定義要素**（`_initializeDCC` 経路）での `$streams` の起動（インスタンス内 `<wcs-state>` は通常経路で起動する、§7-2）。
 8. backpressure の保持（恒久的な非目標）。
 
 ---
@@ -310,11 +318,13 @@ binding / 構造（`deactivateContent`）単位の細粒度停止・再開は第
 |---|---|
 | `types.ts` | `StreamStatus` / `IStreamDefinition` / `IStreamEntry` / `StreamSource` |
 | `processStreamsDeclaration.ts` | 宣言のバリデーション（§1-2）・registry 登録・値プロパティ実体化（§1-3） |
-| `streamRegistry.ts` | `WeakMap` registry・`getStreamEntry` / `abortAllStreams` / `clearStreamRegistry`（`eventTokenRegistry` と対称） |
-| `streamRuntime.ts` | `startStreams` / restart 手順（§2-2）・args トレース（§3-1）・drain リスナー（§3-2）・status/error 反映（§4-3） |
+| `streamRegistry.ts` | `WeakMap` registry・`setStreamEntries` / `getStreamEntries` / `abortAllStreams` / `clearStreamRegistry`（`eventTokenRegistry` と対称） |
+| `streamRuntime.ts` | `startStreams` / restart 手順（§2-2）・drain リスナー（§3-2）・status/error 反映（§4-3） |
+| `argsTrace.ts` | args の依存捕捉（readonly proxy トレース・自己依存 / wildcard 検査、§3-1）。getByAddress → argsTrace ← streamRuntime の一方向依存に保つ import 循環回避の分割 |
 | `consumeSource.ts` | signals `streamResource` の `consume` / `iterate` / `readableToAsyncIterable` 移植（§3-3） |
 | `streamNamespace.ts` | `$streamStatus` / `$streamError` の read-only namespace proxy（`commandNamespace` と対称） |
 | `lastNotified.ts` | 「最後に通知した観測値」台帳（§4-3 の dedup 基準・abortAllStreams の無通知ミューテーション invalidate） |
+| `activeStateElements.ts` | 起動中 stateElement の列挙用 strong Set（§3-2 の drain リスナーの走査元。add = startStreams / delete = abortAllStreams・clearStreamRegistry のリーク防止不変条件） |
 
 **変更**
 

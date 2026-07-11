@@ -93,6 +93,24 @@ describe("consumeSource", () => {
     expect(sink.fold).not.toHaveBeenCalled();
   });
 
+  it("P8 補: source が null / undefined を返しても opaque な TypeError にならず、明示 TypeError で sink.fail されること", async () => {
+    // Symbol.asyncIterator のプロパティアクセス自体が null/undefined で throw すると
+    // 「Cannot read properties of null」の opaque な TypeError が $streamError に入る。
+    // optional chaining により getReader 判定（?. 済み）と対称にフォールスルーさせ、
+    // 意図された親切な TypeError（AsyncIterable or ReadableStream を返せ）に到達させる。
+    for (const value of [null, undefined]) {
+      const sink = makeSink();
+      const source = (() => value) as unknown as StreamSource;
+      await consumeSource(source, undefined, new AbortController().signal, sink);
+      expect(sink.fail).toHaveBeenCalledTimes(1);
+      const e = sink.fail.mock.calls[0][0];
+      expect(e).toBeInstanceOf(TypeError);
+      expect((e as TypeError).message).toMatch(/AsyncIterable or a ReadableStream/);
+      expect(sink.done).not.toHaveBeenCalled();
+      expect(sink.fold).not.toHaveBeenCalled();
+    }
+  });
+
   it("fold throw: sink.fold が throw したら sink.fail がそのエラーで呼ばれ、sink.done は呼ばれない", async () => {
     const err = new Error("fold-boom");
     const sink = makeSink({

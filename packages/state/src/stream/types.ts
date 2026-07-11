@@ -41,7 +41,11 @@ export interface IStreamEntry {
   status: StreamStatus;
   error: unknown;
   controller: AbortController | null;
-  /** 直近の args 評価で読まれた絶対アドレス（Phase C で捕捉。それまでは空） */
+  /**
+   * 直近に成功した args 評価（traceArgs）で読まれた絶対アドレス。
+   * args 省略時は空（traceArgs が clear する）。成功 run ごとに丸ごと置換され、
+   * 評価失敗時は前回成功 run の検証済み捕捉を保持する（stream/argsTrace.ts §3-1）。
+   */
   depAddresses: Set<IAbsoluteStateAddress>;
 }
 

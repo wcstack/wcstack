@@ -113,7 +113,10 @@ export async function consumeSource(
 }
 
 function iterate(produced: StreamProducer, signal: AbortSignal): AsyncIterable<unknown> {
-  if (typeof (produced as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function") {
+  // Optional chaining: a null/undefined source return value must fall through to the
+  // explicit TypeError below (symmetric with the `?.` on the getReader probe), not
+  // throw an opaque "Cannot read properties of null" from this property access.
+  if (typeof (produced as AsyncIterable<unknown>)?.[Symbol.asyncIterator] === "function") {
     return produced as AsyncIterable<unknown>;
   }
   // Not async-iterable: must be a ReadableStream (read via getReader). Validate so

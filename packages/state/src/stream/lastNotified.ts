@@ -8,7 +8,9 @@
  * （clearStreamRegistry → 新 entry 生成）を跨いだ陳腐化を検出できない
  * （error 表示中に再 set すると新 entry は error=null で生まれるため
  * null → null と誤判定して $postUpdate が落ち、DOM に旧 error が残る）。
- * そのため通知 dedup は entry の寿命ではなく stateElement の寿命で持つ。
+ * そのため通知 dedup は entry の寿命ではなく stateElement の寿命で持つ
+ * （ただし再 set で新宣言から消えた名前のエントリは pruneLastNotified で削除する —
+ *  同名にしか dedup は要らず、放置すると台帳が単調増加するため）。
  * 未通知（初回）の基準値は宣言直後の観測初期値と同じ { idle, null }。
  *
  * さらに abortAllStreams（§5-1）は registry entry を通知なしで idle / null に
@@ -60,6 +62,29 @@ export function setLastNotified(
     lastNotifiedByStateElement.set(stateElement, lastMap);
   }
   lastMap.set(name, { status, error });
+}
+
+/**
+ * 再 set（clearStreamRegistry → processStreamsDeclaration）後に呼び、新宣言に
+ * 存在しない名前の台帳エントリを削除する。台帳は stateElement の寿命で生存するが
+ * （§4-3 の再 set・再接続跨ぎ dedup）、それが必要なのは同名エントリのみで、
+ * 旧宣言にしか無い名前は以後どの通知経路（updateStreamStatus）からも参照されない。
+ * prune しないと、再 set のたびに異なる stream 名を使うステートで台帳が
+ * stateElement の寿命の間単調増加する。
+ * 既知の許容: prune 後に同名を再宣言した場合、dedup は基準値 { idle, null } から
+ * やり直しになる（宣言削除時の binding 陳腐化が §4-4 の既知エッジである以上、
+ * 再宣言は新規宣言と同じ扱いでよい）。
+ */
+export function pruneLastNotified(stateElement: IStateElement, liveNames: ReadonlySet<string>): void {
+  const lastMap = lastNotifiedByStateElement.get(stateElement);
+  if (typeof lastMap === "undefined") {
+    return;
+  }
+  for (const name of lastMap.keys()) {
+    if (!liveNames.has(name)) {
+      lastMap.delete(name);
+    }
+  }
 }
 
 /**

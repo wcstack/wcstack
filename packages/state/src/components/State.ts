@@ -45,7 +45,7 @@ function getAllPropertyDescriptors(obj: object): Descriptors {
 
 function getStateInfo(
   state: IState
-): { 
+): {
   getterPaths: Set<string>,
   setterPaths: Set<string>,
 } {
@@ -99,6 +99,16 @@ export class State extends HTMLElement implements IStateElement {
   private _commandTokenNames: Set<string> = new Set<string>();
   private _eventTokenNames: Set<string> = new Set<string>();
   private _dcc: boolean = false;
+  // connect サイクルの世代カウンタ（connectedCallback 冒頭でインクリメント）。
+  // $connectedCallback の await 中の「切断 → 即再接続」では、新 connect が
+  // _rootNode を再設定済みのため陳腐化した旧 connect の再開が _rootNode ガードを
+  // 素通りして startStreams に到達し、同一の再接続に対して source が二重起動する。
+  // 末尾で冒頭に捕捉した世代と照合し、陳腐 connect からの起動を skip する（設計書 §2-3）。
+  private _connectGeneration: number = 0;
+  // _state セッター側の startStreams が走った connect 世代
+  // （connectedCallback 末尾の startStreams との二重起動防止、設計書 §2-3。
+  //  世代が進めば不一致となり自然に無効化される — サイクル単位のフラグリセット相当）
+  private _streamsStartedGeneration: number = 0;
 
   constructor() {
     super();
@@ -156,6 +166,12 @@ export class State extends HTMLElement implements IStateElement {
     // connectedCallback 側の startStreams（$connectedCallback 完了後）が担う。
     if (this._initialized && this._rootNode !== null && !inSsr()) {
       startStreams(this);
+      // $connectedCallback 実行中の再 set（setInitialState）では、ここで新宣言が
+      // 起動済みのため connectedCallback 末尾の startStreams を skip させる。
+      // skip しないと同一 connect サイクルで新宣言の source が 2 回起動する
+      // （1 回目は即 abort — switchMap 意味論で状態は壊れないが、副作用を持つ
+      // source が 2 回発火してしまう）。
+      this._streamsStartedGeneration = this._connectGeneration;
     }
     this._resolveLoading?.();
   }
@@ -315,6 +331,11 @@ export class State extends HTMLElement implements IStateElement {
 
   async connectedCallback() {
     this._rootNode = this.getRootNode() as Node;
+    // connect 世代を進めて冒頭で捕捉する（末尾の startStreams 前に照合し、
+    // $connectedCallback の await 中に「切断 → 即再接続」された陳腐 connect の
+    // 再開からの起動を防ぐ）。前回接続中の再 set（S13）で立った
+    // _streamsStartedGeneration も世代不一致となり自然に無効化される。
+    const connectGeneration = ++this._connectGeneration;
     if (!this._initialized) {
       // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
       const parentNode = this.parentNode;
@@ -361,7 +382,19 @@ export class State extends HTMLElement implements IStateElement {
     // で null 化済み）の raiseError で throw し、connectedCallbackPromise が永遠に
     // 未解決になる。「未接続の entry は restart しない」設計書 §3-2 とも整合し、
     // _state セッター側の startStreams 前ガード（_rootNode !== null）と対称。
-    if (!inSsr() && this._rootNode !== null) {
+    // 世代ガード（connectGeneration 照合）: await 中に「切断 → 即再接続」された場合、
+    // 新 connect が _rootNode を再設定済みで上のガードを素通りするため、世代不一致で
+    // 陳腐化した connect の再開を検出して skip する。起動点が新 connect の末尾に
+    // 一本化され、「$connectedCallback 完了後に起動」（S1）の順序保証も保たれる。
+    // _streamsStartedGeneration ガード: $connectedCallback 内の setInitialState
+    // （接続中の再 set）で _state セッター側が新宣言を起動済みの場合は skip する
+    // （skip しないと同一 connect サイクルで source が 2 回起動する、設計書 §2-3）。
+    if (
+      !inSsr() &&
+      this._rootNode !== null &&
+      connectGeneration === this._connectGeneration &&
+      this._streamsStartedGeneration !== connectGeneration
+    ) {
       startStreams(this);
     }
 
@@ -370,18 +403,26 @@ export class State extends HTMLElement implements IStateElement {
 
   disconnectedCallback() {
     if (this._rootNode !== null) {
-      this._callStateDisconnectedCallback();
-      setStateElementByName(this.rootNode, this._name, null);
-      clearCommandTokenRegistry(this);
-      clearCommandNamespace(this);
-      clearEventTokenRegistry(this);
-      // stream は abort のみで registry は保持する（再接続時に同じ宣言から
-      // initial で再起動できる、設計書 §5-1 / §5-2）。
-      // namespace proxy の memo は破棄する（clearCommandNamespace と対称。
-      // registry は残るため再接続後の初回アクセスで同内容の proxy が再生成される）。
-      abortAllStreams(this);
-      clearStreamNamespace(this);
-      this._rootNode = null;
+      // try/finally: ユーザーの $disconnectedCallback が throw しても後続の後始末を
+      // 必ず実行する。特に abortAllStreams が飛ぶと stream が消費を続け（ゾンビ I/O）、
+      // activeStateElements の強参照残留で GC が妨げられ、切断済み要素が依存駆動
+      // restart の対象にも残る（設計書 §3-2 / §5-1 違反）。throw 自体は従来どおり
+      // 呼び出し元へ伝播させる（変わるのは後始末の保証のみ）。
+      try {
+        this._callStateDisconnectedCallback();
+      } finally {
+        setStateElementByName(this.rootNode, this._name, null);
+        clearCommandTokenRegistry(this);
+        clearCommandNamespace(this);
+        clearEventTokenRegistry(this);
+        // stream は abort のみで registry は保持する（再接続時に同じ宣言から
+        // initial で再起動できる、設計書 §5-1 / §5-2）。
+        // namespace proxy の memo は破棄する（clearCommandNamespace と対称。
+        // registry は残るため再接続後の初回アクセスで同内容の proxy が再生成される）。
+        abortAllStreams(this);
+        clearStreamNamespace(this);
+        this._rootNode = null;
+      }
     }
   }
 
@@ -453,8 +494,8 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   private _addDependency(
-    map: Map<string, string[]>, 
-    sourcePath: string, 
+    map: Map<string, string[]>,
+    sourcePath: string,
     targetPath: string
   ): boolean {
     const deps = map.get(sourcePath);
@@ -466,22 +507,22 @@ export class State extends HTMLElement implements IStateElement {
       return true;
     }
     return false;
-  }  
+  }
 
   /**
    * source,           target
-   * 
-   * products.*.price => products.*.tax 
+   *
+   * products.*.price => products.*.tax
    * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
-   * 
-   * products.*.price => products.summary 
+   *
+   * products.*.price => products.summary
    * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
-   * 
-   * categories.*.name => categories.*.products.*.categoryName 
+   *
+   * categories.*.name => categories.*.products.*.categoryName
    * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
-   * 
-   * @param sourcePath 
-   * @param targetPath 
+   *
+   * @param sourcePath
+   * @param targetPath
    */
   addDynamicDependency(sourcePath: string, targetPath: string): boolean {
     return this._addDependency(this._dynamicDependency, sourcePath, targetPath);
@@ -492,9 +533,9 @@ export class State extends HTMLElement implements IStateElement {
    * products => products.*
    * products.* => products.*.price
    * products.* => products.*.name
-   * 
-   * @param sourcePath 
-   * @param targetPath 
+   *
+   * @param sourcePath
+   * @param targetPath
    */
   addStaticDependency(sourcePath: string, targetPath: string): boolean {
     return this._addDependency(this._staticDependency, sourcePath, targetPath);

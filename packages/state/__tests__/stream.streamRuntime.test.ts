@@ -13,7 +13,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { startStream, startStreams, updateStreamStatus } from "../src/stream/streamRuntime";
 import { processStreamsDeclaration } from "../src/stream/processStreamsDeclaration";
-import { getStreamEntries } from "../src/stream/streamRegistry";
+import { abortAllStreams, getStreamEntries } from "../src/stream/streamRegistry";
 import { createStateProxy } from "../src/proxy/StateHandler";
 import { setStateElementByName } from "../src/stateElementByName";
 import { getUpdater } from "../src/updater/updater";
@@ -351,12 +351,19 @@ describe("streamRuntime", () => {
       const { stateElement, entries } = declareStreams(state);
 
       startStreams(stateElement);
-      expect(sourceA).toHaveBeenCalledTimes(1);
-      expect(sourceB).toHaveBeenCalledTimes(1);
-      expect(entries.get("a")!.status).toBe("active");
-      expect(entries.get("b")!.status).toBe("active");
-      expect(entries.get("a")!.controller).not.toBeNull();
-      expect(entries.get("b")!.controller).not.toBeNull();
+      try {
+        expect(sourceA).toHaveBeenCalledTimes(1);
+        expect(sourceB).toHaveBeenCalledTimes(1);
+        expect(entries.get("a")!.status).toBe("active");
+        expect(entries.get("b")!.status).toBe("active");
+        expect(entries.get("a")!.controller).not.toBeNull();
+        expect(entries.get("b")!.controller).not.toBeNull();
+      } finally {
+        // startStreams はモック stateElement を activeStateElements（モジュール
+        // スコープの strong Set）に登録するため、後始末しないと同一ファイル内の
+        // 後続テストの drain リスナーがこの残留要素を走査し続ける（衛生上の後始末）
+        abortAllStreams(stateElement);
+      }
     });
 
     it("entry が無い（未宣言）stateElement では何もしないこと", () => {

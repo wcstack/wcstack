@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processStreamsDeclaration } from '../src/stream/processStreamsDeclaration';
 import { getStreamEntries, __private__ } from '../src/stream/streamRegistry';
+import { setLastNotified, __private__ as lastNotifiedPrivate } from '../src/stream/lastNotified';
 import type { IStateElement } from '../src/components/types';
 import type { IState } from '../src/types';
 
@@ -53,6 +54,20 @@ describe('processStreamsDeclaration', () => {
     const se = fakeStateElement();
     expect(() => processStreamsDeclaration(se, { $streams: { $tokens: { source: noopSource } } } as unknown as IState))
       .toThrow(/\$streams entry "\$tokens" must not start with "\$"/);
+  });
+
+  it('名前が Object.prototype の継承名の場合はエラーになること（__proto__ は prototype 差し替え・constructor 等は継承キー衝突を引き起こすため）', () => {
+    // own key でなくても `name in state` が真になるため実体化が skip され、起動時の
+    // initial リセット（Reflect.set）が継承 setter に化ける（__proto__ は state の
+    // prototype を差し替える）。名前検査の防衛線として宣言時に一律拒否する（§1-2）。
+    // オブジェクトリテラルの `__proto__:` キーは own key にならない（prototype 指定
+    // 構文で黙って無視される）ため、computed key で own key として宣言して検査する。
+    for (const name of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      const se = fakeStateElement();
+      expect(() => processStreamsDeclaration(se, {
+        $streams: { [name]: { source: noopSource } },
+      } as unknown as IState)).toThrow(/must not be a property name inherited from Object\.prototype/);
+    }
   });
 
   it('getter 宣言済みパスと衝突する場合はエラーになること', () => {
@@ -186,5 +201,31 @@ describe('processStreamsDeclaration', () => {
     processStreamsDeclaration(se2, { $streams: {} } as unknown as IState);
     expect(__private__.registryByStateElement.has(se2)).toBe(true);
     expect(getStreamEntries(se2).size).toBe(0);
+  });
+
+  it('再 set で新宣言に存在しない名前の通知 dedup 台帳エントリが prune され、同名は保持されること（§4-3）', () => {
+    const se = fakeStateElement();
+    // 旧宣言での通知履歴を模す（updateStreamStatus 相当）
+    setLastNotified(se, 'oldOnly', 'done', null);
+    setLastNotified(se, 'keep', 'active', null);
+
+    processStreamsDeclaration(se, {
+      $streams: { keep: { source: noopSource }, fresh: { source: noopSource } },
+    } as unknown as IState);
+
+    const lastMap = lastNotifiedPrivate.lastNotifiedByStateElement.get(se)!;
+    expect(lastMap.has('oldOnly')).toBe(false); // 旧宣言にしか無い名前は削除（単調増加の防止）
+    expect(lastMap.has('keep')).toBe(true); // 同名は保持 = 再 set 跨ぎ dedup 契約の維持
+    expect(lastMap.get('keep')).toEqual({ status: 'active', error: null });
+  });
+
+  it('$streams の無い state への再 set では台帳が全 prune されること', () => {
+    const se = fakeStateElement();
+    setLastNotified(se, 'tokens', 'error', new Error('boom'));
+
+    processStreamsDeclaration(se, {} as IState); // $streams 未宣言（registry 未登録のまま）
+
+    expect(__private__.registryByStateElement.has(se)).toBe(false);
+    expect(lastNotifiedPrivate.lastNotifiedByStateElement.get(se)!.size).toBe(0);
   });
 });

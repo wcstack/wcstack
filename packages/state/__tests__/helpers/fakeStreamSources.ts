@@ -6,6 +6,7 @@
  * 後続テストからも再利用する想定で export している。
  *
  * - makeManualAsyncGenerator: 手動 resolve 制御の async iterable（push / end）
+ * - makeManualFailableSource: 手動 resolve 制御の async iterable（push / fail で reject 終端）
  * - makeFakeReadableStream: getReader だけ持つ ReadableStream 風（全チャンク drain で done）
  * - makeParkedFakeReadableStream: チャンク送出後に永久 park する ReadableStream 風
  *   （cancel が parked read を settle してから reject する — 実 reader の挙動をモデル化）
@@ -50,6 +51,59 @@ export function makeManualAsyncGenerator<C>(): {
     end: (): void => {
       ended = true;
       wake();
+    },
+  };
+}
+
+/**
+ * 手動駆動の失敗可能な async iterable: push でチャンク供給、fail で reject 終端。
+ * makeManualAsyncGenerator（正常終端専用）の error 終端版。
+ * consumeSource は next() を逐次 await するため、pending は常に高々 1 つ。
+ */
+export function makeManualFailableSource<C>(): {
+  iterable: AsyncIterable<C>;
+  push: (c: C) => void;
+  fail: (e: unknown) => void;
+} {
+  const chunks: C[] = [];
+  let waiting: { resolve: (r: IteratorResult<C>) => void; reject: (e: unknown) => void } | null = null;
+  let failure: { error: unknown } | null = null;
+  const settle = (): void => {
+    if (waiting === null) {
+      return;
+    }
+    if (chunks.length > 0) {
+      const w = waiting;
+      waiting = null;
+      w.resolve({ done: false, value: chunks.shift() as C });
+      return;
+    }
+    if (failure !== null) {
+      const w = waiting;
+      waiting = null;
+      w.reject(failure.error);
+    }
+  };
+  const iterable: AsyncIterable<C> = {
+    [Symbol.asyncIterator](): AsyncIterator<C> {
+      return {
+        next: (): Promise<IteratorResult<C>> =>
+          new Promise<IteratorResult<C>>((resolve, reject) => {
+            waiting = { resolve, reject };
+            settle();
+          }),
+      };
+    },
+  };
+  return {
+    iterable,
+    push: (c: C): void => {
+      chunks.push(c);
+      settle();
+    },
+    fail: (e: unknown): void => {
+      failure = { error: e };
+      settle();
     },
   };
 }

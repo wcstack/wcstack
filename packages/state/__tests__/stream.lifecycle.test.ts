@@ -14,7 +14,13 @@
  * - S12: disconnect → abort・再接続 → initial から再起動（「続きから」にならない）
  *        補: $connectedCallback の await 中の切断で startStreams を skip し
  *        connectedCallbackPromise が解決すること（切断ガードの回帰テスト）
+ *        補2: $disconnectedCallback が throw しても stream の後始末が完遂すること
+ *        （disconnectedCallback の try/finally の回帰テスト）
+ *        補3: $connectedCallback の await 中の「切断 → 即再接続」で source が
+ *        二重起動しないこと（connect 世代ガードの回帰テスト）
  * - S13: 接続中の `_state` 再 set（旧 abort・新宣言で再構築・二重起動なし）
+ *        補3: $connectedCallback 内の setInitialState でもセッター起動と
+ *        connectedCallback 末尾起動が重複しない（_streamsStartedGeneration ガード）
  * - S16: stream 値を読む computed がチャンク到着で再計算される
  * - S17: $updatedCallback の paths に stream 名が載る
  */
@@ -22,45 +28,21 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { resetSsrCache } from "../src/config";
+import { getActiveStateElements } from "../src/stream/activeStateElements";
 import { getStreamEntries } from "../src/stream/streamRegistry";
 import { startStreams } from "../src/stream/streamRuntime";
 import type { IState } from "../src/types";
 import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
+import { flushAsync, waitFor, makeConnectHost } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
 });
 
-/** マイクロタスクを出し切る（updater の drain と consume ループの双方を進める） */
-const flushAsync = () => new Promise<void>((r) => setTimeout(r, 0));
+const connectHost = makeConnectHost("stream-lc-host");
 
-/** 条件成立までマクロタスクを進める（再接続の connectedCallback 完了待ちなど） */
-async function waitFor(cond: () => boolean, tries = 20): Promise<void> {
-  for (let i = 0; i < tries && !cond(); i++) {
-    await flushAsync();
-  }
-}
-
-let hostSeq = 0;
-
-/**
- * ShadowRoot 内に <wcs-state> と任意のマークアップを持つホストを組み立てて接続する。
- * ShadowRoot 単位で state 名前空間と binding 構築が閉じるため、テスト間で干渉しない。
- */
-async function connectHost(markup: string, initialState: IState): Promise<{
-  host: HTMLElement;
-  shadowRoot: ShadowRoot;
-  stateEl: State;
-}> {
-  const host = document.createElement(`stream-lc-host-${++hostSeq}`);
-  const shadowRoot = host.attachShadow({ mode: "open" });
-  shadowRoot.innerHTML = `${markup}<wcs-state></wcs-state>`;
-  document.body.appendChild(host);
-  const stateEl = shadowRoot.querySelector("wcs-state") as State;
-  stateEl.setInitialState(initialState);
-  await stateEl.connectedCallbackPromise;
-  return { host, shadowRoot, stateEl };
-}
+/** connectHost を使わず手動でホストを組むテスト（enable-ssr / 切断ガード）用の連番 */
+let manualHostSeq = 0;
 
 describe("$streams State ライフサイクル統合", () => {
   it("S1: connect 完了で status が active になり、$connectedCallback → args 評価 → source の順で呼ばれること", async () => {
@@ -98,7 +80,7 @@ describe("$streams State ライフサイクル統合", () => {
     const m = makeManualAsyncGenerator<string>();
     const connectedFn = vi.fn();
     const source = vi.fn(() => m.iterable);
-    const host = document.createElement(`stream-lc-host-${++hostSeq}`);
+    const host = document.createElement(`stream-lc-manual-${++manualHostSeq}`);
     const shadowRoot = host.attachShadow({ mode: "open" });
     shadowRoot.innerHTML = `<wcs-state enable-ssr></wcs-state>`;
     document.body.appendChild(host);
@@ -273,7 +255,7 @@ describe("$streams State ライフサイクル統合", () => {
     const gate = new Promise<void>((r) => {
       releaseConnected = r;
     });
-    const host = document.createElement(`stream-lc-host-${++hostSeq}`);
+    const host = document.createElement(`stream-lc-manual-${++manualHostSeq}`);
     const shadowRoot = host.attachShadow({ mode: "open" });
     shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
     document.body.appendChild(host);
@@ -296,6 +278,59 @@ describe("$streams State ライフサイクル統合", () => {
     // 切断済みなので stream は起動されない（source 未呼出・status は idle のまま）
     expect(source).not.toHaveBeenCalled();
     expect(getStreamEntries(stateEl).get("ticker")!.status).toBe("idle");
+  });
+
+  it("S12 補3: $connectedCallback の await 中に「切断 → 即再接続」されても、source が再接続 1 回につき 1 回だけ起動すること（connect 世代ガード）", async () => {
+    // 世代ガード（connectedCallback 冒頭で捕捉した世代の末尾照合）の回帰テスト。
+    // 陳腐化した旧 connect の再開時、_rootNode !== null ガードは新 connect が
+    // _rootNode を再設定済みのため素通りする（DOM 移動・router remount 相当）。
+    // ガードなしだと旧 connect と新 connect の双方が startStreams を実行し、
+    // 同一の再接続に対して source が 2 回起動する（さらに旧 connect 側の起動は
+    // 新 connect の $connectedCallback 完了を待たず、S1 の順序保証も破れる）。
+    const source = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    let connectedCalls = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((r) => {
+      releaseFirst = r;
+    });
+    const host = document.createElement(`stream-lc-manual-${++manualHostSeq}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    stateEl.setInitialState({
+      async $connectedCallback() {
+        // 初回 connect (#1) のみ待機させ、その間に切断 → 即再接続を起こす
+        if (++connectedCalls === 1) {
+          await firstGate;
+        }
+      },
+      $streams: { ticker: { source } },
+    });
+
+    // connect #1 の $connectedCallback が gate を await している状態まで進めてから
+    // 切断 → 即再接続する（connect #2 は gate なしで完走する）
+    await waitFor(() => connectedCalls === 1);
+    host.remove();
+    document.body.appendChild(host);
+    await waitFor(() => source.mock.calls.length === 1);
+    expect(source).toHaveBeenCalledTimes(1); // connect #2 の末尾起動のみ
+
+    // 陳腐化した connect #1 の再開を解放しても、世代不一致で startStreams は skip される
+    // （ガードなしだとここで source が 2 回目の起動をする）
+    releaseFirst();
+    await flushAsync();
+    expect(source).toHaveBeenCalledTimes(1);
+    expect(getStreamEntries(stateEl).get("ticker")!.status).toBe("active");
+
+    // 以降の通常の再接続は世代が進んで普通に起動する（ガードの副作用がない）
+    host.remove();
+    document.body.appendChild(host);
+    await waitFor(() => source.mock.calls.length === 2);
+    expect(source).toHaveBeenCalledTimes(2);
+    expect(getStreamEntries(stateEl).get("ticker")!.status).toBe("active");
+
+    host.remove();
   });
 
   it("S13: 接続中の setInitialState で旧 stream が abort され、新宣言で再構築・再起動されること（二重起動なし）", async () => {
@@ -395,6 +430,47 @@ describe("$streams State ライフサイクル統合", () => {
     host.remove();
   });
 
+  it("S13 補3: $connectedCallback 内の setInitialState でも新宣言の source が connect 1 回につき 1 回だけ起動すること（セッター起動と末尾起動の重複防止）", async () => {
+    // $connectedCallback 実行中の再 set は _state セッター側の startStreams
+    // （_initialized && _rootNode !== null が真）で新宣言を即起動する。
+    // _streamsStartedGeneration ガードがないと connectedCallback 末尾の
+    // startStreams も走り、connect 1 回で新 source が 2 回起動する
+    // （1 回目は即 abort — 状態は壊れないが副作用を持つ source が 2 回発火する）。
+    const source1 = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    const source2 = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
+    const host = document.createElement(`stream-lc-manual-${++manualHostSeq}`);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    stateEl.setInitialState({
+      $connectedCallback() {
+        // 接続処理の途中（eager 起動前）にユーザーコードが state を差し替えるシナリオ
+        stateEl.setInitialState({ $streams: { ticker: { source: source2 } } });
+      },
+      $streams: { ticker: { source: source1 } },
+    });
+    await stateEl.connectedCallbackPromise;
+
+    // 旧宣言は eager 起動（$connectedCallback 完了後）の前に clearStreamRegistry で
+    // 削除されるため一度も起動されない
+    expect(source1).not.toHaveBeenCalled();
+    // 新宣言はセッター側の startStreams の 1 回のみ（末尾の startStreams は skip）
+    expect(source2).toHaveBeenCalledTimes(1);
+    expect(getStreamEntries(stateEl).get("ticker")!.status).toBe("active");
+
+    host.remove();
+
+    // 再接続では末尾の startStreams が通常どおり走る（connect 世代が進み、
+    // セッター起動時に記録した世代と不一致になるため skip されない）
+    document.body.appendChild(host);
+    await waitFor(() => source2.mock.calls.length === 2);
+    expect(source2).toHaveBeenCalledTimes(2);
+    expect(getStreamEntries(stateEl).get("ticker")!.status).toBe("active");
+
+    host.remove();
+  });
+
   it("S16: stream 値を読む computed（getter）がチャンク到着で再計算され、同一 drain で binding に反映されること", async () => {
     const m = makeManualAsyncGenerator<string>();
     const updatedLog: string[][] = [];
@@ -451,6 +527,44 @@ describe("$streams State ライフサイクル統合", () => {
     expect(updatedLog.length).toBeGreaterThanOrEqual(1);
     expect(updatedLog[0]).toContain("tokens"); // 通常の更新として paths に載る（§4-4）
     host.remove();
+  });
+
+  it("S12 補2: $disconnectedCallback が throw しても stream の後始末（abort・idle・restart 対象からの除外）が実行されること", async () => {
+    // disconnectedCallback の try/finally の回帰テスト。finally が無いと
+    // abortAllStreams が飛び、stream が消費を続け（ゾンビ I/O）、
+    // activeStateElements の強参照残留で GC・restart 除外も効かなくなる
+    // （設計書 §3-2 / §5-1 違反）。
+    const m = makeManualAsyncGenerator<string>();
+    const fold = vi.fn((acc: unknown, chunk: unknown) => `${acc}${chunk}`);
+    const raw: IState = {
+      $disconnectedCallback() {
+        throw new Error("user disconnect boom");
+      },
+      $streams: { tokens: { source: () => m.iterable, fold, initial: "" } },
+    };
+    const { host, stateEl } = await connectHost("", raw);
+    const entry = getStreamEntries(stateEl).get("tokens")!;
+    const controller = entry.controller!;
+
+    m.push("a");
+    await flushAsync();
+    expect(raw.tokens).toBe("a");
+
+    // throw は従来どおり呼び出し元（remove）へ伝播する（観測可能挙動は変えない）
+    expect(() => host.remove()).toThrow("user disconnect boom");
+
+    // finally により後始末は完遂している: abort・idle・restart 対象からの除外
+    expect(controller.signal.aborted).toBe(true);
+    expect(entry.status).toBe("idle");
+    expect(entry.controller).toBeNull();
+    expect(getActiveStateElements().has(stateEl)).toBe(false);
+
+    // abort 済み run の遅延チャンクは stale-drop され fold に到達しない（ゾンビ I/O なし）
+    const foldCallCount = fold.mock.calls.length;
+    m.push("zombie");
+    await flushAsync();
+    expect(fold.mock.calls.length).toBe(foldCallCount);
+    expect(raw.tokens).toBe("a");
   });
 
   it("§3-2: eager 起動（startStreams）での args throw は error 正規化されず loud fail すること（drain restart 経路との対比）", async () => {

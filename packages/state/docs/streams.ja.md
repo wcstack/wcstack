@@ -75,16 +75,22 @@ export default {
 
 - `$streams` は stream 名から定義へのマップとなるオブジェクトであること。
 - 各エントリ名は**フラットなプロパティ名**であること: 空文字でない・`.` を含まない・`*` を含まない・`$` で始まらない（予約名前空間）。
+- エントリ名は `Object.prototype` の継承名（`__proto__`・`constructor`・`toString`・`hasOwnProperty` など）でないこと。これらはランタイムの own プロパティ前提を破ります（特に `__proto__` は起動時に state の prototype を差し替えてしまいます）。なおオブジェクトリテラルの `__proto__:` キーは prototype 指定構文で own key にならないため、そのようなエントリはエラーにならず黙って無視されます。
 - エントリ名は state に宣言済みの getter / setter と衝突しないこと。
 - 各エントリはオブジェクト（`{ args?, source, fold?, initial? }`）であること。
 - `source` は関数であること。`fold` は（あれば）関数であること。`fold` があるのに `initial` が無ければエラー（reduce にはシード値が必要）。
 - `args` は（あれば）関数であること。
 
-起動 / restart 時（`args` 評価時）に、違反はエラーを送出します:
+起動 / restart 時（`args` 評価時）に検出される違反:
 
 - `args` が `Promise` を返した（同期契約違反）。
 - `args` が stream 自身 — `<name>` / `$streamStatus.<name>` / `$streamError.<name>` — を読んだ（自己依存は自分の書き込みで永遠に restart し続けるため）。
 - `args` がワイルドカードを含むパスを読んだ（`$getAll` 経由も同様）— ワイルドカード依存は現時点でスコープ外です。
+
+違反（および `args` が投げたユーザー例外）の現れ方は経路によって異なります:
+
+- **eager 起動**（connect 時・接続中の state 再セット時）— エラーはそのまま送出されます（loud fail。`$connectedCallback` 内の例外と同じ扱い）。
+- **依存駆動 restart** — 送出されません: エラーは `$streamStatus.<name> = "error"` / `$streamError.<name>` に正規化され、他の entry の restart は継続します。前回成功した run で捕捉した依存は保持されるため、その依存への書き込みで再試行・回復できます。
 
 ### 値プロパティ
 
@@ -110,7 +116,7 @@ export default {
 
 セマンティクス:
 
-- **読み取り専用**。どちらの名前空間への代入（two-way binding 経由を含む）もエラーを送出します。既知の許容が 1 つあります: **現在値と同値**の代入は throw せず黙って無視されます（same-value ガードが書き込み防御より先に短絡するため。何も壊れず、誤用の診断が値の変わる書き込みまで遅れるだけです）。
+- **読み取り専用**。どちらの名前空間への代入（two-way binding 経由を含む）もエラーを送出します。既知の許容が 1 つあります: **現在値と同値の primitive（または `null`）値**の代入は throw せず黙って無視されます（same-value ガード — `sameValueGuard`、既定 ON — が書き込み防御より先に短絡するため。オブジェクト値はガード対象外で、たとえば `$streamError` が現在保持している `Error` インスタンスそのものの再代入は throw します。何も壊れず、誤用の診断がガードを通過する書き込みまで遅れるだけです）。
 - `$streamError.<name>` は起動・restart のたびに `null` にリセットされます。
 - error 時、**値プロパティは直前の fold 結果を保持**します — リセットされません。`initial` へのリセットは次の（再）起動時です。
 - `$streams` に未宣言の名前の読みは `undefined` です（throw しない。`$command` 名前空間と同じ寛容規約）。
@@ -167,7 +173,7 @@ $streams: {
 - **computed 経由の依存も有効** — `args` が getter を読む場合、その getter 自身の依存元の変化で restart します。
 - **stream 間の連鎖は正当** — stream B の `args` が stream A の値や `$streamStatus.A` を読んでも構いません。A のチャンク到着（や status 遷移）が B を restart させ、switchMap が自然に連鎖します。
 - **`args` / getter 内での名前空間読みの正規形**は dotted ブラケット形 `state["$streamStatus.a"]` です。チェーン形 `state.$streamStatus.a` は値は返しますが依存を**登録しません** — 連鎖が無音で切れます。
-- **自己依存はエラー** — `args` が自分の `<name>` / `$streamStatus.<name>` / `$streamError.<name>` を読むとエラーを送出します（自分の書き込みで永遠に restart するため）。
+- **自己依存はエラー** — `args` が自分の `<name>` / `$streamStatus.<name>` / `$streamError.<name>` を読むのは違反です（自分の書き込みで永遠に restart するため）。経路ごとの現れ方は[バリデーション](#バリデーション)を参照。
 - **相互サイクルは MUST NOT** — A の `args` が B の値を読み、B の `args` が A の値を読むと無限 restart ループになります。自己依存と異なり、サイクルはランタイムで検出**されません**。回避はユーザーの責務です。
 
 ---
@@ -242,7 +248,7 @@ fold: (acc, chunk) => [...acc.slice(-99), chunk],
 4. 自動再接続 — 再試行 = 依存の叩き直し。
 5. lazy 起動（将来の `lazy: true` オプションの余地のみ予約。未実装）。
 6. バインディング / 構造ブロック単位の stream 生存期間 — stream は `<wcs-state>` 要素の接続状態とともに生き、死にます。
-7. DCC（`data-wc-definition`）定義内の `$streams` — 宣言は無視されます。
+7. DCC **定義要素**（`data-wc-definition` / `_initializeDCC` 経路で初期化される `<wcs-state>`）での `$streams` — 宣言は無視されます。**DCC インスタンス内の `<wcs-state>`** は通常経路を通るため、`$streams` はインスタンスごとに独立して起動・切断されます。
 8. backpressure の保持（第 1 段の欠落ではなく恒久的な非目標）。
 
 既知のエッジ: 状態の再セットで stream 宣言が**削除された**場合、その `$streamStatus.<name>` / `$streamError.<name>` のバインディングには削除が通知されず、最後に描画された値が表示され続けます（以後の読みは `undefined` に解決されます）。

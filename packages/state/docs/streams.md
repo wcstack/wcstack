@@ -75,16 +75,22 @@ Violations raise an error when the state is set (declaration parse time):
 
 - `$streams` must be an object mapping stream names to definitions.
 - Each entry name must be a **flat property name**: non-empty, no `.`, no `*`, and must not start with `$` (reserved namespace).
+- Entry names must not be property names inherited from `Object.prototype` (`__proto__`, `constructor`, `toString`, `hasOwnProperty`, …). Such names break the runtime's own-property assumptions (`__proto__` would even rewrite the state's prototype on start). Note that a literal `__proto__:` key in an object literal is prototype-setting syntax — it never becomes an own key, so such an entry is silently ignored rather than rejected.
 - Entry names must not collide with a getter or setter declared on the state.
 - Each entry must be an object (`{ args?, source, fold?, initial? }`).
 - `source` must be a function. `fold`, if present, must be a function. `fold` without `initial` is an error (reduce needs a seed value).
 - `args`, if present, must be a function.
 
-Violations raise an error at start / restart time (when `args` is evaluated):
+Violations detected when `args` is evaluated (at start / restart):
 
 - `args` returned a `Promise` (the synchronous contract).
 - `args` read the stream itself — `<name>`, `$streamStatus.<name>`, or `$streamError.<name>` (a self-dependency would restart the stream on its own writes).
 - `args` read a wildcard path (including via `$getAll`) — wildcard dependencies are out of scope for now.
+
+How a violation (or any exception `args` throws) surfaces depends on the path:
+
+- **Eager start** (on connect, or re-setting the state while connected) — the error is thrown as is (loud fail, same as an exception in `$connectedCallback`).
+- **Dependency-driven restart** — nothing is thrown: the error is normalized into `$streamStatus.<name> = "error"` / `$streamError.<name>`, and restarts of other entries continue. The dependencies captured by the last successful run are kept, so writing to one of them retries the stream and can recover it.
 
 ### The Value Property
 
@@ -110,7 +116,7 @@ Every stream exposes two read-only companion paths:
 
 Semantics:
 
-- **Read-only.** Assigning to either namespace (including via two-way binding) throws an error. One known tolerance: assigning a value **identical to the current one** is silently ignored instead of throwing (the same-value guard short-circuits before the write defense; nothing is corrupted — the misuse diagnostic is just delayed until a differing write).
+- **Read-only.** Assigning to either namespace (including via two-way binding) throws an error. One known tolerance: assigning a **primitive or `null` value identical to the current one** is silently ignored instead of throwing (the same-value guard — `sameValueGuard`, on by default — short-circuits before the write defense; object values are outside the guard, so re-assigning e.g. the very `Error` instance currently held by `$streamError` still throws). Nothing is corrupted — the misuse diagnostic is just delayed until a write the guard lets through.
 - `$streamError.<name>` is reset to `null` on every start and restart.
 - On error, the **value property keeps the last folded value** — it is not reset. The reset to `initial` happens on the next (re)start.
 - Names not declared in `$streams` read as `undefined` (no throw), same as the `$command` namespace convention.
@@ -167,7 +173,7 @@ Details:
 - **Computed dependencies work** — if `args` reads a getter, changes to the getter's own dependencies trigger the restart.
 - **Stream chaining is legitimate** — stream B's `args` may read stream A's value, or `$streamStatus.A`. A's chunk arrivals (or status transitions) then restart B, chaining switchMaps naturally.
 - **Canonical form for namespace reads in `args` / getters** is the dotted bracket form `state["$streamStatus.a"]`. The chained form `state.$streamStatus.a` returns the value but does **not** register a dependency — the chain breaks silently.
-- **Self-dependency is an error** — `args` reading its own `<name>` / `$streamStatus.<name>` / `$streamError.<name>` raises (it would restart forever on its own writes).
+- **Self-dependency is an error** — `args` reading its own `<name>` / `$streamStatus.<name>` / `$streamError.<name>` is a violation (it would restart forever on its own writes); see [Validation](#validation) for how it surfaces on each path.
 - **Mutual cycles are MUST NOT** — A's `args` reading B's value while B's `args` reads A's value is an infinite restart loop. Unlike self-dependency, cycles are **not** detected at runtime; avoiding them is your responsibility.
 
 ---
@@ -242,7 +248,7 @@ The following are explicitly not supported:
 4. Automatic reconnection — retrying = re-touching a dependency.
 5. Lazy start (a future `lazy: true` option is reserved, not implemented).
 6. Per-binding / per-structural-block stream lifetimes — streams live and die with the `<wcs-state>` element's connection.
-7. `$streams` inside DCC (`data-wc-definition`) definitions — the declaration is ignored there.
+7. `$streams` on a DCC **definition element** (a `<wcs-state>` initialized through the `data-wc-definition` / `_initializeDCC` path) — the declaration is ignored there. A `<wcs-state>` **inside a DCC instance** goes through the normal path, so its `$streams` start and stop independently per instance.
 8. Backpressure preservation (a permanent non-goal, not a first-stage gap).
 
 Known edge: if re-setting the state **removes** a stream declaration, bindings to its `$streamStatus.<name>` / `$streamError.<name>` are not notified of the removal and keep showing the last rendered value (subsequent reads resolve to `undefined`).
