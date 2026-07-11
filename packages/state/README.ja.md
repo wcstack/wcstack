@@ -98,6 +98,7 @@
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
 - **command token** — pub/sub チャネル（`command.<method>: tokenName`）で state から wc-bindable カスタム要素のメソッドを起動
 - **event token** — command token の双対。wc-bindable 要素が dispatch するイベントを `eventToken.<prop>: tokenName` + `$on` マップで state が受信
+- **stream** — `$streams` 宣言で連続的な非同期フロー（async iterable / `ReadableStream`）を fold して reactive プロパティ化。switchMap 型の依存駆動 restart 付き
 - **パス getter** — ドットパスキー getter（`get "users.*.fullName"()`）によるデータツリーの任意の深さへのフラットな仮想プロパティ定義、自動依存追跡・キャッシュ
 - **Mustache 構文** — テキストノードでの `{{ path|filter }}`
 - **複数の状態ソース** — JSON, JS モジュール, インラインスクリプト, API, 属性
@@ -1392,6 +1393,62 @@ $on: {
 ### Token API
 
 event token は command token と同じ `Token` pub/sub プリミティブを共有します —— `name` / `size` / `subscribe` / `unsubscribe` / `emit`、subscribe 順の保持つき（[Token API](#token-api) 参照）。token はイベントごとに registry から解決されるため、`setInitialState()` による再構築後も最新の `$on` 購読者に届きます。所有する `<wcs-state>` が disconnect されると、event-token registry はクリアされます。
+
+## Stream（`$streams`）
+
+command token / event token が運ぶのは離散的なやり取りです。**`$streams`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$updatedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      prompt: "",
+
+      $streams: {
+        // フル形: LLM トークンストリームを累積
+        tokens: {
+          args:    (state) => state.prompt,                 // 依存はここでのみ捕捉される
+          source:  (prompt, signal) => llmStream(prompt, signal),
+          fold:    (acc, chunk) => acc + chunk,             // reduce（累積）
+          initial: "",                                      // fold 指定時は必須
+        },
+
+        // 最小形: fold 省略 = latest（最新チャンクで置換）、args 省略 = 一度だけ起動
+        ticker: {
+          source: (_args, signal) => priceStream(signal),
+        },
+      },
+    };
+  </script>
+</wcs-state>
+```
+
+| フィールド | 必須 | 契約 |
+|---|---|---|
+| `source` | ✔ | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<同>`。**`AbortSignal` を必ず尊重すること** —— restart / 破棄はこの signal で駆動される |
+| `args` | — | readonly な state proxy を受ける同期・純粋関数。ここで読んだパスが依存として捕捉される。省略時は一度だけ起動し restart しない |
+| `fold` | — | 同期関数 `(acc, chunk) => next`。省略時は latest（チャンクで置換）。毎回新しい値を返すこと —— `acc` の in-place 変異は非サポート |
+| `initial` | `fold` 指定時 ✔ | 初期値。起動・restart のたびにプロパティはこの値にリセットされる |
+
+stream の値は普通のプロパティで、コンパニオンの status / error は読み取り専用の名前空間から参照できます：
+
+```html
+<p data-wcs="textContent: tokens"></p>
+<p data-wcs="textContent: $streamStatus.tokens"></p>  <!-- "idle" | "active" | "done" | "error" -->
+<p data-wcs="textContent: $streamError.tokens"></p>   <!-- 直近のエラー。(re)start で null -->
+```
+
+error 時、プロパティは直前の fold 結果を保持し、エラーは `$streamError.<name>` に入ります。`done` / `error` の stream も依存の変化で restart します（再試行 = 依存の叩き直し）。
+
+重要な規範：
+
+- **協調キャンセル（MUST）** —— `source` は渡された `AbortSignal` を必ず監視し、発火したら生産を停止すること。
+- **有界 fold** —— 需要は producer に逆流しません（backpressure は明示的に放棄）。無限 / 長寿命ストリームでは latest・count・last-N（`(acc, chunk) => [...acc.slice(-99), chunk]`）・ウィンドウ集計など有界な fold を使うこと。生の全チャンク累積は有限ストリーム限定。
+- **`args` は同期** —— Promise を返すとエラー。`args` 内での wildcard 読みも拒否されます。
+- **自己依存・相互サイクルの禁止** —— `args` が自 stream の値や status を読むとエラーになります。2 つの stream の相互サイクル（A の `args` が B の値を読み、B の `args` が A の値を読む）は検出されず無限 restart になるため組まないこと。一方向のチェイン（A の値を B の `args` が読む）は正当です。
+- **SSR では起動しない** —— サーバーでは宣言のパースとプロパティの実体化（`initial`）のみ行い、source は実行されません。クライアント側は通常どおり起動します。
+
+完全な契約 —— ライフサイクルと所有権・restart セマンティクス・flush 粒度・スコープ外リスト —— は [docs/streams.ja.md](docs/streams.ja.md) を参照してください。
 
 ## Inputs と属性ミラー
 

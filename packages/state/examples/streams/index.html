@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Streams — fetch body streaming</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <!-- $streams is not released yet: import the LOCAL build that server.js
+         mounts under /state-dist/ (run `npm run build` in packages/state first)
+         instead of https://esm.run/@wcstack/state/auto. -->
+    <script type="module" src="/state-dist/auto.js"></script>
+    <style>
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+      .controls input {
+        flex: 1;
+        min-width: 12rem;
+      }
+      .chip {
+        padding: 2px 10px;
+        border-radius: 12px;
+        background-color: #2a2a4a;
+        color: #a0a0c0;
+        font-size: 0.75rem;
+      }
+      .chip.active { background-color: #2f2a5a; color: #b9b3ff; }
+      .chip.done { background-color: #1f3a2a; color: #7ac98f; }
+      .chip.error { background-color: #3a1f28; color: #e07a8a; }
+      .story {
+        min-height: 9rem;
+        padding: 1rem;
+        background-color: #1a1a2e;
+        border: 1px solid #2a2a4a;
+        border-radius: 8px;
+        white-space: pre-wrap;
+      }
+      .cursor {
+        display: inline-block;
+        width: 0.55em;
+        height: 1em;
+        margin-left: 2px;
+        vertical-align: text-bottom;
+        background-color: #6c63ff;
+        animation: blink 1s steps(2, start) infinite;
+      }
+      @keyframes blink { to { visibility: hidden; } }
+      .error-line {
+        margin-top: 0.75rem;
+        color: #e07a8a;
+        font-size: 0.85rem;
+      }
+      .meta {
+        margin-top: 0.75rem;
+        color: #a0a0c0;
+        font-size: 0.8rem;
+      }
+      .notes {
+        margin-top: 1.5rem;
+        font-size: 0.8rem;
+        color: #888;
+      }
+      .notes li {
+        margin-left: 1.25rem;
+        margin-bottom: 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+export default {
+  prompt: "a tiny robot",
+  seed: 0,
+
+  // $streams: fold an async producer into ONE reactive property (`story`).
+  $streams: {
+    story: {
+      // Dependencies are captured HERE (and only here): writing `prompt` or
+      // `seed` aborts the current run, resets `story` to `initial`, and starts
+      // a new run with the fresh args (switchMap semantics).
+      args: (state) => ({ prompt: state.prompt, seed: state.seed }),
+
+      // The source MUST honor the AbortSignal it is given (cooperative
+      // cancellation contract) — handing it to fetch() is all it takes here.
+      source: async ({ prompt, seed }, signal) => {
+        const response = await fetch(
+          `/api/story?prompt=${encodeURIComponent(prompt)}&seed=${seed}`,
+          { signal },
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        // ReadableStream<string>. Where ReadableStream has no
+        // Symbol.asyncIterator, the runtime consumes it via getReader().
+        return response.body.pipeThrough(new TextDecoderStream());
+      },
+
+      // Accumulate the text chunk by chunk. Unbounded accumulation is fine
+      // ONLY because this stream is finite — long-lived streams must use a
+      // bounded fold (latest / last-N / windowed aggregate).
+      fold: (acc, chunk) => acc + chunk,
+      initial: "",
+    },
+  },
+
+  // Computeds over the companion namespaces. Inside JS, the dotted BRACKET
+  // form `this["$streamStatus.story"]` is the canonical, dependency-tracked
+  // way to read them.
+  get status() { return this["$streamStatus.story"]; },
+  get isStreaming() { return this.status === "active"; },
+  get isDone() { return this.status === "done"; },
+  get isError() { return this.status === "error"; },
+  get errorText() {
+    const e = this["$streamError.story"];
+    return e ? String(e) : "";
+  },
+  // `story` is a primitive string, so a dotted path like `story.length` is
+  // not bindable in HTML — read the property inside a computed instead.
+  get charCount() { return this.story.length; },
+
+  // Retry / regenerate = poke a dependency the stream's args reads.
+  // There is no auto-reconnect: restarting after done/error is just this.
+  onRegenerate() {
+    this.seed++;
+  },
+};
+      </script>
+    </wcs-state>
+
+    <div class="example-container wide">
+      <p class="example-title">@wcstack/state</p>
+      <h1>$streams — fetch body streaming</h1>
+
+      <div class="controls">
+        <input type="text" data-wcs="value: prompt" placeholder="prompt"/>
+        <button data-wcs="onclick: onRegenerate">Regenerate</button>
+        <span class="chip" data-wcs="textContent: $streamStatus.story; class.active: isStreaming; class.done: isDone; class.error: isError"></span>
+      </div>
+
+      <div class="story"><span data-wcs="textContent: story"></span><template data-wcs="if: isStreaming"><span class="cursor"></span></template></div>
+
+      <template data-wcs="if: isError">
+        <p class="error-line">{{ errorText }} — the text folded so far is kept. Edit the prompt or hit Regenerate to retry.</p>
+      </template>
+
+      <p class="meta">{{ charCount }} chars</p>
+
+      <ul class="notes">
+        <li>Every keystroke in the prompt restarts the stream: the previous run is aborted through its AbortSignal and <code>story</code> resets to <code>initial</code> (switchMap semantics).</li>
+        <li><strong>Regenerate</strong> bumps <code>seed</code> — retrying after <code>done</code> / <code>error</code> is just poking a dependency the stream's <code>args</code> reads (there is no auto-reconnect).</li>
+        <li>Type a prompt containing <code>error</code>: the server drops the connection mid-stream, the chip turns <code>error</code>, <code>$streamError.story</code> is filled — and the folded text is kept.</li>
+        <li>The chip binds <code>$streamStatus.story</code> directly in HTML; the getters read it as <code>this["$streamStatus.story"]</code> (dotted bracket form).</li>
+      </ul>
+    </div>
+  </body>
+</html>

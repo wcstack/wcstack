@@ -194,6 +194,37 @@ defineState({
 });
 ```
 
+## `$streams` 宣言
+
+`$commandTokens` / `$eventTokens` / `$on` と並んで、状態オブジェクトは `$streams` 宣言マップを認識します。各エントリは非同期プロデューサー（async iterable / async generator / `ReadableStream`）を単一のリアクティブプロパティに畳み込みます:
+
+```typescript
+import { defineState } from '@wcstack/state';
+
+// (args, AbortSignal) => AsyncIterable | ReadableStream のプロデューサーなら何でもよい
+declare function llmStream(prompt: string, signal: AbortSignal): AsyncIterable<string>;
+
+export default defineState({
+  prompt: "",
+  answer: "",  // ランタイムでは stream の所有物。先に宣言しておくと `this.answer` に型が付く
+
+  $streams: {
+    answer: {
+      // `$streams` のコールバックにはまだ文脈型が付かない（宣言マップの型付けは
+      // 後続課題）ため、引数の型は明示的に注釈する。
+      args:    (state: { prompt: string }) => state.prompt,  // ここで読んだパスが restart を駆動する
+      source:  (prompt: string, signal: AbortSignal) => llmStream(prompt, signal),
+      fold:    (acc: string, token: string) => acc + token,
+      initial: "",
+    },
+  },
+});
+```
+
+stream は `$connectedCallback` の後に起動し、各チャンクを `this.answer` に畳み込み、`args` 内で読んだパスが変化するたびに restart（abort → `initial` リセット → 新 run）します。ランタイム状態は読み取り専用のコンパニオンパス `$streamStatus.answer` / `$streamError.answer` として公開されます。
+
+完全な契約 — 協調キャンセル・有界 fold 規範・バリデーション・ライフサイクル — は [Streams](./streams.ja.md) を参照してください。
+
 ## 使用例
 
 ### カウンター

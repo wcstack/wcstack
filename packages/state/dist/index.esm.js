@@ -150,6 +150,9 @@ const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 const STATE_COMMAND_NAMESPACE_NAME = "$command";
 const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
+const STATE_STREAMS_NAME = "$streams";
+const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
+const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
 const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";
 
 const _cache$4 = new Map();
@@ -1914,12 +1917,12 @@ function attachEventHandler(binding) {
 class EventToken extends Token {
 }
 
-const registryByStateElement$1 = new WeakMap();
+const registryByStateElement$2 = new WeakMap();
 function getOrCreateEventToken(stateElement, name) {
-    let registry = registryByStateElement$1.get(stateElement);
+    let registry = registryByStateElement$2.get(stateElement);
     if (typeof registry === "undefined") {
         registry = new Map();
-        registryByStateElement$1.set(stateElement, registry);
+        registryByStateElement$2.set(stateElement, registry);
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
@@ -1929,7 +1932,7 @@ function getOrCreateEventToken(stateElement, name) {
     return token;
 }
 function clearEventTokenRegistry(stateElement) {
-    registryByStateElement$1.delete(stateElement);
+    registryByStateElement$2.delete(stateElement);
 }
 
 /**
@@ -5486,12 +5489,12 @@ function processCommandTokensDeclaration(state) {
     return names;
 }
 
-const registryByStateElement = new WeakMap();
+const registryByStateElement$1 = new WeakMap();
 function getOrCreateCommandToken(stateElement, name) {
-    let registry = registryByStateElement.get(stateElement);
+    let registry = registryByStateElement$1.get(stateElement);
     if (typeof registry === "undefined") {
         registry = new Map();
-        registryByStateElement.set(stateElement, registry);
+        registryByStateElement$1.set(stateElement, registry);
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
@@ -5501,7 +5504,7 @@ function getOrCreateCommandToken(stateElement, name) {
     return token;
 }
 function clearCommandTokenRegistry(stateElement) {
-    registryByStateElement.delete(stateElement);
+    registryByStateElement$1.delete(stateElement);
 }
 
 /**
@@ -5622,6 +5625,911 @@ function processOnDeclaration(stateElement, state, eventTokenNames) {
         token.subscribe(handler);
     }
 }
+
+/**
+ * stream/lastNotified.ts
+ *
+ * 「最後に通知した観測値」台帳 — DOM binding / $updatedCallback（観測層）が
+ * 最後に見た status・error（docs/state-streams-design.md §4-3）。
+ *
+ * 通知の same-value 判定を entry フィールドとの比較で行うと、再 set
+ * （clearStreamRegistry → 新 entry 生成）を跨いだ陳腐化を検出できない
+ * （error 表示中に再 set すると新 entry は error=null で生まれるため
+ * null → null と誤判定して $postUpdate が落ち、DOM に旧 error が残る）。
+ * そのため通知 dedup は entry の寿命ではなく stateElement の寿命で持つ
+ * （ただし再 set で新宣言から消えた名前のエントリは pruneLastNotified で削除する —
+ *  同名にしか dedup は要らず、放置すると台帳が単調増加するため）。
+ * 未通知（初回）の基準値は宣言直後の観測初期値と同じ { idle, null }。
+ *
+ * さらに abortAllStreams（§5-1）は registry entry を通知なしで idle / null に
+ * 直接ミューテーションするため、観測層が「台帳の値」と「idle / null」の
+ * どちらを見たか確定できなくなる（binding / computed の fresh 読みは通知が
+ * なくても他パスの drain で走る）。その乖離フィールドは invalidateLastNotified
+ * で UNCERTAIN に無効化し、次回 updateStreamStatus の同値判定が必ず
+ * 「変化あり」になるようにする（再接続ウィンドウ内の idle 描画が恒久陳腐化
+ * しないための不変条件、§4-3）。
+ */
+/**
+ * 無通知ミューテーション後の「観測値が確定できない」印。
+ * どの実値とも一致しないため、次回の通知 dedup（`!==` / `Object.is`）を強制的に解除する。
+ */
+const UNCERTAIN = Symbol("wcs-stream-last-notified-uncertain");
+const lastNotifiedByStateElement = new WeakMap();
+/**
+ * 最後に通知した観測値を返す。未通知なら基準値 { idle, null }。
+ */
+function getLastNotified(stateElement, name) {
+    return (lastNotifiedByStateElement.get(stateElement)?.get(name) ?? { status: "idle", error: null });
+}
+/**
+ * 通知した観測値を記録する（updateStreamStatus が $postUpdate 発行と同時に呼ぶ）。
+ */
+function setLastNotified(stateElement, name, status, error) {
+    let lastMap = lastNotifiedByStateElement.get(stateElement);
+    if (typeof lastMap === "undefined") {
+        lastMap = new Map();
+        lastNotifiedByStateElement.set(stateElement, lastMap);
+    }
+    lastMap.set(name, { status, error });
+}
+/**
+ * 再 set（clearStreamRegistry → processStreamsDeclaration）後に呼び、新宣言に
+ * 存在しない名前の台帳エントリを削除する。台帳は stateElement の寿命で生存するが
+ * （§4-3 の再 set・再接続跨ぎ dedup）、それが必要なのは同名エントリのみで、
+ * 旧宣言にしか無い名前は以後どの通知経路（updateStreamStatus）からも参照されない。
+ * prune しないと、再 set のたびに異なる stream 名を使うステートで台帳が
+ * stateElement の寿命の間単調増加する。
+ * 既知の許容: prune 後に同名を再宣言した場合、dedup は基準値 { idle, null } から
+ * やり直しになる（宣言削除時の binding 陳腐化が §4-4 の既知エッジである以上、
+ * 再宣言は新規宣言と同じ扱いでよい）。
+ */
+function pruneLastNotified(stateElement, liveNames) {
+    const lastMap = lastNotifiedByStateElement.get(stateElement);
+    if (typeof lastMap === "undefined") {
+        return;
+    }
+    for (const name of lastMap.keys()) {
+        if (!liveNames.has(name)) {
+            lastMap.delete(name);
+        }
+    }
+}
+/**
+ * 無通知ミューテーション（abortAllStreams の idle / null 直接書き換え）の直後に呼び、
+ * 台帳のうちミューテーション後の値と一致しないフィールドを UNCERTAIN に無効化する。
+ * 一致しているフィールド（観測層がどちらを見ても同じ値）は dedup を維持する
+ * （例: error が null のままなら再接続時に $streamError.<name> の余計な通知は出ない）。
+ */
+function invalidateLastNotified(stateElement, name) {
+    const lastMap = lastNotifiedByStateElement.get(stateElement);
+    if (typeof lastMap === "undefined") {
+        return;
+    }
+    const last = lastMap.get(name);
+    if (typeof last === "undefined") {
+        // 未通知: 基準値 { idle, null } はミューテーション後の値と一致するため乖離しない
+        return;
+    }
+    lastMap.set(name, {
+        status: last.status === "idle" ? last.status : UNCERTAIN,
+        error: Object.is(last.error, null) ? null : UNCERTAIN,
+    });
+}
+
+/**
+ * stream/activeStateElements.ts
+ *
+ * 起動中（startStreams 済み・未切断）の stateElement の列挙用 Set
+ * （docs/state-streams-design.md §3-2）。
+ *
+ * streamRegistry の WeakMap は列挙不能のため、updater の drain リスナーが
+ * 「どの stateElement の entry と batch を交差させるか」を知るには
+ * 列挙可能な strong Set が別途必要になる。lastNotified.ts と同じ
+ * 「import 循環回避の小モジュール」パターン
+ * （streamRegistry → activeStateElements ← streamRuntime の一方向依存に保つ）。
+ *
+ * リーク防止の不変条件（strong Set が切断済み要素の GC を妨げないための連動）:
+ * - add は startStreams（streamRuntime.ts）だけが行う
+ *   （eager 起動＝connect 時、および接続中の `_state` 再 set 時の再起動）。
+ * - delete は abortAllStreams / clearStreamRegistry（streamRegistry.ts）が行う。
+ *   disconnect（disconnectedCallback → abortAllStreams）と `_state` 再 set
+ *   （clearStreamRegistry → processStreamsDeclaration → 接続中なら startStreams で
+ *   再 add）の両経路が必ずここを通るため、「Set に居る = 接続中かつ起動済み」が
+ *   常に保たれ、切断済み stateElement への強参照は残らない。
+ *   設計書 §3-2 の「未接続（disconnect 済み）の stateElement の entry は restart
+ *   しない」はこの不変条件で担保される。
+ */
+const activeStateElements = new Set();
+/**
+ * 起動中 stateElement として登録する（startStreams 専用。不変条件はモジュールヘッダ参照）。
+ */
+function addActiveStateElement(stateElement) {
+    activeStateElements.add(stateElement);
+}
+/**
+ * 起動中 stateElement から外す（abortAllStreams / clearStreamRegistry 専用）。
+ */
+function deleteActiveStateElement(stateElement) {
+    activeStateElements.delete(stateElement);
+}
+/**
+ * 起動中 stateElement を列挙する（drain リスナーの交差判定用）。
+ */
+function getActiveStateElements() {
+    return activeStateElements;
+}
+
+/**
+ * stream/streamRegistry.ts
+ *
+ * `$streams` の registry（docs/state-streams-design.md §2-1 / §5）。
+ * eventTokenRegistry と対称の WeakMap registry。
+ *
+ * - status / error の正本は registry entry（state オブジェクト上に実プロパティは持たない）。
+ * - disconnect 時は abortAllStreams（abort のみ・registry 保持）、
+ *   `_state` 再 set 時のみ clearStreamRegistry（abort ＋ 全削除）。
+ */
+const registryByStateElement = new WeakMap();
+/**
+ * stream entry 群を置換登録する（`_state` セッターからの再構築で丸ごと差し替える）。
+ */
+function setStreamEntries(stateElement, entries) {
+    registryByStateElement.set(stateElement, entries);
+}
+/**
+ * 登録済みの stream entry 群を返す。未登録なら空 Map を返す（registry への登録はしない）。
+ */
+function getStreamEntries(stateElement) {
+    return registryByStateElement.get(stateElement) ?? new Map();
+}
+/**
+ * 全 stream を abort して idle に戻す（設計書 §5-1）。registry は保持する。
+ *
+ * disconnectedCallback（切断時）に呼ばれるため、status / error の反映は
+ * proxy / $postUpdate を使わず entry への直接ミューテーションで行う
+ * （切断済みで binding 更新は不要かつ rootNode が無い）。
+ *
+ * 無通知ミューテーションは「最後に通知した観測値」台帳（stream/lastNotified.ts）
+ * と registry を乖離させるため、同時に台帳側を invalidate する。これを怠ると
+ * 再接続ウィンドウ内の fresh 読み（他パスの drain での getter 再計算など）が
+ * 描画した idle に対し、restart の updateStreamStatus("active") が切断前の
+ * 通知値と同値判定されて skip され、DOM が恒久的に陳腐化する（設計書 §4-3）。
+ */
+function abortAllStreams(stateElement) {
+    // 依存駆動 restart の対象から外す（切断済み stateElement は restart しない、
+    // 設計書 §3-2。add 側は startStreams — stream/activeStateElements.ts の
+    // リーク防止不変条件を参照）。registry の有無に関わらず必ず外す。
+    deleteActiveStateElement(stateElement);
+    const entries = registryByStateElement.get(stateElement);
+    if (typeof entries === "undefined") {
+        return;
+    }
+    for (const entry of entries.values()) {
+        entry.controller?.abort();
+        entry.controller = null;
+        entry.status = "idle";
+        entry.error = null;
+        invalidateLastNotified(stateElement, entry.name);
+    }
+}
+/**
+ * 全 stream を abort したうえで registry から削除する（`_state` 再 set 時の再配線用、設計書 §5-2）。
+ */
+function clearStreamRegistry(stateElement) {
+    abortAllStreams(stateElement);
+    // abortAllStreams が既に delete 済みだが、「clear = 全削除でも必ず restart 対象から
+    // 外れる」不変条件を将来の abortAllStreams の変更から独立に保証するため明示的に呼ぶ。
+    deleteActiveStateElement(stateElement);
+    registryByStateElement.delete(stateElement);
+}
+
+/**
+ * stream/processStreamsDeclaration.ts
+ *
+ * `$streams: { <name>: { args?, source, fold?, initial? } }` 宣言マップを解析し、
+ * IStreamEntry を構築して streamRegistry に一括登録する
+ * （docs/state-streams-design.md §1-1 / §1-2 / §1-3）。
+ *
+ * - バリデーション（§1-2）: 違反は raiseError。
+ *   - 名前はフラットなプロパティ名のみ（空文字 / `.`（DELIMITER）/ `*`（WILDCARD）/ 先頭 `$` を禁止）。
+ *   - Object.prototype の継承名（`__proto__` / `constructor` / `toString` 等）を禁止
+ *     （own key でなくても `in` 判定が真になり、実体化 skip ＋ 起動時 Reflect.set の
+ *      継承 setter 化 — `__proto__` は prototype 差し替え — を引き起こすため）。
+ *   - getter / setter として宣言済みのパスとの衝突を禁止（getterPaths / setterPaths を検査）。
+ *   - `source` は関数必須。`fold` は（あれば）関数。`fold` があるのに `initial` が無ければエラー
+ *     （reduce は initial 必須。`initial` の有無は in 演算子で判定）。`args` は（あれば）関数。
+ * - fold 省略時は latest（`(_acc, chunk) => chunk`）を注入する（§0 決定レコード）。
+ * - 値プロパティ実体化（§1-3）: `state[name]` が未定義なら `initial`
+ *   （fold 無しなら undefined）でデータプロパティとして初期化する。
+ *   ユーザーが同名プロパティを先に宣言していた場合は上書きしない
+ *   （起動時の initial リセットは streamRuntime 側の責務）。
+ * - 通知 dedup 台帳の prune（§4-3）: 新宣言に存在しない名前の lastNotified エントリを
+ *   削除する（台帳は stateElement 寿命 — 再 set 跨ぎ dedup が必要なのは同名のみ）。
+ *
+ * 呼び出しは stateElement.getterPaths / setterPaths の確定後であること
+ * （State の `_state` セッターが getStateInfo の反映より後に呼ぶことで保証する）。
+ */
+/** fold 省略時に注入される既定 fold（latest = 最新チャンクで置換） */
+const latestFold = (_acc, chunk) => chunk;
+/** `$streams` 無し宣言の prune 用（旧宣言の全名前が残骸になる） */
+const NO_STREAM_NAMES = new Set();
+function processStreamsDeclaration(stateElement, state) {
+    const declared = state[STATE_STREAMS_NAME];
+    if (typeof declared === "undefined") {
+        // $streams 無しの再 set でも旧宣言の名前は通知 dedup 台帳の残骸になるため prune する
+        pruneLastNotified(stateElement, NO_STREAM_NAMES);
+        return;
+    }
+    if (typeof declared !== "object" || declared === null) {
+        raiseError(`${STATE_STREAMS_NAME} must be an object mapping stream names to stream definitions.`);
+    }
+    const entries = new Map();
+    for (const [name, def] of Object.entries(declared)) {
+        if (name.length === 0) {
+            raiseError(`${STATE_STREAMS_NAME} entry name must be a non-empty string.`);
+        }
+        if (name.includes(DELIMITER)) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" must be a flat property name ("${DELIMITER}" is not allowed).`);
+        }
+        if (name.includes(WILDCARD)) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" must be a flat property name ("${WILDCARD}" is not allowed).`);
+        }
+        if (name.startsWith("$")) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" must not start with "$" (reserved namespace).`);
+        }
+        // Object.prototype の継承名（__proto__ / constructor / toString 等）は一律拒否する。
+        // own key でないのに `name in state` が真になるため実体化（§1-3）が skip され、
+        // 起動時の initial リセット（Reflect.set）が継承 setter に化ける
+        // （特に __proto__ は state の prototype を差し替える）ため、名前検査の防衛線で落とす（§1-2）。
+        if (name in Object.prototype) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" must not be a property name inherited from Object.prototype (e.g. "__proto__", "constructor").`);
+        }
+        if (stateElement.getterPaths.has(name)) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" conflicts with a getter declared on the state.`);
+        }
+        if (stateElement.setterPaths.has(name)) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" conflicts with a setter declared on the state.`);
+        }
+        if (typeof def !== "object" || def === null) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" must be an object ({ args?, source, fold?, initial? }).`);
+        }
+        const definition = def;
+        if (typeof definition.source !== "function") {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" source must be a function.`);
+        }
+        const hasFold = typeof definition.fold !== "undefined";
+        if (hasFold && typeof definition.fold !== "function") {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" fold must be a function.`);
+        }
+        if (hasFold && !("initial" in definition)) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" requires "initial" when fold is specified (reduce needs a seed value).`);
+        }
+        const hasArgs = typeof definition.args !== "undefined";
+        if (hasArgs && typeof definition.args !== "function") {
+            raiseError(`${STATE_STREAMS_NAME} entry "${name}" args must be a function.`);
+        }
+        const entry = {
+            name,
+            definition: {
+                args: definition.args ?? null,
+                source: definition.source,
+                fold: definition.fold ?? latestFold,
+                initial: definition.initial,
+            },
+            status: "idle",
+            error: null,
+            controller: null,
+            depAddresses: new Set(),
+        };
+        // 値プロパティ実体化（§1-3）: ユーザーが同名プロパティを先に宣言していたら上書きしない
+        if (!(name in state)) {
+            state[name] = entry.definition.initial;
+        }
+        entries.set(name, entry);
+    }
+    setStreamEntries(stateElement, entries);
+    // 新宣言に存在しない名前の通知 dedup 台帳エントリを prune する
+    // （同名は保持 = §4-3 の再 set 跨ぎ dedup 契約を維持。stream/lastNotified.ts 参照）
+    pruneLastNotified(stateElement, new Set(entries.keys()));
+}
+
+/**
+ * stream/streamNamespace.ts
+ *
+ * `$streamStatus` / `$streamError` の read-only namespace proxy
+ * （docs/state-streams-design.md §4-1 / §4-2）。commandNamespace と対称。
+ *
+ * - state element 単位で memo 化し、同一 stateElement なら同じ proxy が返る。
+ * - 宣言された stream 名（`$streams` に列挙されたもの）のみ registry entry の
+ *   status / error を返す。宣言外の名前・Symbol キーは undefined
+ *   （`then` / `constructor` 等を内部機構が触っても throw しない寛容規約、
+ *    $command と同じ）。
+ * - 値は memo しない: proxy は getStreamEntries を毎回読む thin gateway
+ *   （status / error は runtime が随時書き換えるため。registry entry が正本、§2-1）。
+ * - set / deleteProperty は raiseError。setByAddress の親走査が namespace proxy に
+ *   到達したときの Reflect.set もここで落ちる（書き込み防御 S11 の終端）。
+ */
+const statusNamespaceByStateElement = new WeakMap();
+const errorNamespaceByStateElement = new WeakMap();
+function createStreamNamespaceProxy(stateElement, namespaceName, pick) {
+    return new Proxy(Object.create(null), {
+        get(_target, prop) {
+            if (typeof prop !== "string") {
+                return undefined;
+            }
+            const entry = getStreamEntries(stateElement).get(prop);
+            if (typeof entry === "undefined") {
+                return undefined;
+            }
+            return pick(entry);
+        },
+        has(_target, prop) {
+            return typeof prop === "string" && getStreamEntries(stateElement).has(prop);
+        },
+        ownKeys() {
+            return Array.from(getStreamEntries(stateElement).keys());
+        },
+        getOwnPropertyDescriptor(_target, prop) {
+            if (typeof prop !== "string") {
+                return undefined;
+            }
+            const entry = getStreamEntries(stateElement).get(prop);
+            if (typeof entry === "undefined") {
+                return undefined;
+            }
+            return {
+                configurable: true,
+                enumerable: true,
+                value: pick(entry),
+            };
+        },
+        set() {
+            raiseError(`${namespaceName} namespace is read-only; assigning to it is not allowed.`);
+        },
+        deleteProperty() {
+            raiseError(`${namespaceName} namespace is read-only; deleting from it is not allowed.`);
+        },
+    });
+}
+function getStreamStatusNamespace(stateElement) {
+    const cached = statusNamespaceByStateElement.get(stateElement);
+    if (typeof cached !== "undefined") {
+        return cached;
+    }
+    const proxy = createStreamNamespaceProxy(stateElement, STATE_STREAM_STATUS_NAMESPACE_NAME, (entry) => entry.status);
+    statusNamespaceByStateElement.set(stateElement, proxy);
+    return proxy;
+}
+function getStreamErrorNamespace(stateElement) {
+    const cached = errorNamespaceByStateElement.get(stateElement);
+    if (typeof cached !== "undefined") {
+        return cached;
+    }
+    const proxy = createStreamNamespaceProxy(stateElement, STATE_STREAM_ERROR_NAMESPACE_NAME, (entry) => entry.error);
+    errorNamespaceByStateElement.set(stateElement, proxy);
+    return proxy;
+}
+/**
+ * 両 namespace proxy の memo を破棄する（clearCommandNamespace と対称）。
+ * disconnectedCallback と `_state` 再 set 時に呼ばれる。
+ */
+function clearStreamNamespace(stateElement) {
+    statusNamespaceByStateElement.delete(stateElement);
+    errorNamespaceByStateElement.delete(stateElement);
+}
+
+const updateBatchListeners = new Set();
+/**
+ * drain 終了リスナーを登録する。
+ */
+function registerUpdateBatchListener(listener) {
+    updateBatchListeners.add(listener);
+}
+/**
+ * 全リスナーに drain のバッチを通知する。
+ * リスナーの throw は握りつぶさない（内部バグの隠蔽防止）。
+ * stream 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
+ */
+function notifyUpdateBatchListeners(batch) {
+    for (const listener of updateBatchListeners) {
+        listener(batch);
+    }
+}
+class Updater {
+    _queueAbsoluteAddresses = [];
+    constructor() {
+    }
+    enqueueAbsoluteAddress(absoluteAddress) {
+        const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
+        this._queueAbsoluteAddresses.push(absoluteAddress);
+        if (requireStartProcess) {
+            queueMicrotask(() => {
+                const absoluteAddresses = this._queueAbsoluteAddresses;
+                this._queueAbsoluteAddresses = [];
+                this._applyChange(absoluteAddresses);
+            });
+        }
+    }
+    // テスト用に公開
+    testApplyChange(absoluteAddresses) {
+        this._applyChange(absoluteAddresses);
+    }
+    _applyChange(absoluteAddresses) {
+        // Note: AbsoluteStateAddress はキャッシュされているため、
+        // 同一の (stateName, address) は同じインスタンスとなり、
+        // Set による重複排除が正しく機能する    
+        const absoluteAddressSet = new Set(absoluteAddresses);
+        const processBindings = [];
+        for (const absoluteAddress of absoluteAddressSet) {
+            const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
+            for (const binding of bindings) {
+                if (binding.replaceNode.isConnected === false) {
+                    // 切断されているバインディングは無視
+                    continue;
+                }
+                processBindings.push(binding);
+            }
+        }
+        applyChangeFromBindings(processBindings);
+        // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
+        // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
+        notifyUpdateBatchListeners(absoluteAddressSet);
+    }
+}
+const updater = new Updater();
+function getUpdater() {
+    return updater;
+}
+
+/**
+ * stream/argsTrace.ts
+ *
+ * `$streams` の args トレース（依存捕捉、docs/state-streams-design.md §3-1）。
+ *
+ * - モジュールスコープの collector を立てて readonly proxy 上で args を評価し、
+ *   getByAddress を通った読みを絶対アドレス（IAbsoluteStateAddress）として捕捉する。
+ *   AbsolutePathInfo / AbsoluteStateAddress は両方キャッシュ済みのため、捕捉した
+ *   アドレスは drain バッチと Set.has のインスタンス同一性で O(1) 照合できる（§2-1）。
+ * - collectStreamDependency は getByAddress のホットパスから毎読み呼ばれるため、
+ *   collector === null なら即 return し、それ以外の計算を一切しない。
+ * - 起動・restart のたびに traceArgs が呼ばれ、成功時は entry.depAddresses を
+ *   丸ごと置換する（per-run の動的再捕捉）。失敗時は前回成功 run の検証済み
+ *   捕捉を保持する（§2-2 の「error からも依存変化で restart」を保つ）。
+ * - lastNotified.ts と同じく import 循環回避のための小モジュール
+ *   （getByAddress → argsTrace ← streamRuntime の一方向依存に保つ）。
+ */
+/** トレース中のみ非 null。getByAddress を通った読みの絶対アドレスが溜まる。 */
+let collector = null;
+/**
+ * getByAddress の入口（checkDependency 直後）から毎読み呼ばれるフック。
+ * トレース外（collector === null）では何もしない。
+ */
+function collectStreamDependency(stateElement, address) {
+    if (collector === null) {
+        return;
+    }
+    const absolutePathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
+    collector.add(createAbsoluteStateAddress(absolutePathInfo, address.listIndex));
+}
+/**
+ * args を readonly proxy で同期評価し、読まれたパスを entry.depAddresses に
+ * 丸ごと置換で再捕捉する（§3-1）。評価値（source の第 1 引数になる）を返す。
+ *
+ * - args === null（宣言で省略）なら depAddresses を clear して undefined
+ *   （依存なし = 起動後 restart しない）。
+ * - 検査（違反は raiseError）:
+ *   (a) 評価値が Promise（同期契約違反）
+ *   (b) 自己依存 — `<name>` / `$streamStatus.<name>` / `$streamError.<name>` の読み
+ *       （restart の自己書き込みで再発火する無限ループ、S8）
+ *   (c) wildcard を含むパスの読み（`$getAll` 等も同様。第 1 段スコープ外）
+ * - 失敗時（args のユーザー例外・検査違反）は今回の捕捉（captured）を採用せず
+ *   伝播し、entry.depAddresses には**前回成功 run の検証済み捕捉を保持する**。
+ *   これにより drain リスナーが throw を error 経路に正規化したあとも、依存の
+ *   書き込みで再試行できる（§2-2「done / error からも依存変化で restart」——
+ *   一時的な args throw で stream が恒久固着しない）。ループ安全性:
+ *   保持されるのは前回**成功** run の捕捉のみ（自己依存・wildcard 検査済み）で
+ *   自分の `<name>` / `$streamStatus.<name>` / `$streamError.<name>` を含み得ず、
+ *   traceArgs throw 時の startStream は initial リセットに到達しないため、
+ *   error 正規化の書き込みが保持 deps に再 hit することはない。再試行は依存
+ *   書き込み 1 回につき高々 1 回で有界。未検査の captured を採用しないことが
+ *   ループ防止の要件であり、前回検証済み捕捉の保持はそれを侵さない。
+ * - collector は finally で必ず復元する（例外・再入安全。ネスト評価は想定しないが
+ *   防御的に「前の collector を復元」の形にしておく — コストは同等）。
+ */
+function traceArgs(stateElement, entry) {
+    const argsFn = entry.definition.args;
+    if (argsFn === null) {
+        entry.depAddresses.clear();
+        return undefined;
+    }
+    const previousCollector = collector;
+    const captured = new Set();
+    collector = captured;
+    let argsValue = undefined;
+    try {
+        stateElement.createState("readonly", (state) => {
+            argsValue = argsFn(state);
+        });
+    }
+    finally {
+        // args のユーザー例外時は captured を採用せずそのまま伝播する
+        // （entry.depAddresses は前回成功 run の検証済み捕捉を保持）
+        collector = previousCollector;
+    }
+    if (argsValue instanceof Promise) {
+        raiseError(`${STATE_STREAMS_NAME} entry "${entry.name}" args must be synchronous (it returned a Promise).`);
+    }
+    const selfStatusPath = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}${entry.name}`;
+    const selfErrorPath = `${STATE_STREAM_ERROR_NAMESPACE_NAME}${DELIMITER}${entry.name}`;
+    for (const dep of captured) {
+        const pathInfo = dep.absolutePathInfo.pathInfo;
+        if (dep.absolutePathInfo.stateElement === stateElement &&
+            (pathInfo.path === entry.name || pathInfo.path === selfStatusPath || pathInfo.path === selfErrorPath)) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${entry.name}" args must not read the stream itself ("${pathInfo.path}"): a self-dependency would restart the stream on its own writes (infinite loop).`);
+        }
+        if (pathInfo.wildcardCount > 0) {
+            raiseError(`${STATE_STREAMS_NAME} entry "${entry.name}" args must not read wildcard paths ("${pathInfo.path}"): wildcard dependencies are out of scope.`);
+        }
+    }
+    entry.depAddresses = captured;
+    return argsValue;
+}
+
+/**
+ * stream/consumeSource.ts
+ *
+ * `$streams` のチャンク消費ループ（docs/state-streams-design.md §3-3）。
+ * packages/signals/src/streamResource.ts の consume / iterate /
+ * readableToAsyncIterable の移植（パッケージ間依存は持たない自己完結原則）。
+ *
+ * 唯一の構造差分は状態書き込みの IConsumeSink への委譲:
+ *   value.set(fold(value.peek(), chunk)) → sink.fold(chunk)
+ *   status.set("done")                   → sink.done()
+ *   error.set(e) + status.set("error")   → sink.fail(e)
+ *
+ * sink.fold() が throw した場合（fold throw）もループ内の throw として
+ * 既存の catch に流れ、signal.aborted なら return、でなければ sink.fail(e)。
+ * consumeSource 自体は fold throw と source throw を区別しない
+ * （producer の掃除 = controller.abort() は呼び出し側 runtime が fail 内で行う）。
+ * consumeSource は reject しない（全経路 catch 済み）。
+ *
+ * ---------------------------------------------------------------------------
+ * 以下、移植元モジュールヘッダの契約（原文英語のまま維持）:
+ *
+ * CONTRACT (cooperative cancellation — STRONG REQUIREMENT): the `source` MUST honor
+ * the `AbortSignal` it is given. Honoring it is what drives switchMap restart/dispose;
+ * a source that ignores it cannot be reliably cancelled.
+ *
+ * Rescue levels on abort:
+ *   - ReadableStream: FULLY rescued. A parked read() is force-unwound via
+ *     reader.cancel(), which both releases the underlying source and settles the
+ *     pending read() so the loop unwinds.
+ *   - AsyncIterable / async generator: PARTIALLY rescued. On abort we call
+ *     iterator.return() to trigger the generator's finally/cleanup. But a parked
+ *     `await` (the producer stalling before its next yield while IGNORING `signal`)
+ *     cannot be force-unwound from outside — return() only takes effect when the
+ *     generator next resumes. So a source that parks forever and never observes
+ *     `signal` still leaks its consume task. Honor `signal` to bound this.
+ * The `if (signal.aborted) return` check only runs after a chunk arrives, not while
+ * parked — it drops stale chunks but is not, by itself, a cancellation mechanism.
+ */
+async function consumeSource(source, args, signal, sink) {
+    // Obtain the iterator EXPLICITLY (not via `for await`'s implicit one) so abort can
+    // call `iterator.return()` to trigger an AsyncIterable / async generator's
+    // `finally`/cleanup. A `for await` only calls `.return()` when the loop itself exits;
+    // if the producer is PARKED (awaiting before the next yield while ignoring `signal`),
+    // the loop never advances, so the implicit `.return()` never runs and the task leaks
+    // past restart/dispose. Calling `.return()` on abort is the PARTIAL rescue: the
+    // parked `await` cannot be force-unwound from outside, but once the generator resumes
+    // (its next tick), `.return()` makes it run its `finally` and stop — recovering the
+    // common "generator wakes up after abort" case. The ReadableStream path is fully
+    // rescued via `reader.cancel()` (see `readableToAsyncIterable`).
+    let iterator = null;
+    // Guard against returning the SAME iterator twice. `onAbort` is reachable two ways:
+    // the abort listener, and the explicit call below when abort raced the
+    // `await source(...)`. The guard keys on the iterator instance (not a plain "ran"
+    // flag): the listener firing with iterator still null must NOT consume the single
+    // real cleanup that the explicit call performs once the iterator exists. So we only
+    // mark an iterator returned once we have actually called `.return()` on it.
+    let returned = null;
+    const onAbort = () => {
+        if (!iterator || iterator === returned) {
+            return; // nothing to release yet, or already released this iterator
+        }
+        returned = iterator;
+        // Fire the iterator's cleanup. Swallow any throw/rejection from `.return()` — we
+        // are tearing down; a producer that rejects on return must not surface here.
+        try {
+            void iterator.return?.()?.then?.(undefined, () => { });
+        }
+        catch {
+            // `.return()` threw synchronously while tearing down — ignore.
+        }
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+        const produced = await source(args, signal);
+        iterator = iterate(produced, signal)[Symbol.asyncIterator]();
+        if (signal.aborted) {
+            // Aborted while awaiting the source: the abort listener already ran (iterator
+            // was still null then), so explicitly release the just-produced iterator now —
+            // this fires a generator's finally / a ReadableStream's cancel for the
+            // resource we created but will never iterate.
+            onAbort();
+            return;
+        }
+        for (;;) {
+            const result = await iterator.next();
+            if (result.done) {
+                break;
+            }
+            if (signal.aborted) {
+                return; // stale chunk from a superseded/disposed run — drop it
+            }
+            sink.fold(result.value);
+        }
+        if (signal.aborted) {
+            return; // stream ended but this run was aborted — don't mark done
+        }
+        sink.done();
+    }
+    catch (e) {
+        if (signal.aborted) {
+            return; // an abort that surfaced as a throw is not an error
+        }
+        sink.fail(e); // keep the last folded value (do not reset)
+    }
+    finally {
+        signal.removeEventListener("abort", onAbort);
+    }
+}
+function iterate(produced, signal) {
+    // Optional chaining: a null/undefined source return value must fall through to the
+    // explicit TypeError below (symmetric with the `?.` on the getReader probe), not
+    // throw an opaque "Cannot read properties of null" from this property access.
+    if (typeof produced?.[Symbol.asyncIterator] === "function") {
+        return produced;
+    }
+    // Not async-iterable: must be a ReadableStream (read via getReader). Validate so
+    // a wrong source value yields a clear error instead of an opaque "getReader is
+    // not a function" from inside the generator.
+    if (typeof produced?.getReader !== "function") {
+        throw new TypeError("[@wcstack/state] $streams: source must return an AsyncIterable or a ReadableStream (got neither).");
+    }
+    return readableToAsyncIterable(produced, signal);
+}
+async function* readableToAsyncIterable(stream, signal) {
+    const reader = stream.getReader();
+    // A ReadableStream read() does NOT observe an AbortSignal on its own. Without
+    // this, a switchMap restart / dispose leaves the previous reader parked in a
+    // pending read() forever, leaking the underlying source. Cancelling on abort
+    // both releases the source AND settles the pending read() so the for-await
+    // unwinds and the finally below can release the lock. Abort is the only
+    // early-exit path for this generator (the consumer never calls .return()
+    // without aborting), so this is the sole place a non-drained stream is cancelled.
+    const onAbort = () => {
+        void reader.cancel().catch(() => { }); // tearing down; swallow a rejected cancel
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) {
+                return;
+            }
+            yield value;
+        }
+    }
+    finally {
+        signal.removeEventListener("abort", onAbort);
+        reader.releaseLock();
+    }
+}
+
+/**
+ * stream/streamRuntime.ts
+ *
+ * `$streams` の起動・チャンク反映・status 遷移（docs/state-streams-design.md
+ * §2-2 / §3-3 / §4-3）。
+ *
+ * スコープ:
+ * - eager 起動（startStreams）と start = restart の共通手順（startStream）。
+ * - args は traceArgs（stream/argsTrace.ts）で readonly proxy 評価と同時に依存を
+ *   per-run 再捕捉する（§3-1）。
+ * - 依存駆動 restart（§3-2）: モジュール初期化時に updater の drain 終了リスナーを
+ *   1 つ登録し（restartStreamsOnUpdateBatch）、起動中 stateElement
+ *   （stream/activeStateElements.ts — startStreams で add・abortAllStreams /
+ *   clearStreamRegistry で delete）の各 entry について depAddresses と batch を
+ *   交差させ、hit した entry を restart する。
+ *
+ * 切断後の後始末について（不変条件）:
+ * - disconnect（abortAllStreams）は registry entry を直接ミューテーションして
+ *   idle に戻す（$postUpdate は呼ばない — 切断済みで binding 更新は不要かつ
+ *   rootNode が無い）。
+ * - abort 済み run の sink コールバック（fold / done / fail）は consumeSource の
+ *   stale-drop（全経路の signal.aborted チェック）が createState 到達前に
+ *   落とすため、runtime 側に切断後ガードは不要。
+ *   「runtime が createState を呼ぶのは自分の controller が生きている間だけ」が
+ *   この 2 つの組み合わせで常に保たれる。
+ */
+/**
+ * 登録済みの全 stream を起動する（eager 起動、設計書 §2-3）。
+ * State.connectedCallback（$connectedCallback 完了後）と接続中の `_state` 再 set
+ * から呼ばれる想定。
+ *
+ * 同時に依存駆動 restart（§3-2）の対象として activeStateElements に登録する
+ * （delete 側は abortAllStreams / clearStreamRegistry —
+ *  stream/activeStateElements.ts のリーク防止不変条件を参照）。
+ * eager 起動の throw（args のユーザー例外等）はここでは正規化せず loud fail のまま
+ * （既存の $connectedCallback と同じ扱い。正規化は drain リスナー側の restart のみ）。
+ */
+function startStreams(stateElement) {
+    const entries = getStreamEntries(stateElement);
+    if (entries.size === 0) {
+        return;
+    }
+    addActiveStateElement(stateElement);
+    for (const entry of entries.values()) {
+        startStream(stateElement, entry);
+    }
+}
+/**
+ * stream を起動する。start = restart の共通手順（設計書 §2-2）:
+ *
+ * 1. 旧 run を abort（restart 時）→ 新 AbortController
+ * 2. traceArgs で args を readonly proxy 評価し依存を丸ごと再捕捉
+ *    （Promise / 自己依存 / wildcard 読みは raiseError、§3-1）
+ * 3. 値を initial にリセット（起動 = 最初の run も restart と同一セマンティクス、§1-3）
+ * 4. status="active"・error=null を反映
+ * 5. consumeSource で消費開始
+ */
+function startStream(stateElement, entry) {
+    entry.controller?.abort();
+    const controller = new AbortController();
+    entry.controller = controller;
+    // args 評価 ＋ 依存の per-run 再捕捉（args === null なら depAddresses を clear して
+    // undefined。Promise / 自己依存 / wildcard 読みは raiseError、§3-1）
+    const argsValue = traceArgs(stateElement, entry);
+    // 値リセット: setByAddress を通すことで updater coalesce・sameValueGuard・
+    // walkDependency（stream 値に依存する computed の dirty 化）がすべて乗る（§3-3）
+    stateElement.createState("writable", (state) => {
+        state[entry.name] = entry.definition.initial;
+    });
+    updateStreamStatus(stateElement, entry, "active", null);
+    const definition = entry.definition;
+    const sink = {
+        fold(chunk) {
+            // fold の throw はそのまま伝播させる（consumeSource が fail 経路に回す）
+            stateElement.createState("writable", (state) => {
+                state[entry.name] = definition.fold(state[entry.name], chunk);
+            });
+        },
+        done() {
+            updateStreamStatus(stateElement, entry, "done", null);
+        },
+        fail(error) {
+            // 値は直前の fold 結果を保持（リセットしない）
+            updateStreamStatus(stateElement, entry, "error", error);
+            // fold-throw 時の producer 掃除（iterator.return() / reader.cancel() を発火）。
+            // source-throw 時は producer が既に終了しているので abort は無害（§3-3）。
+            controller.abort();
+        },
+    };
+    void consumeSource(definition.source, argsValue, controller.signal, sink);
+}
+/**
+ * status / error の反映ヘルパ（設計書 §4-3）。
+ *
+ * - registry entry が正本。常に最新値へ書き換える。
+ * - 「最後に通知した観測値」（stream/lastNotified.ts — 再 set・再接続を跨いで
+ *   stateElement の寿命で生存する台帳）から変化した項目に対応する名前空間パス
+ *   （`$streamStatus.<name>` / `$streamError.<name>`）だけを writable proxy の
+ *   $postUpdate で通知する（updater enqueue ＋ walkDependency）。
+ * - 両方不変なら通知しない（名前空間パスは setByAddress を通らないため
+ *   sameValueGuard が効かず、同等の same-value 判定を runtime 側が持つ）。
+ *   abortAllStreams の無通知ミューテーションで台帳が invalidate されている場合は
+ *   同値扱いにならず必ず通知される（再接続ウィンドウ内の fresh 読みが描画した
+ *   idle の恒久陳腐化を防ぐ、§4-3）。
+ */
+function updateStreamStatus(stateElement, entry, status, error) {
+    entry.status = status;
+    entry.error = error;
+    const last = getLastNotified(stateElement, entry.name);
+    const statusChanged = last.status !== status;
+    const errorChanged = !Object.is(last.error, error);
+    if (!statusChanged && !errorChanged) {
+        return;
+    }
+    setLastNotified(stateElement, entry.name, status, error);
+    stateElement.createState("writable", (state) => {
+        if (statusChanged) {
+            state.$postUpdate(`${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}${entry.name}`);
+        }
+        if (errorChanged) {
+            state.$postUpdate(`${STATE_STREAM_ERROR_NAMESPACE_NAME}${DELIMITER}${entry.name}`);
+        }
+    });
+}
+/**
+ * 依存駆動 restart の drain リスナー（設計書 §3-2）。
+ * モジュール初期化時に registerUpdateBatchListener で 1 つだけ登録される。
+ *
+ * - 起動中の各 stateElement の各 entry について、depAddresses と batch の交差を
+ *   Set.has のインスタンス同一性で判定する（小さい方 = depAddresses を回して
+ *   batch.has(dep)。AbsoluteStateAddress はキャッシュにより同一 (stateName, path,
+ *   listIndex) が同一インスタンス、§2-1）。args なし（depAddresses 空）の entry は
+ *   自然にスキップされる。
+ * - status は問わず restart する（done / error からも依存の叩き直しで再試行、§2-2）。
+ * - hit は収集してから一括で restart する（イテレーション中の registry 変更を避ける。
+ *   entry ごとに最初の hit で break するため「1 drain につき 1 entry 最大 1 restart」
+ *   もここで自然に成立する — 同一 tick 内の複数依存書き込みは 1 restart に畳まれる）。
+ * - hits の実行時にも active ＋ entry identity を再チェックする: 先行 restart の
+ *   source / args は consumeSource / traceArgs の同期プレフィックスで同期実行される
+ *   ため、そこで (a) 他の stateElement（や自分自身のホスト）の同期切断、(b) 同一要素の
+ *   _state 同期再 set（clearStreamRegistry → startStreams で Set に再 add される）が
+ *   起こり得る。(a) は切断済み要素への startStream が rootNode 不在で throw する経路、
+ *   (b) は registry から置換済みの旧 entry を restart して到達不能な孤児 consume run を
+ *   リークする経路（§3-2「未接続の stateElement の entry は restart しない」・
+ *   §5-1「切断後は idle」に違反）で、いずれも「entry が現行 registry の live entry で
+ *   あること」の再検証で skip する。startStream **実行中**の自己切断・再 set は事前
+ *   チェックではガードできないため、catch 側でも同じ再検証を行ってから error に
+ *   正規化する（切断済みでの正規化は createState が再 throw して drain リスナー外へ
+ *   漏れ、後続 hits の restart を巻き添えにするため）。
+ * - restart（startStream）は entry ごとに try/catch し、throw（args のユーザー例外・
+ *   Promise 同期契約違反等）は controller.abort() → status="error"・$streamError 格納
+ *   に正規化する（§3-2 規範 3）。updater の drain を壊さず、他 entry の restart も
+ *   継続する。eager 起動（connect 時の startStreams）の throw は従来どおり loud fail。
+ * - restart 内の書き込み（initial リセット・status 通知）は updater への enqueue のみで
+ *   新しい microtask バッチを作る（drain 再入ではない）。自己依存は traceArgs が
+ *   宣言時に raiseError で検出するため、restart 書き込みが自分の依存に再 hit する
+ *   ループは起きない（§3-1）。
+ */
+function restartStreamsOnUpdateBatch(batch) {
+    const activeStateElements = getActiveStateElements();
+    if (activeStateElements.size === 0) {
+        // stream 未使用アプリの drain に配列・イテレータ割り当てのコストを載せない
+        return;
+    }
+    const hits = [];
+    for (const stateElement of activeStateElements) {
+        for (const entry of getStreamEntries(stateElement).values()) {
+            for (const dep of entry.depAddresses) {
+                if (batch.has(dep)) {
+                    hits.push({ stateElement, entry });
+                    break;
+                }
+            }
+        }
+    }
+    for (const { stateElement, entry } of hits) {
+        // 先行 restart の source / args 同期実行は他要素の切断や同一要素の _state 同期再 set を
+        // 行い得るため、実行時に再チェックする（live な Set / registry ビューで即時反映）:
+        // - 切断済み要素は skip（§3-2「未接続の stateElement の entry は restart しない」）
+        // - entry が現行 registry のものでなければ skip — 同期再 set で置換された旧 entry を
+        //   restart すると、registry から到達不能なため abortAllStreams でも止められない
+        //   孤児 consume run がリークする
+        if (!activeStateElements.has(stateElement) ||
+            getStreamEntries(stateElement).get(entry.name) !== entry) {
+            continue;
+        }
+        try {
+            startStream(stateElement, entry);
+        }
+        catch (e) {
+            entry.controller?.abort();
+            // startStream 実行中（args / source の同期プレフィックス）の自己切断・同期再 set は
+            // 上の再チェックではガードできない。切断済みだと updateStreamStatus の createState が
+            // rootNode 不在で再 throw して drain リスナー外へ漏れる（後続 hits の restart を
+            // 巻き添えにする）ため、entry がまだ現行の live entry である場合のみ error に
+            // 正規化する（切断済みなら abortAllStreams が idle に戻し済み。§3-2 規範 3 / §5-1）。
+            if (activeStateElements.has(stateElement) &&
+                getStreamEntries(stateElement).get(entry.name) === entry) {
+                updateStreamStatus(stateElement, entry, "error", e);
+            }
+        }
+    }
+}
+registerUpdateBatchListener(restartStreamsOnUpdateBatch);
 
 function getterFn(name) {
     return function () {
@@ -5981,19 +6889,42 @@ function checkDependency(handler, address) {
  * - ワイルドカードや多重ループにも柔軟に対応し、再帰的な値取得を実現
  * - finallyでキャッシュへの格納を保証
  */
-function _getByAddress(target, address, receiver, handler, stateElement) {
-    if (address.pathInfo.segments[0] === STATE_COMMAND_NAMESPACE_NAME) {
-        // $command 名前空間配下のパスは raw state を持たないため、proxy の get トラップと
-        // 同じ namespace を辿る。1セグメント目は namespace 本体、2セグメント目以降は
-        // namespace 上のキー (= 宣言済み command token 名) を順に走査する。
-        let value = getCommandNamespace(stateElement);
-        for (let i = 1; i < address.pathInfo.segments.length; i++) {
-            if (value == null) {
-                return undefined;
-            }
-            value = Reflect.get(value, address.pathInfo.segments[i]);
+/**
+ * namespace 配下のパスは raw state を持たないため、proxy の get トラップと同じ
+ * namespace オブジェクトを辿る。1セグメント目は namespace 本体、2セグメント目以降は
+ * namespace 上のキーを順に走査する。走査値が object / function 以外（null /
+ * undefined / primitive の葉）になったら undefined を返す — 葉より深い読み
+ * （例: `$streamStatus.<name>.<key>`、error が primitive throw のときの
+ * `$streamError.<name>.message`）は宣言外アクセスと同じ undefined 解決とし、
+ * Reflect.get の non-object TypeError を updater の drain に漏らさない
+ * （§4-1 の throw しない寛容規約）。
+ */
+function walkNamespace(namespace, segments) {
+    let value = namespace;
+    for (let i = 1; i < segments.length; i++) {
+        // Object(v) !== v は「v が object / function でない」（= primitive / null / undefined）判定
+        if (Object(value) !== value) {
+            return undefined;
         }
-        return value;
+        value = Reflect.get(value, segments[i]);
+    }
+    return value;
+}
+function _getByAddress(target, address, receiver, handler, stateElement) {
+    const firstSegment = address.pathInfo.segments[0];
+    if (firstSegment === STATE_COMMAND_NAMESPACE_NAME) {
+        // $command 名前空間: キーは宣言済み command token 名
+        return walkNamespace(getCommandNamespace(stateElement), address.pathInfo.segments);
+    }
+    if (firstSegment === STATE_STREAM_STATUS_NAMESPACE_NAME) {
+        // $streamStatus / $streamError 名前空間: キーは宣言済み stream 名
+        // （registry entry が正本の thin gateway、docs/state-streams-design.md §4-2）。
+        // setByAddress の親走査もここを通るため、子への Reflect.set が namespace proxy の
+        // raiseError に到達する = 書き込み防御（S11）もこの分岐で成立する。
+        return walkNamespace(getStreamStatusNamespace(stateElement), address.pathInfo.segments);
+    }
+    if (firstSegment === STATE_STREAM_ERROR_NAMESPACE_NAME) {
+        return walkNamespace(getStreamErrorNamespace(stateElement), address.pathInfo.segments);
     }
     if (address.pathInfo.path in target) {
         // getterの中で参照の可能性があるので、addressをプッシュする
@@ -6039,6 +6970,8 @@ function _getByAddressWithCache(target, address, receiver, handler, stateElement
 }
 function getByAddress(target, address, receiver, handler) {
     checkDependency(handler, address);
+    // $streams の args トレース中のみ絶対アドレスを捕捉（collector 非活性なら即 return）
+    collectStreamDependency(handler.stateElement, address);
     const stateElement = handler.stateElement;
     const cacheable = address.pathInfo.wildcardCount > 0 ||
         stateElement.getterPaths.has(address.pathInfo.path);
@@ -6080,49 +7013,6 @@ function getContextListIndex(handler, structuredPath) {
         return null;
     }
     return address.listIndex?.at(index) ?? null;
-}
-
-class Updater {
-    _queueAbsoluteAddresses = [];
-    constructor() {
-    }
-    enqueueAbsoluteAddress(absoluteAddress) {
-        const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
-        this._queueAbsoluteAddresses.push(absoluteAddress);
-        if (requireStartProcess) {
-            queueMicrotask(() => {
-                const absoluteAddresses = this._queueAbsoluteAddresses;
-                this._queueAbsoluteAddresses = [];
-                this._applyChange(absoluteAddresses);
-            });
-        }
-    }
-    // テスト用に公開
-    testApplyChange(absoluteAddresses) {
-        this._applyChange(absoluteAddresses);
-    }
-    _applyChange(absoluteAddresses) {
-        // Note: AbsoluteStateAddress はキャッシュされているため、
-        // 同一の (stateName, address) は同じインスタンスとなり、
-        // Set による重複排除が正しく機能する    
-        const absoluteAddressSet = new Set(absoluteAddresses);
-        const processBindings = [];
-        for (const absoluteAddress of absoluteAddressSet) {
-            const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
-            for (const binding of bindings) {
-                if (binding.replaceNode.isConnected === false) {
-                    // 切断されているバインディングは無視
-                    continue;
-                }
-                processBindings.push(binding);
-            }
-        }
-        applyChangeFromBindings(processBindings);
-    }
-}
-const updater = new Updater();
-function getUpdater() {
-    return updater;
 }
 
 const swapInfoByStateAddress = new WeakMap();
@@ -6821,6 +7711,9 @@ async function setLoopContextAsync(handler, loopContext, callback) {
  * - 通常のプロパティアクセスもバインディングや多重ループに対応
  * - シンボルAPIやReflect.getで拡張性・互換性も確保
  */
+// `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
+const STREAM_STATUS_PATH_PREFIX = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}`;
+const STREAM_ERROR_PATH_PREFIX = `${STATE_STREAM_ERROR_NAMESPACE_NAME}${DELIMITER}`;
 function get(target, prop, receiver, handler) {
     const index = INDEX_BY_INDEX_NAME[prop];
     if (typeof index !== "undefined") {
@@ -6859,14 +7752,27 @@ function get(target, prop, receiver, handler) {
                 case STATE_COMMAND_NAMESPACE_NAME: {
                     return getCommandNamespace(handler.stateElement);
                 }
+                case STATE_STREAM_STATUS_NAMESPACE_NAME: {
+                    return getStreamStatusNamespace(handler.stateElement);
+                }
+                case STATE_STREAM_ERROR_NAMESPACE_NAME: {
+                    return getStreamErrorNamespace(handler.stateElement);
+                }
+            }
+            // switch 不一致の $ プロパティのうち、`$streamStatus.<name>` / `$streamError.<name>`
+            // の dotted パスだけは通常のパス解決（getByAddress）へフォールスルーさせる。
+            // これが computed（getter）内での依存追跡付き読み取りの正規形
+            // （checkDependency が getter スコープで動的依存を登録し、$postUpdate の
+            //  walkDependency で computed が無効化される、docs/state-streams-design.md §4-3）。
+            // それ以外の未知 $ プロパティは従来どおり undefined を返す。
+            if (!prop.startsWith(STREAM_STATUS_PATH_PREFIX) && !prop.startsWith(STREAM_ERROR_PATH_PREFIX)) {
+                return undefined;
             }
         }
-        else {
-            const resolvedAddress = getResolvedAddress(prop);
-            const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
-            const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
-            return getByAddress(target, stateAddress, receiver, handler);
-        }
+        const resolvedAddress = getResolvedAddress(prop);
+        const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+        const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
+        return getByAddress(target, stateAddress, receiver, handler);
     }
     else if (typeof prop === "symbol") {
         switch (prop) {
@@ -7466,6 +8372,17 @@ class State extends HTMLElement {
     _bindableEventMap = {};
     _commandTokenNames = new Set();
     _eventTokenNames = new Set();
+    _dcc = false;
+    // connect サイクルの世代カウンタ（connectedCallback 冒頭でインクリメント）。
+    // $connectedCallback の await 中の「切断 → 即再接続」では、新 connect が
+    // _rootNode を再設定済みのため陳腐化した旧 connect の再開が _rootNode ガードを
+    // 素通りして startStreams に到達し、同一の再接続に対して source が二重起動する。
+    // 末尾で冒頭に捕捉した世代と照合し、陳腐 connect からの起動を skip する（設計書 §2-3）。
+    _connectGeneration = 0;
+    // _state セッター側の startStreams が走った connect 世代
+    // （connectedCallback 末尾の startStreams との二重起動防止、設計書 §2-3。
+    //  世代が進めば不一致となり自然に無効化される — サイクル単位のフラグリセット相当）
+    _streamsStartedGeneration = 0;
     constructor() {
         super();
         this._initializePromise = new Promise((resolve) => {
@@ -7497,6 +8414,9 @@ class State extends HTMLElement {
         this._listPaths.clear();
         this._elementPaths.clear();
         this._getterPaths.clear();
+        // 再 set 時の残骸が $streams の衝突検査（processStreamsDeclaration）に
+        // 偽陽性で命中しないよう getterPaths と対称にクリアする。
+        this._setterPaths.clear();
         this._pathSet.clear();
         const stateInfo = getStateInfo(value);
         for (const path of stateInfo.getterPaths) {
@@ -7504,6 +8424,25 @@ class State extends HTMLElement {
         }
         for (const path of stateInfo.setterPaths) {
             this._setterPaths.add(path);
+        }
+        // $streams: 再 set 時の二重起動防止のため旧 stream を abort ＋ registry 全削除してから
+        // 新宣言をパースする（clearEventTokenRegistry → processOnDeclaration と同じ再配線パターン）。
+        // getterPaths / setterPaths の収集後であること（宣言バリデーションが衝突検査で参照する）。
+        // namespace proxy の memo も破棄して古い proxy を捨てる（clearCommandNamespace と対称）。
+        clearStreamNamespace(this);
+        clearStreamRegistry(this);
+        processStreamsDeclaration(this, value);
+        // 接続中の再 set（S13）は新宣言で即再起動する。
+        // 初回（_initialize 中）は _initialized が false なのでここでは起動されず、
+        // connectedCallback 側の startStreams（$connectedCallback 完了後）が担う。
+        if (this._initialized && this._rootNode !== null && !inSsr()) {
+            startStreams(this);
+            // $connectedCallback 実行中の再 set（setInitialState）では、ここで新宣言が
+            // 起動済みのため connectedCallback 末尾の startStreams を skip させる。
+            // skip しないと同一 connect サイクルで新宣言の source が 2 回起動する
+            // （1 回目は即 abort — switchMap 意味論で状態は壊れないが、副作用を持つ
+            // source が 2 回発火してしまう）。
+            this._streamsStartedGeneration = this._connectGeneration;
         }
         this._resolveLoading?.();
     }
@@ -7655,6 +8594,7 @@ class State extends HTMLElement {
             raiseError(`DCC: Failed to load state: ${e}`);
         }
         defineDCC(hostElement, shadowRoot, state);
+        this._dcc = true;
         this._initialized = true;
         this._rootNode = null; // disconnectedCallbackでのstate参照を防止
         this._resolveInitialize?.();
@@ -7670,6 +8610,11 @@ class State extends HTMLElement {
     }
     async connectedCallback() {
         this._rootNode = this.getRootNode();
+        // connect 世代を進めて冒頭で捕捉する（末尾の startStreams 前に照合し、
+        // $connectedCallback の await 中に「切断 → 即再接続」された陳腐 connect の
+        // 再開からの起動を防ぐ）。前回接続中の再 set（S13）で立った
+        // _streamsStartedGeneration も世代不一致となり自然に無効化される。
+        const connectGeneration = ++this._connectGeneration;
         if (!this._initialized) {
             // DCC 検出: ShadowRoot 内かつホストに data-wc-definition がある場合
             const parentNode = this.parentNode;
@@ -7682,6 +8627,12 @@ class State extends HTMLElement {
             await this._initialize();
             this._initialized = true;
             this._resolveInitialize?.();
+        }
+        else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
+            // 再接続（disconnect で名前登録が解除された後の再 connect）: 登録を復元する。
+            // createState が rootNode 経由でこの要素を解決できるようにするために必要
+            // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
+            setStateElementByName(this._rootNode, this._name, this);
         }
         // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
         // inSsr() (サーバー側): レンダリング中なので実行する
@@ -7699,16 +8650,53 @@ class State extends HTMLElement {
             Ssr.buildContent(ssrEl, stateData);
             this.parentNode?.insertBefore(ssrEl, this);
         }
+        // $streams の eager 起動（$connectedCallback 完了後、設計書 §2-3）。
+        // inSsr() 時は起動しない（SSR 出力には initial が乗る、§7-1）。
+        // enable-ssr のクライアント側は $connectedCallback をスキップしても起動する
+        // （stream はシリアライズ不能なランタイム副作用のため）。
+        // _rootNode ガード: $connectedCallback の await 中に切断された場合は起動しない。
+        // ガードなしだと startStream 内の createState が rootNode 解決（disconnectedCallback
+        // で null 化済み）の raiseError で throw し、connectedCallbackPromise が永遠に
+        // 未解決になる。「未接続の entry は restart しない」設計書 §3-2 とも整合し、
+        // _state セッター側の startStreams 前ガード（_rootNode !== null）と対称。
+        // 世代ガード（connectGeneration 照合）: await 中に「切断 → 即再接続」された場合、
+        // 新 connect が _rootNode を再設定済みで上のガードを素通りするため、世代不一致で
+        // 陳腐化した connect の再開を検出して skip する。起動点が新 connect の末尾に
+        // 一本化され、「$connectedCallback 完了後に起動」（S1）の順序保証も保たれる。
+        // _streamsStartedGeneration ガード: $connectedCallback 内の setInitialState
+        // （接続中の再 set）で _state セッター側が新宣言を起動済みの場合は skip する
+        // （skip しないと同一 connect サイクルで source が 2 回起動する、設計書 §2-3）。
+        if (!inSsr() &&
+            this._rootNode !== null &&
+            connectGeneration === this._connectGeneration &&
+            this._streamsStartedGeneration !== connectGeneration) {
+            startStreams(this);
+        }
         this._resolveConnectedCallback?.();
     }
     disconnectedCallback() {
         if (this._rootNode !== null) {
-            this._callStateDisconnectedCallback();
-            setStateElementByName(this.rootNode, this._name, null);
-            clearCommandTokenRegistry(this);
-            clearCommandNamespace(this);
-            clearEventTokenRegistry(this);
-            this._rootNode = null;
+            // try/finally: ユーザーの $disconnectedCallback が throw しても後続の後始末を
+            // 必ず実行する。特に abortAllStreams が飛ぶと stream が消費を続け（ゾンビ I/O）、
+            // activeStateElements の強参照残留で GC が妨げられ、切断済み要素が依存駆動
+            // restart の対象にも残る（設計書 §3-2 / §5-1 違反）。throw 自体は従来どおり
+            // 呼び出し元へ伝播させる（変わるのは後始末の保証のみ）。
+            try {
+                this._callStateDisconnectedCallback();
+            }
+            finally {
+                setStateElementByName(this.rootNode, this._name, null);
+                clearCommandTokenRegistry(this);
+                clearCommandNamespace(this);
+                clearEventTokenRegistry(this);
+                // stream は abort のみで registry は保持する（再接続時に同じ宣言から
+                // initial で再起動できる、設計書 §5-1 / §5-2）。
+                // namespace proxy の memo は破棄する（clearCommandNamespace と対称。
+                // registry は残るため再接続後の初回アクセスで同内容の proxy が再生成される）。
+                abortAllStreams(this);
+                clearStreamNamespace(this);
+                this._rootNode = null;
+            }
         }
     }
     get initializePromise() {

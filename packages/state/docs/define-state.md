@@ -194,6 +194,37 @@ defineState({
 });
 ```
 
+## `$streams` Declaration
+
+Alongside `$commandTokens` / `$eventTokens` / `$on`, the state object recognizes the `$streams` declaration map. Each entry folds an async producer (async iterable / async generator / `ReadableStream`) into a single reactive property:
+
+```typescript
+import { defineState } from '@wcstack/state';
+
+// Any (args, AbortSignal) => AsyncIterable | ReadableStream producer works.
+declare function llmStream(prompt: string, signal: AbortSignal): AsyncIterable<string>;
+
+export default defineState({
+  prompt: "",
+  answer: "",  // owned by the stream at runtime; pre-declaring it types `this.answer`
+
+  $streams: {
+    answer: {
+      // `$streams` callbacks get no contextual type yet (typing the declaration
+      // map is a planned follow-up), so annotate the parameters explicitly.
+      args:    (state: { prompt: string }) => state.prompt,  // paths read here drive restart
+      source:  (prompt: string, signal: AbortSignal) => llmStream(prompt, signal),
+      fold:    (acc: string, token: string) => acc + token,
+      initial: "",
+    },
+  },
+});
+```
+
+The stream starts after `$connectedCallback`, folds each chunk into `this.answer`, and restarts (abort → reset to `initial` → new run) whenever a path read in `args` changes. Runtime state is exposed through the read-only companion paths `$streamStatus.answer` / `$streamError.answer`.
+
+See [Streams](./streams.md) for the full contract — cooperative cancellation, the bounded-fold rule, validation, and lifecycle.
+
 ## Examples
 
 ### Counter
