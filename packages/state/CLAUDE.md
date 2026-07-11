@@ -69,6 +69,16 @@ src/
 │   └── twowayHandler.ts    # 双方向バインディング
 ├── updater/
 │   └── updater.ts          # 変更通知・DOM更新
+├── stream/                 # $streams (非同期プロデューサー → fold → リアクティブプロパティ)
+│   ├── types.ts            # StreamStatus, IStreamDefinition, IStreamEntry, StreamSource
+│   ├── processStreamsDeclaration.ts  # $streams 宣言のバリデーション・registry 登録・値プロパティ実体化
+│   ├── streamRegistry.ts   # WeakMap registry (status/error の正本), abort/clear
+│   ├── streamRuntime.ts    # 起動・restart 手順、status/error 反映、依存駆動 restart の drain リスナー
+│   ├── argsTrace.ts        # args の依存捕捉 (readonly proxy トレース、自己依存/wildcard 検査)
+│   ├── consumeSource.ts    # チャンク消費ループ (AsyncIterable / ReadableStream getReader フォールバック)
+│   ├── streamNamespace.ts  # $streamStatus / $streamError の read-only namespace proxy
+│   ├── lastNotified.ts     # 通知 dedup 台帳 (最後に通知した観測値)
+│   └── activeStateElements.ts  # 起動中 stateElement 集合 (restart 対象の走査元)
 ├── dependency/             # 依存関係追跡
 ├── stateLoader/            # 状態ロード (innerScript, jsonFile, scriptFile, scriptJson)
 ├── cache/                  # キャッシュ

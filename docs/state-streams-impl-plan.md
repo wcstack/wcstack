@@ -1,6 +1,6 @@
 # 実装計画: `$streams`（@wcstack/state）
 
-- **状態**: Phase A 完了（2026-07-11・フルスイート green・`src/stream/*` カバレッジ 100/100/100/100）。B〜D 未着手。設計の正本は [state-streams-design.md](./state-streams-design.md)（以下「設計書」）。本書は設計書 §9 のフェーズ分割を、着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
+- **状態**: **全 Phase 完了**（2026-07-11・Phase A=0e2c93f / B=f0095f3 / C=413edf4 / D=docs+example+ビルド検証）。フルスイート 172 files / 1624 tests green・lint 0・カバレッジ閾値クリア（`src/stream/*` は 100/100/100/100）・`npm run build` 通過（dist に $streams 収録・d.ts 健全）。残課題は設計書 §11（TS 型公開・signals 逆輸入・DCC 対応・リリース時 minor bump）。設計の正本は [state-streams-design.md](./state-streams-design.md)（以下「設計書」）。本書は設計書 §9 のフェーズ分割を、着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
 - **Phase A の裁定記録**: S3「1 tick N チャンク → flush 1 回」は構造的に不成立（チャンクは microtask 境界を跨ぐ）→ 設計書 §6-1/§10-2 を「チャンクごとに 1 drain（レート有界）」に改定。`_setterPaths` 未クリアの偽陽性を修正。再接続不能の既存バグ（stateElementByName 未再登録）を修正。connect 中切断時の startStreams ガードを追加。S17 の $streamStatus 掲載検証と S12 の binding 継続性テストは **Phase B に持ち越し**（B-3 に統合）。
 - **ブランチ**: `feature/state-streams`（本書・設計書と同居。実装コミットもここに積む）。
 - **参照実装**: `packages/signals/src/streamResource.ts` ＋ `packages/signals/__tests__/streamResource.test.ts`（fake source ヘルパの移植元でもある）。

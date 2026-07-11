@@ -98,6 +98,7 @@ That's it. No build, no bootstrap code, no framework.
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
 - **Command tokens** — invoke methods on wc-bindable custom elements from state via a pub/sub channel (`command.<method>: tokenName`)
 - **Event tokens** — the dual of command tokens: receive a wc-bindable element's dispatched events in state via `eventToken.<prop>: tokenName` + the `$on` map
+- **Streams** — fold continuous async flows (async iterables / `ReadableStream`) into reactive properties via the `$streams` declaration, with switchMap-style dependency-driven restart
 - **Path getters** — dot-path key getters (`get "users.*.fullName"()`) for virtual properties at any depth in a data tree, all defined flat in one place with automatic dependency tracking and caching
 - **Mustache syntax** — `{{ path|filter }}` in text nodes
 - **Multiple state sources** — JSON, JS module, inline script, API, attribute
@@ -1393,6 +1394,62 @@ $on: {
 ### Token API
 
 Event tokens share the same `Token` pub/sub primitive as command tokens — `name` / `size` / `subscribe` / `unsubscribe` / `emit`, with subscribe-order preservation (see [Token API](#token-api)). The token is resolved from the registry on every event so a re-`setInitialState()` rebuild still reaches the latest `$on` subscribers. When the owning `<wcs-state>` is disconnected, the event-token registry is cleared.
+
+## Streams (`$streams`)
+
+Command tokens and event tokens carry discrete interactions. **`$streams`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$updatedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects.
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      prompt: "",
+
+      $streams: {
+        // Full form: accumulate an LLM token stream
+        tokens: {
+          args:    (state) => state.prompt,                 // dependencies are captured here, and only here
+          source:  (prompt, signal) => llmStream(prompt, signal),
+          fold:    (acc, chunk) => acc + chunk,             // reduce (accumulate)
+          initial: "",                                      // required when fold is specified
+        },
+
+        // Minimal form: no fold = latest (replace with the newest chunk), no args = start once
+        ticker: {
+          source: (_args, signal) => priceStream(signal),
+        },
+      },
+    };
+  </script>
+</wcs-state>
+```
+
+| Field | Required | Contract |
+|---|---|---|
+| `source` | ✔ | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<same>`. **Must honor the `AbortSignal`** — restart and disposal are driven by it |
+| `args` | — | Synchronous pure function over a readonly state proxy. Paths read here are captured as dependencies; omitted = start once, never restart |
+| `fold` | — | Synchronous `(acc, chunk) => next`. Omitted = latest (replace with the chunk). Must return a new value — no in-place mutation of `acc` |
+| `initial` | with `fold` ✔ | Seed value. The property resets to it on every (re)start |
+
+The stream's value is an ordinary property, and its companion status / error live under read-only namespaces:
+
+```html
+<p data-wcs="textContent: tokens"></p>
+<p data-wcs="textContent: $streamStatus.tokens"></p>  <!-- "idle" | "active" | "done" | "error" -->
+<p data-wcs="textContent: $streamError.tokens"></p>   <!-- last error, null after (re)start -->
+```
+
+On error the property keeps its last folded value and the error lands in `$streamError.<name>`; a `done` or `error` stream restarts when its dependencies change (retrying = re-hitting the dependency).
+
+Key rules:
+
+- **Cooperative cancellation (MUST)** — `source` must observe the passed `AbortSignal` and stop producing when it fires.
+- **Bounded fold** — demand never flows back to the producer (backpressure is deliberately abandoned). For infinite / long-lived streams use a bounded fold — latest, count, last-N (`(acc, chunk) => [...acc.slice(-99), chunk]`), windowed aggregates. Raw accumulation of every chunk is for finite streams only.
+- **`args` is synchronous** — returning a Promise is an error, and wildcard reads inside `args` are rejected.
+- **No self-dependency, no mutual cycles** — `args` reading the stream's own value or status raises an error. Mutual cycles between two streams (A's `args` reads B's value and vice versa) are not detected and restart forever — do not build them. One-way chains (A's value feeding B's `args`) are legitimate.
+- **SSR does not start streams** — on the server the declaration is parsed and the property is materialized with `initial`, but no source runs; the client starts streams as usual.
+
+See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and ownership, restart semantics, flush granularity, and the out-of-scope list.
 
 ## Inputs and Attribute Mirror
 

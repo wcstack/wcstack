@@ -8,8 +8,8 @@
  * 受け入れ ID（docs/state-streams-design.md §10-2）:
  * - S1:  eager 起動（$connectedCallback → args 評価 → source の順・connect 完了で active）
  * - S2:  SSR 非起動（inSsr() で source が呼ばれない・値は initial のまま）
- * - S3:  1 tick 複数チャンク（fold は全チャンクに適用。設計書の「binding flush 1 回」は
- *        現行実装では未成立 — 既知の乖離として特性化。テスト内コメント参照）
+ * - S3:  1 tick 複数チャンク（fold は全チャンクに適用。反映はチャンクごとに 1 drain —
+ *        設計書 §6-1 改定済みの契約。テスト内コメント参照）
  * - S4:  sameValueGuard（同値 primitive チャンクで $updatedCallback が呼ばれない）
  * - S12: disconnect → abort・再接続 → initial から再起動（「続きから」にならない）
  *        補: $connectedCallback の await 中の切断で startStreams を skip し
@@ -174,15 +174,12 @@ describe("$streams State ライフサイクル統合", () => {
     expect(fold.mock.calls).toEqual([["", "a"], ["a", "b"], ["ab", "c"]]);
     expect(raw.tokens).toBe("abc");
     expect(shadowRoot.querySelector("p")!.textContent).toBe("abc");
-    // 【特性化・設計書との既知の乖離】設計書 §6-1 / §10-2 S3 は「1 tick N チャンク →
-    // binding flush 1 回」を規定するが、現行実装では成立しない: updater の drain は
-    // microtask バッチ単位の coalesce であり、async iterator 経由のチャンクは
-    // `await iterator.next()` により各々別 microtask で届くため、チャンクごとに
-    // 1 drain（= DOM 書き込み・$updatedCallback もチャンク数回）になる。
-    // これは実装バグではなく設計書と実装の契約不一致であり、Phase A 単独では解消
-    // できない。設計書 §6-1・S3 の文言修正か updater/stream 側の coalesce 導入かの
-    // 裁定待ち（Phase D 想定）。以下は裁定までの現行挙動の固定であって設計の保証では
-    // ない — 裁定され次第この固定を更新すること。
+    // 【契約の固定（裁定済み・設計書 §6-1 改定 2026-07-11）】チャンク反映の粒度は
+    // 「チャンクごとに 1 drain」が正: updater の drain は microtask バッチ単位の
+    // coalesce であり、async iterator 経由のチャンクは `await iterator.next()` により
+    // 各々別 microtask で届くため、DOM 書き込み・$updatedCallback もチャンク数回になる
+    // （flush レートはチャンク到着レートに有界。signals PoC の effect スケジューラと
+    // 同一挙動＝共有契約）。docs/streams.md も同じ契約を規範化している。
     expect(updatedLog).toEqual([["tokens"], ["tokens"], ["tokens"]]);
 
     host.remove();
