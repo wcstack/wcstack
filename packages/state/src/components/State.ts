@@ -17,6 +17,7 @@ import { processEventTokensDeclaration } from "../event/processEventTokensDeclar
 import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
 import { processOnDeclaration } from "../event/processOnDeclaration";
 import { processStreamsDeclaration } from "../stream/processStreamsDeclaration";
+import { clearStreamNamespace } from "../stream/streamNamespace";
 import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
 import { startStreams } from "../stream/streamRuntime";
 import { defineDCC } from "../dcc/defineDCC";
@@ -146,6 +147,8 @@ export class State extends HTMLElement implements IStateElement {
     // $streams: 再 set 時の二重起動防止のため旧 stream を abort ＋ registry 全削除してから
     // 新宣言をパースする（clearEventTokenRegistry → processOnDeclaration と同じ再配線パターン）。
     // getterPaths / setterPaths の収集後であること（宣言バリデーションが衝突検査で参照する）。
+    // namespace proxy の memo も破棄して古い proxy を捨てる（clearCommandNamespace と対称）。
+    clearStreamNamespace(this);
     clearStreamRegistry(this);
     processStreamsDeclaration(this, value);
     // 接続中の再 set（S13）は新宣言で即再起動する。
@@ -374,7 +377,10 @@ export class State extends HTMLElement implements IStateElement {
       clearEventTokenRegistry(this);
       // stream は abort のみで registry は保持する（再接続時に同じ宣言から
       // initial で再起動できる、設計書 §5-1 / §5-2）。
+      // namespace proxy の memo は破棄する（clearCommandNamespace と対称。
+      // registry は残るため再接続後の初回アクセスで同内容の proxy が再生成される）。
       abortAllStreams(this);
+      clearStreamNamespace(this);
       this._rootNode = null;
     }
   }

@@ -10,6 +10,7 @@
  */
 
 import type { IStateElement } from "../components/types";
+import { invalidateLastNotified } from "./lastNotified";
 import type { IStreamEntry } from "./types";
 
 const registryByStateElement: WeakMap<IStateElement, Map<string, IStreamEntry>> = new WeakMap();
@@ -34,6 +35,12 @@ export function getStreamEntries(stateElement: IStateElement): Map<string, IStre
  * disconnectedCallback（切断時）に呼ばれるため、status / error の反映は
  * proxy / $postUpdate を使わず entry への直接ミューテーションで行う
  * （切断済みで binding 更新は不要かつ rootNode が無い）。
+ *
+ * 無通知ミューテーションは「最後に通知した観測値」台帳（stream/lastNotified.ts）
+ * と registry を乖離させるため、同時に台帳側を invalidate する。これを怠ると
+ * 再接続ウィンドウ内の fresh 読み（他パスの drain での getter 再計算など）が
+ * 描画した idle に対し、restart の updateStreamStatus("active") が切断前の
+ * 通知値と同値判定されて skip され、DOM が恒久的に陳腐化する（設計書 §4-3）。
  */
 export function abortAllStreams(stateElement: IStateElement): void {
   const entries = registryByStateElement.get(stateElement);
@@ -45,6 +52,7 @@ export function abortAllStreams(stateElement: IStateElement): void {
     entry.controller = null;
     entry.status = "idle";
     entry.error = null;
+    invalidateLastNotified(stateElement, entry.name);
   }
 }
 

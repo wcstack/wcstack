@@ -1,0 +1,349 @@
+/**
+ * stream.namespaceResolution.test.ts
+ *
+ * `$streamStatus` / `$streamError` の解決経路の統合テスト（B-2）。
+ * 実 `<wcs-state>` 要素を happy-dom で connect する流儀は stream.lifecycle.test.ts の
+ * connectHost パターンを流用。
+ *
+ * 検証する解決経路（docs/state-streams-design.md §4-2）:
+ * - JS 直接アクセス: get トラップの namespace case（state.$streamStatus.tokens）
+ * - dotted 直接アクセス: get トラップのフォールスルー → getByAddress の namespace 分岐
+ *   （this["$streamStatus.tokens"]、getter 内の依存追跡付き読み取りの正規形）
+ * - binding パス解決: applyChange の読みが getByAddress の namespace 分岐に到達
+ * - 書き込み防御（S11）: setByAddress の親走査が namespace proxy に到達して raiseError
+ * - $streamError 側の同型・未宣言名は undefined（binding は書き込みスキップ = 空表示）
+ * - 葉より深い読み: primitive / null の葉を跨ぐ dotted パスは undefined 解決で throw しない
+ *   （§4-1 の寛容規約 — Reflect.get の non-object TypeError を updater の drain に漏らさない）
+ */
+import { describe, it, expect, beforeAll } from "vitest";
+import { bootstrapState } from "../src/bootstrapState";
+import { State } from "../src/components/State";
+import type { IState } from "../src/types";
+import type { IStateProxy } from "../src/proxy/types";
+import { makeManualAsyncGenerator } from "./helpers/fakeStreamSources";
+
+beforeAll(() => {
+  bootstrapState();
+});
+
+/** マイクロタスクを出し切る（updater の drain と consume ループの双方を進める） */
+const flushAsync = () => new Promise<void>((r) => setTimeout(r, 0));
+
+let hostSeq = 0;
+
+/**
+ * ShadowRoot 内に <wcs-state> と任意のマークアップを持つホストを組み立てて接続する。
+ * ShadowRoot 単位で state 名前空間と binding 構築が閉じるため、テスト間で干渉しない。
+ */
+async function connectHost(markup: string, initialState: IState): Promise<{
+  host: HTMLElement;
+  shadowRoot: ShadowRoot;
+  stateEl: State;
+}> {
+  const host = document.createElement(`stream-ns-host-${++hostSeq}`);
+  const shadowRoot = host.attachShadow({ mode: "open" });
+  shadowRoot.innerHTML = `${markup}<wcs-state></wcs-state>`;
+  document.body.appendChild(host);
+  const stateEl = shadowRoot.querySelector("wcs-state") as State;
+  stateEl.setInitialState(initialState);
+  await stateEl.connectedCallbackPromise;
+  return { host, shadowRoot, stateEl };
+}
+
+/** tokens ストリーム 1 本だけ持つ最小 state 宣言 */
+function makeTokensState(): { raw: IState } {
+  const m = makeManualAsyncGenerator<string>();
+  const raw: IState = {
+    $streams: {
+      tokens: {
+        source: () => m.iterable,
+        fold: (acc: unknown, chunk: unknown) => `${acc}${chunk}`,
+        initial: "",
+      },
+    },
+  };
+  return { raw };
+}
+
+describe("$streamStatus / $streamError の解決経路統合", () => {
+  it("JS 直接アクセス: state.$streamStatus.tokens が status を返すこと（readonly / writable 両 proxy）", async () => {
+    const { raw } = makeTokensState();
+    const { host, stateEl } = await connectHost("", raw);
+
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      expect((s.$streamStatus as Record<string, unknown>).tokens).toBe("active");
+      expect((s.$streamError as Record<string, unknown>).tokens).toBeNull();
+    });
+    stateEl.createState("writable", (s: IStateProxy) => {
+      expect((s.$streamStatus as Record<string, unknown>).tokens).toBe("active");
+      expect((s.$streamError as Record<string, unknown>).tokens).toBeNull();
+    });
+
+    host.remove();
+  });
+
+  it("dotted 直接アクセス: proxy 上の this[\"$streamStatus.tokens\"] が値を返すこと（getter 内・直接読みの両方）", async () => {
+    // 注意: makeTokensState の extra 経由で getter を渡すと object spread が getter を
+    // 即時評価して data プロパティ化してしまうため、getter 持ちの state は inline で宣言する
+    const m = makeManualAsyncGenerator<string>();
+    const raw: IState = {
+      $streams: {
+        tokens: {
+          source: () => m.iterable,
+          fold: (acc: unknown, chunk: unknown) => `${acc}${chunk}`,
+          initial: "",
+        },
+      },
+      // getter 内の dotted 読み（依存追跡付き読み取りの正規形、設計書 §4-3）
+      get isStreaming() {
+        return (this as Record<string, unknown>)["$streamStatus.tokens"] === "active";
+      },
+    };
+    const { host, stateEl } = await connectHost("", raw);
+
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      // 直接の dotted 読み（get トラップのフォールスルー → getByAddress の namespace 分岐）
+      expect(s["$streamStatus.tokens"]).toBe("active");
+      expect(s["$streamError.tokens"]).toBeNull();
+      // getter 経由の dotted 読み
+      expect(s.isStreaming).toBe(true);
+    });
+
+    host.remove();
+  });
+
+  it("binding: <p data-wcs=\"textContent: $streamStatus.tokens\"> が初期表示されること", async () => {
+    const { raw } = makeTokensState();
+    const { host, shadowRoot } = await connectHost(
+      `<p id="st" data-wcs="textContent: $streamStatus.tokens"></p>`,
+      raw,
+    );
+    await State.getBindingsReady(shadowRoot);
+    await flushAsync();
+
+    expect(shadowRoot.querySelector("#st")!.textContent).toBe("active");
+
+    host.remove();
+  });
+
+  it("書き込み防御（S11）: 直接代入 state[\"$streamStatus.tokens\"] = \"x\" が raiseError すること", async () => {
+    const { raw } = makeTokensState();
+    const { host, stateEl } = await connectHost("", raw);
+
+    // setByAddress の親走査が "$streamStatus" を解決 → 子への Reflect.set が
+    // namespace proxy の set トラップに到達して raiseError
+    expect(() => {
+      stateEl.createState("writable", (s: IStateProxy) => {
+        s["$streamStatus.tokens"] = "x";
+      });
+    }).toThrow(/\$streamStatus namespace is read-only/);
+
+    expect(() => {
+      stateEl.createState("writable", (s: IStateProxy) => {
+        s["$streamError.tokens"] = "x";
+      });
+    }).toThrow(/\$streamError namespace is read-only/);
+
+    host.remove();
+  });
+
+  it("書き込み防御（S11）: state.$streamStatus.tokens = \"x\"（namespace proxy 経由）も raiseError すること", async () => {
+    const { raw } = makeTokensState();
+    const { host, stateEl } = await connectHost("", raw);
+
+    expect(() => {
+      stateEl.createState("writable", (s: IStateProxy) => {
+        (s.$streamStatus as Record<string, unknown>).tokens = "x";
+      });
+    }).toThrow(/\$streamStatus namespace is read-only/);
+
+    expect(() => {
+      stateEl.createState("writable", (s: IStateProxy) => {
+        (s.$streamError as Record<string, unknown>).tokens = "x";
+      });
+    }).toThrow(/\$streamError namespace is read-only/);
+
+    host.remove();
+  });
+
+  it("$streamError 側の同型確認: error 発生後に binding / JS 両経路で読めること", async () => {
+    const failure = new Error("stream failed");
+    let failRun: (() => void) | null = null;
+    const raw: IState = {
+      $streams: {
+        broken: {
+          source: () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next: () =>
+                  new Promise<IteratorResult<string>>((_resolve, reject) => {
+                    failRun = () => reject(failure);
+                  }),
+              };
+            },
+          }),
+        },
+      },
+    };
+    const { host, shadowRoot, stateEl } = await connectHost(
+      `<p id="err" data-wcs="textContent: $streamError.broken"></p>` +
+        `<p id="st" data-wcs="textContent: $streamStatus.broken"></p>`,
+      raw,
+    );
+    await State.getBindingsReady(shadowRoot);
+    await flushAsync();
+
+    // error 前: $streamError は null（textContent への null 書き込みは空文字化）
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      expect(s["$streamError.broken"]).toBeNull();
+      expect(s["$streamStatus.broken"]).toBe("active");
+    });
+
+    failRun!();
+    await flushAsync();
+
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      expect(s["$streamError.broken"]).toBe(failure);
+      expect(s["$streamStatus.broken"]).toBe("error");
+    });
+    // binding にも反映される（$postUpdate → updater 経由、B-3 の end-to-end は別テストで完結）
+    expect(shadowRoot.querySelector("#st")!.textContent).toBe("error");
+    expect(shadowRoot.querySelector("#err")!.textContent).toBe(String(failure));
+
+    host.remove();
+  });
+
+  it("未宣言名: $streamStatus.unknown は undefined を返し、binding は空表示のままであること", async () => {
+    const { raw } = makeTokensState();
+    const { host, shadowRoot, stateEl } = await connectHost(
+      `<p id="unknown" data-wcs="textContent: $streamStatus.unknown">initial</p>`,
+      raw,
+    );
+    await State.getBindingsReady(shadowRoot);
+    await flushAsync();
+
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      expect(s["$streamStatus.unknown"]).toBeUndefined();
+      expect(s["$streamError.unknown"]).toBeUndefined();
+      expect((s.$streamStatus as Record<string, unknown>).unknown).toBeUndefined();
+    });
+    // undefined は「状態が値を持たない＝無意見」でプロパティ書き込みがスキップされる
+    // （applyChangeToProperty の undefined スキップ規約）ため、要素側の既定値が残る
+    expect(shadowRoot.querySelector("#unknown")!.textContent).toBe("initial");
+
+    host.remove();
+  });
+
+  it("葉より深い読み: primitive / null の葉を跨ぐ dotted パスが undefined 解決で throw しないこと（§4-1 寛容規約）", async () => {
+    const { raw } = makeTokensState();
+    const { host, stateEl } = await connectHost("", raw);
+
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      // status は常に primitive 文字列 → その先の読みは undefined（Reflect.get の TypeError にしない）
+      expect(s["$streamStatus.tokens.length"]).toBeUndefined();
+      // error が null のときの深い読みも undefined
+      expect(s["$streamError.tokens.message"]).toBeUndefined();
+    });
+
+    host.remove();
+  });
+
+  it("葉より深い読み E2E: error が primitive throw でも $streamError.<name>.message の binding が drain を壊さないこと（後続 binding 適用と $updatedCallback が生存）", async () => {
+    let failRun: (() => void) | null = null;
+    const updatedLog: string[][] = [];
+    const raw: IState = {
+      $streams: {
+        broken: {
+          source: () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next: () =>
+                  new Promise<IteratorResult<string>>((_resolve, reject) => {
+                    // Error オブジェクトでなく primitive を throw する producer
+                    failRun = () => reject("primitive-error-string");
+                  }),
+              };
+            },
+          }),
+        },
+      },
+      $updatedCallback(paths: string[]) {
+        updatedLog.push(paths);
+      },
+    };
+    const { host, shadowRoot } = await connectHost(
+      `<p id="msg" data-wcs="textContent: $streamError.broken.message">initial</p>` +
+        `<p id="st" data-wcs="textContent: $streamStatus.broken"></p>`,
+      raw,
+    );
+    await State.getBindingsReady(shadowRoot);
+    await flushAsync();
+    updatedLog.length = 0;
+
+    failRun!();
+    await flushAsync();
+
+    // primitive の葉を跨ぐ読みは undefined 解決 → プロパティ書き込みスキップで既定表示が残る
+    expect(shadowRoot.querySelector("#msg")!.textContent).toBe("initial");
+    // 同一 drain の後続 binding 適用と $updatedCallback は巻き添えにならない
+    // （paths は binding を持つアドレス単位: $streamError.broken の通知は
+    //   walkDependency 経由で binding を持つ子パス .message として列挙される）
+    expect(shadowRoot.querySelector("#st")!.textContent).toBe("error");
+    expect(updatedLog.length).toBe(1);
+    expect([...updatedLog[0]].sort()).toEqual([
+      "$streamError.broken.message",
+      "$streamStatus.broken",
+    ]);
+
+    host.remove();
+  });
+
+  it("葉より深い読み E2E: error が Error オブジェクトなら $streamError.<name>.message の binding に message が表示されること", async () => {
+    const failure = new Error("stream failed");
+    let failRun: (() => void) | null = null;
+    const raw: IState = {
+      $streams: {
+        broken: {
+          source: () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next: () =>
+                  new Promise<IteratorResult<string>>((_resolve, reject) => {
+                    failRun = () => reject(failure);
+                  }),
+              };
+            },
+          }),
+        },
+      },
+    };
+    const { host, shadowRoot } = await connectHost(
+      `<p id="msg" data-wcs="textContent: $streamError.broken.message"></p>`,
+      raw,
+    );
+    await State.getBindingsReady(shadowRoot);
+    await flushAsync();
+
+    failRun!();
+    await flushAsync();
+
+    // Error は object なので葉より深い読みが成立する（message が表示される）
+    expect(shadowRoot.querySelector("#msg")!.textContent).toBe("stream failed");
+
+    host.remove();
+  });
+
+  it("未知の $ プロパティは従来どおり undefined を返すこと（フォールスルーの範囲確認）", async () => {
+    const { raw } = makeTokensState();
+    const { host, stateEl } = await connectHost("", raw);
+
+    stateEl.createState("readonly", (s: IStateProxy) => {
+      // stream プレフィックスに一致しない未知 $ プロパティは undefined のまま
+      // （getResolvedAddress へフォールスルーさせない既存挙動の保存）
+      expect(s.$unknownNamespace).toBeUndefined();
+      expect(s["$unknown.dotted"]).toBeUndefined();
+    });
+
+    host.remove();
+  });
+});

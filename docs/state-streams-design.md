@@ -208,7 +208,7 @@ state 固有の差分:
 1. **binding パス解決**: `getByAddress` の `$command` namespace 分岐（`_getByAddress` 冒頭）の直後に、第 1 セグメントが `$streamStatus` / `$streamError` の場合の分岐を追加。registry から現在値を返す。これで `data-wcs="textContent: $streamStatus.tokens"` が既存の binding 機構でそのまま解決される（`$command.<name>` を右辺に書ける既存前例と同型）。
 2. **JS からの直接アクセス**: proxy get トラップの switch に `STATE_STREAM_STATUS_NAMESPACE_NAME` / `STATE_STREAM_ERROR_NAMESPACE_NAME` の case を追加し、`commandNamespace` と対称の **read-only namespace proxy** を返す（`set` / `deleteProperty` は raiseError、`ownKeys` は宣言済み stream 名）。
 
-書き込み防御は自然に成立する: two-way binding 等で `$streamStatus.tokens` への set が走ると、`setByAddress` の親走査が namespace proxy に到達し `Reflect.set` が raiseError で落ちる。
+書き込み防御は自然に成立する: two-way binding 等で `$streamStatus.tokens` への set が走ると、`setByAddress` の親走査が namespace proxy に到達し `Reflect.set` が raiseError で落ちる。既知の許容: `sameValueGuard`（既定 ON）が親走査より先に評価されるため、**現在値と同値**の代入は raiseError せず黙って no-op になる（防御は値が変わる書き込みで発火。registry/DOM の破壊は起きず、誤用診断が遅延するのみ）。
 
 ### 4-3. 反映経路（reactive 化）
 
@@ -219,10 +219,15 @@ status / error の変化時、runtime は registry を書き換えたうえで *
 
 同値の status を再セットする場合は runtime 側で skip する（`setByAddress` を通らないため sameValueGuard は効かない。同等の same-value 判定を runtime が持つ）。
 
+**通知 dedup の基準（Phase B で確定）**: same-value 判定は entry フィールドとの比較ではなく「**最後に通知した観測値**」（stateElement 寿命の WeakMap）に対して行う。entry は再 set（`clearStreamRegistry` → 再生成）で作り直されるため、entry 比較では「error 表示中に再 set → 新 entry は error=null で誕生 → null→null と誤判定して通知が落ち、DOM に旧 error が残る」。dedup 状態を観測層（stateElement 単位）に置くことで、再 set・再接続を跨いだ陳腐化を正しく検出する。
+
+**無通知ミューテーションとの同期（Phase B レビューで確定）**: `abortAllStreams`（§5-1）は registry entry を通知なしで `idle` / `null` に直接ミューテーションするため、台帳と registry が乖離する。binding / computed の fresh 読みは通知がなくても他パスの drain で走り、再接続ウィンドウ内に registry の `idle` を描画し得る。そのまま restart の `updateStreamStatus("active")` を台帳（切断前の `active`）との同値判定で skip すると DOM が恒久的に陳腐化するため、abortAllStreams はミューテーションと同時に台帳のうちミューテーション後の値と一致しないフィールドを「観測値不確定」として無効化し、次回の通知 dedup を強制解除する（`stream/lastNotified.ts`）。一致しているフィールド（例: error が `null` のまま）は dedup を維持し、余計な通知は出さない。
+
 ### 4-4. 観測保証
 
 - 中間 status の観測は保証しない。coalesce により同一 tick 内の `active → done` 遷移は最終値しか binding に見えないことがある（updater の既存契約と同じ）。
 - `$updatedCallback` の paths には `<name>` / `$streamStatus.<name>` / `$streamError.<name>` が通常の更新として載る。
+- 既知エッジ（第 1 段の許容）: 再 set で stream 宣言自体が**消えた**場合、その `$streamStatus.<name>` 等の binding には削除の通知が飛ばず直前表示が残る（以後の読みは undefined 解決）。宣言の同名入れ替えは §4-3 の dedup 基準により正しく追従する。
 
 ---
 
@@ -306,6 +311,7 @@ binding / 構造（`deactivateContent`）単位の細粒度停止・再開は第
 | `streamRuntime.ts` | `startStreams` / restart 手順（§2-2）・args トレース（§3-1）・drain リスナー（§3-2）・status/error 反映（§4-3） |
 | `consumeSource.ts` | signals `streamResource` の `consume` / `iterate` / `readableToAsyncIterable` 移植（§3-3） |
 | `streamNamespace.ts` | `$streamStatus` / `$streamError` の read-only namespace proxy（`commandNamespace` と対称） |
+| `lastNotified.ts` | 「最後に通知した観測値」台帳（§4-3 の dedup 基準・abortAllStreams の無通知ミューテーション invalidate） |
 
 **変更**
 

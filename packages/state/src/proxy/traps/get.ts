@@ -21,8 +21,9 @@ import { getResolvedAddress } from "../../address/ResolvedAddress";
 import { createStateAddress } from "../../address/StateAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { getCommandNamespace } from "../../command/commandNamespace";
-import { INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME } from "../../define";
+import { DELIMITER, INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
 import { raiseError } from "../../raiseError";
+import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { connectedCallback } from "../apis/connectedCallback";
 import { disconnectedCallback } from "../apis/disconnectedCallback";
 import { getAll } from "../apis/getAll";
@@ -36,6 +37,10 @@ import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import { IStateHandler } from "../types";
+
+// `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
+const STREAM_STATUS_PATH_PREFIX = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}`;
+const STREAM_ERROR_PATH_PREFIX = `${STATE_STREAM_ERROR_NAMESPACE_NAME}${DELIMITER}`;
 
 export function get(
   target  : object, 
@@ -100,18 +105,32 @@ export function get(
         case STATE_COMMAND_NAMESPACE_NAME: {
           return getCommandNamespace(handler.stateElement);
         }
+        case STATE_STREAM_STATUS_NAMESPACE_NAME: {
+          return getStreamStatusNamespace(handler.stateElement);
+        }
+        case STATE_STREAM_ERROR_NAMESPACE_NAME: {
+          return getStreamErrorNamespace(handler.stateElement);
+        }
       }
-    } else {
-      const resolvedAddress = getResolvedAddress(prop);
-      const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
-      const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
-      return getByAddress(
-        target, 
-        stateAddress,
-        receiver,
-        handler
-      );
+      // switch 不一致の $ プロパティのうち、`$streamStatus.<name>` / `$streamError.<name>`
+      // の dotted パスだけは通常のパス解決（getByAddress）へフォールスルーさせる。
+      // これが computed（getter）内での依存追跡付き読み取りの正規形
+      // （checkDependency が getter スコープで動的依存を登録し、$postUpdate の
+      //  walkDependency で computed が無効化される、docs/state-streams-design.md §4-3）。
+      // それ以外の未知 $ プロパティは従来どおり undefined を返す。
+      if (!prop.startsWith(STREAM_STATUS_PATH_PREFIX) && !prop.startsWith(STREAM_ERROR_PATH_PREFIX)) {
+        return undefined;
+      }
     }
+    const resolvedAddress = getResolvedAddress(prop);
+    const listIndex = getListIndex(target, resolvedAddress, receiver, handler);
+    const stateAddress = createStateAddress(resolvedAddress.pathInfo, listIndex);
+    return getByAddress(
+      target,
+      stateAddress,
+      receiver,
+      handler
+    );
   } else if (typeof prop === "symbol") {
     switch (prop) {
       case setLoopContextAsyncSymbol: {

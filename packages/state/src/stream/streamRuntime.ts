@@ -29,6 +29,7 @@ import {
 } from "../define";
 import { raiseError } from "../raiseError";
 import { consumeSource } from "./consumeSource";
+import { getLastNotified, setLastNotified } from "./lastNotified";
 import { getStreamEntries } from "./streamRegistry";
 import type { IConsumeSink, IStreamEntry, StreamStatus } from "./types";
 
@@ -103,11 +104,16 @@ export function startStream(stateElement: IStateElement, entry: IStreamEntry): v
 /**
  * status / error の反映ヘルパ（設計書 §4-3）。
  *
- * - registry entry が正本。変化した項目だけ書き換える。
- * - 変化した項目に対応する名前空間パス（`$streamStatus.<name>` / `$streamError.<name>`）
- *   だけを writable proxy の $postUpdate で通知する（updater enqueue ＋ walkDependency）。
- * - 両方不変なら何もしない（名前空間パスは setByAddress を通らないため
+ * - registry entry が正本。常に最新値へ書き換える。
+ * - 「最後に通知した観測値」（stream/lastNotified.ts — 再 set・再接続を跨いで
+ *   stateElement の寿命で生存する台帳）から変化した項目に対応する名前空間パス
+ *   （`$streamStatus.<name>` / `$streamError.<name>`）だけを writable proxy の
+ *   $postUpdate で通知する（updater enqueue ＋ walkDependency）。
+ * - 両方不変なら通知しない（名前空間パスは setByAddress を通らないため
  *   sameValueGuard が効かず、同等の same-value 判定を runtime 側が持つ）。
+ *   abortAllStreams の無通知ミューテーションで台帳が invalidate されている場合は
+ *   同値扱いにならず必ず通知される（再接続ウィンドウ内の fresh 読みが描画した
+ *   idle の恒久陳腐化を防ぐ、§4-3）。
  */
 export function updateStreamStatus(
   stateElement: IStateElement,
@@ -115,17 +121,15 @@ export function updateStreamStatus(
   status: StreamStatus,
   error: unknown,
 ): void {
-  const statusChanged = entry.status !== status;
-  const errorChanged = !Object.is(entry.error, error);
+  entry.status = status;
+  entry.error = error;
+  const last = getLastNotified(stateElement, entry.name);
+  const statusChanged = last.status !== status;
+  const errorChanged = !Object.is(last.error, error);
   if (!statusChanged && !errorChanged) {
     return;
   }
-  if (statusChanged) {
-    entry.status = status;
-  }
-  if (errorChanged) {
-    entry.error = error;
-  }
+  setLastNotified(stateElement, entry.name, status, error);
   stateElement.createState("writable", (state) => {
     if (statusChanged) {
       state.$postUpdate(`${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}${entry.name}`);
