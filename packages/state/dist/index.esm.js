@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     }
 }
 
-var version$1 = "1.19.0";
+var version$1 = "1.19.1";
 var pkg = {
 	version: version$1};
 

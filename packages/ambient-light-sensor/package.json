@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/ambient-light-sensor",
-  "version": "1.19.0",
+  "version": "1.19.1",
   "description": "Declarative AmbientLightSensor component for Web Components. Framework-agnostic Generic Sensor API (AmbientLightSensor) monitor via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
