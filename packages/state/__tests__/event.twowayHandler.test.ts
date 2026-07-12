@@ -42,7 +42,7 @@ describe('event/twowayHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __private__.handlerByHandlerKey.clear();
-    __private__.bindingSetByHandlerKey.clear();
+    __private__.bindingRegistry.clear();
   });
 
   it('two-way対象でイベントを登録できること', () => {
@@ -110,7 +110,8 @@ describe('event/twowayHandler', () => {
     const eventName = __private__.getEventName(binding);
     const key = __private__.getHandlerKey(binding, eventName, false);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
-    expect(__private__.bindingSetByHandlerKey.has(key)).toBe(false);
+    expect(__private__.bindingRegistry.countOf(key)).toBe(0);
+    expect(__private__.bindingRegistry.has(key, binding)).toBe(false);
   });
 
   it('two-way対象外はaddEventListenerが呼ばれないこと', () => {
@@ -285,7 +286,7 @@ describe('event/twowayHandler', () => {
     );
   });
 
-  it('bindingInfoSetが未登録ならdetachでremoveEventListenerが呼ばれないこと', () => {
+  it('登録が無い場合はdetachでremoveEventListenerのみ行いハンドラは残ること', () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'text');
     const removeSpy = vi.spyOn(input, 'removeEventListener');
@@ -294,11 +295,13 @@ describe('event/twowayHandler', () => {
     attachTwowayEventHandler(binding);
     const eventName = __private__.getEventName(binding);
     const key = __private__.getHandlerKey(binding, eventName, false);
-    __private__.bindingSetByHandlerKey.delete(key);
+    // 台帳から登録を外し、remove が false を返す経路に入れる
+    __private__.bindingRegistry.remove(key, binding);
 
     detachTwowayEventHandler(binding);
-    // removeEventListenerは呼ばれるが、bindingSetがないため早期リターン
+    // removeEventListenerは呼ばれるが、登録が無いためハンドラは削除されない
     expect(removeSpy).toHaveBeenCalled();
+    expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
   });
 
   it('最後のbindingInfoを削除したらハンドラも削除されること', () => {
@@ -316,15 +319,14 @@ describe('event/twowayHandler', () => {
       null
     );
     __private__.handlerByHandlerKey.set(key, handler);
-    const bindingInfoSet = new Set([binding]);
-    __private__.bindingSetByHandlerKey.set(key, bindingInfoSet);
+    __private__.bindingRegistry.add(key, binding);
 
-    expect(bindingInfoSet.size).toBe(1);
+    expect(__private__.bindingRegistry.countOf(key)).toBe(1);
 
     detachTwowayEventHandler(binding);
-    expect(bindingInfoSet.size).toBe(0);
+    expect(__private__.bindingRegistry.countOf(key)).toBe(0);
+    expect(__private__.bindingRegistry.has(key, binding)).toBe(false);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(false);
-    expect(__private__.bindingSetByHandlerKey.has(key)).toBe(false);
   });
 
   it('同一キーのbindingが残る場合はハンドラを保持すること', () => {
@@ -343,7 +345,9 @@ describe('event/twowayHandler', () => {
     const key = __private__.getHandlerKey(binding1, eventName, false);
     detachTwowayEventHandler(binding1);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
-    expect(__private__.bindingSetByHandlerKey.has(key)).toBe(true);
+    expect(__private__.bindingRegistry.countOf(key)).toBe(1);
+    expect(__private__.bindingRegistry.has(key, binding1)).toBe(false);
+    expect(__private__.bindingRegistry.has(key, binding2)).toBe(true);
   });
 
   describe('wcBindable プロトコル', () => {

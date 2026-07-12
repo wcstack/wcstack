@@ -3,9 +3,11 @@ import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
+import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
-const bindingSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry = createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo, eventName: string): string {
   const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
@@ -89,13 +91,7 @@ export function attachCheckboxEventHandler(binding: IBindingInfo): boolean {
       handlerByHandlerKey.set(key, checkboxEventHandler);
     }
     (binding.node as Element).addEventListener(eventName, checkboxEventHandler);
-    let bindingSet = bindingSetByHandlerKey.get(key);
-    if (typeof bindingSet === "undefined") {
-      bindingSet = new Set<IBindingInfo>([binding]);
-      bindingSetByHandlerKey.set(key, bindingSet);
-    } else {
-      bindingSet.add(binding);
-    }
+    bindingRegistry.add(key, binding);
     return true;
   }
   return false;
@@ -111,14 +107,11 @@ export function detachCheckboxEventHandler(binding: IBindingInfo): boolean {
     }
     (binding.node as Element).removeEventListener(eventName, checkboxEventHandler);
 
-    const bindingSet = bindingSetByHandlerKey.get(key);
-    if (typeof bindingSet === "undefined") {
+    if (bindingRegistry.countOf(key) === 0) {
       return false;
     }
-    bindingSet.delete(binding);
-    if (bindingSet.size === 0) {
+    if (bindingRegistry.remove(key, binding)) {
       handlerByHandlerKey.delete(key);
-      bindingSetByHandlerKey.delete(key);
     }
     return true;
   }
@@ -127,7 +120,7 @@ export function detachCheckboxEventHandler(binding: IBindingInfo): boolean {
 
 export const __private__ = {
   handlerByHandlerKey,
-  bindingSetByHandlerKey,
+  bindingRegistry,
   getHandlerKey,
   getEventName,
   checkboxEventHandlerFunction,

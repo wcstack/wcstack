@@ -8,6 +8,7 @@ import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
+import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 // onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
 // 右辺が $command 名前空間配下のパス（$command.<token>）のときに true。
@@ -16,7 +17,8 @@ function isCommandTokenPath(statePathName: string): boolean {
 }
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
-const bindingSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry = createHandlerBindingRegistry();
 
 function getHandlerKey(binding: IBindingInfo): string {
   const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
@@ -75,13 +77,7 @@ export function attachEventHandler(binding: IBindingInfo): boolean {
   const eventName = binding.propName.slice(2);
   (binding.node as Element).addEventListener(eventName, stateEventHandler);
 
-  let bindingSet = bindingSetByHandlerKey.get(key);
-  if (typeof bindingSet === "undefined") {
-    bindingSet = new Set<IBindingInfo>([binding]);
-    bindingSetByHandlerKey.set(key, bindingSet);
-  } else {
-    bindingSet.add(binding);
-  }
+  bindingRegistry.add(key, binding);
   return true;
 }
 
@@ -97,20 +93,18 @@ export function detachEventHandler(binding: IBindingInfo): boolean {
   const eventName = binding.propName.slice(2);
   (binding.node as Element).removeEventListener(eventName, stateEventHandler);
 
-  const bindingSet = bindingSetByHandlerKey.get(key);
-  if (typeof bindingSet === "undefined") {
+  if (bindingRegistry.countOf(key) === 0) {
     return false;
   }
-  bindingSet.delete(binding);
-  if (bindingSet.size === 0) {
+  if (bindingRegistry.remove(key, binding)) {
     handlerByHandlerKey.delete(key);
-    bindingSetByHandlerKey.delete(key);
   }
   return true;
 }
 
 export const __private__ = {
   handlerByHandlerKey,
-  bindingSetByHandlerKey,
+  bindingRegistry,
+  getHandlerKey,
 };
 

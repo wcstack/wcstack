@@ -1846,13 +1846,62 @@ const connectedCallbackSymbol = Symbol("$$connectedCallback");
 const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
 const updatedCallbackSymbol = Symbol("$$updatedCallback");
 
+function createHandlerBindingRegistry() {
+    const attachedByKey = new Map();
+    const countByKey = new Map();
+    return {
+        add(key, binding) {
+            let attached = attachedByKey.get(key);
+            if (typeof attached === "undefined") {
+                attached = new WeakSet();
+                attachedByKey.set(key, attached);
+            }
+            if (attached.has(binding)) {
+                return false;
+            }
+            attached.add(binding);
+            countByKey.set(key, (countByKey.get(key) ?? 0) + 1);
+            return true;
+        },
+        remove(key, binding) {
+            const attached = attachedByKey.get(key);
+            if (typeof attached === "undefined" || !attached.has(binding)) {
+                return false;
+            }
+            attached.delete(binding);
+            const next = (countByKey.get(key) ?? 1) - 1;
+            if (next <= 0) {
+                attachedByKey.delete(key);
+                countByKey.delete(key);
+                return true;
+            }
+            countByKey.set(key, next);
+            return false;
+        },
+        has(key, binding) {
+            return attachedByKey.get(key)?.has(binding) ?? false;
+        },
+        countOf(key) {
+            return countByKey.get(key) ?? 0;
+        },
+        get keyCount() {
+            return countByKey.size;
+        },
+        clear() {
+            attachedByKey.clear();
+            countByKey.clear();
+        },
+    };
+}
+
 // onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
 // 右辺が $command 名前空間配下のパス（$command.<token>）のときに true。
 function isCommandTokenPath(statePathName) {
     return statePathName.startsWith(STATE_COMMAND_NAMESPACE_NAME + ".");
 }
 const handlerByHandlerKey$3 = new Map();
-const bindingSetByHandlerKey$3 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$3 = createHandlerBindingRegistry();
 function getHandlerKey$3(binding) {
     const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
     return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
@@ -1901,14 +1950,7 @@ function attachEventHandler(binding) {
     }
     const eventName = binding.propName.slice(2);
     binding.node.addEventListener(eventName, stateEventHandler);
-    let bindingSet = bindingSetByHandlerKey$3.get(key);
-    if (typeof bindingSet === "undefined") {
-        bindingSet = new Set([binding]);
-        bindingSetByHandlerKey$3.set(key, bindingSet);
-    }
-    else {
-        bindingSet.add(binding);
-    }
+    bindingRegistry$3.add(key, binding);
     return true;
 }
 
@@ -2078,7 +2120,8 @@ function isPossibleTwoWay(node, propName) {
 }
 
 const handlerByHandlerKey$2 = new Map();
-const bindingSetByHandlerKey$2 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$2 = createHandlerBindingRegistry();
 const DEFAULT_GETTER = (e) => e.detail;
 function getHandlerKey$2(binding, eventName, hasGetter) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
@@ -2181,14 +2224,7 @@ function attachTwowayEventHandler(binding) {
             handlerByHandlerKey$2.set(key, twowayEventHandler);
         }
         binding.node.addEventListener(eventName, twowayEventHandler);
-        let bindingSet = bindingSetByHandlerKey$2.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey$2.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
+        bindingRegistry$2.add(key, binding);
     }
 }
 
@@ -4099,7 +4135,8 @@ function applyChangeFromBindings(bindings) {
 }
 
 const handlerByHandlerKey$1 = new Map();
-const bindingSetByHandlerKey$1 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$1 = createHandlerBindingRegistry();
 function getHandlerKey$1(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
     return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
@@ -4153,21 +4190,15 @@ function attachRadioEventHandler(binding) {
             handlerByHandlerKey$1.set(key, radioEventHandler);
         }
         binding.node.addEventListener(eventName, radioEventHandler);
-        let bindingSet = bindingSetByHandlerKey$1.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey$1.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
+        bindingRegistry$1.add(key, binding);
         return true;
     }
     return false;
 }
 
 const handlerByHandlerKey = new Map();
-const bindingSetByHandlerKey = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry = createHandlerBindingRegistry();
 function getHandlerKey(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
     return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
@@ -4240,14 +4271,7 @@ function attachCheckboxEventHandler(binding) {
             handlerByHandlerKey.set(key, checkboxEventHandler);
         }
         binding.node.addEventListener(eventName, checkboxEventHandler);
-        let bindingSet = bindingSetByHandlerKey.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
+        bindingRegistry.add(key, binding);
         return true;
     }
     return false;

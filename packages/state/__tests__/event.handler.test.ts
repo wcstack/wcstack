@@ -85,19 +85,19 @@ describe('event/handler', () => {
     expect(detachEventHandler(bindingInfo)).toBe(false);
   });
 
-  it('bindingInfoSetが存在しない場合はfalseを返すこと', () => {
+  it('登録が無い場合はfalseを返すこと', () => {
     const el = document.createElement('button');
     const binding = createBindingInfo(el, { statePathName: 'handleClick-no-set' });
 
     attachEventHandler(binding);
 
-    const key = `${binding.stateName}::${binding.statePathName}::`;
-    __private__.bindingSetByHandlerKey.delete(key);
+    const key = __private__.getHandlerKey(binding);
+    // 台帳から登録を外し、countOf === 0 の経路に入れる
+    __private__.bindingRegistry.remove(key, binding);
 
     expect(detachEventHandler(binding)).toBe(false);
 
     __private__.handlerByHandlerKey.delete(key);
-    __private__.bindingSetByHandlerKey.delete(key);
   });
 
   it('複数バインディング時に1つ解除してもハンドラが残ること', () => {
@@ -110,9 +110,12 @@ describe('event/handler', () => {
     attachEventHandler(binding1);
     attachEventHandler(binding2);
 
-    const key = `${binding1.stateName}::${binding1.statePathName}::`;
+    const key = __private__.getHandlerKey(binding1);
     expect(detachEventHandler(binding1)).toBe(true);
     expect(__private__.handlerByHandlerKey.has(key)).toBe(true);
+    expect(__private__.bindingRegistry.countOf(key)).toBe(1);
+    expect(__private__.bindingRegistry.has(key, binding1)).toBe(false);
+    expect(__private__.bindingRegistry.has(key, binding2)).toBe(true);
 
     detachEventHandler(binding2);
   });
