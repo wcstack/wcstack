@@ -2893,6 +2893,103 @@ function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue)
     };
 }
 
+/**
+ * Indices into `seq` whose values form a longest strictly-increasing
+ * subsequence, returned in ascending order. Classic patience-sorting
+ * LIS in O(n log n). `seq` values are assumed distinct (old list
+ * positions are unique).
+ */
+function longestIncreasingSubsequence(seq) {
+    const n = seq.length;
+    // tails[k] = index into seq of the smallest tail of an increasing
+    // subsequence of length k+1; prev[i] = predecessor index to rebuild the chain.
+    const tails = [];
+    const prev = new Array(n).fill(-1);
+    for (let i = 0; i < n; i++) {
+        const value = seq[i];
+        let lo = 0;
+        let hi = tails.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (seq[tails[mid]] < value) {
+                lo = mid + 1;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        if (lo > 0) {
+            prev[i] = tails[lo - 1];
+        }
+        tails[lo] = i;
+    }
+    const result = [];
+    let k = tails.length > 0 ? tails[tails.length - 1] : -1;
+    while (k >= 0) {
+        result.push(k);
+        k = prev[k];
+    }
+    result.reverse();
+    return result;
+}
+/**
+ * Determines which reused list indexes can stay where they are when the DOM
+ * is brought into the new list order.
+ *
+ * Returns null when the reused indexes already appear in their old relative
+ * order (no inversions) — the caller's existing position guard then performs
+ * no moves, so nothing extra is needed. When inversions exist, returns the
+ * set of indexes forming a longest increasing subsequence of old positions:
+ * leaving exactly those in place and moving every other content yields the
+ * correct final order with the fewest content moves (the naive forward walk
+ * otherwise cascades: a single swap of rows 2/999 in 1000 rows moves ~997
+ * contents instead of 2).
+ *
+ * Note: IListIndex.index is already mutated to the NEW position by
+ * createListDiff, so old positions must come from the oldIndexes array order.
+ */
+function computeStableIndexSet(diff) {
+    // No reused index changed position, or nothing was reused: relative order
+    // is already correct and the walk performs no moves.
+    if (diff.changeIndexSet.size === 0 || diff.addIndexSet.size === diff.newIndexes.length) {
+        return null;
+    }
+    const oldPosByIndex = new Map();
+    for (let i = 0; i < diff.oldIndexes.length; i++) {
+        oldPosByIndex.set(diff.oldIndexes[i], i);
+    }
+    const reused = [];
+    const seq = [];
+    let prevPos = -1;
+    let sorted = true;
+    for (const index of diff.newIndexes) {
+        if (diff.addIndexSet.has(index)) {
+            continue;
+        }
+        const pos = oldPosByIndex.get(index);
+        if (pos === undefined) {
+            // Invariant break (a reused index missing from oldIndexes): fall back
+            // to the settle walk rather than compute a stable set from bad data.
+            return null;
+        }
+        if (pos < prevPos) {
+            sorted = false;
+        }
+        prevPos = pos;
+        reused.push(index);
+        seq.push(pos);
+    }
+    if (sorted) {
+        return null;
+    }
+    const lis = longestIncreasingSubsequence(seq);
+    const stable = new Set();
+    for (const seqIndex of lis) {
+        stable.add(reused[seqIndex]);
+    }
+    return stable;
+}
+
 const bindingSetByAbsoluteStateAddress = new WeakMap();
 function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
     let bindingSet = null;
@@ -3154,6 +3251,23 @@ function isOnlyNodeInParentContent(firstNode, lastNode) {
     }
     return onlyNode;
 }
+// A stable content may be left in place only when its first node verifiably
+// follows the settled walk position in the same tree: the listIndexes ledger
+// can lag the physical DOM (element-write swaps reorder listIndexes without
+// moving nodes; hidden regions unmount contents that stay registered). Empty
+// contents (null firstNode) always take the settle walk so their mount
+// bookkeeping matches the pre-LIS behavior.
+function isPhysicallyAfter(lastNode, firstNode) {
+    if (firstNode === null) {
+        return false;
+    }
+    if (lastNode.nextSibling === firstNode) {
+        return true;
+    }
+    const position = lastNode.compareDocumentPosition(firstNode);
+    return (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+        && (position & Node.DOCUMENT_POSITION_DISCONNECTED) === 0;
+}
 function getContent(node, listIndex) {
     let contentByListIndex = contentByListIndexByNode.get(node);
     if (typeof contentByListIndex === 'undefined') {
@@ -3213,6 +3327,11 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     let lastNode = bindingInfo.node;
     const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
     const loopContextStack = context.stateElement.loopContextStack;
+    // When the new order contains inversions, contents in the stable set (an LIS
+    // of old positions) keep their relative order and must not be moved; moving
+    // only the rest avoids the cascade where one swap relocates every row in
+    // between. null = no inversions; the position guard below then does no moves.
+    const stableIndexSet = computeStableIndexSet(diff);
     let fragment = null;
     if (diff.newIndexes.length == diff.addIndexSet.size
         && diff.newIndexes.length > 0
@@ -3282,7 +3401,13 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             if (content === null) {
                 raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
             }
-            if (lastNode.nextSibling !== content.firstNode) {
+            // Stable contents are already in correct relative order — but only
+            // trust that after physical verification (see isPhysicallyAfter).
+            // Contents out of order (and everything unverifiable) settle via the
+            // self-healing mountAfter walk below.
+            const stable = stableIndexSet !== null && stableIndexSet.has(index)
+                && isPhysicallyAfter(lastNode, content.firstNode);
+            if (!stable && lastNode.nextSibling !== content.firstNode) {
                 content.mountAfter(lastNode);
             }
         }

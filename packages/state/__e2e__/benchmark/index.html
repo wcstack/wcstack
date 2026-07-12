@@ -51,7 +51,12 @@ export default {
   },
   onSwapRows() {
     if (this.data.length > 998) {
-      [this["data.1"], this["data.998"]] = [this["data.998"], this["data.1"]];
+      // Keyed semantics: replace the array so the list differ sees a reorder
+      // and moves the existing DOM rows. Assigning the two index paths instead
+      // would rewrite the two rows' contents in place (non-keyed behavior).
+      const data = this.data.slice();
+      [data[1], data[998]] = [data[998], data[1]];
+      this.data = data;
     }
   }
 }

@@ -7,6 +7,7 @@ import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { computeStableIndexSet } from "../list/stableListOrder";
 import { IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
@@ -80,6 +81,24 @@ function isOnlyNodeInParentContent(firstNode: Node, lastNode: Node): boolean {
   return onlyNode;
 }
 
+// A stable content may be left in place only when its first node verifiably
+// follows the settled walk position in the same tree: the listIndexes ledger
+// can lag the physical DOM (element-write swaps reorder listIndexes without
+// moving nodes; hidden regions unmount contents that stay registered). Empty
+// contents (null firstNode) always take the settle walk so their mount
+// bookkeeping matches the pre-LIS behavior.
+function isPhysicallyAfter(lastNode: Node, firstNode: Node | null): boolean {
+  if (firstNode === null) {
+    return false;
+  }
+  if (lastNode.nextSibling === firstNode) {
+    return true;
+  }
+  const position = lastNode.compareDocumentPosition(firstNode);
+  return (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    && (position & Node.DOCUMENT_POSITION_DISCONNECTED) === 0;
+}
+
 function getContent(node: Node, listIndex: IListIndex): IContent | null {
   let contentByListIndex = contentByListIndexByNode.get(node);
   if (typeof contentByListIndex === 'undefined') {
@@ -147,6 +166,11 @@ export function applyChangeToFor(
   let lastNode = bindingInfo.node;
   const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
   const loopContextStack = context.stateElement.loopContextStack;
+  // When the new order contains inversions, contents in the stable set (an LIS
+  // of old positions) keep their relative order and must not be moved; moving
+  // only the rest avoids the cascade where one swap relocates every row in
+  // between. null = no inversions; the position guard below then does no moves.
+  const stableIndexSet = computeStableIndexSet(diff);
   let fragment: DocumentFragment | null = null;
   if (diff.newIndexes.length == diff.addIndexSet.size 
     && diff.newIndexes.length > 0
@@ -215,7 +239,13 @@ export function applyChangeToFor(
       if (content === null) {
         raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
       }
-      if (lastNode.nextSibling !== content.firstNode) {
+      // Stable contents are already in correct relative order — but only
+      // trust that after physical verification (see isPhysicallyAfter).
+      // Contents out of order (and everything unverifiable) settle via the
+      // self-healing mountAfter walk below.
+      const stable = stableIndexSet !== null && stableIndexSet.has(index)
+        && isPhysicallyAfter(lastNode, content.firstNode);
+      if (!stable && lastNode.nextSibling !== content.firstNode) {
         content.mountAfter(lastNode);
       }
     }
