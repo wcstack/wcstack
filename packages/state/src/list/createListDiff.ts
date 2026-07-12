@@ -47,6 +47,21 @@ function isSameList(oldList: readonly unknown[], newList: readonly unknown[]): b
 }
 
 /**
+ * Aligns each list index's .index with its position in the new list.
+ * A diff only becomes the rendered state once the updater applies it: an
+ * earlier diff in the same batch (two replacements in one microtask) may have
+ * moved shared indexes toward a list that never got applied, and a cache hit
+ * skips recomputation entirely — so every createListDiff return re-aligns.
+ */
+function syncListIndexes(newIndexes: IListIndex[]): void {
+  for (let i = 0; i < newIndexes.length; i++) {
+    if (newIndexes[i].index !== i) {
+      newIndexes[i].index = i;
+    }
+  }
+}
+
+/**
  * Creates or updates list indexes by comparing old and new lists.
  * Optimizes by reusing existing list indexes when values match.
  * @param parentListIndex - Parent list index for nested lists, or null for top-level
@@ -56,6 +71,16 @@ function isSameList(oldList: readonly unknown[], newList: readonly unknown[]): b
  * @returns Array of list indexes for the new list
  */
 export function createListDiff(
+  parentListIndex: IListIndex | null,
+  rawOldList: unknown,
+  rawNewList: unknown,
+): IListDiff {
+  const diff = computeListDiff(parentListIndex, rawOldList, rawNewList);
+  syncListIndexes(diff.newIndexes);
+  return diff;
+}
+
+function computeListDiff(
   parentListIndex: IListIndex | null,
   rawOldList: unknown,
   rawNewList: unknown,
@@ -141,9 +166,11 @@ export function createListDiff(
       } else {
         // Reuse existing element
         const existingListIndex = oldIndexes[oldIndex];
-        // Update index if position changed
-        if (existingListIndex.index !== i) {
-          existingListIndex.index = i;
+        // Judge position change against the old list's order (oldIndexes array
+        // order), not the mutable .index — an earlier diff in the same batch
+        // may have already moved .index toward a list that was never applied.
+        // The .index itself is re-aligned by syncListIndexes on return.
+        if (oldIndex !== i) {
           changeIndexSet.add(existingListIndex);
         }
         newIndexes.push(existingListIndex);
@@ -184,8 +211,9 @@ function calcDiffIndexes(
     const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
     if (typeof oldIndex !== "undefined") {
       const existingListIndex = oldIndexes[oldIndex];
-      if (existingListIndex.index !== i) {
-        // 位置が違うことだけを記録 
+      if (oldIndex !== i) {
+        // 位置が違うことだけを記録（判定は古いリストの並び順基準。
+        // .index は同一バッチ内の未適用 diff で変異している可能性がある）
         changeIndexSet.add(existingListIndex);
       }
     }
