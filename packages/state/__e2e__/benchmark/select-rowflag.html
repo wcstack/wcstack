@@ -19,7 +19,14 @@
       本家 index.html の selectedIndex + wildcard getter 方式は、selectedIndex の
       動的依存エッジが全行に展開されるため選択が O(全行) になる。この方式は
       葉パス書き込み 2 本（旧行 false / 新行 true）だけが伝播するため O(2)。
-      docs/list-replacement-dependency-scaling.md §8 参照。
+
+      ⚠ js-framework-benchmark へ提出する実装には使わないこと:
+      公式ルール（krausest/js-framework-benchmark Issue #800）は「選択状態は
+      行ごとのフラグではなくアプリレベルの単一参照で持つ」と定めており、
+      行フラグ方式は "view state on the model" として note #800 が付く。
+      提出実装は本家 index.html を使う（公式 select は 1,000 行実施で ~0.7ms）。
+      このページは実アプリ向けイディオムとエンジン特性の実証用。
+      docs/list-replacement-dependency-scaling.md §8.1 参照。
     -->
     <wcs-state>
       <script type="module">
