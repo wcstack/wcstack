@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/fullscreen",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Declarative Fullscreen API component for Web Components. Framework-agnostic requestFullscreen()/exitFullscreen() control via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

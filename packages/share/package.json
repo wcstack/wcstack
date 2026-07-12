@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/share",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Declarative Web Share component for Web Components. Framework-agnostic navigator.share primitive via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
