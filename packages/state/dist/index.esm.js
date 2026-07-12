@@ -7079,7 +7079,8 @@ function dirtyCacheEntryByAbsoluteStateAddress(address) {
 function checkDependency(handler, address) {
     // 動的依存関係の登録
     if (handler.addressStackLength > 0) {
-        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+        const lastAddress = handler.lastAddressStack;
+        const lastInfo = lastAddress?.pathInfo ?? null;
         const stateElement = handler.stateElement;
         if (lastInfo !== null) {
             if (stateElement.getterPaths.has(lastInfo.path) &&
@@ -7087,6 +7088,27 @@ function checkDependency(handler, address) {
                 // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
                 // そのgetterが参照している値のパスである
                 stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
+                // 他行読み取りの検出: 評価中の getter と読み取り先が同じワイルドカード親
+                // （リスト）を共有し、その階層の listIndex が異なる場合、この getter は
+                // 自行の外に依存する（隣接項目参照など）。該当リストを crossRowListPaths に
+                // 記録し、walkDependency の diff-filter 展開を全行展開へフォールバックさせる。
+                if (address.pathInfo.wildcardCount > 0 && lastInfo.wildcardCount > 0) {
+                    const sharedLen = calcWildcardLen(address.pathInfo, lastInfo);
+                    if (sharedLen > 0) {
+                        let crossRow = false;
+                        for (let level = 0; level < sharedLen; level++) {
+                            if (address.listIndex?.at(level) !== lastAddress.listIndex?.at(level)) {
+                                crossRow = true;
+                                break;
+                            }
+                        }
+                        if (crossRow) {
+                            for (let level = 0; level < sharedLen; level++) {
+                                stateElement.addCrossRowListPath?.(address.pathInfo.wildcardParentPaths[level]);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -7289,6 +7311,37 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
         }
     }
 }
+/**
+ * 静的子展開で訪問する listIndex 群を選ぶ。"diff" でも次の場合は全行に倒す:
+ * - diff に変化が一切見えない再代入（同一参照および内容同一コピーの再代入。
+ *   `arr[0].v = 5; s.items = [...arr]` のような in-place 変異後のリフレッシュ
+ *   イディオムは diff に映らないため、全行展開で従来挙動を保つ。
+ *   削除だけの置換は除く — 残存行に変化は無く、集計はコンテナ動的エッジが担う）
+ * - 他行を読む getter が検出されたリスト（隣接項目参照など。未変更行の派生値も変わりうる）
+ */
+function selectExpansionIndexes(context, sourcePath, _lastValue, _newValue, listDiff) {
+    if (context.listExpansion === "full") {
+        return listDiff.newIndexes;
+    }
+    if (context.stateElement.crossRowListPaths?.has(sourcePath)) {
+        return listDiff.newIndexes;
+    }
+    if (listDiff.addIndexSet.size === 0 && listDiff.changeIndexSet.size === 0) {
+        // 追加も移動も無い。削除も無ければ「変化が見えない再代入」= リフレッシュ意図
+        if (listDiff.deleteIndexSet.size === 0) {
+            return listDiff.newIndexes;
+        }
+        // 削除のみ: 残存行は位置も値も不変なので展開しない
+        return listDiff.changeIndexSet;
+    }
+    if (listDiff.addIndexSet.size === 0) {
+        return listDiff.changeIndexSet;
+    }
+    if (listDiff.changeIndexSet.size === 0) {
+        return listDiff.addIndexSet;
+    }
+    return [...listDiff.addIndexSet, ...listDiff.changeIndexSet];
+}
 function _walkDependency(context, startAddress, callback) {
     const stack = [{ address: startAddress, depth: 0 }];
     while (stack.length > 0) {
@@ -7321,7 +7374,7 @@ function _walkDependency(context, startAddress, callback) {
                     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
                     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
                     const listDiff = createListDiff(address.listIndex, lastValue, newValue);
-                    for (const listIndex of listDiff.newIndexes) {
+                    for (const listIndex of selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff)) {
                         const depAddress = createStateAddress(depPathInfo, listIndex);
                         context.result.add(depAddress);
                         nextEntries.push({ address: depAddress, depth: nextDepth });
@@ -7415,7 +7468,7 @@ function _walkDependency(context, startAddress, callback) {
         }
     }
 }
-function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
+function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback, options) {
     const context = {
         stateElement: stateElement,
         staticMap: staticDependency,
@@ -7425,6 +7478,7 @@ function walkDependency(stateName, stateElement, startAddress, staticDependency,
         visited: new Set(),
         stateProxy: stateProxy,
         searchType: searchType,
+        listExpansion: options?.listExpansion ?? "full",
     };
     _walkDependency(context, startAddress, callback);
     return Array.from(context.result);
@@ -7490,7 +7544,10 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
             dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
-        });
+        }, 
+        // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
+        // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
+        { listExpansion: "diff" });
     }
 }
 function _setByAddressWithSwap(target, address, absAddress, value, receiver, handler) {
@@ -8570,6 +8627,9 @@ class State extends HTMLElement {
     }
     __state;
     _hasUpdatedCallback = false;
+    // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
+    // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
+    _crossRowListPaths = new Set();
     _name = 'default';
     _initialized = false;
     _initializePromise;
@@ -9062,6 +9122,12 @@ class State extends HTMLElement {
     }
     get hasUpdatedCallback() {
         return this._hasUpdatedCallback;
+    }
+    get crossRowListPaths() {
+        return this._crossRowListPaths;
+    }
+    addCrossRowListPath(path) {
+        this._crossRowListPaths.add(path);
     }
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);

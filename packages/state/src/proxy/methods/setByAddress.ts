@@ -84,7 +84,10 @@ function _setByAddress(
         dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
         // 更新対象として登録
         updater.enqueueAbsoluteAddress(absDepAddress);
-      }
+      },
+      // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
+      // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
+      { listExpansion: "diff" }
     )
   }
 }

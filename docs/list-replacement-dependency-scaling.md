@@ -1,6 +1,6 @@
 # リスト置換時の依存展開スケーリング問題と diff-filter 展開の設計検討
 
-Status: 設計検討（未実装）
+Status: **実装済み（静的分岐のみ・保守的版）** — §7 実装記録を参照
 Date: 2026-07-12
 Related: docs/state-redesign-council.md（判断表②の主張の訂正を含む）, docs/async-execution-model.md
 
@@ -102,7 +102,60 @@ getter 実行時の `checkDependency` は「どのパスを読んだか」を記
 案 B の規範追記は案 A 実装後に「cross-row は自動フォールバックにより保証される
 （ただし全行展開のコストがかかる）」という**性能規範**として書くのが整合的。
 
-## 6. 補足: 関連する残観察
+## 7. 実装記録（2026-07-12）
+
+実装したのは**静的分岐のみの保守的版**（案 A の縮小版）:
+
+- `walkDependency` に `options.listExpansion: "full" | "diff"`（既定 "full"）を追加。
+  `setByAddress` 経路のみ "diff" を渡す。`$postUpdate` は全行展開のまま。
+- "diff" は静的子展開（`list → list.*`）を `addIndexSet ∪ changeIndexSet` に絞る。
+  次の場合は全行展開へフォールバック:
+  1. **diff に変化が一切見えない再代入**（add / change / delete すべて空。
+     同一参照の再代入と、`s.items = [...arr]` のような内容同一コピー再代入の両方）
+     — in-place 変異後のリフレッシュイディオムは diff に映らないため全行展開で
+     従来挙動を保つ（レビューで検出・修正した取りこぼし: 当初は同一参照のみだった）
+  2. **crossRowListPaths に登録されたリスト** — checkDependency が getter 評価中の
+     読み取りで「共有ワイルドカード親の listIndex が評価中アドレスと異なる」ことを
+     検出して自動登録する（隣接項目参照の自動フォールバック。案 A の検出部）
+
+### 7.0 規範: in-place 変異の反映保証
+
+生配列経由の in-place 変異（`const arr = s.items; arr[0].v = 5`）の DOM 反映が
+保証されるのは次の綴りのみ:
+
+- 同一参照の再代入 `s.items = arr`
+- 内容同一コピーの再代入 `s.items = [...arr]`（構造変化を伴わないこと）
+- `$postUpdate("items")`（常に全行展開）
+
+**変異と構造変化を 1 回の代入に混ぜる**（`arr[0].v = 5; s.items = [...arr, newRow]`）
+と、diff は追加行しか検出できず、変異した既存行は再適用されない（診断不能）。
+per-path 書き込み（`s["items.0.v"] = 5`）が常に正しいイディオムである。
+
+### 7.1 実装で確定した追加事実: container エッジが行 getter のフィルタを迂回する
+
+行データを読む wildcard getter（`get "rows.*.tax"() { return this["rows.*.v"] * 10 }`）は、
+値解決の**親走査**が checkDependency を通るため、`rows → rows.*.tax` /
+`rows.* → rows.*.tax` の動的エッジが必ず登録される（実測で確認）。リスト置換時は
+この container エッジが `_walkExpandWildcard`（searchType "new" = 全行）で展開される
+ため、**行 getter を持つリストでは静的分岐のフィルタが動的エッジ経由で迂回される**
+（利得なし・退行なし）。
+
+動的展開側のフィルタは実装**しない**と判断した。`this.items.length` を読む getter
+（行値が リスト構造自体に依存）の container エッジと、親走査由来の偶発的エッジが
+登録時点で区別できず、フィルタすると前者が stale になるため。
+
+ベンチマーク型のリスト（plain パスの mustache/text バインディング＋スカラーのみを
+読む getter）は container エッジを持たないため、フィルタの恩恵を全額受ける。
+
+### 7.2 フォローアップ候補（案 D: 内部走査 read の依存登録除外）
+
+親走査（getByAddress の内部再帰）での checkDependency 呼び出しを除外できれば、
+container エッジは「getter が明示的にコンテナを読んだ場合」（$getAll・$resolve・
+`this.items` 直読み）だけになり、行 getter にも diff-filter が効くようになる。
+依存グラフの形が広く変わるため、着手時は walkDependency 系 23 テスト＋a3 オラクル
+＋集計系の統合テストを回帰基盤とすること。
+
+## 8. 補足: 関連する残観察
 
 - `onSelect` の O(全行) は動的エッジ（`_walkExpandWildcard`）経由なので本提案の
   対象外。同じ diff-filter の考え方を適用するには「selectedIndex の変化で

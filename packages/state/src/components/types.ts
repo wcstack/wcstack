@@ -25,6 +25,13 @@ export interface IStateElement {
    * optional なのはテスト用モック互換のため（undefined は「不明＝集計する」）。
    */
   readonly hasUpdatedCallback?: boolean;
+  /**
+   * 他行を読む getter（隣接項目参照など）が検出されたリストパスの集合。
+   * これらのリストは walkDependency の diff-filter 展開の対象外（全行展開）。
+   * optional なのはテスト用モック互換のため（undefined は「検出なし」扱い）。
+   */
+  readonly crossRowListPaths?: ReadonlySet<string>;
+  addCrossRowListPath?(path: string): void;
   setPathInfo(path: string, bindingType: BindingType): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

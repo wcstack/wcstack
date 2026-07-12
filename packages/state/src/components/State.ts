@@ -74,6 +74,9 @@ export class State extends HTMLElement implements IStateElement {
 
   private __state: IState | undefined;
   private _hasUpdatedCallback: boolean = false;
+  // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
+  // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
+  private _crossRowListPaths: Set<string> = new Set<string>();
   private _name: string = 'default';
   private _initialized: boolean = false;
   private _initializePromise: Promise<void>;
@@ -593,6 +596,14 @@ export class State extends HTMLElement implements IStateElement {
 
   get hasUpdatedCallback(): boolean {
     return this._hasUpdatedCallback;
+  }
+
+  get crossRowListPaths(): ReadonlySet<string> {
+    return this._crossRowListPaths;
+  }
+
+  addCrossRowListPath(path: string): void {
+    this._crossRowListPaths.add(path);
   }
 
   bindProperty(prop: string, desc: PropertyDescriptor): void {
