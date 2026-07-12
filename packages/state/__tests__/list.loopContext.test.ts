@@ -6,14 +6,31 @@ import { createStateAddress } from '../src/address/StateAddress';
 import { MAX_LOOP_DEPTH } from '../src/define';
 
 describe('loopContext', () => {
-  it('ループコンテキストがない状態でwildcardが1以外ならエラーになること', () => {
+  it('ループコンテキストがない状態でlistIndexチェーンがwildcard数を賄えなければエラーになること', () => {
     const stack = createLoopContextStack();
-    const listIndex = createListIndex(null, 0);
+    const listIndex = createListIndex(null, 0); // チェーン長 1
     const pathInfo = getPathInfo('users.*.orders.*'); // wildcardCount = 2
 
     expect(() => stack.createLoopContext(createStateAddress(pathInfo, listIndex), () => undefined)).toThrow(
-      /Cannot push loop context for a list with wildcard positions when there is no active loop context/,
+      /does not cover the wildcard path/,
     );
+  });
+
+  it('ループコンテキストがない状態でもlistIndexチェーンが完結していればネストパスを開始できること', () => {
+    // ループ外からの $resolve によるネストリスト置換の直接適用に相当:
+    // for バインディングの listIndex が祖先チェーンを供給する
+    const stack = createLoopContextStack();
+    const rootIndex = createListIndex(null, 1);
+    const childIndex = createListIndex(rootIndex, 0); // チェーン長 2
+    const pathInfo = getPathInfo('users.*.orders.*'); // wildcardCount = 2
+
+    let called = false;
+    stack.createLoopContext(createStateAddress(pathInfo, childIndex), (loopContext) => {
+      called = true;
+      expect(loopContext.pathInfo).toBe(pathInfo);
+      expect(loopContext.listIndex).toBe(childIndex);
+    });
+    expect(called).toBe(true);
   });
 
   it('ネスト時にwildcard数が+1でない場合はエラーになること', () => {

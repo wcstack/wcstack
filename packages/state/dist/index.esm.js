@@ -2789,6 +2789,20 @@ function isSameList(oldList, newList) {
     return true;
 }
 /**
+ * Aligns each list index's .index with its position in the new list.
+ * A diff only becomes the rendered state once the updater applies it: an
+ * earlier diff in the same batch (two replacements in one microtask) may have
+ * moved shared indexes toward a list that never got applied, and a cache hit
+ * skips recomputation entirely — so every createListDiff return re-aligns.
+ */
+function syncListIndexes(newIndexes) {
+    for (let i = 0; i < newIndexes.length; i++) {
+        if (newIndexes[i].index !== i) {
+            newIndexes[i].index = i;
+        }
+    }
+}
+/**
  * Creates or updates list indexes by comparing old and new lists.
  * Optimizes by reusing existing list indexes when values match.
  * @param parentListIndex - Parent list index for nested lists, or null for top-level
@@ -2798,6 +2812,11 @@ function isSameList(oldList, newList) {
  * @returns Array of list indexes for the new list
  */
 function createListDiff(parentListIndex, rawOldList, rawNewList) {
+    const diff = computeListDiff(parentListIndex, rawOldList, rawNewList);
+    syncListIndexes(diff.newIndexes);
+    return diff;
+}
+function computeListDiff(parentListIndex, rawOldList, rawNewList) {
     // Normalize inputs to arrays (handles null/undefined)
     const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
     const newList = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
@@ -2878,9 +2897,11 @@ function createListDiff(parentListIndex, rawOldList, rawNewList) {
             else {
                 // Reuse existing element
                 const existingListIndex = oldIndexes[oldIndex];
-                // Update index if position changed
-                if (existingListIndex.index !== i) {
-                    existingListIndex.index = i;
+                // Judge position change against the old list's order (oldIndexes array
+                // order), not the mutable .index — an earlier diff in the same batch
+                // may have already moved .index toward a list that was never applied.
+                // The .index itself is re-aligned by syncListIndexes on return.
+                if (oldIndex !== i) {
                     changeIndexSet.add(existingListIndex);
                 }
                 newIndexes.push(existingListIndex);
@@ -2914,8 +2935,9 @@ function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue)
         const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
         if (typeof oldIndex !== "undefined") {
             const existingListIndex = oldIndexes[oldIndex];
-            if (existingListIndex.index !== i) {
-                // 位置が違うことだけを記録 
+            if (oldIndex !== i) {
+                // 位置が違うことだけを記録（判定は古いリストの並び順基準。
+                // .index は同一バッチ内の未適用 diff で変異している可能性がある）
                 changeIndexSet.add(existingListIndex);
             }
         }
@@ -5666,8 +5688,14 @@ class LoopContextStack {
             }
         }
         else {
-            if (loopContext.pathInfo.wildcardCount !== 1) {
-                raiseError(`Cannot push loop context for a list with wildcard positions when there is no active loop context.`);
+            // With no active loop context the address must be self-contained: the
+            // listIndex chain supplies one index per wildcard. Top-level lists
+            // (wildcardCount 1) always satisfy this. A nested list re-rendered
+            // directly (e.g. replaced via $resolve from outside the loop) also
+            // satisfies it — the for binding's listIndex carries the full ancestor
+            // chain.
+            if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount) {
+                raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}).`);
             }
         }
         this._loopContextStack[this._length] = loopContext;

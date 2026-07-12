@@ -31,8 +31,14 @@ class LoopContextStack {
         raiseError(`Cannot push loop context for a list whose parent wildcard path info does not match the current active loop context.`);
       }
     } else {
-      if (loopContext.pathInfo.wildcardCount !== 1) {
-        raiseError(`Cannot push loop context for a list with wildcard positions when there is no active loop context.`);
+      // With no active loop context the address must be self-contained: the
+      // listIndex chain supplies one index per wildcard. Top-level lists
+      // (wildcardCount 1) always satisfy this. A nested list re-rendered
+      // directly (e.g. replaced via $resolve from outside the loop) also
+      // satisfies it — the for binding's listIndex carries the full ancestor
+      // chain.
+      if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount) {
+        raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}).`);
       }
     }
     this._loopContextStack[this._length] = loopContext;
