@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
-import { inSsr, getConfig, resetSsrCache } from "../src/config";
+import { inSsr, getConfig } from "../src/config";
 import { Ssr } from "../src/components/Ssr";
 import { addSsrProperty, trackSsrPropertyNode, getSsrProperties, getAllSsrPropertyNodes, clearSsrPropertyStore } from "../src/apply/ssrPropertyStore";
 import { getBindingsReady } from "../src/stateElementByName";
@@ -10,13 +10,8 @@ beforeAll(() => {
 });
 
 describe("inSsr()", () => {
-  beforeEach(() => {
-    resetSsrCache();
-  });
-
   afterEach(() => {
     document.documentElement.removeAttribute("data-wcs-server");
-    resetSsrCache();
   });
 
   it("data-wcs-server 属性がない場合は false を返す", () => {
@@ -28,24 +23,19 @@ describe("inSsr()", () => {
     expect(inSsr()).toBe(true);
   });
 
-  it("キャッシュが効いて2回目以降は DOM を参照しない", () => {
-    document.documentElement.setAttribute("data-wcs-server", "");
-    expect(inSsr()).toBe(true);
-    // 属性を外してもキャッシュで true のまま
-    document.documentElement.removeAttribute("data-wcs-server");
-    expect(inSsr()).toBe(true);
-  });
-
-  it("resetSsrCache() でキャッシュがクリアされる", () => {
+  it("属性の付け外しに動的に追随する（キャッシュしない）", () => {
+    // @wcstack/server は同一プロセスで「サーバー文書でレンダリング → クライアント
+    // 文書でハイドレーション」を行うため、判定のキャッシュはフェーズ間汚染になる
     document.documentElement.setAttribute("data-wcs-server", "");
     expect(inSsr()).toBe(true);
     document.documentElement.removeAttribute("data-wcs-server");
-    resetSsrCache();
     expect(inSsr()).toBe(false);
+    document.documentElement.setAttribute("data-wcs-server", "");
+    expect(inSsr()).toBe(true);
   });
 
-  it("html 要素が見つからない場合は false を返す", () => {
-    const spy = vi.spyOn(document, "querySelector").mockReturnValue(null);
+  it("documentElement が無い場合は false を返す", () => {
+    const spy = vi.spyOn(document, "documentElement", "get").mockReturnValue(null as unknown as HTMLElement);
     expect(inSsr()).toBe(false);
     spy.mockRestore();
   });
@@ -210,13 +200,11 @@ describe("Ssr.buildContent()", () => {
 
 describe("SSR モードでのバインディング", () => {
   beforeEach(() => {
-    resetSsrCache();
     document.documentElement.setAttribute("data-wcs-server", "");
   });
 
   afterEach(() => {
     document.documentElement.removeAttribute("data-wcs-server");
-    resetSsrCache();
     document.body.innerHTML = "";
   });
 

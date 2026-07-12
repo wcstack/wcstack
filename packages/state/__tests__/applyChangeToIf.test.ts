@@ -26,7 +26,7 @@ import { getContentSetByNode } from '../src/structural/contentsByNode';
 import { getBindingsByContent } from '../src/bindings/bindingsByContent';
 import { applyChange } from '../src/apply/applyChange';
 import { activateContent, deactivateContent } from '../src/structural/activateContent';
-import { config, resetSsrCache } from '../src/config';
+import { config } from '../src/config';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
@@ -329,7 +329,6 @@ describe('applyChangeToIf', () => {
   });
 
   it('SSRモードでuuidがundefinedの場合に空文字にフォールバックすること', () => {
-    resetSsrCache();
     document.documentElement.setAttribute('data-wcs-server', '');
 
     const node = document.createComment('if');
@@ -354,12 +353,10 @@ describe('applyChangeToIf', () => {
     expect(html).toContain('@@wcs-if-start::');
 
     document.documentElement.removeAttribute('data-wcs-server');
-    resetSsrCache();
     document.body.innerHTML = '';
   });
 
   it('SSRモードでcontent.lastNodeがnullの場合にstartCommentをフォールバックに使うこと', () => {
-    resetSsrCache();
     document.documentElement.setAttribute('data-wcs-server', '');
 
     const node = document.createComment('if');
@@ -384,7 +381,6 @@ describe('applyChangeToIf', () => {
     expect(html).toContain('@@wcs-if-end:');
 
     document.documentElement.removeAttribute('data-wcs-server');
-    resetSsrCache();
     document.body.innerHTML = '';
   });
 

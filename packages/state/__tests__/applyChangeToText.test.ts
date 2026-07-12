@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
 import { getPathInfo } from '../src/address/PathInfo';
-import { resetSsrCache } from '../src/config';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -98,7 +97,6 @@ describe('applyChangeToText', () => {
   });
 
   it('SSRモードでparentNodeが���いテキストノードはコメントを挿入しないこと', () => {
-    resetSsrCache();
     document.documentElement.setAttribute('data-wcs-server', '');
 
     // DOMに追加されていないテキストノード（parentNode === null）
@@ -108,6 +106,5 @@ describe('applyChangeToText', () => {
     expect(textNode.nodeValue).toBe('test');
 
     document.documentElement.removeAttribute('data-wcs-server');
-    resetSsrCache();
   });
 });

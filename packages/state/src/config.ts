@@ -1,17 +1,14 @@
 import { IConfig, IWritableConfig } from "./types.js";
 
-let _inSsrCache: boolean | null = null;
-
 export function inSsr(): boolean {
-  if (_inSsrCache !== null) return _inSsrCache;
-  const html = document.querySelector('html');
-  _inSsrCache = html ? html.hasAttribute('data-wcs-server') : false;
-  return _inSsrCache;
-}
-
-/** @internal テスト用: inSsr() キャッシュをリセット */
-export function resetSsrCache(): void {
-  _inSsrCache = null;
+  // キャッシュしない: SSR モードはプロセスの属性ではなく「現在の document」の
+  // 属性。@wcstack/server はグローバル document を差し替えてサーバーレンダリング
+  // した後、同一プロセスでクライアント側ハイドレーションが走る（SSR→hydrate の
+  // e2e が該当）。サーバーフェーズの判定をキャッシュするとクライアントフェーズが
+  // SSR モード扱いになり、hydrateBindings の代わりに buildBindings が選ばれて
+  // connectedCallbackPromise が永久に未解決になる。
+  const html = document.documentElement;
+  return html ? html.hasAttribute('data-wcs-server') : false;
 }
 
 interface IInternalConfig {

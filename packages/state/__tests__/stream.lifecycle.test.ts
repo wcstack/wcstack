@@ -27,7 +27,6 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
-import { resetSsrCache } from "../src/config";
 import { getActiveStateElements } from "../src/stream/activeStateElements";
 import { getStreamEntries } from "../src/stream/streamRegistry";
 import { startStreams } from "../src/stream/streamRuntime";
@@ -102,7 +101,6 @@ describe("$streams State ライフサイクル統合", () => {
 
   it("S2: SSR モードでは source が呼ばれず、値は initial のまま（status は idle）", async () => {
     document.documentElement.setAttribute("data-wcs-server", "");
-    resetSsrCache();
     let host: HTMLElement | null = null;
     try {
       const source = vi.fn(() => makeManualAsyncGenerator<string>().iterable);
@@ -125,7 +123,6 @@ describe("$streams State ライフサイクル統合", () => {
     } finally {
       host?.remove();
       document.documentElement.removeAttribute("data-wcs-server");
-      resetSsrCache();
     }
   });
 
