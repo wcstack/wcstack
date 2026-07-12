@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
 import { getPathInfo } from '../src/address/PathInfo';
-import { config, resetSsrCache } from '../src/config';
+import { config } from '../src/config';
 import { getSsrProperties, clearSsrPropertyStore } from '../src/apply/ssrPropertyStore';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
@@ -210,7 +210,6 @@ describe('applyChangeToProperty', () => {
 
     it('SSR モードでも undefined はスキップされ属性・ストアに積まれないこと', () => {
       document.documentElement.setAttribute('data-wcs-server', '');
-      resetSsrCache();
       try {
         const input = document.createElement('input');
         applyChangeToProperty(createBinding(input, ['value']), dummyContext, undefined);
@@ -221,7 +220,6 @@ describe('applyChangeToProperty', () => {
         expect(getSsrProperties(el)).toEqual([]);
       } finally {
         document.documentElement.removeAttribute('data-wcs-server');
-        resetSsrCache();
         clearSsrPropertyStore();
       }
     });

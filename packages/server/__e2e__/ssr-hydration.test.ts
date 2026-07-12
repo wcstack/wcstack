@@ -169,7 +169,7 @@ describe('SSR → ハイドレーション結合テスト', () => {
     expect(input.value).toBe('Alice');
   });
 
-  it('data-wcs-completed がハイドレーション後に付与される', async () => {
+  it('ハイドレーション後に data-wcs-completed が残らず、バインディングが機能する', async () => {
     const ssrHtml = await renderToString(`
       <wcs-state enable-ssr json='{"msg":"test"}'></wcs-state>
       <span data-wcs="textContent: msg">test</span>
@@ -177,7 +177,16 @@ describe('SSR → ハイドレーション結合テスト', () => {
 
     await hydrate(ssrHtml);
 
-    const span = document.querySelector('span')!;
-    expect(span.hasAttribute('data-wcs-completed')).toBe(true);
+    // data-wcs-completed はハイドレーション中の重複登録防止用の一時マーカーで、
+    // 完了後に除去される（state 側 ssr.hydrate.bindings.test.ts と同じ契約）
+    expect(document.querySelectorAll('[data-wcs-completed]').length).toBe(0);
+
+    // ハイドレーション済みバインディングが機能すること
+    const stateEl = document.querySelector('wcs-state') as any;
+    stateEl.createState('writable', (state: any) => {
+      state.msg = 'hydrated!';
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(document.querySelector('span')!.textContent).toBe('hydrated!');
   });
 });
