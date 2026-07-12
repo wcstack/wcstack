@@ -43,19 +43,16 @@
     code { font-family: ui-monospace, monospace; font-size: 0.95em; }
   </style>
 
-  <!-- $streams is not released yet: the local packages/state/dist build is
-       mounted under /state-dist/ by server.js (run `npm run build` in
-       packages/state first). sse / network load from the CDN as usual.
+  <!-- All three packages load from the CDN ($streams ships since v1.19.0).
 
-       ORDER MATTERS: module scripts execute in document order, so listing the
-       I/O nodes BEFORE state guarantees their elements are defined by the time
-       state initializes its bindings. The initial state→element apply is
-       silently skipped for not-yet-defined custom elements (and not replayed),
-       so with the fast local state build racing the CDN, `url: sseUrl` would
-       otherwise never be written and the left panel would stay silent. -->
+       Module scripts execute in document order, so listing the I/O nodes
+       BEFORE state keeps their elements defined by the time state initializes
+       its bindings. (state also re-applies the initial state→element write
+       via customElements.whenDefined for late-defined elements, so this
+       ordering is a best practice rather than a hard requirement.) -->
   <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
-  <script type="module" src="/state-dist/auto.js"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 
