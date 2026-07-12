@@ -157,10 +157,37 @@ container エッジは「getter が明示的にコンテナを読んだ場合」
 
 ## 8. 補足: 関連する残観察
 
-- `onSelect` の O(全行) は動的エッジ（`_walkExpandWildcard`）経由なので本提案の
-  対象外。同じ diff-filter の考え方を適用するには「selectedIndex の変化で
-  .selected が変わる行は旧選択行と新選択行の 2 行だけ」という値レベルの知識が
-  必要で、これは別問題（値ベースの依存カット）。
+### 8.1 選択（onSelect）の O(全行) と行フラグイディオム（調査済み・2026-07-12）
+
+`this.selectedIndex = $1` ＋ `get "data.*.selected"() { return this.$1 === this.selectedIndex }`
+の形は、動的エッジ `selectedIndex → data.*.selected` が `_walkExpandWildcard` で
+**全行**に展開されるため O(全行)（10k 行で実測 ~7.6-8.2ms。1k 行なら ~0.7ms）。
+diff-filter は静的展開のみが対象なのでこの経路には効かない。値レベルの依存カット
+（同値なら伝播を止める）が必要で、getter→class 適用経路に同値カットは現状
+存在しない（唯一の同値カットは applyChangeToProperty の DOM 読み比較）。
+
+**解消はアプリ側イディオムで達成できる**: 選択フラグを行データに持ち、
+2 本の葉パス書き込みで排他を維持する（`packages/state/__e2e__/benchmark/select-rowflag.html`）:
+
+```js
+onSelect(e, $1) {
+  if (this.selectedIndex !== null) this[`data.${this.selectedIndex}.selected`] = false;
+  this[`data.${$1}.selected`] = true;
+  this.selectedIndex = $1;
+}
+```
+
+葉パス書き込みは展開ゼロ（walk は葉 seed から辿るものが無い）なので O(2)。
+実測: select10k **8.15ms → 0.1ms**（select1k 0.7 → 0.05ms）。
+注意点: getter は削除すること（getter-only プロパティへの Reflect.set は黙って
+失敗する）、行データに `selected: false` の初期化が必要（class バインディングは
+boolean 以外で raiseError）。
+
+エンジン側の値ベース依存カットは、command 再発火・two-way クロバー訂正など
+「同値でも再適用に意味があるバインディング」の存在により一律には入れられない。
+入れるなら葉値バインディング（text/class/attr/style）限定の last-applied 比較だが、
+パイプライン前段（アドレス生成・enqueue・getter 再評価）が支配項のため効果は
+限定的（見積り 7.6 → 6ms 台）。優先度低。
 - clear10k 後のヒープ残留（quick wins 後も ~17MB）はプール（上限 1000）以外の
   保持源がある。ヒープスナップショットのドミネータ解析が必要（未調査）。
   候補: インターンされる address/listIndex/キャッシュエントリのグラフ。
