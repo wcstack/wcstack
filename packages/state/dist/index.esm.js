@@ -3672,6 +3672,37 @@ function getValue(state, binding) {
     }
 }
 
+// applyChange が「未 define のカスタム要素」への適用を見送った binding の台帳。
+// define されるまでの間、同じ binding に対して applyChange は（state 更新の
+// たびに）何度も呼ばれうるため、whenDefined の多重登録をここで抑止する。
+// WeakSet なので binding の寿命に追従し、恒久 define されないタグでもリークしない。
+const scheduledBindings = new WeakSet();
+/**
+ * 未 define のカスタム要素に対する適用を customElements.whenDefined 後に再実行
+ * する。two-way / event-token の attach、spread の deferred 展開はいずれも
+ * whenDefined で再試行するのに対し、値の適用だけが片道 skip だった非対称の解消
+ * （docs/state-binding-init-races.md §2）。
+ *
+ * 再適用は applyChangeFromBindings を通すため、define 時点の最新 state 値で
+ * 適用される（skip 時点の値を保持しない）。define を待つ間に DOM から外れた
+ * binding には適用しない（deferred spread と同じ規約）。
+ */
+function scheduleDeferredApply(binding, tagName) {
+    if (scheduledBindings.has(binding)) {
+        return;
+    }
+    scheduledBindings.add(binding);
+    customElements.whenDefined(tagName).then(() => {
+        scheduledBindings.delete(binding);
+        if (!binding.replaceNode.isConnected) {
+            return; // define を待つ間にノードが削除された
+        }
+        applyChangeFromBindings([binding]);
+    }).catch((error) => {
+        console.error(`[@wcstack/state] deferred apply failed for <${tagName}>.`, error);
+    });
+}
+
 const applyChangeByFirstSegment = {
     "class": applyChangeToClass,
     "attr": applyChangeToAttribute,
@@ -3768,7 +3799,11 @@ function applyChange(binding, context) {
     const customTag = getCustomElement(binding.replaceNode);
     if (customTag) {
         if (customElements.get(customTag) === undefined) {
-            // cutomElement側の初期化を期待
+            // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
+            // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
+            // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
+            // spread と対称。docs/state-binding-init-races.md §2）。
+            scheduleDeferredApply(binding, customTag);
             return;
         }
     }

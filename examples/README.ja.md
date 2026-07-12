@@ -15,6 +15,12 @@
 React / Vue variant（Vite 使用）と、`$streams` がリリースされるまで
 ローカルの `packages/state` ビルドを import する `state-sse-dashboard` です。
 
+**script の順序**: I/O ノード系パッケージを `@wcstack/state` より*先*に並べて
+ください。module script は文書順で実行されるため、state がバインディングを
+確立する時点で全カスタム要素の define が保証されます — 逆順だと、ノード側の
+ロードが state より遅い構成（例: ローカルの state ビルドと CDN の競走）で、
+未 define 要素への初期 state→element 適用がスキップされることがあります。
+
 ## デモ一覧
 
 | デモ | 組み合わせ | 起動 | URL |

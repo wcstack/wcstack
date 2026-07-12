@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: deferred apply for late-defined custom elements</title>
+  <!-- Reproduces the race in docs/state-binding-init-races.md §2: state defines
+       and initializes its bindings FIRST, while the I/O node's class arrives
+       later (a slow CDN, simulated with a delayed dynamic import). Before the
+       fix, the initial state→element apply was silently dropped and `url` was
+       never written; with the fix, applyChange schedules a whenDefined re-apply. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <script type="module">
+    // simulate a slow CDN: define <wcs-sse> ~800ms after state is ready
+    setTimeout(() => { import("/packages/sse/dist/auto.min.js"); }, 800);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default { theUrl: "/api/never?x=1" };
+    </script>
+  </wcs-state>
+  <!-- manual: never actually connects; the test only asserts the url apply -->
+  <wcs-sse manual data-wcs="url: theUrl"></wcs-sse>
+</body>
+</html>

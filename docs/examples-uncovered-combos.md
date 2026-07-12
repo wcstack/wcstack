@@ -66,7 +66,7 @@ EyeDropper で画面から採色 → パレットに追加（list diffing）→ 
 
 ## 4. 実装で判明した上流の課題（要対応検討）
 
-推し 3 案の実装・実ブラウザ検証（Playwright）の過程で、examples ではなく **state / storage 側の設計ギャップ**が 2 件見つかった。**正本 = [state-binding-init-races.md](./state-binding-init-races.md)**（機序・実測・該当コード・恒久対応候補のトレードオフ表）。以下は要約。
+推し 3 案の実装・実ブラウザ検証（Playwright）の過程で、examples ではなく **state / storage 側の設計ギャップ**が 2 件見つかった。**正本 = [state-binding-init-races.md](./state-binding-init-races.md)**（機序・実測・該当コード・恒久対応候補のトレードオフ表）。**両件とも同日中に恒久対応済み**（バグ 2 = `scheduleDeferredApply` 実装、バグ 1 = idiom 規範化 + cross-tab-todo 修正、いずれも e2e 回帰テスト付き — 詳細は正本の状態欄）。以下は発見時点の要約。
 
 ### 4-1. storage の load-before-bind clobber（既存デモで実害あり）
 

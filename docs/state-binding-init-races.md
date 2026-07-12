@@ -1,6 +1,10 @@
 # 調査記録: state バインド初期化のレース 2 件（load-before-bind clobber / 未 define 要素への初期 apply 黙殺）
 
-- **状態**: 調査確定・**未修正**（2026-07-12）。恒久対応は設計判断待ち（§1-5 / §2-5 に候補とトレードオフを列挙）。
+- **状態**: **対応済み**（2026-07-12・同日中に調査→修正）。
+  - **バグ 2 = 案 A 実装済み**: `packages/state/src/apply/scheduleDeferredApply.ts` を新設し、`applyChange` の skip 分岐から whenDefined 再適用をスケジュール（two-way attach / deferred spread と対称化）。unit テスト = `packages/state/__tests__/integration.applyDeferred.test.ts`（happy-dom はノード差し替えのため no-op / エラー / 多重登録ガードのみ）、happy path の実ブラウザ回帰 = `e2e/tests/state-deferred-apply.spec.ts` + `e2e/fixtures/deferred-apply.html`。state 全テスト・カバレッジ閾値（100/97/100/100）・lint・build green。
+  - **バグ 1 = 案 C 実施済み**: `examples/state-cross-tab-todo` を idiom（undefined 初期値 + `$connectedCallback` pull + script 順序）に修正、storage README（en/ja）の Quick Start §1/§4 を安全な形に直し「§5 load-before-bind: 永続スロットの idiom」を新設。リロード永続化の実ブラウザ回帰 = `e2e/tests/state-cross-tab-todo.spec.ts` に追加。**案 A（初期 apply の限定抑制）は中期課題として未着手**。
+  - **案 B 実施済み**: `examples/README.md` / `README.ja.md` に「I/O ノードの script を state より先に並べる」規約を明文化。
+- 以下 §1〜§4 は調査時点の記録（機序・実測・候補比較）としてそのまま残す。
 - **発見経緯**: examples 追加 3 デモ（[examples-uncovered-combos.md](./examples-uncovered-combos.md)）の Playwright 実ブラウザ検証で発見・実測。
 - **影響**:
   - バグ 1 は**既存デモ `examples/state-cross-tab-todo` に実害**（リロードのたびに todos が全消失。本ドキュメント時点で未修正）。`<wcs-storage>` の two-way 配線を使うすべてのページが対象。

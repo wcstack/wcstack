@@ -15,6 +15,12 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 `websocket-chat`, which use Vite, and `state-sse-dashboard`, which imports the
 local `packages/state` build until `$streams` ships in a release.
 
+**Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
+scripts execute in document order, so this guarantees every custom element is
+defined before state attaches its bindings — otherwise, when the node packages
+load slower than state (e.g. a local state build racing the CDN), the initial
+state→element apply can be skipped for not-yet-defined elements.
+
 ## Demo list
 
 | Demo | Combines | Run | URL |

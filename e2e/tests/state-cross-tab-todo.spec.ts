@@ -31,4 +31,27 @@ test.describe("examples/state-cross-tab-todo", () => {
     expect(errorsA).toEqual([]);
     expect(errorsB).toEqual([]);
   });
+
+  // load-before-bind clobber の回帰テスト (docs/state-binding-init-races.md §1)。
+  // storage の load はバインディング確立前に発火しうるため、state 初期値が
+  // null/[] だと write-through 保存がリロードのたびに永続値を上書き消去する。
+  // デモは「undefined 初期値 + $connectedCallback pull」の idiom で回避している。
+  test("リロードしても todo が消えない(load-before-bind clobber 回帰)", async ({ context }) => {
+    const page = await context.newPage();
+    const errors = collectErrors(page);
+    await page.goto("/examples/state-cross-tab-todo/");
+
+    await page.locator(".add-form input").fill("survive reload");
+    await page.locator(".add-form button").click();
+    await expect(page.locator(".todo-item .text")).toHaveText("survive reload");
+
+    await page.reload();
+
+    // 永続値がそのまま復元される(以前は初期値 [] で上書きされ全消失していた)
+    await expect(page.locator(".todo-item .text")).toHaveText("survive reload");
+    const stored = await page.evaluate(() => localStorage.getItem("wcs-cross-tab-todos"));
+    expect(stored).toContain("survive reload");
+
+    expect(errors).toEqual([]);
+  });
 });
