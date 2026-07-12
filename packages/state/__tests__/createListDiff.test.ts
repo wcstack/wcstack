@@ -4,25 +4,80 @@ import { setListIndexesByList } from '../src/list/listIndexesByList';
 
 describe('createListDiff', () => {
   it('calcDiffIndexesで位置が変わった既存要素がchangeIndexSetに含まれること', () => {
-    // oldList と newList の両方にlistIndexesが登録済みの場合、calcDiffIndexesが呼ばれる
-    const oldList = [1, 2, 3];
-    const newList = [3, 1];
+    // oldList と newList の両方にlistIndexesが登録済みの場合、calcDiffIndexesが呼ばれる。
+    // 台帳はチェーンした diff で共有させる（往復パターン）
+    const listA = [1, 2, 3];
+    const dA = createListDiff(null, [], listA);
+    const [i1, , i3] = dA.newIndexes;
+    const listB = [3, 1];
+    createListDiff(null, listA, listB); // build 経路: ledger(B) を A と共有して登録
 
-    // まず両方のリストに対してlistIndexesを生成・登録する
-    const diffOld = createListDiff(null, [], oldList);
-    const diffNew = createListDiff(null, [], newList);
+    // (B,A) は未キャッシュ・ledger(A) 登録済み → calcDiffIndexes に入る
+    // B=[3,1] → A=[1,2,3]: 1 は 1→0、3 は 0→2 で位置変更
+    const diff = createListDiff(null, listB, listA);
 
-    // oldList=[1,2,3], newList=[3,1] で diff を計算
-    // 両方のリストにlistIndexesが登録済みなので calcDiffIndexes に入る
-    // oldList の value 3 は oldIndex=2、newList の position=0 → index !== i → changeIndexSet に追加
-    const diff = createListDiff(null, oldList, newList);
+    expect(diff.changeIndexSet.has(i1)).toBe(true);
+    expect(diff.changeIndexSet.has(i3)).toBe(true);
+    // マーカーは必ず newIndexes のメンバーであること
+    const newIndexSet = new Set(diff.newIndexes);
+    for (const marker of diff.changeIndexSet) {
+      expect(newIndexSet.has(marker)).toBe(true);
+    }
 
-    // 位置が変わった要素が changeIndexSet に含まれること
-    expect(diff.changeIndexSet.size).toBeGreaterThan(0);
+    // クリーンアップ
+    setListIndexesByList(listA, null);
+    setListIndexesByList(listB, null);
+  });
+
+  it('calcDiffIndexes: 台帳が分岐している場合に oldIndexes 側の孤児マーカーが混入しないこと', () => {
+    // 同じ行オブジェクトを含む2つの配列を、それぞれ独立に（接続されない diff で）
+    // 台帳化したケース。identity が無い行は add+delete で表現されるのが正であり、
+    // changeIndexSet に oldIndexes 側のオブジェクトが混入してはならない
+    // （消費側 applyChangeToFor / walkDependency は newIndexes 側の identity 前提）。
+    const r1 = { id: 1 };
+    const r2 = { id: 2 };
+    const oldList = [r1, r2];
+    const newList = [r2, r1];
+    createListDiff(null, [], oldList);
+    createListDiff(null, [], newList); // oldList と未接続の台帳
+
+    const diff = createListDiff(null, oldList, newList); // calcDiffIndexes 経路
+
+    expect(diff.addIndexSet.size).toBe(2);
+    expect(diff.deleteIndexSet.size).toBe(2);
+    expect(diff.changeIndexSet.size).toBe(0);
 
     // クリーンアップ
     setListIndexesByList(oldList, null);
     setListIndexesByList(newList, null);
+  });
+
+  it('calcDiffIndexes: 共有行と分岐行が混在しても、共有行の移動だけが記録されること', () => {
+    // ledger(N) は X から作られ、oldList A とは一部（iq）だけ台帳を共有する
+    const listA = ['p', 'q'];
+    const dA = createListDiff(null, [], listA);
+    const [ip, iq] = dA.newIndexes;
+    const listX = ['q'];
+    createListDiff(null, listA, listX); // ledger(X) = [iq]（共有）
+    const listN = ['n', 'q'];
+    const dN = createListDiff(null, listX, listN); // ledger(N) = [in(新規), iq]
+    const inNew = dN.newIndexes[0];
+
+    const diff = createListDiff(null, listA, listN); // (A,N) 未キャッシュ → calcDiffIndexes
+
+    // iq: A では位置 1、N でも位置 1 → 移動なし
+    expect(diff.changeIndexSet.has(iq)).toBe(false);
+    // in: A の台帳に無い → add
+    expect(diff.addIndexSet.has(inNew)).toBe(true);
+    // ip: N の台帳に無い → delete
+    expect(diff.deleteIndexSet.has(ip)).toBe(true);
+    // 'n' は A に値として存在しないが、値マッチングによる孤児マーカーが出ないこと
+    expect(diff.changeIndexSet.size).toBe(0);
+
+    // クリーンアップ
+    setListIndexesByList(listA, null);
+    setListIndexesByList(listX, null);
+    setListIndexesByList(listN, null);
   });
 
   describe('同一バッチ内の連続 diff（未適用 diff による .index 先行変異の影響）', () => {
