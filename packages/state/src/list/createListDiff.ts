@@ -133,6 +133,11 @@ function computeListDiff(
         addIndexSet: EMPTY_SET,
       };
     }
+    if (newIndexes !== null) {
+      return calcDiffIndexes(oldIndexes, newIndexes);
+    }
+    newIndexes = [];
+
     // Use index-based map for efficiency
     // Supports duplicate values by storing array of indexes
     const indexByValue = new Map<unknown, number[]>();
@@ -145,10 +150,6 @@ function computeListDiff(
       }
       indexes.push(i);
     }
-    if (newIndexes !== null) {
-      return calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue);
-    }
-    newIndexes = [];
 
     // Build new indexes array by matching values with old list
     const changeIndexSet: Set<IListIndex> = new Set();
@@ -193,29 +194,38 @@ function computeListDiff(
   }
 }
 
+/**
+ * Diff between two lists whose listIndex ledgers both already exist.
+ * Rows are joined by listIndex identity — the same key applyChangeToFor and
+ * walkDependency consume the result sets with. A value-based join could mark
+ * oldIndexes-side objects that are absent from newIndexes (ledgers built along
+ * unconnected diff chains hold different objects for the same value); such
+ * orphan markers never match the consumers' has() lookups and only pollute
+ * the dirty set. Rows without shared identity are represented as add+delete.
+ */
 function calcDiffIndexes(
-  oldList: readonly unknown[],
-  newList: readonly unknown[],
   oldIndexes: IListIndex[],
   newIndexes: IListIndex[],
-  indexByValue: Map<unknown, number[]>
 ): IListDiff {
   const newIndexSet: Set<IListIndex> = new Set(newIndexes);
   const oldIndexSet: Set<IListIndex> = new Set(oldIndexes);
   const changeIndexSet: Set<IListIndex> = new Set();
   const addIndexSet: Set<IListIndex> = newIndexSet.difference(oldIndexSet);
   const deleteIndexSet: Set<IListIndex> = oldIndexSet.difference(newIndexSet);
-  for(let i = 0; i < newList.length; i++) {
-    const newValue = newList[i];
-    const existingIndexes = indexByValue.get(newValue);
-    const oldIndex = existingIndexes && existingIndexes.length > 0 ? existingIndexes.shift() : undefined;
-    if (typeof oldIndex !== "undefined") {
-      const existingListIndex = oldIndexes[oldIndex];
-      if (oldIndex !== i) {
-        // 位置が違うことだけを記録（判定は古いリストの並び順基準。
-        // .index は同一バッチ内の未適用 diff で変異している可能性がある）
-        changeIndexSet.add(existingListIndex);
-      }
+  // Old positions come from the oldIndexes array order (.index may have been
+  // mutated by an unapplied diff in the same batch).
+  const oldPosByIndex = new Map<IListIndex, number>();
+  for (let i = 0; i < oldIndexes.length; i++) {
+    oldPosByIndex.set(oldIndexes[i], i);
+  }
+  for (let i = 0; i < newIndexes.length; i++) {
+    const index = newIndexes[i];
+    if (addIndexSet.has(index)) {
+      continue;
+    }
+    if (oldPosByIndex.get(index) !== i) {
+      // 位置が違うことだけを記録
+      changeIndexSet.add(index);
     }
   }
   return {
