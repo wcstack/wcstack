@@ -57,9 +57,11 @@
     .layers code { background: rgba(0,0,0,0.05); border-radius: 3px; padding: 0 4px; }
   </style>
 
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them. -->
   <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/broadcast/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 
@@ -107,7 +109,15 @@
       // array (never mutate in place):
       // the `value: todos` binding only fires on a parent assignment, and only then
       // does the new array get persisted + broadcast to the storage event.
-      todos: [],
+      //
+      // Starts as `undefined` ON PURPOSE (load-before-bind guard): the storage
+      // node loads and announces the persisted list in its connectedCallback,
+      // which can happen BEFORE these bindings attach. A null/[] initial here
+      // would then be written back through the two-way binding and CLOBBER the
+      // persisted todos on every reload. `undefined` means "no opinion" —
+      // property writes are skipped — and $connectedCallback below pulls the
+      // already-loaded value once.
+      todos: undefined,
       // <wcs-storage> surfaces a quota/serialize failure here (it never throws).
       storageError: null,
 
@@ -130,6 +140,22 @@
       $eventTokens: ["liveSignal"],
 
       draft: "",
+
+      // Pull the list <wcs-storage> already loaded (its load event fires in its
+      // own connectedCallback — possibly before our bindings attached). Fire-and-
+      // forget; if the load event DID land through the binding, the guard makes
+      // this a no-op.
+      $connectedCallback() {
+        (async () => {
+          await customElements.whenDefined("wcs-storage");
+          const el = document.querySelector("wcs-storage");
+          if (!el) return;
+          await el.connectedCallbackPromise;
+          if (!Array.isArray(this.todos) && Array.isArray(el.value)) {
+            this.todos = el.value;
+          }
+        })();
+      },
 
       // ---- derived ----
       // Normalize the storage value (null on an empty key) into an array. Every

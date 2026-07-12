@@ -51,7 +51,12 @@ Primitive values (strings, numbers, booleans) work with just a `value` binding f
 
 <wcs-state>
   <script type="module">
-    export default { username: "" };
+    export default {
+      // undefined on purpose — a "" / null initial would be written back
+      // through the two-way binding and overwrite the saved value on
+      // reload (see "5. Load-before-bind" below)
+      username: undefined,
+    };
   </script>
 </wcs-state>
 
@@ -66,6 +71,7 @@ This is the default mode:
 - Set a `key` to auto-load on connection
 - Bind to `value` for two-way persistence
 - Optionally bind `loading` and `error` as well
+- Start the bound state slot as `undefined` — see [5. Load-before-bind](#5-load-before-bind-the-persistent-slot-idiom) for the full idiom
 
 ### 2. Persisting objects with `$trackDependency`
 
@@ -136,7 +142,10 @@ localStorage changes are automatically detected from other tabs:
 ```html
 <wcs-state>
   <script type="module">
-    export default { sharedCounter: 0 };
+    export default {
+      // undefined on purpose — see "5. Load-before-bind" below
+      sharedCounter: undefined,
+    };
   </script>
 </wcs-state>
 
@@ -149,6 +158,49 @@ localStorage changes are automatically detected from other tabs:
 ```
 
 > **Note**: The `storage` event only fires for changes made in other tabs of the same origin. Since sessionStorage is not shared across tabs, cross-tab sync only works with localStorage.
+
+### 5. Load-before-bind: the persistent-slot idiom
+
+`<wcs-storage>` loads and announces the persisted value in its own `connectedCallback`. Depending on script loading, that can happen **before** `<wcs-state>` finishes attaching its bindings — with two consequences:
+
+1. **Clobber**: if the bound state slot starts as `""` / `0` / `null` / `[]`, the initial state→element apply writes that value into `value`, and the write-through save **overwrites the persisted data on every reload**.
+2. **Missed load**: the value event announcing the loaded data fired before anyone was listening, so the state slot can stay at its initial value.
+
+The idiom that closes both:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      // 1. undefined = "no opinion": the initial apply is skipped,
+      //    so the persisted value is never clobbered
+      todos: undefined,
+      // reads go through a normalizing getter
+      get list() {
+        return Array.isArray(this.todos) ? this.todos : [];
+      },
+      // 2. pull the value <wcs-storage> already loaded, once
+      $connectedCallback() {
+        (async () => {
+          await customElements.whenDefined("wcs-storage");
+          const el = document.querySelector("wcs-storage");
+          if (!el) return;
+          await el.connectedCallbackPromise;
+          if (!Array.isArray(this.todos) && Array.isArray(el.value)) {
+            this.todos = el.value;
+          }
+        })();
+      },
+    };
+  </script>
+</wcs-state>
+
+<wcs-storage key="todos" type="local" data-wcs="value: todos"></wcs-storage>
+```
+
+- Rule of thumb: **a state slot bound two-way to `value` must start as `undefined`** — never `""` / `0` / `null` / `[]`.
+- The `$connectedCallback` pull is only needed when the persisted value must render on first paint. If the slot is only ever written after user interaction, `undefined` alone is enough.
+- Working examples: `examples/state-cross-tab-todo`, `examples/state-color-palette`.
 
 ## State Surface vs Command Surface
 
@@ -416,6 +468,7 @@ interface WcsStorageValues<T = unknown> extends WcsStorageCoreValues<T> {
 - `value` is bound to a state path, reflected in the UI
 - User interactions update state, which auto-saves back to storage
 - State survives page reloads
+- The bound slot starts as `undefined` (Quick Start 5), so a reload never overwrites what was saved
 
 Persistence looks just like any other state update.
 

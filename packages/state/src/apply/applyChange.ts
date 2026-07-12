@@ -18,6 +18,7 @@ import { applyChangeToWebComponent } from "./applyChangeToWebComponent.js";
 import { getFilteredValue } from "./getFilteredValue.js";
 import { getValue } from "./getValue.js";
 import { getRootNodeByFragment } from "./rootNodeByFragment.js";
+import { scheduleDeferredApply } from "./scheduleDeferredApply.js";
 import { ApplyChangeFn, IApplyContext } from "./types.js";
 
 const applyChangeByFirstSegment: { [key: string]: ApplyChangeFn } = {
@@ -118,7 +119,11 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   const customTag = getCustomElement(binding.replaceNode);
   if (customTag) {
     if (customElements.get(customTag) === undefined) {
-      // cutomElement側の初期化を期待
+      // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
+      // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
+      // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
+      // spread と対称。docs/state-binding-init-races.md §2）。
+      scheduleDeferredApply(binding, customTag);
       return;
     }
   }
