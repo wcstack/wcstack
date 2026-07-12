@@ -9,7 +9,7 @@ import { IStateElement } from "./types";
 import { setStateElementByName, getStateElementByName, getBindingsReady } from "../stateElementByName";
 import { ILoopContextStack } from "../list/types";
 import { createLoopContextStack } from "../list/loopContext";
-import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, WILDCARD } from "../define";
+import { DCC_DEFINITION_ATTRIBUTE, NO_SET_TIMEOUT, STATE_CONNECTED_CALLBACK_NAME, STATE_DISCONNECTED_CALLBACK_NAME, STATE_UPDATED_CALLBACK_NAME, WILDCARD } from "../define";
 import { processCommandTokensDeclaration } from "../command/processCommandTokensDeclaration";
 import { clearCommandTokenRegistry } from "../command/commandTokenRegistry";
 import { clearCommandNamespace } from "../command/commandNamespace";
@@ -73,6 +73,10 @@ export class State extends HTMLElement implements IStateElement {
   }
 
   private __state: IState | undefined;
+  private _hasUpdatedCallback: boolean = false;
+  // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
+  // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
+  private _crossRowListPaths: Set<string> = new Set<string>();
   private _name: string = 'default';
   private _initialized: boolean = false;
   private _initializePromise: Promise<void>;
@@ -137,6 +141,13 @@ export class State extends HTMLElement implements IStateElement {
     this._commandTokenNames = processCommandTokensDeclaration(value);
     this._eventTokenNames = processEventTokensDeclaration(value);
     this.__state = value;
+    // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
+    // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
+    // 集計と writable createState をスキップできる。
+    // 注: state セット後に生オブジェクトへ直接 $updatedCallback を後付けする
+    // パターンは検知できない（bindProperty / _state 再セットは検知する）。
+    // ライフサイクルフックは宣言時に定義するのが規約。
+    this._hasUpdatedCallback = STATE_UPDATED_CALLBACK_NAME in value;
     // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
     clearEventTokenRegistry(this);
     processOnDeclaration(this, value, this._eventTokenNames);
@@ -583,8 +594,23 @@ export class State extends HTMLElement implements IStateElement {
     return this._version;
   }
 
+  get hasUpdatedCallback(): boolean {
+    return this._hasUpdatedCallback;
+  }
+
+  get crossRowListPaths(): ReadonlySet<string> {
+    return this._crossRowListPaths;
+  }
+
+  addCrossRowListPath(path: string): void {
+    this._crossRowListPaths.add(path);
+  }
+
   bindProperty(prop: string, desc: PropertyDescriptor): void {
     Object.defineProperty(this._state, prop, desc);
+    if (prop === STATE_UPDATED_CALLBACK_NAME) {
+      this._hasUpdatedCallback = true;
+    }
   }
 
   setInitialState(state: Record<string, any>): void {

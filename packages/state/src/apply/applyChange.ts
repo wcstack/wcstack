@@ -104,14 +104,19 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
     return;
   }
   context.appliedBindingSet.add(binding);
-  const absAddress = getAbsoluteStateAddressByBinding(binding);
-  if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
-    const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement)!;
-    addressSet.add(absAddress);
-  } else {
-    context.updatedAbsAddressSetByStateElement.set(context.stateElement, new Set([
-      absAddress
-    ]));
+  // $updatedCallback が定義されていない state では、更新アドレスの集計自体が
+  // 不要（drain 終端の呼び出しごと省略される）。大量バインディング適用時の
+  // Set 蓄積を避ける。undefined（テスト用モック等）は従来通り集計する。
+  if (context.stateElement.hasUpdatedCallback !== false) {
+    const absAddress = getAbsoluteStateAddressByBinding(binding);
+    if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
+      const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement)!;
+      addressSet.add(absAddress);
+    } else {
+      context.updatedAbsAddressSetByStateElement.set(context.stateElement, new Set([
+        absAddress
+      ]));
+    }
   }
   if (binding.bindingType === "event") {
     return;
@@ -126,6 +131,14 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
       scheduleDeferredApply(binding, customTag);
       return;
     }
+  }
+  // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
+  // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略
+  // できる。activateContent 経由（フラグメント内の新規 content）も、フラグメントは
+  // setRootNodeByFragment で context.rootNode に解決されるため同じ不変条件が成り立つ。
+  if (context.sameRootVerified === true && binding.stateName === context.stateName) {
+    _applyChange(binding, context);
+    return;
   }
   let rootNode: Node | null = binding.replaceNode.getRootNode() as Node;
   if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {

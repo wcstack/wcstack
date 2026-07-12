@@ -76,16 +76,66 @@ function _walkExpandWildcard(
   }
 }
 
+/**
+ * 静的子展開（list → list.*）の展開範囲。
+ * - "full": 新リストの全行を展開する（従来挙動）。
+ * - "diff": 追加行（addIndexSet）と位置が変わった行（changeIndexSet）のみ展開する。
+ *   未変更行は値が変わらないため dirty 化・再適用が不要（リスト置換のコストが
+ *   既存行数に比例するスケーリング欠陥の解消。docs/list-replacement-dependency-scaling.md）。
+ *   削除時の集計 getter は $getAll / $resolve がリスト本体（コンテナ）を読むことで
+ *   登録される動的エッジ（list → 集計 getter）が担う。
+ */
+export type ListExpansion = "full" | "diff";
+
 type Context = {
   readonly stateName: string,
   readonly stateElement: IStateElement,
   readonly staticMap: Map<string, string[]>,
-  readonly dynamicMap: Map<string, string[]>, 
+  readonly dynamicMap: Map<string, string[]>,
   readonly result: Set<IStateAddress>,
   readonly listPathSet: Set<string>,
   readonly visited: Set<IStateAddress>,
   readonly stateProxy: IStateProxy,
   readonly searchType: SearchType,
+  readonly listExpansion: ListExpansion,
+}
+
+/**
+ * 静的子展開で訪問する listIndex 群を選ぶ。"diff" でも次の場合は全行に倒す:
+ * - diff に変化が一切見えない再代入（同一参照および内容同一コピーの再代入。
+ *   `arr[0].v = 5; s.items = [...arr]` のような in-place 変異後のリフレッシュ
+ *   イディオムは diff に映らないため、全行展開で従来挙動を保つ。
+ *   削除だけの置換は除く — 残存行に変化は無く、集計はコンテナ動的エッジが担う）
+ * - 他行を読む getter が検出されたリスト（隣接項目参照など。未変更行の派生値も変わりうる）
+ */
+function selectExpansionIndexes(
+  context: Context,
+  sourcePath: string,
+  _lastValue: unknown,
+  _newValue: unknown,
+  listDiff: IListDiff,
+): Iterable<IListIndex> {
+  if (context.listExpansion === "full") {
+    return listDiff.newIndexes;
+  }
+  if (context.stateElement.crossRowListPaths?.has(sourcePath)) {
+    return listDiff.newIndexes;
+  }
+  if (listDiff.addIndexSet.size === 0 && listDiff.changeIndexSet.size === 0) {
+    // 追加も移動も無い。削除も無ければ「変化が見えない再代入」= リフレッシュ意図
+    if (listDiff.deleteIndexSet.size === 0) {
+      return listDiff.newIndexes;
+    }
+    // 削除のみ: 残存行は位置も値も不変なので展開しない
+    return listDiff.changeIndexSet;
+  }
+  if (listDiff.addIndexSet.size === 0) {
+    return listDiff.changeIndexSet;
+  }
+  if (listDiff.changeIndexSet.size === 0) {
+    return listDiff.addIndexSet;
+  }
+  return [...listDiff.addIndexSet, ...listDiff.changeIndexSet];
 }
 
 type StackEntry = { address: IStateAddress, depth: number };
@@ -129,7 +179,7 @@ function _walkDependency(
           const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
           const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
           const listDiff = createListDiff(address.listIndex, lastValue, newValue);
-          for(const listIndex of listDiff.newIndexes) {
+          for(const listIndex of selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff)) {
             const depAddress = createStateAddress(depPathInfo, listIndex);
             context.result.add(depAddress);
             nextEntries.push({ address: depAddress, depth: nextDepth });
@@ -232,7 +282,8 @@ export function walkDependency(
   listPathSet: Set<string>,
   stateProxy: IStateProxy,
   searchType: SearchType,
-  callback: (address: IStateAddress) => void
+  callback: (address: IStateAddress) => void,
+  options?: { listExpansion?: ListExpansion }
 ): IStateAddress[] {
   const context: Context = {
     stateName: stateName,
@@ -244,6 +295,7 @@ export function walkDependency(
     visited: new Set<IStateAddress>(),
     stateProxy: stateProxy,
     searchType: searchType,
+    listExpansion: options?.listExpansion ?? "full",
   };
   _walkDependency(context, startAddress, callback);
   return Array.from(context.result);

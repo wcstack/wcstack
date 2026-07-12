@@ -46,7 +46,7 @@ describe('event/checkboxHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __private__.handlerByHandlerKey.clear();
-    __private__.bindingSetByHandlerKey.clear();
+    __private__.bindingRegistry.clear();
   });
 
   describe('attachCheckboxEventHandler', () => {
@@ -59,7 +59,7 @@ describe('event/checkboxHandler', () => {
 
       expect(result).toBe(true);
       expect(__private__.handlerByHandlerKey.size).toBe(1);
-      expect(__private__.bindingSetByHandlerKey.size).toBe(1);
+      expect(__private__.bindingRegistry.keyCount).toBe(1);
     });
 
     it('checkbox以外のbindingTypeはfalseを返すこと', () => {
@@ -94,8 +94,10 @@ describe('event/checkboxHandler', () => {
       attachCheckboxEventHandler(binding2);
 
       expect(__private__.handlerByHandlerKey.size).toBe(1);
-      const bindingSet = [...__private__.bindingSetByHandlerKey.values()][0];
-      expect(bindingSet.size).toBe(2);
+      const key = __private__.getHandlerKey(binding1, __private__.getEventName(binding1));
+      expect(__private__.bindingRegistry.countOf(key)).toBe(2);
+      expect(__private__.bindingRegistry.has(key, binding1)).toBe(true);
+      expect(__private__.bindingRegistry.has(key, binding2)).toBe(true);
     });
 
     it('onchangeモディファイアでイベント名がchangeになること', () => {
@@ -121,7 +123,7 @@ describe('event/checkboxHandler', () => {
 
       expect(result).toBe(true);
       expect(__private__.handlerByHandlerKey.size).toBe(0);
-      expect(__private__.bindingSetByHandlerKey.size).toBe(0);
+      expect(__private__.bindingRegistry.keyCount).toBe(0);
     });
 
     it('checkbox以外のbindingTypeはfalseを返すこと', () => {
@@ -143,14 +145,14 @@ describe('event/checkboxHandler', () => {
       expect(result).toBe(false);
     });
 
-    it('bindingSetが未登録の場合はfalseを返すこと', () => {
+    it('登録が無い場合はfalseを返すこと', () => {
       const input = document.createElement('input');
       input.type = 'checkbox';
       const binding = createCheckboxBinding(input);
       const eventName = __private__.getEventName(binding);
       const key = __private__.getHandlerKey(binding, eventName);
 
-      // handlerだけ登録してbindingSetは未登録
+      // handlerだけ登録して台帳には未登録（countOf === 0 の経路）
       __private__.handlerByHandlerKey.set(key, () => {});
 
       const result = detachCheckboxEventHandler(binding);

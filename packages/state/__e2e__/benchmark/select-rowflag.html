@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>@wcstack/state-"keyed"</title>
+    <title>@wcstack/state-"keyed" (row-flag selection variant)</title>
     <link href="./css/currentStyle.css" rel="stylesheet"/>
     <script type="importmap">
       {
@@ -14,35 +14,52 @@
     <script type="module" src="../../dist/auto.js"></script>
   </head>
   <body>
+    <!--
+      選択を「行データのフラグ + 2 本のパス個別書き込み」で表現する変種。
+      本家 index.html の selectedIndex + wildcard getter 方式は、selectedIndex の
+      動的依存エッジが全行に展開されるため選択が O(全行) になる。この方式は
+      葉パス書き込み 2 本（旧行 false / 新行 true）だけが伝播するため O(2)。
+
+      ⚠ js-framework-benchmark へ提出する実装には使わないこと:
+      公式ルール（krausest/js-framework-benchmark Issue #800）は「選択状態は
+      行ごとのフラグではなくアプリレベルの単一参照で持つ」と定めており、
+      行フラグ方式は "view state on the model" として note #800 が付く。
+      提出実装は本家 index.html を使う（公式 select は 1,000 行実施で ~0.7ms）。
+      このページは実アプリ向けイディオムとエンジン特性の実証用。
+      docs/list-replacement-dependency-scaling.md §8.1 参照。
+    -->
     <wcs-state>
       <script type="module">
 import { buildData } from '@lib/buildData';
+const withFlag = (rows) => rows.map(r => ({ ...r, selected: false }));
 export default {
   data: [],
   selectedIndex: null,
-  get "data.*.selected"() {
-    return this.$1 === this.selectedIndex;
-  },
   onSelect(e, $1) {
+    if (this.selectedIndex !== null) {
+      this[`data.${this.selectedIndex}.selected`] = false;
+    }
+    this[`data.${$1}.selected`] = true;
     this.selectedIndex = $1;
   },
   onRemove(e, $1) {
+    if (this.selectedIndex === $1) this.selectedIndex = null;
     this.data = this.data.toSpliced($1, 1);
   },
   onRun() {
-    this.data = buildData(1000);
+    this.data = withFlag(buildData(1000));
     this.selectedIndex = null;
   },
   onRunLots() {
-    this.data = buildData(10000);
+    this.data = withFlag(buildData(10000));
     this.selectedIndex = null;
   },
   onAdd() {
-    this.data = this.data.concat(buildData(1000));
+    this.data = this.data.concat(withFlag(buildData(1000)));
   },
   onUpdate() {
     for(let i = 0; i < this.data.length; i += 10) {
-      this[`data.${i}.label`] += " !!!";     
+      this[`data.${i}.label`] += " !!!";
     }
   },
   onClear() {
@@ -51,9 +68,6 @@ export default {
   },
   onSwapRows() {
     if (this.data.length > 998) {
-      // Keyed semantics: replace the array so the list differ sees a reorder
-      // and moves the existing DOM rows. Assigning the two index paths instead
-      // would rewrite the two rows' contents in place (non-keyed behavior).
       const data = this.data.slice();
       [data[1], data[998]] = [data[998], data[1]];
       this.data = data;
@@ -67,7 +81,7 @@ export default {
       <div class="jumbotron">
         <div class="row">
           <div class="col-md-6">
-            <h1>@wcstack/state-"keyed"</h1>
+            <h1>@wcstack/state-"keyed" (row-flag)</h1>
           </div>
           <div class="col-md-6">
             <div class="row">

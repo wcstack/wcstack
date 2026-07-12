@@ -6,9 +6,11 @@ import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { getCustomElement } from "../getCustomElement";
 import { IWcBindable } from "./types";
+import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
-const bindingSetByHandlerKey: Map<string, Set<IBindingInfo>> = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry = createHandlerBindingRegistry();
 
 const DEFAULT_GETTER = (e: Event) => (e as CustomEvent).detail;
 
@@ -131,13 +133,7 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
       handlerByHandlerKey.set(key, twowayEventHandler);
     }
     (binding.node as Element).addEventListener(eventName, twowayEventHandler);
-    let bindingSet = bindingSetByHandlerKey.get(key);
-    if (typeof bindingSet === "undefined") {
-      bindingSet = new Set<IBindingInfo>([binding]);
-      bindingSetByHandlerKey.set(key, bindingSet);
-    } else {
-      bindingSet.add(binding);
-    }
+    bindingRegistry.add(key, binding);
   }
 }
 
@@ -163,21 +159,15 @@ export function detachTwowayEventHandler(binding: IBindingInfo): void {
     }
     (binding.node as Element).removeEventListener(eventName, twowayEventHandler);
 
-    const bindingSet = bindingSetByHandlerKey.get(key);
-    if (typeof bindingSet === "undefined") {
-      return;
-    }
-    bindingSet.delete(binding);
-    if (bindingSet.size === 0) {
+    if (bindingRegistry.remove(key, binding)) {
       handlerByHandlerKey.delete(key);
-      bindingSetByHandlerKey.delete(key);
     }
   }
 }
 
 export const __private__ = {
   handlerByHandlerKey,
-  bindingSetByHandlerKey,
+  bindingRegistry,
   getHandlerKey,
   getEventName,
   getValueGetter,

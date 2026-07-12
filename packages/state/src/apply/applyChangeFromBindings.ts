@@ -62,6 +62,9 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
         newListValueByAbsAddress: newListValueByAbsAddress,
         updatedAbsAddressSetByStateElement: updatedAbsAddressSetByStateElement,
         deferredSelectBindings: deferredSelectBindings,
+        // グループ内の binding は下の do/while が「解決済みルート === rootNode」を
+        // 検証してから applyChange に渡す（applyChange 側の getRootNode 省略の根拠）
+        sameRootVerified: true,
       };
 
       do {

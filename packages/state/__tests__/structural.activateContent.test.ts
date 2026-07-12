@@ -123,10 +123,10 @@ describe('activateContent', () => {
       expect(getAbsoluteStateAddressByBindingMock).toHaveBeenCalledWith(binding2);
       expect(removeBindingByAbsoluteStateAddressMock).toHaveBeenCalledWith(absAddress1, binding1);
       expect(removeBindingByAbsoluteStateAddressMock).toHaveBeenCalledWith(absAddress2, binding2);
-      expect(clearAbsoluteStateAddressByBindingMock).toHaveBeenCalledWith(binding1);
-      expect(clearAbsoluteStateAddressByBindingMock).toHaveBeenCalledWith(binding2);
-      expect(clearStateAddressByBindingInfoMock).toHaveBeenCalledWith(binding1);
-      expect(clearStateAddressByBindingInfoMock).toHaveBeenCalledWith(binding2);
+      // アドレスキャッシュのクリアは呼び出し元が直後に呼ぶ content.unmount() の責務
+      // （ネスト content も含めて unmount がクリアする。二重 delete 回避）
+      expect(clearAbsoluteStateAddressByBindingMock).not.toHaveBeenCalled();
+      expect(clearStateAddressByBindingInfoMock).not.toHaveBeenCalled();
       expect(unbindLoopContextToContentMock).toHaveBeenCalledWith(content);
     });
 

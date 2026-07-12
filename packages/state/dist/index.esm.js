@@ -1846,13 +1846,62 @@ const connectedCallbackSymbol = Symbol("$$connectedCallback");
 const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
 const updatedCallbackSymbol = Symbol("$$updatedCallback");
 
+function createHandlerBindingRegistry() {
+    const attachedByKey = new Map();
+    const countByKey = new Map();
+    return {
+        add(key, binding) {
+            let attached = attachedByKey.get(key);
+            if (typeof attached === "undefined") {
+                attached = new WeakSet();
+                attachedByKey.set(key, attached);
+            }
+            if (attached.has(binding)) {
+                return false;
+            }
+            attached.add(binding);
+            countByKey.set(key, (countByKey.get(key) ?? 0) + 1);
+            return true;
+        },
+        remove(key, binding) {
+            const attached = attachedByKey.get(key);
+            if (typeof attached === "undefined" || !attached.has(binding)) {
+                return false;
+            }
+            attached.delete(binding);
+            const next = (countByKey.get(key) ?? 1) - 1;
+            if (next <= 0) {
+                attachedByKey.delete(key);
+                countByKey.delete(key);
+                return true;
+            }
+            countByKey.set(key, next);
+            return false;
+        },
+        has(key, binding) {
+            return attachedByKey.get(key)?.has(binding) ?? false;
+        },
+        countOf(key) {
+            return countByKey.get(key) ?? 0;
+        },
+        get keyCount() {
+            return countByKey.size;
+        },
+        clear() {
+            attachedByKey.clear();
+            countByKey.clear();
+        },
+    };
+}
+
 // onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
 // 右辺が $command 名前空間配下のパス（$command.<token>）のときに true。
 function isCommandTokenPath(statePathName) {
     return statePathName.startsWith(STATE_COMMAND_NAMESPACE_NAME + ".");
 }
 const handlerByHandlerKey$3 = new Map();
-const bindingSetByHandlerKey$3 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$3 = createHandlerBindingRegistry();
 function getHandlerKey$3(binding) {
     const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
     return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
@@ -1901,14 +1950,7 @@ function attachEventHandler(binding) {
     }
     const eventName = binding.propName.slice(2);
     binding.node.addEventListener(eventName, stateEventHandler);
-    let bindingSet = bindingSetByHandlerKey$3.get(key);
-    if (typeof bindingSet === "undefined") {
-        bindingSet = new Set([binding]);
-        bindingSetByHandlerKey$3.set(key, bindingSet);
-    }
-    else {
-        bindingSet.add(binding);
-    }
+    bindingRegistry$3.add(key, binding);
     return true;
 }
 
@@ -2078,7 +2120,8 @@ function isPossibleTwoWay(node, propName) {
 }
 
 const handlerByHandlerKey$2 = new Map();
-const bindingSetByHandlerKey$2 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$2 = createHandlerBindingRegistry();
 const DEFAULT_GETTER = (e) => e.detail;
 function getHandlerKey$2(binding, eventName, hasGetter) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
@@ -2181,14 +2224,7 @@ function attachTwowayEventHandler(binding) {
             handlerByHandlerKey$2.set(key, twowayEventHandler);
         }
         binding.node.addEventListener(eventName, twowayEventHandler);
-        let bindingSet = bindingSetByHandlerKey$2.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey$2.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
+        bindingRegistry$2.add(key, binding);
     }
 }
 
@@ -2893,6 +2929,103 @@ function calcDiffIndexes(oldList, newList, oldIndexes, newIndexes, indexByValue)
     };
 }
 
+/**
+ * Indices into `seq` whose values form a longest strictly-increasing
+ * subsequence, returned in ascending order. Classic patience-sorting
+ * LIS in O(n log n). `seq` values are assumed distinct (old list
+ * positions are unique).
+ */
+function longestIncreasingSubsequence(seq) {
+    const n = seq.length;
+    // tails[k] = index into seq of the smallest tail of an increasing
+    // subsequence of length k+1; prev[i] = predecessor index to rebuild the chain.
+    const tails = [];
+    const prev = new Array(n).fill(-1);
+    for (let i = 0; i < n; i++) {
+        const value = seq[i];
+        let lo = 0;
+        let hi = tails.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (seq[tails[mid]] < value) {
+                lo = mid + 1;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        if (lo > 0) {
+            prev[i] = tails[lo - 1];
+        }
+        tails[lo] = i;
+    }
+    const result = [];
+    let k = tails.length > 0 ? tails[tails.length - 1] : -1;
+    while (k >= 0) {
+        result.push(k);
+        k = prev[k];
+    }
+    result.reverse();
+    return result;
+}
+/**
+ * Determines which reused list indexes can stay where they are when the DOM
+ * is brought into the new list order.
+ *
+ * Returns null when the reused indexes already appear in their old relative
+ * order (no inversions) — the caller's existing position guard then performs
+ * no moves, so nothing extra is needed. When inversions exist, returns the
+ * set of indexes forming a longest increasing subsequence of old positions:
+ * leaving exactly those in place and moving every other content yields the
+ * correct final order with the fewest content moves (the naive forward walk
+ * otherwise cascades: a single swap of rows 2/999 in 1000 rows moves ~997
+ * contents instead of 2).
+ *
+ * Note: IListIndex.index is already mutated to the NEW position by
+ * createListDiff, so old positions must come from the oldIndexes array order.
+ */
+function computeStableIndexSet(diff) {
+    // No reused index changed position, or nothing was reused: relative order
+    // is already correct and the walk performs no moves.
+    if (diff.changeIndexSet.size === 0 || diff.addIndexSet.size === diff.newIndexes.length) {
+        return null;
+    }
+    const oldPosByIndex = new Map();
+    for (let i = 0; i < diff.oldIndexes.length; i++) {
+        oldPosByIndex.set(diff.oldIndexes[i], i);
+    }
+    const reused = [];
+    const seq = [];
+    let prevPos = -1;
+    let sorted = true;
+    for (const index of diff.newIndexes) {
+        if (diff.addIndexSet.has(index)) {
+            continue;
+        }
+        const pos = oldPosByIndex.get(index);
+        if (pos === undefined) {
+            // Invariant break (a reused index missing from oldIndexes): fall back
+            // to the settle walk rather than compute a stable set from bad data.
+            return null;
+        }
+        if (pos < prevPos) {
+            sorted = false;
+        }
+        prevPos = pos;
+        reused.push(index);
+        seq.push(pos);
+    }
+    if (sorted) {
+        return null;
+    }
+    const lis = longestIncreasingSubsequence(seq);
+    const stable = new Set();
+    for (const seqIndex of lis) {
+        stable.add(reused[seqIndex]);
+    }
+    return stable;
+}
+
 const bindingSetByAbsoluteStateAddress = new WeakMap();
 function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
     let bindingSet = null;
@@ -2903,38 +3036,24 @@ function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
     }
     return bindingSet;
 }
+/**
+ * 参照専用の取得。get-or-create と違い、未登録アドレスに空 Set を
+ * 生成・キャッシュしない（リスト置換の drain は大量のバインディング無し
+ * アドレスを照会するため、生成すると空 Set が溜まり続ける）。
+ */
+function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
+    return bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+}
 function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
     const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
     bindingSet.add(binding);
 }
 function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
-    bindingSet.delete(binding);
-}
-
-const stateAddressByBindingInfo = new WeakMap();
-function getStateAddressByBindingInfo(bindingInfo) {
-    let stateAddress = null;
-    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
-    if (stateAddress !== null) {
-        return stateAddress;
+    // get-or-create を通すと未登録アドレスに空 Set を生成してしまうため素の get で参照する
+    const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+    if (bindingSet !== undefined) {
+        bindingSet.delete(binding);
     }
-    if (bindingInfo.statePathInfo.wildcardCount > 0) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        if (listIndex === null) {
-            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
-        }
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
-    }
-    else {
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
-    }
-    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
-    return stateAddress;
-}
-// call for change loopContext
-function clearStateAddressByBindingInfo(bindingInfo) {
-    stateAddressByBindingInfo.delete(bindingInfo);
 }
 
 const bindingsByContent = new WeakMap();
@@ -2983,8 +3102,10 @@ function deactivateContent(content) {
     for (const binding of bindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
         removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-        clearAbsoluteStateAddressByBinding(binding);
-        clearStateAddressByBindingInfo(binding);
+        // アドレスキャッシュ（absoluteStateAddressByBinding / stateAddressByBindingInfo）
+        // のクリアはここでは行わない。deactivateContent の呼び出し元（for/if）は必ず
+        // 直後に content.unmount() を呼び、unmount が同じ2台帳をネスト content も含めて
+        // クリアする（createContent.ts）。ここで消すと全 binding で二重 delete になる。
     }
     unbindLoopContextToContent(content);
 }
@@ -3010,6 +3131,40 @@ function getContentSetByNode(node) {
         return contents;
     }
     return EMPTY_SET;
+}
+function deleteContentByNode(node, content) {
+    const contents = contentSetByNode.get(node);
+    if (contents) {
+        contents.delete(content);
+        if (contents.size === 0) {
+            contentSetByNode.delete(node);
+        }
+    }
+}
+
+const stateAddressByBindingInfo = new WeakMap();
+function getStateAddressByBindingInfo(bindingInfo) {
+    let stateAddress = null;
+    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
+    if (stateAddress !== null) {
+        return stateAddress;
+    }
+    if (bindingInfo.statePathInfo.wildcardCount > 0) {
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        if (listIndex === null) {
+            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
+        }
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
+    }
+    else {
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
+    }
+    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
+    return stateAddress;
+}
+// call for change loopContext
+function clearStateAddressByBindingInfo(bindingInfo) {
+    stateAddressByBindingInfo.delete(bindingInfo);
 }
 
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
@@ -3123,13 +3278,26 @@ function hydrateSetLastNode(node, lastNode) {
 function getPooledContents(bindingInfo) {
     return pooledContentsByNode.get(bindingInfo.node) || [];
 }
+// プールの上限（アンカーごと）。プールはアンカー（文書に永続するコメントノード）
+// から content とその DOM サブツリー・バインディング群を強参照するため、無制限だと
+// 大きなリストのクリア後もメモリが解放されない（10k 行で 10MB 級）。上限超過分は
+// contentSetByNode の台帳からも外して GC 可能にする。再追加時は createContent で
+// 作り直すコストと引き換えになる。
+const MAX_POOLED_CONTENTS = 1000;
+let maxPooledContents = MAX_POOLED_CONTENTS;
 function setPooledContent(bindingInfo, content) {
-    const contents = pooledContentsByNode.get(bindingInfo.node);
+    let contents = pooledContentsByNode.get(bindingInfo.node);
     if (typeof contents === 'undefined') {
-        pooledContentsByNode.set(bindingInfo.node, [content]);
+        contents = [];
+        pooledContentsByNode.set(bindingInfo.node, contents);
+    }
+    if (contents.length < maxPooledContents) {
+        contents.push(content);
     }
     else {
-        contents.push(content);
+        // 上限超過: content を完全に手放す。contentSetByNode は createContent 時に
+        // 追加されたきり解放経路が無いため、ここで外さないと GC できない。
+        deleteContentByNode(bindingInfo.node, content);
     }
 }
 function isOnlyNodeInParentContent(firstNode, lastNode) {
@@ -3153,6 +3321,23 @@ function isOnlyNodeInParentContent(firstNode, lastNode) {
         nextCheckNode = nextCheckNode.nextSibling;
     }
     return onlyNode;
+}
+// A stable content may be left in place only when its first node verifiably
+// follows the settled walk position in the same tree: the listIndexes ledger
+// can lag the physical DOM (element-write swaps reorder listIndexes without
+// moving nodes; hidden regions unmount contents that stay registered). Empty
+// contents (null firstNode) always take the settle walk so their mount
+// bookkeeping matches the pre-LIS behavior.
+function isPhysicallyAfter(lastNode, firstNode) {
+    if (firstNode === null) {
+        return false;
+    }
+    if (lastNode.nextSibling === firstNode) {
+        return true;
+    }
+    const position = lastNode.compareDocumentPosition(firstNode);
+    return (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+        && (position & Node.DOCUMENT_POSITION_DISCONNECTED) === 0;
 }
 function getContent(node, listIndex) {
     let contentByListIndex = contentByListIndexByNode.get(node);
@@ -3213,6 +3398,11 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     let lastNode = bindingInfo.node;
     const elementPathInfo = getPathInfo(listPathInfo.path + '.' + WILDCARD);
     const loopContextStack = context.stateElement.loopContextStack;
+    // When the new order contains inversions, contents in the stable set (an LIS
+    // of old positions) keep their relative order and must not be moved; moving
+    // only the rest avoids the cascade where one swap relocates every row in
+    // between. null = no inversions; the position guard below then does no moves.
+    const stableIndexSet = computeStableIndexSet(diff);
     let fragment = null;
     if (diff.newIndexes.length == diff.addIndexSet.size
         && diff.newIndexes.length > 0
@@ -3282,7 +3472,13 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             if (content === null) {
                 raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
             }
-            if (lastNode.nextSibling !== content.firstNode) {
+            // Stable contents are already in correct relative order — but only
+            // trust that after physical verification (see isPhysicallyAfter).
+            // Contents out of order (and everything unverifiable) settle via the
+            // self-healing mountAfter walk below.
+            const stable = stableIndexSet !== null && stableIndexSet.has(index)
+                && isPhysicallyAfter(lastNode, content.firstNode);
+            if (!stable && lastNode.nextSibling !== content.firstNode) {
                 content.mountAfter(lastNode);
             }
         }
@@ -3611,8 +3807,14 @@ function applyChangeToStyle(binding, _context, newValue) {
 
 const ssrWrappedNodes = new WeakSet();
 function applyChangeToText(binding, _context, newValue) {
-    if (binding.replaceNode.nodeValue !== newValue) {
-        binding.replaceNode.nodeValue = newValue;
+    // nodeValue は nullable DOMString（実ブラウザでは null / undefined とも空文字に
+    // 正規化される）ため、比較前に同じ規則で文字列化する。生値のまま比較すると
+    // 数値など非文字列値は常に不一致になり、同値でも毎回 DOM 書き込みが走る。
+    // 注: happy-dom は undefined を "undefined" にする非準拠実装なので String() に
+    // 頼らず明示的に "" へ正規化する。
+    const text = newValue === null || newValue === undefined ? "" : String(newValue);
+    if (binding.replaceNode.nodeValue !== text) {
+        binding.replaceNode.nodeValue = text;
     }
     // SSR モード時: テキストノードの前後にコメントを挿入して境界を明示
     if (inSsr() && !ssrWrappedNodes.has(binding.replaceNode)) {
@@ -3783,15 +3985,20 @@ function applyChange(binding, context) {
         return;
     }
     context.appliedBindingSet.add(binding);
-    const absAddress = getAbsoluteStateAddressByBinding(binding);
-    if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
-        const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement);
-        addressSet.add(absAddress);
-    }
-    else {
-        context.updatedAbsAddressSetByStateElement.set(context.stateElement, new Set([
-            absAddress
-        ]));
+    // $updatedCallback が定義されていない state では、更新アドレスの集計自体が
+    // 不要（drain 終端の呼び出しごと省略される）。大量バインディング適用時の
+    // Set 蓄積を避ける。undefined（テスト用モック等）は従来通り集計する。
+    if (context.stateElement.hasUpdatedCallback !== false) {
+        const absAddress = getAbsoluteStateAddressByBinding(binding);
+        if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
+            const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement);
+            addressSet.add(absAddress);
+        }
+        else {
+            context.updatedAbsAddressSetByStateElement.set(context.stateElement, new Set([
+                absAddress
+            ]));
+        }
     }
     if (binding.bindingType === "event") {
         return;
@@ -3806,6 +4013,14 @@ function applyChange(binding, context) {
             scheduleDeferredApply(binding, customTag);
             return;
         }
+    }
+    // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
+    // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略
+    // できる。activateContent 経由（フラグメント内の新規 content）も、フラグメントは
+    // setRootNodeByFragment で context.rootNode に解決されるため同じ不変条件が成り立つ。
+    if (context.sameRootVerified === true && binding.stateName === context.stateName) {
+        _applyChange(binding, context);
+        return;
     }
     let rootNode = binding.replaceNode.getRootNode();
     if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
@@ -3887,6 +4102,9 @@ function applyChangeFromBindings(bindings) {
                 newListValueByAbsAddress: newListValueByAbsAddress,
                 updatedAbsAddressSetByStateElement: updatedAbsAddressSetByStateElement,
                 deferredSelectBindings: deferredSelectBindings,
+                // グループ内の binding は下の do/while が「解決済みルート === rootNode」を
+                // 検証してから applyChange に渡す（applyChange 側の getRootNode 省略の根拠）
+                sameRootVerified: true,
             };
             do {
                 applyChange(binding, context);
@@ -3917,7 +4135,8 @@ function applyChangeFromBindings(bindings) {
 }
 
 const handlerByHandlerKey$1 = new Map();
-const bindingSetByHandlerKey$1 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$1 = createHandlerBindingRegistry();
 function getHandlerKey$1(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
     return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
@@ -3971,21 +4190,15 @@ function attachRadioEventHandler(binding) {
             handlerByHandlerKey$1.set(key, radioEventHandler);
         }
         binding.node.addEventListener(eventName, radioEventHandler);
-        let bindingSet = bindingSetByHandlerKey$1.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey$1.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
+        bindingRegistry$1.add(key, binding);
         return true;
     }
     return false;
 }
 
 const handlerByHandlerKey = new Map();
-const bindingSetByHandlerKey = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry = createHandlerBindingRegistry();
 function getHandlerKey(binding, eventName) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
     return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
@@ -4058,14 +4271,7 @@ function attachCheckboxEventHandler(binding) {
             handlerByHandlerKey.set(key, checkboxEventHandler);
         }
         binding.node.addEventListener(eventName, checkboxEventHandler);
-        let bindingSet = bindingSetByHandlerKey.get(key);
-        if (typeof bindingSet === "undefined") {
-            bindingSet = new Set([binding]);
-            bindingSetByHandlerKey.set(key, bindingSet);
-        }
-        else {
-            bindingSet.add(binding);
-        }
+        bindingRegistry.add(key, binding);
         return true;
     }
     return false;
@@ -6096,7 +6302,12 @@ class Updater {
         const absoluteAddressSet = new Set(absoluteAddresses);
         const processBindings = [];
         for (const absoluteAddress of absoluteAddressSet) {
-            const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
+            // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
+            // アドレス等）に空 Set を生成・蓄積しない
+            const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
+            if (bindings === undefined) {
+                continue;
+            }
             for (const binding of bindings) {
                 if (binding.replaceNode.isConnected === false) {
                     // 切断されているバインディングは無視
@@ -6892,7 +7103,8 @@ function dirtyCacheEntryByAbsoluteStateAddress(address) {
 function checkDependency(handler, address) {
     // 動的依存関係の登録
     if (handler.addressStackLength > 0) {
-        const lastInfo = handler.lastAddressStack?.pathInfo ?? null;
+        const lastAddress = handler.lastAddressStack;
+        const lastInfo = lastAddress?.pathInfo ?? null;
         const stateElement = handler.stateElement;
         if (lastInfo !== null) {
             if (stateElement.getterPaths.has(lastInfo.path) &&
@@ -6900,6 +7112,27 @@ function checkDependency(handler, address) {
                 // lastInfo.pathはgetterの名前であり、address.pathInfo.pathは
                 // そのgetterが参照している値のパスである
                 stateElement.addDynamicDependency(address.pathInfo.path, lastInfo.path);
+                // 他行読み取りの検出: 評価中の getter と読み取り先が同じワイルドカード親
+                // （リスト）を共有し、その階層の listIndex が異なる場合、この getter は
+                // 自行の外に依存する（隣接項目参照など）。該当リストを crossRowListPaths に
+                // 記録し、walkDependency の diff-filter 展開を全行展開へフォールバックさせる。
+                if (address.pathInfo.wildcardCount > 0 && lastInfo.wildcardCount > 0) {
+                    const sharedLen = calcWildcardLen(address.pathInfo, lastInfo);
+                    if (sharedLen > 0) {
+                        let crossRow = false;
+                        for (let level = 0; level < sharedLen; level++) {
+                            if (address.listIndex?.at(level) !== lastAddress.listIndex?.at(level)) {
+                                crossRow = true;
+                                break;
+                            }
+                        }
+                        if (crossRow) {
+                            for (let level = 0; level < sharedLen; level++) {
+                                stateElement.addCrossRowListPath?.(address.pathInfo.wildcardParentPaths[level]);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -7102,6 +7335,37 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
         }
     }
 }
+/**
+ * 静的子展開で訪問する listIndex 群を選ぶ。"diff" でも次の場合は全行に倒す:
+ * - diff に変化が一切見えない再代入（同一参照および内容同一コピーの再代入。
+ *   `arr[0].v = 5; s.items = [...arr]` のような in-place 変異後のリフレッシュ
+ *   イディオムは diff に映らないため、全行展開で従来挙動を保つ。
+ *   削除だけの置換は除く — 残存行に変化は無く、集計はコンテナ動的エッジが担う）
+ * - 他行を読む getter が検出されたリスト（隣接項目参照など。未変更行の派生値も変わりうる）
+ */
+function selectExpansionIndexes(context, sourcePath, _lastValue, _newValue, listDiff) {
+    if (context.listExpansion === "full") {
+        return listDiff.newIndexes;
+    }
+    if (context.stateElement.crossRowListPaths?.has(sourcePath)) {
+        return listDiff.newIndexes;
+    }
+    if (listDiff.addIndexSet.size === 0 && listDiff.changeIndexSet.size === 0) {
+        // 追加も移動も無い。削除も無ければ「変化が見えない再代入」= リフレッシュ意図
+        if (listDiff.deleteIndexSet.size === 0) {
+            return listDiff.newIndexes;
+        }
+        // 削除のみ: 残存行は位置も値も不変なので展開しない
+        return listDiff.changeIndexSet;
+    }
+    if (listDiff.addIndexSet.size === 0) {
+        return listDiff.changeIndexSet;
+    }
+    if (listDiff.changeIndexSet.size === 0) {
+        return listDiff.addIndexSet;
+    }
+    return [...listDiff.addIndexSet, ...listDiff.changeIndexSet];
+}
 function _walkDependency(context, startAddress, callback) {
     const stack = [{ address: startAddress, depth: 0 }];
     while (stack.length > 0) {
@@ -7134,7 +7398,7 @@ function _walkDependency(context, startAddress, callback) {
                     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
                     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
                     const listDiff = createListDiff(address.listIndex, lastValue, newValue);
-                    for (const listIndex of listDiff.newIndexes) {
+                    for (const listIndex of selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff)) {
                         const depAddress = createStateAddress(depPathInfo, listIndex);
                         context.result.add(depAddress);
                         nextEntries.push({ address: depAddress, depth: nextDepth });
@@ -7228,7 +7492,7 @@ function _walkDependency(context, startAddress, callback) {
         }
     }
 }
-function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback) {
+function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback, options) {
     const context = {
         stateElement: stateElement,
         staticMap: staticDependency,
@@ -7238,6 +7502,7 @@ function walkDependency(stateName, stateElement, startAddress, staticDependency,
         visited: new Set(),
         stateProxy: stateProxy,
         searchType: searchType,
+        listExpansion: options?.listExpansion ?? "full",
     };
     _walkDependency(context, startAddress, callback);
     return Array.from(context.result);
@@ -7303,7 +7568,10 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
             dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
             updater.enqueueAbsoluteAddress(absDepAddress);
-        });
+        }, 
+        // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
+        // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
+        { listExpansion: "diff" });
     }
 }
 function _setByAddressWithSwap(target, address, absAddress, value, receiver, handler) {
@@ -8382,6 +8650,10 @@ class State extends HTMLElement {
         return getBindingsReady(rootNode);
     }
     __state;
+    _hasUpdatedCallback = false;
+    // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
+    // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
+    _crossRowListPaths = new Set();
     _name = 'default';
     _initialized = false;
     _initializePromise;
@@ -8443,6 +8715,13 @@ class State extends HTMLElement {
         this._commandTokenNames = processCommandTokensDeclaration(value);
         this._eventTokenNames = processEventTokensDeclaration(value);
         this.__state = value;
+        // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
+        // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
+        // 集計と writable createState をスキップできる。
+        // 注: state セット後に生オブジェクトへ直接 $updatedCallback を後付けする
+        // パターンは検知できない（bindProperty / _state 再セットは検知する）。
+        // ライフサイクルフックは宣言時に定義するのが規約。
+        this._hasUpdatedCallback = STATE_UPDATED_CALLBACK_NAME in value;
         // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
         clearEventTokenRegistry(this);
         processOnDeclaration(this, value, this._eventTokenNames);
@@ -8865,8 +9144,20 @@ class State extends HTMLElement {
         this._version++;
         return this._version;
     }
+    get hasUpdatedCallback() {
+        return this._hasUpdatedCallback;
+    }
+    get crossRowListPaths() {
+        return this._crossRowListPaths;
+    }
+    addCrossRowListPath(path) {
+        this._crossRowListPaths.add(path);
+    }
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);
+        if (prop === STATE_UPDATED_CALLBACK_NAME) {
+            this._hasUpdatedCallback = true;
+        }
     }
     setInitialState(state) {
         if (!this._initialized) {
