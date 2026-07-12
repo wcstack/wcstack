@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + sse + network demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    /* Top bar: host switch + connection tile */
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .hosts { display: flex; gap: 0.5rem; align-items: center; }
+    .hosts button { padding: 0.5rem 1.1rem; font-size: 0.9rem; border: 2px solid #ddd; border-radius: 8px; cursor: pointer; background: #fff; color: #333; }
+    .hosts button.active { border-color: #3949ab; background: #e8eaf6; color: #283593; font-weight: 600; }
+    .net-tile { font-size: 0.8rem; color: #555; text-align: right; }
+    .net-tile b { color: #283593; }
+
+    /* Two-panel comparison */
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 720px) { .panels { grid-template-columns: 1fr; } }
+    .panel h2 { font-size: 1rem; margin-bottom: 0.25rem; }
+    .panel .idiom { font-size: 0.75rem; color: #888; font-family: ui-monospace, monospace; margin-bottom: 0.75rem; }
+    .chip { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; background: #eee; color: #555; margin-bottom: 0.75rem; }
+    .chip.on { background: #e8f5e9; color: #2e7d32; }
+    .chip.err { background: #ffebee; color: #c62828; }
+
+    .stats { display: flex; gap: 1.25rem; margin-bottom: 0.75rem; font-size: 0.8rem; color: #666; }
+    .stats b { display: block; font-size: 1.3rem; color: #1a1a2e; font-variant-numeric: tabular-nums; }
+
+    .bars { display: flex; align-items: flex-end; gap: 2px; height: 72px; background: #fafafa; border-radius: 6px; padding: 4px; }
+    .bars span { flex: 1; min-height: 2px; background: #3949ab; border-radius: 2px 2px 0 0; }
+    .panel.right .bars span { background: #00897b; }
+
+    .deploy { margin-top: 0.75rem; font-size: 0.8rem; background: #fff8e1; color: #b26a00; padding: 0.4rem 0.8rem; border-radius: 6px; }
+    .stream-error { margin-top: 0.75rem; font-size: 0.8rem; color: #c62828; }
+
+    .notes { font-size: 0.8rem; color: #888; }
+    .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
+    code { font-family: ui-monospace, monospace; font-size: 0.95em; }
+  </style>
+
+  <!-- $streams is not released yet: the local packages/state/dist build is
+       mounted under /state-dist/ by server.js (run `npm run build` in
+       packages/state first). sse / network load from the CDN as usual.
+
+       ORDER MATTERS: module scripts execute in document order, so listing the
+       I/O nodes BEFORE state guarantees their elements are defined by the time
+       state initializes its bindings. The initial state→element apply is
+       silently skipped for not-yet-defined custom elements (and not replayed),
+       so with the fast local state build racing the CDN, `url: sseUrl` would
+       otherwise never be written and the left panel would stay silent. -->
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="/state-dist/auto.js"></script>
+</head>
+<body>
+
+<h1>wcstack: live metrics — one SSE feed, two idioms</h1>
+<p class="lead">sse + state($streams) + network — the same server-sent event stream consumed twice: left through the <code>&lt;wcs-sse&gt;</code> tag, right through a state-side <code>$streams</code> fold. Switch hosts and watch who has to remember to reset.</p>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      host: "a",
+
+      // --- LEFT panel: <wcs-sse> outputs + a manual fold in $on -------------
+      sseConnected: false,
+      sseLoading: false,
+      leftSamples: [],
+      leftCount: 0,
+      lastDeploy: null,
+
+      // --- network tile (Network Information API monitor) ------------------
+      netSupported: false,
+      netType: null,
+      netDownlink: null,
+      netRtt: null,
+      netSaveData: false,
+
+      $eventTokens: ["sseMessage"],
+
+      // --- RIGHT panel: the state OWNS the connection ----------------------
+      $streams: {
+        metrics: {
+          // The dependency is captured HERE: writing `host` aborts the current
+          // run, resets `metrics` to `initial` and reconnects with the new
+          // args (switchMap semantics) — no manual reset code anywhere.
+          args: (state) => ({ host: state.host }),
+
+          // Bridge an EventSource into the async iterable the runtime
+          // consumes. Cooperative cancellation: everything tears down through
+          // the AbortSignal (including waking the pending read).
+          source: async ({ host }, signal) => {
+            const es = new EventSource(`/api/metrics?host=${host}`);
+            const queue = [];
+            let wake = null;
+            es.addEventListener("metric", (e) => {
+              queue.push(JSON.parse(e.data));
+              wake?.();
+            });
+            signal.addEventListener("abort", () => {
+              es.close();
+              wake?.();
+            });
+            return (async function* () {
+              try {
+                while (!signal.aborted) {
+                  if (queue.length === 0) {
+                    await new Promise((r) => { wake = r; });
+                    wake = null;
+                    continue;
+                  }
+                  yield queue.shift();
+                }
+              } finally {
+                es.close();
+              }
+            })();
+          },
+
+          // BOUNDED fold — a long-lived stream must never accumulate without
+          // limit; last-20 window + a running count is all the state we keep.
+          fold: (acc, sample) => ({
+            samples: [...acc.samples, sample].slice(-20),
+            count: acc.count + 1,
+          }),
+          initial: { samples: [], count: 0 },
+        },
+      },
+
+      // <wcs-network> publishes its initial snapshot synchronously in its own
+      // connectedCallback — possibly before these bindings attach — so pull
+      // the current values once; later changes stream in via the bindings.
+      // Fire-and-forget so $streams startup never waits on the CDN.
+      $connectedCallback() {
+        (async () => {
+          await customElements.whenDefined("wcs-network");
+          const el = document.querySelector("wcs-network");
+          if (!el) return;
+          await el.connectedCallbackPromise;
+          this.netSupported = el.supported;
+          this.netType = el.effectiveType;
+          this.netDownlink = el.downlink;
+          this.netRtt = el.rtt;
+          this.netSaveData = el.saveData;
+        })();
+      },
+
+      // --- derived ----------------------------------------------------------
+
+      get sseUrl() { return "/api/metrics?host=" + this.host; },
+      get isHostA() { return this.host === "a"; },
+      get isHostB() { return this.host === "b"; },
+
+      get leftStatusText() {
+        return this.sseConnected ? "connected" : (this.sseLoading ? "connecting…" : "idle");
+      },
+      get leftLatestCpu() {
+        const s = this.leftSamples;
+        return s.length ? s[s.length - 1].cpu.toFixed(0) + "%" : "—";
+      },
+      get leftAvgCpu() {
+        const s = this.leftSamples;
+        return s.length ? (s.reduce((a, x) => a + x.cpu, 0) / s.length).toFixed(1) + "%" : "—";
+      },
+      get leftLatestRps() {
+        const s = this.leftSamples;
+        return s.length ? String(s[s.length - 1].rps) : "—";
+      },
+      get leftBars() {
+        return this.leftSamples.map((x) => ({ h: Math.min(100, x.cpu).toFixed(0) + "%" }));
+      },
+      get hasDeploy() { return !!this.lastDeploy; },
+      get deployText() {
+        const d = this.lastDeploy;
+        return d ? `🚀 ${d.version} deployed on host ${d.host}` : "";
+      },
+
+      get rightStatus() { return this["$streamStatus.metrics"]; },
+      get rightActive() { return this.rightStatus === "active"; },
+      get rightIsError() { return this.rightStatus === "error"; },
+      get rightErrorText() {
+        const e = this["$streamError.metrics"];
+        return e ? String(e) : "";
+      },
+      get rightCount() { return this.metrics.count; },
+      get rightLatestCpu() {
+        const s = this.metrics.samples;
+        return s.length ? s[s.length - 1].cpu.toFixed(0) + "%" : "—";
+      },
+      get rightAvgCpu() {
+        const s = this.metrics.samples;
+        return s.length ? (s.reduce((a, x) => a + x.cpu, 0) / s.length).toFixed(1) + "%" : "—";
+      },
+      get rightLatestRps() {
+        const s = this.metrics.samples;
+        return s.length ? String(s[s.length - 1].rps) : "—";
+      },
+      get rightBars() {
+        return this.metrics.samples.map((x) => ({ h: Math.min(100, x.cpu).toFixed(0) + "%" }));
+      },
+
+      get netText() {
+        if (!this.netSupported) {
+          return "Network Information API not supported here (Chromium-only) — the dashboard works regardless.";
+        }
+        const parts = [];
+        if (this.netType) parts.push(this.netType);
+        if (this.netDownlink != null) parts.push(this.netDownlink + " Mbps");
+        if (this.netRtt != null) parts.push("RTT " + this.netRtt + " ms");
+        if (this.netSaveData) parts.push("data-saver on");
+        return parts.length ? parts.join(" · ") : "…";
+      },
+
+      // --- actions -----------------------------------------------------------
+
+      setHost(next) {
+        if (this.host === next) return;
+        this.host = next;
+        // LEFT panel bookkeeping: <wcs-sse> reconnects itself when sseUrl
+        // changes, but the history WE folded in $on does not reset itself —
+        // three lines someone has to remember. The $streams panel needs none
+        // of this: the dependency-driven restart already reset it to initial.
+        this.leftSamples = [];
+        this.leftCount = 0;
+        this.lastDeploy = null;
+      },
+      onHostA() { this.setHost("a"); },
+      onHostB() { this.setHost("b"); },
+
+      $on: {
+        // ALL named SSE events funnel into the single `message` output;
+        // message.event says which one fired ("metric" / "deploy").
+        sseMessage: (state, event) => {
+          const msg = event.detail; // { event, data, lastEventId }
+          if (msg.event === "metric") {
+            state.leftSamples = [...state.leftSamples, msg.data].slice(-20);
+            state.leftCount = state.leftCount + 1;
+          } else if (msg.event === "deploy") {
+            state.lastDeploy = msg.data;
+          }
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Headless nodes (no UI)
+     ============================================================ -->
+<!-- LEFT panel's connection. url is derived state: switching hosts changes
+     sseUrl, and the tag closes + reconnects on its own. Reconnection after a
+     network drop is native EventSource behavior — the tag adds none. -->
+<wcs-sse events="metric,deploy"
+  data-wcs="url: sseUrl;
+            connected: sseConnected;
+            loading: sseLoading;
+            eventToken.message: sseMessage"></wcs-sse>
+
+<!-- Pure monitor: no attributes, no commands — five outputs. -->
+<wcs-network
+  data-wcs="supported: netSupported;
+            effectiveType: netType;
+            downlink: netDownlink;
+            rtt: netRtt;
+            saveData: netSaveData"></wcs-network>
+
+<!-- ============================================================
+     UI
+     ============================================================ -->
+<section class="topbar">
+  <div class="hosts">
+    <span style="font-size:0.85rem;color:#666">Feed:</span>
+    <button data-wcs="onclick: onHostA; class.active: isHostA">host A (calm)</button>
+    <button data-wcs="onclick: onHostB; class.active: isHostB">host B (busy)</button>
+  </div>
+  <div class="net-tile">your connection<br><b data-wcs="textContent: netText"></b></div>
+</section>
+
+<div class="panels">
+  <!-- LEFT: tag idiom -->
+  <section class="panel left">
+    <h2>&lt;wcs-sse&gt; — the tag owns the connection</h2>
+    <p class="idiom">eventToken.message → $on fold → state</p>
+    <span class="chip" data-wcs="textContent: leftStatusText; class.on: sseConnected"></span>
+    <div class="stats">
+      <span>cpu<b data-wcs="textContent: leftLatestCpu"></b></span>
+      <span>avg (20)<b data-wcs="textContent: leftAvgCpu"></b></span>
+      <span>req/s<b data-wcs="textContent: leftLatestRps"></b></span>
+      <span>samples<b data-wcs="textContent: leftCount"></b></span>
+    </div>
+    <div class="bars" aria-hidden="true">
+      <template data-wcs="for: leftBars">
+        <span data-wcs="style.height: .h"></span>
+      </template>
+    </div>
+    <template data-wcs="if: hasDeploy">
+      <p class="deploy" data-wcs="textContent: deployText"></p>
+    </template>
+  </section>
+
+  <!-- RIGHT: $streams idiom -->
+  <section class="panel right">
+    <h2>$streams — the state owns the connection</h2>
+    <p class="idiom">source(EventSource) → fold → reactive property</p>
+    <span class="chip" data-wcs="textContent: rightStatus; class.on: rightActive; class.err: rightIsError"></span>
+    <div class="stats">
+      <span>cpu<b data-wcs="textContent: rightLatestCpu"></b></span>
+      <span>avg (20)<b data-wcs="textContent: rightAvgCpu"></b></span>
+      <span>req/s<b data-wcs="textContent: rightLatestRps"></b></span>
+      <span>samples<b data-wcs="textContent: rightCount"></b></span>
+    </div>
+    <div class="bars" aria-hidden="true">
+      <template data-wcs="for: rightBars">
+        <span data-wcs="style.height: .h"></span>
+      </template>
+    </div>
+    <template data-wcs="if: rightIsError">
+      <p class="stream-error" data-wcs="textContent: rightErrorText"></p>
+    </template>
+  </section>
+</div>
+
+<ul class="notes">
+  <li><b>Same job, two owners</b>: <code>&lt;wcs-sse&gt;</code> and <code>$streams</code> compete for the same work, so this page runs them side by side instead of chaining them. Rule of thumb: wiring events at elements → the tag; folding/switching inside state → <code>$streams</code>.</li>
+  <li><b>The host switch is the punchline</b>: the left panel's reset is three manual lines in <code>setHost()</code>; the right panel resets itself because <code>args</code> reads <code>host</code> — the dependency-driven restart aborts the old EventSource and starts from <code>initial</code>.</li>
+  <li><b>Named events</b>: <code>events="metric,deploy"</code> funnels every named SSE event into the single <code>message</code> output — <code>message.event</code> tells you which one fired.</li>
+  <li><b>network</b> is a pure monitor of the Network Information API (connection <em>quality</em>, not online/offline) — no attributes, no commands, five outputs. It is Chromium-only and the tile says so elsewhere.</li>
+  <li><b>Both folds are bounded</b> (last-20 window): backpressure is explicitly abandoned, so unbounded accumulation on a long-lived stream is the one mistake this page must not make.</li>
+</ul>
+
+</body>
+</html>

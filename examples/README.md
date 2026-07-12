@@ -12,7 +12,8 @@ single-package demos live in that package's own `examples/` directory instead:
 Every demo is buildless and loads packages straight from the CDN
 (`https://esm.run/@wcstack/<pkg>/auto` one-liners; signals demos import the
 single `@wcstack/signals/dom` entry) — except the React/Vue variants of
-`websocket-chat`, which use Vite.
+`websocket-chat`, which use Vite, and `state-sse-dashboard`, which imports the
+local `packages/state` build until `$streams` ships in a release.
 
 ## Demo list
 
@@ -21,12 +22,15 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 | [`websocket-chat/`](websocket-chat/) | websocket × 5 stacks (vanilla / state / signals / React / Vue) | see its [README](websocket-chat/README.md) | :3300–:3305 |
 | [`router-spa/`](router-spa/) | router + fetch + state (SPA catalog: URL ⇄ state bridge) | `node examples/router-spa/server.js` | :3000 |
 | [`state-camera-record-upload/`](state-camera-record-upload/) | camera + permission + upload + state | any static server (secure context) | — |
+| [`state-color-palette/`](state-color-palette/) | eyedropper + clipboard + storage + state | any static server (EyeDropper is Chromium-only) | — |
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js` (open 2 tabs) | :3000 |
 | [`state-custom-states/`](state-custom-states/) | fetch + websocket + state (`:state()` showcase) | `node examples/state-custom-states/server.js` (needs the [websocket-chat shared install](websocket-chat/README.md#setup)) | :3303 |
 | [`state-intersect-scroll/`](state-intersect-scroll/) | fetch + intersection + state | `node examples/state-intersect-scroll/server.js` | :3000 |
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | any static server | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | any static server | — |
+| [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | any static server (secure context) | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
+| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state (`$streams`) + network — one feed, two idioms | `node examples/state-sse-dashboard/server.js` (build `packages/state` first — unreleased `$streams`) | :3000 |
 | [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + state (sensor game) | any static server (secure context) | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × the same 4 sensor nodes as `state-tilt-maze` (core swap comparison) | any static server (secure context) | — |

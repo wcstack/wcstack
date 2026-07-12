@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + timer + wakelock + notification demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 1.5rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    /* Mode + status pills */
+    .pills { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+    .pill { padding: 2px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: 500; background: #eee; color: #555; }
+    .pill.mode.focus { background: #ffebee; color: #c62828; }
+    .pill.mode.break { background: #e8f5e9; color: #2e7d32; }
+    .pill.awake { background: #fff8e1; color: #f57f17; }
+
+    /* Countdown */
+    .clock { font-size: 4rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: 0.05em; }
+    .clock.paused { opacity: 0.4; }
+    .bar-track { height: 8px; background: #f0f0f0; border-radius: 4px; margin: 1rem 0; overflow: hidden; }
+    .bar-fill { height: 100%; background: #e53935; border-radius: 4px; transition: width 0.3s linear; }
+    .bar-fill.break { background: #43a047; }
+
+    /* Controls */
+    .controls { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+    button { padding: 0.6rem 1.4rem; font-size: 0.95rem; border: none; border-radius: 8px; cursor: pointer; background: #3949ab; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button.secondary { background: #eee; color: #333; }
+
+    /* Duration settings */
+    .settings { display: flex; gap: 1.5rem; margin-top: 1.25rem; justify-content: center; font-size: 0.85rem; color: #555; }
+    .settings label { display: flex; align-items: center; gap: 0.4rem; }
+    select { padding: 0.3rem; border: 1px solid #ddd; border-radius: 6px; }
+
+    /* Notification banner */
+    .banner { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 8px; background: #e3f2fd; color: #1565c0; font-size: 0.85rem; }
+    .banner.denied { background: #ffebee; color: #c62828; }
+    .banner button { padding: 0.35rem 0.9rem; font-size: 0.8rem; white-space: nowrap; }
+
+    .tally { text-align: center; font-size: 0.9rem; color: #555; margin-top: 1rem; min-height: 1.4rem; }
+    .tally b { font-size: 1.1rem; letter-spacing: 0.1em; }
+
+    .notes { font-size: 0.8rem; color: #888; }
+    .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
+  </style>
+
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them. -->
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/notification/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: pomodoro timer</h1>
+<p class="lead">state + timer + wakelock + notification — the screen stays awake <em>only while you focus</em>, and the session-end notification is the "start next" button.</p>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      // "focus" | "break" — which session type the clock is counting.
+      mode: "focus",
+      // Durations in minutes, bound to the <select>s (strings; Number() them).
+      // The 0.1 / 0.05 options exist so a full cycle can be watched in seconds.
+      focusMin: "25",
+      breakMin: "5",
+      // Written ONLY by the tick handler below (single writer), in ms.
+      elapsedMs: 0,
+      // <wcs-timer> running output. pause() flips this to false, which — via
+      // the keepAwake getter — releases the wake lock while paused.
+      running: false,
+      // Set by our own pause/resume/start methods, NOT by the element (the
+      // timer has no "paused" output; running=false covers both stop & pause).
+      paused: false,
+      // <wcs-wakelock> held output: the ACTUAL lock state, distinct from the
+      // desired `active` input (OS may deny or auto-release it).
+      wakelockHeld: false,
+      // Finished focus sessions.
+      completed: 0,
+
+      // Notification permission mirrors — <wcs-notify> monitors the
+      // Permissions API itself, so no separate <wcs-permission> is needed.
+      notifPermission: "prompt",
+      notifGranted: false,
+      notifPrompt: false,
+      notifDenied: false,
+      notifUnsupported: false,
+
+      $commandTokens: ["start", "stop", "reset", "pause", "resume", "askNotify", "notify"],
+      $eventTokens: ["timerTick", "notifyClicked"],
+
+      // --- derived ---------------------------------------------------------
+
+      get durationMs() {
+        const min = this.mode === "focus" ? Number(this.focusMin) : Number(this.breakMin);
+        return Math.round(min * 60000);
+      },
+      get remainingMs() {
+        return Math.max(0, this.durationMs - this.elapsedMs);
+      },
+      get remainingText() {
+        const total = Math.round(this.remainingMs / 1000);
+        const mm = String(Math.floor(total / 60)).padStart(2, "0");
+        const ss = String(total % 60).padStart(2, "0");
+        return `${mm}:${ss}`;
+      },
+      get progressWidth() {
+        return Math.min(100, (this.elapsedMs / this.durationMs) * 100).toFixed(1) + "%";
+      },
+      get isFocus() { return this.mode === "focus"; },
+      get isBreak() { return this.mode === "break"; },
+      get modeText() { return this.mode === "focus" ? "🍅 focus" : "☕ break"; },
+
+      // Keep the screen awake ONLY while a focus session is actually running.
+      // Pausing releases the lock (running goes false), resuming re-acquires it —
+      // one bound boolean, the node handles the OS round-trips.
+      get keepAwake() { return this.running && this.mode === "focus"; },
+      get wakeText() { return this.wakelockHeld ? "screen: kept awake" : "screen: normal"; },
+
+      get sessionActive() { return this.running || this.paused; },
+      get hideStart() { return this.sessionActive; },
+      get hidePause() { return !this.running; },
+      get hideResume() { return !this.paused; },
+      get statusText() {
+        if (this.running) return this.mode === "focus" ? "Focusing…" : "On break…";
+        if (this.paused) return "Paused";
+        return "Ready — press start";
+      },
+      get tomatoes() { return "🍅".repeat(Math.min(this.completed, 20)); },
+      get bannerText() {
+        if (this.notifDenied) return "Notifications are blocked — sessions still work, you just won't be notified.";
+        if (this.notifUnsupported) return "This browser doesn't support notifications.";
+        return "Enable notifications to get pinged when a session ends (even in another tab).";
+      },
+      get hideBanner() { return this.notifGranted; },
+      get hideAskButton() { return !this.notifPrompt; },
+
+      // --- actions ----------------------------------------------------------
+
+      onStart() {
+        this.paused = false;
+        this.$command.start.emit();
+      },
+      onPause() {
+        this.paused = true;
+        this.$command.pause.emit();
+      },
+      onResume() {
+        this.paused = false;
+        this.$command.resume.emit();
+      },
+      onReset() {
+        this.$command.stop.emit();
+        this.$command.reset.emit();
+        this.paused = false;
+        this.elapsedMs = 0;
+      },
+      onAskNotify() {
+        this.$command.askNotify.emit();
+      },
+
+      // Session end: stop & rewind the metronome, flip the mode, notify.
+      // The next session does NOT auto-start — the notification (or the start
+      // button) is the explicit "begin the next one" gesture.
+      finishSession() {
+        const finishedFocus = this.mode === "focus";
+        if (finishedFocus) this.completed++;
+        this.mode = finishedFocus ? "break" : "focus";
+        this.$command.notify.emit(
+          finishedFocus ? "Focus session complete! ☕" : "Break is over! 🍅",
+          {
+            body: finishedFocus
+              ? `Nice work. Click to start your ${this.breakMin}-minute break.`
+              : `Recharged? Click to start the next ${this.focusMin}-minute focus session.`,
+            tag: "wcs-pomodoro", // constant tag: each notification replaces the previous
+            data: { next: this.mode },
+          },
+        );
+      },
+
+      $on: {
+        // <wcs-timer> is a plain 1s metronome; the pomodoro state machine lives
+        // here. detail is { count, elapsed } — elapsed only moves while running,
+        // so pausing freezes the countdown for free.
+        timerTick: (state, event) => {
+          const elapsed = event.detail.elapsed;
+          if (elapsed >= state.durationMs) {
+            state.$command.stop.emit();
+            state.$command.reset.emit();
+            state.elapsedMs = 0;
+            state.finishSession();
+          } else {
+            state.elapsedMs = elapsed;
+          }
+        },
+        // Clicking the session-end notification starts the next session.
+        // detail is { tag, data, action } — data.next round-trips untouched.
+        notifyClicked: (state) => {
+          if (!state.running) {
+            state.paused = false;
+            state.$command.start.emit();
+          }
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Headless nodes (no UI)
+     ============================================================ -->
+<!-- A 1-second metronome, started/stopped imperatively via command tokens.
+     `manual` stops it from ticking as soon as it connects. -->
+<wcs-timer interval="1000" manual
+  data-wcs="running: running;
+            eventToken.tick: timerTick;
+            command.start: $command.start;
+            command.stop: $command.stop;
+            command.reset: $command.reset;
+            command.pause: $command.pause;
+            command.resume: $command.resume"></wcs-timer>
+
+<!-- desired (active, input) vs actual (held, output) are separate one-way
+     surfaces on purpose: the OS can release the lock behind your back, so the
+     truth is always read back from `held`. -->
+<wcs-wakelock data-wcs="active: keepAwake; held: wakelockHeld"></wcs-wakelock>
+
+<!-- Permission monitoring is built into <wcs-notify> (no <wcs-permission>
+     needed). notify(title, options) is invoked with the emit() arguments. -->
+<wcs-notify
+  data-wcs="permission: notifPermission;
+            granted: notifGranted;
+            prompt: notifPrompt;
+            denied: notifDenied;
+            unsupported: notifUnsupported;
+            command.request: $command.askNotify;
+            command.notify: $command.notify;
+            eventToken.clicked: notifyClicked"></wcs-notify>
+
+<!-- ============================================================
+     UI
+     ============================================================ -->
+<section>
+  <div class="pills">
+    <span class="pill mode" data-wcs="textContent: modeText; class.focus: isFocus; class.break: isBreak"></span>
+    <span class="pill" role="status" data-wcs="textContent: statusText"></span>
+    <span class="pill" data-wcs="textContent: wakeText; class.awake: wakelockHeld"></span>
+  </div>
+
+  <div class="clock" data-wcs="textContent: remainingText; class.paused: paused"></div>
+  <div class="bar-track"><div class="bar-fill" data-wcs="style.width: progressWidth; class.break: isBreak"></div></div>
+
+  <div class="controls">
+    <button data-wcs="onclick: onStart; hidden: hideStart">▶ Start</button>
+    <button data-wcs="onclick: onPause; hidden: hidePause" class="secondary">⏸ Pause</button>
+    <button data-wcs="onclick: onResume; hidden: hideResume">▶ Resume</button>
+    <button data-wcs="onclick: onReset" class="secondary">↺ Reset</button>
+  </div>
+
+  <div class="settings">
+    <label>Focus
+      <select data-wcs="value: focusMin; disabled: sessionActive">
+        <option value="25">25 min</option>
+        <option value="50">50 min</option>
+        <option value="15">15 min</option>
+        <option value="0.1">6 sec (demo)</option>
+      </select>
+    </label>
+    <label>Break
+      <select data-wcs="value: breakMin; disabled: sessionActive">
+        <option value="5">5 min</option>
+        <option value="10">10 min</option>
+        <option value="0.05">3 sec (demo)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="tally">completed: <b data-wcs="textContent: tomatoes"></b> <span data-wcs="textContent: completed"></span></div>
+</section>
+
+<section data-wcs="hidden: hideBanner">
+  <div class="banner" data-wcs="class.denied: notifDenied">
+    <span data-wcs="textContent: bannerText"></span>
+    <button data-wcs="onclick: onAskNotify; hidden: hideAskButton">🔔 Enable</button>
+  </div>
+</section>
+
+<ul class="notes">
+  <li><b>wakelock</b>: the lock is requested only while a <em>focus</em> session is running — pause (or a break) releases it. Watch the "screen" pill; <code>held</code> is the OS truth, not the request.</li>
+  <li><b>timer</b>: <code>&lt;wcs-timer&gt;</code> is just a declarative 1s metronome (<code>tick</code> → event token); the pomodoro state machine is ~20 lines of state.</li>
+  <li><b>notification</b>: the session-end notification carries <code>data.next</code> and its <em>click</em> flows back through <code>eventToken.clicked</code> — clicking it starts the next session, even from another tab.</li>
+  <li>Pick the <em>6 sec / 3 sec (demo)</em> durations to watch a full focus → break → focus cycle without waiting 25 minutes.</li>
+  <li>Serve over <code>http://localhost</code> or HTTPS — wake lock and notifications need a secure context.</li>
+</ul>
+
+</body>
+</html>

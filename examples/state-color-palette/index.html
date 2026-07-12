@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: state + eyedropper + clipboard + storage demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 1.5rem; padding: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+
+    /* Sample art to pick from */
+    .art { display: flex; height: 72px; border-radius: 8px; overflow: hidden; margin-bottom: 1rem; }
+    .art div { flex: 1; }
+
+    .controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    button { padding: 0.55rem 1.2rem; font-size: 0.9rem; border: none; border-radius: 8px; cursor: pointer; background: #3949ab; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button.secondary { background: #eee; color: #333; }
+    .fallback { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; }
+    .fallback input[type="color"] { width: 42px; height: 32px; border: 1px solid #ddd; border-radius: 6px; padding: 2px; cursor: pointer; background: #fff; }
+    .unsupported-note { font-size: 0.8rem; color: #b26a00; background: #fff8e1; padding: 0.4rem 0.8rem; border-radius: 6px; }
+
+    .status-line { margin-top: 0.9rem; font-size: 0.85rem; color: #555; min-height: 1.25rem; }
+    .status-line.error { color: #c62828; }
+
+    /* Palette grid */
+    .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem; }
+    .swatch { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+    .swatch .chip { height: 64px; cursor: pointer; }
+    .swatch .meta { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.6rem; }
+    .swatch .hex { font-family: ui-monospace, monospace; font-size: 0.8rem; }
+    .swatch .remove { background: none; border: none; color: #999; font-size: 0.9rem; padding: 0 0.2rem; cursor: pointer; }
+    .swatch .remove:hover { color: #c62828; }
+    .empty { color: #999; padding: 1rem 0; text-align: center; }
+    .palette-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.75rem; }
+    .palette-head h2 { font-size: 1rem; }
+    .palette-head button { padding: 0.3rem 0.8rem; font-size: 0.8rem; }
+
+    .notes { font-size: 0.8rem; color: #888; }
+    .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
+  </style>
+
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them. -->
+  <script type="module" src="https://esm.run/@wcstack/eyedropper/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/clipboard/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<h1>wcstack: color palette picker</h1>
+<p class="lead">state + eyedropper + clipboard + storage — pick colors from anywhere on screen, click a swatch to copy its hex, and the palette survives reloads (and syncs across tabs).</p>
+
+<!-- ============================================================
+     App State
+     ============================================================ -->
+<wcs-state>
+  <script type="module">
+    export default {
+      // <wcs-storage> two-way slot. Everything reads through the normalizing
+      // `list` getter and every write REPLACES the array (assignment is what
+      // triggers the auto-save).
+      //
+      // Starts as `undefined` ON PURPOSE (load-before-bind guard): the storage
+      // node loads and announces the persisted value in its connectedCallback,
+      // which can happen BEFORE these bindings attach. A null/[] initial here
+      // would then be written back through the two-way binding and CLOBBER the
+      // persisted palette on every reload. `undefined` means "no opinion" —
+      // property writes are skipped — and $connectedCallback below pulls the
+      // already-loaded value once.
+      palette: undefined,
+      storageError: null,
+
+      // <wcs-eyedropper> outputs.
+      picking: false,           // loading: true while the OS picker is open
+      // Feature-detect once at load: there is deliberately no `supported`
+      // output on the node — the API itself is the flag.
+      eyedropperSupported: typeof EyeDropper === "function",
+
+      // <wcs-clipboard> error output (writeText has no success event by
+      // design — it's fire-and-forget; failures surface here).
+      clipboardError: null,
+      copiedHex: "",
+
+      $commandTokens: ["pick", "copy"],
+      $eventTokens: ["colorPicked"],
+
+      // Pull the value <wcs-storage> already loaded (its load event fires in
+      // its own connectedCallback — possibly before our bindings attached).
+      // Fire-and-forget; if the load event DID land through the binding, the
+      // Array.isArray guard makes this a no-op.
+      $connectedCallback() {
+        (async () => {
+          await customElements.whenDefined("wcs-storage");
+          const el = document.querySelector("wcs-storage");
+          if (!el) return;
+          await el.connectedCallbackPromise;
+          if (!Array.isArray(this.palette) && Array.isArray(el.value)) {
+            this.palette = el.value;
+          }
+        })();
+      },
+
+      // --- derived ---------------------------------------------------------
+
+      get list() { return Array.isArray(this.palette) ? this.palette : []; },
+      get isEmpty() { return this.list.length === 0; },
+      get hasSwatches() { return this.list.length > 0; },
+      get count() { return this.list.length; },
+      get eyedropperUnsupported() { return !this.eyedropperSupported; },
+      get clipboardErrorText() {
+        const e = this.clipboardError;
+        return e ? (e.message || String(e)) : "";
+      },
+      get storageErrorText() {
+        const e = this.storageError;
+        return e ? (e.message || String(e)) : "";
+      },
+      get hasError() { return !!(this.clipboardErrorText || this.storageErrorText); },
+      get statusText() {
+        if (this.picking) return "Pick a color anywhere on the screen… (Esc to cancel)";
+        if (this.clipboardErrorText) return "Copy failed: " + this.clipboardErrorText;
+        if (this.storageErrorText) return "Storage error: " + this.storageErrorText;
+        if (this.copiedHex) return `Copied ${this.copiedHex} to the clipboard ✓`;
+        return this.isEmpty ? "Your palette is empty — grab a color!" : "Click a swatch to copy its hex.";
+      },
+
+      // --- actions ----------------------------------------------------------
+
+      addColor(hex) {
+        // Re-picking an existing color bumps it to the end (no duplicates).
+        this.palette = [...this.list.filter((c) => c.hex !== hex), { hex }];
+      },
+
+      onPick() {
+        this.$command.pick.emit();   // -> <wcs-eyedropper>.open()
+      },
+      // Fallback picker for browsers without the EyeDropper API.
+      onManualPick(event) {
+        this.addColor(event.target.value);
+      },
+
+      // Swatch click: the loop context resolves `list.*.hex` to THIS row.
+      // emit(hex) passes the text straight through to writeText(hex)
+      // (command-token argument pass-through).
+      copyColor() {
+        const hex = this["list.*.hex"];
+        this.$command.copy.emit(hex);
+        this.copiedHex = hex;
+      },
+      removeColor() {
+        const hex = this["list.*.hex"];
+        this.palette = this.list.filter((c) => c.hex !== hex);
+        if (this.copiedHex === hex) this.copiedHex = "";
+      },
+      clearAll() {
+        this.palette = [];
+        this.copiedHex = "";
+      },
+
+      $on: {
+        // wcs-eyedropper:complete — detail is { value: { sRGBHex } }.
+        // Cancelling (Esc) fires no complete event, so this only runs on a
+        // real pick.
+        colorPicked: (state, event) => {
+          const hex = event.detail?.value?.sRGBHex;
+          if (hex) state.addColor(hex);
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- ============================================================
+     Headless nodes (no UI)
+     ============================================================ -->
+<!-- command.open starts the OS picker; the picked color comes back as the
+     `value` event token ({ sRGBHex }). loading is true while picking. -->
+<wcs-eyedropper
+  data-wcs="loading: picking; command.open: $command.pick; eventToken.value: colorPicked"></wcs-eyedropper>
+
+<!-- writeText(text) is fire-and-forget: no success event on purpose —
+     failures land in `error`. The emit() argument becomes the text. -->
+<wcs-clipboard
+  data-wcs="error: clipboardError; command.writeText: $command.copy"></wcs-clipboard>
+
+<!-- Two-way persistence: connect auto-loads, every `palette` assignment
+     auto-saves, and edits from OTHER tabs stream in via the native
+     `storage` event (type="local" only). -->
+<wcs-storage key="wcs-color-palette" type="local"
+  data-wcs="value: palette; error: storageError"></wcs-storage>
+
+<!-- ============================================================
+     UI
+     ============================================================ -->
+<section>
+  <!-- Something colorful to pick from, so the demo works on a blank page. -->
+  <div class="art" aria-hidden="true">
+    <div style="background:#e63946"></div>
+    <div style="background:#f4a261"></div>
+    <div style="background:#e9c46a"></div>
+    <div style="background:#2a9d8f"></div>
+    <div style="background:#264653"></div>
+    <div style="background:#6c63ff"></div>
+    <div style="background:#f72585"></div>
+  </div>
+
+  <div class="controls">
+    <button data-wcs="onclick: onPick; disabled: picking; hidden: eyedropperUnsupported">💧 Pick a color from the screen</button>
+    <template data-wcs="if: eyedropperUnsupported">
+      <span class="unsupported-note">EyeDropper API is Chromium-only — use the color input instead:</span>
+    </template>
+    <label class="fallback">
+      <input type="color" value="#6c63ff" data-wcs="onchange: onManualPick" aria-label="Add a color manually">
+      add manually
+    </label>
+  </div>
+
+  <div class="status-line" role="status" data-wcs="textContent: statusText; class.error: hasError"></div>
+</section>
+
+<section>
+  <div class="palette-head">
+    <h2>Palette (<span data-wcs="textContent: count"></span>)</h2>
+    <button class="secondary" data-wcs="onclick: clearAll; disabled: isEmpty">clear all</button>
+  </div>
+
+  <template data-wcs="if: isEmpty">
+    <p class="empty">No colors yet. Pick from the strip above — or from anything else on your screen.</p>
+  </template>
+
+  <template data-wcs="if: hasSwatches">
+    <div class="palette">
+      <template data-wcs="for: list">
+        <div class="swatch">
+          <div class="chip" data-wcs="style.backgroundColor: .hex; onclick: copyColor" title="Copy hex"></div>
+          <div class="meta">
+            <span class="hex" data-wcs="textContent: .hex"></span>
+            <button class="remove" data-wcs="onclick: removeColor" title="Remove" aria-label="Remove color">✕</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+</section>
+
+<ul class="notes">
+  <li><b>eyedropper</b>: <code>command.open</code> starts the picker, the result returns as the <code>value</code> event token (<code>{ sRGBHex }</code>) — a command → event round trip. Esc cancels silently (<code>cancelled</code>, not <code>error</code>).</li>
+  <li><b>clipboard</b>: the swatch click handler resolves the row via the wildcard path <code>this["list.*.hex"]</code> and emits it — <code>emit(hex)</code> arguments pass straight through to <code>writeText(hex)</code>. There is deliberately no "copied" success event; failures surface on the <code>error</code> output.</li>
+  <li><b>storage</b>: one two-way binding (<code>value: palette</code>) gives load-on-connect, save-on-assign, and cross-tab sync via the native <code>storage</code> event. Open this page in two tabs and pick a color.</li>
+  <li>The EyeDropper API needs Chromium + secure context (<code>http://localhost</code> is fine). Everything else — including the manual color input — works in any modern browser.</li>
+</ul>
+
+</body>
+</html>
