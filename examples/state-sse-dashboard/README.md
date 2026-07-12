@@ -10,13 +10,10 @@ One Server-Sent Events feed, consumed twice on the same page:
 ## Getting Started
 
 ```bash
-# $streams is unreleased — build the local state bundle once first:
-cd packages/state && npm run build && cd ../..
-
 node examples/state-sse-dashboard/server.js
 ```
 
-Open http://localhost:3000. The server mounts `packages/state/dist` under `/state-dist/` (the page imports the local build instead of the CDN); `sse` / `network` load from the CDN as usual. Once `$streams` ships in a release, the local mount can be replaced by the standard CDN one-liner.
+Open http://localhost:3000. All three packages (`state` / `sse` / `network`) load from the CDN — `$streams` ships since v1.19.0, so no local build is needed.
 
 ## The punchline: switch hosts
 

@@ -12,14 +12,13 @@
 すべてのデモはビルドレスで、パッケージを CDN から直接ロードします
 （`https://esm.run/@wcstack/<pkg>/auto` の 1 行。signals デモは単一の
 `@wcstack/signals/dom` エントリを import）。例外は `websocket-chat` の
-React / Vue variant（Vite 使用）と、`$streams` がリリースされるまで
-ローカルの `packages/state` ビルドを import する `state-sse-dashboard` です。
+React / Vue variant（Vite 使用）のみです。
 
 **script の順序**: I/O ノード系パッケージを `@wcstack/state` より*先*に並べて
 ください。module script は文書順で実行されるため、state がバインディングを
-確立する時点で全カスタム要素の define が保証されます — 逆順だと、ノード側の
-ロードが state より遅い構成（例: ローカルの state ビルドと CDN の競走）で、
-未 define 要素への初期 state→element 適用がスキップされることがあります。
+確立する時点で全カスタム要素の define が保証されます（state は未 define 要素
+への初期 state→element 書き込みを `customElements.whenDefined` 後に再適用する
+ため、この順序は必須要件ではなくベストプラクティスです）。
 
 ## デモ一覧
 
@@ -36,7 +35,7 @@ React / Vue variant（Vite 使用）と、`$streams` がリリースされるま
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | 任意の静的サーバー | — |
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | 任意の静的サーバー（secure context 必須） | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
-| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state（`$streams`）+ network — 1 フィード・2 流儀 | `node examples/state-sse-dashboard/server.js`（先に `packages/state` をビルド — `$streams` 未リリースのため） | :3000 |
+| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state（`$streams`）+ network — 1 フィード・2 流儀 | `node examples/state-sse-dashboard/server.js` | :3000 |
 | [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + state（センサーゲーム） | 任意の静的サーバー（secure context 必須） | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × `state-tilt-maze` と同じ 4 センサーノード（コア差し替え比較） | 任意の静的サーバー（secure context 必須） | — |

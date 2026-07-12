@@ -12,14 +12,13 @@ single-package demos live in that package's own `examples/` directory instead:
 Every demo is buildless and loads packages straight from the CDN
 (`https://esm.run/@wcstack/<pkg>/auto` one-liners; signals demos import the
 single `@wcstack/signals/dom` entry) — except the React/Vue variants of
-`websocket-chat`, which use Vite, and `state-sse-dashboard`, which imports the
-local `packages/state` build until `$streams` ships in a release.
+`websocket-chat`, which use Vite.
 
 **Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
 scripts execute in document order, so this guarantees every custom element is
-defined before state attaches its bindings — otherwise, when the node packages
-load slower than state (e.g. a local state build racing the CDN), the initial
-state→element apply can be skipped for not-yet-defined elements.
+defined before state attaches its bindings. (state also re-applies the initial
+state→element write via `customElements.whenDefined` for late-defined
+elements, so this ordering is a best practice rather than a hard requirement.)
 
 ## Demo list
 
@@ -36,7 +35,7 @@ state→element apply can be skipped for not-yet-defined elements.
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | any static server | — |
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | any static server (secure context) | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
-| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state (`$streams`) + network — one feed, two idioms | `node examples/state-sse-dashboard/server.js` (build `packages/state` first — unreleased `$streams`) | :3000 |
+| [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state (`$streams`) + network — one feed, two idioms | `node examples/state-sse-dashboard/server.js` | :3000 |
 | [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + state (sensor game) | any static server (secure context) | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × the same 4 sensor nodes as `state-tilt-maze` (core swap comparison) | any static server (secure context) | — |

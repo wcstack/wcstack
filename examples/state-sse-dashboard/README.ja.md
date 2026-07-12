@@ -10,13 +10,10 @@
 ## 起動方法
 
 ```bash
-# $streams は未リリースのため、まずローカルの state をビルド:
-cd packages/state && npm run build && cd ../..
-
 node examples/state-sse-dashboard/server.js
 ```
 
-http://localhost:3000 を開いてください。サーバーは `packages/state/dist` を `/state-dist/` にマウントします（ページは CDN でなくローカルビルドを import）。`sse` / `network` は通常どおり CDN からロードします。`$streams` がリリースに載ったら、ローカルマウントは標準の CDN 1 行に置き換えられます。
+http://localhost:3000 を開いてください。3 パッケージ（`state` / `sse` / `network`）はすべて CDN からロードします — `$streams` は v1.19.0 でリリース済みのため、ローカルビルドは不要です。
 
 ## 見せ場: ホスト切り替え
 
