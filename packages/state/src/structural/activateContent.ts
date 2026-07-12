@@ -1,8 +1,7 @@
 import { applyChange } from "../apply/applyChange";
 import { IApplyContext } from "../apply/types";
-import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
+import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, removeBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
-import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { bindLoopContextToContent, unbindLoopContextToContent } from "../bindings/bindLoopContextToContent";
 import { ILoopContext } from "../list/types";
@@ -32,8 +31,10 @@ export function deactivateContent(
   for(const binding of bindings) {
     const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
     removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-    clearAbsoluteStateAddressByBinding(binding);
-    clearStateAddressByBindingInfo(binding);
+    // アドレスキャッシュ（absoluteStateAddressByBinding / stateAddressByBindingInfo）
+    // のクリアはここでは行わない。deactivateContent の呼び出し元（for/if）は必ず
+    // 直後に content.unmount() を呼び、unmount が同じ2台帳をネスト content も含めて
+    // クリアする（createContent.ts）。ここで消すと全 binding で二重 delete になる。
   }
   unbindLoopContextToContent(content);
 }

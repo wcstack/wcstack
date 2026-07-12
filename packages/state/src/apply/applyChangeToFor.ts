@@ -11,6 +11,7 @@ import { computeStableIndexSet } from "../list/stableListOrder";
 import { IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
+import { deleteContentByNode } from "../structural/contentsByNode";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
@@ -49,12 +50,37 @@ function getPooledContents(bindingInfo: IBindingInfo): IContent[] {
   return pooledContentsByNode.get(bindingInfo.node) || [];
 }
 
+// プールの上限（アンカーごと）。プールはアンカー（文書に永続するコメントノード）
+// から content とその DOM サブツリー・バインディング群を強参照するため、無制限だと
+// 大きなリストのクリア後もメモリが解放されない（10k 行で 10MB 級）。上限超過分は
+// contentSetByNode の台帳からも外して GC 可能にする。再追加時は createContent で
+// 作り直すコストと引き換えになる。
+const MAX_POOLED_CONTENTS = 1000;
+let maxPooledContents = MAX_POOLED_CONTENTS;
+
+// テスト用: プール上限の変更と現在のプールサイズ取得
+export function __test_setMaxPooledContents(limit: number): number {
+  const prev = maxPooledContents;
+  maxPooledContents = limit;
+  return prev;
+}
+
+export function __test_getPooledContentsCount(node: Node): number {
+  return (pooledContentsByNode.get(node) || []).length;
+}
+
 function setPooledContent(bindingInfo: IBindingInfo, content: IContent): void {
-  const contents = pooledContentsByNode.get(bindingInfo.node);
+  let contents = pooledContentsByNode.get(bindingInfo.node);
   if (typeof contents === 'undefined') {
-    pooledContentsByNode.set(bindingInfo.node, [content]);
-  } else {
+    contents = [];
+    pooledContentsByNode.set(bindingInfo.node, contents);
+  }
+  if (contents.length < maxPooledContents) {
     contents.push(content);
+  } else {
+    // 上限超過: content を完全に手放す。contentSetByNode は createContent 時に
+    // 追加されたきり解放経路が無いため、ここで外さないと GC できない。
+    deleteContentByNode(bindingInfo.node, content);
   }
 }
 

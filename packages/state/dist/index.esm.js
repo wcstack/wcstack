@@ -3000,38 +3000,24 @@ function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
     }
     return bindingSet;
 }
+/**
+ * 参照専用の取得。get-or-create と違い、未登録アドレスに空 Set を
+ * 生成・キャッシュしない（リスト置換の drain は大量のバインディング無し
+ * アドレスを照会するため、生成すると空 Set が溜まり続ける）。
+ */
+function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
+    return bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+}
 function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
     const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
     bindingSet.add(binding);
 }
 function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
-    bindingSet.delete(binding);
-}
-
-const stateAddressByBindingInfo = new WeakMap();
-function getStateAddressByBindingInfo(bindingInfo) {
-    let stateAddress = null;
-    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
-    if (stateAddress !== null) {
-        return stateAddress;
+    // get-or-create を通すと未登録アドレスに空 Set を生成してしまうため素の get で参照する
+    const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+    if (bindingSet !== undefined) {
+        bindingSet.delete(binding);
     }
-    if (bindingInfo.statePathInfo.wildcardCount > 0) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        if (listIndex === null) {
-            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
-        }
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
-    }
-    else {
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
-    }
-    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
-    return stateAddress;
-}
-// call for change loopContext
-function clearStateAddressByBindingInfo(bindingInfo) {
-    stateAddressByBindingInfo.delete(bindingInfo);
 }
 
 const bindingsByContent = new WeakMap();
@@ -3080,8 +3066,10 @@ function deactivateContent(content) {
     for (const binding of bindings) {
         const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
         removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-        clearAbsoluteStateAddressByBinding(binding);
-        clearStateAddressByBindingInfo(binding);
+        // アドレスキャッシュ（absoluteStateAddressByBinding / stateAddressByBindingInfo）
+        // のクリアはここでは行わない。deactivateContent の呼び出し元（for/if）は必ず
+        // 直後に content.unmount() を呼び、unmount が同じ2台帳をネスト content も含めて
+        // クリアする（createContent.ts）。ここで消すと全 binding で二重 delete になる。
     }
     unbindLoopContextToContent(content);
 }
@@ -3107,6 +3095,40 @@ function getContentSetByNode(node) {
         return contents;
     }
     return EMPTY_SET;
+}
+function deleteContentByNode(node, content) {
+    const contents = contentSetByNode.get(node);
+    if (contents) {
+        contents.delete(content);
+        if (contents.size === 0) {
+            contentSetByNode.delete(node);
+        }
+    }
+}
+
+const stateAddressByBindingInfo = new WeakMap();
+function getStateAddressByBindingInfo(bindingInfo) {
+    let stateAddress = null;
+    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
+    if (stateAddress !== null) {
+        return stateAddress;
+    }
+    if (bindingInfo.statePathInfo.wildcardCount > 0) {
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        if (listIndex === null) {
+            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
+        }
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
+    }
+    else {
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
+    }
+    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
+    return stateAddress;
+}
+// call for change loopContext
+function clearStateAddressByBindingInfo(bindingInfo) {
+    stateAddressByBindingInfo.delete(bindingInfo);
 }
 
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
@@ -3220,13 +3242,26 @@ function hydrateSetLastNode(node, lastNode) {
 function getPooledContents(bindingInfo) {
     return pooledContentsByNode.get(bindingInfo.node) || [];
 }
+// プールの上限（アンカーごと）。プールはアンカー（文書に永続するコメントノード）
+// から content とその DOM サブツリー・バインディング群を強参照するため、無制限だと
+// 大きなリストのクリア後もメモリが解放されない（10k 行で 10MB 級）。上限超過分は
+// contentSetByNode の台帳からも外して GC 可能にする。再追加時は createContent で
+// 作り直すコストと引き換えになる。
+const MAX_POOLED_CONTENTS = 1000;
+let maxPooledContents = MAX_POOLED_CONTENTS;
 function setPooledContent(bindingInfo, content) {
-    const contents = pooledContentsByNode.get(bindingInfo.node);
+    let contents = pooledContentsByNode.get(bindingInfo.node);
     if (typeof contents === 'undefined') {
-        pooledContentsByNode.set(bindingInfo.node, [content]);
+        contents = [];
+        pooledContentsByNode.set(bindingInfo.node, contents);
+    }
+    if (contents.length < maxPooledContents) {
+        contents.push(content);
     }
     else {
-        contents.push(content);
+        // 上限超過: content を完全に手放す。contentSetByNode は createContent 時に
+        // 追加されたきり解放経路が無いため、ここで外さないと GC できない。
+        deleteContentByNode(bindingInfo.node, content);
     }
 }
 function isOnlyNodeInParentContent(firstNode, lastNode) {
@@ -3736,8 +3771,14 @@ function applyChangeToStyle(binding, _context, newValue) {
 
 const ssrWrappedNodes = new WeakSet();
 function applyChangeToText(binding, _context, newValue) {
-    if (binding.replaceNode.nodeValue !== newValue) {
-        binding.replaceNode.nodeValue = newValue;
+    // nodeValue は nullable DOMString（実ブラウザでは null / undefined とも空文字に
+    // 正規化される）ため、比較前に同じ規則で文字列化する。生値のまま比較すると
+    // 数値など非文字列値は常に不一致になり、同値でも毎回 DOM 書き込みが走る。
+    // 注: happy-dom は undefined を "undefined" にする非準拠実装なので String() に
+    // 頼らず明示的に "" へ正規化する。
+    const text = newValue === null || newValue === undefined ? "" : String(newValue);
+    if (binding.replaceNode.nodeValue !== text) {
+        binding.replaceNode.nodeValue = text;
     }
     // SSR モード時: テキストノードの前後にコメントを挿入して境界を明示
     if (inSsr() && !ssrWrappedNodes.has(binding.replaceNode)) {
@@ -3908,15 +3949,20 @@ function applyChange(binding, context) {
         return;
     }
     context.appliedBindingSet.add(binding);
-    const absAddress = getAbsoluteStateAddressByBinding(binding);
-    if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
-        const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement);
-        addressSet.add(absAddress);
-    }
-    else {
-        context.updatedAbsAddressSetByStateElement.set(context.stateElement, new Set([
-            absAddress
-        ]));
+    // $updatedCallback が定義されていない state では、更新アドレスの集計自体が
+    // 不要（drain 終端の呼び出しごと省略される）。大量バインディング適用時の
+    // Set 蓄積を避ける。undefined（テスト用モック等）は従来通り集計する。
+    if (context.stateElement.hasUpdatedCallback !== false) {
+        const absAddress = getAbsoluteStateAddressByBinding(binding);
+        if (context.updatedAbsAddressSetByStateElement.has(context.stateElement)) {
+            const addressSet = context.updatedAbsAddressSetByStateElement.get(context.stateElement);
+            addressSet.add(absAddress);
+        }
+        else {
+            context.updatedAbsAddressSetByStateElement.set(context.stateElement, new Set([
+                absAddress
+            ]));
+        }
     }
     if (binding.bindingType === "event") {
         return;
@@ -3931,6 +3977,14 @@ function applyChange(binding, context) {
             scheduleDeferredApply(binding, customTag);
             return;
         }
+    }
+    // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
+    // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略
+    // できる。activateContent 経由（フラグメント内の新規 content）も、フラグメントは
+    // setRootNodeByFragment で context.rootNode に解決されるため同じ不変条件が成り立つ。
+    if (context.sameRootVerified === true && binding.stateName === context.stateName) {
+        _applyChange(binding, context);
+        return;
     }
     let rootNode = binding.replaceNode.getRootNode();
     if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
@@ -4012,6 +4066,9 @@ function applyChangeFromBindings(bindings) {
                 newListValueByAbsAddress: newListValueByAbsAddress,
                 updatedAbsAddressSetByStateElement: updatedAbsAddressSetByStateElement,
                 deferredSelectBindings: deferredSelectBindings,
+                // グループ内の binding は下の do/while が「解決済みルート === rootNode」を
+                // 検証してから applyChange に渡す（applyChange 側の getRootNode 省略の根拠）
+                sameRootVerified: true,
             };
             do {
                 applyChange(binding, context);
@@ -6221,7 +6278,12 @@ class Updater {
         const absoluteAddressSet = new Set(absoluteAddresses);
         const processBindings = [];
         for (const absoluteAddress of absoluteAddressSet) {
-            const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
+            // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
+            // アドレス等）に空 Set を生成・蓄積しない
+            const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
+            if (bindings === undefined) {
+                continue;
+            }
             for (const binding of bindings) {
                 if (binding.replaceNode.isConnected === false) {
                     // 切断されているバインディングは無視
@@ -8507,6 +8569,7 @@ class State extends HTMLElement {
         return getBindingsReady(rootNode);
     }
     __state;
+    _hasUpdatedCallback = false;
     _name = 'default';
     _initialized = false;
     _initializePromise;
@@ -8568,6 +8631,13 @@ class State extends HTMLElement {
         this._commandTokenNames = processCommandTokensDeclaration(value);
         this._eventTokenNames = processEventTokensDeclaration(value);
         this.__state = value;
+        // $updatedCallback の有無を state セット時に確定しておく（in はプロトタイプ
+        // チェーンも見る・getter を評価しない）。drain 側はこのフラグで更新アドレスの
+        // 集計と writable createState をスキップできる。
+        // 注: state セット後に生オブジェクトへ直接 $updatedCallback を後付けする
+        // パターンは検知できない（bindProperty / _state 再セットは検知する）。
+        // ライフサイクルフックは宣言時に定義するのが規約。
+        this._hasUpdatedCallback = STATE_UPDATED_CALLBACK_NAME in value;
         // 再 set 時に二重 subscribe しないよう registry をクリアしてから $on を配線し直す。
         clearEventTokenRegistry(this);
         processOnDeclaration(this, value, this._eventTokenNames);
@@ -8990,8 +9060,14 @@ class State extends HTMLElement {
         this._version++;
         return this._version;
     }
+    get hasUpdatedCallback() {
+        return this._hasUpdatedCallback;
+    }
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);
+        if (prop === STATE_UPDATED_CALLBACK_NAME) {
+            this._hasUpdatedCallback = true;
+        }
     }
     setInitialState(state) {
         if (!this._initialized) {

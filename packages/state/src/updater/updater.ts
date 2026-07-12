@@ -1,6 +1,6 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { getBindingSetByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { peekBindingSetByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { IBindingInfo } from "../types";
 
 /**
@@ -67,7 +67,12 @@ class Updater {
     const absoluteAddressSet = new Set(absoluteAddresses);
     const processBindings: IBindingInfo[] = [];
     for (const absoluteAddress of absoluteAddressSet) {
-      const bindings = getBindingSetByAbsoluteStateAddress(absoluteAddress);
+      // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
+      // アドレス等）に空 Set を生成・蓄積しない
+      const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
+      if (bindings === undefined) {
+        continue;
+      }
       for(const binding of bindings) {
         if (binding.replaceNode.isConnected === false) {
           // 切断されているバインディングは無視

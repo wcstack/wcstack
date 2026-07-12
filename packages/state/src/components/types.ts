@@ -19,6 +19,12 @@ export interface IStateElement {
   readonly bindableEventMap: Record<string, string>;
   readonly commandTokenNames: ReadonlySet<string>;
   readonly eventTokenNames: ReadonlySet<string>;
+  /**
+   * state が $updatedCallback を定義しているか。false のとき drain は更新
+   * アドレスの集計と最終の writable createState を丸ごとスキップできる。
+   * optional なのはテスト用モック互換のため（undefined は「不明＝集計する」）。
+   */
+  readonly hasUpdatedCallback?: boolean;
   setPathInfo(path: string, bindingType: BindingType): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;
