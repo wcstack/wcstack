@@ -46,7 +46,7 @@ This means you can redesign the UI without touching state, refactor state withou
 
 ## Packages
 
-Thirty-nine independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Forty-one independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
