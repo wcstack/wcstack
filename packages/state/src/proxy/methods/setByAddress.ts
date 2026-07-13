@@ -30,6 +30,7 @@ import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { config } from "../../config";
+import { devtoolsSink } from "../../devtools/sink";
 
 function _setByAddress(
   target   : object, 
@@ -147,18 +148,33 @@ export function setByAddress(
   // primitive 値かつ Object.is 同値なら、set / enqueue / walkDependency / DOM 適用 /
   // $updatedCallback / DCC イベントを丸ごとスキップ（標準的なリアクティブ no-op）。
   // 参照型(object/array)は in-place mutation 取りこぼし防止のため素通し（ガードしない）。
+  // devtools write イベント用: guard が既に取得した旧値のみ流用する
+  // （参照型のために追加の get はしない — protocol §4.2）
+  let devOldValue: unknown;
+  let devHasOldValue = false;
   if (config.sameValueGuard && (value === null || typeof value !== "object")) {
     const oldValue = getByAddress(target, address, receiver, handler);
     if (Object.is(oldValue, value)) {
       return true;
     }
+    devOldValue = oldValue;
+    devHasOldValue = true;
   }
   // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
-  const cacheable = address.pathInfo.wildcardCount > 0 || 
+  const cacheable = address.pathInfo.wildcardCount > 0 ||
                     stateElement.getterPaths.has(address.pathInfo.path);
   const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
   const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+  if (devtoolsSink !== null) {
+    devtoolsSink({
+      type: "state:write",
+      absoluteAddress: absAddress,
+      value,
+      oldValue: devOldValue,
+      hasOldValue: devHasOldValue,
+    });
+  }
   try {
     if (isSwappable) {
       return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler);

@@ -3,9 +3,19 @@ import { hydrateBindings } from "./hydrateBindings";
 import { IStateElement } from "./components/types";
 import { config, inSsr } from "./config";
 import { raiseError } from "./raiseError";
+import { devtoolsSink } from "./devtools/sink";
 
 const stateElementByNameByNode: WeakMap<Node, Map<string, IStateElement>> = new WeakMap();
 const bindingsReadyByNode: WeakMap<Node, Promise<void>> = new WeakMap();
+
+// devtools 用の列挙可能な登録簿（protocol §4.1 — 唯一の常時 ON 台帳）。
+// サイズは <wcs-state> 要素数に拘束され、unregister（disconnectedCallback）で
+// 必ず削除されるためリークしない。
+const liveStateElements: Set<IStateElement> = new Set();
+
+export function getLiveStateElements(): ReadonlySet<IStateElement> {
+  return liveStateElements;
+}
 
 export function getStateElementByName(rootNode:Node, name: string): IStateElement | null {
   let stateElementByName = stateElementByNameByNode.get(rootNode);
@@ -31,9 +41,16 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
     if (!stateElementByName) {
       return;
     }
+    const removed = stateElementByName.get(name);
     stateElementByName.delete(name);
     if (stateElementByName.size === 0) {
       stateElementByNameByNode.delete(rootNode);
+    }
+    if (removed !== undefined) {
+      liveStateElements.delete(removed);
+      if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:element-unregistered", name, rootNode, element: removed });
+      }
     }
     if (config.debug) {
       console.debug(`State element unregistered: name="${name}"`);
@@ -75,6 +92,10 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
       raiseError(`State element with name "${name}" is already registered.`);
     }
     stateElementByName.set(name, element);
+    liveStateElements.add(element);
+    if (devtoolsSink !== null) {
+      devtoolsSink({ type: "state:element-registered", name, rootNode, element });
+    }
     if (config.debug) {
       console.debug(`State element registered: name="${name}"`, element);
     }

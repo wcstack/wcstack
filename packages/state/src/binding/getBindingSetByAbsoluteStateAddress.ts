@@ -1,4 +1,5 @@
 import { IAbsoluteStateAddress } from "../address/types";
+import { devtoolsSink } from "../devtools/sink";
 import { IBindingInfo } from "./types";
 
 const bindingSetByAbsoluteStateAddress: WeakMap<IAbsoluteStateAddress, Set<IBindingInfo>> = new WeakMap();
@@ -25,10 +26,16 @@ export function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress: IAbso
 export function addBindingByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress, binding: IBindingInfo): void {
   const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
   bindingSet.add(binding);
+  if (devtoolsSink !== null) {
+    devtoolsSink({ type: "state:binding-added", absoluteAddress: absoluteStateAddress, binding });
+  }
 }
 
 export function clearBindingSetByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress): void {
   bindingSetByAbsoluteStateAddress.delete(absoluteStateAddress);
+  if (devtoolsSink !== null) {
+    devtoolsSink({ type: "state:binding-cleared", absoluteAddress: absoluteStateAddress });
+  }
 }
 
 export function removeBindingByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress, binding: IBindingInfo): void {
@@ -36,5 +43,8 @@ export function removeBindingByAbsoluteStateAddress(absoluteStateAddress: IAbsol
   const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
   if (bindingSet !== undefined) {
     bindingSet.delete(binding);
+    if (devtoolsSink !== null) {
+      devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
+    }
   }
 }
