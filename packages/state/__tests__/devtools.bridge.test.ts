@@ -199,6 +199,46 @@ describe('devtools/bridge', () => {
       }
     });
 
+    it('keysがデータキーとgetterを返し、メソッド・$・*・throwするgetterを適切に扱うこと', () => {
+      registerDevtoolsSource();
+      const source = __getRegisteredSourceForTest()!;
+      const stateObject = {
+        count: 1,
+        items: [1, 2],
+        doSomething() { /* method: 除外 */ },
+        get total() { return 3; },
+        get 'items.*.double'() { return 0; },
+        get $hidden() { return 1; },
+        get broken(): number { throw new Error('context required'); },
+      };
+      const element = createMockStateElement('keys-test', {
+        createState: vi.fn((mutability: string, cb: (s: any) => void) => {
+          expect(mutability).toBe('readonly');
+          cb(stateObject);
+        }),
+      });
+      setStateElementByName(element.rootNode, 'keys-test', element);
+      try {
+        const keys = source.keys('keys-test', element.rootNode);
+        expect(keys).toContain('count');
+        expect(keys).toContain('items');
+        expect(keys).toContain('total');
+        // throw する getter は「キーとしては存在する」側
+        expect(keys).toContain('broken');
+        expect(keys).not.toContain('doSomething');
+        expect(keys).not.toContain('items.*.double');
+        expect(keys).not.toContain('$hidden');
+      } finally {
+        setStateElementByName(element.rootNode, 'keys-test', null);
+      }
+    });
+
+    it('keysは未登録のstate要素でthrowすること', () => {
+      registerDevtoolsSource();
+      const source = __getRegisteredSourceForTest()!;
+      expect(() => source.keys('missing', document.createElement('div'))).toThrow(/state element not found/);
+    });
+
     it('readがreadonly createState経由で$resolveを呼ぶこと', () => {
       registerDevtoolsSource();
       const source = __getRegisteredSourceForTest()!;

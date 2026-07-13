@@ -76,6 +76,7 @@ interface IDevtoolsSource {
   readonly packageVersion: string;
   // --- pull ---
   getStateElements(): IStateElementSummary[];   // 接続時スナップショットの起点
+  keys(name: string, rootNode: Node): string[]; // トップレベルキー列挙（状態ツリーの描画起点）
   read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
   write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   // --- 内部（registry 専用） ---
@@ -97,6 +98,10 @@ interface IStateElementSummary {
 }
 ```
 
+- `keys` はメソッド・`$` 始まり・ワイルドカードを含むキーを除外したトップレベルキーを
+  返す（メソッド判別の typeof アクセスが getter を 1 回実行する点は仕様。コンテキスト外で
+  throw する getter は「キーとして存在する」側に倒す）。IStateElementSummary の paths が
+  binding 済みパスしか持たないのに対し、こちらは宣言された全データ面が起点になる。
 - `read` / `write` は `stateElement.createState("readonly" | "writable", cb)` を通す。
   つまり **write は通常のリアクティブパイプライン（set trap → enqueue → drain）を通り**、
   DevTools からの編集がユーザーコードの set と完全に同じ経路になる（別経路を作らない）。

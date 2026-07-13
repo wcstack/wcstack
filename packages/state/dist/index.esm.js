@@ -5949,6 +5949,31 @@ function registerDevtoolsSource() {
             }
             return summaries;
         },
+        keys(name, rootNode) {
+            const element = requireStateElement(name, rootNode);
+            const result = [];
+            element.createState("readonly", (state) => {
+                // Object.keys は Proxy の ownKeys 経由で target の own key を返す。
+                // メソッド判別の typeof アクセスは getter を 1 回実行する副作用があるため、
+                // ループ文脈依存で throw する getter は catch して「キーとしては存在する」
+                // 側に倒す（値の表示可否は UI 側の責務）。
+                for (const key of Object.keys(state)) {
+                    if (key.includes("*") || key.startsWith("$")) {
+                        continue;
+                    }
+                    try {
+                        if (typeof state[key] === "function") {
+                            continue;
+                        }
+                    }
+                    catch {
+                        // 読めない getter もキーとしては列挙する
+                    }
+                    result.push(key);
+                }
+            });
+            return result;
+        },
         read(name, rootNode, path, indexes) {
             const element = requireStateElement(name, rootNode);
             let result;

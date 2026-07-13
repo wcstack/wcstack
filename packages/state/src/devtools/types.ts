@@ -89,6 +89,12 @@ export interface IDevtoolsSource {
   readonly kind: "state";
   readonly packageVersion: string;
   getStateElements(): IStateElementSummary[];
+  /**
+   * state のトップレベルキー（データプロパティ + 実行可能な getter）を列挙する。
+   * メソッド・`$` 始まり・ワイルドカードを含むキーは除外。
+   * 状態ツリー UI の描画起点（protocol §3）。
+   */
+  keys(name: string, rootNode: Node): string[];
   read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
   write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
   /** registry 専用。listener の有無に応じて registry が差し替える */
