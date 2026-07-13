@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/network",
-  "version": "1.19.1",
+  "version": "1.20.0",
   "description": "Declarative Network Information component for Web Components. Framework-agnostic navigator.connection monitor via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

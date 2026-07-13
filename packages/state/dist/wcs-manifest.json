@@ -528,6 +528,9 @@
     "$commandTokens",
     "$command",
     "$eventTokens",
-    "$on"
+    "$on",
+    "$streams",
+    "$streamStatus",
+    "$streamError"
   ]
 }

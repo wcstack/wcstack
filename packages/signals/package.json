@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/signals",
-  "version": "1.19.1",
+  "version": "1.20.0",
   "description": "Signals-based lightweight reactive core with async-IO resource adapters and a wc-bindable → signal bridge for Web Components. Zero runtime dependencies.",
   "type": "module",
   "sideEffects": false,

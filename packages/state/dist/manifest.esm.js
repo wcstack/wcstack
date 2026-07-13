@@ -868,6 +868,9 @@ const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 const STATE_COMMAND_NAMESPACE_NAME = "$command";
 const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
+const STATE_STREAMS_NAME = "$streams";
+const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
+const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
 
 /**
  * manifest.ts — `<wcs-state>` の構文・フィルタ・予約名を機械可読な単一正本として公開する。
@@ -918,6 +921,9 @@ function getWcsManifest() {
             STATE_COMMAND_NAMESPACE_NAME,
             STATE_EVENT_TOKENS_NAME,
             STATE_ON_NAME,
+            STATE_STREAMS_NAME,
+            STATE_STREAM_STATUS_NAMESPACE_NAME,
+            STATE_STREAM_ERROR_NAMESPACE_NAME,
         ],
     };
 }
