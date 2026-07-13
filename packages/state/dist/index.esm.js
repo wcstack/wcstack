@@ -65,16 +65,6 @@ function setConfig(partialConfig) {
     }
 }
 
-var version$1 = "1.19.1";
-var pkg = {
-	version: version$1};
-
-const VERSION = pkg.version;
-
-function raiseError(message) {
-    throw new Error(`[@wcstack/state] ${message}`);
-}
-
 const bindingPromiseByNode = new WeakMap();
 let id$1 = 0;
 function getInitializeBindingPromiseByNode(node) {
@@ -101,6 +91,10 @@ async function waitInitializeBinding(node) {
 function resolveInitializedBinding(node) {
     const bindingPromise = getInitializeBindingPromiseByNode(node);
     bindingPromise.resolve();
+}
+
+function raiseError(message) {
+    throw new Error(`[@wcstack/state] ${message}`);
 }
 
 function replaceToReplaceNode(bindingInfo) {
@@ -1593,6 +1587,37 @@ function parseBindTextForEmbeddedNode(bindText) {
     };
 }
 
+const fragmentInfoByUUID = new Map();
+function setFragmentInfoByUUID(uuid, rootNode, fragmentInfo) {
+    if (fragmentInfo === null) {
+        fragmentInfoByUUID.delete(uuid);
+    }
+    else {
+        fragmentInfoByUUID.set(uuid, fragmentInfo);
+        const bindingPartial = fragmentInfo.parseBindTextResult;
+        const stateElement = getStateElementByName(rootNode, bindingPartial.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${bindingPartial.stateName}" not found for fragment info.`);
+        }
+        stateElement.setPathInfo(bindingPartial.statePathName, bindingPartial.bindingType);
+        for (const nodeInfo of fragmentInfo.nodeInfos) {
+            for (const nodeBindingPartial of nodeInfo.parseBindTextResults) {
+                const nodeStateElement = getStateElementByName(rootNode, nodeBindingPartial.stateName);
+                if (nodeStateElement === null) {
+                    raiseError(`State element with name "${nodeBindingPartial.stateName}" not found for fragment info node.`);
+                }
+                nodeStateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
+            }
+        }
+    }
+}
+function getFragmentInfoByUUID(uuid) {
+    return fragmentInfoByUUID.get(uuid) || null;
+}
+function getAllFragmentUUIDs() {
+    return Array.from(fragmentInfoByUUID.keys());
+}
+
 function getParseBindTextResults(node) {
     if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node;
@@ -1775,6 +1800,23 @@ function createStateAddress(pathInfo, listIndex) {
     }
 }
 
+/**
+ * devtools/sink.ts
+ *
+ * 計装点が参照するホットパス唯一の接点。依存ゼロの葉モジュールにすることで、
+ * 計装される側（stateElementByName / setByAddress / binding / token）と
+ * bridge の間の循環 import を避ける。
+ *
+ * コスト規範（protocol §1-1）: フック未接続時、計装点のコストは
+ * `devtoolsSink !== null` の分岐 1 個。イベントオブジェクトの生成は
+ * 必ずこのチェックの内側で行うこと。
+ */
+/** live binding としてエクスポート。計装点は `if (devtoolsSink !== null)` で参照する */
+let devtoolsSink = null;
+function setDevtoolsSink(sink) {
+    devtoolsSink = sink;
+}
+
 // command-token / event-token が共有する pub/sub プリミティブ。
 // _subscribers は Set のため挿入順を保持する。
 // emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
@@ -1814,7 +1856,31 @@ class Token {
 
 // CommandToken は共有 pub/sub プリミティブ Token の薄い特化。
 // instanceof による型判別を成立させるため独立クラスとして維持する。
+//
+// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
+// command-token-protocol の外部仕様は不変更（registry が渡すだけで、
+// subscribe/emit の意味論には一切影響しない）。
 class CommandToken extends Token {
+    _ownerStateName;
+    constructor(name, ownerStateName) {
+        super(name);
+        this._ownerStateName = ownerStateName ?? null;
+    }
+    emit(...args) {
+        if (devtoolsSink !== null) {
+            // subscriberCount 0 の emit（空撃ち）もそのまま流す — whenDefined 前の
+            // command 空撃ちレース類をタイムラインで可視化するため
+            devtoolsSink({
+                type: "state:token-emit",
+                kind: "command",
+                stateName: this._ownerStateName,
+                tokenName: this.name,
+                args,
+                subscriberCount: this.size,
+            });
+        }
+        return super.emit(...args);
+    }
 }
 function isCommandToken(value) {
     return value instanceof CommandToken;
@@ -1958,7 +2024,28 @@ function attachEventHandler(binding) {
 
 // EventToken は共有 pub/sub プリミティブ Token の薄い特化（element→state 方向）。
 // instanceof による型判別を成立させるため独立クラスとして維持する。
+//
+// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
+// event-token-protocol の外部仕様は不変更。
 class EventToken extends Token {
+    _ownerStateName;
+    constructor(name, ownerStateName) {
+        super(name);
+        this._ownerStateName = ownerStateName ?? null;
+    }
+    emit(...args) {
+        if (devtoolsSink !== null) {
+            devtoolsSink({
+                type: "state:token-emit",
+                kind: "event",
+                stateName: this._ownerStateName,
+                tokenName: this.name,
+                args,
+                subscriberCount: this.size,
+            });
+        }
+        return super.emit(...args);
+    }
 }
 
 const registryByStateElement$2 = new WeakMap();
@@ -1970,7 +2057,7 @@ function getOrCreateEventToken(stateElement, name) {
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
-        token = new EventToken(name);
+        token = new EventToken(name, stateElement.name);
         registry.set(name, token);
     }
     return token;
@@ -2606,7 +2693,7 @@ function getUUID() {
     return `u${(count++).toString(36)}`;
 }
 
-let version = 0;
+let version$1 = 0;
 class ListIndex {
     uuid = getUUID();
     parentListIndex;
@@ -2627,7 +2714,7 @@ class ListIndex {
         this.position = parentListIndex ? parentListIndex.position + 1 : 0;
         this.length = this.position + 1;
         this._index = index;
-        this._version = version;
+        this._version = version$1;
     }
     /**
      * Gets current index value.
@@ -2644,7 +2731,7 @@ class ListIndex {
      */
     set index(value) {
         this._index = value;
-        this._version = ++version;
+        this._version = ++version$1;
         this.indexes[this.position] = value;
     }
     /**
@@ -2683,7 +2770,7 @@ class ListIndex {
         else {
             if (typeof this._indexes === "undefined" || this.dirty) {
                 this._indexes = [...this.parentListIndex.indexes, this._index];
-                this._version = version;
+                this._version = version$1;
             }
         }
         return this._indexes;
@@ -3083,12 +3170,18 @@ function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
 function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
     const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
     bindingSet.add(binding);
+    if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:binding-added", absoluteAddress: absoluteStateAddress, binding });
+    }
 }
 function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
     // get-or-create を通すと未登録アドレスに空 Set を生成してしまうため素の get で参照する
     const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
     if (bindingSet !== undefined) {
         bindingSet.delete(binding);
+        if (devtoolsSink !== null) {
+            devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
+        }
     }
 }
 
@@ -4780,6 +4873,354 @@ async function buildBindings(root) {
     }
 }
 
+var version = "1.19.1";
+var pkg = {
+	version: version};
+
+const VERSION = pkg.version;
+
+// SSR コメントパターン
+const SSR_PLACEHOLDER_COMMENT = /^@@wcs-(?:for|if|elseif|else):[^-]/;
+const SSR_BLOCK_START = /^@@wcs-(for|if|elseif|else)-start:(.+)$/;
+const SSR_BLOCK_END = /^@@wcs-(for|if|elseif|else)-end:(.+)$/;
+const SSR_TEXT_START = /^@@wcs-text-start:(.+)$/;
+/**
+ * script 要素へ埋め込む JSON を HTML パーサから保護する。
+ * HTML 直列化時、script の中身は生のまま出力されるため、state 値に
+ * "</script>" や "<!--" を含む文字列があると script を脱出できてしまう。
+ * "<" ">" "&" と U+2028/U+2029 を JSON の \uXXXX エスケープへ置換する
+ * (JSON.parse では元の文字列と等価に復元される)。
+ */
+function escapeJsonForScript(json) {
+    return json
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e')
+        .replace(/&/g, '\\u0026')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+}
+class Ssr extends HTMLElement {
+    _stateData = null;
+    _templates = null;
+    _hydrateProps = null;
+    get name() {
+        return this.getAttribute('name') || 'default';
+    }
+    get version() {
+        return this.getAttribute('version') || '';
+    }
+    get stateData() {
+        if (this._stateData === null) {
+            this._stateData = this._loadStateData();
+        }
+        return this._stateData;
+    }
+    get templates() {
+        if (this._templates === null) {
+            this._templates = this._loadTemplates();
+        }
+        return this._templates;
+    }
+    get hydrateProps() {
+        if (this._hydrateProps === null) {
+            this._hydrateProps = this._loadHydrateProps();
+        }
+        return this._hydrateProps;
+    }
+    getTemplate(uuid) {
+        return this.templates.get(uuid) ?? null;
+    }
+    /**
+     * サーバーの SSR バージョンとクライアントの state バージョンを検証する。
+     * メジャー・マイナーバージョンが一致すればtrue。
+     * version 属性がない場合は検証スキップ（true）。
+     */
+    verifyVersion() {
+        const serverVersion = this.version;
+        if (!serverVersion)
+            return true;
+        const serverParts = serverVersion.split('.');
+        const clientParts = VERSION.split('.');
+        // メジャー・マイナーが一致すれば互換
+        return serverParts[0] === clientParts[0] && serverParts[1] === clientParts[1];
+    }
+    setStateData(data) {
+        this._stateData = data;
+    }
+    setHydrateProps(props) {
+        this._hydrateProps = props;
+    }
+    _loadStateData() {
+        const script = this.querySelector(`script[type="application/json"]:not([data-wcs-ssr-props])`);
+        if (!script)
+            return {};
+        try {
+            return JSON.parse(script.textContent || '{}');
+        }
+        catch {
+            return {};
+        }
+    }
+    _loadTemplates() {
+        const map = new Map();
+        const templates = this.querySelectorAll('template[id]');
+        for (const tpl of templates) {
+            const id = tpl.getAttribute('id');
+            if (id) {
+                map.set(id, tpl);
+            }
+        }
+        return map;
+    }
+    _loadHydrateProps() {
+        const script = this.querySelector('script[data-wcs-ssr-props]');
+        if (!script)
+            return {};
+        try {
+            return JSON.parse(script.textContent || '{}');
+        }
+        catch {
+            return {};
+        }
+    }
+    static findByName(root, name) {
+        const tagName = config.tagNames.ssr;
+        const parentEl = root instanceof Element
+            ? root
+            : root instanceof Document
+                ? root.documentElement
+                : null;
+        if (!parentEl)
+            return null;
+        const el = parentEl.querySelector(`${tagName}[name="${name}"]`);
+        return el;
+    }
+    /**
+     * stateData と構造テンプレート・プロパティから <wcs-ssr> の中身を構築する。
+     * server パッケージの renderToString から呼ばれる。
+     */
+    /**
+     * wcs-state 要素から $ プレフィックスや関数を除いたデータを抽出する。
+     */
+    static extractStateData(stateEl) {
+        const raw = stateEl.__state;
+        if (!raw || typeof raw !== 'object')
+            return {};
+        const data = {};
+        for (const [key, value] of Object.entries(raw)) {
+            if (!key.startsWith('$') && typeof value !== 'function') {
+                data[key] = value;
+            }
+        }
+        return data;
+    }
+    static buildContent(ssrEl, stateData) {
+        // 初期データ JSON
+        const jsonScript = document.createElement('script');
+        jsonScript.setAttribute('type', 'application/json');
+        jsonScript.textContent = escapeJsonForScript(JSON.stringify(stateData));
+        ssrEl.appendChild(jsonScript);
+        // UUID で管理されているテンプレートを復元して格納
+        const uuids = getAllFragmentUUIDs();
+        for (const uuid of uuids) {
+            const fragmentInfo = getFragmentInfoByUUID(uuid);
+            if (!fragmentInfo)
+                continue;
+            const tpl = document.createElement('template');
+            tpl.setAttribute('id', uuid);
+            const bindResult = fragmentInfo.parseBindTextResult;
+            const bindText = bindResult.bindingType === 'else'
+                ? 'else:'
+                : `${bindResult.bindingType}: ${bindResult.statePathName}`;
+            tpl.setAttribute(config.bindAttributeName, bindText);
+            const content = fragmentInfo.fragment.cloneNode(true);
+            tpl.content.appendChild(content);
+            ssrEl.appendChild(tpl);
+        }
+        // 属性で代替不可なプロパティをハイドレーション用に格納
+        const ssrNodes = getAllSsrPropertyNodes();
+        if (ssrNodes.length > 0) {
+            const propsData = {};
+            for (let i = 0; i < ssrNodes.length; i++) {
+                const node = ssrNodes[i];
+                const entries = getSsrProperties(node);
+                if (entries.length === 0)
+                    continue;
+                const id = `wcs-ssr-${i}`;
+                node.setAttribute('data-wcs-ssr-id', id);
+                const props = {};
+                for (const entry of entries) {
+                    props[entry.propName] = entry.value;
+                }
+                propsData[id] = props;
+            }
+            if (Object.keys(propsData).length > 0) {
+                const propsScript = document.createElement('script');
+                propsScript.setAttribute('type', 'application/json');
+                propsScript.setAttribute('data-wcs-ssr-props', '');
+                propsScript.textContent = escapeJsonForScript(JSON.stringify(propsData));
+                ssrEl.appendChild(propsScript);
+            }
+        }
+        clearSsrPropertyStore();
+    }
+    /**
+     * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
+     */
+    static removeBlockBoundaryComments(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const toRemove = [];
+        while (walker.nextNode()) {
+            const comment = walker.currentNode;
+            if (SSR_BLOCK_START.test(comment.data) || SSR_BLOCK_END.test(comment.data)) {
+                toRemove.push(comment);
+            }
+        }
+        for (const comment of toRemove) {
+            comment.remove();
+        }
+    }
+    /**
+     * SSR の構造プレースホルダーコメント (@@wcs-for:uuid 等) を除去する
+     */
+    static removeStructuralComments(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const toRemove = [];
+        while (walker.nextNode()) {
+            const comment = walker.currentNode;
+            if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
+                toRemove.push(comment);
+            }
+        }
+        for (const comment of toRemove) {
+            comment.remove();
+        }
+    }
+    /**
+     * SSR テキストバインディングコメントを復元する。
+     * <!--@@wcs-text-start:path-->text<!--@@wcs-text-end:path-->
+     * → <!--@@: path--> (バインディングシステムが認識する形式)
+     */
+    static restoreTextBindings(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const startComments = [];
+        while (walker.nextNode()) {
+            const comment = walker.currentNode;
+            const match = SSR_TEXT_START.exec(comment.data);
+            if (match) {
+                startComments.push({ comment, path: match[1] });
+            }
+        }
+        for (const { comment, path } of startComments) {
+            const bindComment = document.createComment(`@@: ${path}`);
+            comment.parentNode.insertBefore(bindComment, comment);
+            let sibling = comment.nextSibling;
+            comment.remove();
+            const endPattern = `@@wcs-text-end:${path}`;
+            while (sibling) {
+                const next = sibling.nextSibling;
+                if (sibling.nodeType === Node.COMMENT_NODE && sibling.data === endPattern) {
+                    sibling.parentNode.removeChild(sibling);
+                    break;
+                }
+                sibling.parentNode.removeChild(sibling);
+                sibling = next;
+            }
+        }
+    }
+    /**
+     * SSR DOM をクリーンアップし、buildBindings が動作できる状態に戻す。
+     * バージョン不一致時のフォールバック用。
+     *
+     * 1. SSR ブロック境界コメント間のレンダリング済みノードを除去
+     * 2. SSR テキストバインディングを @@: 形式に復元
+     * 3. プレースホルダーコメントを <wcs-ssr> 内のテンプレートで差し替え
+     * 4. data-wcs-ssr-id 属性を除去
+     * 5. <wcs-ssr> を除去
+     */
+    static cleanupDom(root) {
+        const body = document.body;
+        // <wcs-ssr> からテンプレート UUID マップを構築（カスタム要素未定義でも動作するよう DOM 直接走査）
+        const ssrElements = root.querySelectorAll(config.tagNames.ssr);
+        const templateByUuid = new Map();
+        for (const ssrNode of ssrElements) {
+            const templates = ssrNode.querySelectorAll('template[id]');
+            for (const tpl of templates) {
+                const id = tpl.getAttribute('id');
+                if (id) {
+                    templateByUuid.set(id, tpl);
+                }
+            }
+        }
+        // SSR ブロック境界コメント間のレンダリング済みノードと境界コメントを除去
+        const walker1 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
+        const startComments = [];
+        while (walker1.nextNode()) {
+            const comment = walker1.currentNode;
+            if (SSR_BLOCK_START.test(comment.data)) {
+                startComments.push(comment);
+            }
+        }
+        for (const startComment of startComments) {
+            const match = SSR_BLOCK_START.exec(startComment.data);
+            const type = match[1];
+            const info = match[2];
+            const endPattern = `@@wcs-${type}-end:${info}`;
+            let sibling = startComment.nextSibling;
+            while (sibling) {
+                const next = sibling.nextSibling;
+                if (sibling.nodeType === Node.COMMENT_NODE && sibling.data === endPattern) {
+                    sibling.remove();
+                    break;
+                }
+                sibling.remove();
+                sibling = next;
+            }
+            startComment.remove();
+        }
+        // SSR テキストバインディングを @@: 形式に復元
+        Ssr.restoreTextBindings(body);
+        // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替え
+        const walker2 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
+        const placeholders = [];
+        while (walker2.nextNode()) {
+            const comment = walker2.currentNode;
+            if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
+                const uuid = comment.data.split(':')[1];
+                placeholders.push({ comment, uuid });
+            }
+        }
+        for (const { comment, uuid } of placeholders) {
+            const tpl = templateByUuid.get(uuid);
+            if (tpl) {
+                const restored = document.createElement('template');
+                const bindAttr = tpl.getAttribute(config.bindAttributeName);
+                if (bindAttr)
+                    restored.setAttribute(config.bindAttributeName, bindAttr);
+                const imported = document.importNode(tpl.content, true);
+                if (imported.childNodes.length > 0) {
+                    restored.content.appendChild(imported);
+                }
+                else {
+                    for (const child of Array.from(tpl.childNodes)) {
+                        restored.content.appendChild(document.importNode(child, true));
+                    }
+                }
+                comment.parentNode.replaceChild(restored, comment);
+            }
+        }
+        // data-wcs-ssr-id 属性を除去
+        const ssrIdElements = root.querySelectorAll('[data-wcs-ssr-id]');
+        for (const el of ssrIdElements) {
+            el.removeAttribute('data-wcs-ssr-id');
+        }
+        // <wcs-ssr> を除去
+        for (const el of ssrElements) {
+            el.remove();
+        }
+    }
+}
+
 // ハイドレーション時にスキップするバインディングタイプ
 const STRUCTURAL_TYPES = new Set(['for', 'if', 'elseif', 'else']);
 /**
@@ -5170,6 +5611,13 @@ async function hydrateBindings(root) {
 
 const stateElementByNameByNode = new WeakMap();
 const bindingsReadyByNode = new WeakMap();
+// devtools 用の列挙可能な登録簿（protocol §4.1 — 唯一の常時 ON 台帳）。
+// サイズは <wcs-state> 要素数に拘束され、unregister（disconnectedCallback）で
+// 必ず削除されるためリークしない。
+const liveStateElements = new Set();
+function getLiveStateElements() {
+    return liveStateElements;
+}
 function getStateElementByName(rootNode, name) {
     let stateElementByName = stateElementByNameByNode.get(rootNode);
     if (!stateElementByName) {
@@ -5190,9 +5638,16 @@ function setStateElementByName(rootNode, name, element) {
         if (!stateElementByName) {
             return;
         }
+        const removed = stateElementByName.get(name);
         stateElementByName.delete(name);
         if (stateElementByName.size === 0) {
             stateElementByNameByNode.delete(rootNode);
+        }
+        if (removed !== undefined) {
+            liveStateElements.delete(removed);
+            if (devtoolsSink !== null) {
+                devtoolsSink({ type: "state:element-unregistered", name, rootNode, element: removed });
+            }
         }
         if (config.debug) {
             console.debug(`State element unregistered: name="${name}"`);
@@ -5237,383 +5692,314 @@ function setStateElementByName(rootNode, name, element) {
             raiseError(`State element with name "${name}" is already registered.`);
         }
         stateElementByName.set(name, element);
+        liveStateElements.add(element);
+        if (devtoolsSink !== null) {
+            devtoolsSink({ type: "state:element-registered", name, rootNode, element });
+        }
         if (config.debug) {
             console.debug(`State element registered: name="${name}"`, element);
         }
     }
 }
 
-const fragmentInfoByUUID = new Map();
-function setFragmentInfoByUUID(uuid, rootNode, fragmentInfo) {
-    if (fragmentInfo === null) {
-        fragmentInfoByUUID.delete(uuid);
+const updateBatchListeners = new Set();
+/**
+ * drain 終了リスナーを登録する。
+ */
+function registerUpdateBatchListener(listener) {
+    updateBatchListeners.add(listener);
+}
+/**
+ * drain 終了リスナーを解除する（テスト間の分離用）。
+ */
+function unregisterUpdateBatchListener(listener) {
+    updateBatchListeners.delete(listener);
+}
+/**
+ * 全リスナーに drain のバッチを通知する。
+ * リスナーの throw は握りつぶさない（内部バグの隠蔽防止）。
+ * stream 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
+ */
+function notifyUpdateBatchListeners(batch) {
+    for (const listener of updateBatchListeners) {
+        listener(batch);
     }
-    else {
-        fragmentInfoByUUID.set(uuid, fragmentInfo);
-        const bindingPartial = fragmentInfo.parseBindTextResult;
-        const stateElement = getStateElementByName(rootNode, bindingPartial.stateName);
-        if (stateElement === null) {
-            raiseError(`State element with name "${bindingPartial.stateName}" not found for fragment info.`);
+}
+class Updater {
+    _queueAbsoluteAddresses = [];
+    constructor() {
+    }
+    enqueueAbsoluteAddress(absoluteAddress) {
+        const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
+        this._queueAbsoluteAddresses.push(absoluteAddress);
+        if (requireStartProcess) {
+            queueMicrotask(() => {
+                const absoluteAddresses = this._queueAbsoluteAddresses;
+                this._queueAbsoluteAddresses = [];
+                this._applyChange(absoluteAddresses);
+            });
         }
-        stateElement.setPathInfo(bindingPartial.statePathName, bindingPartial.bindingType);
-        for (const nodeInfo of fragmentInfo.nodeInfos) {
-            for (const nodeBindingPartial of nodeInfo.parseBindTextResults) {
-                const nodeStateElement = getStateElementByName(rootNode, nodeBindingPartial.stateName);
-                if (nodeStateElement === null) {
-                    raiseError(`State element with name "${nodeBindingPartial.stateName}" not found for fragment info node.`);
+    }
+    // テスト用に公開
+    testApplyChange(absoluteAddresses) {
+        this._applyChange(absoluteAddresses);
+    }
+    _applyChange(absoluteAddresses) {
+        // Note: AbsoluteStateAddress はキャッシュされているため、
+        // 同一の (stateName, address) は同じインスタンスとなり、
+        // Set による重複排除が正しく機能する    
+        const absoluteAddressSet = new Set(absoluteAddresses);
+        const processBindings = [];
+        for (const absoluteAddress of absoluteAddressSet) {
+            // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
+            // アドレス等）に空 Set を生成・蓄積しない
+            const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
+            if (bindings === undefined) {
+                continue;
+            }
+            for (const binding of bindings) {
+                if (binding.replaceNode.isConnected === false) {
+                    // 切断されているバインディングは無視
+                    continue;
                 }
-                nodeStateElement.setPathInfo(nodeBindingPartial.statePathName, nodeBindingPartial.bindingType);
+                processBindings.push(binding);
             }
         }
+        applyChangeFromBindings(processBindings);
+        // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
+        // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
+        notifyUpdateBatchListeners(absoluteAddressSet);
     }
 }
-function getFragmentInfoByUUID(uuid) {
-    return fragmentInfoByUUID.get(uuid) || null;
-}
-function getAllFragmentUUIDs() {
-    return Array.from(fragmentInfoByUUID.keys());
+const updater = new Updater();
+function getUpdater() {
+    return updater;
 }
 
-// SSR コメントパターン
-const SSR_PLACEHOLDER_COMMENT = /^@@wcs-(?:for|if|elseif|else):[^-]/;
-const SSR_BLOCK_START = /^@@wcs-(for|if|elseif|else)-start:(.+)$/;
-const SSR_BLOCK_END = /^@@wcs-(for|if|elseif|else)-end:(.+)$/;
-const SSR_TEXT_START = /^@@wcs-text-start:(.+)$/;
 /**
- * script 要素へ埋め込む JSON を HTML パーサから保護する。
- * HTML 直列化時、script の中身は生のまま出力されるため、state 値に
- * "</script>" や "<!--" を含む文字列があると script を脱出できてしまう。
- * "<" ">" "&" と U+2028/U+2029 を JSON の \uXXXX エスケープへ置換する
- * (JSON.parse では元の文字列と等価に復元される)。
+ * devtools/types.ts
+ *
+ * DevTools Hook Protocol (docs/devtools-hook-protocol.md) の型定義。
+ *
+ * イベント payload はランタイム内部オブジェクト（IAbsoluteStateAddress /
+ * IBindingInfo 等）への生参照を含む（同一 realm・オーバーレイ前提、protocol 原則 4）。
+ * 消費者はこれらを変異してはならない。
  */
-function escapeJsonForScript(json) {
-    return json
-        .replace(/</g, '\\u003c')
-        .replace(/>/g, '\\u003e')
-        .replace(/&/g, '\\u0026')
-        .replace(/\u2028/g, '\\u2028')
-        .replace(/\u2029/g, '\\u2029');
+/** グローバル registry のプロパティ名 */
+const DEVTOOLS_HOOK_GLOBAL = "__WCSTACK_DEVTOOLS_HOOK__";
+/** プロトコル版。additive change では上げない（protocol §2） */
+const DEVTOOLS_PROTOCOL_VERSION = 1;
+
+/**
+ * devtools/bridge.ts
+ *
+ * DevTools Hook Protocol (docs/devtools-hook-protocol.md) の state 側実装。
+ *
+ * - registry 最小実装: `globalThis.__WCSTACK_DEVTOOLS_HOOK__` を create-if-missing で
+ *   確保する（ロード順非依存・先勝ち。devtools 側 client も同一仕様の実装を持つ）。
+ * - source: この state モジュールコピーを 1 source として登録する。同一ページに
+ *   コピーが複数あれば複数 source になる（正常系、protocol §5）。
+ * - sink 切替: listener の有無に応じて registry が `_setSink` を呼び、ここで
+ *   updater の drain リスナー登録/解除も連動させる（protocol §4.3）。
+ */
+/**
+ * registry の最小実装（protocol §2）。30 行程度に抑え、振る舞いは
+ * 「source/listener の管理と sink の配線」のみ。台帳・整形は devtools 側の責務。
+ */
+function createMinimalRegistry() {
+    const sources = new Map();
+    const listeners = new Set();
+    const applySink = (source) => {
+        if (listeners.size === 0) {
+            source._setSink(null);
+            return;
+        }
+        const sourceId = source.id;
+        source._setSink((event) => {
+            for (const listener of listeners) {
+                listener.onEvent?.(sourceId, event);
+            }
+        });
+    };
+    return {
+        version: DEVTOOLS_PROTOCOL_VERSION,
+        sources,
+        register(source) {
+            if (sources.has(source.id)) {
+                return;
+            }
+            sources.set(source.id, source);
+            applySink(source);
+            for (const listener of listeners) {
+                listener.onSourceRegistered?.(source);
+            }
+        },
+        unregister(sourceId) {
+            const source = sources.get(sourceId);
+            if (source === undefined) {
+                return;
+            }
+            source._setSink(null);
+            sources.delete(sourceId);
+            for (const listener of listeners) {
+                listener.onSourceUnregistered?.(sourceId);
+            }
+        },
+        addListener(listener) {
+            listeners.add(listener);
+            // 既登録 source をリプレイ（遅延アタッチの起点、protocol §6）
+            for (const source of sources.values()) {
+                applySink(source);
+                listener.onSourceRegistered?.(source);
+            }
+            return () => {
+                if (!listeners.delete(listener)) {
+                    return;
+                }
+                for (const source of sources.values()) {
+                    applySink(source);
+                }
+            };
+        },
+    };
 }
-class Ssr extends HTMLElement {
-    _stateData = null;
-    _templates = null;
-    _hydrateProps = null;
-    get name() {
-        return this.getAttribute('name') || 'default';
-    }
-    get version() {
-        return this.getAttribute('version') || '';
-    }
-    get stateData() {
-        if (this._stateData === null) {
-            this._stateData = this._loadStateData();
+function getOrCreateHookRegistry() {
+    const globals = globalThis;
+    const existing = globals[DEVTOOLS_HOOK_GLOBAL];
+    if (existing !== undefined) {
+        if (existing.version !== DEVTOOLS_PROTOCOL_VERSION) {
+            // 先勝ち固定。振る舞いは差し替えない（protocol §2）
+            console.warn(`[wcstack/state] devtools hook registry version mismatch: found ${existing.version}, expected ${DEVTOOLS_PROTOCOL_VERSION}. Keeping the existing registry (first-wins).`);
         }
-        return this._stateData;
+        return existing;
     }
-    get templates() {
-        if (this._templates === null) {
-            this._templates = this._loadTemplates();
-        }
-        return this._templates;
+    const registry = createMinimalRegistry();
+    globals[DEVTOOLS_HOOK_GLOBAL] = registry;
+    return registry;
+}
+/**
+ * drain 終了バッチの転送リスナー。sink 接続中のみ updater に登録される。
+ */
+const onUpdateBatch = (batch) => {
+    if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:update-batch", addresses: batch });
     }
-    get hydrateProps() {
-        if (this._hydrateProps === null) {
-            this._hydrateProps = this._loadHydrateProps();
-        }
-        return this._hydrateProps;
+};
+/**
+ * registry からの sink 差し替え。updater の drain リスナー登録/解除を連動させる。
+ * detach 時に登録が残らないこと（protocol §7-2）。
+ */
+function setSink(sink) {
+    const wasActive = devtoolsSink !== null;
+    setDevtoolsSink(sink);
+    const isActive = sink !== null;
+    if (isActive && !wasActive) {
+        registerUpdateBatchListener(onUpdateBatch);
     }
-    getTemplate(uuid) {
-        return this.templates.get(uuid) ?? null;
+    else if (!isActive && wasActive) {
+        unregisterUpdateBatchListener(onUpdateBatch);
     }
-    /**
-     * サーバーの SSR バージョンとクライアントの state バージョンを検証する。
-     * メジャー・マイナーバージョンが一致すればtrue。
-     * version 属性がない場合は検証スキップ（true）。
-     */
-    verifyVersion() {
-        const serverVersion = this.version;
-        if (!serverVersion)
-            return true;
-        const serverParts = serverVersion.split('.');
-        const clientParts = VERSION.split('.');
-        // メジャー・マイナーが一致すれば互換
-        return serverParts[0] === clientParts[0] && serverParts[1] === clientParts[1];
+}
+function createStateElementSummary(element) {
+    return {
+        name: element.name,
+        rootNode: element.rootNode,
+        element,
+        paths: {
+            list: element.listPaths,
+            element: element.elementPaths,
+            getter: element.getterPaths,
+            setter: element.setterPaths,
+        },
+        commandTokenNames: element.commandTokenNames,
+        eventTokenNames: element.eventTokenNames,
+        staticDependency: element.staticDependency,
+        dynamicDependency: element.dynamicDependency,
+    };
+}
+function requireStateElement(name, rootNode) {
+    return getStateElementByName(rootNode, name) ??
+        raiseError(`devtools: state element not found: name="${name}"`);
+}
+function createSourceId() {
+    // getUUID() はモジュールローカル連番のため、state コピーが複数ある
+    // ページで source id が衝突する。ランダム採番で回避する。
+    return "state:" + Math.random().toString(36).slice(2, 10);
+}
+let registeredSource = null;
+/**
+ * この state ランタイムを 1 source として registry に登録する。
+ * bootstrapState() から呼ばれる。冪等・SSR では何もしない（protocol 原則 6）。
+ */
+function registerDevtoolsSource() {
+    if (inSsr()) {
+        return;
     }
-    setStateData(data) {
-        this._stateData = data;
+    if (registeredSource !== null) {
+        return;
     }
-    setHydrateProps(props) {
-        this._hydrateProps = props;
-    }
-    _loadStateData() {
-        const script = this.querySelector(`script[type="application/json"]:not([data-wcs-ssr-props])`);
-        if (!script)
-            return {};
-        try {
-            return JSON.parse(script.textContent || '{}');
-        }
-        catch {
-            return {};
-        }
-    }
-    _loadTemplates() {
-        const map = new Map();
-        const templates = this.querySelectorAll('template[id]');
-        for (const tpl of templates) {
-            const id = tpl.getAttribute('id');
-            if (id) {
-                map.set(id, tpl);
+    const source = {
+        id: createSourceId(),
+        kind: "state",
+        packageVersion: VERSION,
+        getStateElements() {
+            const summaries = [];
+            for (const element of getLiveStateElements()) {
+                summaries.push(createStateElementSummary(element));
             }
-        }
-        return map;
-    }
-    _loadHydrateProps() {
-        const script = this.querySelector('script[data-wcs-ssr-props]');
-        if (!script)
-            return {};
-        try {
-            return JSON.parse(script.textContent || '{}');
-        }
-        catch {
-            return {};
-        }
-    }
-    static findByName(root, name) {
-        const tagName = config.tagNames.ssr;
-        const parentEl = root instanceof Element
-            ? root
-            : root instanceof Document
-                ? root.documentElement
-                : null;
-        if (!parentEl)
-            return null;
-        const el = parentEl.querySelector(`${tagName}[name="${name}"]`);
-        return el;
-    }
-    /**
-     * stateData と構造テンプレート・プロパティから <wcs-ssr> の中身を構築する。
-     * server パッケージの renderToString から呼ばれる。
-     */
-    /**
-     * wcs-state 要素から $ プレフィックスや関数を除いたデータを抽出する。
-     */
-    static extractStateData(stateEl) {
-        const raw = stateEl.__state;
-        if (!raw || typeof raw !== 'object')
-            return {};
-        const data = {};
-        for (const [key, value] of Object.entries(raw)) {
-            if (!key.startsWith('$') && typeof value !== 'function') {
-                data[key] = value;
-            }
-        }
-        return data;
-    }
-    static buildContent(ssrEl, stateData) {
-        // 初期データ JSON
-        const jsonScript = document.createElement('script');
-        jsonScript.setAttribute('type', 'application/json');
-        jsonScript.textContent = escapeJsonForScript(JSON.stringify(stateData));
-        ssrEl.appendChild(jsonScript);
-        // UUID で管理されているテンプレートを復元して格納
-        const uuids = getAllFragmentUUIDs();
-        for (const uuid of uuids) {
-            const fragmentInfo = getFragmentInfoByUUID(uuid);
-            if (!fragmentInfo)
-                continue;
-            const tpl = document.createElement('template');
-            tpl.setAttribute('id', uuid);
-            const bindResult = fragmentInfo.parseBindTextResult;
-            const bindText = bindResult.bindingType === 'else'
-                ? 'else:'
-                : `${bindResult.bindingType}: ${bindResult.statePathName}`;
-            tpl.setAttribute(config.bindAttributeName, bindText);
-            const content = fragmentInfo.fragment.cloneNode(true);
-            tpl.content.appendChild(content);
-            ssrEl.appendChild(tpl);
-        }
-        // 属性で代替不可なプロパティをハイドレーション用に格納
-        const ssrNodes = getAllSsrPropertyNodes();
-        if (ssrNodes.length > 0) {
-            const propsData = {};
-            for (let i = 0; i < ssrNodes.length; i++) {
-                const node = ssrNodes[i];
-                const entries = getSsrProperties(node);
-                if (entries.length === 0)
-                    continue;
-                const id = `wcs-ssr-${i}`;
-                node.setAttribute('data-wcs-ssr-id', id);
-                const props = {};
-                for (const entry of entries) {
-                    props[entry.propName] = entry.value;
+            return summaries;
+        },
+        keys(name, rootNode) {
+            const element = requireStateElement(name, rootNode);
+            const result = [];
+            element.createState("readonly", (state) => {
+                // Object.keys は Proxy の ownKeys 経由で target の own key を返す。
+                // メソッド判別の typeof アクセスは getter を 1 回実行する副作用があるため、
+                // ループ文脈依存で throw する getter は catch して「キーとしては存在する」
+                // 側に倒す（値の表示可否は UI 側の責務）。
+                for (const key of Object.keys(state)) {
+                    if (key.includes("*") || key.startsWith("$")) {
+                        continue;
+                    }
+                    try {
+                        if (typeof state[key] === "function") {
+                            continue;
+                        }
+                    }
+                    catch {
+                        // 読めない getter もキーとしては列挙する
+                    }
+                    result.push(key);
                 }
-                propsData[id] = props;
-            }
-            if (Object.keys(propsData).length > 0) {
-                const propsScript = document.createElement('script');
-                propsScript.setAttribute('type', 'application/json');
-                propsScript.setAttribute('data-wcs-ssr-props', '');
-                propsScript.textContent = escapeJsonForScript(JSON.stringify(propsData));
-                ssrEl.appendChild(propsScript);
-            }
-        }
-        clearSsrPropertyStore();
-    }
-    /**
-     * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
-     */
-    static removeBlockBoundaryComments(root) {
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-        const toRemove = [];
-        while (walker.nextNode()) {
-            const comment = walker.currentNode;
-            if (SSR_BLOCK_START.test(comment.data) || SSR_BLOCK_END.test(comment.data)) {
-                toRemove.push(comment);
-            }
-        }
-        for (const comment of toRemove) {
-            comment.remove();
-        }
-    }
-    /**
-     * SSR の構造プレースホルダーコメント (@@wcs-for:uuid 等) を除去する
-     */
-    static removeStructuralComments(root) {
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-        const toRemove = [];
-        while (walker.nextNode()) {
-            const comment = walker.currentNode;
-            if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
-                toRemove.push(comment);
-            }
-        }
-        for (const comment of toRemove) {
-            comment.remove();
-        }
-    }
-    /**
-     * SSR テキストバインディングコメントを復元する。
-     * <!--@@wcs-text-start:path-->text<!--@@wcs-text-end:path-->
-     * → <!--@@: path--> (バインディングシステムが認識する形式)
-     */
-    static restoreTextBindings(root) {
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-        const startComments = [];
-        while (walker.nextNode()) {
-            const comment = walker.currentNode;
-            const match = SSR_TEXT_START.exec(comment.data);
-            if (match) {
-                startComments.push({ comment, path: match[1] });
-            }
-        }
-        for (const { comment, path } of startComments) {
-            const bindComment = document.createComment(`@@: ${path}`);
-            comment.parentNode.insertBefore(bindComment, comment);
-            let sibling = comment.nextSibling;
-            comment.remove();
-            const endPattern = `@@wcs-text-end:${path}`;
-            while (sibling) {
-                const next = sibling.nextSibling;
-                if (sibling.nodeType === Node.COMMENT_NODE && sibling.data === endPattern) {
-                    sibling.parentNode.removeChild(sibling);
-                    break;
-                }
-                sibling.parentNode.removeChild(sibling);
-                sibling = next;
-            }
-        }
-    }
-    /**
-     * SSR DOM をクリーンアップし、buildBindings が動作できる状態に戻す。
-     * バージョン不一致時のフォールバック用。
-     *
-     * 1. SSR ブロック境界コメント間のレンダリング済みノードを除去
-     * 2. SSR テキストバインディングを @@: 形式に復元
-     * 3. プレースホルダーコメントを <wcs-ssr> 内のテンプレートで差し替え
-     * 4. data-wcs-ssr-id 属性を除去
-     * 5. <wcs-ssr> を除去
-     */
-    static cleanupDom(root) {
-        const body = document.body;
-        // <wcs-ssr> からテンプレート UUID マップを構築（カスタム要素未定義でも動作するよう DOM 直接走査）
-        const ssrElements = root.querySelectorAll(config.tagNames.ssr);
-        const templateByUuid = new Map();
-        for (const ssrNode of ssrElements) {
-            const templates = ssrNode.querySelectorAll('template[id]');
-            for (const tpl of templates) {
-                const id = tpl.getAttribute('id');
-                if (id) {
-                    templateByUuid.set(id, tpl);
-                }
-            }
-        }
-        // SSR ブロック境界コメント間のレンダリング済みノードと境界コメントを除去
-        const walker1 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
-        const startComments = [];
-        while (walker1.nextNode()) {
-            const comment = walker1.currentNode;
-            if (SSR_BLOCK_START.test(comment.data)) {
-                startComments.push(comment);
-            }
-        }
-        for (const startComment of startComments) {
-            const match = SSR_BLOCK_START.exec(startComment.data);
-            const type = match[1];
-            const info = match[2];
-            const endPattern = `@@wcs-${type}-end:${info}`;
-            let sibling = startComment.nextSibling;
-            while (sibling) {
-                const next = sibling.nextSibling;
-                if (sibling.nodeType === Node.COMMENT_NODE && sibling.data === endPattern) {
-                    sibling.remove();
-                    break;
-                }
-                sibling.remove();
-                sibling = next;
-            }
-            startComment.remove();
-        }
-        // SSR テキストバインディングを @@: 形式に復元
-        Ssr.restoreTextBindings(body);
-        // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替え
-        const walker2 = document.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
-        const placeholders = [];
-        while (walker2.nextNode()) {
-            const comment = walker2.currentNode;
-            if (SSR_PLACEHOLDER_COMMENT.test(comment.data)) {
-                const uuid = comment.data.split(':')[1];
-                placeholders.push({ comment, uuid });
-            }
-        }
-        for (const { comment, uuid } of placeholders) {
-            const tpl = templateByUuid.get(uuid);
-            if (tpl) {
-                const restored = document.createElement('template');
-                const bindAttr = tpl.getAttribute(config.bindAttributeName);
-                if (bindAttr)
-                    restored.setAttribute(config.bindAttributeName, bindAttr);
-                const imported = document.importNode(tpl.content, true);
-                if (imported.childNodes.length > 0) {
-                    restored.content.appendChild(imported);
+            });
+            return result;
+        },
+        read(name, rootNode, path, indexes) {
+            const element = requireStateElement(name, rootNode);
+            let result;
+            element.createState("readonly", (state) => {
+                result = state["$resolve"](path, indexes ?? []);
+            });
+            return result;
+        },
+        write(name, rootNode, path, value, indexes) {
+            const element = requireStateElement(name, rootNode);
+            element.createState("writable", (state) => {
+                if (indexes !== undefined && indexes.length > 0) {
+                    // Note: $resolve は value===undefined を「取得」と解釈するため、
+                    // ワイルドカードパスへの undefined 書き込みは非サポート
+                    // （spread undefined 規範と同じ側に倒す）
+                    state["$resolve"](path, indexes, value);
                 }
                 else {
-                    for (const child of Array.from(tpl.childNodes)) {
-                        restored.content.appendChild(document.importNode(child, true));
-                    }
+                    state[path] = value;
                 }
-                comment.parentNode.replaceChild(restored, comment);
-            }
-        }
-        // data-wcs-ssr-id 属性を除去
-        const ssrIdElements = root.querySelectorAll('[data-wcs-ssr-id]');
-        for (const el of ssrIdElements) {
-            el.removeAttribute('data-wcs-ssr-id');
-        }
-        // <wcs-ssr> を除去
-        for (const el of ssrElements) {
-            el.remove();
-        }
-    }
+            });
+        },
+        _setSink: setSink,
+    };
+    registeredSource = source;
+    getOrCreateHookRegistry().register(source);
 }
 
 async function loadFromInnerScript(script, name) {
@@ -5781,7 +6167,7 @@ function getOrCreateCommandToken(stateElement, name) {
     }
     let token = registry.get(name);
     if (typeof token === "undefined") {
-        token = new CommandToken(name);
+        token = new CommandToken(name, stateElement.name);
         registry.set(name, token);
     }
     return token;
@@ -6299,74 +6685,6 @@ function getStreamErrorNamespace(stateElement) {
 function clearStreamNamespace(stateElement) {
     statusNamespaceByStateElement.delete(stateElement);
     errorNamespaceByStateElement.delete(stateElement);
-}
-
-const updateBatchListeners = new Set();
-/**
- * drain 終了リスナーを登録する。
- */
-function registerUpdateBatchListener(listener) {
-    updateBatchListeners.add(listener);
-}
-/**
- * 全リスナーに drain のバッチを通知する。
- * リスナーの throw は握りつぶさない（内部バグの隠蔽防止）。
- * stream 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
- */
-function notifyUpdateBatchListeners(batch) {
-    for (const listener of updateBatchListeners) {
-        listener(batch);
-    }
-}
-class Updater {
-    _queueAbsoluteAddresses = [];
-    constructor() {
-    }
-    enqueueAbsoluteAddress(absoluteAddress) {
-        const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
-        this._queueAbsoluteAddresses.push(absoluteAddress);
-        if (requireStartProcess) {
-            queueMicrotask(() => {
-                const absoluteAddresses = this._queueAbsoluteAddresses;
-                this._queueAbsoluteAddresses = [];
-                this._applyChange(absoluteAddresses);
-            });
-        }
-    }
-    // テスト用に公開
-    testApplyChange(absoluteAddresses) {
-        this._applyChange(absoluteAddresses);
-    }
-    _applyChange(absoluteAddresses) {
-        // Note: AbsoluteStateAddress はキャッシュされているため、
-        // 同一の (stateName, address) は同じインスタンスとなり、
-        // Set による重複排除が正しく機能する    
-        const absoluteAddressSet = new Set(absoluteAddresses);
-        const processBindings = [];
-        for (const absoluteAddress of absoluteAddressSet) {
-            // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
-            // アドレス等）に空 Set を生成・蓄積しない
-            const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
-            if (bindings === undefined) {
-                continue;
-            }
-            for (const binding of bindings) {
-                if (binding.replaceNode.isConnected === false) {
-                    // 切断されているバインディングは無視
-                    continue;
-                }
-                processBindings.push(binding);
-            }
-        }
-        applyChangeFromBindings(processBindings);
-        // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
-        // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
-        notifyUpdateBatchListeners(absoluteAddressSet);
-    }
-}
-const updater = new Updater();
-function getUpdater() {
-    return updater;
 }
 
 /**
@@ -7658,11 +7976,17 @@ function setByAddress(target, address, value, receiver, handler) {
     // primitive 値かつ Object.is 同値なら、set / enqueue / walkDependency / DOM 適用 /
     // $updatedCallback / DCC イベントを丸ごとスキップ（標準的なリアクティブ no-op）。
     // 参照型(object/array)は in-place mutation 取りこぼし防止のため素通し（ガードしない）。
+    // devtools write イベント用: guard が既に取得した旧値のみ流用する
+    // （参照型のために追加の get はしない — protocol §4.2）
+    let devOldValue;
+    let devHasOldValue = false;
     if (config.sameValueGuard && (value === null || typeof value !== "object")) {
         const oldValue = getByAddress(target, address, receiver, handler);
         if (Object.is(oldValue, value)) {
             return true;
         }
+        devOldValue = oldValue;
+        devHasOldValue = true;
     }
     // --- end same-value guard ---
     const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
@@ -7670,6 +7994,15 @@ function setByAddress(target, address, value, receiver, handler) {
         stateElement.getterPaths.has(address.pathInfo.path);
     const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+    if (devtoolsSink !== null) {
+        devtoolsSink({
+            type: "state:write",
+            absoluteAddress: absAddress,
+            value,
+            oldValue: devOldValue,
+            hasOldValue: devHasOldValue,
+        });
+    }
     try {
         if (isSwappable) {
             return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler);
@@ -9225,6 +9558,8 @@ function bootstrapState(config) {
         setConfig(config);
     }
     registerComponents();
+    // DevTools Hook Protocol への source 登録（SSR では no-op・冪等）
+    registerDevtoolsSource();
 }
 
 /**

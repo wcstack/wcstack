@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wcstack: devtools playground</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 2rem; color: #1a1a2e; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .lead { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+    section h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+    button { padding: 0.4rem 1rem; font-size: 0.9rem; border: none; border-radius: 6px; cursor: pointer; background: #3949ab; color: #fff; }
+    button.secondary { background: #eee; color: #333; }
+    button.ghost { background: #fbe9e7; color: #bf360c; }
+    input[type="text"] { padding: 0.4rem 0.6rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .big { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    ul { list-style: none; margin-top: 0.75rem; }
+    li { display: flex; gap: 0.5rem; align-items: center; padding: 0.3rem 0; border-bottom: 1px dashed #eee; }
+    li .box { cursor: pointer; user-select: none; }
+    li .title.done { text-decoration: line-through; color: #999; }
+    .hint { font-size: 0.8rem; color: #888; margin-top: 0.75rem; }
+    .hint li { border: none; display: list-item; list-style: disc; margin-left: 1.25rem; padding: 0.1rem 0; }
+  </style>
+
+  <!-- devtools を最初に読む: バインディング構築前にフックが繋がり、
+       Wiring ペインがライブ台帳（declared ではなく）で埋まる。
+       ※ リリース後は https://esm.run/@wcstack/<pkg>/auto の CDN 一行に置き換え可能 -->
+  <script type="module" src="/packages/devtools/dist/auto.js"></script>
+  <script type="module" src="/packages/timer/dist/auto.js"></script>
+  <script type="module" src="/packages/state/dist/auto.js"></script>
+</head>
+<body>
+
+<h1>wcstack devtools playground</h1>
+<p class="lead">
+  右下の <b>WCS</b> バッジ（または <b>Alt+Shift+D</b>）で DevTools オーバーレイが開きます。
+  State ツリー・配線（Wiring）・タイムラインの 3 ペイン全部が仕事をする最小ページです。
+</p>
+
+<wcs-state>
+  <script type="module">
+export default {
+  // --- counter (write / computed getter を見る) ---
+  count: 0,
+  get double() { return this.count * 2; },
+  increment() { this.count++; },
+
+  // --- todos (リスト diff / ワイルドカード getter を見る) ---
+  newTitle: "",
+  todos: [
+    { title: "open the devtools overlay", done: false },
+    { title: "edit `count` from the State pane", done: false },
+    { title: "click a path to highlight bound nodes", done: false },
+  ],
+  get "todos.*.box"() { return this["todos.*.done"] ? "☑" : "☐"; },
+  get remaining() { return this.$getAll("todos.*.done", []).filter((done) => !done).length; },
+  addTodo() {
+    const title = this.newTitle.trim();
+    if (title === "") return;
+    this.todos = this.todos.concat({ title, done: false });
+    this.newTitle = "";
+  },
+  toggleTodo() {
+    const index = this.$1;
+    this[`todos.${index}.done`] = !this[`todos.${index}.done`];
+  },
+
+  // --- clock (command-token / event-token をタイムラインで見る) ---
+  seconds: 0,
+  running: false,
+  $commandTokens: ["startClock", "stopClock", "ghost"],
+  $eventTokens: ["clockTick"],
+  $on: {
+    clockTick(state, _event) { state.seconds = state.seconds + 1; },
+  },
+  startClock() {
+    this.running = true;
+    this.$command.startClock.emit();
+  },
+  stopClock() {
+    this.running = false;
+    this.$command.stopClock.emit();
+  },
+  // 誰も subscribe していないコマンドの空撃ち —
+  // タイムラインに subscriberCount 0 の警告バッジが出る
+  fireGhost() {
+    this.$command.ghost.emit("nobody is listening");
+  },
+};
+  </script>
+</wcs-state>
+
+<section>
+  <h2>Counter</h2>
+  <div class="row">
+    <span class="big">{{ count }}</span>
+    <span>double = {{ double }}</span>
+    <button data-wcs="onclick: increment">+1</button>
+  </div>
+</section>
+
+<section>
+  <h2>Todos ({{ remaining }} left)</h2>
+  <div class="row">
+    <input type="text" placeholder="new todo" data-wcs="value: newTitle">
+    <button data-wcs="onclick: addTodo">add</button>
+  </div>
+  <ul>
+    <template data-wcs="for: todos">
+      <li>
+        <span class="box" data-wcs="onclick: toggleTodo">{{ .box }}</span>
+        <span class="title" data-wcs="class.done: .done">{{ .title }}</span>
+      </li>
+    </template>
+  </ul>
+</section>
+
+<section>
+  <h2>Clock (command / event tokens)</h2>
+  <wcs-timer manual interval="1000"
+    data-wcs="command.start: $command.startClock; command.stop: $command.stopClock; eventToken.tick: clockTick"></wcs-timer>
+  <div class="row">
+    <span class="big">{{ seconds }}s</span>
+    <button data-wcs="onclick: startClock">start</button>
+    <button class="secondary" data-wcs="onclick: stopClock">stop</button>
+    <button class="ghost" data-wcs="onclick: fireGhost">fire ghost command</button>
+  </div>
+  <ul class="hint">
+    <li>start / stop はタイムラインに <b>command</b> 行として現れます（subscriber 1）。</li>
+    <li>tick は <b>event</b> 行 → <b>write</b>(seconds) → <b>batch</b> の順に流れます。</li>
+    <li>"fire ghost command" は購読者ゼロのコマンド空撃ち — 警告バッジの実演です。</li>
+  </ul>
+</section>
+
+</body>
+</html>

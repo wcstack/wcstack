@@ -30,6 +30,7 @@ elements, so this ordering is a best practice rather than a hard requirement.)
 | [`state-color-palette/`](state-color-palette/) | eyedropper + clipboard + storage + state | any static server (EyeDropper is Chromium-only) | — |
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js` (open 2 tabs) | :3000 |
 | [`state-custom-states/`](state-custom-states/) | fetch + websocket + state (`:state()` showcase) | `node examples/state-custom-states/server.js` (needs the [websocket-chat shared install](websocket-chat/README.md#setup)) | :3303 |
+| [`state-devtools-playground/`](state-devtools-playground/) | devtools + state + timer (overlay inspector demo) | `node examples/state-devtools-playground/server.js` (serves local dist until the next release) | :3000 |
 | [`state-intersect-scroll/`](state-intersect-scroll/) | fetch + intersection + state | `node examples/state-intersect-scroll/server.js` | :3000 |
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | any static server | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | any static server | — |
