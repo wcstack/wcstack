@@ -11,6 +11,7 @@ import {
   BUILTIN_FILTERS,
   COMMON_PROPERTIES,
   PROPERTY_PREFIXES,
+  SPECIAL_BINDINGS,
   STRUCTURAL_DIRECTIVES,
   COMMON_EVENTS,
   EVENT_MODIFIERS,
@@ -114,6 +115,13 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
                     insertText: p.insertColon ? `${p.name}: ` : p.name,
                     sortText: `2_${p.name}`,
                   })),
+                  ...SPECIAL_BINDINGS.map(p => ({
+                    label: p.name,
+                    kind: 14 as const, // Keyword
+                    detail: p.description,
+                    insertText: p.insertColon ? `${p.name}: ` : p.name,
+                    sortText: `2_${p.name}`,
+                  })),
                   ...COMMON_EVENTS.map(p => ({
                     label: p.name,
                     kind: 23 as const, // Event
@@ -164,18 +172,28 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
               const targetStateName = context.targetState || 'default';
               const isEvent = context.propName.startsWith('on');
               const isForValue = context.propName === 'for';
+              const isCommandProp = context.propName.startsWith('command.');
+              const isEventTokenProp = context.propName.startsWith('eventToken.');
 
               let pathCandidates = allPaths.filter(p => p.stateName === targetStateName);
 
-              if (isEvent) {
-                // イベントハンドラ: メソッドのみ表示
-                pathCandidates = pathCandidates.filter(p => p.kind === 'method');
+              if (isCommandProp) {
+                // command.<method>: の右辺は $command.<name> のみ
+                pathCandidates = pathCandidates.filter(p => p.kind === 'command');
+              } else if (isEventTokenProp) {
+                // eventToken.<prop>: の右辺は $eventTokens 宣言名のみ
+                pathCandidates = pathCandidates.filter(p => p.kind === 'eventToken');
+              } else if (isEvent) {
+                // イベントハンドラ: メソッドと $command.<name> を表示
+                pathCandidates = pathCandidates.filter(p => p.kind === 'method' || p.kind === 'command');
               } else if (isForValue) {
                 // for: の値: 配列型のみ表示
                 pathCandidates = pathCandidates.filter(p => p.typeHint === 'array');
               } else {
-                // データバインディング: メソッドを除外
-                pathCandidates = pathCandidates.filter(p => p.kind !== 'method');
+                // データバインディング: メソッド・トークン系を除外
+                pathCandidates = pathCandidates.filter(
+                  p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken',
+                );
                 if (!insideFor) {
                   // for 外: パターンパス（* 含む）を除外
                   pathCandidates = pathCandidates.filter(p => !p.path.includes('*'));
@@ -228,15 +246,19 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
 
               const items: any[] = pathCandidates.map(p => ({
                 label: p.path,
-                kind: (p.kind === 'method'   ? 2
-                    : p.kind === 'computed' ? 10
-                    : p.kind === 'list'     ? 18
-                    :                          6) as 2 | 6 | 10 | 18,
+                kind: (p.kind === 'method'     ? 2
+                    : p.kind === 'computed'   ? 10
+                    : p.kind === 'list'       ? 18
+                    : p.kind === 'command'    ? 3
+                    : p.kind === 'eventToken' ? 23
+                    :                            6) as 2 | 3 | 6 | 10 | 18 | 23,
                 detail: [
                   p.typeHint ? `(${p.typeHint})` : '',
                   p.kind === 'computed' ? 'computed' : '',
                   p.kind === 'list' ? 'list' : '',
                   p.kind === 'method' ? 'method' : '',
+                  p.kind === 'command' ? 'command token' : '',
+                  p.kind === 'eventToken' ? 'event token' : '',
                 ].filter(Boolean).join(' ') || undefined,
                 sortText: `1_${p.path}`,
               }));
@@ -430,7 +452,7 @@ function validateTemplateSyntax(
         const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
         if (forPath && !forPath.startsWith('.')) {
           const expandedPath = `${forPath}.*.${pathPart.slice(1)}`;
-          if (!isValidTemplatePath(expandedPath, pathSet)) {
+          if (!isValidTemplatePath(expandedPath, pathSet, defaultPaths)) {
             diagnostics.push({
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
@@ -440,7 +462,7 @@ function validateTemplateSyntax(
           }
         }
       } else {
-        if (!isValidTemplatePath(pathPart, pathSet)) {
+        if (!isValidTemplatePath(pathPart, pathSet, defaultPaths)) {
           diagnostics.push({
             start: item.exprStart,
             end: item.exprStart + pathPart.length,
@@ -469,7 +491,19 @@ function validateTemplateSyntax(
   return diagnostics;
 }
 
-function isValidTemplatePath(path: string, pathSet: Set<string>): boolean {
+function isValidTemplatePath(
+  path: string,
+  pathSet: Set<string>,
+  scopedPaths: { path: string }[],
+): boolean {
+  // ループインデックス（$1〜$128）は状態定義に依存しない
+  if (/^\$\d+$/.test(path)) return true;
+  // $streamStatus.<name> / $streamError.<name> は $streams 宣言が解析できている場合のみ照合
+  if (path.startsWith('$streamStatus.') || path.startsWith('$streamError.')) {
+    const prefix = path.startsWith('$streamStatus.') ? '$streamStatus.' : '$streamError.';
+    const hasNamespace = scopedPaths.some(p => p.path.startsWith(prefix));
+    return !hasNamespace || pathSet.has(path);
+  }
   return pathSet.has(path);
 }
 
@@ -523,11 +557,11 @@ function buildPathAndFilterCompletions(
     };
   }
 
-  // パス補完
+  // パス補完（テキストバインディングなのでメソッド・トークン系は除外）
   const allPaths = getStatePathsFromHtml(html, stateTagName);
   const targetStateName = targetState || 'default';
   const pathCandidates = allPaths
-    .filter(p => p.kind !== 'method')
+    .filter(p => p.kind !== 'method' && p.kind !== 'command' && p.kind !== 'eventToken')
     .filter(p => p.stateName === targetStateName);
   if (pathCandidates.length === 0) return undefined;
 

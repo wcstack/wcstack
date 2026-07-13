@@ -21,7 +21,9 @@ type _IsPlainObject<T> =
     ? false
     : T extends Record<string, any> ? true : false;
 type _DataKeys<T> = {
-  [K in keyof T & string]: _IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
+  [K in keyof T & string]:
+    K extends \`$\${string}\` ? never :
+    _IsAny<T[K]> extends true ? K : T[K] extends Function ? never : K;
 }[keyof T & string];
 type _WcsPaths<T, D extends readonly any[] = []> =
   D["length"] extends 4 ? never :
@@ -49,12 +51,18 @@ type _WcsPathValue<T, P extends string> =
       : never
     : never;
 type _WcsPathAccessor<T> = { [P in _WcsPaths<T>]: _WcsPathValue<T, P> };
+type _WcsStreamStatus = "idle" | "active" | "done" | "error";
 interface WcsStateApi {
-  $getAll<V = any>(path: string, defaultValue?: V[]): V[];
+  $getAll<V = any>(path: string, indexes?: number[]): V[];
   $postUpdate(path: string): void;
   $resolve(path: string, indexes: number[], value?: any): any;
   $trackDependency(path: string): void;
   readonly $stateElement: HTMLElement;
+  readonly $command: Record<string, { emit(...args: any[]): any }>;
+  readonly $streamStatus: Record<string, _WcsStreamStatus>;
+  readonly $streamError: Record<string, unknown>;
+  readonly [key: \`$streamStatus.\${string}\`]: _WcsStreamStatus;
+  readonly [key: \`$streamError.\${string}\`]: unknown;
   readonly $1: number; readonly $2: number; readonly $3: number;
   readonly $4: number; readonly $5: number; readonly $6: number;
   readonly $7: number; readonly $8: number; readonly $9: number;

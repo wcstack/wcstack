@@ -32,6 +32,9 @@ import {
   STATE_COMMAND_NAMESPACE_NAME,
   STATE_EVENT_TOKENS_NAME,
   STATE_ON_NAME,
+  STATE_STREAMS_NAME,
+  STATE_STREAM_STATUS_NAMESPACE_NAME,
+  STATE_STREAM_ERROR_NAMESPACE_NAME,
 } from "./define.js";
 
 // 消費側（vscode-wcs 等）が `@wcstack/state/manifest` から正本を直接引けるよう再エクスポート。
@@ -108,6 +111,9 @@ export function getWcsManifest(): IWcsManifest {
       STATE_COMMAND_NAMESPACE_NAME,
       STATE_EVENT_TOKENS_NAME,
       STATE_ON_NAME,
+      STATE_STREAMS_NAME,
+      STATE_STREAM_STATUS_NAMESPACE_NAME,
+      STATE_STREAM_ERROR_NAMESPACE_NAME,
     ],
   };
 }
