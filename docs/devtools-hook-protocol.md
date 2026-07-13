@@ -1,6 +1,11 @@
 # DevTools Hook Protocol 設計 (devtools-hook-protocol)
 
-- Status: **設計ドラフト（2026-07-14・未実装）** — UI 側は [devtools-tag-design.md](devtools-tag-design.md)
+- Status: **v1 実装完了（2026-07-14・未リリース）** — UI 側は [devtools-tag-design.md](devtools-tag-design.md)。
+  実装: ランタイム側 = packages/state/src/devtools/（bridge + 計装 5 点）、
+  消費者側 = packages/devtools/src/protocol/。受け入れゲート §7 は全て通過
+  （state 1747 tests / jsfb-verify 計装前後一致 / detach 残留ゼロテスト）。
+  §9 G-R は実ブラウザ e2e（devtools-smoke.mjs）の編集ラウンドトリップで実証済み、
+  G-P は素通しのまま実測問題なし（UI 側 rAF 合流で吸収）。
 - 位置づけ: 「静的検査可能性の弱さを**実行時検査可能性**で補う」ための規範プロトコル。
   wc-bindable / command-token / event-token に続く第 4 のプロトコル文書であり、
   UI（`<wcs-devtools>`）とランタイム（state / 将来 signals）の唯一の接点。

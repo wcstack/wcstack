@@ -288,6 +288,7 @@ const html = await renderToString(`
 - [`@wcstack/defined`](packages/defined/) — Declarative custom-element readiness with `<wcs-defined>`: watches `whenDefined()` for a set of tags and exposes `defined`/`pending`/`missing`/`count`/`total` state, with timeout-based load-failure detection. Companion to the autoloader; what CSS `:defined` cannot do.
 - [`@wcstack/camera`](packages/camera/) — Declarative camera capture and recording with `<wcs-camera>` (getUserMedia + built-in preview) and `<wcs-recorder>` (MediaRecorder). The live `MediaStream` is bound straight to elements via a command-token argument and **never stored in serializable state** — only derived values (permission, recording flag, the recorded `Blob`/URL) flow through state.
 - [`@wcstack/signals`](packages/signals/) — A signals-based, fine-grained reactive **core** (the JS-first counterpart to `@wcstack/state`): `signal`/`computed`/`effect`, async `resource`/`streamResource`, keyed `For`/`Index`, and a `bindNode` adapter that drives the same wc-bindable IO nodes through signals. TC39-Signals-shaped, zero-dependency.
+- [`@wcstack/devtools`](packages/devtools/) — In-page DevTools overlay with `<wcs-devtools>`: inspect state trees (with inline editing through the normal reactive pipeline), see which DOM nodes each path is wired to, and watch a live timeline of writes, update batches, and command/event-token emissions — including zero-subscriber "empty emits". One script tag, connects via the DevTools Hook Protocol, zero-dependency.
 - [`wcstack-intellisense`](packages/vscode-wcs/) — VS Code extension that provides language support for `<wcs-state>` inline scripts.
 
 ---
@@ -384,6 +385,7 @@ wcstack/
 │   ├── defined/       # @wcstack/defined
 │   ├── camera/        # @wcstack/camera
 │   ├── signals/       # @wcstack/signals
+│   ├── devtools/      # @wcstack/devtools
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code extension)
 ```
 
