@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.10.0
+
+`@wcstack/state` の現行実装（command-token / event-token / spread / `$streams`）への追従。
+
+### Features
+
+- **`$streams` 宣言対応** — エントリ名を値プロパティとして実体化（`initial` から型・配列パスを導出）し、`$streamStatus.<name>` / `$streamError.<name>` を補完・検証対象に追加
+- **command-token 対応** — `$commandTokens` 宣言から `$command.<name>` 候補を導出。`onclick: $command.<name>` / `command.<method>: $command.<name>` の右辺を宣言と照合
+- **event-token 対応** — `$eventTokens` 宣言からトークン名候補を導出。`eventToken.<prop>: <name>` の右辺を宣言と照合（state パスとしては検証しない）
+- **スプレッド / radio / checkbox** — `...:` のフィルタ禁止・ターゲット必須をランタイムと同じく error 化。`...` / `radio` / `checkbox` / `command.` / `eventToken.` を補完候補に追加
+- **prop 側 input フィルタ** — `value|int: path` の書き戻しフィルタを解釈し、フィルタ名・引数を検証
+- **修飾子 `ro`** — 双方向バインディングの書き戻し抑止修飾子を補完候補に追加
+- **ループインデックス** — `$1` 等を存在検証から除外し、`<template for>` 外での使用に warning を追加
+
+### Fixes
+
+- トップレベルの `$` 予約キー（`$streams` / `$commandTokens` / `$eventTokens` / `$on` / `$bindables` / ライフサイクル）が偽のデータパス（`streams` 等）として補完・検証に混入していた問題を修正
+- preamble の `$getAll` シグネチャをランタイム実装 `(path, indexes?)` に修正（旧: `(path, defaultValue?)`）
+- preamble に `$command` / `$streamStatus` / `$streamError` 名前空間と `this["$streamStatus.<name>"]` の dotted アクセス型を追加（`$streams` 利用スクリプトの偽型エラーを解消）
+
 ## 0.1.0
 
 Initial release.

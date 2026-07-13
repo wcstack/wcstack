@@ -19,7 +19,7 @@ export default {
     this.count++;              // number
     this["users.*.name"];      // string
     this["users.*.age"];       // number
-    this.$getAll("path", []);  // WcsStateApi
+    this.$getAll("users.*.age"); // WcsStateApi
   },
 
   get "users.*.ageCategory"() {
@@ -37,9 +37,11 @@ Completions for property names, state paths, and filter names in `data-wcs` attr
 - `data-wcs="` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...
 - `data-wcs="textContent: ` → `count`, `users`, `users.*.name` ...
 - `data-wcs="textContent: count|` → `gt`, `eq`, `uc`, `trim` ...
-- `data-wcs="onclick#` → `prevent`, `stop`
+- `data-wcs="onclick#` → `prevent`, `stop`, `ro`
 - `data-wcs="for: ` → only array-typed paths
-- `data-wcs="onclick: ` → only methods
+- `data-wcs="onclick: ` → only methods and `$command.<name>`
+- `data-wcs="command.play: ` → only `$command.<name>` (from the `$commandTokens` declaration)
+- `data-wcs="eventToken.value: ` → only token names from the `$eventTokens` declaration
 
 #### for-context Completions
 

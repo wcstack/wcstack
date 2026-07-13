@@ -19,7 +19,7 @@ export default {
     this.count++;              // number
     this["users.*.name"];      // string
     this["users.*.age"];       // number
-    this.$getAll("path", []);  // WcsStateApi
+    this.$getAll("users.*.age"); // WcsStateApi
   },
 
   get "users.*.ageCategory"() {
@@ -37,9 +37,11 @@ export default {
 - `data-wcs="` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...
 - `data-wcs="textContent: ` → `count`, `users`, `users.*.name` ...
 - `data-wcs="textContent: count|` → `gt`, `eq`, `uc`, `trim` ...
-- `data-wcs="onclick#` → `prevent`, `stop`
+- `data-wcs="onclick#` → `prevent`, `stop`, `ro`
 - `data-wcs="for: ` → 配列型のパスのみ表示
-- `data-wcs="onclick: ` → メソッドのみ表示
+- `data-wcs="onclick: ` → メソッドと `$command.<name>` のみ表示
+- `data-wcs="command.play: ` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示
+- `data-wcs="eventToken.value: ` → `$eventTokens` 宣言のトークン名のみ表示
 
 #### for コンテキスト補完
 

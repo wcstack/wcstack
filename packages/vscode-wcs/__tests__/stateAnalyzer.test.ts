@@ -233,3 +233,118 @@ describe('analyzeJsonPaths', () => {
     expect(paths.map(p => p.path)).not.toContain('a.b.c.d.e.f.g.h');
   });
 });
+
+describe('analyzeStatePaths — $ 予約キー（@wcstack/state define.ts の予約名）', () => {
+  const STREAMS_SCRIPT = `
+export default {
+  filter: "all",
+  $streams: {
+    metrics: {
+      args() { return this.filter; },
+      async *source(args, signal) { yield 1; },
+      fold(acc, chunk) { return [...acc, chunk]; },
+      initial: [],
+    },
+    latestPrice: {
+      source(args, signal) { return makeStream(); },
+    },
+  },
+};`;
+
+  it('$streams のエントリ名を値プロパティとして実体化する', () => {
+    const paths = analyzeStatePaths(STREAMS_SCRIPT);
+    const metrics = paths.find(p => p.path === 'metrics');
+    expect(metrics).toBeDefined();
+    expect(metrics!.kind).toBe('data');
+    expect(paths.find(p => p.path === 'latestPrice')).toBeDefined();
+  });
+
+  it('$streams エントリの initial から型ヒント・配列パスを導出する', () => {
+    const paths = analyzeStatePaths(STREAMS_SCRIPT);
+    expect(paths.find(p => p.path === 'metrics')?.typeHint).toBe('array');
+    expect(paths.map(p => p.path)).toContain('metrics.*');
+    expect(paths.map(p => p.path)).toContain('metrics.length');
+  });
+
+  it('$streamStatus / $streamError の名前空間パスを生成する', () => {
+    const paths = analyzeStatePaths(STREAMS_SCRIPT);
+    expect(paths.find(p => p.path === '$streamStatus.metrics')?.typeHint).toBe('string');
+    expect(paths.map(p => p.path)).toContain('$streamError.metrics');
+    expect(paths.map(p => p.path)).toContain('$streamStatus.latestPrice');
+  });
+
+  it('$streams 自体や宣言オブジェクトの中身はパスにしない', () => {
+    const paths = analyzeStatePaths(STREAMS_SCRIPT);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).not.toContain('$streams');
+    expect(pathNames).not.toContain('streams');
+    expect(pathNames).not.toContain('$streams.metrics');
+    expect(pathNames).not.toContain('$streams.metrics.initial');
+  });
+
+  it('明示宣言された同名プロパティが $streams の実体化より優先される', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  metrics: "explicit",
+  $streams: {
+    metrics: { source(a, s) { return x; }, initial: [] },
+  },
+};`);
+    const metrics = paths.filter(p => p.path === 'metrics');
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0].typeHint).toBe('string');
+  });
+
+  it('$commandTokens から $command.<name> 候補を生成する', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  $commandTokens: ["play", "pause"],
+};`);
+    const play = paths.find(p => p.path === '$command.play');
+    expect(play).toBeDefined();
+    expect(play!.kind).toBe('command');
+    expect(paths.find(p => p.path === '$command.pause')).toBeDefined();
+    expect(paths.map(p => p.path)).not.toContain('$commandTokens');
+    expect(paths.map(p => p.path)).not.toContain('commandTokens');
+  });
+
+  it('$eventTokens からトークン名候補を生成する', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  $eventTokens: ["userChanged"],
+};`);
+    const token = paths.find(p => p.path === 'userChanged');
+    expect(token).toBeDefined();
+    expect(token!.kind).toBe('eventToken');
+    expect(paths.map(p => p.path)).not.toContain('$eventTokens');
+  });
+
+  it('$on / $bindables / ライフサイクルフックはパスにしない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  count: 0,
+  $on: {
+    userChanged(state, event) {},
+  },
+  $bindables: ["count"],
+  async $connectedCallback() { this.count = 1; },
+  $updatedCallback() {},
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('count');
+    expect(pathNames).not.toContain('$on');
+    expect(pathNames).not.toContain('on');
+    expect(pathNames).not.toContain('$bindables');
+    expect(pathNames).not.toContain('$connectedCallback');
+    expect(pathNames).not.toContain('connectedCallback');
+    expect(pathNames).not.toContain('$updatedCallback');
+  });
+
+  it('JSON のトップレベル $ キーはパスにしない', () => {
+    const paths = analyzeJsonPaths('{"count": 0, "$streams": {"metrics": {}}}');
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('count');
+    expect(pathNames).not.toContain('$streams');
+    expect(pathNames).not.toContain('$streams.metrics');
+  });
+});

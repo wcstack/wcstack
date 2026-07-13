@@ -52,6 +52,15 @@ export const PROPERTY_PREFIXES: PropertyInfo[] = [
   { name: 'class.', description: 'CSS クラスの切り替え', insertColon: false },
   { name: 'style.', description: 'インラインスタイルの設定', insertColon: false },
   { name: 'attr.', description: 'HTML 属性の設定', insertColon: false },
+  { name: 'command.', description: 'command-token 起動（右辺: $command.<name>）', insertColon: false },
+  { name: 'eventToken.', description: 'event-token 配線（右辺: $eventTokens 宣言名）', insertColon: false },
+];
+
+/** 特殊バインディング（parseBindTextsForElement.ts の special-propPart） */
+export const SPECIAL_BINDINGS: PropertyInfo[] = [
+  { name: '...', description: 'スプレッド — wcBindable の properties+inputs を一括配線', insertColon: true },
+  { name: 'radio', description: 'ラジオボタングループの双方向バインディング', insertColon: true },
+  { name: 'checkbox', description: 'チェックボックスグループの双方向バインディング', insertColon: true },
 ];
 
 /**
@@ -83,8 +92,14 @@ export const COMMON_EVENTS: PropertyInfo[] = [
   { name: 'onmouseout', description: 'マウスアウトイベント', insertColon: true },
 ];
 
-/** イベント修飾子 */
+/**
+ * バインディング修飾子（`prop#modifier` — カンマ区切りで複数指定可）。
+ * prevent/stop はイベント系、ro は two-way / radio / checkbox の書き戻し抑止。
+ * このほか two-way では `on<event>`（例: `value#onblur`）でトリガーイベントを上書きできる
+ * （event/twowayHandler.ts）— イベント名は自由記述のため静的候補には含めない。
+ */
 export const EVENT_MODIFIERS = [
   { name: 'prevent', description: 'event.preventDefault() を呼び出す' },
   { name: 'stop', description: 'event.stopPropagation() を呼び出す' },
+  { name: 'ro', description: '双方向バインディングの書き戻しを抑止（読み取り専用）' },
 ];

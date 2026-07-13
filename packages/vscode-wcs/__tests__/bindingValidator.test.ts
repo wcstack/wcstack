@@ -557,3 +557,161 @@ export default { count: 0 };
     expect(diags.some(d => d.message.includes('"missing"'))).toBe(true);
   });
 });
+
+describe('validateBindings — command-token / event-token / $streams / spread', () => {
+  const TOKEN_STATE = `
+<wcs-state>
+  <script type="module">
+export default {
+  count: 0,
+  items: [],
+  $commandTokens: ["play", "pause"],
+  $eventTokens: ["userChanged"],
+  $streams: {
+    metrics: { source(a, s) { return x; }, initial: [] },
+  },
+};
+  </script>
+</wcs-state>`;
+
+  it('onclick: $command.<宣言済み> に警告を出さない', () => {
+    const html = `${TOKEN_STATE}\n<button data-wcs="onclick: $command.play"></button>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('onclick: $command.<未宣言> に warning を出す', () => {
+    const html = `${TOKEN_STATE}\n<button data-wcs="onclick: $command.typo"></button>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('$commandTokens に宣言されていません');
+  });
+
+  it('command.<method>: $command.<宣言済み> に警告を出さない', () => {
+    const html = `${TOKEN_STATE}\n<audio data-wcs="command.play: $command.play"></audio>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('command.<method> の右辺が $command.* でないと warning を出す', () => {
+    const html = `${TOKEN_STATE}\n<audio data-wcs="command.play: count"></audio>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('$command.<name>');
+  });
+
+  it('eventToken.<prop>: <宣言済みトークン> に警告を出さない', () => {
+    const html = `${TOKEN_STATE}\n<my-input data-wcs="eventToken.value: userChanged"></my-input>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('eventToken.<prop>: <未宣言トークン> に warning を出す', () => {
+    const html = `${TOKEN_STATE}\n<my-input data-wcs="eventToken.value: typo"></my-input>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('$eventTokens に宣言されていません');
+  });
+
+  it('$eventTokens 宣言がない場合は eventToken の右辺を検証しない（誤警告回避）', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { count: 0 };
+  </script>
+</wcs-state>
+<my-input data-wcs="eventToken.value: anything"></my-input>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('$streamStatus.<宣言済み> のバインディングに警告を出さない', () => {
+    const html = `${TOKEN_STATE}\n<span data-wcs="textContent: $streamStatus.metrics"></span>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('$streamStatus.<未宣言> に warning を出す', () => {
+    const html = `${TOKEN_STATE}\n<span data-wcs="textContent: $streamStatus.typo"></span>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('$streams 宣言に存在しません');
+  });
+
+  it('$streams 宣言がない場合は $streamStatus.* を検証しない（誤警告回避）', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { count: 0 };
+  </script>
+</wcs-state>
+<span data-wcs="textContent: $streamStatus.metrics"></span>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('$streams の値プロパティを for: にバインドしても警告を出さない', () => {
+    const html = `${TOKEN_STATE}\n<template data-wcs="for: metrics"><span data-wcs="textContent: .*"></span></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const forDiags = diags.filter(d => d.message.includes('"metrics"'));
+    expect(forDiags).toHaveLength(0);
+  });
+
+  it('スプレッドのターゲットにフィルタがあると error を出す', () => {
+    const html = `${TOKEN_STATE}\n<wcs-fetch data-wcs="...: count|uc"></wcs-fetch>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.severity === 'error' && d.message.includes('スプレッド'))).toBe(true);
+  });
+
+  it('スプレッドのターゲットパスがないと error を出す', () => {
+    const html = `${TOKEN_STATE}\n<wcs-fetch data-wcs="...:"></wcs-fetch>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.severity === 'error' && d.message.includes('ターゲットパスが必要'))).toBe(true);
+  });
+
+  it('正常なスプレッドには警告を出さない', () => {
+    const html = `${TOKEN_STATE}\n<wcs-fetch data-wcs="...: count"></wcs-fetch>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+});
+
+describe('validateBindings — prop 側 input フィルタ / ループインデックス', () => {
+  const STATE = `
+<wcs-state>
+  <script type="module">
+export default { count: 0, name: "a", items: [{ label: "x" }] };
+  </script>
+</wcs-state>`;
+
+  it('prop 側の既知 input フィルタには警告を出さない', () => {
+    const html = `${STATE}\n<input data-wcs="value|int: count">`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('prop 側の未知 input フィルタに warning を出す', () => {
+    const html = `${STATE}\n<input data-wcs="value|nosuch: name">`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('"nosuch"'))).toBe(true);
+  });
+
+  it('prop 側フィルタがあってもプロパティ名・パスは正しく検証される', () => {
+    const html = `${STATE}\n<input data-wcs="value|int: missing">`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('"missing"'))).toBe(true);
+  });
+
+  it('for 内の $1 には警告を出さない', () => {
+    const html = `${STATE}\n<template data-wcs="for: items"><span data-wcs="textContent: $1"></span></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('for 外の $1 に warning を出す', () => {
+    const html = `${STATE}\n<span data-wcs="textContent: $1"></span>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('ループインデックス');
+  });
+});

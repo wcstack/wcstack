@@ -40,10 +40,13 @@ type IsPlainObject<T> =
 /**
  * T のキーのうち、関数でないもの（データプロパティ・computed getter）を抽出する。
  * メソッド（イベントハンドラ等）はドットパスの対象外。
+ * `$` プレフィックスキー（$streams / $commandTokens / $on 等の予約宣言）もドットパスにならない。
  * any 型のプロパティは除外せず保持する。
  */
 type DataKeys<T> = {
-  [K in keyof T & string]: IsAny<T[K]> extends true ? K : T[K] extends (...args: any[]) => any ? never : K;
+  [K in keyof T & string]:
+    K extends `$${string}` ? never :
+    IsAny<T[K]> extends true ? K : T[K] extends (...args: any[]) => any ? never : K;
 }[keyof T & string];
 
 // ============================================================
@@ -160,14 +163,17 @@ export interface WcsStateApi {
   /**
    * ワイルドカードを含むパスにマッチする全要素を配列で取得する。
    *
+   * @param path - ワイルドカードを含むパス
+   * @param indexes - 各ワイルドカード階層のインデックス（省略時はループコンテキストから解決）
+   *
    * @example
    * ```ts
    * get "cart.totalPrice"() {
-   *   return this.$getAll("cart.items.*.price", []).reduce((sum, v) => sum + v, 0);
+   *   return this.$getAll("cart.items.*.price").reduce((sum, v) => sum + v, 0);
    * }
    * ```
    */
-  $getAll<V = any>(path: string, defaultValue?: V[]): V[];
+  $getAll<V = any>(path: string, indexes?: number[]): V[];
 
   /**
    * 指定パスの更新を手動でトリガーする。
@@ -193,9 +199,28 @@ export interface WcsStateApi {
   /** `<wcs-state>` 要素への参照 */
   readonly $stateElement: HTMLElement;
 
+  /**
+   * `$commandTokens` で宣言した command token の名前空間。
+   * `this.$command.<name>` で token を解決できる（バインディングでは
+   * `onclick: $command.<name>` / `command.<method>: $command.<name>`）。
+   */
+  readonly $command: Record<string, { emit(...args: any[]): any }>;
+
+  /** `$streams` 各エントリの状態（"idle" | "active" | "done" | "error"）を返す読み取り専用名前空間 */
+  readonly $streamStatus: Record<string, "idle" | "active" | "done" | "error">;
+
+  /** `$streams` 各エントリの直近エラーを返す読み取り専用名前空間 */
+  readonly $streamError: Record<string, unknown>;
+
+  // computed getter 内での依存追跡付き読み取りの正規形は dotted パス
+  // （`this["$streamStatus.<name>"]` — docs/state-streams-design.md §4-3）
+  readonly [key: `$streamStatus.${string}`]: "idle" | "active" | "done" | "error";
+  readonly [key: `$streamError.${string}`]: unknown;
+
   // ループインデックス変数 ($1〜$9)
   // for テンプレート内のイベントハンドラで、ネストされたループの
   // 各階層のインデックスにアクセスするために使用。
+  // （ランタイムは $1〜$128 まで解決するが、型宣言は実用域の $9 までとする）
   readonly $1: number;
   readonly $2: number;
   readonly $3: number;
@@ -227,7 +252,7 @@ export interface WcsStateApi {
  *   increment() {
  *     this.count++;                // number
  *     this["users.*.name"];        // string (パス型解決)
- *     this.$getAll("path", []);    // API
+ *     this.$getAll("users.*.age"); // API
  *   }
  * });
  * ```

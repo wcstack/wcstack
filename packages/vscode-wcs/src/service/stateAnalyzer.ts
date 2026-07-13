@@ -10,15 +10,25 @@
 
 /** パス候補 */
 export interface PathCandidate {
-  /** ドット区切りパス（例: "users.*.name"） */
+  /** ドット区切りパス（例: "users.*.name"、"$command.play"） */
   path: string;
-  /** パスの種別（method は検証専用、補完候補には出さない） */
-  kind: 'data' | 'computed' | 'method' | 'list';
+  /**
+   * パスの種別（method は検証専用、補完候補には出さない）。
+   * - command: `$commandTokens` 宣言から導出した `$command.<name>` パス
+   * - eventToken: `$eventTokens` 宣言から導出したトークン名（`eventToken.<prop>:` の右辺）
+   */
+  kind: 'data' | 'computed' | 'method' | 'list' | 'command' | 'eventToken';
   /** 値の型ヒント（推定） */
   typeHint?: string;
   /** 所属する state 名（デフォルト: 'default'） */
   stateName: string;
 }
+
+// ランタイム予約キー（@wcstack/state src/define.ts が正本）。
+// トップレベルの `$` プレフィックスキーは宣言・API 名前空間でありデータパスにならない。
+const RESERVED_STREAMS_KEY = '$streams';
+const RESERVED_COMMAND_TOKENS_KEY = '$commandTokens';
+const RESERVED_EVENT_TOKENS_KEY = '$eventTokens';
 
 /**
  * export default { ... } のオブジェクトリテラルからパス候補を生成する。
@@ -32,8 +42,17 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
 
   const paths: PathCandidate[] = [];
   const topLevelProps = parseTopLevelProperties(objectContent);
+  // `$streams` の値プロパティ実体化はループ後に処理する（明示宣言されたプロパティが優先）
+  const pendingStreamValues: PropertyInfo[] = [];
 
   for (const prop of topLevelProps) {
+    // トップレベルの `$` プレフィックスキーは予約名（$streams/$commandTokens/$eventTokens/
+    // $on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の候補だけを導出する。
+    if (prop.name.startsWith('$')) {
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, stateName);
+      continue;
+    }
+
     if (prop.kind === 'method') {
       // メソッドはパス補完には含めないが、検証用に登録
       paths.push({ path: prop.name, kind: 'method', stateName });
@@ -46,56 +65,143 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
       continue;
     }
 
-    // データプロパティ
-    paths.push({ path: prop.name, kind: 'data', typeHint: prop.typeHint, stateName });
+    pushDataPropertyPaths(prop, paths, stateName);
+  }
 
-    // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成
-    if (prop.value && isArrayLiteral(prop.value)) {
-      paths.push({ path: `${prop.name}.*`, kind: 'list', stateName });
-      paths.push({ path: `${prop.name}.length`, kind: 'data', typeHint: 'number', stateName });
-      const elementProps = extractArrayElementProperties(prop.value);
-      for (const childProp of elementProps) {
+  // $streams 宣言による値プロパティの実体化（processStreamsDeclaration §1-3 相当）。
+  // ユーザーが同名プロパティを明示宣言している場合は上書きしない。
+  for (const streamValue of pendingStreamValues) {
+    if (paths.some(p => p.stateName === stateName && p.path === streamValue.name)) continue;
+    pushDataPropertyPaths(streamValue, paths, stateName);
+  }
+
+  return paths;
+}
+
+/**
+ * トップレベルの `$` 予約キーから、バインディングで使える派生パス候補を導出する。
+ *
+ * - `$streams: { <name>: { initial?, ... } }` → 値プロパティ `<name>`（実体化・後処理）＋
+ *   `$streamStatus.<name>` / `$streamError.<name>`（読み取り専用名前空間パス）
+ * - `$commandTokens: ["a", ...]` → `$command.<a>`（kind: 'command'）
+ * - `$eventTokens: ["a", ...]` → `<a>`（kind: 'eventToken'）
+ * - その他（`$on` / `$bindables` / ライフサイクル等）→ 候補なし
+ */
+function collectReservedKeyPaths(
+  prop: PropertyInfo,
+  paths: PathCandidate[],
+  pendingStreamValues: PropertyInfo[],
+  stateName: string,
+): void {
+  if (prop.name === RESERVED_STREAMS_KEY && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
+    const entries = parseTopLevelProperties(extractObjectContent(prop.value));
+    for (const entry of entries) {
+      // ストリーム名はフラットなプロパティ名のみ（`$` 始まりはランタイムが拒否）
+      if (entry.kind !== 'data' || entry.name.startsWith('$')) continue;
+      const initial = entry.value && isObjectLiteral(entry.value)
+        ? findStreamInitialProperty(entry.value)
+        : undefined;
+      pendingStreamValues.push({
+        name: entry.name,
+        kind: 'data',
+        value: initial?.value,
+        typeHint: initial?.typeHint,
+      });
+      paths.push({ path: `$streamStatus.${entry.name}`, kind: 'data', typeHint: 'string', stateName });
+      paths.push({ path: `$streamError.${entry.name}`, kind: 'data', stateName });
+    }
+    return;
+  }
+
+  if (prop.name === RESERVED_COMMAND_TOKENS_KEY && prop.value) {
+    for (const name of extractStringArrayItems(prop.value)) {
+      paths.push({ path: `$command.${name}`, kind: 'command', stateName });
+    }
+    return;
+  }
+
+  if (prop.name === RESERVED_EVENT_TOKENS_KEY && prop.value) {
+    for (const name of extractStringArrayItems(prop.value)) {
+      paths.push({ path: name, kind: 'eventToken', stateName });
+    }
+    return;
+  }
+}
+
+/**
+ * `$streams` エントリ定義オブジェクトから `initial` プロパティを取り出す。
+ */
+function findStreamInitialProperty(entryValue: string): PropertyInfo | undefined {
+  const defProps = parseTopLevelProperties(extractObjectContent(entryValue));
+  return defProps.find(p => p.kind === 'data' && p.name === 'initial');
+}
+
+/**
+ * 配列リテラルから文字列リテラル要素を取り出す（`$commandTokens` / `$eventTokens` 用）。
+ */
+function extractStringArrayItems(value: string): string[] {
+  if (!isArrayLiteral(value)) return [];
+  const items: string[] = [];
+  const regex = /["']([^"'\\]+)["']/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(value)) !== null) {
+    items.push(match[1]);
+  }
+  return items;
+}
+
+/**
+ * データプロパティ1つ分のパス候補を生成する
+ * （配列ならワイルドカード・`.length`・要素子パス、オブジェクトなら子パスも展開）。
+ */
+function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], stateName: string): void {
+  // データプロパティ
+  paths.push({ path: prop.name, kind: 'data', typeHint: prop.typeHint, stateName });
+
+  // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成
+  if (prop.value && isArrayLiteral(prop.value)) {
+    paths.push({ path: `${prop.name}.*`, kind: 'list', stateName });
+    paths.push({ path: `${prop.name}.length`, kind: 'data', typeHint: 'number', stateName });
+    const elementProps = extractArrayElementProperties(prop.value);
+    for (const childProp of elementProps) {
+      paths.push({
+        path: `${prop.name}.*.${childProp.name}`,
+        kind: 'data',
+        typeHint: childProp.typeHint,
+        stateName,
+      });
+    }
+  }
+
+  // オブジェクトの場合、子パスを生成
+  if (prop.value && isObjectLiteral(prop.value)) {
+    const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
+    for (const childProp of childProps) {
+      if (childProp.kind === 'data') {
         paths.push({
-          path: `${prop.name}.*.${childProp.name}`,
+          path: `${prop.name}.${childProp.name}`,
           kind: 'data',
           typeHint: childProp.typeHint,
           stateName,
         });
-      }
-    }
 
-    // オブジェクトの場合、子パスを生成
-    if (prop.value && isObjectLiteral(prop.value)) {
-      const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
-      for (const childProp of childProps) {
-        if (childProp.kind === 'data') {
-          paths.push({
-            path: `${prop.name}.${childProp.name}`,
-            kind: 'data',
-            typeHint: childProp.typeHint,
-            stateName,
-          });
-
-          // ネストした配列
-          if (childProp.value && isArrayLiteral(childProp.value)) {
-            paths.push({ path: `${prop.name}.${childProp.name}.*`, kind: 'list', stateName });
-            paths.push({ path: `${prop.name}.${childProp.name}.length`, kind: 'data', typeHint: 'number', stateName });
-            const grandchildProps = extractArrayElementProperties(childProp.value);
-            for (const gc of grandchildProps) {
-              paths.push({
-                path: `${prop.name}.${childProp.name}.*.${gc.name}`,
-                kind: 'data',
-                typeHint: gc.typeHint,
-                stateName,
-              });
-            }
+        // ネストした配列
+        if (childProp.value && isArrayLiteral(childProp.value)) {
+          paths.push({ path: `${prop.name}.${childProp.name}.*`, kind: 'list', stateName });
+          paths.push({ path: `${prop.name}.${childProp.name}.length`, kind: 'data', typeHint: 'number', stateName });
+          const grandchildProps = extractArrayElementProperties(childProp.value);
+          for (const gc of grandchildProps) {
+            paths.push({
+              path: `${prop.name}.${childProp.name}.*.${gc.name}`,
+              kind: 'data',
+              typeHint: gc.typeHint,
+              stateName,
+            });
           }
         }
       }
     }
   }
-
-  return paths;
 }
 
 /**
@@ -138,6 +244,8 @@ function collectJsonPaths(
   if (depth > 5) return; // 深すぎるネストは無視
 
   for (const [key, value] of Object.entries(obj)) {
+    // トップレベルの `$` キーは予約名（JSON state に書いてもデータパスにはならない）
+    if (prefix === '' && key.startsWith('$')) continue;
     const path = prefix ? `${prefix}.${key}` : key;
     const typeHint = inferJsonTypeHint(value);
 
@@ -208,7 +316,9 @@ function extractDefaultExportObject(script: string): string | null {
  */
 function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
   const props: PropertyInfo[] = [];
-  const regex = /(?:get\s+(?:"([^"]+)"|'([^']+)'|(\w+))\s*\(\s*\))|(?:(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|(\w+))\s*:\s*)/g;
+  // 名前は `$` プレフィックスを含めて捕捉する（`\w` だけだと `$streams:` の
+  // `streams` 部分にマッチして偽のパスが生まれる）
+  const regex = /(?:get\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\(\s*\))|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/g;
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(objectContent)) !== null) {
