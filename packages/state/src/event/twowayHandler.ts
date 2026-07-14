@@ -1,5 +1,8 @@
 import { isPossibleTwoWay } from "./isPossibleTwoWay";
+import { config } from "../config";
+import { devtoolsSink } from "../devtools/sink";
 import { getLoopContextByNode } from "../list/loopContextByNode";
+import { beginPropagationTransaction, extendPropagationContext, getCurrentPropagationContext, getEdgeId, getWireId, matchWriteReceipt, runWithPropagationContext } from "../propagation/propagation";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
@@ -88,6 +91,63 @@ const twowayEventHandlerFunction = (
     for (const observer of producerObservers) observer(filteredNewValue);
   }
 
+  let propagationContext: ReturnType<typeof getCurrentPropagationContext> = null;
+  if (config.enablePropagationContext) {
+    // Phase 3: element → state edge の因果判定（設計書 §4）。
+    const wireId = getWireId(node, propName, stateName, statePathName);
+    const receipt = matchWriteReceipt(node, propName);
+    if (receipt !== null && Object.is(receipt.writtenValue, newValue)) {
+      // 規則 4: 同じ setter call stack 内で同じ member から Object.is 同値の
+      // 通知が戻った場合だけ confirmation として再伝播を抑止する。
+      // shadow diagnostic（§8）: primitive なら same-value guard も同じ結論に
+      // なるため、provenance だけが守っている非 primitive の echo を可視化する。
+      if (config.debug) {
+        console.debug(`[@wcstack/state] propagation: write confirmation suppressed echo.`, {
+          node,
+          propName,
+          statePathName,
+          transactionId: receipt.transactionId,
+          coveredBySameValueGuard: config.sameValueGuard
+            && (filteredNewValue === null || typeof filteredNewValue !== "object"),
+        });
+      }
+      if (devtoolsSink !== null) {
+        devtoolsSink({
+          type: "propagation:suppressed",
+          reason: "confirmation",
+          transactionId: receipt.transactionId,
+          edgeId: getEdgeId(wireId, "to-state"),
+          node,
+          member: propName,
+        });
+      }
+      return;
+    }
+    // receipt があるが値が異なる場合は正規化差分: element の確定値として受理し、
+    // 新しい edge を通る変更として継続する（規則 5・decision gate）。
+    const toStateEdgeId = getEdgeId(wireId, "to-state");
+    const baseContext = getCurrentPropagationContext();
+    if (baseContext !== null && baseContext.visitedEdges.has(toStateEdgeId)) {
+      // 規則 2: 同じ transaction が同じ edge を再度通ろうとした場合だけ抑止
+      if (devtoolsSink !== null) {
+        devtoolsSink({
+          type: "propagation:suppressed",
+          reason: "visited-edge",
+          transactionId: baseContext.transactionId,
+          edgeId: toStateEdgeId,
+          node,
+          member: propName,
+        });
+      }
+      return;
+    }
+    // 規則 1: 外部 event（受け皿の context が無い）なら新しい transaction を開始
+    propagationContext = extendPropagationContext(
+      baseContext ?? beginPropagationTransaction(wireId),
+      toStateEdgeId,
+    );
+  }
+
   const rootNode = node.getRootNode() as Node;
   const stateElement = getStateElementByName(rootNode, stateName);
   if (stateElement === null) {
@@ -95,11 +155,18 @@ const twowayEventHandlerFunction = (
   }
 
   const loopContext = getLoopContextByNode(node);
-  stateElement.createState("writable", (state) => {
-    state[setLoopContextSymbol](loopContext, () => {
-      state[statePathName] = filteredNewValue;
+  const commitToState = (): void => {
+    stateElement.createState("writable", (state) => {
+      state[setLoopContextSymbol](loopContext, () => {
+        state[statePathName] = filteredNewValue;
+      });
     });
-  });
+  };
+  if (propagationContext !== null) {
+    runWithPropagationContext(propagationContext, commitToState);
+  } else {
+    commitToState();
+  }
 }
 
 export function addTwowayValueObserver(

@@ -31,6 +31,12 @@ export interface IConfig {
    */
   readonly enableDirectionalInitialSync: boolean;
   /**
+   * Enables causal propagation tracking (transaction / edge provenance /
+   * write receipts). Disabled by default while Phase 3 runs as a shadow of
+   * the primitive same-value guard.
+   */
+  readonly enablePropagationContext: boolean;
+  /**
    * 同値ガード（**既定 true**・標準的リアクティブ挙動・`setConfig({ sameValueGuard: false })` で opt-out 可）。
    * primitive 値の set で `Object.is` 同値なら更新を no-op にする
    * （enqueue / 依存 walk / DOM 適用 / $updatedCallback / DCC イベントを発火しない）。
@@ -52,5 +58,6 @@ export interface IWritableConfig {
   debug?: boolean;
   enableMustache?: boolean;
   enableDirectionalInitialSync?: boolean;
+  enablePropagationContext?: boolean;
   sameValueGuard?: boolean;
 }

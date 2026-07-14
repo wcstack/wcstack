@@ -1,5 +1,7 @@
 import { config, inSsr } from "../config";
+import { devtoolsSink } from "../devtools/sink";
 import { applyMirrorAttribute, getInputAttributeMirror } from "../event/getInputAttributeMirror";
+import { beginPropagationTransaction, extendPropagationContext, getCurrentPropagationContext, getEdgeId, getWireId, runWithPropagationContext, runWithWriteReceipt } from "../propagation/propagation";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
@@ -57,38 +59,69 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
   if (propSegments.length === 1) {
     const firstSegment = propSegments[0];
     if ((element as any)[firstSegment] !== newValue) {
-      let propertyWriteSucceeded = false;
-      try {
-        (element as any)[firstSegment] = newValue;
-        propertyWriteSucceeded = true;
-      } catch (error) {
-        if (config.debug) {
-          console.warn(`Failed to set property '${firstSegment}' on element.`, {
-            element,
-            newValue,
-            error
-          });
+      const performWrite = (): void => {
+        let propertyWriteSucceeded = false;
+        try {
+          (element as any)[firstSegment] = newValue;
+          propertyWriteSucceeded = true;
+        } catch (error) {
+          if (config.debug) {
+            console.warn(`Failed to set property '${firstSegment}' on element.`, {
+              element,
+              newValue,
+              error
+            });
+          }
         }
-      }
-      // wc-bindable inputs[].attribute ミラー。プロパティ書き込みが成功したときだけ
-      // 属性へ反映する。setter が値を拒否した場合に属性だけ進んでしまうと
-      // property と attribute が乖離し、attributeChangedCallback や CSS セレクタが
-      // 実際のプロパティ値と矛盾した状態で発火するため、ここでガードする。
-      if (propertyWriteSucceeded) {
-        const mirrorAttr = getInputAttributeMirror(element, firstSegment);
-        if (mirrorAttr !== null) {
-          try {
-            applyMirrorAttribute(element, mirrorAttr, newValue);
-          } catch (error) {
-            if (config.debug) {
-              console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
-                element,
-                newValue,
-                error
-              });
+        // wc-bindable inputs[].attribute ミラー。プロパティ書き込みが成功したときだけ
+        // 属性へ反映する。setter が値を拒否した場合に属性だけ進んでしまうと
+        // property と attribute が乖離し、attributeChangedCallback や CSS セレクタが
+        // 実際のプロパティ値と矛盾した状態で発火するため、ここでガードする。
+        if (propertyWriteSucceeded) {
+          const mirrorAttr = getInputAttributeMirror(element, firstSegment);
+          if (mirrorAttr !== null) {
+            try {
+              applyMirrorAttribute(element, mirrorAttr, newValue);
+            } catch (error) {
+              if (config.debug) {
+                console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
+                  element,
+                  newValue,
+                  error
+                });
+              }
             }
           }
         }
+      };
+      if (config.enablePropagationContext) {
+        // Phase 3: state → element edge の通過を記録し、同じ transaction が
+        // 同じ edge を再度通ろうとした場合だけ抑止する（設計書 §4 規則 2）。
+        // 書き込みは WriteReceipt scope で包み、setter が同期 dispatch する
+        // event が confirmation / 正規化を判定できるようにする（規則 3）。
+        const wireId = getWireId(element, firstSegment, binding.stateName, binding.statePathName);
+        const edgeId = getEdgeId(wireId, "to-element");
+        const baseContext = _context?.propagationContextByBinding?.get(binding)
+          ?? getCurrentPropagationContext()
+          ?? beginPropagationTransaction(wireId);
+        if (baseContext.visitedEdges.has(edgeId)) {
+          if (devtoolsSink !== null) {
+            devtoolsSink({
+              type: "propagation:suppressed",
+              reason: "visited-edge",
+              transactionId: baseContext.transactionId,
+              edgeId,
+              node: element,
+              member: firstSegment,
+            });
+          }
+        } else {
+          const extendedContext = extendPropagationContext(baseContext, edgeId);
+          runWithPropagationContext(extendedContext, () =>
+            runWithWriteReceipt(element, firstSegment, newValue, wireId, extendedContext.transactionId, performWrite));
+        }
+      } else {
+        performWrite();
       }
     }
     if (inSsr()) {

@@ -2,6 +2,7 @@ import { IStateElement } from "../components/types";
 import { IStateProxy } from "../proxy/types";
 import { IBindingInfo } from "../binding/types";
 import { IAbsoluteStateAddress } from "../address/types";
+import { IPropagationContext } from "../propagation/types";
 
 export interface IDeferredSelectBinding {
   readonly binding: IBindingInfo;
@@ -24,6 +25,12 @@ export interface IApplyContext {
    * 省略できる（大量バインディング drain のホットパス短縮）。
    */
   readonly sameRootVerified?: boolean;
+  /**
+   * updater drain 由来の binding ごとの因果 context（Phase 3、
+   * `enablePropagationContext` 有効時のみ設定される）。update record の
+   * coalescing 済み winner context がそのまま入る。
+   */
+  readonly propagationContextByBinding?: ReadonlyMap<IBindingInfo, IPropagationContext | null>;
 }
 
 export type ApplyChangeFn = (binding: IBindingInfo, context: IApplyContext, newValue: unknown) => void;

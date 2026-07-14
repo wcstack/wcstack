@@ -2,6 +2,9 @@ export const DELIMITER = '.';
 export const WILDCARD = '*';
 export const MAX_WILDCARD_DEPTH = 128;
 export const MAX_LOOP_DEPTH = 128;
+// 因果伝播（Phase 3）の 1 transaction あたり hop 上限。超過分の未処理 record は
+// quarantine し（適用済みの値は戻さない）、updater から例外は投げない。
+export const MAX_PROPAGATION_HOPS = 32;
 
 // data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。

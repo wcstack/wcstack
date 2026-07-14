@@ -64,6 +64,26 @@ export type DevtoolsEvent =
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
+    }
+  | {
+      readonly type: "propagation:suppressed";
+      readonly reason: "confirmation" | "visited-edge";
+      readonly transactionId: number;
+      readonly edgeId: number;
+      readonly node: Node;
+      readonly member: string;
+    }
+  | {
+      readonly type: "propagation:coalesced";
+      readonly absoluteAddress: IAbsoluteStateAddress;
+      readonly droppedTransactionId: number;
+      readonly winnerTransactionId: number;
+    }
+  | {
+      readonly type: "propagation:hop-limit";
+      readonly absoluteAddress: IAbsoluteStateAddress;
+      readonly transactionId: number;
+      readonly hop: number;
     };
 
 export type DevtoolsSink = (event: DevtoolsEvent) => void;
