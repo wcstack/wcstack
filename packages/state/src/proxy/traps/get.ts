@@ -33,10 +33,11 @@ import { resolve } from "../apis/resolve";
 import { trackDependency } from "../apis/trackDependency";
 import { updatedCallback } from "../apis/updatedCallback";
 import { getByAddress } from "../methods/getByAddress";
+import { hasByAddress } from "../methods/hasByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setByAddress } from "../methods/setByAddress";
 import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, setByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import { IStateHandler } from "../types";
 
 // `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
@@ -147,6 +148,16 @@ export function get(
       case getByAddressSymbol: {
         return (address: IStateAddress): any => {
           return getByAddress(
+            target,
+            address,
+            receiver,
+            handler
+          );
+        }
+      }
+      case hasByAddressSymbol: {
+        return (address: IStateAddress): boolean => {
+          return hasByAddress(
             target,
             address,
             receiver,

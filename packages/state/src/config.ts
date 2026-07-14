@@ -25,6 +25,7 @@ interface IInternalConfig {
   locale: string;
   debug: boolean;
   enableMustache: boolean;
+  enableDirectionalInitialSync: boolean;
   sameValueGuard: boolean;
 }
 
@@ -42,6 +43,7 @@ const _config: IInternalConfig = {
   locale: 'en',
   debug: false,
   enableMustache: true,
+  enableDirectionalInitialSync: false,
   sameValueGuard: true,
 };
 
@@ -82,6 +84,9 @@ export function setConfig(partialConfig: IWritableConfig): void {
   }
   if (typeof partialConfig.enableMustache === "boolean") {
     _config.enableMustache = partialConfig.enableMustache;
+  }
+  if (typeof partialConfig.enableDirectionalInitialSync === "boolean") {
+    _config.enableDirectionalInitialSync = partialConfig.enableDirectionalInitialSync;
   }
   if (typeof partialConfig.sameValueGuard === "boolean") {
     _config.sameValueGuard = partialConfig.sameValueGuard;

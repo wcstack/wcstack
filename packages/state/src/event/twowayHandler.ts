@@ -12,6 +12,7 @@ import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
 const bindingRegistry = createHandlerBindingRegistry();
+const producerValueObserversByNode = new WeakMap<Node, Map<string, Set<(value: unknown) => void>>>();
 
 const DEFAULT_GETTER = (e: Event) => (e as CustomEvent).detail;
 
@@ -82,6 +83,10 @@ const twowayEventHandlerFunction = (
   for(const filter of inFilters) {
     filteredNewValue = filter.filterFn(filteredNewValue);
   }
+  const producerObservers = producerValueObserversByNode.get(node)?.get(propName);
+  if (typeof producerObservers !== "undefined") {
+    for (const observer of producerObservers) observer(filteredNewValue);
+  }
 
   const rootNode = node.getRootNode() as Node;
   const stateElement = getStateElementByName(rootNode, stateName);
@@ -95,6 +100,29 @@ const twowayEventHandlerFunction = (
       state[statePathName] = filteredNewValue;
     });
   });
+}
+
+export function addTwowayValueObserver(
+  node: Node,
+  propName: string,
+  observer: (value: unknown) => void,
+): () => void {
+  let byProperty = producerValueObserversByNode.get(node);
+  if (typeof byProperty === "undefined") {
+    byProperty = new Map();
+    producerValueObserversByNode.set(node, byProperty);
+  }
+  let observers = byProperty.get(propName);
+  if (typeof observers === "undefined") {
+    observers = new Set();
+    byProperty.set(propName, observers);
+  }
+  observers.add(observer);
+  return () => {
+    observers?.delete(observer);
+    if (observers?.size === 0) byProperty?.delete(propName);
+    if (byProperty?.size === 0) producerValueObserversByNode.delete(node);
+  };
 }
 
 export function attachTwowayEventHandler(binding: IBindingInfo): void {
@@ -162,6 +190,7 @@ export function detachTwowayEventHandler(binding: IBindingInfo): void {
 export const __private__ = {
   handlerByHandlerKey,
   bindingRegistry,
+  producerValueObserversByNode,
   getHandlerKey,
   getEventName,
   getValueGetter,

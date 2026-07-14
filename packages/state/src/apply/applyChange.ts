@@ -1,4 +1,5 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
+import { getBindingSession } from "../bindings/BindingSession.js";
 import { getCustomElement } from "../getCustomElement.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { raiseError } from "../raiseError.js";
@@ -118,6 +119,10 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
         absAddress
       ]));
     }
+  }
+  const bindingSession = getBindingSession(binding);
+  if (bindingSession !== null && !bindingSession.shouldApplyState(binding)) {
+    return;
   }
   if (binding.bindingType === "event") {
     return;

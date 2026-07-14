@@ -16,6 +16,10 @@ export function scheduleDeferredApply(binding: IBindingInfo, tagName: string): v
 
   const applyLatest = (): void => {
     scheduledBindings.delete(binding);
+    const currentSession = getBindingSession(binding);
+    if (currentSession !== null && !currentSession.shouldApplyState(binding)) {
+      return;
+    }
     applyChangeFromBindings([binding]);
   };
   const reject = (error: unknown): void => {

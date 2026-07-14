@@ -28,6 +28,9 @@ export function activateContent(
       const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
       addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
     }
+    if (session !== null && !session.shouldApplyState(binding)) {
+      continue;
+    }
     applyChange(binding, context);
   }
 }

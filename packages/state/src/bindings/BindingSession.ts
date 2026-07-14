@@ -3,17 +3,19 @@ import { IAbsoluteStateAddress } from "../address/types";
 import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, removeBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
+import { config } from "../config";
 import { detachCheckboxEventHandler, attachCheckboxEventHandler } from "../event/checkboxHandler";
 import { detachEventTokenHandler, attachEventTokenHandler } from "../event/eventTokenHandler";
 import { detachEventHandler, attachEventHandler } from "../event/handler";
 import { detachRadioEventHandler, attachRadioEventHandler } from "../event/radioHandler";
-import { detachTwowayEventHandler, attachTwowayEventHandler } from "../event/twowayHandler";
+import { detachTwowayEventHandler, attachTwowayEventHandler, addTwowayValueObserver } from "../event/twowayHandler";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
+import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
 
 export type BindingPhase =
@@ -46,6 +48,13 @@ interface IInternalBindingRecord extends IBindingRecord {
   readonly options: IBindingOptions;
   address: IAbsoluteStateAddress | null;
   pendingDefinitions: number;
+  initialPolicy: IInitialSyncPolicy | null;
+  resolvedAuthority: ResolvedInitialAuthority | null;
+  initialSettled: boolean;
+  observationPending: boolean;
+  eventSequence: number;
+  hasProducerValue: boolean;
+  producerValue: unknown;
 }
 
 interface IDeferredDefinition {
@@ -176,12 +185,26 @@ export class BindingSession {
           existing.options.registerAddress = true;
           this.registerAddress(existing);
         }
+        if (existing.phase === "active") this.settleInitialRecord(existing);
+        this.settleConnectedSnapshot(existing);
         continue;
       }
       this.start(binding, resolvedOptions);
       initialized.push(binding);
     }
-    return initialized;
+    return initialized.filter((binding) => this.shouldApplyState(binding));
+  }
+
+  shouldApplyState(binding: IBindingInfo): boolean {
+    if (!config.enableDirectionalInitialSync) {
+      if (hasInitialSyncModifier(binding)) resolveInitialSyncPolicy(binding);
+      return true;
+    }
+    const record = recordByBinding.get(binding);
+    if (typeof record === "undefined" || record.session !== this) return true;
+    if (!record.options.registerAddress || record.phase === "waiting-definition") return true;
+    if (record.phase === "active") this.settleInitialRecord(record);
+    return record.resolvedAuthority === "state";
   }
 
   getRecord(binding: IBindingInfo): IBindingRecord | null {
@@ -296,12 +319,16 @@ export class BindingSession {
         if (typeof known === "undefined") return;
         for (const binding of known.values()) {
           const record = recordByBinding.get(binding);
+          if (record?.phase === "active") {
+            this.settleConnectedSnapshot(record);
+            continue;
+          }
           if (record?.phase !== "disposed") continue;
           const options = this.optionsByBinding.get(binding);
           if (typeof options === "undefined") continue;
           try {
             this.start(binding, options);
-            if (options.applyOnReconnect) reconnected.push(binding);
+            if (options.applyOnReconnect && this.shouldApplyState(binding)) reconnected.push(binding);
           } catch {
             // Mutation delivery cannot surface initialization errors to a caller.
           }
@@ -348,6 +375,13 @@ export class BindingSession {
       options: recordOptions,
       address: null,
       pendingDefinitions: 0,
+      initialPolicy: null,
+      resolvedAuthority: null,
+      initialSettled: false,
+      observationPending: false,
+      eventSequence: 0,
+      hasProducerValue: false,
+      producerValue: undefined,
     };
     recordByBinding.set(binding, record);
     this.records.add(record);
@@ -368,6 +402,15 @@ export class BindingSession {
 
   private attachListeners(record: IInternalBindingRecord): void {
     const binding = record.info;
+    if (config.enableDirectionalInitialSync) {
+      const removeObserver = addTwowayValueObserver(binding.node, binding.propName, (value) => {
+        if (!this.isAlive(record, record.generation)) return;
+        record.eventSequence += 1;
+        record.hasProducerValue = true;
+        record.producerValue = value;
+      });
+      record.teardowns.add(removeObserver);
+    }
     if (attachEventHandler(binding)) {
       record.teardowns.add(() => detachEventHandler(binding));
       return;
@@ -419,7 +462,10 @@ export class BindingSession {
         upgradeCustomElement(registry, record.info.node);
         attach();
         record.pendingDefinitions -= 1;
-        if (record.pendingDefinitions === 0) record.phase = "active";
+        if (record.pendingDefinitions === 0) {
+          record.phase = "active";
+          this.settleInitialRecord(record);
+        }
       } catch {
         record.phase = "failed";
         this.runTeardowns(record);
@@ -432,6 +478,66 @@ export class BindingSession {
       this.records.delete(record);
     });
     record.teardowns.add(cancel);
+  }
+
+  private settleInitialRecord(record: IInternalBindingRecord): void {
+    if (!config.enableDirectionalInitialSync || record.initialSettled || !record.options.registerAddress) return;
+    record.phase = "synchronizing";
+    try {
+      const policy = resolveInitialSyncPolicy(record.info);
+      const authority = resolveInitialAuthority(record.info, policy.authority);
+      record.initialPolicy = policy;
+      record.resolvedAuthority = authority;
+      record.initialSettled = true;
+      record.phase = "active";
+      if (!policy.observable) return;
+      if (
+        policy.syncOn === "connect"
+        && record.info.node instanceof HTMLElement
+        && !record.info.node.isConnected
+      ) {
+        record.observationPending = true;
+        return;
+      }
+      this.readProducerSnapshot(record, policy.syncOn === "call");
+    } catch (error) {
+      record.phase = "failed";
+      this.runTeardowns(record);
+      this.records.delete(record);
+      throw error;
+    }
+  }
+
+  private readProducerSnapshot(record: IInternalBindingRecord, eventWins: boolean): void {
+    if (!this.isAlive(record, record.generation)) return;
+    const target = record.info.node as Node & Record<string, unknown>;
+    const name = record.info.propName;
+    if (!(name in target)) return;
+    const sequence = record.eventSequence;
+    const value = target[name];
+    record.observationPending = false;
+    if (eventWins && record.eventSequence !== sequence) return;
+    record.hasProducerValue = true;
+    record.producerValue = value;
+    if (record.resolvedAuthority === "element") {
+      commitProducerValue(record.info, value);
+    }
+  }
+
+  private settleConnectedSnapshot(record: IInternalBindingRecord): void {
+    if (
+      !config.enableDirectionalInitialSync
+      || !record.observationPending
+      || !(record.info.node instanceof HTMLElement)
+      || !record.info.node.isConnected
+    ) return;
+    try {
+      this.readProducerSnapshot(record, false);
+    } catch {
+      record.phase = "failed";
+      this.runTeardowns(record);
+      this.records.delete(record);
+    }
   }
 
   private registerAddress(record: IInternalBindingRecord): void {

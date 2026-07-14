@@ -256,15 +256,18 @@ describe('setByAddress', () => {
     setListIndexesByList(target.items, null);
   });
 
-  it('parentAddressがnullの場合はエラーになること（_setByAddress）', () => {
-    // 単一セグメントで target にプロパティがない場合、parentAddress は null
-    const target = {};
+  it('parentAddressがnullの場合はtargetへ直接設定すること（_setByAddress）', () => {
+    // 単一セグメントで target にプロパティがない場合、parentAddress は null。
+    // 未初期化 slot への初回書き込み（initial sync の commitProducerValue 等）を
+    // own property の作成として受理する
+    const target: Record<string, unknown> = {};
     const address = createStateAddress(getPathInfo('foo'), null);
     // getPathInfo('foo') の parentPathInfo は null なので parentAddress も null
     const stateElement = createStateElement();
     const handler = createHandler(stateElement);
 
-    expect(() => setByAddress(target, address, 'bar', target, handler as any)).toThrow(/parentAddress/);
+    expect(setByAddress(target, address, 'bar', target, handler as any)).toBe(true);
+    expect(target.foo).toBe('bar');
   });
 
   it('parentAddressがnullの場合はエラーになること（_setByAddressWithSwap）', () => {

@@ -25,6 +25,7 @@ import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { IStateHandler, IStateProxy } from "../types";
 import { getByAddress } from "./getByAddress";
+import { hasByAddress } from "./hasByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
@@ -54,7 +55,10 @@ function _setByAddress(
         return Reflect.set(target, address.pathInfo.path, value);
       }
     } else {
-      const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+      const parentAddress = address.parentAddress;
+      if (parentAddress === null) {
+        return Reflect.set(target, address.pathInfo.path, value);
+      }
       const parentValue = getByAddress(target, parentAddress, receiver, handler);
       const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
       if (lastSegment === WILDCARD) {
@@ -154,7 +158,7 @@ export function setByAddress(
   let devHasOldValue = false;
   if (config.sameValueGuard && (value === null || typeof value !== "object")) {
     const oldValue = getByAddress(target, address, receiver, handler);
-    if (Object.is(oldValue, value)) {
+    if (hasByAddress(target, address, receiver, handler) && Object.is(oldValue, value)) {
       return true;
     }
     devOldValue = oldValue;

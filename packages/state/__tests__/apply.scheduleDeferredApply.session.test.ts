@@ -53,6 +53,7 @@ describe("scheduleDeferredApply session ownership", () => {
         ownedTeardown = teardown;
         return true;
       }),
+      shouldApplyState: vi.fn(() => true),
     };
 
     scheduleDeferredApply(target, "x-session-apply");
@@ -67,11 +68,31 @@ describe("scheduleDeferredApply session ownership", () => {
     expect(mocks.apply).toHaveBeenCalledWith([target]);
   });
 
+  it("session が state 適用を拒否した場合は apply を送らないこと", () => {
+    const target = binding();
+    let resolve!: () => void;
+    mocks.session = {
+      deferUntilDefined: vi.fn((_node: Node, _tag: string, done: () => void) => {
+        resolve = done;
+        return vi.fn();
+      }),
+      addTeardown: vi.fn(() => true),
+      shouldApplyState: vi.fn(() => false),
+    };
+
+    scheduleDeferredApply(target, "x-session-denied");
+    resolve();
+
+    expect(mocks.session.shouldApplyState).toHaveBeenCalledWith(target);
+    expect(mocks.apply).not.toHaveBeenCalled();
+  });
+
   it("record が teardown を受理しない場合は直ちに cancel すること", () => {
     const cancel = vi.fn();
     mocks.session = {
       deferUntilDefined: vi.fn(() => cancel),
       addTeardown: vi.fn(() => false),
+      shouldApplyState: vi.fn(() => true),
     };
     scheduleDeferredApply(binding(), "x-session-gone");
     expect(cancel).toHaveBeenCalledTimes(1);

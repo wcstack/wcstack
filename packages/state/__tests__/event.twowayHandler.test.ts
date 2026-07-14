@@ -13,7 +13,7 @@ vi.mock('../src/raiseError', () => ({
   raiseError: vi.fn(),
 }));
 
-import { attachTwowayEventHandler, detachTwowayEventHandler, __private__ } from '../src/event/twowayHandler';
+import { addTwowayValueObserver, attachTwowayEventHandler, detachTwowayEventHandler, __private__ } from '../src/event/twowayHandler';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getStateElementByName } from '../src/stateElementByName';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
@@ -679,6 +679,35 @@ describe('event/twowayHandler', () => {
       expect(keyWithGetter).toContain('::g');
       expect(keyWithoutGetter).toContain('::n');
       expect(keyWithGetter).not.toBe(keyWithoutGetter);
+    });
+  });
+
+  describe('addTwowayValueObserver', () => {
+    it('同一 node/prop の複数 observer を管理し、解除で台帳を掃除すること', () => {
+      const node = document.createElement('input');
+      const seen: Array<[string, unknown]> = [];
+      const removeFirst = addTwowayValueObserver(node, 'value', (value) => seen.push(['first', value]));
+      const removeSecond = addTwowayValueObserver(node, 'value', (value) => seen.push(['second', value]));
+      const removeOther = addTwowayValueObserver(node, 'checked', (value) => seen.push(['other', value]));
+
+      const byProperty = __private__.producerValueObserversByNode.get(node);
+      expect(byProperty?.get('value')?.size).toBe(2);
+      expect(byProperty?.get('checked')?.size).toBe(1);
+
+      for (const observer of byProperty!.get('value')!) observer('dispatched');
+      expect(seen).toEqual([['first', 'dispatched'], ['second', 'dispatched']]);
+
+      removeFirst();
+      expect(byProperty?.get('value')?.size).toBe(1);
+      removeFirst();
+      expect(byProperty?.get('value')?.size).toBe(1);
+
+      removeSecond();
+      expect(byProperty?.get('value')).toBeUndefined();
+      expect(__private__.producerValueObserversByNode.get(node)).toBe(byProperty);
+
+      removeOther();
+      expect(__private__.producerValueObserversByNode.get(node)).toBeUndefined();
     });
   });
 });
