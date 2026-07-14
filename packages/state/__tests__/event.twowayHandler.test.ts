@@ -420,7 +420,7 @@ describe('event/twowayHandler', () => {
       expect(addSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
     });
 
-    it('未定義カスタム要素はwhenDefinedで遅延登録されること', async () => {
+    it('未定義要素の待機はBindingSession所有のためhandler単体では再試行しないこと', async () => {
       const el = document.createElement('my-deferred-tw');
       const addSpy = vi.spyOn(el, 'addEventListener');
 
@@ -441,16 +441,19 @@ describe('event/twowayHandler', () => {
         };
       }
       customElements.define('my-deferred-tw', MyDeferredTw);
+      // happy-dom does not currently mutate detached pre-definition instances
+      // in CustomElementRegistry.upgrade(); emulate the platform upgrade result.
+      Object.setPrototypeOf(el, MyDeferredTw.prototype);
 
       // whenDefinedのPromiseが解決するのを待つ
       await customElements.whenDefined('my-deferred-tw');
       // microtask を待つ（then コールバックの実行のため）
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      expect(addSpy).toHaveBeenCalledWith('my-deferred-tw:ready', expect.any(Function));
+      expect(addSpy).not.toHaveBeenCalled();
     });
 
-    it('未定義カスタム要素のdetachもwhenDefinedで遅延されること', async () => {
+    it('未定義カスタム要素のdetachは待機を追加しないこと', async () => {
       const el = document.createElement('my-deferred-detach-tw');
       const removeSpy = vi.spyOn(el, 'removeEventListener');
 
@@ -632,7 +635,7 @@ describe('event/twowayHandler', () => {
       expect(getter).toBeNull();
     });
 
-    it('プロトコルバリデーション: version不一致時はnullを返すこと', () => {
+    it('プロトコルバリデーション: forward-compatibleなversion 2を受理すること', () => {
       class BadVersionTw extends HTMLElement {
         static wcBindable = {
           protocol: "wc-bindable" as const,
@@ -644,7 +647,7 @@ describe('event/twowayHandler', () => {
       const el = document.createElement('bad-version-tw');
       const binding = createBindingInfo(el);
       const getter = __private__.getValueGetter(binding);
-      expect(getter).toBeNull();
+      expect(getter).toBe(__private__.DEFAULT_GETTER);
     });
 
     it('getEventNameでwcBindableのpropertiesにないpropNameはデフォルトイベントを返すこと', () => {

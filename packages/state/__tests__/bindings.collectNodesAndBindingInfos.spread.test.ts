@@ -21,6 +21,7 @@ function defineEl(tag: string, properties: { name: string; event: string }[]) {
     };
   }
   customElements.define(tag, C);
+  return C;
 }
 
 describe("collectNodesAndBindingInfos spread deferral", () => {
@@ -52,10 +53,11 @@ describe("collectNodesAndBindingInfos spread deferral", () => {
     expect(deferred).toHaveLength(1);
 
     // class を後から登録
-    defineEl(tag, [
+    const constructor = defineEl(tag, [
       { name: "value", event: `${tag}:value-changed` },
       { name: "loading", event: `${tag}:loading-changed` },
     ]);
+    Object.setPrototypeOf(el, constructor.prototype);
 
     const bindings = processDeferredNode(deferred[0]);
     expect(bindings).toHaveLength(2);
@@ -93,7 +95,8 @@ describe("collectNodesAndBindingInfos spread deferral", () => {
     const [, , deferred] = collectNodesAndBindingInfos(root);
     const entry: IDeferredSpreadEntry = deferred[0];
 
-    defineEl(tag, [{ name: "value", event: `${tag}:value-changed` }]);
+    const constructor = defineEl(tag, [{ name: "value", event: `${tag}:value-changed` }]);
+    Object.setPrototypeOf(el, constructor.prototype);
     const bindings = processDeferredNode(entry);
     expect(bindings).toHaveLength(1);
 

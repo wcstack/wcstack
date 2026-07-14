@@ -97,7 +97,7 @@ describe("spread binding deferred (integration)", () => {
     expect(errorSpy.mock.calls[0]?.[0]).toContain(`[@wcstack/state] deferred spread failed for <${tag}>.`);
     expect(errorSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
     expect((errorSpy.mock.calls[0]?.[1] as Error).message).toContain(
-      `[@wcstack/state] Spread binding "fetchX" requires <${tag}> to declare wcBindable`,
+      `[@wcstack/state] Spread binding "fetchX" requires <${tag}> to expose a valid wcBindable declaration`,
     );
 
     host.remove();

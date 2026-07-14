@@ -144,7 +144,7 @@ describe('isPossibleTwoWay', () => {
       expect(isPossibleTwoWay(el, 'value')).toBe(false);
     });
 
-    it('versionが1でない場合はfalse', () => {
+    it('forward-compatibleなversion 2も受理する', () => {
       class BadVersionA extends HTMLElement {
         static wcBindable = {
           protocol: "wc-bindable" as const,
@@ -154,7 +154,7 @@ describe('isPossibleTwoWay', () => {
       }
       customElements.define('bad-version-a', BadVersionA);
       const el = document.createElement('bad-version-a');
-      expect(isPossibleTwoWay(el, 'value')).toBe(false);
+      expect(isPossibleTwoWay(el, 'value')).toBe(true);
     });
   });
 });

@@ -21,8 +21,9 @@
 
 import { isCommandToken } from "../command/CommandToken";
 import { ICommandToken } from "../command/types";
-import { IWcBindable } from "../event/types";
 import { getCustomElement } from "../getCustomElement";
+import { getCustomElementRegistry } from "../platform/customElementRegistry";
+import { readBindableDeclaration, ReadBindableResult } from "../protocol/wcBindableReader";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
@@ -35,20 +36,16 @@ interface ICommandSubscription {
 
 const subscribedBindings: WeakMap<IBindingInfo, ICommandSubscription> = new WeakMap();
 
-function getWcBindable(element: Element): IWcBindable | null {
+function getWcBindable(element: Element): ReadBindableResult | null {
   const customTagName = getCustomElement(element);
   if (customTagName === null) {
     return null;
   }
-  const customClass = customElements.get(customTagName) as { wcBindable?: IWcBindable } | undefined;
+  const customClass = getCustomElementRegistry()?.get(customTagName);
   if (typeof customClass === "undefined") {
     raiseError(`Custom element <${customTagName}> is not defined for command binding.`);
   }
-  const bindable = customClass.wcBindable;
-  if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
-    return bindable;
-  }
-  return null;
+  return readBindableDeclaration(element);
 }
 
 export function applyChangeToCommand(binding: IBindingInfo, _context: IApplyContext, newValue: unknown): void {
@@ -73,7 +70,7 @@ export function applyChangeToCommand(binding: IBindingInfo, _context: IApplyCont
   if (bindable === null) {
     raiseError(`command binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
   }
-  if (!Array.isArray(bindable.commands) || !bindable.commands.some((c) => c.name === methodName)) {
+  if (!bindable.declaredCommands.has(methodName)) {
     raiseError(`Command "${methodName}" is not declared in wcBindable.commands of <${element.tagName.toLowerCase()}>.`);
   }
 

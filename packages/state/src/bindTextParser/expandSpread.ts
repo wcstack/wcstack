@@ -1,17 +1,10 @@
 import { getPathInfo } from "../address/PathInfo";
 import { config } from "../config";
 import { getCustomElement } from "../getCustomElement";
+import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
+import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { raiseError } from "../raiseError";
-import { IWcBindable } from "../event/types";
 import { ParseBindTextResult } from "./types";
-
-function isValidWcBindable(value: unknown): value is IWcBindable {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as { protocol?: unknown; version?: unknown; properties?: unknown };
-  return v.protocol === "wc-bindable"
-    && v.version === 1
-    && Array.isArray(v.properties);
-}
 
 function makeExpandedEntry(
   name: string,
@@ -107,7 +100,11 @@ export function expandSpread(
     if (tagName === null) {
       raiseError(`Spread binding "${result.statePathName}" requires a custom element with wcBindable, but <${element.tagName.toLowerCase()}> is not a custom element.`);
     }
-    const customClass = customElements.get(tagName) as { wcBindable?: unknown } | undefined;
+    const registry = getCustomElementRegistry();
+    if (registry === null) {
+      raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
+    }
+    const customClass = registry.get(tagName);
     if (typeof customClass === "undefined") {
       if (!allowDeferred) {
         raiseError(`Spread binding "${result.statePathName}" requires <${tagName}> to be registered. Define the custom element before initializing this binding.`);
@@ -116,26 +113,27 @@ export function expandSpread(
       expanded.push(result);
       continue;
     }
-    const bindable = customClass.wcBindable;
-    if (!isValidWcBindable(bindable)) {
-      raiseError(`Spread binding "${result.statePathName}" requires <${tagName}> to declare wcBindable (protocol="wc-bindable", version=1).`);
+    upgradeCustomElement(registry, element);
+    const bindable = readBindableDeclaration(element);
+    if (bindable === null) {
+      raiseError(`Spread binding "${result.statePathName}" requires <${tagName}> to expose a valid wcBindable declaration.`);
     }
     const targetBase = result.statePathName;
     const stateName = result.stateName;
     const seen = new Set<string>();
-    for (const prop of bindable.properties) {
-      if (seen.has(prop.name)) continue;
-      seen.add(prop.name);
-      const entry = makeExpandedEntry(prop.name, targetBase, stateName);
+    for (const name of bindable.knownProperties.keys()) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const entry = makeExpandedEntry(name, targetBase, stateName);
       spreadOrigin.add(entry);
       expanded.push(entry);
     }
     // properties win over inputs when the name overlaps because they carry the
     // full property contract (for example change events).
-    for (const input of (bindable.inputs ?? [])) {
-      if (seen.has(input.name)) continue;
-      seen.add(input.name);
-      const entry = makeExpandedEntry(input.name, targetBase, stateName);
+    for (const name of bindable.declaredInputs.keys()) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const entry = makeExpandedEntry(name, targetBase, stateName);
       spreadOrigin.add(entry);
       expanded.push(entry);
     }

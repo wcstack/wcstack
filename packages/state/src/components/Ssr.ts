@@ -3,6 +3,7 @@ import { IState } from "../types";
 import { VERSION } from "../version";
 import { getAllFragmentUUIDs, getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
 import { getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore } from "../apply/ssrPropertyStore";
+import { HTMLElementBase } from "../platform/HTMLElementBase";
 
 export interface ISsrElement {
   readonly name: string;
@@ -43,7 +44,7 @@ function escapeJsonForScript(json: string): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
-export class Ssr extends HTMLElement implements ISsrElement {
+export class Ssr extends HTMLElementBase implements ISsrElement {
   private _stateData: IState | null = null;
   private _templates: Map<string, HTMLTemplateElement> | null = null;
   private _hydrateProps: Record<string, Record<string, unknown>> | null = null;

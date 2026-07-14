@@ -3,39 +3,50 @@ import { IApplyContext } from "../apply/types";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { addBindingByAbsoluteStateAddress, removeBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
+import { getBindingSessionByContent } from "../bindings/bindingSessionByContent";
 import { bindLoopContextToContent, unbindLoopContextToContent } from "../bindings/bindLoopContextToContent";
 import { ILoopContext } from "../list/types";
 import { IContent } from "./types";
 
 export function activateContent(
-  content: IContent, 
+  content: IContent,
   loopContext: ILoopContext | null,
   context: IApplyContext,
 ): void {
   bindLoopContextToContent(content, loopContext);
   const bindings = getBindingsByContent(content);
-  for(const binding of bindings) {
-    const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
-    addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
+  const session = getBindingSessionByContent(content);
+  if (session !== null) {
+    session.initialize(bindings, {
+      registerAddress: true,
+      registerPathInfo: false,
+      applyOnReconnect: false,
+    });
+  }
+  for (const binding of bindings) {
+    if (session === null) {
+      const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
+      addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
+    }
     applyChange(binding, context);
   }
 }
 
 export function deactivateContent(
-  content: IContent
+  content: IContent,
 ): void {
   if (!content.mounted) {
     return;
   }
   const bindings = getBindingsByContent(content);
-  for(const binding of bindings) {
-    const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
-    removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-    // アドレスキャッシュ（absoluteStateAddressByBinding / stateAddressByBindingInfo）
-    // のクリアはここでは行わない。deactivateContent の呼び出し元（for/if）は必ず
-    // 直後に content.unmount() を呼び、unmount が同じ2台帳をネスト content も含めて
-    // クリアする（createContent.ts）。ここで消すと全 binding で二重 delete になる。
+  const session = getBindingSessionByContent(content);
+  for (const binding of bindings) {
+    if (session !== null) {
+      session.disposeBinding(binding);
+    } else {
+      const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
+      removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
+    }
   }
   unbindLoopContextToContent(content);
 }
-

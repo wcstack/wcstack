@@ -1,6 +1,7 @@
 import { clearAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
+import { getBindingSessionByContent, setBindingSessionByContent } from "../bindings/bindingSessionByContent.js";
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
@@ -57,6 +58,7 @@ class Content implements IContent {
   }
 
   unmount(): void {
+    getBindingSessionByContent(this)?.dispose();
     for(const node of this._childNodeArray) {
       if (node.parentNode !== null) {
         node.parentNode.removeChild(node);
@@ -108,6 +110,7 @@ export function createContent(
   const cloneFragment = document.importNode(fragmentInfo.fragment, true);
   const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
   const content = new Content(cloneFragment);
+  setBindingSessionByContent(content, initialInfo.bindingSession);
   setBindingsByContent(content, initialInfo.bindingInfos);
   const indexBindings: IBindingInfo[] = [];
   for(const binding of initialInfo.bindingInfos) {

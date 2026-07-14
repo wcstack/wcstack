@@ -8,12 +8,14 @@ import type { IBindingInfo } from '../src/types';
 import type { IWcBindable } from '../src/event/types';
 import type { IStateElement } from '../src/components/types';
 
-function defineWcBindable(tagName: string, bindable: IWcBindable | undefined): void {
-  if (customElements.get(tagName)) return;
+function defineWcBindable(tagName: string, bindable: IWcBindable | undefined): CustomElementConstructor {
+  const existing = customElements.get(tagName);
+  if (existing) return existing;
   class C extends HTMLElement {
     static wcBindable: IWcBindable | undefined = bindable;
   }
   customElements.define(tagName, C);
+  return C;
 }
 
 const OK_PROPS: IWcBindable = {
@@ -72,6 +74,7 @@ describe('eventTokenHandler', () => {
   });
   afterEach(() => {
     setStateElementByName(document, 'default', null);
+    vi.unstubAllGlobals();
   });
 
   it('eventToken以外のpropSegmentsではfalseを返すこと', () => {
@@ -212,7 +215,7 @@ describe('eventTokenHandler', () => {
     clearEventTokenRegistry(se);
   });
 
-  it('未定義のカスタム要素は定義後に再試行してlistenすること', async () => {
+  it('未定義要素の待機はBindingSession所有のためhandler単体では再試行しないこと', async () => {
     const el = document.createElement('evt-deferred');
     const addSpy = vi.spyOn(el, 'addEventListener');
     const se = makeFakeStateElement(['createFailed'], makeState());
@@ -222,11 +225,21 @@ describe('eventTokenHandler', () => {
     expect(attachEventTokenHandler(binding)).toBe(true);
     expect(addSpy).not.toHaveBeenCalled();
 
-    defineWcBindable('evt-deferred', OK_PROPS);
+    const constructor = defineWcBindable('evt-deferred', OK_PROPS);
+    // happy-dom does not currently mutate detached pre-definition instances
+    // in CustomElementRegistry.upgrade(); emulate the platform upgrade result.
+    Object.setPrototypeOf(el, constructor.prototype);
     await customElements.whenDefined('evt-deferred');
     await Promise.resolve();
 
-    expect(addSpy).toHaveBeenCalledWith('my-error', expect.any(Function));
+    expect(addSpy).not.toHaveBeenCalled();
     clearEventTokenRegistry(se);
+  });
+
+  it('CustomElementRegistryが無いruntimeでは未定義要素を明示的に拒否する', () => {
+    const el = document.createElement('evt-no-registry');
+    const binding = createBinding(el, 'error', 'createFailed');
+    vi.stubGlobal('customElements', undefined);
+    expect(() => attachEventTokenHandler(binding)).toThrow(/CustomElementRegistry is unavailable/);
   });
 });

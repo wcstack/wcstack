@@ -1,5 +1,6 @@
 import { getCustomElement } from "../getCustomElement";
-import { IWcBindable } from "./types";
+import { getCustomElementRegistry } from "../platform/customElementRegistry";
+import { readBindableDeclaration } from "../protocol/wcBindableReader";
 
 /**
  * 要素 `element` の `propName` プロパティ書き込みに対して、
@@ -15,22 +16,13 @@ export function getInputAttributeMirror(element: Element, propName: string): str
   if (customTagName === null) {
     return null;
   }
-  const customClass = customElements.get(customTagName) as { wcBindable?: IWcBindable } | undefined;
+  const customClass = getCustomElementRegistry()?.get(customTagName);
   if (typeof customClass === "undefined") {
     return null;
   }
-  const bindable = customClass.wcBindable;
-  if (bindable?.protocol !== "wc-bindable" || bindable?.version !== 1) {
-    return null;
-  }
-  const inputs = bindable.inputs;
-  if (!Array.isArray(inputs)) {
-    return null;
-  }
-  for (const input of inputs) {
-    if (input.name === propName && typeof input.attribute === "string" && input.attribute.length > 0) {
-      return input.attribute;
-    }
+  const input = readBindableDeclaration(element)?.declaredInputs.get(propName);
+  if (typeof input?.attribute === "string" && input.attribute.length > 0) {
+    return input.attribute;
   }
   return null;
 }

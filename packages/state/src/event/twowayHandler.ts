@@ -5,7 +5,8 @@ import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { getCustomElement } from "../getCustomElement";
-import { IWcBindable } from "./types";
+import { getCustomElementRegistry } from "../platform/customElementRegistry";
+import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
@@ -26,16 +27,13 @@ function getEventName(binding: IBindingInfo): string {
   // 2.wcBindable protocol
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const customClass = customElements.get(customTagName) as any;
+    const customClass = getCustomElementRegistry()?.get(customTagName);
     if (typeof customClass === "undefined") {
       raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
     }
-    const bindable: IWcBindable | undefined = customClass.wcBindable;
-    if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
-      const propDesc = bindable.properties.find(p => p.name === binding.propName);
-      if (propDesc) {
-        eventName = propDesc.event;
-      }
+    const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
+    if (propDesc) {
+      eventName = propDesc.event;
     }
   }
   // 3.modifier
@@ -50,15 +48,9 @@ function getEventName(binding: IBindingInfo): string {
 function getValueGetter(binding: IBindingInfo): ((event: Event) => any) | null {
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const customClass = customElements.get(customTagName) as any;
-    if (customClass) {
-      const bindable: IWcBindable | undefined = customClass.wcBindable;
-      if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
-        const propDesc = bindable.properties.find(p => p.name === binding.propName);
-        if (propDesc) {
-          return propDesc.getter ?? DEFAULT_GETTER;
-        }
-      }
+    const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
+    if (propDesc) {
+      return propDesc.getter ?? DEFAULT_GETTER;
     }
   }
   return null;
@@ -108,11 +100,12 @@ const twowayEventHandlerFunction = (
 export function attachTwowayEventHandler(binding: IBindingInfo): void {
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const customClass = customElements.get(customTagName);
+    const registry = getCustomElementRegistry();
+    const customClass = registry?.get(customTagName);
     if (typeof customClass === "undefined") {
-      customElements.whenDefined(customTagName).then(() => {
-        attachTwowayEventHandler(binding);
-      });
+      if (registry === null) {
+        raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
+      }
       return;
     }
   }
@@ -140,11 +133,12 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
 export function detachTwowayEventHandler(binding: IBindingInfo): void {
   const customTagName = getCustomElement(binding.node as Element);
   if (customTagName !== null) {
-    const customClass = customElements.get(customTagName);
+    const registry = getCustomElementRegistry();
+    const customClass = registry?.get(customTagName);
     if (typeof customClass === "undefined") {
-      customElements.whenDefined(customTagName).then(() => {
-        detachTwowayEventHandler(binding);
-      });
+      if (registry === null) {
+        return;
+      }
       return;
     }
   }

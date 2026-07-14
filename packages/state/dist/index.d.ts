@@ -52,6 +52,13 @@ declare function getConfig(): IConfig;
  */
 declare function getBindingsReady(rootNode: Node): Promise<void>;
 
+/**
+ * Browser builds use the native HTMLElement. Headless runtimes receive an
+ * inert base so the public module can be imported without installing DOM
+ * globals; constructing components remains a browser-only operation.
+ */
+declare const HTMLElementBase: typeof HTMLElement;
+
 interface ISsrElement {
     readonly name: string;
     readonly version: string;
@@ -61,7 +68,7 @@ interface ISsrElement {
     getTemplate(uuid: string): HTMLTemplateElement | null;
     verifyVersion(): boolean;
 }
-declare class Ssr extends HTMLElement implements ISsrElement {
+declare class Ssr extends HTMLElementBase implements ISsrElement {
     private _stateData;
     private _templates;
     private _hydrateProps;

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Propagates the single-source wc-bindable protocol type (/protocol/wc-bindable.ts)
-// into each consuming package as a generated, do-not-edit copy:
+// Propagates the single-source wc-bindable protocol sources from /protocol
+// into consuming packages as generated, do-not-edit copies:
 //   packages/<pkg>/src/protocol/wcBindable.ts
+//   packages/state/src/protocol/wcBindableReader.ts
 //
 // Each package's own types file re-exports from that copy, so the package stays
 // independently buildable/publishable with zero runtime dependency (the types erase
@@ -21,6 +22,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const canonicalPath = join(repoRoot, "protocol", "wc-bindable.ts");
+const canonicalReaderPath = join(repoRoot, "protocol", "wc-bindable-reader.ts");
 
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
@@ -42,10 +44,12 @@ const TARGET_PACKAGES = [
   "state",
 ];
 
-const BANNER =
+const READER_TARGET_PACKAGES = ["state"];
+
+const banner = (sourceName) =>
   "// ===========================================================================\n" +
   "// AUTO-GENERATED FILE - DO NOT EDIT.\n" +
-  "// Generated from /protocol/wc-bindable.ts by scripts/sync-protocol-types.mjs.\n" +
+  `// Generated from /protocol/${sourceName} by scripts/sync-protocol-types.mjs.\n` +
   "// Run `node scripts/sync-protocol-types.mjs` after editing the source.\n" +
   "// ===========================================================================\n\n";
 
@@ -53,31 +57,37 @@ const BANNER =
 // writes are always LF.
 const normalize = (s) => s.replace(/\r\n/g, "\n");
 
-function expectedContent() {
-  return BANNER + normalize(readFileSync(canonicalPath, "utf8"));
+function expectedContent(sourcePath, sourceName) {
+  return banner(sourceName) + normalize(readFileSync(sourcePath, "utf8"));
 }
 
-function destFor(pkg) {
-  return join(repoRoot, "packages", pkg, "src", "protocol", "wcBindable.ts");
+function destFor(pkg, fileName) {
+  return join(repoRoot, "packages", pkg, "src", "protocol", fileName);
 }
 
 function main() {
   const checkOnly = process.argv.includes("--check");
-  const expected = expectedContent();
+  const typeContent = expectedContent(canonicalPath, "wc-bindable.ts");
+  const readerContent = expectedContent(canonicalReaderPath, "wc-bindable-reader.ts")
+    .replace('from "./wc-bindable.js"', 'from "./wcBindable.js"');
+  const targets = [
+    ...TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindable.ts", content: typeContent })),
+    ...READER_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindableReader.ts", content: readerContent })),
+  ];
   const stale = [];
 
-  for (const pkg of TARGET_PACKAGES) {
-    const dest = destFor(pkg);
+  for (const { pkg, fileName, content } of targets) {
+    const dest = destFor(pkg, fileName);
     const current = existsSync(dest) ? normalize(readFileSync(dest, "utf8")) : null;
-    if (current === expected) continue;
+    if (current === content) continue;
 
     if (checkOnly) {
-      stale.push(pkg);
+      stale.push(`${pkg}/${fileName}`);
       continue;
     }
     mkdirSync(dirname(dest), { recursive: true });
-    writeFileSync(dest, expected);
-    console.log(`  synced  packages/${pkg}/src/protocol/wcBindable.ts`);
+    writeFileSync(dest, content);
+    console.log(`  synced  packages/${pkg}/src/protocol/${fileName}`);
   }
 
   if (checkOnly) {
@@ -88,11 +98,11 @@ function main() {
       );
       process.exit(1);
     }
-    console.log(`wc-bindable protocol types are in sync (${TARGET_PACKAGES.length} packages).`);
+    console.log(`wc-bindable protocol sources are in sync (${targets.length} generated files).`);
     return;
   }
 
-  console.log(`Done. ${TARGET_PACKAGES.length} packages checked.`);
+  console.log(`Done. ${targets.length} generated files checked.`);
 }
 
 main();

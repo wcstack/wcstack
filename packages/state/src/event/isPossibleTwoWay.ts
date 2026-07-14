@@ -1,6 +1,7 @@
 import { getCustomElement } from "../getCustomElement";
+import { getCustomElementRegistry } from "../platform/customElementRegistry";
+import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { raiseError } from "../raiseError";
-import { IWcBindable } from "./types";
 
 const CHECK_TYPES = new Set([ 'radio', 'checkbox' ]);
 const DEFAULT_VALUE_PROP_NAMES = new Set([ 'value', 'valueAsNumber', 'valueAsDate' ]);
@@ -31,15 +32,13 @@ export function isPossibleTwoWay(node: Node, propName: string): boolean {
   }
   const customTagName = getCustomElement(element);
   if (customTagName !== null) {
-    const customClass = customElements.get(customTagName) as any;
+    const customClass = getCustomElementRegistry()?.get(customTagName);
     if (typeof customClass === "undefined") {
       raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
     }
-    const bindable: IWcBindable | undefined = customClass.wcBindable;
-    if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
-      if (bindable.properties.some(p => p.name === propName)) {
-        return true;
-      }
+    const bindable = readBindableDeclaration(element);
+    if (bindable?.knownProperties.has(propName)) {
+      return true;
     }
   }
   return false;
