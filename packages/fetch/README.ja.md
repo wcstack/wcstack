@@ -396,6 +396,40 @@ unbind();
 
 Node.js、Deno、Cloudflare Workers など、`EventTarget` と `fetch` が利用可能な環境で動作します。
 
+## Capability と error taxonomy（opt-in・Core 限定）
+
+`FetchCore` は**追加的・opt-in** の診断サーフェスを公開します。既存の `error`
+プロパティ／イベントの shape は**不変**で、これらの getter はその隣に並び、破壊的
+変更なしに DevTools やアダプタが失敗を分類できるようにします。Core 限定です
+（`wc-bindable` の `properties` ではないため `data-wcs` のバインド対象ではありません）。
+
+| Getter | 型 | 説明 |
+|--------|-----|------|
+| `errorInfo` | `WcsIoErrorInfo \| null` | 直近の失敗の serializable な情報、または `null`。各リクエスト開始時に `error` と同様クリアされる |
+| `supported` | `boolean` | 必須 capability（`web.fetch`）が**今**利用可能か — User-Agent ではなく利用直前の feature detection で判定 |
+| `platformAssessment` | `PlatformAssessment` | capability の完全な assessment（availability / readiness / preconditions）。利用直前に probe |
+
+```typescript
+// `errorInfo` の戻り値 shape — serializable（clone 不可の `cause` は含まない）
+interface WcsIoErrorInfo {
+  code: string; // 安定コード: "capability-missing" | "invalid-argument" | "network" | "http-error" | "timeout" | "aborted"
+  phase: "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+  recoverable: boolean;
+  capabilityId?: string;
+  message: string;
+}
+```
+
+feature detection はリクエスト開始の直前に行い、module 評価時には行いません
+（SSR / worker でも `FetchCore` の import が安全）:
+
+- `web.fetch` が**欠如**（古いランタイム / 一部 SSR / ヘッドレス）の場合、`fetch()`
+  はリクエストを**開始せず**、`errorInfo.code === "capability-missing"` を出して
+  `error` に対応メッセージを設定します（汎用のネットワークエラー経路は通りません）。
+- `web.abort-controller` が**欠如**の場合、リクエストは **degraded** で動作します
+  （native abort signal なし）。supersede / dispose は機能し、
+  `platformAssessment.readiness` は `"degraded"` になります。
+
 ## URL の監視
 
 `<wcs-fetch>` はデフォルトで以下のタイミングに自動的にリクエストを実行します:

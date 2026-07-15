@@ -135,6 +135,27 @@ this.user.name = "Bob";
 this["user.name"] = "Bob";
 ```
 
+### Sidecar Manifest Validation & CLI
+
+Static-contract sidecar files (`wcstack.manifest.json`) are validated against the
+supported JSON-Schema subset: envelope / `kind` checks, cross-file package
+resolution, same-name tag/filter collision, forbidden override-after-collision, and
+drift against the live `static wcBindable` surface. Findings carry stable diagnostic
+codes (e.g. `manifest-schema-version`, `manifest-kind-invalid`).
+
+A single `validateDocument` entry point drives both the in-editor diagnostics and
+the CLI, so the IDE and CI report identically. The bundled **`wcs-validate`** CLI
+runs the same checks headlessly — over `wcstack.manifest.json` sidecars and/or HTML
+`data-wcs` bindings — for CI:
+
+```bash
+npx wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] <file> [<file> ...]
+```
+
+The sidecar is **tooling-only**: it never overrides the runtime `static wcBindable`
+declaration, and a missing or stale file never changes runtime behavior. The
+normative schema and resolution rules live in `docs/wcstack-manifest-schema.md`.
+
 ## Settings
 
 | Setting | Default | Description |

@@ -399,6 +399,40 @@ unbind();
 
 This works in Node.js, Deno, Cloudflare Workers — anywhere `EventTarget` and `fetch` are available.
 
+## Capability & error taxonomy (opt-in, Core only)
+
+`FetchCore` exposes an **additive, opt-in** diagnostic surface. The existing
+`error` property/event shape is **unchanged** — these getters sit alongside it so
+DevTools and adopters can classify failures without any breaking change. They are
+Core-only (not `wc-bindable` `properties`, so not a `data-wcs` bind target).
+
+| Getter | Type | Description |
+|--------|------|-------------|
+| `errorInfo` | `WcsIoErrorInfo \| null` | The last failure's serializable info, or `null`. Cleared at the start of each request, mirroring `error` |
+| `supported` | `boolean` | Whether the required capability (`web.fetch`) is available **now** — call-time feature detection, not User-Agent |
+| `platformAssessment` | `PlatformAssessment` | Full capability assessment (availability / readiness / preconditions), probed at call time |
+
+```typescript
+// Return shape of `errorInfo` — serializable (no non-cloneable `cause`)
+interface WcsIoErrorInfo {
+  code: string; // stable: "capability-missing" | "invalid-argument" | "network" | "http-error" | "timeout" | "aborted"
+  phase: "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+  recoverable: boolean;
+  capabilityId?: string;
+  message: string;
+}
+```
+
+Feature detection runs just before a request starts, never at module load (so
+importing `FetchCore` stays safe under SSR / workers):
+
+- If `web.fetch` is **missing** (old runtime / some SSR / headless), `fetch()`
+  does **not** start — it surfaces `errorInfo.code === "capability-missing"` and
+  sets `error` to a matching message (no generic network-error path).
+- If `web.abort-controller` is **missing**, the request runs **degraded** (no
+  native abort signal); supersede / dispose still work, and
+  `platformAssessment.readiness` becomes `"degraded"`.
+
 ## URL Observation
 
 By default, `<wcs-fetch>` automatically executes a request when:

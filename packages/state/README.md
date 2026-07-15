@@ -1194,7 +1194,7 @@ class MyFetcher extends HTMLElement {
 
 Validation rules (enforced at binding time):
 
-- The element must be a custom element exposing `static wcBindable` with `protocol: "wc-bindable"` and `version: 1`
+- The element must be a custom element exposing `static wcBindable` with `protocol: "wc-bindable"` and an integer `version` of `1` or later (the current protocol version is `1`; all versions ≥ 1 are core-compatible)
 - `methodName` must appear (by `name`) in `wcBindable.commands`
 - The bound value must be a `CommandToken` (assigning a non-token value throws — for example, an undeclared name like `$command.typo` resolves to `undefined` and is rejected here)
 
@@ -1353,7 +1353,7 @@ class MyTarget extends HTMLElement {
 
 Validation rules:
 
-- The element must be a wc-bindable custom element (`static wcBindable`, `protocol: "wc-bindable"`, `version: 1`). A non-wc-bindable element is rejected at attach time.
+- The element must be a wc-bindable custom element (`static wcBindable`, `protocol: "wc-bindable"`, integer `version` ≥ 1 — all versions ≥ 1 are core-compatible). A non-wc-bindable element is rejected at attach time.
 - `<property>` must appear in `wcBindable.properties` — checked at **attach time** (fail-fast; needs only the class, not DOM connection).
 - `<tokenName>` must be declared in `$eventTokens` — checked at **fire time**. State is resolved from the element's live root node when the event fires, so the binding also works inside `for` / `if` blocks and after SSR hydration, where the node may still be detached at attach time.
 - Modifiers `#prevent` / `#stop` work as on any event binding: `eventToken.error#prevent: createFailed`.
@@ -1672,6 +1672,15 @@ All options with defaults:
 | `locale` | `'en'` | Default locale for filters |
 | `debug` | `false` | Debug mode |
 | `enableMustache` | `true` | Enable `{{ }}` syntax |
+| `enableDirectionalInitialSync` | `false` | Opt-in: direction-aware initial sync (`#init=` / `#sync=` binding modifiers, e.g. `value#init=state: form.name`) |
+| `enablePropagationContext` | `false` | Opt-in: causal propagation tracking across bindings |
+| `enableContractAnalyzer` | `false` | Opt-in dev-time contract analyzer (exposes `analyzeContract`) |
+
+> The last three are opt-in **architecture-hardening** features. All default to
+> `false` with **zero runtime cost when off**; their normative reference is
+> `docs/architecture-hardening/`. When `enableContractAnalyzer` is on, the exported
+> `analyzeContract()` API reports drift between a live `static wcBindable` surface
+> and a sidecar manifest for dev-time diagnostics.
 
 ## TypeScript Support
 
