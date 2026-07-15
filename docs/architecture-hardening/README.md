@@ -34,6 +34,12 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
   `BindingSession`、`PropagationContext`、`OperationTicket`、`wcstack.manifest.json` の責務分割、
   段階導入、回帰テスト、decision gate をまとめる。
 
+## 既定化・横展開ステータス
+
+- [既定化・横展開ステータスと残作業](10-defaulting-rollout-status.md) — phase 0-6 の PoC 実装完了後の
+  opt-in → 既定化 / IO 族横展開の進捗と残作業を追跡する living document（Phase 2/3 既定化済み、
+  errorInfo 8/35 ノード、5a CI ゲート化 / 5b analyzer 既定 ON / 残ノード横展開 が未）。
+
 ## 横断原則
 
 1. **暗黙の時刻依存を、明示的なフェーズまたは状態へ変える。**
