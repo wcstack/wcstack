@@ -159,6 +159,7 @@ Add the `monitor` attribute to republish document `copy` / `cut` / `paste` as re
 | `items`          | `wcs-clipboard:read`                     | Normalized `ClipboardItem` snapshot from `read()` (`{ types, data }[]`), or `null`. |
 | `loading`        | `wcs-clipboard:loading-changed`          | `true` during any async read/write.                                  |
 | `error`          | `wcs-clipboard:error`                    | Normalized `{ name, message }` (e.g. `NotAllowedError`, `NotSupportedError`). |
+| `errorInfo`      | `wcs-clipboard:error-info-changed`       | Serializable failure taxonomy (`WcsIoErrorInfo`), or `null`. Additive — derived from `error.name` (`NotSupportedError` → `capability-missing`, `NotAllowedError` → `not-allowed`, else → `clipboard-error`). The `error` shape is unchanged. |
 | `readPermission` | `wcs-clipboard:read-permission-changed`  | `"prompt"` / `"granted"` / `"denied"` / `"unsupported"` for `clipboard-read`. |
 | `writePermission`| `wcs-clipboard:write-permission-changed` | Same states for `clipboard-write`.                                   |
 | `monitoring`     | `wcs-clipboard:monitoring-changed`       | `true` while monitoring document clipboard events.                  |

@@ -15,7 +15,10 @@ export default defineConfig({
         'dist/',
         '*.config.{js,ts,mjs}',
         'src/exports.ts',
-        'src/types.ts'
+        'src/types.ts',
+        // Generated io-core copy (sync-io-core.mjs): byte-identical to fetch's,
+        // which tests it fully. Capability-only (no lane). See scripts/sync-io-core.mjs.
+        'src/core/platformCapability.ts'
       ],
       thresholds: {
         statements: 100,

@@ -384,4 +384,28 @@ describe("BindingSession Phase 2 initial synchronization", () => {
     expect(() => resolveInitialSyncPolicy(createBinding(node, "disabled", ["sync=connect"])))
       .toThrow(/enableDirectionalInitialSync/);
   });
+
+  it("command-token 配線(propSegments[0]===command)は wcBindable 検証を経ず state authority を返すこと", () => {
+    // bindingType は "prop" だが propName は wcBindable property ではない。
+    // directional 有効下で declaration 検証(未宣言なら raiseError)に掛からず、
+    // 現行互換の state authority を無同期で返すことを固定する。
+    const tag = nextTag("command");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = declaration([{ name: "value", event: "value-change" }]);
+    });
+    const node = document.createElement(tag);
+    document.body.append(node);
+    const commandBinding = {
+      ...createBinding(node, "fetchResult"),
+      propName: "command.fetch",
+      propSegments: ["command", "fetch"],
+    };
+
+    expect(() => resolveInitialSyncPolicy(commandBinding)).not.toThrow();
+    expect(resolveInitialSyncPolicy(commandBinding)).toEqual({
+      authority: "state",
+      syncOn: "call",
+      observable: false,
+    });
+  });
 });

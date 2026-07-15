@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IBindingInfo } from "../src/types";
+import { setConfig } from "../src/config";
 
 const mocks = vi.hoisted(() => ({
   customTag: null as string | null,
@@ -41,7 +42,7 @@ vi.mock("../src/binding/getStateAddressByBindingInfo", () => ({ clearStateAddres
 vi.mock("../src/stateElementByName", () => ({ getStateElementByName: vi.fn(() => mocks.stateElement) }));
 vi.mock("../src/event/handler", () => ({ attachEventHandler: mocks.attachEvent, detachEventHandler: mocks.detachEvent }));
 vi.mock("../src/event/eventTokenHandler", () => ({ attachEventTokenHandler: mocks.attachToken, detachEventTokenHandler: mocks.detachToken }));
-vi.mock("../src/event/twowayHandler", () => ({ attachTwowayEventHandler: mocks.attachTwoway, detachTwowayEventHandler: mocks.detachTwoway }));
+vi.mock("../src/event/twowayHandler", () => ({ attachTwowayEventHandler: mocks.attachTwoway, detachTwowayEventHandler: mocks.detachTwoway, addTwowayValueObserver: vi.fn(() => vi.fn()) }));
 vi.mock("../src/event/radioHandler", () => ({ attachRadioEventHandler: mocks.attachRadio, detachRadioEventHandler: mocks.detachRadio }));
 vi.mock("../src/event/checkboxHandler", () => ({ attachCheckboxEventHandler: mocks.attachCheckbox, detachCheckboxEventHandler: mocks.detachCheckbox }));
 
@@ -80,9 +81,15 @@ describe("BindingSession defensive branches", () => {
     mocks.attachCheckbox.mockReturnValue(false);
     mocks.attachTwoway.mockImplementation(() => undefined);
     mocks.getAddress.mockImplementation(() => ({ path: "value" }));
+    // flag 非依存の lifecycle 分岐テスト。OFF を明示して非 directional 経路を網羅
+    // （directional path は initialSyncPolicy / initialSync.unit が担当）。
+    setConfig({ enableDirectionalInitialSync: false });
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setConfig({ enableDirectionalInitialSync: true });
+  });
 
   it("event/eventToken/radio/checkbox cleanup と filter key を所有すること", () => {
     const eventSession = new BindingSession();

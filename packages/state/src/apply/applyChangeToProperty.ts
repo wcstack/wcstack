@@ -2,6 +2,7 @@ import { config, inSsr } from "../config";
 import { devtoolsSink } from "../devtools/sink";
 import { applyMirrorAttribute, getInputAttributeMirror } from "../event/getInputAttributeMirror";
 import { beginPropagationTransaction, extendPropagationContext, getCurrentPropagationContext, getEdgeId, getWireId, runWithPropagationContext, runWithWriteReceipt } from "../propagation/propagation";
+import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
 import { addSsrProperty, trackSsrPropertyNode } from "./ssrPropertyStore";
@@ -94,7 +95,17 @@ export function applyChangeToProperty(binding: IBindingInfo, _context: IApplyCon
           }
         }
       };
-      if (config.enablePropagationContext) {
+      // Zero-cost fast path (§4 最適化): the propagation edge / WriteReceipt
+      // machinery only matters when the element write can *echo* — i.e. the setter
+      // may synchronously dispatch an event a two-way wire feeds back to state.
+      // `isPossibleTwoWay` is the same conservative check the two-way listener
+      // registration uses, and it is cheap for the common one-way case (textContent
+      // / class / style on plain elements return false fast). One-way bindings can
+      // never re-traverse an edge, so skipping the context/receipt is safe and
+      // avoids a per-apply Set copy + receipt allocation. Diamond / coalescing are
+      // unaffected — those ride the write-transaction context threaded through the
+      // updater, not the element edge.
+      if (config.enablePropagationContext && isPossibleTwoWay(element, firstSegment)) {
         // Phase 3: state → element edge の通過を記録し、同じ transaction が
         // 同じ edge を再度通ろうとした場合だけ抑止する（設計書 §4 規則 2）。
         // 書き込みは WriteReceipt scope で包み、setter が同期 dispatch する

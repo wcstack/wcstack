@@ -1671,14 +1671,21 @@ bootstrapState({
 | `locale` | `'en'` | フィルタのデフォルトロケール |
 | `debug` | `false` | デバッグモード |
 | `enableMustache` | `true` | `{{ }}` 構文の有効化 |
-| `enableDirectionalInitialSync` | `false` | opt-in: 方向認識の初期同期（`#init=` / `#sync=` バインド modifier。例 `value#init=state: form.name`） |
-| `enablePropagationContext` | `false` | opt-in: バインド間の因果伝播トラッキング |
+| `enableDirectionalInitialSync` | `true` | 方向認識の初期同期（`#init=` / `#sync=` バインド modifier。例 `value#init=state: form.name`）。既定 on。`false` で opt-out |
+| `enablePropagationContext` | `true` | バインド間の因果伝播トラッキング（echo/diamond のループ防止）。既定 on。`false` で opt-out |
 | `enableContractAnalyzer` | `false` | opt-in の開発時 contract analyzer（`analyzeContract` を公開） |
 
-> 後半 3 つは opt-in の **architecture-hardening** 機能です。すべて既定 `false` で
-> **無効時はランタイムコストゼロ**、規範は `docs/architecture-hardening/` にあります。
-> `enableContractAnalyzer` が有効な場合、公開 API `analyzeContract()` が、稼働中の
-> `static wcBindable` サーフェスと sidecar manifest の drift を開発時診断として報告します。
+> この 3 つは **architecture-hardening** 機能で、規範は `docs/architecture-hardening/` に
+> あります。`enablePropagationContext` は**既定 on** — write-path コストは一方向バインドで
+> ほぼゼロ（echo しうる双方向 wire のみ因果 bookkeeping を行う）で、フラグは恒久的な
+> opt-out として残します。`enableDirectionalInitialSync` も**既定 on**: プロパティ単位で
+> 初期同期の authority を割り当てます（output-only な `wcBindable` メンバは初期値を
+> element→state で読み取り、双方向 / input メンバは state→element を維持）。setup-path
+> コストは初期 render の 5% 未満（producer-value observer は echo しうる双方向 wire にのみ
+> 登録）で、フラグは恒久的な opt-out として残します。`enableContractAnalyzer` は opt-in
+> （既定 `false`・無効時ランタイムコストゼロ）で、有効な場合、公開 API `analyzeContract()`
+> が稼働中の `static wcBindable` サーフェスと sidecar manifest の drift を開発時診断として
+> 報告します。
 
 ## TypeScript サポート
 

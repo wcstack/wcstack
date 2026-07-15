@@ -628,8 +628,11 @@ describe("ClipboardCore", () => {
     expect(props).toEqual([
       "text", "items", "loading", "error",
       "readPermission", "writePermission",
-      "monitoring", "copied", "cut", "pasted",
+      "monitoring", "errorInfo", "copied", "cut", "pasted",
     ]);
+    const errorInfoProp = ClipboardCore.wcBindable.properties.find((p) => p.name === "errorInfo")!;
+    expect(errorInfoProp.event).toBe("wcs-clipboard:error-info-changed");
+    expect(errorInfoProp.getter).toBeUndefined();
     const commands = (ClipboardCore.wcBindable.commands ?? []).map((c) => c.name);
     expect(commands).toEqual([
       "writeText", "write", "readText", "read", "startMonitor", "stopMonitor",
@@ -645,5 +648,54 @@ describe("ClipboardCore", () => {
     expect(get("copied")(cev)).toBe("c");
     expect(get("cut")(new CustomEvent("wcs-clipboard:cut", { detail: "x" }))).toBe("x");
     expect(get("pasted")(new CustomEvent("wcs-clipboard:pasted", { detail: "p" }))).toBe("p");
+  });
+
+  describe("errorInfo（bindable 出力・wcs-clipboard:error-info-changed）", () => {
+    it("NotAllowedError は errorInfo=not-allowed(recoverable=false)で発火し、成功で null クリア", async () => {
+      installClipboard({ writeError: new DOMException("denied", "NotAllowedError") });
+      removePermissions();
+      const core = new ClipboardCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-clipboard:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+
+      await core.writeText("x");
+      expect(details).toHaveLength(1);
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: false, message: "denied" });
+
+      installClipboard({ readText: "ok" });
+      await core.readText(); // 成功: 開始時に _setError(null) → errorInfo null クリア
+      expect(details).toHaveLength(2);
+      expect(details[1]).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("unsupported(NotSupportedError)は errorInfo=capability-missing", async () => {
+      removeClipboard();
+      removePermissions();
+      const core = new ClipboardCore();
+      await core.readText();
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "start", recoverable: false,
+        message: "Clipboard API is not available in this environment.",
+      });
+    });
+
+    it("その他の失敗(非 DOMException)は errorInfo=clipboard-error(recoverable=true)", async () => {
+      installClipboard({ writeError: "boom" }); // 非 Error → name:"Error"
+      removePermissions();
+      const core = new ClipboardCore();
+      await core.writeText("x");
+      expect(core.errorInfo).toEqual({ code: "clipboard-error", phase: "execute", recoverable: true, message: "boom" });
+    });
+
+    it("イベントは bubbles する", async () => {
+      installClipboard({ writeError: new DOMException("denied", "NotAllowedError") });
+      removePermissions();
+      const core = new ClipboardCore();
+      let bubbles = false;
+      core.addEventListener("wcs-clipboard:error-info-changed", (e) => { bubbles = e.bubbles; });
+      await core.writeText("x");
+      expect(bubbles).toBe(true);
+    });
   });
 });

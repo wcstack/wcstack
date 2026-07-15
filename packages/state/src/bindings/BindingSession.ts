@@ -9,6 +9,7 @@ import { detachEventTokenHandler, attachEventTokenHandler } from "../event/event
 import { detachEventHandler, attachEventHandler } from "../event/handler";
 import { detachRadioEventHandler, attachRadioEventHandler } from "../event/radioHandler";
 import { detachTwowayEventHandler, attachTwowayEventHandler, addTwowayValueObserver } from "../event/twowayHandler";
+import { isPossibleTwoWay } from "../event/isPossibleTwoWay";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
 import { raiseError } from "../raiseError";
@@ -402,15 +403,6 @@ export class BindingSession {
 
   private attachListeners(record: IInternalBindingRecord): void {
     const binding = record.info;
-    if (config.enableDirectionalInitialSync) {
-      const removeObserver = addTwowayValueObserver(binding.node, binding.propName, (value) => {
-        if (!this.isAlive(record, record.generation)) return;
-        record.eventSequence += 1;
-        record.hasProducerValue = true;
-        record.producerValue = value;
-      });
-      record.teardowns.add(removeObserver);
-    }
     if (attachEventHandler(binding)) {
       record.teardowns.add(() => detachEventHandler(binding));
       return;
@@ -432,6 +424,28 @@ export class BindingSession {
       record.teardowns.add(() => detachCheckboxEventHandler(binding));
     }
     this.attachAfterDefinition(record, () => {
+      // directional initial sync の producer-value observer は twowayEventHandlerFunction
+      // からのみ呼ばれる（唯一の consumer）。その handler が attach されるのは
+      // isPossibleTwoWay かつ非 ro の binding だけ（attachTwowayEventHandler と同条件）
+      // なので、one-way / event / eventToken / radio(非value) 等では observer は決して
+      // fire しない。以前は attachListeners 冒頭で全 binding に無条件登録していたが、
+      // fire しえない大多数の binding に対する setup 死荷重だった。ここへ移すことで
+      // 「twoway handler が付く binding のみ observer 登録」を構造的に保証する
+      // （undefined custom element は attachAfterDefinition が定義後まで遅延するので
+      // isPossibleTwoWay の未定義 CE raiseError も踏まない）。
+      if (
+        config.enableDirectionalInitialSync
+        && isPossibleTwoWay(binding.node, binding.propName)
+        && binding.propModifiers.indexOf("ro") === -1
+      ) {
+        const removeObserver = addTwowayValueObserver(binding.node, binding.propName, (value) => {
+          if (!this.isAlive(record, record.generation)) return;
+          record.eventSequence += 1;
+          record.hasProducerValue = true;
+          record.producerValue = value;
+        });
+        record.teardowns.add(removeObserver);
+      }
       attachTwowayEventHandler(binding);
       record.teardowns.add(() => detachTwowayEventHandler(binding));
     });

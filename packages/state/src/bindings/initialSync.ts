@@ -73,6 +73,14 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
     }
     return { authority: "none", syncOn, observable: false };
   }
+  // command.<name>: $command.<method> は命令的な command-token 配線。bindingType は
+  // "prop" だが propName ("command.<name>") は wcBindable property ではないため、下の
+  // property authority 検証(未宣言なら raiseError)に掛けてはならない。値の初期同期を
+  // 持たない配線なので、現行互換の "state" authority を返す(command token は従来通り
+  // 初期 apply で配線される)。
+  if (binding.propSegments[0] === "command") {
+    return { authority: "state", syncOn, observable: false };
+  }
   if (binding.bindingType !== "prop") {
     if (explicitAuthority !== null && explicitAuthority !== "state" && explicitAuthority !== "none") {
       raiseError(`Binding type "${binding.bindingType}" does not support init=${explicitAuthority}.`);

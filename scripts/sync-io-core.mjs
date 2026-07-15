@@ -26,16 +26,32 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 
 // Canonical source (kebab) -> generated dest file name (camelCase) under src/core.
-const FILES = [
-  { source: "operation-lane.ts", dest: "operationLane.ts" },
-  { source: "platform-capability.ts", dest: "platformCapability.ts" },
-];
+const DEST_NAME = {
+  "operation-lane.ts": "operationLane.ts",
+  "platform-capability.ts": "platformCapability.ts",
+};
 
-// Packages that bundle the IO-core primitives. Grows as the lane / capability
-// rollout reaches more operation-shaped nodes (see decision: operation nodes only).
+// Per-package file selection.
+// - Competing operation nodes bundle BOTH the concurrency lane and the capability
+//   / error-taxonomy layer.
+// - Concurrent-independent nodes (clipboard, geolocation) that adopt only the error
+//   taxonomy bundle the capability layer ONLY (no lane — their async ops don't
+//   compete, so a lane adds no value; see decision: operation nodes only).
 // Consumers other than the reference package (fetch) exclude the generated copies
 // from coverage — they are byte-identical to fetch's, which tests them fully.
-const TARGET_PACKAGES = ["fetch", "share", "contacts", "eyedropper", "credential", "upload"];
+const LANE_AND_CAPABILITY = ["operation-lane.ts", "platform-capability.ts"];
+const CAPABILITY_ONLY = ["platform-capability.ts"];
+
+const PACKAGE_FILES = {
+  fetch: LANE_AND_CAPABILITY,
+  share: LANE_AND_CAPABILITY,
+  contacts: LANE_AND_CAPABILITY,
+  eyedropper: LANE_AND_CAPABILITY,
+  credential: LANE_AND_CAPABILITY,
+  upload: LANE_AND_CAPABILITY,
+  clipboard: CAPABILITY_ONLY,
+  geolocation: CAPABILITY_ONLY,
+};
 
 const banner = (sourceName) =>
   "// ===========================================================================\n" +
@@ -59,9 +75,9 @@ function destFor(pkg, fileName) {
 
 function main() {
   const checkOnly = process.argv.includes("--check");
-  const contents = new Map(FILES.map((f) => [f.dest, expectedContent(f.source)]));
-  const targets = TARGET_PACKAGES.flatMap((pkg) =>
-    FILES.map((f) => ({ pkg, fileName: f.dest, content: contents.get(f.dest) })),
+  const contents = new Map(Object.keys(DEST_NAME).map((source) => [source, expectedContent(source)]));
+  const targets = Object.entries(PACKAGE_FILES).flatMap(([pkg, sources]) =>
+    sources.map((source) => ({ pkg, fileName: DEST_NAME[source], content: contents.get(source) })),
   );
   const stale = [];
 

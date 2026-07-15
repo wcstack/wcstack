@@ -1672,15 +1672,22 @@ All options with defaults:
 | `locale` | `'en'` | Default locale for filters |
 | `debug` | `false` | Debug mode |
 | `enableMustache` | `true` | Enable `{{ }}` syntax |
-| `enableDirectionalInitialSync` | `false` | Opt-in: direction-aware initial sync (`#init=` / `#sync=` binding modifiers, e.g. `value#init=state: form.name`) |
-| `enablePropagationContext` | `false` | Opt-in: causal propagation tracking across bindings |
+| `enableDirectionalInitialSync` | `true` | Direction-aware initial sync (`#init=` / `#sync=` binding modifiers, e.g. `value#init=state: form.name`). Default on; set `false` to opt out |
+| `enablePropagationContext` | `true` | Causal propagation tracking across bindings (echo/diamond loop prevention). Default on; set `false` to opt out |
 | `enableContractAnalyzer` | `false` | Opt-in dev-time contract analyzer (exposes `analyzeContract`) |
 
-> The last three are opt-in **architecture-hardening** features. All default to
-> `false` with **zero runtime cost when off**; their normative reference is
-> `docs/architecture-hardening/`. When `enableContractAnalyzer` is on, the exported
-> `analyzeContract()` API reports drift between a live `static wcBindable` surface
-> and a sidecar manifest for dev-time diagnostics.
+> These three are **architecture-hardening** features; their normative reference is
+> `docs/architecture-hardening/`. `enablePropagationContext` defaults **on** — its
+> write-path cost is near-zero for one-way bindings (only echo-capable two-way
+> wires do the causal bookkeeping) — with the flag kept as a permanent opt-out.
+> `enableDirectionalInitialSync` also defaults **on**: it assigns per-property
+> initial-sync authority (an output-only `wcBindable` member reads its initial value
+> element→state; two-way / input members keep state→element). Its setup-path cost is
+> under 5% of initial render (the producer-value observer is only registered for
+> echo-capable two-way wires), and the flag is a permanent opt-out. `enableContractAnalyzer`
+> is opt-in (default `false`, zero runtime cost when off); when on, the exported
+> `analyzeContract()` API reports drift between a live `static wcBindable` surface and
+> a sidecar manifest for dev-time diagnostics.
 
 ## TypeScript Support
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IBindingInfo } from "../src/types";
+import { setConfig } from "../src/config";
 
 const mocks = vi.hoisted(() => ({
   addAddress: vi.fn(),
@@ -45,6 +46,9 @@ vi.mock("../src/event/eventTokenHandler", () => ({
 vi.mock("../src/event/twowayHandler", () => ({
   attachTwowayEventHandler: mocks.attachTwoway,
   detachTwowayEventHandler: mocks.detachTwoway,
+  // directional initial sync 有効時に attachListeners が呼ぶ。observer は no-op、
+  // teardown も no-op を返す（本 suite は observer 挙動でなく lifecycle 分岐を検証）。
+  addTwowayValueObserver: vi.fn(() => vi.fn()),
 }));
 vi.mock("../src/event/radioHandler", () => ({
   attachRadioEventHandler: mocks.attachRadio,
@@ -87,10 +91,15 @@ describe("BindingSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.replaceChildren();
+    // これらは flag 非依存の lifecycle テスト。既定 on の directional path は
+    // initialSyncPolicy / initialSync.unit で検証するので、ここは OFF を明示して
+    // shouldApplyState / attachListeners の非 directional 分岐を網羅する。
+    setConfig({ enableDirectionalInitialSync: false });
   });
 
   afterEach(() => {
     document.body.replaceChildren();
+    setConfig({ enableDirectionalInitialSync: true });
   });
 
   it("同じ binding の listener と address を二重登録せず、再 activation は新 generation にすること", () => {

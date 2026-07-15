@@ -143,6 +143,15 @@ describe("Clipboard (Shell)", () => {
     expect(mock.write).toHaveBeenCalledWith([item]);
   });
 
+  it("errorInfo は Core から転送される（NotAllowedError）", async () => {
+    installClipboard({ writeError: new DOMException("denied", "NotAllowedError") });
+    removePermissions();
+    const el = createClipboard();
+    document.body.appendChild(el);
+    await el.writeText("x");
+    expect(el.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: false, message: "denied" });
+  });
+
   it("readText / read コマンドが Core に委譲される", async () => {
     const item = makeClipboardItem({ "text/plain": "rich" });
     installClipboard({ readText: "plain read", readItems: [item] });

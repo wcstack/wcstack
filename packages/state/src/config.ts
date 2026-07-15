@@ -45,8 +45,8 @@ const _config: IInternalConfig = {
   locale: 'en',
   debug: false,
   enableMustache: true,
-  enableDirectionalInitialSync: false,
-  enablePropagationContext: false,
+  enableDirectionalInitialSync: true,
+  enablePropagationContext: true,
   enableContractAnalyzer: false,
   sameValueGuard: true,
 };
