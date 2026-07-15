@@ -27,6 +27,7 @@ interface IInternalConfig {
   enableMustache: boolean;
   enableDirectionalInitialSync: boolean;
   enablePropagationContext: boolean;
+  enableContractAnalyzer: boolean;
   sameValueGuard: boolean;
 }
 
@@ -46,6 +47,7 @@ const _config: IInternalConfig = {
   enableMustache: true,
   enableDirectionalInitialSync: false,
   enablePropagationContext: false,
+  enableContractAnalyzer: false,
   sameValueGuard: true,
 };
 
@@ -92,6 +94,9 @@ export function setConfig(partialConfig: IWritableConfig): void {
   }
   if (typeof partialConfig.enablePropagationContext === "boolean") {
     _config.enablePropagationContext = partialConfig.enablePropagationContext;
+  }
+  if (typeof partialConfig.enableContractAnalyzer === "boolean") {
+    _config.enableContractAnalyzer = partialConfig.enableContractAnalyzer;
   }
   if (typeof partialConfig.sameValueGuard === "boolean") {
     _config.sameValueGuard = partialConfig.sameValueGuard;

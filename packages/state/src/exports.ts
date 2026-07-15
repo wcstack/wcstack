@@ -23,5 +23,10 @@ export { VERSION } from "./version.js";
 
 export { getWcsManifest, WCS_MANIFEST_VERSION } from "./manifest.js";
 export type { IWcsManifest } from "./manifest.js";
+
+// Phase 5b: opt-in dev-time contract analyzer(既定 off・無効時ゼロコスト)。
+export { analyzeContract } from "./contract/contractAnalyzer.js";
+export type { IContractManifest } from "./contract/types.js";
+export type { ContractEvent } from "./devtools/types.js";
 export { builtinFilterMeta } from "./filters/filterMeta.js";
 export type { IFilterMeta, FilterResultType, FilterArgType } from "./filters/filterMeta.js";
