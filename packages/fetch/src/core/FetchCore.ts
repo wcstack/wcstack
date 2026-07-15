@@ -1,5 +1,14 @@
 import { IWcBindable } from "../types.js";
 import { OperationLane, OperationTicket } from "./operationLane.js";
+import {
+  FETCH_CAPABILITIES,
+  PlatformAssessment,
+  WCS_FETCH_ERROR_CODE,
+  WcsIoErrorInfo,
+  WcsIoErrorPhase,
+  assessCapabilities,
+  requiredCapabilitiesAvailable,
+} from "./platformCapability.js";
 
 export type FetchResponseType = "auto" | "json" | "text" | "blob" | "arrayBuffer";
 
@@ -63,6 +72,16 @@ export class FetchCore extends EventTarget {
   private _lane = new OperationLane("fetch", "latest", { withSignal: true });
   // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
+  // Phase 6 (§7.2): opt-in error taxonomy. The existing `error` property/event
+  // shape is unchanged; `errorInfo` projects the serializable WcsIoErrorInfo so
+  // DevTools / adopters can classify failures without a breaking change.
+  private _errorInfo: WcsIoErrorInfo | null = null;
+
+  // Capability IDs (probed at call time, never at module eval / never eval'd as a
+  // global path). `web.fetch` required; `web.abort-controller` optional (its
+  // absence degrades to a fetch without an abort signal).
+  private static readonly REQUIRED_CAPABILITIES = ["web.fetch"] as const;
+  private static readonly OPTIONAL_CAPABILITIES = ["web.abort-controller"] as const;
 
   constructor(target?: EventTarget) {
     super();
@@ -113,6 +132,42 @@ export class FetchCore extends EventTarget {
 
   get promise(): Promise<any> {
     return this._promise;
+  }
+
+  /**
+   * Phase 6 opt-in taxonomy: the last failure's serializable `WcsIoErrorInfo`
+   * (stable `code` / `phase` / `recoverable` / `capabilityId`), or null. Additive
+   * — the existing `error` property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
+  /**
+   * Whether the required platform capabilities (`web.fetch`) are available right
+   * now — the minimal "supported" signal, decided by call-time feature detection,
+   * not User-Agent. Additive.
+   */
+  get supported(): boolean {
+    return requiredCapabilitiesAvailable(this.platformAssessment, FetchCore.REQUIRED_CAPABILITIES);
+  }
+
+  /**
+   * Full platform assessment (availability / readiness / preconditions), probed
+   * at call time. `readiness` is `degraded` when only the optional
+   * `web.abort-controller` is missing. Dev / sidecar view.
+   */
+  get platformAssessment(): PlatformAssessment {
+    return assessCapabilities(FETCH_CAPABILITIES, {
+      required: FetchCore.REQUIRED_CAPABILITIES,
+      optional: FetchCore.OPTIONAL_CAPABILITIES,
+      activity: this._loading ? "active" : "inactive",
+      lastError: this._errorInfo ?? undefined,
+    });
+  }
+
+  private _setErrorInfo(code: string, phase: WcsIoErrorPhase, recoverable: boolean, message: string, capabilityId?: string): void {
+    this._errorInfo = { code, phase, recoverable, message, ...(capabilityId === undefined ? {} : { capabilityId }) };
   }
 
   private _setLoading(loading: boolean): void {
@@ -195,7 +250,22 @@ export class FetchCore extends EventTarget {
     // 流し、サニタイズ値(null)を返す。command-token 経路からの呼び出しが unhandled
     // rejection にならず、「fetch() は全終了ケースで resolve」契約とも整合する。
     if (!url) {
+      // Existing `error` shape is unchanged (§7.2 / 07 §互換性); the taxonomy is
+      // projected only through the additive `errorInfo`.
+      this._setErrorInfo(WCS_FETCH_ERROR_CODE.InvalidArgument, "start", false, "url attribute is required.");
       this._setError({ message: "url attribute is required." });
+      return null;
+    }
+
+    // Phase 6 (§7.2): probe required capabilities just before starting. If the
+    // `web.fetch` API is absent (SSR / headless / very old runtime), do NOT start
+    // the operation — surface a stable `capability-missing` taxonomy without
+    // attempting the call (and without the generic network-error path).
+    const assessment = this.platformAssessment;
+    if (!requiredCapabilitiesAvailable(assessment, FetchCore.REQUIRED_CAPABILITIES)) {
+      const missing = FetchCore.REQUIRED_CAPABILITIES.find((id) => assessment.availability.get(id) !== "available");
+      this._setErrorInfo(WCS_FETCH_ERROR_CODE.CapabilityMissing, "start", false, `Required capability "${missing}" is unavailable.`, missing);
+      this._setError({ message: `Required capability "${missing}" is unavailable.` });
       return null;
     }
 
@@ -208,13 +278,15 @@ export class FetchCore extends EventTarget {
     // Issue a lane ticket. For the `latest` policy this advances the epoch and
     // aborts the previous in-flight request (supersede), returning a ticket +
     // attempt whose `signal` is the lane-owned AbortController for this operation.
+    // `attempt.signal` is undefined when `web.abort-controller` is missing
+    // (degraded): the request runs without a native abort signal.
     const started = this._lane.begin();
     // `latest` begin never returns null (exhaust is the only rejecting policy).
     const { ticket, attempt } = started!;
-    const signal = attempt.signal!;
+    const signal = attempt.signal;
 
     this._commitStep(ticket, () => this._setLoading(true));
-    this._commitStep(ticket, () => this._setError(null));
+    this._commitStep(ticket, () => { this._errorInfo = null; this._setError(null); });
 
     const {
       method = "GET",
@@ -233,7 +305,11 @@ export class FetchCore extends EventTarget {
     if (timeout > 0) {
       timeoutTimer = setTimeout(() => {
         if (!this._lane.claimTerminal(ticket, "timeout")) return;
-        this._commitStep(ticket, () => this._setError({ name: "TimeoutError", message: `Request timed out after ${timeout}ms.` }));
+        const message = `Request timed out after ${timeout}ms.`;
+        this._commitStep(ticket, () => {
+          this._setErrorInfo(WCS_FETCH_ERROR_CODE.Timeout, "execute", true, message);
+          this._setError({ name: "TimeoutError", message });
+        });
         this._commitStep(ticket, () => this._setResponse(null, 0));
         this._commitStep(ticket, () => this._setLoading(false));
         this._lane.abort(ticket);
@@ -306,7 +382,10 @@ export class FetchCore extends EventTarget {
         if (!this._lane.claimTerminal(ticket, "error")) {
           return null;
         }
-        this._commitStep(ticket, () => this._setError(error));
+        this._commitStep(ticket, () => {
+          this._setErrorInfo(WCS_FETCH_ERROR_CODE.HttpError, "execute", true, `HTTP ${response.status} ${response.statusText}`);
+          this._setError(error);
+        });
         // Notify `status` observers on HTTP errors too. The `status` property is
         // surfaced via the `wcs-fetch:response` event (getter reads detail.status),
         // so without dispatching it here a bind() subscriber would never see the
@@ -343,7 +422,15 @@ export class FetchCore extends EventTarget {
       if (!this._lane.claimTerminal(ticket, "error")) {
         return null;
       }
-      this._commitStep(ticket, () => this._setError(e));
+      this._commitStep(ticket, () => {
+        const message = String(e?.message ?? "Network request failed.");
+        this._setErrorInfo(WCS_FETCH_ERROR_CODE.Network, "execute", true, message);
+        // Coalesce a falsy rejection (Promise.reject(null)/throw null) to a non-null
+        // envelope so the `error` same-value guard (cleared to null at start) cannot
+        // suppress a genuine terminal error — keeping `error`/`wcs-fetch:error` in sync
+        // with `errorInfo`. Truthy errors (real TypeErrors) pass through unchanged.
+        this._setError(e ?? { message });
+      });
       // Reset value/status on network errors too, mirroring the HTTP-error path.
       // Without this, a prior successful request's value/status would linger while
       // `error` is non-null. status=0 is the web-platform convention for "no HTTP

@@ -321,7 +321,10 @@ export class OperationLane {
 
   private _makeAttempt(operationId: number, attemptNo: number): OperationAttempt {
     let signal: AbortSignal | undefined;
-    if (this._withSignal) {
+    // AbortController 不在環境(古い runtime / 一部 SSR)では degraded: signal なしで進む。
+    // 正しさは owner generation / eligibility / terminal CAS が担うため、native 中断が
+    // 無くても supersede / dispose は機能する(best-effort resource 中断が省かれるだけ)。
+    if (this._withSignal && typeof AbortController === "function") {
       const controller = new AbortController();
       this._controllers.set(operationId, controller);
       signal = controller.signal;
