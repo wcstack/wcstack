@@ -1,9 +1,3 @@
-// ===========================================================================
-// AUTO-GENERATED FILE - DO NOT EDIT.
-// Generated from /io-core/operation-lane.ts by scripts/sync-io-core.mjs.
-// Run `node scripts/sync-io-core.mjs` after editing the source.
-// ===========================================================================
-
 /**
  * operationLane.ts
  *

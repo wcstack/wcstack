@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FetchCore } from "../src/core/FetchCore";
-import { WCS_FETCH_ERROR_CODE } from "../src/core/platformCapability";
+import { WCS_FETCH_ERROR_CODE } from "../src/core/fetchCapabilities";
 
 function jsonResponse(body: any, status = 200): Response {
   return {
@@ -154,5 +154,48 @@ describe("FetchCore Phase 6 — error taxonomy (errorInfo, existing error shape 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("FetchCore Phase 6 — errorInfo は bindable 出力 (wcs-fetch:error-info-changed)", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  it("失敗時に detail=errorInfo で発火し、次の成功リクエスト開始時に null で発火する", async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError("boom"));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const core = new FetchCore();
+    const details: unknown[] = [];
+    core.addEventListener("wcs-fetch:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+
+    await core.fetch("/api/x"); // 失敗 → null→object で 1 回発火
+    expect(details).toHaveLength(1);
+    expect((details[0] as { code: string }).code).toBe(WCS_FETCH_ERROR_CODE.Network);
+
+    await core.fetch("/api/y"); // 成功: 開始時に object→null クリアで 1 回発火
+    expect(details).toHaveLength(2);
+    expect(details[1]).toBeNull();
+    expect(core.errorInfo).toBeNull();
+  });
+
+  it("エラーなしの成功リクエストでは error-info-changed を発火しない(同値ガード)", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const core = new FetchCore();
+    const details: unknown[] = [];
+    core.addEventListener("wcs-fetch:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+
+    await core.fetch("/api/x"); // errorInfo は初期 null → 開始クリアは null→null で抑制
+    expect(details).toHaveLength(0);
+    expect(core.errorInfo).toBeNull();
+  });
+
+  it("イベントは bubbles する", async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError("boom"));
+    const core = new FetchCore();
+    let bubbles = false;
+    core.addEventListener("wcs-fetch:error-info-changed", (e) => { bubbles = e.bubbles; });
+    await core.fetch("/api/x");
+    expect(bubbles).toBe(true);
   });
 });

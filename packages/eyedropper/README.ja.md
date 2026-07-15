@@ -118,8 +118,13 @@ npm install @wcstack/eyedropper
 | `loading`   | `wcs-eyedropper:loading-changed`    | スポイトカーソルが有効な間（`open()` 呼び出しが進行中）は `true`。 |
 | `error`     | `wcs-eyedropper:error`              | 真のプラットフォーム障害（ピッカーがキャンセルされた場合を除く全て）。まだ失敗が無い場合、または次の `open()` 呼び出しでリセットされた後は `null`。 |
 | `cancelled` | `wcs-eyedropper:cancelled-changed`  | 選択が完了しなかった場合に `true` — ユーザーが Escape を押した場合と、呼び出し元が `abort()` を呼んだ場合の両方。どちらも同じ `AbortError` として現れ、区別されない。 |
+| `errorInfo` | `wcs-eyedropper:error-info-changed` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は unsupported なら `capability-missing`、真の失敗なら `pick-failed`。キャンセルは `cancelled` であり `errorInfo` ではない。 |
 
 `cancelled` と `error` はどちらも、次の `open()` 呼び出しの **開始時** にリセットされる（`false` / `null`）ため、前回の呼び出しの古い結果が次回の結果に残り続けることはありません。
+
+**並行制御。** `EyeDropper.open()` は `AbortSignal` を受けるため、`<wcs-eyedropper>` は共有
+io-core lane を `latest` policy で用いる（`<wcs-fetch>` と同様）: 新しい `open()` が進行中の
+呼び出しを **supersede**（abort）し、`abort()` コマンドは実行中の選択をキャンセルする。
 
 ## コマンド
 

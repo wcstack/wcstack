@@ -1,5 +1,6 @@
 import { IWcBindable, WcsEyedropperData } from "../types.js";
 import { EyedropperCore } from "../core/EyedropperCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-eyedropper>` — declarative EyeDropper API primitive.
@@ -94,6 +95,10 @@ export class WcsEyedropper extends HTMLElement {
 
   get cancelled(): boolean {
     return this._core.cancelled;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

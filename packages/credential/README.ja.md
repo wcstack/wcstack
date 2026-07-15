@@ -61,6 +61,11 @@ npm install @wcstack/credential
 | `loading`   | `wcs-credential:loading-changed`    | `get()`/`store()`呼び出し中は`true`。 |
 | `error`     | `wcs-credential:error`              | 真のプラットフォーム失敗（正規化された`{ name, message }`）、無ければ`null`。 |
 | `cancelled` | `wcs-credential:cancelled-changed`  | ユーザーがブラウザのアカウント選択UIを閉じたら`true`（Credential Management APIは`NotAllowedError`でrejectする）。`error`には含めない。 |
+| `errorInfo` | `wcs-credential:error-info-changed` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は `capability-missing`（unsupported）・`out-of-scope`（`publicKey`/WebAuthn 試行）・`credential-failed`（真の失敗）。`NotAllowedError` のキャンセルは `cancelled` であり `errorInfo` ではない。 |
+
+**並行制御。** `get()` と `store()` は 1 つの io-core lane を `latest` policy で共有する:
+後発の呼び出しが先発を **supersede** する（実際の認証フローでは順次利用される — ログイン後に
+store、その前に get — 並行ではない）。並行実行時は後発の結果が勝つ。
 
 ## コマンド
 

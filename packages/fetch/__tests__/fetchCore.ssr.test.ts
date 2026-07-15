@@ -26,7 +26,7 @@ describe("FetchCore SSR import safety", () => {
 
     // module 評価(import)が browser global を必須参照しない。
     const mod = await import("../src/core/FetchCore");
-    const capMod = await import("../src/core/platformCapability");
+    const capMod = await import("../src/core/fetchCapabilities");
 
     let core: InstanceType<typeof mod.FetchCore> | undefined;
     expect(() => { core = new mod.FetchCore(); }).not.toThrow();

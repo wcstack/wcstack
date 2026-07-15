@@ -1,5 +1,20 @@
 # 設計メモ: `@wcstack/contacts`（`<wcs-contacts>`）
 
+> **⚠ 更新（architecture-hardening 昇格）**: 本書が `@wcstack/share` から継承した
+> 単一 `_gen` 世代ガードと `_api()` ヘルパーは、共有 io-core（`OperationLane` +
+> `platformCapability`）への昇格に伴い置換された。現行 `ContactsCore` は:
+> - **並行制御** = `OperationLane("contacts", "exhaust")`。進行中の2回目の `select()` は
+>   ticket 化されず即 no-op（`navigator.contacts.select` を呼ばない）。旧設計は「プラット
+>   フォームが2回目を `InvalidStateError` で弾く」前提だったが、それは進行中の1回目の
+>   `error`/`loading` を破壊するバグを生んでいた（exhaust がこれを解消）。`dispose()` は
+>   lane の owner generation を進めて in-flight を無効化する（旧 `_gen++` 相当）。
+> - **capability/error taxonomy** = 利用直前 probe（`web.contacts`）で unsupported を
+>   `capability-missing` として検出し、追加的な bindable プロパティ `errorInfo`
+>   （`WcsIoErrorInfo`）を公開する。既存 `error`/`cancelled` の shape は不変。
+>
+> 詳細は [web-share-tag-design.md](./web-share-tag-design.md) の同等バナーと
+> [share の実装](../packages/share/src/core/ShareCore.ts) を参照。以下は実装時の論点整理の記録。
+
 - **状態**: 実装済み（`packages/contacts`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Contact Picker API（`navigator.contacts.select(properties, options)`、`navigator.contacts.getProperties()`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の3本目。同計画書は本ノードを「**複数引数command**」と「**Android Chrome限定でunsupportedがデフォルト環境になりやすい**」という2点の実証役に位置づける（同書§per-API仕様「Contact Picker」）。

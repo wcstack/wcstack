@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly eyedropper: string;
 }
@@ -51,6 +53,8 @@ export interface WcsEyedropperCoreValues {
   // (docs/eyedropper-tag-design.md §2). Kept separate from `error` so
   // `hidden@error`-style bindings do not react to a routine cancellation.
   cancelled: boolean;
+  // Last failure's serializable taxonomy (stable code/phase/recoverable), or null.
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

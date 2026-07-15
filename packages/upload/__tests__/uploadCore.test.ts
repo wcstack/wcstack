@@ -24,12 +24,15 @@ describe("UploadCore", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(UploadCore.wcBindable.protocol).toBe("wc-bindable");
     expect(UploadCore.wcBindable.version).toBe(1);
-    expect(UploadCore.wcBindable.properties).toHaveLength(5);
+    expect(UploadCore.wcBindable.properties).toHaveLength(6);
     expect(UploadCore.wcBindable.properties[0].name).toBe("value");
     expect(UploadCore.wcBindable.properties[1].name).toBe("loading");
     expect(UploadCore.wcBindable.properties[2].name).toBe("progress");
     expect(UploadCore.wcBindable.properties[3].name).toBe("error");
     expect(UploadCore.wcBindable.properties[4].name).toBe("status");
+    expect(UploadCore.wcBindable.properties[5].name).toBe("errorInfo");
+    expect(UploadCore.wcBindable.properties[5].event).toBe("wcs-upload:error-info-changed");
+    expect(UploadCore.wcBindable.properties[5].getter).toBeUndefined();
   });
 
   it("wcBindable inputsがurl/method/fieldNameを宣言している", () => {
@@ -518,6 +521,142 @@ describe("UploadCore", () => {
       core.upload("/api/upload", files);
       expect(firstXhr.abort).toHaveBeenCalled();
       expect(MockXMLHttpRequest.instances).toHaveLength(2);
+    });
+  });
+
+  describe("errorInfo（bindable 出力・wcs-upload:error-info-changed）", () => {
+    it("HTTP エラーで errorInfo=http-error が detail 付きで発火し、次の upload 開始時に null で発火する", async () => {
+      const core = new UploadCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-upload:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+      const files = [createMockFile("a.txt", 1, "text/plain")];
+
+      const p1 = core.upload("/api/1", files);
+      MockXMLHttpRequest.instances[0].simulateLoad(500, "boom");
+      await p1;
+      expect(details).toHaveLength(1);
+      expect((details[0] as { code: string }).code).toBe("http-error");
+      expect(core.errorInfo?.recoverable).toBe(true);
+
+      const p2 = core.upload("/api/2", files);
+      MockXMLHttpRequest.instances[1].simulateLoad(200, "ok");
+      await p2;
+      expect(details).toHaveLength(2);
+      expect(details[1]).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("ネットワークエラーは errorInfo=network", async () => {
+      const core = new UploadCore();
+      const p = core.upload("/api/1", [createMockFile("a.txt", 1, "text/plain")]);
+      MockXMLHttpRequest.instances[0].simulateError();
+      await p;
+      expect(core.errorInfo).toEqual({ code: "network", phase: "execute", recoverable: true, message: "Network error" });
+    });
+
+    it("abort は errorInfo を立てない（失敗ではない）", async () => {
+      const core = new UploadCore();
+      const p = core.upload("/api/1", [createMockFile("a.txt", 1, "text/plain")]);
+      MockXMLHttpRequest.instances[0].simulateAbort();
+      await p;
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("成功のみでは error-info-changed を発火しない（同値ガード）", async () => {
+      const core = new UploadCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-upload:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+      const p = core.upload("/api/1", [createMockFile("a.txt", 1, "text/plain")]);
+      MockXMLHttpRequest.instances[0].simulateLoad(200, "ok");
+      await p;
+      expect(details).toHaveLength(0);
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("url/files 欠落は invalid-argument", async () => {
+      const core = new UploadCore();
+      await core.upload("", [createMockFile("a.txt", 1, "text/plain")]);
+      expect(core.errorInfo).toEqual({ code: "invalid-argument", phase: "start", recoverable: false, message: "url is required." });
+      await core.upload("/api/1", []);
+      expect(core.errorInfo).toEqual({ code: "invalid-argument", phase: "start", recoverable: false, message: "files are required." });
+    });
+
+    it("イベントは bubbles する", async () => {
+      const core = new UploadCore();
+      let bubbles = false;
+      core.addEventListener("wcs-upload:error-info-changed", (e) => { bubbles = e.bubbles; });
+      const p = core.upload("/api/1", [createMockFile("a.txt", 1, "text/plain")]);
+      MockXMLHttpRequest.instances[0].simulateError();
+      await p;
+      expect(bubbles).toBe(true);
+    });
+
+    it("XMLHttpRequest があれば supported=true・readiness=ready", () => {
+      const core = new UploadCore();
+      expect(core.supported).toBe(true);
+      expect(core.platformAssessment.readiness).toBe("ready");
+      expect(core.platformAssessment.availability.get("web.xhr")).toBe("available");
+    });
+  });
+
+  describe("capability（XMLHttpRequest 不在）", () => {
+    it("XMLHttpRequest 不在時は開始せず capability-missing", async () => {
+      const orig = globalThis.XMLHttpRequest;
+      (globalThis as any).XMLHttpRequest = undefined;
+      try {
+        const core = new UploadCore();
+        expect(core.supported).toBe(false);
+        expect(core.platformAssessment.readiness).toBe("idle");
+        const result = await core.upload("/api/1", [createMockFile("a.txt", 1, "text/plain")]);
+        expect(result).toBeNull();
+        expect(core.errorInfo).toEqual({
+          code: "capability-missing", phase: "start", recoverable: false,
+          capabilityId: "web.xhr",
+          message: 'Required capability "web.xhr" is unavailable.',
+        });
+        expect(core.error).toEqual({ message: 'Required capability "web.xhr" is unavailable.' });
+      } finally {
+        globalThis.XMLHttpRequest = orig;
+      }
+    });
+  });
+
+  describe("commit guard（latest の同期 supersede）", () => {
+    it("response listener が upload を再入して supersede すると残り commit を止める（guard 後検査）", async () => {
+      const core = new UploadCore();
+      const loadingEvents: boolean[] = [];
+      core.addEventListener("wcs-upload:loading-changed", (e) => loadingEvents.push((e as CustomEvent).detail));
+      let superseded = false;
+      core.addEventListener("wcs-upload:response", () => {
+        if (!superseded) {
+          superseded = true;
+          core.upload("/api/2", [createMockFile("b.txt", 1, "text/plain")]); // op1 の setResponse 途中で supersede
+        }
+      });
+
+      const p1 = core.upload("/api/1", [createMockFile("a.txt", 1, "text/plain")]);
+      MockXMLHttpRequest.instances[0].simulateLoad(200, "ok1");
+      await p1;
+      MockXMLHttpRequest.instances[1].simulateLoad(200, "ok2");
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(core.value).toBe("ok2"); // op2 が勝つ
+      // op1 の setLoading(false) は guard で抑止される（無ければ op1 の false が余分に挟まる）。
+      expect(loadingEvents).toEqual([true, true, false]);
+    });
+
+    it("dispose 後に HTTP エラーで load した stale な upload は状態を書かない（http-error stale）", async () => {
+      const core = new UploadCore();
+      const errors: any[] = [];
+      core.addEventListener("wcs-upload:error", (e) => errors.push((e as CustomEvent).detail));
+      const p = core.upload("/api/1", [createMockFile("a.txt", 1, "text/plain")]);
+      const xhr = MockXMLHttpRequest.instances[0];
+      core.dispose();                 // owner generation を進めて stale 化
+      xhr.simulateLoad(500, "boom");  // stale な HTTP エラー(terminal CAS が失敗する)
+      const result = await p;
+      expect(result).toBeNull();
+      expect(core.error).toBeNull();  // stale なので error は書かれない
+      expect(errors).toEqual([]);
     });
   });
 });

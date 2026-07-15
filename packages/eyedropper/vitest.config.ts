@@ -19,7 +19,11 @@ export default defineConfig({
         // Intentionally-retained scaffolding with no import site (see the note in
         // src/raiseError.ts); excluded explicitly so its 0% coverage is a visible,
         // deliberate decision rather than a file silently missing from the report.
-        'src/raiseError.ts'
+        'src/raiseError.ts',
+        // Generated io-core copies (sync-io-core.mjs): byte-identical to fetch's,
+        // which tests them fully. See scripts/sync-io-core.mjs.
+        'src/core/operationLane.ts',
+        'src/core/platformCapability.ts'
       ],
       thresholds: {
         statements: 100,

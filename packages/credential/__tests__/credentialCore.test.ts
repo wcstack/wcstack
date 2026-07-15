@@ -14,9 +14,15 @@ describe("CredentialCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties が value/loading/error/cancelled を宣言している", () => {
+    it("properties が value/loading/error/cancelled/errorInfo を宣言している", () => {
       const names = CredentialCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["value", "loading", "error", "cancelled"]);
+      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo"]);
+    });
+
+    it("errorInfo の event が wcs-credential:error-info-changed で getter を持たない（detail が値）", () => {
+      const prop = CredentialCore.wcBindable.properties.find((p) => p.name === "errorInfo")!;
+      expect(prop.event).toBe("wcs-credential:error-info-changed");
+      expect(prop.getter).toBeUndefined();
     });
 
     it("commands は get(async)/store(async) の2つを宣言している（このバッチ唯一の複数command）", () => {
@@ -85,6 +91,11 @@ describe("CredentialCore", () => {
         name: "NotSupportedError",
         message: "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead.",
       });
+      // out-of-scope taxonomy（既存 error shape は不変・errorInfo は追加）
+      expect(core.errorInfo).toEqual({
+        code: "out-of-scope", phase: "start", recoverable: false,
+        message: "WebAuthn (publicKey) is out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead.",
+      });
     });
   });
 
@@ -103,6 +114,10 @@ describe("CredentialCore", () => {
         name: "NotSupportedError",
         message: "WebAuthn (publicKey) credentials are out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead.",
       });
+      expect(core.errorInfo).toEqual({
+        code: "out-of-scope", phase: "start", recoverable: false,
+        message: "WebAuthn (publicKey) credentials are out of scope for @wcstack/credential v1. Use a dedicated WebAuthn node instead.",
+      });
     });
   });
 
@@ -118,6 +133,14 @@ describe("CredentialCore", () => {
       expect(result).toBeNull();
       expect(core.error).toEqual({ message: "Credential Management API is not supported in this browser." });
       expect(loadingEvents).toEqual([]);
+      // capability-missing taxonomy
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "start", recoverable: false,
+        capabilityId: "web.credentials",
+        message: "Credential Management API is not supported in this browser.",
+      });
+      expect(core.supported).toBe(false);
+      expect(core.platformAssessment.readiness).toBe("idle");
     });
   });
 
@@ -134,6 +157,7 @@ describe("CredentialCore", () => {
       expect(result).toBeNull();
       expect(core.cancelled).toBe(true);
       expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull(); // NotAllowedError=cancelled は errorInfo を立てない
     });
   });
 
@@ -267,7 +291,7 @@ describe("CredentialCore", () => {
     });
   });
 
-  describe("_gen 世代ガード（get()/store() 共有、既知の並行呼び出し制限あり）", () => {
+  describe("dispose / supersede 世代ガード（get()/store() 共有 lane・latest）", () => {
     it("dispose 後に resolve した stale な get() は状態を書かない", async () => {
       let resolveGet!: (c: any) => void;
       installGet(() => new Promise((resolve) => { resolveGet = resolve; }));
@@ -338,8 +362,104 @@ describe("CredentialCore", () => {
       // get() が後から resolve しても、store() が既に進めた世代のため無視される
       resolveGet({ id: "from-get" });
       const getResult = await getPromise;
-      expect(getResult).toBeNull(); // stale — this is the documented single-_gen limitation
+      expect(getResult).toBeNull(); // stale — store() が supersede した（latest 共有 lane）
       expect(core.value).toEqual({ id: "stored" }); // store() の結果が保持されたまま
+    });
+  });
+
+  describe("errorInfo（bindable 出力・wcs-credential:error-info-changed）", () => {
+    it("真の失敗で errorInfo=credential-failed が detail 付きで発火し、次の呼び出し開始時に null で発火する", async () => {
+      installGet(() => Promise.reject(new DOMException("Not a secure context", "SecurityError")));
+      const core = new CredentialCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-credential:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+
+      await core.get();
+      expect(details).toHaveLength(1);
+      expect((details[0] as { code: string }).code).toBe("credential-failed");
+      expect(core.errorInfo?.message).toBe("Not a secure context");
+
+      installGet(() => Promise.resolve({ id: "u@example.com" } as any));
+      await core.get();
+      expect(details).toHaveLength(2);
+      expect(details[1]).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("成功のみでは error-info-changed を発火しない（同値ガード）", async () => {
+      installGet(() => Promise.resolve({ id: "u" } as any));
+      const core = new CredentialCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-credential:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+      await core.get();
+      expect(details).toHaveLength(0);
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("NotAllowedError キャンセルは errorInfo を立てない", async () => {
+      installGet(() => Promise.reject(new DOMException("declined", "NotAllowedError")));
+      const core = new CredentialCore();
+      await core.get();
+      expect(core.cancelled).toBe(true);
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("イベントは bubbles する", async () => {
+      installGet(() => Promise.reject(new DOMException("x", "SecurityError")));
+      const core = new CredentialCore();
+      let bubbles = false;
+      core.addEventListener("wcs-credential:error-info-changed", (e) => { bubbles = e.bubbles; });
+      await core.get();
+      expect(bubbles).toBe(true);
+    });
+
+    it("navigator.credentials があれば supported=true・readiness=ready", () => {
+      installGet(() => Promise.resolve(null));
+      const core = new CredentialCore();
+      expect(core.supported).toBe(true);
+      expect(core.platformAssessment.readiness).toBe("ready");
+      expect(core.platformAssessment.availability.get("web.credentials")).toBe("available");
+    });
+
+    it("store() の真の失敗も errorInfo=credential-failed（get と共有 lane）", async () => {
+      installStore(() => Promise.reject(new DOMException("boom", "SecurityError")));
+      const core = new CredentialCore();
+      await core.store({ id: "u" } as any);
+      expect(core.errorInfo?.code).toBe("credential-failed");
+      expect(core.cancelled).toBe(false);
+    });
+
+    it("非 Error rejection は _normalizeError で {name:'Error', message:String(e)} に正規化される", async () => {
+      installGet(() => Promise.reject("plain string"));
+      const core = new CredentialCore();
+      await core.get();
+      expect(core.error).toEqual({ name: "Error", message: "plain string" });
+      expect(core.errorInfo).toEqual({ code: "credential-failed", phase: "execute", recoverable: true, message: "plain string" });
+    });
+  });
+
+  describe("commit guard（latest の同期 supersede）", () => {
+    it("setter が同期発火した event で同 lane を supersede すると残りの commit を止める（guard 後検査）", async () => {
+      installGet(() => Promise.resolve({ id: "op1" } as any));
+      const core = new CredentialCore();
+      const loadingEvents: boolean[] = [];
+      core.addEventListener("wcs-credential:loading-changed", (e) => loadingEvents.push((e as CustomEvent).detail));
+      let superseded = false;
+      core.addEventListener("wcs-credential:complete", () => {
+        if (!superseded) {
+          superseded = true;
+          installGet(() => Promise.resolve({ id: "op2" } as any));
+          core.get(); // op1 の setValue 途中で op2 が supersede
+        }
+      });
+
+      await core.get();
+      await new Promise((r) => setTimeout(r, 0));
+
+      // op1 の setLoading(false) は guard で抑止され、loading は true→false（op2 の完了のみ）。
+      expect(loadingEvents).toEqual([true, false]);
+      expect(core.loading).toBe(false);
+      expect((core.value as { id?: string } | null)?.id).toBe("op2");
     });
   });
 

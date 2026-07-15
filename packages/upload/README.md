@@ -202,6 +202,7 @@ In this setup, upload becomes a bindable async node:
 | `progress` | `number` | `0` | Upload progress from `0` to `100` |
 | `error` | `any` | `null` | Validation, network, or response error |
 | `status` | `number` | `0` | HTTP response status |
+| `errorInfo` | `WcsIoErrorInfo \| null` | `null` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`). Additive — `error` is unchanged; `code` is `capability-missing`, `invalid-argument`, `network`, or `http-error`. An `abort()` is not a failure (no `errorInfo`) |
 | `promise` | `Promise<any>` | resolved `null` | Current upload promise |
 
 ### Methods

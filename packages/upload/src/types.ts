@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly upload: string;
 }
@@ -42,6 +44,8 @@ export interface WcsUploadCoreValues<T = unknown> {
   progress: number;
   error: WcsUploadError | Error | null;
   status: number;
+  /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

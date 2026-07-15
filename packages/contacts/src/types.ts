@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly contacts: string;
 }
@@ -86,6 +88,8 @@ export interface WcsContactsCoreValues {
   // separate from `error`, mirroring `@wcstack/share`'s `cancelled`
   // (docs/contact-picker-tag-design.md §1).
   cancelled: boolean;
+  // Last failure's serializable taxonomy (stable code/phase/recoverable), or null.
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

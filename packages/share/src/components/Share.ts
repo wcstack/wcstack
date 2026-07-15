@@ -1,5 +1,6 @@
 import { IWcBindable, WcsShareData } from "../types.js";
 import { ShareCore } from "../core/ShareCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-share>` — declarative Web Share API primitive.
@@ -93,6 +94,10 @@ export class WcsShare extends HTMLElement {
 
   get cancelled(): boolean {
     return this._core.cancelled;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

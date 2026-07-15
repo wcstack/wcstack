@@ -33,12 +33,15 @@ describe("FetchCore", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(FetchCore.wcBindable.protocol).toBe("wc-bindable");
     expect(FetchCore.wcBindable.version).toBe(1);
-    expect(FetchCore.wcBindable.properties).toHaveLength(5);
+    expect(FetchCore.wcBindable.properties).toHaveLength(6);
     expect(FetchCore.wcBindable.properties[0].name).toBe("value");
     expect(FetchCore.wcBindable.properties[1].name).toBe("loading");
     expect(FetchCore.wcBindable.properties[2].name).toBe("error");
     expect(FetchCore.wcBindable.properties[3].name).toBe("status");
     expect(FetchCore.wcBindable.properties[4].name).toBe("objectURL");
+    expect(FetchCore.wcBindable.properties[5].name).toBe("errorInfo");
+    expect(FetchCore.wcBindable.properties[5].event).toBe("wcs-fetch:error-info-changed");
+    expect(FetchCore.wcBindable.properties[5].getter).toBeUndefined();
   });
 
   it("wcBindable inputsがurl/methodを宣言している", () => {

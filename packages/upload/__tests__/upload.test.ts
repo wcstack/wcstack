@@ -34,9 +34,9 @@ describe("WcsUpload コンポーネント", () => {
 
   it("wcBindableが正しく定義されている", () => {
     expect(WcsUpload.wcBindable.protocol).toBe("wc-bindable");
-    expect(WcsUpload.wcBindable.properties).toHaveLength(7);
+    expect(WcsUpload.wcBindable.properties).toHaveLength(8);
     const names = WcsUpload.wcBindable.properties.map(p => p.name);
-    expect(names).toEqual(["value", "loading", "progress", "error", "status", "trigger", "files"]);
+    expect(names).toEqual(["value", "loading", "progress", "error", "status", "errorInfo", "trigger", "files"]);
   });
 
   it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
@@ -199,6 +199,7 @@ describe("WcsUpload コンポーネント", () => {
       expect(el.progress).toBe(0);
       expect(el.error).toBeNull();
       expect(el.status).toBe(0);
+      expect(el.errorInfo).toBeNull();
       expect(el.promise).toBeInstanceOf(Promise);
 
       el.remove();

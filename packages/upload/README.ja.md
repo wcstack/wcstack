@@ -202,6 +202,7 @@ npm install @wcstack/upload
 | `progress` | `number` | `0` | `0` から `100` の進捗率 |
 | `error` | `any` | `null` | バリデーション、ネットワーク、レスポンスのエラー |
 | `status` | `number` | `0` | HTTP レスポンスステータス |
+| `errorInfo` | `WcsIoErrorInfo \| null` | `null` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）。追加的で `error` は不変。`code` は `capability-missing` / `invalid-argument` / `network` / `http-error`。`abort()` は失敗ではない（`errorInfo` を立てない） |
 | `promise` | `Promise<any>` | resolved `null` | 現在のアップロード Promise |
 
 ### メソッド

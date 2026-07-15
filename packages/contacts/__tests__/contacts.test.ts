@@ -105,8 +105,19 @@ describe("Contacts (Shell)", () => {
     expect(WcsContacts.wcBindable.inputs).toEqual([]);
     expect(WcsContacts.wcBindable.commands).toEqual([{ name: "select", async: true }]);
     expect(WcsContacts.wcBindable.properties.map((p) => p.name)).toEqual([
-      "value", "loading", "error", "cancelled",
+      "value", "loading", "error", "cancelled", "errorInfo",
     ]);
+  });
+
+  it("errorInfo は Core から転送される（unsupported で capability-missing）", async () => {
+    removeContacts();
+    const el = createContacts();
+    await el.select(["name"]);
+    expect(el.errorInfo).toEqual({
+      code: "capability-missing", phase: "start", recoverable: false,
+      capabilityId: "web.contacts",
+      message: "Contact Picker API is not supported in this browser.",
+    });
   });
 
   it("再接続すると再度 observe() され、以後の select() が独立して動く", async () => {

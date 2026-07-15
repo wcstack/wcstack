@@ -1,27 +1,30 @@
 import { IWcBindable, WcsEyedropperData } from "../types.js";
+import { OperationLane, OperationTicket } from "./operationLane.js";
+import {
+  PlatformAssessment,
+  WcsIoErrorInfo,
+  WcsIoErrorPhase,
+  assessCapabilities,
+  requiredCapabilitiesAvailable,
+} from "./platformCapability.js";
+import { EYEDROPPER_CAPABILITIES, WCS_EYEDROPPER_ERROR_CODE } from "./eyedropperCapabilities.js";
 
 /**
  * Headless EyeDropper primitive. A thin, framework-agnostic wrapper around
  * `new EyeDropper().open(options)` exposed through the wc-bindable protocol.
  *
- * This is a simplified derivative of `FetchCore._doFetch`
- * (docs/eyedropper-tag-design.md §1, docs/web-share-tag-design.md §2): it
- * keeps the single `_gen` generation guard, the same-value-guarded private
- * setters, and the never-throw try/catch wrapper — the same skeleton
- * `@wcstack/share`'s `ShareCore` uses.
- *
- * Unlike `ShareCore`, this Core **does** restore `AbortController`/`abort()`
- * (docs/eyedropper-tag-design.md §2): `EyeDropper.open()` accepts a `{signal}`
- * option, so — unlike Web Share — a caller has a real platform mechanism to
- * cancel an in-flight color pick. The shape mirrors `FetchCore.abort()`
- * (packages/fetch/src/core/FetchCore.ts:159-164) including the identity check
- * on the locally-held `AbortController` in the `finally` block
- * (packages/fetch/src/core/FetchCore.ts:312-314), so a fast abort()→open()
- * sequence never lets a stale controller null out the new call's controller.
+ * Concurrency is owned by the shared `OperationLane` (io-core) with the `latest`
+ * policy: `EyeDropper.open()` accepts a `{signal}`, so — unlike Web Share / Contact
+ * Picker (exhaust) — a caller has a real platform mechanism to cancel an in-flight
+ * pick. A new `open()` supersedes the previous one (the lane aborts its
+ * AbortController and the superseded completion fails the terminal CAS), and the
+ * `abort()` command aborts the active pick. This replaces the ad-hoc `_gen` +
+ * `_abortController` + finally-block identity check with the same lane FetchCore
+ * uses; the lane owns the per-attempt AbortController and the commit guard.
  *
  * Both the user dismissing the picker with Escape and the caller invoking
- * `abort()` reject `open()` with the same `AbortError` — both land on
- * `cancelled` without distinction (docs/eyedropper-tag-design.md §2).
+ * `abort()` reject `open()` with the same `AbortError` — both land on `cancelled`
+ * without distinction (docs/eyedropper-tag-design.md §2).
  */
 export class EyedropperCore extends EventTarget {
   static wcBindable: IWcBindable = {
@@ -32,6 +35,11 @@ export class EyedropperCore extends EventTarget {
       { name: "loading", event: "wcs-eyedropper:loading-changed" },
       { name: "error", event: "wcs-eyedropper:error" },
       { name: "cancelled", event: "wcs-eyedropper:cancelled-changed" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output; the existing `error` property/event are unchanged.
+      // Fires its own `wcs-eyedropper:error-info-changed` event; no getter, so the
+      // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
+      { name: "errorInfo", event: "wcs-eyedropper:error-info-changed" },
     ],
     commands: [
       { name: "open", async: true },
@@ -39,18 +47,20 @@ export class EyedropperCore extends EventTarget {
     ],
   };
 
+  // Required capability (probed at call time, never at module eval).
+  private static readonly REQUIRED_CAPABILITIES = ["web.eyedropper"] as const;
+
   private _target: EventTarget;
   private _value: WcsEyedropperData | null = null;
   private _loading: boolean = false;
   private _error: any = null;
   private _cancelled: boolean = false;
-  private _abortController: AbortController | null = null;
-  // Generation guard (§3.4 of the guidelines): bumped on dispose() (and each
-  // open() start). An open() that settles after dispose() has a stale `gen`
-  // and MUST NOT write state to a torn-down element. Not bumped on the
-  // unsupported early-return — no asynchronous work is started, so there is
-  // no generation to protect (docs/eyedropper-tag-design.md §4).
-  private _gen = 0;
+  private _errorInfo: WcsIoErrorInfo | null = null;
+  // Concurrency lane (io-core). `latest`: a new open() supersedes + aborts the
+  // in-flight one (switchMap). `withSignal: true`: the lane owns the per-attempt
+  // AbortController whose signal is passed to EyeDropper.open(). dispose() bumps
+  // the owner generation and aborts.
+  private _lane = new OperationLane("eyedropper", "latest", { withSignal: true });
   // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
 
@@ -79,16 +89,57 @@ export class EyedropperCore extends EventTarget {
     return this._cancelled;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable` / `capabilityId`), or null. Exposed as an additive wc-bindable
+   * property (event `wcs-eyedropper:error-info-changed`); the existing `error`
+   * property/event are unchanged. Note user/abort cancellation is `cancelled`, not
+   * `errorInfo`.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
+  /**
+   * Whether the required platform capability (`web.eyedropper`) is available right
+   * now — decided by call-time feature detection, not User-Agent. Core-only,
+   * additive.
+   */
+  get supported(): boolean {
+    return requiredCapabilitiesAvailable(this.platformAssessment, EyedropperCore.REQUIRED_CAPABILITIES);
+  }
+
+  /**
+   * Full platform assessment (availability / readiness / preconditions), probed at
+   * call time. Core-only opt-in dev / sidecar view.
+   */
+  get platformAssessment(): PlatformAssessment {
+    return assessCapabilities(EYEDROPPER_CAPABILITIES, {
+      required: EyedropperCore.REQUIRED_CAPABILITIES,
+      activity: this._loading ? "active" : "inactive",
+      lastError: this._errorInfo ?? undefined,
+    });
+  }
+
   // Lifecycle (§3.5). EyeDropper is command-driven with no subscription to
   // establish, so observe() is an idempotent no-op that resolves once ready;
-  // dispose() invalidates any in-flight open() and aborts it.
+  // dispose() bumps the lane's owner generation (invalidating any in-flight open())
+  // and aborts its AbortController.
   observe(): Promise<void> {
     return this._ready;
   }
 
   dispose(): void {
-    this._gen++;
-    this.abort();
+    this._lane.disposeOwner();
+  }
+
+  // CommitGuard (§5.1): external setters / event dispatch only run if the ticket
+  // still holds owner generation, is pre-terminal, and is the lane's latest epoch
+  // (a superseding open() can invalidate a ticket mid-commit).
+  private _commitStep(ticket: OperationTicket, step: () => void): void {
+    if (this._lane.canCommit(ticket)) {
+      step();
+    }
   }
 
   private _setLoading(loading: boolean): void {
@@ -127,98 +178,101 @@ export class EyedropperCore extends EventTarget {
     }));
   }
 
-  // API resolution is call-time, never cached (§3.7): lets tests install/remove
-  // the global EyeDropper constructor freely and lets an unsupported
-  // environment (non-Chromium browsers, as of 2026) be detected correctly on
-  // every call (docs/eyedropper-tag-design.md §4).
-  private _api(): (new () => { open(options?: { signal?: AbortSignal }): Promise<WcsEyedropperData> }) | undefined {
-    const g = globalThis as any;
-    return typeof g.EyeDropper === "function" ? g.EyeDropper : undefined;
+  // Single mutation point for `errorInfo`, mirroring `_setError`'s same-value guard
+  // and event dispatch so the additive `errorInfo` wc-bindable property stays in
+  // sync with `error`. Each failure builds a fresh object (reference guard passes);
+  // the clear path passes null (suppresses a redundant null→null per open start).
+  private _setErrorInfo(code: string, phase: WcsIoErrorPhase, recoverable: boolean, message: string, capabilityId?: string): void {
+    this._commitErrorInfo({ code, phase, recoverable, message, ...(capabilityId === undefined ? {} : { capabilityId }) });
+  }
+
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    if (this._errorInfo === info) return;
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-eyedropper:error-info-changed", {
+      detail: info,
+      bubbles: true,
+    }));
   }
 
   /**
-   * Cancels an in-flight `open()` call, if any. A no-op when no open() is in
-   * flight (no AbortController has been created yet, or the previous one has
-   * already settled) — mirrors `FetchCore.abort()`
-   * (packages/fetch/src/core/FetchCore.ts:159-164).
+   * Cancels an in-flight `open()` call, if any (a no-op otherwise). Aborts the
+   * lane's active AbortController — the in-flight open() then rejects with
+   * `AbortError` and lands on `cancelled`. The epoch is not advanced, so the
+   * aborted operation keeps eligibility to claim the `aborted` terminal.
    */
   abort(): void {
-    if (this._abortController) {
-      this._abortController.abort();
-      this._abortController = null;
-    }
+    this._lane.abortActive();
   }
 
   async open(): Promise<WcsEyedropperData | null> {
-    // never-throw + unsupported (§4): resolve API at call time and bail out
-    // immediately if absent. No _gen bump — no asynchronous work is started,
-    // so there is no generation to protect, and `new EyeDropper()` is never
-    // constructed.
-    const EyeDropperCtor = this._api();
-    if (!EyeDropperCtor) {
-      this._setError({ message: "EyeDropper API is not supported in this browser." });
+    // never-throw + unsupported (§4 / §7.2): probe the required capability at call
+    // time (non-Chromium browsers lack this API). If `web.eyedropper` is absent, do
+    // NOT start — surface a stable `capability-missing` taxonomy and the existing
+    // error message shape.
+    const assessment = this.platformAssessment;
+    if (!requiredCapabilitiesAvailable(assessment, EyedropperCore.REQUIRED_CAPABILITIES)) {
+      const missing = EyedropperCore.REQUIRED_CAPABILITIES.find((id) => assessment.availability.get(id) !== "available");
+      const message = "EyeDropper API is not supported in this browser.";
+      this._setErrorInfo(WCS_EYEDROPPER_ERROR_CODE.CapabilityMissing, "start", false, message, missing);
+      this._setError({ message });
       return null;
     }
 
-    // Cancel any previous in-flight pick before starting a new one (mirrors
-    // FetchCore._doFetch's `this.abort()` at the top).
-    this.abort();
+    // `latest`: advance the epoch and abort the previous in-flight pick (supersede).
+    // begin() never returns null for latest.
+    const started = this._lane.begin()!;
+    const { ticket, attempt } = started;
+    const signal = attempt.signal;
 
-    // Hold the controller in a local so the finally block (which can run after
-    // a subsequent open() has already replaced this._abortController) only
-    // clears the field when it still owns it — identical identity check to
-    // FetchCore._doFetch (packages/fetch/src/core/FetchCore.ts:312-314). This
-    // is what keeps a fast abort()→open() sequence from letting a stale
-    // controller null out the new call's controller.
-    const ac = new AbortController();
-    this._abortController = ac;
-    const { signal } = ac;
+    // Capability probed above → EyeDropper is present. Resolve the constructor at
+    // call time (never cached, §3.7) so tests can install/remove it freely.
+    const EyeDropperCtor = (globalThis as { EyeDropper?: new () => { open(options?: { signal?: AbortSignal }): Promise<WcsEyedropperData> } }).EyeDropper!;
 
-    const gen = ++this._gen;
-
-    this._setLoading(true);
+    this._commitStep(ticket, () => this._setLoading(true));
     // Reset the previous outcome before starting a new open() so a stale
-    // cancelled/error does not linger into this call's result
-    // (docs/eyedropper-tag-design.md §1, docs/web-share-tag-design.md §3).
-    this._setError(null);
-    this._setCancelled(false);
+    // cancelled/error/errorInfo does not linger into this call's result.
+    this._commitStep(ticket, () => {
+      this._commitErrorInfo(null);
+      this._setError(null);
+      this._setCancelled(false);
+    });
 
     try {
       const result = await new EyeDropperCtor().open({ signal });
-
-      // Stale completion (dispose() ran, or a superseding open() ran, while
-      // the picker was open). Drop the result without writing state.
-      if (gen !== this._gen) {
+      // Terminal CAS: a stale (superseded / dispose-invalidated) completion loses
+      // the claim and is dropped without writing state.
+      if (!this._lane.claimTerminal(ticket, "success")) {
         return null;
       }
-
-      // The platform's own result object ({ sRGBHex }) is used verbatim — no
-      // synthesis needed, unlike Web Share's `value`
-      // (docs/eyedropper-tag-design.md §3).
-      this._setValue(result);
-      this._setLoading(false);
+      // The platform's own result object ({ sRGBHex }) is used verbatim (§3).
+      // Separate commit steps (like FetchCore): if `_setValue`'s event listener
+      // synchronously supersedes this op, the following `_setLoading(false)` is
+      // stopped by the commit guard rather than clobbering the newer op.
+      this._commitStep(ticket, () => this._setValue(result));
+      this._commitStep(ticket, () => this._setLoading(false));
+      this._lane.finalize(ticket);
       return result;
     } catch (e: any) {
-      // Stale completion (dispose() ran, or a superseding open() ran, while
-      // the picker was open).
-      if (gen !== this._gen) {
+      const cancelled = e?.name === "AbortError";
+      if (!this._lane.claimTerminal(ticket, cancelled ? "aborted" : "error")) {
         return null;
       }
-      if (e?.name === "AbortError") {
-        // Either the user dismissed the picker with Escape, or the caller
-        // invoked abort() — both are a routine cancellation, not a platform
-        // failure, and are not distinguished (docs/eyedropper-tag-design.md
-        // §2). Kept out of `error`.
-        this._setCancelled(true);
-      } else {
-        this._setError(e);
-      }
-      this._setLoading(false);
+      this._commitStep(ticket, () => {
+        if (cancelled) {
+          // Either the user dismissed the picker with Escape or the caller invoked
+          // abort() — a routine cancellation, not a platform failure, and not
+          // distinguished (§2). Kept out of `error`/`errorInfo`.
+          this._setCancelled(true);
+        } else {
+          const message = String(e?.message ?? "Color pick failed.");
+          this._setErrorInfo(WCS_EYEDROPPER_ERROR_CODE.PickFailed, "execute", true, message);
+          this._setError(e ?? { message });
+        }
+      });
+      this._commitStep(ticket, () => this._setLoading(false));
+      this._lane.finalize(ticket);
       return null;
-    } finally {
-      if (this._abortController === ac) {
-        this._abortController = null;
-      }
     }
   }
 }

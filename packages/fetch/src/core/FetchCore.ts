@@ -1,14 +1,13 @@
 import { IWcBindable } from "../types.js";
 import { OperationLane, OperationTicket } from "./operationLane.js";
 import {
-  FETCH_CAPABILITIES,
   PlatformAssessment,
-  WCS_FETCH_ERROR_CODE,
   WcsIoErrorInfo,
   WcsIoErrorPhase,
   assessCapabilities,
   requiredCapabilitiesAvailable,
 } from "./platformCapability.js";
+import { FETCH_CAPABILITIES, WCS_FETCH_ERROR_CODE } from "./fetchCapabilities.js";
 
 export type FetchResponseType = "auto" | "json" | "text" | "blob" | "arrayBuffer";
 
@@ -43,6 +42,11 @@ export class FetchCore extends EventTarget {
       // The Core revokes the previous URL on each new response and on dispose, so
       // a consumer can bind it straight into <img src> without lifecycle glue.
       { name: "objectURL", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.objectURL },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output — the existing `error` property/event are unchanged.
+      // Fires on its own `wcs-fetch:error-info-changed` event; no getter, so the
+      // bound value is the event detail (mirrors `error` / `loading`).
+      { name: "errorInfo", event: "wcs-fetch:error-info-changed" },
     ],
     inputs: [
       { name: "url" },
@@ -72,9 +76,10 @@ export class FetchCore extends EventTarget {
   private _lane = new OperationLane("fetch", "latest", { withSignal: true });
   // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
-  // Phase 6 (§7.2): opt-in error taxonomy. The existing `error` property/event
-  // shape is unchanged; `errorInfo` projects the serializable WcsIoErrorInfo so
-  // DevTools / adopters can classify failures without a breaking change.
+  // Phase 6 (§7.2): error taxonomy. The existing `error` property/event shape is
+  // unchanged; `errorInfo` projects the serializable WcsIoErrorInfo as an additive
+  // wc-bindable output (event `wcs-fetch:error-info-changed`) so DevTools / adopters
+  // can classify failures without a breaking change.
   private _errorInfo: WcsIoErrorInfo | null = null;
 
   // Capability IDs (probed at call time, never at module eval / never eval'd as a
@@ -135,9 +140,10 @@ export class FetchCore extends EventTarget {
   }
 
   /**
-   * Phase 6 opt-in taxonomy: the last failure's serializable `WcsIoErrorInfo`
-   * (stable `code` / `phase` / `recoverable` / `capabilityId`), or null. Additive
-   * — the existing `error` property/event are unchanged.
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable` / `capabilityId`), or null. Exposed as an additive wc-bindable
+   * property (event `wcs-fetch:error-info-changed`); the existing `error`
+   * property/event are unchanged.
    */
   get errorInfo(): WcsIoErrorInfo | null {
     return this._errorInfo;
@@ -167,7 +173,20 @@ export class FetchCore extends EventTarget {
   }
 
   private _setErrorInfo(code: string, phase: WcsIoErrorPhase, recoverable: boolean, message: string, capabilityId?: string): void {
-    this._errorInfo = { code, phase, recoverable, message, ...(capabilityId === undefined ? {} : { capabilityId }) };
+    this._commitErrorInfo({ code, phase, recoverable, message, ...(capabilityId === undefined ? {} : { capabilityId }) });
+  }
+
+  // Single mutation point for `errorInfo`, mirroring `_setError`'s same-value guard
+  // and event dispatch so the additive `errorInfo` wc-bindable property stays in sync
+  // with `error`. Each failure builds a fresh object (reference guard passes); the
+  // clear path passes null (suppresses a redundant null→null per successful fetch).
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    if (this._errorInfo === info) return;
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-fetch:error-info-changed", {
+      detail: info,
+      bubbles: true,
+    }));
   }
 
   private _setLoading(loading: boolean): void {
@@ -286,7 +305,7 @@ export class FetchCore extends EventTarget {
     const signal = attempt.signal;
 
     this._commitStep(ticket, () => this._setLoading(true));
-    this._commitStep(ticket, () => { this._errorInfo = null; this._setError(null); });
+    this._commitStep(ticket, () => { this._commitErrorInfo(null); this._setError(null); });
 
     const {
       method = "GET",

@@ -162,14 +162,16 @@ describe("Fetch", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(Fetch.wcBindable.protocol).toBe("wc-bindable");
     expect(Fetch.wcBindable.version).toBe(1);
-    expect(Fetch.wcBindable.properties).toHaveLength(6);
+    expect(Fetch.wcBindable.properties).toHaveLength(7);
     expect(Fetch.wcBindable.properties[0].name).toBe("value");
     expect(Fetch.wcBindable.properties[1].name).toBe("loading");
     expect(Fetch.wcBindable.properties[2].name).toBe("error");
     expect(Fetch.wcBindable.properties[3].name).toBe("status");
     expect(Fetch.wcBindable.properties[4].name).toBe("objectURL");
-    expect(Fetch.wcBindable.properties[5].name).toBe("trigger");
-    expect(Fetch.wcBindable.properties[5].event).toBe("wcs-fetch:trigger-changed");
+    expect(Fetch.wcBindable.properties[5].name).toBe("errorInfo");
+    expect(Fetch.wcBindable.properties[5].event).toBe("wcs-fetch:error-info-changed");
+    expect(Fetch.wcBindable.properties[6].name).toBe("trigger");
+    expect(Fetch.wcBindable.properties[6].event).toBe("wcs-fetch:trigger-changed");
   });
 
   it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
@@ -393,6 +395,11 @@ describe("Fetch", () => {
     const result = await el.fetch();
     expect(result).toBeNull();
     expect(el.error).toEqual({ message: "url attribute is required." });
+    // Shell は errorInfo を Core から転送する（bindable 出力）
+    expect(el.errorInfo).toEqual({
+      code: "invalid-argument", phase: "start", recoverable: false,
+      message: "url attribute is required.",
+    });
   });
 
   it("GETリクエストでJSONレスポンスを取得できる", async () => {

@@ -1,5 +1,17 @@
 # 設計メモ: `@wcstack/credential`（`<wcs-credential>`）
 
+> **⚠ 更新（architecture-hardening 昇格）**: 本書が記述する `get()`/`store()` 共有の単一
+> `_gen` と `_api()` ヘルパーは、共有 io-core（`OperationLane` + `platformCapability`）
+> への昇格に伴い置換された。get/store は **1 つの `OperationLane("credential", "latest",
+> {withSignal:false})` を共有**する（旧「単一 `_gen`」= latest supersede と同義。後発呼び出しが
+> 先発を上書きする既知挙動を維持）。`dispose()` は owner generation を進める。キャンセル判定は
+> **`NotAllowedError`（`AbortError` でない）** のまま維持。publicKey(WebAuthn) 拒否も get/store
+> 双方で維持し、`errorInfo.code === "out-of-scope"` を付与する。capability probe（`web.credentials`）で
+> unsupported を `capability-missing`、真の失敗を `credential-failed` として追加的 bindable
+> プロパティ `errorInfo`（`WcsIoErrorInfo`）に投影する。既存 `error`/`cancelled` の shape は不変。
+> （decision 2 の policy 表は credential を exhaust と記載していたが、実装は latest。
+> eyedropper 同様「node ごとの固有契約を一括変換しない」原則で実挙動を維持した。）
+
 - **状態**: 実装済み（`packages/credential`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Credential Management API（`navigator.credentials.get()` / `.store()`、`PasswordCredential` / `FederatedCredential`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の4本目にして最後。バッチ内で唯一「単一commandでなく2つの独立したcommand」を持つメンバーであり、バッチの中で最も複雑（実装順の最後に置かれている理由でもある）。

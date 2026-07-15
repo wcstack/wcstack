@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { IWcBindable, WcsUploadError } from "../types.js";
 import { UploadCore } from "../core/UploadCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 export class WcsUpload extends HTMLElement {
@@ -191,6 +192,10 @@ export class WcsUpload extends HTMLElement {
 
   get status(): number {
     return this._core.status;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get promise(): Promise<any> {

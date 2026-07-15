@@ -1,5 +1,19 @@
 # 設計メモ: `@wcstack/share`（`<wcs-share>`）
 
+> **⚠ 更新（architecture-hardening 昇格）**: 本書 §2 / §8 / §11–§13 が記述する
+> 単一 `_gen` 世代ガードと `_api()` ヘルパーは、共有 io-core（`OperationLane` +
+> `platformCapability`）への昇格に伴い置換された。現行 `ShareCore` は:
+> - **並行制御** = `OperationLane("share", "exhaust")`。進行中の2回目の `share()` は
+>   ticket 化されず即 no-op（`navigator.share` を呼ばない）。旧設計は「プラットフォームが
+>   2回目を `InvalidStateError` で弾く」前提だったが、それは進行中の1回目の
+>   `error`/`loading` を破壊するバグを生んでいた（exhaust がこれを解消）。`dispose()` は
+>   lane の owner generation を進めて in-flight を無効化する（旧 `_gen++` 相当）。
+> - **capability/error taxonomy** = 利用直前 probe（`web.share`）で unsupported を
+>   `capability-missing` として検出し、追加的な bindable プロパティ `errorInfo`
+>   （`WcsIoErrorInfo`）を公開する。既存 `error`/`cancelled` の shape は不変。
+>
+> 以下の本文は実装前の論点整理のスナップショットとして歴史的経緯のため保持する。
+
 - **状態**: 実装済み（`@wcstack/share` として公開済み）。本文書は実装前に行った論点整理と決定事項のスナップショットであり、実装後も設計意図の参照用に保持している。以降の `hidden@error` / `text@error.message` 等の `@` 表記は説明用の擬似記法であり、実際の `data-wcs` 構文ではない点に注意（実装では `command.share: $command.doShare` のような明示的なプロパティ名構文を使う。README.md/README.ja.md 参照）。
 - **対象 WebAPI**: Web Share API（`navigator.share(data)`、`navigator.canShare(data)`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の1本目。EyeDropper / Contact Picker / Credential Management に先立ち、**このバッチの共有アーキタイプを初めて実装で確立するノード**。既存25パッケージに前例の無い新規アーキタイプであり、本書の決定がバッチ内の後続ノードにそのまま流用される。

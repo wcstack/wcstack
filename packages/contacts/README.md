@@ -55,6 +55,13 @@ npm install @wcstack/contacts
 | `loading`   | `wcs-contacts:loading-changed` | `true` while the picker dialog is open. |
 | `error`     | `wcs-contacts:error`           | A true platform failure (a `DOMException`/`Error` from `select()`), or the plain object `{ message: "Contact Picker API is not supported in this browser." }` on the unsupported path, or `null`. |
 | `cancelled` | `wcs-contacts:cancelled-changed` | `true` when the user dismissed the picker (kept separate from `error`). |
+| `errorInfo` | `wcs-contacts:error-info-changed` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` when unsupported or `select-failed` on a genuine failure. |
+
+**Concurrency.** The contact picker is a single system-modal surface, so
+`<wcs-contacts>` runs its calls through the shared io-core lane with the `exhaust`
+policy: while one `select()` is in flight, a second call is an idempotent **no-op**
+(it returns `null` without opening a second picker), leaving the in-flight call's
+result untouched.
 
 ## Commands
 

@@ -1,12 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
-  FETCH_CAPABILITIES,
-  WCS_FETCH_ERROR_CODE,
   assessCapabilities,
   requiredCapabilitiesAvailable,
   type CapabilityRegistry,
   type CapabilitySpec,
 } from "../src/core/platformCapability";
+import { FETCH_CAPABILITIES, WCS_FETCH_ERROR_CODE } from "../src/core/fetchCapabilities";
 
 function registry(entries: Record<string, CapabilitySpec>): CapabilityRegistry {
   return new Map(Object.entries(entries));

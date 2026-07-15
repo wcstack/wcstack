@@ -68,6 +68,7 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/sync-protocol-types.mjs --check
+      - run: node scripts/sync-io-core.mjs --check
       - run: node scripts/sync-package-configs.mjs --check
 
   ci:

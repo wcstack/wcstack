@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly share: string;
 }
@@ -61,6 +63,8 @@ export interface WcsShareCoreValues {
    * routine cancellation (docs/web-share-tag-design.md §3).
    */
   cancelled: boolean;
+  /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

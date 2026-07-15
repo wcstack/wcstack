@@ -62,6 +62,12 @@ npm install @wcstack/credential
 | `loading`   | `wcs-credential:loading-changed` | `true` while a `get()`/`store()` call is in flight. |
 | `error`     | `wcs-credential:error`           | A true platform failure (normalized `{ name, message }`), or `null`. |
 | `cancelled` | `wcs-credential:cancelled-changed` | `true` when the user dismissed the browser's account-chooser UI (the Credential Management API rejects with `NotAllowedError`). Kept out of `error`. |
+| `errorInfo` | `wcs-credential:error-info-changed` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` (unsupported), `out-of-scope` (a `publicKey`/WebAuthn attempt), or `credential-failed` (a genuine failure). A `NotAllowedError` cancellation is `cancelled`, not `errorInfo`. |
+
+**Concurrency.** `get()` and `store()` share one io-core lane with the `latest`
+policy: a later call **supersedes** the earlier one (these are used sequentially in
+real auth flows — store after login, get before one — not concurrently). If both
+are invoked concurrently, the later call's result wins.
 
 ## Commands
 
