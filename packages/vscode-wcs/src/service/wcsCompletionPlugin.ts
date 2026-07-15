@@ -18,14 +18,11 @@ import {
 } from './completionData.js';
 import { getBindingContext } from './bindingContext.js';
 import { getStatePathsFromHtml } from './statePathResolver.js';
-import { validateBindings } from './bindingValidator.js';
-import { validateStateTypes } from './stateTypeValidator.js';
-import { validateNestedAssigns } from './nestedAssignValidator.js';
+import { validateDocument } from '../core/validateDocument.js';
+import { severityToLsp } from '../core/diagnostics.js';
 import {
   findMustacheAtOffset,
   findCommentBindingAtOffset,
-  findAllMustacheSyntax,
-  findAllCommentBindings,
 } from './templateSyntax.js';
 import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
 
@@ -296,19 +293,17 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
         provideDiagnostics(document) {
           if (document.languageId !== 'html') return;
 
+          // CI CLI と同じ validator core を呼ぶ(§7.1)。両者は同一 {code, range, severity}
+          // を生成する。LSP Diagnostic の code 欄に stable code を転送する。
           const text = document.getText();
-          const bindingDiags = validateBindings(text, bindAttrName, stateTagName);
-          const stateTypeDiags = validateStateTypes(text, stateTagName);
-          const nestedAssignDiags = validateNestedAssigns(text, stateTagName);
-          const templateDiags = validateTemplateSyntax(text, stateTagName, bindAttrName);
-
-          return [...bindingDiags, ...stateTypeDiags, ...nestedAssignDiags, ...templateDiags].map(d => ({
+          return validateDocument(text, { bindAttribute: bindAttrName, stateTagName }).map(d => ({
             range: {
               start: document.positionAt(d.start),
               end: document.positionAt(d.end),
             },
+            code: d.code,
             message: d.message,
-            severity: d.severity === 'error' ? 1 : d.severity === 'warning' ? 2 : 3,
+            severity: severityToLsp(d.severity),
             source: 'wcstack',
           }));
         },
@@ -358,153 +353,6 @@ function findBindAttribute(html: string, offset: number, attrName: string): Bind
   }
 
   return null;
-}
-
-/**
- * Mustache / コメント構文のパス・フィルタを検証する。
- */
-function validateTemplateSyntax(
-  html: string,
-  stateTagName: string,
-  bindAttrName: string = 'data-wcs',
-): { start: number; end: number; message: string; severity: 'error' | 'warning' | 'info' }[] {
-  const diagnostics: { start: number; end: number; message: string; severity: 'error' | 'warning' | 'info' }[] = [];
-
-  const allPaths = getStatePathsFromHtml(html, stateTagName);
-  if (allPaths.length === 0) return diagnostics;
-
-  const defaultPaths = allPaths.filter(p => p.stateName === 'default');
-  const pathSet = new Set(defaultPaths.map(p => p.path));
-  const filterNameSet = new Set(BUILTIN_FILTERS.map(f => f.name));
-
-  const mustaches = findAllMustacheSyntax(html);
-  const comments = findAllCommentBindings(html);
-
-  for (const item of [...mustaches, ...comments]) {
-    // コメント構文の可視化: 通常コメントと区別するため info を表示
-    if (item.kind === 'comment') {
-      diagnostics.push({
-        start: item.matchStart,
-        end: item.matchEnd,
-        message: `wcs-text バインディング: ${item.expression}`,
-        severity: 'info' as const,
-      });
-    }
-
-    // FOUC 警告: <template> 外の {{ }} はレンダリング前に表示される
-    if (item.kind === 'mustache' && !item.insideTemplate) {
-      diagnostics.push({
-        start: item.matchStart,
-        end: item.matchEnd,
-        message: `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${item.expression}--> またはコメント構文の使用を検討してください。`,
-        severity: 'info' as const,
-      });
-    }
-
-    if (!item.expression) continue;
-
-    // パスとフィルタを分離
-    const parts = item.expression.split('|');
-    let pathPart = (parts[0] || '').trim();
-
-    // @state を除去
-    const atIdx = pathPart.indexOf('@');
-    if (atIdx !== -1) pathPart = pathPart.slice(0, atIdx).trim();
-
-    // for コンテキスト判定
-    const insideFor = item.insideTemplate && isInsideForTemplate(html, item.matchStart, bindAttrName);
-
-    // パス制約チェック
-    if (pathPart && !/^-?\d|^["'`]|^true$|^false$|^null$/.test(pathPart)) {
-      // for 外でパターンパス（* を含む）を使用
-      if (!insideFor && pathPart.includes('*')) {
-        diagnostics.push({
-          start: item.exprStart,
-          end: item.exprStart + pathPart.length,
-          message: `パターンパス "${pathPart}" は <template for> の外側では使用できません`,
-          severity: 'warning',
-        });
-      }
-
-      // for 外で省略パス（. から始まる）を使用
-      if (!insideFor && pathPart.startsWith('.')) {
-        diagnostics.push({
-          start: item.exprStart,
-          end: item.exprStart + pathPart.length,
-          message: `省略パス "${pathPart}" は <template for> の外側では使用できません`,
-          severity: 'warning',
-        });
-      }
-
-      // UI で解決済みパス（数値セグメントを含む）を使用
-      if (/\.\d+\.|\.\d+$/.test(pathPart)) {
-        diagnostics.push({
-          start: item.exprStart,
-          end: item.exprStart + pathPart.length,
-          message: `解決済みパス "${pathPart}" は UI バインディングでは使用できません。パターンパスを使用してください`,
-          severity: 'warning',
-        });
-      }
-
-      // パス存在検証
-      if (pathPart.startsWith('.')) {
-        // 省略パスを展開してから検証
-        const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
-        if (forPath && !forPath.startsWith('.')) {
-          const expandedPath = `${forPath}.*.${pathPart.slice(1)}`;
-          if (!isValidTemplatePath(expandedPath, pathSet, defaultPaths)) {
-            diagnostics.push({
-              start: item.exprStart,
-              end: item.exprStart + pathPart.length,
-              message: `パス "${pathPart}" は状態定義に存在しません（展開: ${expandedPath}）`,
-              severity: 'warning',
-            });
-          }
-        }
-      } else {
-        if (!isValidTemplatePath(pathPart, pathSet, defaultPaths)) {
-          diagnostics.push({
-            start: item.exprStart,
-            end: item.exprStart + pathPart.length,
-            message: `パス "${pathPart}" は状態定義に存在しません`,
-            severity: 'warning',
-          });
-        }
-      }
-    }
-
-    // フィルタ名検証
-    for (let i = 1; i < parts.length; i++) {
-      const filterName = parts[i].trim().replace(/\(.*$/, '');
-      if (filterName && !filterNameSet.has(filterName)) {
-        const filterOffset = item.expression.indexOf(parts[i]);
-        diagnostics.push({
-          start: item.exprStart + filterOffset,
-          end: item.exprStart + filterOffset + filterName.length,
-          message: `フィルタ "${filterName}" は組み込みフィルタに存在しません`,
-          severity: 'warning',
-        });
-      }
-    }
-  }
-
-  return diagnostics;
-}
-
-function isValidTemplatePath(
-  path: string,
-  pathSet: Set<string>,
-  scopedPaths: { path: string }[],
-): boolean {
-  // ループインデックス（$1〜$128）は状態定義に依存しない
-  if (/^\$\d+$/.test(path)) return true;
-  // $streamStatus.<name> / $streamError.<name> は $streams 宣言が解析できている場合のみ照合
-  if (path.startsWith('$streamStatus.') || path.startsWith('$streamError.')) {
-    const prefix = path.startsWith('$streamStatus.') ? '$streamStatus.' : '$streamError.';
-    const hasNamespace = scopedPaths.some(p => p.path.startsWith(prefix));
-    return !hasNamespace || pathSet.has(path);
-  }
-  return pathSet.has(path);
 }
 
 /**

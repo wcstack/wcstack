@@ -24,6 +24,14 @@ const configs = [
     entryPoints: ['src/server.ts'],
     outdir: 'dist',
   },
+  {
+    // CI CLI (Phase 5a): pure validator core を bundle して単一 node 実行可能に。
+    // @wcstack/state/manifest を inline するので実行時に依存解決を要しない。
+    ...sharedOptions,
+    entryPoints: ['src/cli.ts'],
+    outdir: 'dist',
+    banner: { js: '#!/usr/bin/env node' },
+  },
 ];
 
 if (isWatch) {

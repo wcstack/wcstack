@@ -12,12 +12,15 @@ import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import type { PathCandidate } from './stateAnalyzer.js';
 import { getStatePathsFromHtml } from './statePathResolver.js';
 import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
+import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
 
 /** 診断情報 */
 export interface BindingDiagnostic {
+  /** 安定した診断 code（IDE / CI 一致の要）。 */
+  code: WcsDiagnosticCodeValue;
   /** HTML 内のオフセット（開始） */
   start: number;
   /** HTML 内のオフセット（終了） */
@@ -71,6 +74,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
       if (propNoMod === '...') {
         for (const filter of parsed.filters) {
           diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
             start: bindingStart + filter.offset,
             end: bindingStart + filter.offset + filter.name.length,
             message: `スプレッドのターゲットにフィルタは使用できません`,
@@ -79,6 +83,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
         }
         if (!parsed.path || parsed.path.trim() === '') {
           diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
             start: bindingStart,
             end: bindingStart + binding.length,
             message: `スプレッドにはターゲットパスが必要です`,
@@ -98,6 +103,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
           const pathOffset = binding.indexOf(parsed.path!);
           const pathStart = bindingStart + pathOffset;
           diagnostics.push({
+            code: WcsDiagnosticCode.TokenUndeclared,
             start: pathStart,
             end: pathStart + tokenName.length,
             message: `イベントトークン "${tokenName}" は $eventTokens に宣言されていません`,
@@ -120,6 +126,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
           const pathStart = bindingStart + pathOffset;
           if (!tokenPath.startsWith('$command.')) {
             diagnostics.push({
+              code: WcsDiagnosticCode.TokenMisconfigured,
               start: pathStart,
               end: pathStart + tokenPath.length,
               message: `command バインディングの右辺には $command.<name>（$commandTokens で宣言）を指定してください`,
@@ -127,6 +134,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             });
           } else if (commandNames.size > 0 && !commandNames.has(tokenPath)) {
             diagnostics.push({
+              code: WcsDiagnosticCode.TokenUndeclared,
               start: pathStart,
               end: pathStart + tokenPath.length,
               message: `コマンドトークン "${tokenPath}" は $commandTokens に宣言されていません`,
@@ -157,6 +165,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
               diagnostics.push({
+                code: WcsDiagnosticCode.BindingPathMissing,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
                 message: `${message}${pathTrimmed.startsWith('.') ? `（展開: ${checkPath}）` : ''}`,
@@ -179,6 +188,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
+              code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
               message: `パターンパス "${pathTrimmed}" は <template for> の外側では使用できません`,
@@ -191,6 +201,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
+              code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
               message: `省略パス "${pathTrimmed}" は <template for> の外側では使用できません`,
@@ -203,6 +214,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
+              code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
               message: `ループインデックス "${pathTrimmed}" は <template for> の外側では使用できません`,
@@ -215,6 +227,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
+              code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
               message: `解決済みパス "${pathTrimmed}" は UI バインディングでは使用できません。パターンパスを使用してください`,
@@ -231,6 +244,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
         // イベントハンドラにフィルタは使用不可
         for (const filter of parsed.filters) {
           diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
             start: bindingStart + filter.offset,
             end: bindingStart + filter.offset + filter.name.length,
             message: `イベントハンドラ "${parsed.property}" にフィルタは使用できません`,
@@ -271,6 +285,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
               diagnostics.push({
+                code: WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
                 message: `"${typeReq.label}" には${typeReq.expectedLabel}が必要です（現在の型: ${resultType}）`,
@@ -434,6 +449,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
   const info = filterMap.get(filter.name);
   if (!info) {
     diagnostics.push({
+      code: WcsDiagnosticCode.FilterUnknown,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
       message: `フィルタ "${filter.name}" は組み込みフィルタに存在しません`,
@@ -446,6 +462,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
   const argCount = filter.args.length;
   if (argCount < info.minArgs) {
     diagnostics.push({
+      code: WcsDiagnosticCode.FilterArity,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
       message: `フィルタ "${filter.name}" には最低 ${info.minArgs} 個の引数が必要です（${argCount} 個指定）`,
@@ -453,6 +470,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
     });
   } else if (argCount > info.maxArgs) {
     diagnostics.push({
+      code: WcsDiagnosticCode.FilterArity,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
       message: `フィルタ "${filter.name}" の引数は最大 ${info.maxArgs} 個です（${argCount} 個指定）`,
@@ -468,6 +486,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
       const actualArgType = inferArgType(filter.args[i]);
       if (actualArgType !== expectedArgType) {
         diagnostics.push({
+          code: WcsDiagnosticCode.FilterArgType,
           start: bindingStart + filter.argsOffset,
           end: bindingStart + filter.argsOffset + filter.name.length,
           message: `フィルタ "${filter.name}" の第${i + 1}引数は ${expectedArgType} 型が必要です（"${filter.args[i]}" は ${actualArgType} 型）`,
@@ -602,6 +621,7 @@ function validateFilterChainTypes(
       const hasMatch = currentTypes.some(t => (info.acceptTypes as string[]).includes(t));
       if (!hasMatch) {
         diagnostics.push({
+          code: WcsDiagnosticCode.FilterInputType,
           start: bindingStart + filter.offset,
           end: bindingStart + filter.offset + filter.name.length,
           message: `フィルタ "${filter.name}" は ${(info.acceptTypes as string[]).join('|')} 型の入力が必要です（現在の型: ${currentType}）`,
