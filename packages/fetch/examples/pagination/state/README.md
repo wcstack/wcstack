@@ -27,8 +27,10 @@ endpoint (`GET /api/items?page=<1-based>&limit=12`, ~400 ms latency, 200 members
 
 - **Zero JS glue.** The whole flow is HTML: a computed `itemsFetch.url` getter rebuilds the
   URL from `page`, one `<wcs-fetch data-wcs="...: itemsFetch">` runs the request, and the
-  response JSON lands in `itemsFetch.value` — read straight from the template as
-  `itemsFetch.value.items` / `.total` / `.totalPages`.
+  response JSON lands in `itemsFetch.value`. The element is the authority for that output —
+  it is `null` before the first response and again after an error — so the template never
+  reads it directly: null-safe getters (`rows` / `total` / `totalPages`) project it, and the
+  list binds `for: rows`.
 - **Automatic stale-response protection.** Clicking a page only changes `page`; the URL
   getter recomputes, `<wcs-fetch>` sees the new `url`, and it **aborts the previous in-flight
   request** before starting the new one. No `AbortController`, no "is this still the current

@@ -679,9 +679,10 @@ phase 3 までは primitive same-value guard を残し、provenance と結果が
 phase 4 の lane policy は fetch 系から始め、node ごとの固有 cancellation / retry 契約を一括変換しない。
 phase 0 の最小 platform guard は global の存在確認と owner adapter だけを提供し、phase 6 の capability taxonomy と混同しない。
 
-> **既定化・横展開ステータス（2026-07-16）**: phase 0-6 の PoC 実装は完了済み。opt-in → 既定化 /
-> IO 族横展開の進捗（phase 2/3 は既定 `true` に反転済み、phase 4 lane は 6 operation ノード、
-> phase 6 errorInfo は 8/35 ノード）と残作業（5a CI ゲート化 / 5b analyzer 既定 ON / 残ノード横展開）は
+> **既定化・横展開ステータス（2026-07-17 更新）**: phase 0-6 の PoC 実装は完了済み。既定化・横展開も
+> ほぼ完了 — phase 2/3 は既定 `true` に反転、phase 4 lane は 6 operation ノード、phase 6 errorInfo は
+> 27/35 ノード適用（defer 3・非該当 5）、5a は CI 必須ゲート化済み、5b は explicit opt-in を正式仕様として
+> 確定。残作業（リリース時 dist rebuild / defer ノード判断 / lane trace ブリッジ）は
 > [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) が追跡する living document。
 
 各 phase の旧経路と新経路を同じ binding に二重適用してはならない。session 単位で ownership を切り替え、

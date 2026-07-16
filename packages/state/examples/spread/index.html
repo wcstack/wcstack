@@ -7,6 +7,13 @@
     <link rel="stylesheet" href="../shared/theme.css"/>
     <script type="module">
       // Mock wc-bindable element. In real apps this would be <wcs-fetch> etc.
+      // One deliberate difference from the real <wcs-fetch>: value/loading/error/
+      // status are declared under BOTH properties and inputs (two-way), so the
+      // initial authority stays with state and the seeds below drive the display —
+      // this demo teaches the spread expansion + last-wins mechanics, not data
+      // ownership. A real IO node declares its outputs as properties only, which
+      // makes the element the authority: state then reads the element's value at
+      // bind time instead of writing the seed.
       class FakeFetch extends HTMLElement {
         static wcBindable = {
           protocol: "wc-bindable",
@@ -20,6 +27,10 @@
           inputs: [
             { name: "url" },
             { name: "method" },
+            { name: "value" },
+            { name: "loading" },
+            { name: "error" },
+            { name: "status" },
           ],
         };
         connectedCallback() {

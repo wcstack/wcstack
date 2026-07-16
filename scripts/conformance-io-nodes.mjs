@@ -126,7 +126,10 @@ function checkCore(orig) {
   // signal — every conformant core now declares `ready: Promise` / `observe(): Promise`,
   // so the annotation no longer distinguishes async work from the SSR skeleton.
   const isAsync = has(code, /\basync\b|\bawait\b|\.then\s*\(|new\s+Promise\b/);
-  const guard = has(code, /\b_\w*[Gg]en\b|AbortController|AbortSignal|\bgeneration\b/);
+  // OperationLane counts as a stale-async guard: phase 4 moved the cancellation /
+  // terminal-CAS protection for operation nodes out of the Core's local ++_gen
+  // counters into the shared lane (io-core/operation-lane.ts).
+  const guard = has(code, /\b_\w*[Gg]en\b|AbortController|AbortSignal|\bgeneration\b|\bOperationLane\b/);
   r["stale-async guard"] = isAsync
     ? { tier: "MUST", pass: guard, note: guard ? undefined : "async work but no _gen / AbortController" }
     : { tier: "MUST", na: true, note: "no async work" };
@@ -174,7 +177,13 @@ let mustFail = 0, shouldWarn = 0, files = 0;
 const rows = [], findings = [], deviations = [];
 
 for (const pkg of IO_NODES) {
-  const cores = tsFiles(join(PKGDIR, pkg, "src", "core"));
+  // src/core/ also holds non-Core files since the phase 4/6 rollout: generated
+  // copies (operationLane.ts / platformCapability.ts, from scripts/sync-io-core.mjs)
+  // and per-node error-taxonomy helpers (xxxCapabilities.ts). The invariants below
+  // are class-authoring contracts, so a Core unit is a file that defines a *Core
+  // class; classless helper modules have nothing to check.
+  const cores = tsFiles(join(PKGDIR, pkg, "src", "core"))
+    .filter((f) => /\bclass\s+\w+Core\b/.test(blankComments(readFileSync(f, "utf8"))));
   const shells = tsFiles(join(PKGDIR, pkg, "src", "components"))
     .filter((f) => /static\s+wcBindable\b/.test(blankComments(readFileSync(f, "utf8"))));
 

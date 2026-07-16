@@ -17,8 +17,8 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
 | 2 初期同期 | `enableDirectionalInitialSync` / `#init=` `#sync=` | **既定 `true`（2026-07-16 flip 完）**。恒久 opt-out フラグ残置 |
 | 3 因果伝播 | `enablePropagationContext` / `WriteReceipt` | **既定 `true`（flip 完）**。恒久 opt-out フラグ残置 |
 | 4 非同期 lane / trace | `OperationLane` / commit guard / terminal CAS | operation **6 ノード**へ横展開完（残候補は非競合/session で対象外＝完）。DevTools trace の全体適用は要確認（§F） |
-| 5a 静的契約 | validator core / `wcs-validate` CLI | 実装完。**CI 必須ゲート化が未（§B）** |
-| 5b 開発時照合 | `enableContractAnalyzer` analyzer | 実装完（opt-in）。**dev 既定 ON 化が未（§C）** |
+| 5a 静的契約 | validator core / `wcs-validate` CLI | 実装完。**CI 必須ゲート化 完（§B、2026-07-16）** |
+| 5b 開発時照合 | `enableContractAnalyzer` analyzer | 実装完。**explicit opt-in を正式仕様として確定（§C、dev 既定 ON は不採用）** |
 | 6 capability | probe / report / error taxonomy | **27 / 35 IO ノード**適用済み（+19、2026-07-16。view 族は bindable 化で error も観測面に）。残 8 = defer 3（permission/network/defined、ユーザー判断）+ 非該当 5。詳細 §A |
 
 ### 既定化済みフラグ（`packages/state/src/config.ts`）
@@ -44,7 +44,9 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
 
 ## 2. 残作業
 
-### A. Phase 6 — errorInfo taxonomy の横展開【決定: 適用可能な全ノード展開。進行中 13/35】
+### A. Phase 6 — errorInfo taxonomy の横展開【決定: 適用可能な全ノード展開。**完了 27/35 適用＋defer 3＋非該当 5（2026-07-16）**】
+
+> 以下は横展開の時系列ログ（進捗数はその時点の値）。最終状態は「残ノードの最終分類」を参照。
 
 **方針決定済み（2026-07-16）**: `09` §8 phase 6 の design 意図どおり **適用可能な全 IO ノードへ順次適用**（scope 補正は下記参照）。
 
@@ -134,22 +136,24 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
 
 ### D. ビルド / リリース衛生 — 各パッケージ dist 再ビルド【リリース時】
 
-- `fetch` / `share` / `contacts` / `eyedropper` / `credential` / `upload` / `clipboard` / `geolocation` / `router` は src 変更が dist 未反映。加えて `protocol/wcBindable.ts` の再生成（`version: 1` → `version: number`）を取り込んでいない dist が広範に残る（`debounce` / `network` で確認）。
-- **2026-07-17 追記**: `state` / `fetch` dist は既に Phase 2/3 の flip 済み（`enableDirectionalInitialSync: true` を確認）で、この項の記述を訂正した。`router` は本日の wcBindable 修正（下記）が dist 未反映。
+- **2026-07-17 検証で訂正**: `state` / `fetch` の dist は**最新**（再ビルドで byte 差分ゼロを確認。state dist は `enableDirectionalInitialSync: true` / `enablePropagationContext: true` を含む）。当初の「state dist は stale」は誤りだった。
+- `share` / `contacts` / `eyedropper` / `credential` / `upload` / `clipboard` / `geolocation` の dist も Phase 4/6 の成果物（errorInfo）を含むことを確認（marker 検査）。当初の「src 変更が dist 未反映」リストは全体として誤りだった。
+- 一方 `router` は本日の wcBindable 修正（下記）が dist 未反映（再ビルドで差分が出ることを確認し、リリース時方針に合わせて dist は据置）。加えて `protocol/wcBindable.ts` の再生成（`version: 1` → `version: number`）を取り込んでいない dist が残る（`debounce` / `network` / `router` の再ビルド差分で確認）。**リリース時は全パッケージ一括 rebuild が安全**。
 - 設計上リリース build で解消するが、公開 artifact は現状フラグ反映前。リリースまでに:
   1. 各パッケージ rebuild（`rimraf dist` → `tsc` → `rollup -c`）
   2. **`state` に依存する `router` / `signals` / `server` / `examples` の回帰確認**（dist 更新で新既定が効くため）
 
-**examples 回帰確認 完了（2026-07-17、ローカル dist ＋ 実ブラウザ）**: 上記 2 を先行実施し、既定 ON で **実際に壊れる例を 5 件検出・修正**した。examples は CDN（公開済み v1.20.0）を読むため、この破壊はリリースまで顕在化しない。
+**examples 回帰確認 完了（2026-07-17、ローカル dist ＋ 実ブラウザ）**: 上記 2 を先行実施し、既定 ON で **実際に壊れる例を 6 件検出・修正**した（5 件は初回検証、6 件目の `packages/state/examples/spread` は全 examples の 2 回目掃引で検出）。examples は CDN（公開済み v1.20.0）を読むため、この破壊はリリースまで顕在化しない。
 - **根因は 1 件が package バグ**: `router` の `wcBindable` が settable な `navigateUrl` を `properties` にだけ宣言していた（output-only 判定 → `shouldApplyState` が state→element 書き込みを**恒久抑止** → state からのプログラム遷移が死ぬ）。`inputs` へ追加して修正（§3.6 の「properties と inputs の両方 → 互換性のため state」に一致）。実ブラウザの反実仮想で確認済み（修正前: クリックしても URL 不変／修正後: 遷移）。`path` は setter が navigate しないので output-only のまま据置。
-- **残り 4 件は examples 側の pattern**: output-only スロットに state 側が「都合のよい初期値」を種蒔きし（`value: []`、`debouncedQuery: ""`）、element authority の実初期値（`null` / `undefined`）で上書きされて getter が落ちる。**seed は element の実初期値に合わせ、表示用は派生 getter で null 安全化**する形に統一（state-search / router-spa / fetch pagination / fetch users-crud）。`<wcs-debounce>` の `value` も同型（`DebounceCore._value = undefined`）で、これは e2e 実行でのみ発覚した。
+- **残り 5 件は examples 側の pattern**: output-only スロットに state 側が「都合のよい初期値」を種蒔きし（`value: []`、`debouncedQuery: ""`）、element authority の実初期値（`null` / `undefined`）で上書きされて getter が落ちる。**seed は element の実初期値に合わせ、表示用は派生 getter で null 安全化**する形に統一（state-search / router-spa / fetch pagination / fetch users-crud）。`<wcs-debounce>` の `value` も同型（`DebounceCore._value = undefined`）で、これは e2e 実行でのみ発覚した。6 件目の `packages/state/examples/spread` は逆向きの教材（state seed→element 表示が主旨）なので、inline fake-fetch の 4 メンバを inputs にも宣言して two-way 化＝state authority を維持し、実 IO ノードとの契約差はコメントで明示した。
 - **副次**: `state-sse-dashboard` の `<wcs-network>` 手動 pull（初回スナップショット消失の回避策）は Phase 2 が構造的に解決したため削除。実ブラウザで自動 pull を実証（`netSupported` シード `false` → `true` に置換され tile が描画）。
 - ⇒ **教訓**: 「output-only メンバに state 側の初期値を持たせる」は Phase 2 既定 ON で成立しなくなる。既存アプリの移行ガイドに要記載。`for:` パスは validator が静的に配列型を要求するため、null seed と併せて**派生 getter へ向ける**必要がある（`wcs-validate` が実際にこの誤りを捕捉した）。
 
-### E. ドキュメント / normative 更新【軽微】
+### E. ドキュメント / normative 更新【完了 2026-07-16】
 
-- `03-two-way-echo-control.md` / `09` §3.6（directional）/ §4（propagation）は feature-flag 前提の記述 → 「既定 on・恒久 opt-out」を反映。
-- `09` §8 phase 表に defaulting 完了状況を注記（または本書へのリンク）。
+- `03-two-way-echo-control.md` ヘッダ / `09` §3.6（directional）/ §4（propagation）/ §8 に実装ステータス
+  callout を追加済み（「既定 on・恒久 opt-out」と本書へのリンク）。本文は flag 導入時の記述のまま残るが、
+  callout が normative pointer として現状を指す。
 
 ### F. 確認事項【解決済み 2026-07-16】
 
@@ -163,17 +167,18 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
 
 ## 3. 推奨順序
 
-1. **A の方針決定**（全展開か代表止めか）— 残工数が大きく変わるため最初に確定
-2. **B（CI ゲート）** — 独立・機械的・低リスク、すぐ着手可
-3. **C（analyzer dev 既定 ON）** — 判断 → 実装
-4. **A の横展開実行** — 方針次第で 27 ノード or 一部
-5. **E（doc）→ D（release build + 依存回帰）** — リリース前にまとめて
+当初の推奨順序 1-4（A 方針決定 → B CI ゲート → C analyzer 判断 → A 横展開）と E は
+**すべて完了/確定済み（2026-07-16）**。残りは:
+
+1. **D（release build + 依存回帰）** — リリース時にまとめて実施（examples 回帰は 2026-07-17 に先行実施済み、§D）
+2. **defer 3 の個別判断** — permission / network（capability-only errorInfo の価値）、defined（error 面の再設計）
+3. **lane trace → devtoolsSink ブリッジ** — 未着手 followup（§F、既定化ブロッカーではない）
 
 ---
 
-## 付記: 検証した事実（2026-07-16 時点）
+## 付記: 検証した事実（2026-07-17 再検証）
 
-- errorInfo 実装済み 8 パッケージ = `grep -rl errorInfo packages/*/src/exports.ts`。
-- lane 生成コピー保有 6 パッケージ = `packages/*/src/core/operationLane.ts`。
-- CI の architecture-hardening 関連ステップは `sync-io-core.mjs --check` のみ（`wcs-validate` / analyzer 参照なし）。
-- Phase 2 flip は commit `aaeb784`（メッセージは "geolocation errorInfo" と実態を過小記述、state 変更を混載）に含まれる。作業ツリーは clean。
+- errorInfo 実装済み **27 パッケージ** = `grep -rl errorInfo packages/*/src/exports.ts`（横展開前の初期値は 8）。
+- lane 生成コピー保有 6 パッケージ = `packages/*/src/core/operationLane.ts`。`sync-io-core.mjs --check` = 33 生成ファイル整合。
+- CI の architecture-hardening 関連ステップは `sync-io-core.mjs --check` に加え、独立 job **`wcs-validate`**（§B で追加。examples + packages の HTML を error severity で gate、現状 0 error）。
+- Phase 2 flip は commit `aaeb784`（メッセージは "geolocation errorInfo" と実態を過小記述、state 変更を混載）に含まれる。

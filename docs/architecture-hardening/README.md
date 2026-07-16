@@ -41,7 +41,8 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
 
 - [既定化・横展開ステータスと残作業](10-defaulting-rollout-status.md) — phase 0-6 の PoC 実装完了後の
   opt-in → 既定化 / IO 族横展開の進捗と残作業を追跡する living document（Phase 2/3 既定化済み、
-  errorInfo 8/35 ノード、5a CI ゲート化 / 5b analyzer 既定 ON / 残ノード横展開 が未）。
+  errorInfo 27/35 ノード適用＋defer 3＋非該当 5、5a CI ゲート化済み、5b は explicit opt-in 確定。
+  残 = リリース時 dist rebuild / defer ノード判断 / lane trace ブリッジ）。
 
 ## 横断原則
 
