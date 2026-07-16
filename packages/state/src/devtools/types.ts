@@ -64,9 +64,58 @@ export type DevtoolsEvent =
       readonly tokenName: string;
       readonly args: readonly unknown[];
       readonly subscriberCount: number;
+    }
+  | {
+      readonly type: "propagation:suppressed";
+      readonly reason: "confirmation" | "visited-edge";
+      readonly transactionId: number;
+      readonly edgeId: number;
+      readonly node: Node;
+      readonly member: string;
+    }
+  | {
+      readonly type: "propagation:coalesced";
+      readonly absoluteAddress: IAbsoluteStateAddress;
+      readonly droppedTransactionId: number;
+      readonly winnerTransactionId: number;
+    }
+  | {
+      readonly type: "propagation:hop-limit";
+      readonly absoluteAddress: IAbsoluteStateAddress;
+      readonly transactionId: number;
+      readonly hop: number;
+    }
+  // --- contract analyzer (Phase 5b, §6 contract category) ---
+  | {
+      // sidecar manifest から 1 コンポーネント契約を読んだ(dev-time analyzer)。
+      readonly type: "contract:manifest-read";
+      readonly tag: string;
+      /** 実行時に該当タグが登録済みか(未登録なら drift の起点)。 */
+      readonly loaded: boolean;
+    }
+  | {
+      // manifest の未知 namespace / extension(runtime analyzer が解釈しない)。
+      readonly type: "contract:unsupported-extension";
+      readonly namespace: string;
+    }
+  | {
+      // sidecar と live wcBindable 宣言の drift。live 宣言が正本。
+      readonly type: "contract:drift";
+      readonly reason: "component-not-loaded" | "missing-member" | "event-mismatch";
+      readonly tag: string;
+      readonly member?: string;
+      /** event-mismatch のとき: sidecar 宣言 event / live event。 */
+      readonly sidecarEvent?: string;
+      readonly liveEvent?: string;
     };
 
 export type DevtoolsSink = (event: DevtoolsEvent) => void;
+
+/** contract analyzer(Phase 5b)が生成しうる event だけの狭い union(公開 API の戻り型)。 */
+export type ContractEvent = Extract<
+  DevtoolsEvent,
+  { readonly type: "contract:manifest-read" | "contract:unsupported-extension" | "contract:drift" }
+>;
 
 export interface IStateElementSummary {
   readonly name: string;

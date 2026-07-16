@@ -88,6 +88,12 @@ npm install @wcstack/share
 | `loading`   | `wcs-share:loading-changed`     | `share()` 呼び出しが進行中なら `true`。 |
 | `error`     | `wcs-share:error`               | 真のプラットフォーム障害（ユーザーが共有シートをキャンセルした場合を**除く**すべて）。まだ失敗が無い場合、または次の `share()` 呼び出しでリセットされた後は `null`。 |
 | `cancelled` | `wcs-share:cancelled-changed`   | ユーザーがネイティブ共有シートを閉じた（`AbortError`）場合に `true`。`error` を条件にしたバインディングが日常的なキャンセルに反応しないよう、`error` とは独立している。 |
+| `errorInfo` | `wcs-share:error-info-changed`  | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は unsupported なら `capability-missing`、真の失敗なら `share-failed`。 |
+
+**並行制御。** 共有シートはシステムに1つのモーダル面なので、`<wcs-share>` は共有
+io-core lane を `exhaust` policy で用いる: 1つの `share()` が進行中の間、2回目の呼び出しは
+冪等な **no-op**（2つ目のシートを開かず `null` を返す）となり、進行中の呼び出しの結果を
+汚さない。
 
 `cancelled` と `error` はどちらも、実際に `navigator.share()` を呼び出す `share()` 呼び出しの **開始時** にリセットされる（`false` / `null`）ため、前回の呼び出しの古い結果がその呼び出しの結果に残り続けることはありません。唯一の例外が unsupported 早期リターン（`navigator.share` が存在しない場合。後述）です — このリセットが走る前に return するため、前回呼び出しの `cancelled` が `true` のまま残り、新たに設定された unsupported の `error` と同時に立つことがあります。`navigator.share` がセッション途中で消失するのは非現実的なため、これは限定的なエッジケースです。
 

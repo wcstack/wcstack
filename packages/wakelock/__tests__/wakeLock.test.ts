@@ -177,6 +177,19 @@ describe("<wcs-wakelock>", () => {
     wl = installWakeLock();
   });
 
+  it("errorInfo getter は Core の errorInfo を委譲する", async () => {
+    wl.restore();
+    const denied = new Error("page hidden");
+    denied.name = "NotAllowedError";
+    const failing = installWakeLock({ reject: denied });
+    const el = make({ active: "" });
+    document.body.append(el);
+    await flush();
+    expect(el.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "page hidden" });
+    failing.restore();
+    wl = installWakeLock();
+  });
+
   it("hasConnectedCallbackPromise は true（SSR の await プロトコルに参加する）", () => {
     expect(WcsWakeLock.hasConnectedCallbackPromise).toBe(true);
   });
@@ -193,9 +206,9 @@ describe("<wcs-wakelock>", () => {
     await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
   });
 
-  it("wcBindable に held/error プロパティと request/release コマンドを宣言する", () => {
+  it("wcBindable に held/error/errorInfo プロパティと request/release コマンドを宣言する", () => {
     const names = WcsWakeLock.wcBindable.properties.map((p) => p.name);
-    expect(names).toEqual(["held", "error"]);
+    expect(names).toEqual(["held", "error", "errorInfo"]);
     const commands = WcsWakeLock.wcBindable.commands?.map((c) => c.name);
     expect(commands).toEqual(["request", "release"]);
     const inputs = WcsWakeLock.wcBindable.inputs?.map((i) => i.name);

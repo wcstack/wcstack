@@ -25,12 +25,14 @@ import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { IStateHandler, IStateProxy } from "../types";
 import { getByAddress } from "./getByAddress";
+import { hasByAddress } from "./hasByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
+import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
 
 function _setByAddress(
   target   : object, 
@@ -54,7 +56,10 @@ function _setByAddress(
         return Reflect.set(target, address.pathInfo.path, value);
       }
     } else {
-      const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+      const parentAddress = address.parentAddress;
+      if (parentAddress === null) {
+        return Reflect.set(target, address.pathInfo.path, value);
+      }
       const parentValue = getByAddress(target, parentAddress, receiver, handler);
       const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
       if (lastSegment === WILDCARD) {
@@ -65,8 +70,15 @@ function _setByAddress(
       }
     }
   } finally {
+    // Phase 3: 書き込み時点の因果 context を update record に付与する。
+    // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
+    // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
+    // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
+    const propagationContext = config.enablePropagationContext
+      ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
+      : null;
     const updater = getUpdater();
-    updater.enqueueAbsoluteAddress(absAddress);
+    updater.enqueueAbsoluteAddress(absAddress, propagationContext);
     // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
     walkDependency(
       handler.stateName,
@@ -84,7 +96,7 @@ function _setByAddress(
         const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
         dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
         // 更新対象として登録
-        updater.enqueueAbsoluteAddress(absDepAddress);
+        updater.enqueueAbsoluteAddress(absDepAddress, propagationContext);
       },
       // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
       // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
@@ -154,7 +166,7 @@ export function setByAddress(
   let devHasOldValue = false;
   if (config.sameValueGuard && (value === null || typeof value !== "object")) {
     const oldValue = getByAddress(target, address, receiver, handler);
-    if (Object.is(oldValue, value)) {
+    if (hasByAddress(target, address, receiver, handler) && Object.is(oldValue, value)) {
       return true;
     }
     devOldValue = oldValue;

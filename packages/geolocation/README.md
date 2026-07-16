@@ -111,6 +111,7 @@ Add the `watch` attribute to stream fixes via `watchPosition` until the element 
 | `loading`    | `wcs-geo:loading-changed`      | `true` during a one-shot `getCurrentPosition` request.                |
 | `error`      | `wcs-geo:error`                | Normalized `{ code, message }` (`PERMISSION_DENIED=1`, `POSITION_UNAVAILABLE=2`, `TIMEOUT=3`). |
 | `permission` | `wcs-geo:permission-changed`   | `"prompt"` / `"granted"` / `"denied"` / `"unsupported"`, tracked live via the Permissions API. |
+| `errorInfo`  | `wcs-geo:error-info-changed`   | Serializable failure taxonomy (`WcsIoErrorInfo`), or `null`. Additive — derived from `error` (`code` → `permission-denied` / `position-unavailable` / `timeout`; `recoverable` is `false` only for `permission-denied`). The `error` shape is unchanged. |
 
 ## Commands
 

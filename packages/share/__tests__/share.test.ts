@@ -128,8 +128,19 @@ describe("Share (Shell)", () => {
     expect(WcsShare.wcBindable.inputs).toEqual([]);
     expect(WcsShare.wcBindable.commands).toEqual([{ name: "share", async: true }]);
     expect(WcsShare.wcBindable.properties.map((p) => p.name)).toEqual([
-      "value", "loading", "error", "cancelled",
+      "value", "loading", "error", "cancelled", "errorInfo",
     ]);
+  });
+
+  it("errorInfo は Core から転送される（unsupported で capability-missing）", async () => {
+    removeShare();
+    const el = createShare();
+    await el.share({ url: "https://example.com" });
+    expect(el.errorInfo).toEqual({
+      code: "capability-missing", phase: "start", recoverable: false,
+      capabilityId: "web.share",
+      message: "Web Share API is not supported in this browser.",
+    });
   });
 
   it("再接続すると再度 observe() され、以後の share() が独立して動く", async () => {

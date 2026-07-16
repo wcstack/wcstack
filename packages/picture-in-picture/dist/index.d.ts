@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -34,26 +46,27 @@ interface IWritableConfig {
 
 /**
  * Value types for PipCore (headless) — the Core's readable value surface.
- * Note that only `active` is *observable* (declared in
- * `wcBindable.properties` with a change event); `error` is an
- * imperative-read-only getter with no event of its own — a wc-bindable
- * binding core will never deliver it, so read it after a command settles
- * (docs/picture-in-picture-tag-design.md, README "Notes & limitations").
+ * `active`, `error`, and `errorInfo` are all *observable* (declared in
+ * `wcBindable.properties` with change events: `wcs-pip:change` / `:error` /
+ * `:error-info-changed`), so a wc-bindable binding core delivers a request/exit
+ * failure. `errorInfo` is the additive serializable failure taxonomy derived
+ * from `error` (README "Output state").
  *
  * @example
  * ```typescript
  * const core = new PipCore();
- * // bind() only ever delivers "active" — see the note above about "error".
  * bind(core, (name: keyof WcsPipCoreValues, value) => { ... });
  * ```
  */
 interface WcsPipCoreValues {
     active: boolean;
     error: any;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
 }
 /**
  * Value types for the Shell (`<wcs-pip>`) — identical value surface to the
- * Core (same caveat: only `active` is observable). The Shell adds the
+ * Core (`active` / `error` / `errorInfo` all observable). The Shell adds the
  * `target` input (attribute-mirrored) and no additional observable
  * properties.
  */
@@ -94,6 +107,7 @@ declare class PipCore extends EventTarget {
     private _target;
     private _active;
     private _error;
+    private _errorInfo;
     private _video;
     private _gen;
     private _ready;
@@ -101,6 +115,13 @@ declare class PipCore extends EventTarget {
     get ready(): Promise<void>;
     get active(): boolean;
     get error(): any;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-pip:error-info-changed`), derived from `error`; the existing `error`
+     * value shape is unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     /**
      * (Re-)subscribe to `enterpictureinpicture`/`leavepictureinpicture` on
      * `element` (the Shell's resolved `<video>` target). Idempotent when called
@@ -133,6 +154,7 @@ declare class PipCore extends EventTarget {
     private _detach;
     private _setActive;
     private _setError;
+    private _commitErrorInfo;
 }
 
 /**
@@ -168,6 +190,7 @@ declare class WcsPip extends HTMLElement {
     set target(value: string);
     get active(): boolean;
     get error(): any;
+    get errorInfo(): WcsIoErrorInfo | null;
     requestPictureInPicture(): Promise<void>;
     exitPictureInPicture(): Promise<void>;
     /**
@@ -192,5 +215,32 @@ declare class WcsPip extends HTMLElement {
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
 }
 
-export { PipCore, WcsPip, bootstrapPip, getConfig };
-export type { IWritableConfig, IWritableTagNames, WcsPipCoreValues, WcsPipValues };
+/**
+ * pictureInPictureCapabilities.ts
+ *
+ * Picture-in-Picture node 固有の error code(taxonomy)と derivation。汎用の error
+ * info 型は `./platformCapability.js`(/io-core/ から copy-distribution される生成
+ * ファイル)から import する。Picture-in-Picture は referenced `<video>` を操作する
+ * ノードで競合 operation を持たないため lane は無く、error taxonomy(errorInfo)のみを
+ * 採用する(fullscreen と同型)。
+ *
+ * `_setError` は合成 `{ message }`(target が `<video>` に解決しない / API 非対応)と
+ * caught 例外(`NotAllowedError` = user gesture 外の requestPictureInPicture 拒否等)を
+ * 混在受理する。呼出側が明示 `kind` を渡して合成側を曖昧さ無く分類し、caught は `.name`
+ * で分類する(fullscreen / storage / screen-orientation と同じ discriminator 方式)。
+ */
+
+/** 安定した Picture-in-Picture error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_PICTURE_IN_PICTURE_ERROR_CODE: {
+    /** Picture-in-Picture API 非対応。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** target が `<video>` に解決しない等の入力不備。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** `NotAllowedError` / `TypeError` — user gesture 外での要求拒否。 */
+    readonly NotAllowed: "not-allowed";
+    /** その他の caught 例外。 */
+    readonly PipError: "pip-error";
+};
+
+export { PipCore, WCS_PICTURE_IN_PICTURE_ERROR_CODE, WcsPip, bootstrapPip, getConfig };
+export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsPipCoreValues, WcsPipValues };

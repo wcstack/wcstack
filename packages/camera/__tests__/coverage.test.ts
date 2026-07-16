@@ -254,6 +254,7 @@ describe("Shell アクセサ網羅", () => {
     expect(el.audioPermission).toBeNull();
     expect(el.devices).toEqual([]);
     expect(el.error).toBeNull();
+    expect(el.errorInfo).toBeNull(); // Shell ゲッターが Core に委譲する（Phase 6）
     // 非数値属性は NaN（既定）を返す。
     el.setAttribute("width", "abc");
     expect(Number.isNaN(el.width)).toBe(true);
@@ -276,6 +277,7 @@ describe("Shell アクセサ網羅", () => {
     expect(el.blob).toBeNull();
     expect(el.objectURL).toBeNull();
     expect(el.error).toBeNull();
+    expect(el.errorInfo).toBeNull(); // Shell ゲッターが Core に委譲する（Phase 6）
     el.setAttribute("timeslice", "");
     expect(Number.isNaN(el.timeslice)).toBe(true);
     // 非数値文字列は Number.isFinite が偽 → NaN フォールバック（#7・Recorder.ts:79）。

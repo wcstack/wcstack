@@ -1,7 +1,10 @@
 # wcstack アーキテクチャ難所の堅牢化
 
 - **作成日**: 2026-07-14
-- **状態**: 設計提案（未採択。本文書群だけでは実行時挙動を変更しない）
+- **状態**: 一部採択・実装済み。phase 0-6 の PoC 実装は完了し、phase 2（方向認識初期同期）/ phase 3
+  （因果伝播）は既定 `true` に反転済み。opt-in → 既定化 / IO 族横展開の進捗と残作業は
+  [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) が追跡する。未実装の設計提案は
+  各論点 doc（01-08）に残る。
 - **対象スナップショット**:
   - wcstack: `27371dca55888c864028042e71d8a7e7149365b4`（v1.20.0）
   - wc-bindable-protocol: `5ec0deef212578a072b2f669d2a5554f254253e0`
@@ -33,6 +36,13 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
 - [8 論点を横断する修正設計](09-remediation-design.md) — `BindableDeclarationReader`、
   `BindingSession`、`PropagationContext`、`OperationTicket`、`wcstack.manifest.json` の責務分割、
   段階導入、回帰テスト、decision gate をまとめる。
+
+## 既定化・横展開ステータス
+
+- [既定化・横展開ステータスと残作業](10-defaulting-rollout-status.md) — phase 0-6 の PoC 実装完了後の
+  opt-in → 既定化 / IO 族横展開の進捗と残作業を追跡する living document（Phase 2/3 既定化済み、
+  errorInfo 27/35 ノード適用＋defer 3＋非該当 5、5a CI ゲート化済み、5b は explicit opt-in 確定。
+  残 = リリース時 dist rebuild / defer ノード判断 / lane trace ブリッジ）。
 
 ## 横断原則
 

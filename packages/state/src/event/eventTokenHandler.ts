@@ -29,8 +29,9 @@ import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { getCustomElement } from "../getCustomElement";
+import { getCustomElementRegistry } from "../platform/customElementRegistry";
+import { readBindableDeclaration, ReadBindableResult } from "../protocol/wcBindableReader";
 import { IBindingInfo } from "../types";
-import { IWcBindable } from "./types";
 import { getOrCreateEventToken } from "./eventTokenRegistry";
 
 interface IEventTokenListener {
@@ -40,18 +41,13 @@ interface IEventTokenListener {
 
 const listenerByBinding: WeakMap<IBindingInfo, IEventTokenListener> = new WeakMap();
 
-function getWcBindable(element: Element): IWcBindable | null {
+function getWcBindable(element: Element): ReadBindableResult | null {
   const customTagName = getCustomElement(element);
   if (customTagName === null) {
     return null;
   }
   // attach 側で未定義要素は whenDefined 後に再試行するため、ここに来る時点で customClass は定義済み。
-  const customClass = customElements.get(customTagName) as { wcBindable?: IWcBindable } | undefined;
-  const bindable = customClass?.wcBindable;
-  if (bindable?.protocol === "wc-bindable" && bindable?.version === 1) {
-    return bindable;
-  }
-  return null;
+  return readBindableDeclaration(element);
 }
 
 export function attachEventTokenHandler(binding: IBindingInfo): boolean {
@@ -62,10 +58,11 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
 
   // カスタム要素が未定義なら定義後に再試行（wcBindable が必要なため）。
   const customTagName = getCustomElement(element);
-  if (customTagName !== null && customElements.get(customTagName) === undefined) {
-    customElements.whenDefined(customTagName).then(() => {
-      attachEventTokenHandler(binding);
-    });
+  const registry = getCustomElementRegistry();
+  if (customTagName !== null && registry?.get(customTagName) === undefined) {
+    if (registry === null) {
+      raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
+    }
     return true;
   }
 
@@ -83,7 +80,7 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
   if (bindable === null) {
     raiseError(`eventToken binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
   }
-  const propDesc = bindable.properties.find((p) => p.name === propertyName);
+  const propDesc = bindable.knownProperties.get(propertyName);
   if (typeof propDesc === "undefined") {
     raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.`);
   }

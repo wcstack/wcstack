@@ -118,6 +118,17 @@ describe("ScreenOrientation (Shell)", () => {
     expect(el.error).not.toBeNull();
   });
 
+  it("lock() 失敗時に el.errorInfo が Core の taxonomy を委譲する（Phase 6）", async () => {
+    const orientation = installOrientation();
+    orientation.lock = vi.fn(() => Promise.reject({ name: "NotAllowedError", message: "not in fullscreen" }));
+    const el = createScreenOrientation();
+    document.body.appendChild(el);
+
+    await el.lock("landscape");
+
+    expect(el.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: false, message: "not in fullscreen" });
+  });
+
   it("inputs は空（属性を持たない、バッチ中最小の Shell）", () => {
     expect(WcsScreenOrientation.wcBindable.inputs).toEqual([]);
   });

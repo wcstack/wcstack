@@ -36,6 +36,57 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+/**
+ * tiltCapabilities.ts
+ *
+ * Tilt(Device Orientation)node 固有の error code(taxonomy)と derivation。汎用の
+ * error info 型は `./platformCapability.js`(/io-core/ から copy-distribution される
+ * 生成ファイル)から import する。tilt は監視系(deviceorientation の subscribe/
+ * unsubscribe)で競合する operation を持たないため lane は持たず、error taxonomy
+ * (errorInfo)のみを採用する。
+ *
+ * sensor 4 兄弟(accelerometer / gyroscope / magnetometer / ambient-light-sensor)と
+ * 違い、tilt の error 面は **異なる shape** を持つ:
+ * - sensor 族の error detail は `{ error: <Error.name>, message }`(name/message は文字列)。
+ * - tilt の error detail は `{ error: <生の rejection reason> }`(TiltCore._setError が
+ *   `requestPermission()` の catch で `{ error: e }` を渡す。`e` は生の Error/reason)。
+ *
+ * したがって derive は「wrap された生の値」から name/message を取り出す。また tilt は
+ * "unsupported"(capability-missing)経路を **持たない**: `DeviceOrientationEvent` や
+ * その `requestPermission` が無い環境では error にせず `"granted"` に倒して error を
+ * クリアする(docs/device-orientation-tag-design.md §3)。よって capability-missing の
+ * code / branch は生成しない(到達不能・dead code を避ける)。error として _setError に
+ * 届くのは iOS の `requestPermission()` reject だけで、その name は実権限拒否なら
+ * `NotAllowedError`、gesture 文脈外等なら汎用 `Error` になる。
+ */
+/** 安定した tilt error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_TILT_ERROR_CODE = {
+    /** `NotAllowedError` — iOS の Device Orientation 権限拒否。 */
+    NotAllowed: "not-allowed",
+    /** その他の `requestPermission()` reject(gesture 文脈外 / 想定外の失敗)。 */
+    TiltError: "tilt-error",
+};
+/**
+ * tilt の失敗(`_setError` に渡る `{ error: <生の reason> }`)を serializable な error
+ * taxonomy に写す。name は wrap された reason の `Error.name`、message はその `.message`
+ * (無ければ `String(...)`)。
+ *
+ * - `NotAllowedError` は iOS の権限拒否 → phase="start" / not-allowed。retry で回復しない。
+ * - それ以外(gesture 文脈外の汎用 `Error`、非 Error reason 等)→ phase="execute" /
+ *   tilt-error。
+ *
+ * capability-missing 経路は無い(上のヘッダ参照): 非対応環境は error ではなく
+ * `"granted"` へ倒れるため、ここには到達しない。
+ */
+function deriveTiltErrorInfo(detail) {
+    const name = detail.error?.name;
+    const message = detail.error?.message ?? String(detail.error);
+    if (name === "NotAllowedError") {
+        return { code: WCS_TILT_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message };
+    }
+    return { code: WCS_TILT_ERROR_CODE.TiltError, phase: "execute", recoverable: false, message };
+}
+
 const UNSUPPORTED_SNAPSHOT = Object.freeze({
     alpha: null,
     beta: null,
@@ -77,6 +128,11 @@ class TiltCore extends EventTarget {
             // rejecting/throwing. Mirrors idle (same batch2) and the accelerometer
             // family (batch5) — see docs/io-node-batch-implementation-plan.md.
             { name: "error", event: "wcs-tilt:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error.error` (the wrapped rejection's
+            // Error.name); the existing `error` property/event are unchanged. Fires
+            // wcs-tilt:error-info-changed. No lane — this is a monitor node.
+            { name: "errorInfo", event: "wcs-tilt:error-info-changed" },
         ],
         commands: [
             { name: "requestPermission", async: true },
@@ -88,6 +144,7 @@ class TiltCore extends EventTarget {
     _snapshot = UNSUPPORTED_SNAPSHOT;
     _permissionState = "unknown";
     _error = null;
+    _errorInfo = null;
     _subscribed = false;
     // SSR (§3.8): never auto-starts on connect, so there is no probe to await —
     // readiness is always immediate.
@@ -117,6 +174,15 @@ class TiltCore extends EventTarget {
     get error() {
         return this._error;
     }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-tilt:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
+    }
     // Lifecycle (§3.5). observe() is a synchronous no-op: like `<wcs-idle>`,
     // this Core deliberately does NOT auto-start on connect (§6) on platforms
     // that gate deviceorientation behind requestPermission().
@@ -143,8 +209,23 @@ class TiltCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // wrapped rejection (or null on clear). Fires before the `error` event so an
+        // observer binding both sees the classification first, mirroring the io-node
+        // family.
+        this._commitErrorInfo(error === null ? null : deriveTiltErrorInfo(error));
         this._target.dispatchEvent(new CustomEvent("wcs-tilt:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already reference-guards on the error
+    // object), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-tilt:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -318,6 +399,9 @@ class WcsTilt extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -354,5 +438,5 @@ function bootstrapTilt(userConfig) {
     registerComponents();
 }
 
-export { TiltCore, WcsTilt, bootstrapTilt, getConfig };
+export { TiltCore, WCS_TILT_ERROR_CODE, WcsTilt, bootstrapTilt, getConfig };
 //# sourceMappingURL=index.esm.js.map

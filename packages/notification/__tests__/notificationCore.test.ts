@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { NotificationCore } from "../src/core/NotificationCore.js";
 import { WcsNotifyClickDetail, WcsNotifyErrorDetail } from "../src/types.js";
+import { deriveNotifyErrorInfo, WCS_NOTIFY_ERROR_CODE } from "../src/core/notificationCapabilities.js";
 import {
   FakeNotification, installNotification, removeNotification,
   installServiceWorker, removeServiceWorker,
@@ -669,5 +670,128 @@ describe("初期の observable サーフェス", () => {
       expect(get(name)(new CustomEvent("x", { detail: { tag: name } }))).toEqual({ tag: name });
     }
     vi.clearAllMocks();
+  });
+});
+
+describe("errorInfo taxonomy (Phase 6)", () => {
+  async function grantedCore(mode: "auto" | "sw" | "constructor" = "auto"): Promise<NotificationCore> {
+    installNotification({ permission: "granted" });
+    removePermissions();
+    const core = make();
+    await core.observe(mode);
+    return core;
+  }
+
+  it("初期状態の errorInfo は null", () => {
+    expect(new NotificationCore().errorInfo).toBeNull();
+  });
+
+  it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+    const names = NotificationCore.wcBindable.properties.map((p) => p.name);
+    expect(names).toContain("errorInfo");
+    expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+  });
+
+  it("unsupported → capability-missing / probe / recoverable=false", async () => {
+    removeNotification();
+    removePermissions();
+    const core = make();
+    await core.observe();
+    core.notify("Hi");
+    expect(core.errorInfo).toEqual({
+      code: "capability-missing", phase: "probe", recoverable: false,
+      message: "Notifications API is not available in this environment.",
+    });
+    // 公開 error shape は不変。
+    expect(core.error).toEqual({ error: "unsupported", message: "Notifications API is not available in this environment." });
+  });
+
+  it("not-granted → not-allowed / start / recoverable=false", async () => {
+    installNotification({ permission: "denied" });
+    removePermissions();
+    const core = make();
+    await core.observe();
+    core.notify("Hi");
+    expect(core.errorInfo).toEqual({
+      code: "not-allowed", phase: "start", recoverable: false,
+      message: "Notification permission is not granted; call request() first.",
+    });
+  });
+
+  it("invalid-title → invalid-argument / start / recoverable=false", async () => {
+    const core = await grantedCore();
+    core.notify(123 as unknown as string);
+    expect(core.errorInfo).toEqual({
+      code: "invalid-argument", phase: "start", recoverable: false,
+      message: "notify() requires a string title.",
+    });
+  });
+
+  it("show-failed → show-failed / execute / recoverable=false", async () => {
+    const core = await grantedCore();
+    FakeNotification.throwOnConstruct = new Error("boom");
+    core.notify("Hi");
+    expect(core.errorInfo).toEqual({
+      code: "show-failed", phase: "execute", recoverable: false,
+      message: "Failed to create the notification.",
+    });
+  });
+
+  it("no-service-worker → no-service-worker / execute / recoverable=false", async () => {
+    installNotification({ permission: "granted" });
+    removePermissions();
+    removeServiceWorker();
+    const core = make();
+    await core.observe("sw");
+    core.notify("Hi");
+    expect(core.errorInfo).toEqual({
+      code: "no-service-worker", phase: "execute", recoverable: false,
+      message: "Service Worker is required to show this notification but is unavailable.",
+    });
+  });
+
+  it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", async () => {
+    const core = await grantedCore();
+    const order: string[] = [];
+    core.addEventListener("wcs-notify:error-info-changed", () => order.push("errorInfo"));
+    core.addEventListener("wcs-notify:error", () => order.push("error"));
+    core.notify(123 as unknown as string); // invalid-title
+    expect(order).toEqual(["errorInfo", "error"]);
+    expect(core.errorInfo).not.toBeNull();
+  });
+
+  it("成功した notify は直前の error を晴らし、errorInfo も null に戻す(clear 経路)", async () => {
+    const core = await grantedCore();
+    // First surface an error…
+    core.notify(123 as unknown as string);
+    expect(core.errorInfo).not.toBeNull();
+    // …then a successful notify() calls _setError(null), mirroring errorInfo to null.
+    const tag = core.notify("valid");
+    expect(tag).toBe("wcs-1");
+    expect(core.error).toBeNull();
+    expect(core.errorInfo).toBeNull();
+  });
+
+  // Direct map coverage: exercises every code branch of deriveNotifyErrorInfo,
+  // including the defensive `default` fallback the Core never emits itself.
+  it("deriveNotifyErrorInfo が全コードを taxonomy に写す(未知コードは notify-error へ畳む)", () => {
+    expect(deriveNotifyErrorInfo({ error: "unsupported", message: "m" })).toEqual({
+      code: WCS_NOTIFY_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message: "m",
+    });
+    expect(deriveNotifyErrorInfo({ error: "not-granted", message: "m" })).toEqual({
+      code: WCS_NOTIFY_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message: "m",
+    });
+    expect(deriveNotifyErrorInfo({ error: "invalid-title", message: "m" })).toEqual({
+      code: WCS_NOTIFY_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message: "m",
+    });
+    expect(deriveNotifyErrorInfo({ error: "show-failed", message: "m" })).toEqual({
+      code: WCS_NOTIFY_ERROR_CODE.ShowFailed, phase: "execute", recoverable: false, message: "m",
+    });
+    expect(deriveNotifyErrorInfo({ error: "no-service-worker", message: "m" })).toEqual({
+      code: WCS_NOTIFY_ERROR_CODE.NoServiceWorker, phase: "execute", recoverable: false, message: "m",
+    });
+    expect(deriveNotifyErrorInfo({ error: "totally-unknown", message: "m" })).toEqual({
+      code: WCS_NOTIFY_ERROR_CODE.NotifyError, phase: "execute", recoverable: false, message: "m",
+    });
   });
 });

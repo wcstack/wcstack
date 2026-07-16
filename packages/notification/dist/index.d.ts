@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -109,6 +121,8 @@ interface WcsNotifyCoreValues {
     prompt: boolean;
     unsupported: boolean;
     error: WcsNotifyErrorDetail | null;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
     clicked: WcsNotifyClickDetail | null;
     closed: WcsNotifyClickDetail | null;
     shown: WcsNotifyClickDetail | null;
@@ -179,6 +193,7 @@ declare class NotificationCore extends EventTarget {
     private _mode;
     private _permission;
     private _error;
+    private _errorInfo;
     private _lastClick;
     private _lastClose;
     private _lastShow;
@@ -200,6 +215,13 @@ declare class NotificationCore extends EventTarget {
     get prompt(): boolean;
     get unsupported(): boolean;
     get error(): WcsNotifyErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-notify:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get clicked(): WcsNotifyClickDetail | null;
     get closed(): WcsNotifyClickDetail | null;
     get shown(): WcsNotifyClickDetail | null;
@@ -207,6 +229,7 @@ declare class NotificationCore extends EventTarget {
     get ready(): Promise<void>;
     private _setPermission;
     private _setError;
+    private _commitErrorInfo;
     private _emit;
     /**
      * Start observing the `notifications` permission and subscribing to Service
@@ -321,6 +344,7 @@ declare class WcsNotify extends HTMLElement {
     get prompt(): boolean;
     get unsupported(): boolean;
     get error(): WcsNotifyErrorDetail | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get clicked(): WcsNotifyClickDetail | null;
     get closed(): WcsNotifyClickDetail | null;
     get shown(): WcsNotifyClickDetail | null;
@@ -336,5 +360,37 @@ declare class WcsNotify extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { NotificationCore, WcsNotify, bootstrapNotification, getConfig };
-export type { IWritableConfig, IWritableTagNames, NotificationPermissionRaw, NotifyBackend, NotifyOptions, PermissionStateOrUnsupported, WcsNotifyClickDetail, WcsNotifyCommands, WcsNotifyCoreCommands, WcsNotifyCoreValues, WcsNotifyErrorDetail, WcsNotifyInputs, WcsNotifySwMessage, WcsNotifyValues };
+/**
+ * notificationCapabilities.ts
+ *
+ * Notification node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。notification は監視(permission)と操作(notify/close)を 1 タグに併せ持つが、
+ * 競合する非同期 operation の lane は持たない(show は最新値で上書きされる momentary な
+ * 送出)ため、lane は採用せず error taxonomy(errorInfo)のみを追加する。
+ *
+ * sensor family と異なり、NotificationCore の error detail の `.error` は既に安定コード
+ * (`this._err(code, message)` が産出する `"unsupported"` / `"not-granted"` /
+ * `"invalid-title"` / `"show-failed"` / `"no-service-worker"`)であり、Error.name ではない。
+ * したがって derivation は `.error` コードを taxonomy に写すだけの純粋な map である。
+ * 想定外のコードは防御的に `notify-error` へ畳む。
+ */
+
+/** 安定した notification error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_NOTIFY_ERROR_CODE: {
+    /** Notifications API 非対応(`globalThis.Notification` 不在)。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** 権限が granted でない状態での notify()。 */
+    readonly NotAllowed: "not-allowed";
+    /** notify() に非文字列 title が渡された。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** notification の生成 / 表示に失敗した(constructor 例外 / onerror / SW show reject)。 */
+    readonly ShowFailed: "show-failed";
+    /** SW backend が必要だが `navigator.serviceWorker` が不在。 */
+    readonly NoServiceWorker: "no-service-worker";
+    /** その他 / 想定外の error code に対する防御的 fallback。 */
+    readonly NotifyError: "notify-error";
+};
+
+export { NotificationCore, WCS_NOTIFY_ERROR_CODE, WcsNotify, bootstrapNotification, getConfig };
+export type { IWritableConfig, IWritableTagNames, NotificationPermissionRaw, NotifyBackend, NotifyOptions, PermissionStateOrUnsupported, WcsIoErrorInfo, WcsIoErrorPhase, WcsNotifyClickDetail, WcsNotifyCommands, WcsNotifyCoreCommands, WcsNotifyCoreValues, WcsNotifyErrorDetail, WcsNotifyInputs, WcsNotifySwMessage, WcsNotifyValues };

@@ -1,3 +1,168 @@
+/**
+ * Interface for hierarchical loop index management in nested loops.
+ * Tracks parent-child relationships, versions, and provides access to index hierarchy.
+ */
+interface IListIndex {
+    readonly parentListIndex: IListIndex | null;
+    readonly uuid: string;
+    readonly position: number;
+    readonly length: number;
+    index: number;
+    readonly version: number;
+    readonly dirty: boolean;
+    readonly indexes: number[];
+    readonly listIndexes: WeakRef<IListIndex>[];
+    readonly varName: string;
+    at(position: number): IListIndex | null;
+}
+interface ILoopContext extends IStateAddress {
+    readonly pathInfo: IPathInfo;
+    readonly listIndex: IListIndex;
+}
+interface ILoopContextStack {
+    createLoopContext(elementStateAddress: IStateAddress, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
+}
+
+declare const setLoopContextAsyncSymbol: unique symbol;
+declare const setLoopContextSymbol: unique symbol;
+declare const getByAddressSymbol: unique symbol;
+declare const hasByAddressSymbol: unique symbol;
+declare const setByAddressSymbol: unique symbol;
+declare const connectedCallbackSymbol: unique symbol;
+declare const disconnectedCallbackSymbol: unique symbol;
+declare const updatedCallbackSymbol: unique symbol;
+
+interface IStateProxy extends IState {
+    [setLoopContextAsyncSymbol](loopContext: ILoopContext | null, callback: () => Promise<any>): Promise<any>;
+    [setLoopContextSymbol](loopContext: ILoopContext | null, callback: () => any): any;
+    [getByAddressSymbol](address: IStateAddress): any;
+    [hasByAddressSymbol](address: IStateAddress): boolean;
+    [setByAddressSymbol](address: IStateAddress, value: any): void;
+    [connectedCallbackSymbol](): Promise<void>;
+    [disconnectedCallbackSymbol](): void;
+    [updatedCallbackSymbol](updatedAbsAddressList: IAbsoluteStateAddress[]): void;
+}
+type Mutability = "readonly" | "writable";
+
+interface IStateElement {
+    readonly name: string;
+    readonly initializePromise: Promise<void>;
+    readonly connectedCallbackPromise: Promise<void>;
+    readonly listPaths: Set<string>;
+    readonly elementPaths: Set<string>;
+    readonly getterPaths: Set<string>;
+    readonly setterPaths: Set<string>;
+    readonly loopContextStack: ILoopContextStack;
+    readonly dynamicDependency: Map<string, string[]>;
+    readonly staticDependency: Map<string, string[]>;
+    readonly version: number;
+    readonly rootNode: Node;
+    readonly boundComponentStateProp: string | null;
+    readonly bindableEventMap: Record<string, string>;
+    readonly commandTokenNames: ReadonlySet<string>;
+    readonly eventTokenNames: ReadonlySet<string>;
+    /**
+     * state が $updatedCallback を定義しているか。false のとき drain は更新
+     * アドレスの集計と最終の writable createState を丸ごとスキップできる。
+     * optional なのはテスト用モック互換のため（undefined は「不明＝集計する」）。
+     */
+    readonly hasUpdatedCallback?: boolean;
+    /**
+     * 他行を読む getter（隣接項目参照など）が検出されたリストパスの集合。
+     * これらのリストは walkDependency の diff-filter 展開の対象外（全行展開）。
+     * optional なのはテスト用モック互換のため（undefined は「検出なし」扱い）。
+     */
+    readonly crossRowListPaths?: ReadonlySet<string>;
+    addCrossRowListPath?(path: string): void;
+    setPathInfo(path: string, bindingType: BindingType): void;
+    addStaticDependency(parentPath: string, childPath: string): boolean;
+    addDynamicDependency(fromPath: string, toPath: string): boolean;
+    createStateAsync(mutability: Mutability, callback: (state: IStateProxy) => Promise<void>): Promise<void>;
+    createState(mutability: Mutability, callback: (state: IStateProxy) => void): void;
+    nextVersion(): number;
+    bindProperty(prop: string, desc: PropertyDescriptor): void;
+    setInitialState(state: Record<string, any>): void;
+}
+
+interface IPathInfo {
+    readonly id: number;
+    readonly path: string;
+    readonly segments: string[];
+    readonly lastSegment: string;
+    readonly cumulativePaths: string[];
+    readonly cumulativePathSet: Set<string>;
+    readonly cumulativePathInfos: IPathInfo[];
+    readonly cumulativePathInfoSet: Set<IPathInfo>;
+    readonly parentPath: string | null;
+    readonly parentPathInfo: IPathInfo | null;
+    readonly wildcardPaths: string[];
+    readonly wildcardPathSet: Set<string>;
+    readonly indexByWildcardPath: Record<string, number>;
+    readonly wildcardPathInfos: IPathInfo[];
+    readonly wildcardPathInfoSet: Set<IPathInfo>;
+    readonly wildcardParentPaths: string[];
+    readonly wildcardParentPathSet: Set<string>;
+    readonly wildcardParentPathInfos: IPathInfo[];
+    readonly wildcardParentPathInfoSet: Set<IPathInfo>;
+    readonly wildcardPositions: number[];
+    readonly lastWildcardPath: string | null;
+    readonly lastWildcardInfo: IPathInfo | null;
+    readonly wildcardCount: number;
+}
+interface IStateAddress {
+    readonly pathInfo: IPathInfo;
+    readonly listIndex: IListIndex | null;
+    readonly parentAddress: IStateAddress | null;
+}
+interface IAbsolutePathInfo {
+    readonly stateName: string;
+    readonly stateElement: IStateElement;
+    readonly pathInfo: IPathInfo;
+    readonly parentAbsolutePathInfo: IAbsolutePathInfo | null;
+}
+interface IAbsoluteStateAddress {
+    readonly absolutePathInfo: IAbsolutePathInfo;
+    readonly listIndex: IListIndex | null;
+    readonly parentAbsoluteAddress: IAbsoluteStateAddress | null;
+}
+
+/**
+ * Filter/types.ts
+ *
+ * Type definition file for filter functions.
+ *
+ * Main responsibilities:
+ * - Defines types for filter functions (FilterFn) and filter functions with options (FilterWithOptionsFn)
+ * - Type-safe management of filter name-to-function mappings (FilterWithOptions) and filter function arrays (Filters)
+ * - Defines types for retrieving filter functions from built-in filter collections
+ *
+ * Design points:
+ * - Type design enabling flexible filter design and extension
+ * - Supports filters with options and combinations of multiple filters
+ */
+type FilterFn<T = unknown> = (value: unknown) => T;
+
+type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
+interface IFilterInfo {
+    readonly filterName: string;
+    readonly args: string[];
+    readonly filterFn: FilterFn;
+}
+interface IBindingInfo {
+    readonly propName: string;
+    readonly propSegments: string[];
+    readonly propModifiers: string[];
+    readonly statePathName: string;
+    readonly statePathInfo: IPathInfo;
+    readonly stateName: string;
+    readonly inFilters: IFilterInfo[];
+    readonly outFilters: IFilterInfo[];
+    readonly node: Node;
+    readonly replaceNode: Node;
+    readonly bindingType: BindingType;
+    readonly uuid?: string | null;
+}
+
 interface IState {
     [key: string]: any;
 }
@@ -21,6 +186,25 @@ interface IConfig {
     readonly debug: boolean;
     readonly enableMustache: boolean;
     /**
+     * Enables direction-aware initial synchronization (`init=` / `sync=`).
+     * Disabled by default while Phase 2 is evaluated against existing snapshots.
+     */
+    readonly enableDirectionalInitialSync: boolean;
+    /**
+     * Enables causal propagation tracking (transaction / edge provenance /
+     * write receipts). Disabled by default while Phase 3 runs as a shadow of
+     * the primitive same-value guard.
+     */
+    readonly enablePropagationContext: boolean;
+    /**
+     * Enables the opt-in dev-time contract analyzer (Phase 5b). When false
+     * (default), `analyzeContract()` is a no-op with zero cost — runtime
+     * behavior and allocation are unchanged. When true, it checks the actually
+     * loaded `static wcBindable` declarations against a supplied sidecar
+     * manifest and emits `contract:*` drift trace via the DevTools sink.
+     */
+    readonly enableContractAnalyzer: boolean;
+    /**
      * 同値ガード（**既定 true**・標準的リアクティブ挙動・`setConfig({ sameValueGuard: false })` で opt-out 可）。
      * primitive 値の set で `Object.is` 同値なら更新を no-op にする
      * （enqueue / 依存 walk / DOM 適用 / $updatedCallback / DCC イベントを発火しない）。
@@ -40,6 +224,9 @@ interface IWritableConfig {
     locale?: string;
     debug?: boolean;
     enableMustache?: boolean;
+    enableDirectionalInitialSync?: boolean;
+    enablePropagationContext?: boolean;
+    enableContractAnalyzer?: boolean;
     sameValueGuard?: boolean;
 }
 
@@ -52,6 +239,13 @@ declare function getConfig(): IConfig;
  */
 declare function getBindingsReady(rootNode: Node): Promise<void>;
 
+/**
+ * Browser builds use the native HTMLElement. Headless runtimes receive an
+ * inert base so the public module can be imported without installing DOM
+ * globals; constructing components remains a browser-only operation.
+ */
+declare const HTMLElementBase: typeof HTMLElement;
+
 interface ISsrElement {
     readonly name: string;
     readonly version: string;
@@ -61,7 +255,7 @@ interface ISsrElement {
     getTemplate(uuid: string): HTMLTemplateElement | null;
     verifyVersion(): boolean;
 }
-declare class Ssr extends HTMLElement implements ISsrElement {
+declare class Ssr extends HTMLElementBase implements ISsrElement {
     private _stateData;
     private _templates;
     private _hydrateProps;
@@ -425,5 +619,141 @@ interface IWcsManifest {
 /** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
 declare function getWcsManifest(): IWcsManifest;
 
-export { Ssr, VERSION, WCS_MANIFEST_VERSION, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
-export type { FilterArgType, FilterResultType, IFilterMeta, ISsrElement, IWcsManifest, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };
+/**
+ * devtools/types.ts
+ *
+ * DevTools Hook Protocol (docs/devtools-hook-protocol.md) の型定義。
+ *
+ * イベント payload はランタイム内部オブジェクト（IAbsoluteStateAddress /
+ * IBindingInfo 等）への生参照を含む（同一 realm・オーバーレイ前提、protocol 原則 4）。
+ * 消費者はこれらを変異してはならない。
+ */
+
+type DevtoolsEvent = {
+    readonly type: "state:element-registered";
+    readonly name: string;
+    readonly rootNode: Node;
+    readonly element: IStateElement;
+} | {
+    readonly type: "state:element-unregistered";
+    readonly name: string;
+    readonly rootNode: Node;
+    readonly element: IStateElement;
+} | {
+    readonly type: "state:write";
+    readonly absoluteAddress: IAbsoluteStateAddress;
+    readonly value: unknown;
+    /** same-value guard が既に取得していた場合のみ意味を持つ（protocol §4.2） */
+    readonly oldValue: unknown;
+    readonly hasOldValue: boolean;
+} | {
+    readonly type: "state:update-batch";
+    readonly addresses: ReadonlySet<IAbsoluteStateAddress>;
+} | {
+    readonly type: "state:binding-added";
+    readonly absoluteAddress: IAbsoluteStateAddress;
+    readonly binding: IBindingInfo;
+} | {
+    readonly type: "state:binding-removed";
+    readonly absoluteAddress: IAbsoluteStateAddress;
+    readonly binding: IBindingInfo;
+} | {
+    readonly type: "state:binding-cleared";
+    readonly absoluteAddress: IAbsoluteStateAddress;
+} | {
+    readonly type: "state:token-emit";
+    readonly kind: "command" | "event";
+    readonly stateName: string | null;
+    readonly tokenName: string;
+    readonly args: readonly unknown[];
+    readonly subscriberCount: number;
+} | {
+    readonly type: "propagation:suppressed";
+    readonly reason: "confirmation" | "visited-edge";
+    readonly transactionId: number;
+    readonly edgeId: number;
+    readonly node: Node;
+    readonly member: string;
+} | {
+    readonly type: "propagation:coalesced";
+    readonly absoluteAddress: IAbsoluteStateAddress;
+    readonly droppedTransactionId: number;
+    readonly winnerTransactionId: number;
+} | {
+    readonly type: "propagation:hop-limit";
+    readonly absoluteAddress: IAbsoluteStateAddress;
+    readonly transactionId: number;
+    readonly hop: number;
+} | {
+    readonly type: "contract:manifest-read";
+    readonly tag: string;
+    /** 実行時に該当タグが登録済みか(未登録なら drift の起点)。 */
+    readonly loaded: boolean;
+} | {
+    readonly type: "contract:unsupported-extension";
+    readonly namespace: string;
+} | {
+    readonly type: "contract:drift";
+    readonly reason: "component-not-loaded" | "missing-member" | "event-mismatch";
+    readonly tag: string;
+    readonly member?: string;
+    /** event-mismatch のとき: sidecar 宣言 event / live event。 */
+    readonly sidecarEvent?: string;
+    readonly liveEvent?: string;
+};
+/** contract analyzer(Phase 5b)が生成しうる event だけの狭い union(公開 API の戻り型)。 */
+type ContractEvent = Extract<DevtoolsEvent, {
+    readonly type: "contract:manifest-read" | "contract:unsupported-extension" | "contract:drift";
+}>;
+
+/**
+ * contract/types.ts
+ *
+ * Phase 5b(dev-time contract analyzer)が読む sidecar manifest の最小 subset。
+ * 完全な JSON-Schema subset 検証は CI 側(vscode-wcs の validator core)の責務であり、
+ * runtime analyzer は「実際に読み込まれた wcBindable 宣言との drift」照合に絞る。
+ *
+ * この型は vscode-wcs の `wcstack.types` を copy-distribution したもの(§14: ランタイム
+ * 依存を導入しない)。CI 側の全量型ではなく drift 照合に必要な形だけを持つ。
+ */
+interface IContractObservable {
+    readonly event?: string;
+}
+interface IContractComponent {
+    readonly observables?: Readonly<Record<string, IContractObservable>>;
+    readonly inputs?: Readonly<Record<string, unknown>>;
+    readonly commands?: Readonly<Record<string, unknown>>;
+}
+interface IContractManifest {
+    readonly manifestExtensions?: {
+        readonly "wcstack.types"?: {
+            readonly components?: Readonly<Record<string, IContractComponent>>;
+        };
+        readonly [namespace: string]: unknown;
+    };
+}
+
+/**
+ * contract/contractAnalyzer.ts
+ *
+ * Phase 5b(09-remediation-design.md §5b / §7.1 dev runtime / §6 contract trace)の
+ * opt-in dev-time analyzer。実際に登録済みの custom element の `static wcBindable`
+ * 宣言(= 実行時の正本)を、利用者が渡した sidecar manifest と突き合わせ、drift を
+ * DevTools trace(`contract:*`)へ流す。
+ *
+ * 完了条件「無効時の runtime 挙動・cost が不変」: `analyzeContract` は
+ * `config.enableContractAnalyzer` が false のとき即 return し、manifest を一切走査
+ * しない(hot path には一切フックしない — 純粋な on-demand API)。
+ *
+ * pure な core(`analyzeManifestContract`)は宣言解決と emit を注入で受けるためテスト可能。
+ */
+
+/**
+ * opt-in dev-time contract analysis。無効時はゼロコスト(即 return・manifest 非走査)。
+ * 有効時は live 宣言と manifest を突き合わせ、`contract:*` trace を返しつつ、DevTools
+ * sink が接続されていれば同時に流す。
+ */
+declare function analyzeContract(manifest: IContractManifest): readonly ContractEvent[];
+
+export { Ssr, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
+export type { ContractEvent, FilterArgType, FilterResultType, IContractManifest, IFilterMeta, ISsrElement, IWcsManifest, IWritableConfig, IWritableTagNames, WcsPathValue, WcsPaths, WcsStateApi, WcsThis };

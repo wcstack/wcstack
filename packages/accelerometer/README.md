@@ -8,7 +8,7 @@ It is an **async primitive node** that turns device acceleration readings into r
 With `@wcstack/state`, `<wcs-accelerometer>` can be bound directly through path contracts:
 
 - **input surface**: `frequency` (sampling rate in Hz)
-- **output state surface**: `x`, `y`, `z`, `error`
+- **output state surface**: `x`, `y`, `z`, `error`, `errorInfo`
 
 This means tilt/shake-gesture UI can be expressed declaratively in HTML, without writing `Accelerometer`/`reading`/`error`-listener glue in your UI layer.
 
@@ -103,6 +103,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 | `y`      | `wcs-accelerometer:reading` | Acceleration along the y-axis. |
 | `z`      | `wcs-accelerometer:reading` | Acceleration along the z-axis. |
 | `error`  | `wcs-accelerometer:error`   | Normalized `{ error, message }`, or `null`. |
+| `errorInfo` | `wcs-accelerometer:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo` — stable `code` / `phase` / `recoverable`), or `null`. Additive, derived from `error`; the existing `error` shape is unchanged. |
 
 `x`/`y`/`z` all derive from the single `wcs-accelerometer:reading` event (one native `reading` event updates all three axes together).
 
@@ -117,6 +118,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
 - **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
+- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-accelerometer:error-info-changed`) that classifies the same failure into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. The mapping keys off the normalized error name: `unsupported` → `capability-missing` (phase `probe`); `SecurityError` / `NotAllowedError` → `not-allowed` (phase `start`); `NotReadableError` → `not-readable` (phase `execute`); any other sensor failure → `sensor-error` (phase `execute`). All are `recoverable: false`. `errorInfo` transitions exactly when `error` does, so it is **sticky** in the same way and only returns to `null` when `error` does. The shared `WcsIoErrorInfo` type and the `WCS_ACCELEROMETER_ERROR_CODE` constants are exported.
 - **Never call the raw `new Accelerometer(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
 - Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="accelerometer">`.
 

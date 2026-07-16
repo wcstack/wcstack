@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly geo: string;
 }
@@ -106,6 +108,8 @@ export interface WcsGeoCoreValues {
   loading: boolean;
   error: WcsGeoErrorDetail | null;
   permission: GeoPermissionState;
+  /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

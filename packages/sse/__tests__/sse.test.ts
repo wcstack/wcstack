@@ -332,6 +332,24 @@ describe("WcsSse", () => {
       MockEventSource.last.simulateMessage("hi");
       expect(el.message?.data).toBe("hi");
     });
+
+    it("errorInfo が Shell ゲッター経由で Core から読み取れる", () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      expect(el.errorInfo).toBeNull();
+      // 恒久切断(CLOSED)で connection-error / execute / recoverable=false が入る。
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(el.errorInfo).toEqual({
+        code: "connection-error", phase: "execute", recoverable: false, message: "SSE connection error",
+      });
+    });
+  });
+
+  describe("wcBindable errorInfo", () => {
+    it("Shell は errorInfo プロパティを（Core 継承で）宣言する", () => {
+      const names = WcsSse.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+    });
   });
 
   describe("エラー処理", () => {

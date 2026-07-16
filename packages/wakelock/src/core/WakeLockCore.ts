@@ -1,4 +1,6 @@
 import { IWcBindable, WakeLockKind } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveWakeLockErrorInfo } from "./wakelockCapabilities.js";
 
 /**
  * Minimal structural views of the Screen Wake Lock API. Declared locally (rather
@@ -42,6 +44,12 @@ export class WakeLockCore extends EventTarget {
     properties: [
       { name: "held", event: "wcs-wakelock:held-changed" },
       { name: "error", event: "wcs-wakelock:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from the raw `error` (not-allowed / wakelock-error);
+      // the existing `error` property/event are unchanged. Fires
+      // wcs-wakelock:error-info-changed. No lane — the wake lock is a pure sink (request /
+      // release do not compete).
+      { name: "errorInfo", event: "wcs-wakelock:error-info-changed" },
     ],
     commands: [
       { name: "request", async: true },
@@ -57,6 +65,7 @@ export class WakeLockCore extends EventTarget {
   private _active: boolean = false;
   private _held: boolean = false;
   private _error: Error | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _sentinel: WakeLockSentinelLike | null = null;
 
   // Bumped on every release()/new acquire so an in-flight async request() that
@@ -104,6 +113,16 @@ export class WakeLockCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-wakelock:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   /** The desired intent. Read-only reflection; not a wc-bindable property (it does
    * not change on an OS auto-release, so there is nothing to observe). */
   get active(): boolean {
@@ -146,8 +165,23 @@ export class WakeLockCore extends EventTarget {
     // success clears the error) always re-fire, so a genuinely new failure is seen.
     if (this._sameError(this._error, error)) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the raw
+    // Error (or null on clear). Fires before the `error` event so an observer binding
+    // both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveWakeLockErrorInfo(error));
     this._target.dispatchEvent(new CustomEvent("wcs-wakelock:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already same-value-guards on the error name +
+  // message via _sameError), so errorInfo transitions exactly when error does — no
+  // separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-wakelock:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

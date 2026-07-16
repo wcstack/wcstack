@@ -16,6 +16,9 @@ export default defineConfig({
         '*.config.{js,ts,mjs}',
         'src/exports.ts',
         'src/types.ts',
+        // Generated copy of the shared io-core capability layer; the wake lock uses
+        // only the WcsIoErrorInfo type (see fetch, which tests the layer fully).
+        'src/core/platformCapability.ts',
       ],
       thresholds: {
         statements: 100,

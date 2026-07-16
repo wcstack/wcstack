@@ -135,6 +135,25 @@ this.user.name = "Bob";
 this["user.name"] = "Bob";
 ```
 
+### Sidecar Manifest 検証と CLI
+
+静的契約の sidecar ファイル（`wcstack.manifest.json`）を、サポートする JSON-Schema
+サブセットに対して検証します: envelope / `kind` チェック、ファイル横断の package 解決、
+同名 tag/filter 衝突、衝突後 override の禁止、稼働中の `static wcBindable` サーフェスとの
+drift。診断には安定コード（例 `manifest-schema-version` / `manifest-kind-invalid`）が付きます。
+
+単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、エディタと CI で
+結果が一致します。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
+sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します:
+
+```bash
+npx wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] <file> [<file> ...]
+```
+
+sidecar は**ツール専用**です: 稼働中の `static wcBindable` 宣言を上書きすることはなく、
+ファイルの欠落や陳腐化がランタイム挙動を変えることもありません。規範的なスキーマと解決
+規則は `docs/wcstack-manifest-schema.md` にあります。
+
 ## Settings
 
 | 設定 | デフォルト | 説明 |

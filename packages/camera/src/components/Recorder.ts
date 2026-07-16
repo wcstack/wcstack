@@ -2,6 +2,7 @@ import {
   IWcBindable, RecorderOptions, WcsMediaErrorDetail,
 } from "../types.js";
 import { RecorderCore } from "../core/RecorderCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-recorder>` — declarative media recording. Wraps RecorderCore and records a
@@ -121,6 +122,8 @@ export class WcsRecorder extends HTMLElement {
   get blob(): Blob | null { return this._core.blob; }
   get objectURL(): string | null { return this._core.objectURL; }
   get error(): WcsMediaErrorDetail | null { return this._core.error; }
+  /** The last failure's serializable `WcsIoErrorInfo` (Phase 6 taxonomy), or null. */
+  get errorInfo(): WcsIoErrorInfo | null { return this._core.errorInfo; }
 
   // --- Commands ---
 

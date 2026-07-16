@@ -62,5 +62,8 @@
     "volar-service-typescript": "^0.0.62",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver-protocol": "^3.17.5"
+  },
+  "bin": {
+    "wcs-validate": "./dist/cli.cjs"
   }
 }

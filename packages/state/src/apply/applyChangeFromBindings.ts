@@ -5,6 +5,7 @@ import { setLastListValueByAbsoluteStateAddress } from "../list/lastListValueByA
 import { updatedCallbackSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
+import { IPropagationContext } from "../propagation/types";
 import { IBindingInfo } from "../types";
 import { applyChange } from "./applyChange";
 import { applyChangeToProperty } from "./applyChangeToProperty";
@@ -21,7 +22,10 @@ import { IApplyContext, IDeferredSelectBinding } from "./types";
  * 最適化のため、以下のグループ化を行う:
  * 同じ stateNameとrootNode を持つバインディングをグループ化 → createState の呼び出しを削減
  */
-export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
+export function applyChangeFromBindings(
+  bindings: IBindingInfo[],
+  propagationContextByBinding?: ReadonlyMap<IBindingInfo, IPropagationContext | null>,
+): void {
   let bindingIndex = 0;
   const appliedBindingSet: Set<IBindingInfo> = new Set();
   const newListValueByAbsAddress: Map<IAbsoluteStateAddress, readonly unknown[]> = new Map();
@@ -65,6 +69,7 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
         // グループ内の binding は下の do/while が「解決済みルート === rootNode」を
         // 検証してから applyChange に渡す（applyChange 側の getRootNode 省略の根拠）
         sameRootVerified: true,
+        propagationContextByBinding: propagationContextByBinding,
       };
 
       do {
@@ -80,9 +85,10 @@ export function applyChangeFromBindings(bindings: IBindingInfo[]): void {
     });
   }
   // Phase 2: 遅延されたselect.value/selectedIndex を適用
-  // applyChangeToProperty は context を参照しないため null を渡す
+  // applyChangeToProperty は propagationContextByBinding 以外の context を
+  // 参照しないため、遅延分は最小 context を渡す
   for (const { binding, value } of deferredSelectBindings) {
-    applyChangeToProperty(binding, null as unknown as IApplyContext, value);
+    applyChangeToProperty(binding, { propagationContextByBinding } as unknown as IApplyContext, value);
   }
 
   for(const [ absAddress, newListValue ] of newListValueByAbsAddress.entries()) {

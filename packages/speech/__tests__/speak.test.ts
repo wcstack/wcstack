@@ -175,6 +175,18 @@ describe("<wcs-speak>", () => {
       const el = create();
       expect(el.unsupported).toBe(true);
     });
+
+    it("errorInfo が Shell ゲッター経由で Core から読み取れる（Phase 6）", () => {
+      const el = create();
+      expect(el.errorInfo).toBeNull();
+      el.say = "hi";
+      synth.fireStart();
+      synth.fireError("synthesis-failed");
+      expect(el.errorInfo).toEqual({
+        code: "synthesis-failed", phase: "execute", recoverable: false,
+        message: "Speech synthesis failed: synthesis-failed.",
+      });
+    });
   });
 
   describe("ライフサイクル", () => {
@@ -232,6 +244,7 @@ describe("<wcs-speak>", () => {
       const props = WcsSpeak.wcBindable.properties.map((p) => p.name);
       expect(props).toContain("speaking");
       expect(props).toContain("charIndex");
+      expect(props).toContain("errorInfo");
       const commands = WcsSpeak.wcBindable.commands!.map((c) => c.name);
       expect(commands).toEqual(["speak", "cancel", "pause", "resume"]);
     });

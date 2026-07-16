@@ -1,5 +1,6 @@
 import { IWcBindable, TiltPermissionState } from "../types.js";
 import { TiltCore } from "../core/TiltCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-tilt>` — declarative Device Orientation API monitor.
@@ -99,6 +100,10 @@ export class WcsTilt extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

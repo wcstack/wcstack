@@ -57,6 +57,162 @@ function setConfig(partialConfig) {
 }
 
 /**
+ * speechCapabilities.ts
+ *
+ * speech node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。speech パッケージは 2 つの Core を持つ:
+ *
+ * - ListenCore(`<wcs-listen>`, SpeechRecognition / STT) — 認識セッションの
+ *   start/stop/abort。監視ではなく command 駆動だが、競合する非同期 operation の lane は
+ *   持たない(直近の start が単一セッションを置換する)ため、lane は採用せず error
+ *   taxonomy(errorInfo)のみを追加する。
+ * - SpeakCore(`<wcs-speak>`, SpeechSynthesis / TTS) — 発話キュー。同上。
+ *
+ * SpeechRecognitionErrorEvent と SpeechSynthesisErrorEvent は `error` enum の値集合が
+ * 異なるため、taxonomy も Core ごとに別 derive を持つ。いずれの Core も error detail の
+ * `.error` は既に安定コード(SpeechRecognition/SpeechSynthesis の error enum、または
+ * `"unsupported"` fallback)であり Error.name ではないので、derivation は notification と
+ * 同型の「`.error` コードを taxonomy に写す純粋 map」である。想定外のコードは防御的に
+ * `speech-error` へ畳む。
+ */
+// ---------------------------------------------------------------------------
+// SpeechRecognition (STT) — <wcs-listen>
+// ---------------------------------------------------------------------------
+/** 安定した listen(SpeechRecognition)error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_LISTEN_ERROR_CODE = {
+    /** SpeechRecognition API 非対応(`SpeechRecognition` / `webkitSpeechRecognition` 不在)。 */
+    CapabilityMissing: "capability-missing",
+    /** `not-allowed` / `service-not-allowed` — マイク権限拒否 / サービス不許可。 */
+    NotAllowed: "not-allowed",
+    /** `audio-capture` — マイクが読めない(不在 / ハードウェア)。 */
+    NotReadable: "not-readable",
+    /** `no-speech` — 無音のまま検出できず(transient — retry で成功しうる)。 */
+    NoSpeech: "no-speech",
+    /** `network` — 認識バックエンドへの通信失敗(transient)。 */
+    NetworkError: "network-error",
+    /** `aborted` — セッションが中断された(transient)。 */
+    Aborted: "aborted",
+    /** `language-not-supported` / `bad-grammar` — 言語 / 文法が不正(前提条件違反)。 */
+    InvalidArgument: "invalid-argument",
+    /** その他 / 想定外の error code に対する防御的 fallback。 */
+    SpeechError: "speech-error",
+};
+/**
+ * listen(SpeechRecognition)の失敗を serializable な error taxonomy に写す。引数は
+ * `wcs-listen:error` の detail(`{ error, message }`)そのもの。`.error` は
+ * `SpeechRecognitionErrorEvent.error` enum(または `"unsupported"` / `"aborted"`
+ * fallback)で、Error.name ではない。
+ *
+ * - `"unsupported"` は開始前の能力欠如 → phase="probe" / capability-missing。
+ * - `"not-allowed"` / `"service-not-allowed"` はマイク権限拒否 → phase="start" /
+ *   not-allowed。回復しない(recoverable=false)。ListenCore はこの 2 つを終端扱いにし
+ *   自動再開を止める。
+ * - `"audio-capture"` はマイクの読取失敗 → phase="start" / not-readable / false。
+ * - `"no-speech"` / `"network"` / `"aborted"` は transient で、continuous セッションは
+ *   `maxRestarts` の範囲で自動再開しうる → phase="execute" / recoverable=true。
+ * - `"language-not-supported"` / `"bad-grammar"` は言語 / 文法の前提違反 →
+ *   phase="start" / invalid-argument / false。
+ * - それ以外(未知コード)は防御的に phase="execute" / speech-error / false。
+ */
+function deriveListenErrorInfo(error) {
+    const { error: code, message } = error;
+    switch (code) {
+        case "unsupported":
+            return { code: WCS_LISTEN_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+        case "not-allowed":
+        case "service-not-allowed":
+            return { code: WCS_LISTEN_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message };
+        case "audio-capture":
+            return { code: WCS_LISTEN_ERROR_CODE.NotReadable, phase: "start", recoverable: false, message };
+        case "no-speech":
+            return { code: WCS_LISTEN_ERROR_CODE.NoSpeech, phase: "execute", recoverable: true, message };
+        case "network":
+            return { code: WCS_LISTEN_ERROR_CODE.NetworkError, phase: "execute", recoverable: true, message };
+        case "aborted":
+            return { code: WCS_LISTEN_ERROR_CODE.Aborted, phase: "execute", recoverable: true, message };
+        case "language-not-supported":
+        case "bad-grammar":
+            return { code: WCS_LISTEN_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message };
+        default:
+            return { code: WCS_LISTEN_ERROR_CODE.SpeechError, phase: "execute", recoverable: false, message };
+    }
+}
+// ---------------------------------------------------------------------------
+// SpeechSynthesis (TTS) — <wcs-speak>
+// ---------------------------------------------------------------------------
+/** 安定した speak(SpeechSynthesis)error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_SPEAK_ERROR_CODE = {
+    /** SpeechSynthesis API 非対応(`speechSynthesis` / `SpeechSynthesisUtterance` 不在)。 */
+    CapabilityMissing: "capability-missing",
+    /** `not-allowed` — 合成が許可されていない。 */
+    NotAllowed: "not-allowed",
+    /** `canceled` / `interrupted` — 発話がキャンセル / 中断された(transient)。 */
+    Aborted: "aborted",
+    /** `audio-busy` / `audio-hardware` — オーディオ出力の占有 / ハードウェア障害。 */
+    NotReadable: "not-readable",
+    /** `network` — 合成バックエンドへの通信失敗(transient)。 */
+    NetworkError: "network-error",
+    /** `language-unavailable` / `voice-unavailable` / `text-too-long` / `invalid-argument` —
+     *  発話パラメータが不正 / 未対応(前提条件違反)。 */
+    InvalidArgument: "invalid-argument",
+    /** `synthesis-unavailable` / `synthesis-failed` — 合成そのものが失敗した。 */
+    SynthesisFailed: "synthesis-failed",
+    /** その他 / 想定外の error code に対する防御的 fallback。 */
+    SpeechError: "speech-error",
+};
+/**
+ * speak(SpeechSynthesis)の失敗を serializable な error taxonomy に写す。引数は
+ * `wcs-speak:error` の detail(`{ error, message }`)そのもの。`.error` は
+ * `SpeechSynthesisErrorEvent.error` enum(または `"unsupported"` /
+ * `"synthesis-failed"` fallback)で、Error.name ではない。
+ *
+ * - `"unsupported"` は開始前の能力欠如 → phase="probe" / capability-missing。
+ * - `"not-allowed"` は合成不許可 → phase="start" / not-allowed / false。
+ * - `"canceled"` / `"interrupted"` は cancel()/後続発話による中断 → phase="execute" /
+ *   aborted / recoverable=true(通常は SpeakCore の世代ガードが握りつぶすため error として
+ *   表面化しないが、防御的に写す)。
+ * - `"audio-busy"` はオーディオ占有で transient(retry で回復しうる)→ phase="execute" /
+ *   not-readable / recoverable=true。`"audio-hardware"` はハードウェア障害で回復しない →
+ *   同 not-readable だが recoverable=false。
+ * - `"network"` は transient → phase="execute" / network-error / recoverable=true。
+ * - `"language-unavailable"` / `"voice-unavailable"` / `"text-too-long"` /
+ *   `"invalid-argument"` は発話パラメータの前提違反 → phase="start" / invalid-argument /
+ *   false。
+ * - `"synthesis-unavailable"` / `"synthesis-failed"` は合成実行の失敗 → phase="execute" /
+ *   synthesis-failed / false。
+ * - それ以外(未知コード)は防御的に phase="execute" / speech-error / false。
+ */
+function deriveSpeakErrorInfo(error) {
+    const { error: code, message } = error;
+    switch (code) {
+        case "unsupported":
+            return { code: WCS_SPEAK_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+        case "not-allowed":
+            return { code: WCS_SPEAK_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message };
+        case "canceled":
+        case "interrupted":
+            return { code: WCS_SPEAK_ERROR_CODE.Aborted, phase: "execute", recoverable: true, message };
+        case "audio-busy":
+            return { code: WCS_SPEAK_ERROR_CODE.NotReadable, phase: "execute", recoverable: true, message };
+        case "audio-hardware":
+            return { code: WCS_SPEAK_ERROR_CODE.NotReadable, phase: "execute", recoverable: false, message };
+        case "network":
+            return { code: WCS_SPEAK_ERROR_CODE.NetworkError, phase: "execute", recoverable: true, message };
+        case "language-unavailable":
+        case "voice-unavailable":
+        case "text-too-long":
+        case "invalid-argument":
+            return { code: WCS_SPEAK_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message };
+        case "synthesis-unavailable":
+        case "synthesis-failed":
+            return { code: WCS_SPEAK_ERROR_CODE.SynthesisFailed, phase: "execute", recoverable: false, message };
+        default:
+            return { code: WCS_SPEAK_ERROR_CODE.SpeechError, phase: "execute", recoverable: false, message };
+    }
+}
+
+/**
  * Headless text-to-speech primitive. A thin, framework-agnostic wrapper around
  * the SpeechSynthesis API exposed through the wc-bindable protocol.
  *
@@ -89,6 +245,13 @@ class SpeakCore extends EventTarget {
             { name: "charIndex", event: "wcs-speak:boundary", getter: (e) => e.detail?.charIndex ?? null },
             { name: "spokenWord", event: "wcs-speak:boundary", getter: (e) => e.detail?.word ?? null },
             { name: "error", event: "wcs-speak:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error.error` (the
+            // SpeechSynthesisErrorEvent.error code / "unsupported"); the existing `error`
+            // property/event are unchanged. Fires wcs-speak:error-info-changed. No lane —
+            // speak() is a momentary queue submission with no competing async operation to
+            // serialize.
+            { name: "errorInfo", event: "wcs-speak:error-info-changed" },
             { name: "unsupported", event: "wcs-speak:unsupported-changed" },
         ],
         commands: [
@@ -107,6 +270,7 @@ class SpeakCore extends EventTarget {
     _charIndex = null;
     _spokenWord = null;
     _error = null;
+    _errorInfo = null;
     _unsupported = false;
     // Count of utterances submitted via speak() but not yet started, and of
     // utterances started but not yet ended/errored. `pending`/`speaking` are
@@ -161,6 +325,15 @@ class SpeakCore extends EventTarget {
     }
     get error() {
         return this._error;
+    }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-speak:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
     }
     // Resolved once in the constructor (`_setUnsupported(!_hasApi())`) and never
     // re-evaluated: the speechSynthesis API's presence is immutable for the
@@ -244,8 +417,21 @@ class SpeakCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // error code (or null on clear). Fires before the `error` event so an observer
+        // binding both sees the classification first, mirroring the io-node family.
+        this._commitErrorInfo(error === null ? null : deriveSpeakErrorInfo(error));
         this._target.dispatchEvent(new CustomEvent("wcs-speak:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already guards on error identity), so
+    // errorInfo transitions exactly when error does — no separate guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-speak:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -741,6 +927,11 @@ class WcsSpeak extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    // Additive Phase 6 taxonomy output (event wcs-speak:error-info-changed),
+    // delegated from the Core; declared via the inherited SpeakCore.wcBindable.
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get unsupported() {
         return this._core.unsupported;
     }
@@ -831,6 +1022,12 @@ class ListenCore extends EventTarget {
             { name: "listening", event: "wcs-listen:listening-changed" },
             { name: "permission", event: "wcs-listen:permission-changed" },
             { name: "error", event: "wcs-listen:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error.error` (the
+            // SpeechRecognitionErrorEvent.error code / "unsupported"); the existing `error`
+            // property/event are unchanged. Fires wcs-listen:error-info-changed. No lane —
+            // recognition has no competing async operation to serialize.
+            { name: "errorInfo", event: "wcs-listen:error-info-changed" },
             { name: "unsupported", event: "wcs-listen:unsupported-changed" },
         ],
         commands: [
@@ -847,6 +1044,7 @@ class ListenCore extends EventTarget {
     _listening = false;
     _permission = "prompt";
     _error = null;
+    _errorInfo = null;
     _unsupported = false;
     // Intent flag: true between start() and stop()/abort()/terminal-error. Gates
     // the auto-restart loop so a session that ended because the user stopped it
@@ -893,6 +1091,15 @@ class ListenCore extends EventTarget {
     get error() {
         return this._error;
     }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-listen:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
+    }
     // Resolved once in the constructor (`_setUnsupported(!Ctor)`) and never
     // re-evaluated: the SpeechRecognition API's presence is immutable for the
     // lifetime of a document, so there's nothing to re-check.
@@ -936,7 +1143,17 @@ class ListenCore extends EventTarget {
         if (this._error === value)
             return;
         this._error = value;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // error code (or null on clear). Fires before the `error` event so an observer
+        // binding both sees the classification first, mirroring the io-node family.
+        this._commitErrorInfo(value === null ? null : deriveListenErrorInfo(value));
         this._target.dispatchEvent(new CustomEvent("wcs-listen:error", { detail: value, bubbles: true }));
+    }
+    // Called only from _setError (which already guards on error identity), so
+    // errorInfo transitions exactly when error does — no separate guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-listen:error-info-changed", { detail: info, bubbles: true }));
     }
     _setUnsupported(value) {
         if (this._unsupported === value)
@@ -1410,6 +1627,11 @@ class WcsListen extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    // Additive Phase 6 taxonomy output (event wcs-listen:error-info-changed),
+    // delegated from the Core; declared via the inherited ListenCore.wcBindable.
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get unsupported() {
         return this._core.unsupported;
     }
@@ -1489,5 +1711,5 @@ function bootstrapSpeech(userConfig) {
     registerComponents();
 }
 
-export { ListenCore, SpeakCore, WcsListen, WcsSpeak, bootstrapSpeech, getConfig };
+export { ListenCore, SpeakCore, WCS_LISTEN_ERROR_CODE, WCS_SPEAK_ERROR_CODE, WcsListen, WcsSpeak, bootstrapSpeech, getConfig };
 //# sourceMappingURL=index.esm.js.map

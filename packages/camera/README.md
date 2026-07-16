@@ -46,7 +46,7 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 
 **Commands:** `start()`, `stop()`, `switchCamera()` (toggle front/back).
 
-**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId`, `devices`, `error`.
+**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId`, `devices`, `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
 
 **Events (event-token):** `streamReady` (`wcs-camera:stream-ready`, detail = the live `MediaStream`), `error`, `ended` (a track was revoked by the OS). The `streamReady` "property" exists for event-token wiring only — never bind it as a value.
 
@@ -65,7 +65,7 @@ Records a **borrowed** stream received via `attachStream` (the direct channel fr
 
 **Commands:** `attachStream(stream)`, `start()`, `stop()`, `pause()`, `resume()`.
 
-**Bindable values:** `recording`, `paused`, `duration` (ms — see note below), `mimeType` (the **resolved** recording type, which may differ from the requested `mime-type` attribute or be filled in when none was requested), `blob`, `objectURL`, `error`.
+**Bindable values:** `recording`, `paused`, `duration` (ms — see note below), `mimeType` (the **resolved** recording type, which may differ from the requested `mime-type` attribute or be filled in when none was requested), `blob`, `objectURL`, `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-recorder:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
 
 **Events (event-token):** `recorded` (`wcs-recorder:recorded`, detail = `{ blob, objectURL, mimeType, duration }`), `dataavailable` (only in `timeslice` mode), `error`.
 
@@ -148,6 +148,17 @@ DevTools open; they are not a supported styling hook.
 - **The camera indicator = a leak detector.** If it stays on after you are done, a track was not stopped.
 - **User gesture.** Some browsers require `getUserMedia` to be triggered by a user action; firing it from a timer may silently fail (surfaced via `error`, never thrown).
 - **Errors are classified, never thrown:** `NotAllowedError` (denied), `NotFoundError` (no device), `NotReadableError` (in use by another app), `OverconstrainedError`.
+- **`errorInfo` — additive failure taxonomy.** Alongside `error`, both `<wcs-camera>` and `<wcs-recorder>` expose an **additive** bindable output `errorInfo` (`WcsIoErrorInfo` = a stable `code` / `phase` / `recoverable` / `message`), derived from the same failure and published via `wcs-camera:error-info-changed` / `wcs-recorder:error-info-changed`. The `error` shape is unchanged; `errorInfo` transitions exactly when `error` does (cleared to `null` on success). Both elements share one code set (`WCS_MEDIA_ERROR_CODE`, defined in `core/mediaCapabilities.ts`):
+  - `capability-missing` (phase `probe`) — `getUserMedia` / `MediaRecorder` unavailable, including non-secure context.
+  - `not-allowed` (phase `start`) — `NotAllowedError` / `SecurityError` (permission denied or feature-policy block).
+  - `not-found` (phase `start`) — `NotFoundError` (no camera / mic of the requested kind).
+  - `not-readable` (phase `start`) — `NotReadableError` (device busy or hardware fault).
+  - `invalid-argument` (phase `start`) — `OverconstrainedError` / `NotSupportedError` (constraints or mimeType unsatisfiable).
+  - `invalid-state` (phase `start`) — `NoStreamError` (recorder started with no stream attached).
+  - `aborted` (phase `execute`, `recoverable: true`) — `AbortError` (interrupted mid-flight, may recover on retry).
+  - `media-error` (phase `execute`) — any other runtime failure (e.g. `RecorderError` / unexpected `MediaRecorder` error).
+
+  The `WcsIoErrorInfo` type and the `WCS_MEDIA_ERROR_CODE` constants are exported.
 - **Stream ownership stays with the camera.** A recorder borrows it; switching cameras while recording is not supported (stop recording first).
 - **mimeType support varies** (webm/mp4). Unsupported `mime-type` values are ignored and the browser default is used.
 

@@ -103,6 +103,11 @@ describe("<wcs-pip>", () => {
 
       await expect(el.requestPictureInPicture()).resolves.toBeUndefined();
       expect(el.error).toEqual({ message: "target must be a <video> element." });
+      // errorInfo が Shell ゲッター経由で Core から読める（taxonomy 分類済み）。
+      expect(el.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false,
+        message: "target must be a <video> element.",
+      });
     });
 
     it("target 省略 + 子要素が <div> の場合も同様に error になる", async () => {
@@ -420,6 +425,7 @@ describe("<wcs-pip>", () => {
 
       expect(el.active).toBe(false);
       expect(el.error).toBeNull();
+      expect(el.errorInfo).toBeNull();
 
       setPictureInPictureElement(video);
       emitEnter(video);

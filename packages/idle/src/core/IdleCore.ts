@@ -1,4 +1,6 @@
 import { IdleScreenState, IdleUserState, IWcBindable } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveIdleErrorInfo } from "./idleCapabilities.js";
 
 interface IdleDetectorLike extends EventTarget {
   userState: IdleUserState;
@@ -46,6 +48,12 @@ export class IdleCore extends EventTarget {
       // instead of rejecting/throwing. Mirrors every other bidirectional IO
       // node in this batch (fetch, share, screen-orientation).
       { name: "error", event: "wcs-idle:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` (capability-missing / not-allowed
+      // / idle-error); the existing `error` property/event are unchanged. Fires
+      // wcs-idle:error-info-changed. No lane — requestPermission()/start()/stop() form a
+      // single command path (a 2nd start() supersedes the 1st), not competing operations.
+      { name: "errorInfo", event: "wcs-idle:error-info-changed" },
     ],
     // No `inputs`: the Core has no settable `threshold` state — `threshold` is a
     // per-call argument to `start(threshold)`, not a property/setter. The DOM-driven
@@ -63,6 +71,9 @@ export class IdleCore extends EventTarget {
   private _userState: IdleUserState | null = null;
   private _screenState: IdleScreenState | null = null;
   private _error: any = null;
+  // Additive failure taxonomy, kept strictly in sync with `_error` (derived on
+  // every _setError, cleared to null when error clears). The two transition together.
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _detector: IdleDetectorLike | null = null;
   private _abortController: AbortController | null = null;
 
@@ -98,6 +109,16 @@ export class IdleCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-idle:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   // Lifecycle (§3.5). observe() is a synchronous no-op: unlike most IO nodes,
   // this Core deliberately does NOT auto-start on connect (§6) — permission
   // is gesture-gated, so attempting start() before it is granted is
@@ -125,11 +146,45 @@ export class IdleCore extends EventTarget {
     }));
   }
 
-  private _setError(error: any): void {
+  // `name` is the discriminator for the additive `errorInfo` taxonomy only (it
+  // stays out of the public `error` shape): the synthetic unsupported marker has
+  // no `.name`, so the unsupported call sites pass an explicit `"unsupported"`
+  // hint (storage/screen-orientation-style — avoids coupling to `error.message`),
+  // while the caught paths pass the wrapped rejection's `Error.name` (`e?.name`).
+  // `null` clears (no name).
+  private _setError(error: any, name?: string): void {
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // discriminator + extracted message (or null on clear). Fires before the `error`
+    // event so an observer binding both sees the classification first, mirroring the
+    // io-node family.
+    this._commitErrorInfo(error === null ? null : deriveIdleErrorInfo(name, this._errorInfoMessage(error)));
     this._target.dispatchEvent(new CustomEvent("wcs-idle:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Extract a serializable string message for `errorInfo` WITHOUT normalizing the
+  // public `error` shape. The public error is either the synthetic `{ message }`
+  // (unsupported) or a wrapped `{ error: e }` (a caught rejection). For the wrapped
+  // form the meaningful message lives on `e`, so unwrap one level before reading
+  // `.message`; a non-conformant / nullish value (e.g. `Promise.reject(undefined)`)
+  // falls back to `String(...)` so it still classifies instead of throwing
+  // (never-throw §3.6).
+  private _errorInfoMessage(error: any): string {
+    const src = error != null && typeof error === "object" && "error" in error ? error.error : error;
+    return typeof src?.message === "string" ? src.message : String(src);
+  }
+
+  // Called only from _setError (which already same-value-guards on the error
+  // reference), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-idle:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }
@@ -145,7 +200,7 @@ export class IdleCore extends EventTarget {
   async requestPermission(): Promise<"granted" | "denied"> {
     const Ctor = this._api();
     if (!Ctor) {
-      this._setError({ message: "IdleDetector is not supported in this browser" });
+      this._setError({ message: "IdleDetector is not supported in this browser" }, "unsupported");
       return "denied";
     }
     try {
@@ -155,8 +210,8 @@ export class IdleCore extends EventTarget {
       // an earlier attempt (e.g. a prior gesture-context rejection).
       this._setError(null);
       return result === "granted" ? "granted" : "denied";
-    } catch (e) {
-      this._setError({ error: e });
+    } catch (e: any) {
+      this._setError({ error: e }, e?.name);
       return "denied";
     }
   }
@@ -171,7 +226,7 @@ export class IdleCore extends EventTarget {
 
     const Ctor = this._api();
     if (!Ctor) {
-      this._setError({ message: "IdleDetector is not supported in this browser" });
+      this._setError({ message: "IdleDetector is not supported in this browser" }, "unsupported");
       return;
     }
 
@@ -201,7 +256,7 @@ export class IdleCore extends EventTarget {
       this._detector?.removeEventListener("change", this._onChange);
       this._detector = null;
       this._abortController = null;
-      this._setError({ error: e });
+      this._setError({ error: e }, e?.name);
     }
   }
 

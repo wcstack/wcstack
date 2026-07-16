@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly screenOrientation: string;
 }
@@ -68,6 +70,8 @@ export type WcsScreenOrientationCoreValues = WcsScreenOrientationSnapshot & {
   portrait: boolean;
   landscape: boolean;
   error: any;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 };
 
 /**

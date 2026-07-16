@@ -21,8 +21,9 @@ describe("bindNode: 実 IWcBindable との互換", () => {
     const core = new FetchCore();
     const bound = bindNode(core, desc);
 
-    // The five declared properties become signals.
-    expect(Object.keys(bound.signals).sort()).toEqual(["error", "loading", "objectURL", "status", "value"]);
+    // The declared observable properties become signals (incl. the additive
+    // Phase 6 `errorInfo` failure-taxonomy output alongside `error`).
+    expect(Object.keys(bound.signals).sort()).toEqual(["error", "errorInfo", "loading", "objectURL", "status", "value"]);
   });
 
   it("実ノードに対し on / bindInput / bindCommand を設定できる（fetch を起動せず）", () => {

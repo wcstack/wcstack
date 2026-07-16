@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { IWcBindable, SpeakOptions, SpeechVoiceInfo, WcsSpeakErrorDetail } from "../types.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { SpeakCore } from "../core/SpeakCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
@@ -221,6 +222,12 @@ export class WcsSpeak extends HTMLElement {
 
   get error(): WcsSpeakErrorDetail | null {
     return this._core.error;
+  }
+
+  // Additive Phase 6 taxonomy output (event wcs-speak:error-info-changed),
+  // delegated from the Core; declared via the inherited SpeakCore.wcBindable.
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get unsupported(): boolean {

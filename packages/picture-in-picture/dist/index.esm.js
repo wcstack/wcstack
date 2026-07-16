@@ -37,6 +37,57 @@ function setConfig(partialConfig) {
 }
 
 /**
+ * pictureInPictureCapabilities.ts
+ *
+ * Picture-in-Picture node 固有の error code(taxonomy)と derivation。汎用の error
+ * info 型は `./platformCapability.js`(/io-core/ から copy-distribution される生成
+ * ファイル)から import する。Picture-in-Picture は referenced `<video>` を操作する
+ * ノードで競合 operation を持たないため lane は無く、error taxonomy(errorInfo)のみを
+ * 採用する(fullscreen と同型)。
+ *
+ * `_setError` は合成 `{ message }`(target が `<video>` に解決しない / API 非対応)と
+ * caught 例外(`NotAllowedError` = user gesture 外の requestPictureInPicture 拒否等)を
+ * 混在受理する。呼出側が明示 `kind` を渡して合成側を曖昧さ無く分類し、caught は `.name`
+ * で分類する(fullscreen / storage / screen-orientation と同じ discriminator 方式)。
+ */
+/** 安定した Picture-in-Picture error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_PICTURE_IN_PICTURE_ERROR_CODE = {
+    /** Picture-in-Picture API 非対応。 */
+    CapabilityMissing: "capability-missing",
+    /** target が `<video>` に解決しない等の入力不備。 */
+    InvalidArgument: "invalid-argument",
+    /** `NotAllowedError` / `TypeError` — user gesture 外での要求拒否。 */
+    NotAllowed: "not-allowed",
+    /** その他の caught 例外。 */
+    PipError: "pip-error",
+};
+function messageOf(error) {
+    return typeof error?.message === "string"
+        ? error.message
+        : String(error);
+}
+/**
+ * Picture-in-Picture の失敗を serializable な error taxonomy に写す。`kind` は合成
+ * エラーの呼出側が渡す明示 discriminator(`capability-missing` / `invalid-argument`)。
+ * 未指定は caught 例外を意味し、`.name` で分類する。`NotAllowedError` / `TypeError` は
+ * user gesture 内で再試行すれば成功しうるため recoverable=true。
+ */
+function derivePictureInPictureErrorInfo(error, kind) {
+    const message = messageOf(error);
+    if (kind === "capability-missing") {
+        return { code: WCS_PICTURE_IN_PICTURE_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+    }
+    if (kind === "invalid-argument") {
+        return { code: WCS_PICTURE_IN_PICTURE_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message };
+    }
+    const name = error?.name;
+    if (name === "NotAllowedError" || name === "TypeError") {
+        return { code: WCS_PICTURE_IN_PICTURE_ERROR_CODE.NotAllowed, phase: "execute", recoverable: true, message };
+    }
+    return { code: WCS_PICTURE_IN_PICTURE_ERROR_CODE.PipError, phase: "execute", recoverable: false, message };
+}
+
+/**
  * Headless Picture-in-Picture primitive. A thin, framework-agnostic wrapper
  * around the classic Picture-in-Picture API
  * (`HTMLVideoElement.requestPictureInPicture()` / `document.exitPictureInPicture()` /
@@ -68,6 +119,14 @@ class PipCore extends EventTarget {
         version: 1,
         properties: [
             { name: "active", event: "wcs-pip:change", getter: (e) => e.detail.active },
+            // `error` / `errorInfo` are observable failure outputs. Historically `error`
+            // was an imperative getter with no event; both are now bindable (event-backed)
+            // so `data-wcs` / bind() can observe a request/exit failure. `errorInfo` is the
+            // additive serializable taxonomy (stable code / phase / recoverable) derived
+            // from `error`; the `error` value shape is unchanged. No lane — Picture-in-Picture
+            // drives a referenced `<video>`, not a competing operation (fullscreen と同型)。
+            { name: "error", event: "wcs-pip:error" },
+            { name: "errorInfo", event: "wcs-pip:error-info-changed" },
         ],
         commands: [
             { name: "requestPictureInPicture", async: true },
@@ -77,6 +136,7 @@ class PipCore extends EventTarget {
     _target;
     _active = false;
     _error = null;
+    _errorInfo = null;
     // The <video> element the Core currently subscribes to for
     // enterpictureinpicture/leavepictureinpicture (null when unresolved/torn down).
     _video = null;
@@ -98,6 +158,15 @@ class PipCore extends EventTarget {
     }
     get error() {
         return this._error;
+    }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-pip:error-info-changed`), derived from `error`; the existing `error`
+     * value shape is unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
     }
     // --- Lifecycle (§3.5) ---
     /**
@@ -136,7 +205,9 @@ class PipCore extends EventTarget {
     async requestPictureInPicture(element) {
         const gen = ++this._gen;
         if (!element || element.tagName !== "VIDEO") {
-            this._setError({ message: "target must be a <video> element." });
+            // Distinct from "API is not supported" (below): the resolved target did
+            // not satisfy the `<video>`-only constraint (wrong tag / unresolved).
+            this._setError({ message: "target must be a <video> element." }, "invalid-argument");
             return;
         }
         // Re-wire to `element` before issuing the platform call: a caller may
@@ -152,7 +223,7 @@ class PipCore extends EventTarget {
         this.observe(element);
         const fn = this._requestPictureInPictureFn(element);
         if (!fn) {
-            this._setError({ message: "Picture-in-Picture API is not supported." });
+            this._setError({ message: "Picture-in-Picture API is not supported." }, "capability-missing");
             return;
         }
         try {
@@ -246,8 +317,33 @@ class PipCore extends EventTarget {
             bubbles: true,
         }));
     }
-    _setError(error) {
+    // `kind` is an explicit taxonomy discriminator passed only from the synthetic
+    // error sites (unsupported / non-<video> target); caught exceptions pass no kind
+    // and are classified by their `.name`. Both `error` and the additive `errorInfo`
+    // are now event-backed so a request/exit failure is observable via bind().
+    _setError(error, kind) {
+        // Same-value guard on reference: each failure builds a fresh object and the
+        // clear path passes the literal null, so this only suppresses redundant
+        // null→null (a successful request/exit clearing an already-null error).
+        if (this._error === error)
+            return;
         this._error = error;
+        // Keep the additive errorInfo taxonomy in sync; fire it before the `error`
+        // event so an observer of both sees the classification first (io-node family).
+        this._commitErrorInfo(error === null ? null : derivePictureInPictureErrorInfo(error, kind));
+        this._target.dispatchEvent(new CustomEvent("wcs-pip:error", {
+            detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (already reference-guarded), so errorInfo
+    // transitions exactly when error does — no separate guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-pip:error-info-changed", {
+            detail: info,
+            bubbles: true,
+        }));
     }
 }
 
@@ -356,6 +452,9 @@ class WcsPip extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     // --- Commands ---
     async requestPictureInPicture() {
         const { element } = this._resolveVideoTarget();
@@ -442,5 +541,5 @@ function bootstrapPip(userConfig) {
     registerComponents();
 }
 
-export { PipCore, WcsPip, bootstrapPip, getConfig };
+export { PipCore, WCS_PICTURE_IN_PICTURE_ERROR_CODE, WcsPip, bootstrapPip, getConfig };
 //# sourceMappingURL=index.esm.js.map

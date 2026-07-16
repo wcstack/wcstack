@@ -1,5 +1,6 @@
 import { IWcBindable } from "../types.js";
 import { PipCore } from "../core/PipCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-pip target="...">` — declarative Picture-in-Picture control.
@@ -109,6 +110,10 @@ export class WcsPip extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   // --- Commands ---

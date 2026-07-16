@@ -1,5 +1,6 @@
 import { IWcBindable, WcsAccelerometerErrorDetail } from "../types.js";
 import { AccelerometerCore } from "../core/AccelerometerCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-accelerometer>` — declarative Generic Sensor API (`Accelerometer`)
@@ -130,6 +131,10 @@ export class WcsAccelerometer extends HTMLElement {
 
   get error(): WcsAccelerometerErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

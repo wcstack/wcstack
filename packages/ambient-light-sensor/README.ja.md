@@ -7,7 +7,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-ambient-light-sensor>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `frequency`（サンプリングレート、Hz）
-- **出力 state サーフェス**: `illuminance`、`error`
+- **出力 state サーフェス**: `illuminance`、`error`、`errorInfo`
 
 明るさ駆動のUI（自動ダークモード、画面減光）を、`AmbientLightSensor`/`reading`/`error`リスナーの配線コードを書かずにHTML上で宣言的に表現できます。
 
@@ -102,6 +102,7 @@ npm install @wcstack/ambient-light-sensor
 | -------------- | --------------------------------------- | ---- |
 | `illuminance`  | `wcs-ambient-light-sensor:reading`       | 周囲の明るさ（lux）。初回読み取り前は`null`。 |
 | `error`        | `wcs-ambient-light-sensor:error`         | 正規化された`{ error, message }`、無ければ`null`。 |
+| `errorInfo`    | `wcs-ambient-light-sensor:error-info-changed` | シリアライズ可能な失敗分類（`WcsIoErrorInfo` — 安定した `code` / `phase` / `recoverable`）、無ければ`null`。`error`から派生する追加的な出力で、既存の`error`の形状は不変。 |
 
 ## コマンド
 
@@ -164,6 +165,7 @@ wcs-ambient-light-sensor:state(error) ~ .fallback { display: block; }
 
 - **`_gen`世代ガードは無し。** `start()`/`stop()`は同期的な購読/購読解除のトグルであり、`dispose()`とレースしうる非同期probeが存在しません（`docs/sensor-tag-design.md` §1.5）。
 - **`error`は sticky（据え置き）です。** 最後に観測した失敗（`unsupported`、`SecurityError`等）を保持し、その後の`start()`成功や`reading`受信では自動クリアされません。`stop()`＋`start()`でリトライが成功しても直前の`error`は残り続けます。必要なら利用側の state でクリア／再解釈してください。
+- **`errorInfo` 分類（taxonomy）。** 同じ失敗をシリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-ambient-light-sensor:error-info-changed`）で、`error`の形状は変更しません。正規化された error 名に応じて対応づけます: `unsupported` → `capability-missing`（phase `probe`）、`SecurityError` / `NotAllowedError` → `not-allowed`（phase `start`）、`NotReadableError` → `not-readable`（phase `execute`）、その他のセンサー失敗 → `sensor-error`（phase `execute`）。いずれも `recoverable: false` です。`errorInfo` は `error` と完全に同じタイミングで遷移するため、同様に **sticky** で、`error` が `null` に戻るときにのみ `null` に戻ります。共有の `WcsIoErrorInfo` 型と `WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE` 定数はエクスポートされます。
 - **生の`new AmbientLightSensor(...)`は唯一のガード付き構築ヘルパー以外では呼ばない。** 権限拒否・Permissions-Policyブロックは同期的に例外を投げます。
 - 権限状態（`granted`/`denied`/`prompt`）は意図的にこのノードでは重複実装していません — `<wcs-permission name="ambient-light-sensor">`と合成してください。
 - **採用前に現在のブラウザ対応状況を必ず確認してください** — 上記「なぜ存在するか」参照。

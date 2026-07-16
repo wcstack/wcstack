@@ -1,5 +1,6 @@
 import { IWcBindable, WcsSseMessage } from "../types.js";
 import { SseCore } from "../core/SseCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 export class WcsSse extends HTMLElement {
   // SSR (§4.1/§4.4): wc-bindable アダプタはこのフラグを見て connectedCallbackPromise を
@@ -162,6 +163,10 @@ export class WcsSse extends HTMLElement {
 
   get error(): Event | Error | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get readyState(): number {

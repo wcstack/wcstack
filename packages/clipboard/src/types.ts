@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly clipboard: string;
 }
@@ -85,6 +87,8 @@ export interface WcsClipboardCoreValues {
   items: WcsClipboardReadItem[] | null;
   loading: boolean;
   error: WcsClipboardErrorDetail | null;
+  /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
+  errorInfo: WcsIoErrorInfo | null;
   readPermission: ClipboardPermissionState;
   writePermission: ClipboardPermissionState;
   monitoring: boolean;

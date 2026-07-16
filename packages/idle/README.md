@@ -8,7 +8,7 @@ It is an **async primitive node** that turns `IdleDetector`'s live user/screen s
 With `@wcstack/state`, `<wcs-idle>` can be bound directly through path contracts:
 
 - **input surface**: `threshold` (ms, minimum 60000)
-- **output state surface**: `userState`, `screenState`, `active`, `error`
+- **output state surface**: `userState`, `screenState`, `active`, `error`, `errorInfo`
 
 ## Why this exists — the reference implementation for gesture-gated permission
 
@@ -71,6 +71,7 @@ npm install @wcstack/idle
 | `screenState` | `wcs-idle:change`  | `"locked"` \| `"unlocked"`, or `null` before `start()`. |
 | `active`      | `wcs-idle:change`  | `true` when `userState === "active"`. |
 | `error`       | `wcs-idle:error`   | The last `requestPermission()`/`start()` failure, or `null`. |
+| `errorInfo`   | `wcs-idle:error-info-changed` | Serializable failure taxonomy `WcsIoErrorInfo \| null` (stable `code` / `phase` / `recoverable`) for that same failure, or `null` when clear. Additive — the `error` shape is unchanged. |
 
 ## Commands
 
@@ -148,6 +149,7 @@ DevTools open; they are not a supported styling hook.
 - **Chromium-only, and secure-context-only.** Firefox and Safari do not implement `IdleDetector` at all. Even in Chromium, `IdleDetector` is a `[SecureContext]`-only interface, so over plain `http://` (other than `localhost`) `window.IdleDetector` itself is `undefined` — same as an unsupported browser, this falls into the `unsupported` (via `error`) path.
 - **Permissions-Policy gate.** Idle detection is governed by the `idle-detection` Permissions-Policy directive (default allowlist: `self`). Using `<wcs-idle>` inside a cross-origin `<iframe>` requires `allow="idle-detection"` on that `<iframe>` element — otherwise `requestPermission()`/`start()` fail the same way as an unsupported browser.
 - **`stop()`/disconnect does not reset `userState`/`screenState`/`active`.** They keep their last observed value until the next successful `start()` — the same "retain the last reading" behavior as the Generic Sensor family (`<wcs-gyroscope>` et al.).
+- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-idle:error-info-changed`) that classifies the same `requestPermission()`/`start()` failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A missing `IdleDetector` (unsupported browser, or a non-secure context where `window.IdleDetector` is `undefined`) is `capability-missing` (phase `probe`); a `NotAllowedError` (permission denied or called outside a user gesture — the two are deliberately not distinguished) is `not-allowed` (phase `start`); any other failure (a raw throw, a `TypeError` from a bad `threshold`, a nullish rejection) is `idle-error` (phase `execute`). All are `recoverable: false`. `errorInfo` transitions exactly when `error` does (cleared to `null` alongside it). The shared `WcsIoErrorInfo` type and the `WCS_IDLE_ERROR_CODE` constants are exported.
 
 ## Headless usage (`IdleCore`)
 

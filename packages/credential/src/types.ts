@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly credential: string;
 }
@@ -53,6 +55,8 @@ export interface WcsCredentialCoreValues {
   // `error`, mirroring `@wcstack/share`'s `cancelled` (which keys off that
   // API's own dismissal error name instead).
   cancelled: boolean;
+  // Last failure's serializable taxonomy (stable code/phase/recoverable), or null.
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

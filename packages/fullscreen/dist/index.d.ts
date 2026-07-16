@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -34,26 +46,27 @@ interface IWritableConfig {
 
 /**
  * Value types for FullscreenCore (headless) — the Core's readable value
- * surface. Note that only `active` is *observable* (declared in
- * `wcBindable.properties` with a change event); `error` is an
- * imperative-read-only getter with no event of its own — a wc-bindable
- * binding core will never deliver it, so read it after a command settles
- * (docs/fullscreen-tag-design.md §8, README "Notes & limitations").
+ * surface. `active`, `error`, and `errorInfo` are all *observable* (declared in
+ * `wcBindable.properties` with change events: `wcs-fullscreen:change` /
+ * `:error` / `:error-info-changed`), so a wc-bindable binding core delivers a
+ * request/exit failure. `errorInfo` is the additive serializable failure
+ * taxonomy derived from `error` (docs/fullscreen-tag-design.md §8, README).
  *
  * @example
  * ```typescript
  * const core = new FullscreenCore();
- * // bind() only ever delivers "active" — see the note above about "error".
  * bind(core, (name: keyof WcsFullscreenCoreValues, value) => { ... });
  * ```
  */
 interface WcsFullscreenCoreValues {
     active: boolean;
     error: any;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
 }
 /**
  * Value types for the Shell (`<wcs-fullscreen target="...">`) — identical
- * value surface to the Core (same caveat: only `active` is observable).
+ * value surface to the Core (`active` / `error` / `errorInfo` all observable).
  * The Shell adds the `target` input (attribute-mirrored) that resolves which
  * element requestFullscreen()/exitFullscreen() operate on
  * (docs/fullscreen-tag-design.md §1/§9).
@@ -84,6 +97,7 @@ declare class FullscreenCore extends EventTarget {
     private _target;
     private _active;
     private _error;
+    private _errorInfo;
     private _resolvedTarget;
     private _gen;
     private _subscribed;
@@ -92,6 +106,13 @@ declare class FullscreenCore extends EventTarget {
     get ready(): Promise<void>;
     get active(): boolean;
     get error(): any;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-fullscreen:error-info-changed`), derived from `error`; the existing
+     * `error` value shape is unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     /**
      * Update the resolved target without issuing a fullscreen request (e.g. the
      * Shell re-resolves `target` on attribute change / connect). Re-evaluates
@@ -126,6 +147,7 @@ declare class FullscreenCore extends EventTarget {
     private _applyActive;
     private _setActive;
     private _setError;
+    private _commitErrorInfo;
 }
 
 /**
@@ -165,6 +187,7 @@ declare class WcsFullscreen extends HTMLElement {
     set target(value: string);
     get active(): boolean;
     get error(): any;
+    get errorInfo(): WcsIoErrorInfo | null;
     /**
      * Resolve `target` and request fullscreen on it. never-throw: an
      * unresolvable target or an unsupported/rejected API call are both
@@ -180,5 +203,31 @@ declare class WcsFullscreen extends HTMLElement {
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
 }
 
-export { FullscreenCore, WcsFullscreen, bootstrapFullscreen, getConfig };
-export type { IWritableConfig, IWritableTagNames, WcsFullscreenCoreValues, WcsFullscreenValues };
+/**
+ * fullscreenCapabilities.ts
+ *
+ * Fullscreen node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。fullscreen は referenced element を操作するモニタ的ノードで競合 operation
+ * を持たないため lane は無く、error taxonomy(errorInfo)のみを採用する。
+ *
+ * `_setError` は合成 `{ message }`(target 未解決 / API 非対応)と caught 例外
+ * (`NotAllowedError` / `TypeError` = user gesture 外の requestFullscreen 拒否)を混在
+ * 受理する。呼出側が明示 `code` を渡して合成側を曖昧さ無く分類し、caught は `.name` で
+ * 分類する(storage / screen-orientation と同じ discriminator 方式)。
+ */
+
+/** 安定した fullscreen error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_FULLSCREEN_ERROR_CODE: {
+    /** Fullscreen API 非対応。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** target selector が要素に解決しない等の入力不備。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** `NotAllowedError` / `TypeError` — user gesture 外での要求拒否。 */
+    readonly NotAllowed: "not-allowed";
+    /** その他の caught 例外。 */
+    readonly FullscreenError: "fullscreen-error";
+};
+
+export { FullscreenCore, WCS_FULLSCREEN_ERROR_CODE, WcsFullscreen, bootstrapFullscreen, getConfig };
+export type { IWritableConfig, IWritableTagNames, WcsFullscreenCoreValues, WcsFullscreenValues, WcsIoErrorInfo, WcsIoErrorPhase };

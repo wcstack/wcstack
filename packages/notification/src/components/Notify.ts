@@ -4,6 +4,7 @@ import {
   WcsNotifyClickDetail, WcsNotifyErrorDetail,
 } from "../types.js";
 import { NotificationCore } from "../core/NotificationCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 /**
@@ -248,6 +249,10 @@ export class WcsNotify extends HTMLElement {
 
   get error(): WcsNotifyErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get clicked(): WcsNotifyClickDetail | null {

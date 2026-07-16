@@ -60,7 +60,11 @@
       // The raw input value. Updates on every keystroke.
       query: "",
       // The debounced value. <wcs-debounce> writes here after the input goes quiet.
-      debouncedQuery: "",
+      // `value` is the element's own output, so <wcs-debounce> is its authority and
+      // state takes the element's value when the binding attaches — which is
+      // undefined, because nothing has been debounced yet. Read it through
+      // `debouncedText` below, never directly.
+      debouncedQuery: undefined,
       // True while the debounce timer is pending (between keystroke and settle).
       typing: false,
       // Counts how many requests were actually SENT to the network — the debounce payoff.
@@ -77,8 +81,20 @@
       $eventTokens: ["requestStarted"],
 
       // 1 fetch = 1 state slot. The ...: spread wires all wcBindable properties at once.
+      // value / loading / error / status are the element's own outputs, so <wcs-fetch>
+      // is their authority: state takes them at bind time and on every event, and never
+      // writes them back. Seed each slot with the element's real initial value — `value`
+      // starts as null ("no response yet"), not [] — and derive what the view needs from
+      // it (see `hits`).
       searchFetch: {
-        value: [], loading: false, error: null, status: 0,
+        value: null, loading: false, error: null, status: 0,
+      },
+
+      // The debounced query as a string: "" both before the first settle and after
+      // the box is cleared, so the url getter and the empty-state message can treat
+      // those two the same way.
+      get debouncedText() {
+        return this.debouncedQuery ?? "";
       },
 
       // The url is derived from the debounced query. When debouncedQuery changes,
@@ -88,8 +104,18 @@
       // *immediately previous* one (its same-value guard). Going "abc" -> "" -> "abc"
       // DOES refetch, because the last fetched url ("") differs from "abc".
       get "searchFetch.url"() {
-        const q = this.debouncedQuery.trim();
+        const q = this.debouncedText.trim();
         return q ? "/api/search?q=" + encodeURIComponent(q) : "/api/search";
+      },
+
+      // searchFetch.value is null until the first response lands, so the view never
+      // reads it directly: `results` is the always-an-array projection the list binds
+      // to (a `for:` path must be an array), and `hits` is its count.
+      get results() {
+        return this["searchFetch.value"] ?? [];
+      },
+      get hits() {
+        return this.results.length;
       },
 
       // Status text shown under the search box. Reading typing / searchFetch.*
@@ -98,7 +124,7 @@
       get statusText() {
         if (this.typing) return "Typing… (search on pause)";
         if (this["searchFetch.loading"]) return "Searching…";
-        return this["searchFetch.value"].length + " hits";
+        return this.hits + " hits";
       },
       // Three MUTUALLY EXCLUSIVE status flags, derived with the SAME priority as
       // statusText (typing wins over loading). Binding one class per flag keeps the
@@ -114,17 +140,17 @@
         return !this.typing && !this["searchFetch.loading"];
       },
       get hasResults() {
-        return this["searchFetch.value"].length > 0;
+        return this.hits > 0;
       },
       // Spinner only on the FIRST load (no prior results). On later searches we keep
       // the previous list and just dim it (stale-while-revalidate), so the screen
       // never flashes empty between keystrokes.
       get loadingFirst() {
-        return this["searchFetch.loading"] && this["searchFetch.value"].length === 0;
+        return this["searchFetch.loading"] && this.hits === 0;
       },
       // Show the empty message only once the search has truly finished with no hits.
       get showEmpty() {
-        return this.statusIdle && !this["searchFetch.error"] && this["searchFetch.value"].length === 0;
+        return this.statusIdle && !this["searchFetch.error"] && this.hits === 0;
       },
       // Show the error only while not loading. wcs-fetch clears `error` at the start of
       // every request (_setError(null) before the await), so a retry already hides this;
@@ -202,7 +228,7 @@
        results read as "being updated" rather than current (stale-while-revalidate). -->
   <template data-wcs="if: hasResults">
     <ul class="result-list" data-wcs="class.stale: searchFetch.loading">
-      <template data-wcs="for: searchFetch.value">
+      <template data-wcs="for: results">
         <li class="result-item">
           <div>
             <span class="result-name" data-wcs="textContent: .name"></span>
@@ -215,7 +241,7 @@
   </template>
 
   <template data-wcs="if: showEmpty">
-    <p class="empty">No products match “<span data-wcs="textContent: debouncedQuery"></span>”.</p>
+    <p class="empty">No products match “<span data-wcs="textContent: debouncedText"></span>”.</p>
   </template>
 </section>
 

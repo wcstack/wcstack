@@ -49,6 +49,55 @@ function setConfig(partialConfig) {
 }
 
 /**
+ * workerCapabilities.ts
+ *
+ * Worker node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。worker は所有する子スレッドに対する command 駆動(start / post / terminate)
+ * であり、競合する複数 operation を lane 管理する必要が無い(post は fire-and-forget、
+ * start は張り替えを冪等ガード)ため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ */
+/** 安定した worker error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_WORKER_ERROR_CODE = {
+    /** `Worker` コンストラクタ不在(SSR / 非対応環境で構築が投げる)。 */
+    CapabilityMissing: "capability-missing",
+    /** `start(src)` の `src` 未指定(TypeError "src is required.")。 */
+    InvalidArgument: "invalid-argument",
+    /** worker スクリプトの uncaught error / messageerror / post 失敗 / 構築失敗など。 */
+    WorkerError: "worker-error",
+};
+/**
+ * 正規化済み worker error(`WcsWorkerErrorDetail`)を serializable な error taxonomy に
+ * 写す。`.name` で分岐する:
+ *
+ * - `TypeError` かつ `message === "src is required."` は `start()` 自身の引数検証。
+ *   WorkerCore.start がこの固定 message で立てる唯一の検証 TypeError なので、runtime の
+ *   worker error(name は "Error" / "DataError" 等)や構築失敗の TypeError とは message で
+ *   一意に切り分かる → phase="start" / invalid-argument。
+ * - それ以外の `TypeError` / `ReferenceError` は `new Worker(...)` の構築失敗。global
+ *   `Worker` が `undefined` なら `new undefined()` が "... is not a constructor"(TypeError)、
+ *   素の Node/SSR で `Worker` が未宣言なら "Worker is not defined"(ReferenceError)を投げる。
+ *   いずれも platform API 欠如の顕れ → phase="probe" / capability-missing。runtime の worker
+ *   error はこの 2 name を名乗らない(_onError は "Error"、_onMessageError は "DataError")ので
+ *   誤爆しない。
+ * - それ以外(worker スクリプトの `Error` / messageerror の `DataError` / post の
+ *   `InvalidStateError` / `DataCloneError` / 構築時の `SecurityError` 等)は稼働中/構築時の
+ *   失敗 → phase="execute" / worker-error。
+ *
+ * いずれも retry で自動回復しない(recoverable=false)。公開 `error` shape は不変。
+ */
+function deriveWorkerErrorInfo(error) {
+    const { name, message } = error;
+    if (name === "TypeError" && message === "src is required.") {
+        return { code: WCS_WORKER_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message };
+    }
+    if (name === "TypeError" || name === "ReferenceError") {
+        return { code: WCS_WORKER_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+    }
+    return { code: WCS_WORKER_ERROR_CODE.WorkerError, phase: "execute", recoverable: false, message };
+}
+
+/**
  * Headless Dedicated Worker primitive. A thin, framework-agnostic wrapper around
  * the `Worker` API exposed through the wc-bindable protocol.
  *
@@ -74,6 +123,11 @@ class WorkerCore extends EventTarget {
         properties: [
             { name: "message", event: "wcs-worker:message" },
             { name: "error", event: "wcs-worker:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error` (name + message); the existing
+            // `error` property/event are unchanged. Fires wcs-worker:error-info-changed. No
+            // lane — the worker is a command-driven owner, not a concurrent-operation node.
+            { name: "errorInfo", event: "wcs-worker:error-info-changed" },
             { name: "running", event: "wcs-worker:running-changed" },
         ],
         commands: [
@@ -86,6 +140,7 @@ class WorkerCore extends EventTarget {
     _worker = null;
     _message = null;
     _error = null;
+    _errorInfo = null;
     _running = false;
     // Spawn configuration, retained so an automatic restart can re-spawn the same
     // script with the same options.
@@ -132,6 +187,15 @@ class WorkerCore extends EventTarget {
     get error() {
         return this._error;
     }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-worker:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
+    }
     get running() {
         return this._running;
     }
@@ -155,8 +219,23 @@ class WorkerCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // normalized error (name + message), or null on clear. Fires before the `error`
+        // event so an observer binding both sees the classification first, mirroring the
+        // io-node family.
+        this._commitErrorInfo(error === null ? null : deriveWorkerErrorInfo(error));
         this._target.dispatchEvent(new CustomEvent("wcs-worker:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already same-value-guards on the error
+    // reference), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-worker:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -236,8 +315,9 @@ class WorkerCore extends EventTarget {
     }
     /**
      * Tear the Core down for a disconnected Shell: terminate the worker and reset
-     * the error shadow. Only the `error` clear is silent — it mutates the shadow
-     * without dispatching. Terminating a *running* worker still dispatches
+     * the error shadow (both `error` and its derived `errorInfo`). Only that
+     * error/errorInfo clear is silent — it mutates the shadows without dispatching.
+     * Terminating a *running* worker still dispatches
      * `wcs-worker:running-changed` (true→false) via `_terminateWorker`, so a
      * dispose on a worker that was live does emit one event on the (now
      * disconnected) element; only a no-op dispose (no worker running) is fully
@@ -255,7 +335,10 @@ class WorkerCore extends EventTarget {
         this._gen++;
         this._clearRestartTimer();
         this._terminateWorker();
+        // Silent shadow reset (no dispatch), mirroring `_error`: keep `errorInfo`'s
+        // clear-to-null invariant so a reconnect does not read a stale classification.
         this._error = null;
+        this._errorInfo = null;
     }
     // --- Internal ---
     _spawn() {
@@ -607,6 +690,9 @@ class WcsWorker extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get running() {
         return this._core.running;
     }
@@ -684,5 +770,5 @@ function bootstrapWorker(userConfig) {
     registerComponents();
 }
 
-export { WcsWorker, WorkerCore, bootstrapWorker, getConfig };
+export { WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig };
 //# sourceMappingURL=index.esm.js.map

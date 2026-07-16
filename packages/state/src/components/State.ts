@@ -30,6 +30,7 @@ import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNod
 import { getCustomElement } from "../getCustomElement";
 import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
+import { HTMLElementBase } from "../platform/HTMLElementBase";
 
 type Descriptors = Record<string, PropertyDescriptor>;
 
@@ -65,7 +66,7 @@ function getStateInfo(
   };
 }
 
-export class State extends HTMLElement implements IStateElement {
+export class State extends HTMLElementBase implements IStateElement {
   static hasConnectedCallbackPromise = true;
 
   static getBindingsReady(rootNode: Node): Promise<void> {

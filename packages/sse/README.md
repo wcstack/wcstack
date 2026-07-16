@@ -8,7 +8,7 @@ It is a **one-way I/O node** that connects an SSE stream to reactive state.
 With `@wcstack/state`, `<wcs-sse>` can be bound directly through path contracts:
 
 - **input / command surface**: `url`, `trigger` (plus the connection options `withCredentials`, `events`, `raw`, `manual`)
-- **output state surface**: `message`, `connected`, `loading`, `error`, `readyState`
+- **output state surface**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`
 
 This means server-pushed streaming can be expressed declaratively in HTML, without writing `new EventSource()`, `onmessage`, or connection glue code in your UI layer.
 
@@ -193,6 +193,7 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 | `connected` | `boolean` | `true` while the stream is open |
 | `loading` | `boolean` | `true` while connecting or reconnecting |
 | `error` | `Event \| Error \| null` | Connection error |
+| `errorInfo` | `WcsIoErrorInfo \| null` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), derived from `error`. Additive — the `error` shape is unchanged. |
 | `readyState` | `number` | `EventSource` readyState constant |
 
 ### Input / command surface
@@ -351,6 +352,7 @@ sseEl.close();
 | `connected` | `boolean` | `true` while the stream is open |
 | `loading` | `boolean` | `true` while connecting or reconnecting |
 | `error` | `Event \| Error \| null` | Error info |
+| `errorInfo` | `WcsIoErrorInfo \| null` | Failure taxonomy (`code` / `phase` / `recoverable`), derived from `error` |
 | `readyState` | `number` | `EventSource` readyState constant |
 | `trigger` | `boolean` | Set to `true` to open connection |
 
@@ -374,6 +376,7 @@ static wcBindable = {
     { name: "connected",  event: "wcs-sse:connected-changed" },
     { name: "loading",    event: "wcs-sse:loading-changed" },
     { name: "error",      event: "wcs-sse:error" },
+    { name: "errorInfo",  event: "wcs-sse:error-info-changed" },
     { name: "readyState", event: "wcs-sse:readystate-changed" },
   ],
   commands: [
@@ -489,6 +492,7 @@ bootstrapSse({
 - Reconnection is native — there is no reconnect configuration; `close()` stops it
 - `manual` is useful when connection timing should be controlled explicitly
 - `wcs-sse:error` is a **property-change notification** (wc-bindable model), not just a failure signal: it fires with `detail` = the error on failure, and again with `detail = null` when a connection establishes/recovers and the `error` property clears. Treat `error == null` as "no current error", not "no error ever happened"
+- **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-sse:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A `connect()` with no `url` is `invalid-argument` (phase `start`, not recoverable). Every stream failure is `connection-error`, with `phase` / `recoverable` distinguishing the case: a `new EventSource()` construction failure is phase `start` / not recoverable (no `EventSource` exists, so the browser will not auto-reconnect); a transient drop while the browser is auto-reconnecting (`readyState` CONNECTING) is phase `execute` / **`recoverable: true` — the only recoverable path in SSE** (recovers without caller intervention); a permanent close (`readyState` CLOSED) is phase `execute` / not recoverable. `errorInfo` transitions exactly when `error` does (cleared to `null` when the stream recovers). The shared `WcsIoErrorInfo` type and the `WCS_SSE_ERROR_CODE` constants are exported.
 
 ## License
 

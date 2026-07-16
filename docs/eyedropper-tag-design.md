@@ -1,5 +1,18 @@
 # 設計メモ: `@wcstack/eyedropper`（`<wcs-eyedropper>`）
 
+> **⚠ 更新（architecture-hardening 昇格）**: 本書 §1/§2 が記述する ad-hoc な `_gen` +
+> `_abortController`（finally の identity チェック）と `_api()` ヘルパーは、共有 io-core
+> （`OperationLane` + `platformCapability`）への昇格に伴い置換された。eyedropper は
+> `EyeDropper.open()` が `{signal}` を受け、`abort()`/supersession を持つため、share/contacts
+> の **exhaust** ではなく **`OperationLane("eyedropper", "latest", {withSignal:true})`**
+> （＝FetchCore と同型）を採用する。新しい `open()` は前回を supersede + abort し、`abort()`
+> コマンドは `lane.abortActive()`、`dispose()` は `lane.disposeOwner()` に対応する。
+> capability/error taxonomy は利用直前 probe（`web.eyedropper`）で unsupported を
+> `capability-missing` として検出し、追加的な bindable プロパティ `errorInfo`
+> （`WcsIoErrorInfo`）を公開する。既存 `error`/`cancelled` の shape は不変。
+> （decision 2 の policy 表は eyedropper を exhaust と記載していたが、実装は latest。
+> 「node ごとの固有 cancellation/retry 契約を一括変換しない」原則に従い実挙動を維持した。）
+
 - **状態**: **実装済み・公開済み**（`packages/eyedropper` / `@wcstack/eyedropper`）。本文書は実装前の論点整理と決定事項のスナップショットであり、実装完了に伴い、ステータスおよび実装との差分箇所（本書の性質の`abort`注記、§1/§7のautoTrigger追記、§1/§4/§7のunsupported判定表記、§2の直列化根拠、§3のスニペットの`open()`シグネチャ整合、§8のexample未提供注記）を実装に合わせて更新した。
 - **対象 WebAPI**: EyeDropper API（`new EyeDropper().open(options)`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の2本目。**アーキタイプの汎用性を最初に証明する候補**（同計画書§実装順序）。

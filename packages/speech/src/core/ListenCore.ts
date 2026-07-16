@@ -2,6 +2,8 @@ import {
   IWcBindable, ListenOptions, ListenPermissionState,
   WcsListenResultDetail, WcsListenAlternative, WcsListenErrorDetail,
 } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveListenErrorInfo } from "./speechCapabilities.js";
 
 // The vendor-prefixed constructor is not in the DOM lib types; declare a minimal
 // shape so we can feature-detect and construct it.
@@ -82,6 +84,12 @@ export class ListenCore extends EventTarget {
       { name: "listening", event: "wcs-listen:listening-changed" },
       { name: "permission", event: "wcs-listen:permission-changed" },
       { name: "error", event: "wcs-listen:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error.error` (the
+      // SpeechRecognitionErrorEvent.error code / "unsupported"); the existing `error`
+      // property/event are unchanged. Fires wcs-listen:error-info-changed. No lane —
+      // recognition has no competing async operation to serialize.
+      { name: "errorInfo", event: "wcs-listen:error-info-changed" },
       { name: "unsupported", event: "wcs-listen:unsupported-changed" },
     ],
     commands: [
@@ -100,6 +108,7 @@ export class ListenCore extends EventTarget {
   private _listening: boolean = false;
   private _permission: ListenPermissionState = "prompt";
   private _error: WcsListenErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _unsupported: boolean = false;
 
   // Intent flag: true between start() and stop()/abort()/terminal-error. Gates
@@ -157,6 +166,16 @@ export class ListenCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-listen:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   // Resolved once in the constructor (`_setUnsupported(!Ctor)`) and never
   // re-evaluated: the SpeechRecognition API's presence is immutable for the
   // lifetime of a document, so there's nothing to re-check.
@@ -203,7 +222,18 @@ export class ListenCore extends EventTarget {
   private _setError(value: WcsListenErrorDetail | null): void {
     if (this._error === value) return;
     this._error = value;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error code (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(value === null ? null : deriveListenErrorInfo(value));
     this._target.dispatchEvent(new CustomEvent("wcs-listen:error", { detail: value, bubbles: true }));
+  }
+
+  // Called only from _setError (which already guards on error identity), so
+  // errorInfo transitions exactly when error does — no separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-listen:error-info-changed", { detail: info, bubbles: true }));
   }
 
   private _setUnsupported(value: boolean): void {

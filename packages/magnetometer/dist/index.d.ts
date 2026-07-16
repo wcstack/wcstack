@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -64,6 +76,8 @@ interface WcsMagnetometerErrorDetail {
  */
 interface WcsMagnetometerCoreValues extends WcsMagnetometerReading {
     error: WcsMagnetometerErrorDetail | null;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
 }
 /**
  * Value types for the Shell (`<wcs-magnetometer>`) — identical observable
@@ -115,18 +129,27 @@ declare class MagnetometerCore extends EventTarget {
     private _target;
     private _reading;
     private _error;
+    private _errorInfo;
     private _sensor;
     constructor(target?: EventTarget);
     get x(): number | null;
     get y(): number | null;
     get z(): number | null;
     get error(): WcsMagnetometerErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-magnetometer:error-info-changed`), derived from `error`; the existing
+     * `error` property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     /** No asynchronous probe to await: start()/stop() are synchronous
      *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
      *  NetworkCore). */
     get ready(): Promise<void>;
     private _setReading;
     private _setError;
+    private _commitErrorInfo;
     /**
      * Start the sensor at the given `frequency` (Hz), or the platform default
      * when omitted. Idempotent while already started: a redundant start() does
@@ -218,6 +241,7 @@ declare class WcsMagnetometer extends HTMLElement {
     get y(): number | null;
     get z(): number | null;
     get error(): WcsMagnetometerErrorDetail | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get connectedCallbackPromise(): Promise<void>;
     start(): void;
     stop(): void;
@@ -225,5 +249,30 @@ declare class WcsMagnetometer extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { MagnetometerCore, WcsMagnetometer, bootstrapMagnetometer, getConfig };
-export type { IWritableConfig, IWritableTagNames, WcsMagnetometerCoreValues, WcsMagnetometerErrorDetail, WcsMagnetometerReading, WcsMagnetometerValues };
+/**
+ * magnetometerCapabilities.ts
+ *
+ * Magnetometer node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。sensor は監視系(継続 subscribe/unsubscribe)で競合する operation を持た
+ * ないため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ *
+ * sensor family(accelerometer / gyroscope / magnetometer / ambient-light-sensor)は
+ * error 面が構造同一(`{ error: <name>, message }`、`.error` が Error.name / "unsupported"
+ * / "error" fallback)なので、taxonomy も 4 兄弟で一致させる。
+ */
+
+/** 安定した magnetometer error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_MAGNETOMETER_ERROR_CODE: {
+    /** Sensor API 非対応(`globalThis.Magnetometer` 不在)。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** `SecurityError` / `NotAllowedError` — 権限拒否・feature-policy ブロック。 */
+    readonly NotAllowed: "not-allowed";
+    /** `NotReadableError` — センサーハードウェアを読めない。 */
+    readonly NotReadable: "not-readable";
+    /** その他の SensorErrorEvent / 想定外の失敗。 */
+    readonly SensorError: "sensor-error";
+};
+
+export { MagnetometerCore, WCS_MAGNETOMETER_ERROR_CODE, WcsMagnetometer, bootstrapMagnetometer, getConfig };
+export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsMagnetometerCoreValues, WcsMagnetometerErrorDetail, WcsMagnetometerReading, WcsMagnetometerValues };

@@ -9,7 +9,7 @@ Notifications API をリアクティブな state と state 駆動のコマンド
 
 - **command サーフェス**: `request`, `notify`, `close`, `closeAll`
 - **input サーフェス**: `notice`（reactive な表示）, `mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `require-interaction`, `silent`, `renotify`, `manual`
-- **output state サーフェス**: `permission`, `granted`, `denied`, `prompt`, `unsupported`, `error`, `clicked`, `closed`, `shown`
+- **output state サーフェス**: `permission`, `granted`, `denied`, `prompt`, `unsupported`, `error`, `errorInfo`, `clicked`, `closed`, `shown`
 
 `@wcstack/notification` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
@@ -143,6 +143,7 @@ wireNotificationClicks();
 | `permission`  | `wcs-notify:permission-change` | `"prompt"` / `"granted"` / `"denied"` / `"unsupported"`、live。    |
 | `granted` / `denied` / `prompt` / `unsupported` | `wcs-notify:permission-change` | `permission` から派生する便宜ブール。 |
 | `error`       | `wcs-notify:error`             | 失敗時の `{ error, message }`（never-throw）、無ければ `null`。    |
+| `errorInfo`   | `wcs-notify:error-info-changed` | 失敗を serializable な taxonomy（`WcsIoErrorInfo`: 安定した `code` / `phase` / `recoverable`）に写した値、無ければ `null`。additive —— `error` から派生し、`error` の形状は不変。 |
 | `clicked`     | `wcs-notify:click`             | 直近クリックの `{ tag, data, action }`（event-token 源）。        |
 | `closed`      | `wcs-notify:close`             | 直近クローズの `{ tag, data, action }`。                          |
 | `shown`       | `wcs-notify:show`              | 直近表示の `{ tag, data, action }`。                              |
@@ -223,6 +224,7 @@ form:has(wcs-notify:state(error)) .banner { display: block; }
 - **SW バックエンドは `close` を中継しない。** `@wcstack/notification/sw` ヘルパは `notificationclick` のみを配線し、`notificationclose` は配線しません。そのため `sw` バックエンドでは `closed` / `wcs-notify:close` は発火しません（close 用のワーカー越え中継がない）。`clicked` はクリック中継で動作しますが、`closed` は constructor バックエンド限定の信号です。
 - **Push API はスコープ外。** 本パッケージは Notifications API（ローカル通知）をラップします。サーバ起点の Push は別の関心事です。
 - **サイレント失敗（zero-log）。** wcstack のゼロ依存哲学に沿い、`<wcs-notify>` は決してログ出力も throw もしません。API 不在 → `permission = "unsupported"`、未許可や表示失敗 → `error` プロパティ。`error` / `permission` をバインドして反応してください。
+- **`errorInfo` taxonomy（additive）。** `error` と並んで、`<wcs-notify>` は*同一の*失敗を安定した `WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類した serializable な `errorInfo`（`wcs-notify:error-info-changed`）を公開します。`error` の形状は変えません。Core 自身の安定エラーコードがそのまま写像されます: `unsupported` → `capability-missing`（phase `probe`）、未許可の権限 → `not-allowed`、非文字列 title → `invalid-argument`（いずれも phase `start`）、表示失敗 → `show-failed`、Service Worker バックエンド不在 → `no-service-worker`（いずれも phase `execute`）、想定外のコードは防御的に `notify-error`（phase `execute`）へ畳まれます。6 つとも `recoverable: false` です。`errorInfo` は `error` とまったく同じタイミングで遷移し（回復時に `null` へクリア）、共有の `WcsIoErrorInfo` 型と `WCS_NOTIFY_ERROR_CODE` 定数は export されています。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開するため、サーバレンダラは接続時の権限プローブが解決するまで待ってからスナップショットします。
 
 ## 設定

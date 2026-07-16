@@ -1,5 +1,15 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
+const sessionHolder = vi.hoisted(() => ({ session: null as any }));
+
+vi.mock('../src/bindings/BindingSession', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/bindings/BindingSession')>();
+  return {
+    ...actual,
+    getBindingSession: vi.fn(() => sessionHolder.session),
+  };
+});
+
 vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => {
   const cache = new WeakMap();
   return {
@@ -76,6 +86,7 @@ function createContext(stateElement: IStateElement, extras: Partial<IApplyContex
 
 describe('applyChange のゲートと fast path', () => {
   afterEach(() => {
+    sessionHolder.session = null;
     setStateElementByName(document, 'default', null);
     setStateElementByName(document, 'other', null);
     document.body.innerHTML = '';
@@ -137,6 +148,23 @@ describe('applyChange のゲートと fast path', () => {
     applyChange(binding, context);
 
     expect(getRootNodeSpy).toHaveBeenCalled();
+  });
+
+  it('session が state 適用を拒否した binding は集計後に適用せず戻ること', () => {
+    const stateElement = createMockStateElement('default');
+    const context = createContext(stateElement);
+    const binding = createTextBinding('default');
+    binding.replaceNode.nodeValue = 'unchanged';
+    sessionHolder.session = { shouldApplyState: vi.fn(() => false) };
+
+    applyChange(binding, context);
+
+    expect(sessionHolder.session.shouldApplyState).toHaveBeenCalledWith(binding);
+    // 更新アドレスの集計はガードより先に行われる
+    expect(context.updatedAbsAddressSetByStateElement.size).toBe(1);
+    // ガードで戻るため text は書き換えられない
+    expect(binding.replaceNode.nodeValue).toBe('unchanged');
+    expect(stateElement.createStateCalls).toBe(0);
   });
 
   it('sameRootVerified でも stateName 不一致なら従来の解決経路にフォールバックすること（テンプレート内 @state バインド相当）', () => {

@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly camera: string;
   readonly recorder: string;
@@ -81,6 +83,8 @@ export interface WcsCameraCoreValues {
   deviceId: string | null;
   devices: MediaDeviceSnapshot[];
   error: WcsMediaErrorDetail | null;
+  /** Serializable Phase 6 failure taxonomy derived from `error`, or null. */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 export type WcsCameraValues = WcsCameraCoreValues;
@@ -152,6 +156,8 @@ export interface WcsRecorderCoreValues {
   blob: Blob | null;
   objectURL: string | null;
   error: WcsMediaErrorDetail | null;
+  /** Serializable Phase 6 failure taxonomy derived from `error`, or null. */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 export type WcsRecorderValues = WcsRecorderCoreValues;

@@ -13,7 +13,7 @@ vi.mock('../src/raiseError', () => ({
   raiseError: vi.fn(),
 }));
 
-import { attachTwowayEventHandler, detachTwowayEventHandler, __private__ } from '../src/event/twowayHandler';
+import { addTwowayValueObserver, attachTwowayEventHandler, detachTwowayEventHandler, __private__ } from '../src/event/twowayHandler';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getStateElementByName } from '../src/stateElementByName';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
@@ -420,7 +420,7 @@ describe('event/twowayHandler', () => {
       expect(addSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
     });
 
-    it('未定義カスタム要素はwhenDefinedで遅延登録されること', async () => {
+    it('未定義要素の待機はBindingSession所有のためhandler単体では再試行しないこと', async () => {
       const el = document.createElement('my-deferred-tw');
       const addSpy = vi.spyOn(el, 'addEventListener');
 
@@ -441,16 +441,19 @@ describe('event/twowayHandler', () => {
         };
       }
       customElements.define('my-deferred-tw', MyDeferredTw);
+      // happy-dom does not currently mutate detached pre-definition instances
+      // in CustomElementRegistry.upgrade(); emulate the platform upgrade result.
+      Object.setPrototypeOf(el, MyDeferredTw.prototype);
 
       // whenDefinedのPromiseが解決するのを待つ
       await customElements.whenDefined('my-deferred-tw');
       // microtask を待つ（then コールバックの実行のため）
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      expect(addSpy).toHaveBeenCalledWith('my-deferred-tw:ready', expect.any(Function));
+      expect(addSpy).not.toHaveBeenCalled();
     });
 
-    it('未定義カスタム要素のdetachもwhenDefinedで遅延されること', async () => {
+    it('未定義カスタム要素のdetachは待機を追加しないこと', async () => {
       const el = document.createElement('my-deferred-detach-tw');
       const removeSpy = vi.spyOn(el, 'removeEventListener');
 
@@ -632,7 +635,7 @@ describe('event/twowayHandler', () => {
       expect(getter).toBeNull();
     });
 
-    it('プロトコルバリデーション: version不一致時はnullを返すこと', () => {
+    it('プロトコルバリデーション: forward-compatibleなversion 2を受理すること', () => {
       class BadVersionTw extends HTMLElement {
         static wcBindable = {
           protocol: "wc-bindable" as const,
@@ -644,7 +647,7 @@ describe('event/twowayHandler', () => {
       const el = document.createElement('bad-version-tw');
       const binding = createBindingInfo(el);
       const getter = __private__.getValueGetter(binding);
-      expect(getter).toBeNull();
+      expect(getter).toBe(__private__.DEFAULT_GETTER);
     });
 
     it('getEventNameでwcBindableのpropertiesにないpropNameはデフォルトイベントを返すこと', () => {
@@ -676,6 +679,35 @@ describe('event/twowayHandler', () => {
       expect(keyWithGetter).toContain('::g');
       expect(keyWithoutGetter).toContain('::n');
       expect(keyWithGetter).not.toBe(keyWithoutGetter);
+    });
+  });
+
+  describe('addTwowayValueObserver', () => {
+    it('同一 node/prop の複数 observer を管理し、解除で台帳を掃除すること', () => {
+      const node = document.createElement('input');
+      const seen: Array<[string, unknown]> = [];
+      const removeFirst = addTwowayValueObserver(node, 'value', (value) => seen.push(['first', value]));
+      const removeSecond = addTwowayValueObserver(node, 'value', (value) => seen.push(['second', value]));
+      const removeOther = addTwowayValueObserver(node, 'checked', (value) => seen.push(['other', value]));
+
+      const byProperty = __private__.producerValueObserversByNode.get(node);
+      expect(byProperty?.get('value')?.size).toBe(2);
+      expect(byProperty?.get('checked')?.size).toBe(1);
+
+      for (const observer of byProperty!.get('value')!) observer('dispatched');
+      expect(seen).toEqual([['first', 'dispatched'], ['second', 'dispatched']]);
+
+      removeFirst();
+      expect(byProperty?.get('value')?.size).toBe(1);
+      removeFirst();
+      expect(byProperty?.get('value')?.size).toBe(1);
+
+      removeSecond();
+      expect(byProperty?.get('value')).toBeUndefined();
+      expect(__private__.producerValueObserversByNode.get(node)).toBe(byProperty);
+
+      removeOther();
+      expect(__private__.producerValueObserversByNode.get(node)).toBeUndefined();
     });
   });
 });

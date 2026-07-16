@@ -7,7 +7,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-tilt>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: 無し
-- **出力 state サーフェス**: `alpha`、`beta`、`gamma`、`absolute`、`permissionState`、`error`
+- **出力 state サーフェス**: `alpha`、`beta`、`gamma`、`absolute`、`permissionState`、`error`、`errorInfo`
 
 ## なぜ存在するか — `@wcstack/idle`の兄弟、iOSのgesture-gateを吸収する
 
@@ -65,6 +65,7 @@ npm install @wcstack/tilt
 | `absolute`        | `wcs-tilt:change`             | 地磁気に対する絶対方位かどうか。ブラウザにより信頼性が異なるため実機で確認してください。 |
 | `permissionState` | `wcs-tilt:permission-changed` | `"granted"` \| `"denied"` \| `"unknown"`。 |
 | `error`           | `wcs-tilt:error`              | 直近の`requestPermission()`の失敗（gesture文脈外呼び出しのrejectなど）、無ければ`null`。never-throw: 失敗はreject/throwせず、ここに流れます。 |
+| `errorInfo`       | `wcs-tilt:error-info-changed` | `error`から派生した、失敗のserializableなtaxonomy（`WcsIoErrorInfo`: 安定した`code` / `phase` / `recoverable`）、無ければ`null`。additive —— `error`の形状は不変。 |
 
 ## コマンド
 
@@ -133,6 +134,7 @@ form:has(wcs-tilt:state(error)) .banner { display: block; }
 
 - **connect時に自動startしません。**
 - **`@wcstack/permission`とは合成しません**（対応するPermissions APIエントリが存在しないため）——`permissionState`はローカルで追跡します。
+- **`errorInfo` taxonomy（additive）。** `error`と並んで、`<wcs-tilt>`は*同一の*失敗を安定した`WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類したserializableな`errorInfo`（`wcs-tilt:error-info-changed`）を公開します。`error`の形状は変えません。ここで失敗しうるのは`requestPermission()`だけで、reject理由の`Error.name`で分類されます: `NotAllowedError`（iOSのDevice Orientation権限拒否）→ `not-allowed`（phase `start`）、それ以外（user-gesture文脈外のreject、非`Error`のreason）→ `tilt-error`（phase `execute`）。どちらも`recoverable: false`です。`capability-missing`コードは**ありません**: gatingの無いプラットフォームでは未対応環境はエラーにならず`"granted"`へ倒れるため、その分岐には到達しないからです。`errorInfo`は`error`とまったく同じタイミングで遷移し（回復時に`null`へクリア）、共有の`WcsIoErrorInfo`型と`WCS_TILT_ERROR_CODE`定数はexportされています。
 - `_gen`世代ガードは無し: 購読は完全に同期的です。
 - **非secure context（素のHTTP）では`deviceorientation`は一切発火しません**——ブラウザがネイティブに抑止し、`<wcs-tilt>`自身はガードを持たない（nativeの非発火を信頼する設計）ため、傾き値は`null`のまま・`wcs-tilt:change`は飛ばず・`permissionState`も（`requestPermission()`を呼ばない限り）`"unknown"`のまま変化しません。`requestPermission()`でも検出できません: gatingの無いプラットフォームではフォールバックが何も問い合わせずに`"granted"`を返します。何も起きないときは、まず配信元（HTTPS/localhost）を確認してください。
 - **Permissions-Policyでゲートされます。** `deviceorientation`イベントは`accelerometer`と`gyroscope`のPermissions-Policyディレクティブが許可されている場合にのみ発火します（既定allowlist: `self`、Device Orientation Events仕様§4準拠）。クロスオリジンの`<iframe>`内で`<wcs-tilt>`を使うには、その`<iframe>`要素に`allow="accelerometer; gyroscope"`が必要です——無いとイベントは無音のまま一切発火しません。上記の非secure originのケースと同じ失敗モードです。

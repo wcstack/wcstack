@@ -276,6 +276,7 @@ These properties represent the result of the current request and are the main ob
 | `error` | `WcsFetchHttpError \| Error \| null` | HTTP or network error |
 | `status` | `number` | HTTP status code |
 | `objectURL` | `string \| null` | Managed object URL for a `response-type="blob"` response; `null` otherwise. The Core revokes the previous URL on each new response and on dispose, so it can be bound straight into `<img src>` |
+| `errorInfo` | `WcsIoErrorInfo \| null` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; fires `wcs-fetch:error-info-changed` |
 
 > **Note:** On an HTTP error, `value` is reset to `null` and `status` carries the
 > error code. If you bind only `value` (without observing `error`), the previous
@@ -399,6 +400,32 @@ unbind();
 
 This works in Node.js, Deno, Cloudflare Workers — anywhere `EventTarget` and `fetch` are available.
 
+## Capability & error taxonomy
+
+**`errorInfo`** is an additive wc-bindable property (see the property tables
+above): the existing `error` property/event shape is **unchanged**, and `errorInfo`
+projects the last failure's serializable taxonomy (`WcsIoErrorInfo`, shape under
+[TypeScript Types](#typescript-types)) so DevTools and adopters can classify
+failures without any breaking change.
+
+Two related signals are **Core-only opt-in getters** on `FetchCore` (not
+`wc-bindable` properties, so not `data-wcs` bind targets):
+
+| Getter | Type | Description |
+|--------|------|-------------|
+| `supported` | `boolean` | Whether the required capability (`web.fetch`) is available **now** — call-time feature detection, not User-Agent |
+| `platformAssessment` | `PlatformAssessment` | Full capability assessment (availability / readiness / preconditions), probed at call time |
+
+Feature detection runs just before a request starts, never at module load (so
+importing `FetchCore` stays safe under SSR / workers):
+
+- If `web.fetch` is **missing** (old runtime / some SSR / headless), `fetch()`
+  does **not** start — it surfaces `errorInfo.code === "capability-missing"` and
+  sets `error` to a matching message (no generic network-error path).
+- If `web.abort-controller` is **missing**, the request runs **degraded** (no
+  native abort signal); supersede / dispose still work, and
+  `platformAssessment.readiness` becomes `"degraded"`.
+
 ## URL Observation
 
 By default, `<wcs-fetch>` automatically executes a request when:
@@ -495,6 +522,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `error` | `WcsFetchHttpError \| Error \| null` | Error info |
 | `status` | `number` | HTTP status code |
 | `objectURL` | `string \| null` | Managed object URL for a `response-type="blob"` response; `null` otherwise |
+| `errorInfo` | `WcsIoErrorInfo \| null` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null` |
 | `responseType` | `"auto" \| "json" \| "text" \| "blob" \| "arrayBuffer"` | Response body interpretation (backs the `response-type` attribute) |
 | `body` | `any` | Request body (resets to `null` after `fetch()`) |
 | `trigger` | `boolean` | Set to `true` to execute fetch |
@@ -542,7 +570,7 @@ Both `FetchCore` and `<wcs-fetch>` declare `wc-bindable-protocol` compliance, ma
 
 The declaration follows the full wc-bindable interface model — three independent surfaces:
 
-- **`properties`** — observable outputs that `bind()` subscribes to (`value`, `loading`, `error`, `status`, `objectURL`, and the Shell's `trigger`)
+- **`properties`** — observable outputs that `bind()` subscribes to (`value`, `loading`, `error`, `status`, `objectURL`, `errorInfo`, and the Shell's `trigger`)
 - **`inputs`** — the settable surface (`url`, `method`, …); declarative metadata that tooling, codegen, and remote proxying read
 - **`commands`** — invocable methods (`fetch`, `abort`); a binding system such as `@wcstack/state` can invoke them by name
 
@@ -565,6 +593,7 @@ static wcBindable = {
       getter: (e) => e.detail.status },
     { name: "objectURL", event: "wcs-fetch:response",
       getter: (e) => e.detail.objectURL },
+    { name: "errorInfo", event: "wcs-fetch:error-info-changed" },
   ],
   inputs: [
     { name: "url" },
@@ -608,7 +637,7 @@ The Shell's inputs intentionally carry no `attribute` hint: each setter (`url`, 
 
 ```typescript
 import type {
-  WcsFetchHttpError, WcsFetchCoreValues, WcsFetchValues
+  WcsFetchHttpError, WcsFetchCoreValues, WcsFetchValues, WcsIoErrorInfo
 } from "@wcstack/fetch";
 ```
 
@@ -620,7 +649,16 @@ interface WcsFetchHttpError {
   body: string;
 }
 
-// Core (headless) — 5 async state properties
+// Serializable failure taxonomy (value of the `errorInfo` property)
+interface WcsIoErrorInfo {
+  code: string; // stable: "capability-missing" | "invalid-argument" | "network" | "http-error" | "timeout" | "aborted"
+  phase: "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+  recoverable: boolean;
+  capabilityId?: string;
+  message: string;
+}
+
+// Core (headless) — 6 async state properties
 // T defaults to unknown; pass a type argument for typed `value`
 interface WcsFetchCoreValues<T = unknown> {
   value: T;
@@ -628,6 +666,7 @@ interface WcsFetchCoreValues<T = unknown> {
   error: WcsFetchHttpError | Error | null;
   status: number;
   objectURL: string | null; // managed object URL for a responseType:"blob" response, else null
+  errorInfo: WcsIoErrorInfo | null; // last failure's serializable taxonomy, else null
 }
 
 // Shell (<wcs-fetch>) — extends Core with trigger
@@ -782,7 +821,7 @@ bootstrapFetch({
 
 ## Design Notes
 
-- `value`, `loading`, `error`, `status`, and `objectURL` are **output state**
+- `value`, `loading`, `error`, `status`, `objectURL`, and `errorInfo` are **output state**
 - `url`, `body`, `response-type`, and `trigger` are **input / command surface**
 - `response-type` (default `auto`) selects how the response body is read; `blob` additionally publishes a managed `objectURL` (revoked on each new response / dispose). `target` (HTML-replace mode) overrides it
 - `trigger` is intentionally one-way: writing `true` executes, reset emits completion. Writing `true` while `url` is empty is silently ignored (no fetch, no event, flag stays `false`)

@@ -141,8 +141,19 @@ describe("Eyedropper (Shell)", () => {
       { name: "abort" },
     ]);
     expect(WcsEyedropper.wcBindable.properties.map((p) => p.name)).toEqual([
-      "value", "loading", "error", "cancelled",
+      "value", "loading", "error", "cancelled", "errorInfo",
     ]);
+  });
+
+  it("errorInfo は Core から転送される（unsupported で capability-missing）", async () => {
+    removeEyeDropper();
+    const el = createEyedropper();
+    await el.open();
+    expect(el.errorInfo).toEqual({
+      code: "capability-missing", phase: "start", recoverable: false,
+      capabilityId: "web.eyedropper",
+      message: "EyeDropper API is not supported in this browser.",
+    });
   });
 
   it("再接続すると再度 observe() され、以後の open() が独立して動く", async () => {

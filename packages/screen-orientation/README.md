@@ -8,7 +8,7 @@ It is an **async primitive node** that turns `screen.orientation` into reactive 
 With `@wcstack/state`, `<wcs-screen-orientation>` can be bound directly through path contracts:
 
 - **input surface**: none — `screen.orientation` is a single global with nothing to configure
-- **output state surface**: `type`, `angle`, `portrait`, `landscape`, `error`
+- **output state surface**: `type`, `angle`, `portrait`, `landscape`, `error`, `errorInfo`
 
 ## Why this exists — a monitor/command asymmetry unique in this batch
 
@@ -82,6 +82,7 @@ In a plain tab like this, clicking the button will not actually lock anything: c
 | `portrait`  | `wcs-orientation:change` | `true` when `type` starts with `"portrait"`. |
 | `landscape` | `wcs-orientation:change` | `true` when `type` starts with `"landscape"`. |
 | `error`     | `wcs-orientation:error`  | The last `lock()`/`unlock()` failure, or `null`. |
+| `errorInfo` | `wcs-orientation:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo`: stable `code` / `phase` / `recoverable`) derived from `error`, or `null`. Additive — the `error` shape is unchanged. |
 
 `type`/`angle`/`portrait`/`landscape` all derive from the single `wcs-orientation:change` event.
 
@@ -101,6 +102,7 @@ In a plain tab like this, clicking the button will not actually lock anything: c
 - **No secure-context requirement** for monitoring (unlike `@wcstack/geolocation`/`@wcstack/permission`).
 - **`lock()` needs a fullscreen or installed-PWA context — not a desktop-vs-mobile split.** A plain-tab call typically rejects on both desktop and mobile (as `NotAllowedError` / `NotSupportedError` / `SecurityError` depending on browser and cause — do not branch on the name); Safari does not implement `lock()` at all. Design any UI around it being best-effort, and pair it with an explicit fullscreen entry point (e.g. `@wcstack/fullscreen`) when the lock actually needs to take hold.
 - **The initial snapshot does not reach bindings.** The first `wcs-orientation:change` fires synchronously during `connectedCallback` — before `@wcstack/state` attaches its binding listeners (binding setup is deferred to a later microtask; see `docs/timing-and-firing-contract.md` §4.1) — and events are not replayed to late subscribers, so bound paths update only from the *next* orientation change. If the initial value matters (it does for `portrait`/`landscape`/`type`/`angle`), pull it once in `$connectedCallback` as the Quick Start example does. This is a property of the wc-bindable event contract shared by all monitor nodes, not a quirk of this package. See `docs/timing-and-firing-contract.md` §7 for the full firing/generation contract (initial snapshot, `lock()` generation ordering, `error` dedup).
+- **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-screen-orientation>` publishes a serializable `errorInfo` (`wcs-orientation:error-info-changed` — note the `wcs-orientation:` namespace, not the tag name) that classifies the *same* `lock()`/`unlock()` failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape. A missing `screen.orientation` / method (synthetic "unsupported") → `capability-missing` (phase `probe`); the plain-tab lock rejections `NotAllowedError` / `NotSupportedError` / `SecurityError` all fold to a single `not-allowed` (phase `execute`, `recoverable: false` — matching the "don't branch on the name" model above); an `AbortError` (superseded by a newer `lock()`) → `aborted` (phase `execute`, `recoverable: true` — a fresh `lock()` may still succeed); anything else (e.g. `InvalidStateError`, a raw throw, a missing `.name`) → `orientation-error` (phase `execute`). `errorInfo` transitions exactly when `error` does (cleared to `null` on recovery); the shared `WcsIoErrorInfo` type and the `WCS_SCREEN_ORIENTATION_ERROR_CODE` constants are exported.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true`; since monitoring is synchronous, `connectedCallbackPromise` always settles immediately.
 
 ## CSS styling with `:state()`

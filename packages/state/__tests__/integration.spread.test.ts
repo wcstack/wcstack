@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
+import { getConfig, setConfig } from "../src/config";
 import type { IWcBindable } from "../src/event/types";
 
 beforeAll(() => {
@@ -25,13 +26,22 @@ function defineMockBindable(tag: string, properties: { name: string; event: stri
   customElements.define(tag, MockEl);
 }
 
+// Directional initial sync (enableDirectionalInitialSync) assigns per-property
+// authority: a two-way member (declared as both a property AND an input) keeps the
+// current-compatible `state` authority (state→element push), while an OUTPUT-ONLY
+// member (property with no input) gets `element` authority (its initial value is
+// read element→state, not pushed). These spread tests exercise spread EXPANSION by
+// pushing a state object into the element, so the pushed members are settable and
+// are declared two-way (output + input) — that is the correct model under directional
+// and stays state-authority whether the flag is on or off. The distinct output-only
+// element-authority behavior is covered by its own test below.
 describe("spread binding (integration)", () => {
   it("トップレベルで properties と inputs を一括配線すること", async () => {
     const tag = uniqueTag("spread-top");
     defineMockBindable(
       tag,
       [{ name: "value", event: `${tag}:value-changed` }, { name: "loading", event: `${tag}:loading-changed` }],
-      [{ name: "url" }, { name: "method" }],
+      [{ name: "url" }, { name: "method" }, { name: "value" }, { name: "loading" }],
     );
 
     const host = document.createElement(uniqueTag("spread-top-host"));
@@ -58,7 +68,7 @@ describe("spread binding (integration)", () => {
   it("spread が双方向 prop の event を尊重すること (event 経由で書き戻し)", async () => {
     const tag = uniqueTag("spread-twoway");
     const eventName = `${tag}:value-changed`;
-    defineMockBindable(tag, [{ name: "value", event: eventName }]);
+    defineMockBindable(tag, [{ name: "value", event: eventName }], [{ name: "value" }]);
 
     const host = document.createElement(uniqueTag("spread-twoway-host"));
     const shadowRoot = host.attachShadow({ mode: "open" });
@@ -87,7 +97,7 @@ describe("spread binding (integration)", () => {
 
   it("for ループ内で '...: items.*' が各イテレーションへ展開されること", async () => {
     const tag = uniqueTag("spread-loop-star");
-    defineMockBindable(tag, [{ name: "value", event: `${tag}:value-changed` }]);
+    defineMockBindable(tag, [{ name: "value", event: `${tag}:value-changed` }], [{ name: "value" }]);
 
     const host = document.createElement(uniqueTag("spread-loop-star-host"));
     const shadowRoot = host.attachShadow({ mode: "open" });
@@ -116,7 +126,7 @@ describe("spread binding (integration)", () => {
 
   it("for ループ内で '...: .' (dot ショートカット) も同様に展開されること", async () => {
     const tag = uniqueTag("spread-loop-dot");
-    defineMockBindable(tag, [{ name: "value", event: `${tag}:value-changed` }]);
+    defineMockBindable(tag, [{ name: "value", event: `${tag}:value-changed` }], [{ name: "value" }]);
 
     const host = document.createElement(uniqueTag("spread-loop-dot-host"));
     const shadowRoot = host.attachShadow({ mode: "open" });
@@ -151,7 +161,7 @@ describe("spread binding (integration)", () => {
         protocol: "wc-bindable",
         version: 1,
         properties: [{ name: "value", event: `${tag}:value-changed` }],
-        inputs: [{ name: "url" }, { name: "method" }, { name: "manual" }],
+        inputs: [{ name: "url" }, { name: "method" }, { name: "manual" }, { name: "value" }],
       };
       get url(): string { return this.getAttribute("url") || ""; }
       set url(v: string) { this.setAttribute("url", v); }
@@ -194,7 +204,7 @@ describe("spread binding (integration)", () => {
     defineMockBindable(tag, [
       { name: "value", event: `${tag}:value-changed` },
       { name: "loading", event: `${tag}:loading-changed` },
-    ]);
+    ], [{ name: "value" }, { name: "loading" }]);
 
     const host = document.createElement(uniqueTag("spread-override-host"));
     const shadowRoot = host.attachShadow({ mode: "open" });
@@ -213,5 +223,36 @@ describe("spread binding (integration)", () => {
     expect(el.loading).toBe(true);
 
     host.remove();
+  });
+
+  it("directional 有効時、output-only な spread メンバは element authority で state→element push しない", async () => {
+    // Phase 2 (enableDirectionalInitialSync) の意図挙動: OUTPUT-ONLY メンバ
+    // (property のみ・input 宣言なし) は element authority になり、pre-seed した state
+    // 値は要素へ push されない (要素の初期値が真実源)。IO ノードでは output は初期空
+    // なので実挙動は無害だが、spread がこの方向規則に従うことをここで固定する。
+    const prevDirectional = getConfig().enableDirectionalInitialSync;
+    setConfig({ enableDirectionalInitialSync: true });
+    const tag = uniqueTag("spread-output-only");
+    defineMockBindable(tag, [{ name: "value", event: `${tag}:value-changed` }]); // input なし = output-only
+
+    const host = document.createElement(uniqueTag("spread-output-only-host"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `
+      <${tag} id="mock" data-wcs="...: fetchX"></${tag}>
+      <wcs-state json='{"fetchX":{"value":"seed"}}'></wcs-state>
+    `;
+    document.body.appendChild(host);
+
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    await stateEl.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+
+    const el = shadowRoot.querySelector("#mock") as any;
+    // output-only: pre-seed した "seed" は要素へ push されない (element authority)。
+    expect(el.value).toBeUndefined();
+
+    host.remove();
+    // 立てた directional フラグを元の値へ戻す（他テストへ漏らさない）。
+    setConfig({ enableDirectionalInitialSync: prevDirectional });
   });
 });

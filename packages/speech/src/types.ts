@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly speak: string;
   readonly listen: string;
@@ -78,6 +80,8 @@ export interface WcsSpeakCoreValues {
   charIndex: number | null;
   spokenWord: string | null;
   error: WcsSpeakErrorDetail | null;
+  /** Phase 6 serializable failure taxonomy derived from `error`, or null. */
+  errorInfo: WcsIoErrorInfo | null;
   unsupported: boolean;
 }
 
@@ -193,6 +197,8 @@ export interface WcsListenCoreValues {
   listening: boolean;
   permission: ListenPermissionState;
   error: WcsListenErrorDetail | null;
+  /** Phase 6 serializable failure taxonomy derived from `error`, or null. */
+  errorInfo: WcsIoErrorInfo | null;
   unsupported: boolean;
 }
 

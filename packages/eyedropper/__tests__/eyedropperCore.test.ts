@@ -14,9 +14,15 @@ describe("EyedropperCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties が value/loading/error/cancelled を宣言している", () => {
+    it("properties が value/loading/error/cancelled/errorInfo を宣言している", () => {
       const names = EyedropperCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["value", "loading", "error", "cancelled"]);
+      expect(names).toEqual(["value", "loading", "error", "cancelled", "errorInfo"]);
+    });
+
+    it("errorInfo の event が wcs-eyedropper:error-info-changed で getter を持たない（detail が値）", () => {
+      const prop = EyedropperCore.wcBindable.properties.find((p) => p.name === "errorInfo")!;
+      expect(prop.event).toBe("wcs-eyedropper:error-info-changed");
+      expect(prop.getter).toBeUndefined();
     });
 
     it("value の event が wcs-eyedropper:complete で getter が detail.value を返す", () => {
@@ -377,6 +383,14 @@ describe("EyedropperCore", () => {
       expect(core.error).toEqual({ message: "EyeDropper API is not supported in this browser." });
       expect(core.loading).toBe(false);
       expect(loadingEvents).toEqual([]);
+      // capability-missing taxonomy（既存 error shape は不変・errorInfo は追加）
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "start", recoverable: false,
+        capabilityId: "web.eyedropper",
+        message: "EyeDropper API is not supported in this browser.",
+      });
+      expect(core.supported).toBe(false);
+      expect(core.platformAssessment.readiness).toBe("idle");
     });
 
     it("EyeDropper が関数でない truthy 値でも unsupported として即 error になる", async () => {
@@ -400,7 +414,122 @@ describe("EyedropperCore", () => {
     });
   });
 
-  describe("_gen 世代ガード", () => {
+  describe("errorInfo（bindable 出力・wcs-eyedropper:error-info-changed）", () => {
+    it("真の失敗で errorInfo=pick-failed が detail 付きで発火し、次の open 開始時に null で発火する", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-eyedropper:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+
+      const p1 = core.open();
+      pendingOpens[0].reject(new DOMException("Permission denied", "NotAllowedError"));
+      await p1;
+      expect(details).toHaveLength(1);
+      expect((details[0] as { code: string }).code).toBe("pick-failed");
+      expect(core.errorInfo?.recoverable).toBe(true);
+
+      const p2 = core.open();
+      pendingOpens[1].resolve({ sRGBHex: "#123456" });
+      await p2;
+      expect(details).toHaveLength(2);
+      expect(details[1]).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("成功のみでは error-info-changed を発火しない（同値ガード）", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-eyedropper:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+      const p = core.open();
+      pendingOpens[0].resolve({ sRGBHex: "#abcdef" });
+      await p;
+      expect(details).toHaveLength(0);
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("キャンセル（AbortError）は errorInfo を立てない", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const p = core.open();
+      pendingOpens[0].reject(new DOMException("aborted", "AbortError"));
+      await p;
+      expect(core.cancelled).toBe(true);
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("イベントは bubbles する", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      let bubbles = false;
+      core.addEventListener("wcs-eyedropper:error-info-changed", (e) => { bubbles = e.bubbles; });
+      const p = core.open();
+      pendingOpens[0].reject(new TypeError("boom"));
+      await p;
+      expect(bubbles).toBe(true);
+    });
+
+    it("EyeDropper があれば supported=true・readiness=ready", () => {
+      installEyeDropper();
+      const core = new EyedropperCore();
+      expect(core.supported).toBe(true);
+      expect(core.platformAssessment.readiness).toBe("ready");
+      expect(core.platformAssessment.availability.get("web.eyedropper")).toBe("available");
+    });
+
+    it("message を持たない失敗は errorInfo.message を既定文言にフォールバックする", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const p = core.open();
+      pendingOpens[0].reject({ name: "WeirdError" });
+      await p;
+      expect(core.errorInfo).toEqual({ code: "pick-failed", phase: "execute", recoverable: true, message: "Color pick failed." });
+      expect(core.error).toEqual({ name: "WeirdError" });
+    });
+
+    it("falsy な rejection(null)でも error は非 null envelope になり errorInfo と同期する", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const p = core.open();
+      pendingOpens[0].reject(null);
+      await p;
+      expect(core.error).toEqual({ message: "Color pick failed." });
+      expect(core.errorInfo?.code).toBe("pick-failed");
+    });
+  });
+
+  describe("commit guard（latest の同期 supersede）", () => {
+    it("setter が同期発火した event で同 lane を supersede すると残りの commit を止める（guard 後検査）", async () => {
+      // §5.1: _setValue の complete event を listener が受けて同期的に open() を呼ぶと、
+      // op1 は superseded となり、op1 の後続 _setLoading(false) は CommitGuard で止まる
+      // （既発生の副作用は巻き戻さない）。fetch の同型テストの eyedropper 版。
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const loadingEvents: boolean[] = [];
+      core.addEventListener("wcs-eyedropper:loading-changed", (e) => loadingEvents.push((e as CustomEvent).detail));
+      let superseded = false;
+      core.addEventListener("wcs-eyedropper:complete", () => {
+        if (!superseded) {
+          superseded = true;
+          core.open(); // op1 の setValue 途中で op2 が supersede
+        }
+      });
+
+      const p1 = core.open();
+      pendingOpens[0].resolve({ sRGBHex: "#111111" });
+      await p1;
+      pendingOpens[1].resolve({ sRGBHex: "#222222" });
+      await new Promise((r) => setTimeout(r, 0));
+
+      // op1 の setLoading(false) は guard で抑止され、loading は true→false（op2 の完了のみ）。
+      // 抑止されなければ余分な false/true イベントが挟まる。
+      expect(loadingEvents).toEqual([true, false]);
+      expect(core.loading).toBe(false);
+      expect(core.value).toEqual({ sRGBHex: "#222222" });
+    });
+  });
+
+  describe("dispose 世代ガード（lane owner generation）", () => {
     it("dispose 後に resolve した stale な open() は状態を書かない", async () => {
       const { pendingOpens } = installEyeDropper();
       const core = new EyedropperCore();

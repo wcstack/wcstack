@@ -26,6 +26,7 @@ describe('expandSpread', () => {
   });
   afterEach(() => {
     setConfig({ debug: false });
+    vi.unstubAllGlobals();
   });
 
   it('spread を含まなければそのまま返すこと', () => {
@@ -188,16 +189,17 @@ describe('expandSpread', () => {
     expect(() => expandSpread(el, results)).toThrow(/wcBindable/);
   });
 
-  it('wcBindable.version が不一致なら即エラー', () => {
+  it('version 2 と未知 optional field を受理する', () => {
     const tag = uniqueTagName();
     defineElement(tag, {
       protocol: 'wc-bindable',
       version: 2,
       properties: [{ name: 'value', event: `${tag}:value-changed` }],
+      futureMetadata: { enabled: true },
     });
     const el = createElement(tag);
     const results = parseBindTextsForElement('...: fetchX');
-    expect(() => expandSpread(el, results)).toThrow(/wcBindable/);
+    expect(expandSpread(el, results).map((entry) => entry.propName)).toEqual(['value']);
   });
 
   it('カスタム要素ではない普通の要素では即エラー', () => {
@@ -224,5 +226,17 @@ describe('expandSpread', () => {
   it('hasUnresolvedSpread は spread エントリの有無を判定すること', () => {
     expect(hasUnresolvedSpread(parseBindTextsForElement('value: a'))).toBe(false);
     expect(hasUnresolvedSpread(parseBindTextsForElement('...: fetchX'))).toBe(true);
+  });
+
+  it('element以外のnodeへのspreadを拒否する', () => {
+    const results = parseBindTextsForElement('...: fetchX');
+    expect(() => expandSpread(document.createTextNode('x'), results)).toThrow(/element node/);
+  });
+
+  it('CustomElementRegistryが無いruntimeでは明示的に失敗する', () => {
+    const el = document.createElement('wcs-no-registry');
+    const results = parseBindTextsForElement('...: fetchX');
+    vi.stubGlobal('customElements', undefined);
+    expect(() => expandSpread(el, results)).toThrow(/CustomElementRegistry is unavailable/);
   });
 });

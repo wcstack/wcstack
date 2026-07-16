@@ -1,5 +1,6 @@
 import { IWcBindable, WakeLockKind } from "../types.js";
 import { WakeLockCore } from "../core/WakeLockCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-wakelock>` — declarative Screen Wake Lock.
@@ -154,6 +155,10 @@ export class WcsWakeLock extends HTMLElement {
 
   get error(): Error | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   // --- Commands ---

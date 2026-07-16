@@ -8,14 +8,14 @@
 `@wcstack/state` と組み合わせると、`<wcs-fullscreen>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `target`（操作対象の要素。下記参照）
-- **出力 state サーフェス**: `active`、`error`
+- **出力 state サーフェス**: `active`、`error`、`errorInfo`
 - **コマンド**: `requestFullscreen()`、`exitFullscreen()`
 
 `@wcstack/fullscreen` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
 - **Core**（`FullscreenCore`）が Fullscreen API を操作し、`document` の `fullscreenchange` イベントを追従
 - **Shell**（`<wcs-fullscreen target="...">`）が `target` を DOM 要素へ解決し、Core の state を DOM ライフサイクルに接続
-- **Binding Contract**（`static wcBindable`）が観測可能な `active` プロパティと `requestFullscreen`/`exitFullscreen` コマンドを宣言
+- **Binding Contract**（`static wcBindable`）が観測可能な `active` / `error` / `errorInfo` プロパティと `requestFullscreen`/`exitFullscreen` コマンドを宣言
 
 ## なぜ存在するか — 操作対象は「タグ自身」ではなく「参照先」
 
@@ -81,7 +81,8 @@ npm install @wcstack/fullscreen
 | プロパティ | イベント                | 説明 |
 | ----------- | ------------------------ | ---- |
 | `active`    | `wcs-fullscreen:change`  | `document.fullscreenElement` が**このインスタンスが解決したtarget**と一致している間 `true`、それ以外は `false`。 |
-| `error`     | *（無し — 単純なgetter、data-wcsでバインド不可）* | 直近の失敗: rejectされたPromise（gesture外呼び出しなら `TypeError` 等）、プラットフォームAPI非対応なら `{ message: "Fullscreen API is not supported." }`、`target` が要素へ未解決なら `{ message: "Fullscreen target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は `null`。 |
+| `error`     | `wcs-fullscreen:error` | 直近の失敗: rejectされたPromise（gesture外呼び出しなら `TypeError` 等）、プラットフォームAPI非対応なら `{ message: "Fullscreen API is not supported." }`、`target` が要素へ未解決なら `{ message: "Fullscreen target could not be resolved." }`。直近の呼び出しが成功済み・まだ何も失敗していない場合は `null`。 |
+| `errorInfo` | `wcs-fullscreen:error-info-changed` | `error` から導出した serializable な失敗 taxonomy（`WcsIoErrorInfo`: 安定 `code` / `phase` / `recoverable`）、または `null`。additive で `error` の値の形は不変。 |
 
 ## コマンド
 
@@ -107,8 +108,9 @@ npm install @wcstack/fullscreen
 |----------|----------------|
 | `active` | `wcs-fullscreen:change` が `detail.active === true` で発火（`active: false` でクリア） |
 
-`error` は反映**しません**: 専用イベントを持たず、`static wcBindable.properties`
-にも宣言されていないため（上記「注意・制限」参照）、`:state()` 反映が購読できる対象がありません。
+`error` / `errorInfo` は observable（各自のイベントで `data-wcs` バインド可 — 上記
+「観測可能プロパティ」参照）ですが、`:state()` には反映**しません**: 失敗オブジェクトは
+boolean ステートではないため、boolean の `:state()` 反映で表現するものがありません。
 
 ```css
 wcs-fullscreen:state(active) ~ .exit-hint { display: block; }
@@ -153,7 +155,7 @@ wcs-fullscreen:state(active) ~ .exit-hint { display: none; } /* デフォルト 
 - **ベンダープレフィックス。** 一部の古いSafariバージョンは `webkitRequestFullscreen` / `webkitExitFullscreen` / `webkitFullscreenElement` / `webkitfullscreenchange` のみを実装しています。Coreは標準名を優先的にプローブし、**呼び出しの都度**（非キャッシュ）レガシー名にフォールバックするため、両方とも透過的にサポートされます。
 - **複数インスタンス。** `document.fullscreenElement` はdocument全体で単一の値です。異なるtargetを指す複数の `<wcs-fullscreen>` インスタンスが存在する場合、`target` が `document.fullscreenElement` と一致するインスタンスのみが `active: true` を報告し、他は正しく `false` を報告します。各インスタンスは内部で**自分自身が解決したtarget**を追跡しており、単純に「何かがfullscreenかどうか」をミラーしているわけではありません。ただし非対称な点に注意: `exitFullscreen()` はインスタンス単位にスコープされて**いません** — document全体に作用する `document.exitFullscreen()` を呼ぶため、どのインスタンスから呼んでも、現在fullscreenの要素（別インスタンスの `target` がfullscreen化した要素であっても）を解除します（silent no-opの判定も同様にdocument全体の「何かがfullscreenか」であり、「自分のtargetがfullscreenか」ではありません）。これはプラットフォームAPI自体の挙動をそのまま反映したものです。
 - **`exitFullscreen()` は安全なno-op。** 何もfullscreenでない状態（またはAPI非対応）で呼び出してもエラーなくresolveします — 失敗しうる事前条件チェックではなく、べき等な「fullscreenでないことを保証する」コマンドとして扱われます。
-- **`error` に専用イベントは無く、`data-wcs` でバインドもできない。** 大半のwcstack IOノードと異なり、`error` は専用の `wcs-fullscreen:error` イベントを持たない単純なgetterで、`static wcBindable.properties` にも宣言されていません — バインディング側が購読できる対象が無いため、リアクティブに観測することはできません。コマンドのPromiseがsettleした後、`element.error` を命令的に読み取ってください（例: `await el.requestFullscreen(); if (el.error) { ... }`）。
+- **`error` / `errorInfo` は observable（バインド可）。** 両者は専用イベント（`wcs-fullscreen:error` / `wcs-fullscreen:error-info-changed`）付きで `static wcBindable.properties` に宣言されているため、バインディング側が request/exit の失敗をリアクティブに観測できます（`data-wcs="error: fsError; errorInfo: fsErrorInfo"`）。もちろんコマンドの Promise settle 後に `element.error` / `element.errorInfo` を命令的に読み取ることもできます。`errorInfo` は `error` から導出した**additive** な serializable 失敗 taxonomy（`WcsIoErrorInfo`: `code` / `phase` / `recoverable`、`error` の値の形は不変）。API 非対応（`"…is not supported."`）→ `capability-missing`（phase `probe`）、`target` 未解決 → `invalid-argument`（phase `start`）、gesture 外拒否（`TypeError` / `NotAllowedError`）→ `not-allowed`（phase `execute`、`recoverable: true` — 実 gesture 内で再試行すれば成功しうる）、その他 → `fullscreen-error`（phase `execute`）。`errorInfo` は `error` と厳密に同期し（成功で `null` にクリア）、`WcsIoErrorInfo` 型と `WCS_FULLSCREEN_ERROR_CODE` 定数は export 済み。
 - **`_gen` 世代ガード。** `dispose()` 後（または後続の呼び出しに追い越された後）にsettleした進行中の `requestFullscreen()`/`exitFullscreen()` 呼び出しは、破棄済みの状態を書き換えません。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開しますが、`fullscreenchange` の購読が同期的なため、この promise は常に即座に settle します。
 

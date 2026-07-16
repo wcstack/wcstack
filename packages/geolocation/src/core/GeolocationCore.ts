@@ -2,6 +2,8 @@ import {
   IWcBindable, GeoOptions, GeoPermissionState,
   WcsGeoPositionDetail, WcsGeoCoords, WcsGeoErrorDetail,
 } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveGeoErrorInfo } from "./geolocationCapabilities.js";
 
 /**
  * Headless geolocation primitive. A thin, framework-agnostic wrapper around the
@@ -40,6 +42,11 @@ export class GeolocationCore extends EventTarget {
       { name: "loading", event: "wcs-geo:loading-changed" },
       { name: "error", event: "wcs-geo:error" },
       { name: "permission", event: "wcs-geo:permission-changed" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from the normalized `error` (spec code
+      // 1/2/3 → permission-denied / position-unavailable / timeout); the existing
+      // `error` property/event are unchanged. Fires `wcs-geo:error-info-changed`.
+      { name: "errorInfo", event: "wcs-geo:error-info-changed" },
     ],
     commands: [
       { name: "getCurrentPosition", async: true },
@@ -55,6 +62,7 @@ export class GeolocationCore extends EventTarget {
   private _watching: boolean = false;
   private _loading: boolean = false;
   private _error: WcsGeoErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _permission: GeoPermissionState = "prompt";
 
   // Live PermissionStatus handle (when the Permissions API is available), kept
@@ -143,6 +151,16 @@ export class GeolocationCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Exposed as an additive wc-bindable property (event
+   * `wcs-geo:error-info-changed`), derived from the normalized `error`; the
+   * existing `error` property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   get permission(): GeoPermissionState {
     return this._permission;
   }
@@ -187,8 +205,24 @@ export class GeolocationCore extends EventTarget {
     // a successful fix clearing an already-null error) avoids spurious events.
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive it from
+    // the normalized error (or null on clear). Fires before the `error` event so an
+    // observer binding both sees the classification first, mirroring the io-node
+    // family. No lane here — geolocation's fixes don't compete (dispose-only guard).
+    this._commitErrorInfo(error === null ? null : deriveGeoErrorInfo(error.code, error.message));
     this._target.dispatchEvent(new CustomEvent("wcs-geo:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already same-value-guards on the error
+  // reference), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-geo:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

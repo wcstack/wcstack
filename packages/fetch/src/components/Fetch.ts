@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { IWcBindable } from "../types.js";
 import { FetchCore, FetchResponseType } from "../core/FetchCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
@@ -169,6 +170,10 @@ export class Fetch extends HTMLElement {
 
   get objectURL(): string | null {
     return this._core.objectURL;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get promise(): Promise<any> {

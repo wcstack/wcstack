@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly notify: string;
 }
@@ -111,6 +113,8 @@ export interface WcsNotifyCoreValues {
   prompt: boolean;
   unsupported: boolean;
   error: WcsNotifyErrorDetail | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
   clicked: WcsNotifyClickDetail | null;
   closed: WcsNotifyClickDetail | null;
   shown: WcsNotifyClickDetail | null;

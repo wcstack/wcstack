@@ -6,6 +6,8 @@ import {
   buildConstraints, enumerateVideoDevices, hasMediaDevices, requestUserMedia, stopAllTracks,
 } from "../media/getUserMedia.js";
 import { MediaPermissionWatcher } from "../media/permission.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveMediaErrorInfo } from "./mediaCapabilities.js";
 
 /**
  * Headless camera-capture primitive. Wraps getUserMedia + the Permissions API and
@@ -32,6 +34,12 @@ export class CameraCore extends EventTarget {
       { name: "deviceId", event: "wcs-camera:device-changed" },
       { name: "devices", event: "wcs-camera:devices-changed" },
       { name: "error", event: "wcs-camera:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` (the DOMException name /
+      // "unsupported" sentinel); the existing `error` property/event are unchanged.
+      // Fires wcs-camera:error-info-changed. No lane — acquisition is switchMap'd by
+      // `_gen`, so there is no per-node operation policy to attach here.
+      { name: "errorInfo", event: "wcs-camera:error-info-changed" },
       // Direct-channel handle: event-token only — never bound as a reactive value.
       { name: "streamReady", event: "wcs-camera:stream-ready", getter: (e: Event) => (e as CustomEvent).detail },
       // event-token: a bare signal (detail is always null) — surface detail, not the raw Event.
@@ -52,6 +60,7 @@ export class CameraCore extends EventTarget {
   private _deviceId: string | null = null;
   private _devices: MediaDeviceSnapshot[] = [];
   private _error: WcsMediaErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
 
   // The live stream — internal only, never a reactive value (see class docs).
   private _stream: MediaStream | null = null;
@@ -87,6 +96,13 @@ export class CameraCore extends EventTarget {
   get deviceId(): string | null { return this._deviceId; }
   get devices(): MediaDeviceSnapshot[] { return this._devices; }
   get error(): WcsMediaErrorDetail | null { return this._error; }
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-camera:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null { return this._errorInfo; }
   get ready(): Promise<void> { return this._ready; }
 
   // --- State setters with event dispatch (same-value guarded) ---
@@ -130,7 +146,18 @@ export class CameraCore extends EventTarget {
   private _setError(error: WcsMediaErrorDetail | null): void {
     if (error === null && this._error === null) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error detail (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveMediaErrorInfo(error));
     this._dispatch("wcs-camera:error", error);
+  }
+
+  // Called only from _setError (which already collapses the null→null transition), so
+  // errorInfo transitions exactly when error does — no separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._dispatch("wcs-camera:error-info-changed", info);
   }
 
   private _dispatch(type: string, detail: unknown): void {

@@ -383,4 +383,111 @@ describe("CameraCore", () => {
     // gen が一致しないので _setDevices は呼ばれない。
     expect(core.devices).toEqual([]);
   });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new CameraCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = CameraCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("mediaDevices 不在(unsupported)→ capability-missing / probe / recoverable=false", async () => {
+      media.uninstall();
+      media = installMedia({ noMediaDevices: true });
+      const core = new CameraCore();
+      await core.observe({});
+      core.start();
+      await flush();
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "getUserMedia is not available (requires a secure context).",
+      });
+      // 公開 error shape は不変。
+      expect(core.error?.name).toBe("unsupported");
+    });
+
+    it("NotAllowedError → not-allowed / start、SecurityError も同分類", async () => {
+      const core = new CameraCore();
+      media.rejectWith("NotAllowedError", "denied by user");
+      await core.observe({});
+      core.start();
+      await flush();
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "denied by user" });
+
+      const core2 = new CameraCore();
+      media.rejectWith("SecurityError", "policy block");
+      await core2.observe({});
+      core2.start();
+      await flush();
+      expect(core2.errorInfo?.code).toBe("not-allowed");
+    });
+
+    it("NotFoundError → not-found / start", async () => {
+      const core = new CameraCore();
+      media.rejectWith("NotFoundError", "no camera");
+      await core.observe({});
+      core.start();
+      await flush();
+      expect(core.errorInfo).toEqual({ code: "not-found", phase: "start", recoverable: false, message: "no camera" });
+    });
+
+    it("NotReadableError → not-readable / start", async () => {
+      const core = new CameraCore();
+      media.rejectWith("NotReadableError", "device busy");
+      await core.observe({});
+      core.start();
+      await flush();
+      expect(core.errorInfo).toEqual({ code: "not-readable", phase: "start", recoverable: false, message: "device busy" });
+    });
+
+    it("OverconstrainedError → invalid-argument / start", async () => {
+      const core = new CameraCore();
+      media.rejectWith("OverconstrainedError", "unsatisfiable");
+      await core.observe({});
+      core.start();
+      await flush();
+      expect(core.errorInfo).toEqual({ code: "invalid-argument", phase: "start", recoverable: false, message: "unsatisfiable" });
+    });
+
+    it("AbortError → aborted / execute / recoverable=true", async () => {
+      const core = new CameraCore();
+      media.rejectWith("AbortError", "interrupted");
+      await core.observe({});
+      core.start();
+      await flush();
+      expect(core.errorInfo).toEqual({ code: "aborted", phase: "execute", recoverable: true, message: "interrupted" });
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", async () => {
+      const core = new CameraCore();
+      media.rejectWith("NotReadableError", "x");
+      await core.observe({});
+      const order: string[] = [];
+      core.addEventListener("wcs-camera:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-camera:error", () => order.push("error"));
+      core.start();
+      await flush();
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
+    });
+
+    it("成功で error が null にクリアされると errorInfo も null になる(clear 経路)", async () => {
+      const core = new CameraCore();
+      media.rejectWith("NotReadableError", "transient");
+      await core.observe({});
+      core.start();
+      await flush();
+      expect(core.errorInfo).not.toBeNull();
+      // NotReadableError は desired を維持するので resume で再取得 → 成功で _setError(null)。
+      media.resolveWith(new FakeMediaStream("recovered"));
+      core.resume();
+      await flush();
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+  });
 });

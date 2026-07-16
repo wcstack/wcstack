@@ -14,9 +14,9 @@ describe("TiltCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties が alpha/beta/gamma/absolute/permissionState/error を宣言している", () => {
+    it("properties が alpha/beta/gamma/absolute/permissionState/error/errorInfo を宣言している", () => {
       const names = TiltCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["alpha", "beta", "gamma", "absolute", "permissionState", "error"]);
+      expect(names).toEqual(["alpha", "beta", "gamma", "absolute", "permissionState", "error", "errorInfo"]);
     });
 
     it("commands が requestPermission(async)/start/stop を宣言している", () => {
@@ -47,6 +47,7 @@ describe("TiltCore", () => {
       expect(byName("absolute").event).toBe("wcs-tilt:change");
       expect(byName("permissionState").event).toBe("wcs-tilt:permission-changed");
       expect(byName("error").event).toBe("wcs-tilt:error");
+      expect(byName("errorInfo").event).toBe("wcs-tilt:error-info-changed");
     });
   });
 
@@ -362,6 +363,75 @@ describe("TiltCore", () => {
       emitDeviceOrientation({ alpha: 1, beta: 2, gamma: 3 });
 
       expect(events).toHaveLength(1);
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new TiltCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = TiltCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("NotAllowedError の reject → not-allowed / start / recoverable=false", async () => {
+      const e = new Error("Permission denied");
+      e.name = "NotAllowedError";
+      installRequestPermission(() => Promise.reject(e));
+      const core = new TiltCore();
+      await core.requestPermission();
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "Permission denied" });
+      // 公開 error shape は不変（生の reason を wrap した { error } のまま）。
+      expect(core.error).toEqual({ error: e });
+    });
+
+    it("その他の reject（gesture 文脈外の汎用 Error）→ tilt-error / execute", async () => {
+      installRequestPermission(() => Promise.reject(new Error("not in a user gesture")));
+      const core = new TiltCore();
+      await core.requestPermission();
+      expect(core.errorInfo).toEqual({ code: "tilt-error", phase: "execute", recoverable: false, message: "not in a user gesture" });
+    });
+
+    it("非 Error reason（message を持たない）でも message は String() で導出される", async () => {
+      installRequestPermission(() => Promise.reject(undefined));
+      const core = new TiltCore();
+      await core.requestPermission();
+      expect(core.errorInfo).toEqual({ code: "tilt-error", phase: "execute", recoverable: false, message: "undefined" });
+    });
+
+    it("その後の成功で error が null にクリアされると errorInfo も null になる", async () => {
+      installRequestPermission(() => Promise.reject(new Error("boom")));
+      const core = new TiltCore();
+      await core.requestPermission();
+      expect(core.errorInfo).not.toBeNull();
+
+      installRequestPermission(() => Promise.resolve("granted"));
+      await core.requestPermission();
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", async () => {
+      installRequestPermission(() => Promise.reject(new Error("boom")));
+      const core = new TiltCore();
+      const order: string[] = [];
+      core.addEventListener("wcs-tilt:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-tilt:error", () => order.push("error"));
+      await core.requestPermission();
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
+    });
+
+    it("wcs-tilt:error-info-changed は bubbles: true で dispatch される", async () => {
+      installRequestPermission(() => Promise.reject(new Error("boom")));
+      const core = new TiltCore();
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-tilt:error-info-changed", (e) => { bubbles = e.bubbles; });
+      await core.requestPermission();
+      expect(bubbles).toBe(true);
     });
   });
 });

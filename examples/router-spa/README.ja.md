@@ -89,10 +89,15 @@ http://localhost:3000/products/3 、 http://localhost:3000/about 。
 - **サーバーには SPA フォールバックが必要**: `server.js` は拡張子なし・
   非 API の GET（`/products/3` や `/about`）すべてに `index.html` を返し、
   リロードや直リンクをクライアント側ルーターに届けます。
-- **state 側の `path: location.pathname` シード**が初期ロードをカバーします:
-  router の最初の `path-changed` イベントより前でも初回描画が正しくなります。
-  router の `path` setter と state の同値ガードがどちらも無変化のエコーを
-  抑止するため、双方向バインディングがループすることはありません。
+- **初期ロードにシードは不要**: `path` は output-only な `wcBindable` メンバなので
+  router が authority となり、state はバインディング確立時に router の現在パスを
+  読み取り、以降の変化は `path-changed` で受けます。router が最初のルート解決を
+  バインディング確立より先に終えていても、その値は「待つ」のではなく「読む」ため
+  取りこぼしがなく、ディープリンクも正しく描画されます。state から `path` を書き
+  戻すことはないので、抑止すべきエコー自体も存在しません。
+- **`navigateUrl` は output と input の両方として宣言**されており、これが
+  `this.navigateUrl = "/products/3"` で遷移できる理由です。`properties` にだけ
+  宣言されたメンバは output-only となり、state からは書き込まれません。
 - **`navigateUrl` は自己リセット**: 遷移完了時に router が `null` に戻す
   （`navigate-url-changed` を発火する）ので、後で同じパスを代入しても再度
   遷移します。

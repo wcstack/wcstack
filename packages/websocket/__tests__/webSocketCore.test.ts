@@ -73,12 +73,13 @@ describe("WebSocketCore", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(WebSocketCore.wcBindable.protocol).toBe("wc-bindable");
     expect(WebSocketCore.wcBindable.version).toBe(1);
-    expect(WebSocketCore.wcBindable.properties).toHaveLength(5);
+    expect(WebSocketCore.wcBindable.properties).toHaveLength(6);
     expect(WebSocketCore.wcBindable.properties[0].name).toBe("message");
     expect(WebSocketCore.wcBindable.properties[1].name).toBe("connected");
     expect(WebSocketCore.wcBindable.properties[2].name).toBe("loading");
     expect(WebSocketCore.wcBindable.properties[3].name).toBe("error");
-    expect(WebSocketCore.wcBindable.properties[4].name).toBe("readyState");
+    expect(WebSocketCore.wcBindable.properties[4].name).toBe("errorInfo");
+    expect(WebSocketCore.wcBindable.properties[5].name).toBe("readyState");
     expect(WebSocketCore.wcBindable.inputs).toBeUndefined();
     expect(WebSocketCore.wcBindable.commands?.map(command => command.name)).toEqual(["connect", "send", "close"]);
   });
@@ -733,6 +734,91 @@ describe("WebSocketCore", () => {
       // 開始時の error=null クリアは同値ガードで抑止され、コンストラクタ例外のみ届く
       expect(errors).toHaveLength(1);
       expect(errors[0]).toBeInstanceOf(Error);
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    // 例外を投げる WebSocket コンストラクタ mock（構築失敗の再現）。
+    function installThrowingWebSocket(message: string): void {
+      (globalThis as any).WebSocket = class {
+        constructor() { throw new Error(message); }
+      };
+      (globalThis as any).WebSocket.CONNECTING = 0;
+      (globalThis as any).WebSocket.OPEN = 1;
+      (globalThis as any).WebSocket.CLOSING = 2;
+      (globalThis as any).WebSocket.CLOSED = 3;
+    }
+
+    it("初期状態の errorInfo は null", () => {
+      expect(new WebSocketCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = WebSocketCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("url 未指定 → invalid-argument / start / recoverable=false", () => {
+      const core = new WebSocketCore();
+      core.connect("");
+      expect(core.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false, message: "url is required.",
+      });
+      // 公開 error shape は不変。
+      expect(core.error).toEqual({ message: "url is required." });
+    });
+
+    it("open 前 send → invalid-state / execute / recoverable=false", () => {
+      const core = new WebSocketCore();
+      core.send("hello");
+      expect(core.errorInfo).toEqual({
+        code: "invalid-state", phase: "execute", recoverable: false, message: "WebSocket is not connected.",
+      });
+      expect(core.error).toEqual({ message: "WebSocket is not connected." });
+    });
+
+    it("コンストラクタ例外 → connection-error / execute / recoverable=true(message は例外由来)", () => {
+      installThrowingWebSocket("Invalid URL");
+      const core = new WebSocketCore();
+      core.connect("ws://fail");
+      expect(core.errorInfo).toEqual({
+        code: "connection-error", phase: "execute", recoverable: true, message: "Invalid URL",
+      });
+      // 公開 error は caught 例外(Error)そのまま。
+      expect(core.error).toBeInstanceOf(Error);
+    });
+
+    it("error Event → connection-error / execute / recoverable=true(message は安定 fallback)", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      MockWebSocket.instances[0].simulateError();
+      expect(core.errorInfo).toEqual({
+        code: "connection-error", phase: "execute", recoverable: true, message: "WebSocket connection error",
+      });
+      // 公開 error は生の Event のまま。
+      expect(core.error).toBeInstanceOf(Event);
+    });
+
+    it("error が null にクリアされると errorInfo も null になる（再接続の clear 経路）", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      MockWebSocket.instances[0].simulateError();
+      expect(core.errorInfo).not.toBeNull();
+      // 再接続開始で _doConnect が error=null をクリア → errorInfo も同期して null になる。
+      core.connect("ws://localhost:8080");
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("errorInfo は error と同期し、error より前に error-info-changed が流れる", () => {
+      const core = new WebSocketCore();
+      const order: string[] = [];
+      core.addEventListener("wcs-ws:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-ws:error", () => order.push("error"));
+      core.connect(""); // url 未指定の同期失敗
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
     });
   });
 });

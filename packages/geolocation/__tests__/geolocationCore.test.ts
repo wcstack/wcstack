@@ -611,8 +611,11 @@ describe("GeolocationCore", () => {
     const props = GeolocationCore.wcBindable.properties.map((p) => p.name);
     expect(props).toEqual([
       "position", "latitude", "longitude", "accuracy", "coords", "timestamp",
-      "watching", "loading", "error", "permission",
+      "watching", "loading", "error", "permission", "errorInfo",
     ]);
+    const errorInfoProp = GeolocationCore.wcBindable.properties.find((p) => p.name === "errorInfo")!;
+    expect(errorInfoProp.event).toBe("wcs-geo:error-info-changed");
+    expect(errorInfoProp.getter).toBeUndefined();
     const commands = (GeolocationCore.wcBindable.commands ?? []).map((c) => c.name);
     expect(commands).toEqual(["getCurrentPosition", "watch", "clearWatch"]);
 
@@ -626,5 +629,55 @@ describe("GeolocationCore", () => {
     expect(get("accuracy")(ev)).toBe(3);
     expect(get("coords")(ev)).toEqual({ x: 1 });
     expect(get("timestamp")(ev)).toBe(4);
+  });
+
+  describe("errorInfo（bindable 出力・wcs-geo:error-info-changed）", () => {
+    it("PERMISSION_DENIED(code 1)は errorInfo=permission-denied(recoverable=false)で発火し、成功で null クリア", async () => {
+      installGeolocation({ error: { code: 1, message: "denied" } });
+      removePermissions();
+      const core = new GeolocationCore();
+      const details: unknown[] = [];
+      core.addEventListener("wcs-geo:error-info-changed", (e) => details.push((e as CustomEvent).detail));
+
+      await core.getCurrentPosition();
+      expect(details).toHaveLength(1);
+      expect(core.errorInfo).toEqual({ code: "permission-denied", phase: "execute", recoverable: false, message: "denied" });
+
+      installGeolocation({ position: makePosition({ latitude: 1 }) });
+      await core.getCurrentPosition(); // 成功: 開始時に _setError(null) → errorInfo null クリア
+      expect(details).toHaveLength(2);
+      expect(details[1]).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("POSITION_UNAVAILABLE(code 2)=position-unavailable、TIMEOUT(code 3)=timeout（いずれも recoverable=true）", async () => {
+      installGeolocation({ error: { code: 2, message: "unavail" } });
+      removePermissions();
+      const core = new GeolocationCore();
+      await core.getCurrentPosition();
+      expect(core.errorInfo).toEqual({ code: "position-unavailable", phase: "execute", recoverable: true, message: "unavail" });
+
+      installGeolocation({ error: { code: 3, message: "timed out" } });
+      await core.getCurrentPosition();
+      expect(core.errorInfo).toEqual({ code: "timeout", phase: "execute", recoverable: true, message: "timed out" });
+    });
+
+    it("unsupported は code 2 に畳まれるため errorInfo=position-unavailable", async () => {
+      removeGeolocation();
+      removePermissions();
+      const core = new GeolocationCore();
+      await core.getCurrentPosition();
+      expect(core.errorInfo?.code).toBe("position-unavailable");
+    });
+
+    it("イベントは bubbles する", async () => {
+      installGeolocation({ error: { code: 1, message: "denied" } });
+      removePermissions();
+      const core = new GeolocationCore();
+      let bubbles = false;
+      core.addEventListener("wcs-geo:error-info-changed", (e) => { bubbles = e.bubbles; });
+      await core.getCurrentPosition();
+      expect(bubbles).toBe(true);
+    });
   });
 });

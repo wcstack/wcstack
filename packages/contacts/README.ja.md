@@ -54,6 +54,12 @@ npm install @wcstack/contacts
 | `loading`   | `wcs-contacts:loading-changed`    | ピッカーダイアログが開いている間`true`。 |
 | `error`     | `wcs-contacts:error`              | 真のプラットフォーム失敗（`select()`が投げた`DOMException`/`Error`）、または unsupported 経路ではプレーンオブジェクト`{ message: "Contact Picker API is not supported in this browser." }`、無ければ`null`。 |
 | `cancelled` | `wcs-contacts:cancelled-changed`  | ユーザーがピッカーを閉じたら`true`（`error`とは分離）。 |
+| `errorInfo` | `wcs-contacts:error-info-changed` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）、または `null`。追加的で `error` の shape は不変。`code` は unsupported なら `capability-missing`、真の失敗なら `select-failed`。 |
+
+**並行制御。** 連絡先ピッカーはシステムに1つのモーダル面なので、`<wcs-contacts>` は共有
+io-core lane を `exhaust` policy で用いる: 1つの `select()` が進行中の間、2回目の呼び出しは
+冪等な **no-op**（2つ目のピッカーを開かず `null` を返す）となり、進行中の呼び出しの結果を
+汚さない。
 
 ## コマンド
 

@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly fetch: string;
   readonly fetchHeader: string;
@@ -39,7 +41,7 @@ export interface WcsFetchHttpError {
 }
 
 /**
- * Value types for FetchCore (headless) — the 5 async state properties.
+ * Value types for FetchCore (headless) — the 6 async state properties.
  * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
@@ -56,6 +58,8 @@ export interface WcsFetchCoreValues<T = unknown> {
   status: number;
   /** Managed object URL for a `responseType: "blob"` response; null otherwise. */
   objectURL: string | null;
+  /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

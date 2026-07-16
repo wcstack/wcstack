@@ -118,8 +118,14 @@ npm install @wcstack/eyedropper
 | `loading`   | `wcs-eyedropper:loading-changed`    | `true` while the eyedropper cursor is active (an `open()` call is in flight). |
 | `error`     | `wcs-eyedropper:error`              | A true platform failure (anything other than the picker being dismissed). `null` when there has been no failure yet, or after the next `open()` call resets it. |
 | `cancelled` | `wcs-eyedropper:cancelled-changed`  | `true` when the pick did not complete — either the user pressed Escape, or the caller invoked `abort()`. Both surface as the same `AbortError` and are not distinguished. |
+| `errorInfo` | `wcs-eyedropper:error-info-changed` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` when unsupported or `pick-failed` on a genuine failure. Cancellation is `cancelled`, not `errorInfo`. |
 
 `cancelled` and `error` are both reset (`false` / `null`) at the **start** of the next `open()` call, so a stale outcome from a previous call never lingers into the next one's result.
+
+**Concurrency.** `EyeDropper.open()` accepts an `AbortSignal`, so `<wcs-eyedropper>`
+runs its calls through the shared io-core lane with the `latest` policy (like
+`<wcs-fetch>`): a new `open()` **supersedes** the in-flight one (aborting it), and
+the `abort()` command cancels the active pick.
 
 ## Commands
 

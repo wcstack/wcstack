@@ -29,6 +29,11 @@ function uniqueTag(prefix: string): string {
 describe("spread binding with composite shell (integration)", () => {
   it("composite shell の synthesized properties が spread で展開されること", async () => {
     const tag = uniqueTag("composite-shell");
+    // The spread pushes the state object into the shell, so these composed members
+    // are settable and are declared two-way (property + input). Under directional
+    // initial sync (enableDirectionalInitialSync) a two-way member keeps the
+    // current-compatible `state` authority (state→element push); an output-only
+    // member would instead take `element` authority. See integration.spread.test.ts.
     const wcBindable: IWcBindable = {
       protocol: "wc-bindable",
       version: 1,
@@ -37,6 +42,9 @@ describe("spread binding with composite shell (integration)", () => {
         { name: "s3.status", event: `@wc-bindable/composite:s3.status` },
         { name: "ai.prompt", event: `@wc-bindable/composite:ai.prompt` },
         { name: "ai.response", event: `@wc-bindable/composite:ai.response` },
+      ],
+      inputs: [
+        { name: "s3.progress" }, { name: "s3.status" }, { name: "ai.prompt" }, { name: "ai.response" },
       ],
     };
     class CompositeShell extends HTMLElement {
@@ -81,6 +89,7 @@ describe("spread binding with composite shell (integration)", () => {
         properties: [
           { name: "s3.progress", event: eventName },
         ],
+        inputs: [{ name: "s3.progress" }], // settable ⇒ two-way ⇒ state authority (directional)
       };
     }
     customElements.define(tag, CompositeShell);

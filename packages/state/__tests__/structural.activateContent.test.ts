@@ -23,6 +23,7 @@ vi.mock('../src/bindings/bindLoopContextToContent', () => ({
 }));
 
 import { activateContent, deactivateContent } from '../src/structural/activateContent';
+import { setBindingSessionByContent } from '../src/bindings/bindingSessionByContent';
 import { applyChange } from '../src/apply/applyChange';
 import { getAbsoluteStateAddressByBinding, clearAbsoluteStateAddressByBinding } from '../src/binding/getAbsoluteStateAddressByBinding';
 import { addBindingByAbsoluteStateAddress, removeBindingByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
@@ -100,6 +101,29 @@ describe('activateContent', () => {
       expect(getBindingsByContentMock).toHaveBeenCalledWith(content);
       expect(addBindingByAbsoluteStateAddressMock).not.toHaveBeenCalled();
       expect(applyChangeMock).not.toHaveBeenCalled();
+    });
+
+    it('sessionが拒否したbindingにはapplyChangeを呼ばないこと', () => {
+      const content = { mounted: true } as any;
+      const context = {} as any;
+      const allowed = { id: 1 } as any;
+      const denied = { id: 2 } as any;
+      const initialize = vi.fn(() => [allowed]);
+      const shouldApplyState = vi.fn((binding: any) => binding === allowed);
+
+      getBindingsByContentMock.mockReturnValue([allowed, denied]);
+      setBindingSessionByContent(content, { initialize, shouldApplyState } as any);
+
+      activateContent(content, null, context);
+
+      expect(initialize).toHaveBeenCalledWith([allowed, denied], {
+        registerAddress: true,
+        registerPathInfo: false,
+        applyOnReconnect: false,
+      });
+      expect(addBindingByAbsoluteStateAddressMock).not.toHaveBeenCalled();
+      expect(applyChangeMock).toHaveBeenCalledTimes(1);
+      expect(applyChangeMock).toHaveBeenCalledWith(allowed, context);
     });
   });
 

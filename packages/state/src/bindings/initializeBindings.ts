@@ -1,8 +1,4 @@
 import { ILoopContext } from "../list/types";
-import { IBindingInfo } from "../types";
-import { getStateElementByName } from "../stateElementByName";
-import { raiseError } from "../raiseError";
-import { replaceToReplaceNode } from "./replaceToReplaceNode";
 import {
   collectNodesAndBindingInfos,
   collectNodesAndBindingInfosByFragment,
@@ -10,91 +6,41 @@ import {
   processDeferredNode,
 } from "./collectNodesAndBindingInfos";
 import { IFragmentNodeInfo } from "../structural/types";
-import { attachEventHandler } from "../event/handler";
-import { attachEventTokenHandler } from "../event/eventTokenHandler";
-import { attachTwowayEventHandler } from "../event/twowayHandler";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IInitialBindingInfo } from "./types";
-import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
-import { addBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
-import { attachRadioEventHandler } from "../event/radioHandler";
-import { attachCheckboxEventHandler } from "../event/checkboxHandler";
+import { BindingSession, getOrCreateBindingSession } from "./BindingSession";
 
-function _initializeBindings(
-  allBindings: IBindingInfo[],
-): void {
-  for(const binding of allBindings) {
-
-    // replace node
-    replaceToReplaceNode(binding);
-
-    // event
-    if (attachEventHandler(binding)) {
-      continue;
-    }
-
-    // event token (element → state)
-    if (attachEventTokenHandler(binding)) {
-      continue;
-    }
-
-    // two-way binding
-    attachTwowayEventHandler(binding);
-    // radio binding
-    attachRadioEventHandler(binding);
-    // checkbox binding
-    attachCheckboxEventHandler(binding);
-
-  }
-}
-
-function _registerAbsoluteAddresses(allBindings: IBindingInfo[]): void {
-  for(const binding of allBindings) {
-    const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
-    addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-    const rootNode = binding.replaceNode.getRootNode() as Node;
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
-    if (stateElement === null) {
-      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
-    }
-    if (binding.bindingType !== 'event') {
-      stateElement.setPathInfo(binding.statePathName, binding.bindingType);
-    }
-  }
-}
-
-function _scheduleDeferredSpreads(
+function scheduleDeferredSpreads(
   deferredSpreads: IDeferredSpreadEntry[],
   parentLoopContext: ILoopContext | null,
+  session: BindingSession,
 ): void {
   for (const entry of deferredSpreads) {
-    customElements.whenDefined(entry.tagName).then(() => {
-      if (!entry.node.isConnected) return; // node was removed before class became ready
+    session.deferUntilDefined(entry.node, entry.tagName, () => {
       const bindings = processDeferredNode(entry);
       if (bindings.length === 0) return;
       setLoopContextByNode(entry.node, parentLoopContext);
-      _initializeBindings(bindings);
-      _registerAbsoluteAddresses(bindings);
-      applyChangeFromBindings(bindings);
-    }).catch((error: unknown) => {
+      const initialized = session.initialize(bindings);
+      applyChangeFromBindings(initialized);
+    }, (error: unknown) => {
       console.error(`[@wcstack/state] deferred spread failed for <${entry.tagName}>.`, error);
     });
   }
 }
 
 export function initializeBindings(
-  root: Document | DocumentFragment |Element, parentLoopContext: ILoopContext | null
+  root: Document | DocumentFragment | Element,
+  parentLoopContext: ILoopContext | null,
 ): void {
   const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root);
-  for(const node of subscriberNodes) {
+  const session = getOrCreateBindingSession(root);
+  for (const node of subscriberNodes) {
     setLoopContextByNode(node, parentLoopContext);
   }
-  _initializeBindings(allBindings);
-  _registerAbsoluteAddresses(allBindings);
-  // apply all at once
-  applyChangeFromBindings(allBindings);
-  _scheduleDeferredSpreads(deferredSpreads, parentLoopContext);
+  const initialized = session.initialize(allBindings);
+  applyChangeFromBindings(initialized);
+  scheduleDeferredSpreads(deferredSpreads, parentLoopContext, session);
 }
 
 export function initializeBindingsByFragment(
@@ -102,9 +48,14 @@ export function initializeBindingsByFragment(
   nodeInfos: IFragmentNodeInfo[],
 ): IInitialBindingInfo {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
-  _initializeBindings(allBindings);
+  const session = new BindingSession();
+  const initialized = session.initialize(allBindings, {
+    registerAddress: false,
+    applyOnReconnect: false,
+  });
   return {
     nodes: subscriberNodes,
-    bindingInfos: allBindings,
+    bindingInfos: initialized,
+    bindingSession: session,
   };
 }

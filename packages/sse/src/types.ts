@@ -19,6 +19,8 @@ export type {
   IWcBindable, IWcBindableProperty, IWcBindableInput, IWcBindableCommand,
 } from "./protocol/wcBindable.js";
 
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 /**
  * Options for `SseCore.connect()` / the headless `connect` command.
  * Single source of truth — referenced by both `SseCore.connect` and
@@ -62,6 +64,8 @@ export interface WcsSseCoreValues<T = unknown> {
   connected: boolean;
   loading: boolean;
   error: Event | Error | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
   readyState: number;
 }
 

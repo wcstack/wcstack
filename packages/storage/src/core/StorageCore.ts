@@ -1,5 +1,7 @@
 import { STORAGE_EVENTS } from "../events.js";
 import { IWcBindable, StorageType, WcsStorageError } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveStorageErrorInfo } from "./storageCapabilities.js";
 
 export class StorageCore extends EventTarget {
   static wcBindable: IWcBindable = {
@@ -9,6 +11,11 @@ export class StorageCore extends EventTarget {
       { name: "value", event: STORAGE_EVENTS.valueChanged, getter: (e: Event) => (e as CustomEvent).detail },
       { name: "loading", event: STORAGE_EVENTS.loadingChanged },
       { name: "error", event: STORAGE_EVENTS.error },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` (invalid-argument / quota-exceeded
+      // / not-allowed / storage-error); the existing `error` property/event are unchanged.
+      // Fires wcs-storage:error-info-changed. No lane — load/save/remove don't compete.
+      { name: "errorInfo", event: STORAGE_EVENTS.errorInfoChanged },
     ],
     inputs: [
       { name: "key" },
@@ -26,6 +33,7 @@ export class StorageCore extends EventTarget {
   private _value: any = null;
   private _loading: boolean = false;
   private _error: any = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _key: string = "";
   private _type: StorageType = "local";
   private _storageListener: ((e: StorageEvent) => void) | null = null;
@@ -87,6 +95,16 @@ export class StorageCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-storage:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   get key(): string {
     return this._key;
   }
@@ -126,7 +144,11 @@ export class StorageCore extends EventTarget {
     }));
   }
 
-  private _setError(error: any): void {
+  // `name` is the caught exception's `Error.name` (passed only from the
+  // load/save/remove catch blocks); it stays out of the public `error` shape and
+  // is used solely to classify errorInfo (quota vs security vs generic). Inline
+  // validation errors (invalid type / missing key) pass no name → invalid-argument.
+  private _setError(error: any, name?: string): void {
     // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
     // so suppressing redundant null→null dispatches (every load/save/remove start
     // clears a usually-already-null error) avoids a spurious error event per
@@ -134,8 +156,23 @@ export class StorageCore extends EventTarget {
     // a fresh object, and the clear path always passes null.
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveStorageErrorInfo(error, name));
     this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.error, {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already same-value-guards on the error
+  // reference), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.errorInfoChanged, {
+      detail: info,
       bubbles: true,
     }));
   }
@@ -147,6 +184,15 @@ export class StorageCore extends EventTarget {
       operation,
       message: e instanceof Error ? e.message : String(e),
     };
+  }
+
+  // The caught exception's `Error.name` for errorInfo classification (quota vs
+  // security vs generic), or "" for a non-Error throw (→ storage-error). Returning
+  // a string (never undefined) keeps a caught exception in the execute phase; only
+  // inline validation errors, which pass no name to _setError, become start-phase
+  // invalid-argument. Single chokepoint so the ternary is covered in one place.
+  private _errName(e: unknown): string {
+    return e instanceof Error ? e.name : "";
   }
 
   private _setValue(value: any): void {
@@ -185,7 +231,7 @@ export class StorageCore extends EventTarget {
       this._setLoading(false);
       return this._value;
     } catch (e: any) {
-      this._setError(this._toStorageError("load", e));
+      this._setError(this._toStorageError("load", e), this._errName(e));
       this._setLoading(false);
       return null;
     }
@@ -222,7 +268,7 @@ export class StorageCore extends EventTarget {
 
       this._setLoading(false);
     } catch (e: any) {
-      this._setError(this._toStorageError("save", e));
+      this._setError(this._toStorageError("save", e), this._errName(e));
       this._setLoading(false);
     }
   }
@@ -244,7 +290,7 @@ export class StorageCore extends EventTarget {
       this._setValue(null);
       this._setLoading(false);
     } catch (e: any) {
-      this._setError(this._toStorageError("remove", e));
+      this._setError(this._toStorageError("remove", e), this._errName(e));
       this._setLoading(false);
     }
   }

@@ -73,12 +73,15 @@
       $eventTokens: ["userResponded"],
 
       // 1 fetch = 1 state slot. The ...: spread wires all wcBindable properties + inputs at once.
-      // Uninitialized paths (undefined) are treated as "no opinion" — the binder skips the write,
+      // Uninitialized inputs (undefined) are treated as "no opinion" — the binder skips the write,
       // so the element's defaults (method=GET, manual=false, etc.) stay intact.
-      // Only initialize the outputs the template reads (value/loading/error/status) and the
-      // inputs you want to change from their defaults. To clear a value explicitly, write null.
+      // Inputs (url/method/manual/body) flow state → element: seed the ones you want to change.
+      // Outputs (value/loading/error/status) flow the other way — <wcs-fetch> is their authority,
+      // so state takes the element's value at bind time and on every event. Seeding them names
+      // the slot and documents its shape; it cannot override the element, so seed what the
+      // element actually starts with — `value` is null until a response lands, never [].
       listFetch: {
-        value: [], loading: false, error: null, status: 0,
+        value: null, loading: false, error: null, status: 0,
       },
       detailFetch: {
         value: null, loading: false, error: null, status: 0,
@@ -111,8 +114,8 @@
       selectUser() {
         this["detailFetch.value"] = null;
         // `*` resolves to the index of the clicked row within the `for:` loop, so
-        // listFetch.value.*.id reads the id of the user that was actually clicked.
-        this.selectedUserId = this["listFetch.value.*.id"];
+        // listRows.*.id reads the id of the user that was actually clicked.
+        this.selectedUserId = this["listRows.*.id"];
       },
 
       filterBy(role) {
@@ -128,11 +131,17 @@
       filterEditor() { this.filterBy("editor"); },
       filterViewer() { this.filterBy("viewer"); },
 
+      // listFetch.value is null until the first response lands, so the list binds this
+      // always-an-array projection instead (a `for:` path has to be an array).
+      get listRows() {
+        return this["listFetch.value"] ?? [];
+      },
+
       // Spinner only on the FIRST list load (no rows yet). On a filter switch we
       // keep the previous rows and just dim them (stale-while-revalidate, see
       // class.stale below), so the list never flashes empty between filters.
       get listLoadingFirst() {
-        return this["listFetch.loading"] && this["listFetch.value"].length === 0;
+        return this["listFetch.loading"] && this.listRows.length === 0;
       },
 
       // Detail pane has three MUTUALLY EXCLUSIVE states. Deriving them as getters
@@ -226,7 +235,7 @@
   <!-- class.stale dims the existing rows while a filter switch reloads, so they
        read as "being updated" rather than current (stale-while-revalidate). -->
   <ul class="user-list" data-wcs="class.stale: listFetch.loading">
-    <template data-wcs="for: listFetch.value">
+    <template data-wcs="for: listRows">
       <li>
         <button type="button" class="user-item" data-wcs="onclick: selectUser">
           <div>

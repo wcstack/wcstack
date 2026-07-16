@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import {
   IWcBindable, ListenOptions, ListenPermissionState, WcsListenResultDetail, WcsListenErrorDetail,
 } from "../types.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { ListenCore } from "../core/ListenCore.js";
 import { registerListenAutoTrigger } from "../listenAutoTrigger.js";
 
@@ -189,6 +190,12 @@ export class WcsListen extends HTMLElement {
 
   get error(): WcsListenErrorDetail | null {
     return this._core.error;
+  }
+
+  // Additive Phase 6 taxonomy output (event wcs-listen:error-info-changed),
+  // delegated from the Core; declared via the inherited ListenCore.wcBindable.
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get unsupported(): boolean {

@@ -376,6 +376,77 @@ describe("MagnetometerCore", () => {
     });
   });
 
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new MagnetometerCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = MagnetometerCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("unsupported → capability-missing / probe / recoverable=false", () => {
+      removeSensor(GLOBAL_NAME);
+      const core = new MagnetometerCore();
+      core.start();
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "Magnetometer is not supported",
+      });
+    });
+
+    it("SecurityError → not-allowed / start / recoverable=false", () => {
+      installThrowingSensor(GLOBAL_NAME, "SecurityError", "Permission denied");
+      const core = new MagnetometerCore();
+      core.start();
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "Permission denied" });
+      // 公開 error shape は不変。
+      expect(core.error).toEqual({ error: "SecurityError", message: "Permission denied" });
+    });
+
+    it("NotReadableError(稼働中)→ not-readable / execute / recoverable=false", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      core.start();
+      handle.current!.emitError("NotReadableError", "could not read");
+      expect(core.errorInfo).toEqual({ code: "not-readable", phase: "execute", recoverable: false, message: "could not read" });
+    });
+
+    it("その他 name → sensor-error / execute", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      core.start();
+      handle.current!.emitError("GenericFailure", "weird");
+      expect(core.errorInfo).toEqual({ code: "sensor-error", phase: "execute", recoverable: false, message: "weird" });
+    });
+
+    it("error が null にクリアされると errorInfo も null になる(同期・防御的 clear 経路)", () => {
+      // sensor は通常 error を sticky に保つ(clear 経路が無い)が、errorInfo は error と
+      // 厳密に同期する契約。_setError(null) を直接呼び、mirror のクリアを固定する。
+      const core = new MagnetometerCore();
+      (core as unknown as { _setError(e: { error: string; message: string } | null): void })
+        ._setError({ error: "SecurityError", message: "x" });
+      expect(core.errorInfo).not.toBeNull();
+      (core as unknown as { _setError(e: { error: string; message: string } | null): void })._setError(null);
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+      const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
+      const core = new MagnetometerCore();
+      const order: string[] = [];
+      core.addEventListener("wcs-magnetometer:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-magnetometer:error", () => order.push("error"));
+      core.start();
+      handle.current!.emitError("NotReadableError", "x");
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
+    });
+  });
+
   describe("wcBindable プロトコル宣言", () => {
     it("commands は start/stop", () => {
       expect(MagnetometerCore.wcBindable.commands).toEqual([{ name: "start" }, { name: "stop" }]);

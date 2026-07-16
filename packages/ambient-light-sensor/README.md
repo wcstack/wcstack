@@ -8,7 +8,7 @@ It is an **async primitive node** that turns ambient light readings into reactiv
 With `@wcstack/state`, `<wcs-ambient-light-sensor>` can be bound directly through path contracts:
 
 - **input surface**: `frequency` (sampling rate in Hz)
-- **output state surface**: `illuminance`, `error`
+- **output state surface**: `illuminance`, `error`, `errorInfo`
 
 This means light-level-driven UI (auto dark mode, screen dimming) can be expressed declaratively in HTML, without writing `AmbientLightSensor`/`reading`/`error`-listener glue in your UI layer.
 
@@ -103,6 +103,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 | ------------- | -------------------------------------- | ------------ |
 | `illuminance` | `wcs-ambient-light-sensor:reading`      | Ambient light level in lux, or `null` before the first reading. |
 | `error`       | `wcs-ambient-light-sensor:error`        | Normalized `{ error, message }`, or `null`. |
+| `errorInfo`   | `wcs-ambient-light-sensor:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo` — stable `code` / `phase` / `recoverable`), or `null`. Additive, derived from `error`; the existing `error` shape is unchanged. |
 
 ## Commands
 
@@ -167,6 +168,7 @@ DevTools open; it is not a supported styling hook.
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
 - **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
+- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-ambient-light-sensor:error-info-changed`) that classifies the same failure into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. The mapping keys off the normalized error name: `unsupported` → `capability-missing` (phase `probe`); `SecurityError` / `NotAllowedError` → `not-allowed` (phase `start`); `NotReadableError` → `not-readable` (phase `execute`); any other sensor failure → `sensor-error` (phase `execute`). All are `recoverable: false`. `errorInfo` transitions exactly when `error` does, so it is **sticky** in the same way and only returns to `null` when `error` does. The shared `WcsIoErrorInfo` type and the `WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE` constants are exported.
 - **Never call the raw `new AmbientLightSensor(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.
 - Permission status (`granted`/`denied`/`prompt`) is intentionally not duplicated here — compose with `<wcs-permission name="ambient-light-sensor">`.
 - **Confirm current browser support before adopting this package** — see "Why this exists" above.

@@ -24,15 +24,17 @@
       page: 1,
       limit: 12,
 
-      // The whole JSON body lands in itemsFetch.value. Initialise only the
-      // fields the template paths read (itemsFetch.value.items / .total /
-      // .totalPages) so they resolve from the very first render. The real
-      // response carries page/limit too, but the UI never reads them, so we
-      // leave them out to keep this seed minimal. Uninitialised inputs
-      // (method/manual/…) are "no opinion" — the binder skips them and wcs-fetch
-      // keeps its defaults.
+      // The whole JSON body lands in itemsFetch.value. value / loading / error /
+      // status are <wcs-fetch>'s own outputs, so the element is their authority:
+      // state takes them at bind time and on every event, and never writes them
+      // back. That means seeding them is about naming the slot, not about winning
+      // — the element's real initial value lands here regardless, and for `value`
+      // that is null ("no response yet"). Everything the view needs is derived
+      // null-safely below, so no template path ever walks through the null.
+      // Uninitialised inputs (method/manual/…) are "no opinion" — the binder skips
+      // them and wcs-fetch keeps its defaults.
       itemsFetch: {
-        value: { items: [], total: 0, totalPages: 1 },
+        value: null,
         // status is not used by the UI here, but every demo mirrors it to show
         // <wcs-fetch> exposes the HTTP status too.
         loading: false, error: null, status: 0,
@@ -47,12 +49,15 @@
       // A property name that contains a dot (the slot key "itemsFetch.value",
       // "itemsFetch.loading", …) is a single literal key, so it is read with bracket
       // notation: this["itemsFetch.value"]. In `data-wcs` template paths the same dotted
-      // string is a PATH instead (itemsFetch.value.items walks value → items).
-      // Null-safe: on an HTTP/network error <wcs-fetch> resets value to null, so
-      // these read through optional chaining and fall back to empty/edge values.
+      // string is a PATH instead (itemsFetch.value.items would walk value → items).
+      // Null-safe: value is null before the first response and again on an HTTP/network
+      // error, so these read through optional chaining and fall back to empty/edge
+      // values. A template path cannot do that — `for: itemsFetch.value.items` would
+      // walk straight through the null — which is why the list binds `rows` instead.
+      get rows()         { return this["itemsFetch.value"]?.items ?? []; },
       get total()        { return this["itemsFetch.value"]?.total ?? 0; },
       get totalPages()   { return this["itemsFetch.value"]?.totalPages ?? 1; },
-      get rowCount()     { return this["itemsFetch.value"]?.items?.length ?? 0; },
+      get rowCount()     { return this.rows.length; },
       get hasData()      { return this.rowCount > 0; },
       // First-load spinner only: loading AND no rows yet. On a reload we keep the
       // old rows and just dim them (class.stale below), so the list never flashes.
@@ -185,7 +190,7 @@
          (hasData is guaranteed here) — matching the other four demos. -->
     <template data-wcs="if: showList">
       <ul class="member-list" data-wcs="class.stale: itemsFetch.loading">
-        <template data-wcs="for: itemsFetch.value.items">
+        <template data-wcs="for: rows">
           <li>
             <div class="member-item">
               <div class="member-main">

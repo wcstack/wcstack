@@ -8,7 +8,7 @@ WebSocket 通信とリアクティブな状態をつなぐ **I/O ノード** で
 `@wcstack/state` と組み合わせると、`<wcs-ws>` はパス契約を通じて直接バインドできます:
 
 - **入力 / コマンドサーフェス**: `url`, `trigger`, `send`
-- **出力ステートサーフェス**: `message`, `connected`, `loading`, `error`, `readyState`
+- **出力ステートサーフェス**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`
 
 つまり、リアルタイム通信を HTML 内で宣言的に表現できます。UI レイヤーに `new WebSocket()`、`onmessage`、接続管理のグルーコードを書く必要はありません。
 
@@ -190,6 +190,7 @@ npm install @wcstack/websocket
 | `connected` | `boolean` | WebSocket 接続中は `true` |
 | `loading` | `boolean` | 接続処理中は `true` |
 | `error` | `WcsWsError \| Event \| null` | 接続またはクローズエラー |
+| `errorInfo` | `WcsIoErrorInfo \| null` | シリアライズ可能な失敗タクソノミ（安定した `code` / `phase` / `recoverable`）。`error` から導出される。追加的で、`error` の形状は不変。 |
 | `readyState` | `number` | WebSocket readyState 定数 |
 
 ### 入力 / コマンドサーフェス
@@ -383,6 +384,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `connected` | `boolean` | WebSocket 接続中は `true` |
 | `loading` | `boolean` | 接続処理中は `true` |
 | `error` | `WcsWsError \| Event \| null` | エラー情報 |
+| `errorInfo` | `WcsIoErrorInfo \| null` | 失敗タクソノミ（`code` / `phase` / `recoverable`）。`error` から導出される |
 | `readyState` | `number` | WebSocket readyState 定数 |
 | `binaryType` | `"blob" \| "arraybuffer"` | バイナリフレーム表現（`binary-type` 属性を背後に持つ。既定 `blob`） |
 | `trigger` | `boolean` | `true` を設定すると接続を開始 |
@@ -417,6 +419,7 @@ static wcBindable = {
     { name: "connected",  event: "wcs-ws:connected-changed" },
     { name: "loading",    event: "wcs-ws:loading-changed" },
     { name: "error",      event: "wcs-ws:error" },
+    { name: "errorInfo",  event: "wcs-ws:error-info-changed" },
     { name: "readyState", event: "wcs-ws:readystate-changed" },
   ],
   commands: [
@@ -666,6 +669,7 @@ bootstrapWebSocket({
 - JSON メッセージは受信時に自動パース、オブジェクトは送信時に自動文字列化
 - `manual` は接続タイミングを明示的に制御したい場合に有用
 - 自動再接続は異常切断時のみ発動（コード 1000 以外）
+- **`errorInfo` タクソノミ**: `error` に現れるのと同じ失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-ws:error-info-changed`）です。`error` の形状は変えません。`url` を指定しない `connect()` は `invalid-argument`（phase `start`、回復不可）、open 前の `send()` は `invalid-state`（phase `execute`、回復不可——先に connect が必要）、`new WebSocket()` の構築例外またはプラットフォームの `error` Event は `connection-error`（phase `execute`、**`recoverable: true`**——接続エラーは通常一過性で、再接続で回復しうる）です。`errorInfo` は `error` と同じタイミングで遷移し（`error` と共にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_WEBSOCKET_ERROR_CODE` 定数は export 済みです。
 
 ## ライセンス
 

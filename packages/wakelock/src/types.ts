@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly wakelock: string;
 }
@@ -48,6 +50,8 @@ export interface WcsWakeLockCoreValues {
   held: boolean;
   /** The last request failure, or `null` while none. */
   error: Error | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

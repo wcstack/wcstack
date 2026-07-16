@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -79,6 +91,8 @@ interface WcsWorkerCoreValues {
     message: any;
     /** The last failure (post / spawn / script error / messageerror), or `null`. */
     error: WcsWorkerErrorDetail | null;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
     /** `true` while a worker is spawned and not yet terminated. */
     running: boolean;
 }
@@ -152,6 +166,7 @@ declare class WorkerCore extends EventTarget {
     private _worker;
     private _message;
     private _error;
+    private _errorInfo;
     private _running;
     private _src;
     private _type;
@@ -168,9 +183,17 @@ declare class WorkerCore extends EventTarget {
     observe(): Promise<void>;
     get message(): any;
     get error(): WcsWorkerErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-worker:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get running(): boolean;
     private _setMessage;
     private _setError;
+    private _commitErrorInfo;
     private _setRunning;
     /**
      * Spawn the worker from `src`. Any previously-spawned worker is terminated
@@ -197,8 +220,9 @@ declare class WorkerCore extends EventTarget {
     terminate(): void;
     /**
      * Tear the Core down for a disconnected Shell: terminate the worker and reset
-     * the error shadow. Only the `error` clear is silent — it mutates the shadow
-     * without dispatching. Terminating a *running* worker still dispatches
+     * the error shadow (both `error` and its derived `errorInfo`). Only that
+     * error/errorInfo clear is silent — it mutates the shadows without dispatching.
+     * Terminating a *running* worker still dispatches
      * `wcs-worker:running-changed` (true→false) via `_terminateWorker`, so a
      * dispose on a worker that was live does emit one event on the (now
      * disconnected) element; only a no-op dispose (no worker running) is fully
@@ -251,6 +275,7 @@ declare class WcsWorker extends HTMLElement {
     set restartInterval(value: number);
     get message(): any;
     get error(): WcsWorkerErrorDetail | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get running(): boolean;
     start(): void;
     post(data: any, transfer?: Transferable[]): void;
@@ -260,5 +285,25 @@ declare class WcsWorker extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { WcsWorker, WorkerCore, bootstrapWorker, getConfig };
-export type { IWritableConfig, IWritableTagNames, WcsWorkerCommands, WcsWorkerCoreCommands, WcsWorkerCoreValues, WcsWorkerErrorDetail, WcsWorkerInputs, WcsWorkerStartOptions, WcsWorkerValues };
+/**
+ * workerCapabilities.ts
+ *
+ * Worker node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。worker は所有する子スレッドに対する command 駆動(start / post / terminate)
+ * であり、競合する複数 operation を lane 管理する必要が無い(post は fire-and-forget、
+ * start は張り替えを冪等ガード)ため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ */
+
+/** 安定した worker error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_WORKER_ERROR_CODE: {
+    /** `Worker` コンストラクタ不在(SSR / 非対応環境で構築が投げる)。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** `start(src)` の `src` 未指定(TypeError "src is required.")。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** worker スクリプトの uncaught error / messageerror / post 失敗 / 構築失敗など。 */
+    readonly WorkerError: "worker-error";
+};
+
+export { WCS_WORKER_ERROR_CODE, WcsWorker, WorkerCore, bootstrapWorker, getConfig };
+export type { IWritableConfig, IWritableTagNames, WcsIoErrorInfo, WcsIoErrorPhase, WcsWorkerCommands, WcsWorkerCoreCommands, WcsWorkerCoreValues, WcsWorkerErrorDetail, WcsWorkerInputs, WcsWorkerStartOptions, WcsWorkerValues };

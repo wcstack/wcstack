@@ -1,5 +1,6 @@
 import { ContactInfo, ContactProperty, ContactsSelectOptions, IWcBindable } from "../types.js";
 import { ContactsCore } from "../core/ContactsCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-contacts>` — declarative Contact Picker API primitive.
@@ -97,6 +98,10 @@ export class WcsContacts extends HTMLElement {
 
   get cancelled(): boolean {
     return this._core.cancelled;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

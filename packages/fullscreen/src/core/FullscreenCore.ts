@@ -1,4 +1,6 @@
 import { IWcBindable } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveFullscreenErrorInfo, FullscreenErrorKind } from "./fullscreenCapabilities.js";
 
 /**
  * Headless Fullscreen API primitive. Unlike most wcstack IO nodes, this Core
@@ -21,6 +23,14 @@ export class FullscreenCore extends EventTarget {
     version: 1,
     properties: [
       { name: "active", event: "wcs-fullscreen:change", getter: (e: Event) => (e as CustomEvent).detail.active },
+      // `error` / `errorInfo` are observable failure outputs. Historically `error`
+      // was an imperative getter with no event; both are now bindable (event-backed)
+      // so `data-wcs` / bind() can observe a request/exit failure. `errorInfo` is the
+      // additive serializable taxonomy (stable code / phase / recoverable) derived
+      // from `error`; the `error` value shape is unchanged. No lane — fullscreen
+      // drives a referenced element, not a competing operation.
+      { name: "error", event: "wcs-fullscreen:error" },
+      { name: "errorInfo", event: "wcs-fullscreen:error-info-changed" },
     ],
     commands: [
       { name: "requestFullscreen", async: true },
@@ -35,6 +45,7 @@ export class FullscreenCore extends EventTarget {
   // machine like permission's 4-value surface — active/error are two
   // orthogonal, independently-observable axes.
   private _error: any = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
 
   // The last Element this Core resolved via requestFullscreen()/setTarget().
   // Compared against document.fullscreenElement on every fullscreenchange so
@@ -72,6 +83,16 @@ export class FullscreenCore extends EventTarget {
 
   get error(): any {
     return this._error;
+  }
+
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-fullscreen:error-info-changed`), derived from `error`; the existing
+   * `error` value shape is unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
   }
 
   /**
@@ -122,12 +143,12 @@ export class FullscreenCore extends EventTarget {
       // selector did not resolve to any element (missing/typo'd selector).
       // Conflating the two previously misled users into thinking Fullscreen
       // itself was unsupported when only their selector was wrong.
-      this._setError({ message: "Fullscreen target could not be resolved." });
+      this._setError({ message: "Fullscreen target could not be resolved." }, "invalid-argument");
       return;
     }
     const fn = this._requestFullscreenFn(element);
     if (!fn) {
-      this._setError({ message: "Fullscreen API is not supported." });
+      this._setError({ message: "Fullscreen API is not supported." }, "capability-missing");
       return;
     }
     try {
@@ -231,7 +252,32 @@ export class FullscreenCore extends EventTarget {
     }));
   }
 
-  private _setError(error: any): void {
+  // `kind` is an explicit taxonomy discriminator passed only from the synthetic
+  // error sites (unsupported / unresolved target); caught exceptions pass no kind
+  // and are classified by their `.name`. Both `error` and the additive `errorInfo`
+  // are now event-backed so a request/exit failure is observable via bind().
+  private _setError(error: any, kind?: FullscreenErrorKind): void {
+    // Same-value guard on reference: each failure builds a fresh object and the
+    // clear path passes the literal null, so this only suppresses redundant
+    // null→null (a successful request/exit clearing an already-null error).
+    if (this._error === error) return;
     this._error = error;
+    // Keep the additive errorInfo taxonomy in sync; fire it before the `error`
+    // event so an observer of both sees the classification first (io-node family).
+    this._commitErrorInfo(error === null ? null : deriveFullscreenErrorInfo(error, kind));
+    this._target.dispatchEvent(new CustomEvent("wcs-fullscreen:error", {
+      detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (already reference-guarded), so errorInfo
+  // transitions exactly when error does — no separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-fullscreen:error-info-changed", {
+      detail: info,
+      bubbles: true,
+    }));
   }
 }

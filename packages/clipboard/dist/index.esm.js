@@ -45,6 +45,35 @@ function setConfig(partialConfig) {
 }
 
 /**
+ * clipboardCapabilities.ts
+ *
+ * Clipboard node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。clipboard の read/write は concurrent-independent(競合しない)ため lane
+ * は持たず、error taxonomy(errorInfo)のみを採用する。
+ */
+/** 安定した clipboard error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_CLIPBOARD_ERROR_CODE = {
+    CapabilityMissing: "capability-missing",
+    NotAllowed: "not-allowed",
+    ClipboardError: "clipboard-error",
+};
+/**
+ * 正規化済み error(`{ name, message }`)を serializable な error taxonomy に写す。
+ * `NotSupportedError`(Clipboard API 不在)→ capability-missing、`NotAllowedError`
+ * (permission 拒否、retry では回復しない)→ not-allowed、その他 → clipboard-error。
+ */
+function deriveClipboardErrorInfo(name, message) {
+    if (name === "NotSupportedError") {
+        return { code: WCS_CLIPBOARD_ERROR_CODE.CapabilityMissing, phase: "start", recoverable: false, message };
+    }
+    if (name === "NotAllowedError") {
+        return { code: WCS_CLIPBOARD_ERROR_CODE.NotAllowed, phase: "execute", recoverable: false, message };
+    }
+    return { code: WCS_CLIPBOARD_ERROR_CODE.ClipboardError, phase: "execute", recoverable: true, message };
+}
+
+/**
  * Headless clipboard primitive. A thin, framework-agnostic wrapper around the
  * Clipboard API exposed through the wc-bindable protocol.
  *
@@ -79,6 +108,11 @@ class ClipboardCore extends EventTarget {
             { name: "readPermission", event: "wcs-clipboard:read-permission-changed" },
             { name: "writePermission", event: "wcs-clipboard:write-permission-changed" },
             { name: "monitoring", event: "wcs-clipboard:monitoring-changed" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from the normalized `error` (`name` →
+            // capability-missing / not-allowed / clipboard-error); the existing `error`
+            // property/event are unchanged. Fires `wcs-clipboard:error-info-changed`.
+            { name: "errorInfo", event: "wcs-clipboard:error-info-changed" },
             { name: "copied", event: "wcs-clipboard:copied", getter: (e) => e.detail },
             { name: "cut", event: "wcs-clipboard:cut", getter: (e) => e.detail },
             { name: "pasted", event: "wcs-clipboard:pasted", getter: (e) => e.detail },
@@ -97,6 +131,7 @@ class ClipboardCore extends EventTarget {
     _items = null;
     _loading = false;
     _error = null;
+    _errorInfo = null;
     _readPermission = "prompt";
     _writePermission = "prompt";
     _monitoring = false;
@@ -162,6 +197,15 @@ class ClipboardCore extends EventTarget {
     get error() {
         return this._error;
     }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Exposed as an additive wc-bindable property (event
+     * `wcs-clipboard:error-info-changed`), derived from the normalized `error`; the
+     * existing `error` property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
+    }
     get readPermission() {
         return this._readPermission;
     }
@@ -210,8 +254,23 @@ class ClipboardCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive it from
+        // the normalized error (or null on clear). Fires before the `error` event so an
+        // observer binding both sees the classification first, mirroring the io-node
+        // family. No lane here — clipboard's read/write ops don't compete.
+        this._commitErrorInfo(error === null ? null : deriveClipboardErrorInfo(error.name, error.message));
         this._target.dispatchEvent(new CustomEvent("wcs-clipboard:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already same-value-guards on the error
+    // reference), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-clipboard:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -723,6 +782,9 @@ class WcsClipboard extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get readPermission() {
         return this._core.readPermission;
     }
@@ -795,5 +857,5 @@ function bootstrapClipboard(userConfig) {
     registerComponents();
 }
 
-export { ClipboardCore, WcsClipboard, bootstrapClipboard, getConfig };
+export { ClipboardCore, WCS_CLIPBOARD_ERROR_CODE, WcsClipboard, bootstrapClipboard, getConfig };
 //# sourceMappingURL=index.esm.js.map

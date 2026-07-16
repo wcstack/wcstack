@@ -15,7 +15,10 @@ export default defineConfig({
         'dist/',
         '*.config.{js,ts,mjs}',
         'src/exports.ts',
-        'src/types.ts'
+        'src/types.ts',
+        // Generated copy of the shared io-core capability layer (byte-identical to
+        // fetch's, which tests it fully); storage uses only the WcsIoErrorInfo type.
+        'src/core/platformCapability.ts'
       ],
       thresholds: {
         statements: 100,

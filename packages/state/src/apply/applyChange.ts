@@ -1,5 +1,7 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
+import { getBindingSession } from "../bindings/BindingSession.js";
 import { getCustomElement } from "../getCustomElement.js";
+import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { raiseError } from "../raiseError.js";
 import { getStateElementByName } from "../stateElementByName.js";
 import { IBindingInfo } from "../types.js";
@@ -118,12 +120,16 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
       ]));
     }
   }
+  const bindingSession = getBindingSession(binding);
+  if (bindingSession !== null && !bindingSession.shouldApplyState(binding)) {
+    return;
+  }
   if (binding.bindingType === "event") {
     return;
   }
   const customTag = getCustomElement(binding.replaceNode);
   if (customTag) {
-    if (customElements.get(customTag) === undefined) {
+    if (getCustomElementRegistry()?.get(customTag) === undefined) {
       // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
       // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
       // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred

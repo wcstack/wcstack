@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly magnetometer: string;
 }
@@ -53,6 +55,8 @@ export interface WcsMagnetometerErrorDetail {
  */
 export interface WcsMagnetometerCoreValues extends WcsMagnetometerReading {
   error: WcsMagnetometerErrorDetail | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

@@ -1,4 +1,6 @@
 import { IWcBindable, TiltPermissionState } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveTiltErrorInfo } from "./tiltCapabilities.js";
 
 interface DeviceOrientationEventCtor {
   requestPermission?: () => Promise<"granted" | "denied">;
@@ -53,6 +55,11 @@ export class TiltCore extends EventTarget {
       // rejecting/throwing. Mirrors idle (same batch2) and the accelerometer
       // family (batch5) — see docs/io-node-batch-implementation-plan.md.
       { name: "error", event: "wcs-tilt:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error.error` (the wrapped rejection's
+      // Error.name); the existing `error` property/event are unchanged. Fires
+      // wcs-tilt:error-info-changed. No lane — this is a monitor node.
+      { name: "errorInfo", event: "wcs-tilt:error-info-changed" },
     ],
     commands: [
       { name: "requestPermission", async: true },
@@ -65,6 +72,7 @@ export class TiltCore extends EventTarget {
   private _snapshot: WcsTiltSnapshot = UNSUPPORTED_SNAPSHOT;
   private _permissionState: TiltPermissionState = "unknown";
   private _error: any = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _subscribed = false;
 
   // SSR (§3.8): never auto-starts on connect, so there is no probe to await —
@@ -104,6 +112,16 @@ export class TiltCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-tilt:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   // Lifecycle (§3.5). observe() is a synchronous no-op: like `<wcs-idle>`,
   // this Core deliberately does NOT auto-start on connect (§6) on platforms
   // that gate deviceorientation behind requestPermission().
@@ -132,8 +150,24 @@ export class TiltCore extends EventTarget {
   private _setError(error: any): void {
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // wrapped rejection (or null on clear). Fires before the `error` event so an
+    // observer binding both sees the classification first, mirroring the io-node
+    // family.
+    this._commitErrorInfo(error === null ? null : deriveTiltErrorInfo(error));
     this._target.dispatchEvent(new CustomEvent("wcs-tilt:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already reference-guards on the error
+  // object), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-tilt:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

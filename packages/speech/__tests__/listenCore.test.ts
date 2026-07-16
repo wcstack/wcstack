@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ListenCore } from "../src/core/ListenCore";
+import { deriveListenErrorInfo, WCS_LISTEN_ERROR_CODE } from "../src/core/speechCapabilities";
 import {
   FakeRecognition, installSpeechRecognition, uninstallSpeechRecognition,
   installPermissions, removePermissions, makeResults,
@@ -445,6 +446,103 @@ describe("ListenCore", () => {
       core.start();
       recs[0].fireStart();
       expect(events).toEqual([true]);
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new ListenCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = ListenCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("unsupported → capability-missing / probe / recoverable=false（error shape は不変）", () => {
+      uninstallSpeechRecognition();
+      const core = new ListenCore();
+      core.start();
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "SpeechRecognition API is not available in this environment.",
+      });
+      // 公開 error shape は不変。
+      expect(core.error).toEqual({ error: "unsupported", message: "SpeechRecognition API is not available in this environment." });
+    });
+
+    it("recognition error を taxonomy に写す（network → network-error / execute / recoverable）", () => {
+      const core = new ListenCore();
+      core.start();
+      recs[0].fireStart();
+      recs[0].fireError("network");
+      expect(core.errorInfo).toEqual({
+        code: "network-error", phase: "execute", recoverable: true,
+        message: "Speech recognition failed: network.",
+      });
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+      const core = new ListenCore();
+      core.start();
+      recs[0].fireStart();
+      const order: string[] = [];
+      core.addEventListener("wcs-listen:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-listen:error", () => order.push("error"));
+      recs[0].fireError("not-allowed");
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
+    });
+
+    it("次の start() は直前の error を晴らし、errorInfo も null に戻す(clear 経路)", () => {
+      const core = new ListenCore();
+      core.start({ continuous: true, maxRestarts: 5 });
+      recs[0].fireStart();
+      // not-allowed は終端で _active を落とすので、次の start() が実行され error をクリアする。
+      recs[0].fireError("not-allowed");
+      expect(core.errorInfo).not.toBeNull();
+      const infoEvents = collect(core, "wcs-listen:error-info-changed");
+      core.start();
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+      // clear も error-info-changed を 1 度発火する（null 遷移）。
+      expect(infoEvents).toEqual([null]);
+    });
+
+    // Direct map coverage: exercises every code branch of deriveListenErrorInfo,
+    // including the defensive `default` fallback the Core never emits itself.
+    it("deriveListenErrorInfo が全コードを taxonomy に写す(未知コードは speech-error へ畳む)", () => {
+      expect(deriveListenErrorInfo({ error: "unsupported", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "not-allowed", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "service-not-allowed", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "audio-capture", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.NotReadable, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "no-speech", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.NoSpeech, phase: "execute", recoverable: true, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "network", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.NetworkError, phase: "execute", recoverable: true, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "aborted", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.Aborted, phase: "execute", recoverable: true, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "language-not-supported", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "bad-grammar", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveListenErrorInfo({ error: "totally-unknown", message: "m" })).toEqual({
+        code: WCS_LISTEN_ERROR_CODE.SpeechError, phase: "execute", recoverable: false, message: "m",
+      });
     });
   });
 });

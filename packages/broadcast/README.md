@@ -14,7 +14,7 @@ With `@wcstack/state`, `<wcs-broadcast>` can be bound directly through path cont
 
 - **input surface**: `name`, `manual`
 - **command surface**: `open`, `post`, `close`
-- **output state surface**: `message`, `error`
+- **output state surface**: `message`, `error`, `errorInfo`
 
 This means cross-tab synchronization can be expressed declaratively in HTML, without writing `new BroadcastChannel()`, `postMessage()`, `onmessage` listeners, or teardown glue in your UI layer.
 
@@ -131,6 +131,7 @@ You do not need the event-token to *read* the latest message — bind `message` 
 | --------- | ------------------------ | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-broadcast:message`  | The last value received from another context on the channel (structured-clone copy). Never set by this context's own posts. |
 | `error`   | `wcs-broadcast:error`    | Normalized `{ name, message }` — `DataCloneError` (non-cloneable post), `DataError` (a peer's message could not be deserialized), `InvalidStateError` (post with no open channel), or `NotSupportedError` (BroadcastChannel unavailable). |
+| `errorInfo` | `wcs-broadcast:error-info-changed` | Serializable failure taxonomy `WcsIoErrorInfo \| null` (stable `code` / `phase` / `recoverable`), derived from the same failure as `error`. Additive — the `error` shape is unchanged. |
 
 ## Commands
 
@@ -205,6 +206,7 @@ DevTools open; it is not a supported styling hook.
 - **No connection state.** A BroadcastChannel is "open" the moment it is constructed — there is no connecting/handshake phase, no `readyState`, and no reconnect (none is needed). The Shell opens synchronously on connect, so its `connectedCallbackPromise` resolves immediately (an already-resolved promise). It is still exposed (`hasConnectedCallbackPromise = true`) so a state binder / SSR can uniformly await readiness before snapshotting.
 - **Reconnect re-opens.** Removing and re-inserting the element runs `connectedCallback` again, re-opening the channel from the `name` attribute (the source of truth), and `disconnectedCallback` closes it.
 - **Silent failure handling (zero-log).** Consistent with the rest of wcstack's zero-dependency philosophy, `<wcs-broadcast>` never logs or throws for runtime failures. A missing BroadcastChannel constructor, a non-cloneable post, or a deserialization failure are surfaced only through the `error` property / `wcs-broadcast:error` event — `post()` resolves and never rejects. Bind `error` to observe and react.
+- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-broadcast:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A missing `BroadcastChannel` constructor (`NotSupportedError`) is `capability-missing` (phase `probe`); a non-cloneable post (`DataCloneError` — caller input) is `invalid-argument` (phase `execute`); anything else (a `DataError` deserialization failure, an `InvalidStateError`, or an `Error` fallback) is `broadcast-error` (phase `execute`). All are `recoverable: false` (the same input re-sent will not recover). `errorInfo` stays in lockstep with `error` (same transitions, cleared alongside it). The shared `WcsIoErrorInfo` type and the `WCS_BROADCAST_ERROR_CODE` constants are exported.
 
 ## Headless usage (`BroadcastCore`)
 

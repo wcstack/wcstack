@@ -367,7 +367,7 @@ describe("PointerLockCore", () => {
       const names = PointerLockCore.wcBindable.properties.map((p) => p.name);
       expect(names).not.toContain("movementX");
       expect(names).not.toContain("movementY");
-      expect(names).toEqual(["active"]);
+      expect(names).toEqual(["active", "error", "errorInfo"]);
     });
   });
 
@@ -385,6 +385,102 @@ describe("PointerLockCore", () => {
     it("active は getter を持たない（detail 自体が boolean 値）", () => {
       const prop = PointerLockCore.wcBindable.properties.find((p) => p.name === "active")!;
       expect(prop.getter).toBeUndefined();
+    });
+
+    it("error / errorInfo が observable な失敗出力(event 付き)として宣言される", () => {
+      expect(PointerLockCore.wcBindable.properties).toHaveLength(3);
+      expect(PointerLockCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-pointer-lock:error" });
+      expect(PointerLockCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-pointer-lock:error-info-changed" });
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new PointerLockCore().errorInfo).toBeNull();
+    });
+
+    it("target 未解決 → invalid-argument / start / recoverable=false", async () => {
+      installPointerLockDoc();
+      const core = new PointerLockCore();
+      await core.requestPointerLock(null);
+      expect(core.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false,
+        message: "Pointer Lock target could not be resolved.",
+      });
+    });
+
+    it("unsupported → capability-missing / probe / recoverable=false", async () => {
+      removePointerLockDoc();
+      const el = makeElement();
+      const core = new PointerLockCore();
+      await core.requestPointerLock(el);
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "Pointer Lock API is not supported.",
+      });
+    });
+
+    it("TypeError(gesture 外)→ not-allowed / execute / recoverable=true", async () => {
+      installPointerLockDoc({}, function () {
+        return Promise.reject(new TypeError("needs a user gesture"));
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      await core.requestPointerLock(el);
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: true, message: "needs a user gesture" });
+    });
+
+    it("NotAllowedError → not-allowed / execute / recoverable=true", async () => {
+      installPointerLockDoc({}, function () {
+        return Promise.reject(new DOMException("denied", "NotAllowedError"));
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      await core.requestPointerLock(el);
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: true, message: "denied" });
+    });
+
+    it("その他 caught 例外 → pointer-lock-error / execute / recoverable=false", async () => {
+      const err = new Error("boom"); err.name = "InvalidStateError";
+      installPointerLockDoc({}, function () {
+        return Promise.reject(err);
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      await core.requestPointerLock(el);
+      expect(core.errorInfo).toEqual({ code: "pointer-lock-error", phase: "execute", recoverable: false, message: "boom" });
+    });
+
+    it("非 Error(message 非 string)の reject も never-throw で pointer-lock-error に分類", async () => {
+      // string を throw: .message を持たないので messageOf は String(error) にフォールバック。
+      installPointerLockDoc({}, function () {
+        return Promise.reject("raw failure");
+      });
+      const el = makeElement();
+      const core = new PointerLockCore();
+      await expect(core.requestPointerLock(el)).resolves.toBeUndefined();
+      expect(core.errorInfo).toEqual({ code: "pointer-lock-error", phase: "execute", recoverable: false, message: "raw failure" });
+    });
+
+    it("成功で errorInfo が null にクリアされ、error と同期する", async () => {
+      installPointerLockDoc();
+      const core = new PointerLockCore();
+      await core.requestPointerLock(null); // まず error を立てる
+      expect(core.errorInfo).not.toBeNull();
+      const el = makeElement();
+      await core.requestPointerLock(el);
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("wcs-pointer-lock:error-info-changed が error より前に発火する", async () => {
+      installPointerLockDoc();
+      const core = new PointerLockCore();
+      const order: string[] = [];
+      core.addEventListener("wcs-pointer-lock:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-pointer-lock:error", () => order.push("error"));
+      await core.requestPointerLock(null);
+      expect(order).toEqual(["errorInfo", "error"]);
     });
   });
 });

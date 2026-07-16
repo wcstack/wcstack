@@ -2,6 +2,8 @@ import {
   IWcBindable, RecorderOptions, WcsMediaErrorDetail, WcsRecordedDetail,
 } from "../types.js";
 import { hasMediaRecorder, normalizeMediaError } from "../media/getUserMedia.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveMediaErrorInfo } from "./mediaCapabilities.js";
 
 /**
  * Headless media-recording primitive. Wraps MediaRecorder, consuming a borrowed
@@ -38,6 +40,12 @@ export class RecorderCore extends EventTarget {
       { name: "blob", event: "wcs-recorder:recorded", getter: (e: Event) => (e as CustomEvent).detail?.blob ?? null },
       { name: "objectURL", event: "wcs-recorder:recorded", getter: (e: Event) => (e as CustomEvent).detail?.objectURL ?? null },
       { name: "error", event: "wcs-recorder:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` (the DOMException name /
+      // "unsupported"/"NoStreamError"/"RecorderError" sentinel); the existing `error`
+      // property/event are unchanged. Fires wcs-recorder:error-info-changed. No lane —
+      // recording is command-driven.
+      { name: "errorInfo", event: "wcs-recorder:error-info-changed" },
       // event-token: detail = the assembled clip { blob, objectURL, mimeType, duration }.
       { name: "recorded", event: "wcs-recorder:recorded", getter: (e: Event) => (e as CustomEvent).detail },
       // event-token (timeslice mode): detail = the streamed Blob chunk.
@@ -61,6 +69,7 @@ export class RecorderCore extends EventTarget {
   private _blob: Blob | null = null;
   private _objectURL: string | null = null;
   private _error: WcsMediaErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
 
   private _recorder: MediaRecorder | null = null;
   private _stream: MediaStream | null = null; // borrowed — never stopped here
@@ -91,6 +100,13 @@ export class RecorderCore extends EventTarget {
   get blob(): Blob | null { return this._blob; }
   get objectURL(): string | null { return this._objectURL; }
   get error(): WcsMediaErrorDetail | null { return this._error; }
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-recorder:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null { return this._errorInfo; }
   get ready(): Promise<void> { return this._ready; }
 
   // --- State setters ---
@@ -127,7 +143,18 @@ export class RecorderCore extends EventTarget {
   private _setError(error: WcsMediaErrorDetail | null): void {
     if (error === null && this._error === null) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error detail (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveMediaErrorInfo(error));
     this._dispatch("wcs-recorder:error", error);
+  }
+
+  // Called only from _setError (which already collapses the null→null transition), so
+  // errorInfo transitions exactly when error does — no separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._dispatch("wcs-recorder:error-info-changed", info);
   }
 
   private _dispatch(type: string, detail: unknown): void {

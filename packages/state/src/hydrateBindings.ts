@@ -1,10 +1,11 @@
 import { getAbsoluteStateAddressByBinding } from "./binding/getAbsoluteStateAddressByBinding";
-import { addBindingByAbsoluteStateAddress } from "./binding/getBindingSetByAbsoluteStateAddress";
 import { setLastListValueByAbsoluteStateAddress } from "./list/lastListValueByAbsoluteStateAddress";
 import { parseBindTextsForElement } from "./bindTextParser/parseBindTextsForElement";
 import { ParseBindTextResult } from "./bindTextParser/types";
+import { BindingSession, getOrCreateBindingSession } from "./bindings/BindingSession";
 import { collectNodesAndBindingInfos } from "./bindings/collectNodesAndBindingInfos";
 import { setBindingsByContent } from "./bindings/bindingsByContent";
+import { setBindingSessionByContent } from "./bindings/bindingSessionByContent";
 import { setIndexBindingsByContent } from "./bindings/indexBindingsByContent";
 import { setNodesByContent } from "./bindings/nodesByContent";
 import { bindLoopContextToContent } from "./bindings/bindLoopContextToContent";
@@ -12,14 +13,7 @@ import { config } from "./config";
 import { WILDCARD, INDEX_BY_INDEX_NAME } from "./define";
 import { Ssr, SSR_BLOCK_START } from "./components/Ssr";
 import { getStateElementByName } from "./stateElementByName";
-import { raiseError } from "./raiseError";
 import { setLoopContextByNode } from "./list/loopContextByNode";
-import { replaceToReplaceNode } from "./bindings/replaceToReplaceNode";
-import { attachEventHandler } from "./event/handler";
-import { attachEventTokenHandler } from "./event/eventTokenHandler";
-import { attachTwowayEventHandler } from "./event/twowayHandler";
-import { attachRadioEventHandler } from "./event/radioHandler";
-import { attachCheckboxEventHandler } from "./event/checkboxHandler";
 import { applyChangeFromBindings } from "./apply/applyChangeFromBindings";
 import { hydrateSetContent, hydrateSetLastNode } from "./apply/applyChangeToFor";
 import { waitForStateInitialize } from "./waitForStateInitialize";
@@ -112,8 +106,11 @@ function collectSsrBlocks(root: Node): ISsrBlock[] {
  */
 function collectBindingsFromLiveNodes(
   nodes: Node[],
-): { bindingInfos: IBindingInfo[], subscriberNodes: Node[] } {
-  if (nodes.length === 0) return { bindingInfos: [], subscriberNodes: [] };
+): { bindingInfos: IBindingInfo[], subscriberNodes: Node[], bindingSession: BindingSession } {
+  const bindingSession = new BindingSession();
+  if (nodes.length === 0) {
+    return { bindingInfos: [], subscriberNodes: [], bindingSession };
+  }
 
   // ノードの元の位置を記録
   const parent = nodes[0].parentNode;
@@ -128,15 +125,10 @@ function collectBindingsFromLiveNodes(
   // バインディング収集
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfos(wrapper);
 
-  // _initializeBindings 相当の処理
-  for (const binding of allBindings) {
-    replaceToReplaceNode(binding);
-    if (attachEventHandler(binding)) continue;
-    if (attachEventTokenHandler(binding)) continue;
-    attachTwowayEventHandler(binding);
-    attachRadioEventHandler(binding);
-    attachCheckboxEventHandler(binding);
-  }
+  const bindingInfos = bindingSession.initialize(allBindings, {
+    registerAddress: false,
+    applyOnReconnect: false,
+  });
 
   // 元の位置に戻す
   if (parent) {
@@ -146,8 +138,9 @@ function collectBindingsFromLiveNodes(
   }
 
   return {
-    bindingInfos: allBindings,
+    bindingInfos,
     subscriberNodes,
+    bindingSession,
   };
 }
 
@@ -164,7 +157,8 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
     const content = createContentFromNodes(block.nodes);
 
     // Content のバインディングを収集
-    const { bindingInfos, subscriberNodes } = collectBindingsFromLiveNodes(block.nodes);
+    const { bindingInfos, subscriberNodes, bindingSession } = collectBindingsFromLiveNodes(block.nodes);
+    setBindingSessionByContent(content, bindingSession);
 
     // Content 内のノードに data-wcs-completed を付与
     // （メインの collectNodesAndBindingInfos で重複登録されないようにする）
@@ -199,10 +193,11 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
         // ILoopContext は IStateAddress + listIndex なので、stateAddress をそのまま使う
         bindLoopContextToContent(content, stateAddress as any);
 
-        for (const binding of bindingInfos) {
-          const absAddr = getAbsoluteStateAddressByBinding(binding);
-          addBindingByAbsoluteStateAddress(absAddr, binding);
-        }
+        bindingSession.initialize(bindingInfos, {
+          registerAddress: true,
+          registerPathInfo: false,
+          applyOnReconnect: false,
+        });
 
         // listIndex を UUID ごとに収集（後で setListIndexesByList に渡す）
         let indexes = listIndexesByUuid.get(block.uuid);
@@ -217,11 +212,11 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): void {
       if (placeholderComment) {
         setContentByNode(placeholderComment, content);
 
-        // バインディングをアドレスに登録
-        for (const binding of bindingInfos) {
-          const absAddr = getAbsoluteStateAddressByBinding(binding);
-          addBindingByAbsoluteStateAddress(absAddr, binding);
-        }
+        bindingSession.initialize(bindingInfos, {
+          registerAddress: true,
+          registerPathInfo: false,
+          applyOnReconnect: false,
+        });
       }
     }
   }
@@ -392,19 +387,11 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
   // バインディングを構造系とそれ以外に分離
   const normalBindings: IBindingInfo[] = [];
   const structuralBindings: IBindingInfo[] = [];
+  const bindingSession = getOrCreateBindingSession(document.body);
+  const initializedBindings = bindingSession.initialize(allBindings);
 
-  for (const binding of allBindings) {
-    replaceToReplaceNode(binding);
-    if (attachEventHandler(binding)) {
-      continue;
-    }
-    if (attachEventTokenHandler(binding)) {
-      continue;
-    }
-    attachTwowayEventHandler(binding);
-    attachRadioEventHandler(binding);
-    attachCheckboxEventHandler(binding);
-
+  for (const binding of initializedBindings) {
+    if (binding.bindingType === "event") continue;
     if (STRUCTURAL_TYPES.has(binding.bindingType)) {
       structuralBindings.push(binding);
     } else if (binding.statePathName.includes(WILDCARD)) {
@@ -412,20 +399,6 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
       continue;
     } else {
       normalBindings.push(binding);
-    }
-  }
-
-  // 全バインディング（通常 + 構造）をアドレスに登録
-  for (const binding of [...normalBindings, ...structuralBindings]) {
-    const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
-    addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
-    const rootNode = binding.replaceNode.getRootNode() as Node;
-    const stateElement = getStateElementByName(rootNode, binding.stateName);
-    if (stateElement === null) {
-      raiseError(`State element with name "${binding.stateName}" not found for binding.`);
-    }
-    if (binding.bindingType !== 'event') {
-      stateElement.setPathInfo(binding.statePathName, binding.bindingType);
     }
   }
 

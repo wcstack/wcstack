@@ -88,6 +88,12 @@ Because `share()` must run from within a real user gesture (a click handler), th
 | `loading`   | `wcs-share:loading-changed`     | `true` while a `share()` call is in flight. |
 | `error`     | `wcs-share:error`               | A genuine platform failure (anything **other than** the user cancelling the share sheet). `null` when there has been no failure yet, or after the next `share()` call resets it. |
 | `cancelled` | `wcs-share:cancelled-changed`   | `true` when the user dismissed the native share sheet (`AbortError`). Kept independent of `error` so bindings gated on `error` do not react to routine cancellation. |
+| `errorInfo` | `wcs-share:error-info-changed`  | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), or `null`. Additive — the `error` shape is unchanged; `code` is `capability-missing` when unsupported or `share-failed` on a genuine failure. |
+
+**Concurrency.** A share sheet is a single system-modal surface, so `<wcs-share>`
+runs its calls through the shared io-core lane with the `exhaust` policy: while one
+`share()` is in flight, a second call is an idempotent **no-op** (it returns `null`
+without opening a second sheet), leaving the in-flight call's result untouched.
 
 `cancelled` and `error` are both reset (`false` / `null`) at the **start** of a `share()` call that goes on to actually invoke `navigator.share()`, so a stale outcome from a previous call never lingers into that call's result. The one exception is the unsupported early-return (`navigator.share` missing, see below): it returns before that reset runs, so a `cancelled` left over from an earlier call can still read `true` alongside the freshly-set unsupported `error`. This is a narrow edge case in practice — a page losing `navigator.share` mid-session is not a realistic scenario.
 

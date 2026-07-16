@@ -248,11 +248,22 @@ describe("WcsWorker - コマンドと委譲 getter", () => {
     expect(el.error).toBeNull();
     expect(el.running).toBe(true);
   });
+
+  it("errorInfo が Shell ゲッター経由で Core から読み取れる", () => {
+    const el = makeElement({ src: "w.js" });
+    document.body.appendChild(el);
+    expect(el.errorInfo).toBeNull();
+    FakeWorker.last!.emitError({ message: "boom" }); // worker-error / execute
+    expect(el.errorInfo).toEqual({
+      code: "worker-error", phase: "execute", recoverable: false, message: "boom",
+    });
+  });
 });
 
 describe("WcsWorker - メタ宣言", () => {
   it("wcBindable に properties / inputs / commands を宣言している", () => {
     expect(WcsWorker.wcBindable.properties.map(p => p.name)).toContain("message");
+    expect(WcsWorker.wcBindable.properties.map(p => p.name)).toContain("errorInfo");
     expect(WcsWorker.wcBindable.inputs?.map(i => i.name)).toContain("src");
     expect(WcsWorker.wcBindable.commands?.map(c => c.name)).toEqual(["start", "post", "terminate"]);
   });

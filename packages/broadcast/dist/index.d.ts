@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -68,6 +80,8 @@ interface WcsBroadcastCoreValues {
     message: any;
     /** The last error (post failure / deserialization failure / unsupported), or `null`. */
     error: WcsBroadcastErrorDetail | null;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable), or `null`. */
+    errorInfo: WcsIoErrorInfo | null;
 }
 /**
  * Value types for the Shell (`<wcs-broadcast>`) — identical observable surface
@@ -128,15 +142,24 @@ declare class BroadcastCore extends EventTarget {
     private _name;
     private _message;
     private _error;
+    private _errorInfo;
     private _gen;
     private _ready;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     get message(): any;
     get error(): WcsBroadcastErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-broadcast:error-info-changed`), derived from `error`; the existing
+     * `error` property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     observe(): Promise<void>;
     private _setMessage;
     private _setError;
+    private _commitErrorInfo;
     /**
      * Join the named channel. Any previously-open channel is closed first, so
      * calling `open()` again switches channels. When the BroadcastChannel
@@ -193,6 +216,7 @@ declare class WcsBroadcast extends HTMLElement {
     set manual(value: boolean);
     get message(): any;
     get error(): WcsBroadcastErrorDetail | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     open(): void;
     post(data: any): void;
     close(): void;
@@ -201,5 +225,24 @@ declare class WcsBroadcast extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { BroadcastCore, WcsBroadcast, bootstrapBroadcast, getConfig };
-export type { IWritableConfig, IWritableTagNames, WcsBroadcastCommands, WcsBroadcastCoreCommands, WcsBroadcastCoreValues, WcsBroadcastErrorDetail, WcsBroadcastInputs, WcsBroadcastValues };
+/**
+ * broadcastCapabilities.ts
+ *
+ * Broadcast node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。BroadcastChannel の post / message は concurrent-independent(競合しない)
+ * ため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ */
+
+/** 安定した broadcast error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_BROADCAST_ERROR_CODE: {
+    /** BroadcastChannel コンストラクタ不在(`_unsupportedError()` の `NotSupportedError`)。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** structured clone 不可な payload を post(`DataCloneError`)。呼び出し側入力の不備。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** その他の post / channel 失敗(DataError / InvalidStateError / "Error" fallback など)。 */
+    readonly BroadcastError: "broadcast-error";
+};
+
+export { BroadcastCore, WCS_BROADCAST_ERROR_CODE, WcsBroadcast, bootstrapBroadcast, getConfig };
+export type { IWritableConfig, IWritableTagNames, WcsBroadcastCommands, WcsBroadcastCoreCommands, WcsBroadcastCoreValues, WcsBroadcastErrorDetail, WcsBroadcastInputs, WcsBroadcastValues, WcsIoErrorInfo, WcsIoErrorPhase };

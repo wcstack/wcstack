@@ -30,7 +30,7 @@ http://localhost:3000 でアクセスできます。
 - **サーバメッセージは今日 round-trip する**: `body` が読み取り済みテキストを保持するため、fetch 出力のネストパスは `detailFetch.value.name` と同様に reactive にバインドできます。エラーバナーは `createFetch.error.body` から `createErrorMessage` を導出し、サーバの `{ "error": "<理由>" }` をパースして空 name の 400 では `"Name is required"` を表示、その JSON 形でないとき（ネットワークエラーなど）は汎用文言にフォールバックします。フレームワークの変更は不要で、`error.body` は契約の一部です（`fetchCore` の HTTP エラーテストに `error.body === "Not Found"` の主張を追加して釘を打ちました）。
 - **リクエストヘッダは宣言的**: `create-fetch` は `<wcs-fetch-header name="…" value="…">` 子要素を入れ子にして `Content-Type: application/json` を送ります。ヘッダはコードではなく子タグとして積みます。
 - **ステータスのライブリージョン**: 成功/エラーバナーは *常設の* `<div role="status">` の中に置き、テンプレートはその内側の中身だけを差し替えます。`aria-live` リージョンは確実に読み上げるために DOM に常駐している必要があり、テキストごとオンデマンドで mount すると読み飛ばされがちです。
-- **`*` はクリックされた行に解決される**: `selectUser` は `listFetch.value.*.id` を読み、`*` は `for:` ループ内でクリックされた行のインデックス、つまりそのユーザーの id を指します。
+- **`*` はクリックされた行に解決される**: `selectUser` は `listRows.*.id` を読み、`*` は `for:` ループ内でクリックされた行のインデックス、つまりそのユーザーの id を指します（`listRows` は `listFetch.value` の null 安全な射影です。`value` は初回レスポンスまで `null` なので、リストの `for:` も同じ理由で `listRows` にバインドします）。
 - **排他的な UI 状態**: 詳細ペイン（`detailLoading` / `detailReady` / `detailIdle`）と作成バナー（`createSucceeded`）は相互排他的な getter として導出されるため、「Click a user…」のヒントがスピナーと重なって表示されたり、成功メッセージが次の送信に重なったりしません。
 - **stale-while-revalidate**: フィルタ切替時、スピナーは初回ロード時のみ表示（`listLoadingFirst`）。以降は前の行を残したまま `class.stale` で薄く表示するので、一覧が一瞬空になりません。
 - **`onclick` は引数を取れない**: メソッドを名前でバインドするため、各フィルタボタンは共通の `filterBy(role)` をラップした 0 引数版（`filterAdmin` など）を持ちます。

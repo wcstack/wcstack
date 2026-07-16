@@ -27,8 +27,9 @@ node packages/fetch/examples/pagination/shared/server.js
 
 - **JS のつなぎコードがゼロ。** すべての流れが HTML で完結します。算出 getter `itemsFetch.url` が
   `page` から URL を組み立て、1 つの `<wcs-fetch data-wcs="...: itemsFetch">` がリクエストを実行し、
-  レスポンスの JSON が `itemsFetch.value` に入ります。テンプレートからは
-  `itemsFetch.value.items` / `.total` / `.totalPages` をそのまま読みます。
+  レスポンスの JSON が `itemsFetch.value` に入ります。この出力は要素が authority で、初回レスポンス前
+  とエラー後は `null` になるため、テンプレートから直接は読みません。null 安全な getter
+  （`rows` / `total` / `totalPages`）で射影し、リストは `for: rows` にバインドします。
 - **古いレスポンスからの自動保護。** ページをクリックすると `page` が変わるだけです。URL getter が
   再計算され、`<wcs-fetch>` が新しい `url` を検知し、**進行中の前のリクエストを自動的に中断** してから
   新しいリクエストを開始します。`AbortController` も「これはまだ現在のページか？」という判定も不要です。

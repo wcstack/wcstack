@@ -113,4 +113,21 @@ describe("Idle (Shell)", () => {
     expect(WcsIdle.wcBindable.inputs).toEqual([{ name: "threshold", attribute: "threshold" }]);
     expect(WcsIdle.wcBindable.commands!.map((c) => c.name)).toEqual(["requestPermission", "start", "stop"]);
   });
+
+  it("wcBindable: properties は Core を継承し errorInfo を含む", () => {
+    const names = WcsIdle.wcBindable.properties.map((p) => p.name);
+    expect(names).toEqual(["userState", "screenState", "active", "error", "errorInfo"]);
+  });
+
+  it("errorInfo が Shell ゲッター経由で Core から読み取れる", async () => {
+    removeIdleDetector();
+    const el = createIdle();
+    document.body.appendChild(el);
+    expect(el.errorInfo).toBeNull();
+    await el.start(); // 非対応 → capability-missing
+    expect(el.errorInfo).toEqual({
+      code: "capability-missing", phase: "probe", recoverable: false,
+      message: "IdleDetector is not supported in this browser",
+    });
+  });
 });

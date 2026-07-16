@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { IWcBindable, GeoOptions, GeoPermissionState, WcsGeoPositionDetail, WcsGeoCoords, WcsGeoErrorDetail } from "../types.js";
 import { GeolocationCore } from "../core/GeolocationCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 // Named WcsGeolocation (not `Geolocation`) so the class does not shadow the
@@ -199,6 +200,10 @@ export class WcsGeolocation extends HTMLElement {
 
   get error(): WcsGeoErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get permission(): GeoPermissionState {

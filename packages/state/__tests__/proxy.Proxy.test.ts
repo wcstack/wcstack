@@ -164,6 +164,9 @@ describe('proxy/StateHandler', () => {
     (proxy as any).count = 2;
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(applyChangeFromBindingsMock).toHaveBeenCalledTimes(1);
-    expect(applyChangeFromBindingsMock).toHaveBeenCalledWith([bindingInfo]);
+    // 第1引数(bindings)のみ検証。enablePropagationContext 有効時は追加の伝播 context
+    // 引数が続くため、正確一致(toHaveBeenCalledWith)ではなく第1引数だけを確認して
+    // フラグ非依存にする（挙動は等価・context は追加的）。
+    expect(applyChangeFromBindingsMock.mock.calls[0][0]).toEqual([bindingInfo]);
   });
 });

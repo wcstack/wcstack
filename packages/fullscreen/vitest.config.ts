@@ -19,7 +19,10 @@ export default defineConfig({
         // Intentionally-retained scaffolding with no import site (see the note in
         // src/raiseError.ts); excluded explicitly so its 0% coverage is a visible,
         // deliberate decision rather than a file silently missing from the report.
-        'src/raiseError.ts'
+        'src/raiseError.ts',
+        // Generated copy of the shared io-core capability layer (byte-identical to
+        // fetch's, which tests it fully); fullscreen uses only the WcsIoErrorInfo type.
+        'src/core/platformCapability.ts'
       ],
       thresholds: {
         statements: 100,

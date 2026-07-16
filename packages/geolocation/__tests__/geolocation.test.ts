@@ -54,6 +54,15 @@ describe("Geolocation (Shell)", () => {
     expect(el.latitude).toBe(5);
   });
 
+  it("errorInfo は Core から転送される（PERMISSION_DENIED）", async () => {
+    installGeolocation({ error: { code: 1, message: "denied" } });
+    removePermissions();
+    const el = createGeo();
+    document.body.appendChild(el);
+    await el.connectedCallbackPromise;
+    expect(el.errorInfo).toEqual({ code: "permission-denied", phase: "execute", recoverable: false, message: "denied" });
+  });
+
   it("watch / manual モードでは connectedCallbackPromise は即解決（接続時一発取得なし）", async () => {
     installGeolocation();
     const watchEl = createGeo({ watch: "" });

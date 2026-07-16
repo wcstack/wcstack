@@ -14,7 +14,7 @@ With `@wcstack/state`, `<wcs-wakelock>` reads as one declarative line:
 *"Keep the screen awake **while** `isPlaying` is true."* No `navigator.wakeLock.request()`, no `visibilitychange` re-acquire glue, no teardown.
 
 - **input surface**: `active`, `type`, `manual`
-- **output state surface**: `held`, `error`
+- **output state surface**: `held`, `error`, `errorInfo`
 - **commands**: `request()`, `release()`
 
 `@wcstack/wakelock` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
@@ -110,6 +110,7 @@ npm install @wcstack/wakelock
 |----------|------------------|-------------|
 | `held`   | `boolean`        | Whether a wake lock sentinel is currently held. Reflects OS auto-release and re-acquisition. |
 | `error`  | `Error \| null`  | The last request failure (e.g. denied, unsupported), or `null`. |
+| `errorInfo` | `WcsIoErrorInfo \| null` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`) derived from `error`, or `null`. Additive — the `error` shape is unchanged. |
 
 > **`wcs-wakelock:error` is a property-change notification** (wc-bindable model), not just a failure signal: it fires with `detail` = the Error on a failed request, and fires again with `detail = null` when a later request succeeds and the `error` property is cleared. Read `error == null` as "no error *right now*", not "an error never happened".
 
@@ -185,6 +186,7 @@ WakeLockCore.wcBindable = {
   properties: [
     { name: "held", event: "wcs-wakelock:held-changed" },
     { name: "error", event: "wcs-wakelock:error" },
+    { name: "errorInfo", event: "wcs-wakelock:error-info-changed" },
   ],
   commands: [
     { name: "request", async: true }, { name: "release" },
@@ -221,6 +223,7 @@ When you drive the Core directly, call `dispose()` when you are done so its
 - **Auto-release is handled for you.** The OS may drop the lock for several reasons — the page being hidden, but also battery-low or power-saver mode while the page stays visible. The component renews the lease in both cases: a release while *visible* is re-acquired immediately, and a release while *hidden* is re-acquired on the next return to visibility — as long as `active` is still set. The binding means "keep awake *while* active", not "acquire once". A **denied** re-acquire does not loop — it surfaces via `error` and stays quiet (the dominant case: the spec rejects re-requests under battery-low / power-saver). A **granted** re-acquire renews the lease, so if the OS keeps granting and releasing, the component keeps renewing (one request per release, driven by the OS, not a synchronous spin).
 - **Secure context (HTTPS).** The Screen Wake Lock API only works in a secure context (HTTPS, or `localhost`).
 - **Never throws.** An unsupported environment is a silent no-op (`held` stays `false`); a rejected request surfaces via the `error` property rather than throwing. `request()` never rejects.
+- **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-wakelock>` publishes a serializable `errorInfo` (`wcs-wakelock:error-info-changed`) that classifies the *same* failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape. A rejected `request()` is classified by its `Error.name`: a `NotAllowedError` (page not visible, or a permission / feature-policy block) → `not-allowed` (phase `start`); anything else (e.g. a normalized non-`Error` rejection) → `wakelock-error` (phase `execute`). Both are `recoverable: false`. There is **no** `capability-missing` code: an unsupported environment is a silent no-op (`held` stays `false`, `error` unset), so that branch is unreachable. `errorInfo` transitions exactly when `error` does (cleared to `null` on a later success); the shared `WcsIoErrorInfo` type and the `WCS_WAKELOCK_ERROR_CODE` constants are exported.
 - **No permission gate.** There is no separate permission prompt (a request may still be denied if the page is not visible — that surfaces as `error`).
 
 ## License

@@ -3,6 +3,7 @@ import {
   WcsMediaErrorDetail,
 } from "../types.js";
 import { CameraCore } from "../core/CameraCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-camera>` — declarative camera capture with a built-in preview.
@@ -158,6 +159,8 @@ export class WcsCamera extends HTMLElement {
   get audioPermission(): MediaPermissionState | null { return this._core.audioPermission; }
   get devices(): MediaDeviceSnapshot[] { return this._core.devices; }
   get error(): WcsMediaErrorDetail | null { return this._core.error; }
+  /** The last failure's serializable `WcsIoErrorInfo` (Phase 6 taxonomy), or null. */
+  get errorInfo(): WcsIoErrorInfo | null { return this._core.errorInfo; }
 
   get connectedCallbackPromise(): Promise<void> { return this._connectedCallbackPromise; }
 

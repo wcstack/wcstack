@@ -54,6 +54,17 @@ describe("Credential (Shell)", () => {
     expect(el.loading).toBe(false);
   });
 
+  it("errorInfo は Core から転送される（unsupported で capability-missing）", async () => {
+    removeCredentials();
+    const el = createCredential();
+    await el.get();
+    expect(el.errorInfo).toEqual({
+      code: "capability-missing", phase: "start", recoverable: false,
+      capabilityId: "web.credentials",
+      message: "Credential Management API is not supported in this browser.",
+    });
+  });
+
   it("store() が成功すると value が反映される", async () => {
     const credential = { id: "user@example.com" };
     installStore(() => Promise.resolve(credential));

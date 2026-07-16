@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly tilt: string;
 }
@@ -38,6 +40,8 @@ export interface WcsTiltCoreValues {
   absolute: boolean | null;
   permissionState: TiltPermissionState;
   error: any;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

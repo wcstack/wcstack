@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { STORAGE_EVENTS } from "../events.js";
 import { IWcBindable, StorageType } from "../types.js";
 import { StorageCore } from "../core/StorageCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 export class Storage extends HTMLElement {
@@ -149,6 +150,10 @@ export class Storage extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

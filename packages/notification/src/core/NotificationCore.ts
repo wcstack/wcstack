@@ -2,6 +2,8 @@ import {
   IWcBindable, NotifyBackend, NotifyOptions, NotificationPermissionRaw,
   PermissionStateOrUnsupported, WcsNotifyClickDetail, WcsNotifyErrorDetail,
 } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveNotifyErrorInfo } from "./notificationCapabilities.js";
 
 // Wrapper stored in a notification's `data` so the Service Worker side (a
 // separate global scope with no access to this instance) can recover the
@@ -60,6 +62,12 @@ export class NotificationCore extends EventTarget {
       { name: "prompt", event: "wcs-notify:permission-change", getter: (e: Event) => (e as CustomEvent).detail === "prompt" },
       { name: "unsupported", event: "wcs-notify:permission-change", getter: (e: Event) => (e as CustomEvent).detail === "unsupported" },
       { name: "error", event: "wcs-notify:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error.error` (the stable code the
+      // Core's `_err()` already produces); the existing `error` property/event are
+      // unchanged. Fires wcs-notify:error-info-changed. No lane — show is a
+      // momentary, last-value-wins send, not a competing async operation.
+      { name: "errorInfo", event: "wcs-notify:error-info-changed" },
       { name: "clicked", event: "wcs-notify:click", getter: (e: Event) => (e as CustomEvent).detail },
       { name: "closed", event: "wcs-notify:close", getter: (e: Event) => (e as CustomEvent).detail },
       { name: "shown", event: "wcs-notify:show", getter: (e: Event) => (e as CustomEvent).detail },
@@ -77,6 +85,7 @@ export class NotificationCore extends EventTarget {
 
   private _permission: PermissionStateOrUnsupported = "prompt";
   private _error: WcsNotifyErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _lastClick: WcsNotifyClickDetail | null = null;
   private _lastClose: WcsNotifyClickDetail | null = null;
   private _lastShow: WcsNotifyClickDetail | null = null;
@@ -147,6 +156,16 @@ export class NotificationCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-notify:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   get clicked(): WcsNotifyClickDetail | null {
     return this._lastClick;
   }
@@ -178,8 +197,23 @@ export class NotificationCore extends EventTarget {
   private _setError(error: WcsNotifyErrorDetail | null): void {
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // stable error code (or null on clear). Fires before the `error` event so an
+    // observer binding both sees the classification first, mirroring the io-node
+    // family.
+    this._commitErrorInfo(error === null ? null : deriveNotifyErrorInfo(error));
     this._target.dispatchEvent(new CustomEvent("wcs-notify:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already guards on error identity), so
+  // errorInfo transitions exactly when error does — no separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-notify:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

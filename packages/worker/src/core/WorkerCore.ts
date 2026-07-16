@@ -1,4 +1,6 @@
 import { IWcBindable, WcsWorkerErrorDetail, WcsWorkerStartOptions } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveWorkerErrorInfo } from "./workerCapabilities.js";
 
 /**
  * Headless Dedicated Worker primitive. A thin, framework-agnostic wrapper around
@@ -26,6 +28,11 @@ export class WorkerCore extends EventTarget {
     properties: [
       { name: "message", event: "wcs-worker:message" },
       { name: "error", event: "wcs-worker:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` (name + message); the existing
+      // `error` property/event are unchanged. Fires wcs-worker:error-info-changed. No
+      // lane — the worker is a command-driven owner, not a concurrent-operation node.
+      { name: "errorInfo", event: "wcs-worker:error-info-changed" },
       { name: "running", event: "wcs-worker:running-changed" },
     ],
     commands: [
@@ -39,6 +46,7 @@ export class WorkerCore extends EventTarget {
   private _worker: Worker | null = null;
   private _message: any = null;
   private _error: WcsWorkerErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _running: boolean = false;
 
   // Spawn configuration, retained so an automatic restart can re-spawn the same
@@ -94,6 +102,16 @@ export class WorkerCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-worker:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   get running(): boolean {
     return this._running;
   }
@@ -119,8 +137,24 @@ export class WorkerCore extends EventTarget {
   private _setError(error: WcsWorkerErrorDetail | null): void {
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // normalized error (name + message), or null on clear. Fires before the `error`
+    // event so an observer binding both sees the classification first, mirroring the
+    // io-node family.
+    this._commitErrorInfo(error === null ? null : deriveWorkerErrorInfo(error));
     this._target.dispatchEvent(new CustomEvent("wcs-worker:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already same-value-guards on the error
+  // reference), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-worker:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }
@@ -206,8 +240,9 @@ export class WorkerCore extends EventTarget {
 
   /**
    * Tear the Core down for a disconnected Shell: terminate the worker and reset
-   * the error shadow. Only the `error` clear is silent — it mutates the shadow
-   * without dispatching. Terminating a *running* worker still dispatches
+   * the error shadow (both `error` and its derived `errorInfo`). Only that
+   * error/errorInfo clear is silent — it mutates the shadows without dispatching.
+   * Terminating a *running* worker still dispatches
    * `wcs-worker:running-changed` (true→false) via `_terminateWorker`, so a
    * dispose on a worker that was live does emit one event on the (now
    * disconnected) element; only a no-op dispose (no worker running) is fully
@@ -225,7 +260,10 @@ export class WorkerCore extends EventTarget {
     this._gen++;
     this._clearRestartTimer();
     this._terminateWorker();
+    // Silent shadow reset (no dispatch), mirroring `_error`: keep `errorInfo`'s
+    // clear-to-null invariant so a reconnect does not read a stale classification.
     this._error = null;
+    this._errorInfo = null;
   }
 
   // --- Internal ---

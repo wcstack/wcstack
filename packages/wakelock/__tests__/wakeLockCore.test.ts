@@ -533,4 +533,78 @@ describe("WakeLockCore", () => {
     expect(core.held).toBe(false);
     expect(wl.request).toHaveBeenCalledTimes(0);
   });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(makeCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = WakeLockCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("NotAllowedError → not-allowed / start / recoverable=false（公開 error shape は不変）", async () => {
+      wl.restore();
+      // 実 API は取得拒否時に NotAllowedError で reject する（ページ非可視 / permission）。
+      const denied = new Error("page not visible");
+      denied.name = "NotAllowedError";
+      const failing = installWakeLock({ reject: denied });
+      const core = makeCore();
+      await core.request();
+      expect(core.errorInfo).toEqual({
+        code: "not-allowed", phase: "start", recoverable: false, message: "page not visible",
+      });
+      // 公開 error プロパティは生の Error のまま（taxonomy は additive）。
+      expect(core.error).toBe(denied);
+      failing.restore();
+      wl = installWakeLock();
+    });
+
+    it("その他の Error → wakelock-error / execute / recoverable=false", async () => {
+      wl.restore();
+      // 非 Error reject は Core が Error(name="Error")に正規化する → else 分岐。
+      const failing = installWakeLock({ reject: "boom" });
+      const core = makeCore();
+      await core.request();
+      expect(core.errorInfo).toEqual({
+        code: "wakelock-error", phase: "execute", recoverable: false, message: "boom",
+      });
+      failing.restore();
+      wl = installWakeLock();
+    });
+
+    it("成功取得で error が null にクリアされると errorInfo も null になる（error と同期）", async () => {
+      wl.restore();
+      const failing = installWakeLock({ reject: new Error("x") });
+      const core = makeCore();
+      await core.request();
+      expect(core.errorInfo).not.toBeNull();
+      failing.restore();
+
+      // 成功環境へ差し替えて再取得 → error/errorInfo ともに null にクリアされる。
+      wl = installWakeLock();
+      core.release();
+      await core.request();
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+      expect(core.held).toBe(true);
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", async () => {
+      wl.restore();
+      const failing = installWakeLock({ reject: new Error("denied") });
+      const target = new EventTarget();
+      const core = makeCore(target);
+      const order: string[] = [];
+      target.addEventListener("wcs-wakelock:error-info-changed", () => order.push("errorInfo"));
+      target.addEventListener("wcs-wakelock:error", () => order.push("error"));
+      await core.request();
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
+      failing.restore();
+      wl = installWakeLock();
+    });
+  });
 });

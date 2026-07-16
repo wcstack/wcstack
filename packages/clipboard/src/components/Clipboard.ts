@@ -4,6 +4,7 @@ import {
   WcsClipboardReadItem, WcsClipboardErrorDetail,
 } from "../types.js";
 import { ClipboardCore } from "../core/ClipboardCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 // Named WcsClipboard (not `Clipboard`) so the class does not shadow the global
@@ -128,6 +129,10 @@ export class WcsClipboard extends HTMLElement {
 
   get error(): WcsClipboardErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get readPermission(): ClipboardPermissionState {

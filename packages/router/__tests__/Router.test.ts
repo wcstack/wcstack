@@ -632,9 +632,24 @@ describe('Router', () => {
     });
 
     it('inputsにbasenameが宣言されていること', () => {
-      expect(Router.wcBindable.inputs).toHaveLength(1);
+      expect(Router.wcBindable.inputs).toHaveLength(2);
       expect(Router.wcBindable.inputs![0].name).toBe('basename');
       expect(Router.wcBindable.inputs![0].attribute).toBe('basename');
+    });
+
+    // navigateUrl を properties にだけ置くと、方向認識初期同期を持つ binding core が
+    // output-only と判定して state → element の書き込みを止めてしまい、state からの
+    // プログラム遷移が成立しなくなる。settable な面であることを宣言で固定する。
+    it('inputsにnavigateUrlが宣言されていること（settableな書き込み面）', () => {
+      const navigateUrl = Router.wcBindable.inputs!.find(input => input.name === 'navigateUrl');
+      expect(navigateUrl).toBeDefined();
+      expect(navigateUrl!.attribute).toBeUndefined();
+    });
+
+    // path の setter は navigate せず内部値を反映するだけなので、書き込み面としては
+    // 宣言しない（state から書いても URL は動かず、router と乖離するだけになる）。
+    it('inputsにpathを宣言しないこと（observable outputのみ）', () => {
+      expect(Router.wcBindable.inputs!.some(input => input.name === 'path')).toBe(false);
     });
 
     it('commandsにnavigateが宣言されていること', () => {

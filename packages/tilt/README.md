@@ -8,7 +8,7 @@ It is an **async primitive node** that turns device tilt (`deviceorientation`) i
 With `@wcstack/state`, `<wcs-tilt>` can be bound directly through path contracts:
 
 - **input surface**: none
-- **output state surface**: `alpha`, `beta`, `gamma`, `absolute`, `permissionState`, `error`
+- **output state surface**: `alpha`, `beta`, `gamma`, `absolute`, `permissionState`, `error`, `errorInfo`
 
 ## Why this exists — the iOS gesture-gate absorption sibling to `@wcstack/idle`
 
@@ -66,6 +66,7 @@ Every path referenced by `data-wcs` (`tiltBeta`, `tiltGamma`, `tiltTransform`, `
 | `absolute`        | `wcs-tilt:change`           | Whether the reading is relative to the Earth's frame. Reliability varies by browser — verify on your target devices. |
 | `permissionState` | `wcs-tilt:permission-changed` | `"granted"` \| `"denied"` \| `"unknown"`. |
 | `error`           | `wcs-tilt:error`            | The last `requestPermission()` failure (e.g. a gesture-context rejection), or `null`. never-throw: failures never reject/throw, they land here instead. |
+| `errorInfo`       | `wcs-tilt:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo`: stable `code` / `phase` / `recoverable`) derived from `error`, or `null`. Additive — the `error` shape is unchanged. |
 
 ## Commands
 
@@ -137,6 +138,7 @@ DevTools open; it is not a supported styling hook.
 
 - **Does not auto-start on connect.**
 - **Does not compose with `@wcstack/permission`** (no matching Permissions API entry exists) — `permissionState` is tracked locally.
+- **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-tilt>` publishes a serializable `errorInfo` (`wcs-tilt:error-info-changed`) that classifies the *same* failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape. Only `requestPermission()` can fail here, classified by the rejection reason's `Error.name`: a `NotAllowedError` (iOS Device Orientation permission denied) → `not-allowed` (phase `start`); anything else (a rejection outside a user-gesture context, a non-`Error` reason) → `tilt-error` (phase `execute`). Both are `recoverable: false`. There is **no** `capability-missing` code: on gate-less platforms an unsupported environment resolves to `"granted"` rather than erroring, so that branch is unreachable. `errorInfo` transitions exactly when `error` does (cleared to `null` on recovery); the shared `WcsIoErrorInfo` type and the `WCS_TILT_ERROR_CODE` constants are exported.
 - No `_gen` generation guard: subscribing is fully synchronous.
 - **On a non-secure origin (plain HTTP), `deviceorientation` never fires** — the browser suppresses it natively and `<wcs-tilt>` adds no guard of its own, so tilt values stay `null`, `wcs-tilt:change` never dispatches, and `permissionState` stays `"unknown"` (until you call `requestPermission()`). Calling `requestPermission()` cannot detect this either: on gate-less platforms its fallback resolves `"granted"` without probing anything. If nothing seems to happen, check your origin first.
 - **Permissions-Policy gate.** The `deviceorientation` event is only dispatched when the `accelerometer` and `gyroscope` Permissions-Policy directives are allowed (default allowlist: `self`, per the Device Orientation Events spec §4). Using `<wcs-tilt>` inside a cross-origin `<iframe>` requires `allow="accelerometer; gyroscope"` on that `<iframe>` element — otherwise the event silently never fires, the same failure mode as the non-secure-origin case above.

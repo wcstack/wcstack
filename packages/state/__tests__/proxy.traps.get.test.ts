@@ -3,7 +3,7 @@ import { get } from '../src/proxy/traps/get';
 import { createListIndex } from '../src/list/createListIndex';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
-import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol, setByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
+import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
 
 vi.mock('../src/proxy/methods/setLoopContext', () => ({
   setLoopContext: vi.fn(),
@@ -12,6 +12,10 @@ vi.mock('../src/proxy/methods/setLoopContext', () => ({
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
   getByAddress: vi.fn()
+}));
+
+vi.mock('../src/proxy/methods/hasByAddress', () => ({
+  hasByAddress: vi.fn()
 }));
 
 vi.mock('../src/proxy/methods/setByAddress', () => ({
@@ -52,6 +56,7 @@ vi.mock('../src/proxy/apis/updatedCallback', () => ({
 
 import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
+import { hasByAddress } from '../src/proxy/methods/hasByAddress';
 import { setByAddress } from '../src/proxy/methods/setByAddress';
 import { getListIndex } from '../src/proxy/methods/getListIndex';
 import { getAll } from '../src/proxy/apis/getAll';
@@ -65,6 +70,7 @@ import { updatedCallback } from '../src/proxy/apis/updatedCallback';
 const setLoopContextMock = vi.mocked(setLoopContext);
 const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
 const getByAddressMock = vi.mocked(getByAddress);
+const hasByAddressMock = vi.mocked(hasByAddress);
 const setByAddressMock = vi.mocked(setByAddress);
 const getListIndexMock = vi.mocked(getListIndex);
 const getAllMock = vi.mocked(getAll);
@@ -152,6 +158,21 @@ describe('proxy/traps/get', () => {
     expect(getByAddressMock).toHaveBeenCalledTimes(1);
     expect(getByAddressMock).toHaveBeenCalledWith(target, address, receiver, handler);
     expect(result).toBe('value');
+  });
+
+  it('$$hasByAddress が hasByAddress を呼び出すこと', () => {
+    hasByAddressMock.mockReturnValueOnce(true);
+    const handler = {} as any;
+    const target = { a: 1 };
+    const receiver = { receiver: true };
+    const address = createStateAddress(getPathInfo('a'), null);
+
+    const fn = get(target, hasByAddressSymbol, receiver, handler) as (address: any) => boolean;
+    const result = fn(address);
+
+    expect(hasByAddressMock).toHaveBeenCalledTimes(1);
+    expect(hasByAddressMock).toHaveBeenCalledWith(target, address, receiver, handler);
+    expect(result).toBe(true);
   });
 
   it('$$setByAddress が setByAddress を呼び出すこと', () => {

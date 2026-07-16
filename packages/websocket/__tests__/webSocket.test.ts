@@ -79,9 +79,9 @@ describe("WcsWebSocket コンポーネント", () => {
 
   it("wcBindableが正しく定義されている", () => {
     expect(WcsWebSocket.wcBindable.protocol).toBe("wc-bindable");
-    expect(WcsWebSocket.wcBindable.properties).toHaveLength(7);
+    expect(WcsWebSocket.wcBindable.properties).toHaveLength(8);
     const names = WcsWebSocket.wcBindable.properties.map(p => p.name);
-    expect(names).toEqual(["message", "connected", "loading", "error", "readyState", "trigger", "send"]);
+    expect(names).toEqual(["message", "connected", "loading", "error", "errorInfo", "readyState", "trigger", "send"]);
     expect(WcsWebSocket.wcBindable.inputs?.map(input => input.name)).toEqual([
       "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "binaryType", "manual", "trigger", "send"
     ]);
@@ -461,6 +461,18 @@ describe("WcsWebSocket コンポーネント", () => {
 
       MockWebSocket.instances[0].simulateError();
       expect(el.error).toBeTruthy();
+      el.remove();
+    });
+
+    it("errorInfo が Shell ゲッター経由で Core から読み取れる", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      expect(el.errorInfo).toBeNull();
+
+      MockWebSocket.instances[0].simulateError(); // error Event → connection-error
+      expect(el.errorInfo).toEqual({
+        code: "connection-error", phase: "execute", recoverable: true, message: "WebSocket connection error",
+      });
       el.remove();
     });
   });

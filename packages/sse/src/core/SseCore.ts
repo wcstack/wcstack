@@ -1,4 +1,6 @@
 import { IWcBindable, SseConnectOptions, WcsSseMessage } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveSseErrorInfo, WcsSseErrorKind } from "./sseCapabilities.js";
 
 // EventSource readyState values. Hardcoded rather than read from the global
 // EventSource so the Core does not require EventSource to exist at module load
@@ -15,6 +17,12 @@ export class SseCore extends EventTarget {
       { name: "connected", event: "wcs-sse:connected-changed" },
       { name: "loading", event: "wcs-sse:loading-changed" },
       { name: "error", event: "wcs-sse:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` via an explicit `kind`
+      // discriminator (invalid-argument / connection-error, split by phase +
+      // recoverable). The existing `error` property/event are unchanged. Fires
+      // wcs-sse:error-info-changed. No lane — SSE is a session/streaming monitor.
+      { name: "errorInfo", event: "wcs-sse:error-info-changed" },
       { name: "readyState", event: "wcs-sse:readystate-changed" },
     ],
     commands: [
@@ -29,6 +37,7 @@ export class SseCore extends EventTarget {
   private _connected: boolean = false;
   private _loading: boolean = false;
   private _error: Event | Error | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _readyState: number = SSE_CLOSED;
 
   private _url: string = "";
@@ -89,6 +98,17 @@ export class SseCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-sse:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged. `recoverable=true` only for a transient
+   * CONNECTING drop (the browser auto-reconnects).
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   get readyState(): number {
     return this._readyState;
   }
@@ -129,13 +149,44 @@ export class SseCore extends EventTarget {
     }));
   }
 
-  private _setError(error: Event | Error | null): void {
+  // `kind` is an explicit discriminator (passed only from the non-null call
+  // sites) that classifies the failure into the errorInfo taxonomy without
+  // reverse-engineering the mixed `Event | Error` shape — raw EventSource error
+  // Events cannot be told apart from a fatal (CLOSED) vs transient (CONNECTING)
+  // drop, so the caller supplies it. The clear path (`_setError(null)`) passes no
+  // kind; errorInfo is cleared to null in lockstep.
+  private _setError(error: Event | Error | null, kind?: WcsSseErrorKind): void {
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // kind discriminator (or null on clear). Fires before the `error` event so an
+    // observer binding both sees the classification first, mirroring the io-node
+    // family. Non-null errors always carry a kind (kind! is a type assertion, not
+    // a runtime branch).
+    this._commitErrorInfo(error === null ? null : deriveSseErrorInfo(kind!, this._errorMessage(error)));
     this._target.dispatchEvent(new CustomEvent("wcs-sse:error", {
       detail: error,
       bubbles: true,
     }));
+  }
+
+  // Called only from _setError (which already same-value-guards on the error
+  // reference), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-sse:error-info-changed", {
+      detail: info,
+      bubbles: true,
+    }));
+  }
+
+  // Extract a message for the errorInfo taxonomy. EventSource `error` Events carry
+  // no message field, so they fall back to a stable literal; validation and
+  // construction failures are Error/DOMException-like and expose `.message`.
+  private _errorMessage(error: Event | Error): string {
+    if (error instanceof Event) return "SSE connection error";
+    return error.message;
   }
 
   private _setReadyState(readyState: number): void {
@@ -166,7 +217,7 @@ export class SseCore extends EventTarget {
     // no-op で戻る。command-token 経路からの呼び出しが例外で更新サイクルを壊さず、
     // 「公開メソッドは throw しない」契約に揃える。
     if (!url) {
-      this._setError(new Error("url is required."));
+      this._setError(new Error("url is required."), "invalid-argument");
       return;
     }
 
@@ -215,7 +266,9 @@ export class SseCore extends EventTarget {
       // 生成失敗：dispatch はまだしていないので this._es 上書き競合は無い。
       this._es = null;
       this._setLoading(false);
-      this._setError(e as Error);
+      // stream 未確立の構築失敗 → connection-error / start / recoverable=false
+      // (EventSource が無いためブラウザの自動再接続は起きない)。
+      this._setError(e as Error, "connection-start");
       return;
     }
 
@@ -294,7 +347,12 @@ export class SseCore extends EventTarget {
     const es = this._es!;
     const state = es.readyState;
 
-    this._setError(event);
+    // errorInfo の分類は先読みした state で決める。CLOSED＝恒久エラー
+    // (connection-fatal / recoverable=false)、それ以外(CONNECTING)＝ブラウザが
+    // 自動再接続中(connection-transient / recoverable=true)。this._setReadyState
+    // より前に確定させるのは、_setError が同期 dispatch する error-info-changed が
+    // 正しい recoverable を載せて流れるようにするため。
+    this._setError(event, state === SSE_CLOSED ? "connection-fatal" : "connection-transient");
 
     // 再入した close()/connect() で自分が無効化されたら、以降の状態更新は放棄する
     // （再入側が確定させた状態が正。broadcast の _onMessage が dispatch 後に

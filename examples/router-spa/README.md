@@ -87,10 +87,15 @@ side does what it is best at, and the `path` binding is the only coupling.
 - **The server needs an SPA fallback**: `server.js` serves `index.html` for any
   extension-less non-API GET (`/products/3`, `/about`, …) so reloads and direct
   links reach the client-side router.
-- **Seeding `path: location.pathname`** in state covers the initial load: the
-  first render is correct even before the router's first `path-changed` event.
-  Both sides converge because the router's `path` setter and state's same-value
-  guard each suppress no-op echoes — the two-way binding cannot loop.
+- **The initial load needs no seed**: `path` is an output-only `wcBindable`
+  member, so the router is its authority — state reads the router's current path
+  when the binding attaches and takes later changes from `path-changed`. A deep
+  link renders correctly even though the router resolves its first route before
+  the binding exists, because that first value is *read*, not awaited. State never
+  writes `path` back, so there is no echo to suppress either.
+- **`navigateUrl` is declared as both an output and an input**, which is what makes
+  `this.navigateUrl = "/products/3"` navigate: a member declared only under
+  `properties` is output-only, and state would never write to it.
 - **`navigateUrl` is self-resetting**: the router sets it back to `null` (and
   emits `navigate-url-changed`) when navigation completes, so assigning the
   same path later still triggers a navigation.

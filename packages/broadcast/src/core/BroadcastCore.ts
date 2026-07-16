@@ -1,4 +1,6 @@
 import { IWcBindable, WcsBroadcastErrorDetail } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveBroadcastErrorInfo } from "./broadcastCapabilities.js";
 
 /**
  * Headless cross-tab messaging primitive. A thin, framework-agnostic wrapper
@@ -29,6 +31,12 @@ export class BroadcastCore extends EventTarget {
     properties: [
       { name: "message", event: "wcs-broadcast:message" },
       { name: "error", event: "wcs-broadcast:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` (the DOMException.name /
+      // synthetic name); the existing `error` property/event are unchanged. Fires
+      // wcs-broadcast:error-info-changed. No lane — post/message are concurrent-
+      // independent (mirrors ClipboardCore).
+      { name: "errorInfo", event: "wcs-broadcast:error-info-changed" },
     ],
     commands: [
       { name: "open" },
@@ -42,6 +50,7 @@ export class BroadcastCore extends EventTarget {
   private _name: string | null = null;
   private _message: any = null;
   private _error: WcsBroadcastErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   // Generation guard (§3.4): bumped on dispose(). An incoming message /
   // messageerror that fires after the Shell disconnected (a peer posted between
   // disconnect and the channel actually closing, or a queued event drains late)
@@ -67,6 +76,16 @@ export class BroadcastCore extends EventTarget {
 
   get error(): WcsBroadcastErrorDetail | null {
     return this._error;
+  }
+
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-broadcast:error-info-changed`), derived from `error`; the existing
+   * `error` property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
   }
 
   // --- Lifecycle (§3.5) ---
@@ -101,8 +120,23 @@ export class BroadcastCore extends EventTarget {
     // failure builds a fresh object, and the clear path always passes null.
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error name (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveBroadcastErrorInfo(error));
     this._target.dispatchEvent(new CustomEvent("wcs-broadcast:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already same-value-guards on reference
+  // identity), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-broadcast:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }
@@ -206,6 +240,10 @@ export class BroadcastCore extends EventTarget {
     this._gen++;
     this._closeChannel();
     this._error = null;
+    // dispose bypasses _setError (silent, no dispatch on a torn-down element), so
+    // clear the errorInfo mirror directly too — otherwise a stale taxonomy would
+    // survive after `error` has been reset to null.
+    this._errorInfo = null;
   }
 
   // --- Internal ---

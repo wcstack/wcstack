@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -88,6 +100,8 @@ interface WcsSpeakCoreValues {
     charIndex: number | null;
     spokenWord: string | null;
     error: WcsSpeakErrorDetail | null;
+    /** Phase 6 serializable failure taxonomy derived from `error`, or null. */
+    errorInfo: WcsIoErrorInfo | null;
     unsupported: boolean;
 }
 /**
@@ -189,6 +203,8 @@ interface WcsListenCoreValues {
     listening: boolean;
     permission: ListenPermissionState;
     error: WcsListenErrorDetail | null;
+    /** Phase 6 serializable failure taxonomy derived from `error`, or null. */
+    errorInfo: WcsIoErrorInfo | null;
     unsupported: boolean;
 }
 /**
@@ -257,6 +273,7 @@ declare class SpeakCore extends EventTarget {
     private _charIndex;
     private _spokenWord;
     private _error;
+    private _errorInfo;
     private _unsupported;
     private _queued;
     private _started;
@@ -271,6 +288,13 @@ declare class SpeakCore extends EventTarget {
     get charIndex(): number | null;
     get spokenWord(): string | null;
     get error(): WcsSpeakErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-speak:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get unsupported(): boolean;
     /** Resolves once the first probe settles (immediate — see `_ready`). */
     get ready(): Promise<void>;
@@ -281,6 +305,7 @@ declare class SpeakCore extends EventTarget {
     private _setPending;
     private _setBoundary;
     private _setError;
+    private _commitErrorInfo;
     private _setUnsupported;
     /**
      * Queue an utterance for `text` with optional per-utterance parameters. Never
@@ -373,6 +398,7 @@ declare class WcsSpeak extends HTMLElement {
     get charIndex(): number | null;
     get spokenWord(): string | null;
     get error(): WcsSpeakErrorDetail | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get unsupported(): boolean;
     speak(text: string): void;
     cancel(): void;
@@ -417,6 +443,7 @@ declare class ListenCore extends EventTarget {
     private _listening;
     private _permission;
     private _error;
+    private _errorInfo;
     private _unsupported;
     private _active;
     private _continuous;
@@ -433,6 +460,13 @@ declare class ListenCore extends EventTarget {
     get listening(): boolean;
     get permission(): ListenPermissionState;
     get error(): WcsListenErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-listen:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get unsupported(): boolean;
     /** Resolves once the first probe settles (immediate — see `_ready`). */
     get ready(): Promise<void>;
@@ -442,6 +476,7 @@ declare class ListenCore extends EventTarget {
     private _setListening;
     private _setPermission;
     private _setError;
+    private _commitErrorInfo;
     private _setUnsupported;
     /**
      * Begin a recognition session. Resets the transcripts (a fresh, user-initiated
@@ -518,6 +553,7 @@ declare class WcsListen extends HTMLElement {
     get listening(): boolean;
     get permission(): ListenPermissionState;
     get error(): WcsListenErrorDetail | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get unsupported(): boolean;
     get trigger(): boolean;
     set trigger(value: boolean);
@@ -529,5 +565,66 @@ declare class WcsListen extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { ListenCore, SpeakCore, WcsListen, WcsSpeak, bootstrapSpeech, getConfig };
-export type { IWritableConfig, IWritableTagNames, ListenOptions, ListenPermissionState, SpeakOptions, SpeechVoiceInfo, WcsListenAlternative, WcsListenCommands, WcsListenCoreCommands, WcsListenCoreValues, WcsListenErrorDetail, WcsListenInputs, WcsListenResultDetail, WcsListenValues, WcsSpeakCommands, WcsSpeakCoreCommands, WcsSpeakCoreValues, WcsSpeakErrorDetail, WcsSpeakInputs, WcsSpeakValues };
+/**
+ * speechCapabilities.ts
+ *
+ * speech node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。speech パッケージは 2 つの Core を持つ:
+ *
+ * - ListenCore(`<wcs-listen>`, SpeechRecognition / STT) — 認識セッションの
+ *   start/stop/abort。監視ではなく command 駆動だが、競合する非同期 operation の lane は
+ *   持たない(直近の start が単一セッションを置換する)ため、lane は採用せず error
+ *   taxonomy(errorInfo)のみを追加する。
+ * - SpeakCore(`<wcs-speak>`, SpeechSynthesis / TTS) — 発話キュー。同上。
+ *
+ * SpeechRecognitionErrorEvent と SpeechSynthesisErrorEvent は `error` enum の値集合が
+ * 異なるため、taxonomy も Core ごとに別 derive を持つ。いずれの Core も error detail の
+ * `.error` は既に安定コード(SpeechRecognition/SpeechSynthesis の error enum、または
+ * `"unsupported"` fallback)であり Error.name ではないので、derivation は notification と
+ * 同型の「`.error` コードを taxonomy に写す純粋 map」である。想定外のコードは防御的に
+ * `speech-error` へ畳む。
+ */
+
+/** 安定した listen(SpeechRecognition)error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_LISTEN_ERROR_CODE: {
+    /** SpeechRecognition API 非対応(`SpeechRecognition` / `webkitSpeechRecognition` 不在)。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** `not-allowed` / `service-not-allowed` — マイク権限拒否 / サービス不許可。 */
+    readonly NotAllowed: "not-allowed";
+    /** `audio-capture` — マイクが読めない(不在 / ハードウェア)。 */
+    readonly NotReadable: "not-readable";
+    /** `no-speech` — 無音のまま検出できず(transient — retry で成功しうる)。 */
+    readonly NoSpeech: "no-speech";
+    /** `network` — 認識バックエンドへの通信失敗(transient)。 */
+    readonly NetworkError: "network-error";
+    /** `aborted` — セッションが中断された(transient)。 */
+    readonly Aborted: "aborted";
+    /** `language-not-supported` / `bad-grammar` — 言語 / 文法が不正(前提条件違反)。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** その他 / 想定外の error code に対する防御的 fallback。 */
+    readonly SpeechError: "speech-error";
+};
+/** 安定した speak(SpeechSynthesis)error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_SPEAK_ERROR_CODE: {
+    /** SpeechSynthesis API 非対応(`speechSynthesis` / `SpeechSynthesisUtterance` 不在)。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** `not-allowed` — 合成が許可されていない。 */
+    readonly NotAllowed: "not-allowed";
+    /** `canceled` / `interrupted` — 発話がキャンセル / 中断された(transient)。 */
+    readonly Aborted: "aborted";
+    /** `audio-busy` / `audio-hardware` — オーディオ出力の占有 / ハードウェア障害。 */
+    readonly NotReadable: "not-readable";
+    /** `network` — 合成バックエンドへの通信失敗(transient)。 */
+    readonly NetworkError: "network-error";
+    /** `language-unavailable` / `voice-unavailable` / `text-too-long` / `invalid-argument` —
+     *  発話パラメータが不正 / 未対応(前提条件違反)。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** `synthesis-unavailable` / `synthesis-failed` — 合成そのものが失敗した。 */
+    readonly SynthesisFailed: "synthesis-failed";
+    /** その他 / 想定外の error code に対する防御的 fallback。 */
+    readonly SpeechError: "speech-error";
+};
+
+export { ListenCore, SpeakCore, WCS_LISTEN_ERROR_CODE, WCS_SPEAK_ERROR_CODE, WcsListen, WcsSpeak, bootstrapSpeech, getConfig };
+export type { IWritableConfig, IWritableTagNames, ListenOptions, ListenPermissionState, SpeakOptions, SpeechVoiceInfo, WcsIoErrorInfo, WcsIoErrorPhase, WcsListenAlternative, WcsListenCommands, WcsListenCoreCommands, WcsListenCoreValues, WcsListenErrorDetail, WcsListenInputs, WcsListenResultDetail, WcsListenValues, WcsSpeakCommands, WcsSpeakCoreCommands, WcsSpeakCoreValues, WcsSpeakErrorDetail, WcsSpeakInputs, WcsSpeakValues };

@@ -17,8 +17,8 @@ React / Vue variant（Vite 使用）のみです。
 **script の順序**: I/O ノード系パッケージを `@wcstack/state` より*先*に並べて
 ください。module script は文書順で実行されるため、state がバインディングを
 確立する時点で全カスタム要素の define が保証されます（state は未 define 要素
-への初期 state→element 書き込みを `customElements.whenDefined` 後に再適用する
-ため、この順序は必須要件ではなくベストプラクティスです）。
+へのバインディングを `customElements.whenDefined` で保留し、クラスが揃った時点で
+初期同期を確定させるため、この順序は必須要件ではなくベストプラクティスです）。
 
 ## デモ一覧
 

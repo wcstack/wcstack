@@ -1,4 +1,13 @@
 import { IWcBindable } from "../types.js";
+import { OperationLane, OperationTicket } from "./operationLane.js";
+import {
+  PlatformAssessment,
+  WcsIoErrorInfo,
+  WcsIoErrorPhase,
+  assessCapabilities,
+  requiredCapabilitiesAvailable,
+} from "./platformCapability.js";
+import { UPLOAD_CAPABILITIES, WCS_UPLOAD_ERROR_CODE } from "./uploadCapabilities.js";
 
 export interface UploadRequestOptions {
   method?: string;
@@ -16,6 +25,12 @@ export class UploadCore extends EventTarget {
       { name: "progress", event: "wcs-upload:progress" },
       { name: "error", event: "wcs-upload:error" },
       { name: "status", event: "wcs-upload:response", getter: (e: Event) => (e as CustomEvent).detail.status },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output; the existing `error` property/event are unchanged.
+      // Fires its own `wcs-upload:error-info-changed` event; no getter, so the bound
+      // value is the event detail (mirrors `error` / `loading`). An abort() is not a
+      // failure — it clears loading without setting error/errorInfo.
+      { name: "errorInfo", event: "wcs-upload:error-info-changed" },
     ],
     inputs: [
       { name: "url" },
@@ -28,19 +43,23 @@ export class UploadCore extends EventTarget {
     ],
   };
 
+  // Required capability (probed at call time, never at module eval).
+  private static readonly REQUIRED_CAPABILITIES = ["web.xhr"] as const;
+
   private _target: EventTarget;
   private _value: any = null;
   private _loading: boolean = false;
   private _progress: number = 0;
   private _error: any = null;
   private _status: number = 0;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _xhr: XMLHttpRequest | null = null;
   private _promise: Promise<any> = Promise.resolve(null);
-  // Generation guard: bumped on dispose() (and each upload start). An in-flight
-  // request that settles after dispose / a superseding start has a stale `gen`
-  // and MUST NOT write state to a torn-down element. A boolean flag is
-  // insufficient (dispose→observe would let stale work slip through).
-  private _gen = 0;
+  // Concurrency lane (io-core). `latest`: a new upload supersedes the in-flight one
+  // (switchMap). `withSignal: false`: upload uses XMLHttpRequest.abort() rather than
+  // an AbortSignal, so the lane owns epoch / commit-guard while abort() below owns
+  // the XHR cancellation. dispose() bumps the owner generation and aborts the XHR.
+  private _lane = new OperationLane("upload", "latest", { withSignal: false });
   // SSR: no asynchronous probe to await, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
 
@@ -53,15 +72,16 @@ export class UploadCore extends EventTarget {
     return this._ready;
   }
 
-  // Lifecycle (§3.5). Upload is command-driven with no subscription to
-  // establish, so observe() is an idempotent no-op that resolves once ready;
-  // dispose() invalidates any in-flight request and aborts it.
+  // Lifecycle (§3.5). Upload is command-driven with no subscription to establish,
+  // so observe() is an idempotent no-op that resolves once ready; dispose() bumps
+  // the lane's owner generation (invalidating any in-flight upload) and aborts the
+  // XHR.
   observe(): Promise<void> {
     return this._ready;
   }
 
   dispose(): void {
-    this._gen++;
+    this._lane.disposeOwner();
     this.abort();
   }
 
@@ -87,6 +107,45 @@ export class UploadCore extends EventTarget {
 
   get promise(): Promise<any> {
     return this._promise;
+  }
+
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable` / `capabilityId`), or null. Exposed as an additive wc-bindable
+   * property (event `wcs-upload:error-info-changed`); the existing `error`
+   * property/event are unchanged. An abort() is not a failure (no errorInfo).
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
+  /**
+   * Whether the required platform capability (`web.xhr`) is available right now —
+   * decided by call-time feature detection, not User-Agent. Core-only, additive.
+   */
+  get supported(): boolean {
+    return requiredCapabilitiesAvailable(this.platformAssessment, UploadCore.REQUIRED_CAPABILITIES);
+  }
+
+  /**
+   * Full platform assessment (availability / readiness / preconditions), probed at
+   * call time. Core-only opt-in dev / sidecar view.
+   */
+  get platformAssessment(): PlatformAssessment {
+    return assessCapabilities(UPLOAD_CAPABILITIES, {
+      required: UploadCore.REQUIRED_CAPABILITIES,
+      activity: this._loading ? "active" : "inactive",
+      lastError: this._errorInfo ?? undefined,
+    });
+  }
+
+  // CommitGuard (§5.1): external setters / event dispatch only run if the ticket
+  // still holds owner generation, is pre-terminal, and is the lane's latest epoch
+  // (a superseding upload can invalidate a ticket mid-commit).
+  private _commitStep(ticket: OperationTicket, step: () => void): void {
+    if (this._lane.canCommit(ticket)) {
+      step();
+    }
   }
 
   // --- State setters with event dispatch ---
@@ -139,15 +198,31 @@ export class UploadCore extends EventTarget {
     }));
   }
 
+  // Single mutation point for `errorInfo`, mirroring `_setError`'s same-value guard
+  // and event dispatch so the additive `errorInfo` wc-bindable property stays in
+  // sync with `error`. Each failure builds a fresh object (reference guard passes);
+  // the clear path passes null (suppresses a redundant null→null per upload start).
+  private _setErrorInfo(code: string, phase: WcsIoErrorPhase, recoverable: boolean, message: string, capabilityId?: string): void {
+    this._commitErrorInfo({ code, phase, recoverable, message, ...(capabilityId === undefined ? {} : { capabilityId }) });
+  }
+
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    if (this._errorInfo === info) return;
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-upload:error-info-changed", {
+      detail: info,
+      bubbles: true,
+    }));
+  }
+
   // --- Public API ---
 
   abort(): void {
-    // `_xhr` は send() の直前に同期で代入されるため、send 前に外部から abort が
-    // 割り込む余地はない（割り込み点となる await が存在しない）。よって XHR.abort()
-    // は常に進行中のリクエストに対して呼ばれ、abort イベントが発火して loading を
-    // 解除する。loading の解除を abort イベントハンドラに集約しているのは、
-    // ネットワークエラー/HTTP エラー/正常完了/中断のすべてで解除経路を一本化し、
-    // FetchCore.abort() と挙動を揃えるため。
+    // Abort the current XHR. Its `abort` event handler claims the `aborted` terminal
+    // (while the ticket is still latest — abort() runs before a superseding upload's
+    // begin()), unifying the loading-release path with success/error/network. When a
+    // superseding upload or dispose() has already advanced the epoch/owner gen, the
+    // handler's claim fails and it writes nothing (stale-drop).
     if (this._xhr) {
       this._xhr.abort();
       this._xhr = null;
@@ -159,10 +234,12 @@ export class UploadCore extends EventTarget {
     // サニタイズ値(null)を返す。command-token 経路からの呼び出しが unhandled
     // rejection にならず、「upload() は全終了ケースで resolve」契約とも整合する。
     if (!url) {
+      this._setErrorInfo(WCS_UPLOAD_ERROR_CODE.InvalidArgument, "start", false, "url is required.");
       this._setError({ message: "url is required." });
       return null;
     }
     if (!files || files.length === 0) {
+      this._setErrorInfo(WCS_UPLOAD_ERROR_CODE.InvalidArgument, "start", false, "files are required.");
       this._setError({ message: "files are required." });
       return null;
     }
@@ -175,12 +252,29 @@ export class UploadCore extends EventTarget {
   // --- Internal ---
 
   private _doUpload(url: string, files: FileList | File[], options: UploadRequestOptions): Promise<any> {
-    // 既存のアップロードを中止
-    this.abort();
+    // Probe the required capability just before starting (SSR / very old runtime).
+    const assessment = this.platformAssessment;
+    if (!requiredCapabilitiesAvailable(assessment, UploadCore.REQUIRED_CAPABILITIES)) {
+      const missing = UploadCore.REQUIRED_CAPABILITIES.find((id) => assessment.availability.get(id) !== "available");
+      const message = `Required capability "${missing}" is unavailable.`;
+      this._setErrorInfo(WCS_UPLOAD_ERROR_CODE.CapabilityMissing, "start", false, message, missing);
+      this._setError({ message });
+      return Promise.resolve(null);
+    }
 
-    this._setLoading(true);
-    this._setProgress(0);
-    this._setError(null);
+    // Abort the previous XHR BEFORE advancing the epoch, so its `abort` handler
+    // claims `aborted` while still latest (preserving the loading true→false→true
+    // supersede sequence). Then begin() advances the epoch for THIS upload.
+    this.abort();
+    const started = this._lane.begin()!; // `latest` begin never returns null
+    const { ticket } = started;
+
+    this._commitStep(ticket, () => this._setLoading(true));
+    this._commitStep(ticket, () => {
+      this._setProgress(0);
+      this._commitErrorInfo(null);
+      this._setError(null);
+    });
 
     const {
       method = "POST",
@@ -193,63 +287,69 @@ export class UploadCore extends EventTarget {
       formData.append(fieldName, files[i]);
     }
 
-    const gen = ++this._gen;
-
     return new Promise<any>((resolve) => {
       const xhr = new XMLHttpRequest();
       this._xhr = xhr;
 
       xhr.upload.addEventListener("progress", (event: ProgressEvent) => {
-        if (gen !== this._gen) return;
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          this._setProgress(percent);
-        }
+        // Guarded: a superseded / disposed upload's late progress writes nothing.
+        this._commitStep(ticket, () => {
+          if (event.lengthComputable) {
+            this._setProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        });
       });
 
       xhr.addEventListener("load", () => {
         this._xhr = null;
-        if (gen !== this._gen) { resolve(null); return; }
-        this._status = xhr.status;
-
         if (xhr.status >= 200 && xhr.status < 300) {
+          if (!this._lane.claimTerminal(ticket, "success")) { resolve(null); this._lane.finalize(ticket); return; }
           let value: any = xhr.responseText;
           const contentType = xhr.getResponseHeader("Content-Type") || "";
           if (contentType.includes("application/json")) {
-            try {
-              value = JSON.parse(xhr.responseText);
-            } catch {
-              // テキストのまま
-            }
+            try { value = JSON.parse(xhr.responseText); } catch { /* テキストのまま */ }
           }
-          this._setProgress(100);
-          this._setResponse(value, xhr.status);
-          this._setLoading(false);
+          this._commitStep(ticket, () => this._setProgress(100));
+          this._commitStep(ticket, () => this._setResponse(value, xhr.status));
+          this._commitStep(ticket, () => this._setLoading(false));
+          this._lane.finalize(ticket);
           resolve(value);
         } else {
-          const error = {
-            status: xhr.status,
-            statusText: xhr.statusText,
-            body: xhr.responseText,
-          };
-          this._setError(error);
-          this._setLoading(false);
+          if (!this._lane.claimTerminal(ticket, "error")) { resolve(null); this._lane.finalize(ticket); return; }
+          const error = { status: xhr.status, statusText: xhr.statusText, body: xhr.responseText };
+          this._commitStep(ticket, () => {
+            this._status = xhr.status; // HTTP error keeps status (no wcs-upload:response — value not reset)
+            this._setErrorInfo(WCS_UPLOAD_ERROR_CODE.HttpError, "execute", true, `HTTP ${xhr.status} ${xhr.statusText}`);
+            this._setError(error);
+          });
+          this._commitStep(ticket, () => this._setLoading(false));
+          this._lane.finalize(ticket);
           resolve(null);
         }
       });
 
       xhr.addEventListener("error", () => {
         this._xhr = null;
-        if (gen !== this._gen) { resolve(null); return; }
-        this._setError({ message: "Network error" });
-        this._setLoading(false);
+        if (!this._lane.claimTerminal(ticket, "error")) { resolve(null); this._lane.finalize(ticket); return; }
+        const message = "Network error";
+        this._commitStep(ticket, () => {
+          this._setErrorInfo(WCS_UPLOAD_ERROR_CODE.Network, "execute", true, message);
+          this._setError({ message });
+        });
+        this._commitStep(ticket, () => this._setLoading(false));
+        this._lane.finalize(ticket);
         resolve(null);
       });
 
       xhr.addEventListener("abort", () => {
         this._xhr = null;
-        if (gen !== this._gen) { resolve(null); return; }
-        this._setLoading(false);
+        // abort is a routine cancellation, not a failure: claim the `aborted`
+        // terminal and clear loading only (no error/errorInfo). A superseded /
+        // disposed ticket fails the claim and drops.
+        if (this._lane.claimTerminal(ticket, "aborted")) {
+          this._commitStep(ticket, () => this._setLoading(false));
+        }
+        this._lane.finalize(ticket);
         resolve(null);
       });
 

@@ -14,7 +14,7 @@
 
 - **入力面**: `src`, `type`, `name`, `manual`, `keep-alive`, `restart-on-error`, `max-restarts`, `restart-interval`
 - **コマンド面**: `start`, `post`, `terminate`
-- **出力状態面**: `message`, `error`, `running`
+- **出力状態面**: `message`, `error`, `errorInfo`, `running`
 
 つまり、worker スレッドへの処理のオフロードを HTML 上で宣言的に表現でき、UI 層に `new Worker()` / `postMessage()` / `onmessage` リスナ、後始末のグルーコードを書く必要がありません。
 
@@ -140,6 +140,7 @@ DOM トリガは**常に文字列を post します** — リテラルの `data-
 | --------- | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-worker:message`          | worker が post し返した直近の値（structured clone のコピー）。値が変わらなくても、メッセージごとに再発火する。 |
 | `error`   | `wcs-worker:error`            | 正規化された `{ name, message, filename?, lineno?, colno? }` — `DataCloneError`（クローン不可能な post）、`DataError`（worker メッセージをデシリアライズできなかった）、`InvalidStateError`（稼働中の worker が無い状態での post）、スクリプトの `Error`（worker 内の未捕捉エラー、位置情報付き）、または spawn 失敗（不正な URL / CSP / 非対応）。 |
+| `errorInfo` | `wcs-worker:error-info-changed` | シリアライズ可能な失敗タクソノミ `WcsIoErrorInfo \| null`（安定した `code` / `phase` / `recoverable`）。`error` と同じ失敗から導出される。追加的で、`error` の形状は不変。 |
 | `running` | `wcs-worker:running-changed`  | worker が spawn され、まだ terminate されていない間は `true`。                       |
 
 ## コマンド
@@ -217,6 +218,7 @@ form:has(wcs-worker:state(error)) .banner { display: block; }
 - **`src` は監視される。`type` / `name` は spawn 時に適用される。** 接続中（かつ非 `manual`）に `src` 属性を変更すると、古い worker を terminate して新しいスクリプトを spawn します。空でない新しい値だけが切り替えをトリガします。`type` と `name` は spawn 時に読み取られ、`observedAttributes` に**含まれません** — 稼働中の worker でそれらを変更しても、次回の spawn（`src` 変更、または `terminate()` + `start()`）まで効果はありません。同様に、同じ `src` で `start()` を再呼び出ししても冪等となり、変更されたオプションは無視されます。
 - **transferable はエスケープハッチ。** `transfer`（ArrayBuffer の所有権、MessagePort）は `data-wcs` のデータ配線では表現できません。命令的な `element.post(data, transfer)`（または `WorkerCore.post(data, transfer)`）を使ってください。宣言的レイヤは structured clone データのみを運びます。
 - **無言のエラー処理（ゼロログ）。** wcstack のゼロ依存主義に従い、`<wcs-worker>` は実行時の失敗に対して一切ログ出力も throw もしません。不正なスクリプト URL、CSP `worker-src` ブロック、クローン不可能な post、デシリアライズ失敗、worker 内の未捕捉エラーは `error` プロパティ / `wcs-worker:error` イベントを通じてのみ表面化します — `post()` は return し、決して reject しません。観測・対処するには `error` をバインドしてください。
+- **`errorInfo` タクソノミ。** `error` に現れるのと同じ失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-worker:error-info-changed`）です。`error` の形状は変えません。`Worker` コンストラクタの欠如（SSR / 非対応で `new Worker()` が `TypeError` / `ReferenceError` を投げる）は `capability-missing`（phase `probe`）、`src` を指定しない `start()` は `invalid-argument`（phase `start`）、その他の失敗——worker の未捕捉 `Error`、`DataError`（デシリアライズ失敗）、`DataCloneError` / `InvalidStateError`（post 失敗）、spawn 失敗——は `worker-error`（phase `execute`）です。worker の失敗はいずれも `recoverable: false`（自動リトライでは回復しません）。`errorInfo` は `error` と同期して遷移し（同じタイミングで、`error` と共にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_WORKER_ERROR_CODE` 定数は export 済みです。
 - **`src` はコードとして実行される — 信頼すること。** `src` の値は `new Worker(src)` にそのまま渡され、ページの権限でスクリプトを実行します。タグはオリジンの検証もサンドボックス化もしません。信頼するスクリプトにのみ `src` を向け（`<script src>` と同様に扱う）、worker をどこから読み込めるか制約するために明示的な `worker-src` 許可リストを持つ `Content-Security-Policy` を優先してください — 特に `src` がデータバインディングの影響を受け得る場合は。
 - **Dedicated Worker のみ。** SharedWorker と Worklet はこのタグの対象外です。
 

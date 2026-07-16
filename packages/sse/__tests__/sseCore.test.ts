@@ -82,9 +82,9 @@ describe("SseCore", () => {
       expect(core.readyState).toBe(MockEventSource.CLOSED);
     });
 
-    it("wcBindable に message/connected/loading/error/readyState が宣言される", () => {
+    it("wcBindable に message/connected/loading/error/errorInfo/readyState が宣言される", () => {
       const names = SseCore.wcBindable.properties.map(p => p.name);
-      expect(names).toEqual(["message", "connected", "loading", "error", "readyState"]);
+      expect(names).toEqual(["message", "connected", "loading", "error", "errorInfo", "readyState"]);
     });
 
     it("wcBindable の commands は connect/close のみ", () => {
@@ -410,6 +410,87 @@ describe("SseCore", () => {
       core.connect("/feed");
       MockEventSource.last.simulateOpen();
       expect(core.connected).toBe(true);
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new SseCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = SseCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("url 未指定 → invalid-argument / start / recoverable=false（error shape 不変）", () => {
+      const core = new SseCore();
+      core.connect("");
+      expect(core.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false, message: "url is required.",
+      });
+      // 公開 error shape は不変（Error のまま）。
+      expect(core.error).toBeInstanceOf(Error);
+      expect((core.error as Error).message).toBe("url is required.");
+    });
+
+    it("構築失敗 → connection-error / start / recoverable=false（stream 未確立）", () => {
+      const core = new SseCore();
+      MockEventSource.nextConstructError = new Error("bad url");
+      core.connect("/feed");
+      expect(core.errorInfo).toEqual({
+        code: "connection-error", phase: "start", recoverable: false, message: "bad url",
+      });
+      // 公開 error shape は不変（構築時 throw の Error）。
+      expect(core.error).toBeInstanceOf(Error);
+    });
+
+    it("トランジェント切断(CONNECTING) → connection-error / execute / recoverable=true", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      MockEventSource.last.simulateOpen();
+      MockEventSource.last.simulateError(MockEventSource.CONNECTING);
+      // Event は message を持たないため安定 fallback。
+      expect(core.errorInfo).toEqual({
+        code: "connection-error", phase: "execute", recoverable: true, message: "SSE connection error",
+      });
+      // 公開 error shape は生の Event のまま。
+      expect(core.error).toBeInstanceOf(Event);
+    });
+
+    it("恒久切断(CLOSED) → connection-error / execute / recoverable=false", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(core.errorInfo).toEqual({
+        code: "connection-error", phase: "execute", recoverable: false, message: "SSE connection error",
+      });
+      expect(core.error).toBeInstanceOf(Event);
+    });
+
+    it("トランジェント切断後にネイティブ再接続が成功すると error と共に errorInfo も null に戻る", () => {
+      const core = new SseCore();
+      core.connect("/feed");
+      MockEventSource.last.simulateOpen();
+      MockEventSource.last.simulateError(MockEventSource.CONNECTING);
+      expect(core.errorInfo).not.toBeNull();
+      // 同一インスタンスが open を再発火 → _onOpen の _setError(null) で clear。
+      MockEventSource.last.simulateOpen();
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+      const target = new EventTarget();
+      const order: string[] = [];
+      target.addEventListener("wcs-sse:error-info-changed", () => order.push("errorInfo"));
+      target.addEventListener("wcs-sse:error", () => order.push("error"));
+      const core = new SseCore(target);
+      core.connect("/feed");
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
     });
   });
 });

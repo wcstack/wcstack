@@ -1,5 +1,6 @@
 import { CredentialGetOptions, IWcBindable, StorableCredential } from "../types.js";
 import { CredentialCore } from "../core/CredentialCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-credential>` — declarative Credential Management API primitive
@@ -91,6 +92,10 @@ export class WcsCredential extends HTMLElement {
 
   get cancelled(): boolean {
     return this._core.cancelled;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

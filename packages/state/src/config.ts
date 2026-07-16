@@ -25,6 +25,9 @@ interface IInternalConfig {
   locale: string;
   debug: boolean;
   enableMustache: boolean;
+  enableDirectionalInitialSync: boolean;
+  enablePropagationContext: boolean;
+  enableContractAnalyzer: boolean;
   sameValueGuard: boolean;
 }
 
@@ -42,6 +45,14 @@ const _config: IInternalConfig = {
   locale: 'en',
   debug: false,
   enableMustache: true,
+  enableDirectionalInitialSync: true,
+  enablePropagationContext: true,
+  // Phase 5b の dev-time contract analyzer は意図的に explicit opt-in（既定 off）。
+  // wcstack は buildless / zero-config で NODE_ENV 相当の確実な dev/prod 判定が無く、
+  // hostname や minification の heuristic で auto-ON すると誤検出で prod にコストを
+  // 乗せうるため、dev 既定 ON は採らない。利用側が setConfig で明示有効化する
+  // （docs/architecture-hardening/10-defaulting-rollout-status.md §C）。
+  enableContractAnalyzer: false,
   sameValueGuard: true,
 };
 
@@ -82,6 +93,15 @@ export function setConfig(partialConfig: IWritableConfig): void {
   }
   if (typeof partialConfig.enableMustache === "boolean") {
     _config.enableMustache = partialConfig.enableMustache;
+  }
+  if (typeof partialConfig.enableDirectionalInitialSync === "boolean") {
+    _config.enableDirectionalInitialSync = partialConfig.enableDirectionalInitialSync;
+  }
+  if (typeof partialConfig.enablePropagationContext === "boolean") {
+    _config.enablePropagationContext = partialConfig.enablePropagationContext;
+  }
+  if (typeof partialConfig.enableContractAnalyzer === "boolean") {
+    _config.enableContractAnalyzer = partialConfig.enableContractAnalyzer;
   }
   if (typeof partialConfig.sameValueGuard === "boolean") {
     _config.sameValueGuard = partialConfig.sameValueGuard;

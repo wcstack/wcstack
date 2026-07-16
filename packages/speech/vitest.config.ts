@@ -15,7 +15,8 @@ export default defineConfig({
         'dist/',
         '*.config.{js,ts,mjs}',
         'src/exports.ts',
-        'src/types.ts'
+        'src/types.ts',
+        'src/core/platformCapability.ts'
       ],
       thresholds: {
         statements: 100,
