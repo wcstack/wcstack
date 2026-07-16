@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -60,6 +72,8 @@ interface WcsWakeLockCoreValues {
     held: boolean;
     /** The last request failure, or `null` while none. */
     error: Error | null;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
 }
 /**
  * Value types for the Shell (`<wcs-wakelock>`) — identical observable surface to
@@ -125,6 +139,7 @@ declare class WakeLockCore extends EventTarget {
     private _active;
     private _held;
     private _error;
+    private _errorInfo;
     private _sentinel;
     private _gen;
     private _acquiring;
@@ -135,6 +150,13 @@ declare class WakeLockCore extends EventTarget {
     observe(): Promise<void>;
     get held(): boolean;
     get error(): Error | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-wakelock:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     /** The desired intent. Read-only reflection; not a wc-bindable property (it does
      * not change on an OS auto-release, so there is nothing to observe). */
     get active(): boolean;
@@ -142,6 +164,7 @@ declare class WakeLockCore extends EventTarget {
     set type(value: WakeLockKind);
     private _setHeld;
     private _setError;
+    private _commitErrorInfo;
     private _sameError;
     /**
      * Mark the lock as desired and acquire it. Idempotent while already held. If the
@@ -248,6 +271,7 @@ declare class WcsWakeLock extends HTMLElement {
     set manual(value: boolean);
     get held(): boolean;
     get error(): Error | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     /** Acquire (and keep) the wake lock. Never rejects — see the `error` property. */
     request(): Promise<void>;
     /** Release the wake lock and stop re-acquiring it. */
@@ -257,5 +281,31 @@ declare class WcsWakeLock extends HTMLElement {
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
 }
 
-export { WakeLockCore, WcsWakeLock, bootstrapWakeLock, getConfig };
-export type { IWritableConfig, IWritableTagNames, WakeLockKind, WcsWakeLockCommands, WcsWakeLockCoreCommands, WcsWakeLockCoreValues, WcsWakeLockInputs, WcsWakeLockValues };
+/**
+ * wakelockCapabilities.ts
+ *
+ * Wake Lock node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。wake lock は request / release の pure sink で競合する operation を持た
+ * ないため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ *
+ * error 面は sensor family(`{ error: <name>, message }`)とは異なり、`WakeLockCore._setError`
+ * は生の `Error`(または clear の null)を受け取る。分類は `Error.name` で行う。
+ *
+ * NOTE(未対応環境について): Screen Wake Lock API は "unsupported" を error として通知しない。
+ * `navigator.wakeLock` 不在時、Core の `_acquire()` は silent no-op(`held` は false のまま・
+ * error 未設定)で戻る。よって sensor family のような `capability-missing` / phase="probe" の
+ * 分岐は wake lock には存在しない(到達不能なので実装しない)。error が出るのは
+ * `navigator.wakeLock.request()` の reject を `_normalizeError` で正規化した場合のみ。
+ */
+
+/** 安定した wake lock error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_WAKELOCK_ERROR_CODE: {
+    /** `NotAllowedError` — ページ非可視/非アクティブ、または permission / feature-policy による拒否。 */
+    readonly NotAllowed: "not-allowed";
+    /** その他の `request()` 失敗(非 Error reject の正規化など)。 */
+    readonly WakeLockError: "wakelock-error";
+};
+
+export { WCS_WAKELOCK_ERROR_CODE, WakeLockCore, WcsWakeLock, bootstrapWakeLock, getConfig };
+export type { IWritableConfig, IWritableTagNames, WakeLockKind, WcsIoErrorInfo, WcsIoErrorPhase, WcsWakeLockCommands, WcsWakeLockCoreCommands, WcsWakeLockCoreValues, WcsWakeLockInputs, WcsWakeLockValues };

@@ -1,3 +1,56 @@
+/**
+ * platform-capability.ts
+ *
+ * Phase 6(docs/architecture-hardening/09-remediation-design.md §7.2 /
+ * 07-browser-capability-variance.md)の browser capability 判定と error taxonomy の
+ * 汎用プリミティブ。node 固有の capability registry / error code は各パッケージが
+ * 別ファイルで宣言し、この汎用層(型 + assess 機構)を import する。
+ *
+ * 原則:
+ * - feature detection は境界(利用直前)で行う。module 評価時に browser global を
+ *   参照しない(SSR / worker で import が失敗しない)。
+ * - capability ID(`web.fetch` 等)は文字列を global property path として eval せず、
+ *   registry が ID ごとに副作用のない presence probe を対応付ける。
+ * - availability / permission / readiness / activity / operation error を 1 つの
+ *   `ready / unsupported / error` enum に畳まない。required 欠如は開始しない、
+ *   optional 欠如は宣言済み fallback で readiness を `degraded` にする。
+ *
+ * 配置: 本ファイルは /io-core/ の単一正典であり、scripts/sync-io-core.mjs が
+ * 各 IO ノードの src/core/ へ生成コピー (AUTO-GENERATED, 編集禁止) を配布する。
+ * `protocol/wcBindable.ts` と同じ copy-distribution 方式で、ランタイム依存を導入せず
+ * 各パッケージのバンドルへ inline される (zero-runtime-dep / 自己完結 CDN を維持)。
+ * 編集はこの正典に対して行い、`node scripts/sync-io-core.mjs` で再配布する。
+ *
+ * pure(module 評価時に browser global 非参照)。
+ */
+type Availability = "available" | "missing" | "unknown";
+type PermissionState = "granted" | "denied" | "prompt" | "not-applicable" | "unknown";
+type Readiness = "idle" | "ready" | "degraded";
+type Activity = "inactive" | "active";
+type PreconditionState = "satisfied" | "required" | "not-applicable";
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+interface PlatformAssessment {
+    readonly availability: ReadonlyMap<string, Availability>;
+    readonly permission: PermissionState;
+    readonly readiness: Readiness;
+    readonly activity: Activity;
+    readonly preconditions: {
+        readonly secureContext: PreconditionState;
+        readonly userActivation: PreconditionState;
+    };
+    readonly epoch: number;
+    readonly lastError?: WcsIoErrorInfo;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +66,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -51,7 +105,7 @@ interface WcsFetchHttpError {
     body: string;
 }
 /**
- * Value types for FetchCore (headless) — the 5 async state properties.
+ * Value types for FetchCore (headless) — the 6 async state properties.
  * Use with `bind()` from `a wc-bindable binding core` for compile-time type checking.
  *
  * @example
@@ -68,6 +122,8 @@ interface WcsFetchCoreValues<T = unknown> {
     status: number;
     /** Managed object URL for a `responseType: "blob"` response; null otherwise. */
     objectURL: string | null;
+    /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
+    errorInfo: WcsIoErrorInfo | null;
 }
 /**
  * Value types for the Shell (`<wcs-fetch>`) — extends Core with `trigger`.
@@ -98,6 +154,7 @@ interface FetchRequestOptions {
     contentType?: string | null;
     forceText?: boolean;
     responseType?: FetchResponseType;
+    timeout?: number;
 }
 declare class FetchCore extends EventTarget {
     static wcBindable: IWcBindable;
@@ -107,10 +164,12 @@ declare class FetchCore extends EventTarget {
     private _error;
     private _status;
     private _objectURL;
-    private _abortController;
     private _promise;
-    private _gen;
+    private _lane;
     private _ready;
+    private _errorInfo;
+    private static readonly REQUIRED_CAPABILITIES;
+    private static readonly OPTIONAL_CAPABILITIES;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     observe(): Promise<void>;
@@ -121,12 +180,34 @@ declare class FetchCore extends EventTarget {
     get status(): number;
     get objectURL(): string | null;
     get promise(): Promise<any>;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable` / `capabilityId`), or null. Exposed as an additive wc-bindable
+     * property (event `wcs-fetch:error-info-changed`); the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
+    /**
+     * Whether the required platform capabilities (`web.fetch`) are available right
+     * now — the minimal "supported" signal, decided by call-time feature detection,
+     * not User-Agent. Additive.
+     */
+    get supported(): boolean;
+    /**
+     * Full platform assessment (availability / readiness / preconditions), probed
+     * at call time. `readiness` is `degraded` when only the optional
+     * `web.abort-controller` is missing. Dev / sidecar view.
+     */
+    get platformAssessment(): PlatformAssessment;
+    private _setErrorInfo;
+    private _commitErrorInfo;
     private _setLoading;
     private _setError;
     private _setResponse;
     private _createObjectURL;
     private _revokeObjectURL;
     abort(): void;
+    private _commitStep;
     fetch(url: string, options?: FetchRequestOptions): Promise<any>;
     private _doFetch;
 }
@@ -160,6 +241,7 @@ declare class Fetch extends HTMLElement {
     get error(): any;
     get status(): number;
     get objectURL(): string | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get promise(): Promise<any>;
     get connectedCallbackPromise(): Promise<void>;
     get manual(): boolean;
@@ -222,5 +304,23 @@ declare class InfiniteScroll extends HTMLElement {
     private _triggerFetch;
 }
 
-export { FetchCore, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig };
-export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues };
+/**
+ * fetchCapabilities.ts
+ *
+ * fetch node 固有の capability registry と error code。汎用の assess 機構・型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。node 固有の宣言はこのハンドライトファイルに置き、生成コピーとは分離する。
+ */
+
+/** 安定した fetch error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_FETCH_ERROR_CODE: {
+    readonly CapabilityMissing: "capability-missing";
+    readonly InvalidArgument: "invalid-argument";
+    readonly Network: "network";
+    readonly HttpError: "http-error";
+    readonly Timeout: "timeout";
+    readonly Aborted: "aborted";
+};
+
+export { FetchCore, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig };
+export type { FetchRequestOptions, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues, WcsIoErrorInfo, WcsIoErrorPhase };

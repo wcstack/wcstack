@@ -37,6 +37,56 @@ function setConfig(partialConfig) {
 }
 
 /**
+ * pointerLockCapabilities.ts
+ *
+ * Pointer Lock node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。pointer-lock は referenced element を操作するモニタ的ノードで競合 operation
+ * を持たないため lane は無く、error taxonomy(errorInfo)のみを採用する。
+ *
+ * `_setError` は合成 `{ message }`(target 未解決 / API 非対応)と caught 例外
+ * (`NotAllowedError` / `TypeError` = user gesture 外の requestPointerLock 拒否)を混在
+ * 受理する。呼出側が明示 `kind` を渡して合成側を曖昧さ無く分類し、caught は `.name` で
+ * 分類する(fullscreen と同じ discriminator 方式)。
+ */
+/** 安定した pointer-lock error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_POINTER_LOCK_ERROR_CODE = {
+    /** Pointer Lock API 非対応。 */
+    CapabilityMissing: "capability-missing",
+    /** target selector が要素に解決しない等の入力不備。 */
+    InvalidArgument: "invalid-argument",
+    /** `NotAllowedError` / `TypeError` — user gesture 外での要求拒否。 */
+    NotAllowed: "not-allowed",
+    /** その他の caught 例外。 */
+    PointerLockError: "pointer-lock-error",
+};
+function messageOf(error) {
+    return typeof error?.message === "string"
+        ? error.message
+        : String(error);
+}
+/**
+ * pointer-lock の失敗を serializable な error taxonomy に写す。`kind` は合成エラーの
+ * 呼出側が渡す明示 discriminator(`capability-missing` / `invalid-argument`)。未指定は
+ * caught 例外を意味し、`.name` で分類する。`NotAllowedError` / `TypeError` は user
+ * gesture 内で再試行すれば成功しうるため recoverable=true。
+ */
+function derivePointerLockErrorInfo(error, kind) {
+    const message = messageOf(error);
+    if (kind === "capability-missing") {
+        return { code: WCS_POINTER_LOCK_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+    }
+    if (kind === "invalid-argument") {
+        return { code: WCS_POINTER_LOCK_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message };
+    }
+    const name = error?.name;
+    if (name === "NotAllowedError" || name === "TypeError") {
+        return { code: WCS_POINTER_LOCK_ERROR_CODE.NotAllowed, phase: "execute", recoverable: true, message };
+    }
+    return { code: WCS_POINTER_LOCK_ERROR_CODE.PointerLockError, phase: "execute", recoverable: false, message };
+}
+
+/**
  * Headless Pointer Lock primitive. A thin, framework-agnostic wrapper around
  * the Pointer Lock API (`Element.requestPointerLock()` /
  * `document.exitPointerLock()` / `document.pointerLockElement` / the
@@ -74,6 +124,14 @@ class PointerLockCore extends EventTarget {
         // FullscreenCore's `{ active }`-shaped detail + getter.
         properties: [
             { name: "active", event: "wcs-pointer-lock:change" },
+            // `error` / `errorInfo` are observable failure outputs. Historically `error`
+            // was an imperative getter with no event; both are now bindable (event-backed)
+            // so `data-wcs` / bind() can observe a request/exit failure. `errorInfo` is the
+            // additive serializable taxonomy (stable code / phase / recoverable) derived
+            // from `error`; the `error` value shape is unchanged. No lane — pointer-lock
+            // drives a referenced element, not a competing operation.
+            { name: "error", event: "wcs-pointer-lock:error" },
+            { name: "errorInfo", event: "wcs-pointer-lock:error-info-changed" },
         ],
         commands: [
             { name: "requestPointerLock", async: true },
@@ -85,6 +143,7 @@ class PointerLockCore extends EventTarget {
     _target;
     _active = false;
     _error = null;
+    _errorInfo = null;
     // The element this instance last resolved requestPointerLock()/observe()
     // against, kept so the document-scoped `pointerlockchange` handler can
     // self-filter under multiple concurrent instances (docs/fullscreen-tag-design.md
@@ -114,6 +173,15 @@ class PointerLockCore extends EventTarget {
     }
     get error() {
         return this._error;
+    }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-pointer-lock:error-info-changed`), derived from `error`; the existing
+     * `error` value shape is unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
     }
     // Lifecycle (§3.5). Idempotent: a second observe() while already subscribed
     // updates the tracked resolved target without re-subscribing to `document`.
@@ -149,7 +217,7 @@ class PointerLockCore extends EventTarget {
         const gen = ++this._gen;
         this._resolvedTarget = element;
         if (!element) {
-            this._setError({ message: "Pointer Lock target could not be resolved." });
+            this._setError({ message: "Pointer Lock target could not be resolved." }, "invalid-argument");
             return;
         }
         const fn = this._requestPointerLockFn(element);
@@ -158,7 +226,7 @@ class PointerLockCore extends EventTarget {
             // cannot have run yet, so no staleness check is needed here (matches
             // the reference `requestFullscreen()` implementation,
             // docs/fullscreen-tag-design.md §6).
-            this._setError({ message: "Pointer Lock API is not supported." });
+            this._setError({ message: "Pointer Lock API is not supported." }, "capability-missing");
             return;
         }
         try {
@@ -269,8 +337,33 @@ class PointerLockCore extends EventTarget {
             bubbles: true,
         }));
     }
-    _setError(e) {
-        this._error = e;
+    // `kind` is an explicit taxonomy discriminator passed only from the synthetic
+    // error sites (unsupported / unresolved target); caught exceptions pass no kind
+    // and are classified by their `.name`. Both `error` and the additive `errorInfo`
+    // are now event-backed so a request/exit failure is observable via bind().
+    _setError(error, kind) {
+        // Same-value guard on reference: each failure builds a fresh object and the
+        // clear path passes the literal null, so this only suppresses redundant
+        // null→null (a successful request/exit clearing an already-null error).
+        if (this._error === error)
+            return;
+        this._error = error;
+        // Keep the additive errorInfo taxonomy in sync; fire it before the `error`
+        // event so an observer of both sees the classification first (io-node family).
+        this._commitErrorInfo(error === null ? null : derivePointerLockErrorInfo(error, kind));
+        this._target.dispatchEvent(new CustomEvent("wcs-pointer-lock:error", {
+            detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (already reference-guarded), so errorInfo
+    // transitions exactly when error does — no separate guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-pointer-lock:error-info-changed", {
+            detail: info,
+            bubbles: true,
+        }));
     }
 }
 
@@ -388,6 +481,9 @@ class WcsPointerLock extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     // --- Commands ---
     /**
      * Resolve `target` and request pointer lock on it. Requires a user-gesture
@@ -465,5 +561,5 @@ function bootstrapPointerLock(userConfig) {
     registerComponents();
 }
 
-export { PointerLockCore, WcsPointerLock, bootstrapPointerLock, getConfig };
+export { PointerLockCore, WCS_POINTER_LOCK_ERROR_CODE, WcsPointerLock, bootstrapPointerLock, getConfig };
 //# sourceMappingURL=index.esm.js.map

@@ -44,6 +44,64 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+/**
+ * websocketCapabilities.ts
+ *
+ * WebSocket node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。WebSocket は持続的な session / monitor node(1 本の接続を張り続ける)で、
+ * 競合する operation を持たないため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ *
+ * この node の `_setError` は 4 形態の非 null 入力を受ける(いずれも公開 `error` shape は不変):
+ *   1. synthetic な `{ message: "url is required." }`(`.name` 無し)— connect() の引数不備。
+ *   2. synthetic な `{ message: "WebSocket is not connected." }`(`.name` 無し)— open 前の send()。
+ *   3. caught された生の構築例外 `e`(`new WebSocket()` の同期 throw)。
+ *   4. platform の WebSocket `error` Event(`Event`。`.name`/`.message` を持たない)。
+ *
+ * これらは shape がバラバラで、message からの分類は脆い。そこで呼び出し側が明示的な
+ * taxonomy code を discriminator として渡す(storage の `deriveStorageErrorInfo(error, name)`
+ * と同じ技法)。derive 側は synthetic / Event / Error を reverse-engineer せず、渡された
+ * code で phase / recoverable を決め、message だけを防御的に抽出する。
+ */
+/** 安定した websocket error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_WEBSOCKET_ERROR_CODE = {
+    /** connect() の `url` 未指定 — 開始前の入力不備。retry では回復しない。 */
+    InvalidArgument: "invalid-argument",
+    /** open 前の send() — 接続が OPEN でない状態での送信。retry では回復しない(先に connect が要る)。 */
+    InvalidState: "invalid-state",
+    /**
+     * 接続の確立 / 維持に失敗(`new WebSocket()` の同期例外、または platform の error Event)。
+     * WebSocket のエラーは通常一過性で、再接続で回復しうる(recoverable=true)。
+     */
+    ConnectionError: "connection-error",
+};
+/**
+ * websocket の失敗を serializable な error taxonomy に写す。`code` は呼び出し側が渡す
+ * discriminator(公開 `error` shape からは復元しない)。`message` は入力から防御的に抽出し、
+ * message を持たない error Event 等では安定した fallback を使う。
+ *
+ * - `invalid-argument`(url 未指定)は開始前の入力不備 → phase="start" / recoverable=false。
+ * - `invalid-state`(open 前 send)は接続状態が満たされない実行時失敗 → phase="execute" /
+ *   recoverable=false(先に connect() が必要)。
+ * - `connection-error`(構築例外 / error Event)は接続の確立 / 維持失敗 → phase="execute" /
+ *   recoverable=true(再接続で回復しうる)。
+ */
+function deriveWebSocketErrorInfo(error, code) {
+    // error は非 null(_setError は error===null を derive 前に分岐する)だが、synthetic /
+    // Event / caught 例外 / 生 throw と shape がバラバラなので message は防御的に抽出する。
+    // error Event は message を持たないため安定した fallback に落とす。
+    const raw = error.message;
+    const message = typeof raw === "string" ? raw : "WebSocket connection error";
+    if (code === WCS_WEBSOCKET_ERROR_CODE.InvalidArgument) {
+        return { code: WCS_WEBSOCKET_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message };
+    }
+    if (code === WCS_WEBSOCKET_ERROR_CODE.InvalidState) {
+        return { code: WCS_WEBSOCKET_ERROR_CODE.InvalidState, phase: "execute", recoverable: false, message };
+    }
+    // connection-error(構築例外 / error Event): 接続の確立/維持失敗、再接続で回復しうる。
+    return { code: WCS_WEBSOCKET_ERROR_CODE.ConnectionError, phase: "execute", recoverable: true, message };
+}
+
 // WebSocket readyState values. Hardcoded rather than read from the global
 // WebSocket so the Core does not require WebSocket to exist at module load
 // (referencing `WebSocket.CLOSED` in a field initializer evaluates at class
@@ -60,6 +118,12 @@ class WebSocketCore extends EventTarget {
             { name: "connected", event: "wcs-ws:connected-changed" },
             { name: "loading", event: "wcs-ws:loading-changed" },
             { name: "error", event: "wcs-ws:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error` (invalid-argument / invalid-state
+            // / connection-error); the existing `error` property/event are unchanged. Fires
+            // wcs-ws:error-info-changed. No lane — WebSocket is a persistent session/monitor
+            // node, not a competing operation.
+            { name: "errorInfo", event: "wcs-ws:error-info-changed" },
             { name: "readyState", event: "wcs-ws:readystate-changed" },
         ],
         commands: [
@@ -74,6 +138,7 @@ class WebSocketCore extends EventTarget {
     _connected = false;
     _loading = false;
     _error = null;
+    _errorInfo = null;
     _readyState = WS_CLOSED;
     // 自動再接続
     _autoReconnect = false;
@@ -128,6 +193,15 @@ class WebSocketCore extends EventTarget {
     get error() {
         return this._error;
     }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-ws:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
+    }
     get readyState() {
         return this._readyState;
     }
@@ -153,7 +227,12 @@ class WebSocketCore extends EventTarget {
             bubbles: true,
         }));
     }
-    _setError(error) {
+    // `code` is an explicit taxonomy discriminator (WCS_WEBSOCKET_ERROR_CODE), passed
+    // only from the non-null failure call sites. It stays out of the public `error`
+    // shape and is used solely to classify errorInfo without reverse-engineering the
+    // heterogeneous `error` values (synthetic {message} / caught Error / raw Event).
+    // The clear path passes null and no code.
+    _setError(error, code) {
         // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
         // so suppressing redundant null→null dispatches (every connect/send start
         // clears a usually-already-null error) avoids a spurious wcs-ws:error per
@@ -163,8 +242,24 @@ class WebSocketCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // explicit `code` (or null on clear). Fires before the `error` event so an
+        // observer binding both sees the classification first, mirroring the io-node
+        // family. Every non-null error carries a code (the clear path is the only
+        // caller without one, and it is short-circuited here), so `code!` holds.
+        this._commitErrorInfo(error === null ? null : deriveWebSocketErrorInfo(error, code));
         this._target.dispatchEvent(new CustomEvent("wcs-ws:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already same-value-guards on the error
+    // reference), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-ws:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -181,7 +276,7 @@ class WebSocketCore extends EventTarget {
         // 流し、サニタイズ値(なにもしない)を返す。command-token 経路（set trigger →
         // connect()）からの呼び出しが state 更新サイクルを壊さないようにする。
         if (!url) {
-            this._setError({ message: "url is required." });
+            this._setError({ message: "url is required." }, WCS_WEBSOCKET_ERROR_CODE.InvalidArgument);
             return;
         }
         // 新しい接続を開始するため世代を更新し、進行中のソケット/再接続を無効化する。
@@ -203,7 +298,7 @@ class WebSocketCore extends EventTarget {
         // never-throw (§3.6): 未接続での送信は例外ではなく error に流す。set send の
         // fire-and-forget 経路で例外が伝播するのを防ぐ。
         if (!this._ws || this._ws.readyState !== WS_OPEN) {
-            this._setError({ message: "WebSocket is not connected." });
+            this._setError({ message: "WebSocket is not connected." }, WCS_WEBSOCKET_ERROR_CODE.InvalidState);
             return;
         }
         this._ws.send(data);
@@ -230,7 +325,7 @@ class WebSocketCore extends EventTarget {
         }
         catch (e) {
             this._setLoading(false);
-            this._setError(e);
+            this._setError(e, WCS_WEBSOCKET_ERROR_CODE.ConnectionError);
             return;
         }
         // Binary frames default to Blob; opt into ArrayBuffer for direct byte access.
@@ -267,7 +362,7 @@ class WebSocketCore extends EventTarget {
     _onError = (event) => {
         if (this._socketGen !== this._gen)
             return;
-        this._setError(event);
+        this._setError(event, WCS_WEBSOCKET_ERROR_CODE.ConnectionError);
     };
     _onClose = (event) => {
         this._removeListeners();
@@ -528,6 +623,9 @@ class WcsWebSocket extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get readyState() {
         return this._core.readyState;
     }
@@ -619,5 +717,5 @@ function bootstrapWebSocket(userConfig) {
     registerComponents();
 }
 
-export { WcsWebSocket, WebSocketCore, bootstrapWebSocket, getConfig };
+export { WCS_WEBSOCKET_ERROR_CODE, WcsWebSocket, WebSocketCore, bootstrapWebSocket, getConfig };
 //# sourceMappingURL=index.esm.js.map

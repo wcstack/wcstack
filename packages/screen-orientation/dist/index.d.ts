@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -71,6 +83,8 @@ type WcsScreenOrientationCoreValues = WcsScreenOrientationSnapshot & {
     portrait: boolean;
     landscape: boolean;
     error: any;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
 };
 /**
  * Value types for the Shell (`<wcs-screen-orientation>`) — identical
@@ -105,6 +119,7 @@ declare class ScreenOrientationCore extends EventTarget {
     private _target;
     private _snapshot;
     private _error;
+    private _errorInfo;
     private _orientation;
     private _subscribed;
     private _gen;
@@ -116,6 +131,13 @@ declare class ScreenOrientationCore extends EventTarget {
     get portrait(): boolean;
     get landscape(): boolean;
     get error(): any;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-orientation:error-info-changed`), derived from `error`; the existing
+     * `error` property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     observe(): Promise<void>;
     dispose(): void;
     /**
@@ -139,6 +161,8 @@ declare class ScreenOrientationCore extends EventTarget {
     private _read;
     private _onChange;
     private _setError;
+    private _errorInfoMessage;
+    private _commitErrorInfo;
     private _apply;
 }
 
@@ -167,6 +191,7 @@ declare class WcsScreenOrientation extends HTMLElement {
     get portrait(): boolean;
     get landscape(): boolean;
     get error(): any;
+    get errorInfo(): WcsIoErrorInfo | null;
     get connectedCallbackPromise(): Promise<void>;
     lock(orientation: OrientationLockType): Promise<void>;
     unlock(): void;
@@ -174,5 +199,44 @@ declare class WcsScreenOrientation extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { ScreenOrientationCore, WcsScreenOrientation, bootstrapScreenOrientation, getConfig };
-export type { IWritableConfig, IWritableTagNames, OrientationLockType, WcsScreenOrientationCoreValues, WcsScreenOrientationSnapshot, WcsScreenOrientationValues };
+/**
+ * screenOrientationCapabilities.ts
+ *
+ * Screen Orientation node 固有の error code(taxonomy)と derivation。汎用の error info
+ * 型は `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。screen.orientation の監視(change 購読)は同期で競合する operation を持た
+ * ないため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ *
+ * この node は bidirectional で、失敗は `lock()`/`unlock()` から来る。`_setError` は
+ * 2 形態の入力を受ける:
+ *   1. synthetic な `UNSUPPORTED_ERROR`(`{ message: "unsupported" }`、`.name` 無し)
+ *      — API / メソッド自体が不在。
+ *   2. caught された生の rejection / 例外(`.name` を持つ)。
+ * 両者を message coupling 無しに弁別するため、呼び出し側が明示的な `name` ヒントを渡す
+ * (storage の `deriveStorageErrorInfo(error, name)` と同じ discriminator 技法)。
+ * unsupported 経路は `"unsupported"` を、caught 経路は `Error.name` を渡す。
+ *
+ * lock() の実 rejection 名は README.md §"lock() needs a fullscreen…" と Core JSDoc §5 の
+ * とおり `NotAllowedError` / `NotSupportedError` / `SecurityError`(いずれも plain-tab で
+ * lock が効かない同一の実務的結末=「name で分岐するな」)+ spec の `AbortError`(新しい
+ * lock() に取って代わられた)。前者 3 名は同一 `not-allowed` に畳む(README のモデルに一致)。
+ */
+
+/** 安定した screen-orientation error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_SCREEN_ORIENTATION_ERROR_CODE: {
+    /** `screen.orientation` / `lock()`・`unlock()` 自体が不在(synthetic "unsupported")。 */
+    readonly CapabilityMissing: "capability-missing";
+    /**
+     * `NotAllowedError` / `NotSupportedError` / `SecurityError` — 非 fullscreen /
+     * plain-tab / feature-policy / sandbox で lock が効かない。README のモデルどおり
+     * 三者は同一の実務的結末なので 1 code に畳む。retry では回復しない。
+     */
+    readonly NotAllowed: "not-allowed";
+    /** `AbortError` — より新しい `lock()` に取って代わられた。fresh lock は成功しうる。 */
+    readonly Aborted: "aborted";
+    /** その他の `lock()`/`unlock()` 失敗。 */
+    readonly OrientationError: "orientation-error";
+};
+
+export { ScreenOrientationCore, WCS_SCREEN_ORIENTATION_ERROR_CODE, WcsScreenOrientation, bootstrapScreenOrientation, getConfig };
+export type { IWritableConfig, IWritableTagNames, OrientationLockType, WcsIoErrorInfo, WcsIoErrorPhase, WcsScreenOrientationCoreValues, WcsScreenOrientationSnapshot, WcsScreenOrientationValues };

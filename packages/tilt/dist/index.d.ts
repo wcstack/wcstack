@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -50,6 +62,8 @@ interface WcsTiltCoreValues {
     absolute: boolean | null;
     permissionState: TiltPermissionState;
     error: any;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
 }
 /**
  * Value types for the Shell (`<wcs-tilt>`) — identical observable surface to
@@ -88,6 +102,7 @@ declare class TiltCore extends EventTarget {
     private _snapshot;
     private _permissionState;
     private _error;
+    private _errorInfo;
     private _subscribed;
     private _ready;
     constructor(target?: EventTarget);
@@ -98,11 +113,19 @@ declare class TiltCore extends EventTarget {
     get absolute(): boolean | null;
     get permissionState(): TiltPermissionState;
     get error(): any;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-tilt:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     observe(): Promise<void>;
     dispose(): void;
     private _deviceOrientationEventCtor;
     private _setPermissionState;
     private _setError;
+    private _commitErrorInfo;
     /**
      * Wraps iOS 13+ Safari's static, gesture-gated
      * `DeviceOrientationEvent.requestPermission()`. On platforms without this
@@ -152,6 +175,7 @@ declare class WcsTilt extends HTMLElement {
     get absolute(): boolean | null;
     get permissionState(): TiltPermissionState;
     get error(): any;
+    get errorInfo(): WcsIoErrorInfo | null;
     get connectedCallbackPromise(): Promise<void>;
     requestPermission(): Promise<TiltPermissionState>;
     start(): void;
@@ -160,5 +184,37 @@ declare class WcsTilt extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { TiltCore, WcsTilt, bootstrapTilt, getConfig };
-export type { IWritableConfig, IWritableTagNames, TiltPermissionState, WcsTiltCoreValues, WcsTiltValues };
+/**
+ * tiltCapabilities.ts
+ *
+ * Tilt(Device Orientation)node 固有の error code(taxonomy)と derivation。汎用の
+ * error info 型は `./platformCapability.js`(/io-core/ から copy-distribution される
+ * 生成ファイル)から import する。tilt は監視系(deviceorientation の subscribe/
+ * unsubscribe)で競合する operation を持たないため lane は持たず、error taxonomy
+ * (errorInfo)のみを採用する。
+ *
+ * sensor 4 兄弟(accelerometer / gyroscope / magnetometer / ambient-light-sensor)と
+ * 違い、tilt の error 面は **異なる shape** を持つ:
+ * - sensor 族の error detail は `{ error: <Error.name>, message }`(name/message は文字列)。
+ * - tilt の error detail は `{ error: <生の rejection reason> }`(TiltCore._setError が
+ *   `requestPermission()` の catch で `{ error: e }` を渡す。`e` は生の Error/reason)。
+ *
+ * したがって derive は「wrap された生の値」から name/message を取り出す。また tilt は
+ * "unsupported"(capability-missing)経路を **持たない**: `DeviceOrientationEvent` や
+ * その `requestPermission` が無い環境では error にせず `"granted"` に倒して error を
+ * クリアする(docs/device-orientation-tag-design.md §3)。よって capability-missing の
+ * code / branch は生成しない(到達不能・dead code を避ける)。error として _setError に
+ * 届くのは iOS の `requestPermission()` reject だけで、その name は実権限拒否なら
+ * `NotAllowedError`、gesture 文脈外等なら汎用 `Error` になる。
+ */
+
+/** 安定した tilt error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_TILT_ERROR_CODE: {
+    /** `NotAllowedError` — iOS の Device Orientation 権限拒否。 */
+    readonly NotAllowed: "not-allowed";
+    /** その他の `requestPermission()` reject(gesture 文脈外 / 想定外の失敗)。 */
+    readonly TiltError: "tilt-error";
+};
+
+export { TiltCore, WCS_TILT_ERROR_CODE, WcsTilt, bootstrapTilt, getConfig };
+export type { IWritableConfig, IWritableTagNames, TiltPermissionState, WcsIoErrorInfo, WcsIoErrorPhase, WcsTiltCoreValues, WcsTiltValues };

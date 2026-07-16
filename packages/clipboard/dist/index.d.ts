@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -94,6 +106,8 @@ interface WcsClipboardCoreValues {
     items: WcsClipboardReadItem[] | null;
     loading: boolean;
     error: WcsClipboardErrorDetail | null;
+    /** Last failure's serializable taxonomy (stable code/phase/recoverable), or null. */
+    errorInfo: WcsIoErrorInfo | null;
     readPermission: ClipboardPermissionState;
     writePermission: ClipboardPermissionState;
     monitoring: boolean;
@@ -158,6 +172,7 @@ declare class ClipboardCore extends EventTarget {
     private _items;
     private _loading;
     private _error;
+    private _errorInfo;
     private _readPermission;
     private _writePermission;
     private _monitoring;
@@ -177,6 +192,13 @@ declare class ClipboardCore extends EventTarget {
     get items(): WcsClipboardReadItem[] | null;
     get loading(): boolean;
     get error(): WcsClipboardErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Exposed as an additive wc-bindable property (event
+     * `wcs-clipboard:error-info-changed`), derived from the normalized `error`; the
+     * existing `error` property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get readPermission(): ClipboardPermissionState;
     get writePermission(): ClipboardPermissionState;
     get monitoring(): boolean;
@@ -186,6 +208,7 @@ declare class ClipboardCore extends EventTarget {
     private _setRead;
     private _setLoading;
     private _setError;
+    private _commitErrorInfo;
     private _setReadPermission;
     private _setWritePermission;
     private _setMonitoring;
@@ -283,6 +306,7 @@ declare class WcsClipboard extends HTMLElement {
     get items(): WcsClipboardReadItem[] | null;
     get loading(): boolean;
     get error(): WcsClipboardErrorDetail | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get readPermission(): ClipboardPermissionState;
     get writePermission(): ClipboardPermissionState;
     get monitoring(): boolean;
@@ -299,5 +323,21 @@ declare class WcsClipboard extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { ClipboardCore, WcsClipboard, bootstrapClipboard, getConfig };
-export type { ClipboardPermissionState, IWritableConfig, IWritableTagNames, WcsClipboardCommands, WcsClipboardCoreCommands, WcsClipboardCoreValues, WcsClipboardErrorDetail, WcsClipboardInputs, WcsClipboardReadDetail, WcsClipboardReadItem, WcsClipboardValues };
+/**
+ * clipboardCapabilities.ts
+ *
+ * Clipboard node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。clipboard の read/write は concurrent-independent(競合しない)ため lane
+ * は持たず、error taxonomy(errorInfo)のみを採用する。
+ */
+
+/** 安定した clipboard error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_CLIPBOARD_ERROR_CODE: {
+    readonly CapabilityMissing: "capability-missing";
+    readonly NotAllowed: "not-allowed";
+    readonly ClipboardError: "clipboard-error";
+};
+
+export { ClipboardCore, WCS_CLIPBOARD_ERROR_CODE, WcsClipboard, bootstrapClipboard, getConfig };
+export type { ClipboardPermissionState, IWritableConfig, IWritableTagNames, WcsClipboardCommands, WcsClipboardCoreCommands, WcsClipboardCoreValues, WcsClipboardErrorDetail, WcsClipboardInputs, WcsClipboardReadDetail, WcsClipboardReadItem, WcsClipboardValues, WcsIoErrorInfo, WcsIoErrorPhase };

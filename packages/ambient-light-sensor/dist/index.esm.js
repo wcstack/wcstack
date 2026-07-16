@@ -36,6 +36,53 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+/**
+ * ambientLightSensorCapabilities.ts
+ *
+ * AmbientLightSensor node 固有の error code(taxonomy)と derivation。汎用の error info
+ * 型は `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。sensor は監視系(継続 subscribe/unsubscribe)で競合する operation を持た
+ * ないため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ *
+ * sensor family(accelerometer / gyroscope / magnetometer / ambient-light-sensor)は
+ * error 面が構造同一(`{ error: <name>, message }`、`.error` が Error.name / "unsupported"
+ * / "error" fallback)なので、taxonomy も 4 兄弟で一致させる。
+ */
+/** 安定した ambient-light-sensor error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE = {
+    /** Sensor API 非対応(`globalThis.AmbientLightSensor` 不在)。 */
+    CapabilityMissing: "capability-missing",
+    /** `SecurityError` / `NotAllowedError` — 権限拒否・feature-policy ブロック。 */
+    NotAllowed: "not-allowed",
+    /** `NotReadableError` — センサーハードウェアを読めない。 */
+    NotReadable: "not-readable",
+    /** その他の SensorErrorEvent / 想定外の失敗。 */
+    SensorError: "sensor-error",
+};
+/**
+ * sensor の失敗を serializable な error taxonomy に写す。`name` は error detail の
+ * `.error`(`Error.name` / "unsupported" / "error" fallback)。
+ *
+ * - "unsupported" は開始前の能力欠如 → phase="probe" / capability-missing。
+ * - `SecurityError` / `NotAllowedError` は sensor 構築時の権限拒否 → phase="start" /
+ *   not-allowed。いずれも retry で回復しない(recoverable=false)。
+ * - `NotReadableError` は稼働中のハードウェア読取失敗 → phase="execute" / not-readable。
+ * - それ以外(SensorErrorEvent の他 name / "error" fallback)は phase="execute" /
+ *   sensor-error。
+ */
+function deriveAmbientLightSensorErrorInfo(name, message) {
+    if (name === "unsupported") {
+        return { code: WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+    }
+    if (name === "SecurityError" || name === "NotAllowedError") {
+        return { code: WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message };
+    }
+    if (name === "NotReadableError") {
+        return { code: WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE.NotReadable, phase: "execute", recoverable: false, message };
+    }
+    return { code: WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE.SensorError, phase: "execute", recoverable: false, message };
+}
+
 const NULL_READING = Object.freeze({ illuminance: null });
 /**
  * Headless AmbientLightSensor primitive. A thin, framework-agnostic wrapper around
@@ -78,12 +125,18 @@ class AmbientLightSensorCore extends EventTarget {
         properties: [
             { name: "illuminance", event: "wcs-ambient-light-sensor:reading", getter: (e) => e.detail.illuminance },
             { name: "error", event: "wcs-ambient-light-sensor:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error.error` (the Error.name /
+            // "unsupported"); the existing `error` property/event are unchanged. Fires
+            // wcs-ambient-light-sensor:error-info-changed. No lane — the sensor is a monitor.
+            { name: "errorInfo", event: "wcs-ambient-light-sensor:error-info-changed" },
         ],
         commands: [{ name: "start" }, { name: "stop" }],
     };
     _target;
     _reading = NULL_READING;
     _error = null;
+    _errorInfo = null;
     // The live sensor instance while started (null otherwise), kept so stop()
     // can remove its listeners precisely and so start() can detect "already
     // started" without a separate boolean (docs/async-io-node-guidelines.md §3.5
@@ -98,6 +151,15 @@ class AmbientLightSensorCore extends EventTarget {
     }
     get error() {
         return this._error;
+    }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-ambient-light-sensor:error-info-changed`), derived from `error`; the existing
+     * `error` property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
     }
     /** No asynchronous probe to await: start()/stop() are synchronous
      *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
@@ -125,8 +187,22 @@ class AmbientLightSensorCore extends EventTarget {
         if (this._error?.error === error?.error && this._error?.message === error?.message)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // error name (or null on clear). Fires before the `error` event so an observer
+        // binding both sees the classification first, mirroring the io-node family.
+        this._commitErrorInfo(error === null ? null : deriveAmbientLightSensorErrorInfo(error.error, error.message));
         this._target.dispatchEvent(new CustomEvent("wcs-ambient-light-sensor:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already same-value-guards on the error name
+    // + message), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-ambient-light-sensor:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -358,6 +434,9 @@ class WcsAmbientLightSensor extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -402,5 +481,5 @@ function bootstrapAmbientLightSensor(userConfig) {
     registerComponents();
 }
 
-export { AmbientLightSensorCore, WcsAmbientLightSensor, bootstrapAmbientLightSensor, getConfig };
+export { AmbientLightSensorCore, WCS_AMBIENT_LIGHT_SENSOR_ERROR_CODE, WcsAmbientLightSensor, bootstrapAmbientLightSensor, getConfig };
 //# sourceMappingURL=index.esm.js.map

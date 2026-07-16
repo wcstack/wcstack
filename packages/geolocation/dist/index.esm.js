@@ -45,6 +45,35 @@ function setConfig(partialConfig) {
 }
 
 /**
+ * geolocationCapabilities.ts
+ *
+ * Geolocation node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。geolocation は concurrent-independent(競合しない)ため lane は持たず、
+ * error taxonomy(errorInfo)のみを採用する。
+ */
+/** 安定した geolocation error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_GEO_ERROR_CODE = {
+    PermissionDenied: "permission-denied",
+    PositionUnavailable: "position-unavailable",
+    Timeout: "timeout",
+};
+/**
+ * 正規化済み `GeolocationPositionError`(spec code 1/2/3)を serializable な error
+ * taxonomy に写す。Core は "unsupported"/"unexpected" を code 2(position-unavailable)
+ * に畳むため、これは既存の `error.code` を忠実にミラーする。permission-denied(1)だけ
+ * は retry で回復しないため recoverable=false。
+ */
+function deriveGeoErrorInfo(code, message) {
+    const taxonomyCode = code === 1
+        ? WCS_GEO_ERROR_CODE.PermissionDenied
+        : code === 3
+            ? WCS_GEO_ERROR_CODE.Timeout
+            : WCS_GEO_ERROR_CODE.PositionUnavailable;
+    return { code: taxonomyCode, phase: "execute", recoverable: code !== 1, message };
+}
+
+/**
  * Headless geolocation primitive. A thin, framework-agnostic wrapper around the
  * Geolocation API exposed through the wc-bindable protocol.
  *
@@ -81,6 +110,11 @@ class GeolocationCore extends EventTarget {
             { name: "loading", event: "wcs-geo:loading-changed" },
             { name: "error", event: "wcs-geo:error" },
             { name: "permission", event: "wcs-geo:permission-changed" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from the normalized `error` (spec code
+            // 1/2/3 → permission-denied / position-unavailable / timeout); the existing
+            // `error` property/event are unchanged. Fires `wcs-geo:error-info-changed`.
+            { name: "errorInfo", event: "wcs-geo:error-info-changed" },
         ],
         commands: [
             { name: "getCurrentPosition", async: true },
@@ -94,6 +128,7 @@ class GeolocationCore extends EventTarget {
     _watching = false;
     _loading = false;
     _error = null;
+    _errorInfo = null;
     _permission = "prompt";
     // Live PermissionStatus handle (when the Permissions API is available), kept
     // so the `change` listener can be removed on dispose().
@@ -165,6 +200,15 @@ class GeolocationCore extends EventTarget {
     get error() {
         return this._error;
     }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Exposed as an additive wc-bindable property (event
+     * `wcs-geo:error-info-changed`), derived from the normalized `error`; the
+     * existing `error` property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
+    }
     get permission() {
         return this._permission;
     }
@@ -206,8 +250,23 @@ class GeolocationCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive it from
+        // the normalized error (or null on clear). Fires before the `error` event so an
+        // observer binding both sees the classification first, mirroring the io-node
+        // family. No lane here — geolocation's fixes don't compete (dispose-only guard).
+        this._commitErrorInfo(error === null ? null : deriveGeoErrorInfo(error.code, error.message));
         this._target.dispatchEvent(new CustomEvent("wcs-geo:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already same-value-guards on the error
+    // reference), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-geo:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -686,6 +745,9 @@ class WcsGeolocation extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get permission() {
         return this._core.permission;
     }
@@ -781,5 +843,5 @@ function bootstrapGeolocation(userConfig) {
     registerComponents();
 }
 
-export { GeolocationCore, WcsGeolocation, bootstrapGeolocation, getConfig };
+export { GeolocationCore, WCS_GEO_ERROR_CODE, WcsGeolocation, bootstrapGeolocation, getConfig };
 //# sourceMappingURL=index.esm.js.map

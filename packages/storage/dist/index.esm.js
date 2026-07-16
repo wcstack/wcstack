@@ -63,8 +63,55 @@ const STORAGE_EVENTS = {
     valueChanged: "wcs-storage:value-changed",
     loadingChanged: "wcs-storage:loading-changed",
     error: "wcs-storage:error",
+    errorInfoChanged: "wcs-storage:error-info-changed",
     triggerChanged: "wcs-storage:trigger-changed",
 };
+
+/**
+ * storageCapabilities.ts
+ *
+ * Storage node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。storage の load / save / remove は同期で互いに競合しないため lane は
+ * 持たず、error taxonomy(errorInfo)のみを採用する。
+ */
+/** 安定した storage error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_STORAGE_ERROR_CODE = {
+    /** `key` 未設定 / 不正な `type` などの入力不備。retry では回復しない。 */
+    InvalidArgument: "invalid-argument",
+    /** `QuotaExceededError` — 容量超過。空きを作れば回復しうる(環境要因)。 */
+    QuotaExceeded: "quota-exceeded",
+    /** `SecurityError` — storage アクセス拒否(cookie 無効 / third-party context 等)。retry では回復しない。 */
+    NotAllowed: "not-allowed",
+    /** その他の caught 例外。 */
+    StorageError: "storage-error",
+};
+/**
+ * storage の失敗を serializable な error taxonomy に写す。
+ *
+ * `name` は caught 例外の `Error.name`(load / save / remove の catch から渡る)。
+ * 未指定(undefined)は inline 構築の validation error(不正 `type` / `key` 未設定)を意味し、
+ * これは開始前の入力不備なので phase="start" / `invalid-argument` / recoverable=false。
+ * caught 例外は実行中の失敗なので phase="execute"。`QuotaExceededError` は環境要因で
+ * 空きを作れば回復しうる(recoverable=true)、`SecurityError` は retry で回復しない。
+ */
+function deriveStorageErrorInfo(error, name) {
+    if (name === undefined) {
+        return {
+            code: WCS_STORAGE_ERROR_CODE.InvalidArgument,
+            phase: "start",
+            recoverable: false,
+            message: error.message,
+        };
+    }
+    if (name === "QuotaExceededError") {
+        return { code: WCS_STORAGE_ERROR_CODE.QuotaExceeded, phase: "execute", recoverable: true, message: error.message };
+    }
+    if (name === "SecurityError") {
+        return { code: WCS_STORAGE_ERROR_CODE.NotAllowed, phase: "execute", recoverable: false, message: error.message };
+    }
+    return { code: WCS_STORAGE_ERROR_CODE.StorageError, phase: "execute", recoverable: true, message: error.message };
+}
 
 class StorageCore extends EventTarget {
     static wcBindable = {
@@ -74,6 +121,11 @@ class StorageCore extends EventTarget {
             { name: "value", event: STORAGE_EVENTS.valueChanged, getter: (e) => e.detail },
             { name: "loading", event: STORAGE_EVENTS.loadingChanged },
             { name: "error", event: STORAGE_EVENTS.error },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error` (invalid-argument / quota-exceeded
+            // / not-allowed / storage-error); the existing `error` property/event are unchanged.
+            // Fires wcs-storage:error-info-changed. No lane — load/save/remove don't compete.
+            { name: "errorInfo", event: STORAGE_EVENTS.errorInfoChanged },
         ],
         inputs: [
             { name: "key" },
@@ -90,6 +142,7 @@ class StorageCore extends EventTarget {
     _value = null;
     _loading = false;
     _error = null;
+    _errorInfo = null;
     _key = "";
     _type = "local";
     _storageListener = null;
@@ -143,6 +196,15 @@ class StorageCore extends EventTarget {
     get error() {
         return this._error;
     }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-storage:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
+    }
     get key() {
         return this._key;
     }
@@ -176,7 +238,11 @@ class StorageCore extends EventTarget {
             bubbles: true,
         }));
     }
-    _setError(error) {
+    // `name` is the caught exception's `Error.name` (passed only from the
+    // load/save/remove catch blocks); it stays out of the public `error` shape and
+    // is used solely to classify errorInfo (quota vs security vs generic). Inline
+    // validation errors (invalid type / missing key) pass no name → invalid-argument.
+    _setError(error, name) {
         // Same-value guard (async-io-node-guidelines.md §3.3). `error` is state-ish,
         // so suppressing redundant null→null dispatches (every load/save/remove start
         // clears a usually-already-null error) avoids a spurious error event per
@@ -185,8 +251,22 @@ class StorageCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // error (or null on clear). Fires before the `error` event so an observer
+        // binding both sees the classification first, mirroring the io-node family.
+        this._commitErrorInfo(error === null ? null : deriveStorageErrorInfo(error, name));
         this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.error, {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already same-value-guards on the error
+    // reference), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent(STORAGE_EVENTS.errorInfoChanged, {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -197,6 +277,14 @@ class StorageCore extends EventTarget {
             operation,
             message: e instanceof Error ? e.message : String(e),
         };
+    }
+    // The caught exception's `Error.name` for errorInfo classification (quota vs
+    // security vs generic), or "" for a non-Error throw (→ storage-error). Returning
+    // a string (never undefined) keeps a caught exception in the execute phase; only
+    // inline validation errors, which pass no name to _setError, become start-phase
+    // invalid-argument. Single chokepoint so the ternary is covered in one place.
+    _errName(e) {
+        return e instanceof Error ? e.name : "";
     }
     _setValue(value) {
         this._value = value;
@@ -232,7 +320,7 @@ class StorageCore extends EventTarget {
             return this._value;
         }
         catch (e) {
-            this._setError(this._toStorageError("load", e));
+            this._setError(this._toStorageError("load", e), this._errName(e));
             this._setLoading(false);
             return null;
         }
@@ -267,7 +355,7 @@ class StorageCore extends EventTarget {
             this._setLoading(false);
         }
         catch (e) {
-            this._setError(this._toStorageError("save", e));
+            this._setError(this._toStorageError("save", e), this._errName(e));
             this._setLoading(false);
         }
     }
@@ -287,7 +375,7 @@ class StorageCore extends EventTarget {
             this._setLoading(false);
         }
         catch (e) {
-            this._setError(this._toStorageError("remove", e));
+            this._setError(this._toStorageError("remove", e), this._errName(e));
             this._setLoading(false);
         }
     }
@@ -508,6 +596,9 @@ class Storage extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -620,5 +711,5 @@ function bootstrapStorage(userConfig) {
     registerComponents();
 }
 
-export { StorageCore, Storage as WcsStorage, bootstrapStorage, getConfig };
+export { StorageCore, WCS_STORAGE_ERROR_CODE, Storage as WcsStorage, bootstrapStorage, getConfig };
 //# sourceMappingURL=index.esm.js.map

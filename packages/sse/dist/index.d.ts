@@ -13,10 +13,22 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
+}
+
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
 }
 
 interface ITagNames {
@@ -73,6 +85,8 @@ interface WcsSseCoreValues<T = unknown> {
     connected: boolean;
     loading: boolean;
     error: Event | Error | null;
+    /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+    errorInfo: WcsIoErrorInfo | null;
     readyState: number;
 }
 /**
@@ -110,6 +124,7 @@ declare class SseCore extends EventTarget {
     private _connected;
     private _loading;
     private _error;
+    private _errorInfo;
     private _readyState;
     private _url;
     private _withCredentials;
@@ -126,11 +141,21 @@ declare class SseCore extends EventTarget {
     get connected(): boolean;
     get loading(): boolean;
     get error(): Event | Error | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-sse:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged. `recoverable=true` only for a transient
+     * CONNECTING drop (the browser auto-reconnects).
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get readyState(): number;
     private _setMessage;
     private _setConnected;
     private _setLoading;
     private _setError;
+    private _commitErrorInfo;
+    private _errorMessage;
     private _setReadyState;
     /**
      * Open an SSE connection. Required `url`; `options` are evaluated once at the
@@ -181,6 +206,7 @@ declare class WcsSse extends HTMLElement {
     get connected(): boolean;
     get loading(): boolean;
     get error(): Event | Error | null;
+    get errorInfo(): WcsIoErrorInfo | null;
     get readyState(): number;
     get trigger(): boolean;
     set trigger(value: boolean);
@@ -191,5 +217,38 @@ declare class WcsSse extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { SseCore, WcsSse, bootstrapSse, getConfig };
-export type { IWritableConfig, IWritableTagNames, SseConnectOptions, WcsSseCommands, WcsSseCoreCommands, WcsSseCoreValues, WcsSseInputs, WcsSseMessage, WcsSseValues };
+/**
+ * sseCapabilities.ts
+ *
+ * SSE node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。SSE は session/streaming の監視系(持続接続、競合する operation を持たない)
+ * なので lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ *
+ * `SseCore._setError(error, kind?)` は 3 形態の入力を受ける:
+ *   1. synthetic な validation `Error`(`new Error("url is required.")`) — 入力不備。
+ *   2. caught された EventSource 構築失敗(`new EventSource()` の throw、Error/DOMException)。
+ *   3. EventSource が切断/再接続時に発火する生の `error` **Event**(message を持たない)。
+ * 生の Event と Error を message coupling 無しに弁別し、さらに EventSource の
+ * `error` Event が「恒久エラー(readyState CLOSED)」か「トランジェント再接続中
+ * (readyState CONNECTING、ブラウザが自動再接続)」かは *raw な値では判別できない* ため、
+ * 呼び出し側が明示的な `kind` discriminator を渡す(storage の
+ * `deriveStorageErrorInfo(error, name)` / screen-orientation の
+ * `deriveScreenOrientationErrorInfo(name, message)` と同じ discriminator 技法)。
+ * derive 側は mixed shape を reverse-engineer しない。
+ */
+
+/** 安定した SSE error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_SSE_ERROR_CODE: {
+    /** `url` 未指定などの入力不備。retry では回復しない。 */
+    readonly InvalidArgument: "invalid-argument";
+    /**
+     * EventSource の生成失敗、または稼働中ストリームの切断。EventSource は
+     * CloseEvent を持たず error が切断も兼ねるため、生成失敗・恒久切断・トランジェント
+     * 再接続を 1 つの code に畳み、`phase` / `recoverable` で区別する。
+     */
+    readonly ConnectionError: "connection-error";
+};
+
+export { SseCore, WCS_SSE_ERROR_CODE, WcsSse, bootstrapSse, getConfig };
+export type { IWritableConfig, IWritableTagNames, SseConnectOptions, WcsIoErrorInfo, WcsIoErrorPhase, WcsSseCommands, WcsSseCoreCommands, WcsSseCoreValues, WcsSseInputs, WcsSseMessage, WcsSseValues };

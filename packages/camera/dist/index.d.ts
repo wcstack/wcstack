@@ -1,3 +1,14 @@
+/** operation error の phase(taxonomy)。 */
+type WcsIoErrorPhase = "probe" | "start" | "execute" | "decode" | "commit" | "dispose";
+/** serializable な error info(non-cloneable な cause とは分離。DevTools / remote へは info のみ)。 */
+interface WcsIoErrorInfo {
+    readonly code: string;
+    readonly phase: WcsIoErrorPhase;
+    readonly recoverable: boolean;
+    readonly capabilityId?: string;
+    readonly message: string;
+}
+
 interface IWcBindableProperty {
     readonly name: string;
     readonly event: string;
@@ -13,7 +24,8 @@ interface IWcBindableCommand {
 }
 interface IWcBindable {
     readonly protocol: "wc-bindable";
-    readonly version: 1;
+    /** Integer protocol version. All versions >= 1 are core-compatible. */
+    readonly version: number;
     readonly properties: readonly IWcBindableProperty[];
     readonly inputs?: readonly IWcBindableInput[];
     readonly commands?: readonly IWcBindableCommand[];
@@ -89,6 +101,8 @@ interface WcsCameraCoreValues {
     deviceId: string | null;
     devices: MediaDeviceSnapshot[];
     error: WcsMediaErrorDetail | null;
+    /** Serializable Phase 6 failure taxonomy derived from `error`, or null. */
+    errorInfo: WcsIoErrorInfo | null;
 }
 type WcsCameraValues = WcsCameraCoreValues;
 interface WcsCameraInputs {
@@ -153,6 +167,8 @@ interface WcsRecorderCoreValues {
     blob: Blob | null;
     objectURL: string | null;
     error: WcsMediaErrorDetail | null;
+    /** Serializable Phase 6 failure taxonomy derived from `error`, or null. */
+    errorInfo: WcsIoErrorInfo | null;
 }
 type WcsRecorderValues = WcsRecorderCoreValues;
 interface WcsRecorderInputs {
@@ -204,6 +220,7 @@ declare class CameraCore extends EventTarget {
     private _deviceId;
     private _devices;
     private _error;
+    private _errorInfo;
     private _stream;
     private _desired;
     private _constraints;
@@ -219,6 +236,13 @@ declare class CameraCore extends EventTarget {
     get deviceId(): string | null;
     get devices(): MediaDeviceSnapshot[];
     get error(): WcsMediaErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-camera:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get ready(): Promise<void>;
     private _setActive;
     private _setPermission;
@@ -226,6 +250,7 @@ declare class CameraCore extends EventTarget {
     private _setDeviceId;
     private _setDevices;
     private _setError;
+    private _commitErrorInfo;
     private _dispatch;
     private _devicesEqual;
     /**
@@ -325,6 +350,8 @@ declare class WcsCamera extends HTMLElement {
     get audioPermission(): MediaPermissionState | null;
     get devices(): MediaDeviceSnapshot[];
     get error(): WcsMediaErrorDetail | null;
+    /** The last failure's serializable `WcsIoErrorInfo` (Phase 6 taxonomy), or null. */
+    get errorInfo(): WcsIoErrorInfo | null;
     get connectedCallbackPromise(): Promise<void>;
     start(): void;
     stop(): void;
@@ -384,6 +411,7 @@ declare class RecorderCore extends EventTarget {
     private _blob;
     private _objectURL;
     private _error;
+    private _errorInfo;
     private _recorder;
     private _stream;
     private _chunks;
@@ -399,12 +427,20 @@ declare class RecorderCore extends EventTarget {
     get blob(): Blob | null;
     get objectURL(): string | null;
     get error(): WcsMediaErrorDetail | null;
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-recorder:error-info-changed`), derived from `error`; the existing `error`
+     * property/event are unchanged.
+     */
+    get errorInfo(): WcsIoErrorInfo | null;
     get ready(): Promise<void>;
     private _setRecording;
     private _setPaused;
     private _setDuration;
     private _setMimeType;
     private _setError;
+    private _commitErrorInfo;
     private _dispatch;
     /**
      * Borrow a stream for recording (the direct-channel sink). Synchronous, no
@@ -475,6 +511,8 @@ declare class WcsRecorder extends HTMLElement {
     get blob(): Blob | null;
     get objectURL(): string | null;
     get error(): WcsMediaErrorDetail | null;
+    /** The last failure's serializable `WcsIoErrorInfo` (Phase 6 taxonomy), or null. */
+    get errorInfo(): WcsIoErrorInfo | null;
     /** Borrow a stream (the direct-channel sink). */
     attachStream(stream: MediaStream): void;
     start(): void;
@@ -487,5 +525,39 @@ declare class WcsRecorder extends HTMLElement {
     disconnectedCallback(): void;
 }
 
-export { CameraCore, RecorderCore, WcsCamera, WcsRecorder, bootstrapCamera, getConfig };
-export type { CameraConstraints, FacingMode, IWritableConfig, IWritableTagNames, MediaDeviceSnapshot, MediaPermissionState, RecorderOptions, WcsCameraCommands, WcsCameraCoreCommands, WcsCameraCoreValues, WcsCameraInputs, WcsCameraValues, WcsMediaErrorDetail, WcsRecordedDetail, WcsRecorderCommands, WcsRecorderCoreCommands, WcsRecorderCoreValues, WcsRecorderInputs, WcsRecorderValues };
+/**
+ * mediaCapabilities.ts
+ *
+ * camera / recorder node 固有の error code(taxonomy)と derivation。汎用の error info
+ * 型は `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。
+ *
+ * この 1 ファイルを CameraCore(getUserMedia)と RecorderCore(MediaRecorder)の両方が
+ * import する。両 Core は同一の error detail 型(`WcsMediaErrorDetail = { name, message }`、
+ * `.name` が DOMException 名 / "unsupported" sentinel / 各 Core 固有の合成名)を共有する
+ * ため、derivation も 1 本で両者を賄える。lane は持たず(getUserMedia は acquire を
+ * `_gen` で switchMap 済み、録画は command-driven)、error taxonomy(errorInfo)のみを採用する。
+ */
+
+/** 安定した media(camera / recorder)error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_MEDIA_ERROR_CODE: {
+    /** getUserMedia / MediaRecorder API 不在(非セキュアコンテキスト含む) — "unsupported" sentinel。 */
+    readonly CapabilityMissing: "capability-missing";
+    /** `NotAllowedError` / `SecurityError` — 権限拒否・feature-policy ブロック。 */
+    readonly NotAllowed: "not-allowed";
+    /** `NotFoundError` — 要求した種類のデバイス(カメラ/マイク)が存在しない。 */
+    readonly NotFound: "not-found";
+    /** `NotReadableError` — デバイスがハードウェア障害/他アプリ占有で読めない。 */
+    readonly NotReadable: "not-readable";
+    /** `OverconstrainedError` / `NotSupportedError` — 制約・構成(mimeType 等)が満たせない。 */
+    readonly InvalidArgument: "invalid-argument";
+    /** `NoStreamError` — stream 未 attach で録画開始(前提状態の不備)。 */
+    readonly InvalidState: "invalid-state";
+    /** `AbortError` — 実行途中の中断(retry で回復しうる)。 */
+    readonly Aborted: "aborted";
+    /** その他の実行時失敗(`RecorderError` / 想定外の MediaRecorder エラー等)。 */
+    readonly MediaError: "media-error";
+};
+
+export { CameraCore, RecorderCore, WCS_MEDIA_ERROR_CODE, WcsCamera, WcsRecorder, bootstrapCamera, getConfig };
+export type { CameraConstraints, FacingMode, IWritableConfig, IWritableTagNames, MediaDeviceSnapshot, MediaPermissionState, RecorderOptions, WcsCameraCommands, WcsCameraCoreCommands, WcsCameraCoreValues, WcsCameraInputs, WcsCameraValues, WcsIoErrorInfo, WcsIoErrorPhase, WcsMediaErrorDetail, WcsRecordedDetail, WcsRecorderCommands, WcsRecorderCoreCommands, WcsRecorderCoreValues, WcsRecorderInputs, WcsRecorderValues };

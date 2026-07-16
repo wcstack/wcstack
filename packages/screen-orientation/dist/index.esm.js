@@ -36,6 +36,71 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+/**
+ * screenOrientationCapabilities.ts
+ *
+ * Screen Orientation node 固有の error code(taxonomy)と derivation。汎用の error info
+ * 型は `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。screen.orientation の監視(change 購読)は同期で競合する operation を持た
+ * ないため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ *
+ * この node は bidirectional で、失敗は `lock()`/`unlock()` から来る。`_setError` は
+ * 2 形態の入力を受ける:
+ *   1. synthetic な `UNSUPPORTED_ERROR`(`{ message: "unsupported" }`、`.name` 無し)
+ *      — API / メソッド自体が不在。
+ *   2. caught された生の rejection / 例外(`.name` を持つ)。
+ * 両者を message coupling 無しに弁別するため、呼び出し側が明示的な `name` ヒントを渡す
+ * (storage の `deriveStorageErrorInfo(error, name)` と同じ discriminator 技法)。
+ * unsupported 経路は `"unsupported"` を、caught 経路は `Error.name` を渡す。
+ *
+ * lock() の実 rejection 名は README.md §"lock() needs a fullscreen…" と Core JSDoc §5 の
+ * とおり `NotAllowedError` / `NotSupportedError` / `SecurityError`(いずれも plain-tab で
+ * lock が効かない同一の実務的結末=「name で分岐するな」)+ spec の `AbortError`(新しい
+ * lock() に取って代わられた)。前者 3 名は同一 `not-allowed` に畳む(README のモデルに一致)。
+ */
+/** 安定した screen-orientation error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_SCREEN_ORIENTATION_ERROR_CODE = {
+    /** `screen.orientation` / `lock()`・`unlock()` 自体が不在(synthetic "unsupported")。 */
+    CapabilityMissing: "capability-missing",
+    /**
+     * `NotAllowedError` / `NotSupportedError` / `SecurityError` — 非 fullscreen /
+     * plain-tab / feature-policy / sandbox で lock が効かない。README のモデルどおり
+     * 三者は同一の実務的結末なので 1 code に畳む。retry では回復しない。
+     */
+    NotAllowed: "not-allowed",
+    /** `AbortError` — より新しい `lock()` に取って代わられた。fresh lock は成功しうる。 */
+    Aborted: "aborted",
+    /** その他の `lock()`/`unlock()` 失敗。 */
+    OrientationError: "orientation-error",
+};
+/**
+ * screen-orientation の失敗を serializable な error taxonomy に写す。
+ *
+ * `name` は呼び出し側が渡す discriminator:synthetic unsupported なら `"unsupported"`、
+ * caught 例外なら `Error.name`(生の非 Error throw では `undefined`)。`message` は
+ * 公開 `error` と同じ文言(unsupported なら "unsupported")。
+ *
+ * - `"unsupported"` は利用直前の能力欠如 → phase="probe" / capability-missing。
+ * - `NotAllowedError` / `NotSupportedError` / `SecurityError` は lock() 実行時に
+ *   context が満たされず lock が効かない → phase="execute" / not-allowed / recoverable=false。
+ * - `AbortError` は新しい lock() による supersede → phase="execute" / aborted /
+ *   recoverable=true(fresh な lock() は成功しうる)。
+ * - それ以外(spec の `InvalidStateError`、生の throw、`.name` 欠如等)は
+ *   phase="execute" / orientation-error。
+ */
+function deriveScreenOrientationErrorInfo(name, message) {
+    if (name === "unsupported") {
+        return { code: WCS_SCREEN_ORIENTATION_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+    }
+    if (name === "NotAllowedError" || name === "NotSupportedError" || name === "SecurityError") {
+        return { code: WCS_SCREEN_ORIENTATION_ERROR_CODE.NotAllowed, phase: "execute", recoverable: false, message };
+    }
+    if (name === "AbortError") {
+        return { code: WCS_SCREEN_ORIENTATION_ERROR_CODE.Aborted, phase: "execute", recoverable: true, message };
+    }
+    return { code: WCS_SCREEN_ORIENTATION_ERROR_CODE.OrientationError, phase: "execute", recoverable: false, message };
+}
+
 const UNSUPPORTED_SNAPSHOT = Object.freeze({
     type: null,
     angle: null,
@@ -83,6 +148,13 @@ class ScreenOrientationCore extends EventTarget {
             // every other bidirectional IO node exposes (FetchCore, GeolocationCore,
             // NotificationCore) so `hidden@error`-style bindings work uniformly.
             { name: "error", event: "wcs-orientation:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error` (capability-missing / not-allowed
+            // / aborted / orientation-error); the existing `error` property/event are
+            // unchanged. Fires wcs-orientation:error-info-changed. No lane — monitoring is a
+            // synchronous subscribe and lock()/unlock() are a single command path, not
+            // competing operations.
+            { name: "errorInfo", event: "wcs-orientation:error-info-changed" },
         ],
         commands: [
             { name: "lock", async: true },
@@ -103,6 +175,10 @@ class ScreenOrientationCore extends EventTarget {
     // FullscreenCore, ClipboardCore, and NotificationCore all leave their error
     // field untouched in dispose() too.
     _error = null;
+    // Additive failure taxonomy, kept strictly in sync with `_error` (derived on
+    // every _setError, cleared to null when error clears). Sticky across
+    // dispose()/observe() exactly like `_error` — the two transition together.
+    _errorInfo = null;
     // The live ScreenOrientation object the `change` listener is attached to
     // (kept so dispose() can remove it precisely; not read for anything else).
     _orientation = null;
@@ -142,6 +218,15 @@ class ScreenOrientationCore extends EventTarget {
     }
     get error() {
         return this._error;
+    }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-orientation:error-info-changed`), derived from `error`; the existing
+     * `error` property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
     }
     // Lifecycle (§3.5). Idempotent: a second observe() while already subscribed
     // is a no-op (no double listener, no redundant dispatch). Synchronous overall
@@ -185,7 +270,7 @@ class ScreenOrientationCore extends EventTarget {
             // No stale-generation check here: nothing asynchronous has happened yet
             // since `gen` was captured immediately above, so `_gen` cannot have
             // changed underneath this synchronous branch.
-            this._setError(UNSUPPORTED_ERROR);
+            this._setError(UNSUPPORTED_ERROR, "unsupported");
             return;
         }
         try {
@@ -197,7 +282,7 @@ class ScreenOrientationCore extends EventTarget {
         catch (e) {
             if (gen !== this._gen)
                 return;
-            this._setError(e);
+            this._setError(e, e?.name);
         }
     }
     /**
@@ -210,7 +295,7 @@ class ScreenOrientationCore extends EventTarget {
         this._gen++;
         const api = this._api();
         if (!api || typeof api.unlock !== "function") {
-            this._setError(UNSUPPORTED_ERROR);
+            this._setError(UNSUPPORTED_ERROR, "unsupported");
             return;
         }
         try {
@@ -218,7 +303,7 @@ class ScreenOrientationCore extends EventTarget {
             this._setError(null);
         }
         catch (e) {
-            this._setError(e);
+            this._setError(e, e?.name);
         }
     }
     // API resolution is call-time, never cached (§3.7, §7): lets tests
@@ -247,12 +332,43 @@ class ScreenOrientationCore extends EventTarget {
     // unsupported state, only `error`. This guard is a `===` reference check, so
     // repeated unsupported calls only stay deduped because both call sites pass
     // the shared `UNSUPPORTED_ERROR` constant rather than a fresh object literal.
-    _setError(error) {
+    //
+    // `name` is the discriminator for the additive `errorInfo` taxonomy only (it
+    // stays out of the public `error` shape): the synthetic UNSUPPORTED_ERROR has
+    // no `.name`, so the unsupported call sites pass an explicit `"unsupported"`
+    // hint (storage-style — avoids coupling to `error.message`), while the caught
+    // paths pass `Error.name`. `null` clears (no name).
+    _setError(error, name) {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // discriminator (or null on clear). Fires before the `error` event so an
+        // observer binding both sees the classification first, mirroring the io-node
+        // family.
+        this._commitErrorInfo(error === null ? null : deriveScreenOrientationErrorInfo(name, this._errorInfoMessage(error)));
         this._target.dispatchEvent(new CustomEvent("wcs-orientation:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Extract a serializable string message for `errorInfo` WITHOUT normalizing the
+    // public `error` shape (which keeps the raw rejection value verbatim). A caught
+    // value with a non-string `.message` — or a non-conformant nullish/non-object
+    // rejection such as `Promise.reject(undefined)` — falls back to `String(error)`
+    // so it still classifies instead of throwing out of lock()/unlock()
+    // (never-throw §3.6). UNSUPPORTED_ERROR and real DOMException rejections already
+    // carry a string message and take the fast path.
+    _errorInfoMessage(error) {
+        return typeof error?.message === "string" ? error.message : String(error);
+    }
+    // Called only from _setError (which already same-value-guards on the error
+    // reference), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-orientation:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -373,6 +489,9 @@ class WcsScreenOrientation extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -406,5 +525,5 @@ function bootstrapScreenOrientation(userConfig) {
     registerComponents();
 }
 
-export { ScreenOrientationCore, WcsScreenOrientation, bootstrapScreenOrientation, getConfig };
+export { ScreenOrientationCore, WCS_SCREEN_ORIENTATION_ERROR_CODE, WcsScreenOrientation, bootstrapScreenOrientation, getConfig };
 //# sourceMappingURL=index.esm.js.map

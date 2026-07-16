@@ -22,6 +22,14 @@ const _config = {
     locale: 'en',
     debug: false,
     enableMustache: true,
+    enableDirectionalInitialSync: true,
+    enablePropagationContext: true,
+    // Phase 5b の dev-time contract analyzer は意図的に explicit opt-in（既定 off）。
+    // wcstack は buildless / zero-config で NODE_ENV 相当の確実な dev/prod 判定が無く、
+    // hostname や minification の heuristic で auto-ON すると誤検出で prod にコストを
+    // 乗せうるため、dev 既定 ON は採らない。利用側が setConfig で明示有効化する
+    // （docs/architecture-hardening/10-defaulting-rollout-status.md §C）。
+    enableContractAnalyzer: false,
     sameValueGuard: true,
 };
 // backward compatible export (read-only usage)
@@ -60,6 +68,15 @@ function setConfig(partialConfig) {
     if (typeof partialConfig.enableMustache === "boolean") {
         _config.enableMustache = partialConfig.enableMustache;
     }
+    if (typeof partialConfig.enableDirectionalInitialSync === "boolean") {
+        _config.enableDirectionalInitialSync = partialConfig.enableDirectionalInitialSync;
+    }
+    if (typeof partialConfig.enablePropagationContext === "boolean") {
+        _config.enablePropagationContext = partialConfig.enablePropagationContext;
+    }
+    if (typeof partialConfig.enableContractAnalyzer === "boolean") {
+        _config.enableContractAnalyzer = partialConfig.enableContractAnalyzer;
+    }
     if (typeof partialConfig.sameValueGuard === "boolean") {
         _config.sameValueGuard = partialConfig.sameValueGuard;
     }
@@ -97,6 +114,9 @@ const DELIMITER = '.';
 const WILDCARD = '*';
 const MAX_WILDCARD_DEPTH = 128;
 const MAX_LOOP_DEPTH = 128;
+// 因果伝播（Phase 3）の 1 transaction あたり hop 上限。超過分の未処理 record は
+// quarantine し（適用済みの値は戻さない）、updater から例外は投げない。
+const MAX_PROPAGATION_HOPS = 32;
 // data-wcs バインディング構文 `[prop][#mod]: [path][@state][|filter...]` の区切り文字（単一正本）。
 // これらは「死守の壁（構文契約）」であり値は不変。manifest.syntax.delimiters で公開される。
 const BINDING_SEPARATOR = ';'; // 複数バインディングの区切り
@@ -1874,6 +1894,7 @@ function setLastListValueByAbsoluteStateAddress(address, value) {
 const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
 const setLoopContextSymbol = Symbol("$$setLoopContext");
 const getByAddressSymbol = Symbol("$$getByAddress");
+const hasByAddressSymbol = Symbol("$$hasByAddress");
 const setByAddressSymbol = Symbol("$$setByAddress");
 const connectedCallbackSymbol = Symbol("$$connectedCallback");
 const disconnectedCallbackSymbol = Symbol("$$disconnectedCallback");
@@ -2076,6 +2097,1776 @@ function clearAbsoluteStateAddressByBinding(binding) {
     absoluteStateAddressByBinding.delete(binding);
 }
 
+/**
+ * devtools/sink.ts
+ *
+ * 計装点が参照するホットパス唯一の接点。依存ゼロの葉モジュールにすることで、
+ * 計装される側（stateElementByName / setByAddress / binding / token）と
+ * bridge の間の循環 import を避ける。
+ *
+ * コスト規範（protocol §1-1）: フック未接続時、計装点のコストは
+ * `devtoolsSink !== null` の分岐 1 個。イベントオブジェクトの生成は
+ * 必ずこのチェックの内側で行うこと。
+ */
+/** live binding としてエクスポート。計装点は `if (devtoolsSink !== null)` で参照する */
+let devtoolsSink = null;
+function setDevtoolsSink(sink) {
+    devtoolsSink = sink;
+}
+
+const bindingSetByAbsoluteStateAddress = new WeakMap();
+function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
+    let bindingSet = null;
+    bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress) || null;
+    if (bindingSet === null) {
+        bindingSet = new Set();
+        bindingSetByAbsoluteStateAddress.set(absoluteStateAddress, bindingSet);
+    }
+    return bindingSet;
+}
+/**
+ * 参照専用の取得。get-or-create と違い、未登録アドレスに空 Set を
+ * 生成・キャッシュしない（リスト置換の drain は大量のバインディング無し
+ * アドレスを照会するため、生成すると空 Set が溜まり続ける）。
+ */
+function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
+    return bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+}
+function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
+    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
+    bindingSet.add(binding);
+    if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:binding-added", absoluteAddress: absoluteStateAddress, binding });
+    }
+}
+function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
+    // get-or-create を通すと未登録アドレスに空 Set を生成してしまうため素の get で参照する
+    const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+    if (bindingSet !== undefined) {
+        bindingSet.delete(binding);
+        if (devtoolsSink !== null) {
+            devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
+        }
+    }
+}
+
+const _cache$1 = new WeakMap();
+const _cacheNullListIndex = new WeakMap();
+class StateAddress {
+    pathInfo;
+    listIndex;
+    _parentAddress;
+    constructor(pathInfo, listIndex) {
+        this.pathInfo = pathInfo;
+        this.listIndex = listIndex;
+    }
+    get parentAddress() {
+        if (typeof this._parentAddress !== 'undefined') {
+            return this._parentAddress;
+        }
+        const parentPathInfo = this.pathInfo.parentPathInfo;
+        if (parentPathInfo === null) {
+            return null;
+        }
+        const lastSegment = this.pathInfo.segments[this.pathInfo.segments.length - 1];
+        let parentListIndex = null;
+        if (lastSegment === WILDCARD) {
+            parentListIndex = this.listIndex?.parentListIndex ?? null;
+        }
+        else {
+            parentListIndex = this.listIndex;
+        }
+        return this._parentAddress = createStateAddress(parentPathInfo, parentListIndex);
+    }
+}
+function createStateAddress(pathInfo, listIndex) {
+    if (listIndex === null) {
+        let cached = _cacheNullListIndex.get(pathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new StateAddress(pathInfo, null);
+        _cacheNullListIndex.set(pathInfo, cached);
+        return cached;
+    }
+    else {
+        let cacheByPathInfo = _cache$1.get(listIndex);
+        if (typeof cacheByPathInfo === "undefined") {
+            cacheByPathInfo = new WeakMap();
+            _cache$1.set(listIndex, cacheByPathInfo);
+        }
+        let cached = cacheByPathInfo.get(pathInfo);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        cached = new StateAddress(pathInfo, listIndex);
+        cacheByPathInfo.set(pathInfo, cached);
+        return cached;
+    }
+}
+
+const stateAddressByBindingInfo = new WeakMap();
+function getStateAddressByBindingInfo(bindingInfo) {
+    let stateAddress = null;
+    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
+    if (stateAddress !== null) {
+        return stateAddress;
+    }
+    if (bindingInfo.statePathInfo.wildcardCount > 0) {
+        const listIndex = getListIndexByBindingInfo(bindingInfo);
+        if (listIndex === null) {
+            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
+        }
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
+    }
+    else {
+        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
+    }
+    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
+    return stateAddress;
+}
+// call for change loopContext
+function clearStateAddressByBindingInfo(bindingInfo) {
+    stateAddressByBindingInfo.delete(bindingInfo);
+}
+
+function createHandlerBindingRegistry() {
+    const attachedByKey = new Map();
+    const countByKey = new Map();
+    return {
+        add(key, binding) {
+            let attached = attachedByKey.get(key);
+            if (typeof attached === "undefined") {
+                attached = new WeakSet();
+                attachedByKey.set(key, attached);
+            }
+            if (attached.has(binding)) {
+                return false;
+            }
+            attached.add(binding);
+            countByKey.set(key, (countByKey.get(key) ?? 0) + 1);
+            return true;
+        },
+        remove(key, binding) {
+            const attached = attachedByKey.get(key);
+            if (typeof attached === "undefined" || !attached.has(binding)) {
+                return false;
+            }
+            attached.delete(binding);
+            const next = (countByKey.get(key) ?? 1) - 1;
+            if (next <= 0) {
+                attachedByKey.delete(key);
+                countByKey.delete(key);
+                return true;
+            }
+            countByKey.set(key, next);
+            return false;
+        },
+        has(key, binding) {
+            return attachedByKey.get(key)?.has(binding) ?? false;
+        },
+        countOf(key) {
+            return countByKey.get(key) ?? 0;
+        },
+        get keyCount() {
+            return countByKey.size;
+        },
+        clear() {
+            attachedByKey.clear();
+            countByKey.clear();
+        },
+    };
+}
+
+const handlerByHandlerKey$3 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$3 = createHandlerBindingRegistry();
+function getHandlerKey$3(binding, eventName) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+}
+function getEventName$2(binding) {
+    let eventName = 'input';
+    for (const modifier of binding.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+    const node = event.target;
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
+        return;
+    }
+    if (node.type !== 'checkbox') {
+        console.warn(`[@wcstack/state] event.target is not a checkbox input element.`);
+        return;
+    }
+    const checked = node.checked;
+    const newValue = node.value;
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            let currentValue = state[statePathName];
+            if (Array.isArray(currentValue)) {
+                if (checked) {
+                    if (currentValue.indexOf(filteredNewValue) === -1) {
+                        state[statePathName] = currentValue.concat(filteredNewValue);
+                    }
+                }
+                else {
+                    const index = currentValue.indexOf(filteredNewValue);
+                    if (index !== -1) {
+                        state[statePathName] = currentValue.toSpliced(index, 1);
+                    }
+                }
+            }
+            else {
+                if (checked) {
+                    state[statePathName] = [filteredNewValue];
+                }
+                else {
+                    state[statePathName] = [];
+                }
+            }
+        });
+    });
+};
+function attachCheckboxEventHandler(binding) {
+    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName$2(binding);
+        const key = getHandlerKey$3(binding, eventName);
+        let checkboxEventHandler = handlerByHandlerKey$3.get(key);
+        if (typeof checkboxEventHandler === "undefined") {
+            checkboxEventHandler = checkboxEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            handlerByHandlerKey$3.set(key, checkboxEventHandler);
+        }
+        binding.node.addEventListener(eventName, checkboxEventHandler);
+        bindingRegistry$3.add(key, binding);
+        return true;
+    }
+    return false;
+}
+function detachCheckboxEventHandler(binding) {
+    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName$2(binding);
+        const key = getHandlerKey$3(binding, eventName);
+        const checkboxEventHandler = handlerByHandlerKey$3.get(key);
+        if (typeof checkboxEventHandler === "undefined") {
+            return false;
+        }
+        binding.node.removeEventListener(eventName, checkboxEventHandler);
+        if (bindingRegistry$3.countOf(key) === 0) {
+            return false;
+        }
+        if (bindingRegistry$3.remove(key, binding)) {
+            handlerByHandlerKey$3.delete(key);
+        }
+        return true;
+    }
+    return false;
+}
+
+// command-token / event-token が共有する pub/sub プリミティブ。
+// _subscribers は Set のため挿入順を保持する。
+// emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
+//
+// 「誰が subscribe し誰が emit するか」だけが command / event の違い:
+//   - command-token: element が subscribe / state が emit
+//   - event-token:   state(`$on`) が subscribe / element(listener) が emit
+class Token {
+    _name;
+    _subscribers = new Set();
+    constructor(name) {
+        this._name = name;
+    }
+    get name() {
+        return this._name;
+    }
+    get size() {
+        return this._subscribers.size;
+    }
+    subscribe(fn) {
+        this._subscribers.add(fn);
+        return () => {
+            this._subscribers.delete(fn);
+        };
+    }
+    unsubscribe(fn) {
+        return this._subscribers.delete(fn);
+    }
+    emit(...args) {
+        const results = [];
+        for (const fn of this._subscribers) {
+            results.push(fn(...args));
+        }
+        return results;
+    }
+}
+
+// EventToken は共有 pub/sub プリミティブ Token の薄い特化（element→state 方向）。
+// instanceof による型判別を成立させるため独立クラスとして維持する。
+//
+// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
+// event-token-protocol の外部仕様は不変更。
+class EventToken extends Token {
+    _ownerStateName;
+    constructor(name, ownerStateName) {
+        super(name);
+        this._ownerStateName = ownerStateName ?? null;
+    }
+    emit(...args) {
+        if (devtoolsSink !== null) {
+            devtoolsSink({
+                type: "state:token-emit",
+                kind: "event",
+                stateName: this._ownerStateName,
+                tokenName: this.name,
+                args,
+                subscriberCount: this.size,
+            });
+        }
+        return super.emit(...args);
+    }
+}
+
+const registryByStateElement$2 = new WeakMap();
+function getOrCreateEventToken(stateElement, name) {
+    let registry = registryByStateElement$2.get(stateElement);
+    if (typeof registry === "undefined") {
+        registry = new Map();
+        registryByStateElement$2.set(stateElement, registry);
+    }
+    let token = registry.get(name);
+    if (typeof token === "undefined") {
+        token = new EventToken(name, stateElement.name);
+        registry.set(name, token);
+    }
+    return token;
+}
+function clearEventTokenRegistry(stateElement) {
+    registryByStateElement$2.delete(stateElement);
+}
+
+/**
+ * eventToken.<propertyName>: <eventTokenName> バインディングの attach ハンドラ。
+ *
+ * command-token の双対（element→state）。要素が dispatch する CustomEvent を受けて
+ * event-token を emit し、state 側の `$on` ハンドラ群へ pub/sub で配送する。
+ *
+ * 設計（MVP スコープ: wc-bindable カスタム要素のみ）:
+ *   - キーは生イベント名ではなく **wcBindable property 名**。実 DOM イベント名は
+ *     wcBindable.properties[].event から解決する（command-token が wcBindable.commands で
+ *     検証するのと対称。コロンを含む namespaced event 名と binding 構文の `:` 衝突も回避）。
+ *   - <prop> が wcBindable.properties に宣言されていることは attach 時に検証する
+ *     （要素クラス参照のみで DOM 接続に非依存。fail-fast / typo 耐性）。
+ *   - <eventTokenName> が $eventTokens に宣言されていることは **発火時** に検証する
+ *     （state 解決が必要なため。詳細は下記の fire-time 解決の注記を参照）。
+ *   - subscriber 引数規約は `(state, event, ...listIndexes)`。
+ *   - modifier `#prevent` / `#stop` は既存イベント binding と同等にサポート。
+ *
+ * token はイベント発火ごとに registry から解決する（getOrCreateEventToken）。これにより
+ * state の再 set で registry が作り直されても最新の subscriber 群へ配送できる。
+ *
+ * state element の解決と `$eventTokens` 検証は **発火時** に行う（attach 時ではない）。
+ * 構造ブロック（for/if）や SSR hydration では、binding 初期化時にノードが detached な
+ * DocumentFragment / wrapper 上にあり、その時点では element.getRootNode() から state を
+ * 解決できないため。onclick / two-way ハンドラと同じく fire-time 解決に揃えている。
+ */
+const listenerByBinding = new WeakMap();
+function getWcBindable$1(element) {
+    const customTagName = getCustomElement(element);
+    if (customTagName === null) {
+        return null;
+    }
+    // attach 側で未定義要素は whenDefined 後に再試行するため、ここに来る時点で customClass は定義済み。
+    return readBindableDeclaration(element);
+}
+function attachEventTokenHandler(binding) {
+    if (binding.propSegments[0] !== "eventToken") {
+        return false;
+    }
+    const element = binding.node;
+    // カスタム要素が未定義なら定義後に再試行（wcBindable が必要なため）。
+    const customTagName = getCustomElement(element);
+    const registry = getCustomElementRegistry();
+    if (customTagName !== null && registry?.get(customTagName) === undefined) {
+        if (registry === null) {
+            raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
+        }
+        return true;
+    }
+    // 再評価で二重 attach しない。
+    if (listenerByBinding.has(binding)) {
+        return true;
+    }
+    const propertyName = binding.propSegments[1];
+    if (typeof propertyName !== "string" || propertyName.length === 0) {
+        raiseError(`eventToken binding requires a property name (e.g., "eventToken.error").`);
+    }
+    const bindable = getWcBindable$1(element);
+    if (bindable === null) {
+        raiseError(`eventToken binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
+    }
+    const propDesc = bindable.knownProperties.get(propertyName);
+    if (typeof propDesc === "undefined") {
+        raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.`);
+    }
+    const eventName = propDesc.event;
+    const tokenName = binding.statePathName;
+    const stateName = binding.stateName;
+    const modifiers = binding.propModifiers;
+    const handler = (event) => {
+        if (modifiers.includes("prevent"))
+            event.preventDefault();
+        if (modifiers.includes("stop"))
+            event.stopPropagation();
+        // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
+        const rootNode = element.getRootNode();
+        const stateElement = getStateElementByName(rootNode, stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
+        }
+        if (!stateElement.eventTokenNames.has(tokenName)) {
+            raiseError(`eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".`);
+        }
+        const loopContext = getLoopContextByNode(element);
+        stateElement.createStateAsync("writable", async (state) => {
+            state[setLoopContextSymbol](loopContext, () => {
+                const indexes = loopContext?.listIndex.indexes ?? [];
+                const token = getOrCreateEventToken(stateElement, tokenName);
+                return token.emit(state, event, ...indexes);
+            });
+        });
+    };
+    element.addEventListener(eventName, handler);
+    listenerByBinding.set(binding, { eventName, handler });
+    return true;
+}
+function detachEventTokenHandler(binding) {
+    if (binding.propSegments[0] !== "eventToken") {
+        return false;
+    }
+    const listener = listenerByBinding.get(binding);
+    if (typeof listener === "undefined") {
+        return false;
+    }
+    binding.node.removeEventListener(listener.eventName, listener.handler);
+    listenerByBinding.delete(binding);
+    return true;
+}
+
+// CommandToken は共有 pub/sub プリミティブ Token の薄い特化。
+// instanceof による型判別を成立させるため独立クラスとして維持する。
+//
+// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
+// command-token-protocol の外部仕様は不変更（registry が渡すだけで、
+// subscribe/emit の意味論には一切影響しない）。
+class CommandToken extends Token {
+    _ownerStateName;
+    constructor(name, ownerStateName) {
+        super(name);
+        this._ownerStateName = ownerStateName ?? null;
+    }
+    emit(...args) {
+        if (devtoolsSink !== null) {
+            // subscriberCount 0 の emit（空撃ち）もそのまま流す — whenDefined 前の
+            // command 空撃ちレース類をタイムラインで可視化するため
+            devtoolsSink({
+                type: "state:token-emit",
+                kind: "command",
+                stateName: this._ownerStateName,
+                tokenName: this.name,
+                args,
+                subscriberCount: this.size,
+            });
+        }
+        return super.emit(...args);
+    }
+}
+function isCommandToken(value) {
+    return value instanceof CommandToken;
+}
+
+// onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
+// 右辺が $command 名前空間配下のパス（$command.<token>）のときに true。
+function isCommandTokenPath(statePathName) {
+    return statePathName.startsWith(STATE_COMMAND_NAMESPACE_NAME + ".");
+}
+const handlerByHandlerKey$2 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$2 = createHandlerBindingRegistry();
+function getHandlerKey$2(binding) {
+    const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
+    return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
+}
+const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathInfo) => (event) => {
+    if (modifiers.includes('prevent'))
+        event.preventDefault();
+    if (modifiers.includes('stop'))
+        event.stopPropagation();
+    const node = event.target;
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for event handler.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    const isCommand = isCommandTokenPath(handlerName);
+    stateElement.createStateAsync("writable", async (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            const indexes = loopContext?.listIndex.indexes ?? [];
+            if (isCommand) {
+                // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
+                const token = state[getByAddressSymbol](createStateAddress(statePathInfo, null));
+                if (!isCommandToken(token)) {
+                    raiseError(`Event binding "${handlerName}" did not resolve to a CommandToken. Declare the name in $commandTokens and reference it as $command.<name>.`);
+                }
+                return token.emit(event, ...indexes);
+            }
+            const handler = state[handlerName];
+            if (typeof handler !== "function") {
+                raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
+            }
+            return Reflect.apply(handler, state, [event, ...indexes]);
+        });
+    });
+};
+function attachEventHandler(binding) {
+    if (!binding.propName.startsWith("on")) {
+        return false;
+    }
+    const key = getHandlerKey$2(binding);
+    let stateEventHandler = handlerByHandlerKey$2.get(key);
+    if (typeof stateEventHandler === "undefined") {
+        stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers, binding.statePathInfo);
+        handlerByHandlerKey$2.set(key, stateEventHandler);
+    }
+    const eventName = binding.propName.slice(2);
+    binding.node.addEventListener(eventName, stateEventHandler);
+    bindingRegistry$2.add(key, binding);
+    return true;
+}
+function detachEventHandler(binding) {
+    if (!binding.propName.startsWith("on")) {
+        return false;
+    }
+    const key = getHandlerKey$2(binding);
+    const stateEventHandler = handlerByHandlerKey$2.get(key);
+    if (typeof stateEventHandler === "undefined") {
+        return false;
+    }
+    const eventName = binding.propName.slice(2);
+    binding.node.removeEventListener(eventName, stateEventHandler);
+    if (bindingRegistry$2.countOf(key) === 0) {
+        return false;
+    }
+    if (bindingRegistry$2.remove(key, binding)) {
+        handlerByHandlerKey$2.delete(key);
+    }
+    return true;
+}
+
+const handlerByHandlerKey$1 = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry$1 = createHandlerBindingRegistry();
+function getHandlerKey$1(binding, eventName) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
+}
+function getEventName$1(binding) {
+    let eventName = 'input';
+    for (const modifier of binding.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
+    const node = event.target;
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
+        return;
+    }
+    if (node.type !== 'radio') {
+        console.warn(`[@wcstack/state] event.target is not a radio input element.`);
+        return;
+    }
+    if (node.checked === false) {
+        return;
+    }
+    const newValue = node.value;
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            state[statePathName] = filteredNewValue;
+        });
+    });
+};
+function attachRadioEventHandler(binding) {
+    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName$1(binding);
+        const key = getHandlerKey$1(binding, eventName);
+        let radioEventHandler = handlerByHandlerKey$1.get(key);
+        if (typeof radioEventHandler === "undefined") {
+            radioEventHandler = radioEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
+            handlerByHandlerKey$1.set(key, radioEventHandler);
+        }
+        binding.node.addEventListener(eventName, radioEventHandler);
+        bindingRegistry$1.add(key, binding);
+        return true;
+    }
+    return false;
+}
+function detachRadioEventHandler(binding) {
+    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName$1(binding);
+        const key = getHandlerKey$1(binding, eventName);
+        const radioEventHandler = handlerByHandlerKey$1.get(key);
+        if (typeof radioEventHandler === "undefined") {
+            return false;
+        }
+        binding.node.removeEventListener(eventName, radioEventHandler);
+        if (bindingRegistry$1.countOf(key) === 0) {
+            return false;
+        }
+        if (bindingRegistry$1.remove(key, binding)) {
+            handlerByHandlerKey$1.delete(key);
+        }
+        return true;
+    }
+    return false;
+}
+
+const CHECK_TYPES = new Set(['radio', 'checkbox']);
+const DEFAULT_VALUE_PROP_NAMES = new Set(['value', 'valueAsNumber', 'valueAsDate']);
+function isPossibleTwoWay(node, propName) {
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+        return false;
+    }
+    const element = node;
+    const tagName = element.tagName.toLowerCase();
+    if (tagName === 'input') {
+        const inputType = (element.getAttribute('type') || 'text').toLowerCase();
+        if (inputType === 'button') {
+            return false;
+        }
+        if (CHECK_TYPES.has(inputType) && propName === 'checked') {
+            return true;
+        }
+        if (DEFAULT_VALUE_PROP_NAMES.has(propName)) {
+            return true;
+        }
+    }
+    if (tagName === 'select' && propName === 'value') {
+        return true;
+    }
+    if (tagName === 'textarea' && propName === 'value') {
+        return true;
+    }
+    const customTagName = getCustomElement(element);
+    if (customTagName !== null) {
+        const customClass = getCustomElementRegistry()?.get(customTagName);
+        if (typeof customClass === "undefined") {
+            raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
+        }
+        const bindable = readBindableDeclaration(element);
+        if (bindable?.knownProperties.has(propName)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * propagation/propagation.ts
+ *
+ * Phase 3 の因果伝播コア（feature flag `enablePropagationContext` 下）。
+ * 依存は types のみの葉モジュールとし、twowayHandler / applyChangeToProperty /
+ * setByAddress / updater の計装点から循環 import なしで参照できるようにする。
+ *
+ * wire 識別は (node × member × stateName × statePathName) で行う。設計書の
+ * WriteReceipt は bindingId + generation を持つが、twoway handler は共有
+ * handler（handlerByHandlerKey）で binding インスタンスに到達できないため、
+ * runtime の edge / receipt 照合キーは wire 単位とする。BindingSession
+ * generation との統合（再 attach 後の edge ID 非再利用）は session 側の
+ * 計装が揃う段階で bindingGeneration に反映する。
+ */
+let nextWireId = 1;
+let nextTransactionId = 1;
+let nextSynchronousScopeId = 1;
+// node を強参照しない wire 台帳。inner key = `${stateName}::${statePathName}::${member}`
+const wireIdsByNode = new WeakMap();
+function wireKey(member, stateName, statePathName) {
+    return `${stateName}::${statePathName}::${member}`;
+}
+/**
+ * wire（配線）の安定 ID を返す。edge ID の基底と receipt の bindingId に使う。
+ */
+function getWireId(node, member, stateName, statePathName) {
+    let byKey = wireIdsByNode.get(node);
+    if (typeof byKey === "undefined") {
+        byKey = new Map();
+        wireIdsByNode.set(node, byKey);
+    }
+    const key = wireKey(member, stateName, statePathName);
+    let wireId = byKey.get(key);
+    if (typeof wireId === "undefined") {
+        wireId = nextWireId++;
+        byKey.set(key, wireId);
+    }
+    return wireId;
+}
+/** wire × 方向 → edge ID。方向を含めるため再利用されない */
+function getEdgeId(wireId, direction) {
+    return direction === "to-element" ? wireId * 2 : wireId * 2 + 1;
+}
+const EMPTY_EDGES = new Set();
+/** 外部 event / API update ごとの transaction 開始。current context は変更しない */
+function beginPropagationTransaction(originBindingId) {
+    return {
+        transactionId: nextTransactionId++,
+        originBindingId,
+        visitedEdges: EMPTY_EDGES,
+        hop: 0,
+    };
+}
+/** edge を 1 つ通過した新しい context を返す（visitedEdges 追加・hop+1） */
+function extendPropagationContext(context, edgeId) {
+    const visitedEdges = new Set(context.visitedEdges);
+    visitedEdges.add(edgeId);
+    return {
+        transactionId: context.transactionId,
+        originBindingId: context.originBindingId,
+        visitedEdges,
+        hop: context.hop + 1,
+    };
+}
+// 同期 dynamic scope の current context（updater drain / element 書き込み中に設定）
+let currentContext = null;
+function getCurrentPropagationContext() {
+    return currentContext;
+}
+function runWithPropagationContext(context, callback) {
+    const previous = currentContext;
+    currentContext = context;
+    try {
+        return callback();
+    }
+    finally {
+        currentContext = previous;
+    }
+}
+const receiptStack = [];
+/**
+ * state → element 書き込みを receipt scope で包んで実行する。
+ * setter が同期 dispatch する event は matchWriteReceipt でこの receipt を観測できる。
+ */
+function runWithWriteReceipt(node, member, writtenValue, bindingId, transactionId, callback) {
+    const receipt = {
+        bindingId,
+        bindingGeneration: 0,
+        member,
+        transactionId,
+        synchronousScopeId: nextSynchronousScopeId++,
+        writtenValue,
+    };
+    receiptStack.push({ receipt, node });
+    try {
+        return callback();
+    }
+    finally {
+        receiptStack.pop();
+    }
+}
+/**
+ * (node, member) に対する最も内側の active receipt を返す。
+ * confirmation / normalization の判定（writtenValue との Object.is 比較）は
+ * 呼び出し側が行う。scope 外（非同期に届いた event）では null。
+ */
+function matchWriteReceipt(node, member) {
+    for (let i = receiptStack.length - 1; i >= 0; i--) {
+        const active = receiptStack[i];
+        if (active.node === node && active.receipt.member === member) {
+            return active.receipt;
+        }
+    }
+    return null;
+}
+
+const handlerByHandlerKey = new Map();
+// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
+const bindingRegistry = createHandlerBindingRegistry();
+const producerValueObserversByNode = new WeakMap();
+const DEFAULT_GETTER = (e) => e.detail;
+function getHandlerKey(binding, eventName, hasGetter) {
+    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
+    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}`;
+}
+function getEventName(binding) {
+    const tagName = binding.node.tagName.toLowerCase();
+    // 1.default event name
+    let eventName = (tagName === 'select') ? 'change' : 'input';
+    // 2.wcBindable protocol
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName !== null) {
+        const customClass = getCustomElementRegistry()?.get(customTagName);
+        if (typeof customClass === "undefined") {
+            raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
+        }
+        const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
+        if (propDesc) {
+            eventName = propDesc.event;
+        }
+    }
+    // 3.modifier
+    for (const modifier of binding.propModifiers) {
+        if (modifier.startsWith('on')) {
+            eventName = modifier.slice(2);
+        }
+    }
+    return eventName;
+}
+function getValueGetter(binding) {
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName !== null) {
+        const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
+        if (propDesc) {
+            return propDesc.getter ?? DEFAULT_GETTER;
+        }
+    }
+    return null;
+}
+const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters, valueGetter) => (event) => {
+    const node = event.target;
+    if (node === null) {
+        console.warn(`[@wcstack/state] event.target is null.`);
+        return;
+    }
+    let newValue;
+    if (valueGetter !== null) {
+        newValue = valueGetter(event);
+    }
+    else {
+        if (!(propName in node)) {
+            console.warn(`[@wcstack/state] Property "${propName}" does not exist on target element.`);
+            return;
+        }
+        newValue = node[propName];
+    }
+    let filteredNewValue = newValue;
+    for (const filter of inFilters) {
+        filteredNewValue = filter.filterFn(filteredNewValue);
+    }
+    const producerObservers = producerValueObserversByNode.get(node)?.get(propName);
+    if (typeof producerObservers !== "undefined") {
+        for (const observer of producerObservers)
+            observer(filteredNewValue);
+    }
+    let propagationContext = null;
+    if (config.enablePropagationContext) {
+        // Phase 3: element → state edge の因果判定（設計書 §4）。
+        const wireId = getWireId(node, propName, stateName, statePathName);
+        const receipt = matchWriteReceipt(node, propName);
+        if (receipt !== null && Object.is(receipt.writtenValue, newValue)) {
+            // 規則 4: 同じ setter call stack 内で同じ member から Object.is 同値の
+            // 通知が戻った場合だけ confirmation として再伝播を抑止する。
+            // shadow diagnostic（§8）: primitive なら same-value guard も同じ結論に
+            // なるため、provenance だけが守っている非 primitive の echo を可視化する。
+            if (config.debug) {
+                console.debug(`[@wcstack/state] propagation: write confirmation suppressed echo.`, {
+                    node,
+                    propName,
+                    statePathName,
+                    transactionId: receipt.transactionId,
+                    coveredBySameValueGuard: config.sameValueGuard
+                        && (filteredNewValue === null || typeof filteredNewValue !== "object"),
+                });
+            }
+            if (devtoolsSink !== null) {
+                devtoolsSink({
+                    type: "propagation:suppressed",
+                    reason: "confirmation",
+                    transactionId: receipt.transactionId,
+                    edgeId: getEdgeId(wireId, "to-state"),
+                    node,
+                    member: propName,
+                });
+            }
+            return;
+        }
+        // receipt があるが値が異なる場合は正規化差分: element の確定値として受理し、
+        // 新しい edge を通る変更として継続する（規則 5・decision gate）。
+        const toStateEdgeId = getEdgeId(wireId, "to-state");
+        const baseContext = getCurrentPropagationContext();
+        if (baseContext !== null && baseContext.visitedEdges.has(toStateEdgeId)) {
+            // 規則 2: 同じ transaction が同じ edge を再度通ろうとした場合だけ抑止
+            if (devtoolsSink !== null) {
+                devtoolsSink({
+                    type: "propagation:suppressed",
+                    reason: "visited-edge",
+                    transactionId: baseContext.transactionId,
+                    edgeId: toStateEdgeId,
+                    node,
+                    member: propName,
+                });
+            }
+            return;
+        }
+        // 規則 1: 外部 event（受け皿の context が無い）なら新しい transaction を開始
+        propagationContext = extendPropagationContext(baseContext ?? beginPropagationTransaction(wireId), toStateEdgeId);
+    }
+    const rootNode = node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
+    }
+    const loopContext = getLoopContextByNode(node);
+    const commitToState = () => {
+        stateElement.createState("writable", (state) => {
+            state[setLoopContextSymbol](loopContext, () => {
+                state[statePathName] = filteredNewValue;
+            });
+        });
+    };
+    if (propagationContext !== null) {
+        runWithPropagationContext(propagationContext, commitToState);
+    }
+    else {
+        commitToState();
+    }
+};
+function addTwowayValueObserver(node, propName, observer) {
+    let byProperty = producerValueObserversByNode.get(node);
+    if (typeof byProperty === "undefined") {
+        byProperty = new Map();
+        producerValueObserversByNode.set(node, byProperty);
+    }
+    let observers = byProperty.get(propName);
+    if (typeof observers === "undefined") {
+        observers = new Set();
+        byProperty.set(propName, observers);
+    }
+    observers.add(observer);
+    return () => {
+        observers?.delete(observer);
+        if (observers?.size === 0)
+            byProperty?.delete(propName);
+        if (byProperty?.size === 0)
+            producerValueObserversByNode.delete(node);
+    };
+}
+function attachTwowayEventHandler(binding) {
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName !== null) {
+        const registry = getCustomElementRegistry();
+        const customClass = registry?.get(customTagName);
+        if (typeof customClass === "undefined") {
+            if (registry === null) {
+                raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
+            }
+            return;
+        }
+    }
+    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName(binding);
+        const valueGetter = getValueGetter(binding);
+        const key = getHandlerKey(binding, eventName, valueGetter !== null);
+        let twowayEventHandler = handlerByHandlerKey.get(key);
+        if (typeof twowayEventHandler === "undefined") {
+            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters, valueGetter);
+            handlerByHandlerKey.set(key, twowayEventHandler);
+        }
+        binding.node.addEventListener(eventName, twowayEventHandler);
+        bindingRegistry.add(key, binding);
+    }
+}
+function detachTwowayEventHandler(binding) {
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName !== null) {
+        const registry = getCustomElementRegistry();
+        const customClass = registry?.get(customTagName);
+        if (typeof customClass === "undefined") {
+            if (registry === null) {
+                return;
+            }
+            return;
+        }
+    }
+    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
+        const eventName = getEventName(binding);
+        const valueGetter = getValueGetter(binding);
+        const key = getHandlerKey(binding, eventName, valueGetter !== null);
+        const twowayEventHandler = handlerByHandlerKey.get(key);
+        if (typeof twowayEventHandler === "undefined") {
+            return;
+        }
+        binding.node.removeEventListener(eventName, twowayEventHandler);
+        if (bindingRegistry.remove(key, binding)) {
+            handlerByHandlerKey.delete(key);
+        }
+    }
+}
+
+/**
+ * Shares one CustomElementRegistry.whenDefined() continuation per registry/tag.
+ * Waiters can be removed independently, so a never-defined tag does not retain
+ * binding records or their DOM nodes after teardown.
+ */
+class DefinitionCoordinator {
+    registry;
+    entries = new Map();
+    constructor(registry) {
+        this.registry = registry;
+    }
+    wait(tagName, resolve, reject = () => undefined) {
+        const normalizedTagName = tagName.toLowerCase();
+        let entry = this.entries.get(normalizedTagName);
+        if (typeof entry === "undefined") {
+            entry = { waiters: new Set() };
+            this.entries.set(normalizedTagName, entry);
+            this.registry.whenDefined(normalizedTagName).then(() => this.settle(normalizedTagName, null), (error) => this.settle(normalizedTagName, error));
+        }
+        const waiter = { active: true, resolve, reject };
+        entry.waiters.add(waiter);
+        return () => {
+            if (!waiter.active)
+                return;
+            waiter.active = false;
+            entry?.waiters.delete(waiter);
+        };
+    }
+    pendingCount(tagName) {
+        return this.entries.get(tagName.toLowerCase())?.waiters.size ?? 0;
+    }
+    settle(tagName, error) {
+        const entry = this.entries.get(tagName);
+        if (typeof entry === "undefined")
+            return;
+        this.entries.delete(tagName);
+        const waiters = Array.from(entry.waiters);
+        entry.waiters.clear();
+        for (const waiter of waiters) {
+            if (!waiter.active)
+                continue;
+            waiter.active = false;
+            if (error === null)
+                waiter.resolve();
+            else
+                waiter.reject(error);
+        }
+    }
+}
+const coordinatorByRegistry = new WeakMap();
+function getDefinitionCoordinator(registry) {
+    let coordinator = coordinatorByRegistry.get(registry);
+    if (typeof coordinator === "undefined") {
+        coordinator = new DefinitionCoordinator(registry);
+        coordinatorByRegistry.set(registry, coordinator);
+    }
+    return coordinator;
+}
+
+function readOption(binding, key) {
+    let result = null;
+    for (const modifier of binding.propModifiers) {
+        const separator = modifier.indexOf("=");
+        if (separator < 0)
+            continue;
+        const modifierKey = modifier.slice(0, separator).trim();
+        const value = modifier.slice(separator + 1).trim();
+        if (modifierKey !== "init" && modifierKey !== "sync") {
+            raiseError(`Unknown binding modifier "${modifierKey}" in "${modifier}".`);
+        }
+        if (modifierKey !== key)
+            continue;
+        if (result !== null) {
+            raiseError(`Binding modifier "${key}" may only be specified once.`);
+        }
+        result = value;
+    }
+    return result;
+}
+function parseAuthority(value) {
+    if (value === null)
+        return null;
+    if (value === "state" || value === "element" || value === "auto" || value === "none") {
+        return value;
+    }
+    return raiseError(`Invalid init modifier value "${value}".`);
+}
+function parseSyncOn(value) {
+    if (value === null || value === "call")
+        return "call";
+    if (value === "connect")
+        return "connect";
+    return raiseError(`Invalid sync modifier value "${value}".`);
+}
+function hasInitialSyncModifier(binding) {
+    return binding.propModifiers.some((modifier) => modifier.includes("="));
+}
+function resolveInitialSyncPolicy(binding) {
+    if (!config.enableDirectionalInitialSync) {
+        if (hasInitialSyncModifier(binding)) {
+            raiseError("init=/sync= modifiers require enableDirectionalInitialSync.");
+        }
+        return { authority: "state", syncOn: "call", observable: false };
+    }
+    const explicitAuthority = parseAuthority(readOption(binding, "init"));
+    const syncOn = parseSyncOn(readOption(binding, "sync"));
+    if (binding.bindingType === "event") {
+        if (explicitAuthority !== null && explicitAuthority !== "none") {
+            raiseError("Event bindings only allow init=none.");
+        }
+        return { authority: "none", syncOn, observable: false };
+    }
+    // command.<name>: $command.<method> は命令的な command-token 配線。bindingType は
+    // "prop" だが propName ("command.<name>") は wcBindable property ではないため、下の
+    // property authority 検証(未宣言なら raiseError)に掛けてはならない。値の初期同期を
+    // 持たない配線なので、現行互換の "state" authority を返す(command token は従来通り
+    // 初期 apply で配線される)。
+    if (binding.propSegments[0] === "command") {
+        return { authority: "state", syncOn, observable: false };
+    }
+    if (binding.bindingType !== "prop") {
+        if (explicitAuthority !== null && explicitAuthority !== "state" && explicitAuthority !== "none") {
+            raiseError(`Binding type "${binding.bindingType}" does not support init=${explicitAuthority}.`);
+        }
+        return { authority: explicitAuthority ?? "state", syncOn, observable: false };
+    }
+    const declaration = readBindableDeclaration(binding.node);
+    if (declaration === null) {
+        return { authority: explicitAuthority ?? "state", syncOn, observable: false };
+    }
+    const hasOutput = declaration.knownProperties.has(binding.propName);
+    const hasInput = declaration.declaredInputs.has(binding.propName);
+    if (!hasOutput && !hasInput) {
+        raiseError(`Property "${binding.propName}" is not declared by wcBindable.`);
+    }
+    const allowed = hasOutput && hasInput
+        ? new Set(["state", "element", "auto", "none"])
+        : hasOutput
+            ? new Set(["element", "none"])
+            : new Set(["state", "none"]);
+    const defaultAuthority = hasOutput && !hasInput ? "element" : "state";
+    const authority = explicitAuthority ?? defaultAuthority;
+    if (!allowed.has(authority)) {
+        raiseError(`init=${authority} is incompatible with wcBindable member "${binding.propName}".`);
+    }
+    if (syncOn === "connect" && !hasOutput) {
+        raiseError(`sync=connect requires observable property "${binding.propName}".`);
+    }
+    return { authority, syncOn, observable: hasOutput };
+}
+function isBindingStateInitialized(binding) {
+    const rootNode = binding.replaceNode.getRootNode();
+    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+    }
+    const address = getStateAddressByBindingInfo(binding);
+    let initialized = false;
+    stateElement.createState("readonly", (state) => {
+        initialized = state[hasByAddressSymbol](address);
+    });
+    return initialized;
+}
+function resolveInitialAuthority(binding, authority) {
+    if (authority !== "auto")
+        return authority;
+    return isBindingStateInitialized(binding) ? "state" : "element";
+}
+function commitProducerValue(binding, value) {
+    let filteredValue = value;
+    for (const filter of binding.inFilters) {
+        filteredValue = filter.filterFn(filteredValue);
+    }
+    const rootNode = binding.node.getRootNode();
+    const stateElement = getStateElementByName(rootNode, binding.stateName);
+    if (stateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for initial binding sync.`);
+    }
+    const loopContext = getLoopContextByNode(binding.node);
+    stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+            state[binding.statePathName] = filteredValue;
+        });
+    });
+}
+
+function replaceToReplaceNode(bindingInfo) {
+    const node = bindingInfo.node;
+    const replaceNode = bindingInfo.replaceNode;
+    if (node === replaceNode) {
+        return;
+    }
+    if (node.parentNode === null) {
+        // already replaced
+        return;
+    }
+    node.parentNode.replaceChild(replaceNode, node);
+}
+
+let nextRecordId = 0;
+let nextGeneration = 0;
+const recordByBinding = new WeakMap();
+const sessionByRoot = new WeakMap();
+function forEachInclusive(root, callback) {
+    callback(root);
+    for (const child of Array.from(root.childNodes)) {
+        forEachInclusive(child, callback);
+    }
+}
+function isObservableRoot(value) {
+    if (typeof value !== "object" || value === null)
+        return false;
+    const node = value;
+    return node.nodeType === 9 || (node.nodeType === 11 && "host" in node);
+}
+function observableRootFor(node) {
+    const root = node.getRootNode();
+    return isObservableRoot(root) ? root : null;
+}
+class BindingOwner {
+    root;
+    sessionRefs = new Set();
+    knownSessions = new WeakSet();
+    observer;
+    constructor(root) {
+        this.root = root;
+        const Observer = globalThis.MutationObserver;
+        this.observer = typeof Observer === "function"
+            ? new Observer((mutations) => this.handleMutations(mutations))
+            : null;
+        this.observer?.observe(root, { childList: true, subtree: true });
+    }
+    add(session) {
+        if (this.knownSessions.has(session))
+            return;
+        this.knownSessions.add(session);
+        this.sessionRefs.add(new WeakRef(session));
+    }
+    handleMutations(mutations) {
+        const removed = [];
+        const added = [];
+        for (const mutation of mutations) {
+            removed.push(...Array.from(mutation.removedNodes));
+            added.push(...Array.from(mutation.addedNodes));
+        }
+        for (const ref of Array.from(this.sessionRefs)) {
+            const session = ref.deref();
+            if (typeof session === "undefined") {
+                this.sessionRefs.delete(ref);
+                continue;
+            }
+            session.handleMutations(this.root, removed, added);
+        }
+    }
+}
+const ownerByRoot = new WeakMap();
+function getBindingOwner(root) {
+    let owner = ownerByRoot.get(root);
+    if (typeof owner === "undefined") {
+        owner = new BindingOwner(root);
+        ownerByRoot.set(root, owner);
+    }
+    return owner;
+}
+function bindingKey(binding) {
+    const inFilters = binding.inFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
+    const outFilters = binding.outFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
+    return [
+        binding.bindingType,
+        binding.propName,
+        binding.propModifiers.join(","),
+        binding.stateName,
+        binding.statePathName,
+        inFilters,
+        outFilters,
+        binding.uuid ?? "",
+    ].join("\u0000");
+}
+class BindingSession {
+    records = new Set();
+    knownBindingsByNode = new WeakMap();
+    optionsByBinding = new WeakMap();
+    deferredByNode = new WeakMap();
+    deferred = new Set();
+    constructor(root = null) {
+        if (root !== null)
+            this.observe(root);
+    }
+    initialize(bindings, options = {}) {
+        const registerAddress = options.registerAddress ?? true;
+        const resolvedOptions = {
+            registerAddress,
+            registerPathInfo: options.registerPathInfo ?? registerAddress,
+            applyOnReconnect: options.applyOnReconnect ?? true,
+        };
+        const initialized = [];
+        for (const candidate of bindings) {
+            const binding = this.remember(candidate, resolvedOptions);
+            const existing = recordByBinding.get(binding);
+            if (typeof existing !== "undefined" && existing.phase !== "disposed" && existing.phase !== "failed") {
+                this.observe(existing.anchor);
+                if (resolvedOptions.registerAddress && existing.address === null) {
+                    existing.options.registerAddress = true;
+                    this.registerAddress(existing);
+                }
+                if (existing.phase === "active")
+                    this.settleInitialRecord(existing);
+                this.settleConnectedSnapshot(existing);
+                continue;
+            }
+            this.start(binding, resolvedOptions);
+            initialized.push(binding);
+        }
+        return initialized.filter((binding) => this.shouldApplyState(binding));
+    }
+    shouldApplyState(binding) {
+        if (!config.enableDirectionalInitialSync) {
+            if (hasInitialSyncModifier(binding))
+                resolveInitialSyncPolicy(binding);
+            return true;
+        }
+        const record = recordByBinding.get(binding);
+        if (typeof record === "undefined" || record.session !== this)
+            return true;
+        if (!record.options.registerAddress || record.phase === "waiting-definition")
+            return true;
+        if (record.phase === "active")
+            this.settleInitialRecord(record);
+        return record.resolvedAuthority === "state";
+    }
+    getRecord(binding) {
+        const record = recordByBinding.get(binding);
+        return record?.session === this ? record : null;
+    }
+    addTeardown(binding, teardown) {
+        const record = recordByBinding.get(binding);
+        if (typeof record === "undefined" || !this.isAlive(record, record.generation)) {
+            return false;
+        }
+        record.teardowns.add(teardown);
+        return true;
+    }
+    deferUntilDefined(node, tagName, callback, reject = () => undefined) {
+        const registry = getCustomElementRegistry();
+        if (registry === null) {
+            raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
+        }
+        this.observe(node);
+        const task = { node, active: true, cancel: null };
+        let tasks = this.deferredByNode.get(node);
+        if (typeof tasks === "undefined") {
+            tasks = new Set();
+            this.deferredByNode.set(node, tasks);
+        }
+        tasks.add(task);
+        this.deferred.add(task);
+        const finish = () => {
+            if (!task.active)
+                return false;
+            task.active = false;
+            tasks?.delete(task);
+            this.deferred.delete(task);
+            return true;
+        };
+        task.cancel = getDefinitionCoordinator(registry).wait(tagName, () => {
+            if (!finish())
+                return;
+            try {
+                upgradeCustomElement(registry, node);
+                callback();
+            }
+            catch (error) {
+                reject(error);
+            }
+        }, (error) => {
+            if (!finish())
+                return;
+            reject(error);
+        });
+        return () => {
+            if (!finish())
+                return;
+            task.cancel?.();
+        };
+    }
+    disposeBinding(binding) {
+        const record = recordByBinding.get(binding);
+        if (typeof record === "undefined" || record.session !== this)
+            return;
+        this.disposeRecord(record);
+    }
+    dispose() {
+        for (const record of Array.from(this.records))
+            this.disposeRecord(record);
+        for (const task of Array.from(this.deferred)) {
+            task.active = false;
+            task.cancel?.();
+            this.deferred.delete(task);
+            this.deferredByNode.get(task.node)?.delete(task);
+        }
+    }
+    observe(node) {
+        const root = observableRootFor(node);
+        if (root === null)
+            return;
+        getBindingOwner(root).add(this);
+    }
+    handleMutations(root, removed, added) {
+        for (const subtree of removed) {
+            forEachInclusive(subtree, (node) => {
+                if (root.contains(node))
+                    return;
+                const known = this.knownBindingsByNode.get(node);
+                if (typeof known !== "undefined") {
+                    for (const binding of known.values())
+                        this.disposeBinding(binding);
+                }
+                const tasks = this.deferredByNode.get(node);
+                if (typeof tasks !== "undefined") {
+                    for (const task of Array.from(tasks)) {
+                        task.active = false;
+                        task.cancel?.();
+                        tasks.delete(task);
+                        this.deferred.delete(task);
+                    }
+                }
+            });
+        }
+        const reconnected = [];
+        for (const subtree of added) {
+            forEachInclusive(subtree, (node) => {
+                if (!root.contains(node))
+                    return;
+                const known = this.knownBindingsByNode.get(node);
+                if (typeof known === "undefined")
+                    return;
+                for (const binding of known.values()) {
+                    const record = recordByBinding.get(binding);
+                    if (record?.phase === "active") {
+                        this.settleConnectedSnapshot(record);
+                        continue;
+                    }
+                    if (record?.phase !== "disposed")
+                        continue;
+                    const options = this.optionsByBinding.get(binding);
+                    if (typeof options === "undefined")
+                        continue;
+                    try {
+                        this.start(binding, options);
+                        if (options.applyOnReconnect && this.shouldApplyState(binding))
+                            reconnected.push(binding);
+                    }
+                    catch {
+                        // Mutation delivery cannot surface initialization errors to a caller.
+                    }
+                }
+            });
+        }
+        if (reconnected.length > 0)
+            applyChangeFromBindings(reconnected);
+    }
+    remember(binding, options) {
+        const anchor = binding.replaceNode;
+        let known = this.knownBindingsByNode.get(anchor);
+        if (typeof known === "undefined") {
+            known = new Map();
+            this.knownBindingsByNode.set(anchor, known);
+        }
+        const key = bindingKey(binding);
+        const remembered = known.get(key);
+        if (typeof remembered !== "undefined") {
+            const rememberedOptions = this.optionsByBinding.get(remembered);
+            if (typeof rememberedOptions !== "undefined") {
+                rememberedOptions.registerAddress ||= options.registerAddress;
+                rememberedOptions.registerPathInfo ||= options.registerPathInfo;
+                rememberedOptions.applyOnReconnect ||= options.applyOnReconnect;
+            }
+            return remembered;
+        }
+        known.set(key, binding);
+        this.optionsByBinding.set(binding, { ...options });
+        return binding;
+    }
+    start(binding, options) {
+        replaceToReplaceNode(binding);
+        const recordOptions = this.optionsByBinding.get(binding) ?? { ...options };
+        const record = {
+            id: ++nextRecordId,
+            info: binding,
+            generation: ++nextGeneration,
+            phase: "discovered",
+            teardowns: new Set(),
+            session: this,
+            anchor: binding.replaceNode,
+            options: recordOptions,
+            address: null,
+            pendingDefinitions: 0,
+            initialPolicy: null,
+            resolvedAuthority: null,
+            initialSettled: false,
+            observationPending: false,
+            eventSequence: 0,
+            hasProducerValue: false,
+            producerValue: undefined,
+        };
+        recordByBinding.set(binding, record);
+        this.records.add(record);
+        this.observe(record.anchor);
+        try {
+            record.phase = "attaching";
+            this.attachListeners(record);
+            if (record.options.registerAddress)
+                this.registerAddress(record);
+            if (record.pendingDefinitions === 0)
+                record.phase = "active";
+        }
+        catch (error) {
+            record.phase = "failed";
+            this.runTeardowns(record);
+            this.records.delete(record);
+            throw error;
+        }
+    }
+    attachListeners(record) {
+        const binding = record.info;
+        if (attachEventHandler(binding)) {
+            record.teardowns.add(() => detachEventHandler(binding));
+            return;
+        }
+        if (binding.propSegments[0] === "eventToken") {
+            this.attachAfterDefinition(record, () => {
+                if (attachEventTokenHandler(binding)) {
+                    record.teardowns.add(() => detachEventTokenHandler(binding));
+                }
+            });
+            return;
+        }
+        if (attachRadioEventHandler(binding)) {
+            record.teardowns.add(() => detachRadioEventHandler(binding));
+        }
+        if (attachCheckboxEventHandler(binding)) {
+            record.teardowns.add(() => detachCheckboxEventHandler(binding));
+        }
+        this.attachAfterDefinition(record, () => {
+            // directional initial sync の producer-value observer は twowayEventHandlerFunction
+            // からのみ呼ばれる（唯一の consumer）。その handler が attach されるのは
+            // isPossibleTwoWay かつ非 ro の binding だけ（attachTwowayEventHandler と同条件）
+            // なので、one-way / event / eventToken / radio(非value) 等では observer は決して
+            // fire しない。以前は attachListeners 冒頭で全 binding に無条件登録していたが、
+            // fire しえない大多数の binding に対する setup 死荷重だった。ここへ移すことで
+            // 「twoway handler が付く binding のみ observer 登録」を構造的に保証する
+            // （undefined custom element は attachAfterDefinition が定義後まで遅延するので
+            // isPossibleTwoWay の未定義 CE raiseError も踏まない）。
+            if (config.enableDirectionalInitialSync
+                && isPossibleTwoWay(binding.node, binding.propName)
+                && binding.propModifiers.indexOf("ro") === -1) {
+                const removeObserver = addTwowayValueObserver(binding.node, binding.propName, (value) => {
+                    if (!this.isAlive(record, record.generation))
+                        return;
+                    record.eventSequence += 1;
+                    record.hasProducerValue = true;
+                    record.producerValue = value;
+                });
+                record.teardowns.add(removeObserver);
+            }
+            attachTwowayEventHandler(binding);
+            record.teardowns.add(() => detachTwowayEventHandler(binding));
+        });
+    }
+    attachAfterDefinition(record, attach) {
+        const tagName = getCustomElement(record.info.node);
+        if (tagName === null) {
+            attach();
+            return;
+        }
+        const registry = getCustomElementRegistry();
+        if (registry === null) {
+            raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
+        }
+        if (typeof registry.get(tagName) !== "undefined") {
+            attach();
+            return;
+        }
+        record.phase = "waiting-definition";
+        record.pendingDefinitions += 1;
+        const generation = record.generation;
+        const coordinator = getDefinitionCoordinator(registry);
+        const cancel = coordinator.wait(tagName, () => {
+            if (!this.isAlive(record, generation))
+                return;
+            try {
+                upgradeCustomElement(registry, record.info.node);
+                attach();
+                record.pendingDefinitions -= 1;
+                if (record.pendingDefinitions === 0) {
+                    record.phase = "active";
+                    this.settleInitialRecord(record);
+                }
+            }
+            catch {
+                record.phase = "failed";
+                this.runTeardowns(record);
+                this.records.delete(record);
+            }
+        }, () => {
+            if (!this.isAlive(record, generation))
+                return;
+            record.phase = "failed";
+            this.runTeardowns(record);
+            this.records.delete(record);
+        });
+        record.teardowns.add(cancel);
+    }
+    settleInitialRecord(record) {
+        if (!config.enableDirectionalInitialSync || record.initialSettled || !record.options.registerAddress)
+            return;
+        record.phase = "synchronizing";
+        try {
+            const policy = resolveInitialSyncPolicy(record.info);
+            const authority = resolveInitialAuthority(record.info, policy.authority);
+            record.initialPolicy = policy;
+            record.resolvedAuthority = authority;
+            record.initialSettled = true;
+            record.phase = "active";
+            if (!policy.observable)
+                return;
+            if (policy.syncOn === "connect"
+                && record.info.node instanceof HTMLElement
+                && !record.info.node.isConnected) {
+                record.observationPending = true;
+                return;
+            }
+            this.readProducerSnapshot(record, policy.syncOn === "call");
+        }
+        catch (error) {
+            record.phase = "failed";
+            this.runTeardowns(record);
+            this.records.delete(record);
+            throw error;
+        }
+    }
+    readProducerSnapshot(record, eventWins) {
+        if (!this.isAlive(record, record.generation))
+            return;
+        const target = record.info.node;
+        const name = record.info.propName;
+        if (!(name in target))
+            return;
+        const sequence = record.eventSequence;
+        const value = target[name];
+        record.observationPending = false;
+        if (eventWins && record.eventSequence !== sequence)
+            return;
+        record.hasProducerValue = true;
+        record.producerValue = value;
+        if (record.resolvedAuthority === "element") {
+            commitProducerValue(record.info, value);
+        }
+    }
+    settleConnectedSnapshot(record) {
+        if (!config.enableDirectionalInitialSync
+            || !record.observationPending
+            || !(record.info.node instanceof HTMLElement)
+            || !record.info.node.isConnected)
+            return;
+        try {
+            this.readProducerSnapshot(record, false);
+        }
+        catch {
+            record.phase = "failed";
+            this.runTeardowns(record);
+            this.records.delete(record);
+        }
+    }
+    registerAddress(record) {
+        if (record.address !== null)
+            return;
+        const binding = record.info;
+        const address = getAbsoluteStateAddressByBinding(binding);
+        addBindingByAbsoluteStateAddress(address, binding);
+        record.address = address;
+        record.teardowns.add(() => {
+            if (record.address === null)
+                return;
+            removeBindingByAbsoluteStateAddress(record.address, binding);
+            record.address = null;
+            clearStateAddressByBindingInfo(binding);
+            clearAbsoluteStateAddressByBinding(binding);
+        });
+        if (!record.options.registerPathInfo)
+            return;
+        const rootNode = binding.replaceNode.getRootNode();
+        const stateElement = getStateElementByName(rootNode, binding.stateName);
+        if (stateElement === null) {
+            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+        }
+        if (binding.bindingType !== "event") {
+            stateElement.setPathInfo(binding.statePathName, binding.bindingType);
+        }
+    }
+    isAlive(record, generation) {
+        return record.generation === generation
+            && recordByBinding.get(record.info) === record
+            && record.phase !== "disposed"
+            && record.phase !== "failed";
+    }
+    disposeRecord(record) {
+        if (record.phase === "disposed")
+            return;
+        record.phase = "disposed";
+        this.runTeardowns(record);
+        this.records.delete(record);
+    }
+    runTeardowns(record) {
+        const teardowns = Array.from(record.teardowns).reverse();
+        record.teardowns.clear();
+        for (const teardown of teardowns) {
+            try {
+                teardown();
+            }
+            catch {
+                // Cleanup is best-effort; one faulty resource must not retain the rest.
+            }
+        }
+    }
+}
+function getOrCreateBindingSession(root) {
+    let session = sessionByRoot.get(root);
+    if (typeof session === "undefined") {
+        session = new BindingSession(root);
+        sessionByRoot.set(root, session);
+    }
+    return session;
+}
+function getBindingSession(binding) {
+    return recordByBinding.get(binding)?.session ?? null;
+}
+
 const completeByStateElementByWebComponent = new WeakMap();
 function markWebComponentAsComplete(webComponent, stateElement) {
     let completeByStateElement = completeByStateElementByWebComponent.get(webComponent);
@@ -2132,92 +3923,6 @@ function applyChangeToClass(binding, _context, newValue) {
 }
 
 /**
- * devtools/sink.ts
- *
- * 計装点が参照するホットパス唯一の接点。依存ゼロの葉モジュールにすることで、
- * 計装される側（stateElementByName / setByAddress / binding / token）と
- * bridge の間の循環 import を避ける。
- *
- * コスト規範（protocol §1-1）: フック未接続時、計装点のコストは
- * `devtoolsSink !== null` の分岐 1 個。イベントオブジェクトの生成は
- * 必ずこのチェックの内側で行うこと。
- */
-/** live binding としてエクスポート。計装点は `if (devtoolsSink !== null)` で参照する */
-let devtoolsSink = null;
-function setDevtoolsSink(sink) {
-    devtoolsSink = sink;
-}
-
-// command-token / event-token が共有する pub/sub プリミティブ。
-// _subscribers は Set のため挿入順を保持する。
-// emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
-//
-// 「誰が subscribe し誰が emit するか」だけが command / event の違い:
-//   - command-token: element が subscribe / state が emit
-//   - event-token:   state(`$on`) が subscribe / element(listener) が emit
-class Token {
-    _name;
-    _subscribers = new Set();
-    constructor(name) {
-        this._name = name;
-    }
-    get name() {
-        return this._name;
-    }
-    get size() {
-        return this._subscribers.size;
-    }
-    subscribe(fn) {
-        this._subscribers.add(fn);
-        return () => {
-            this._subscribers.delete(fn);
-        };
-    }
-    unsubscribe(fn) {
-        return this._subscribers.delete(fn);
-    }
-    emit(...args) {
-        const results = [];
-        for (const fn of this._subscribers) {
-            results.push(fn(...args));
-        }
-        return results;
-    }
-}
-
-// CommandToken は共有 pub/sub プリミティブ Token の薄い特化。
-// instanceof による型判別を成立させるため独立クラスとして維持する。
-//
-// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
-// command-token-protocol の外部仕様は不変更（registry が渡すだけで、
-// subscribe/emit の意味論には一切影響しない）。
-class CommandToken extends Token {
-    _ownerStateName;
-    constructor(name, ownerStateName) {
-        super(name);
-        this._ownerStateName = ownerStateName ?? null;
-    }
-    emit(...args) {
-        if (devtoolsSink !== null) {
-            // subscriberCount 0 の emit（空撃ち）もそのまま流す — whenDefined 前の
-            // command 空撃ちレース類をタイムラインで可視化するため
-            devtoolsSink({
-                type: "state:token-emit",
-                kind: "command",
-                stateName: this._ownerStateName,
-                tokenName: this.name,
-                args,
-                subscriberCount: this.size,
-            });
-        }
-        return super.emit(...args);
-    }
-}
-function isCommandToken(value) {
-    return value instanceof CommandToken;
-}
-
-/**
  * command.<methodName>: <commandToken-path> バインディングの適用ハンドラ。
  *
  * subscribe lifecycle:
@@ -2238,7 +3943,7 @@ function isCommandToken(value) {
  *     element ライフサイクルに直接フックする手段が現状の binding 機構に無いため、能動的な purge は将来課題。
  */
 const subscribedBindings = new WeakMap();
-function getWcBindable$1(element) {
+function getWcBindable(element) {
     const customTagName = getCustomElement(element);
     if (customTagName === null) {
         return null;
@@ -2264,7 +3969,7 @@ function applyChangeToCommand(binding, _context, newValue) {
     if (typeof methodName !== "string" || methodName.length === 0) {
         raiseError(`command binding requires a method name (e.g., "command.fetch").`);
     }
-    const bindable = getWcBindable$1(element);
+    const bindable = getWcBindable(element);
     if (bindable === null) {
         raiseError(`command binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
     }
@@ -2293,61 +3998,6 @@ function applyChangeToCommand(binding, _context, newValue) {
     };
     unsubscribe = token.subscribe(subscriber);
     subscribedBindings.set(binding, { token, unsubscribe, elementRef });
-}
-
-const _cache$1 = new WeakMap();
-const _cacheNullListIndex = new WeakMap();
-class StateAddress {
-    pathInfo;
-    listIndex;
-    _parentAddress;
-    constructor(pathInfo, listIndex) {
-        this.pathInfo = pathInfo;
-        this.listIndex = listIndex;
-    }
-    get parentAddress() {
-        if (typeof this._parentAddress !== 'undefined') {
-            return this._parentAddress;
-        }
-        const parentPathInfo = this.pathInfo.parentPathInfo;
-        if (parentPathInfo === null) {
-            return null;
-        }
-        const lastSegment = this.pathInfo.segments[this.pathInfo.segments.length - 1];
-        let parentListIndex = null;
-        if (lastSegment === WILDCARD) {
-            parentListIndex = this.listIndex?.parentListIndex ?? null;
-        }
-        else {
-            parentListIndex = this.listIndex;
-        }
-        return this._parentAddress = createStateAddress(parentPathInfo, parentListIndex);
-    }
-}
-function createStateAddress(pathInfo, listIndex) {
-    if (listIndex === null) {
-        let cached = _cacheNullListIndex.get(pathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new StateAddress(pathInfo, null);
-        _cacheNullListIndex.set(pathInfo, cached);
-        return cached;
-    }
-    else {
-        let cacheByPathInfo = _cache$1.get(listIndex);
-        if (typeof cacheByPathInfo === "undefined") {
-            cacheByPathInfo = new WeakMap();
-            _cache$1.set(listIndex, cacheByPathInfo);
-        }
-        let cached = cacheByPathInfo.get(pathInfo);
-        if (typeof cached !== "undefined") {
-            return cached;
-        }
-        cached = new StateAddress(pathInfo, listIndex);
-        cacheByPathInfo.set(pathInfo, cached);
-        return cached;
-    }
 }
 
 const indexBindingsByContent = new WeakMap();
@@ -2840,42 +4490,6 @@ function computeStableIndexSet(diff) {
     return stable;
 }
 
-const bindingSetByAbsoluteStateAddress = new WeakMap();
-function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
-    let bindingSet = null;
-    bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress) || null;
-    if (bindingSet === null) {
-        bindingSet = new Set();
-        bindingSetByAbsoluteStateAddress.set(absoluteStateAddress, bindingSet);
-    }
-    return bindingSet;
-}
-/**
- * 参照専用の取得。get-or-create と違い、未登録アドレスに空 Set を
- * 生成・キャッシュしない（リスト置換の drain は大量のバインディング無し
- * アドレスを照会するため、生成すると空 Set が溜まり続ける）。
- */
-function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
-    return bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
-}
-function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
-    bindingSet.add(binding);
-    if (devtoolsSink !== null) {
-        devtoolsSink({ type: "state:binding-added", absoluteAddress: absoluteStateAddress, binding });
-    }
-}
-function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    // get-or-create を通すと未登録アドレスに空 Set を生成してしまうため素の get で参照する
-    const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
-    if (bindingSet !== undefined) {
-        bindingSet.delete(binding);
-        if (devtoolsSink !== null) {
-            devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
-        }
-    }
-}
-
 const bindingsByContent = new WeakMap();
 function getBindingsByContent(content) {
     return bindingsByContent.get(content) ?? [];
@@ -2929,6 +4543,9 @@ function activateContent(content, loopContext, context) {
             const absoluteStateAddress = getAbsoluteStateAddressByBinding(binding);
             addBindingByAbsoluteStateAddress(absoluteStateAddress, binding);
         }
+        if (session !== null && !session.shouldApplyState(binding)) {
+            continue;
+        }
         applyChange(binding, context);
     }
 }
@@ -2980,31 +4597,6 @@ function deleteContentByNode(node, content) {
             contentSetByNode.delete(node);
         }
     }
-}
-
-const stateAddressByBindingInfo = new WeakMap();
-function getStateAddressByBindingInfo(bindingInfo) {
-    let stateAddress = null;
-    stateAddress = stateAddressByBindingInfo.get(bindingInfo) || null;
-    if (stateAddress !== null) {
-        return stateAddress;
-    }
-    if (bindingInfo.statePathInfo.wildcardCount > 0) {
-        const listIndex = getListIndexByBindingInfo(bindingInfo);
-        if (listIndex === null) {
-            raiseError(`Cannot resolve state address for binding with wildcard statePathName "${bindingInfo.statePathName}" because list index is null.`);
-        }
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, listIndex);
-    }
-    else {
-        stateAddress = createStateAddress(bindingInfo.statePathInfo, null);
-    }
-    stateAddressByBindingInfo.set(bindingInfo, stateAddress);
-    return stateAddress;
-}
-// call for change loopContext
-function clearStateAddressByBindingInfo(bindingInfo) {
-    stateAddressByBindingInfo.delete(bindingInfo);
 }
 
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
@@ -3532,40 +5124,82 @@ function applyChangeToProperty(binding, _context, newValue) {
     if (propSegments.length === 1) {
         const firstSegment = propSegments[0];
         if (element[firstSegment] !== newValue) {
-            let propertyWriteSucceeded = false;
-            try {
-                element[firstSegment] = newValue;
-                propertyWriteSucceeded = true;
-            }
-            catch (error) {
-                if (config.debug) {
-                    console.warn(`Failed to set property '${firstSegment}' on element.`, {
-                        element,
-                        newValue,
-                        error
-                    });
+            const performWrite = () => {
+                let propertyWriteSucceeded = false;
+                try {
+                    element[firstSegment] = newValue;
+                    propertyWriteSucceeded = true;
                 }
-            }
-            // wc-bindable inputs[].attribute ミラー。プロパティ書き込みが成功したときだけ
-            // 属性へ反映する。setter が値を拒否した場合に属性だけ進んでしまうと
-            // property と attribute が乖離し、attributeChangedCallback や CSS セレクタが
-            // 実際のプロパティ値と矛盾した状態で発火するため、ここでガードする。
-            if (propertyWriteSucceeded) {
-                const mirrorAttr = getInputAttributeMirror(element, firstSegment);
-                if (mirrorAttr !== null) {
-                    try {
-                        applyMirrorAttribute(element, mirrorAttr, newValue);
+                catch (error) {
+                    if (config.debug) {
+                        console.warn(`Failed to set property '${firstSegment}' on element.`, {
+                            element,
+                            newValue,
+                            error
+                        });
                     }
-                    catch (error) {
-                        if (config.debug) {
-                            console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
-                                element,
-                                newValue,
-                                error
-                            });
+                }
+                // wc-bindable inputs[].attribute ミラー。プロパティ書き込みが成功したときだけ
+                // 属性へ反映する。setter が値を拒否した場合に属性だけ進んでしまうと
+                // property と attribute が乖離し、attributeChangedCallback や CSS セレクタが
+                // 実際のプロパティ値と矛盾した状態で発火するため、ここでガードする。
+                if (propertyWriteSucceeded) {
+                    const mirrorAttr = getInputAttributeMirror(element, firstSegment);
+                    if (mirrorAttr !== null) {
+                        try {
+                            applyMirrorAttribute(element, mirrorAttr, newValue);
+                        }
+                        catch (error) {
+                            if (config.debug) {
+                                console.warn(`Failed to mirror attribute '${mirrorAttr}' on element.`, {
+                                    element,
+                                    newValue,
+                                    error
+                                });
+                            }
                         }
                     }
                 }
+            };
+            // Zero-cost fast path (§4 最適化): the propagation edge / WriteReceipt
+            // machinery only matters when the element write can *echo* — i.e. the setter
+            // may synchronously dispatch an event a two-way wire feeds back to state.
+            // `isPossibleTwoWay` is the same conservative check the two-way listener
+            // registration uses, and it is cheap for the common one-way case (textContent
+            // / class / style on plain elements return false fast). One-way bindings can
+            // never re-traverse an edge, so skipping the context/receipt is safe and
+            // avoids a per-apply Set copy + receipt allocation. Diamond / coalescing are
+            // unaffected — those ride the write-transaction context threaded through the
+            // updater, not the element edge.
+            if (config.enablePropagationContext && isPossibleTwoWay(element, firstSegment)) {
+                // Phase 3: state → element edge の通過を記録し、同じ transaction が
+                // 同じ edge を再度通ろうとした場合だけ抑止する（設計書 §4 規則 2）。
+                // 書き込みは WriteReceipt scope で包み、setter が同期 dispatch する
+                // event が confirmation / 正規化を判定できるようにする（規則 3）。
+                const wireId = getWireId(element, firstSegment, binding.stateName, binding.statePathName);
+                const edgeId = getEdgeId(wireId, "to-element");
+                const baseContext = _context?.propagationContextByBinding?.get(binding)
+                    ?? getCurrentPropagationContext()
+                    ?? beginPropagationTransaction(wireId);
+                if (baseContext.visitedEdges.has(edgeId)) {
+                    if (devtoolsSink !== null) {
+                        devtoolsSink({
+                            type: "propagation:suppressed",
+                            reason: "visited-edge",
+                            transactionId: baseContext.transactionId,
+                            edgeId,
+                            node: element,
+                            member: firstSegment,
+                        });
+                    }
+                }
+                else {
+                    const extendedContext = extendPropagationContext(baseContext, edgeId);
+                    runWithPropagationContext(extendedContext, () => runWithWriteReceipt(element, firstSegment, newValue, wireId, extendedContext.transactionId, performWrite));
+                }
+            }
+            else {
+                performWrite();
             }
         }
         if (inSsr()) {
@@ -3707,1131 +5341,6 @@ function getValue(state, binding) {
     }
 }
 
-function createHandlerBindingRegistry() {
-    const attachedByKey = new Map();
-    const countByKey = new Map();
-    return {
-        add(key, binding) {
-            let attached = attachedByKey.get(key);
-            if (typeof attached === "undefined") {
-                attached = new WeakSet();
-                attachedByKey.set(key, attached);
-            }
-            if (attached.has(binding)) {
-                return false;
-            }
-            attached.add(binding);
-            countByKey.set(key, (countByKey.get(key) ?? 0) + 1);
-            return true;
-        },
-        remove(key, binding) {
-            const attached = attachedByKey.get(key);
-            if (typeof attached === "undefined" || !attached.has(binding)) {
-                return false;
-            }
-            attached.delete(binding);
-            const next = (countByKey.get(key) ?? 1) - 1;
-            if (next <= 0) {
-                attachedByKey.delete(key);
-                countByKey.delete(key);
-                return true;
-            }
-            countByKey.set(key, next);
-            return false;
-        },
-        has(key, binding) {
-            return attachedByKey.get(key)?.has(binding) ?? false;
-        },
-        countOf(key) {
-            return countByKey.get(key) ?? 0;
-        },
-        get keyCount() {
-            return countByKey.size;
-        },
-        clear() {
-            attachedByKey.clear();
-            countByKey.clear();
-        },
-    };
-}
-
-const handlerByHandlerKey$3 = new Map();
-// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry$3 = createHandlerBindingRegistry();
-function getHandlerKey$3(binding, eventName) {
-    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
-}
-function getEventName$2(binding) {
-    let eventName = 'input';
-    for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
-        }
-    }
-    return eventName;
-}
-const checkboxEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
-    const node = event.target;
-    if (node === null) {
-        console.warn(`[@wcstack/state] event.target is null.`);
-        return;
-    }
-    if (node.type !== 'checkbox') {
-        console.warn(`[@wcstack/state] event.target is not a checkbox input element.`);
-        return;
-    }
-    const checked = node.checked;
-    const newValue = node.value;
-    let filteredNewValue = newValue;
-    for (const filter of inFilters) {
-        filteredNewValue = filter.filterFn(filteredNewValue);
-    }
-    const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
-    }
-    const loopContext = getLoopContextByNode(node);
-    stateElement.createState("writable", (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-            let currentValue = state[statePathName];
-            if (Array.isArray(currentValue)) {
-                if (checked) {
-                    if (currentValue.indexOf(filteredNewValue) === -1) {
-                        state[statePathName] = currentValue.concat(filteredNewValue);
-                    }
-                }
-                else {
-                    const index = currentValue.indexOf(filteredNewValue);
-                    if (index !== -1) {
-                        state[statePathName] = currentValue.toSpliced(index, 1);
-                    }
-                }
-            }
-            else {
-                if (checked) {
-                    state[statePathName] = [filteredNewValue];
-                }
-                else {
-                    state[statePathName] = [];
-                }
-            }
-        });
-    });
-};
-function attachCheckboxEventHandler(binding) {
-    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName$2(binding);
-        const key = getHandlerKey$3(binding, eventName);
-        let checkboxEventHandler = handlerByHandlerKey$3.get(key);
-        if (typeof checkboxEventHandler === "undefined") {
-            checkboxEventHandler = checkboxEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
-            handlerByHandlerKey$3.set(key, checkboxEventHandler);
-        }
-        binding.node.addEventListener(eventName, checkboxEventHandler);
-        bindingRegistry$3.add(key, binding);
-        return true;
-    }
-    return false;
-}
-function detachCheckboxEventHandler(binding) {
-    if (binding.bindingType === "checkbox" && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName$2(binding);
-        const key = getHandlerKey$3(binding, eventName);
-        const checkboxEventHandler = handlerByHandlerKey$3.get(key);
-        if (typeof checkboxEventHandler === "undefined") {
-            return false;
-        }
-        binding.node.removeEventListener(eventName, checkboxEventHandler);
-        if (bindingRegistry$3.countOf(key) === 0) {
-            return false;
-        }
-        if (bindingRegistry$3.remove(key, binding)) {
-            handlerByHandlerKey$3.delete(key);
-        }
-        return true;
-    }
-    return false;
-}
-
-// EventToken は共有 pub/sub プリミティブ Token の薄い特化（element→state 方向）。
-// instanceof による型判別を成立させるため独立クラスとして維持する。
-//
-// ownerStateName は devtools 計装（protocol §4.5）のための内部 optional 引数。
-// event-token-protocol の外部仕様は不変更。
-class EventToken extends Token {
-    _ownerStateName;
-    constructor(name, ownerStateName) {
-        super(name);
-        this._ownerStateName = ownerStateName ?? null;
-    }
-    emit(...args) {
-        if (devtoolsSink !== null) {
-            devtoolsSink({
-                type: "state:token-emit",
-                kind: "event",
-                stateName: this._ownerStateName,
-                tokenName: this.name,
-                args,
-                subscriberCount: this.size,
-            });
-        }
-        return super.emit(...args);
-    }
-}
-
-const registryByStateElement$2 = new WeakMap();
-function getOrCreateEventToken(stateElement, name) {
-    let registry = registryByStateElement$2.get(stateElement);
-    if (typeof registry === "undefined") {
-        registry = new Map();
-        registryByStateElement$2.set(stateElement, registry);
-    }
-    let token = registry.get(name);
-    if (typeof token === "undefined") {
-        token = new EventToken(name, stateElement.name);
-        registry.set(name, token);
-    }
-    return token;
-}
-function clearEventTokenRegistry(stateElement) {
-    registryByStateElement$2.delete(stateElement);
-}
-
-/**
- * eventToken.<propertyName>: <eventTokenName> バインディングの attach ハンドラ。
- *
- * command-token の双対（element→state）。要素が dispatch する CustomEvent を受けて
- * event-token を emit し、state 側の `$on` ハンドラ群へ pub/sub で配送する。
- *
- * 設計（MVP スコープ: wc-bindable カスタム要素のみ）:
- *   - キーは生イベント名ではなく **wcBindable property 名**。実 DOM イベント名は
- *     wcBindable.properties[].event から解決する（command-token が wcBindable.commands で
- *     検証するのと対称。コロンを含む namespaced event 名と binding 構文の `:` 衝突も回避）。
- *   - <prop> が wcBindable.properties に宣言されていることは attach 時に検証する
- *     （要素クラス参照のみで DOM 接続に非依存。fail-fast / typo 耐性）。
- *   - <eventTokenName> が $eventTokens に宣言されていることは **発火時** に検証する
- *     （state 解決が必要なため。詳細は下記の fire-time 解決の注記を参照）。
- *   - subscriber 引数規約は `(state, event, ...listIndexes)`。
- *   - modifier `#prevent` / `#stop` は既存イベント binding と同等にサポート。
- *
- * token はイベント発火ごとに registry から解決する（getOrCreateEventToken）。これにより
- * state の再 set で registry が作り直されても最新の subscriber 群へ配送できる。
- *
- * state element の解決と `$eventTokens` 検証は **発火時** に行う（attach 時ではない）。
- * 構造ブロック（for/if）や SSR hydration では、binding 初期化時にノードが detached な
- * DocumentFragment / wrapper 上にあり、その時点では element.getRootNode() から state を
- * 解決できないため。onclick / two-way ハンドラと同じく fire-time 解決に揃えている。
- */
-const listenerByBinding = new WeakMap();
-function getWcBindable(element) {
-    const customTagName = getCustomElement(element);
-    if (customTagName === null) {
-        return null;
-    }
-    // attach 側で未定義要素は whenDefined 後に再試行するため、ここに来る時点で customClass は定義済み。
-    return readBindableDeclaration(element);
-}
-function attachEventTokenHandler(binding) {
-    if (binding.propSegments[0] !== "eventToken") {
-        return false;
-    }
-    const element = binding.node;
-    // カスタム要素が未定義なら定義後に再試行（wcBindable が必要なため）。
-    const customTagName = getCustomElement(element);
-    const registry = getCustomElementRegistry();
-    if (customTagName !== null && registry?.get(customTagName) === undefined) {
-        if (registry === null) {
-            raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
-        }
-        return true;
-    }
-    // 再評価で二重 attach しない。
-    if (listenerByBinding.has(binding)) {
-        return true;
-    }
-    const propertyName = binding.propSegments[1];
-    if (typeof propertyName !== "string" || propertyName.length === 0) {
-        raiseError(`eventToken binding requires a property name (e.g., "eventToken.error").`);
-    }
-    const bindable = getWcBindable(element);
-    if (bindable === null) {
-        raiseError(`eventToken binding requires a wc-bindable custom element. <${element.tagName.toLowerCase()}> is not wc-bindable.`);
-    }
-    const propDesc = bindable.knownProperties.get(propertyName);
-    if (typeof propDesc === "undefined") {
-        raiseError(`Property "${propertyName}" is not declared in wcBindable.properties of <${element.tagName.toLowerCase()}>.`);
-    }
-    const eventName = propDesc.event;
-    const tokenName = binding.statePathName;
-    const stateName = binding.stateName;
-    const modifiers = binding.propModifiers;
-    const handler = (event) => {
-        if (modifiers.includes("prevent"))
-            event.preventDefault();
-        if (modifiers.includes("stop"))
-            event.stopPropagation();
-        // state は発火時の live root から解決する（attach 時は detached の可能性があるため）。
-        const rootNode = element.getRootNode();
-        const stateElement = getStateElementByName(rootNode, stateName);
-        if (stateElement === null) {
-            raiseError(`State element with name "${stateName}" not found for eventToken handler.`);
-        }
-        if (!stateElement.eventTokenNames.has(tokenName)) {
-            raiseError(`eventToken "${tokenName}" is not declared in $eventTokens of state "${stateName}".`);
-        }
-        const loopContext = getLoopContextByNode(element);
-        stateElement.createStateAsync("writable", async (state) => {
-            state[setLoopContextSymbol](loopContext, () => {
-                const indexes = loopContext?.listIndex.indexes ?? [];
-                const token = getOrCreateEventToken(stateElement, tokenName);
-                return token.emit(state, event, ...indexes);
-            });
-        });
-    };
-    element.addEventListener(eventName, handler);
-    listenerByBinding.set(binding, { eventName, handler });
-    return true;
-}
-function detachEventTokenHandler(binding) {
-    if (binding.propSegments[0] !== "eventToken") {
-        return false;
-    }
-    const listener = listenerByBinding.get(binding);
-    if (typeof listener === "undefined") {
-        return false;
-    }
-    binding.node.removeEventListener(listener.eventName, listener.handler);
-    listenerByBinding.delete(binding);
-    return true;
-}
-
-// onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
-// 右辺が $command 名前空間配下のパス（$command.<token>）のときに true。
-function isCommandTokenPath(statePathName) {
-    return statePathName.startsWith(STATE_COMMAND_NAMESPACE_NAME + ".");
-}
-const handlerByHandlerKey$2 = new Map();
-// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry$2 = createHandlerBindingRegistry();
-function getHandlerKey$2(binding) {
-    const modifierKey = binding.propModifiers.filter(m => m === 'prevent' || m === 'stop').sort().join(',');
-    return `${binding.stateName}::${binding.statePathName}::${modifierKey}`;
-}
-const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathInfo) => (event) => {
-    if (modifiers.includes('prevent'))
-        event.preventDefault();
-    if (modifiers.includes('stop'))
-        event.stopPropagation();
-    const node = event.target;
-    const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for event handler.`);
-    }
-    const loopContext = getLoopContextByNode(node);
-    const isCommand = isCommandTokenPath(handlerName);
-    stateElement.createStateAsync("writable", async (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-            const indexes = loopContext?.listIndex.indexes ?? [];
-            if (isCommand) {
-                // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
-                const token = state[getByAddressSymbol](createStateAddress(statePathInfo, null));
-                if (!isCommandToken(token)) {
-                    raiseError(`Event binding "${handlerName}" did not resolve to a CommandToken. Declare the name in $commandTokens and reference it as $command.<name>.`);
-                }
-                return token.emit(event, ...indexes);
-            }
-            const handler = state[handlerName];
-            if (typeof handler !== "function") {
-                raiseError(`Handler "${handlerName}" is not a function on state "${stateName}".`);
-            }
-            return Reflect.apply(handler, state, [event, ...indexes]);
-        });
-    });
-};
-function attachEventHandler(binding) {
-    if (!binding.propName.startsWith("on")) {
-        return false;
-    }
-    const key = getHandlerKey$2(binding);
-    let stateEventHandler = handlerByHandlerKey$2.get(key);
-    if (typeof stateEventHandler === "undefined") {
-        stateEventHandler = stateEventHandlerFunction(binding.stateName, binding.statePathName, binding.propModifiers, binding.statePathInfo);
-        handlerByHandlerKey$2.set(key, stateEventHandler);
-    }
-    const eventName = binding.propName.slice(2);
-    binding.node.addEventListener(eventName, stateEventHandler);
-    bindingRegistry$2.add(key, binding);
-    return true;
-}
-function detachEventHandler(binding) {
-    if (!binding.propName.startsWith("on")) {
-        return false;
-    }
-    const key = getHandlerKey$2(binding);
-    const stateEventHandler = handlerByHandlerKey$2.get(key);
-    if (typeof stateEventHandler === "undefined") {
-        return false;
-    }
-    const eventName = binding.propName.slice(2);
-    binding.node.removeEventListener(eventName, stateEventHandler);
-    if (bindingRegistry$2.countOf(key) === 0) {
-        return false;
-    }
-    if (bindingRegistry$2.remove(key, binding)) {
-        handlerByHandlerKey$2.delete(key);
-    }
-    return true;
-}
-
-const handlerByHandlerKey$1 = new Map();
-// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry$1 = createHandlerBindingRegistry();
-function getHandlerKey$1(binding, eventName) {
-    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.statePathName}::${eventName}::${filterKey}`;
-}
-function getEventName$1(binding) {
-    let eventName = 'input';
-    for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
-        }
-    }
-    return eventName;
-}
-const radioEventHandlerFunction = (stateName, statePathName, inFilters) => (event) => {
-    const node = event.target;
-    if (node === null) {
-        console.warn(`[@wcstack/state] event.target is null.`);
-        return;
-    }
-    if (node.type !== 'radio') {
-        console.warn(`[@wcstack/state] event.target is not a radio input element.`);
-        return;
-    }
-    if (node.checked === false) {
-        return;
-    }
-    const newValue = node.value;
-    let filteredNewValue = newValue;
-    for (const filter of inFilters) {
-        filteredNewValue = filter.filterFn(filteredNewValue);
-    }
-    const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
-    }
-    const loopContext = getLoopContextByNode(node);
-    stateElement.createState("writable", (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-            state[statePathName] = filteredNewValue;
-        });
-    });
-};
-function attachRadioEventHandler(binding) {
-    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName$1(binding);
-        const key = getHandlerKey$1(binding, eventName);
-        let radioEventHandler = handlerByHandlerKey$1.get(key);
-        if (typeof radioEventHandler === "undefined") {
-            radioEventHandler = radioEventHandlerFunction(binding.stateName, binding.statePathName, binding.inFilters);
-            handlerByHandlerKey$1.set(key, radioEventHandler);
-        }
-        binding.node.addEventListener(eventName, radioEventHandler);
-        bindingRegistry$1.add(key, binding);
-        return true;
-    }
-    return false;
-}
-function detachRadioEventHandler(binding) {
-    if (binding.bindingType === "radio" && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName$1(binding);
-        const key = getHandlerKey$1(binding, eventName);
-        const radioEventHandler = handlerByHandlerKey$1.get(key);
-        if (typeof radioEventHandler === "undefined") {
-            return false;
-        }
-        binding.node.removeEventListener(eventName, radioEventHandler);
-        if (bindingRegistry$1.countOf(key) === 0) {
-            return false;
-        }
-        if (bindingRegistry$1.remove(key, binding)) {
-            handlerByHandlerKey$1.delete(key);
-        }
-        return true;
-    }
-    return false;
-}
-
-const CHECK_TYPES = new Set(['radio', 'checkbox']);
-const DEFAULT_VALUE_PROP_NAMES = new Set(['value', 'valueAsNumber', 'valueAsDate']);
-function isPossibleTwoWay(node, propName) {
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-        return false;
-    }
-    const element = node;
-    const tagName = element.tagName.toLowerCase();
-    if (tagName === 'input') {
-        const inputType = (element.getAttribute('type') || 'text').toLowerCase();
-        if (inputType === 'button') {
-            return false;
-        }
-        if (CHECK_TYPES.has(inputType) && propName === 'checked') {
-            return true;
-        }
-        if (DEFAULT_VALUE_PROP_NAMES.has(propName)) {
-            return true;
-        }
-    }
-    if (tagName === 'select' && propName === 'value') {
-        return true;
-    }
-    if (tagName === 'textarea' && propName === 'value') {
-        return true;
-    }
-    const customTagName = getCustomElement(element);
-    if (customTagName !== null) {
-        const customClass = getCustomElementRegistry()?.get(customTagName);
-        if (typeof customClass === "undefined") {
-            raiseError(`Custom element <${customTagName}> is not defined. Cannot determine if property "${propName}" is suitable for two-way binding.`);
-        }
-        const bindable = readBindableDeclaration(element);
-        if (bindable?.knownProperties.has(propName)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-const handlerByHandlerKey = new Map();
-// binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
-const bindingRegistry = createHandlerBindingRegistry();
-const DEFAULT_GETTER = (e) => e.detail;
-function getHandlerKey(binding, eventName, hasGetter) {
-    const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}`;
-}
-function getEventName(binding) {
-    const tagName = binding.node.tagName.toLowerCase();
-    // 1.default event name
-    let eventName = (tagName === 'select') ? 'change' : 'input';
-    // 2.wcBindable protocol
-    const customTagName = getCustomElement(binding.node);
-    if (customTagName !== null) {
-        const customClass = getCustomElementRegistry()?.get(customTagName);
-        if (typeof customClass === "undefined") {
-            raiseError(`Custom element <${customTagName}> is not defined. Cannot determine event name for two-way binding.`);
-        }
-        const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
-        if (propDesc) {
-            eventName = propDesc.event;
-        }
-    }
-    // 3.modifier
-    for (const modifier of binding.propModifiers) {
-        if (modifier.startsWith('on')) {
-            eventName = modifier.slice(2);
-        }
-    }
-    return eventName;
-}
-function getValueGetter(binding) {
-    const customTagName = getCustomElement(binding.node);
-    if (customTagName !== null) {
-        const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
-        if (propDesc) {
-            return propDesc.getter ?? DEFAULT_GETTER;
-        }
-    }
-    return null;
-}
-const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters, valueGetter) => (event) => {
-    const node = event.target;
-    if (node === null) {
-        console.warn(`[@wcstack/state] event.target is null.`);
-        return;
-    }
-    let newValue;
-    if (valueGetter !== null) {
-        newValue = valueGetter(event);
-    }
-    else {
-        if (!(propName in node)) {
-            console.warn(`[@wcstack/state] Property "${propName}" does not exist on target element.`);
-            return;
-        }
-        newValue = node[propName];
-    }
-    let filteredNewValue = newValue;
-    for (const filter of inFilters) {
-        filteredNewValue = filter.filterFn(filteredNewValue);
-    }
-    const rootNode = node.getRootNode();
-    const stateElement = getStateElementByName(rootNode, stateName);
-    if (stateElement === null) {
-        raiseError(`State element with name "${stateName}" not found for two-way binding.`);
-    }
-    const loopContext = getLoopContextByNode(node);
-    stateElement.createState("writable", (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-            state[statePathName] = filteredNewValue;
-        });
-    });
-};
-function attachTwowayEventHandler(binding) {
-    const customTagName = getCustomElement(binding.node);
-    if (customTagName !== null) {
-        const registry = getCustomElementRegistry();
-        const customClass = registry?.get(customTagName);
-        if (typeof customClass === "undefined") {
-            if (registry === null) {
-                raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
-            }
-            return;
-        }
-    }
-    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName(binding);
-        const valueGetter = getValueGetter(binding);
-        const key = getHandlerKey(binding, eventName, valueGetter !== null);
-        let twowayEventHandler = handlerByHandlerKey.get(key);
-        if (typeof twowayEventHandler === "undefined") {
-            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters, valueGetter);
-            handlerByHandlerKey.set(key, twowayEventHandler);
-        }
-        binding.node.addEventListener(eventName, twowayEventHandler);
-        bindingRegistry.add(key, binding);
-    }
-}
-function detachTwowayEventHandler(binding) {
-    const customTagName = getCustomElement(binding.node);
-    if (customTagName !== null) {
-        const registry = getCustomElementRegistry();
-        const customClass = registry?.get(customTagName);
-        if (typeof customClass === "undefined") {
-            if (registry === null) {
-                return;
-            }
-            return;
-        }
-    }
-    if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
-        const eventName = getEventName(binding);
-        const valueGetter = getValueGetter(binding);
-        const key = getHandlerKey(binding, eventName, valueGetter !== null);
-        const twowayEventHandler = handlerByHandlerKey.get(key);
-        if (typeof twowayEventHandler === "undefined") {
-            return;
-        }
-        binding.node.removeEventListener(eventName, twowayEventHandler);
-        if (bindingRegistry.remove(key, binding)) {
-            handlerByHandlerKey.delete(key);
-        }
-    }
-}
-
-/**
- * Shares one CustomElementRegistry.whenDefined() continuation per registry/tag.
- * Waiters can be removed independently, so a never-defined tag does not retain
- * binding records or their DOM nodes after teardown.
- */
-class DefinitionCoordinator {
-    registry;
-    entries = new Map();
-    constructor(registry) {
-        this.registry = registry;
-    }
-    wait(tagName, resolve, reject = () => undefined) {
-        const normalizedTagName = tagName.toLowerCase();
-        let entry = this.entries.get(normalizedTagName);
-        if (typeof entry === "undefined") {
-            entry = { waiters: new Set() };
-            this.entries.set(normalizedTagName, entry);
-            this.registry.whenDefined(normalizedTagName).then(() => this.settle(normalizedTagName, null), (error) => this.settle(normalizedTagName, error));
-        }
-        const waiter = { active: true, resolve, reject };
-        entry.waiters.add(waiter);
-        return () => {
-            if (!waiter.active)
-                return;
-            waiter.active = false;
-            entry?.waiters.delete(waiter);
-        };
-    }
-    pendingCount(tagName) {
-        return this.entries.get(tagName.toLowerCase())?.waiters.size ?? 0;
-    }
-    settle(tagName, error) {
-        const entry = this.entries.get(tagName);
-        if (typeof entry === "undefined")
-            return;
-        this.entries.delete(tagName);
-        const waiters = Array.from(entry.waiters);
-        entry.waiters.clear();
-        for (const waiter of waiters) {
-            if (!waiter.active)
-                continue;
-            waiter.active = false;
-            if (error === null)
-                waiter.resolve();
-            else
-                waiter.reject(error);
-        }
-    }
-}
-const coordinatorByRegistry = new WeakMap();
-function getDefinitionCoordinator(registry) {
-    let coordinator = coordinatorByRegistry.get(registry);
-    if (typeof coordinator === "undefined") {
-        coordinator = new DefinitionCoordinator(registry);
-        coordinatorByRegistry.set(registry, coordinator);
-    }
-    return coordinator;
-}
-
-function replaceToReplaceNode(bindingInfo) {
-    const node = bindingInfo.node;
-    const replaceNode = bindingInfo.replaceNode;
-    if (node === replaceNode) {
-        return;
-    }
-    if (node.parentNode === null) {
-        // already replaced
-        return;
-    }
-    node.parentNode.replaceChild(replaceNode, node);
-}
-
-let nextRecordId = 0;
-let nextGeneration = 0;
-const recordByBinding = new WeakMap();
-const sessionByRoot = new WeakMap();
-function forEachInclusive(root, callback) {
-    callback(root);
-    for (const child of Array.from(root.childNodes)) {
-        forEachInclusive(child, callback);
-    }
-}
-function isObservableRoot(value) {
-    if (typeof value !== "object" || value === null)
-        return false;
-    const node = value;
-    return node.nodeType === 9 || (node.nodeType === 11 && "host" in node);
-}
-function observableRootFor(node) {
-    const root = node.getRootNode();
-    return isObservableRoot(root) ? root : null;
-}
-class BindingOwner {
-    root;
-    sessionRefs = new Set();
-    knownSessions = new WeakSet();
-    observer;
-    constructor(root) {
-        this.root = root;
-        const Observer = globalThis.MutationObserver;
-        this.observer = typeof Observer === "function"
-            ? new Observer((mutations) => this.handleMutations(mutations))
-            : null;
-        this.observer?.observe(root, { childList: true, subtree: true });
-    }
-    add(session) {
-        if (this.knownSessions.has(session))
-            return;
-        this.knownSessions.add(session);
-        this.sessionRefs.add(new WeakRef(session));
-    }
-    handleMutations(mutations) {
-        const removed = [];
-        const added = [];
-        for (const mutation of mutations) {
-            removed.push(...Array.from(mutation.removedNodes));
-            added.push(...Array.from(mutation.addedNodes));
-        }
-        for (const ref of Array.from(this.sessionRefs)) {
-            const session = ref.deref();
-            if (typeof session === "undefined") {
-                this.sessionRefs.delete(ref);
-                continue;
-            }
-            session.handleMutations(this.root, removed, added);
-        }
-    }
-}
-const ownerByRoot = new WeakMap();
-function getBindingOwner(root) {
-    let owner = ownerByRoot.get(root);
-    if (typeof owner === "undefined") {
-        owner = new BindingOwner(root);
-        ownerByRoot.set(root, owner);
-    }
-    return owner;
-}
-function bindingKey(binding) {
-    const inFilters = binding.inFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
-    const outFilters = binding.outFilters.map((filter) => `${filter.filterName}(${filter.args.join(",")})`).join("|");
-    return [
-        binding.bindingType,
-        binding.propName,
-        binding.propModifiers.join(","),
-        binding.stateName,
-        binding.statePathName,
-        inFilters,
-        outFilters,
-        binding.uuid ?? "",
-    ].join("\u0000");
-}
-class BindingSession {
-    records = new Set();
-    knownBindingsByNode = new WeakMap();
-    optionsByBinding = new WeakMap();
-    deferredByNode = new WeakMap();
-    deferred = new Set();
-    constructor(root = null) {
-        if (root !== null)
-            this.observe(root);
-    }
-    initialize(bindings, options = {}) {
-        const registerAddress = options.registerAddress ?? true;
-        const resolvedOptions = {
-            registerAddress,
-            registerPathInfo: options.registerPathInfo ?? registerAddress,
-            applyOnReconnect: options.applyOnReconnect ?? true,
-        };
-        const initialized = [];
-        for (const candidate of bindings) {
-            const binding = this.remember(candidate, resolvedOptions);
-            const existing = recordByBinding.get(binding);
-            if (typeof existing !== "undefined" && existing.phase !== "disposed" && existing.phase !== "failed") {
-                this.observe(existing.anchor);
-                if (resolvedOptions.registerAddress && existing.address === null) {
-                    existing.options.registerAddress = true;
-                    this.registerAddress(existing);
-                }
-                continue;
-            }
-            this.start(binding, resolvedOptions);
-            initialized.push(binding);
-        }
-        return initialized;
-    }
-    getRecord(binding) {
-        const record = recordByBinding.get(binding);
-        return record?.session === this ? record : null;
-    }
-    addTeardown(binding, teardown) {
-        const record = recordByBinding.get(binding);
-        if (typeof record === "undefined" || !this.isAlive(record, record.generation)) {
-            return false;
-        }
-        record.teardowns.add(teardown);
-        return true;
-    }
-    deferUntilDefined(node, tagName, callback, reject = () => undefined) {
-        const registry = getCustomElementRegistry();
-        if (registry === null) {
-            raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
-        }
-        this.observe(node);
-        const task = { node, active: true, cancel: null };
-        let tasks = this.deferredByNode.get(node);
-        if (typeof tasks === "undefined") {
-            tasks = new Set();
-            this.deferredByNode.set(node, tasks);
-        }
-        tasks.add(task);
-        this.deferred.add(task);
-        const finish = () => {
-            if (!task.active)
-                return false;
-            task.active = false;
-            tasks?.delete(task);
-            this.deferred.delete(task);
-            return true;
-        };
-        task.cancel = getDefinitionCoordinator(registry).wait(tagName, () => {
-            if (!finish())
-                return;
-            try {
-                upgradeCustomElement(registry, node);
-                callback();
-            }
-            catch (error) {
-                reject(error);
-            }
-        }, (error) => {
-            if (!finish())
-                return;
-            reject(error);
-        });
-        return () => {
-            if (!finish())
-                return;
-            task.cancel?.();
-        };
-    }
-    disposeBinding(binding) {
-        const record = recordByBinding.get(binding);
-        if (typeof record === "undefined" || record.session !== this)
-            return;
-        this.disposeRecord(record);
-    }
-    dispose() {
-        for (const record of Array.from(this.records))
-            this.disposeRecord(record);
-        for (const task of Array.from(this.deferred)) {
-            task.active = false;
-            task.cancel?.();
-            this.deferred.delete(task);
-            this.deferredByNode.get(task.node)?.delete(task);
-        }
-    }
-    observe(node) {
-        const root = observableRootFor(node);
-        if (root === null)
-            return;
-        getBindingOwner(root).add(this);
-    }
-    handleMutations(root, removed, added) {
-        for (const subtree of removed) {
-            forEachInclusive(subtree, (node) => {
-                if (root.contains(node))
-                    return;
-                const known = this.knownBindingsByNode.get(node);
-                if (typeof known !== "undefined") {
-                    for (const binding of known.values())
-                        this.disposeBinding(binding);
-                }
-                const tasks = this.deferredByNode.get(node);
-                if (typeof tasks !== "undefined") {
-                    for (const task of Array.from(tasks)) {
-                        task.active = false;
-                        task.cancel?.();
-                        tasks.delete(task);
-                        this.deferred.delete(task);
-                    }
-                }
-            });
-        }
-        const reconnected = [];
-        for (const subtree of added) {
-            forEachInclusive(subtree, (node) => {
-                if (!root.contains(node))
-                    return;
-                const known = this.knownBindingsByNode.get(node);
-                if (typeof known === "undefined")
-                    return;
-                for (const binding of known.values()) {
-                    const record = recordByBinding.get(binding);
-                    if (record?.phase !== "disposed")
-                        continue;
-                    const options = this.optionsByBinding.get(binding);
-                    if (typeof options === "undefined")
-                        continue;
-                    try {
-                        this.start(binding, options);
-                        if (options.applyOnReconnect)
-                            reconnected.push(binding);
-                    }
-                    catch {
-                        // Mutation delivery cannot surface initialization errors to a caller.
-                    }
-                }
-            });
-        }
-        if (reconnected.length > 0)
-            applyChangeFromBindings(reconnected);
-    }
-    remember(binding, options) {
-        const anchor = binding.replaceNode;
-        let known = this.knownBindingsByNode.get(anchor);
-        if (typeof known === "undefined") {
-            known = new Map();
-            this.knownBindingsByNode.set(anchor, known);
-        }
-        const key = bindingKey(binding);
-        const remembered = known.get(key);
-        if (typeof remembered !== "undefined") {
-            const rememberedOptions = this.optionsByBinding.get(remembered);
-            if (typeof rememberedOptions !== "undefined") {
-                rememberedOptions.registerAddress ||= options.registerAddress;
-                rememberedOptions.registerPathInfo ||= options.registerPathInfo;
-                rememberedOptions.applyOnReconnect ||= options.applyOnReconnect;
-            }
-            return remembered;
-        }
-        known.set(key, binding);
-        this.optionsByBinding.set(binding, { ...options });
-        return binding;
-    }
-    start(binding, options) {
-        replaceToReplaceNode(binding);
-        const recordOptions = this.optionsByBinding.get(binding) ?? { ...options };
-        const record = {
-            id: ++nextRecordId,
-            info: binding,
-            generation: ++nextGeneration,
-            phase: "discovered",
-            teardowns: new Set(),
-            session: this,
-            anchor: binding.replaceNode,
-            options: recordOptions,
-            address: null,
-            pendingDefinitions: 0,
-        };
-        recordByBinding.set(binding, record);
-        this.records.add(record);
-        this.observe(record.anchor);
-        try {
-            record.phase = "attaching";
-            this.attachListeners(record);
-            if (record.options.registerAddress)
-                this.registerAddress(record);
-            if (record.pendingDefinitions === 0)
-                record.phase = "active";
-        }
-        catch (error) {
-            record.phase = "failed";
-            this.runTeardowns(record);
-            this.records.delete(record);
-            throw error;
-        }
-    }
-    attachListeners(record) {
-        const binding = record.info;
-        if (attachEventHandler(binding)) {
-            record.teardowns.add(() => detachEventHandler(binding));
-            return;
-        }
-        if (binding.propSegments[0] === "eventToken") {
-            this.attachAfterDefinition(record, () => {
-                if (attachEventTokenHandler(binding)) {
-                    record.teardowns.add(() => detachEventTokenHandler(binding));
-                }
-            });
-            return;
-        }
-        if (attachRadioEventHandler(binding)) {
-            record.teardowns.add(() => detachRadioEventHandler(binding));
-        }
-        if (attachCheckboxEventHandler(binding)) {
-            record.teardowns.add(() => detachCheckboxEventHandler(binding));
-        }
-        this.attachAfterDefinition(record, () => {
-            attachTwowayEventHandler(binding);
-            record.teardowns.add(() => detachTwowayEventHandler(binding));
-        });
-    }
-    attachAfterDefinition(record, attach) {
-        const tagName = getCustomElement(record.info.node);
-        if (tagName === null) {
-            attach();
-            return;
-        }
-        const registry = getCustomElementRegistry();
-        if (registry === null) {
-            raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
-        }
-        if (typeof registry.get(tagName) !== "undefined") {
-            attach();
-            return;
-        }
-        record.phase = "waiting-definition";
-        record.pendingDefinitions += 1;
-        const generation = record.generation;
-        const coordinator = getDefinitionCoordinator(registry);
-        const cancel = coordinator.wait(tagName, () => {
-            if (!this.isAlive(record, generation))
-                return;
-            try {
-                upgradeCustomElement(registry, record.info.node);
-                attach();
-                record.pendingDefinitions -= 1;
-                if (record.pendingDefinitions === 0)
-                    record.phase = "active";
-            }
-            catch {
-                record.phase = "failed";
-                this.runTeardowns(record);
-                this.records.delete(record);
-            }
-        }, () => {
-            if (!this.isAlive(record, generation))
-                return;
-            record.phase = "failed";
-            this.runTeardowns(record);
-            this.records.delete(record);
-        });
-        record.teardowns.add(cancel);
-    }
-    registerAddress(record) {
-        if (record.address !== null)
-            return;
-        const binding = record.info;
-        const address = getAbsoluteStateAddressByBinding(binding);
-        addBindingByAbsoluteStateAddress(address, binding);
-        record.address = address;
-        record.teardowns.add(() => {
-            if (record.address === null)
-                return;
-            removeBindingByAbsoluteStateAddress(record.address, binding);
-            record.address = null;
-            clearStateAddressByBindingInfo(binding);
-            clearAbsoluteStateAddressByBinding(binding);
-        });
-        if (!record.options.registerPathInfo)
-            return;
-        const rootNode = binding.replaceNode.getRootNode();
-        const stateElement = getStateElementByName(rootNode, binding.stateName);
-        if (stateElement === null) {
-            raiseError(`State element with name "${binding.stateName}" not found for binding.`);
-        }
-        if (binding.bindingType !== "event") {
-            stateElement.setPathInfo(binding.statePathName, binding.bindingType);
-        }
-    }
-    isAlive(record, generation) {
-        return record.generation === generation
-            && recordByBinding.get(record.info) === record
-            && record.phase !== "disposed"
-            && record.phase !== "failed";
-    }
-    disposeRecord(record) {
-        if (record.phase === "disposed")
-            return;
-        record.phase = "disposed";
-        this.runTeardowns(record);
-        this.records.delete(record);
-    }
-    runTeardowns(record) {
-        const teardowns = Array.from(record.teardowns).reverse();
-        record.teardowns.clear();
-        for (const teardown of teardowns) {
-            try {
-                teardown();
-            }
-            catch {
-                // Cleanup is best-effort; one faulty resource must not retain the rest.
-            }
-        }
-    }
-}
-function getOrCreateBindingSession(root) {
-    let session = sessionByRoot.get(root);
-    if (typeof session === "undefined") {
-        session = new BindingSession(root);
-        sessionByRoot.set(root, session);
-    }
-    return session;
-}
-function getBindingSession(binding) {
-    return recordByBinding.get(binding)?.session ?? null;
-}
-
 const scheduledBindings = new WeakSet();
 function reportFailure(tagName, error) {
     console.error(`[@wcstack/state] deferred apply failed for <${tagName}>.`, error);
@@ -4842,6 +5351,10 @@ function scheduleDeferredApply(binding, tagName) {
     scheduledBindings.add(binding);
     const applyLatest = () => {
         scheduledBindings.delete(binding);
+        const currentSession = getBindingSession(binding);
+        if (currentSession !== null && !currentSession.shouldApplyState(binding)) {
+            return;
+        }
         applyChangeFromBindings([binding]);
     };
     const reject = (error) => {
@@ -4971,6 +5484,10 @@ function applyChange(binding, context) {
             ]));
         }
     }
+    const bindingSession = getBindingSession(binding);
+    if (bindingSession !== null && !bindingSession.shouldApplyState(binding)) {
+        return;
+    }
     if (binding.bindingType === "event") {
         return;
     }
@@ -5034,7 +5551,7 @@ function applyChange(binding, context) {
  * 最適化のため、以下のグループ化を行う:
  * 同じ stateNameとrootNode を持つバインディングをグループ化 → createState の呼び出しを削減
  */
-function applyChangeFromBindings(bindings) {
+function applyChangeFromBindings(bindings, propagationContextByBinding) {
     let bindingIndex = 0;
     const appliedBindingSet = new Set();
     const newListValueByAbsAddress = new Map();
@@ -5076,6 +5593,7 @@ function applyChangeFromBindings(bindings) {
                 // グループ内の binding は下の do/while が「解決済みルート === rootNode」を
                 // 検証してから applyChange に渡す（applyChange 側の getRootNode 省略の根拠）
                 sameRootVerified: true,
+                propagationContextByBinding: propagationContextByBinding,
             };
             do {
                 applyChange(binding, context);
@@ -5091,9 +5609,10 @@ function applyChangeFromBindings(bindings) {
         });
     }
     // Phase 2: 遅延されたselect.value/selectedIndex を適用
-    // applyChangeToProperty は context を参照しないため null を渡す
+    // applyChangeToProperty は propagationContextByBinding 以外の context を
+    // 参照しないため、遅延分は最小 context を渡す
     for (const { binding, value } of deferredSelectBindings) {
-        applyChangeToProperty(binding, null, value);
+        applyChangeToProperty(binding, { propagationContextByBinding }, value);
     }
     for (const [absAddress, newListValue] of newListValueByAbsAddress.entries()) {
         setLastListValueByAbsoluteStateAddress(absAddress, newListValue);
@@ -6379,31 +6898,73 @@ function notifyUpdateBatchListeners(batch) {
     }
 }
 class Updater {
-    _queueAbsoluteAddresses = [];
+    _queueUpdateRecords = [];
     constructor() {
     }
-    enqueueAbsoluteAddress(absoluteAddress) {
-        const requireStartProcess = this._queueAbsoluteAddresses.length === 0;
-        this._queueAbsoluteAddresses.push(absoluteAddress);
+    enqueueAbsoluteAddress(absoluteAddress, context = null) {
+        const requireStartProcess = this._queueUpdateRecords.length === 0;
+        this._queueUpdateRecords.push({ absoluteAddress, context });
         if (requireStartProcess) {
             queueMicrotask(() => {
-                const absoluteAddresses = this._queueAbsoluteAddresses;
-                this._queueAbsoluteAddresses = [];
-                this._applyChange(absoluteAddresses);
+                const updateRecords = this._queueUpdateRecords;
+                this._queueUpdateRecords = [];
+                this._applyChange(updateRecords);
             });
         }
     }
     // テスト用に公開
-    testApplyChange(absoluteAddresses) {
-        this._applyChange(absoluteAddresses);
+    testApplyChange(absoluteAddresses, contexts) {
+        this._applyChange(absoluteAddresses.map((absoluteAddress, index) => ({
+            absoluteAddress,
+            context: contexts?.[index] ?? null,
+        })));
     }
-    _applyChange(absoluteAddresses) {
+    _applyChange(updateRecords) {
         // Note: AbsoluteStateAddress はキャッシュされているため、
         // 同一の (stateName, address) は同じインスタンスとなり、
-        // Set による重複排除が正しく機能する    
-        const absoluteAddressSet = new Set(absoluteAddresses);
+        // Map / Set による重複排除が正しく機能する。
+        // coalescing は last-write-wins: 同じ address は最後の update の
+        // (値は state 側が既に保持) context をそのまま採用する（設計書 §4.1）。
+        // visitedEdges の合成や synthetic transaction への置換は行わない。
+        const contextByAbsoluteAddress = new Map();
+        for (const record of updateRecords) {
+            const previous = contextByAbsoluteAddress.get(record.absoluteAddress);
+            if (devtoolsSink !== null
+                && typeof previous !== "undefined" && previous !== null
+                && record.context !== null
+                && previous.transactionId !== record.context.transactionId) {
+                devtoolsSink({
+                    type: "propagation:coalesced",
+                    absoluteAddress: record.absoluteAddress,
+                    droppedTransactionId: previous.transactionId,
+                    winnerTransactionId: record.context.transactionId,
+                });
+            }
+            contextByAbsoluteAddress.set(record.absoluteAddress, record.context);
+        }
         const processBindings = [];
-        for (const absoluteAddress of absoluteAddressSet) {
+        const propagationContextByBinding = new Map();
+        for (const [absoluteAddress, context] of contextByAbsoluteAddress) {
+            if (context !== null && context.hop >= MAX_PROPAGATION_HOPS) {
+                // hop 上限超過: この transaction の未処理 record だけを quarantine する。
+                // 既に適用した値は戻さず、updater から例外は投げない（設計書 §4 規則 6）。
+                console.error(`[@wcstack/state] propagation hop limit exceeded; update record quarantined.`, {
+                    path: absoluteAddress.absolutePathInfo.pathInfo.path,
+                    stateName: absoluteAddress.absolutePathInfo.stateName,
+                    transactionId: context.transactionId,
+                    hop: context.hop,
+                    maxHops: MAX_PROPAGATION_HOPS,
+                });
+                if (devtoolsSink !== null) {
+                    devtoolsSink({
+                        type: "propagation:hop-limit",
+                        absoluteAddress,
+                        transactionId: context.transactionId,
+                        hop: context.hop,
+                    });
+                }
+                continue;
+            }
             // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
             // アドレス等）に空 Set を生成・蓄積しない
             const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
@@ -6416,12 +6977,22 @@ class Updater {
                     continue;
                 }
                 processBindings.push(binding);
+                if (context !== null) {
+                    propagationContextByBinding.set(binding, context);
+                }
             }
         }
-        applyChangeFromBindings(processBindings);
+        // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
+        if (propagationContextByBinding.size > 0) {
+            applyChangeFromBindings(processBindings, propagationContextByBinding);
+        }
+        else {
+            applyChangeFromBindings(processBindings);
+        }
         // drain 終了フック: binding 適用後に dedup 済みバッチを通知する（設計書 §3-2）。
         // testApplyChange も同じ _applyChange を通るため、テストから同期に駆動できる。
-        notifyUpdateBatchListeners(absoluteAddressSet);
+        // quarantine された address も state 値は適用済みのため通知対象に含める。
+        notifyUpdateBatchListeners(new Set(contextByAbsoluteAddress.keys()));
     }
 }
 const updater = new Updater();
@@ -8296,6 +8867,29 @@ function getContextListIndex(handler, structuredPath) {
     return address.listIndex?.at(index) ?? null;
 }
 
+/**
+ * Reports whether an address has been initialized, independently of its value.
+ * In particular, an own slot containing `undefined` is initialized while a
+ * missing slot is not.
+ */
+function hasByAddress(target, address, receiver, handler) {
+    if (address.pathInfo.path in target)
+        return true;
+    const parentAddress = address.parentAddress;
+    if (parentAddress === null)
+        return false;
+    const parentValue = getByAddress(target, parentAddress, receiver, handler);
+    if (parentValue === null || (typeof parentValue !== "object" && typeof parentValue !== "function")) {
+        return false;
+    }
+    const lastSegment = address.pathInfo.lastSegment;
+    if (lastSegment === WILDCARD) {
+        const index = address.listIndex?.index;
+        return typeof index === "number" && index in parentValue;
+    }
+    return lastSegment in parentValue;
+}
+
 const swapInfoByStateAddress = new WeakMap();
 function getSwapInfoByAddress(address) {
     return swapInfoByStateAddress.get(address) ?? null;
@@ -8556,7 +9150,10 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
             }
         }
         else {
-            const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
+            const parentAddress = address.parentAddress;
+            if (parentAddress === null) {
+                return Reflect.set(target, address.pathInfo.path, value);
+            }
             const parentValue = getByAddress(target, parentAddress, receiver, handler);
             const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
             if (lastSegment === WILDCARD) {
@@ -8569,8 +9166,15 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
         }
     }
     finally {
+        // Phase 3: 書き込み時点の因果 context を update record に付与する。
+        // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
+        // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
+        // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
+        const propagationContext = config.enablePropagationContext
+            ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
+            : null;
         const updater = getUpdater();
-        updater.enqueueAbsoluteAddress(absAddress);
+        updater.enqueueAbsoluteAddress(absAddress, propagationContext);
         // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
         walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
             // キャッシュを無効化（ダーティ）
@@ -8580,7 +9184,7 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
             const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
             dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
             // 更新対象として登録
-            updater.enqueueAbsoluteAddress(absDepAddress);
+            updater.enqueueAbsoluteAddress(absDepAddress, propagationContext);
         }, 
         // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
         // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
@@ -8635,7 +9239,7 @@ function setByAddress(target, address, value, receiver, handler) {
     let devHasOldValue = false;
     if (config.sameValueGuard && (value === null || typeof value !== "object")) {
         const oldValue = getByAddress(target, address, receiver, handler);
-        if (Object.is(oldValue, value)) {
+        if (hasByAddress(target, address, receiver, handler) && Object.is(oldValue, value)) {
             return true;
         }
         devOldValue = oldValue;
@@ -9121,6 +9725,11 @@ function get(target, prop, receiver, handler) {
             case getByAddressSymbol: {
                 return (address) => {
                     return getByAddress(target, address, receiver, handler);
+                };
+            }
+            case hasByAddressSymbol: {
+                return (address) => {
+                    return hasByAddress(target, address, receiver, handler);
                 };
             }
             case setByAddressSymbol: {
@@ -10420,5 +11029,133 @@ function getWcsManifest() {
     };
 }
 
-export { Ssr, VERSION, WCS_MANIFEST_VERSION, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
+/**
+ * contract/contractAnalyzer.ts
+ *
+ * Phase 5b(09-remediation-design.md §5b / §7.1 dev runtime / §6 contract trace)の
+ * opt-in dev-time analyzer。実際に登録済みの custom element の `static wcBindable`
+ * 宣言(= 実行時の正本)を、利用者が渡した sidecar manifest と突き合わせ、drift を
+ * DevTools trace(`contract:*`)へ流す。
+ *
+ * 完了条件「無効時の runtime 挙動・cost が不変」: `analyzeContract` は
+ * `config.enableContractAnalyzer` が false のとき即 return し、manifest を一切走査
+ * しない(hot path には一切フックしない — 純粋な on-demand API)。
+ *
+ * pure な core(`analyzeManifestContract`)は宣言解決と emit を注入で受けるためテスト可能。
+ */
+/** runtime analyzer が解釈する manifest namespace。これ以外は unsupported-extension。 */
+const KNOWN_NAMESPACES = new Set([
+    "wcstack.types",
+    "wcstack.async",
+    "wcstack.platformCapabilities",
+    "wcstack.application",
+]);
+const EMPTY = Object.freeze([]);
+/**
+ * opt-in dev-time contract analysis。無効時はゼロコスト(即 return・manifest 非走査)。
+ * 有効時は live 宣言と manifest を突き合わせ、`contract:*` trace を返しつつ、DevTools
+ * sink が接続されていれば同時に流す。
+ */
+function analyzeContract(manifest) {
+    if (!config.enableContractAnalyzer)
+        return EMPTY;
+    const events = [];
+    const emit = (event) => {
+        events.push(event);
+        if (devtoolsSink !== null)
+            devtoolsSink(event);
+    };
+    analyzeManifestContract(manifest, resolveLiveDeclaration, emit);
+    return events;
+}
+/**
+ * pure core。`resolveDeclaration(tag)` は該当タグの live 宣言(未登録なら null)を返す。
+ * emit は生成した trace を受ける。config フラグは見ない(呼び出し側が guard 済み)。
+ */
+function analyzeManifestContract(manifest, resolveDeclaration, emit) {
+    const extensions = manifest.manifestExtensions;
+    if (extensions === null || typeof extensions !== "object")
+        return;
+    // 未知 namespace は runtime が解釈しない → unsupported-extension。
+    for (const namespace of Object.keys(extensions)) {
+        if (!KNOWN_NAMESPACES.has(namespace)) {
+            emit({ type: "contract:unsupported-extension", namespace });
+        }
+    }
+    const components = extensions["wcstack.types"]?.components;
+    if (components === undefined || components === null)
+        return;
+    for (const [tag, component] of Object.entries(components)) {
+        const live = resolveDeclaration(tag);
+        emit({ type: "contract:manifest-read", tag, loaded: live !== null });
+        if (live === null) {
+            // manifest が宣言するタグが実行時に登録されていない = component-not-loaded drift。
+            emit({ type: "contract:drift", reason: "component-not-loaded", tag });
+            continue;
+        }
+        checkComponentDrift(tag, component, live, emit);
+    }
+}
+function checkComponentDrift(tag, rawComponent, live, emit) {
+    // 壊れた manifest(component が null / primitive)でも analyzer 全体を落とさない。
+    const component = rawComponent !== null && typeof rawComponent === "object" ? rawComponent : {};
+    for (const [member, observable] of Object.entries(component.observables ?? {})) {
+        if (!live.propertyEvents.has(member)) {
+            emit({ type: "contract:drift", reason: "missing-member", tag, member });
+            continue;
+        }
+        const liveEvent = live.propertyEvents.get(member);
+        const sidecarEvent = observable?.event;
+        if (typeof sidecarEvent === "string" && sidecarEvent !== liveEvent) {
+            emit({ type: "contract:drift", reason: "event-mismatch", tag, member, sidecarEvent, liveEvent });
+        }
+    }
+    for (const member of Object.keys(component.inputs ?? {})) {
+        if (!live.inputs.has(member)) {
+            emit({ type: "contract:drift", reason: "missing-member", tag, member });
+        }
+    }
+    for (const member of Object.keys(component.commands ?? {})) {
+        if (!live.commands.has(member)) {
+            emit({ type: "contract:drift", reason: "missing-member", tag, member });
+        }
+    }
+}
+/**
+ * 登録済み custom element の `static wcBindable` を drift 照合用に索引化する。
+ * 未登録・非 wc-bindable は null(= component-not-loaded)。
+ */
+function resolveLiveDeclaration(tag) {
+    const registry = getCustomElementRegistry();
+    const ctor = registry?.get(tag);
+    if (ctor === undefined)
+        return null;
+    const declaration = ctor.wcBindable;
+    if (declaration === null
+        || typeof declaration !== "object"
+        || declaration.protocol !== "wc-bindable") {
+        return null;
+    }
+    const decl = declaration;
+    // 各配列は非配列(object 等)でも落ちないよう Array.isArray で container を守る。
+    const propertyEvents = new Map();
+    for (const property of Array.isArray(decl.properties) ? decl.properties : []) {
+        if (typeof property?.name === "string" && typeof property.event === "string") {
+            propertyEvents.set(property.name, property.event);
+        }
+    }
+    const inputs = new Set();
+    for (const input of Array.isArray(decl.inputs) ? decl.inputs : []) {
+        if (typeof input?.name === "string")
+            inputs.add(input.name);
+    }
+    const commands = new Set();
+    for (const command of Array.isArray(decl.commands) ? decl.commands : []) {
+        if (typeof command?.name === "string")
+            commands.add(command.name);
+    }
+    return { propertyEvents, inputs, commands };
+}
+
+export { Ssr, VERSION, WCS_MANIFEST_VERSION, analyzeContract, bootstrapState, buildBindings, builtinFilterMeta, defineState, getBindingsReady, getConfig, getWcsManifest };
 //# sourceMappingURL=index.esm.js.map

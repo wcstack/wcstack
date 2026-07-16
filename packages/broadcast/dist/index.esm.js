@@ -49,6 +49,46 @@ function setConfig(partialConfig) {
 }
 
 /**
+ * broadcastCapabilities.ts
+ *
+ * Broadcast node 固有の error code(taxonomy)と derivation。汎用の error info 型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。BroadcastChannel の post / message は concurrent-independent(競合しない)
+ * ため lane は持たず、error taxonomy(errorInfo)のみを採用する。
+ */
+/** 安定した broadcast error code(taxonomy)。値は公開キーとして固定。 */
+const WCS_BROADCAST_ERROR_CODE = {
+    /** BroadcastChannel コンストラクタ不在(`_unsupportedError()` の `NotSupportedError`)。 */
+    CapabilityMissing: "capability-missing",
+    /** structured clone 不可な payload を post(`DataCloneError`)。呼び出し側入力の不備。 */
+    InvalidArgument: "invalid-argument",
+    /** その他の post / channel 失敗(DataError / InvalidStateError / "Error" fallback など)。 */
+    BroadcastError: "broadcast-error",
+};
+/**
+ * 正規化済み error(`{ name, message }`)を serializable な error taxonomy に写す。
+ * `name` は `DOMException.name`(`_normalizeError`)/ 合成名(`_unsupportedError` の
+ * `NotSupportedError`、`messageerror` の `DataError`、post 前の `InvalidStateError`)。
+ *
+ * - `NotSupportedError`(BroadcastChannel 不在)は利用直前の能力欠如 → phase="probe" /
+ *   capability-missing。
+ * - `DataCloneError`(structured clone 不可な payload を post)は呼び出し側入力の不備 →
+ *   phase="execute" / invalid-argument。
+ * - それ以外(`DataError` の deserialize 失敗 / `InvalidStateError` / "Error" fallback)は
+ *   phase="execute" / broadcast-error。
+ * いずれも同一入力の再送では回復しない(recoverable=false)。
+ */
+function deriveBroadcastErrorInfo(error) {
+    if (error.name === "NotSupportedError") {
+        return { code: WCS_BROADCAST_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message: error.message };
+    }
+    if (error.name === "DataCloneError") {
+        return { code: WCS_BROADCAST_ERROR_CODE.InvalidArgument, phase: "execute", recoverable: false, message: error.message };
+    }
+    return { code: WCS_BROADCAST_ERROR_CODE.BroadcastError, phase: "execute", recoverable: false, message: error.message };
+}
+
+/**
  * Headless cross-tab messaging primitive. A thin, framework-agnostic wrapper
  * around the BroadcastChannel API exposed through the wc-bindable protocol.
  *
@@ -77,6 +117,12 @@ class BroadcastCore extends EventTarget {
         properties: [
             { name: "message", event: "wcs-broadcast:message" },
             { name: "error", event: "wcs-broadcast:error" },
+            // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+            // Additive bindable output derived from `error` (the DOMException.name /
+            // synthetic name); the existing `error` property/event are unchanged. Fires
+            // wcs-broadcast:error-info-changed. No lane — post/message are concurrent-
+            // independent (mirrors ClipboardCore).
+            { name: "errorInfo", event: "wcs-broadcast:error-info-changed" },
         ],
         commands: [
             { name: "open" },
@@ -89,6 +135,7 @@ class BroadcastCore extends EventTarget {
     _name = null;
     _message = null;
     _error = null;
+    _errorInfo = null;
     // Generation guard (§3.4): bumped on dispose(). An incoming message /
     // messageerror that fires after the Shell disconnected (a peer posted between
     // disconnect and the channel actually closing, or a queued event drains late)
@@ -110,6 +157,15 @@ class BroadcastCore extends EventTarget {
     }
     get error() {
         return this._error;
+    }
+    /**
+     * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+     * `recoverable`), or null. Additive wc-bindable property (event
+     * `wcs-broadcast:error-info-changed`), derived from `error`; the existing
+     * `error` property/event are unchanged.
+     */
+    get errorInfo() {
+        return this._errorInfo;
     }
     // --- Lifecycle (§3.5) ---
     // observe() establishes monitoring. BroadcastChannel is command-driven (the
@@ -140,8 +196,22 @@ class BroadcastCore extends EventTarget {
         if (this._error === error)
             return;
         this._error = error;
+        // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+        // error name (or null on clear). Fires before the `error` event so an observer
+        // binding both sees the classification first, mirroring the io-node family.
+        this._commitErrorInfo(error === null ? null : deriveBroadcastErrorInfo(error));
         this._target.dispatchEvent(new CustomEvent("wcs-broadcast:error", {
             detail: error,
+            bubbles: true,
+        }));
+    }
+    // Called only from _setError (which already same-value-guards on reference
+    // identity), so errorInfo transitions exactly when error does — no separate
+    // guard needed here.
+    _commitErrorInfo(info) {
+        this._errorInfo = info;
+        this._target.dispatchEvent(new CustomEvent("wcs-broadcast:error-info-changed", {
+            detail: info,
             bubbles: true,
         }));
     }
@@ -244,6 +314,10 @@ class BroadcastCore extends EventTarget {
         this._gen++;
         this._closeChannel();
         this._error = null;
+        // dispose bypasses _setError (silent, no dispatch on a torn-down element), so
+        // clear the errorInfo mirror directly too — otherwise a stale taxonomy would
+        // survive after `error` has been reset to null.
+        this._errorInfo = null;
     }
     // --- Internal ---
     // Per-channel listeners, (re)created in open() so each closes over its own
@@ -478,6 +552,9 @@ class WcsBroadcast extends HTMLElement {
     get error() {
         return this._core.error;
     }
+    get errorInfo() {
+        return this._core.errorInfo;
+    }
     // --- Commands ---
     open() {
         if (this.name) {
@@ -536,5 +613,5 @@ function bootstrapBroadcast(userConfig) {
     registerComponents();
 }
 
-export { BroadcastCore, WcsBroadcast, bootstrapBroadcast, getConfig };
+export { BroadcastCore, WCS_BROADCAST_ERROR_CODE, WcsBroadcast, bootstrapBroadcast, getConfig };
 //# sourceMappingURL=index.esm.js.map
