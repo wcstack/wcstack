@@ -105,4 +105,49 @@ describe("runValidation — CLI core", () => {
     expect(result.exitCode).toBe(0);
     expect(result.errorCount).toBe(0);
   });
+
+  it("errorsOnly: 表示行は error のみに絞るが count / exitCode は全診断で不変", () => {
+    // warning(存在しないパス)と error(壊れ manifest)を混在させる。
+    const html = `<wcs-state json='{"a":1}'></wcs-state>\n<span data-wcs="textContent: missing"></span>`;
+    const inputs: CliFileInput[] = [
+      { source: "warn.html", text: html, kind: "html" },
+      { source: "bad.manifest.json", text: "{ oops", kind: "manifest" },
+    ];
+
+    const full = runValidation(inputs);
+    const errorsOnly = runValidation(inputs, { errorsOnly: true });
+
+    // count / exitCode は両者で一致(errorsOnly は表示だけを変える)。
+    expect(errorsOnly.errorCount).toBe(full.errorCount);
+    expect(errorsOnly.warningCount).toBe(full.warningCount);
+    expect(errorsOnly.warningCount).toBeGreaterThan(0);
+    expect(errorsOnly.exitCode).toBe(full.exitCode);
+    expect(errorsOnly.exitCode).toBe(1);
+
+    // 表示行: errorsOnly では warning 行が消え、error 行のみ残る。
+    expect(errorsOnly.lines.some((l) => l.includes(" warning "))).toBe(false);
+    expect(errorsOnly.lines.every((l) => l.includes(" error "))).toBe(true);
+    expect(errorsOnly.lines.some((l) => l.startsWith("bad.manifest.json:"))).toBe(true);
+    // full では warning 行が存在する。
+    expect(full.lines.some((l) => l.includes(" warning "))).toBe(true);
+  });
+});
+
+describe("parseArgs — CLI 引数分解", () => {
+  it("--errors-only / --quiet を errorsOnly に、その他フラグと file を分離する", async () => {
+    const { parseArgs } = await import("../src/cli.js");
+    const a = parseArgs(["--errors-only", "--attr=data-x", "page.html", "x.manifest.json"]);
+    expect(a.options.errorsOnly).toBe(true);
+    expect(a.options.bindAttribute).toBe("data-x");
+    expect(a.files).toEqual(["page.html", "x.manifest.json"]);
+
+    const b = parseArgs(["--quiet", "--state-tag=my-state", "a.html"]);
+    expect(b.options.errorsOnly).toBe(true);
+    expect(b.options.stateTagName).toBe("my-state");
+    expect(b.files).toEqual(["a.html"]);
+
+    // フラグ無しなら errorsOnly は未設定(undefined)。
+    const c = parseArgs(["a.html"]);
+    expect(c.options.errorsOnly).toBeUndefined();
+  });
 });

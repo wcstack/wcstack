@@ -24,6 +24,13 @@ export interface CliFileInput {
 
 export interface RunValidationOptions extends ValidateDocumentOptions {
   readonly liveDeclarations?: ReadonlyMap<string, LiveBindableDeclaration>;
+  /**
+   * true なら整形行(`lines`)に error severity の診断だけを載せる(warning / info は省く)。
+   * `errorCount` / `warningCount` / `infoCount` と `exitCode` は全診断で不変。
+   * CI ゲートで大量の false-positive warning(外部 state で解決不能なパス等)を出力から
+   * 除き、build を落とす error だけを表示するために使う。
+   */
+  readonly errorsOnly?: boolean;
 }
 
 export interface RunValidationResult {
@@ -76,6 +83,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
       if (d.severity === "error") errorCount++;
       else if (d.severity === "warning") warningCount++;
       else infoCount++;
+      // counts は全診断で数え、errorsOnly 時は表示行だけ error に絞る。
+      if (options.errorsOnly && d.severity !== "error") continue;
       const pos = mapper(d.start);
       lines.push(`${source}:${pos.line}:${pos.column} ${severityLabel[d.severity]} ${d.code} ${d.message}`);
     }

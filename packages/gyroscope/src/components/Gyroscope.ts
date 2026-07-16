@@ -1,5 +1,6 @@
 import { IWcBindable, WcsGyroscopeErrorDetail } from "../types.js";
 import { GyroscopeCore } from "../core/GyroscopeCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-gyroscope>` — declarative Generic Sensor API (`Gyroscope`)
@@ -137,6 +138,10 @@ export class WcsGyroscope extends HTMLElement {
 
   get error(): WcsGyroscopeErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

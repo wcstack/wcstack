@@ -1,4 +1,6 @@
 import { IWcBindable, WcsGyroscopeReading, WcsGyroscopeErrorDetail } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveGyroscopeErrorInfo } from "./gyroscopeCapabilities.js";
 
 const NULL_READING: WcsGyroscopeReading = Object.freeze({ x: null, y: null, z: null });
 
@@ -46,6 +48,11 @@ export class GyroscopeCore extends EventTarget {
       { name: "y", event: "wcs-gyroscope:reading", getter: (e: Event) => (e as CustomEvent).detail.y },
       { name: "z", event: "wcs-gyroscope:reading", getter: (e: Event) => (e as CustomEvent).detail.z },
       { name: "error", event: "wcs-gyroscope:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error.error` (the Error.name /
+      // "unsupported"); the existing `error` property/event are unchanged. Fires
+      // wcs-gyroscope:error-info-changed. No lane — the sensor is a monitor.
+      { name: "errorInfo", event: "wcs-gyroscope:error-info-changed" },
     ],
     commands: [{ name: "start" }, { name: "stop" }],
   };
@@ -53,6 +60,7 @@ export class GyroscopeCore extends EventTarget {
   private _target: EventTarget;
   private _reading: WcsGyroscopeReading = NULL_READING;
   private _error: WcsGyroscopeErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
 
   // The live sensor instance while started (null otherwise), kept so stop()
   // can remove its listeners precisely and so start() can detect "already
@@ -79,6 +87,16 @@ export class GyroscopeCore extends EventTarget {
 
   get error(): WcsGyroscopeErrorDetail | null {
     return this._error;
+  }
+
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-gyroscope:error-info-changed`), derived from `error`; the existing
+   * `error` property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
   }
 
   /** No asynchronous probe to await: start()/stop() are synchronous
@@ -109,8 +127,23 @@ export class GyroscopeCore extends EventTarget {
     // sensor family deliberately keeps the last observed error (docs/sensor-tag-design.md §1.5).
     if (this._error?.error === error?.error && this._error?.message === error?.message) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error name (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveGyroscopeErrorInfo(error.error, error.message));
     this._target.dispatchEvent(new CustomEvent("wcs-gyroscope:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already same-value-guards on the error name
+  // + message), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-gyroscope:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

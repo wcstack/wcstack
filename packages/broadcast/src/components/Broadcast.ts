@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { IWcBindable, WcsBroadcastErrorDetail } from "../types.js";
 import { BroadcastCore } from "../core/BroadcastCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 // Named WcsBroadcast (not `Broadcast`) to match the <wcs-clipboard> WcsClipboard
@@ -116,6 +117,10 @@ export class WcsBroadcast extends HTMLElement {
 
   get error(): WcsBroadcastErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   // --- Commands ---

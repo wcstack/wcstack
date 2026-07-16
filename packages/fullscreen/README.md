@@ -8,14 +8,14 @@ It is a **control node**: unlike most wcstack IO nodes (which act on themselves)
 With `@wcstack/state`, `<wcs-fullscreen>` can be bound directly through path contracts:
 
 - **input surface**: `target` (which element to operate on — see below)
-- **output state surface**: `active`, `error`
+- **output state surface**: `active`, `error`, `errorInfo`
 - **commands**: `requestFullscreen()`, `exitFullscreen()`
 
 `@wcstack/fullscreen` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
 - **Core** (`FullscreenCore`) drives the Fullscreen API and tracks `document`'s `fullscreenchange` event
 - **Shell** (`<wcs-fullscreen target="...">`) resolves `target` to a DOM element and connects Core state to DOM lifecycle
-- **Binding Contract** (`static wcBindable`) declares the observable `active` property and the `requestFullscreen`/`exitFullscreen` commands
+- **Binding Contract** (`static wcBindable`) declares the observable `active` / `error` / `errorInfo` properties and the `requestFullscreen`/`exitFullscreen` commands
 
 ## Why this exists — you operate on the *target*, not on the tag itself
 
@@ -81,7 +81,8 @@ Every bound state path must be declared up front — `isFullscreen: false` here;
 | Property | Event                 | Description |
 | --------- | ---------------------- | ------------ |
 | `active`  | `wcs-fullscreen:change` | `true` while `document.fullscreenElement` is *this instance's resolved target*; `false` otherwise. |
-| `error`   | *(none — plain getter, not data-wcs bindable)* | The most recent failure: a rejected promise (e.g. a `TypeError` for a gesture-less call), `{ message: "Fullscreen API is not supported." }` when the platform API is missing, `{ message: "Fullscreen target could not be resolved." }` when `target` did not resolve to an element, or `null` if the last attempt succeeded / nothing has failed yet. |
+| `error`   | `wcs-fullscreen:error` | The most recent failure: a rejected promise (e.g. a `TypeError` for a gesture-less call), `{ message: "Fullscreen API is not supported." }` when the platform API is missing, `{ message: "Fullscreen target could not be resolved." }` when `target` did not resolve to an element, or `null` if the last attempt succeeded / nothing has failed yet. |
+| `errorInfo` | `wcs-fullscreen:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo`: stable `code` / `phase` / `recoverable`) derived from `error`, or `null`. Additive — the `error` value shape is unchanged. |
 
 ## Commands
 
@@ -107,9 +108,10 @@ so you can style it directly from CSS with the `:state()` pseudo-class — no
 |-------|---------|
 | `active` | `wcs-fullscreen:change` fires with `detail.active === true` (cleared when `active: false`) |
 
-`error` is **not** reflected: it has no dedicated event and is not declared in
-`static wcBindable.properties` (see "Notes & limitations" above), so there is
-nothing for `:state()` reflection to subscribe to.
+`error` / `errorInfo` are observable (`data-wcs` bindable via their own events —
+see the Observable Properties table above), but they are **not** reflected onto
+`:state()`: a failure object is not a boolean state, so there is nothing for the
+boolean `:state()` reflection to represent.
 
 ```css
 wcs-fullscreen:state(active) ~ .exit-hint { display: block; }
@@ -156,7 +158,7 @@ DevTools open; it is not a supported styling hook.
 - **Vendor prefixes.** Some older Safari versions only implement `webkitRequestFullscreen` / `webkitExitFullscreen` / `webkitFullscreenElement` / `webkitfullscreenchange`. The Core probes the standard name first and falls back to the legacy name at *call time* (never cached), so both are supported transparently.
 - **Multiple instances.** `document.fullscreenElement` is a single, document-wide value. If you have several `<wcs-fullscreen>` instances pointed at different targets, only the instance whose `target` matches `document.fullscreenElement` reports `active: true` — the others correctly report `false`. Each instance tracks *its own* resolved target internally; it does not simply mirror "is anything fullscreen". Note the asymmetry: `exitFullscreen()` is **not** scoped per instance — it calls the document-global `document.exitFullscreen()`, so invoking it on any instance exits whatever element is currently fullscreen, even one put there by another instance's `target` (its silent no-op check is likewise document-wide: "is anything fullscreen", not "is *my* target fullscreen"). This mirrors the platform API itself.
 - **`exitFullscreen()` is a safe no-op.** Calling it when nothing is fullscreen (or when the API is unsupported) resolves without error — it is treated as an idempotent "make sure we're not fullscreen" command, not a failable precondition check.
-- **`error` has no dedicated event, and is not `data-wcs` bindable.** Unlike most wcstack IO nodes, `error` is a plain getter with no `wcs-fullscreen:error` event of its own, and it is not declared in `static wcBindable.properties` — a binding system has nothing to subscribe to and cannot observe it reactively. Read `element.error` imperatively after a command's promise settles (e.g. `await el.requestFullscreen(); if (el.error) { ... }`).
+- **`error` / `errorInfo` are observable (bindable).** Both are declared in `static wcBindable.properties` with their own events (`wcs-fullscreen:error` / `wcs-fullscreen:error-info-changed`), so a binding system can observe a request/exit failure reactively (`data-wcs="error: fsError; errorInfo: fsErrorInfo"`) — or you can still read `element.error` / `element.errorInfo` imperatively after a command's promise settles. `errorInfo` is the **additive** serializable failure taxonomy derived from `error`: a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`) without changing the `error` value shape. A missing API (`"…is not supported."`) → `capability-missing` (phase `probe`); an unresolved `target` → `invalid-argument` (phase `start`); a gesture-less rejection (`TypeError` / `NotAllowedError`) → `not-allowed` (phase `execute`, `recoverable: true` — a retry from within a genuine user gesture may succeed); anything else → `fullscreen-error` (phase `execute`). `errorInfo` transitions exactly when `error` does (cleared to `null` on success); the `WcsIoErrorInfo` type and the `WCS_FULLSCREEN_ERROR_CODE` constants are exported.
 - **`_gen` generation guard.** In-flight `requestFullscreen()`/`exitFullscreen()` calls that settle after `dispose()` (or after a superseding call) do not write to torn-down state.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`, though since subscribing to `fullscreenchange` is synchronous this promise always settles immediately.
 

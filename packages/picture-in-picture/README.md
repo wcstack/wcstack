@@ -8,7 +8,7 @@ It is an **async primitive node** that turns a `<video>` element's Picture-in-Pi
 With `@wcstack/state`, `<wcs-pip>` can be bound directly through path contracts:
 
 - **input surface**: `target` — which `<video>` element to control
-- **output state surface**: `active`, `error`
+- **output state surface**: `active`, `error`, `errorInfo`
 - **command surface**: `requestPictureInPicture()`, `exitPictureInPicture()`
 
 This means a "pop out" video button — with no live-region layout thrashing, no manual `document.pictureInPictureElement` polling — can be expressed declaratively in HTML.
@@ -89,7 +89,7 @@ Neither button touches `<wcs-pip>` directly: each click emits a command token, a
 
 ### 3. Reporting failures (e.g. gesture-context rejection)
 
-`error` has no dedicated event and is not `data-wcs` bindable (see "Output state" below) — read it imperatively after the command's promise settles:
+`error` and `errorInfo` are observable outputs (both fire an event — see "Output state" below), so you can bind them like `active`, or read them imperatively after the command's promise settles:
 
 ```html
 <wcs-state>
@@ -97,19 +97,23 @@ Neither button touches `<wcs-pip>` directly: each click emits a command token, a
     export default {
       $commandTokens: ["popOut"],
       pipActive: false,
+      pipError: null,
     };
   </script>
 </wcs-state>
 
-<wcs-pip target="#player" data-wcs="active: pipActive; command.requestPictureInPicture: $command.popOut"></wcs-pip>
+<wcs-pip target="#player" data-wcs="active: pipActive; error: pipError; command.requestPictureInPicture: $command.popOut"></wcs-pip>
 <button data-wcs="onclick: $command.popOut">Pop out</button>
 ```
+
+Or imperatively, reading `errorInfo` for the stable failure taxonomy:
 
 ```js
 const pip = document.querySelector("wcs-pip");
 await pip.requestPictureInPicture();
 if (pip.error) {
   console.log("Could not enter Picture-in-Picture:", pip.error);
+  console.log(pip.errorInfo); // { code: "not-allowed", phase: "execute", recoverable: true, message: "..." }
 }
 ```
 
@@ -133,12 +137,24 @@ Unlike `@wcstack/fullscreen` (where `target="self"` is a legitimate way to fulls
 
 ## Output state
 
-| Property | Type      | Event            | Description |
-|----------|-----------|------------------|--------------|
-| `active` | `boolean` | `wcs-pip:change` | Whether the resolved `<video>` target is currently the document's Picture-in-Picture element. |
-| `error`  | `any`     | *(none — plain getter, not data-wcs bindable)* | The most recent command failure (wrong tag, unsupported API, gesture-context rejection), or `null`. |
+| Property    | Type                     | Event                        | Description |
+|-------------|--------------------------|------------------------------|--------------|
+| `active`    | `boolean`                | `wcs-pip:change`             | Whether the resolved `<video>` target is currently the document's Picture-in-Picture element. |
+| `error`     | `any`                    | `wcs-pip:error`              | The most recent command failure (wrong tag, unsupported API, gesture-context rejection), or `null` if the last attempt succeeded / nothing has failed yet. Value shape unchanged from before it became observable. |
+| `errorInfo` | `WcsIoErrorInfo \| null` | `wcs-pip:error-info-changed` | Additive serializable failure **taxonomy** derived from `error`: a stable `{ code, phase, recoverable, message }`. `null` in lockstep with `error`. See the taxonomy table below. |
 
 `active` is derived from comparing `document.pictureInPictureElement` against the resolved `<video>` target whenever `enterpictureinpicture`/`leavepictureinpicture` fires **on that target element** — not from a `document`-level event (see "Event subscription" below).
+
+### `errorInfo` taxonomy
+
+`errorInfo` is an *additive* projection of `error` (it never changes `error`'s own value shape) that gives a stable, serializable code you can branch on — safe to log or forward to DevTools/remote without carrying a non-cloneable exception. It moves null↔non-null exactly in step with `error`, and its `wcs-pip:error-info-changed` event fires immediately before `wcs-pip:error`.
+
+| `code`               | `phase`   | `recoverable` | When |
+|----------------------|-----------|---------------|------|
+| `capability-missing` | `probe`   | `false`       | The Picture-in-Picture API is not available (`{ message: "Picture-in-Picture API is not supported." }`). |
+| `invalid-argument`   | `start`   | `false`       | `target` did not resolve to a `<video>` element (`{ message: "target must be a <video> element." }`). |
+| `not-allowed`        | `execute` | `true`        | The request was rejected with `NotAllowedError` / `TypeError` (e.g. called outside a user gesture) — retrying from within a genuine gesture may succeed. |
+| `pip-error`          | `execute` | `false`       | Any other caught exception from the platform call. |
 
 ## Commands
 
@@ -177,8 +193,10 @@ wcs-pip:state(active) ~ .back-to-page-button { display: none; } /* default */
 
 Unlike attributes or classes, `:state()` cannot be written from outside the
 element, so there is no risk of confusing this output state with an input.
-`error` is intentionally **not** reflected — it has no dedicated event (see
-"Output state" above), so there is nothing to derive a state toggle from.
+`error`/`errorInfo` are intentionally **not** reflected as `:state()` — only the
+boolean `active` maps cleanly to a presence/absence pseudo-class. (They *are*
+observable via their own events for `data-wcs` binding — see "Output state"
+above.)
 
 **Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
 Firefox 126+. In older browsers the states are simply never set — `:state()`
@@ -222,6 +240,8 @@ PipCore.wcBindable = {
   version: 1,
   properties: [
     { name: "active", event: "wcs-pip:change", getter: (e) => e.detail.active },
+    { name: "error", event: "wcs-pip:error" },
+    { name: "errorInfo", event: "wcs-pip:error-info-changed" },
   ],
   commands: [
     { name: "requestPictureInPicture", async: true },
@@ -259,8 +279,8 @@ core.dispose();                 // detach listeners
 - **Document Picture-in-Picture API is out of scope.** See "Scope" above.
 - **Never throws.** Unsupported environments, wrong-tag targets, and gesture-context rejections are all funneled into `error`.
 - **`document.pictureInPictureElement` is a single document-wide value**, like `document.fullscreenElement`. Multiple `<wcs-pip>` instances self-filter via their own `<video>` target's `enterpictureinpicture`/`leavepictureinpicture` listeners — see "Event subscription" above. Note the asymmetry, though: `exitPictureInPicture()` is **not** scoped per instance — it calls the document-global `document.exitPictureInPicture()`, so invoking it on any instance exits whatever `<video>` is currently in Picture-in-Picture, even one entered via another instance's `target` (its silent no-op check is likewise document-wide: "is anything in Picture-in-Picture", not "is *my* target in Picture-in-Picture"). This mirrors the platform API itself and `@wcstack/fullscreen`'s `exitFullscreen()` (see `docs/fullscreen-tag-design.md` §7's "scope note" alongside §2.1, and the "Multiple instances" bullet in `packages/fullscreen/README.md`).
-- **No `desired`/`actual` two-phase state** — this node exposes a single `active` boolean plus `error`, mirroring `@wcstack/fullscreen`'s simpler-than-`permission` state model.
-- **`error` has no dedicated event, and is not `data-wcs` bindable.** Like `@wcstack/fullscreen`, `error` is a plain getter with no `wcs-pip:error` event of its own, and it is not declared in `static wcBindable.properties` — a binding system has nothing to subscribe to and cannot observe it reactively. Read `element.error` imperatively after a command's promise settles (e.g. `await el.requestPictureInPicture(); if (el.error) { ... }`).
+- **No `desired`/`actual` two-phase state** — this node exposes a single `active` boolean plus the `error`/`errorInfo` failure pair, mirroring `@wcstack/fullscreen`'s simpler-than-`permission` state model.
+- **`error` and `errorInfo` are observable (bindable).** Both are declared in `static wcBindable.properties` with their own events (`wcs-pip:error` / `wcs-pip:error-info-changed`), so a binding system can subscribe to a request/exit failure via `data-wcs` (e.g. `error: pipError`). `errorInfo` is the additive serializable taxonomy derived from `error` (see "Output state"); the `error` value shape is unchanged. You can still read `element.error` / `element.errorInfo` imperatively after a command's promise settles (e.g. `await el.requestPictureInPicture(); if (el.error) { ... }`).
 
 ## License
 

@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly broadcast: string;
 }
@@ -56,6 +58,8 @@ export interface WcsBroadcastCoreValues {
   message: any;
   /** The last error (post failure / deserialization failure / unsupported), or `null`. */
   error: WcsBroadcastErrorDetail | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable), or `null`. */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

@@ -86,6 +86,11 @@ describe("PointerLock (Shell)", () => {
       await expect(el.requestPointerLock()).resolves.toBeUndefined();
       expect(el.active).toBe(false);
       expect(el.error).toEqual({ message: "Pointer Lock target could not be resolved." });
+      // errorInfo が Shell ゲッター経由で Core から読める(taxonomy 分類済み)。
+      expect(el.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false,
+        message: "Pointer Lock target could not be resolved.",
+      });
     });
 
     it("exitPointerLock() でロック解除される", async () => {
@@ -205,7 +210,7 @@ describe("PointerLock (Shell)", () => {
 
   describe("wcBindable", () => {
     it("Core の properties/commands を継承する", () => {
-      expect(WcsPointerLock.wcBindable.properties.map((p) => p.name)).toEqual(["active"]);
+      expect(WcsPointerLock.wcBindable.properties.map((p) => p.name)).toEqual(["active", "error", "errorInfo"]);
       expect(WcsPointerLock.wcBindable.commands).toEqual([
         { name: "requestPointerLock", async: true },
         { name: "exitPointerLock" },

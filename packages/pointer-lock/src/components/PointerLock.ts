@@ -1,5 +1,6 @@
 import { IWcBindable } from "../types.js";
 import { PointerLockCore } from "../core/PointerLockCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-pointer-lock target="...">` — declarative Pointer Lock API control.
@@ -118,6 +119,10 @@ export class WcsPointerLock extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   // --- Commands ---

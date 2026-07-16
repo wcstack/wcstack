@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly ws: string;
 }
@@ -40,6 +42,8 @@ export interface WcsWsCoreValues<T = unknown> {
   connected: boolean;
   loading: boolean;
   error: WcsWsError | Event | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
   readyState: number;
 }
 

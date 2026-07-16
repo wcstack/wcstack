@@ -14,7 +14,7 @@
 *「`isPlaying` が true である **間** 画面を起こし続ける」*。`navigator.wakeLock.request()` も、`visibilitychange` での再取得のグルーコードも、後始末も不要です。
 
 - **入力サーフェス**: `active`, `type`, `manual`
-- **出力ステートサーフェス**: `held`, `error`
+- **出力ステートサーフェス**: `held`, `error`, `errorInfo`
 - **コマンド**: `request()`, `release()`
 
 `@wcstack/wakelock` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
@@ -109,6 +109,7 @@ npm install @wcstack/wakelock
 |----------|------------------|------|
 | `held`   | `boolean`        | wake lock の sentinel をいま保持しているか。OS の自動解放と再取得を反映する。 |
 | `error`  | `Error \| null`  | 直近のリクエスト失敗（拒否、未対応など）、または `null`。 |
+| `errorInfo` | `WcsIoErrorInfo \| null` | `error` から派生した、失敗の serializable な taxonomy（安定した `code` / `phase` / `recoverable`）、または `null`。additive —— `error` の形状は不変。 |
 
 > **`wcs-wakelock:error` は単なる失敗シグナルではなく、プロパティ変更通知**（wc-bindable モデル）です: 失敗時には `detail` = エラーで発火し、その後のリクエストが成功して `error` プロパティがクリアされると `detail = null` で再度発火します。`error == null` は「過去に一度もエラーがなかった」ではなく「いまエラーがない」と解釈してください。
 
@@ -182,6 +183,7 @@ WakeLockCore.wcBindable = {
   properties: [
     { name: "held", event: "wcs-wakelock:held-changed" },
     { name: "error", event: "wcs-wakelock:error" },
+    { name: "errorInfo", event: "wcs-wakelock:error-info-changed" },
   ],
   commands: [
     { name: "request", async: true }, { name: "release" },
@@ -217,6 +219,7 @@ Core を直接駆動する場合は、終わったら `dispose()` を呼んで `
 - **自動解放は肩代わりされます。** OS は複数の理由でロックを落とします — ページの非表示だけでなく、ページが可視のままでもバッテリー低下や省電力モードで落ちることがあります。コンポーネントはどちらの場合もリースを更新します: *可視*中の解放は即座に再取得し、*非表示*中の解放は次に可視へ戻ったときに再取得します（`active` が立っている限り）。このバインディングは「一度取得する」ではなく「active の **間** 起こし続ける」を意味します。再取得が**拒否**された場合はループせず、`error` で surface して静止します（支配的なケース: 仕様上バッテリー低下/省電力下の再リクエストは拒否されます）。再取得が**許可**された場合はリースを更新するため、OS が許可と解放を繰り返す限りコンポーネントも更新を続けます（解放1回につき request 1回、OS 駆動であり同期的なスピンではありません）。
 - **セキュアコンテキスト（HTTPS）。** Screen Wake Lock API はセキュアコンテキスト（HTTPS、または `localhost`）でのみ動作します。
 - **決して throw しない。** 未対応環境はサイレントな no-op（`held` は `false` のまま）。拒否されたリクエストは throw せず `error` プロパティで surface します。`request()` は決して reject しません。
+- **`errorInfo` taxonomy（additive）。** `error` と並んで、`<wcs-wakelock>` は*同一の*失敗を安定した `WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類した serializable な `errorInfo`（`wcs-wakelock:error-info-changed`）を公開します。`error` の形状は変えません。reject された `request()` はその `Error.name` で分類されます: `NotAllowedError`（ページ非可視、または permission / feature-policy によるブロック）→ `not-allowed`（phase `start`）、それ以外（非 `Error` の reject を正規化したものなど）→ `wakelock-error`（phase `execute`）。どちらも `recoverable: false` です。`capability-missing` コードは**ありません**: 未対応環境はサイレントな no-op（`held` は `false` のまま・`error` 未設定）で、その分岐には到達しないためです。`errorInfo` は `error` とまったく同じタイミングで遷移し（後続の成功で `null` へクリア）、共有の `WcsIoErrorInfo` 型と `WCS_WAKELOCK_ERROR_CODE` 定数は export されています。
 - **パーミッションゲートなし。** 別個のパーミッションプロンプトはありません（ページが可視でない場合はリクエストが拒否されることがあり、それは `error` として surface します）。
 
 ## ライセンス

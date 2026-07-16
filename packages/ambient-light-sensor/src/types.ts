@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly ambientLightSensor: string;
 }
@@ -52,6 +54,8 @@ export interface WcsAmbientLightSensorErrorDetail {
  */
 export interface WcsAmbientLightSensorCoreValues extends WcsAmbientLightSensorReading {
   error: WcsAmbientLightSensorErrorDetail | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

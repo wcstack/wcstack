@@ -1,5 +1,6 @@
 import { IdleScreenState, IdleUserState, IWcBindable } from "../types.js";
 import { IdleCore } from "../core/IdleCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-idle>` — declarative Idle Detection API primitive.
@@ -122,6 +123,10 @@ export class WcsIdle extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

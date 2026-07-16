@@ -7,7 +7,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-magnetometer>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `frequency`（サンプリングレート、Hz）
-- **出力 state サーフェス**: `x`、`y`、`z`、`error`
+- **出力 state サーフェス**: `x`、`y`、`z`、`error`、`errorInfo`
 
 `@wcstack/magnetometer` は [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md)（Core / Shell / Binding Contract）アーキテクチャに従います:
 
@@ -100,6 +100,7 @@ npm install @wcstack/magnetometer
 | `y`        | `wcs-magnetometer:reading` | y軸方向の磁束密度。 |
 | `z`        | `wcs-magnetometer:reading` | z軸方向の磁束密度。 |
 | `error`    | `wcs-magnetometer:error`   | 正規化された`{ error, message }`、無ければ`null`。 |
+| `errorInfo` | `wcs-magnetometer:error-info-changed` | シリアライズ可能な失敗分類（`WcsIoErrorInfo` — 安定した `code` / `phase` / `recoverable`）、無ければ`null`。`error`から派生する追加的な出力で、既存の`error`の形状は不変。 |
 
 `x`/`y`/`z`は単一の`wcs-magnetometer:reading`イベントから派生します（ネイティブの1回の`reading`イベントで3軸が同時に更新される）。
 
@@ -161,6 +162,7 @@ wcs-magnetometer:state(error) ~ .fallback { display: block; }
 
 - **`_gen`世代ガードは無し。** `start()`/`stop()`は同期的な購読/購読解除のトグルであり、`dispose()`とレースしうる非同期probeが存在しません（`docs/sensor-tag-design.md` §1.5）。
 - **`error`は sticky（据え置き）です。** 最後に観測した失敗（`unsupported`、`SecurityError`等）を保持し、その後の`start()`成功や`reading`受信では自動クリアされません。`stop()`＋`start()`でリトライが成功しても直前の`error`は残り続けます。必要なら利用側の state でクリア／再解釈してください。
+- **`errorInfo` 分類（taxonomy）。** 同じ失敗をシリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-magnetometer:error-info-changed`）で、`error`の形状は変更しません。正規化された error 名に応じて対応づけます: `unsupported` → `capability-missing`（phase `probe`）、`SecurityError` / `NotAllowedError` → `not-allowed`（phase `start`）、`NotReadableError` → `not-readable`（phase `execute`）、その他のセンサー失敗 → `sensor-error`（phase `execute`）。いずれも `recoverable: false` です。`errorInfo` は `error` と完全に同じタイミングで遷移するため、同様に **sticky** で、`error` が `null` に戻るときにのみ `null` に戻ります。共有の `WcsIoErrorInfo` 型と `WCS_MAGNETOMETER_ERROR_CODE` 定数はエクスポートされます。
 - **`frequency`は`start()`時にのみ読み取られます。** `attributeChangedCallback`は無く、`start()`は既に開始済みの間は冪等（再度呼んでも何もしない、上記コマンド参照）であるため、稼働中に`frequency`（属性またはプロパティ）を変更しても反映されません。新しいサンプリングレートを適用するには`stop()`してから`start()`し直してください。
 - **再親付け（別の親要素への移動）はセンサーを停止し、自動再開しません。** 接続中の`<wcs-magnetometer>`要素を別の親へ移動すると`disconnectedCallback`→`connectedCallback`が発火します。Shellは接続時に自動開始しないため（上記クイックスタート参照）、これは実質的な停止であり自動再開はされません。`x`/`y`/`z`は最後のサンプル値のまま凍結され、`error`も発生しません — `start`を再度発行するまでセンサーは inert のままです。
 - **生の`new Magnetometer(...)`は唯一のガード付き構築ヘルパー以外では呼ばない。** 権限拒否・Permissions-Policyブロックは同期的に例外を投げます。

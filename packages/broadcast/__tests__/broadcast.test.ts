@@ -154,6 +154,18 @@ describe("WcsBroadcast", () => {
       el.post("y"); // InvalidStateError
       expect(el.error?.name).toBe("InvalidStateError");
     });
+
+    it("errorInfo が Shell ゲッター経由で Core から読み取れる", () => {
+      const el = makeElement({ name: "room" });
+      document.body.appendChild(el);
+      expect(el.errorInfo).toBeNull();
+      el.close();
+      el.post("y"); // InvalidStateError → broadcast-error / execute
+      expect(el.errorInfo).toEqual({
+        code: "broadcast-error", phase: "execute", recoverable: false,
+        message: "Channel is not open. Call open(name) before post().",
+      });
+    });
   });
 
   describe("disconnectedCallback", () => {

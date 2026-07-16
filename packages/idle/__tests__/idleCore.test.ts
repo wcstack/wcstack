@@ -14,9 +14,9 @@ describe("IdleCore", () => {
   });
 
   describe("wcBindable プロトコル宣言", () => {
-    it("properties が userState/screenState/active/error を宣言している", () => {
+    it("properties が userState/screenState/active/error/errorInfo を宣言している", () => {
       const names = IdleCore.wcBindable.properties.map((p) => p.name);
-      expect(names).toEqual(["userState", "screenState", "active", "error"]);
+      expect(names).toEqual(["userState", "screenState", "active", "error", "errorInfo"]);
     });
 
     it("commands が requestPermission(async)/start(async)/stop を宣言している", () => {
@@ -377,6 +377,99 @@ describe("IdleCore", () => {
       await core.start();
 
       expect(events).toHaveLength(1);
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new IdleCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = IdleCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("unsupported(start)→ capability-missing / probe / recoverable=false", async () => {
+      removeIdleDetector();
+      const core = new IdleCore();
+      await core.start();
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "IdleDetector is not supported in this browser",
+      });
+      // 公開 error shape は不変。
+      expect(core.error).toEqual({ message: "IdleDetector is not supported in this browser" });
+    });
+
+    it("unsupported(requestPermission)→ capability-missing / probe / recoverable=false", async () => {
+      removeIdleDetector();
+      const core = new IdleCore();
+      await core.requestPermission();
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "IdleDetector is not supported in this browser",
+      });
+    });
+
+    it("start() の NotAllowedError → not-allowed / start / recoverable=false(権限)", async () => {
+      installIdleDetector({
+        startImpl: () => Promise.reject(Object.assign(new Error("permission denied"), { name: "NotAllowedError" })),
+      });
+      const core = new IdleCore();
+      await core.start();
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "permission denied" });
+      // 公開 error shape は wrap した { error: e } のまま不変。
+      expect(core.error).toEqual({ error: expect.any(Error) });
+    });
+
+    it("requestPermission() の NotAllowedError → not-allowed / start / recoverable=false", async () => {
+      installIdleDetector({
+        requestPermission: () => Promise.reject(Object.assign(new Error("not in a user gesture"), { name: "NotAllowedError" })),
+      });
+      const core = new IdleCore();
+      await core.requestPermission();
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "not in a user gesture" });
+    });
+
+    it("その他の caught 例外 → idle-error / execute(wrap を解いた message を採用)", async () => {
+      installIdleDetector({ startImpl: () => Promise.reject(new Error("boom")) });
+      const core = new IdleCore();
+      await core.start();
+      expect(core.errorInfo).toEqual({ code: "idle-error", phase: "execute", recoverable: false, message: "boom" });
+    });
+
+    it("nullish reject(name/message 欠如)→ idle-error / execute / message='undefined'", async () => {
+      installIdleDetector({ startImpl: () => Promise.reject(undefined) });
+      const core = new IdleCore();
+      await core.start();
+      expect(core.errorInfo).toEqual({ code: "idle-error", phase: "execute", recoverable: false, message: "undefined" });
+      expect(core.error).toEqual({ error: undefined });
+    });
+
+    it("error が null にクリアされると errorInfo も null になる(clear 経路 error===null 分岐)", async () => {
+      // unsupported で error を立て、その後 対応環境で start() 成功 → error/errorInfo とも null。
+      removeIdleDetector();
+      const core = new IdleCore();
+      await core.start();
+      expect(core.errorInfo).not.toBeNull();
+
+      installIdleDetector();
+      await core.start();
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", async () => {
+      installIdleDetector({ startImpl: () => Promise.reject(new Error("boom")) });
+      const core = new IdleCore();
+      const order: string[] = [];
+      core.addEventListener("wcs-idle:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-idle:error", () => order.push("error"));
+      await core.start();
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
     });
   });
 });

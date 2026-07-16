@@ -1,5 +1,6 @@
 import { IWcBindable, WcsMagnetometerErrorDetail } from "../types.js";
 import { MagnetometerCore } from "../core/MagnetometerCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-magnetometer>` — declarative Generic Sensor API (`Magnetometer`)
@@ -137,6 +138,10 @@ export class WcsMagnetometer extends HTMLElement {
 
   get error(): WcsMagnetometerErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

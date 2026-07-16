@@ -171,6 +171,18 @@ describe("Magnetometer (Shell)", () => {
     expect(el.error).toEqual({ error: "SecurityError", message: "denied" });
   });
 
+  it("errorInfo が Shell ゲッター経由で Core から読み取れる", () => {
+    removeSensor(GLOBAL_NAME);
+    const el = createMagnetometer();
+    document.body.appendChild(el);
+    expect(el.errorInfo).toBeNull();
+    el.start(); // 非対応 → capability-missing
+    expect(el.errorInfo).toEqual({
+      code: "capability-missing", phase: "probe", recoverable: false,
+      message: "Magnetometer is not supported",
+    });
+  });
+
   it("disconnectedCallback でセンサーが停止し、再接続後に start() で再開できる", () => {
     const handle = installSensor(GLOBAL_NAME, { x: 0, y: 0, z: 0 });
     const el = createMagnetometer();

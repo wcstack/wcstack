@@ -395,3 +395,103 @@ describe("WorkerCore - error 同値ガード", () => {
     expect(core.error).toBeNull();
   });
 });
+
+describe("WorkerCore - errorInfo taxonomy (Phase 6)", () => {
+  it("初期状態の errorInfo は null", () => {
+    expect(new WorkerCore().errorInfo).toBeNull();
+  });
+
+  it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+    const names = WorkerCore.wcBindable.properties.map((p) => p.name);
+    expect(names).toContain("errorInfo");
+    expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+  });
+
+  it("Worker 不在(コンストラクタ TypeError)→ capability-missing / probe / recoverable=false", () => {
+    removeWorker();
+    const core = new WorkerCore();
+    core.start("worker.js");
+    // 公開 error shape は不変(TypeAPI "... is not a constructor")。
+    expect(core.error?.name).toBe("TypeError");
+    expect(core.error?.message).toMatch(/constructor/);
+    expect(core.errorInfo).toEqual({
+      code: "capability-missing", phase: "probe", recoverable: false, message: core.error!.message,
+    });
+  });
+
+  it("Worker 未宣言(構築 ReferenceError)→ capability-missing / probe", () => {
+    const core = new WorkerCore();
+    // 素の Node/SSR で `Worker` 未宣言のとき `new Worker()` は ReferenceError を投げる。
+    FakeWorker.nextConstructError = new ReferenceError("Worker is not defined");
+    core.start("worker.js");
+    expect(core.error).toEqual({ name: "ReferenceError", message: "Worker is not defined" });
+    expect(core.errorInfo).toEqual({
+      code: "capability-missing", phase: "probe", recoverable: false, message: "Worker is not defined",
+    });
+  });
+
+  it("src 未指定の検証 TypeError → invalid-argument / start / recoverable=false", () => {
+    const core = new WorkerCore();
+    core.start("");
+    // 公開 error shape は不変。
+    expect(core.error).toEqual({ name: "TypeError", message: "src is required." });
+    expect(core.errorInfo).toEqual({
+      code: "invalid-argument", phase: "start", recoverable: false, message: "src is required.",
+    });
+  });
+
+  it("worker スクリプトエラー(name=Error)→ worker-error / execute", () => {
+    const core = new WorkerCore();
+    core.start("worker.js");
+    FakeWorker.last!.emitError({ message: "boom" });
+    expect(core.errorInfo).toEqual({
+      code: "worker-error", phase: "execute", recoverable: false, message: "boom",
+    });
+  });
+
+  it("messageerror(name=DataError)→ worker-error / execute", () => {
+    const core = new WorkerCore();
+    core.start("worker.js");
+    FakeWorker.last!.emitMessageError();
+    expect(core.errorInfo?.code).toBe("worker-error");
+    expect(core.errorInfo?.phase).toBe("execute");
+  });
+
+  it("未起動 post の InvalidStateError → worker-error / execute", () => {
+    const core = new WorkerCore();
+    core.post({ a: 1 });
+    expect(core.errorInfo?.code).toBe("worker-error");
+    expect(core.errorInfo?.phase).toBe("execute");
+  });
+
+  it("成功 clear(別 src での start)で errorInfo も null に戻る(mirror clear)", () => {
+    const core = new WorkerCore();
+    core.start("a.js");
+    FakeWorker.last!.emitError({ message: "boom" });
+    expect(core.errorInfo).not.toBeNull();
+    core.start("b.js"); // 別 src → _setError(null) → errorInfo も null
+    expect(core.error).toBeNull();
+    expect(core.errorInfo).toBeNull();
+  });
+
+  it("dispose は error と errorInfo を silent に null リセットする", () => {
+    const core = new WorkerCore();
+    core.start("a.js");
+    FakeWorker.last!.emitError({ message: "boom" });
+    expect(core.errorInfo).not.toBeNull();
+    core.dispose();
+    expect(core.error).toBeNull();
+    expect(core.errorInfo).toBeNull();
+  });
+
+  it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+    const core = new WorkerCore();
+    core.start("a.js");
+    const order: string[] = [];
+    core.addEventListener("wcs-worker:error-info-changed", () => order.push("errorInfo"));
+    core.addEventListener("wcs-worker:error", () => order.push("error"));
+    FakeWorker.last!.emitError({ message: "x" });
+    expect(order).toEqual(["errorInfo", "error"]);
+    expect(core.errorInfo).not.toBeNull();
+  });
+});

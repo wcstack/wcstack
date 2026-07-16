@@ -1,5 +1,6 @@
 import { IWcBindable } from "../types.js";
 import { FullscreenCore } from "../core/FullscreenCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-fullscreen target="...">` — declarative Fullscreen API control.
@@ -114,6 +115,10 @@ export class WcsFullscreen extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   // --- Commands ---

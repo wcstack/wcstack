@@ -105,6 +105,11 @@ describe("<wcs-fullscreen>", () => {
       expect(el.style.display).toBe("none");
       await el.requestFullscreen();
       expect(el.error).toEqual({ message: "Fullscreen target could not be resolved." });
+      // errorInfo が Shell ゲッター経由で Core から読める(taxonomy 分類済み)。
+      expect(el.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false,
+        message: "Fullscreen target could not be resolved.",
+      });
     });
 
     it("target=不正セレクタ → throw せず未解決扱い（never-throw）", () => {

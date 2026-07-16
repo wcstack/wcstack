@@ -386,4 +386,84 @@ describe("RecorderCore", () => {
     expect(p2).toBe(core.ready);
     await expect(p1).resolves.toBeUndefined();
   });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    function makeStream(): MediaStream {
+      return new FakeMediaStream("rec-stream") as unknown as MediaStream;
+    }
+
+    it("初期状態の errorInfo は null", () => {
+      expect(new RecorderCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = RecorderCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("MediaRecorder 不在(unsupported)→ capability-missing / probe", () => {
+      recorder.uninstall();
+      const core = new RecorderCore();
+      core.attachStream(makeStream());
+      core.start();
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "MediaRecorder is not available in this environment.",
+      });
+      expect(core.error?.name).toBe("unsupported");
+      recorder = installRecorder(); // afterEach の uninstall 用に再設置
+    });
+
+    it("stream 未 attach(NoStreamError)→ invalid-state / start", () => {
+      const core = new RecorderCore();
+      core.start();
+      expect(core.errorInfo).toEqual({
+        code: "invalid-state", phase: "start", recoverable: false,
+        message: "No stream attached. Wire a camera's stream-ready to attachStream first.",
+      });
+    });
+
+    it("MediaRecorder 構築失敗(NotSupportedError)→ invalid-argument / start", () => {
+      FakeMediaRecorder.throwOnConstruct = true;
+      const core = new RecorderCore();
+      core.attachStream(makeStream());
+      core.start();
+      expect(core.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false, message: "construct failed",
+      });
+      expect(core.error?.name).toBe("NotSupportedError");
+    });
+
+    it("runtime の recorder onerror → media-error / execute", () => {
+      const core = new RecorderCore();
+      core.attachStream(makeStream());
+      core.start();
+      FakeMediaRecorder.instances[0].emitError("RecorderBlewUp");
+      expect(core.errorInfo).toEqual({
+        code: "media-error", phase: "execute", recoverable: false,
+        message: "Media request failed: RecorderBlewUp.",
+      });
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+      const core = new RecorderCore();
+      const order: string[] = [];
+      core.addEventListener("wcs-recorder:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-recorder:error", () => order.push("error"));
+      core.start(); // stream 未 attach → NoStreamError
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo?.code).toBe("invalid-state");
+    });
+
+    it("先行エラー後に正常 start すると errorInfo も null にクリアされる", () => {
+      const core = new RecorderCore();
+      core.start(); // NoStreamError（非 null）
+      expect(core.errorInfo).not.toBeNull();
+      core.attachStream(makeStream());
+      core.start(); // 成功 → _setError(null) → errorInfo も null
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+  });
 });

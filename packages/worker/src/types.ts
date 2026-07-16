@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly worker: string;
 }
@@ -68,6 +70,8 @@ export interface WcsWorkerCoreValues {
   message: any;
   /** The last failure (post / spawn / script error / messageerror), or `null`. */
   error: WcsWorkerErrorDetail | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
   /** `true` while a worker is spawned and not yet terminated. */
   running: boolean;
 }

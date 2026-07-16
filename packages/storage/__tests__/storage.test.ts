@@ -94,12 +94,13 @@ describe("Storage", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(Storage.wcBindable.protocol).toBe("wc-bindable");
     expect(Storage.wcBindable.version).toBe(1);
-    expect(Storage.wcBindable.properties).toHaveLength(4);
+    expect(Storage.wcBindable.properties).toHaveLength(5);
     expect(Storage.wcBindable.properties[0].name).toBe("value");
     expect(Storage.wcBindable.properties[1].name).toBe("loading");
     expect(Storage.wcBindable.properties[2].name).toBe("error");
-    expect(Storage.wcBindable.properties[3].name).toBe("trigger");
-    expect(Storage.wcBindable.properties[3].event).toBe("wcs-storage:trigger-changed");
+    expect(Storage.wcBindable.properties[3].name).toBe("errorInfo");
+    expect(Storage.wcBindable.properties[4].name).toBe("trigger");
+    expect(Storage.wcBindable.properties[4].event).toBe("wcs-storage:trigger-changed");
   });
 
   it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
@@ -456,6 +457,16 @@ describe("Storage", () => {
     el.setAttribute("manual", "");
     document.body.appendChild(el);
     expect(el.error).toBeNull();
+  });
+
+  it("errorInfoプロパティがCoreに委譲される", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+    expect(el.errorInfo).toBeNull();
+    // key 未設定で save() → validation error → errorInfo が Shell ゲッター経由で読める
+    el.save();
+    expect(el.errorInfo).toEqual({ code: "invalid-argument", phase: "start", recoverable: false, message: "key is required." });
   });
 
   it("ストレージ例外時にerrorがShellゲッター経由で読み取れる", () => {

@@ -1,5 +1,6 @@
 import { IWcBindable, WcsAmbientLightSensorErrorDetail } from "../types.js";
 import { AmbientLightSensorCore } from "../core/AmbientLightSensorCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-ambient-light-sensor>` — declarative Generic Sensor API (`AmbientLightSensor`)
@@ -122,6 +123,10 @@ export class WcsAmbientLightSensor extends HTMLElement {
 
   get error(): WcsAmbientLightSensorErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {

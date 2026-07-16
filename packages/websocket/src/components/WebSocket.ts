@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { IWcBindable } from "../types.js";
 import { WebSocketCore } from "../core/WebSocketCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 export class WcsWebSocket extends HTMLElement {
@@ -184,6 +185,10 @@ export class WcsWebSocket extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get readyState(): number {

@@ -1,6 +1,8 @@
 # 双方向バインディングのエコー制御
 
-- **状態**: 設計提案（未採択・未実装）
+- **状態**: 採択・実装済み（`PropagationContext` / `WriteReceipt` = phase 3、`enablePropagationContext`
+  として **既定 `true`**・恒久 opt-out）。実装マッピングは [09](09-remediation-design.md) §4、
+  既定化ステータスは [10](10-defaulting-rollout-status.md) を参照。
 - **対象**: UI ↔ state、state ↔ I/O などの双方向経路
 
 ## 問題

@@ -92,6 +92,18 @@ describe("Tilt (Shell)", () => {
     expect(el.error).not.toBeNull();
   });
 
+  it("errorInfo が Shell ゲッター経由で Core から読み取れる", async () => {
+    const e = new Error("Permission denied");
+    e.name = "NotAllowedError";
+    installRequestPermission(() => Promise.reject(e));
+    const el = createTilt();
+    document.body.appendChild(el);
+
+    expect(el.errorInfo).toBeNull();
+    await el.requestPermission();
+    expect(el.errorInfo).toEqual({ code: "not-allowed", phase: "start", recoverable: false, message: "Permission denied" });
+  });
+
   it("切断で dispose される", () => {
     const el = createTilt();
     document.body.appendChild(el);

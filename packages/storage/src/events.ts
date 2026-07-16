@@ -9,5 +9,6 @@ export const STORAGE_EVENTS = {
   valueChanged: "wcs-storage:value-changed",
   loadingChanged: "wcs-storage:loading-changed",
   error: "wcs-storage:error",
+  errorInfoChanged: "wcs-storage:error-info-changed",
   triggerChanged: "wcs-storage:trigger-changed",
 } as const;

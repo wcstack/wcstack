@@ -9,7 +9,7 @@ With `@wcstack/state`, `<wcs-notify>` can be bound directly through path contrac
 
 - **command surface**: `request`, `notify`, `close`, `closeAll`
 - **input surface**: `notice` (reactive show), `mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `require-interaction`, `silent`, `renotify`, `manual`
-- **output state surface**: `permission`, `granted`, `denied`, `prompt`, `unsupported`, `error`, `clicked`, `closed`, `shown`
+- **output state surface**: `permission`, `granted`, `denied`, `prompt`, `unsupported`, `error`, `errorInfo`, `clicked`, `closed`, `shown`
 
 `@wcstack/notification` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
@@ -143,6 +143,7 @@ It relays each click over `BroadcastChannel("wcs-notify")` (primary) and `client
 | `permission`  | `wcs-notify:permission-change` | `"prompt"` / `"granted"` / `"denied"` / `"unsupported"`, live.    |
 | `granted` / `denied` / `prompt` / `unsupported` | `wcs-notify:permission-change` | Convenience booleans derived from `permission`. |
 | `error`       | `wcs-notify:error`             | `{ error, message }` on a failure (never-throw), else `null`.     |
+| `errorInfo`   | `wcs-notify:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo`: stable `code` / `phase` / `recoverable`) on a failure, else `null`. Additive — derived from `error`, whose shape is unchanged. |
 | `clicked`     | `wcs-notify:click`             | `{ tag, data, action }` of the last click (event-token source).   |
 | `closed`      | `wcs-notify:close`             | `{ tag, data, action }` of the last close.                        |
 | `shown`       | `wcs-notify:show`              | `{ tag, data, action }` of the last shown notification.           |
@@ -225,6 +226,7 @@ DevTools open; they are not a supported styling hook.
 - **The SW backend does not relay `close`.** The `@wcstack/notification/sw` helper wires `notificationclick` only, not `notificationclose`. So under the `sw` backend `closed` / `wcs-notify:close` never fires (there is no cross-worker relay for close). `clicked` still works via the click relay; `closed` is a constructor-backend-only signal.
 - **Push API is out of scope.** This package wraps the Notifications API (local notifications). Server-initiated Push is a separate concern.
 - **Silent failure handling (zero-log).** Consistent with wcstack's zero-dependency philosophy, `<wcs-notify>` never logs or throws. A missing API → `permission = "unsupported"`; a not-granted permission or a show failure → the `error` property. Bind `error` / `permission` to react.
+- **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-notify>` publishes a serializable `errorInfo` (`wcs-notify:error-info-changed`) that classifies the *same* failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape. The Core's own stable error code maps straight through: `unsupported` → `capability-missing` (phase `probe`); a not-granted permission → `not-allowed` and a non-string title → `invalid-argument` (both phase `start`); a show failure → `show-failed` and a missing Service Worker backend → `no-service-worker` (both phase `execute`); any unexpected code folds defensively to `notify-error` (phase `execute`). All six are `recoverable: false`. `errorInfo` transitions exactly when `error` does (cleared to `null` on recovery); the shared `WcsIoErrorInfo` type and the `WCS_NOTIFY_ERROR_CODE` constants are exported.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`, so the server renderer waits for the connect-time permission probe before snapshotting.
 
 ## Configuration

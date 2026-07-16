@@ -20,10 +20,11 @@ describe("StorageCore", () => {
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(StorageCore.wcBindable.protocol).toBe("wc-bindable");
     expect(StorageCore.wcBindable.version).toBe(1);
-    expect(StorageCore.wcBindable.properties).toHaveLength(3);
+    expect(StorageCore.wcBindable.properties).toHaveLength(4);
     expect(StorageCore.wcBindable.properties[0].name).toBe("value");
     expect(StorageCore.wcBindable.properties[1].name).toBe("loading");
     expect(StorageCore.wcBindable.properties[2].name).toBe("error");
+    expect(StorageCore.wcBindable.properties[3].name).toBe("errorInfo");
   });
 
   it("wcBindable inputsがkey/typeを宣言している", () => {
@@ -758,6 +759,113 @@ describe("StorageCore", () => {
       expect(core.value).toEqual({ revived: true });
 
       core.stopSync();
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    // caught 例外の name を errorInfo 分類に使うため、name を明示した Error を作る。
+    const namedError = (name: string, message: string): Error => {
+      const e = new Error(message);
+      e.name = name;
+      return e;
+    };
+
+    const withThrowingStorage = (op: "setItem" | "removeItem" | "getItem", err: Error, fn: () => void): void => {
+      const original = globalThis.localStorage;
+      const stub: any = { setItem: () => {}, removeItem: () => {}, getItem: () => null };
+      stub[op] = () => { throw err; };
+      Object.defineProperty(globalThis, "localStorage", { value: stub, configurable: true });
+      try {
+        fn();
+      } finally {
+        Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
+      }
+    };
+
+    it("errorInfo は wcBindable property(index 3, error の直後)として宣言される", () => {
+      expect(StorageCore.wcBindable.properties[3].name).toBe("errorInfo");
+      // 既存 error は index 2 のまま(順序不変)。
+      expect(StorageCore.wcBindable.properties[2].name).toBe("error");
+    });
+
+    it("初期状態の errorInfo は null", () => {
+      expect(new StorageCore().errorInfo).toBeNull();
+    });
+
+    it("QuotaExceededError → quota-exceeded / execute / recoverable=true", () => {
+      const core = new StorageCore();
+      core.key = "quota-key";
+      withThrowingStorage("setItem", namedError("QuotaExceededError", "quota full"), () => core.save({ big: "x" }));
+      expect(core.errorInfo).toEqual({ code: "quota-exceeded", phase: "execute", recoverable: true, message: "quota full" });
+      // 公開 error shape は不変({operation, message} のみ・name は載らない)。
+      expect(core.error).toEqual({ operation: "save", message: "quota full" });
+    });
+
+    it("SecurityError → not-allowed / execute / recoverable=false", () => {
+      const core = new StorageCore();
+      core.key = "sec-key";
+      withThrowingStorage("removeItem", namedError("SecurityError", "denied"), () => core.remove());
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: false, message: "denied" });
+    });
+
+    it("その他 caught 例外(name 付き)→ storage-error / execute / recoverable=true", () => {
+      const core = new StorageCore();
+      core.key = "load-key";
+      withThrowingStorage("getItem", namedError("TypeError", "boom"), () => core.load());
+      expect(core.errorInfo).toEqual({ code: "storage-error", phase: "execute", recoverable: true, message: "boom" });
+    });
+
+    it("非 Error の throw も execute の storage-error に分類される(invalid-argument に落ちない)", () => {
+      const core = new StorageCore();
+      core.key = "nonerr-key";
+      const original = globalThis.localStorage;
+      // 文字列を throw(name を持たない)。_errName は "" を返し、caught=execute のまま。
+      Object.defineProperty(globalThis, "localStorage", {
+        value: { getItem: () => { throw "raw string failure"; }, setItem: () => {}, removeItem: () => {} },
+        configurable: true,
+      });
+      try {
+        core.load();
+      } finally {
+        Object.defineProperty(globalThis, "localStorage", { value: original, configurable: true });
+      }
+      expect(core.errorInfo).toEqual({ code: "storage-error", phase: "execute", recoverable: true, message: "raw string failure" });
+    });
+
+    it("validation error(key 未設定)→ invalid-argument / start / recoverable=false", () => {
+      const core = new StorageCore();
+      core.load(); // key 未設定
+      expect(core.errorInfo).toEqual({ code: "invalid-argument", phase: "start", recoverable: false, message: "key is required." });
+    });
+
+    it("validation error(不正 type)→ invalid-argument / start", () => {
+      const core = new StorageCore();
+      (core as any).type = "invalid";
+      expect(core.errorInfo).toEqual({
+        code: "invalid-argument", phase: "start", recoverable: false,
+        message: 'Invalid storage type: "invalid". Must be "local" or "session".',
+      });
+    });
+
+    it("成功時に errorInfo は null にクリアされ、error と同期して遷移する", () => {
+      const core = new StorageCore();
+      core.key = "recover-key";
+      withThrowingStorage("setItem", namedError("QuotaExceededError", "q"), () => core.save({ a: 1 }));
+      expect(core.errorInfo).not.toBeNull();
+      // storage を正常に戻して save 成功 → errorInfo が null に戻る。
+      core.save("ok");
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("wcs-storage:error-info-changed が発火し、error より前に流れる", () => {
+      const core = new StorageCore();
+      core.key = "order-key";
+      const order: string[] = [];
+      core.addEventListener("wcs-storage:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-storage:error", () => order.push("error"));
+      withThrowingStorage("setItem", namedError("QuotaExceededError", "q"), () => core.save({ a: 1 }));
+      expect(order).toEqual(["errorInfo", "error"]);
     });
   });
 });

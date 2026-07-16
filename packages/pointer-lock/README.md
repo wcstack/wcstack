@@ -8,14 +8,14 @@ It is an **async primitive node** that turns the Pointer Lock API's lock state i
 With `@wcstack/state`, `<wcs-pointer-lock>` can be bound directly through path contracts:
 
 - **input surface**: `target`
-- **output state surface**: `active`, `error`
+- **output state surface**: `active`, `error`, `errorInfo`
 - **commands**: `requestPointerLock`, `exitPointerLock`
 
 `@wcstack/pointer-lock` follows the [CSBC](https://github.com/csbc-dev/arch/blob/main/README.md) (Core / Shell / Binding Contract) architecture:
 
 - **Core** (`PointerLockCore`) wraps `Element.requestPointerLock()` / `document.exitPointerLock()` / `document.pointerLockElement`, self-filtering the `document`-scoped `pointerlockchange` event against its own resolved target
 - **Shell** (`<wcs-pointer-lock target="...">`) resolves *which* element to operate on from the DOM, manages display and lifecycle
-- **Binding Contract** (`static wcBindable`) declares the observable `active` property and the `requestPointerLock`/`exitPointerLock` commands
+- **Binding Contract** (`static wcBindable`) declares the observable `active` / `error` / `errorInfo` properties and the `requestPointerLock`/`exitPointerLock` commands
 
 ## A narrow-purpose node — read this before reaching for it
 
@@ -81,11 +81,26 @@ Every bound state path must be declared up front — `locked: false` here; bindi
 
 ## Observable Properties (outputs)
 
-| Property   | Event                       | Description |
-| ---------- | ---------------------------- | ------------ |
-| `active`   | `wcs-pointer-lock:change`    | `true` when `document.pointerLockElement` is this instance's resolved target, `false` otherwise. |
+| Property    | Event                                 | Description |
+| ----------- | -------------------------------------- | ------------ |
+| `active`    | `wcs-pointer-lock:change`             | `true` when `document.pointerLockElement` is this instance's resolved target, `false` otherwise. |
+| `error`     | `wcs-pointer-lock:error`              | The most recent failure, or `null`. One of: a rejected promise (e.g. `NotAllowedError` for a gesture-less call), `{ message: "Pointer Lock API is not supported." }` when the platform API is missing, `{ message: "Pointer Lock target could not be resolved." }` when `target` did not resolve to an element, or `null` if the last attempt succeeded / nothing has failed yet. |
+| `errorInfo` | `wcs-pointer-lock:error-info-changed` | Additive serializable failure taxonomy derived from `error` — `{ code, phase, recoverable, message }` — or `null`. See below. |
 
-`error` (see Commands below) is exposed as a plain getter, not as a `wcBindable` property — it only changes as a side effect of a command call, mirroring `@wcstack/fullscreen`. The most recent failure is one of: a rejected promise (e.g. `NotAllowedError` for a gesture-less call), `{ message: "Pointer Lock API is not supported." }` when the platform API is missing, `{ message: "Pointer Lock target could not be resolved." }` when `target` did not resolve to an element, or `null` if the last attempt succeeded / nothing has failed yet.
+`error` and `errorInfo` are **both observable, event-backed `wcBindable` properties**. (`error` was historically an imperative getter with no event of its own — that is no longer the case.) A wc-bindable binding core now delivers a request/exit failure reactively, so you can bind it with `data-wcs` / `bind()` rather than polling `element.error` after each command settles. The `error` **value shape is unchanged**; `errorInfo` is the additive serializable classification.
+
+### `errorInfo` taxonomy
+
+`errorInfo` maps each failure to a stable `{ code, phase, recoverable, message }`:
+
+| `code`               | `phase`   | `recoverable` | when |
+| -------------------- | --------- | ------------- | ----- |
+| `capability-missing` | `probe`   | `false`       | Pointer Lock API is unsupported (neither standard nor legacy name present) |
+| `invalid-argument`   | `start`   | `false`       | `target` did not resolve to an element |
+| `not-allowed`        | `execute` | `true`        | `NotAllowedError` / `TypeError` — called outside a user gesture; retrying inside a real gesture can succeed |
+| `pointer-lock-error` | `execute` | `false`       | any other caught exception |
+
+The stable `code` values are exported as `WCS_POINTER_LOCK_ERROR_CODE`; the shared `WcsIoErrorInfo` / `WcsIoErrorPhase` types are re-exported from this package.
 
 ## Commands
 
@@ -118,8 +133,10 @@ wcs-pointer-lock:state(active) ~ .crosshair { display: none; } /* default */
 
 Unlike attributes or classes, `:state()` cannot be written from outside the
 element, so there is no risk of confusing this output state with an input.
-`error` is intentionally not reflected — see "Observable Properties" above;
-it is exposed only as a plain getter, not a `wcBindable` property.
+`error` / `errorInfo` are **not** reflected onto `:state()`: they are observable
+`wcBindable` properties (see "Observable Properties" above), but a failure object
+is not a boolean CSS state, so only `active` is wired to `:state()`. Observe
+`error` / `errorInfo` via `data-wcs` / `bind()` instead.
 
 **Browser support** (`:state(x)` syntax): Chrome/Edge 125+, Safari 17.4+,
 Firefox 126+. In older browsers the states are simply never set — `:state()`

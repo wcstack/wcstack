@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly idle: string;
 }
@@ -33,6 +35,8 @@ export interface WcsIdleCoreValues {
   screenState: IdleScreenState | null;
   active: boolean;
   error: any;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

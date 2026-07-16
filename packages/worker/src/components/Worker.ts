@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { IWcBindable, WcsWorkerErrorDetail } from "../types.js";
 import { WorkerCore } from "../core/WorkerCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 
 // Named WcsWorker (not `Worker`) to avoid shadowing the global `Worker`
@@ -192,6 +193,10 @@ export class WcsWorker extends HTMLElement {
 
   get error(): WcsWorkerErrorDetail | null {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get running(): boolean {

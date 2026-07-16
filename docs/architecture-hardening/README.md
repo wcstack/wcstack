@@ -1,7 +1,10 @@
 # wcstack アーキテクチャ難所の堅牢化
 
 - **作成日**: 2026-07-14
-- **状態**: 設計提案（未採択。本文書群だけでは実行時挙動を変更しない）
+- **状態**: 一部採択・実装済み。phase 0-6 の PoC 実装は完了し、phase 2（方向認識初期同期）/ phase 3
+  （因果伝播）は既定 `true` に反転済み。opt-in → 既定化 / IO 族横展開の進捗と残作業は
+  [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) が追跡する。未実装の設計提案は
+  各論点 doc（01-08）に残る。
 - **対象スナップショット**:
   - wcstack: `27371dca55888c864028042e71d8a7e7149365b4`（v1.20.0）
   - wc-bindable-protocol: `5ec0deef212578a072b2f669d2a5554f254253e0`

@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly accelerometer: string;
 }
@@ -54,6 +56,8 @@ export interface WcsAccelerometerErrorDetail {
  */
 export interface WcsAccelerometerCoreValues extends WcsAccelerometerReading {
   error: WcsAccelerometerErrorDetail | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

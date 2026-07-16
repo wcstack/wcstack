@@ -71,6 +71,32 @@ jobs:
       - run: node scripts/sync-io-core.mjs --check
       - run: node scripts/sync-package-configs.mjs --check
 
+  wcs-validate:
+    # Phase 5a 静的契約の CI ゲート。vscode-wcs の validator core を wcs-validate CLI
+    # 経由で repo の HTML / sidecar manifest に適用し、error severity の診断があれば
+    # build を落とす（spread 構文 / path / modifier / 壊れ manifest 等）。外部 state で
+    # 静的解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
+    # vscode-wcs は @wcstack/* でなく detect-changes matrix 対象外なので独立 job にする。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/vscode-wcs/package-lock.json
+      - run: npm ci
+        working-directory: packages/vscode-wcs
+      - run: npm run build
+        working-directory: packages/vscode-wcs
+      - name: Validate data-wcs bindings (error severity fails the build)
+        run: |
+          set -euo pipefail
+          find examples packages \
+            -type d \( -name node_modules -o -name dist -o -name coverage -o -name .tsc-out \) -prune \
+            -o -type f \( -name '*.html' -o -name '*.manifest.json' \) -print0 \
+            | xargs -0 -r -n 100 node packages/vscode-wcs/dist/cli.cjs --errors-only
+
   ci:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.packages != '[]' }}

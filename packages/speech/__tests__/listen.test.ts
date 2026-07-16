@@ -138,6 +138,18 @@ describe("<wcs-listen>", () => {
       const el = create({ manual: "" });
       expect(el.unsupported).toBe(true);
     });
+
+    it("errorInfo が Shell ゲッター経由で Core から読み取れる（Phase 6）", () => {
+      const el = create({ manual: "" });
+      expect(el.errorInfo).toBeNull();
+      el.start();
+      recs[0].fireStart();
+      recs[0].fireError("not-allowed");
+      expect(el.errorInfo).toEqual({
+        code: "not-allowed", phase: "start", recoverable: false,
+        message: "Speech recognition failed: not-allowed.",
+      });
+    });
   });
 
   describe("ライフサイクル", () => {
@@ -190,6 +202,7 @@ describe("<wcs-listen>", () => {
       const props = WcsListen.wcBindable.properties.map((p) => p.name);
       expect(props).toContain("trigger");
       expect(props).toContain("interimTranscript");
+      expect(props).toContain("errorInfo");
       const inputs = WcsListen.wcBindable.inputs!.map((i) => i.name);
       expect(inputs).toEqual(["lang", "continuous", "interim", "maxRestarts", "manual", "trigger"]);
       const commands = WcsListen.wcBindable.commands!.map((c) => c.name);

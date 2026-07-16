@@ -23,6 +23,8 @@ export type {
   IWcBindable, IWcBindableProperty, IWcBindableInput, IWcBindableCommand,
 } from "./protocol/wcBindable.js";
 
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export type StorageType = "local" | "session";
 
 /**
@@ -43,6 +45,8 @@ export interface WcsStorageCoreValues<T = unknown> {
   value: T;
   loading: boolean;
   error: WcsStorageError | Error | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

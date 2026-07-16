@@ -7,7 +7,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-idle>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: `threshold`（ms、最小60000）
-- **出力 state サーフェス**: `userState`、`screenState`、`active`、`error`
+- **出力 state サーフェス**: `userState`、`screenState`、`active`、`error`、`errorInfo`
 
 ## なぜ存在するか — gesture-gated permission パターンの参照実装
 
@@ -69,6 +69,7 @@ npm install @wcstack/idle
 | `screenState` | `wcs-idle:change`  | `"locked"` \| `"unlocked"`、`start()`前は`null`。 |
 | `active`      | `wcs-idle:change`  | `userState === "active"`のとき`true`。 |
 | `error`       | `wcs-idle:error`   | 直近の`requestPermission()`/`start()`の失敗、無ければ`null`。 |
+| `errorInfo`   | `wcs-idle:error-info-changed` | その同じ失敗のシリアライズ可能な失敗タクソノミ `WcsIoErrorInfo \| null`（安定した `code` / `phase` / `recoverable`）、クリア時は `null`。追加的で、`error` の形状は不変。 |
 
 ## コマンド
 
@@ -144,6 +145,7 @@ form:has(wcs-idle:state(error)) .banner { display: block; }
 - **Chromium限定、かつ secure context 限定です。** Firefox と Safari は`IdleDetector`自体を実装していません。Chromiumであっても`IdleDetector`は`[SecureContext]`専用インターフェースのため、平文の`http://`（`localhost`を除く）では`window.IdleDetector`自体が`undefined`になり——非対応ブラウザと同じ`unsupported`（`error`経由）の分岐に落ちます。
 - **Permissions-Policyでゲートされます。** アイドル検知は`idle-detection`のPermissions-Policyディレクティブ（既定allowlist: `self`）に支配されます。クロスオリジンの`<iframe>`内で`<wcs-idle>`を使うには、その`<iframe>`要素に`allow="idle-detection"`が必要です——無いと`requestPermission()`/`start()`は非対応ブラウザと同様に失敗します。
 - **`stop()`/切断では`userState`/`screenState`/`active`をリセットしません。** 次に`start()`が成功するまで直近の観測値を保持します——Generic Sensor族（`<wcs-gyroscope>`等）と同じ「直近の読み取り値を保持する」挙動です。
+- **`errorInfo` タクソノミ。** `error` に現れるのと同じ `requestPermission()`/`start()` の失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-idle:error-info-changed`）です。`error` の形状は変えません。`IdleDetector` の欠如（非対応ブラウザ、または `window.IdleDetector` が `undefined` になる非セキュアコンテキスト）は `capability-missing`（phase `probe`）、`NotAllowedError`（権限拒否、または user gesture 外での呼び出し——両者は意図的に区別しません）は `not-allowed`（phase `start`）、その他の失敗（生の throw、不正な `threshold` による `TypeError`、nullish な reject）は `idle-error`（phase `execute`）です。いずれも `recoverable: false`。`errorInfo` は `error` と同じタイミングで遷移し（`error` と共に `null` にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_IDLE_ERROR_CODE` 定数は export 済みです。
 
 ## ヘッドレス利用（`IdleCore`）
 

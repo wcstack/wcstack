@@ -1,4 +1,6 @@
 import { IWcBindable, OrientationLockType, WcsScreenOrientationSnapshot } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveScreenOrientationErrorInfo } from "./screenOrientationCapabilities.js";
 
 const UNSUPPORTED_SNAPSHOT: WcsScreenOrientationSnapshot = Object.freeze({
   type: null,
@@ -49,6 +51,13 @@ export class ScreenOrientationCore extends EventTarget {
       // every other bidirectional IO node exposes (FetchCore, GeolocationCore,
       // NotificationCore) so `hidden@error`-style bindings work uniformly.
       { name: "error", event: "wcs-orientation:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error` (capability-missing / not-allowed
+      // / aborted / orientation-error); the existing `error` property/event are
+      // unchanged. Fires wcs-orientation:error-info-changed. No lane — monitoring is a
+      // synchronous subscribe and lock()/unlock() are a single command path, not
+      // competing operations.
+      { name: "errorInfo", event: "wcs-orientation:error-info-changed" },
     ],
     commands: [
       { name: "lock", async: true },
@@ -71,6 +80,11 @@ export class ScreenOrientationCore extends EventTarget {
   // FullscreenCore, ClipboardCore, and NotificationCore all leave their error
   // field untouched in dispose() too.
   private _error: any = null;
+
+  // Additive failure taxonomy, kept strictly in sync with `_error` (derived on
+  // every _setError, cleared to null when error clears). Sticky across
+  // dispose()/observe() exactly like `_error` — the two transition together.
+  private _errorInfo: WcsIoErrorInfo | null = null;
 
   // The live ScreenOrientation object the `change` listener is attached to
   // (kept so dispose() can remove it precisely; not read for anything else).
@@ -123,6 +137,16 @@ export class ScreenOrientationCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-orientation:error-info-changed`), derived from `error`; the existing
+   * `error` property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   // Lifecycle (§3.5). Idempotent: a second observe() while already subscribed
   // is a no-op (no double listener, no redundant dispatch). Synchronous overall
   // (no probe to await), so the returned promise is only for API uniformity
@@ -167,7 +191,7 @@ export class ScreenOrientationCore extends EventTarget {
       // No stale-generation check here: nothing asynchronous has happened yet
       // since `gen` was captured immediately above, so `_gen` cannot have
       // changed underneath this synchronous branch.
-      this._setError(UNSUPPORTED_ERROR);
+      this._setError(UNSUPPORTED_ERROR, "unsupported");
       return;
     }
     try {
@@ -176,7 +200,7 @@ export class ScreenOrientationCore extends EventTarget {
       this._setError(null);
     } catch (e: any) {
       if (gen !== this._gen) return;
-      this._setError(e);
+      this._setError(e, e?.name);
     }
   }
 
@@ -190,14 +214,14 @@ export class ScreenOrientationCore extends EventTarget {
     this._gen++;
     const api = this._api();
     if (!api || typeof api.unlock !== "function") {
-      this._setError(UNSUPPORTED_ERROR);
+      this._setError(UNSUPPORTED_ERROR, "unsupported");
       return;
     }
     try {
       api.unlock();
       this._setError(null);
     } catch (e: any) {
-      this._setError(e);
+      this._setError(e, e?.name);
     }
   }
 
@@ -230,11 +254,44 @@ export class ScreenOrientationCore extends EventTarget {
   // unsupported state, only `error`. This guard is a `===` reference check, so
   // repeated unsupported calls only stay deduped because both call sites pass
   // the shared `UNSUPPORTED_ERROR` constant rather than a fresh object literal.
-  private _setError(error: any): void {
+  //
+  // `name` is the discriminator for the additive `errorInfo` taxonomy only (it
+  // stays out of the public `error` shape): the synthetic UNSUPPORTED_ERROR has
+  // no `.name`, so the unsupported call sites pass an explicit `"unsupported"`
+  // hint (storage-style — avoids coupling to `error.message`), while the caught
+  // paths pass `Error.name`. `null` clears (no name).
+  private _setError(error: any, name?: string): void {
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // discriminator (or null on clear). Fires before the `error` event so an
+    // observer binding both sees the classification first, mirroring the io-node
+    // family.
+    this._commitErrorInfo(error === null ? null : deriveScreenOrientationErrorInfo(name, this._errorInfoMessage(error)));
     this._target.dispatchEvent(new CustomEvent("wcs-orientation:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Extract a serializable string message for `errorInfo` WITHOUT normalizing the
+  // public `error` shape (which keeps the raw rejection value verbatim). A caught
+  // value with a non-string `.message` — or a non-conformant nullish/non-object
+  // rejection such as `Promise.reject(undefined)` — falls back to `String(error)`
+  // so it still classifies instead of throwing out of lock()/unlock()
+  // (never-throw §3.6). UNSUPPORTED_ERROR and real DOMException rejections already
+  // carry a string message and take the fast path.
+  private _errorInfoMessage(error: any): string {
+    return typeof error?.message === "string" ? error.message : String(error);
+  }
+
+  // Called only from _setError (which already same-value-guards on the error
+  // reference), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-orientation:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

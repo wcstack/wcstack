@@ -7,7 +7,7 @@
 `@wcstack/state` と組み合わせると、`<wcs-screen-orientation>` はパス契約で直接バインドできます:
 
 - **入力サーフェス**: 無し — `screen.orientation` は設定すべきものを持たない単一のグローバル
-- **出力 state サーフェス**: `type`、`angle`、`portrait`、`landscape`、`error`
+- **出力 state サーフェス**: `type`、`angle`、`portrait`、`landscape`、`error`、`errorInfo`
 
 ## なぜ存在するか — このバッチで唯一のmonitor/command非対称性
 
@@ -81,6 +81,7 @@ export default {
 | `portrait`  | `wcs-orientation:change`   | `type`が`"portrait"`で始まれば`true`。 |
 | `landscape` | `wcs-orientation:change`   | `type`が`"landscape"`で始まれば`true`。 |
 | `error`     | `wcs-orientation:error`    | 直近の`lock()`/`unlock()`の失敗、無ければ`null`。 |
+| `errorInfo` | `wcs-orientation:error-info-changed` | `error`から派生した、失敗のserializableなtaxonomy（`WcsIoErrorInfo`: 安定した`code` / `phase` / `recoverable`）、無ければ`null`。additive —— `error`の形状は不変。 |
 
 `type`/`angle`/`portrait`/`landscape`は全て単一の`wcs-orientation:change`イベントから派生します。
 
@@ -100,6 +101,7 @@ export default {
 - 監視に**secure-context制約は無し**（`@wcstack/geolocation`/`@wcstack/permission`とは異なる）。
 - **`lock()`にはフルスクリーンまたはインストール済みPWAという文脈が必要です — デスクトップ/モバイルの区別ではありません。** 通常タブでの呼び出しはデスクトップ・モバイルを問わずrejectされるのが通例です（エラー名はブラウザと原因により`NotAllowedError`/`NotSupportedError`/`SecurityError`などと異なるため、名前で分岐しないでください）。Safariはそもそも`lock()`を実装していません。best-effortであることを前提にUIを設計し、ロックを実際に効かせたい場面では`@wcstack/fullscreen`のような明示的なフルスクリーン導線と組み合わせてください。
 - **初回スナップショットはbindingに届きません。** 最初の`wcs-orientation:change`は`connectedCallback`中に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に（bindingのセットアップは後続のmicrotaskへ遅延されます。`docs/timing-and-firing-contract.md` §4.1参照）。イベントは後から購読した相手へ再送されないため、bindされたパスは**次の**向き変化からしか更新されません。初期値が重要な場合（`portrait`/`landscape`/`type`/`angle`はほぼ常にそうです）、Quick Startの例のように`$connectedCallback`で一度pullしてください。これは本パッケージ固有の癖ではなく、すべてのmonitor系ノードが共有するwc-bindableイベント契約の性質です。発火・世代管理の全体像（初回スナップショット・`lock()`の世代順序・`error`の重複排除）は`docs/timing-and-firing-contract.md` §7を参照してください。
+- **`errorInfo` taxonomy（additive）。** `error`と並んで、`<wcs-screen-orientation>`は*同一の*`lock()`/`unlock()`失敗を安定した`WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類したserializableな`errorInfo`（`wcs-orientation:error-info-changed` —— イベント名前空間はタグ名ではなく`wcs-orientation:`である点に注意）を公開します。`error`の形状は変えません。`screen.orientation`やメソッド自体の不在（synthetic な "unsupported"）→ `capability-missing`（phase `probe`）、通常タブでの lock reject である`NotAllowedError` / `NotSupportedError` / `SecurityError`は全て単一の`not-allowed`（phase `execute`、`recoverable: false` —— 上述の「名前で分岐するな」モデルに一致）へ畳まれ、`AbortError`（より新しい`lock()`による supersede）→ `aborted`（phase `execute`、`recoverable: true` —— 新しい`lock()`は成功しうる）、それ以外（`InvalidStateError`、生の throw、`.name`欠如など）→ `orientation-error`（phase `execute`）となります。`errorInfo`は`error`とまったく同じタイミングで遷移し（回復時に`null`へクリア）、共有の`WcsIoErrorInfo`型と`WCS_SCREEN_ORIENTATION_ERROR_CODE`定数はexportされています。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true`を宣言。監視が同期的なため`connectedCallbackPromise`は常に即座にsettleします。
 
 ## `:state()` による CSS スタイリング

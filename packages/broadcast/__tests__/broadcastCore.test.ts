@@ -298,9 +298,11 @@ describe("BroadcastCore", () => {
 
       const events: any[] = [];
       target.addEventListener("wcs-broadcast:error", (e) => events.push(e));
+      expect(core.errorInfo).not.toBeNull(); // post が errorInfo をセット済み
       core.dispose();
 
       expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull(); // errorInfo も error に追随して silent クリア
       expect(events).toHaveLength(0); // dispose では dispatch しない
     });
 
@@ -364,6 +366,83 @@ describe("BroadcastCore", () => {
       onMessageError(new Event("messageerror"));
       expect(core.error).toBeNull(); // dispose で null にリセット済み、再書き込みなし
       expect(events).toHaveLength(0);
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new BroadcastCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = BroadcastCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("非対応(NotSupportedError)→ capability-missing / probe / recoverable=false", () => {
+      removeBroadcastChannel();
+      const core = new BroadcastCore();
+      core.open("room");
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "BroadcastChannel is not available in this environment.",
+      });
+      // 公開 error shape は不変。
+      expect(core.error).toEqual({
+        name: "NotSupportedError",
+        message: "BroadcastChannel is not available in this environment.",
+      });
+    });
+
+    it("クローン不可な payload の post(DataCloneError)→ invalid-argument / execute / recoverable=false", () => {
+      const core = new BroadcastCore();
+      core.open("room");
+      core.post(() => {});
+      expect(core.error?.name).toBe("DataCloneError"); // 公開 error shape は不変
+      expect(core.errorInfo).toMatchObject({
+        code: "invalid-argument", phase: "execute", recoverable: false,
+      });
+      expect(typeof core.errorInfo?.message).toBe("string");
+    });
+
+    it("チャンネル未 open の post(InvalidStateError)→ broadcast-error / execute", () => {
+      const core = new BroadcastCore();
+      core.post("x");
+      expect(core.errorInfo).toEqual({
+        code: "broadcast-error", phase: "execute", recoverable: false,
+        message: "Channel is not open. Call open(name) before post().",
+      });
+    });
+
+    it("deserialize 失敗(DataError)→ broadcast-error / execute", () => {
+      const core = new BroadcastCore();
+      core.open("room");
+      FakeBroadcastChannel.dispatchMessageError("room");
+      expect(core.errorInfo).toEqual({
+        code: "broadcast-error", phase: "execute", recoverable: false,
+        message: "Failed to deserialize a message received on the channel.",
+      });
+    });
+
+    it("error が null にクリアされると errorInfo も null になる(open による回復経路)", () => {
+      const core = new BroadcastCore();
+      core.post("x"); // InvalidStateError → errorInfo セット
+      expect(core.errorInfo).not.toBeNull();
+      core.open("room"); // error: {...} → null
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+      const target = new EventTarget();
+      const core = new BroadcastCore(target);
+      const order: string[] = [];
+      target.addEventListener("wcs-broadcast:error-info-changed", () => order.push("errorInfo"));
+      target.addEventListener("wcs-broadcast:error", () => order.push("error"));
+      core.post("x"); // InvalidStateError
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
     });
   });
 

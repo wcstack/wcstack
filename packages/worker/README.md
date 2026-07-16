@@ -14,7 +14,7 @@ With `@wcstack/state`, `<wcs-worker>` can be bound directly through path contrac
 
 - **input surface**: `src`, `type`, `name`, `manual`, `keep-alive`, `restart-on-error`, `max-restarts`, `restart-interval`
 - **command surface**: `start`, `post`, `terminate`
-- **output state surface**: `message`, `error`, `running`
+- **output state surface**: `message`, `error`, `errorInfo`, `running`
 
 This means offloading work to a worker thread can be expressed declaratively in HTML, without writing `new Worker()`, `postMessage()`, `onmessage` listeners, or teardown glue in your UI layer.
 
@@ -140,6 +140,7 @@ The DOM trigger **always posts a string** — the literal `data-worker-text`, or
 | --------- | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-worker:message`          | The last value posted back by the worker (structured-clone copy). Re-fires on every message, even when the value is unchanged. |
 | `error`   | `wcs-worker:error`            | Normalized `{ name, message, filename?, lineno?, colno? }` — `DataCloneError` (non-cloneable post), `DataError` (a worker message could not be deserialized), `InvalidStateError` (post with no running worker), a script `Error` (uncaught error in the worker, with location), or a spawn failure (bad URL / CSP / unsupported). |
+| `errorInfo` | `wcs-worker:error-info-changed` | Serializable failure taxonomy `WcsIoErrorInfo \| null` (stable `code` / `phase` / `recoverable`), derived from the same failure as `error`. Additive — the `error` shape is unchanged. |
 | `running` | `wcs-worker:running-changed`  | `true` while a worker is spawned and not yet terminated.                              |
 
 ## Commands
@@ -219,6 +220,7 @@ DevTools open; they are not a supported styling hook.
 - **`src` is observed; `type` / `name` are applied at spawn.** Changing the `src` attribute while connected (and not `manual`) terminates the old worker and spawns the new script; only a non-empty new value triggers the switch. `type` and `name` are read at spawn time and are **not** in `observedAttributes` — changing them on an already-running worker has no effect until the next spawn (a `src` change, or a `terminate()` + `start()`). Likewise, re-calling `start()` with the same `src` is idempotent and ignores changed options.
 - **Transferables are an escape hatch.** `transfer` (ArrayBuffer ownership, MessagePort) cannot be expressed through `data-wcs` data wiring. Use the imperative `element.post(data, transfer)` (or `WorkerCore.post(data, transfer)`); the declarative layer carries structured-clone data only.
 - **Silent failure handling (zero-log).** Consistent with wcstack's zero-dependency philosophy, `<wcs-worker>` never logs or throws for runtime failures. A bad script URL, a CSP `worker-src` block, a non-cloneable post, a deserialization failure, and an uncaught worker error are surfaced only through the `error` property / `wcs-worker:error` event — `post()` returns and never rejects. Bind `error` to observe and react.
+- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-worker:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A missing `Worker` constructor (SSR / unsupported, where `new Worker()` throws a `TypeError` / `ReferenceError`) is `capability-missing` (phase `probe`); calling `start()` with no `src` is `invalid-argument` (phase `start`); any other failure — an uncaught worker `Error`, a `DataError` deserialization failure, a `DataCloneError` / `InvalidStateError` post failure, or a spawn failure — is `worker-error` (phase `execute`). Every worker failure is `recoverable: false` (no automatic retry recovers it). `errorInfo` stays in lockstep with `error` (same transitions, cleared alongside it). The shared `WcsIoErrorInfo` type and the `WCS_WORKER_ERROR_CODE` constants are exported.
 - **`src` runs as code — trust it.** The `src` value is passed straight to `new Worker(src)`, which executes the script with the page's privileges; the tag does not validate or sandbox the origin. Only point `src` at scripts you trust (treat it like a `<script src>`), and prefer a `Content-Security-Policy` with an explicit `worker-src` allowlist to constrain where workers may load from — especially if `src` can be influenced by data binding.
 - **Dedicated Worker only.** SharedWorker and Worklets are out of scope for this tag.
 

@@ -1,3 +1,5 @@
+import type { WcsIoErrorInfo } from "./core/platformCapability.js";
+
 export interface ITagNames {
   readonly gyroscope: string;
 }
@@ -53,6 +55,8 @@ export interface WcsGyroscopeErrorDetail {
  */
 export interface WcsGyroscopeCoreValues extends WcsGyroscopeReading {
   error: WcsGyroscopeErrorDetail | null;
+  /** Additive failure taxonomy derived from `error` (stable code / phase / recoverable). */
+  errorInfo: WcsIoErrorInfo | null;
 }
 
 /**

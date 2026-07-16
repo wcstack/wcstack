@@ -46,7 +46,7 @@ $on: {
 
 **コマンド:** `start()`・`stop()`・`switchCamera()`（前後カメラ切替）。
 
-**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`・`devices`・`error`。
+**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`・`devices`・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
 
 **イベント（event-token）:** `streamReady`（`wcs-camera:stream-ready`、detail = 生 `MediaStream`）・`error`・`ended`（OS によるトラック剥奪）。`streamReady` の「プロパティ」は event-token 配線用で、値としてバインドしないでください。
 
@@ -65,7 +65,7 @@ $on: {
 
 **コマンド:** `attachStream(stream)`・`start()`・`stop()`・`pause()`・`resume()`。
 
-**バインド可能な値:** `recording`・`paused`・`duration`（ms・下記注記参照）・`mimeType`（**解決後**の録画タイプ。要求した `mime-type` 属性と異なる、または未指定時にブラウザが補完した値）・`blob`・`objectURL`・`error`。
+**バインド可能な値:** `recording`・`paused`・`duration`（ms・下記注記参照）・`mimeType`（**解決後**の録画タイプ。要求した `mime-type` 属性と異なる、または未指定時にブラウザが補完した値）・`blob`・`objectURL`・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-recorder:error-info-changed` で publish。下記「注意・落とし穴」参照）。
 
 **イベント（event-token）:** `recorded`（`wcs-recorder:recorded`、detail = `{ blob, objectURL, mimeType, duration }`）・`dataavailable`（`timeslice` モードのみ）・`error`。
 
@@ -147,6 +147,17 @@ wcs-recorder:state(paused) ~ .rec-dot      { animation: none; opacity: .4; }
 - **カメラインジケータ＝リーク検出器。** 終了後も点灯したままなら、トラックが停止されていません。
 - **ユーザージェスチャ。** 一部ブラウザは `getUserMedia` をユーザー操作起点で要求します。タイマーから撃つと無言で失敗することがあります（`error` に出ます・throw しません）。
 - **エラーは分類され throw されません:** `NotAllowedError`（拒否）・`NotFoundError`（デバイス無し）・`NotReadableError`（他アプリ使用中）・`OverconstrainedError`。
+- **`errorInfo`——付加的な失敗分類。** `error` と並んで、`<wcs-camera>` / `<wcs-recorder>` はどちらも付加的なバインド可能出力 `errorInfo`（`WcsIoErrorInfo` = 安定した `code` / `phase` / `recoverable` / `message`）を公開します。同じ失敗から派生し、`wcs-camera:error-info-changed` / `wcs-recorder:error-info-changed` で publish されます。`error` の形状は不変で、`errorInfo` は `error` と完全に同期して遷移します（成功時に `null` へクリア）。両要素は 1 つの code セット（`core/mediaCapabilities.ts` の `WCS_MEDIA_ERROR_CODE`）を共有します:
+  - `capability-missing`（phase `probe`）——`getUserMedia` / `MediaRecorder` 非対応（非セキュアコンテキスト含む）。
+  - `not-allowed`（phase `start`）——`NotAllowedError` / `SecurityError`（権限拒否・feature-policy ブロック）。
+  - `not-found`（phase `start`）——`NotFoundError`（要求した種類のカメラ / マイクが存在しない）。
+  - `not-readable`（phase `start`）——`NotReadableError`（デバイス占有・ハードウェア障害）。
+  - `invalid-argument`（phase `start`）——`OverconstrainedError` / `NotSupportedError`（制約・mimeType が満たせない）。
+  - `invalid-state`（phase `start`）——`NoStreamError`（stream 未 attach で録画開始）。
+  - `aborted`（phase `execute`・`recoverable: true`）——`AbortError`（実行途中の中断、retry で回復しうる）。
+  - `media-error`（phase `execute`）——その他の実行時失敗（例: `RecorderError` / 想定外の `MediaRecorder` エラー）。
+
+  `WcsIoErrorInfo` 型と `WCS_MEDIA_ERROR_CODE` 定数は export されます。
 - **ストリームの所有権はカメラ側。** recorder は借用するだけ。録画中のカメラ切替は非対応（先に録画停止）。
 - **mimeType の対応はブラウザ差**（webm/mp4）。非対応の `mime-type` は無視され既定が使われます。
 

@@ -485,6 +485,124 @@ describe("ScreenOrientationCore", () => {
     });
   });
 
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new ScreenOrientationCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = ScreenOrientationCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("unsupported(screen.orientation 不在)→ capability-missing / probe / recoverable=false", async () => {
+      removeOrientation();
+      const core = new ScreenOrientationCore();
+      await core.lock("landscape");
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false, message: "unsupported",
+      });
+      // 公開 error shape は不変。
+      expect(core.error).toEqual({ message: "unsupported" });
+    });
+
+    it("NotAllowedError → not-allowed / execute / recoverable=false（error-info-changed は bubbles:true）", async () => {
+      const orientation = installOrientation();
+      orientation.lock = vi.fn(() => Promise.reject({ name: "NotAllowedError", message: "not in fullscreen" }));
+      const core = new ScreenOrientationCore();
+      let bubbles: boolean | undefined;
+      core.addEventListener("wcs-orientation:error-info-changed", (e) => { bubbles = e.bubbles; });
+
+      await core.lock("landscape");
+
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: false, message: "not in fullscreen" });
+      // 公開 error shape は不変(生の rejection を保持)。
+      expect(core.error).toEqual({ name: "NotAllowedError", message: "not in fullscreen" });
+      expect(bubbles).toBe(true);
+    });
+
+    it("NotSupportedError(desktop 等 README 記載の主経路)→ not-allowed / execute / recoverable=false", async () => {
+      const orientation = installOrientation();
+      orientation.lock = vi.fn(() => Promise.reject({ name: "NotSupportedError", message: "not available on this device" }));
+      const core = new ScreenOrientationCore();
+      await core.lock("landscape");
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: false, message: "not available on this device" });
+    });
+
+    it("SecurityError → not-allowed / execute / recoverable=false", async () => {
+      const orientation = installOrientation();
+      orientation.lock = vi.fn(() => Promise.reject({ name: "SecurityError", message: "sandboxed" }));
+      const core = new ScreenOrientationCore();
+      await core.lock("landscape");
+      expect(core.errorInfo).toEqual({ code: "not-allowed", phase: "execute", recoverable: false, message: "sandboxed" });
+    });
+
+    it("AbortError(新しい lock() に取って代わられた)→ aborted / execute / recoverable=true", async () => {
+      const orientation = installOrientation();
+      orientation.lock = vi.fn(() => Promise.reject({ name: "AbortError", message: "superseded" }));
+      const core = new ScreenOrientationCore();
+      await core.lock("landscape");
+      expect(core.errorInfo).toEqual({ code: "aborted", phase: "execute", recoverable: true, message: "superseded" });
+    });
+
+    it("その他 name(InvalidStateError 等)→ orientation-error / execute / recoverable=false", () => {
+      const orientation = installOrientation();
+      orientation.unlock = vi.fn(() => {
+        throw new Error("boom"); // Error.name === "Error"
+      });
+      const core = new ScreenOrientationCore();
+      core.unlock();
+      expect(core.errorInfo).toEqual({ code: "orientation-error", phase: "execute", recoverable: false, message: "boom" });
+    });
+
+    it("error が null にクリアされると errorInfo も null になる(成功した lock() の clear 経路)", async () => {
+      const orientation = installOrientation();
+      orientation.lock = vi.fn(() => Promise.reject({ name: "NotSupportedError", message: "x" }));
+      const core = new ScreenOrientationCore();
+
+      await core.lock("landscape");
+      expect(core.errorInfo).not.toBeNull();
+
+      orientation.lock = vi.fn(() => Promise.resolve());
+      await core.lock("portrait");
+
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+      const orientation = installOrientation();
+      orientation.unlock = vi.fn(() => {
+        throw { name: "SecurityError", message: "denied" };
+      });
+      const core = new ScreenOrientationCore();
+      const order: string[] = [];
+      core.addEventListener("wcs-orientation:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-orientation:error", () => order.push("error"));
+
+      core.unlock();
+
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
+    });
+
+    it("非準拠な nullish rejection(Promise.reject(undefined))でも never-throw を保ち orientation-error に分類する", async () => {
+      // 実ブラウザは DOMException(string message)で reject するが、非準拠実装が
+      // undefined を投げても _errorInfoMessage の String(error) フォールバックで
+      // 分類され、lock() の promise は決して reject しない(never-throw §3.6)。
+      const orientation = installOrientation();
+      orientation.lock = vi.fn(() => Promise.reject(undefined));
+      const core = new ScreenOrientationCore();
+
+      await expect(core.lock("landscape")).resolves.toBeUndefined();
+
+      expect(core.errorInfo).toEqual({ code: "orientation-error", phase: "execute", recoverable: false, message: "undefined" });
+      // 公開 error は生の rejection 値(undefined)をそのまま保持する。
+      expect(core.error).toBeUndefined();
+    });
+  });
+
   describe("wcBindable プロトコル宣言", () => {
     it("commands は lock(async)/unlock を持つ", () => {
       const lockCmd = ScreenOrientationCore.wcBindable.commands!.find((c) => c.name === "lock")!;

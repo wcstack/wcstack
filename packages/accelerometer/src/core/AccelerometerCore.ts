@@ -1,4 +1,6 @@
 import { IWcBindable, WcsAccelerometerReading, WcsAccelerometerErrorDetail } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveAccelerometerErrorInfo } from "./accelerometerCapabilities.js";
 
 const NULL_READING: WcsAccelerometerReading = Object.freeze({ x: null, y: null, z: null });
 
@@ -46,6 +48,11 @@ export class AccelerometerCore extends EventTarget {
       { name: "y", event: "wcs-accelerometer:reading", getter: (e: Event) => (e as CustomEvent).detail.y },
       { name: "z", event: "wcs-accelerometer:reading", getter: (e: Event) => (e as CustomEvent).detail.z },
       { name: "error", event: "wcs-accelerometer:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error.error` (the Error.name /
+      // "unsupported"); the existing `error` property/event are unchanged. Fires
+      // wcs-accelerometer:error-info-changed. No lane — the sensor is a monitor.
+      { name: "errorInfo", event: "wcs-accelerometer:error-info-changed" },
     ],
     commands: [{ name: "start" }, { name: "stop" }],
   };
@@ -53,6 +60,7 @@ export class AccelerometerCore extends EventTarget {
   private _target: EventTarget;
   private _reading: WcsAccelerometerReading = NULL_READING;
   private _error: WcsAccelerometerErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
 
   // The live sensor instance while started (null otherwise), kept so stop()
   // can remove its listeners precisely and so start() can detect "already
@@ -81,6 +89,16 @@ export class AccelerometerCore extends EventTarget {
     return this._error;
   }
 
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-accelerometer:error-info-changed`), derived from `error`; the existing
+   * `error` property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
+  }
+
   /** No asynchronous probe to await: start()/stop() are synchronous
    *  (docs/async-io-node-guidelines.md §3.8 is satisfied trivially, mirroring
    *  NetworkCore). */
@@ -107,8 +125,23 @@ export class AccelerometerCore extends EventTarget {
     // redispatch.
     if (this._error?.error === error?.error && this._error?.message === error?.message) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error name (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveAccelerometerErrorInfo(error.error, error.message));
     this._target.dispatchEvent(new CustomEvent("wcs-accelerometer:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already same-value-guards on the error name
+  // + message), so errorInfo transitions exactly when error does — no separate
+  // guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-accelerometer:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

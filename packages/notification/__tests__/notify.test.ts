@@ -189,6 +189,16 @@ describe("委譲された event-token getter", () => {
     FakeNotification.instances[0].fireClick();
     expect(el.clicked).toEqual({ tag: "t", data: { n: 1 }, action: "" });
   });
+
+  it("errorInfo が Shell ゲッター経由で Core から読み取れる（Phase 6）", async () => {
+    await mount();
+    expect(el.errorInfo).toBeNull();
+    el.notify(123 as unknown as string); // 非文字列 title → invalid-argument
+    expect(el.errorInfo).toEqual({
+      code: "invalid-argument", phase: "start", recoverable: false,
+      message: "notify() requires a string title.",
+    });
+  });
 });
 
 describe("SSR の connectedCallbackPromise", () => {

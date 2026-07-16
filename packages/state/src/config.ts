@@ -47,6 +47,11 @@ const _config: IInternalConfig = {
   enableMustache: true,
   enableDirectionalInitialSync: true,
   enablePropagationContext: true,
+  // Phase 5b の dev-time contract analyzer は意図的に explicit opt-in（既定 off）。
+  // wcstack は buildless / zero-config で NODE_ENV 相当の確実な dev/prod 判定が無く、
+  // hostname や minification の heuristic で auto-ON すると誤検出で prod にコストを
+  // 乗せうるため、dev 既定 ON は採らない。利用側が setConfig で明示有効化する
+  // （docs/architecture-hardening/10-defaulting-rollout-status.md §C）。
   enableContractAnalyzer: false,
   sameValueGuard: true,
 };

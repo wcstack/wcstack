@@ -1,6 +1,8 @@
 import {
   IWcBindable, SpeakOptions, SpeechVoiceInfo, WcsSpeakErrorDetail,
 } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { deriveSpeakErrorInfo } from "./speechCapabilities.js";
 
 /**
  * Headless text-to-speech primitive. A thin, framework-agnostic wrapper around
@@ -35,6 +37,13 @@ export class SpeakCore extends EventTarget {
       { name: "charIndex", event: "wcs-speak:boundary", getter: (e: Event) => (e as CustomEvent).detail?.charIndex ?? null },
       { name: "spokenWord", event: "wcs-speak:boundary", getter: (e: Event) => (e as CustomEvent).detail?.word ?? null },
       { name: "error", event: "wcs-speak:error" },
+      // Serializable failure taxonomy (stable code / phase / recoverable), or null.
+      // Additive bindable output derived from `error.error` (the
+      // SpeechSynthesisErrorEvent.error code / "unsupported"); the existing `error`
+      // property/event are unchanged. Fires wcs-speak:error-info-changed. No lane —
+      // speak() is a momentary queue submission with no competing async operation to
+      // serialize.
+      { name: "errorInfo", event: "wcs-speak:error-info-changed" },
       { name: "unsupported", event: "wcs-speak:unsupported-changed" },
     ],
     commands: [
@@ -55,6 +64,7 @@ export class SpeakCore extends EventTarget {
   private _charIndex: number | null = null;
   private _spokenWord: string | null = null;
   private _error: WcsSpeakErrorDetail | null = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
   private _unsupported: boolean = false;
 
   // Count of utterances submitted via speak() but not yet started, and of
@@ -121,6 +131,16 @@ export class SpeakCore extends EventTarget {
 
   get error(): WcsSpeakErrorDetail | null {
     return this._error;
+  }
+
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-speak:error-info-changed`), derived from `error`; the existing `error`
+   * property/event are unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
   }
 
   // Resolved once in the constructor (`_setUnsupported(!_hasApi())`) and never
@@ -207,8 +227,22 @@ export class SpeakCore extends EventTarget {
   private _setError(error: WcsSpeakErrorDetail | null): void {
     if (this._error === error) return;
     this._error = error;
+    // Keep the additive `errorInfo` taxonomy in sync with `error`: derive from the
+    // error code (or null on clear). Fires before the `error` event so an observer
+    // binding both sees the classification first, mirroring the io-node family.
+    this._commitErrorInfo(error === null ? null : deriveSpeakErrorInfo(error));
     this._target.dispatchEvent(new CustomEvent("wcs-speak:error", {
       detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (which already guards on error identity), so
+  // errorInfo transitions exactly when error does — no separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-speak:error-info-changed", {
+      detail: info,
       bubbles: true,
     }));
   }

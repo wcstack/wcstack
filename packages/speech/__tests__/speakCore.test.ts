@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { SpeakCore } from "../src/core/SpeakCore";
+import { deriveSpeakErrorInfo, WCS_SPEAK_ERROR_CODE } from "../src/core/speechCapabilities";
 import { FakeSynth, installSpeechSynthesis, uninstallSpeechSynthesis, makeVoice } from "./mocks";
 
 function collect(core: SpeakCore, type: string): any[] {
@@ -467,6 +468,114 @@ describe("SpeakCore", () => {
       core.speak("hi");
       synth.fireStart();
       expect(events).toEqual([true]);
+    });
+  });
+
+  describe("errorInfo taxonomy (Phase 6)", () => {
+    it("初期状態の errorInfo は null", () => {
+      expect(new SpeakCore().errorInfo).toBeNull();
+    });
+
+    it("errorInfo は wcBindable property(error の直後)として宣言される", () => {
+      const names = SpeakCore.wcBindable.properties.map((p) => p.name);
+      expect(names).toContain("errorInfo");
+      expect(names.indexOf("errorInfo")).toBe(names.indexOf("error") + 1);
+    });
+
+    it("unsupported → capability-missing / probe / recoverable=false（error shape は不変）", () => {
+      uninstallSpeechSynthesis();
+      const core = new SpeakCore();
+      core.speak("hi");
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "SpeechSynthesis API is not available in this environment.",
+      });
+      // 公開 error shape は不変。
+      expect(core.error).toEqual({ error: "unsupported", message: "SpeechSynthesis API is not available in this environment." });
+    });
+
+    it("synthesis error を taxonomy に写す（synthesis-failed → synthesis-failed / execute）", () => {
+      const core = new SpeakCore();
+      core.speak("hi");
+      synth.fireStart();
+      synth.fireError("synthesis-failed");
+      expect(core.errorInfo).toEqual({
+        code: "synthesis-failed", phase: "execute", recoverable: false,
+        message: "Speech synthesis failed: synthesis-failed.",
+      });
+    });
+
+    it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {
+      const core = new SpeakCore();
+      core.speak("hi");
+      synth.fireStart();
+      const order: string[] = [];
+      core.addEventListener("wcs-speak:error-info-changed", () => order.push("errorInfo"));
+      core.addEventListener("wcs-speak:error", () => order.push("error"));
+      synth.fireError("audio-busy");
+      expect(order).toEqual(["errorInfo", "error"]);
+      expect(core.errorInfo).not.toBeNull();
+    });
+
+    it("成功した speak は直前の error を晴らし、errorInfo も null に戻す(clear 経路)", () => {
+      const core = new SpeakCore();
+      core.speak("hi");
+      synth.fireStart();
+      synth.fireError("synthesis-failed");
+      expect(core.errorInfo).not.toBeNull();
+      const infoEvents = collect(core, "wcs-speak:error-info-changed");
+      // 次の speak() が _setError(null) を呼び、errorInfo も null へ写す。
+      core.speak("again");
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+      expect(infoEvents).toEqual([null]);
+    });
+
+    // Direct map coverage: exercises every code branch of deriveSpeakErrorInfo,
+    // including the defensive `default` fallback the Core never emits itself.
+    it("deriveSpeakErrorInfo が全コードを taxonomy に写す(未知コードは speech-error へ畳む)", () => {
+      expect(deriveSpeakErrorInfo({ error: "unsupported", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "not-allowed", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.NotAllowed, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "canceled", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.Aborted, phase: "execute", recoverable: true, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "interrupted", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.Aborted, phase: "execute", recoverable: true, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "audio-busy", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.NotReadable, phase: "execute", recoverable: true, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "audio-hardware", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.NotReadable, phase: "execute", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "network", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.NetworkError, phase: "execute", recoverable: true, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "language-unavailable", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "voice-unavailable", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "text-too-long", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "invalid-argument", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.InvalidArgument, phase: "start", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "synthesis-unavailable", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.SynthesisFailed, phase: "execute", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "synthesis-failed", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.SynthesisFailed, phase: "execute", recoverable: false, message: "m",
+      });
+      expect(deriveSpeakErrorInfo({ error: "totally-unknown", message: "m" })).toEqual({
+        code: WCS_SPEAK_ERROR_CODE.SpeechError, phase: "execute", recoverable: false, message: "m",
+      });
     });
   });
 });

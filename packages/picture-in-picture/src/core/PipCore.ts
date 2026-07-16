@@ -1,4 +1,6 @@
 import { IWcBindable } from "../types.js";
+import { WcsIoErrorInfo } from "./platformCapability.js";
+import { derivePictureInPictureErrorInfo, PictureInPictureErrorKind } from "./pictureInPictureCapabilities.js";
 
 /**
  * Headless Picture-in-Picture primitive. A thin, framework-agnostic wrapper
@@ -32,6 +34,14 @@ export class PipCore extends EventTarget {
     version: 1,
     properties: [
       { name: "active", event: "wcs-pip:change", getter: (e: Event) => (e as CustomEvent).detail.active },
+      // `error` / `errorInfo` are observable failure outputs. Historically `error`
+      // was an imperative getter with no event; both are now bindable (event-backed)
+      // so `data-wcs` / bind() can observe a request/exit failure. `errorInfo` is the
+      // additive serializable taxonomy (stable code / phase / recoverable) derived
+      // from `error`; the `error` value shape is unchanged. No lane — Picture-in-Picture
+      // drives a referenced `<video>`, not a competing operation (fullscreen と同型)。
+      { name: "error", event: "wcs-pip:error" },
+      { name: "errorInfo", event: "wcs-pip:error-info-changed" },
     ],
     commands: [
       { name: "requestPictureInPicture", async: true },
@@ -42,6 +52,7 @@ export class PipCore extends EventTarget {
   private _target: EventTarget;
   private _active: boolean = false;
   private _error: any = null;
+  private _errorInfo: WcsIoErrorInfo | null = null;
 
   // The <video> element the Core currently subscribes to for
   // enterpictureinpicture/leavepictureinpicture (null when unresolved/torn down).
@@ -70,6 +81,16 @@ export class PipCore extends EventTarget {
 
   get error(): any {
     return this._error;
+  }
+
+  /**
+   * The last failure's serializable `WcsIoErrorInfo` (stable `code` / `phase` /
+   * `recoverable`), or null. Additive wc-bindable property (event
+   * `wcs-pip:error-info-changed`), derived from `error`; the existing `error`
+   * value shape is unchanged.
+   */
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._errorInfo;
   }
 
   // --- Lifecycle (§3.5) ---
@@ -113,7 +134,9 @@ export class PipCore extends EventTarget {
   async requestPictureInPicture(element: HTMLVideoElement | null): Promise<void> {
     const gen = ++this._gen;
     if (!element || element.tagName !== "VIDEO") {
-      this._setError({ message: "target must be a <video> element." });
+      // Distinct from "API is not supported" (below): the resolved target did
+      // not satisfy the `<video>`-only constraint (wrong tag / unresolved).
+      this._setError({ message: "target must be a <video> element." }, "invalid-argument");
       return;
     }
     // Re-wire to `element` before issuing the platform call: a caller may
@@ -129,7 +152,7 @@ export class PipCore extends EventTarget {
     this.observe(element);
     const fn = this._requestPictureInPictureFn(element);
     if (!fn) {
-      this._setError({ message: "Picture-in-Picture API is not supported." });
+      this._setError({ message: "Picture-in-Picture API is not supported." }, "capability-missing");
       return;
     }
     try {
@@ -227,7 +250,32 @@ export class PipCore extends EventTarget {
     }));
   }
 
-  private _setError(error: any): void {
+  // `kind` is an explicit taxonomy discriminator passed only from the synthetic
+  // error sites (unsupported / non-<video> target); caught exceptions pass no kind
+  // and are classified by their `.name`. Both `error` and the additive `errorInfo`
+  // are now event-backed so a request/exit failure is observable via bind().
+  private _setError(error: any, kind?: PictureInPictureErrorKind): void {
+    // Same-value guard on reference: each failure builds a fresh object and the
+    // clear path passes the literal null, so this only suppresses redundant
+    // null→null (a successful request/exit clearing an already-null error).
+    if (this._error === error) return;
     this._error = error;
+    // Keep the additive errorInfo taxonomy in sync; fire it before the `error`
+    // event so an observer of both sees the classification first (io-node family).
+    this._commitErrorInfo(error === null ? null : derivePictureInPictureErrorInfo(error, kind));
+    this._target.dispatchEvent(new CustomEvent("wcs-pip:error", {
+      detail: error,
+      bubbles: true,
+    }));
+  }
+
+  // Called only from _setError (already reference-guarded), so errorInfo
+  // transitions exactly when error does — no separate guard needed here.
+  private _commitErrorInfo(info: WcsIoErrorInfo | null): void {
+    this._errorInfo = info;
+    this._target.dispatchEvent(new CustomEvent("wcs-pip:error-info-changed", {
+      detail: info,
+      bubbles: true,
+    }));
   }
 }

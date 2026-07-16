@@ -11,3 +11,10 @@ export type {
 export type {
   WebSocketConnectOptions
 } from "./core/WebSocketCore.js";
+
+// Error taxonomy: `errorInfo` is an additive wc-bindable property, so its value
+// type and the stable code constants are public (no lane — WebSocket is a
+// persistent session/monitor node). The generic `WcsIoErrorInfo` type comes from
+// the shared io-core.
+export type { WcsIoErrorInfo, WcsIoErrorPhase } from "./core/platformCapability.js";
+export { WCS_WEBSOCKET_ERROR_CODE } from "./core/websocketCapabilities.js";

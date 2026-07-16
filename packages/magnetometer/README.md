@@ -8,7 +8,7 @@ It is an **async primitive node** that turns device magnetic field readings into
 With `@wcstack/state`, `<wcs-magnetometer>` can be bound directly through path contracts:
 
 - **input surface**: `frequency` (sampling rate in Hz)
-- **output state surface**: `x`, `y`, `z`, `error`
+- **output state surface**: `x`, `y`, `z`, `error`, `errorInfo`
 
 This means compass/magnetic-field-driven UI can be expressed declaratively in HTML, without writing `Magnetometer`/`reading`/`error`-listener glue in your UI layer.
 
@@ -103,6 +103,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 | `y`      | `wcs-magnetometer:reading` | Magnetic flux density along the y-axis. |
 | `z`      | `wcs-magnetometer:reading` | Magnetic flux density along the z-axis. |
 | `error`  | `wcs-magnetometer:error`   | Normalized `{ error, message }`, or `null`. |
+| `errorInfo` | `wcs-magnetometer:error-info-changed` | Serializable failure taxonomy (`WcsIoErrorInfo` — stable `code` / `phase` / `recoverable`), or `null`. Additive, derived from `error`; the existing `error` shape is unchanged. |
 
 `x`/`y`/`z` all derive from the single `wcs-magnetometer:reading` event (one native `reading` event updates all three axes together).
 
@@ -166,6 +167,7 @@ DevTools open; it is not a supported styling hook.
 
 - **No `_gen` generation guard.** `start()`/`stop()` are a synchronous subscribe/unsubscribe toggle with no asynchronous probe to race against a `dispose()` — see `docs/sensor-tag-design.md` §1.5.
 - **`error` is sticky.** It holds the last observed failure (e.g. `unsupported`, `SecurityError`) and is **not** auto-cleared by a later successful `start()` or by incoming `reading`s. A `stop()` + `start()` retry that succeeds still leaves the previous `error` in place — clear or reinterpret it in your own state if needed.
+- **`errorInfo` taxonomy.** An **additive** bindable output (`wcs-magnetometer:error-info-changed`) that classifies the same failure into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. The mapping keys off the normalized error name: `unsupported` → `capability-missing` (phase `probe`); `SecurityError` / `NotAllowedError` → `not-allowed` (phase `start`); `NotReadableError` → `not-readable` (phase `execute`); any other sensor failure → `sensor-error` (phase `execute`). All are `recoverable: false`. `errorInfo` transitions exactly when `error` does, so it is **sticky** in the same way and only returns to `null` when `error` does. The shared `WcsIoErrorInfo` type and the `WCS_MAGNETOMETER_ERROR_CODE` constants are exported.
 - **`frequency` is read only at `start()`.** There is no `attributeChangedCallback`, and `start()` is idempotent while already started (a redundant call is a no-op — see Commands above), so changing the `frequency` attribute/property on a running sensor has no effect. To apply a new sampling rate, `stop()` then `start()` again.
 - **Reparenting stops the sensor and does not resume it.** Moving a connected `<wcs-magnetometer>` element to a different parent runs `disconnectedCallback` → `connectedCallback`; since the Shell does not auto-start on connect (see Quick Start above), this is effectively a stop with no automatic restart. `x`/`y`/`z` freeze at their last sample, and no `error` is raised — the sensor stays inert until `start` is invoked again.
 - **Never call the raw `new Magnetometer(...)` anywhere but the one guarded construction helper** — permission denial and Permissions-Policy blocks throw synchronously.

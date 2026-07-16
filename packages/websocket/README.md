@@ -8,7 +8,7 @@ It is an **I/O node** that connects WebSocket communication to reactive state.
 With `@wcstack/state`, `<wcs-ws>` can be bound directly through path contracts:
 
 - **input / command surface**: `url`, `trigger`, `send`
-- **output state surface**: `message`, `connected`, `loading`, `error`, `readyState`
+- **output state surface**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`
 
 This means real-time communication can be expressed declaratively in HTML, without writing `new WebSocket()`, `onmessage`, or connection glue code in your UI layer.
 
@@ -190,6 +190,7 @@ These properties represent the current connection state and are the main observa
 | `connected` | `boolean` | `true` while WebSocket is open |
 | `loading` | `boolean` | `true` while connecting |
 | `error` | `WcsWsError \| Event \| null` | Connection or close error |
+| `errorInfo` | `WcsIoErrorInfo \| null` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`), derived from `error`. Additive — the `error` shape is unchanged. |
 | `readyState` | `number` | WebSocket readyState constant |
 
 ### Input / command surface
@@ -386,6 +387,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `connected` | `boolean` | `true` while WebSocket is open |
 | `loading` | `boolean` | `true` while connecting |
 | `error` | `WcsWsError \| Event \| null` | Error info |
+| `errorInfo` | `WcsIoErrorInfo \| null` | Failure taxonomy (`code` / `phase` / `recoverable`), derived from `error` |
 | `readyState` | `number` | WebSocket readyState constant |
 | `binaryType` | `"blob" \| "arraybuffer"` | Binary frame representation (backs the `binary-type` attribute; default `blob`) |
 | `trigger` | `boolean` | Set to `true` to open connection |
@@ -420,6 +422,7 @@ static wcBindable = {
     { name: "connected",  event: "wcs-ws:connected-changed" },
     { name: "loading",    event: "wcs-ws:loading-changed" },
     { name: "error",      event: "wcs-ws:error" },
+    { name: "errorInfo",  event: "wcs-ws:error-info-changed" },
     { name: "readyState", event: "wcs-ws:readystate-changed" },
   ],
   commands: [
@@ -669,6 +672,7 @@ bootstrapWebSocket({
 - JSON messages are automatically parsed on receive; objects are auto-stringified on send
 - `manual` is useful when connection timing should be controlled explicitly
 - Auto-reconnect only fires on abnormal close (code other than 1000)
+- **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-ws:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A `connect()` with no `url` is `invalid-argument` (phase `start`, not recoverable); a `send()` before the socket is open is `invalid-state` (phase `execute`, not recoverable — connect first); a `new WebSocket()` construction exception or the platform `error` Event is `connection-error` (phase `execute`, **`recoverable: true`** — connection errors are usually transient and a reconnect can recover). `errorInfo` transitions exactly when `error` does (cleared to `null` alongside it). The shared `WcsIoErrorInfo` type and the `WCS_WEBSOCKET_ERROR_CODE` constants are exported.
 
 ## License
 

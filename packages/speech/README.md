@@ -92,6 +92,7 @@ export default {
 | `charIndex` | number \| null | offset of the word being spoken |
 | `spokenWord` | string \| null | the word being spoken |
 | `error` | `WcsSpeakErrorDetail` \| null | last failure |
+| `errorInfo` | `WcsIoErrorInfo` \| null | serializable failure taxonomy (`code` / `phase` / `recoverable`) derived from `error` — SpeechSynthesis codes, see [Notes & limitations](#notes--limitations); additive, `error` shape unchanged |
 | `unsupported` | boolean | SpeechSynthesis is unavailable |
 
 ### Commands
@@ -149,6 +150,7 @@ Like `<wcs-geo>`, it has two phases: a **one-shot** recognition (default) and a 
 | `listening` | boolean | a session is active |
 | `permission` | `"prompt"\|"granted"\|"denied"\|"unsupported"` | microphone permission |
 | `error` | `WcsListenErrorDetail` \| null | last failure |
+| `errorInfo` | `WcsIoErrorInfo` \| null | serializable failure taxonomy (`code` / `phase` / `recoverable`) derived from `error` — SpeechRecognition codes, see [Notes & limitations](#notes--limitations); additive, `error` shape unchanged |
 | `unsupported` | boolean | SpeechRecognition is unavailable |
 
 ### Commands
@@ -244,6 +246,11 @@ DevTools open; they are not a supported styling hook.
 - **Browser support.** SpeechSynthesis is broad; SpeechRecognition is Chrome-only (vendor-prefixed `webkitSpeechRecognition`) — `<wcs-listen>` reports `unsupported` elsewhere.
 - **SpeechSynthesis is a global singleton.** `<wcs-speak>` does **not** `cancel()` on disconnect (that would stop other instances); call `cancel()` explicitly to stop audio. A disconnected element stops tracking but any in-flight utterance finishes.
 - **Echo loop.** When wiring `<wcs-listen>` → state → `<wcs-speak>`, mute speaking while listening (e.g. bind `manual`) so the synthesized audio is not re-recognized. See the echo example.
+- **`errorInfo` — additive failure taxonomy.** Alongside `error`, each element exposes an **additive** bindable output `errorInfo` (`WcsIoErrorInfo` = a stable `code` / `phase` / `recoverable` / `message`), derived from the same failure — the `error` shape is unchanged — and cleared to `null` on success. The two elements have **different** code sets (SpeechRecognition vs SpeechSynthesis error enums), both defined in `core/speechCapabilities.ts`:
+  - **`<wcs-listen>`** (`WCS_LISTEN_ERROR_CODE`, event `wcs-listen:error-info-changed`): `capability-missing` (phase `probe` — SpeechRecognition absent), `not-allowed` (`start` — `not-allowed` / `service-not-allowed`, mic permission denied), `not-readable` (`start` — `audio-capture`, mic unreadable), `no-speech` (`execute`, recoverable — silence, nothing detected), `network-error` (`execute`, recoverable — `network`), `aborted` (`execute`, recoverable — session interrupted), `invalid-argument` (`start` — `language-not-supported` / `bad-grammar`), `speech-error` (`execute` — defensive fallback for any other code).
+  - **`<wcs-speak>`** (`WCS_SPEAK_ERROR_CODE`, event `wcs-speak:error-info-changed`): `capability-missing` (phase `probe` — SpeechSynthesis absent), `not-allowed` (`start` — synthesis disallowed), `aborted` (`execute`, recoverable — `canceled` / `interrupted`), `not-readable` (`execute` — `audio-busy` recoverable, `audio-hardware` not), `network-error` (`execute`, recoverable — `network`), `invalid-argument` (`start` — `language-unavailable` / `voice-unavailable` / `text-too-long` / `invalid-argument`), `synthesis-failed` (`execute` — `synthesis-unavailable` / `synthesis-failed`), `speech-error` (`execute` — defensive fallback).
+
+  The `WcsIoErrorInfo` type and the `WCS_LISTEN_ERROR_CODE` / `WCS_SPEAK_ERROR_CODE` constants are exported.
 
 ## Headless usage (`SpeakCore` / `ListenCore`)
 

@@ -1,5 +1,6 @@
 import { IWcBindable, OrientationLockType, WcsScreenOrientationSnapshot } from "../types.js";
 import { ScreenOrientationCore } from "../core/ScreenOrientationCore.js";
+import { WcsIoErrorInfo } from "../core/platformCapability.js";
 
 /**
  * `<wcs-screen-orientation>` — declarative Screen Orientation API monitor +
@@ -102,6 +103,10 @@ export class WcsScreenOrientation extends HTMLElement {
 
   get error(): any {
     return this._core.error;
+  }
+
+  get errorInfo(): WcsIoErrorInfo | null {
+    return this._core.errorInfo;
   }
 
   get connectedCallbackPromise(): Promise<void> {
