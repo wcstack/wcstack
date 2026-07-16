@@ -27,4 +27,4 @@ http://localhost:3000 を開いてください。3 パッケージ（`state` / `
 - **名前付き SSE イベント**: `events="metric,deploy"` はすべての名前付きイベントを単一の `message` 出力に集約します。どれが発火したかは `message.event` が教えてくれます。時折届く `deploy` イベントが左パネルのバナーを駆動します。
 - **有界 fold**: 両パネルとも last-20 窓＋累計カウントだけを保持します。このスタックは backpressure を明示的に放棄しているため、長寿命ストリームでは**有界**の集約が契約です。
 - **ネイティブ再接続**: `<wcs-sse>` は再接続ロジックを持ちません — サーバーを落として再起動すると、`EventSource` が自力で復帰するのが見えます（`retry: 3000` ヒントはストリーム側から送っています）。
-- **network タイル**: `<wcs-network>` は Network Information API の純粋なモニタです — 接続の*品質*（`effectiveType` / `downlink` / `rtt` / `saveData`）であって online/offline ではありません。属性もコマンドもありません。初期スナップショットは接続時に同期 dispatch されるため、ページ側は `$connectedCallback` で現在値を一度 pull し、以降の変化はバインディング経由で受けます。
+- **network タイル**: `<wcs-network>` は Network Information API の純粋なモニタです — 接続の*品質*（`effectiveType` / `downlink` / `rtt` / `saveData`）であって online/offline ではありません。属性もコマンドもありません。初期スナップショットは接続時に同期 dispatch されるのでバインディング確立前に飛ぶことがありますが、取りこぼしません — 5 つとも output-only な `wcBindable` メンバであり、要素が authority なので、各バインディングは確立時に現在値を読み取り、以降の変化はイベントで受けます。

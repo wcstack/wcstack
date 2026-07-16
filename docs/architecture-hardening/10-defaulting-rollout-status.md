@@ -134,10 +134,17 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
 
 ### D. ビルド / リリース衛生 — 各パッケージ dist 再ビルド【リリース時】
 
-- **`state` dist は stale**（Phase 2/3 の flip が `dist/*.js` に未反映）。`fetch` / `share` / `contacts` / `eyedropper` / `credential` / `upload` / `clipboard` / `geolocation` も src 変更が dist 未反映。
+- `fetch` / `share` / `contacts` / `eyedropper` / `credential` / `upload` / `clipboard` / `geolocation` / `router` は src 変更が dist 未反映。加えて `protocol/wcBindable.ts` の再生成（`version: 1` → `version: number`）を取り込んでいない dist が広範に残る（`debounce` / `network` で確認）。
+- **2026-07-17 追記**: `state` / `fetch` dist は既に Phase 2/3 の flip 済み（`enableDirectionalInitialSync: true` を確認）で、この項の記述を訂正した。`router` は本日の wcBindable 修正（下記）が dist 未反映。
 - 設計上リリース build で解消するが、公開 artifact は現状フラグ反映前。リリースまでに:
   1. 各パッケージ rebuild（`rimraf dist` → `tsc` → `rollup -c`）
   2. **`state` に依存する `router` / `signals` / `server` / `examples` の回帰確認**（dist 更新で新既定が効くため）
+
+**examples 回帰確認 完了（2026-07-17、ローカル dist ＋ 実ブラウザ）**: 上記 2 を先行実施し、既定 ON で **実際に壊れる例を 5 件検出・修正**した。examples は CDN（公開済み v1.20.0）を読むため、この破壊はリリースまで顕在化しない。
+- **根因は 1 件が package バグ**: `router` の `wcBindable` が settable な `navigateUrl` を `properties` にだけ宣言していた（output-only 判定 → `shouldApplyState` が state→element 書き込みを**恒久抑止** → state からのプログラム遷移が死ぬ）。`inputs` へ追加して修正（§3.6 の「properties と inputs の両方 → 互換性のため state」に一致）。実ブラウザの反実仮想で確認済み（修正前: クリックしても URL 不変／修正後: 遷移）。`path` は setter が navigate しないので output-only のまま据置。
+- **残り 4 件は examples 側の pattern**: output-only スロットに state 側が「都合のよい初期値」を種蒔きし（`value: []`、`debouncedQuery: ""`）、element authority の実初期値（`null` / `undefined`）で上書きされて getter が落ちる。**seed は element の実初期値に合わせ、表示用は派生 getter で null 安全化**する形に統一（state-search / router-spa / fetch pagination / fetch users-crud）。`<wcs-debounce>` の `value` も同型（`DebounceCore._value = undefined`）で、これは e2e 実行でのみ発覚した。
+- **副次**: `state-sse-dashboard` の `<wcs-network>` 手動 pull（初回スナップショット消失の回避策）は Phase 2 が構造的に解決したため削除。実ブラウザで自動 pull を実証（`netSupported` シード `false` → `true` に置換され tile が描画）。
+- ⇒ **教訓**: 「output-only メンバに state 側の初期値を持たせる」は Phase 2 既定 ON で成立しなくなる。既存アプリの移行ガイドに要記載。`for:` パスは validator が静的に配列型を要求するため、null seed と併せて**派生 getter へ向ける**必要がある（`wcs-validate` が実際にこの誤りを捕捉した）。
 
 ### E. ドキュメント / normative 更新【軽微】
 

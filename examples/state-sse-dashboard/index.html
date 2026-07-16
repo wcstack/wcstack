@@ -47,9 +47,9 @@
 
        Module scripts execute in document order, so listing the I/O nodes
        BEFORE state keeps their elements defined by the time state initializes
-       its bindings. (state also re-applies the initial state→element write
-       via customElements.whenDefined for late-defined elements, so this
-       ordering is a best practice rather than a hard requirement.) -->
+       its bindings. (state defers a binding on a not-yet-defined element via
+       customElements.whenDefined and settles it once the class arrives, so
+       this ordering is a best practice rather than a hard requirement.) -->
   <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
@@ -130,24 +130,6 @@
           }),
           initial: { samples: [], count: 0 },
         },
-      },
-
-      // <wcs-network> publishes its initial snapshot synchronously in its own
-      // connectedCallback — possibly before these bindings attach — so pull
-      // the current values once; later changes stream in via the bindings.
-      // Fire-and-forget so $streams startup never waits on the CDN.
-      $connectedCallback() {
-        (async () => {
-          await customElements.whenDefined("wcs-network");
-          const el = document.querySelector("wcs-network");
-          if (!el) return;
-          await el.connectedCallbackPromise;
-          this.netSupported = el.supported;
-          this.netType = el.effectiveType;
-          this.netDownlink = el.downlink;
-          this.netRtt = el.rtt;
-          this.netSaveData = el.saveData;
-        })();
       },
 
       // --- derived ----------------------------------------------------------
@@ -261,7 +243,12 @@
             loading: sseLoading;
             eventToken.message: sseMessage"></wcs-sse>
 
-<!-- Pure monitor: no attributes, no commands — five outputs. -->
+<!-- Pure monitor: no attributes, no commands — five outputs. <wcs-network>
+     publishes its first snapshot in its own connectedCallback, which can run
+     before these bindings attach. Nothing is lost: all five are output-only
+     wcBindable members, so the element is their authority and state reads the
+     current value as each binding attaches. The seeds above just name the
+     slots — they are replaced by the element's real values. -->
 <wcs-network
   data-wcs="supported: netSupported;
             effectiveType: netType;

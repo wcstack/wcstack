@@ -16,9 +16,10 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 
 **Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
 scripts execute in document order, so this guarantees every custom element is
-defined before state attaches its bindings. (state also re-applies the initial
-state→element write via `customElements.whenDefined` for late-defined
-elements, so this ordering is a best practice rather than a hard requirement.)
+defined before state attaches its bindings. (state defers a binding on a
+not-yet-defined element via `customElements.whenDefined` and settles its initial
+sync once the class arrives, so this ordering is a best practice rather than a
+hard requirement.)
 
 ## Demo list
 

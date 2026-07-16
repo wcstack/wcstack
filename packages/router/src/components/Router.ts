@@ -29,8 +29,14 @@ export class Router extends HTMLElement implements IRouter {
       { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
       { name: "path", event: "wcs-router:path-changed" },
     ],
+    // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
+    // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ
+    // 宣言すると binding core は output-only とみなし、state → element の書き込みを
+    // 抑止するため、state 経由のプログラム遷移が成立しなくなる。`path` は setter が
+    // navigate せず内部値の反映だけなので、意図的に output のままにしている。
     inputs: [
       { name: "basename", attribute: "basename" },
+      { name: "navigateUrl" },
     ],
     commands: [
       { name: "navigate", async: true },

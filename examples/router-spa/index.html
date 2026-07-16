@@ -76,17 +76,23 @@
 <wcs-state>
   <script type="module">
     export default {
-      // Current route path, two-way bound to <wcs-router>. Seeding it from
-      // location.pathname makes deep links (/products/3) render correctly even
-      // if the router resolves the initial route before this binding attaches.
-      path: location.pathname,
-      // Write a path here to navigate programmatically: the two-way binding
-      // pushes it into <wcs-router>.navigateUrl, whose setter runs navigate()
-      // and resets itself to null when the navigation finishes.
+      // Current route path, fed by <wcs-router>. `path` is an output-only wcBindable
+      // member, so the router is its authority: state reads the router's current path
+      // when the binding attaches and takes every later change from path-changed.
+      // That is why a deep link (/products/3) paints the right page even though the
+      // router resolves its first route before this binding exists — the value is
+      // read, not awaited, so there is nothing to miss and nothing to seed.
+      path: "",
+      // Write a path here to navigate programmatically: the binding pushes it
+      // into <wcs-router>.navigateUrl, whose setter runs navigate() and resets
+      // itself to null when the navigation finishes.
       navigateUrl: null,
 
       // 1 fetch = 1 state slot (same pattern as the state-search example).
-      productsFetch: { value: [], loading: false, error: null, status: 0 },
+      // <wcs-fetch> is the authority for these outputs, so they are seeded with
+      // the element's real initial values — `value` is null until a response
+      // lands, never [].
+      productsFetch: { value: null, loading: false, error: null, status: 0 },
       productFetch: { value: null, loading: false, error: null, status: 0 },
 
       // --- URL -> page derivation -------------------------------------
@@ -113,6 +119,15 @@
       },
 
       // --- List page flags --------------------------------------------
+      // productsFetch.value is null until the catalog lands, so the view reads it
+      // through `products` — an always-an-array projection, which is what a `for:`
+      // path has to be — and counts that.
+      get products() {
+        return this["productsFetch.value"] ?? [];
+      },
+      get productCount() {
+        return this.products.length;
+      },
       get listError() {
         return !!this["productsFetch.error"] && !this["productsFetch.loading"];
       },
@@ -137,8 +152,10 @@
       },
 
       // --- Actions (state -> router navigation) ------------------------
+      // The click handler runs with the loop context of the row it fired from, so
+      // the wildcard in products.*.id resolves to that row — no $resolve needed.
       openProduct() {
-        this.navigateUrl = "/products/" + this["productsFetch.value.*.id"];
+        this.navigateUrl = "/products/" + this["products.*.id"];
       },
       goToProducts() {
         this.navigateUrl = "/";
@@ -149,9 +166,12 @@
 
 <!-- ============================================================
      Router — owns the URL, history, per-page <title> and the
-     static pages (About / 404). The wc-bindable two-way binding
-     is the whole bridge: path (router -> state) and navigateUrl
-     (state -> router).
+     static pages (About / 404). The wc-bindable binding is the
+     whole bridge, and each side flows one way: path is an
+     output-only member (router -> state, read on attach and then
+     streamed via path-changed), while navigateUrl is declared as
+     both an output and an input, so state can write it to navigate
+     and the router writes it back to null when the nav finishes.
      ============================================================ -->
 <wcs-router data-wcs="path: path; navigateUrl: navigateUrl">
   <template>
@@ -207,7 +227,7 @@
      ============================================================ -->
 <template data-wcs="if: isList">
   <section aria-label="Product list">
-    <h2>Products (<span data-wcs="textContent: productsFetch.value.length"></span>)</h2>
+    <h2>Products (<span data-wcs="textContent: productCount"></span>)</h2>
 
     <template data-wcs="if: productsFetch.loading">
       <div class="spinner" aria-hidden="true"></div>
@@ -218,7 +238,7 @@
     </template>
 
     <ul class="product-list">
-      <template data-wcs="for: productsFetch.value">
+      <template data-wcs="for: products">
         <li>
           <button type="button" class="product-item" data-wcs="onclick: openProduct; attr.aria-label: .name">
             <span class="product-name" data-wcs="textContent: .name"></span>
