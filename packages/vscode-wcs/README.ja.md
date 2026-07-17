@@ -144,11 +144,21 @@ drift。診断には安定コード（例 `manifest-schema-version` / `manifest-
 
 単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、エディタと CI で
 結果が一致します。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
-sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します:
+sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します。
+本パッケージの配布先は VS Code Marketplace であり npm には公開していないため、
+`npx wcs-validate` は動きません。リポジトリからビルドして `node` で起動してください
+（このリポジトリ自身の `wcs-validate` CI job もまったく同じ起動方法です）:
 
 ```bash
-npx wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] <file> [<file> ...]
+# 初回のみビルド（リポジトリルートから）
+cd packages/vscode-wcs && npm ci && npm run build && cd ../..
+
+node packages/vscode-wcs/dist/cli.cjs [--attr=data-wcs] [--state-tag=wcs-state] [--errors-only] <file> [<file> ...]
 ```
+
+`--errors-only`（別名 `--quiet`）は表示を error severity の行だけに絞ります。warning/info の
+件数集計と exit code は変わりません。exit code は error が 1 件でもあれば `1`、引数不正・
+ファイル読み取り失敗は `2`、それ以外は `0` です。
 
 sidecar は**ツール専用**です: 稼働中の `static wcBindable` 宣言を上書きすることはなく、
 ファイルの欠落や陳腐化がランタイム挙動を変えることもありません。規範的なスキーマと解決

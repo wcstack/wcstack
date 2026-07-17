@@ -146,11 +146,20 @@ codes (e.g. `manifest-schema-version`, `manifest-kind-invalid`).
 A single `validateDocument` entry point drives both the in-editor diagnostics and
 the CLI, so the IDE and CI report identically. The bundled **`wcs-validate`** CLI
 runs the same checks headlessly — over `wcstack.manifest.json` sidecars and/or HTML
-`data-wcs` bindings — for CI:
+`data-wcs` bindings — for CI. This package ships to the VS Code Marketplace, not
+npm, so `npx wcs-validate` does not work; build it from this repo and invoke the
+CLI with `node` (this is exactly how the repo's own `wcs-validate` CI job runs it):
 
 ```bash
-npx wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] <file> [<file> ...]
+# one-time build (from the repo root)
+cd packages/vscode-wcs && npm ci && npm run build && cd ../..
+
+node packages/vscode-wcs/dist/cli.cjs [--attr=data-wcs] [--state-tag=wcs-state] [--errors-only] <file> [<file> ...]
 ```
+
+`--errors-only` (alias `--quiet`) prints only error-severity lines; warning/info
+counts and the exit code are unchanged. The exit code is `1` when any error is
+reported, `2` on usage or file-read failure, `0` otherwise.
 
 The sidecar is **tooling-only**: it never overrides the runtime `static wcBindable`
 declaration, and a missing or stale file never changes runtime behavior. The
