@@ -34,17 +34,24 @@ export default {
 
   <my-component data-wcs="count: cnt"></my-component>
 
+  <!-- cnt is seeded to 5 (deliberately different from the DCC's own initial
+       count: 0) so a producer-snapshot leak back into parent state is visible,
+       and the parent button drives the parent→DCC write direction. -->
   <wcs-state>
     <script type="module">
 export default {
-  cnt: 0,
+  cnt: 5,
   get cnt2() {
     return this.cnt * 2;
+  },
+  incrementParent() {
+    this.cnt++;
   }
-};          
+};
     </script>
   </wcs-state>
 
   <div data-wcs="textContent: cnt2"></div>
+  <button data-wcs="onclick: incrementParent">Increment parent</button>
 </body>
 </html>  

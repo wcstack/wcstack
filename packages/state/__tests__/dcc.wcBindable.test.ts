@@ -12,12 +12,26 @@ describe('dcc/wcBindable', () => {
           { name: 'count', event: 'my-component:count-changed' },
           { name: 'name', event: 'my-component:name-changed' },
         ],
+        inputs: [
+          { name: 'count' },
+          { name: 'name' },
+        ],
       });
     });
 
-    it('空のbindablesの場合はpropertiesが空になること', () => {
+    it('$bindables は getter/setter 両面を持つため properties と inputs の両方に宣言されること', () => {
+      // properties のみだと directional initial sync が output-only と判定し、
+      // 親 state → DCC への書き込みが恒久的に抑止される（v1.21.0 の回帰）。
+      const result = createWcBindable('my-counter', ['count']);
+      const propertyNames = result.properties.map((p) => p.name);
+      const inputNames = (result.inputs ?? []).map((i) => i.name);
+      expect(inputNames).toEqual(propertyNames);
+    });
+
+    it('空のbindablesの場合はpropertiesとinputsが空になること', () => {
       const result = createWcBindable('x-el', []);
       expect(result.properties).toEqual([]);
+      expect(result.inputs).toEqual([]);
     });
   });
 

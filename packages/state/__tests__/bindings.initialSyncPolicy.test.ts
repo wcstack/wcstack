@@ -43,6 +43,7 @@ vi.mock("../src/stateElementByName", () => ({
 
 import { BindingSession } from "../src/bindings/BindingSession";
 import { resolveInitialSyncPolicy } from "../src/bindings/initialSync";
+import { createWcBindable } from "../src/dcc/wcBindable";
 import { setConfig } from "../src/config";
 import { __private__ as twowayPrivate } from "../src/event/twowayHandler";
 import { hasByAddressSymbol, setLoopContextSymbol } from "../src/proxy/symbols";
@@ -407,5 +408,51 @@ describe("BindingSession Phase 2 initial synchronization", () => {
       syncOn: "call",
       observable: false,
     });
+  });
+
+  it("DCC $bindables member は既定で state authority になり、DCC 初期値が親 state を上書きしないこと", () => {
+    // v1.21.0 回帰: createWcBindable が inputs を生成せず $bindables が output-only
+    // 判定になり、親 state → DCC 書き込みの恒久抑止と DCC 初期値の親 state への
+    // 逆流(commitProducerValue)が起きていた。
+    const tag = nextTag("dcc");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = createWcBindable(tag, ["count"]);
+      _count: unknown = 0;
+      get count(): unknown { return this._count; }
+      set count(value: unknown) { this._count = value; }
+    });
+    const node = document.createElement(tag) as HTMLElement & { count: unknown };
+    document.body.append(node);
+    mocks.state.parentCount = 42;
+    const binding = { ...createBinding(node, "parentCount"), propName: "count", propSegments: ["count"] };
+
+    expect(resolveInitialSyncPolicy(binding)).toEqual({
+      authority: "state",
+      syncOn: "call",
+      observable: true,
+    });
+    const current = session();
+    expect(current.initialize([binding])).toEqual([binding]);
+    expect(mocks.state.parentCount).toBe(42);
+    expect(current.shouldApplyState(binding)).toBe(true);
+  });
+
+  it("DCC member には init=state / element / auto すべてを明示できること", () => {
+    const tag = nextTag("dcc-modifiers");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = createWcBindable(tag, ["count"]);
+      count: unknown = 0;
+    });
+    const node = document.createElement(tag);
+    document.body.append(node);
+    for (const authority of ["state", "element", "auto"] as const) {
+      const binding = {
+        ...createBinding(node, "dccModifier"),
+        propName: "count",
+        propSegments: ["count"],
+        propModifiers: [`init=${authority}`],
+      };
+      expect(() => resolveInitialSyncPolicy(binding)).not.toThrow();
+    }
   });
 });
