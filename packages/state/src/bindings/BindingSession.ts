@@ -74,6 +74,38 @@ let nextGeneration = 0;
 const recordByBinding = new WeakMap<IBindingInfo, IInternalBindingRecord>();
 const sessionByRoot = new WeakMap<Node, BindingSession>();
 
+// node → その node に関心を持つ session（anchor として binding を覚えている、
+// または定義待ちタスクを抱えている）。BindingOwner は mutation で増減した
+// サブツリーを1回だけ走査し、ここに登録された session だけへ per-node 配送する。
+// 全 session ブロードキャストだと、リスト行の逐次 append などで
+// 「session 数 × 変異ノード数」の O(n²) ファンアウトになるため、その正本台帳。
+// 大多数の node は関心 session が1つなので単一値で持ち、2つ目から Set に昇格する。
+const interestedSessionsByNode = new WeakMap<Node, BindingSession | Set<BindingSession>>();
+
+function addInterestedSession(node: Node, session: BindingSession): void {
+  const current = interestedSessionsByNode.get(node);
+  if (typeof current === "undefined") {
+    interestedSessionsByNode.set(node, session);
+    return;
+  }
+  if (current === session) return;
+  if (current instanceof Set) {
+    current.add(session);
+    return;
+  }
+  interestedSessionsByNode.set(node, new Set([current, session]));
+}
+
+function forEachInterestedSession(node: Node, callback: (session: BindingSession) => void): void {
+  const current = interestedSessionsByNode.get(node);
+  if (typeof current === "undefined") return;
+  if (current instanceof Set) {
+    for (const session of Array.from(current)) callback(session);
+    return;
+  }
+  callback(current);
+}
+
 function forEachInclusive(root: Node, callback: (node: Node) => void): void {
   callback(root);
   for (const child of Array.from(root.childNodes)) {
@@ -93,8 +125,6 @@ function observableRootFor(node: Node): IObservableRoot | null {
 }
 
 class BindingOwner {
-  private readonly sessionRefs = new Set<WeakRef<BindingSession>>();
-  private readonly knownSessions = new WeakSet<BindingSession>();
   private readonly observer: MutationObserver | null;
 
   constructor(readonly root: IObservableRoot) {
@@ -105,12 +135,6 @@ class BindingOwner {
     this.observer?.observe(root, { childList: true, subtree: true });
   }
 
-  add(session: BindingSession): void {
-    if (this.knownSessions.has(session)) return;
-    this.knownSessions.add(session);
-    this.sessionRefs.add(new WeakRef(session));
-  }
-
   private handleMutations(mutations: MutationRecord[]): void {
     const removed: Node[] = [];
     const added: Node[] = [];
@@ -118,14 +142,26 @@ class BindingOwner {
       removed.push(...Array.from(mutation.removedNodes));
       added.push(...Array.from(mutation.addedNodes));
     }
-    for (const ref of Array.from(this.sessionRefs)) {
-      const session = ref.deref();
-      if (typeof session === "undefined") {
-        this.sessionRefs.delete(ref);
-        continue;
-      }
-      session.handleMutations(this.root, removed, added);
+    // 走査は owner が1回だけ行い、関心 session が居る node だけを配送・contains
+    // 検査へ進める。contains は O(木の深さ) なので、関心の無い node で呼ばない。
+    const reconnected: IBindingInfo[] = [];
+    for (const subtree of removed) {
+      forEachInclusive(subtree, (node) => {
+        forEachInterestedSession(node, (session) => {
+          if (this.root.contains(node)) return;
+          session.handleRemovedNode(node);
+        });
+      });
     }
+    for (const subtree of added) {
+      forEachInclusive(subtree, (node) => {
+        forEachInterestedSession(node, (session) => {
+          if (!this.root.contains(node)) return;
+          session.handleAddedNode(node, reconnected);
+        });
+      });
+    }
+    if (reconnected.length > 0) applyChangeFromBindings(reconnected);
   }
 }
 
@@ -233,6 +269,7 @@ export class BindingSession {
       raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
     }
     this.observe(node);
+    addInterestedSession(node, this);
     const task: IDeferredDefinition = { node, active: true, cancel: null };
     let tasks = this.deferredByNode.get(node);
     if (typeof tasks === "undefined") {
@@ -289,58 +326,71 @@ export class BindingSession {
   observe(node: Node): void {
     const root = observableRootFor(node);
     if (root === null) return;
-    getBindingOwner(root).add(this);
+    // owner（root ごとの MutationObserver）の存在だけ保証する。session の配送先
+    // 登録は node 単位（interestedSessionsByNode）で行い、owner は session を
+    // 直接は保持しない。
+    getBindingOwner(root);
   }
 
   handleMutations(root: IObservableRoot, removed: readonly Node[], added: readonly Node[]): void {
     for (const subtree of removed) {
       forEachInclusive(subtree, (node) => {
         if (root.contains(node)) return;
-        const known = this.knownBindingsByNode.get(node);
-        if (typeof known !== "undefined") {
-          for (const binding of known.values()) this.disposeBinding(binding);
-        }
-        const tasks = this.deferredByNode.get(node);
-        if (typeof tasks !== "undefined") {
-          for (const task of Array.from(tasks)) {
-            task.active = false;
-            task.cancel?.();
-            tasks.delete(task);
-            this.deferred.delete(task);
-          }
-        }
+        this.handleRemovedNode(node);
       });
     }
-
     const reconnected: IBindingInfo[] = [];
     for (const subtree of added) {
       forEachInclusive(subtree, (node) => {
         if (!root.contains(node)) return;
-        const known = this.knownBindingsByNode.get(node);
-        if (typeof known === "undefined") return;
-        for (const binding of known.values()) {
-          const record = recordByBinding.get(binding);
-          if (record?.phase === "active") {
-            this.settleConnectedSnapshot(record);
-            continue;
-          }
-          if (record?.phase !== "disposed") continue;
-          const options = this.optionsByBinding.get(binding);
-          if (typeof options === "undefined") continue;
-          try {
-            this.start(binding, options);
-            if (options.applyOnReconnect && this.shouldApplyState(binding)) reconnected.push(binding);
-          } catch {
-            // Mutation delivery cannot surface initialization errors to a caller.
-          }
-        }
+        this.handleAddedNode(node, reconnected);
       });
     }
     if (reconnected.length > 0) applyChangeFromBindings(reconnected);
   }
 
+  handleRemovedNode(node: Node): void {
+    const known = this.knownBindingsByNode.get(node);
+    if (typeof known !== "undefined") {
+      for (const binding of known.values()) this.disposeBinding(binding);
+    }
+    const tasks = this.deferredByNode.get(node);
+    if (typeof tasks !== "undefined") {
+      for (const task of Array.from(tasks)) {
+        task.active = false;
+        task.cancel?.();
+        tasks.delete(task);
+        this.deferred.delete(task);
+      }
+    }
+  }
+
+  handleAddedNode(node: Node, reconnected: IBindingInfo[]): void {
+    const known = this.knownBindingsByNode.get(node);
+    if (typeof known === "undefined") return;
+    for (const binding of known.values()) {
+      const record = recordByBinding.get(binding);
+      if (record?.phase === "active") {
+        this.settleConnectedSnapshot(record);
+        continue;
+      }
+      if (record?.phase !== "disposed") continue;
+      const options = this.optionsByBinding.get(binding);
+      if (typeof options === "undefined") continue;
+      try {
+        this.start(binding, options);
+        if (options.applyOnReconnect && this.shouldApplyState(binding)) reconnected.push(binding);
+      } catch {
+        // Mutation delivery cannot surface initialization errors to a caller.
+      }
+    }
+  }
+
   private remember(binding: IBindingInfo, options: IBindingOptions): IBindingInfo {
     const anchor = binding.replaceNode;
+    // detached fragment 上でも登録しておく（node 単位の台帳なので root 非依存）。
+    // fragment 一括マウントで後から接続された行にも mutation 配送が届くようにする。
+    addInterestedSession(anchor, this);
     let known = this.knownBindingsByNode.get(anchor);
     if (typeof known === "undefined") {
       known = new Map();

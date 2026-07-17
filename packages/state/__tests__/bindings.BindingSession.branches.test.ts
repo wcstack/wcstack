@@ -234,12 +234,77 @@ describe("BindingSession defensive branches", () => {
       constructor(callback: (mutations: MutationRecord[]) => void) { deliver = callback; }
       observe(): void {}
     });
-    vi.stubGlobal("WeakRef", class {
-      deref(): undefined { return undefined; }
-    });
-    const deadRoot = document.createElement("div").attachShadow({ mode: "open" });
-    new BindingSession(deadRoot);
+    const emptyRoot = document.createElement("div").attachShadow({ mode: "open" });
+    new BindingSession(emptyRoot);
     deliver([{ removedNodes: [], addedNodes: [] } as any]);
+  });
+
+  it("owner が interested session のみへ per-node 配送すること（単一値→Set昇格を含む）", () => {
+    let deliver!: (mutations: MutationRecord[]) => void;
+    vi.stubGlobal("MutationObserver", class {
+      constructor(callback: (mutations: MutationRecord[]) => void) { deliver = callback; }
+      observe(): void {}
+    });
+    const shadow = document.createElement("div").attachShadow({ mode: "open" });
+    const anchor = document.createElement("input");
+    const bystander = document.createElement("input");
+    shadow.appendChild(anchor);
+    shadow.appendChild(bystander);
+
+    const first = createBinding(anchor);
+    const second = createBinding(anchor);
+    const third = createBinding(anchor);
+    const unrelated = createBinding(bystander);
+    const firstSession = new BindingSession(shadow);
+    const secondSession = new BindingSession();
+    const thirdSession = new BindingSession();
+    const unrelatedSession = new BindingSession();
+    firstSession.initialize([first], { registerAddress: false });
+    secondSession.initialize([second], { registerAddress: false });
+    thirdSession.initialize([third], { registerAddress: false });
+    unrelatedSession.initialize([unrelated], { registerAddress: false });
+
+    // interest の無い node（テキスト）を含むサブツリー削除でも安全に配送されること
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(document.createTextNode("no interest"));
+    shadow.appendChild(wrapper);
+    shadow.removeChild(wrapper);
+    shadow.removeChild(anchor);
+    deliver([
+      { removedNodes: [wrapper, anchor], addedNodes: [] } as any,
+    ]);
+    expect(firstSession.getRecord(first)?.phase).toBe("disposed");
+    expect(secondSession.getRecord(second)?.phase).toBe("disposed");
+    expect(thirdSession.getRecord(third)?.phase).toBe("disposed");
+    expect(unrelatedSession.getRecord(unrelated)?.phase).toBe("active");
+
+    // 再接続: interested な node のみ restart され、applyOnReconnect 分が一括適用される
+    shadow.appendChild(anchor);
+    deliver([{ removedNodes: [], addedNodes: [anchor, bystander] } as any]);
+    expect(firstSession.getRecord(first)?.phase).toBe("active");
+    expect(secondSession.getRecord(second)?.phase).toBe("active");
+    expect(mocks.apply).toHaveBeenCalledWith(expect.arrayContaining([first, second, third]));
+
+    // root から外れたままの node の追加通知は無視される
+    shadow.removeChild(anchor);
+    firstSession.disposeBinding(first);
+    deliver([{ removedNodes: [], addedNodes: [anchor] } as any]);
+    expect(firstSession.getRecord(first)?.phase).toBe("disposed");
+  });
+
+  it("session 単体の handleMutations が削除・追加サブツリーを per-node 処理すること", () => {
+    const session = new BindingSession();
+    const binding = createBinding();
+    session.initialize([binding], { registerAddress: false });
+    // 追加通知でも root 外なら無視される
+    session.handleMutations({ contains: () => false } as any, [], [binding.node]);
+    expect(session.getRecord(binding)?.phase).toBe("active");
+    session.handleMutations({ contains: () => false } as any, [binding.node], []);
+    expect(session.getRecord(binding)?.phase).toBe("disposed");
+    // 再接続成功時は applyOnReconnect 分が一括適用される
+    session.handleMutations({ contains: () => true } as any, [], [binding.node]);
+    expect(session.getRecord(binding)?.phase).toBe("active");
+    expect(mocks.apply).toHaveBeenCalledWith([binding]);
   });
 
   it("reconnect failure、owner final-state branches、root session cache を処理すること", () => {
