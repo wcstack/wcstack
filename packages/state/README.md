@@ -324,6 +324,10 @@ Multiple bindings separated by `;`:
 | `#prevent` | Calls `event.preventDefault()` on event handlers |
 | `#stop` | Calls `event.stopPropagation()` on event handlers |
 | `#onchange` | Uses `change` event instead of `input` for two-way binding |
+| `#init=<authority>` | Binding authority / initial sync direction — see [Binding Authority](#binding-authority-init--sync) |
+| `#sync=<timing>` | Element snapshot timing — see [Binding Authority](#binding-authority-init--sync) |
+
+Multiple modifiers are comma-separated after a single `#`: `value#ro,init=none: path`.
 
 ### Two-Way Binding
 
@@ -337,6 +341,46 @@ Automatically enabled for:
 | `<textarea>` | `value` | `input` |
 
 `<input type="button">` is excluded. Use `#ro` to disable, `#onchange` to change the event.
+
+### Binding Authority (`#init=` / `#sync=`)
+
+For custom elements that declare `static wcBindable`, every prop binding resolves an **authority** — which side owns the wire. The authority decides both where the initial value comes from *and* whether state→element writes are enabled, for the binding's whole lifetime. It is derived from where the member is declared (on by default via `enableDirectionalInitialSync`):
+
+| Member declared in | Default authority | Effect |
+|---|---|---|
+| `properties` only (output-only) | `element` | The element's value flows into state; **state never writes this member** |
+| `inputs` only | `state` | State writes the element |
+| `properties` + `inputs` (two-way) | `state` | Classic behavior — state writes first, element events update state afterwards |
+| — (no `wcBindable`; plain HTML elements) | `state` | Unchanged behavior |
+
+> **Authoring rule:** declare every settable member in **both** `properties` and `inputs`. A member declared only in `properties` is output-only — state→element writes are suppressed for the life of the binding, and the element's own initial value overwrites whatever the state seeded. (`@wcstack` I/O node Shells and DCC `$bindables` follow this rule.)
+
+Override the authority per binding with `#init=`:
+
+| Value | Authority | Allowed on |
+|---|---|---|
+| `init=state` | State-owned: state → element (two-way members still receive element events) | inputs-only, two-way |
+| `init=element` | Element-owned: element snapshot and events → state; state writes are suppressed | output-only, two-way |
+| `init=auto` | `element` if the state slot is uninitialized, otherwise `state` | two-way |
+| `init=none` | No initial sync (event bindings accept only this value) | any |
+
+`#sync=` controls **when** the element snapshot is read for element-authority bindings:
+
+| Value | Meaning |
+|---|---|
+| `sync=call` (default) | Read immediately when the binding attaches |
+| `sync=connect` | Defer the read until the element is connected to the document |
+
+```html
+<x-clock  data-wcs="value#init=element: clock.now"></x-clock>
+<x-input  data-wcs="value#init=auto: form.name"></x-input>
+<x-widget data-wcs="value#init=element,sync=connect: widget.snapshot"></x-widget>
+```
+
+Notes:
+
+- With `enableDirectionalInitialSync: false` (opt-out), writing `#init=`/`#sync=` throws.
+- **Migrating from ≤ 1.20:** do not seed state with placeholder values (`value: []`, `query: ""`) for output-only members — the element's real initial value (often `null`/`undefined`) replaces the seed. Match the seed to the element's actual initial value and null-guard display values with a derived getter.
 
 ### Radio Binding
 
@@ -1455,6 +1499,8 @@ See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and o
 
 `wcBindable.inputs` declares one-way property inputs (state → element). When an entry sets `attribute`, the framework writes the value to that HTML attribute every time it writes the property, so `attributeChangedCallback`, CSS attribute selectors, and DevTools all stay in sync with the property value.
 
+`inputs` is not just attribute-mirroring metadata: under directional initial sync (default on), it is what marks a member as **settable from state**. A settable member declared only in `properties` becomes output-only and state writes to it are suppressed — see [Binding Authority](#binding-authority-init--sync).
+
 ```javascript
 class MyChip extends HTMLElement {
   static wcBindable = {
@@ -1553,7 +1599,7 @@ export default {
 
 This generates:
 
-- `static wcBindable` on the class — protocol metadata for framework adapters
+- `static wcBindable` on the class — protocol metadata for framework adapters. Each `$bindables` member is declared in both `properties` and `inputs` (two-way), so parent-state → DCC writes keep working under directional initial sync — see [Binding Authority](#binding-authority-init--sync)
 - Getter/setter on the prototype — reads/writes go through the reactive proxy
 - `CustomEvent` dispatch — `my-counter:count-changed` fires on every mutation
 
@@ -1672,7 +1718,7 @@ All options with defaults:
 | `locale` | `'en'` | Default locale for filters |
 | `debug` | `false` | Debug mode |
 | `enableMustache` | `true` | Enable `{{ }}` syntax |
-| `enableDirectionalInitialSync` | `true` | Direction-aware initial sync (`#init=` / `#sync=` binding modifiers, e.g. `value#init=state: form.name`). Default on; set `false` to opt out |
+| `enableDirectionalInitialSync` | `true` | Direction-aware binding authority (`#init=` / `#sync=` binding modifiers) — see [Binding Authority](#binding-authority-init--sync). Default on; set `false` to opt out |
 | `enablePropagationContext` | `true` | Causal propagation tracking across bindings (echo/diamond loop prevention). Default on; set `false` to opt out |
 | `enableContractAnalyzer` | `false` | Opt-in dev-time contract analyzer (exposes `analyzeContract`) |
 

@@ -324,6 +324,10 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 | `#prevent` | イベントハンドラで `event.preventDefault()` を呼び出す |
 | `#stop` | イベントハンドラで `event.stopPropagation()` を呼び出す |
 | `#onchange` | 双方向バインディングで `input` の代わりに `change` イベントを使用 |
+| `#init=<authority>` | バインディングの authority / 初期同期の向き — [バインディング authority](#バインディング-authority-init--sync) 参照 |
+| `#sync=<timing>` | 要素スナップショットの読み取りタイミング — [バインディング authority](#バインディング-authority-init--sync) 参照 |
+
+複数の修飾子は 1 つの `#` の後にカンマ区切りで書きます: `value#ro,init=none: path`
 
 ### 双方向バインディング
 
@@ -337,6 +341,46 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 | `<textarea>` | `value` | `input` |
 
 `<input type="button">` は除外されます。`#ro` で無効化、`#onchange` でイベントを変更できます。
+
+### バインディング authority (`#init=` / `#sync=`)
+
+`static wcBindable` を宣言したカスタム要素への prop バインディングは、**authority**（そのワイヤをどちら側が所有するか）を解決します。authority は初期値の出所だけでなく、**そのバインディングの生存期間全体で state→element 書き込みが有効かどうか**を決めます。既定はメンバの宣言位置から導出されます（`enableDirectionalInitialSync` で既定 ON）：
+
+| メンバの宣言位置 | 既定 authority | 効果 |
+|---|---|---|
+| `properties` のみ（output-only） | `element` | 要素の値が state に流れる。**state からこのメンバへは書き込まれない** |
+| `inputs` のみ | `state` | state が要素に書き込む |
+| `properties` + `inputs`（双方向） | `state` | 従来挙動 — state が先に書き、以後は要素イベントが state を更新 |
+| —（`wcBindable` 非宣言・素の HTML 要素） | `state` | 従来と不変 |
+
+> **作法：** settable なメンバは **`properties` と `inputs` の両方**に宣言してください。`properties` にしか宣言されていないメンバは output-only 扱いになり、state→element 書き込みがバインディングの生存期間ずっと抑止され、要素側の初期値が state 側のシード値を上書きします（`@wcstack` の I/O ノード Shell と DCC の `$bindables` はこの作法に従っています）。
+
+authority はバインディング単位で `#init=` により上書きできます：
+
+| 値 | authority | 使える宣言 |
+|---|---|---|
+| `init=state` | state 所有：state → element（双方向メンバは要素イベントも引き続き受信） | inputs のみ・双方向 |
+| `init=element` | element 所有：要素のスナップショットとイベント → state。state からの書き込みは抑止 | output-only・双方向 |
+| `init=auto` | state スロットが未初期化なら `element`、それ以外は `state` | 双方向 |
+| `init=none` | 初期同期なし（event バインディングはこの値のみ許可） | すべて |
+
+`#sync=` は element authority のバインディングで要素スナップショットを**いつ**読むかを制御します：
+
+| 値 | 意味 |
+|---|---|
+| `sync=call`（既定） | バインディングの attach 時に即読み取り |
+| `sync=connect` | 要素が document に接続されるまで読み取りを保留 |
+
+```html
+<x-clock  data-wcs="value#init=element: clock.now"></x-clock>
+<x-input  data-wcs="value#init=auto: form.name"></x-input>
+<x-widget data-wcs="value#init=element,sync=connect: widget.snapshot"></x-widget>
+```
+
+注意：
+
+- `enableDirectionalInitialSync: false`（opt-out）のとき `#init=`/`#sync=` を書くと throw します。
+- **1.20 以前からの移行：** output-only メンバに対して state 側に都合のよい初期値（`value: []`、`query: ""` 等）をシードしないでください — 要素側の実初期値（多くは `null`/`undefined`）がシードを置き換えます。シードは要素の実初期値に合わせ、表示用の値は派生 getter で null ガードしてください。
 
 ### ラジオボタンバインディング
 
@@ -1454,6 +1498,8 @@ error 時、プロパティは直前の fold 結果を保持し、エラーは `
 
 `wcBindable.inputs` は一方向のプロパティ入力（state → 要素）を宣言します。エントリに `attribute` を設定すると、フレームワークはプロパティを書き込むたびにその値を当該 HTML 属性へも書き込むため、`attributeChangedCallback`・CSS の属性セレクタ・DevTools がすべてプロパティ値と同期し続けます。
 
+`inputs` は属性ミラーのためだけのメタデータではありません。方向認識初期同期（既定 ON）の下では、メンバが **state から settable であること**を示すのが `inputs` です。settable なのに `properties` にしか宣言されていないメンバは output-only 扱いになり、state からの書き込みが抑止されます — [バインディング authority](#バインディング-authority-init--sync) を参照してください。
+
 ```javascript
 class MyChip extends HTMLElement {
   static wcBindable = {
@@ -1552,7 +1598,7 @@ export default {
 
 これにより以下が生成されます：
 
-- クラスの `static wcBindable` — フレームワークアダプタ用のプロトコルメタデータ
+- クラスの `static wcBindable` — フレームワークアダプタ用のプロトコルメタデータ。各 `$bindables` メンバは `properties` と `inputs` の両方に宣言され（双方向）、方向認識初期同期の下でも親 state → DCC の書き込みが機能します — [バインディング authority](#バインディング-authority-init--sync) 参照
 - プロトタイプの getter/setter — リアクティブプロキシ経由で読み書き
 - `CustomEvent` のディスパッチ — 値が変更されるたびに `my-counter:count-changed` が発火
 
@@ -1671,7 +1717,7 @@ bootstrapState({
 | `locale` | `'en'` | フィルタのデフォルトロケール |
 | `debug` | `false` | デバッグモード |
 | `enableMustache` | `true` | `{{ }}` 構文の有効化 |
-| `enableDirectionalInitialSync` | `true` | 方向認識の初期同期（`#init=` / `#sync=` バインド modifier。例 `value#init=state: form.name`）。既定 on。`false` で opt-out |
+| `enableDirectionalInitialSync` | `true` | 方向認識のバインディング authority（`#init=` / `#sync=` バインド modifier）— [バインディング authority](#バインディング-authority-init--sync) 参照。既定 on。`false` で opt-out |
 | `enablePropagationContext` | `true` | バインド間の因果伝播トラッキング（echo/diamond のループ防止）。既定 on。`false` で opt-out |
 | `enableContractAnalyzer` | `false` | opt-in の開発時 contract analyzer（`analyzeContract` を公開） |
 
