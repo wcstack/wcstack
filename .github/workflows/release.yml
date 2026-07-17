@@ -125,6 +125,13 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Last gate before publish: settable wcBindable member ⇒ declared in inputs.
+      # Runs against the freshly rebuilt bundles, so src-introduced declaration
+      # drift (the router navigateUrl / DCC $bindables class of bug) cannot ship
+      # even though the CI job only sees committed dist.
+      - name: Bindable settable-surface conformance (rebuilt dist)
+        run: node scripts/conformance-bindable-inputs.mjs
+
       # Commit release artifacts locally so npm publish uses the same tree that will be tagged.
       - name: Commit release artifacts
         run: |

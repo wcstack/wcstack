@@ -71,6 +71,22 @@ jobs:
       - run: node scripts/sync-io-core.mjs --check
       - run: node scripts/sync-package-configs.mjs --check
 
+  bindable-conformance:
+    # settable wcBindable member ⇒ declared in inputs. A runtime check that
+    # imports each package's committed dist bundle and inspects the *evaluated*
+    # declaration against the prototype chain's setters — so dynamically
+    # generated wcBindable surfaces are covered too, which no source lint can
+    # see (the router navigateUrl / DCC $bindables class of drift). Committed
+    # dist lags src between releases; release.yml re-runs the same script after
+    # the version-bump rebuild so fresh bundles are re-gated before publish.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/conformance-bindable-inputs.mjs
+
   wcs-validate:
     # Phase 5a 静的契約の CI ゲート。vscode-wcs の validator core を wcs-validate CLI
     # 経由で repo の HTML / sidecar manifest に適用し、error severity の診断があれば

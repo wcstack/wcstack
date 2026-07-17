@@ -184,4 +184,5 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
 - errorInfo 実装済み **27 パッケージ** = `grep -rl errorInfo packages/*/src/exports.ts`（横展開前の初期値は 8）。
 - lane 生成コピー保有 6 パッケージ = `packages/*/src/core/operationLane.ts`。`sync-io-core.mjs --check` = 33 生成ファイル整合。
 - CI の architecture-hardening 関連ステップは `sync-io-core.mjs --check` に加え、独立 job **`wcs-validate`**（§B で追加。examples + packages の HTML を error severity で gate、現状 0 error）。
+- 2026-07-17 追加: 独立 job **`bindable-conformance`**（`scripts/conformance-bindable-inputs.mjs`）— 「settable な wcBindable メンバは `inputs` にも宣言する」不変条件を、dist バンドルを import した**評価済み宣言** × プロトタイプチェーン setter の突合で検査（41 pkg / 79 class / 441 メンバ）。ソース lint と違い動的生成宣言もカバーし、v1.20.0 router に対して `navigateUrl` を検出することを実証済み（router navigateUrl / DCC `$bindables` 型ドリフトの恒久ガード）。committed dist は src に遅行するため、release.yml でも bump 後 rebuild 直後・publish 前に同 script を再実行して補完。意図的 output-only（`Router.path` / `StorageCore.value`）は script 内 allowlist に理由付きで記録。dist export に現れない宣言ファクトリ（DCC `createWcBindable`）は state の unit test が固定。
 - Phase 2 flip は commit `aaeb784`（メッセージは "geolocation errorInfo" と実態を過小記述、state 変更を混載）に含まれる。
