@@ -6058,7 +6058,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.21.0";
+var version = "1.21.1";
 var pkg = {
 	version: version};
 
@@ -8427,10 +8427,18 @@ function createWcBindable(tagName, bindables) {
         name: propName,
         event: `${tagName}:${propName}-changed`,
     }));
+    // Every $bindables member gets both a getter and a setter on the DCC prototype,
+    // so declare it in inputs as well — a property declared only in `properties` is
+    // output-only under directional initial sync, which would permanently block
+    // parent-state → DCC writes.
+    const inputs = bindables.map((propName) => ({
+        name: propName,
+    }));
     return {
         protocol: "wc-bindable",
         version: 1,
         properties,
+        inputs,
     };
 }
 function createBindableEventMap(tagName, bindables) {

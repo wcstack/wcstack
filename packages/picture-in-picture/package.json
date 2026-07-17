@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/picture-in-picture",
-  "version": "1.21.0",
+  "version": "1.21.1",
   "description": "Declarative Picture-in-Picture component for Web Components. Framework-agnostic <video> Picture-in-Picture control via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
