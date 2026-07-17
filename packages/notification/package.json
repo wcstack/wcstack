@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/notification",
-  "version": "1.21.1",
+  "version": "1.21.2",
   "description": "Declarative desktop-notification component for Web Components. Framework-agnostic Notifications API wrapper via wc-bindable-protocol, with Service Worker support.",
   "type": "module",
   "main": "./dist/index.esm.js",
