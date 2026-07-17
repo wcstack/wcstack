@@ -15,7 +15,7 @@ jobs:
           fetch-depth: 0
       - id: detect
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
 
@@ -31,10 +31,14 @@ jobs:
             esac
           done
 
-          # Determine which files changed relative to the PR base.
-          git fetch origin "$BASE_REF" --depth=1 || true
-          base=$(git merge-base HEAD "origin/$BASE_REF")
-          changed=$(git diff --name-only "$base" HEAD)
+          # Diff against the PR base SHA from the event payload. HEAD is the PR
+          # merge ref built on this same SHA, so it is always present locally
+          # (fetch-depth: 0) and the diff is exactly the PR's changes. The
+          # previous `git fetch --depth=1` + `git merge-base origin/main`
+          # approach raced with pushes to the base branch: when main advanced
+          # during the run, the shallow fetch grafted the new tip with clipped
+          # parents and merge-base exited 1 without output (PR #77's run).
+          changed=$(git diff --name-only "${BASE_SHA:?not a pull_request event}" HEAD)
 
           # A change to the shared root tsconfig rebuilds every package.
           if echo "$changed" | grep -qx 'tsconfig.json'; then
