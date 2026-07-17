@@ -26,6 +26,11 @@
 //   that never surface a class through exports — DCC's createWcBindable in
 //   @wcstack/state — are locked by that package's own unit tests instead
 //   (dcc.wcBindable.test.ts: properties/inputs member sets must match).
+// - A bundle that imports an external bare specifier (server externalizes
+//   happy-dom) cannot be evaluated when node_modules is absent — the CI job
+//   installs nothing. Such packages are reported as SKIPPED (external deps),
+//   not failed; the release.yml re-run happens after per-package npm ci, where
+//   they resolve and get fully checked. Any other import error stays fatal.
 //
 // Run:  node scripts/conformance-bindable-inputs.mjs
 // Exit 1 on any non-allowlisted violation.
@@ -94,11 +99,26 @@ const packages = readdirSync(PKGDIR, { withFileTypes: true })
   .map((entry) => entry.name)
   .filter((name) => existsSync(join(PKGDIR, name, "dist", "index.esm.js")));
 
+// A missing *external* dependency (bare specifier, e.g. server's happy-dom) is
+// an environment gap, not a conformance finding: skip with a note so the
+// no-install CI job stays green, and rely on the release.yml re-run (after
+// npm ci) for full coverage. Unresolvable relative/internal specifiers mean a
+// broken bundle and stay fatal.
+function externalMissingDependency(error) {
+  if (error?.code !== "ERR_MODULE_NOT_FOUND") return null;
+  const match = /Cannot find package '([^']+)'/.exec(String(error.message));
+  if (!match) return null;
+  const specifier = match[1];
+  const bare = !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("file:");
+  return bare ? specifier : null;
+}
+
 let classesChecked = 0;
 let membersChecked = 0;
 const violations = [];
 const deviations = [];
 const importFailures = [];
+const externalSkips = [];
 const rows = [];
 
 for (const pkg of packages) {
@@ -107,7 +127,13 @@ for (const pkg of packages) {
   try {
     moduleExports = await import(pathToFileURL(bundle).href);
   } catch (error) {
-    importFailures.push({ pkg, message: String(error?.message ?? error) });
+    const missing = externalMissingDependency(error);
+    if (missing) {
+      externalSkips.push({ pkg, missing });
+      rows.push({ pkg, classes: 0, flagged: [`◌ skipped (external dep: ${missing})`] });
+    } else {
+      importFailures.push({ pkg, message: String(error?.message ?? error) });
+    }
     continue;
   }
 
@@ -139,10 +165,15 @@ for (const pkg of packages) {
 
 // ---- print ----
 console.log("\n=== wc-bindable settable-surface conformance (settable ⇒ declared in inputs) ===");
-console.log("(runtime check over dist bundles · ✗ violation · ◇ documented output-only deviation)\n");
+console.log("(runtime check over dist bundles · ✗ violation · ◇ documented output-only deviation · ◌ skipped, external dep absent)\n");
 for (const row of rows) {
   const detail = row.flagged.length ? `  ${row.flagged.join("  ")}` : "";
   console.log(`${row.pkg.padEnd(22)} ${String(row.classes).padStart(2)} bindable class(es)${detail}`);
+}
+
+if (externalSkips.length) {
+  console.log("\n--- Skipped: external dependency not installed (checked in release.yml after npm ci) ---");
+  for (const skip of externalSkips) console.log(`  ◌ ${skip.pkg}: requires '${skip.missing}'`);
 }
 
 if (importFailures.length) {
@@ -165,5 +196,5 @@ if (deviations.length) {
 }
 
 console.log("\n" + "-".repeat(72));
-console.log(`Packages: ${packages.length}  |  Classes: ${classesChecked}  |  properties-only members checked: ${membersChecked}  |  violations: ${violations.length}  |  deviations: ${deviations.length}  |  import failures: ${importFailures.length}`);
+console.log(`Packages: ${packages.length}  |  Classes: ${classesChecked}  |  properties-only members checked: ${membersChecked}  |  violations: ${violations.length}  |  deviations: ${deviations.length}  |  external skips: ${externalSkips.length}  |  import failures: ${importFailures.length}`);
 if (violations.length > 0 || importFailures.length > 0) process.exitCode = 1;

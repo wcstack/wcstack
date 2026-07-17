@@ -79,6 +79,9 @@ jobs:
     # see (the router navigateUrl / DCC $bindables class of drift). Committed
     # dist lags src between releases; release.yml re-runs the same script after
     # the version-bump rebuild so fresh bundles are re-gated before publish.
+    # This job installs nothing, so a bundle importing an external bare
+    # specifier (server externalizes happy-dom) is skipped here with a note and
+    # fully checked in the release.yml re-run, which follows per-package npm ci.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
