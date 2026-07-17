@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/accelerometer",
-  "version": "1.21.2",
+  "version": "1.21.3",
   "description": "Declarative Accelerometer component for Web Components. Framework-agnostic Generic Sensor API (Accelerometer) monitor via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

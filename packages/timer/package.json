@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/timer",
-  "version": "1.21.2",
+  "version": "1.21.3",
   "description": "Declarative timer component for Web Components. Framework-agnostic interval/timeout primitive via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
