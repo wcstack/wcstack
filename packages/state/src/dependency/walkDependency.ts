@@ -101,6 +101,18 @@ type Context = {
 }
 
 /**
+ * 静的子展開の対象 listIndex 群。fullRows は行全体（list.* とその subtree）を展開する。
+ * movedRows は「位置だけが変わった行」で、index 以外の入力が不変なため展開を
+ * index 依存 getter の subtree（getMovedRowExpansionPaths）に限定できる。
+ */
+type ExpansionSelection = {
+  readonly fullRows: Iterable<IListIndex>,
+  readonly movedRows: Iterable<IListIndex> | null,
+}
+
+const EMPTY_INDEXES: IListIndex[] = [];
+
+/**
  * 静的子展開で訪問する listIndex 群を選ぶ。"diff" でも次の場合は全行に倒す:
  * - diff に変化が一切見えない再代入（同一参照および内容同一コピーの再代入。
  *   `arr[0].v = 5; s.items = [...arr]` のような in-place 変異後のリフレッシュ
@@ -114,28 +126,68 @@ function selectExpansionIndexes(
   _lastValue: unknown,
   _newValue: unknown,
   listDiff: IListDiff,
-): Iterable<IListIndex> {
+): ExpansionSelection {
   if (context.listExpansion === "full") {
-    return listDiff.newIndexes;
+    return { fullRows: listDiff.newIndexes, movedRows: null };
   }
   if (context.stateElement.crossRowListPaths?.has(sourcePath)) {
-    return listDiff.newIndexes;
+    return { fullRows: listDiff.newIndexes, movedRows: null };
   }
   if (listDiff.addIndexSet.size === 0 && listDiff.changeIndexSet.size === 0) {
     // 追加も移動も無い。削除も無ければ「変化が見えない再代入」= リフレッシュ意図
     if (listDiff.deleteIndexSet.size === 0) {
-      return listDiff.newIndexes;
+      return { fullRows: listDiff.newIndexes, movedRows: null };
     }
     // 削除のみ: 残存行は位置も値も不変なので展開しない
-    return listDiff.changeIndexSet;
+    return { fullRows: EMPTY_INDEXES, movedRows: null };
   }
-  if (listDiff.addIndexSet.size === 0) {
-    return listDiff.changeIndexSet;
+  return { fullRows: listDiff.addIndexSet, movedRows: listDiff.changeIndexSet };
+}
+
+const EMPTY_PATH_INFOS: IPathInfo[] = [];
+
+/**
+ * 位置だけが変わった行（movedRows）で展開すべきパス群を求める。
+ * `${listPath}.*` の静的 subtree を辿り、$1 等を読んだ実績のある getter
+ * （indexDependentGetterPaths）だけを返す。行の同一性・listIndex は保たれ
+ * index 以外の入力が不変なので、index を読まない getter / 値パスは再評価不要。
+ * 戻り値:
+ * - IPathInfo[]（空可）: この各パスだけを行の listIndex で展開する
+ * - null: ネストしたワイルドカード配下に index 依存 getter がある
+ *   （listIndex の階数が合わず個別展開できない）→ 呼び出し側で行全体展開に倒す
+ */
+function getMovedRowExpansionPaths(
+  context: Context,
+  wildcardPath: string,
+  depPathInfo: IPathInfo,
+): IPathInfo[] | null {
+  const indexGetters = context.stateElement.indexDependentGetterPaths;
+  if (!indexGetters || indexGetters.size === 0) {
+    return EMPTY_PATH_INFOS;
   }
-  if (listDiff.changeIndexSet.size === 0) {
-    return listDiff.addIndexSet;
+  let result: IPathInfo[] | null = null;
+  const queue: string[] = [wildcardPath];
+  const seen = new Set<string>(queue);
+  for (let i = 0; i < queue.length; i++) {
+    const path = queue[i];
+    if (indexGetters.has(path)) {
+      const pathInfo = getPathInfo(path);
+      if (pathInfo.wildcardCount !== depPathInfo.wildcardCount) {
+        return null;
+      }
+      (result ??= []).push(pathInfo);
+    }
+    const children = context.staticMap.get(path);
+    if (children) {
+      for (const child of children) {
+        if (!seen.has(child)) {
+          seen.add(child);
+          queue.push(child);
+        }
+      }
+    }
   }
-  return [...listDiff.addIndexSet, ...listDiff.changeIndexSet];
+  return result ?? EMPTY_PATH_INFOS;
 }
 
 type StackEntry = { address: IStateAddress, depth: number };
@@ -179,10 +231,33 @@ function _walkDependency(
           const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
           const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
           const listDiff = createListDiff(address.listIndex, lastValue, newValue);
-          for(const listIndex of selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff)) {
+          const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
+          for(const listIndex of selection.fullRows) {
             const depAddress = createStateAddress(depPathInfo, listIndex);
             context.result.add(depAddress);
             nextEntries.push({ address: depAddress, depth: nextDepth });
+          }
+          if (selection.movedRows !== null) {
+            const movedPathInfos = getMovedRowExpansionPaths(context, dep, depPathInfo);
+            if (movedPathInfos === null) {
+              // ネスト配下に index 依存 getter: 安全側で行全体を展開（従来挙動）
+              for(const listIndex of selection.movedRows) {
+                const depAddress = createStateAddress(depPathInfo, listIndex);
+                context.result.add(depAddress);
+                nextEntries.push({ address: depAddress, depth: nextDepth });
+              }
+            } else if (movedPathInfos.length > 0) {
+              // 位置のみ変わった行は index 依存 getter のパスだけを展開する
+              for(const listIndex of selection.movedRows) {
+                for(const pathInfo of movedPathInfos) {
+                  const depAddress = createStateAddress(pathInfo, listIndex);
+                  context.result.add(depAddress);
+                  nextEntries.push({ address: depAddress, depth: nextDepth });
+                }
+              }
+            }
+            // movedPathInfos が空: index を読む getter が subtree に無い =
+            // 位置のみ変わった行の値は不変。展開・dirty 化とも不要。
           }
         } else {
           const depAddress = createStateAddress(depPathInfo, address.listIndex);

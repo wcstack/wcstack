@@ -55,7 +55,15 @@ export function get(
     if (handler.addressStackLength === 0) {
       raiseError(`No active state reference to get list index for "${prop.toString()}".`);
     }
-    const listIndex = handler.lastAddressStack?.listIndex;
+    const lastAddress = handler.lastAddressStack;
+    // getter 評価中のインデックス読み取りを記録する。位置だけが変わった行
+    // （listDiff.changeIndexSet）は index 以外の入力が不変なので、walkDependency の
+    // 静的子展開を「インデックスを読んだ getter の subtree」に限定できる。
+    const lastInfo = lastAddress?.pathInfo;
+    if (lastInfo && handler.stateElement?.getterPaths.has(lastInfo.path)) {
+      handler.stateElement.addIndexDependentGetterPath?.(lastInfo.path);
+    }
+    const listIndex = lastAddress?.listIndex;
     return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {

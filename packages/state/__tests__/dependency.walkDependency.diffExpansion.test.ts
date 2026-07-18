@@ -23,11 +23,12 @@ function usersAbsAddress(stateElement: IStateElement) {
   return createAbsoluteStateAddress(absPathInfo, null);
 }
 
-function runWalk(
+function runWalkRaw(
   stateElement: IStateElement,
   oldList: unknown[] | null,
   newList: unknown[],
   options?: { listExpansion?: 'full' | 'diff' },
+  staticDeps?: Map<string, string[]>,
 ) {
   const stateProxy = createStateProxy({ users: newList });
   if (oldList !== null) {
@@ -35,11 +36,11 @@ function runWalk(
     createListDiff(null, [], oldList);
     setLastListValueByAbsoluteStateAddress(usersAbsAddress(stateElement), oldList);
   }
-  const result = walkDependency(
+  return walkDependency(
     'default',
     stateElement,
     createStateAddress(getPathInfo('users'), null),
-    new Map<string, string[]>([['users', ['users.*']]]),
+    staticDeps ?? new Map<string, string[]>([['users', ['users.*']]]),
     new Map<string, string[]>(),
     new Set<string>(['users']),
     stateProxy,
@@ -47,10 +48,22 @@ function runWalk(
     () => {},
     options,
   );
+}
+
+function indexesOf(result: ReturnType<typeof runWalkRaw>, path: string) {
   return result
-    .filter(a => a.pathInfo.path === 'users.*')
+    .filter(a => a.pathInfo.path === path)
     .map(a => a.listIndex?.index ?? null)
     .sort((a, b) => (a ?? -1) - (b ?? -1));
+}
+
+function runWalk(
+  stateElement: IStateElement,
+  oldList: unknown[] | null,
+  newList: unknown[],
+  options?: { listExpansion?: 'full' | 'diff' },
+) {
+  return indexesOf(runWalkRaw(stateElement, oldList, newList, options), 'users.*');
 }
 
 describe('walkDependency の diff-filter 展開', () => {
@@ -78,10 +91,53 @@ describe('walkDependency の diff-filter 展開', () => {
     expect(runWalk(stateElement, oldList, newList, { listExpansion: 'diff' })).toEqual([0]);
   });
 
-  it('diff: スワップでは位置が変わった行のみ展開すること', () => {
+  it('diff: スワップでは index 依存 getter が無ければ移動行を展開しないこと（値は不変）', () => {
     const oldList = [{ id: 1 }, { id: 2 }, { id: 3 }];
     const newList = [oldList[2], oldList[1], oldList[0]];
-    expect(runWalk(stateElement, oldList, newList, { listExpansion: 'diff' })).toEqual([0, 2]);
+    expect(runWalk(stateElement, oldList, newList, { listExpansion: 'diff' })).toEqual([]);
+  });
+
+  it('diff: スワップでは index 依存 getter のパスだけを移動行分展開すること', () => {
+    const idxElement = {
+      name: 'default',
+      indexDependentGetterPaths: new Set(['users.*.sel']),
+    } as unknown as IStateElement;
+    const oldList = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const newList = [oldList[2], oldList[1], oldList[0]];
+    const result = runWalkRaw(idxElement, oldList, newList, { listExpansion: 'diff' },
+      new Map([['users', ['users.*']], ['users.*', ['users.*.sel', 'users.*.name']]]));
+    // 行アドレス（users.*）と index を読まない値パス（users.*.name）は展開されない
+    expect(indexesOf(result, 'users.*')).toEqual([]);
+    expect(indexesOf(result, 'users.*.name')).toEqual([]);
+    expect(indexesOf(result, 'users.*.sel')).toEqual([0, 2]);
+  });
+
+  it('diff: 追加と移動が混在する場合、追加行は全体・移動行は index 依存 getter のみ展開すること', () => {
+    const idxElement = {
+      name: 'default',
+      indexDependentGetterPaths: new Set(['users.*.sel']),
+    } as unknown as IStateElement;
+    const oldList = [{ id: 1 }, { id: 2 }];
+    // 先頭に新規行を挿入: 既存 2 行は位置 0→1 / 1→2 に移動
+    const newList = [{ id: 99 }, oldList[0], oldList[1]];
+    const result = runWalkRaw(idxElement, oldList, newList, { listExpansion: 'diff' },
+      new Map([['users', ['users.*']], ['users.*', ['users.*.sel', 'users.*.name']]]));
+    expect(indexesOf(result, 'users.*')).toEqual([0]);
+    // 追加行は行全体の walk で users.*.name / users.*.sel とも展開される
+    expect(indexesOf(result, 'users.*.name')).toEqual([0]);
+    expect(indexesOf(result, 'users.*.sel')).toEqual([0, 1, 2]);
+  });
+
+  it('diff: ネストしたワイルドカード配下に index 依存 getter がある場合は移動行を全体展開に倒すこと', () => {
+    const idxElement = {
+      name: 'default',
+      indexDependentGetterPaths: new Set(['users.*.tags.*.badge']),
+    } as unknown as IStateElement;
+    const oldList = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const newList = [oldList[2], oldList[1], oldList[0]];
+    const result = runWalkRaw(idxElement, oldList, newList, { listExpansion: 'diff' },
+      new Map([['users', ['users.*']], ['users.*', ['users.*.tags']], ['users.*.tags', ['users.*.tags.*']], ['users.*.tags.*', ['users.*.tags.*.badge']]]));
+    expect(indexesOf(result, 'users.*')).toEqual([0, 2]);
   });
 
   it('diff: 同一参照の再代入では全行展開へ倒すこと（in-place 変異リフレッシュイディオム）', () => {
