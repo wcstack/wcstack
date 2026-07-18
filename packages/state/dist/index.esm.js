@@ -3652,6 +3652,11 @@ function addRecordTeardown(record, teardown) {
 }
 class BindingSession {
     records = new Set();
+    /**
+     * initializeRow で設定される行プラン。非 null のとき activate は
+     * スロット整列の高速経路（activatePlanRows）を使う。
+     */
+    rowPlan = null;
     // anchor ノードが持つ binding は大多数が 1 本なので単一値で持ち、2 本目から
     // Map（remember 経路のキー照合用）に昇格する（台帳・興味 session と同じ前例）
     knownBindingsByNode = new WeakMap();
@@ -3711,6 +3716,10 @@ class BindingSession {
     activate(bindings, knownRoot) {
         if (isObservableRoot(knownRoot))
             getBindingOwner(knownRoot);
+        if (this.rowPlan !== null) {
+            this.activatePlanRows(this.rowPlan, bindings, knownRoot);
+            return;
+        }
         for (const binding of bindings) {
             const record = recordByBinding.get(binding);
             if (typeof record !== "undefined" && record.session === this
@@ -3982,6 +3991,7 @@ class BindingSession {
      * activate は全 binding を同順で昇格するため観測可能な差はない）。
      */
     initializeRow(plan, bindings) {
+        this.rowPlan = plan;
         const rowOptions = { registerAddress: false, registerPathInfo: false, applyOnReconnect: false };
         const slots = plan.slots;
         for (let i = 0; i < bindings.length; i++) {
@@ -4030,6 +4040,56 @@ class BindingSession {
             }
             // 非 event スロットはプラン適格性により双方向不能・radio/checkbox 不能・
             // token 配線不能が確定しているため attach 系を一切呼ばない
+        }
+    }
+    /**
+     * プラン行の活性化（activate の高速経路）。bindings は initializeRow と同一の
+     * スロット整列配列（bindingsByContent がそのまま保持）である前提。
+     * プラン行の record は policy/authority 解決済み・observable なし・
+     * connect-snapshot なしが構造的に保証されているため、settleInitialRecord /
+     * settleConnectedSnapshot の呼び出し自体を省略できる。
+     * プール再利用（disposed/failed）では record オブジェクトを再利用し、
+     * 世代だけ進めて listener attach とアドレス登録をやり直す（record 再割当なし）。
+     */
+    activatePlanRows(plan, bindings, knownRoot) {
+        const slots = plan.slots;
+        for (let i = 0; i < bindings.length; i++) {
+            const binding = bindings[i];
+            const record = recordByBinding.get(binding);
+            if (typeof record === "undefined" || record.session !== this) {
+                // この session の record を持たない binding（防御）: 従来経路
+                this.initialize([binding], { registerAddress: true, registerPathInfo: false, applyOnReconnect: false });
+                continue;
+            }
+            record.options.registerAddress = true;
+            if (record.phase === "disposed" || record.phase === "failed") {
+                // pool 再利用: dispose 済み record を initializeRow と同じ内容で再充填
+                const slot = slots[i];
+                record.generation = ++nextGeneration;
+                record.phase = "active";
+                record.initialPolicy = slot.policy;
+                record.resolvedAuthority = slot.authority;
+                record.initialSettled = true;
+                this.records.add(record);
+                if (slot.isEvent) {
+                    try {
+                        attachEventHandler(binding);
+                    }
+                    catch (error) {
+                        record.phase = "failed";
+                        this.runTeardowns(record);
+                        this.records.delete(record);
+                        throw error;
+                    }
+                    record.eventAttached = true;
+                }
+                this.registerAddress(record, knownRoot);
+                continue;
+            }
+            if (record.address === null && record.patternListIndex === null) {
+                // 初回活性化
+                this.registerAddress(record, knownRoot);
+            }
         }
     }
     addKnownRowBinding(anchor, binding, slotIndex) {

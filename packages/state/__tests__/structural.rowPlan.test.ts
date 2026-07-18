@@ -289,6 +289,47 @@ describe('createContent の plan 経路', () => {
     expect(() => createContent(forBindingInfo(document.createComment('for')))).toThrow(/attach boom/);
   });
 
+  it('activate 高速経路: この session の record を持たない binding は従来 initialize に倒れること（防御）', () => {
+    const fragment = fragmentFromHtml('<span data-wcs="className: items.*.v"></span>');
+    registerFragment(fragment);
+    const content = createContent(forBindingInfo(document.createComment('for')));
+    const session = getBindingSessionByContent(content)!;
+
+    // 接続済みノードに紐づく foreign binding（record 無し）を activate に渡す
+    const foreignNode = document.createElement('span');
+    document.body.appendChild(foreignNode);
+    const foreign: IBindingInfo = {
+      propName: 'title',
+      propSegments: ['title'],
+      propModifiers: [],
+      statePathName: 'label',
+      statePathInfo: getPathInfo('label'),
+      stateName: 'default',
+      inFilters: [],
+      outFilters: [],
+      bindingType: 'prop',
+      uuid: null,
+      node: foreignNode,
+      replaceNode: foreignNode,
+    } as IBindingInfo;
+    session.activate([foreign], document);
+    expect(session.getRecord(foreign)?.phase).toBe('active');
+    foreignNode.remove();
+  });
+
+  it('activate 高速経路: pool 再利用時の attach 失敗は record を failed にして throw を伝播すること', () => {
+    const fragment = fragmentFromHtml('<a data-wcs="onclick: onPick"></a>');
+    registerFragment(fragment);
+    const content = createContent(forBindingInfo(document.createComment('for')));
+    const session = getBindingSessionByContent(content)!;
+    const bindings = getBindingsByContent(content);
+    // pool 返却相当の dispose → 再 activate で record が再利用される
+    session.disposeBinding(bindings[0]);
+    overrides.attachEvent = () => { throw new Error('reattach boom'); };
+    expect(() => session.activate(bindings, document)).toThrow(/reattach boom/);
+    expect(session.getRecord(bindings[0])?.phase).toBe('failed');
+  });
+
   it('不適格テンプレート（双方向 prop + $1）は従来経路で indexBindings 分類されること', () => {
     const fragment = fragmentFromHtml('<input data-wcs="value: items.*.v"><span data-wcs="title: $1"></span>');
     registerFragment(fragment);
