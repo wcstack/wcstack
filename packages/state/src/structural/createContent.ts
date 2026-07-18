@@ -5,7 +5,7 @@ import { getBindingSessionByContent, setBindingSessionByContent } from "../bindi
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
-import { markObserverSkipOnRemove } from "../bindings/observerSkip.js";
+import { markObserverSkipOnAdd, markObserverSkipOnRemove } from "../bindings/observerSkip.js";
 import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
@@ -42,6 +42,10 @@ class Content implements IContent {
 
   appendTo(targetNode: Node): void {
     for(const node of this._childNodeArray) {
+      // framework 起点のマウントを observer に伝える。中間 fragment へ append する
+      // 経路でも、後続の一括 insertBefore(fragment) の mutation record には
+      // この top-level node が addedNodes として現れるため、ここでのマークが届く。
+      markObserverSkipOnAdd(node);
       targetNode.appendChild(node);
     }
     this._mounted = true;
@@ -52,10 +56,42 @@ class Content implements IContent {
     const nextSibling = targetNode.nextSibling;
     if (parentNode) {
       for(const node of this._childNodeArray) {
+        markObserverSkipOnAdd(node);
         parentNode.insertBefore(node, nextSibling);
       }
     }
     this._mounted = true;
+  }
+
+  tryDestroy(): boolean {
+    const session = getBindingSessionByContent(this);
+    // session 無し（SSR ハイドレーション産）や、定義待ち・connect-snapshot 待ちを
+    // 抱える content は teardown 省略でリークするため従来経路に倒す。
+    if (session === null || !session.canWholesaleDestroy()) {
+      return false;
+    }
+    session.destroyRecords();
+    for (const node of this._childNodeArray) {
+      // unmount と同じ理由の observer 向け削除マーク（clear の一括削除でも
+      // top-level node が mutation record の root に現れる）
+      markObserverSkipOnRemove(node);
+      if (node.parentNode !== null) {
+        node.parentNode.removeChild(node);
+      }
+    }
+    const bindings = getBindingsByContent(this);
+    for (const binding of bindings) {
+      if (recursiveBindingTypes.has(binding.bindingType)) {
+        const contents = getContentSetByNode(binding.node);
+        for (const content of contents) {
+          if (!content.tryDestroy()) {
+            content.unmount();
+          }
+        }
+      }
+    }
+    this._mounted = false;
+    return true;
   }
 
   unmount(): void {

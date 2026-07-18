@@ -78,6 +78,9 @@ export class State extends HTMLElementBase implements IStateElement {
   // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
   // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
   private _crossRowListPaths: Set<string> = new Set<string>();
+  // $1 等のインデックスを読んだ getter パス（実行時検出）。位置のみ変わった行の
+  // 静的子展開はこの集合の subtree に限定される。追加のみ・クリアしない（安全側）。
+  private _indexDependentGetterPaths: Set<string> = new Set<string>();
   private _name: string = 'default';
   private _initialized: boolean = false;
   private _initializePromise: Promise<void>;
@@ -605,6 +608,14 @@ export class State extends HTMLElementBase implements IStateElement {
 
   addCrossRowListPath(path: string): void {
     this._crossRowListPaths.add(path);
+  }
+
+  get indexDependentGetterPaths(): ReadonlySet<string> {
+    return this._indexDependentGetterPaths;
+  }
+
+  addIndexDependentGetterPath(path: string): void {
+    this._indexDependentGetterPaths.add(path);
   }
 
   bindProperty(prop: string, desc: PropertyDescriptor): void {

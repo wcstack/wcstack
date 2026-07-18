@@ -206,6 +206,23 @@ describe('applyChangeToFor のプール上限', () => {
     expect(after.some(span => originalSpans.has(span))).toBe(false);
   });
 
+  it('一括削除パスが使えない場合でも wholesale 破棄はノードを個別に取り外すこと', () => {
+    restoreCap = __test_setMaxPooledContents(0);
+    const list = ['a', 'b', 'c'];
+    const { container, bindingInfo, placeholder } = mount(list);
+    // リスト領域の後ろに別要素を置き、textContent='' の一括破棄パスを不成立にする
+    const keeper = document.createElement('b');
+    keeper.textContent = 'keep';
+    container.appendChild(keeper);
+    expect(container.querySelectorAll('span')).toHaveLength(3);
+
+    apply(bindingInfo, []);
+    // 行は個別 removeChild で取り外され、リスト外の要素は残る
+    expect(container.querySelectorAll('span')).toHaveLength(0);
+    expect(container.contains(keeper)).toBe(true);
+    expect(getContentSetByNode(placeholder).size).toBe(0);
+  });
+
   it('既定の上限内では従来通り全件プール・再利用されること', () => {
     const list = ['a', 'b', 'c'];
     const { container, bindingInfo, placeholder } = mount(list);

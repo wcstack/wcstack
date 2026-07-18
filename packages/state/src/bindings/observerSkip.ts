@@ -24,3 +24,42 @@ export function consumeObserverSkipOnRemove(node: Node): boolean {
   observerSkipNodes.delete(node);
   return true;
 }
+
+// framework 自身がマウント（Content.appendTo / mountAfter）したノード。
+// 追加サブツリー走査の実質の仕事は connect-snapshot 待ち（observationPending）の
+// record への配送だけで、record 自体は同期マウント（activateContent → start）で
+// observer flush より先に active 済み。よって待ちがグローバルに 1 つも無ければ
+// 追加側走査も冗長であり丸ごとスキップできる（削除側スキップの対称形）。
+// マーク〜配送が単一 microtask で外部変異が割り込めない前提も削除側と同じ。
+const observerSkipAddedNodes = new WeakSet<Node>();
+
+export function markObserverSkipOnAdd(node: Node): void {
+  observerSkipAddedNodes.add(node);
+}
+
+// マーク済みなら true を返しつつマークを消費する（削除側と同じ one-shot 契約）。
+export function consumeObserverSkipOnAdd(node: Node): boolean {
+  if (!observerSkipAddedNodes.has(node)) {
+    return false;
+  }
+  observerSkipAddedNodes.delete(node);
+  return true;
+}
+
+// connect-snapshot 待ち（two-way sync=connect で未接続のまま activate された record）の
+// グローバル件数。> 0 の間は追加側スキップを無効化して従来走査に戻す。
+// increment は settleInitialRecord、decrement は readProducerSnapshot（消化時）と
+// runTeardowns（未消化のまま終端した record のリーク防止）が担う。
+let pendingObservationCount = 0;
+
+export function incrementPendingObservation(): void {
+  pendingObservationCount++;
+}
+
+export function decrementPendingObservation(): void {
+  pendingObservationCount--;
+}
+
+export function hasPendingObservation(): boolean {
+  return pendingObservationCount > 0;
+}

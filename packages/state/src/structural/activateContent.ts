@@ -17,11 +17,9 @@ export function activateContent(
   const bindings = getBindingsByContent(content);
   const session = getBindingSessionByContent(content);
   if (session !== null) {
-    session.initialize(bindings, {
-      registerAddress: true,
-      registerPathInfo: false,
-      applyOnReconnect: false,
-    });
+    // createContent 側の initialize で remember 済みの同一 binding 配列なので、
+    // remember を再実行しない専用パスで活性化する（リスト行生成のホットパス）
+    session.activate(bindings);
   }
   for (const binding of bindings) {
     if (session === null) {

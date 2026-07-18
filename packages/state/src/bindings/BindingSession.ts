@@ -15,7 +15,7 @@ import { getCustomElementRegistry, upgradeCustomElement } from "../platform/cust
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { consumeObserverSkipOnRemove } from "./observerSkip";
+import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
@@ -169,6 +169,10 @@ class BindingOwner {
       });
     }
     for (const subtree of added) {
+      // framework がマウントしたサブツリーは record が同期 activate 済みで、追加側
+      // 走査の実質の仕事は connect-snapshot 待ちへの配送だけ。待ちがグローバルに
+      // 無ければ丸ごとスキップする（待ちがあればマークだけ消費して従来走査に戻す）。
+      if (consumeObserverSkipOnAdd(subtree) && !hasPendingObservation()) continue;
       forEachInclusive(subtree, (node) => {
         forEachInterestedSession(node, (session) => {
           if (!this.root.contains(node)) return;
@@ -245,6 +249,41 @@ export class BindingSession {
       initialized.push(binding);
     }
     return initialized.filter((binding) => this.shouldApplyState(binding));
+  }
+
+  /**
+   * activateContent 専用の再活性化パス。createContent 側の initialize で
+   * remember 済みの binding 配列（bindingsByContent がそのまま保持する同一オブジェクト）
+   * にだけ使える前提で、remember の再実行（キー照合・options マージ・興味登録）を省き、
+   * 必要な仕事だけ行う: 初回活性化はアドレス登録+初期同期、pool 再利用（disposed）は
+   * start による再構築、未知の binding は防御的に従来 initialize へ倒す。
+   */
+  activate(bindings: readonly IBindingInfo[]): void {
+    for (const binding of bindings) {
+      const record = recordByBinding.get(binding);
+      if (typeof record !== "undefined" && record.session === this
+        && record.phase !== "disposed" && record.phase !== "failed") {
+        if (record.address === null) {
+          // 初回活性化（mountAfter 経路では anchor が接続済みのことがあるため、
+          // 従来 initialize と同様に owner の存在をここで保証する）
+          this.observe(record.anchor);
+          record.options.registerAddress = true;
+          this.registerAddress(record);
+        }
+        if (record.phase === "active") this.settleInitialRecord(record);
+        this.settleConnectedSnapshot(record);
+        continue;
+      }
+      const options = this.optionsByBinding.get(binding);
+      if (typeof options === "undefined") {
+        // この session で remember されていない binding（防御）: 従来経路
+        this.initialize([binding], { registerAddress: true, registerPathInfo: false, applyOnReconnect: false });
+        continue;
+      }
+      // pool 再利用: record は disposed。活性化要件（アドレス登録）を昇格して再構築
+      options.registerAddress = true;
+      this.start(binding, options);
+    }
   }
 
   shouldApplyState(binding: IBindingInfo): boolean {
@@ -336,6 +375,35 @@ export class BindingSession {
       this.deferred.delete(task);
       this.deferredByNode.get(task.node)?.delete(task);
     }
+  }
+
+  /**
+   * wholesale destroy（全行クリアで teardown を GC に任せる高速経路）を適用して
+   * よいか。定義待ち（DefinitionCoordinator の waiter / deferred spread タスク）は
+   * 強参照 Map に閉包が残り、connect-snapshot 待ちは pending カウンタが戻らなく
+   * なるため、1 つでもあれば従来経路（teardown 実行）に倒す。
+   */
+  canWholesaleDestroy(): boolean {
+    if (this.deferred.size > 0) return false;
+    for (const record of this.records) {
+      if (record.pendingDefinitions > 0 || record.observationPending) return false;
+    }
+    return true;
+  }
+
+  /**
+   * 全 record を teardown を走らせずに終端化する（canWholesaleDestroy が true の
+   * content 専用）。イベント listener・アドレス台帳・loopContext はノード/binding
+   * もろとも GC で崩壊する（recordByBinding 以下は全て弱参照）。
+   * handlerBindingRegistry のカウンタは減らないが、残るのはキー文字列と数値のみで
+   * 実害はない設計（handlerBindingRegistry.ts の弱参照化コメント参照）。
+   */
+  destroyRecords(): void {
+    for (const record of this.records) {
+      record.phase = "disposed";
+      record.teardowns.clear();
+    }
+    this.records.clear();
   }
 
   observe(node: Node): void {
@@ -580,6 +648,8 @@ export class BindingSession {
         && !record.info.node.isConnected
       ) {
         record.observationPending = true;
+        // 待ちが 1 件でもある間は追加側 observer スキップを無効化する
+        incrementPendingObservation();
         return;
       }
       this.readProducerSnapshot(record, policy.syncOn === "call");
@@ -598,7 +668,10 @@ export class BindingSession {
     if (!(name in target)) return;
     const sequence = record.eventSequence;
     const value = target[name];
-    record.observationPending = false;
+    if (record.observationPending) {
+      record.observationPending = false;
+      decrementPendingObservation();
+    }
     if (eventWins && record.eventSequence !== sequence) return;
     record.hasProducerValue = true;
     record.producerValue = value;
@@ -662,6 +735,12 @@ export class BindingSession {
   }
 
   private runTeardowns(record: IInternalBindingRecord): void {
+    // runTeardowns は record の終端（disposed / failed）でのみ呼ばれる。未消化の
+    // connect-snapshot 待ちが残っていれば必ずカウンタを戻す（スキップ再有効化）。
+    if (record.observationPending) {
+      record.observationPending = false;
+      decrementPendingObservation();
+    }
     const teardowns = Array.from(record.teardowns).reverse();
     record.teardowns.clear();
     for (const teardown of teardowns) {

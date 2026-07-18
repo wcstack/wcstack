@@ -43,15 +43,19 @@ describe('collectNodesAndBindingInfos', () => {
     fragment.appendChild(comment);
 
     const nodeInfos = getFragmentNodeInfos(fragment);
+    // 事前正規化: text 専用コメントはテンプレート側で空 Text に置き換わる
+    expect(fragment.lastChild?.nodeType).toBe(Node.TEXT_NODE);
     const [nodes, bindings] = collectNodesAndBindingInfosByFragment(fragment, nodeInfos);
     expect(nodes).toHaveLength(2);
     expect(bindings).toHaveLength(2);
+    // 正規化済み Text は node がそのまま replaceNode になる
+    expect(bindings[1].node).toBe(bindings[1].replaceNode);
 
     const [, bindings2] = collectNodesAndBindingInfosByFragment(fragment, nodeInfos);
     expect(bindings2).toHaveLength(0);
 
-    unregisterNode(boundEl);
-    unregisterNode(comment);
+    unregisterNode(nodes[0]);
+    unregisterNode(nodes[1]);
     const [, bindings3] = collectNodesAndBindingInfosByFragment(fragment, nodeInfos);
     expect(bindings3).toHaveLength(2);
   });
