@@ -533,19 +533,51 @@ function For(list, each, options) {
                     }
                     throw err;
                 }
+                // The LIVE parent (`anchor.parentNode`, not the mount arg) so the region
+                // stays correct after being moved (e.g. built inside a Fragment, then
+                // appended elsewhere). `host` is null only if the anchor was detached
+                // without disposing this scope (a misuse) — then there is nothing to
+                // place into. Resolved before the removal phase so the wholesale-removal
+                // fast path below can use it.
+                const host = anchor.parentNode;
                 // Dispose rows whose key vanished. `remove()` no-ops if already detached.
-                for (const [k, row] of rows) {
-                    if (!next.has(k)) {
-                        row.node.remove();
-                        row.dispose();
+                if (rows.size > 0 && next.size === fresh.length) {
+                    // ZERO-REUSE run: no existing key survives (clear, or a full replacement
+                    // with disjoint keys), so EVERY current row is removed. When the host
+                    // contains exactly this list's region — first child is the region's
+                    // first row, last child is the anchor, and the child count matches
+                    // rows + anchor — detach them all with a single native
+                    // `textContent = ""` and re-append the anchor, instead of one
+                    // `remove()` per row (the dominant cost of clearing large lists).
+                    // Any deviation (foreign sibling, externally detached row, shared
+                    // host) fails the guard and falls back to the per-row path.
+                    // Disposal always runs per row; only the DOM detachment is batched.
+                    if (host !== null &&
+                        host.lastChild === anchor &&
+                        prevOrder.length > 0 &&
+                        host.firstChild === prevOrder[0] &&
+                        host.childNodes.length === rows.size + 1) {
+                        host.textContent = "";
+                        host.appendChild(anchor);
+                        for (const row of rows.values()) {
+                            row.dispose();
+                        }
+                    }
+                    else {
+                        for (const row of rows.values()) {
+                            row.node.remove();
+                            row.dispose();
+                        }
                     }
                 }
-                // Reorder relative to the LIVE parent (`anchor.parentNode`, not the mount
-                // arg) so the region stays correct after being moved (e.g. built inside a
-                // Fragment, then appended elsewhere). `host` is null only if the anchor was
-                // detached without disposing this scope (a misuse) — then there is nothing
-                // to place into.
-                const host = anchor.parentNode;
+                else {
+                    for (const [k, row] of rows) {
+                        if (!next.has(k)) {
+                            row.node.remove();
+                            row.dispose();
+                        }
+                    }
+                }
                 if (host) {
                     reconcileOrder(host, anchor, order, prevOrder);
                 }
@@ -602,9 +634,27 @@ function Index(list, each) {
                 }
                 // Trailing slots that no longer exist: dispose and drop.
                 if (items.length < rows.length) {
-                    for (let i = items.length; i < rows.length; i++) {
-                        rows[i].node.remove();
-                        rows[i].dispose();
+                    // WHOLESALE CLEAR (same idea as For's zero-reuse fast path): every slot
+                    // vanishes and the host holds exactly this list's region (all rows +
+                    // the anchor), so one native `textContent = ""` replaces per-row
+                    // `remove()`. Guard failures (foreign sibling, detached row, shared
+                    // host) fall back to the per-row path. Disposal still runs per row.
+                    if (items.length === 0 &&
+                        host !== null &&
+                        host.lastChild === anchor &&
+                        host.firstChild === rows[0].node &&
+                        host.childNodes.length === rows.length + 1) {
+                        host.textContent = "";
+                        host.appendChild(anchor);
+                        for (const row of rows) {
+                            row.dispose();
+                        }
+                    }
+                    else {
+                        for (let i = items.length; i < rows.length; i++) {
+                            rows[i].node.remove();
+                            rows[i].dispose();
+                        }
                     }
                     rows.length = items.length;
                 }
