@@ -5049,14 +5049,6 @@ function isPhysicallyAfter(lastNode, firstNode) {
     return (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
         && (position & Node.DOCUMENT_POSITION_DISCONNECTED) === 0;
 }
-function getContent(node, listIndex) {
-    let contentByListIndex = contentByListIndexByNode.get(node);
-    if (typeof contentByListIndex === 'undefined') {
-        return null;
-    }
-    const content = contentByListIndex.get(listIndex);
-    return typeof content === 'undefined' ? null : content;
-}
 function setContent(node, listIndex, content) {
     let contentByListIndex = contentByListIndexByNode.get(node);
     if (typeof contentByListIndex === 'undefined') {
@@ -5100,22 +5092,35 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     // teardown（listener 解除・アドレス台帳・loopContext 掃除）を丸ごと省略して
     // ノードごと GC に任せる（tryDestroy）。プール行きの分だけ従来どおり解体する
     // （プール行は binding が生存し続けるため address キャッシュのクリアが必須）。
+    // content 台帳の WeakMap ビルトインは V8 プロファイルで本関数の self に計上される
+    // ホットスポット: 外側の node→map 解決はループ外に持ち上げ、fullDelete（旧全行が
+    // deleteIndexSet に載る＝台帳の全エントリが消える）では per-index delete を廃して
+    // 台帳ごと 1 回で手放す。
+    let contentMap = contentByListIndexByNode.get(bindingInfo.node);
     let poolBudget = fullDelete
         ? maxPooledContents - getPooledContents(bindingInfo).length
         : Number.POSITIVE_INFINITY;
-    for (const deleteIndex of diff.deleteIndexSet) {
-        const content = getContent(bindingInfo.node, deleteIndex);
-        if (content !== null) {
-            if (poolBudget <= 0 && content.tryDestroy()) {
-                deleteContentByNode(bindingInfo.node, content);
+    if (typeof contentMap !== 'undefined') {
+        for (const deleteIndex of diff.deleteIndexSet) {
+            const content = contentMap.get(deleteIndex);
+            if (typeof content !== 'undefined') {
+                if (poolBudget <= 0 && content.tryDestroy()) {
+                    deleteContentByNode(bindingInfo.node, content);
+                }
+                else {
+                    deactivateContent(content);
+                    content.unmount();
+                    setPooledContent(bindingInfo, content);
+                    poolBudget -= 1;
+                }
+                if (!fullDelete) {
+                    contentMap.delete(deleteIndex);
+                }
             }
-            else {
-                deactivateContent(content);
-                content.unmount();
-                setPooledContent(bindingInfo, content);
-                poolBudget -= 1;
-            }
-            setContent(bindingInfo.node, deleteIndex, null);
+        }
+        if (fullDelete) {
+            contentByListIndexByNode.delete(bindingInfo.node);
+            contentMap = undefined;
         }
     }
     let lastNode = bindingInfo.node;
@@ -5136,14 +5141,16 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     }
     const ssrMode = inSsr();
     const uuid = bindingInfo.uuid ?? '';
+    // 追加行ごとの WeakMap 解決を避けるためプール配列も 1 回だけ引く（プールの配列
+    // 実体は setPooledContent が一度作ったら不変なので、delete ループ後の参照で安定）
+    const pooledContents = pooledContentsByNode.get(bindingInfo.node);
     for (const index of diff.newIndexes) {
         let content;
         // add
         if (diff.addIndexSet.has(index)) {
             const stateAddress = createStateAddress(elementPathInfo, index);
             loopContextStack.createLoopContext(stateAddress, (loopContext) => {
-                const pooledContents = getPooledContents(bindingInfo);
-                content = pooledContents.pop();
+                content = typeof pooledContents !== 'undefined' ? pooledContents.pop() : undefined;
                 if (typeof content === 'undefined') {
                     content = createContent(bindingInfo);
                 }
@@ -5182,7 +5189,8 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             }
         }
         else {
-            content = getContent(bindingInfo.node, index);
+            // getContent 相当（undefined→null 正規化は後段の raiseError 判定が null 比較のため維持）
+            content = (typeof contentMap !== 'undefined' ? contentMap.get(index) ?? null : null);
             if (diff.changeIndexSet.has(index)) {
                 // change
                 const indexBindings = getIndexBindingsByContent(content);
@@ -5206,7 +5214,11 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             }
         }
         lastNode = content.lastNode || lastNode;
-        setContent(bindingInfo.node, index, content);
+        if (typeof contentMap === 'undefined') {
+            contentMap = new WeakMap();
+            contentByListIndexByNode.set(bindingInfo.node, contentMap);
+        }
+        contentMap.set(index, content);
     }
     lastNodeByNode.set(bindingInfo.node, lastNode);
     if (fragment !== null) {
