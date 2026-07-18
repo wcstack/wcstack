@@ -26,7 +26,8 @@ function argOf(name, dflt) {
 const PORT = Number(argOf("port", "4199"));
 const LABEL = argOf("label", "run");
 const OUT = argOf("out", `bench-${LABEL}.json`);
-const BENCH_URL = `http://127.0.0.1:${PORT}/packages/state/__e2e__/benchmark/index.html`;
+const PAGE = argOf("page", "packages/state/__e2e__/benchmark/index.html");
+const BENCH_URL = `http://127.0.0.1:${PORT}/${PAGE}`;
 
 // --- official isKeyed.ts instrumentation, minimally adapted (no shadow DOM) ---
 const INIT_DETECTOR = `

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>@wcstack/signals-"keyed"</title>
+    <link href="/packages/state/__e2e__/benchmark/css/currentStyle.css" rel="stylesheet"/>
+  </head>
+  <body>
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6">
+            <h1>@wcstack/signals-"keyed"</h1>
+          </div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="run">Create 1,000 rows</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="runlots">Create 10,000 rows</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="add">Append 1,000 rows</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="update">Update every 10th row</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="clear">Clear</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="swaprows">Swap Rows</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <table class="table table-hover table-striped test-data">
+        <tbody></tbody>
+      </table>
+    </div>
+    <span class="preloadicon glyphicon glyphicon-remove" aria-hidden="true"></span>
+
+    <script type="module">
+      import { signal, For, h, render, createRoot } from "/packages/signals/dist/dom.esm.js";
+      import { buildData } from "/packages/state/__e2e__/benchmark/buildData.js";
+
+      // Idiomatic fine-grained jsfb implementation (Solid-style): the list is a
+      // signal of row objects; each row's label is its own signal so "update
+      // every 10th row" touches only those rows' text bindings.
+      const data = signal([]);
+      const selected = signal(null);
+
+      const wrap = (items) => items.map((d) => ({ id: d.id, label: signal(d.label) }));
+
+      const actions = {
+        run() { data.set(wrap(buildData(1000))); selected.set(null); },
+        runlots() { data.set(wrap(buildData(10000))); selected.set(null); },
+        add() { data.set(data.peek().concat(wrap(buildData(1000)))); },
+        update() {
+          const d = data.peek();
+          for (let i = 0; i < d.length; i += 10) {
+            d[i].label.set(d[i].label.peek() + " !!!");
+          }
+        },
+        clear() { data.set([]); selected.set(null); },
+        swaprows() {
+          const d = data.peek();
+          if (d.length > 998) {
+            const next = d.slice();
+            [next[1], next[998]] = [next[998], next[1]];
+            data.set(next);
+          }
+        },
+      };
+      for (const id of Object.keys(actions)) {
+        document.getElementById(id).addEventListener("click", actions[id]);
+      }
+
+      const row = (item) =>
+        h("tr", { class: () => (selected.get() === item.id ? "danger" : "") },
+          h("td", { class: "col-md-1" }, String(item.id)),
+          h("td", { class: "col-md-4" },
+            h("a", { onClick: () => selected.set(item.id) }, () => item.label.get()),
+          ),
+          h("td", { class: "col-md-1" },
+            h("a", { onClick: () => data.set(data.peek().filter((r) => r.id !== item.id)) },
+              h("span", { class: "glyphicon glyphicon-remove", "aria-hidden": "true" }),
+            ),
+          ),
+          h("td", { class: "col-md-6" }),
+        );
+
+      const tbody = document.querySelector("tbody");
+      createRoot(() => {
+        render(For(data, row, { key: (r) => r.id }), tbody);
+      });
+    </script>
+  </body>
+</html>
