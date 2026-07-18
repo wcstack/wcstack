@@ -484,4 +484,150 @@ describe('setByAddress', () => {
     // エラーにならずに完了する
     setByAddress(target, address, 42, target, handler as any);
   });
+
+  describe('fast path（親を持つ未宣言の葉パス）', () => {
+    it('関数を親とする葉パスへの書き込みは従来経路で設定されること', () => {
+      const fnParent: any = function () {};
+      const target = {};
+      const address = createStateAddress(getPathInfo('factory.mode'), null);
+      const stateElement = createStateElement();
+      const handler = createHandler(stateElement);
+      vi.mocked(getByAddress).mockReturnValue(fnParent);
+
+      const result = setByAddress(target, address, 'fast', target, handler as any);
+      expect(result).toBe(true);
+      expect(fnParent.mode).toBe('fast');
+      expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
+    });
+
+    it('同値ガード有効時、同値なら親解決 1 回で early return すること', () => {
+      setConfig({ sameValueGuard: true });
+      try {
+        const parent = { label: 'same' };
+        const target = {};
+        const address = createStateAddress(getPathInfo('row.label'), null);
+        const stateElement = createStateElement();
+        const handler = createHandler(stateElement);
+        vi.mocked(getByAddress).mockReturnValue(parent);
+
+        expect(setByAddress(target, address, 'same', target, handler as any)).toBe(true);
+        expect(mockEnqueueAbsoluteAddress).not.toHaveBeenCalled();
+        // 値が異なれば書き込まれ enqueue される
+        expect(setByAddress(target, address, 'next', target, handler as any)).toBe(true);
+        expect(parent.label).toBe('next');
+        expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
+      } finally {
+        setConfig({ sameValueGuard: false });
+      }
+    });
+
+    it('fast path でも devtools sink に write イベントが流れること', async () => {
+      const { setDevtoolsSink } = await import('../src/devtools/sink');
+      const sink = vi.fn();
+      setConfig({ sameValueGuard: true });
+      try {
+        setDevtoolsSink(sink);
+        const parent = { label: 'old' };
+        const target = {};
+        const address = createStateAddress(getPathInfo('row.label'), null);
+        const stateElement = createStateElement();
+        const handler = createHandler(stateElement);
+        vi.mocked(getByAddress).mockReturnValue(parent);
+
+        setByAddress(target, address, 'new', target, handler as any);
+        expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+          type: 'state:write',
+          value: 'new',
+          oldValue: 'old',
+          hasOldValue: true,
+        }));
+      } finally {
+        setDevtoolsSink(null);
+        setConfig({ sameValueGuard: false });
+      }
+    });
+
+    it('fast path でも bindableEventMap の CustomEvent がディスパッチされること', () => {
+      const host = document.createElement('div');
+      const shadow = host.attachShadow({ mode: 'open' });
+      const received: CustomEvent[] = [];
+      host.addEventListener('cfg-theme-changed', (e) => received.push(e as CustomEvent));
+
+      const parent = { theme: 'light' };
+      const target = {};
+      const address = createStateAddress(getPathInfo('cfg.theme'), null);
+      const stateElement = createStateElement({
+        bindableEventMap: { 'cfg.theme': 'cfg-theme-changed' },
+      });
+      (stateElement as any).rootNode = shadow;
+      const handler = createHandler(stateElement);
+      vi.mocked(getByAddress).mockReturnValue(parent);
+
+      setByAddress(target, address, 'dark', target, handler as any);
+      expect(parent.theme).toBe('dark');
+      expect(received).toHaveLength(1);
+      expect(received[0].detail).toBe('dark');
+    });
+
+    it('fast path で rootNode が ShadowRoot でなければディスパッチされず完了すること', () => {
+      const parent = { theme: 'light' };
+      const target = {};
+      const address = createStateAddress(getPathInfo('cfg.theme'), null);
+      const stateElement = createStateElement({
+        bindableEventMap: { 'cfg.theme': 'cfg-theme-changed' },
+      });
+      (stateElement as any).rootNode = document;
+      const handler = createHandler(stateElement);
+      vi.mocked(getByAddress).mockReturnValue(parent);
+
+      expect(setByAddress(target, address, 'dark', target, handler as any)).toBe(true);
+      expect(parent.theme).toBe('dark');
+    });
+
+    it('enablePropagationContext 無効時は context なしで enqueue されること', () => {
+      setConfig({ enablePropagationContext: false });
+      try {
+        const parent = { label: 'x' };
+        const target = {};
+        const address = createStateAddress(getPathInfo('row.label'), null);
+        const stateElement = createStateElement();
+        const handler = createHandler(stateElement);
+        vi.mocked(getByAddress).mockReturnValue(parent);
+
+        setByAddress(target, address, 'y', target, handler as any);
+        expect(mockEnqueueAbsoluteAddress).toHaveBeenCalledWith(expect.anything(), null);
+      } finally {
+        setConfig({ enablePropagationContext: true });
+      }
+    });
+
+    it('関数親のワイルドカード書き込みで listIndex が無ければ従来経路で raiseError すること', () => {
+      const fnParent: any = function () {};
+      const target = {};
+      const address = createStateAddress(getPathInfo('items.*'), null);
+      const stateElement = createStateElement();
+      const handler = createHandler(stateElement);
+      vi.mocked(getByAddress).mockReturnValue(fnParent);
+
+      expect(() => setByAddress(target, address, 'v', target, handler as any)).toThrow(/listIndex/);
+      expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
+    });
+
+    it('同値ガード有効時、listIndex の無いワイルドカードは has=false 扱いで raiseError まで進むこと', () => {
+      setConfig({ sameValueGuard: true });
+      try {
+        const parent: any[] = ['a'];
+        const target = {};
+        const address = createStateAddress(getPathInfo('items.*'), null);
+        const stateElement = createStateElement();
+        const handler = createHandler(stateElement);
+        vi.mocked(getByAddress).mockReturnValue(parent);
+
+        expect(() => setByAddress(target, address, 'b', target, handler as any)).toThrow(/listIndex/);
+        expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
+      } finally {
+        setConfig({ sameValueGuard: false });
+      }
+    });
+  });
 });

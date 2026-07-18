@@ -104,6 +104,32 @@ describe("clear の wholesale destroy（統合）", () => {
     host.remove();
   });
 
+  it("ネスト内側の content が wholesale できない場合は unmount にフォールバックすること", async () => {
+    restoreCap = __test_setMaxPooledContents(0);
+    const { host, shadowRoot, stateElement } = await mount(
+      { groups: [{ name: "g1", members: [{ n: "a" }] }] },
+      `<div><template data-wcs="for: groups"><section><h2>{{ .name }}</h2><ul><template data-wcs="for: .members"><li>{{ .n }}</li></template></ul></section></template></div>`,
+    );
+    expect(shadowRoot.querySelectorAll("li")).toHaveLength(1);
+
+    // 内側リストの行 content の session に擬似 deferred タスクを注入し、
+    // 外側 tryDestroy の再帰で内側だけ unmount フォールバックさせる
+    const innerAnchor = Array.from(shadowRoot.querySelector("ul")!.childNodes)
+      .find(n => n.nodeType === Node.COMMENT_NODE)!;
+    const innerContents = Array.from(getContentSetByNode(innerAnchor));
+    expect(innerContents.length).toBeGreaterThan(0);
+    const innerSession = getBindingSessionByContent(innerContents[0])!;
+    (innerSession as any).deferred.add({ node: document.createElement("div"), active: true, cancel: null });
+
+    stateElement.createState("writable", (s: any) => { s.groups = []; });
+    await flush();
+    expect(shadowRoot.querySelectorAll("section")).toHaveLength(0);
+    expect(shadowRoot.querySelectorAll("li")).toHaveLength(0);
+    // フォールバック（unmount の session.dispose）で deferred も掃除される
+    expect((innerSession as any).deferred.size).toBe(0);
+    host.remove();
+  });
+
   it("wholesale できない content（deferred タスク持ち）は従来経路で解体されること", async () => {
     restoreCap = __test_setMaxPooledContents(0);
     const { host, shadowRoot, stateElement } = await mount(

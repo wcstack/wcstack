@@ -116,6 +116,12 @@ describe("initialSync policy resolution", () => {
       propName: "onclick",
       propModifiers: ["init=element"],
     }))).toThrow(/Event bindings only allow init=none/);
+    // sync=connect 併用時は凍結シングルトンではなく個別 policy を返す
+    expect(resolveInitialSyncPolicy(createBinding(node, {
+      bindingType: "event",
+      propName: "onclick",
+      propModifiers: ["sync=connect"],
+    }))).toEqual({ authority: "none", syncOn: "connect", observable: false });
   });
 
   it("prop 以外の binding type は state / none だけを許可すること", () => {
