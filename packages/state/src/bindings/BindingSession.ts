@@ -15,6 +15,7 @@ import { getCustomElementRegistry, upgradeCustomElement } from "../platform/cust
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
+import { consumeObserverSkipOnRemove } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
@@ -156,6 +157,10 @@ class BindingOwner {
     // 検査へ進める。contains は O(木の深さ) なので、関心の無い node で呼ばない。
     const reconnected: IBindingInfo[] = [];
     for (const subtree of removed) {
+      // framework が unmount した削除サブツリーは binding を明示 dispose 済みなので
+      // observer 側の冗長走査（forEachInclusive で全 node を歩き handleRemovedNode を
+      // 呼ぶ）を丸ごとスキップする。clear/大量 delete のホットスポット短縮。
+      if (consumeObserverSkipOnRemove(subtree)) continue;
       forEachInclusive(subtree, (node) => {
         forEachInterestedSession(node, (session) => {
           if (this.root.contains(node)) return;
