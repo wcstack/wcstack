@@ -11,7 +11,13 @@ export function getBindingInfos(node: Node, parseBindingTextResults: ParseBindTe
         replaceNode: node,
       });
     } else {
-      const replaceNode = document.createTextNode('');
+      // フラグメント登録時に事前正規化済みの Text ノードはそのまま replaceNode に
+      // 使う（node === replaceNode なら replaceToReplaceNode は no-op）。
+      // 実 DOM 上の wcs-text コメント（非フラグメント経路）は従来どおり
+      // 空 Text を生成して実行時に差し替える。
+      const replaceNode = node.nodeType === Node.TEXT_NODE
+        ? node
+        : document.createTextNode('');
       bindingInfos.push({
         ...parseBindingTextResult,
         node: node,

@@ -443,9 +443,12 @@ describe('collectStructuralFragments', () => {
 
       const info = getFragmentInfoByUUID('uuid-collect-0');
       expect(info).not.toBeNull();
-      // コメントが展開されていること
-      const fragmentComment = info?.fragment.firstChild as Comment;
-      expect(fragmentComment.data).toBe('@@: users.*.name');
+      // ショートハンドが展開されて nodeInfos に記録され、コメント自体は
+      // 事前正規化で空 Text プレースホルダに置き換わっていること
+      expect(info?.fragment.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+      expect(info?.nodeInfos).toHaveLength(1);
+      expect(info?.nodeInfos[0].parseBindTextResults[0].statePathName).toBe('users.*.name');
+      expect(info?.nodeInfos[0].parseBindTextResults[0].bindingType).toBe('text');
     });
 
     it('forテンプレート内の要素属性のショートハンドが展開されること', () => {
