@@ -3332,6 +3332,11 @@ let nextRecordId = 0;
 let nextGeneration = 0;
 const recordByBinding = new WeakMap();
 const sessionByRoot = new WeakMap();
+// binding の構造キーは不変フィールドのみから決まる。リスト行の初期化では同一 binding に
+// 対し remember() が2回呼ばれる（createContent 内 initializeBindingsByFragment と
+// activateContent の registerAddress 目的の initialize）ため、2度目の文字列生成を避けるべく
+// binding 単位でメモ化する。プロファイル上 bindingKey は create-10k の JS 自己時間で上位。
+const bindingKeyByBinding = new WeakMap();
 // node → その node に関心を持つ session（anchor として binding を覚えている、
 // または定義待ちタスクを抱えている）。BindingOwner は mutation で増減した
 // サブツリーを1回だけ走査し、ここに登録された session だけへ per-node 配送する。
@@ -3366,6 +3371,11 @@ function forEachInterestedSession(node, callback) {
 }
 function forEachInclusive(root, callback) {
     callback(root);
+    // 葉ノード（fragment 一括挿入時のテキスト・空セル等が大多数）では
+    // Array.from(childNodes) の空配列アロケーションを避ける。callback が子を
+    // 追加しうるため firstChild は callback 後に判定する（従来と同一意味論）。
+    if (root.firstChild === null)
+        return;
     for (const child of Array.from(root.childNodes)) {
         forEachInclusive(child, callback);
     }
@@ -3649,7 +3659,11 @@ class BindingSession {
             known = new Map();
             this.knownBindingsByNode.set(anchor, known);
         }
-        const key = bindingKey(binding);
+        let key = bindingKeyByBinding.get(binding);
+        if (typeof key === "undefined") {
+            key = bindingKey(binding);
+            bindingKeyByBinding.set(binding, key);
+        }
         const remembered = known.get(key);
         if (typeof remembered !== "undefined") {
             const rememberedOptions = this.optionsByBinding.get(remembered);
