@@ -1029,6 +1029,32 @@ describe('applyChangeToFor', () => {
     setListIndexesByList(list, null);
   });
 
+  it('content台帳マップ自体が無いノードで既存インデックスを再適用するとエラーになること', () => {
+    setupContext();
+
+    const container = document.createElement('div');
+    const placeholder = document.createComment('for');
+    container.appendChild(placeholder);
+
+    setFragmentInfoByUUID(uuid, document, createFragmentInfo());
+    const bindingInfo = createBindingInfo(placeholder);
+
+    // 初回適用
+    const list = [1, 2];
+    const listIndexes = createListIndexes(null, [], list);
+    setListIndexesByList(list, listIndexes);
+    apply(bindingInfo, list);
+
+    // 台帳マップごと削除（contentMap が undefined のまま非 add インデックスに到達する分岐）
+    __test_deleteContentByNode(placeholder);
+
+    const sameList = [1, 2];
+    createListIndexes(null, list, sameList);
+    expect(() => apply(bindingInfo, sameList)).toThrow(/Content not found for ListIndex/);
+
+    setListIndexesByList(list, null);
+  });
+
   it('__test_setContentByListIndexでcontentを設定できること', () => {
     setupContext();
 
