@@ -164,6 +164,7 @@ type V = WcsPathValue<State, "categories.*.products.*.name">; // string
 | `$postUpdate` | `$postUpdate(path: string): void` | パスの更新を手動トリガー |
 | `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | ワイルドカードを特定インデックスで解決 |
 | `$trackDependency` | `$trackDependency(path: string): void` | 依存関係を手動登録 |
+| `$untrackDependency` | `$untrackDependency<T>(fn: () => T): T` | fn 実行中の依存追跡（動的依存・`$1` インデックス依存）を抑止して値を読む |
 
 ### プロパティ
 

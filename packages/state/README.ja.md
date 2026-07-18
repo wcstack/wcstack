@@ -867,6 +867,7 @@ export default {
 | `this.$resolve(path, indexes, value?)` | ワイルドカードパスを特定のインデックスで解決 |
 | `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行 |
 | `this.$trackDependency(path)` | キャッシュ無効化のための依存関係を手動で登録 |
+| `this.$untrackDependency(fn)` | fn 実行中の依存追跡を抑止して値を読む（`$trackDependency` と対称） |
 | `this.$stateElement` | `IStateElement` インスタンスへのアクセス |
 | `this.$1`, `this.$2`, ... | 現在のループインデックス（1始まりの命名、0始まりの値） |
 

@@ -867,6 +867,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
 | `this.$postUpdate(path)` | Manually trigger update notification for a path |
 | `this.$trackDependency(path)` | Manually register a dependency for cache invalidation |
+| `this.$untrackDependency(fn)` | Read values inside fn without registering dependencies (symmetric to `$trackDependency`) |
 | `this.$command.<name>` | Access a `CommandToken` declared in `$commandTokens` (see [Command Token](#command-token-method-binding)) |
 | `this.$stateElement` | Access to the `IStateElement` instance |
 | `this.$1`, `this.$2`, ... | Current loop index (1-based naming, 0-based value) |

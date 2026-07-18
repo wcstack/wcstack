@@ -31,6 +31,7 @@ import { getAll } from "../apis/getAll";
 import { postUpdate } from "../apis/postUpdate";
 import { resolve } from "../apis/resolve";
 import { trackDependency } from "../apis/trackDependency";
+import { untrackDependency } from "../apis/untrackDependency";
 import { updatedCallback } from "../apis/updatedCallback";
 import { getByAddress } from "../methods/getByAddress";
 import { hasByAddress } from "../methods/hasByAddress";
@@ -73,8 +74,9 @@ export function get(
     // getter 評価中のインデックス読み取りを記録する。位置だけが変わった行
     // （listDiff.changeIndexSet）は index 以外の入力が不変なので、walkDependency の
     // 静的子展開を「インデックスを読んだ getter の subtree」に限定できる。
+    // $untrackDependency スコープ中／setter 実行中は記録しない。
     const lastInfo = lastAddress?.pathInfo;
-    if (lastInfo && handler.stateElement?.getterPaths.has(lastInfo.path)) {
+    if (lastInfo && !handler.untracking && handler.stateElement?.getterPaths.has(lastInfo.path)) {
       handler.stateElement.addIndexDependentGetterPath?.(lastInfo.path);
     }
     const listIndex = lastAddress?.listIndex;
@@ -124,6 +126,16 @@ export function get(
               receiver,
               handler
             )(path);
+          }
+        }
+        case "$untrackDependency": {
+          return <T>(fn: () => T): T => {
+            return untrackDependency(
+              target,
+              prop,
+              receiver,
+              handler
+            )(fn);
           }
         }
         case STATE_COMMAND_NAMESPACE_NAME: {

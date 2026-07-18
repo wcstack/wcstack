@@ -16,6 +16,7 @@ class StateHandler implements IStateHandler {
   private _addressStackIndex: number = -1;
   private _loopContext: ILoopContext | null | undefined;
   private _mutability: Mutability;
+  private _untrackDepth: number = 0;
  
   constructor(
     rootNode: Node,
@@ -85,6 +86,18 @@ class StateHandler implements IStateHandler {
 
   clearLoopContext(): void {
     this._loopContext = undefined;
+  }
+
+  get untracking(): boolean {
+    return this._untrackDepth > 0;
+  }
+
+  beginUntrack(): void {
+    this._untrackDepth++;
+  }
+
+  endUntrack(): void {
+    this._untrackDepth--;
   }
 
   get(

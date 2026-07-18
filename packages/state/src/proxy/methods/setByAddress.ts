@@ -85,11 +85,17 @@ function _setByAddress(
   try {
     if (address.pathInfo.path in target) {
       if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
-        // setterの中で参照の可能性があるので、addressをプッシュする
+        // setterの中で参照の可能性があるので、addressをプッシュする。
+        // setter は命令的な代入であって派生（getter）ではないため、実行中の
+        // 読み取り（同値ガードの旧値読み・$1 参照等）で依存を張らない。
+        // アクセサペア（get/set 同名パス）では、抑止しないと setter 内の内部
+        // 書き込みの同値ガード読みが「getter の依存」として誤登録される。
         handler.pushAddress(address);
+        handler.beginUntrack();
         try {
           return Reflect.set(target, address.pathInfo.path, value, receiver);
         } finally {
+          handler.endUntrack();
           handler.popAddress();
         }
       } else {

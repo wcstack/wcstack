@@ -6,6 +6,10 @@ export function checkDependency(
   handler: IStateHandler,
   address: IStateAddress,
 ): void {
+  // $untrackDependency スコープ中／setter 実行中は依存を張らない
+  if (handler.untracking) {
+    return;
+  }
   // 動的依存関係の登録
   if (handler.addressStackLength > 0) {
     const lastAddress = handler.lastAddressStack;

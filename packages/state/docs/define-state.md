@@ -164,6 +164,7 @@ The following properties and methods are available on `this` inside `defineState
 | `$postUpdate` | `$postUpdate(path: string): void` | Manually trigger update for a path |
 | `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | Resolve a wildcard path with specific indexes |
 | `$trackDependency` | `$trackDependency(path: string): void` | Manually register a dependency |
+| `$untrackDependency` | `$untrackDependency<T>(fn: () => T): T` | Run fn with dependency tracking (dynamic deps and `$1` index deps) suppressed |
 
 ### Properties
 

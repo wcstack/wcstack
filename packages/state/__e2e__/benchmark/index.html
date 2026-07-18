@@ -20,11 +20,20 @@ import { buildData } from '@lib/buildData';
 export default {
   data: [],
   selectedIndex: null,
+  // selectedIndex は $untrackDependency で読む: 値は使うが依存は張らない。
+  // 選択変更は onSelect が旧・新の2行のアドレスへ直接書き込むため、
+  // selectedIndex 変更の全行展開（O(全行)）が起きない。$1 は追跡したままなので
+  // 位置変更（swap/remove）では従来どおり該当行が再評価される。
   get "data.*.selected"() {
-    return this.$1 === this.selectedIndex;
+    return this.$1 === this.$untrackDependency(() => this.selectedIndex);
+  },
+  set "data.*.selected"(value) {
+    this.selectedIndex = value ? this.$1 : null;
   },
   onSelect(e, $1) {
-    this.selectedIndex = $1;
+    if (this.selectedIndex !== null && this.selectedIndex !== $1)
+      this[`data.${this.selectedIndex}.selected`] = false;
+    this[`data.${$1}.selected`] = true;
   },
   onRemove(e, $1) {
     this.data = this.data.toSpliced($1, 1);
