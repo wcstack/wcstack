@@ -1,7 +1,11 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IAbsoluteStateAddress } from "../address/types";
-import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
-import { addBindingByAbsoluteStateAddress, removeBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
+import { IAbsolutePathInfo } from "../address/types";
+import { clearAbsoluteStateAddressByBinding, getAbsoluteStateAddressByBinding, resolveBindingRootNode } from "../binding/getAbsoluteStateAddressByBinding";
+import { addBindingByAbsoluteStateAddress, addBindingByPattern, removeBindingByAbsoluteStateAddress, removeBindingByPattern } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
+import { IListIndex } from "../list/types";
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
 import { config } from "../config";
 import { detachCheckboxEventHandler, attachCheckboxEventHandler } from "../event/checkboxHandler";
@@ -56,6 +60,12 @@ interface IInternalBindingRecord extends IBindingRecord {
   readonly anchor: Node;
   readonly options: IBindingOptions;
   address: IAbsoluteStateAddress | null;
+  /**
+   * パターン索引台帳（(absolutePathInfo, listIndex) 2 段キー）への登録。リスト行の
+   * binding は address を intern せずこちらに登録する。address とは排他。
+   */
+  patternPathInfo: IAbsolutePathInfo | null;
+  patternListIndex: IListIndex | null;
   pendingDefinitions: number;
   initialPolicy: IInitialSyncPolicy | null;
   resolvedAuthority: ResolvedInitialAuthority | null;
@@ -265,7 +275,7 @@ export class BindingSession {
       const existing = recordByBinding.get(binding);
       if (typeof existing !== "undefined" && existing.phase !== "disposed" && existing.phase !== "failed") {
         this.observe(existing.anchor);
-        if (resolvedOptions.registerAddress && existing.address === null) {
+        if (resolvedOptions.registerAddress && existing.address === null && existing.patternListIndex === null) {
           existing.options.registerAddress = true;
           this.registerAddress(existing);
         }
@@ -297,7 +307,7 @@ export class BindingSession {
       const record = recordByBinding.get(binding);
       if (typeof record !== "undefined" && record.session === this
         && record.phase !== "disposed" && record.phase !== "failed") {
-        if (record.address === null) {
+        if (record.address === null && record.patternListIndex === null) {
           // 初回活性化（owner は冒頭で保証済み）
           record.options.registerAddress = true;
           this.registerAddress(record, knownRoot);
@@ -582,6 +592,8 @@ export class BindingSession {
         anchor,
         options: rowOptions,
         address: null,
+        patternPathInfo: null,
+        patternListIndex: null,
         pendingDefinitions: 0,
         initialPolicy: slot.policy,
         resolvedAuthority: slot.authority,
@@ -642,6 +654,8 @@ export class BindingSession {
       anchor: binding.replaceNode,
       options: recordOptions,
       address: null,
+      patternPathInfo: null,
+      patternListIndex: null,
       pendingDefinitions: 0,
       initialPolicy: null,
       resolvedAuthority: null,
@@ -831,12 +845,28 @@ export class BindingSession {
   }
 
   private registerAddress(record: IInternalBindingRecord, knownRoot?: Node | null): void {
-    if (record.address !== null) return;
+    if (record.address !== null || record.patternListIndex !== null) return;
     const binding = record.info;
-    const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
-    addBindingByAbsoluteStateAddress(address, binding);
-    record.address = address;
-    // 台帳解除は runTeardowns が record.address からデータ駆動で行う（クロージャ不要）
+    const listIndex = getListIndexByBindingInfo(binding);
+    if (listIndex !== null) {
+      // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
+      // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
+      const rootNode = resolveBindingRootNode(binding, knownRoot);
+      const stateElement = getStateElementByName(rootNode, binding.stateName);
+      if (stateElement === null) {
+        raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+      }
+      const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
+      addBindingByPattern(absolutePathInfo, listIndex, binding);
+      record.patternPathInfo = absolutePathInfo;
+      record.patternListIndex = listIndex;
+    } else {
+      const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
+      addBindingByAbsoluteStateAddress(address, binding);
+      record.address = address;
+    }
+    // 台帳解除は runTeardowns が record.address / pattern フィールドから
+    // データ駆動で行う（クロージャ不要）
     if (!record.options.registerPathInfo) return;
     const rootNode = binding.replaceNode.getRootNode() as Node;
     const stateElement = getStateElementByName(rootNode, binding.stateName);
@@ -882,6 +912,18 @@ export class BindingSession {
         clearAbsoluteStateAddressByBinding(binding);
       } catch {
         // Cleanup is best-effort; one faulty resource must not retain the rest.
+      }
+    } else if (record.patternListIndex !== null) {
+      try {
+        removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);
+        record.patternPathInfo = null;
+        record.patternListIndex = null;
+        // 相対アドレス（getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の
+        // 遅延 intern）のメモは pattern 登録でも作られうるため対称にクリアする
+        clearStateAddressByBindingInfo(binding);
+        clearAbsoluteStateAddressByBinding(binding);
+      } catch {
+        // Cleanup is best-effort.
       }
     }
     if (record.twowayAttached) {

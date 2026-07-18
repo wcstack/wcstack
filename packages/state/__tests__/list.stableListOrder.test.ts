@@ -10,6 +10,7 @@ vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => {
       return addr;
     }),
     clearAbsoluteStateAddressByBinding: vi.fn(),
+    resolveBindingRootNode: vi.fn(() => document),
   };
 });
 import { longestIncreasingSubsequence, computeStableIndexSet } from '../src/list/stableListOrder';

@@ -10,6 +10,7 @@ vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => {
       return addr;
     }),
     clearAbsoluteStateAddressByBinding: vi.fn(),
+    resolveBindingRootNode: vi.fn(() => document),
   };
 });
 import { applyChangeToFor, __test_setContentByListIndex, __test_deleteLastNodeByNode, __test_deleteContentByNode } from '../src/apply/applyChangeToFor';

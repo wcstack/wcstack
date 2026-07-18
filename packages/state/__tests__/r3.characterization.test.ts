@@ -21,7 +21,7 @@ import { getStateElementByName } from "../src/stateElementByName";
 import { setDevtoolsSink } from "../src/devtools/sink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IAbsoluteStateAddress } from "../src/address/types";
-import { peekBindingsByAbsoluteStateAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
+import { peekBindingsForAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
 import type { IBindingInfo } from "../src/types";
 import { registerUpdateBatchListener, unregisterUpdateBatchListener, UpdateBatchListener } from "../src/updater/updater";
 import { __test_setMaxPooledContents } from "../src/apply/applyChangeToFor";
@@ -88,7 +88,7 @@ describe("R3 オラクル: 台帳・drain の観測可能な契約", () => {
     const pinned = added.map((e) => ({
       addr: e.absoluteAddress,
       binding: (e as any).binding as IBindingInfo,
-      entry: peekBindingsByAbsoluteStateAddress(e.absoluteAddress),
+      entry: peekBindingsForAddress(e.absoluteAddress),
     }));
     for (const p of pinned) expect(p.entry).toBeDefined();
 
@@ -106,7 +106,7 @@ describe("R3 オラクル: 台帳・drain の観測可能な契約", () => {
     expect(events.filter(isLedgerEvent)).toEqual([]);
     // 台帳エントリはインスタンスごと不変・登録メンバーも不変（listIndex 同一性キーの帰結）
     for (const p of pinned) {
-      const entry = peekBindingsByAbsoluteStateAddress(p.addr);
+      const entry = peekBindingsForAddress(p.addr);
       expect(entry).toBe(p.entry);
       expect(entry === p.binding || (entry instanceof Set && entry.has(p.binding))).toBe(true);
     }

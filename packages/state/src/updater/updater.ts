@@ -1,6 +1,6 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { peekBindingsByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { peekBindingsForAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { MAX_PROPAGATION_HOPS } from "../define";
 import { devtoolsSink } from "../devtools/sink";
 import { IPropagationContext } from "../propagation/types";
@@ -129,7 +129,8 @@ class Updater {
       // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
       // アドレス等）に空エントリを生成・蓄積しない。エントリは単一 binding
       // （通常ケース）か Set（同一アドレスに 2 本以上）のどちらか。
-      const entry = peekBindingsByAbsoluteStateAddress(absoluteAddress);
+      // 従来台帳 → パターン台帳（リスト行）の順で引く。
+      const entry = peekBindingsForAddress(absoluteAddress);
       if (entry === undefined) {
         continue;
       }

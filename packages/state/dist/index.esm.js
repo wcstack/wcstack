@@ -2090,6 +2090,28 @@ function getListIndexByBindingInfo(bindingInfo) {
 }
 
 const absoluteStateAddressByBinding = new WeakMap();
+/**
+ * binding の解決済み root を返す。knownRootNode があれば getRootNode() と
+ * fragment フォールバックを省略する（リスト行活性化のホットパス）。
+ */
+function resolveBindingRootNode(binding, knownRootNode) {
+    if (knownRootNode != null) {
+        return knownRootNode;
+    }
+    let rootNode = binding.replaceNode.getRootNode();
+    // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
+    if (binding.replaceNode.isConnected === false) {
+        // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
+        const rootNodeByFragment = getRootNodeByFragment(rootNode);
+        if (rootNodeByFragment === null) {
+            raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
+        }
+        else {
+            rootNode = rootNodeByFragment;
+        }
+    }
+    return rootNode;
+}
 function getAbsoluteStateAddressByBinding(binding, knownRootNode) {
     // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
     let absoluteStateAddress = null;
@@ -2097,26 +2119,7 @@ function getAbsoluteStateAddressByBinding(binding, knownRootNode) {
     if (absoluteStateAddress !== null) {
         return absoluteStateAddress;
     }
-    let rootNode;
-    if (knownRootNode != null) {
-        // リスト行活性化のホットパス: 呼び出し側（applyChangeToFor → activateContent）が
-        // root を確定済みなので getRootNode() と fragment フォールバックを省略する
-        rootNode = knownRootNode;
-    }
-    else {
-        rootNode = binding.replaceNode.getRootNode();
-        // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
-        if (binding.replaceNode.isConnected === false) {
-            // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
-            const rootNodeByFragment = getRootNodeByFragment(rootNode);
-            if (rootNodeByFragment === null) {
-                raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
-            }
-            else {
-                rootNode = rootNodeByFragment;
-            }
-        }
-    }
+    const rootNode = resolveBindingRootNode(binding, knownRootNode);
     const listIndex = getListIndexByBindingInfo(binding);
     const stateElement = getStateElementByName(rootNode, binding.stateName);
     if (stateElement === null) {
@@ -2158,17 +2161,6 @@ function setDevtoolsSink(sink) {
  * 2 本目から Set に昇格する（interestedSessionsByNode と同じ前例）。
  */
 const bindingsByAbsoluteStateAddress = new WeakMap();
-/**
- * 参照専用の取得。未登録アドレスにエントリを生成・キャッシュしない
- * （リスト置換の drain は大量のバインディング無しアドレスを照会するため、
- * 生成すると空エントリが溜まり続ける）。
- * 戻り値は単一 binding（登録 1 本）か Set（2 本以上）のどちらか。
- * 呼び出し側は Set を変異してはならない（instanceof で分岐できるよう
- * ReadonlySet でなく Set 型で返す）。
- */
-function peekBindingsByAbsoluteStateAddress(absoluteStateAddress) {
-    return bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
-}
 function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
     const current = bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
     if (typeof current === "undefined") {
@@ -2198,6 +2190,75 @@ function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
     if (devtoolsSink !== null) {
         devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
     }
+}
+/**
+ * パターン索引台帳（リスト行バインディング専用・docs/state-row-instantiation-redesign.md §3-3）。
+ *
+ * 行バインディングは (absolutePathInfo, listIndex) の 2 段キーで登録し、登録側では
+ * AbsoluteStateAddress の intern（アドレスオブジェクト割当 + listIndex ごとの
+ * intern 用 WeakMap）を一切行わない。書き込み側（setByAddress → enqueue）は従来
+ * どおり intern 済みアドレスを使うため、drain はアドレスの構成要素
+ * （absolutePathInfo / listIndex — どちらもオブジェクト同一性が保証済み）で
+ * このパターン台帳を引ける。リオーダーは listIndex 同一性キーの帰結として
+ * 従来同様ゼロタッチ。wholesale destroy は従来同様削除ゼロ（listIndex ごと GC 崩壊）。
+ *
+ * devtools 計装（state:binding-added/removed）はプロトコル契約なので、sink 接続時に
+ * 限りアドレスを intern してイベントを流す（フック未接続時のコストは分岐 1 個の規範を維持）。
+ */
+const patternLedger = new WeakMap();
+function addBindingByPattern(absolutePathInfo, listIndex, binding) {
+    let rowMap = patternLedger.get(absolutePathInfo);
+    if (typeof rowMap === "undefined") {
+        rowMap = new WeakMap();
+        patternLedger.set(absolutePathInfo, rowMap);
+    }
+    const current = rowMap.get(listIndex);
+    if (typeof current === "undefined") {
+        rowMap.set(listIndex, binding);
+    }
+    else if (current instanceof Set) {
+        current.add(binding);
+    }
+    else if (current !== binding) {
+        rowMap.set(listIndex, new Set([current, binding]));
+    }
+    if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:binding-added", absoluteAddress: createAbsoluteStateAddress(absolutePathInfo, listIndex), binding });
+    }
+}
+function removeBindingByPattern(absolutePathInfo, listIndex, binding) {
+    const rowMap = patternLedger.get(absolutePathInfo);
+    if (typeof rowMap === "undefined") {
+        return;
+    }
+    const current = rowMap.get(listIndex);
+    if (typeof current === "undefined") {
+        return;
+    }
+    if (current instanceof Set) {
+        current.delete(binding);
+    }
+    else if (current === binding) {
+        rowMap.delete(listIndex);
+    }
+    if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:binding-removed", absoluteAddress: createAbsoluteStateAddress(absolutePathInfo, listIndex), binding });
+    }
+}
+/**
+ * drain（updater）用の統合参照。従来台帳 → パターン台帳の順に引く。
+ * 従来台帳を先に引くのは、listIndex 付きでも旧経路（SSR ハイドレーション等）で
+ * アドレス台帳に登録される可能性を許容するため（取りこぼし防止）。
+ */
+function peekBindingsForAddress(absoluteStateAddress) {
+    const entry = bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
+    if (typeof entry !== "undefined") {
+        return entry;
+    }
+    if (absoluteStateAddress.listIndex === null) {
+        return undefined;
+    }
+    return patternLedger.get(absoluteStateAddress.absolutePathInfo)?.get(absoluteStateAddress.listIndex);
 }
 
 const _cache$1 = new WeakMap();
@@ -3621,7 +3682,7 @@ class BindingSession {
             const existing = recordByBinding.get(binding);
             if (typeof existing !== "undefined" && existing.phase !== "disposed" && existing.phase !== "failed") {
                 this.observe(existing.anchor);
-                if (resolvedOptions.registerAddress && existing.address === null) {
+                if (resolvedOptions.registerAddress && existing.address === null && existing.patternListIndex === null) {
                     existing.options.registerAddress = true;
                     this.registerAddress(existing);
                 }
@@ -3654,7 +3715,7 @@ class BindingSession {
             const record = recordByBinding.get(binding);
             if (typeof record !== "undefined" && record.session === this
                 && record.phase !== "disposed" && record.phase !== "failed") {
-                if (record.address === null) {
+                if (record.address === null && record.patternListIndex === null) {
                     // 初回活性化（owner は冒頭で保証済み）
                     record.options.registerAddress = true;
                     this.registerAddress(record, knownRoot);
@@ -3940,6 +4001,8 @@ class BindingSession {
                 anchor,
                 options: rowOptions,
                 address: null,
+                patternPathInfo: null,
+                patternListIndex: null,
                 pendingDefinitions: 0,
                 initialPolicy: slot.policy,
                 resolvedAuthority: slot.authority,
@@ -3999,6 +4062,8 @@ class BindingSession {
             anchor: binding.replaceNode,
             options: recordOptions,
             address: null,
+            patternPathInfo: null,
+            patternListIndex: null,
             pendingDefinitions: 0,
             initialPolicy: null,
             resolvedAuthority: null,
@@ -4188,13 +4253,30 @@ class BindingSession {
         }
     }
     registerAddress(record, knownRoot) {
-        if (record.address !== null)
+        if (record.address !== null || record.patternListIndex !== null)
             return;
         const binding = record.info;
-        const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
-        addBindingByAbsoluteStateAddress(address, binding);
-        record.address = address;
-        // 台帳解除は runTeardowns が record.address からデータ駆動で行う（クロージャ不要）
+        const listIndex = getListIndexByBindingInfo(binding);
+        if (listIndex !== null) {
+            // リスト行: (absolutePathInfo, listIndex) のパターン台帳に登録し、
+            // AbsoluteStateAddress の intern（アドレス割当 + intern 用 WeakMap）を省略する
+            const rootNode = resolveBindingRootNode(binding, knownRoot);
+            const stateElement = getStateElementByName(rootNode, binding.stateName);
+            if (stateElement === null) {
+                raiseError(`State element with name "${binding.stateName}" not found for binding.`);
+            }
+            const absolutePathInfo = getAbsolutePathInfo(stateElement, binding.statePathInfo);
+            addBindingByPattern(absolutePathInfo, listIndex, binding);
+            record.patternPathInfo = absolutePathInfo;
+            record.patternListIndex = listIndex;
+        }
+        else {
+            const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
+            addBindingByAbsoluteStateAddress(address, binding);
+            record.address = address;
+        }
+        // 台帳解除は runTeardowns が record.address / pattern フィールドから
+        // データ駆動で行う（クロージャ不要）
         if (!record.options.registerPathInfo)
             return;
         const rootNode = binding.replaceNode.getRootNode();
@@ -4240,6 +4322,20 @@ class BindingSession {
             }
             catch {
                 // Cleanup is best-effort; one faulty resource must not retain the rest.
+            }
+        }
+        else if (record.patternListIndex !== null) {
+            try {
+                removeBindingByPattern(record.patternPathInfo, record.patternListIndex, binding);
+                record.patternPathInfo = null;
+                record.patternListIndex = null;
+                // 相対アドレス（getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の
+                // 遅延 intern）のメモは pattern 登録でも作られうるため対称にクリアする
+                clearStateAddressByBindingInfo(binding);
+                clearAbsoluteStateAddressByBinding(binding);
+            }
+            catch {
+                // Cleanup is best-effort.
             }
         }
         if (record.twowayAttached) {
@@ -7618,7 +7714,8 @@ class Updater {
             // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
             // アドレス等）に空エントリを生成・蓄積しない。エントリは単一 binding
             // （通常ケース）か Set（同一アドレスに 2 本以上）のどちらか。
-            const entry = peekBindingsByAbsoluteStateAddress(absoluteAddress);
+            // 従来台帳 → パターン台帳（リスト行）の順で引く。
+            const entry = peekBindingsForAddress(absoluteAddress);
             if (entry === undefined) {
                 continue;
             }
