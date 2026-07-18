@@ -2,16 +2,21 @@ import { clearAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateA
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { getBindingSessionByContent, setBindingSessionByContent } from "../bindings/bindingSessionByContent.js";
+import { markNodeRegistered } from "../bindings/collectNodesAndBindingInfos.js";
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
-import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
+import { initializeBindingsByFragment, initializeRowBindings } from "../bindings/initializeBindings.js";
+import { resolveInitializedBinding } from "../bindings/initializeBindingPromiseByNode.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
 import { markObserverSkipOnAdd, markObserverSkipOnRemove } from "../bindings/observerSkip.js";
+import { config } from "../config.js";
 import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
 import { getContentSetByNode, setContentByNode } from "./contentsByNode.js";
 import { getFragmentInfoByUUID } from "./fragmentInfoByUUID.js";
-import { IContent } from "./types.js";
+import { resolveNodePath } from "./resolveNodePath.js";
+import { compileRowPlan } from "./rowPlan.js";
+import { IContent, IFragmentInfo, IRowPlan } from "./types.js";
 
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
 
@@ -140,8 +145,56 @@ export function createContentFromNodes(
   return content;
 }
 
+/**
+ * RowPlan 経路の実体化: clone → nodePath 解決 → スロットから薄い binding を複製 →
+ * initializeRowBindings。パース再生（spread 展開・remember・キー文字列・options
+ * オブジェクト・policy 再解決）を行ごとに繰り返さない
+ * （docs/state-row-instantiation-redesign.md §3-1/§3-2）。
+ */
+function createPlanContent(
+  bindingInfo: IBindingInfo,
+  fragmentInfo: IFragmentInfo,
+  plan: IRowPlan,
+): IContent {
+  const cloneFragment = document.importNode(fragmentInfo.fragment, true);
+  const nodeInfos = fragmentInfo.nodeInfos;
+  const nodes: Node[] = new Array(nodeInfos.length);
+  for (let i = 0; i < nodeInfos.length; i++) {
+    const node = resolveNodePath(cloneFragment, nodeInfos[i].nodePath);
+    if (node === null) {
+      raiseError(`Node not found by path [${nodeInfos[i].nodePath.join(', ')}] in fragment.`);
+    }
+    // 再スキャン防止と初期化完了マークは従来経路と同じ台帳に載せる
+    markNodeRegistered(node);
+    resolveInitializedBinding(node);
+    nodes[i] = node;
+  }
+  const slots = plan.slots;
+  const bindings: IBindingInfo[] = new Array(slots.length);
+  const indexBindings: IBindingInfo[] = [];
+  for (let k = 0; k < slots.length; k++) {
+    const slot = slots[k];
+    const node = nodes[slot.nodeIndex];
+    // text スロットは事前正規化済みの Text がそのまま replaceNode（従来経路の
+    // getBindingInfos と同じ帰結）。prop/event は node === replaceNode
+    const binding: IBindingInfo = { ...slot.template, node, replaceNode: node };
+    bindings[k] = binding;
+    if (slot.isIndexBinding) {
+      indexBindings.push(binding);
+    }
+  }
+  const session = initializeRowBindings(plan, bindings);
+  const content = new Content(cloneFragment);
+  setBindingSessionByContent(content, session);
+  setBindingsByContent(content, bindings);
+  setIndexBindingsByContent(content, indexBindings);
+  setNodesByContent(content, nodes);
+  setContentByNode(bindingInfo.node, content);
+  return content;
+}
+
 export function createContent(
-  bindingInfo: IBindingInfo, 
+  bindingInfo: IBindingInfo,
 ): IContent {
   if (typeof bindingInfo.uuid === 'undefined' || bindingInfo.uuid === null) {
     raiseError(`BindingInfo.uuid is null.`);
@@ -149,6 +202,15 @@ export function createContent(
   const fragmentInfo = getFragmentInfoByUUID(bindingInfo.uuid);
   if (!fragmentInfo) {
     raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
+  }
+  let plan = fragmentInfo.rowPlan;
+  if (typeof plan === 'undefined' || (plan !== null && plan.directional !== config.enableDirectionalInitialSync)) {
+    // 初回 or config（directional）が変わったときだけコンパイル。不適格は null を
+    // キャッシュして以後は従来経路へ直行する
+    plan = fragmentInfo.rowPlan = compileRowPlan(fragmentInfo);
+  }
+  if (plan !== null) {
+    return createPlanContent(bindingInfo, fragmentInfo, plan);
   }
   const cloneFragment = document.importNode(fragmentInfo.fragment, true);
   const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);

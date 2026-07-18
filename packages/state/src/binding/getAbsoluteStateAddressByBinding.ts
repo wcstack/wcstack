@@ -9,15 +9,15 @@ import { IBindingInfo } from "./types";
 
 const absoluteStateAddressByBinding: WeakMap<IBindingInfo, IAbsoluteStateAddress> = new WeakMap();
 
-export function getAbsoluteStateAddressByBinding(binding: IBindingInfo): IAbsoluteStateAddress {
-  // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
-  let absoluteStateAddress: IAbsoluteStateAddress | null = null;
-  absoluteStateAddress = absoluteStateAddressByBinding.get(binding) || null;
-  if (absoluteStateAddress !== null) {
-    return absoluteStateAddress;
+/**
+ * binding の解決済み root を返す。knownRootNode があれば getRootNode() と
+ * fragment フォールバックを省略する（リスト行活性化のホットパス）。
+ */
+export function resolveBindingRootNode(binding: IBindingInfo, knownRootNode?: Node | null): Node {
+  if (knownRootNode != null) {
+    return knownRootNode;
   }
-
-  let rootNode: Node | null = binding.replaceNode.getRootNode() as Node;
+  let rootNode: Node = binding.replaceNode.getRootNode() as Node;
   // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
   if (binding.replaceNode.isConnected === false) {
     // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
@@ -28,6 +28,18 @@ export function getAbsoluteStateAddressByBinding(binding: IBindingInfo): IAbsolu
       rootNode = rootNodeByFragment;
     }
   }
+  return rootNode;
+}
+
+export function getAbsoluteStateAddressByBinding(binding: IBindingInfo, knownRootNode?: Node | null): IAbsoluteStateAddress {
+  // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
+  let absoluteStateAddress: IAbsoluteStateAddress | null = null;
+  absoluteStateAddress = absoluteStateAddressByBinding.get(binding) || null;
+  if (absoluteStateAddress !== null) {
+    return absoluteStateAddress;
+  }
+
+  const rootNode: Node = resolveBindingRootNode(binding, knownRootNode);
 
   const listIndex = getListIndexByBindingInfo(binding);
   const stateElement = getStateElementByName(rootNode, binding.stateName);

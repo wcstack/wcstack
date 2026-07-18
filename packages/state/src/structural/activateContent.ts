@@ -18,8 +18,11 @@ export function activateContent(
   const session = getBindingSessionByContent(content);
   if (session !== null) {
     // createContent 側の initialize で remember 済みの同一 binding 配列なので、
-    // remember を再実行しない専用パスで活性化する（リスト行生成のホットパス）
-    session.activate(bindings);
+    // remember を再実行しない専用パスで活性化する（リスト行生成のホットパス）。
+    // context.rootNode は applyChangeFromBindings が確定済みの root（fragment
+    // バッファ中は setRootNodeByFragment の対応先と同一）で、binding ごとの
+    // getRootNode を省略できる
+    session.activate(bindings, context.rootNode);
   }
   for (const binding of bindings) {
     if (session === null) {

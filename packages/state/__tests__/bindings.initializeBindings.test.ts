@@ -14,7 +14,7 @@ import { getLoopContextByNode } from '../src/list/loopContextByNode';
 import { getPathInfo } from '../src/address/PathInfo';
 import { applyChangeFromBindings } from '../src/apply/applyChangeFromBindings';
 import { getAbsoluteStateAddressByBinding } from '../src/binding/getAbsoluteStateAddressByBinding';
-import { getBindingSetByAbsoluteStateAddress, addBindingByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
+import { peekBindingsByAbsoluteStateAddress, addBindingByAbsoluteStateAddress } from '../src/binding/getBindingSetByAbsoluteStateAddress';
 
 vi.mock('../src/binding/getBindingSetByAbsoluteStateAddress', async () => {
   const actual = await vi.importActual('../src/binding/getBindingSetByAbsoluteStateAddress') as any;
@@ -124,7 +124,8 @@ describe('initializeBindings', () => {
     const [bindings] = applyChangeFromBindingsMock.mock.calls[0];
     expect(bindings).toHaveLength(1);
     const absoluteAddress = getAbsoluteStateAddressByBinding(bindings[0]);
-    expect(getBindingSetByAbsoluteStateAddress(absoluteAddress)).toContain(bindings[0]);
+    // 単一登録は Set でなく binding そのものが台帳エントリになる
+    expect(peekBindingsByAbsoluteStateAddress(absoluteAddress)).toBe(bindings[0]);
   });
 
   it('stateElementが存在しない場合はエラーになること', () => {

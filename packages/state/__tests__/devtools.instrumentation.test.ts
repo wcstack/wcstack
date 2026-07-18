@@ -6,7 +6,7 @@ import {
   addBindingByAbsoluteStateAddress,
   removeBindingByAbsoluteStateAddress,
   clearBindingSetByAbsoluteStateAddress,
-  peekBindingSetByAbsoluteStateAddress,
+  peekBindingsByAbsoluteStateAddress,
 } from '../src/binding/getBindingSetByAbsoluteStateAddress';
 import { CommandToken } from '../src/command/CommandToken';
 import { EventToken } from '../src/event/EventToken';
@@ -100,7 +100,7 @@ describe('devtools 計装点', () => {
       expect(events).toContainEqual(
         expect.objectContaining({ type: 'state:binding-added', absoluteAddress: absAddress, binding })
       );
-      expect(peekBindingSetByAbsoluteStateAddress(absAddress)!.has(binding)).toBe(true);
+      expect(peekBindingsByAbsoluteStateAddress(absAddress)).toBe(binding);
 
       removeBindingByAbsoluteStateAddress(absAddress, binding);
       expect(events).toContainEqual(
@@ -124,7 +124,7 @@ describe('devtools 計装点', () => {
       const absAddress: any = { __tag: 'abs-silent' };
       const binding: any = { __tag: 'binding-silent' };
       addBindingByAbsoluteStateAddress(absAddress, binding);
-      expect(peekBindingSetByAbsoluteStateAddress(absAddress)!.has(binding)).toBe(true);
+      expect(peekBindingsByAbsoluteStateAddress(absAddress)).toBe(binding);
       removeBindingByAbsoluteStateAddress(absAddress, binding);
       clearBindingSetByAbsoluteStateAddress(absAddress);
       expect(events.length).toBe(0);
