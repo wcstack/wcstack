@@ -37,7 +37,6 @@ const _cache: Map<string, IResolvedAddress> = new Map();
 class ResolvedAddress implements IResolvedAddress {
   readonly path;
   readonly segments;
-  readonly paths;
   readonly wildcardCount;
   readonly wildcardType;
   readonly wildcardIndexes;
@@ -55,14 +54,12 @@ class ResolvedAddress implements IResolvedAddress {
     // Split path into individual segments
     const segments = path.split(".");
     const tmpPatternSegments = segments.slice();
-    const paths = [];
     let incompleteCount = 0; // Count of unresolved wildcards (*)
     let completeCount = 0;   // Count of resolved wildcards (numeric indexes)
-    let lastPath = "";
     let wildcardCount = 0;
     let wildcardType: WildcardType = "none";
     const wildcardIndexes: (number | null)[] = [];
-    
+
     // Process each segment to identify wildcards and indexes
     for(let i = 0; i < segments.length; i++) {
       const segment = segments[i];
@@ -82,10 +79,6 @@ class ResolvedAddress implements IResolvedAddress {
           wildcardCount++;
         }
       }
-      // Build cumulative path array
-      lastPath += segment;
-      paths.push(lastPath);
-      lastPath += (i < segment.length - 1 ? "." : "");
     }
     // Generate pattern string with wildcards normalized
     const structuredPath = tmpPatternSegments.join(".");
@@ -106,7 +99,6 @@ class ResolvedAddress implements IResolvedAddress {
     }
     this.path = path;
     this.segments = segments;
-    this.paths = paths;
     this.wildcardCount = wildcardCount;
     this.wildcardType = wildcardType;
     this.wildcardIndexes = wildcardIndexes;

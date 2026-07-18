@@ -57,12 +57,23 @@ export function hasInitialSyncModifier(binding: IBindingInfo): boolean {
   return binding.propModifiers.some((modifier) => modifier.includes("="));
 }
 
+// 頻出ポリシー（修飾子なしの通常バインディング）の凍結シングルトン。リスト行では
+// binding ごとに resolveInitialSyncPolicy が走るため、毎回のオブジェクト割り当てを
+// 避ける（record.initialPolicy は読み取り専用でしか使われない）。
+const STATE_CALL_POLICY: IInitialSyncPolicy = Object.freeze({ authority: "state", syncOn: "call", observable: false });
+const NONE_CALL_POLICY: IInitialSyncPolicy = Object.freeze({ authority: "none", syncOn: "call", observable: false });
+
+function statePolicy(authority: InitialAuthority, syncOn: IInitialSyncPolicy["syncOn"]): IInitialSyncPolicy {
+  if (authority === "state" && syncOn === "call") return STATE_CALL_POLICY;
+  return { authority, syncOn, observable: false };
+}
+
 export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPolicy {
   if (!config.enableDirectionalInitialSync) {
     if (hasInitialSyncModifier(binding)) {
       raiseError("init=/sync= modifiers require enableDirectionalInitialSync.");
     }
-    return { authority: "state", syncOn: "call", observable: false };
+    return STATE_CALL_POLICY;
   }
 
   const explicitAuthority = parseAuthority(readOption(binding, "init"));
@@ -71,7 +82,7 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
     if (explicitAuthority !== null && explicitAuthority !== "none") {
       raiseError("Event bindings only allow init=none.");
     }
-    return { authority: "none", syncOn, observable: false };
+    return syncOn === "call" ? NONE_CALL_POLICY : { authority: "none", syncOn, observable: false };
   }
   // command.<name>: $command.<method> は命令的な command-token 配線。bindingType は
   // "prop" だが propName ("command.<name>") は wcBindable property ではないため、下の
@@ -79,18 +90,18 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
   // 持たない配線なので、現行互換の "state" authority を返す(command token は従来通り
   // 初期 apply で配線される)。
   if (binding.propSegments[0] === "command") {
-    return { authority: "state", syncOn, observable: false };
+    return statePolicy("state", syncOn);
   }
   if (binding.bindingType !== "prop") {
     if (explicitAuthority !== null && explicitAuthority !== "state" && explicitAuthority !== "none") {
       raiseError(`Binding type "${binding.bindingType}" does not support init=${explicitAuthority}.`);
     }
-    return { authority: explicitAuthority ?? "state", syncOn, observable: false };
+    return statePolicy(explicitAuthority ?? "state", syncOn);
   }
 
   const declaration = readBindableDeclaration(binding.node);
   if (declaration === null) {
-    return { authority: explicitAuthority ?? "state", syncOn, observable: false };
+    return statePolicy(explicitAuthority ?? "state", syncOn);
   }
   const hasOutput = declaration.knownProperties.has(binding.propName);
   const hasInput = declaration.declaredInputs.has(binding.propName);

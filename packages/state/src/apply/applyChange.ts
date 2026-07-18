@@ -43,6 +43,11 @@ const applyChangeByBindingType: { [key: string]: ApplyChangeFn } = {
 const fnByBinding: WeakMap<IBindingInfo, ApplyChangeFn> = new WeakMap();
 const deferredSelectBindingByBinding: WeakMap<IBindingInfo, boolean> = new WeakMap();
 
+// 未 define カスタム要素チェックの確定メモ。customTag が無い、または define 済みを
+// 一度確認したら以後は不変（define は不可逆）なので apply 毎の getCustomElement /
+// registry 照会を省略できる。scoped registry を導入する場合はこの不可逆前提を再検討。
+const definedApplyVerifiedByBinding: WeakMap<IBindingInfo, boolean> = new WeakMap();
+
 function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
   const value = getValue(context.state, binding);
   const filteredValue = getFilteredValue(value, binding.outFilters);
@@ -127,16 +132,20 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   if (binding.bindingType === "event") {
     return;
   }
-  const customTag = getCustomElement(binding.replaceNode);
-  if (customTag) {
-    if (getCustomElementRegistry()?.get(customTag) === undefined) {
-      // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
-      // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
-      // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
-      // spread と対称。docs/state-binding-init-races.md §2）。
-      scheduleDeferredApply(binding, customTag);
-      return;
+  if (definedApplyVerifiedByBinding.get(binding) !== true) {
+    const customTag = getCustomElement(binding.replaceNode);
+    if (customTag) {
+      if (getCustomElementRegistry()?.get(customTag) === undefined) {
+        // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
+        // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
+        // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
+        // spread と対称。docs/state-binding-init-races.md §2）。
+        scheduleDeferredApply(binding, customTag);
+        return;
+      }
     }
+    // customTag 無し or define 済み確定 → 以後この検査を省略（不可逆）
+    definedApplyVerifiedByBinding.set(binding, true);
   }
   // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
   // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略

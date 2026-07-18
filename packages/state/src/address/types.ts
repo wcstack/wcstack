@@ -51,7 +51,6 @@ export type WildcardType = "none" | "context" | "partial" | "all";
 export interface IResolvedAddress {
   readonly path: string;
   readonly segments: string[];
-  readonly paths: string[];
   readonly wildcardType: WildcardType;
   readonly wildcardIndexes: (number | null)[];
   
