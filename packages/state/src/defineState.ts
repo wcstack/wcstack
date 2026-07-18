@@ -196,6 +196,14 @@ export interface WcsStateApi {
    */
   $trackDependency(path: string): void;
 
+  /**
+   * コールバック実行中の依存追跡（動的依存・`$1` インデックス依存の登録）を
+   * 抑止して fn を実行し、その戻り値を返す（`$trackDependency` と対称）。
+   * リスト行 getter が「行外の単一値」を読みたいが、その値の変更で全行を
+   * 再評価させたくない場合に使う（該当行へ直接書き込む設計と組で用いる）。
+   */
+  $untrackDependency<T>(fn: () => T): T;
+
   /** `<wcs-state>` 要素への参照 */
   readonly $stateElement: HTMLElement;
 

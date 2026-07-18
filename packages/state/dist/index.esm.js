@@ -9501,6 +9501,10 @@ function dirtyCacheEntryByAbsoluteStateAddress(address) {
 }
 
 function checkDependency(handler, address) {
+    // $untrackDependency スコープ中／setter 実行中は依存を張らない
+    if (handler.untracking) {
+        return;
+    }
     // 動的依存関係の登録
     if (handler.addressStackLength > 0) {
         const lastAddress = handler.lastAddressStack;
@@ -10045,12 +10049,18 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
     try {
         if (address.pathInfo.path in target) {
             if (handler.stateElement.setterPaths.has(address.pathInfo.path)) {
-                // setterの中で参照の可能性があるので、addressをプッシュする
+                // setterの中で参照の可能性があるので、addressをプッシュする。
+                // setter は命令的な代入であって派生（getter）ではないため、実行中の
+                // 読み取り（同値ガードの旧値読み・$1 参照等）で依存を張らない。
+                // アクセサペア（get/set 同名パス）では、抑止しないと setter 内の内部
+                // 書き込みの同値ガード読みが「getter の依存」として誤登録される。
                 handler.pushAddress(address);
+                handler.beginUntrack();
                 try {
                     return Reflect.set(target, address.pathInfo.path, value, receiver);
                 }
                 finally {
+                    handler.endUntrack();
                     handler.popAddress();
                 }
             }
@@ -10488,6 +10498,35 @@ function trackDependency(_target, _prop, _receiver, handler) {
 }
 
 /**
+ * untrackDependency.ts
+ *
+ * StateClass の API として、コールバック実行中の依存追跡を抑止する関数
+ * （$untrackDependency）の実装です。$trackDependency（明示的な依存登録）と
+ * 対称の「明示的な依存抑止」API。
+ *
+ * 主な役割:
+ * - fn 実行中、checkDependency の動的依存登録と $1 インデックス依存の記録を抑止
+ * - fn の戻り値をそのまま返す（値の読み取り自体は通常どおり行われる）
+ *
+ * 設計ポイント:
+ * - スコープはハンドラ単位のカウンタ（ネスト可）で管理し、finally で必ず復元する
+ * - 典型例: リスト行 getter が「行の外の単一値」を読みたいが、その値の変更で
+ *   全行を再評価させたくない場合（選択インデックス等）。書き手側が該当行へ
+ *   直接書き込むことで、必要な行だけが更新される
+ */
+function untrackDependency(_target, _prop, _receiver, handler) {
+    return (fn) => {
+        handler.beginUntrack();
+        try {
+            return fn();
+        }
+        finally {
+            handler.endUntrack();
+        }
+    };
+}
+
+/**
  * updatedCallback.ts
  *
  * Utility function to invoke the StateClass lifecycle hook "$updatedCallback".
@@ -10628,8 +10667,9 @@ function get(target, prop, receiver, handler) {
         // getter 評価中のインデックス読み取りを記録する。位置だけが変わった行
         // （listDiff.changeIndexSet）は index 以外の入力が不変なので、walkDependency の
         // 静的子展開を「インデックスを読んだ getter の subtree」に限定できる。
+        // $untrackDependency スコープ中／setter 実行中は記録しない。
         const lastInfo = lastAddress?.pathInfo;
-        if (lastInfo && handler.stateElement?.getterPaths.has(lastInfo.path)) {
+        if (lastInfo && !handler.untracking && handler.stateElement?.getterPaths.has(lastInfo.path)) {
             handler.stateElement.addIndexDependentGetterPath?.(lastInfo.path);
         }
         const listIndex = lastAddress?.listIndex;
@@ -10659,6 +10699,11 @@ function get(target, prop, receiver, handler) {
                 case "$trackDependency": {
                     return (path) => {
                         return trackDependency(target, prop, receiver, handler)(path);
+                    };
+                }
+                case "$untrackDependency": {
+                    return (fn) => {
+                        return untrackDependency(target, prop, receiver, handler)(fn);
                     };
                 }
                 case STATE_COMMAND_NAMESPACE_NAME: {
@@ -10785,6 +10830,7 @@ class StateHandler {
     _addressStackIndex = -1;
     _loopContext;
     _mutability;
+    _untrackDepth = 0;
     constructor(rootNode, stateName, mutability) {
         this._stateName = stateName;
         const stateElement = getStateElementByName(rootNode, this._stateName);
@@ -10840,6 +10886,15 @@ class StateHandler {
     }
     clearLoopContext() {
         this._loopContext = undefined;
+    }
+    get untracking() {
+        return this._untrackDepth > 0;
+    }
+    beginUntrack() {
+        this._untrackDepth++;
+    }
+    endUntrack() {
+        this._untrackDepth--;
     }
     get(target, prop, receiver) {
         return get(target, prop, receiver, this);

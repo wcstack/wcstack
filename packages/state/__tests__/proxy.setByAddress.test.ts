@@ -73,6 +73,9 @@ function createHandler(stateElement: any, overrides?: Partial<any>) {
     stateName: 'default',
     pushAddress: vi.fn(),
     popAddress: vi.fn(),
+    beginUntrack: vi.fn(),
+    endUntrack: vi.fn(),
+    untracking: false,
     ...overrides,
   };
 }
@@ -97,6 +100,9 @@ describe('setByAddress', () => {
     expect(target.count).toBe(5);
     expect(handler.pushAddress).toHaveBeenCalledWith(address);
     expect(handler.popAddress).toHaveBeenCalled();
+    // setter 実行中は依存追跡を抑止する（begin/end が対で呼ばれる）
+    expect(handler.beginUntrack).toHaveBeenCalledTimes(1);
+    expect(handler.endUntrack).toHaveBeenCalledTimes(1);
 
     expect(mockEnqueueAbsoluteAddress).toHaveBeenCalled();
   });
