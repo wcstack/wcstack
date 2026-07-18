@@ -3129,6 +3129,31 @@ function detachTwowayEventHandler(binding) {
     }
 }
 
+// framework 自身が detach し明示的に解体（deactivate/unmount）したノード。
+// BindingOwner の MutationObserver は削除サブツリー走査でこれらをスキップする。
+//
+// 根拠: 削除時の handleRemovedNode は binding を dispose するだけ（DOM 構造変更も
+// connect-snapshot 依存も無い）で、framework が unmount 経路で既に dispose 済みの
+// content に対しては純粋な冗長走査（forEachInclusive で削除サブツリー全体を歩く）に
+// なる。create（追加）経路は two-way の connect-time snapshot を observer に依存する
+// ため対象外だが、削除は依存が無いため安全に飛ばせる。
+//
+// マークは observer が削除を配送した時点で消費（削除）する。マーク〜配送の間隔は
+// 単一 microtask であり、その間に外部 DOM 変異は割り込めない（framework の drain は
+// 同期）ため、マークは framework 由来の削除にしか一致しない。
+const observerSkipNodes = new WeakSet();
+function markObserverSkipOnRemove(node) {
+    observerSkipNodes.add(node);
+}
+// マーク済みなら true を返しつつマークを消費する。未マークなら false。
+function consumeObserverSkipOnRemove(node) {
+    if (!observerSkipNodes.has(node)) {
+        return false;
+    }
+    observerSkipNodes.delete(node);
+    return true;
+}
+
 /**
  * Shares one CustomElementRegistry.whenDefined() continuation per registry/tag.
  * Waiters can be removed independently, so a never-defined tag does not retain
@@ -3412,6 +3437,11 @@ class BindingOwner {
         // 検査へ進める。contains は O(木の深さ) なので、関心の無い node で呼ばない。
         const reconnected = [];
         for (const subtree of removed) {
+            // framework が unmount した削除サブツリーは binding を明示 dispose 済みなので
+            // observer 側の冗長走査（forEachInclusive で全 node を歩き handleRemovedNode を
+            // 呼ぶ）を丸ごとスキップする。clear/大量 delete のホットスポット短縮。
+            if (consumeObserverSkipOnRemove(subtree))
+                continue;
             forEachInclusive(subtree, (node) => {
                 forEachInterestedSession(node, (session) => {
                     if (this.root.contains(node))
@@ -4706,6 +4736,12 @@ class Content {
     unmount() {
         getBindingSessionByContent(this)?.dispose();
         for (const node of this._childNodeArray) {
+            // framework 起点の削除であることを observer に伝える。clear の
+            // parentNode.textContent='' 一括削除でも、この top-level node が
+            // 削除サブツリーの root として mutation record に現れるため、ここで
+            // マークしておけば observer の冗長走査をスキップできる。マークは
+            // 同期実行中に立ち、observer は次 microtask で読むので順序は保証される。
+            markObserverSkipOnRemove(node);
             if (node.parentNode !== null) {
                 node.parentNode.removeChild(node);
             }

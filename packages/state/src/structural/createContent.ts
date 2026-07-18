@@ -5,6 +5,7 @@ import { getBindingSessionByContent, setBindingSessionByContent } from "../bindi
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
+import { markObserverSkipOnRemove } from "../bindings/observerSkip.js";
 import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
@@ -60,6 +61,12 @@ class Content implements IContent {
   unmount(): void {
     getBindingSessionByContent(this)?.dispose();
     for(const node of this._childNodeArray) {
+      // framework 起点の削除であることを observer に伝える。clear の
+      // parentNode.textContent='' 一括削除でも、この top-level node が
+      // 削除サブツリーの root として mutation record に現れるため、ここで
+      // マークしておけば observer の冗長走査をスキップできる。マークは
+      // 同期実行中に立ち、observer は次 microtask で読むので順序は保証される。
+      markObserverSkipOnRemove(node);
       if (node.parentNode !== null) {
         node.parentNode.removeChild(node);
       }
