@@ -1871,6 +1871,14 @@ function unregisterNode(node) {
     registeredNodeSet.delete(node);
 }
 /**
+ * RowPlan 経路（createContent のプラン実体化）用。パース・spread 展開を経ずに
+ * binding を組み立てた subscriber ノードを二重処理防止台帳へ載せる
+ * （後続の collectNodesAndBindingInfos による再スキャンから保護）。
+ */
+function markNodeRegistered(node) {
+    registeredNodeSet.add(node);
+}
+/**
  * Re-process a deferred spread entry once the custom element class is
  * registered. Expands the captured parseResults, installs bindings, and
  * returns them so the caller can attach handlers and apply state values.
@@ -3575,8 +3583,16 @@ function bindingKey(binding) {
         binding.uuid ?? "",
     ].join("\u0000");
 }
+function addRecordTeardown(record, teardown) {
+    if (record.teardowns === null) {
+        record.teardowns = new Set();
+    }
+    record.teardowns.add(teardown);
+}
 class BindingSession {
     records = new Set();
+    // anchor ノードが持つ binding は大多数が 1 本なので単一値で持ち、2 本目から
+    // Map（remember 経路のキー照合用）に昇格する（台帳・興味 session と同じ前例）
     knownBindingsByNode = new WeakMap();
     optionsByBinding = new WeakMap();
     deferredByNode = new WeakMap();
@@ -3683,7 +3699,7 @@ class BindingSession {
         if (typeof record === "undefined" || !this.isAlive(record, record.generation)) {
             return false;
         }
-        record.teardowns.add(teardown);
+        addRecordTeardown(record, teardown);
         return true;
     }
     deferUntilDefined(node, tagName, callback, reject = () => undefined) {
@@ -3771,7 +3787,7 @@ class BindingSession {
     destroyRecords() {
         for (const record of this.records) {
             record.phase = "disposed";
-            record.teardowns.clear();
+            record.teardowns = null;
         }
         this.records.clear();
     }
@@ -3806,8 +3822,13 @@ class BindingSession {
     handleRemovedNode(node) {
         const known = this.knownBindingsByNode.get(node);
         if (typeof known !== "undefined") {
-            for (const binding of known.values())
-                this.disposeBinding(binding);
+            if (known instanceof Map) {
+                for (const binding of known.values())
+                    this.disposeBinding(binding);
+            }
+            else {
+                this.disposeBinding(known);
+            }
         }
         const tasks = this.deferredByNode.get(node);
         if (typeof tasks !== "undefined") {
@@ -3823,7 +3844,8 @@ class BindingSession {
         const known = this.knownBindingsByNode.get(node);
         if (typeof known === "undefined")
             return;
-        for (const binding of known.values()) {
+        const bindings = known instanceof Map ? known.values() : [known];
+        for (const binding of bindings) {
             const record = recordByBinding.get(binding);
             if (record?.phase === "active") {
                 this.settleConnectedSnapshot(record);
@@ -3844,16 +3866,33 @@ class BindingSession {
             }
         }
     }
+    /**
+     * anchor の known 台帳を Map 形へ正規化して返す（remember のキー照合用）。
+     * 単一値（プラン行 or 既存単独 binding）は実キーを引いて昇格する。
+     */
+    knownMapFor(anchor) {
+        const current = this.knownBindingsByNode.get(anchor);
+        if (current instanceof Map) {
+            return current;
+        }
+        const map = new Map();
+        if (typeof current !== "undefined") {
+            let key = bindingKeyByBinding.get(current);
+            if (typeof key === "undefined") {
+                key = bindingKey(current);
+                bindingKeyByBinding.set(current, key);
+            }
+            map.set(key, current);
+        }
+        this.knownBindingsByNode.set(anchor, map);
+        return map;
+    }
     remember(binding, options) {
         const anchor = binding.replaceNode;
         // detached fragment 上でも登録しておく（node 単位の台帳なので root 非依存）。
         // fragment 一括マウントで後から接続された行にも mutation 配送が届くようにする。
         addInterestedSession(anchor, this);
-        let known = this.knownBindingsByNode.get(anchor);
-        if (typeof known === "undefined") {
-            known = new Map();
-            this.knownBindingsByNode.set(anchor, known);
-        }
+        const known = this.knownMapFor(anchor);
         let key = bindingKeyByBinding.get(binding);
         if (typeof key === "undefined") {
             key = bindingKey(binding);
@@ -3873,6 +3912,80 @@ class BindingSession {
         this.optionsByBinding.set(binding, { ...options });
         return binding;
     }
+    /**
+     * RowPlan 経路の一括初期化（createContent 専用・docs/state-row-instantiation-redesign.md §3-2）。
+     * プラン行の binding はこの呼び出しでのみ生成されるため remember（キー照合・
+     * options マージ）を丸ごと省略し、policy/authority はテンプレート時に解決済みの
+     * 値を焼き込む。options は行内共有の 1 オブジェクト（activate が
+     * registerAddress を昇格するとき行内全 binding が同時に昇格する — 従来も
+     * activate は全 binding を同順で昇格するため観測可能な差はない）。
+     */
+    initializeRow(plan, bindings) {
+        const rowOptions = { registerAddress: false, registerPathInfo: false, applyOnReconnect: false };
+        const slots = plan.slots;
+        for (let i = 0; i < bindings.length; i++) {
+            const binding = bindings[i];
+            const slot = slots[i];
+            const anchor = binding.replaceNode;
+            addInterestedSession(anchor, this);
+            this.addKnownRowBinding(anchor, binding, i);
+            this.optionsByBinding.set(binding, rowOptions);
+            const record = {
+                id: ++nextRecordId,
+                info: binding,
+                generation: ++nextGeneration,
+                phase: "active",
+                teardowns: null,
+                session: this,
+                anchor,
+                options: rowOptions,
+                address: null,
+                pendingDefinitions: 0,
+                initialPolicy: slot.policy,
+                resolvedAuthority: slot.authority,
+                initialSettled: true,
+                observationPending: false,
+                eventSequence: 0,
+                hasProducerValue: false,
+                producerValue: undefined,
+                eventAttached: false,
+                twowayAttached: false,
+            };
+            recordByBinding.set(binding, record);
+            this.records.add(record);
+            if (slot.isEvent) {
+                try {
+                    attachEventHandler(binding);
+                }
+                catch (error) {
+                    record.phase = "failed";
+                    this.runTeardowns(record);
+                    this.records.delete(record);
+                    throw error;
+                }
+                record.eventAttached = true;
+            }
+            // 非 event スロットはプラン適格性により双方向不能・radio/checkbox 不能・
+            // token 配線不能が確定しているため attach 系を一切呼ばない
+        }
+    }
+    addKnownRowBinding(anchor, binding, slotIndex) {
+        const current = this.knownBindingsByNode.get(anchor);
+        if (typeof current === "undefined") {
+            this.knownBindingsByNode.set(anchor, binding);
+            return;
+        }
+        // 同一 anchor に複数スロット（複数エントリの data-wcs）: Map へ昇格。
+        // プラン行はキー照合されないため添字ベースの合成キーで一意性だけ担保する
+        if (current instanceof Map) {
+            current.set("@plan:" + slotIndex, binding);
+            return;
+        }
+        const map = new Map();
+        map.set("@plan:first", current);
+        map.set("@plan:" + slotIndex, binding);
+        this.knownBindingsByNode.set(anchor, map);
+    }
     start(binding, options, knownRoot) {
         replaceToReplaceNode(binding);
         const recordOptions = this.optionsByBinding.get(binding) ?? { ...options };
@@ -3881,7 +3994,7 @@ class BindingSession {
             info: binding,
             generation: ++nextGeneration,
             phase: "discovered",
-            teardowns: new Set(),
+            teardowns: null,
             session: this,
             anchor: binding.replaceNode,
             options: recordOptions,
@@ -3894,6 +4007,8 @@ class BindingSession {
             eventSequence: 0,
             hasProducerValue: false,
             producerValue: undefined,
+            eventAttached: false,
+            twowayAttached: false,
         };
         recordByBinding.set(binding, record);
         this.records.add(record);
@@ -3919,22 +4034,22 @@ class BindingSession {
     attachListeners(record) {
         const binding = record.info;
         if (attachEventHandler(binding)) {
-            record.teardowns.add(() => detachEventHandler(binding));
+            record.eventAttached = true;
             return;
         }
         if (binding.propSegments[0] === "eventToken") {
             this.attachAfterDefinition(record, () => {
                 if (attachEventTokenHandler(binding)) {
-                    record.teardowns.add(() => detachEventTokenHandler(binding));
+                    addRecordTeardown(record, () => detachEventTokenHandler(binding));
                 }
             });
             return;
         }
         if (attachRadioEventHandler(binding)) {
-            record.teardowns.add(() => detachRadioEventHandler(binding));
+            addRecordTeardown(record, () => detachRadioEventHandler(binding));
         }
         if (attachCheckboxEventHandler(binding)) {
-            record.teardowns.add(() => detachCheckboxEventHandler(binding));
+            addRecordTeardown(record, () => detachCheckboxEventHandler(binding));
         }
         this.attachAfterDefinition(record, () => {
             // directional initial sync の producer-value observer は twowayEventHandlerFunction
@@ -3956,10 +4071,10 @@ class BindingSession {
                     record.hasProducerValue = true;
                     record.producerValue = value;
                 });
-                record.teardowns.add(removeObserver);
+                addRecordTeardown(record, removeObserver);
             }
             attachTwowayEventHandler(binding);
-            record.teardowns.add(() => detachTwowayEventHandler(binding));
+            record.twowayAttached = true;
         });
     }
     attachAfterDefinition(record, attach) {
@@ -4004,7 +4119,7 @@ class BindingSession {
             this.runTeardowns(record);
             this.records.delete(record);
         });
-        record.teardowns.add(cancel);
+        addRecordTeardown(record, cancel);
     }
     settleInitialRecord(record) {
         if (!config.enableDirectionalInitialSync || record.initialSettled || !record.options.registerAddress)
@@ -4079,14 +4194,7 @@ class BindingSession {
         const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
         addBindingByAbsoluteStateAddress(address, binding);
         record.address = address;
-        record.teardowns.add(() => {
-            if (record.address === null)
-                return;
-            removeBindingByAbsoluteStateAddress(record.address, binding);
-            record.address = null;
-            clearStateAddressByBindingInfo(binding);
-            clearAbsoluteStateAddressByBinding(binding);
-        });
+        // 台帳解除は runTeardowns が record.address からデータ駆動で行う（クロージャ不要）
         if (!record.options.registerPathInfo)
             return;
         const rootNode = binding.replaceNode.getRootNode();
@@ -4118,14 +4226,50 @@ class BindingSession {
             record.observationPending = false;
             decrementPendingObservation();
         }
-        const teardowns = Array.from(record.teardowns).reverse();
-        record.teardowns.clear();
-        for (const teardown of teardowns) {
+        const binding = record.info;
+        // データ駆動の後始末（従来はクロージャで積んでいた頻出3種）。実行順は従来の
+        // 逆順実行と同じ: アドレス台帳解除（最後に積まれていた）→ 双方向 detach →
+        // 希少クロージャ群（逆順）→ イベント detach。各 detach は互いに独立した資源を
+        // 対象とするため、この順序で意味論は変わらない。
+        if (record.address !== null) {
             try {
-                teardown();
+                removeBindingByAbsoluteStateAddress(record.address, binding);
+                record.address = null;
+                clearStateAddressByBindingInfo(binding);
+                clearAbsoluteStateAddressByBinding(binding);
             }
             catch {
                 // Cleanup is best-effort; one faulty resource must not retain the rest.
+            }
+        }
+        if (record.twowayAttached) {
+            record.twowayAttached = false;
+            try {
+                detachTwowayEventHandler(binding);
+            }
+            catch {
+                // Cleanup is best-effort.
+            }
+        }
+        if (record.teardowns !== null) {
+            const teardowns = Array.from(record.teardowns).reverse();
+            record.teardowns = null;
+            for (const teardown of teardowns) {
+                try {
+                    teardown();
+                }
+                catch {
+                    // Cleanup is best-effort; one faulty resource must not retain the rest.
+                }
+            }
+        }
+        if (record.eventAttached) {
+            record.eventAttached = false;
+            try {
+                detachEventHandler(binding);
+            }
+            catch {
+                // Cleanup is best-effort.
             }
         }
     }
@@ -4875,6 +5019,81 @@ function deleteContentByNode(node, content) {
     }
 }
 
+/**
+ * rowPlan.ts — 行実体化プランのコンパイル（docs/state-row-instantiation-redesign.md §3-1）。
+ *
+ * テンプレート（fragmentInfo）を初回行生成時に一度だけ検査し、全スロットが
+ * 「行不変の判定をテンプレート時に確定できる」種別のときだけプランを返す。
+ * 1 スロットでも確定できなければ null（テンプレート丸ごと従来経路 = 部分適用しない。
+ * 経路混在のデバッグ困難を避ける設計判断・同 §5）。
+ *
+ * プラン適格の条件（すべて満たすこと）:
+ *  - bindingType が text / prop / event のみ（構造 for/if・radio/checkbox・spread は不適格）
+ *  - バインディング先ノードがカスタム要素でない（定義待ち・wcBindable 検証が不要）
+ *  - prop が command / eventToken 名前空間でない（token 配線 teardown が要るため）
+ *  - prop が双方向可能（isPossibleTwoWay）でない（connect-snapshot / observer 配線が要るため）
+ *  - initial-sync policy が観測不要（observable=false）かつ authority が "auto" でない
+ *  - text スロットは事前正規化済みの Text ノードである
+ */
+function compileRowPlan(fragmentInfo) {
+    const directional = config.enableDirectionalInitialSync;
+    const slots = [];
+    const nodeInfos = fragmentInfo.nodeInfos;
+    for (let nodeIndex = 0; nodeIndex < nodeInfos.length; nodeIndex++) {
+        const nodeInfo = nodeInfos[nodeIndex];
+        const node = resolveNodePath(fragmentInfo.fragment, nodeInfo.nodePath);
+        if (node === null) {
+            return null;
+        }
+        for (const template of nodeInfo.parseBindTextResults) {
+            const bindingType = template.bindingType;
+            if (bindingType !== "text" && bindingType !== "prop" && bindingType !== "event") {
+                return null;
+            }
+            // command.<name>（prop 扱い）と eventToken.<prop>（event 扱い）は token 配線の
+            // teardown / attach 分岐が要るため不適格
+            const namespace = template.propSegments[0];
+            if (namespace === "command" || namespace === "eventToken") {
+                return null;
+            }
+            if (bindingType === "text") {
+                if (node.nodeType !== Node.TEXT_NODE) {
+                    return null;
+                }
+            }
+            else if (getCustomElement(node) !== null) {
+                return null;
+            }
+            if (bindingType === "prop" && isPossibleTwoWay(node, template.propName)) {
+                return null;
+            }
+            let policy;
+            try {
+                // 判定はテンプレートのノードで行う（policy は node の宣言と行不変フィールドの
+                // 純関数）。修飾子エラー等の throw は不適格として従来経路に倒し、従来経路が
+                // 同じエラーを同じタイミング（初回行生成）で報告する。
+                const probe = { ...template, node, replaceNode: node };
+                policy = resolveInitialSyncPolicy(probe);
+            }
+            catch {
+                return null;
+            }
+            if (policy.observable || policy.authority === "auto") {
+                return null;
+            }
+            slots.push({
+                nodeIndex,
+                template,
+                isEvent: bindingType === "event",
+                isIndexBinding: template.statePathName in INDEX_BY_INDEX_NAME,
+                policy,
+                authority: policy.authority,
+            });
+        }
+    }
+    return { directional, slots };
+}
+
 const recursiveBindingTypes = new Set(['if', 'elseif', 'else', 'for']);
 class Content {
     _content;
@@ -4990,6 +5209,49 @@ function createContentFromNodes(nodes) {
     content._mounted = true; // SSR で既にマウント済み
     return content;
 }
+/**
+ * RowPlan 経路の実体化: clone → nodePath 解決 → スロットから薄い binding を複製 →
+ * initializeRowBindings。パース再生（spread 展開・remember・キー文字列・options
+ * オブジェクト・policy 再解決）を行ごとに繰り返さない
+ * （docs/state-row-instantiation-redesign.md §3-1/§3-2）。
+ */
+function createPlanContent(bindingInfo, fragmentInfo, plan) {
+    const cloneFragment = document.importNode(fragmentInfo.fragment, true);
+    const nodeInfos = fragmentInfo.nodeInfos;
+    const nodes = new Array(nodeInfos.length);
+    for (let i = 0; i < nodeInfos.length; i++) {
+        const node = resolveNodePath(cloneFragment, nodeInfos[i].nodePath);
+        if (node === null) {
+            raiseError(`Node not found by path [${nodeInfos[i].nodePath.join(', ')}] in fragment.`);
+        }
+        // 再スキャン防止と初期化完了マークは従来経路と同じ台帳に載せる
+        markNodeRegistered(node);
+        resolveInitializedBinding(node);
+        nodes[i] = node;
+    }
+    const slots = plan.slots;
+    const bindings = new Array(slots.length);
+    const indexBindings = [];
+    for (let k = 0; k < slots.length; k++) {
+        const slot = slots[k];
+        const node = nodes[slot.nodeIndex];
+        // text スロットは事前正規化済みの Text がそのまま replaceNode（従来経路の
+        // getBindingInfos と同じ帰結）。prop/event は node === replaceNode
+        const binding = { ...slot.template, node, replaceNode: node };
+        bindings[k] = binding;
+        if (slot.isIndexBinding) {
+            indexBindings.push(binding);
+        }
+    }
+    const session = initializeRowBindings(plan, bindings);
+    const content = new Content(cloneFragment);
+    setBindingSessionByContent(content, session);
+    setBindingsByContent(content, bindings);
+    setIndexBindingsByContent(content, indexBindings);
+    setNodesByContent(content, nodes);
+    setContentByNode(bindingInfo.node, content);
+    return content;
+}
 function createContent(bindingInfo) {
     if (typeof bindingInfo.uuid === 'undefined' || bindingInfo.uuid === null) {
         raiseError(`BindingInfo.uuid is null.`);
@@ -4997,6 +5259,15 @@ function createContent(bindingInfo) {
     const fragmentInfo = getFragmentInfoByUUID(bindingInfo.uuid);
     if (!fragmentInfo) {
         raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
+    }
+    let plan = fragmentInfo.rowPlan;
+    if (typeof plan === 'undefined' || (plan !== null && plan.directional !== config.enableDirectionalInitialSync)) {
+        // 初回 or config（directional）が変わったときだけコンパイル。不適格は null を
+        // キャッシュして以後は従来経路へ直行する
+        plan = fragmentInfo.rowPlan = compileRowPlan(fragmentInfo);
+    }
+    if (plan !== null) {
+        return createPlanContent(bindingInfo, fragmentInfo, plan);
     }
     const cloneFragment = document.importNode(fragmentInfo.fragment, true);
     const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
@@ -6012,6 +6283,17 @@ function initializeBindingsByFragment(root, nodeInfos) {
         bindingInfos: initialized,
         bindingSession: session,
     };
+}
+/**
+ * RowPlan 経路の行初期化（createContent 専用）。remember / spread 展開 /
+ * shouldApplyState フィルタを経ず、プランのスロットから直接 record を構築する。
+ * 返す session は従来経路と同じ活性化（activate）・破棄（dispose/wholesale）
+ * インターフェースを持つ。
+ */
+function initializeRowBindings(plan, bindings) {
+    const session = new BindingSession();
+    session.initializeRow(plan, bindings);
+    return session;
 }
 
 const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;

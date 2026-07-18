@@ -1,11 +1,12 @@
 import { ILoopContext } from "../list/types";
+import { IBindingInfo } from "../types";
 import {
   collectNodesAndBindingInfos,
   collectNodesAndBindingInfosByFragment,
   IDeferredSpreadEntry,
   processDeferredNode,
 } from "./collectNodesAndBindingInfos";
-import { IFragmentNodeInfo } from "../structural/types";
+import { IFragmentNodeInfo, IRowPlan } from "../structural/types";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { IInitialBindingInfo } from "./types";
@@ -60,4 +61,16 @@ export function initializeBindingsByFragment(
     bindingInfos: initialized,
     bindingSession: session,
   };
+}
+
+/**
+ * RowPlan 経路の行初期化（createContent 専用）。remember / spread 展開 /
+ * shouldApplyState フィルタを経ず、プランのスロットから直接 record を構築する。
+ * 返す session は従来経路と同じ活性化（activate）・破棄（dispose/wholesale）
+ * インターフェースを持つ。
+ */
+export function initializeRowBindings(plan: IRowPlan, bindings: IBindingInfo[]): BindingSession {
+  const session = new BindingSession();
+  session.initializeRow(plan, bindings);
+  return session;
 }

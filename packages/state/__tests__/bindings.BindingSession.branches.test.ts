@@ -213,11 +213,18 @@ describe("BindingSession defensive branches", () => {
     session.addTeardown(binding, () => { throw new Error("cleanup failed"); });
     const record = session.getRecord(binding)!;
     (session as any).registerAddress(record);
-    const addressCleanup = Array.from(record.teardowns)[1] as () => void;
-    addressCleanup();
+    expect((record as any).address).not.toBeNull();
     session.disposeBinding(binding);
+    // アドレス台帳解除はデータ駆動（record.address 起点）で dispose 時に 1 回だけ走る
+    expect((record as any).address).toBeNull();
+    expect(mocks.removeAddress).toHaveBeenCalledTimes(1);
+    expect(mocks.clearState).toHaveBeenCalledTimes(1);
+    expect(mocks.clearAbsolute).toHaveBeenCalledTimes(1);
+    // 二重 dispose・未知 binding は no-op（二重解除しない）
     session.disposeBinding(binding);
     session.disposeBinding(createBinding());
+    expect(mocks.removeAddress).toHaveBeenCalledTimes(1);
+    // 例外を投げる teardown が居ても他の cleanup（finalCleanup）は完走する
     expect(finalCleanup).toHaveBeenCalledTimes(1);
     expect(mocks.stateElement.setPathInfo).not.toHaveBeenCalled();
 

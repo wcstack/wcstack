@@ -85,6 +85,15 @@ export function unregisterNode(node: Node): void {
 }
 
 /**
+ * RowPlan 経路（createContent のプラン実体化）用。パース・spread 展開を経ずに
+ * binding を組み立てた subscriber ノードを二重処理防止台帳へ載せる
+ * （後続の collectNodesAndBindingInfos による再スキャンから保護）。
+ */
+export function markNodeRegistered(node: Node): void {
+  registeredNodeSet.add(node);
+}
+
+/**
  * Re-process a deferred spread entry once the custom element class is
  * registered. Expands the captured parseResults, installs bindings, and
  * returns them so the caller can attach handlers and apply state values.
