@@ -111,6 +111,40 @@ describe("wholesale destroy（clear 高速破棄）", () => {
     expect(mocks.detachEvent).not.toHaveBeenCalled();
   });
 
+  it("activate: 初回活性化はアドレス登録と初期同期だけ行うこと", () => {
+    const session = new BindingSession();
+    const binding = createBinding();
+    session.initialize([binding], { registerAddress: false });
+    expect(session.getRecord(binding)?.phase).toBe("active");
+    expect(mocks.addAddress).not.toHaveBeenCalled();
+
+    session.activate([binding]);
+    expect(mocks.addAddress).toHaveBeenCalledTimes(1);
+    // 再活性化（アドレス登録済み）では二重登録しない
+    session.activate([binding]);
+    expect(mocks.addAddress).toHaveBeenCalledTimes(1);
+  });
+
+  it("activate: pool 再利用（disposed record）は start で再構築されること", () => {
+    const session = new BindingSession();
+    const binding = createBinding();
+    session.initialize([binding], { registerAddress: false });
+    session.disposeBinding(binding);
+    expect(session.getRecord(binding)?.phase).toBe("disposed");
+
+    session.activate([binding]);
+    expect(session.getRecord(binding)?.phase).toBe("active");
+    expect(mocks.addAddress).toHaveBeenCalledTimes(1);
+  });
+
+  it("activate: remember されていない binding は従来 initialize に倒れること", () => {
+    const session = new BindingSession();
+    const binding = createBinding();
+    session.activate([binding]);
+    expect(session.getRecord(binding)?.phase).toBe("active");
+    expect(mocks.addAddress).toHaveBeenCalledTimes(1);
+  });
+
   it("tryDestroy: session を持たない content は false を返し何も壊さないこと", () => {
     const span = document.createElement("span");
     document.body.appendChild(span);

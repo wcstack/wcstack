@@ -251,6 +251,41 @@ export class BindingSession {
     return initialized.filter((binding) => this.shouldApplyState(binding));
   }
 
+  /**
+   * activateContent 専用の再活性化パス。createContent 側の initialize で
+   * remember 済みの binding 配列（bindingsByContent がそのまま保持する同一オブジェクト）
+   * にだけ使える前提で、remember の再実行（キー照合・options マージ・興味登録）を省き、
+   * 必要な仕事だけ行う: 初回活性化はアドレス登録+初期同期、pool 再利用（disposed）は
+   * start による再構築、未知の binding は防御的に従来 initialize へ倒す。
+   */
+  activate(bindings: readonly IBindingInfo[]): void {
+    for (const binding of bindings) {
+      const record = recordByBinding.get(binding);
+      if (typeof record !== "undefined" && record.session === this
+        && record.phase !== "disposed" && record.phase !== "failed") {
+        if (record.address === null) {
+          // 初回活性化（mountAfter 経路では anchor が接続済みのことがあるため、
+          // 従来 initialize と同様に owner の存在をここで保証する）
+          this.observe(record.anchor);
+          record.options.registerAddress = true;
+          this.registerAddress(record);
+        }
+        if (record.phase === "active") this.settleInitialRecord(record);
+        this.settleConnectedSnapshot(record);
+        continue;
+      }
+      const options = this.optionsByBinding.get(binding);
+      if (typeof options === "undefined") {
+        // この session で remember されていない binding（防御）: 従来経路
+        this.initialize([binding], { registerAddress: true, registerPathInfo: false, applyOnReconnect: false });
+        continue;
+      }
+      // pool 再利用: record は disposed。活性化要件（アドレス登録）を昇格して再構築
+      options.registerAddress = true;
+      this.start(binding, options);
+    }
+  }
+
   shouldApplyState(binding: IBindingInfo): boolean {
     if (!config.enableDirectionalInitialSync) {
       if (hasInitialSyncModifier(binding)) resolveInitialSyncPolicy(binding);

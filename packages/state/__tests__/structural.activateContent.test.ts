@@ -108,19 +108,15 @@ describe('activateContent', () => {
       const context = {} as any;
       const allowed = { id: 1 } as any;
       const denied = { id: 2 } as any;
-      const initialize = vi.fn(() => [allowed]);
+      const activate = vi.fn();
       const shouldApplyState = vi.fn((binding: any) => binding === allowed);
 
       getBindingsByContentMock.mockReturnValue([allowed, denied]);
-      setBindingSessionByContent(content, { initialize, shouldApplyState } as any);
+      setBindingSessionByContent(content, { activate, shouldApplyState } as any);
 
       activateContent(content, null, context);
 
-      expect(initialize).toHaveBeenCalledWith([allowed, denied], {
-        registerAddress: true,
-        registerPathInfo: false,
-        applyOnReconnect: false,
-      });
+      expect(activate).toHaveBeenCalledWith([allowed, denied]);
       expect(addBindingByAbsoluteStateAddressMock).not.toHaveBeenCalled();
       expect(applyChangeMock).toHaveBeenCalledTimes(1);
       expect(applyChangeMock).toHaveBeenCalledWith(allowed, context);
