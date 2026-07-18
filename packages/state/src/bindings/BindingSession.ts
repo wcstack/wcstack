@@ -15,7 +15,7 @@ import { getCustomElementRegistry, upgradeCustomElement } from "../platform/cust
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { consumeObserverSkipOnRemove } from "./observerSkip";
+import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
@@ -169,6 +169,10 @@ class BindingOwner {
       });
     }
     for (const subtree of added) {
+      // framework がマウントしたサブツリーは record が同期 activate 済みで、追加側
+      // 走査の実質の仕事は connect-snapshot 待ちへの配送だけ。待ちがグローバルに
+      // 無ければ丸ごとスキップする（待ちがあればマークだけ消費して従来走査に戻す）。
+      if (consumeObserverSkipOnAdd(subtree) && !hasPendingObservation()) continue;
       forEachInclusive(subtree, (node) => {
         forEachInterestedSession(node, (session) => {
           if (!this.root.contains(node)) return;
@@ -580,6 +584,8 @@ export class BindingSession {
         && !record.info.node.isConnected
       ) {
         record.observationPending = true;
+        // 待ちが 1 件でもある間は追加側 observer スキップを無効化する
+        incrementPendingObservation();
         return;
       }
       this.readProducerSnapshot(record, policy.syncOn === "call");
@@ -598,7 +604,10 @@ export class BindingSession {
     if (!(name in target)) return;
     const sequence = record.eventSequence;
     const value = target[name];
-    record.observationPending = false;
+    if (record.observationPending) {
+      record.observationPending = false;
+      decrementPendingObservation();
+    }
     if (eventWins && record.eventSequence !== sequence) return;
     record.hasProducerValue = true;
     record.producerValue = value;
@@ -662,6 +671,12 @@ export class BindingSession {
   }
 
   private runTeardowns(record: IInternalBindingRecord): void {
+    // runTeardowns は record の終端（disposed / failed）でのみ呼ばれる。未消化の
+    // connect-snapshot 待ちが残っていれば必ずカウンタを戻す（スキップ再有効化）。
+    if (record.observationPending) {
+      record.observationPending = false;
+      decrementPendingObservation();
+    }
     const teardowns = Array.from(record.teardowns).reverse();
     record.teardowns.clear();
     for (const teardown of teardowns) {

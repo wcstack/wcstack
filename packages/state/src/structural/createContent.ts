@@ -5,7 +5,7 @@ import { getBindingSessionByContent, setBindingSessionByContent } from "../bindi
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
 import { initializeBindingsByFragment } from "../bindings/initializeBindings.js";
 import { setNodesByContent } from "../bindings/nodesByContent.js";
-import { markObserverSkipOnRemove } from "../bindings/observerSkip.js";
+import { markObserverSkipOnAdd, markObserverSkipOnRemove } from "../bindings/observerSkip.js";
 import { INDEX_BY_INDEX_NAME } from "../define.js";
 import { raiseError } from "../raiseError.js";
 import { IBindingInfo } from "../types.js";
@@ -42,6 +42,10 @@ class Content implements IContent {
 
   appendTo(targetNode: Node): void {
     for(const node of this._childNodeArray) {
+      // framework 起点のマウントを observer に伝える。中間 fragment へ append する
+      // 経路でも、後続の一括 insertBefore(fragment) の mutation record には
+      // この top-level node が addedNodes として現れるため、ここでのマークが届く。
+      markObserverSkipOnAdd(node);
       targetNode.appendChild(node);
     }
     this._mounted = true;
@@ -52,6 +56,7 @@ class Content implements IContent {
     const nextSibling = targetNode.nextSibling;
     if (parentNode) {
       for(const node of this._childNodeArray) {
+        markObserverSkipOnAdd(node);
         parentNode.insertBefore(node, nextSibling);
       }
     }
