@@ -105,7 +105,7 @@ describe('activateContent', () => {
 
     it('sessionが拒否したbindingにはapplyChangeを呼ばないこと', () => {
       const content = { mounted: true } as any;
-      const context = {} as any;
+      const context = { rootNode: document } as any;
       const allowed = { id: 1 } as any;
       const denied = { id: 2 } as any;
       const activate = vi.fn();
@@ -116,7 +116,8 @@ describe('activateContent', () => {
 
       activateContent(content, null, context);
 
-      expect(activate).toHaveBeenCalledWith([allowed, denied]);
+      // activate には確定済み root（context.rootNode）が渡る
+      expect(activate).toHaveBeenCalledWith([allowed, denied], document);
       expect(addBindingByAbsoluteStateAddressMock).not.toHaveBeenCalled();
       expect(applyChangeMock).toHaveBeenCalledTimes(1);
       expect(applyChangeMock).toHaveBeenCalledWith(allowed, context);

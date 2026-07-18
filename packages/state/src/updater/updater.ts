@@ -1,6 +1,6 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { peekBindingSetByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
+import { peekBindingsByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { MAX_PROPAGATION_HOPS } from "../define";
 import { devtoolsSink } from "../devtools/sink";
 import { IPropagationContext } from "../propagation/types";
@@ -127,19 +127,27 @@ class Updater {
         continue;
       }
       // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
-      // アドレス等）に空 Set を生成・蓄積しない
-      const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
-      if (bindings === undefined) {
+      // アドレス等）に空エントリを生成・蓄積しない。エントリは単一 binding
+      // （通常ケース）か Set（同一アドレスに 2 本以上）のどちらか。
+      const entry = peekBindingsByAbsoluteStateAddress(absoluteAddress);
+      if (entry === undefined) {
         continue;
       }
-      for(const binding of bindings) {
-        if (binding.replaceNode.isConnected === false) {
-          // 切断されているバインディングは無視
-          continue;
+      if (entry instanceof Set) {
+        for(const binding of entry) {
+          if (binding.replaceNode.isConnected === false) {
+            // 切断されているバインディングは無視
+            continue;
+          }
+          processBindings.push(binding);
+          if (context !== null) {
+            propagationContextByBinding.set(binding, context);
+          }
         }
-        processBindings.push(binding);
+      } else if (entry.replaceNode.isConnected !== false) {
+        processBindings.push(entry);
         if (context !== null) {
-          propagationContextByBinding.set(binding, context);
+          propagationContextByBinding.set(entry, context);
         }
       }
     }

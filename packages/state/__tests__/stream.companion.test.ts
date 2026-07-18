@@ -25,7 +25,13 @@ import { State } from "../src/components/State";
 import { getPathInfo } from "../src/address/PathInfo";
 import { getAbsolutePathInfo } from "../src/address/AbsolutePathInfo";
 import { createAbsoluteStateAddress } from "../src/address/AbsoluteStateAddress";
-import { getBindingSetByAbsoluteStateAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
+import { peekBindingsByAbsoluteStateAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
+
+/** 台帳エントリ（単一 binding | Set | undefined）の登録数 */
+function countLedgerBindings(entry: unknown): number {
+  if (typeof entry === "undefined") return 0;
+  return entry instanceof Set ? entry.size : 1;
+}
 import { getStreamEntries } from "../src/stream/streamRegistry";
 import { updateStreamStatus } from "../src/stream/streamRuntime";
 import type { IState } from "../src/types";
@@ -342,7 +348,7 @@ describe("$streamStatus / $streamError の reactive 反映 end-to-end（B-3）",
       getAbsolutePathInfo(stateEl, getPathInfo("tokens")),
       null,
     );
-    const bindingCountBefore = getBindingSetByAbsoluteStateAddress(tokensAbsAddress).size;
+    const bindingCountBefore = countLedgerBindings(peekBindingsByAbsoluteStateAddress(tokensAbsAddress));
     expect(bindingCountBefore).toBeGreaterThanOrEqual(1);
 
     // disconnect → 再 connect（initial から再起動、S12。値のリセットも binding に反映される）
@@ -361,7 +367,7 @@ describe("$streamStatus / $streamError の reactive 反映 end-to-end（B-3）",
     // 二重適用なし: fold は各チャンクにちょうど 1 回（二重 consume なし）、
     // binding 登録数も再接続前と同一（再スキャンによる重複登録なし）
     expect(fold.mock.calls).toEqual([["X", "a"], ["X", "b"]]);
-    expect(getBindingSetByAbsoluteStateAddress(tokensAbsAddress).size).toBe(bindingCountBefore);
+    expect(countLedgerBindings(peekBindingsByAbsoluteStateAddress(tokensAbsAddress))).toBe(bindingCountBefore);
     expect(errorSpy).not.toHaveBeenCalled();
 
     host.remove();

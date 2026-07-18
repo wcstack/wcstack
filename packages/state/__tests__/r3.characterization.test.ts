@@ -21,7 +21,8 @@ import { getStateElementByName } from "../src/stateElementByName";
 import { setDevtoolsSink } from "../src/devtools/sink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IAbsoluteStateAddress } from "../src/address/types";
-import { peekBindingSetByAbsoluteStateAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
+import { peekBindingsByAbsoluteStateAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
+import type { IBindingInfo } from "../src/types";
 import { registerUpdateBatchListener, unregisterUpdateBatchListener, UpdateBatchListener } from "../src/updater/updater";
 import { __test_setMaxPooledContents } from "../src/apply/applyChangeToFor";
 
@@ -81,15 +82,15 @@ describe("R3 オラクル: 台帳・drain の観測可能な契約", () => {
     const texts = () => Array.from(shadowRoot.querySelectorAll("li")).map((li) => li.textContent);
     expect(texts()).toEqual(["1", "2", "3", "4", "5"]);
 
-    // mount 時の行スコープ登録（items.*.v ×5行）を pin: アドレス・binding・Set 参照
+    // mount 時の行スコープ登録（items.*.v ×5行）を pin: アドレス・binding・台帳エントリ参照
     const added = rowLedgerEvents(events, "state:binding-added");
     expect(added.length).toBe(5);
     const pinned = added.map((e) => ({
       addr: e.absoluteAddress,
-      binding: (e as any).binding,
-      set: peekBindingSetByAbsoluteStateAddress(e.absoluteAddress),
+      binding: (e as any).binding as IBindingInfo,
+      entry: peekBindingsByAbsoluteStateAddress(e.absoluteAddress),
     }));
-    for (const p of pinned) expect(p.set).toBeDefined();
+    for (const p of pinned) expect(p.entry).toBeDefined();
 
     // swap（jsfb と同じ keyed イディオム: 同じ行オブジェクトを並べ替えた新配列を代入）
     events.length = 0;
@@ -103,10 +104,11 @@ describe("R3 オラクル: 台帳・drain の観測可能な契約", () => {
 
     // 台帳ゼロタッチ: 追加・削除・クリアが 1 件も発生しない
     expect(events.filter(isLedgerEvent)).toEqual([]);
-    // Set はインスタンスごと不変・登録メンバーも不変（listIndex 同一性キーの帰結）
+    // 台帳エントリはインスタンスごと不変・登録メンバーも不変（listIndex 同一性キーの帰結）
     for (const p of pinned) {
-      expect(peekBindingSetByAbsoluteStateAddress(p.addr)).toBe(p.set);
-      expect(p.set!.has(p.binding)).toBe(true);
+      const entry = peekBindingsByAbsoluteStateAddress(p.addr);
+      expect(entry).toBe(p.entry);
+      expect(entry === p.binding || (entry instanceof Set && entry.has(p.binding))).toBe(true);
     }
     host.remove();
   });

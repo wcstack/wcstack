@@ -2,49 +2,62 @@ import { IAbsoluteStateAddress } from "../address/types";
 import { devtoolsSink } from "../devtools/sink";
 import { IBindingInfo } from "./types";
 
-const bindingSetByAbsoluteStateAddress: WeakMap<IAbsoluteStateAddress, Set<IBindingInfo>> = new WeakMap();
-
-export function getBindingSetByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress): Set<IBindingInfo> {
-  let bindingSet: Set<IBindingInfo> | null = null;
-  bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress) || null;
-  if (bindingSet === null) {
-    bindingSet = new Set();
-    bindingSetByAbsoluteStateAddress.set(absoluteStateAddress, bindingSet);
-  }
-  return bindingSet;
-}
+/**
+ * 絶対アドレス → 登録 binding の台帳。
+ *
+ * リスト行の絶対アドレスは (absolutePathInfo, listIndex) の組ごとに一意で、
+ * 登録される binding は通常 1 本しかない。アドレスごとに Set を確保すると
+ * 行×binding の数だけ Set アロケーションが積み上がるため、単一値で持ち
+ * 2 本目から Set に昇格する（interestedSessionsByNode と同じ前例）。
+ */
+const bindingsByAbsoluteStateAddress: WeakMap<IAbsoluteStateAddress, IBindingInfo | Set<IBindingInfo>> = new WeakMap();
 
 /**
- * 参照専用の取得。get-or-create と違い、未登録アドレスに空 Set を
- * 生成・キャッシュしない（リスト置換の drain は大量のバインディング無し
- * アドレスを照会するため、生成すると空 Set が溜まり続ける）。
+ * 参照専用の取得。未登録アドレスにエントリを生成・キャッシュしない
+ * （リスト置換の drain は大量のバインディング無しアドレスを照会するため、
+ * 生成すると空エントリが溜まり続ける）。
+ * 戻り値は単一 binding（登録 1 本）か Set（2 本以上）のどちらか。
+ * 呼び出し側は Set を変異してはならない（instanceof で分岐できるよう
+ * ReadonlySet でなく Set 型で返す）。
  */
-export function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress): ReadonlySet<IBindingInfo> | undefined {
-  return bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+export function peekBindingsByAbsoluteStateAddress(
+  absoluteStateAddress: IAbsoluteStateAddress,
+): IBindingInfo | Set<IBindingInfo> | undefined {
+  return bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
 }
 
 export function addBindingByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress, binding: IBindingInfo): void {
-  const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
-  bindingSet.add(binding);
+  const current = bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
+  if (typeof current === "undefined") {
+    bindingsByAbsoluteStateAddress.set(absoluteStateAddress, binding);
+  } else if (current instanceof Set) {
+    current.add(binding);
+  } else if (current !== binding) {
+    bindingsByAbsoluteStateAddress.set(absoluteStateAddress, new Set([current, binding]));
+  }
   if (devtoolsSink !== null) {
     devtoolsSink({ type: "state:binding-added", absoluteAddress: absoluteStateAddress, binding });
   }
 }
 
 export function clearBindingSetByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress): void {
-  bindingSetByAbsoluteStateAddress.delete(absoluteStateAddress);
+  bindingsByAbsoluteStateAddress.delete(absoluteStateAddress);
   if (devtoolsSink !== null) {
     devtoolsSink({ type: "state:binding-cleared", absoluteAddress: absoluteStateAddress });
   }
 }
 
 export function removeBindingByAbsoluteStateAddress(absoluteStateAddress: IAbsoluteStateAddress, binding: IBindingInfo): void {
-  // get-or-create を通すと未登録アドレスに空 Set を生成してしまうため素の get で参照する
-  const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
-  if (bindingSet !== undefined) {
-    bindingSet.delete(binding);
-    if (devtoolsSink !== null) {
-      devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
-    }
+  const current = bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
+  if (typeof current === "undefined") {
+    return;
+  }
+  if (current instanceof Set) {
+    current.delete(binding);
+  } else if (current === binding) {
+    bindingsByAbsoluteStateAddress.delete(absoluteStateAddress);
+  }
+  if (devtoolsSink !== null) {
+    devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
   }
 }

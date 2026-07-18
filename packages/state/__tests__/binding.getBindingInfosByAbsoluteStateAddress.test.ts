@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getBindingSetByAbsoluteStateAddress,
+  peekBindingsByAbsoluteStateAddress,
   addBindingByAbsoluteStateAddress,
   removeBindingByAbsoluteStateAddress,
   clearBindingSetByAbsoluteStateAddress,
@@ -12,7 +12,7 @@ import type { IBindingInfo } from '../src/types';
 const createAbsoluteAddress = (path = 'count'): IAbsoluteStateAddress => ({
   stateName: 'default',
   address: { pathInfo: { path } } as any,
-});
+} as unknown as IAbsoluteStateAddress);
 
 const createBindingInfo = (id: string): IBindingInfo => ({
   propName: 'text',
@@ -29,50 +29,54 @@ const createBindingInfo = (id: string): IBindingInfo => ({
   replaceNode: document.createTextNode(id),
 } as IBindingInfo);
 
-describe('getBindingSetByAbsoluteStateAddress', () => {
-  it('同一アドレスで同じSetが返ること', () => {
-    const address = createAbsoluteAddress();
-    const set1 = getBindingSetByAbsoluteStateAddress(address);
-    const set2 = getBindingSetByAbsoluteStateAddress(address);
-
-    expect(set1).toBe(set2);
-    expect(set1.size).toBe(0);
-  });
-
-  it('add/removeでSetが更新されること', () => {
+describe('絶対アドレス台帳の add / remove / clear', () => {
+  it('add/removeで台帳が更新されること', () => {
     const address = createAbsoluteAddress();
     const binding = createBindingInfo('a');
 
     addBindingByAbsoluteStateAddress(address, binding);
-    expect(getBindingSetByAbsoluteStateAddress(address)).toContain(binding);
+    expect(peekBindingsByAbsoluteStateAddress(address)).toBe(binding);
 
     removeBindingByAbsoluteStateAddress(address, binding);
-    expect(getBindingSetByAbsoluteStateAddress(address)).not.toContain(binding);
+    expect(peekBindingsByAbsoluteStateAddress(address)).toBeUndefined();
+  });
+
+  it('複数 binding は Set 昇格で共存し、片方の remove で残りが保たれること', () => {
+    const address = createAbsoluteAddress();
+    const a = createBindingInfo('a');
+    const b = createBindingInfo('b');
+
+    addBindingByAbsoluteStateAddress(address, a);
+    addBindingByAbsoluteStateAddress(address, b);
+    const entry = peekBindingsByAbsoluteStateAddress(address);
+    expect(entry).toBeInstanceOf(Set);
+    expect((entry as Set<IBindingInfo>).size).toBe(2);
+
+    removeBindingByAbsoluteStateAddress(address, a);
+    const after = peekBindingsByAbsoluteStateAddress(address);
+    expect(after).toBe(entry);
+    expect((after as Set<IBindingInfo>).has(b)).toBe(true);
   });
 
   it('存在しないbindingをremoveしても変化しないこと', () => {
     const address = createAbsoluteAddress();
-    const binding = createBindingInfo('missing');
+    const registered = createBindingInfo('a');
+    const missing = createBindingInfo('missing');
 
-    const set = getBindingSetByAbsoluteStateAddress(address);
-    removeBindingByAbsoluteStateAddress(address, binding);
+    addBindingByAbsoluteStateAddress(address, registered);
+    removeBindingByAbsoluteStateAddress(address, missing);
 
-    expect(getBindingSetByAbsoluteStateAddress(address)).toBe(set);
-    expect(set.size).toBe(0);
+    expect(peekBindingsByAbsoluteStateAddress(address)).toBe(registered);
   });
 
-  it('clearでSetがリセットされること', () => {
+  it('clearで台帳エントリが消えること', () => {
     const address = createAbsoluteAddress('value');
     const binding = createBindingInfo('b');
 
     addBindingByAbsoluteStateAddress(address, binding);
-    const beforeClear = getBindingSetByAbsoluteStateAddress(address);
-    expect(beforeClear).toContain(binding);
+    expect(peekBindingsByAbsoluteStateAddress(address)).toBe(binding);
 
     clearBindingSetByAbsoluteStateAddress(address);
-    const afterClear = getBindingSetByAbsoluteStateAddress(address);
-
-    expect(afterClear.size).toBe(0);
-    expect(afterClear).not.toBe(beforeClear);
+    expect(peekBindingsByAbsoluteStateAddress(address)).toBeUndefined();
   });
 });

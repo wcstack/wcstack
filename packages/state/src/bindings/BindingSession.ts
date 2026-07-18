@@ -221,9 +221,17 @@ export class BindingSession {
     if (root !== null) this.observe(root);
   }
 
+  /**
+   * knownRoot: 呼び出し側が root を確定済みのときの per-binding observe 省略。
+   *  - undefined: 従来どおり binding ごとに anchor から root を導出して observe
+   *  - null: detached fragment 上（createContent）の初期化。observableRootFor が
+   *    必ず null を返す状況なので observe（= getRootNode）を丸ごと省略する
+   *  - Node: 呼び出し側で owner 保証済み（activate 経由のみ。initialize へは未使用）
+   */
   initialize(
     bindings: readonly IBindingInfo[],
     options: Partial<IBindingOptions> = {},
+    knownRoot?: Node | null,
   ): IBindingInfo[] {
     const registerAddress = options.registerAddress ?? true;
     const resolvedOptions: IBindingOptions = {
@@ -245,7 +253,7 @@ export class BindingSession {
         this.settleConnectedSnapshot(existing);
         continue;
       }
-      this.start(binding, resolvedOptions);
+      this.start(binding, resolvedOptions, knownRoot);
       initialized.push(binding);
     }
     return initialized.filter((binding) => this.shouldApplyState(binding));
@@ -257,18 +265,22 @@ export class BindingSession {
    * にだけ使える前提で、remember の再実行（キー照合・options マージ・興味登録）を省き、
    * 必要な仕事だけ行う: 初回活性化はアドレス登録+初期同期、pool 再利用（disposed）は
    * start による再構築、未知の binding は防御的に従来 initialize へ倒す。
+   *
+   * knownRoot は呼び出し側（applyChangeToFor / applyChangeToIf の apply context）が
+   * 確定済みの root。owner（root ごとの MutationObserver）の保証を呼び出しあたり
+   * 1 回に集約し、binding ごとの observe（= getRootNode）とアドレス解決の
+   * getRootNode を丸ごと省略する。
    */
-  activate(bindings: readonly IBindingInfo[]): void {
+  activate(bindings: readonly IBindingInfo[], knownRoot: Node): void {
+    if (isObservableRoot(knownRoot)) getBindingOwner(knownRoot);
     for (const binding of bindings) {
       const record = recordByBinding.get(binding);
       if (typeof record !== "undefined" && record.session === this
         && record.phase !== "disposed" && record.phase !== "failed") {
         if (record.address === null) {
-          // 初回活性化（mountAfter 経路では anchor が接続済みのことがあるため、
-          // 従来 initialize と同様に owner の存在をここで保証する）
-          this.observe(record.anchor);
+          // 初回活性化（owner は冒頭で保証済み）
           record.options.registerAddress = true;
-          this.registerAddress(record);
+          this.registerAddress(record, knownRoot);
         }
         if (record.phase === "active") this.settleInitialRecord(record);
         this.settleConnectedSnapshot(record);
@@ -282,7 +294,7 @@ export class BindingSession {
       }
       // pool 再利用: record は disposed。活性化要件（アドレス登録）を昇格して再構築
       options.registerAddress = true;
-      this.start(binding, options);
+      this.start(binding, options, knownRoot);
     }
   }
 
@@ -499,7 +511,7 @@ export class BindingSession {
     return binding;
   }
 
-  private start(binding: IBindingInfo, options: IBindingOptions): void {
+  private start(binding: IBindingInfo, options: IBindingOptions, knownRoot?: Node | null): void {
     replaceToReplaceNode(binding);
     const recordOptions = this.optionsByBinding.get(binding) ?? { ...options };
     const record: IInternalBindingRecord = {
@@ -523,12 +535,14 @@ export class BindingSession {
     };
     recordByBinding.set(binding, record);
     this.records.add(record);
-    this.observe(record.anchor);
+    // knownRoot が渡されたときは observe を省略する（null = detached fragment 上で
+    // observableRootFor が必ず null、Node = activate 冒頭で owner 保証済み）
+    if (typeof knownRoot === "undefined") this.observe(record.anchor);
 
     try {
       record.phase = "attaching";
       this.attachListeners(record);
-      if (record.options.registerAddress) this.registerAddress(record);
+      if (record.options.registerAddress) this.registerAddress(record, knownRoot);
       if (record.pendingDefinitions === 0) record.phase = "active";
     } catch (error) {
       record.phase = "failed";
@@ -696,10 +710,10 @@ export class BindingSession {
     }
   }
 
-  private registerAddress(record: IInternalBindingRecord): void {
+  private registerAddress(record: IInternalBindingRecord, knownRoot?: Node | null): void {
     if (record.address !== null) return;
     const binding = record.info;
-    const address = getAbsoluteStateAddressByBinding(binding);
+    const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
     addBindingByAbsoluteStateAddress(address, binding);
     record.address = address;
     record.teardowns.add(() => {

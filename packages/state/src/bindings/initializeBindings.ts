@@ -49,10 +49,12 @@ export function initializeBindingsByFragment(
 ): IInitialBindingInfo {
   const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
   const session = new BindingSession();
+  // knownRoot=null: detached fragment 上の初期化。observableRootFor が必ず null を
+  // 返す（observe は no-op）ため、binding ごとの getRootNode を省略する
   const initialized = session.initialize(allBindings, {
     registerAddress: false,
     applyOnReconnect: false,
-  });
+  }, null);
   return {
     nodes: subscriberNodes,
     bindingInfos: initialized,

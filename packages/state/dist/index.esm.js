@@ -2082,23 +2082,31 @@ function getListIndexByBindingInfo(bindingInfo) {
 }
 
 const absoluteStateAddressByBinding = new WeakMap();
-function getAbsoluteStateAddressByBinding(binding) {
+function getAbsoluteStateAddressByBinding(binding, knownRootNode) {
     // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
     let absoluteStateAddress = null;
     absoluteStateAddress = absoluteStateAddressByBinding.get(binding) || null;
     if (absoluteStateAddress !== null) {
         return absoluteStateAddress;
     }
-    let rootNode = binding.replaceNode.getRootNode();
-    // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
-    if (binding.replaceNode.isConnected === false) {
-        // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
-        const rootNodeByFragment = getRootNodeByFragment(rootNode);
-        if (rootNodeByFragment === null) {
-            raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
-        }
-        else {
-            rootNode = rootNodeByFragment;
+    let rootNode;
+    if (knownRootNode != null) {
+        // リスト行活性化のホットパス: 呼び出し側（applyChangeToFor → activateContent）が
+        // root を確定済みなので getRootNode() と fragment フォールバックを省略する
+        rootNode = knownRootNode;
+    }
+    else {
+        rootNode = binding.replaceNode.getRootNode();
+        // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
+        if (binding.replaceNode.isConnected === false) {
+            // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
+            const rootNodeByFragment = getRootNodeByFragment(rootNode);
+            if (rootNodeByFragment === null) {
+                raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
+            }
+            else {
+                rootNode = rootNodeByFragment;
+            }
         }
     }
     const listIndex = getListIndexByBindingInfo(binding);
@@ -2133,39 +2141,54 @@ function setDevtoolsSink(sink) {
     devtoolsSink = sink;
 }
 
-const bindingSetByAbsoluteStateAddress = new WeakMap();
-function getBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
-    let bindingSet = null;
-    bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress) || null;
-    if (bindingSet === null) {
-        bindingSet = new Set();
-        bindingSetByAbsoluteStateAddress.set(absoluteStateAddress, bindingSet);
-    }
-    return bindingSet;
-}
 /**
- * 参照専用の取得。get-or-create と違い、未登録アドレスに空 Set を
- * 生成・キャッシュしない（リスト置換の drain は大量のバインディング無し
- * アドレスを照会するため、生成すると空 Set が溜まり続ける）。
+ * 絶対アドレス → 登録 binding の台帳。
+ *
+ * リスト行の絶対アドレスは (absolutePathInfo, listIndex) の組ごとに一意で、
+ * 登録される binding は通常 1 本しかない。アドレスごとに Set を確保すると
+ * 行×binding の数だけ Set アロケーションが積み上がるため、単一値で持ち
+ * 2 本目から Set に昇格する（interestedSessionsByNode と同じ前例）。
  */
-function peekBindingSetByAbsoluteStateAddress(absoluteStateAddress) {
-    return bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
+const bindingsByAbsoluteStateAddress = new WeakMap();
+/**
+ * 参照専用の取得。未登録アドレスにエントリを生成・キャッシュしない
+ * （リスト置換の drain は大量のバインディング無しアドレスを照会するため、
+ * 生成すると空エントリが溜まり続ける）。
+ * 戻り値は単一 binding（登録 1 本）か Set（2 本以上）のどちらか。
+ * 呼び出し側は Set を変異してはならない（instanceof で分岐できるよう
+ * ReadonlySet でなく Set 型で返す）。
+ */
+function peekBindingsByAbsoluteStateAddress(absoluteStateAddress) {
+    return bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
 }
 function addBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    const bindingSet = getBindingSetByAbsoluteStateAddress(absoluteStateAddress);
-    bindingSet.add(binding);
+    const current = bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
+    if (typeof current === "undefined") {
+        bindingsByAbsoluteStateAddress.set(absoluteStateAddress, binding);
+    }
+    else if (current instanceof Set) {
+        current.add(binding);
+    }
+    else if (current !== binding) {
+        bindingsByAbsoluteStateAddress.set(absoluteStateAddress, new Set([current, binding]));
+    }
     if (devtoolsSink !== null) {
         devtoolsSink({ type: "state:binding-added", absoluteAddress: absoluteStateAddress, binding });
     }
 }
 function removeBindingByAbsoluteStateAddress(absoluteStateAddress, binding) {
-    // get-or-create を通すと未登録アドレスに空 Set を生成してしまうため素の get で参照する
-    const bindingSet = bindingSetByAbsoluteStateAddress.get(absoluteStateAddress);
-    if (bindingSet !== undefined) {
-        bindingSet.delete(binding);
-        if (devtoolsSink !== null) {
-            devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
-        }
+    const current = bindingsByAbsoluteStateAddress.get(absoluteStateAddress);
+    if (typeof current === "undefined") {
+        return;
+    }
+    if (current instanceof Set) {
+        current.delete(binding);
+    }
+    else if (current === binding) {
+        bindingsByAbsoluteStateAddress.delete(absoluteStateAddress);
+    }
+    if (devtoolsSink !== null) {
+        devtoolsSink({ type: "state:binding-removed", absoluteAddress: absoluteStateAddress, binding });
     }
 }
 
@@ -3562,7 +3585,14 @@ class BindingSession {
         if (root !== null)
             this.observe(root);
     }
-    initialize(bindings, options = {}) {
+    /**
+     * knownRoot: 呼び出し側が root を確定済みのときの per-binding observe 省略。
+     *  - undefined: 従来どおり binding ごとに anchor から root を導出して observe
+     *  - null: detached fragment 上（createContent）の初期化。observableRootFor が
+     *    必ず null を返す状況なので observe（= getRootNode）を丸ごと省略する
+     *  - Node: 呼び出し側で owner 保証済み（activate 経由のみ。initialize へは未使用）
+     */
+    initialize(bindings, options = {}, knownRoot) {
         const registerAddress = options.registerAddress ?? true;
         const resolvedOptions = {
             registerAddress,
@@ -3584,7 +3614,7 @@ class BindingSession {
                 this.settleConnectedSnapshot(existing);
                 continue;
             }
-            this.start(binding, resolvedOptions);
+            this.start(binding, resolvedOptions, knownRoot);
             initialized.push(binding);
         }
         return initialized.filter((binding) => this.shouldApplyState(binding));
@@ -3595,18 +3625,23 @@ class BindingSession {
      * にだけ使える前提で、remember の再実行（キー照合・options マージ・興味登録）を省き、
      * 必要な仕事だけ行う: 初回活性化はアドレス登録+初期同期、pool 再利用（disposed）は
      * start による再構築、未知の binding は防御的に従来 initialize へ倒す。
+     *
+     * knownRoot は呼び出し側（applyChangeToFor / applyChangeToIf の apply context）が
+     * 確定済みの root。owner（root ごとの MutationObserver）の保証を呼び出しあたり
+     * 1 回に集約し、binding ごとの observe（= getRootNode）とアドレス解決の
+     * getRootNode を丸ごと省略する。
      */
-    activate(bindings) {
+    activate(bindings, knownRoot) {
+        if (isObservableRoot(knownRoot))
+            getBindingOwner(knownRoot);
         for (const binding of bindings) {
             const record = recordByBinding.get(binding);
             if (typeof record !== "undefined" && record.session === this
                 && record.phase !== "disposed" && record.phase !== "failed") {
                 if (record.address === null) {
-                    // 初回活性化（mountAfter 経路では anchor が接続済みのことがあるため、
-                    // 従来 initialize と同様に owner の存在をここで保証する）
-                    this.observe(record.anchor);
+                    // 初回活性化（owner は冒頭で保証済み）
                     record.options.registerAddress = true;
-                    this.registerAddress(record);
+                    this.registerAddress(record, knownRoot);
                 }
                 if (record.phase === "active")
                     this.settleInitialRecord(record);
@@ -3621,7 +3656,7 @@ class BindingSession {
             }
             // pool 再利用: record は disposed。活性化要件（アドレス登録）を昇格して再構築
             options.registerAddress = true;
-            this.start(binding, options);
+            this.start(binding, options, knownRoot);
         }
     }
     shouldApplyState(binding) {
@@ -3838,7 +3873,7 @@ class BindingSession {
         this.optionsByBinding.set(binding, { ...options });
         return binding;
     }
-    start(binding, options) {
+    start(binding, options, knownRoot) {
         replaceToReplaceNode(binding);
         const recordOptions = this.optionsByBinding.get(binding) ?? { ...options };
         const record = {
@@ -3862,12 +3897,15 @@ class BindingSession {
         };
         recordByBinding.set(binding, record);
         this.records.add(record);
-        this.observe(record.anchor);
+        // knownRoot が渡されたときは observe を省略する（null = detached fragment 上で
+        // observableRootFor が必ず null、Node = activate 冒頭で owner 保証済み）
+        if (typeof knownRoot === "undefined")
+            this.observe(record.anchor);
         try {
             record.phase = "attaching";
             this.attachListeners(record);
             if (record.options.registerAddress)
-                this.registerAddress(record);
+                this.registerAddress(record, knownRoot);
             if (record.pendingDefinitions === 0)
                 record.phase = "active";
         }
@@ -4034,11 +4072,11 @@ class BindingSession {
             this.records.delete(record);
         }
     }
-    registerAddress(record) {
+    registerAddress(record, knownRoot) {
         if (record.address !== null)
             return;
         const binding = record.info;
-        const address = getAbsoluteStateAddressByBinding(binding);
+        const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
         addBindingByAbsoluteStateAddress(address, binding);
         record.address = address;
         record.teardowns.add(() => {
@@ -4770,8 +4808,11 @@ function activateContent(content, loopContext, context) {
     const session = getBindingSessionByContent(content);
     if (session !== null) {
         // createContent 側の initialize で remember 済みの同一 binding 配列なので、
-        // remember を再実行しない専用パスで活性化する（リスト行生成のホットパス）
-        session.activate(bindings);
+        // remember を再実行しない専用パスで活性化する（リスト行生成のホットパス）。
+        // context.rootNode は applyChangeFromBindings が確定済みの root（fragment
+        // バッファ中は setRootNodeByFragment の対応先と同一）で、binding ごとの
+        // getRootNode を省略できる
+        session.activate(bindings, context.rootNode);
     }
     for (const binding of bindings) {
         if (session === null) {
@@ -5960,10 +6001,12 @@ function initializeBindings(root, parentLoopContext) {
 function initializeBindingsByFragment(root, nodeInfos) {
     const [subscriberNodes, allBindings] = collectNodesAndBindingInfosByFragment(root, nodeInfos);
     const session = new BindingSession();
+    // knownRoot=null: detached fragment 上の初期化。observableRootFor が必ず null を
+    // 返す（observe は no-op）ため、binding ごとの getRootNode を省略する
     const initialized = session.initialize(allBindings, {
         registerAddress: false,
         applyOnReconnect: false,
-    });
+    }, null);
     return {
         nodes: subscriberNodes,
         bindingInfos: initialized,
@@ -7291,19 +7334,28 @@ class Updater {
                 continue;
             }
             // peek: バインディングの無いアドレス（リスト置換で enqueue される中間
-            // アドレス等）に空 Set を生成・蓄積しない
-            const bindings = peekBindingSetByAbsoluteStateAddress(absoluteAddress);
-            if (bindings === undefined) {
+            // アドレス等）に空エントリを生成・蓄積しない。エントリは単一 binding
+            // （通常ケース）か Set（同一アドレスに 2 本以上）のどちらか。
+            const entry = peekBindingsByAbsoluteStateAddress(absoluteAddress);
+            if (entry === undefined) {
                 continue;
             }
-            for (const binding of bindings) {
-                if (binding.replaceNode.isConnected === false) {
-                    // 切断されているバインディングは無視
-                    continue;
+            if (entry instanceof Set) {
+                for (const binding of entry) {
+                    if (binding.replaceNode.isConnected === false) {
+                        // 切断されているバインディングは無視
+                        continue;
+                    }
+                    processBindings.push(binding);
+                    if (context !== null) {
+                        propagationContextByBinding.set(binding, context);
+                    }
                 }
-                processBindings.push(binding);
+            }
+            else if (entry.replaceNode.isConnected !== false) {
+                processBindings.push(entry);
                 if (context !== null) {
-                    propagationContextByBinding.set(binding, context);
+                    propagationContextByBinding.set(entry, context);
                 }
             }
         }

@@ -9,7 +9,7 @@ import { IBindingInfo } from "./types";
 
 const absoluteStateAddressByBinding: WeakMap<IBindingInfo, IAbsoluteStateAddress> = new WeakMap();
 
-export function getAbsoluteStateAddressByBinding(binding: IBindingInfo): IAbsoluteStateAddress {
+export function getAbsoluteStateAddressByBinding(binding: IBindingInfo, knownRootNode?: Node | null): IAbsoluteStateAddress {
   // 切断されていても、キャッシュされていれば絶対状態アドレスを返す。
   let absoluteStateAddress: IAbsoluteStateAddress | null = null;
   absoluteStateAddress = absoluteStateAddressByBinding.get(binding) || null;
@@ -17,15 +17,22 @@ export function getAbsoluteStateAddressByBinding(binding: IBindingInfo): IAbsolu
     return absoluteStateAddress;
   }
 
-  let rootNode: Node | null = binding.replaceNode.getRootNode() as Node;
-  // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
-  if (binding.replaceNode.isConnected === false) {
-    // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
-    const rootNodeByFragment = getRootNodeByFragment(rootNode as DocumentFragment);
-    if (rootNodeByFragment === null) {
-      raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
-    } else {
-      rootNode = rootNodeByFragment;
+  let rootNode: Node | null;
+  if (knownRootNode != null) {
+    // リスト行活性化のホットパス: 呼び出し側（applyChangeToFor → activateContent）が
+    // root を確定済みなので getRootNode() と fragment フォールバックを省略する
+    rootNode = knownRootNode;
+  } else {
+    rootNode = binding.replaceNode.getRootNode() as Node;
+    // binding.replaceNodeはisConnected=trueになっていることが前提、切断されている場合はraiseErrorを返す
+    if (binding.replaceNode.isConnected === false) {
+      // DocumentFragmentでバッファリングされている場合は、ルートノードをDocumentFragmentから実際のルートノードに切り替える
+      const rootNodeByFragment = getRootNodeByFragment(rootNode as DocumentFragment);
+      if (rootNodeByFragment === null) {
+        raiseError(`Cannot get absolute state address for disconnected binding: ${binding.bindingType} ${binding.statePathName} on ${binding.node.nodeName}`);
+      } else {
+        rootNode = rootNodeByFragment;
+      }
     }
   }
 

@@ -118,10 +118,10 @@ describe("wholesale destroy（clear 高速破棄）", () => {
     expect(session.getRecord(binding)?.phase).toBe("active");
     expect(mocks.addAddress).not.toHaveBeenCalled();
 
-    session.activate([binding]);
+    session.activate([binding], document);
     expect(mocks.addAddress).toHaveBeenCalledTimes(1);
     // 再活性化（アドレス登録済み）では二重登録しない
-    session.activate([binding]);
+    session.activate([binding], document);
     expect(mocks.addAddress).toHaveBeenCalledTimes(1);
   });
 
@@ -132,7 +132,7 @@ describe("wholesale destroy（clear 高速破棄）", () => {
     session.disposeBinding(binding);
     expect(session.getRecord(binding)?.phase).toBe("disposed");
 
-    session.activate([binding]);
+    session.activate([binding], document);
     expect(session.getRecord(binding)?.phase).toBe("active");
     expect(mocks.addAddress).toHaveBeenCalledTimes(1);
   });
@@ -140,7 +140,8 @@ describe("wholesale destroy（clear 高速破棄）", () => {
   it("activate: remember されていない binding は従来 initialize に倒れること", () => {
     const session = new BindingSession();
     const binding = createBinding();
-    session.activate([binding]);
+    // knownRoot が観測不能 root（素の fragment）でも活性化は成立する
+    session.activate([binding], document.createDocumentFragment());
     expect(session.getRecord(binding)?.phase).toBe("active");
     expect(mocks.addAddress).toHaveBeenCalledTimes(1);
   });
