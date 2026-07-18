@@ -44,6 +44,20 @@ import { IStateHandler } from "../types";
 const STREAM_STATUS_PATH_PREFIX = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}`;
 const STREAM_ERROR_PATH_PREFIX = `${STATE_STREAM_ERROR_NAMESPACE_NAME}${DELIMITER}`;
 
+// symbol API のクロージャは handler（= proxy と 1:1、target/receiver 不変）ごとに
+// 使い回す。drain の getValue が binding ごとに getByAddressSymbol を引くため、
+// 毎回の新規クロージャ生成が GC 圧・固定費になっていた。
+const symbolApiCacheByHandler = new WeakMap<IStateHandler, Map<symbol, unknown>>();
+
+function getSymbolApiCache(handler: IStateHandler): Map<symbol, unknown> {
+  let cache = symbolApiCacheByHandler.get(handler);
+  if (typeof cache === "undefined") {
+    cache = new Map<symbol, unknown>();
+    symbolApiCacheByHandler.set(handler, cache);
+  }
+  return cache;
+}
+
 export function get(
   target  : object, 
   prop    : PropertyKey, 
@@ -142,19 +156,27 @@ export function get(
       handler
     );
   } else if (typeof prop === "symbol") {
+    const cache = getSymbolApiCache(handler);
+    const cached = cache.get(prop);
+    if (typeof cached !== "undefined") {
+      return cached;
+    }
+    let api: unknown;
     switch (prop) {
       case setLoopContextAsyncSymbol: {
-        return (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
+        api = (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
           return setLoopContextAsync(handler, loopContext, callback);
         };
+        break;
       }
       case setLoopContextSymbol: {
-        return (loopContext: any, callback = (): any => {}): any => {
+        api = (loopContext: any, callback = (): any => {}): any => {
           return setLoopContext(handler, loopContext, callback);
         };
+        break;
       }
       case getByAddressSymbol: {
-        return (address: IStateAddress): any => {
+        api = (address: IStateAddress): any => {
           return getByAddress(
             target,
             address,
@@ -162,9 +184,10 @@ export function get(
             handler
           );
         }
+        break;
       }
       case hasByAddressSymbol: {
-        return (address: IStateAddress): boolean => {
+        api = (address: IStateAddress): boolean => {
           return hasByAddress(
             target,
             address,
@@ -172,9 +195,10 @@ export function get(
             handler
           );
         }
+        break;
       }
       case setByAddressSymbol: {
-        return (address: IStateAddress, value: any): void => {
+        api = (address: IStateAddress, value: any): void => {
           return setByAddress(
             target,
             address,
@@ -183,29 +207,32 @@ export function get(
             handler
           );
         }
+        break;
       }
       case connectedCallbackSymbol: {
-        return (): Promise<void> => {
+        api = (): Promise<void> => {
           return connectedCallback(
             target,
-            prop,
+            connectedCallbackSymbol,
             receiver,
             handler
           );
         }
+        break;
       }
       case disconnectedCallbackSymbol: {
-        return (): void => {
+        api = (): void => {
           return disconnectedCallback(
             target,
-            prop,
+            disconnectedCallbackSymbol,
             receiver,
             handler
           );
         }
+        break;
       }
       case updatedCallbackSymbol: {
-        return (
+        api = (
           refs: IAbsoluteStateAddress[]
         ): unknown => {
           return updatedCallback(
@@ -215,13 +242,17 @@ export function get(
             handler
           );
         }
+        break;
+      }
+      default: {
+        return Reflect.get(
+          target,
+          prop,
+          receiver
+        );
       }
     }
-
-    return Reflect.get(
-      target, 
-      prop, 
-      receiver
-    );
+    cache.set(prop, api);
+    return api;
   }
 }

@@ -360,6 +360,15 @@ export function walkDependency(
   callback: (address: IStateAddress) => void,
   options?: { listExpansion?: ListExpansion }
 ): IStateAddress[] {
+  // 依存ゼロの葉パス（staticMap / dynamicMap にエントリ無し）は context や Set を
+  // 割り当てず、開始アドレスの callback だけで完結する。リスト行の値書き込み
+  // （update ホットパス）は set 毎にここを通る。開始アドレスへの callback は
+  // 従来の walk 先頭と同一で、戻り値（依存アドレス群）も従来どおり空。
+  const startPath = startAddress.pathInfo.path;
+  if (!staticDependency.has(startPath) && !dynamicDependency.has(startPath)) {
+    callback(startAddress);
+    return [];
+  }
   const context: Context = {
     stateName: stateName,
     stateElement: stateElement,
