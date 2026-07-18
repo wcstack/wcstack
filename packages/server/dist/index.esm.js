@@ -233,7 +233,7 @@ async function renderToString(html, options) {
     }
 }
 
-var version = "1.21.3";
+var version = "1.21.4";
 var pkg = {
 	version: version};
 

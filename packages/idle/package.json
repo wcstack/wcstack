@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/idle",
-  "version": "1.21.3",
+  "version": "1.21.4",
   "description": "Declarative Idle Detection component for Web Components. Framework-agnostic IdleDetector wrapper via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
