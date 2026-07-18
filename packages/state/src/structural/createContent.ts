@@ -63,6 +63,37 @@ class Content implements IContent {
     this._mounted = true;
   }
 
+  tryDestroy(): boolean {
+    const session = getBindingSessionByContent(this);
+    // session 無し（SSR ハイドレーション産）や、定義待ち・connect-snapshot 待ちを
+    // 抱える content は teardown 省略でリークするため従来経路に倒す。
+    if (session === null || !session.canWholesaleDestroy()) {
+      return false;
+    }
+    session.destroyRecords();
+    for (const node of this._childNodeArray) {
+      // unmount と同じ理由の observer 向け削除マーク（clear の一括削除でも
+      // top-level node が mutation record の root に現れる）
+      markObserverSkipOnRemove(node);
+      if (node.parentNode !== null) {
+        node.parentNode.removeChild(node);
+      }
+    }
+    const bindings = getBindingsByContent(this);
+    for (const binding of bindings) {
+      if (recursiveBindingTypes.has(binding.bindingType)) {
+        const contents = getContentSetByNode(binding.node);
+        for (const content of contents) {
+          if (!content.tryDestroy()) {
+            content.unmount();
+          }
+        }
+      }
+    }
+    this._mounted = false;
+    return true;
+  }
+
   unmount(): void {
     getBindingSessionByContent(this)?.dispose();
     for(const node of this._childNodeArray) {

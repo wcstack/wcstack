@@ -162,11 +162,10 @@ export function applyChangeToFor(
   const diff = createListDiff(listIndex, lastValue, newValue);
   context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
 
-  if (Array.isArray(lastValue) 
-    && lastValue.length === diff.deleteIndexSet.size 
-    && diff.deleteIndexSet.size > 0
-    && bindingInfo.node.parentNode !== null
-  ) {
+  const fullDelete = Array.isArray(lastValue)
+    && lastValue.length === diff.deleteIndexSet.size
+    && diff.deleteIndexSet.size > 0;
+  if (fullDelete && bindingInfo.node.parentNode !== null) {
     let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
     if (typeof isOnlyNode === 'undefined') {
       const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
@@ -179,12 +178,24 @@ export function applyChangeToFor(
       parentNode.appendChild(bindingInfo.node);
     }
   }
+  // 全削除時、プールに収まらない content は再利用されないため、per-binding の
+  // teardown（listener 解除・アドレス台帳・loopContext 掃除）を丸ごと省略して
+  // ノードごと GC に任せる（tryDestroy）。プール行きの分だけ従来どおり解体する
+  // （プール行は binding が生存し続けるため address キャッシュのクリアが必須）。
+  let poolBudget = fullDelete
+    ? maxPooledContents - getPooledContents(bindingInfo).length
+    : Number.POSITIVE_INFINITY;
   for(const deleteIndex of diff.deleteIndexSet) {
     const content = getContent(bindingInfo.node, deleteIndex);
     if (content !== null) {
-      deactivateContent(content);
-      content.unmount();
-      setPooledContent(bindingInfo, content);
+      if (poolBudget <= 0 && content.tryDestroy()) {
+        deleteContentByNode(bindingInfo.node, content);
+      } else {
+        deactivateContent(content);
+        content.unmount();
+        setPooledContent(bindingInfo, content);
+        poolBudget -= 1;
+      }
       setContent(bindingInfo.node, deleteIndex, null);
     }
   }

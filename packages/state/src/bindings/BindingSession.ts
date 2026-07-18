@@ -342,6 +342,35 @@ export class BindingSession {
     }
   }
 
+  /**
+   * wholesale destroy（全行クリアで teardown を GC に任せる高速経路）を適用して
+   * よいか。定義待ち（DefinitionCoordinator の waiter / deferred spread タスク）は
+   * 強参照 Map に閉包が残り、connect-snapshot 待ちは pending カウンタが戻らなく
+   * なるため、1 つでもあれば従来経路（teardown 実行）に倒す。
+   */
+  canWholesaleDestroy(): boolean {
+    if (this.deferred.size > 0) return false;
+    for (const record of this.records) {
+      if (record.pendingDefinitions > 0 || record.observationPending) return false;
+    }
+    return true;
+  }
+
+  /**
+   * 全 record を teardown を走らせずに終端化する（canWholesaleDestroy が true の
+   * content 専用）。イベント listener・アドレス台帳・loopContext はノード/binding
+   * もろとも GC で崩壊する（recordByBinding 以下は全て弱参照）。
+   * handlerBindingRegistry のカウンタは減らないが、残るのはキー文字列と数値のみで
+   * 実害はない設計（handlerBindingRegistry.ts の弱参照化コメント参照）。
+   */
+  destroyRecords(): void {
+    for (const record of this.records) {
+      record.phase = "disposed";
+      record.teardowns.clear();
+    }
+    this.records.clear();
+  }
+
   observe(node: Node): void {
     const root = observableRootFor(node);
     if (root === null) return;
