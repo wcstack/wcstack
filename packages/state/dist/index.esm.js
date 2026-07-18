@@ -83,6 +83,9 @@ function setConfig(partialConfig) {
 }
 
 const bindingPromiseByNode = new WeakMap();
+// resolve 済みマーク。エントリ未生成のまま resolve されたノードは、後から
+// wait された時に「生成して即 resolve」で追いつく。
+const resolvedNodes = new WeakSet();
 let id$1 = 0;
 function getInitializeBindingPromiseByNode(node) {
     let bindingPromise = bindingPromiseByNode.get(node) || null;
@@ -99,6 +102,9 @@ function getInitializeBindingPromiseByNode(node) {
         resolve: resolveFn
     };
     bindingPromiseByNode.set(node, bindingPromise);
+    if (resolvedNodes.has(node)) {
+        bindingPromise.resolve();
+    }
     return bindingPromise;
 }
 async function waitInitializeBinding(node) {
@@ -106,8 +112,15 @@ async function waitInitializeBinding(node) {
     await bindingPromise.promise;
 }
 function resolveInitializedBinding(node) {
-    const bindingPromise = getInitializeBindingPromiseByNode(node);
-    bindingPromise.resolve();
+    // ホットパス: リスト行では全 subscriber ノードがここを通るが、await する消費者
+    // （boundComponent / shadowRoot host）はほぼ居ない。既存エントリが無ければ
+    // Promise+closure を生成せず resolve 済みマークだけ残す（15 万個級の割り当て削減）。
+    const existing = bindingPromiseByNode.get(node);
+    if (typeof existing !== "undefined") {
+        existing.resolve();
+        return;
+    }
+    resolvedNodes.add(node);
 }
 
 const DELIMITER = '.';
@@ -575,7 +588,13 @@ function getBindingInfos(node, parseBindingTextResults) {
             });
         }
         else {
-            const replaceNode = document.createTextNode('');
+            // フラグメント登録時に事前正規化済みの Text ノードはそのまま replaceNode に
+            // 使う（node === replaceNode なら replaceToReplaceNode は no-op）。
+            // 実 DOM 上の wcs-text コメント（非フラグメント経路）は従来どおり
+            // 空 Text を生成して実行時に差し替える。
+            const replaceNode = node.nodeType === Node.TEXT_NODE
+                ? node
+                : document.createTextNode('');
             bindingInfos.push({
                 ...parseBindingTextResult,
                 node: node,
@@ -3153,6 +3172,38 @@ function consumeObserverSkipOnRemove(node) {
     observerSkipNodes.delete(node);
     return true;
 }
+// framework 自身がマウント（Content.appendTo / mountAfter）したノード。
+// 追加サブツリー走査の実質の仕事は connect-snapshot 待ち（observationPending）の
+// record への配送だけで、record 自体は同期マウント（activateContent → start）で
+// observer flush より先に active 済み。よって待ちがグローバルに 1 つも無ければ
+// 追加側走査も冗長であり丸ごとスキップできる（削除側スキップの対称形）。
+// マーク〜配送が単一 microtask で外部変異が割り込めない前提も削除側と同じ。
+const observerSkipAddedNodes = new WeakSet();
+function markObserverSkipOnAdd(node) {
+    observerSkipAddedNodes.add(node);
+}
+// マーク済みなら true を返しつつマークを消費する（削除側と同じ one-shot 契約）。
+function consumeObserverSkipOnAdd(node) {
+    if (!observerSkipAddedNodes.has(node)) {
+        return false;
+    }
+    observerSkipAddedNodes.delete(node);
+    return true;
+}
+// connect-snapshot 待ち（two-way sync=connect で未接続のまま activate された record）の
+// グローバル件数。> 0 の間は追加側スキップを無効化して従来走査に戻す。
+// increment は settleInitialRecord、decrement は readProducerSnapshot（消化時）と
+// runTeardowns（未消化のまま終端した record のリーク防止）が担う。
+let pendingObservationCount = 0;
+function incrementPendingObservation() {
+    pendingObservationCount++;
+}
+function decrementPendingObservation() {
+    pendingObservationCount--;
+}
+function hasPendingObservation() {
+    return pendingObservationCount > 0;
+}
 
 /**
  * Shares one CustomElementRegistry.whenDefined() continuation per registry/tag.
@@ -3251,12 +3302,22 @@ function parseSyncOn(value) {
 function hasInitialSyncModifier(binding) {
     return binding.propModifiers.some((modifier) => modifier.includes("="));
 }
+// 頻出ポリシー（修飾子なしの通常バインディング）の凍結シングルトン。リスト行では
+// binding ごとに resolveInitialSyncPolicy が走るため、毎回のオブジェクト割り当てを
+// 避ける（record.initialPolicy は読み取り専用でしか使われない）。
+const STATE_CALL_POLICY = Object.freeze({ authority: "state", syncOn: "call", observable: false });
+const NONE_CALL_POLICY = Object.freeze({ authority: "none", syncOn: "call", observable: false });
+function statePolicy(authority, syncOn) {
+    if (authority === "state" && syncOn === "call")
+        return STATE_CALL_POLICY;
+    return { authority, syncOn, observable: false };
+}
 function resolveInitialSyncPolicy(binding) {
     if (!config.enableDirectionalInitialSync) {
         if (hasInitialSyncModifier(binding)) {
             raiseError("init=/sync= modifiers require enableDirectionalInitialSync.");
         }
-        return { authority: "state", syncOn: "call", observable: false };
+        return STATE_CALL_POLICY;
     }
     const explicitAuthority = parseAuthority(readOption(binding, "init"));
     const syncOn = parseSyncOn(readOption(binding, "sync"));
@@ -3264,7 +3325,7 @@ function resolveInitialSyncPolicy(binding) {
         if (explicitAuthority !== null && explicitAuthority !== "none") {
             raiseError("Event bindings only allow init=none.");
         }
-        return { authority: "none", syncOn, observable: false };
+        return syncOn === "call" ? NONE_CALL_POLICY : { authority: "none", syncOn, observable: false };
     }
     // command.<name>: $command.<method> は命令的な command-token 配線。bindingType は
     // "prop" だが propName ("command.<name>") は wcBindable property ではないため、下の
@@ -3272,17 +3333,17 @@ function resolveInitialSyncPolicy(binding) {
     // 持たない配線なので、現行互換の "state" authority を返す(command token は従来通り
     // 初期 apply で配線される)。
     if (binding.propSegments[0] === "command") {
-        return { authority: "state", syncOn, observable: false };
+        return statePolicy("state", syncOn);
     }
     if (binding.bindingType !== "prop") {
         if (explicitAuthority !== null && explicitAuthority !== "state" && explicitAuthority !== "none") {
             raiseError(`Binding type "${binding.bindingType}" does not support init=${explicitAuthority}.`);
         }
-        return { authority: explicitAuthority ?? "state", syncOn, observable: false };
+        return statePolicy(explicitAuthority ?? "state", syncOn);
     }
     const declaration = readBindableDeclaration(binding.node);
     if (declaration === null) {
-        return { authority: explicitAuthority ?? "state", syncOn, observable: false };
+        return statePolicy(explicitAuthority ?? "state", syncOn);
     }
     const hasOutput = declaration.knownProperties.has(binding.propName);
     const hasInput = declaration.declaredInputs.has(binding.propName);
@@ -3451,6 +3512,11 @@ class BindingOwner {
             });
         }
         for (const subtree of added) {
+            // framework がマウントしたサブツリーは record が同期 activate 済みで、追加側
+            // 走査の実質の仕事は connect-snapshot 待ちへの配送だけ。待ちがグローバルに
+            // 無ければ丸ごとスキップする（待ちがあればマークだけ消費して従来走査に戻す）。
+            if (consumeObserverSkipOnAdd(subtree) && !hasPendingObservation())
+                continue;
             forEachInclusive(subtree, (node) => {
                 forEachInterestedSession(node, (session) => {
                     if (!this.root.contains(node))
@@ -3522,6 +3588,41 @@ class BindingSession {
             initialized.push(binding);
         }
         return initialized.filter((binding) => this.shouldApplyState(binding));
+    }
+    /**
+     * activateContent 専用の再活性化パス。createContent 側の initialize で
+     * remember 済みの binding 配列（bindingsByContent がそのまま保持する同一オブジェクト）
+     * にだけ使える前提で、remember の再実行（キー照合・options マージ・興味登録）を省き、
+     * 必要な仕事だけ行う: 初回活性化はアドレス登録+初期同期、pool 再利用（disposed）は
+     * start による再構築、未知の binding は防御的に従来 initialize へ倒す。
+     */
+    activate(bindings) {
+        for (const binding of bindings) {
+            const record = recordByBinding.get(binding);
+            if (typeof record !== "undefined" && record.session === this
+                && record.phase !== "disposed" && record.phase !== "failed") {
+                if (record.address === null) {
+                    // 初回活性化（mountAfter 経路では anchor が接続済みのことがあるため、
+                    // 従来 initialize と同様に owner の存在をここで保証する）
+                    this.observe(record.anchor);
+                    record.options.registerAddress = true;
+                    this.registerAddress(record);
+                }
+                if (record.phase === "active")
+                    this.settleInitialRecord(record);
+                this.settleConnectedSnapshot(record);
+                continue;
+            }
+            const options = this.optionsByBinding.get(binding);
+            if (typeof options === "undefined") {
+                // この session で remember されていない binding（防御）: 従来経路
+                this.initialize([binding], { registerAddress: true, registerPathInfo: false, applyOnReconnect: false });
+                continue;
+            }
+            // pool 再利用: record は disposed。活性化要件（アドレス登録）を昇格して再構築
+            options.registerAddress = true;
+            this.start(binding, options);
+        }
     }
     shouldApplyState(binding) {
         if (!config.enableDirectionalInitialSync) {
@@ -3609,6 +3710,35 @@ class BindingSession {
             this.deferred.delete(task);
             this.deferredByNode.get(task.node)?.delete(task);
         }
+    }
+    /**
+     * wholesale destroy（全行クリアで teardown を GC に任せる高速経路）を適用して
+     * よいか。定義待ち（DefinitionCoordinator の waiter / deferred spread タスク）は
+     * 強参照 Map に閉包が残り、connect-snapshot 待ちは pending カウンタが戻らなく
+     * なるため、1 つでもあれば従来経路（teardown 実行）に倒す。
+     */
+    canWholesaleDestroy() {
+        if (this.deferred.size > 0)
+            return false;
+        for (const record of this.records) {
+            if (record.pendingDefinitions > 0 || record.observationPending)
+                return false;
+        }
+        return true;
+    }
+    /**
+     * 全 record を teardown を走らせずに終端化する（canWholesaleDestroy が true の
+     * content 専用）。イベント listener・アドレス台帳・loopContext はノード/binding
+     * もろとも GC で崩壊する（recordByBinding 以下は全て弱参照）。
+     * handlerBindingRegistry のカウンタは減らないが、残るのはキー文字列と数値のみで
+     * 実害はない設計（handlerBindingRegistry.ts の弱参照化コメント参照）。
+     */
+    destroyRecords() {
+        for (const record of this.records) {
+            record.phase = "disposed";
+            record.teardowns.clear();
+        }
+        this.records.clear();
     }
     observe(node) {
         const root = observableRootFor(node);
@@ -3855,6 +3985,8 @@ class BindingSession {
                 && record.info.node instanceof HTMLElement
                 && !record.info.node.isConnected) {
                 record.observationPending = true;
+                // 待ちが 1 件でもある間は追加側 observer スキップを無効化する
+                incrementPendingObservation();
                 return;
             }
             this.readProducerSnapshot(record, policy.syncOn === "call");
@@ -3875,7 +4007,10 @@ class BindingSession {
             return;
         const sequence = record.eventSequence;
         const value = target[name];
-        record.observationPending = false;
+        if (record.observationPending) {
+            record.observationPending = false;
+            decrementPendingObservation();
+        }
         if (eventWins && record.eventSequence !== sequence)
             return;
         record.hasProducerValue = true;
@@ -3939,6 +4074,12 @@ class BindingSession {
         this.records.delete(record);
     }
     runTeardowns(record) {
+        // runTeardowns は record の終端（disposed / failed）でのみ呼ばれる。未消化の
+        // connect-snapshot 待ちが残っていれば必ずカウンタを戻す（スキップ再有効化）。
+        if (record.observationPending) {
+            record.observationPending = false;
+            decrementPendingObservation();
+        }
         const teardowns = Array.from(record.teardowns).reverse();
         record.teardowns.clear();
         for (const teardown of teardowns) {
@@ -4628,11 +4769,9 @@ function activateContent(content, loopContext, context) {
     const bindings = getBindingsByContent(content);
     const session = getBindingSessionByContent(content);
     if (session !== null) {
-        session.initialize(bindings, {
-            registerAddress: true,
-            registerPathInfo: false,
-            applyOnReconnect: false,
-        });
+        // createContent 側の initialize で remember 済みの同一 binding 配列なので、
+        // remember を再実行しない専用パスで活性化する（リスト行生成のホットパス）
+        session.activate(bindings);
     }
     for (const binding of bindings) {
         if (session === null) {
@@ -4719,6 +4858,10 @@ class Content {
     }
     appendTo(targetNode) {
         for (const node of this._childNodeArray) {
+            // framework 起点のマウントを observer に伝える。中間 fragment へ append する
+            // 経路でも、後続の一括 insertBefore(fragment) の mutation record には
+            // この top-level node が addedNodes として現れるため、ここでのマークが届く。
+            markObserverSkipOnAdd(node);
             targetNode.appendChild(node);
         }
         this._mounted = true;
@@ -4728,10 +4871,41 @@ class Content {
         const nextSibling = targetNode.nextSibling;
         if (parentNode) {
             for (const node of this._childNodeArray) {
+                markObserverSkipOnAdd(node);
                 parentNode.insertBefore(node, nextSibling);
             }
         }
         this._mounted = true;
+    }
+    tryDestroy() {
+        const session = getBindingSessionByContent(this);
+        // session 無し（SSR ハイドレーション産）や、定義待ち・connect-snapshot 待ちを
+        // 抱える content は teardown 省略でリークするため従来経路に倒す。
+        if (session === null || !session.canWholesaleDestroy()) {
+            return false;
+        }
+        session.destroyRecords();
+        for (const node of this._childNodeArray) {
+            // unmount と同じ理由の observer 向け削除マーク（clear の一括削除でも
+            // top-level node が mutation record の root に現れる）
+            markObserverSkipOnRemove(node);
+            if (node.parentNode !== null) {
+                node.parentNode.removeChild(node);
+            }
+        }
+        const bindings = getBindingsByContent(this);
+        for (const binding of bindings) {
+            if (recursiveBindingTypes.has(binding.bindingType)) {
+                const contents = getContentSetByNode(binding.node);
+                for (const content of contents) {
+                    if (!content.tryDestroy()) {
+                        content.unmount();
+                    }
+                }
+            }
+        }
+        this._mounted = false;
+        return true;
     }
     unmount() {
         getBindingSessionByContent(this)?.dispose();
@@ -4906,10 +5080,10 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
     const diff = createListDiff(listIndex, lastValue, newValue);
     context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
-    if (Array.isArray(lastValue)
+    const fullDelete = Array.isArray(lastValue)
         && lastValue.length === diff.deleteIndexSet.size
-        && diff.deleteIndexSet.size > 0
-        && bindingInfo.node.parentNode !== null) {
+        && diff.deleteIndexSet.size > 0;
+    if (fullDelete && bindingInfo.node.parentNode !== null) {
         let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
         if (typeof isOnlyNode === 'undefined') {
             const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
@@ -4922,12 +5096,25 @@ function applyChangeToFor(bindingInfo, context, newValue) {
             parentNode.appendChild(bindingInfo.node);
         }
     }
+    // 全削除時、プールに収まらない content は再利用されないため、per-binding の
+    // teardown（listener 解除・アドレス台帳・loopContext 掃除）を丸ごと省略して
+    // ノードごと GC に任せる（tryDestroy）。プール行きの分だけ従来どおり解体する
+    // （プール行は binding が生存し続けるため address キャッシュのクリアが必須）。
+    let poolBudget = fullDelete
+        ? maxPooledContents - getPooledContents(bindingInfo).length
+        : Number.POSITIVE_INFINITY;
     for (const deleteIndex of diff.deleteIndexSet) {
         const content = getContent(bindingInfo.node, deleteIndex);
         if (content !== null) {
-            deactivateContent(content);
-            content.unmount();
-            setPooledContent(bindingInfo, content);
+            if (poolBudget <= 0 && content.tryDestroy()) {
+                deleteContentByNode(bindingInfo.node, content);
+            }
+            else {
+                deactivateContent(content);
+                content.unmount();
+                setPooledContent(bindingInfo, content);
+                poolBudget -= 1;
+            }
             setContent(bindingInfo.node, deleteIndex, null);
         }
     }
@@ -5508,6 +5695,10 @@ const applyChangeByBindingType = {
 };
 const fnByBinding = new WeakMap();
 const deferredSelectBindingByBinding = new WeakMap();
+// 未 define カスタム要素チェックの確定メモ。customTag が無い、または define 済みを
+// 一度確認したら以後は不変（define は不可逆）なので apply 毎の getCustomElement /
+// registry 照会を省略できる。scoped registry を導入する場合はこの不可逆前提を再検討。
+const definedApplyVerifiedByBinding = new WeakMap();
 function _applyChange(binding, context) {
     const value = getValue(context.state, binding);
     const filteredValue = getFilteredValue(value, binding.outFilters);
@@ -5593,16 +5784,20 @@ function applyChange(binding, context) {
     if (binding.bindingType === "event") {
         return;
     }
-    const customTag = getCustomElement(binding.replaceNode);
-    if (customTag) {
-        if (getCustomElementRegistry()?.get(customTag) === undefined) {
-            // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
-            // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
-            // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
-            // spread と対称。docs/state-binding-init-races.md §2）。
-            scheduleDeferredApply(binding, customTag);
-            return;
+    if (definedApplyVerifiedByBinding.get(binding) !== true) {
+        const customTag = getCustomElement(binding.replaceNode);
+        if (customTag) {
+            if (getCustomElementRegistry()?.get(customTag) === undefined) {
+                // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
+                // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
+                // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred
+                // spread と対称。docs/state-binding-init-races.md §2）。
+                scheduleDeferredApply(binding, customTag);
+                return;
+            }
         }
+        // customTag 無し or define 済み確定 → 以後この検査を省略（不可逆）
+        definedApplyVerifiedByBinding.set(binding, true);
     }
     // applyChangeFromBindings のグループ化ループが解決済みルートの一致を検証済みの
     // 場合、stateName さえ一致すれば getRootNode の再解決（native 呼び出し）を省略
@@ -5955,8 +6150,24 @@ function getFragmentNodeInfos(fragment) {
     const subscriberNodes = getSubscriberNodes(fragment);
     for (const subscriberNode of subscriberNodes) {
         const parseBindingTextResults = getParseBindTextResults(subscriberNode);
+        let node = subscriberNode;
+        // テンプレート登録時の事前正規化: text 専用の wcs-text コメントは、この時点で
+        // 空 Text に置き換えておく。行 clone は最初から Text を持ち、getBindingInfos が
+        // その Text を replaceNode に使うため、行ごとの createTextNode と start() 時の
+        // replaceChild（コメント→Text 差し替え）が丸ごと不要になる。
+        // 置換は同じ位置なので nodePath は不変。wcs-for/if 等の構造コメントは
+        // アンカーとしてコメントのまま維持する（bindingType で判別）。
+        // 非フラグメント経路（実 DOM 上のコメント）は従来どおり実行時に差し替える。
+        if (subscriberNode.nodeType === Node.COMMENT_NODE
+            && parseBindingTextResults.length === 1
+            && parseBindingTextResults[0].bindingType === "text"
+            && subscriberNode.parentNode !== null) {
+            const textNode = document.createTextNode("");
+            subscriberNode.parentNode.replaceChild(textNode, subscriberNode);
+            node = textNode;
+        }
         fragmnentNodeInfos.push({
-            nodePath: getNodePath(subscriberNode),
+            nodePath: getNodePath(node),
             parseBindTextResults: parseBindingTextResults,
         });
     }
@@ -8640,7 +8851,6 @@ const _cache = new Map();
 class ResolvedAddress {
     path;
     segments;
-    paths;
     wildcardCount;
     wildcardType;
     wildcardIndexes;
@@ -8657,10 +8867,8 @@ class ResolvedAddress {
         // Split path into individual segments
         const segments = path.split(".");
         const tmpPatternSegments = segments.slice();
-        const paths = [];
         let incompleteCount = 0; // Count of unresolved wildcards (*)
         let completeCount = 0; // Count of resolved wildcards (numeric indexes)
-        let lastPath = "";
         let wildcardCount = 0;
         let wildcardType = "none";
         const wildcardIndexes = [];
@@ -8684,10 +8892,6 @@ class ResolvedAddress {
                     wildcardCount++;
                 }
             }
-            // Build cumulative path array
-            lastPath += segment;
-            paths.push(lastPath);
-            lastPath += (i < segment.length - 1 ? "." : "");
         }
         // Generate pattern string with wildcards normalized
         const structuredPath = tmpPatternSegments.join(".");
@@ -8709,7 +8913,6 @@ class ResolvedAddress {
         }
         this.path = path;
         this.segments = segments;
-        this.paths = paths;
         this.wildcardCount = wildcardCount;
         this.wildcardType = wildcardType;
         this.wildcardIndexes = wildcardIndexes;
@@ -9052,6 +9255,7 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
         }
     }
 }
+const EMPTY_INDEXES = [];
 /**
  * 静的子展開で訪問する listIndex 群を選ぶ。"diff" でも次の場合は全行に倒す:
  * - diff に変化が一切見えない再代入（同一参照および内容同一コピーの再代入。
@@ -9062,26 +9266,60 @@ function _walkExpandWildcard(context, currentWildcardIndex, parentListIndex) {
  */
 function selectExpansionIndexes(context, sourcePath, _lastValue, _newValue, listDiff) {
     if (context.listExpansion === "full") {
-        return listDiff.newIndexes;
+        return { fullRows: listDiff.newIndexes, movedRows: null };
     }
     if (context.stateElement.crossRowListPaths?.has(sourcePath)) {
-        return listDiff.newIndexes;
+        return { fullRows: listDiff.newIndexes, movedRows: null };
     }
     if (listDiff.addIndexSet.size === 0 && listDiff.changeIndexSet.size === 0) {
         // 追加も移動も無い。削除も無ければ「変化が見えない再代入」= リフレッシュ意図
         if (listDiff.deleteIndexSet.size === 0) {
-            return listDiff.newIndexes;
+            return { fullRows: listDiff.newIndexes, movedRows: null };
         }
         // 削除のみ: 残存行は位置も値も不変なので展開しない
-        return listDiff.changeIndexSet;
+        return { fullRows: EMPTY_INDEXES, movedRows: null };
     }
-    if (listDiff.addIndexSet.size === 0) {
-        return listDiff.changeIndexSet;
+    return { fullRows: listDiff.addIndexSet, movedRows: listDiff.changeIndexSet };
+}
+const EMPTY_PATH_INFOS = [];
+/**
+ * 位置だけが変わった行（movedRows）で展開すべきパス群を求める。
+ * `${listPath}.*` の静的 subtree を辿り、$1 等を読んだ実績のある getter
+ * （indexDependentGetterPaths）だけを返す。行の同一性・listIndex は保たれ
+ * index 以外の入力が不変なので、index を読まない getter / 値パスは再評価不要。
+ * 戻り値:
+ * - IPathInfo[]（空可）: この各パスだけを行の listIndex で展開する
+ * - null: ネストしたワイルドカード配下に index 依存 getter がある
+ *   （listIndex の階数が合わず個別展開できない）→ 呼び出し側で行全体展開に倒す
+ */
+function getMovedRowExpansionPaths(context, wildcardPath, depPathInfo) {
+    const indexGetters = context.stateElement.indexDependentGetterPaths;
+    if (!indexGetters || indexGetters.size === 0) {
+        return EMPTY_PATH_INFOS;
     }
-    if (listDiff.changeIndexSet.size === 0) {
-        return listDiff.addIndexSet;
+    let result = null;
+    const queue = [wildcardPath];
+    const seen = new Set(queue);
+    for (let i = 0; i < queue.length; i++) {
+        const path = queue[i];
+        if (indexGetters.has(path)) {
+            const pathInfo = getPathInfo(path);
+            if (pathInfo.wildcardCount !== depPathInfo.wildcardCount) {
+                return null;
+            }
+            (result ??= []).push(pathInfo);
+        }
+        const children = context.staticMap.get(path);
+        if (children) {
+            for (const child of children) {
+                if (!seen.has(child)) {
+                    seen.add(child);
+                    queue.push(child);
+                }
+            }
+        }
     }
-    return [...listDiff.addIndexSet, ...listDiff.changeIndexSet];
+    return result ?? EMPTY_PATH_INFOS;
 }
 function _walkDependency(context, startAddress, callback) {
     const stack = [{ address: startAddress, depth: 0 }];
@@ -9115,10 +9353,34 @@ function _walkDependency(context, startAddress, callback) {
                     const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
                     const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
                     const listDiff = createListDiff(address.listIndex, lastValue, newValue);
-                    for (const listIndex of selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff)) {
+                    const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
+                    for (const listIndex of selection.fullRows) {
                         const depAddress = createStateAddress(depPathInfo, listIndex);
                         context.result.add(depAddress);
                         nextEntries.push({ address: depAddress, depth: nextDepth });
+                    }
+                    if (selection.movedRows !== null) {
+                        const movedPathInfos = getMovedRowExpansionPaths(context, dep, depPathInfo);
+                        if (movedPathInfos === null) {
+                            // ネスト配下に index 依存 getter: 安全側で行全体を展開（従来挙動）
+                            for (const listIndex of selection.movedRows) {
+                                const depAddress = createStateAddress(depPathInfo, listIndex);
+                                context.result.add(depAddress);
+                                nextEntries.push({ address: depAddress, depth: nextDepth });
+                            }
+                        }
+                        else if (movedPathInfos.length > 0) {
+                            // 位置のみ変わった行は index 依存 getter のパスだけを展開する
+                            for (const listIndex of selection.movedRows) {
+                                for (const pathInfo of movedPathInfos) {
+                                    const depAddress = createStateAddress(pathInfo, listIndex);
+                                    context.result.add(depAddress);
+                                    nextEntries.push({ address: depAddress, depth: nextDepth });
+                                }
+                            }
+                        }
+                        // movedPathInfos が空: index を読む getter が subtree に無い =
+                        // 位置のみ変わった行の値は不変。展開・dirty 化とも不要。
                     }
                 }
                 else {
@@ -9210,6 +9472,15 @@ function _walkDependency(context, startAddress, callback) {
     }
 }
 function walkDependency(stateName, stateElement, startAddress, staticDependency, dynamicDependency, listPathSet, stateProxy, searchType, callback, options) {
+    // 依存ゼロの葉パス（staticMap / dynamicMap にエントリ無し）は context や Set を
+    // 割り当てず、開始アドレスの callback だけで完結する。リスト行の値書き込み
+    // （update ホットパス）は set 毎にここを通る。開始アドレスへの callback は
+    // 従来の walk 先頭と同一で、戻り値（依存アドレス群）も従来どおり空。
+    const startPath = startAddress.pathInfo.path;
+    if (!staticDependency.has(startPath) && !dynamicDependency.has(startPath)) {
+        callback(startAddress);
+        return [];
+    }
     const context = {
         stateElement: stateElement,
         staticMap: staticDependency,
@@ -9242,6 +9513,31 @@ function walkDependency(stateName, stateElement, startAddress, staticDependency,
  * - finallyで必ず更新情報を登録し、再描画や依存解決に利用
  * - getter/setter経由のスコープ切り替えも考慮した設計
  */
+// Phase 3: 書き込み時点の因果 context を update record に付与する。
+// binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
+// binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
+// 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
+function notifyWrite(address, absAddress, receiver, handler) {
+    const propagationContext = config.enablePropagationContext
+        ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
+        : null;
+    const updater = getUpdater();
+    updater.enqueueAbsoluteAddress(absAddress, propagationContext);
+    // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
+    walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
+        // キャッシュを無効化（ダーティ）
+        if (depAddress === address)
+            return;
+        const absDepPathInfo = getAbsolutePathInfo(handler.stateElement, depAddress.pathInfo);
+        const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
+        dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
+        // 更新対象として登録
+        updater.enqueueAbsoluteAddress(absDepAddress, propagationContext);
+    }, 
+    // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
+    // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
+    { listExpansion: "diff" });
+}
 function _setByAddress(target, address, absAddress, value, receiver, handler) {
     try {
         if (address.pathInfo.path in target) {
@@ -9276,29 +9572,7 @@ function _setByAddress(target, address, absAddress, value, receiver, handler) {
         }
     }
     finally {
-        // Phase 3: 書き込み時点の因果 context を update record に付与する。
-        // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
-        // binding 外からの API update は新しい transaction を開始する（設計書 §4 規則 1）。
-        // 依存 walk で enqueue される派生アドレスも同じ書き込みの因果に属する。
-        const propagationContext = config.enablePropagationContext
-            ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
-            : null;
-        const updater = getUpdater();
-        updater.enqueueAbsoluteAddress(absAddress, propagationContext);
-        // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-        walkDependency(handler.stateName, handler.stateElement, address, handler.stateElement.staticDependency, handler.stateElement.dynamicDependency, handler.stateElement.listPaths, receiver, "new", (depAddress) => {
-            // キャッシュを無効化（ダーティ）
-            if (depAddress === address)
-                return;
-            const absDepPathInfo = getAbsolutePathInfo(handler.stateElement, depAddress.pathInfo);
-            const absDepAddress = createAbsoluteStateAddress(absDepPathInfo, depAddress.listIndex);
-            dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
-            // 更新対象として登録
-            updater.enqueueAbsoluteAddress(absDepAddress, propagationContext);
-        }, 
-        // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
-        // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
-        { listExpansion: "diff" });
+        notifyWrite(address, absAddress, receiver, handler);
     }
 }
 function _setByAddressWithSwap(target, address, absAddress, value, receiver, handler) {
@@ -9339,6 +9613,75 @@ function _setByAddressWithSwap(target, address, absAddress, value, receiver, han
 }
 function setByAddress(target, address, value, receiver, handler) {
     const stateElement = handler.stateElement;
+    const path = address.pathInfo.path;
+    // --- fast path: 宣言済み getter/setter でも swap 対象でもない、親を持つ葉パス ---
+    // 従来は same-value guard の値読み・hasByAddress・実書き込みがそれぞれ親チェーンを
+    // 解決していた（キャッシュヒットでも getByAddress 呼び出しの固定費 ×3）。
+    // 親を 1 回だけ解決し、同じ親オブジェクトに対して guard 判定と Reflect.set を行う。
+    // 非オブジェクト親などの例外形は従来経路へ倒し、挙動差を作らない。
+    if (!(path in target) && address.parentAddress !== null && !stateElement.elementPaths.has(path)) {
+        const parentValue = getByAddress(target, address.parentAddress, receiver, handler);
+        if (typeof parentValue === "object" && parentValue !== null) {
+            // ワイルドカード末尾で listIndex が無い不正アドレスは、従来どおり
+            // 書き込み時（enqueue 済みの try 内）に raiseError する → key は undefined のまま持ち回す
+            const lastSegment = address.pathInfo.lastSegment;
+            const key = lastSegment === WILDCARD
+                ? address.listIndex?.index
+                : lastSegment;
+            let devOldValue;
+            let devHasOldValue = false;
+            if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+                // hasByAddress と同じ「初期化済みスロットか」判定（undefined 格納と未初期化を区別）
+                const has = key !== undefined && key in parentValue;
+                const oldValue = key !== undefined ? parentValue[key] : undefined;
+                if (has && Object.is(oldValue, value)) {
+                    return true;
+                }
+                devOldValue = oldValue;
+                devHasOldValue = true;
+            }
+            const cacheable = address.pathInfo.wildcardCount > 0 ||
+                stateElement.getterPaths.has(path);
+            const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
+            const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+            if (devtoolsSink !== null) {
+                devtoolsSink({
+                    type: "state:write",
+                    absoluteAddress: absAddress,
+                    value,
+                    oldValue: devOldValue,
+                    hasOldValue: devHasOldValue,
+                });
+            }
+            try {
+                if (key === undefined) {
+                    raiseError(`address.listIndex?.index is undefined path: ${path}`);
+                }
+                return Reflect.set(parentValue, key, value);
+            }
+            finally {
+                notifyWrite(address, absAddress, receiver, handler);
+                if (cacheable) {
+                    setCacheEntryByAbsoluteStateAddress(absAddress, {
+                        value: value,
+                        dirty: false
+                    });
+                }
+                // DCC bindable イベントディスパッチ
+                const eventName = stateElement.bindableEventMap[path];
+                if (eventName) {
+                    const rootNode = stateElement.rootNode;
+                    if (rootNode instanceof ShadowRoot) {
+                        rootNode.host.dispatchEvent(new CustomEvent(eventName, {
+                            detail: value,
+                            bubbles: true,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+    // --- end fast path ---
     // --- same-value guard (config.sameValueGuard・既定 ON) ---
     // primitive 値かつ Object.is 同値なら、set / enqueue / walkDependency / DOM 適用 /
     // $updatedCallback / DCC イベントを丸ごとスキップ（標準的なリアクティブ no-op）。
@@ -9760,13 +10103,33 @@ async function setLoopContextAsync(handler, loopContext, callback) {
 // `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
 const STREAM_STATUS_PATH_PREFIX = `${STATE_STREAM_STATUS_NAMESPACE_NAME}${DELIMITER}`;
 const STREAM_ERROR_PATH_PREFIX = `${STATE_STREAM_ERROR_NAMESPACE_NAME}${DELIMITER}`;
+// symbol API のクロージャは handler（= proxy と 1:1、target/receiver 不変）ごとに
+// 使い回す。drain の getValue が binding ごとに getByAddressSymbol を引くため、
+// 毎回の新規クロージャ生成が GC 圧・固定費になっていた。
+const symbolApiCacheByHandler = new WeakMap();
+function getSymbolApiCache(handler) {
+    let cache = symbolApiCacheByHandler.get(handler);
+    if (typeof cache === "undefined") {
+        cache = new Map();
+        symbolApiCacheByHandler.set(handler, cache);
+    }
+    return cache;
+}
 function get(target, prop, receiver, handler) {
     const index = INDEX_BY_INDEX_NAME[prop];
     if (typeof index !== "undefined") {
         if (handler.addressStackLength === 0) {
             raiseError(`No active state reference to get list index for "${prop.toString()}".`);
         }
-        const listIndex = handler.lastAddressStack?.listIndex;
+        const lastAddress = handler.lastAddressStack;
+        // getter 評価中のインデックス読み取りを記録する。位置だけが変わった行
+        // （listDiff.changeIndexSet）は index 以外の入力が不変なので、walkDependency の
+        // 静的子展開を「インデックスを読んだ getter の subtree」に限定できる。
+        const lastInfo = lastAddress?.pathInfo;
+        if (lastInfo && handler.stateElement?.getterPaths.has(lastInfo.path)) {
+            handler.stateElement.addIndexDependentGetterPath?.(lastInfo.path);
+        }
+        const listIndex = lastAddress?.listIndex;
         return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
     }
     if (typeof prop === "string") {
@@ -9821,49 +10184,67 @@ function get(target, prop, receiver, handler) {
         return getByAddress(target, stateAddress, receiver, handler);
     }
     else if (typeof prop === "symbol") {
+        const cache = getSymbolApiCache(handler);
+        const cached = cache.get(prop);
+        if (typeof cached !== "undefined") {
+            return cached;
+        }
+        let api;
         switch (prop) {
             case setLoopContextAsyncSymbol: {
-                return (loopContext, callback = async () => { }) => {
+                api = (loopContext, callback = async () => { }) => {
                     return setLoopContextAsync(handler, loopContext, callback);
                 };
+                break;
             }
             case setLoopContextSymbol: {
-                return (loopContext, callback = () => { }) => {
+                api = (loopContext, callback = () => { }) => {
                     return setLoopContext(handler, loopContext, callback);
                 };
+                break;
             }
             case getByAddressSymbol: {
-                return (address) => {
+                api = (address) => {
                     return getByAddress(target, address, receiver, handler);
                 };
+                break;
             }
             case hasByAddressSymbol: {
-                return (address) => {
+                api = (address) => {
                     return hasByAddress(target, address, receiver, handler);
                 };
+                break;
             }
             case setByAddressSymbol: {
-                return (address, value) => {
+                api = (address, value) => {
                     return setByAddress(target, address, value, receiver, handler);
                 };
+                break;
             }
             case connectedCallbackSymbol: {
-                return () => {
-                    return connectedCallback(target, prop, receiver);
+                api = () => {
+                    return connectedCallback(target, connectedCallbackSymbol, receiver);
                 };
+                break;
             }
             case disconnectedCallbackSymbol: {
-                return () => {
-                    return disconnectedCallback(target, prop, receiver);
+                api = () => {
+                    return disconnectedCallback(target, disconnectedCallbackSymbol, receiver);
                 };
+                break;
             }
             case updatedCallbackSymbol: {
-                return (refs) => {
+                api = (refs) => {
                     return updatedCallback(target, refs, receiver, handler);
                 };
+                break;
+            }
+            default: {
+                return Reflect.get(target, prop, receiver);
             }
         }
-        return Reflect.get(target, prop, receiver);
+        cache.set(prop, api);
+        return api;
     }
 }
 
@@ -10402,6 +10783,9 @@ class State extends HTMLElementBase {
     // 他行を読む getter が検出されたリストパス（diff-filter 展開の全行フォールバック対象）。
     // 依存マップ（static/dynamic）と同様に追加のみ・クリアしない（安全側に固定される）。
     _crossRowListPaths = new Set();
+    // $1 等のインデックスを読んだ getter パス（実行時検出）。位置のみ変わった行の
+    // 静的子展開はこの集合の subtree に限定される。追加のみ・クリアしない（安全側）。
+    _indexDependentGetterPaths = new Set();
     _name = 'default';
     _initialized = false;
     _initializePromise;
@@ -10900,6 +11284,12 @@ class State extends HTMLElementBase {
     }
     addCrossRowListPath(path) {
         this._crossRowListPaths.add(path);
+    }
+    get indexDependentGetterPaths() {
+        return this._indexDependentGetterPaths;
+    }
+    addIndexDependentGetterPath(path) {
+        this._indexDependentGetterPaths.add(path);
     }
     bindProperty(prop, desc) {
         Object.defineProperty(this._state, prop, desc);
