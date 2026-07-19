@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/permission",
-  "version": "1.21.6",
+  "version": "1.21.7",
   "description": "Declarative permission-state component for Web Components. Framework-agnostic Permissions API monitor via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

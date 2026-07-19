@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/contacts",
-  "version": "1.21.6",
+  "version": "1.21.7",
   "description": "Declarative Contact Picker component for Web Components. Framework-agnostic navigator.contacts.select() wrapper via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
