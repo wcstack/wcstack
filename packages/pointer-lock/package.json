@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/pointer-lock",
-  "version": "1.21.5",
+  "version": "1.21.6",
   "description": "Declarative Pointer Lock component for Web Components. Framework-agnostic Pointer Lock API control via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
