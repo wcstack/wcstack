@@ -3849,13 +3849,22 @@ class BindingSession {
     }
     /**
      * 全 record を teardown を走らせずに終端化する（canWholesaleDestroy が true の
-     * content 専用）。イベント listener・アドレス台帳・loopContext はノード/binding
-     * もろとも GC で崩壊する（recordByBinding 以下は全て弱参照）。
+     * content 専用）。イベント listener・loopContext・パターン台帳（listIndex キー）は
+     * ノード/binding もろとも GC で崩壊する（recordByBinding 以下は全て弱参照）。
+     * 例外は null-listIndex の従来台帳（record.address）: キーの intern 済み
+     * AbsoluteStateAddress が PathInfo キャッシュ経由で生涯生存するため GC で
+     * 崩壊せず、共有エントリに残った binding が binding.node 経由で行 DOM 全体を
+     * 永久リークする。ここだけ明示除去する（行イベント binding が典型で行あたり
+     * 高々数件・Set.delete のみなので wholesale の速度特性は保たれる）。
      * handlerBindingRegistry のカウンタは減らないが、残るのはキー文字列と数値のみで
      * 実害はない設計（handlerBindingRegistry.ts の弱参照化コメント参照）。
      */
     destroyRecords() {
         for (const record of this.records) {
+            if (record.address !== null) {
+                removeBindingByAbsoluteStateAddress(record.address, record.info);
+                record.address = null;
+            }
             record.phase = "disposed";
             record.teardowns = null;
         }
