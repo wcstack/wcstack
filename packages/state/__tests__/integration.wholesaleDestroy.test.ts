@@ -13,6 +13,9 @@ import { getStateElementByName } from "../src/stateElementByName";
 import { __test_setMaxPooledContents } from "../src/apply/applyChangeToFor";
 import { getBindingSessionByContent } from "../src/bindings/bindingSessionByContent";
 import { getContentSetByNode } from "../src/structural/contentsByNode";
+import { getBindingsByContent } from "../src/bindings/bindingsByContent";
+import { getAbsoluteStateAddressByBinding } from "../src/binding/getAbsoluteStateAddressByBinding";
+import { peekBindingsByAbsoluteStateAddress } from "../src/binding/getBindingSetByAbsoluteStateAddress";
 
 beforeAll(() => {
   bootstrapState();
@@ -127,6 +130,39 @@ describe("clear の wholesale destroy（統合）", () => {
     expect(shadowRoot.querySelectorAll("li")).toHaveLength(0);
     // フォールバック（unmount の session.dispose）で deferred も掃除される
     expect((innerSession as any).deferred.size).toBe(0);
+    host.remove();
+  });
+
+  it("wholesale destroy が null-listIndex 台帳からイベント binding を除去すること（DOM リーク回帰）", async () => {
+    // 行のイベント binding（ワイルドカード無しパス）は listIndex が null のため
+    // 従来台帳（intern 済み生涯生存キー）に登録される。wholesale destroy が
+    // ここを除去しないと、共有エントリに残った binding.node 経由で破棄済み行の
+    // DOM 全体が永久リークする（create→clear 反復でヒープ無限成長）。
+    restoreCap = __test_setMaxPooledContents(0);
+    const { host, shadowRoot, stateElement } = await mount(
+      {
+        items: [{ v: 1 }, { v: 2 }, { v: 3 }],
+        onPick() { /* noop */ },
+      },
+      `<ul><template data-wcs="for: items"><li><a data-wcs="onclick: onPick">{{ .v }}</a></li></template></ul>`,
+    );
+    const anchor = Array.from(shadowRoot.querySelector("ul")!.childNodes)
+      .find(n => n.nodeType === Node.COMMENT_NODE)!;
+    const eventBindings = Array.from(getContentSetByNode(anchor))
+      .flatMap(c => Array.from(getBindingsByContent(c)))
+      .filter(b => b.bindingType === "event" && b.statePathName === "onPick");
+    expect(eventBindings).toHaveLength(3);
+    const address = getAbsoluteStateAddressByBinding(eventBindings[0]);
+    const before = peekBindingsByAbsoluteStateAddress(address);
+    expect(before instanceof Set ? before.size : (before ? 1 : 0)).toBe(3);
+
+    stateElement.createState("writable", (s: any) => { s.items = []; });
+    await flush();
+    expect(shadowRoot.querySelectorAll("li")).toHaveLength(0);
+
+    // 全行 wholesale 破棄後、台帳エントリに破棄済み binding が残っていないこと
+    const after = peekBindingsByAbsoluteStateAddress(address);
+    expect(after instanceof Set ? after.size : (after ? 1 : 0)).toBe(0);
     host.remove();
   });
 
