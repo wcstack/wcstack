@@ -15,16 +15,13 @@ The smallest page where all three `<wcs-devtools>` panes have real work to do:
 
 ## Run
 
-```bash
-node examples/state-devtools-playground/server.js
-# → http://localhost:3000/  then Alt+Shift+D (or click the WCS badge)
-```
+The packages load from a CDN ([esm.run](https://esm.run)), so there is no
+backend and no build — any static server works:
 
-The server serves the **repo root** because the page loads the locally built
-dist of `@wcstack/devtools` and the instrumented `@wcstack/state` (run
-`npm run build` in `packages/devtools`, `packages/state` and `packages/timer`
-first). After the next release the `<script>` tags can switch to the usual
-`https://esm.run/@wcstack/<pkg>/auto` CDN one-liners.
+```bash
+npx serve examples/state-devtools-playground
+# → open the served URL, then Alt+Shift+D (or click the WCS badge)
+```
 
 ## Notes
 

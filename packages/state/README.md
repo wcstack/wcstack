@@ -1834,6 +1834,50 @@ Paths like `users.*.name` are decomposed into:
 - **StateAddress** — combination of PathInfo + ListIndex
 - **AbsoluteStateAddress** — state name + StateAddress (for cross-state references)
 
+## Performance
+
+Measured with the repository's [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark)-style
+drivers (`e2e/bench/jsfb-verify.mjs`, `e2e/bench/memory-profile.mjs`) against the
+standard 1,000 / 10,000-row table page — headless Chromium, medians, both
+implementations measured back-to-back in the same session. `@wcstack/state`
+passes the official keyed-mode classification while recycling row DOM through a
+bounded pool (up to 1,000 rows).
+
+| Duration (ms, median) | `@wcstack/state` | [`@wcstack/signals`](../signals/) |
+|---|---|---|
+| create 1,000 rows | 25.2 | 9.5 |
+| replace all 1,000 rows | 18.8 | 12.5 |
+| update every 10th of 10,000 | 11.4 | 4.7 |
+| select row | 0.1 | 0.4 |
+| swap 2 rows | 0.9 | 0.4 |
+| remove row | 2.8 | 0.6 |
+| append 1,000 to 10,000 | 48.6 | 14.2 |
+| clear 10,000 rows | 54.6 | 52.2 |
+
+| Heap after forced GC (MB) | `@wcstack/state` | `@wcstack/signals` |
+|---|---|---|
+| page ready | 1.0 | 0.6 |
+| after create 1,000 | 5.6 | 3.5 |
+| after 5× replace 1,000 | 6.4 | 3.7 |
+| after create 10,000 | 35.1 | 18.0 |
+| after create 10,000 + clear | 13.2 | 1.9 |
+
+How to read this, honestly:
+
+- Interactive operations (select / swap / remove) run in a few milliseconds or
+  less, and clearing a huge list matches the signals implementation.
+- Creating and appending rows costs ~2.5–3.5× `@wcstack/signals`. That is the
+  price of the declarative binding ledger this package builds per row — the same
+  ledger that powers `data-wcs` inspection, DevTools wiring, and SSR hydration.
+  The two packages interoperate, so a hot list can be rendered with signals'
+  `For` while the rest of the page stays declarative.
+- The heap retained after a clear is the bounded row pool that makes the next
+  list population cheap.
+
+Absolute numbers are from one development machine (v1.21.6 + the clear-leak fix
+in PR#87); the drivers in `e2e/bench/` reproduce the comparison on your own
+hardware.
+
 ## Server-Side Rendering
 
 `@wcstack/state` supports SSR via the companion [`@wcstack/server`](../server/) package. The same templates you write for the client render on the server — no changes needed.

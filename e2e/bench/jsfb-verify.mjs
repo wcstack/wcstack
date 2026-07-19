@@ -9,6 +9,8 @@
 //   - per-operation timings (median of N samples, MutationObserver-clocked)
 //
 // Usage (from e2e/):  node bench/jsfb-verify.mjs --label before --out results.json
+// --throttle N applies CDP CPU throttling (the official jsfb harness measures
+// at 4x slowdown); default 1 = unthrottled.
 // The server (serve.mjs) is spawned on PORT (default 4199) and killed on exit.
 
 import { spawn } from "node:child_process";
@@ -27,6 +29,7 @@ const PORT = Number(argOf("port", "4199"));
 const LABEL = argOf("label", "run");
 const OUT = argOf("out", `bench-${LABEL}.json`);
 const PAGE = argOf("page", "packages/state/__e2e__/benchmark/index.html");
+const THROTTLE = Number(argOf("throttle", "1"));
 const BENCH_URL = `http://127.0.0.1:${PORT}/${PAGE}`;
 
 // --- official isKeyed.ts instrumentation, minimally adapted (no shadow DOM) ---
@@ -362,6 +365,10 @@ async function main() {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     page.setDefaultTimeout(20000);
+    if (THROTTLE > 1) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
+    }
 
     console.log(`[${LABEL}] keyed classification (official isKeyed algorithm)...`);
     const keyed = await runKeyedChecks(page);
@@ -390,6 +397,7 @@ async function main() {
       label: LABEL,
       timestamp: new Date().toISOString(),
       url: BENCH_URL,
+      throttle: THROTTLE,
       keyed,
       timings,
     };
