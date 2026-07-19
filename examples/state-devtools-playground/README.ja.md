@@ -13,16 +13,13 @@
 
 ## 実行
 
-```bash
-node examples/state-devtools-playground/server.js
-# → http://localhost:3000/  Alt+Shift+D（または WCS バッジをクリック）
-```
+パッケージは CDN（[esm.run](https://esm.run)）から読み込むため、バックエンドも
+ビルドも不要。任意の静的サーバーで動く:
 
-このサーバーはローカルビルドの `@wcstack/devtools` と計装済み `@wcstack/state`
-を配信するため**リポジトリルート**を root にしている（先に `packages/devtools`
-/ `packages/state` / `packages/timer` で `npm run build` を実行）。次のリリース
-後は `<script>` を通常の CDN 一行（`https://esm.run/@wcstack/<pkg>/auto`）に
-差し替えられる。
+```bash
+npx serve examples/state-devtools-playground
+# → 表示された URL を開き Alt+Shift+D（または WCS バッジをクリック）
+```
 
 ## メモ
 

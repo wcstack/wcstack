@@ -8,9 +8,15 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const URL_ = "http://127.0.0.1:3000/";
+const URL_ = "http://127.0.0.1:3000/examples/state-devtools-playground/";
 
-const server = spawn(process.execPath, [`${ROOT}/examples/state-devtools-playground/server.js`], { stdio: "pipe" });
+// The example page loads packages from the CDN; e2e/serve.mjs rewrites those
+// esm.run references to the local packages/*/dist bundles so this smoke test
+// verifies the working tree, matching the rest of the e2e suite.
+const server = spawn(process.execPath, [`${ROOT}/e2e/serve.mjs`], {
+  env: { ...process.env, PORT: "3000" },
+  stdio: "pipe",
+});
 
 const errors = [];
 function fail(msg) {
