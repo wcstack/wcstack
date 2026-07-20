@@ -26,7 +26,11 @@
  * Rescue levels on abort:
  *   - ReadableStream: FULLY rescued. A parked read() is force-unwound via
  *     reader.cancel(), which both releases the underlying source and settles the
- *     pending read() so the loop unwinds.
+ *     pending read() so the loop unwinds. Anything getReader-bearing is routed
+ *     through this path even when it is ALSO natively async-iterable (Node 18+ /
+ *     Chrome 124+ / Firefox): the spec serializes asyncIterator.return() behind
+ *     the pending next() ([[ongoingPromise]]), so the AsyncIterable rescue below
+ *     cannot force-unwind a parked read on a native ReadableStream.
  *   - AsyncIterable / async generator: PARTIALLY rescued. On abort we call
  *     iterator.return() to trigger the generator's finally/cleanup. But a parked
  *     `await` (the producer stalling before its next yield while IGNORING `signal`)
@@ -113,21 +117,26 @@ export async function consumeSource(
 }
 
 function iterate(produced: StreamProducer, signal: AbortSignal): AsyncIterable<unknown> {
-  // Optional chaining: a null/undefined source return value must fall through to the
-  // explicit TypeError below (symmetric with the `?.` on the getReader probe), not
-  // throw an opaque "Cannot read properties of null" from this property access.
+  // Anything ReadableStream-shaped (has getReader) takes the reader path FIRST —
+  // even when it is also async-iterable. On runtimes where ReadableStream
+  // implements native async iteration (Node 18+ / Chrome 124+ / Firefox), the
+  // spec serializes `iterator.return()` behind the pending `next()`
+  // ([[ongoingPromise]]), so the AsyncIterable rescue cannot force-unwind a
+  // parked read: abort would hang the consume task until the producer's next
+  // chunk (or forever on a silent stream), leaking the underlying source.
+  // `reader.cancel()` has no such ordering — routing every getReader-bearing
+  // source through it keeps the FULL rescue promised for ReadableStream.
+  // Optional chaining: a null/undefined source return value must fall through to
+  // the explicit TypeError below, not throw an opaque property access error.
+  if (typeof (produced as ReadableStream<unknown>)?.getReader === "function") {
+    return readableToAsyncIterable(produced as ReadableStream<unknown>, signal);
+  }
   if (typeof (produced as AsyncIterable<unknown>)?.[Symbol.asyncIterator] === "function") {
     return produced as AsyncIterable<unknown>;
   }
-  // Not async-iterable: must be a ReadableStream (read via getReader). Validate so
-  // a wrong source value yields a clear error instead of an opaque "getReader is
-  // not a function" from inside the generator.
-  if (typeof (produced as ReadableStream<unknown>)?.getReader !== "function") {
-    throw new TypeError(
-      "[@wcstack/state] $streams: source must return an AsyncIterable or a ReadableStream (got neither).",
-    );
-  }
-  return readableToAsyncIterable(produced as ReadableStream<unknown>, signal);
+  throw new TypeError(
+    "[@wcstack/state] $streams: source must return an AsyncIterable or a ReadableStream (got neither).",
+  );
 }
 
 async function* readableToAsyncIterable(

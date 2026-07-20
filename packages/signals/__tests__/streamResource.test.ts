@@ -230,6 +230,34 @@ describe("streamResource", () => {
     expect(released).toBe(true);
   });
 
+  it("推奨イディオム: イベント API を包む native ReadableStream は restart abort で cancel() が走る", async () => {
+    // native ReadableStream は Node 18+ / Chrome 124+ / Firefox で async-iterable
+    // でもあるため、getReader を優先しない旧 iterate では AsyncIterable 経路に入り、
+    // iterator.return() が pending next() の後ろに直列化されて parked read を強制
+    // 解放できなかった（無音ストリームで restart がハング）。getReader 優先化の回帰テスト。
+    const id = signal(1);
+    let closed = 0;
+    const source = () =>
+      new ReadableStream<string>({
+        start(controller) {
+          controller.enqueue("first");
+          // 以後 enqueue しない = parked read（無音ストリーム）
+        },
+        cancel() {
+          closed += 1;
+        },
+      });
+    const r = streamResource<string>(source, { args: () => id.get() });
+    await flushAsync();
+    expect(r.value.peek()).toBe("first");
+
+    id.set(2); // restart → 旧 run を abort
+    flushSync();
+    await flushAsync();
+
+    expect(closed).toBe(1); // underlying リソース（EventSource 相当）が解放された
+  });
+
   it("ReadableStream が done まで消費されたら cancel は呼ばない", async () => {
     let cancelled = false;
     const fakeReadable = {

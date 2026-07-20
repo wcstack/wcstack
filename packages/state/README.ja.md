@@ -1495,9 +1495,32 @@ stream の値は普通のプロパティで、コンパニオンの status / err
 
 error 時、プロパティは直前の fold 結果を保持し、エラーは `$streamError.<name>` に入ります。`done` / `error` の stream も依存の変化で restart します（再試行 = 依存の叩き直し）。
 
+**イベント API の橋渡し** —— 実際の source の多くはコールバック型（`EventSource`・`WebSocket`・DOM イベント）で、async iterable ではありません。標準の `ReadableStream` で包んでください: `start` で enqueue し、`cancel` でリソースを解放します。`AbortSignal` には一切触れません —— restart / 破棄時は runtime が reader を cancel し、parked read を強制解放して `cancel()` まで届けます：
+
+```js
+$streams: {
+  metrics: {
+    args: (state) => ({ host: state.host }),
+    source: ({ host }) => {
+      const es = new EventSource(`/api/metrics?host=${host}`);
+      return new ReadableStream({
+        start(controller) {
+          es.addEventListener("metric", (e) => controller.enqueue(JSON.parse(e.data)));
+        },
+        cancel() { es.close(); },   // restart / 破棄時に走る
+      });
+    },
+    fold: (acc, sample) => [...acc, sample].slice(-20),
+    initial: [],
+  },
+},
+```
+
+手書きの async generator も producer 側の制御が要るときは引き続き完全サポートですが、abort 救済は*部分的*です: `signal` を無視して `await` で park した generator は外から強制解放できません。イベント API の橋渡しには `ReadableStream` 形を推奨します。
+
 重要な規範：
 
-- **協調キャンセル（MUST）** —— `source` は渡された `AbortSignal` を必ず監視し、発火したら生産を停止すること。
+- **協調キャンセル（MUST）** —— `source` は渡された `AbortSignal` を必ず監視し、発火したら生産を停止すること。`ReadableStream` の source はこの契約を `cancel()` コールバック経由で自動的に満たします（abort 時に runtime が reader を cancel します）。自前の async iterable だけが `signal` を自分で監視する必要があります。
 - **有界 fold** —— 需要は producer に逆流しません（backpressure は明示的に放棄）。無限 / 長寿命ストリームでは latest・count・last-N（`(acc, chunk) => [...acc.slice(-99), chunk]`）・ウィンドウ集計など有界な fold を使うこと。生の全チャンク累積は有限ストリーム限定。
 - **`args` は同期** —— Promise を返すとエラー。`args` 内での wildcard 読みも拒否されます。
 - **自己依存・相互サイクルの禁止** —— `args` が自 stream の値や status を読むとエラーになります。2 つの stream の相互サイクル（A の `args` が B の値を読み、B の `args` が A の値を読む）は検出されず無限 restart になるため組まないこと。一方向のチェイン（A の値を B の `args` が読む）は正当です。

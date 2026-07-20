@@ -177,6 +177,36 @@ describe("consumeSource", () => {
     expect(sink.fail).not.toHaveBeenCalled();
   });
 
+  it("推奨イディオム: イベント API を包む native ReadableStream は abort で cancel() が走りリソースが解放される", async () => {
+    // README「Streams」で正本化するブリッジ形: コールバック API（EventSource 等）を
+    // `new ReadableStream({ start, cancel })` で包み、cancel() にリソース解放を置く。
+    // source 側は signal に一切触れない — abort は runtime が reader.cancel() /
+    // iterator.return()（native async iteration 環境）経由で cancel() まで届ける。
+    const sink = makeSink();
+    const ac = new AbortController();
+    let closed = 0;
+    let emit: (chunk: unknown) => void = () => {};
+    const source: StreamSource = () =>
+      new ReadableStream({
+        start(controller) {
+          emit = (chunk) => controller.enqueue(chunk);
+        },
+        cancel() {
+          closed += 1;
+        },
+      });
+    const p = consumeSource(source, undefined, ac.signal, sink);
+    await flushAsync();
+    emit("first");
+    await flushAsync();
+    expect(sink.fold).toHaveBeenCalledWith("first");
+    ac.abort(); // parked read 中でも cancel() が強制的に届く
+    await p;
+    expect(closed).toBe(1); // underlying リソース（EventSource 相当）が解放された
+    expect(sink.done).not.toHaveBeenCalled();
+    expect(sink.fail).not.toHaveBeenCalled();
+  });
+
   it("P13: abort 時に AsyncIterable の return() を呼ぶ（generator の finally 救済）", async () => {
     const sink = makeSink();
     const ac = new AbortController();

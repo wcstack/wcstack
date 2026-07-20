@@ -66,8 +66,55 @@ function json(res, data, status = 200) {
   res.end(JSON.stringify(data));
 }
 
+// examples/state-sse-dashboard — a named "metric" SSE event every 300ms with a
+// host-specific profile (?host=a|b), plus an occasional "deploy". Mirrors
+// examples/state-sse-dashboard/server.js with a faster interval for tests.
+// The active-connection counter is exposed at /api/metrics-connections so the
+// spec can assert that a host switch really closes the superseded streams
+// (ReadableStream cancel() → EventSource.close() propagation).
+const SSE_HOSTS = {
+  a: { cpuBase: 32, rpsBase: 120 },
+  b: { cpuBase: 68, rpsBase: 480 },
+};
+let activeMetricsStreams = 0;
+
+function handleMetrics(req, res, url) {
+  const host = url.searchParams.get("host") === "b" ? "b" : "a";
+  const profile = SSE_HOSTS[host];
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-store",
+    "Connection": "keep-alive",
+  });
+  res.write("retry: 3000\n\n");
+  activeMetricsStreams++;
+  let n = 0;
+  const timer = setInterval(() => {
+    if (res.destroyed || res.writableEnded) return; // close handler clears the timer
+    n++;
+    const cpu = profile.cpuBase + (n % 5);
+    res.write(`event: metric\ndata: ${JSON.stringify({ host, cpu, rps: profile.rpsBase + n })}\n\n`);
+    if (n % 8 === 0) {
+      res.write(`event: deploy\ndata: ${JSON.stringify({ host, version: `v1.${n}.0` })}\n\n`);
+    }
+  }, 300);
+  req.on("close", () => {
+    activeMetricsStreams--;
+    clearInterval(timer);
+  });
+}
+
 async function handleApi(req, res, url) {
   const path = url.pathname;
+
+  if (path === "/api/metrics" && req.method === "GET") {
+    handleMetrics(req, res, url);
+    return true; // streaming — res stays open, never res.end() here
+  }
+
+  if (path === "/api/metrics-connections" && req.method === "GET") {
+    return json(res, { active: activeMetricsStreams });
+  }
 
   if (path === "/api/search" && req.method === "GET") {
     const q = (url.searchParams.get("q") || "").trim().toLowerCase();
