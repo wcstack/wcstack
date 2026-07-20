@@ -164,6 +164,8 @@ Each I/O node component splits into two layers:
 
 `docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `README.md`/`README.ja.md` are the normative references for that package.
 
+The AI app-building skill (`wcstack-app`) lives in the separate [wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill) repository. When changing `data-wcs` syntax, the wc-bindable / command-token / event-token protocols, or router attributes/behavior, update that skill's references to match (its plugin version tracks the wcstack release it was verified against).
+
 ## Module System
 
 All packages use `"type": "module"` (ESM only). No CommonJS support.
