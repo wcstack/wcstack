@@ -18,8 +18,8 @@
 //   - source(args, signal) receives an AbortSignal; honoring it drives restart.
 //   - restart RESETS value to `initial`; error KEEPS the last value.
 //   - status companion: "idle" | "active" | "done" | "error".
-//   - async iterable is the lingua franca; a ReadableStream lacking
-//     Symbol.asyncIterator is read via getReader().
+//   - async iterable is the lingua franca; anything getReader-bearing
+//     (ReadableStream) is read via getReader() — see rescue levels below.
 //
 // CONTRACT (cooperative cancellation — STRONG REQUIREMENT): the `source` MUST honor
 // the `AbortSignal` it is given. Honoring it is what drives switchMap restart/dispose;
@@ -28,7 +28,11 @@
 // Rescue levels on abort:
 //   - ReadableStream: FULLY rescued. A parked read() is force-unwound via
 //     reader.cancel(), which both releases the underlying source and settles the
-//     pending read() so the loop unwinds.
+//     pending read() so the loop unwinds. Anything getReader-bearing is routed
+//     through this path even when it is ALSO natively async-iterable (Node 18+ /
+//     Chrome 124+ / Firefox): the spec serializes asyncIterator.return() behind
+//     the pending next() ([[ongoingPromise]]), so the AsyncIterable rescue below
+//     cannot force-unwind a parked read on a native ReadableStream.
 //   - AsyncIterable / async generator: PARTIALLY rescued. On abort we call
 //     iterator.return() to trigger the generator's finally/cleanup. But a parked
 //     `await` (the producer stalling before its next yield while IGNORING `signal`)
@@ -200,18 +204,24 @@ async function consume<T, C, A>(
 }
 
 function iterate<C>(produced: StreamProducer<C>, signal: AbortSignal): AsyncIterable<C> {
-  if (typeof (produced as AsyncIterable<C>)[Symbol.asyncIterator] === "function") {
+  // Anything ReadableStream-shaped (has getReader) takes the reader path FIRST —
+  // even when it is also async-iterable. On runtimes where ReadableStream
+  // implements native async iteration (Node 18+ / Chrome 124+ / Firefox), the
+  // spec serializes `iterator.return()` behind the pending `next()`
+  // ([[ongoingPromise]]), so the AsyncIterable rescue cannot force-unwind a
+  // parked read: abort would hang the consume task until the producer's next
+  // chunk (or forever on a silent stream), leaking the underlying source.
+  // `reader.cancel()` has no such ordering — routing every getReader-bearing
+  // source through it keeps the FULL rescue promised for ReadableStream.
+  if (typeof (produced as ReadableStream<C>)?.getReader === "function") {
+    return readableToAsyncIterable(produced as ReadableStream<C>, signal);
+  }
+  if (typeof (produced as AsyncIterable<C>)?.[Symbol.asyncIterator] === "function") {
     return produced as AsyncIterable<C>;
   }
-  // Not async-iterable: must be a ReadableStream (read via getReader). Validate so
-  // a wrong source value yields a clear error instead of an opaque "getReader is
-  // not a function" from inside the generator.
-  if (typeof (produced as ReadableStream<C>)?.getReader !== "function") {
-    throw new TypeError(
-      "streamResource: source must return an AsyncIterable or a ReadableStream (got neither).",
-    );
-  }
-  return readableToAsyncIterable(produced as ReadableStream<C>, signal);
+  throw new TypeError(
+    "streamResource: source must return an AsyncIterable or a ReadableStream (got neither).",
+  );
 }
 
 async function* readableToAsyncIterable<C>(

@@ -64,7 +64,7 @@ export default {
 
 | フィールド | 型 | 必須 | 契約 |
 |---|---|---|---|
-| `source` | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<同>` | ✔ | **`AbortSignal` を必ず尊重すること**（協調キャンセル契約）。restart・破棄はこの signal で駆動されます — signal を無視する source は確実にキャンセルできません。プロデューサーの `Promise` を返しても構いません。`Symbol.asyncIterator` を持たない `ReadableStream` は `getReader()` フォールバックで消費されます。それ以外の戻り値は `TypeError` となり error 状態に現れます。 |
+| `source` | `(args, signal) => AsyncIterable \| ReadableStream \| Promise<同>` | ✔ | **`AbortSignal` を必ず尊重すること**（協調キャンセル契約）。restart・破棄はこの signal で駆動されます — signal を無視する source は確実にキャンセルできません。`ReadableStream` はこの契約を自動的に満たします: getReader を持つものは（native に async-iterable でも）常に `getReader()` 経路で消費され（仕様上 `iterator.return()` は pending `next()` の後ろに直列化されるため、parked read を強制解放できるのは `reader.cancel()` のみ）、abort 時に runtime が reader を cancel してストリームの `cancel()` コールバックまで届けます。プロデューサーの `Promise` を返しても構いません。それ以外の戻り値は `TypeError` となり error 状態に現れます。 |
 | `args` | `(state) => any` | — | **同期・純粋関数**。読み取り専用の state ビューを受け取り、ここで読んだパスすべてが依存として捕捉されます（[依存駆動 restart](#依存駆動-restart) 参照）。省略時は依存なし — 一度起動したら restart しません。戻り値はそのまま `source` の第 1 引数になります（複数値はオブジェクト/配列で束ねる）。`Promise` を返すとエラーです。 |
 | `fold` | `(acc, chunk) => next` | — | **同期関数**。省略時は latest（チャンクで値を置換）。**新しい値を返すこと** — `acc` の in-place 変異は非サポートです（[新しい値を返す](#新しい値を返すin-place-変異の禁止) 参照）。fold が throw すると stream は error 状態になり、プロデューサーは abort されます。 |
 | `initial` | any | fold 指定時 ✔ | 初期値。起動・restart のたびにプロパティの値はこれにリセットされます。 |

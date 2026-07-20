@@ -91,35 +91,21 @@
           // args (switchMap semantics) — no manual reset code anywhere.
           args: (state) => ({ host: state.host }),
 
-          // Bridge an EventSource into the async iterable the runtime
-          // consumes. Cooperative cancellation: everything tears down through
-          // the AbortSignal (including waking the pending read).
-          source: async ({ host }, signal) => {
+          // Bridge the EventSource with a standard ReadableStream: enqueue in
+          // start(), release the resource in cancel(). No AbortSignal wiring —
+          // on restart/dispose the runtime cancels its reader, which force-
+          // unwinds a parked read and runs cancel() below (ReadableStream is
+          // the fully-rescued source shape; see the state README "Streams").
+          source: ({ host }) => {
             const es = new EventSource(`/api/metrics?host=${host}`);
-            const queue = [];
-            let wake = null;
-            es.addEventListener("metric", (e) => {
-              queue.push(JSON.parse(e.data));
-              wake?.();
-            });
-            signal.addEventListener("abort", () => {
-              es.close();
-              wake?.();
-            });
-            return (async function* () {
-              try {
-                while (!signal.aborted) {
-                  if (queue.length === 0) {
-                    await new Promise((r) => { wake = r; });
-                    wake = null;
-                    continue;
-                  }
-                  yield queue.shift();
-                }
-              } finally {
+            return new ReadableStream({
+              start(controller) {
+                es.addEventListener("metric", (e) => controller.enqueue(JSON.parse(e.data)));
+              },
+              cancel() {
                 es.close();
-              }
-            })();
+              },
+            });
           },
 
           // BOUNDED fold — a long-lived stream must never accumulate without

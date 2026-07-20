@@ -1496,9 +1496,32 @@ The stream's value is an ordinary property, and its companion status / error liv
 
 On error the property keeps its last folded value and the error lands in `$streamError.<name>`; a `done` or `error` stream restarts when its dependencies change (retrying = re-hitting the dependency).
 
+**Bridging an event API** — most real sources are callback-shaped (`EventSource`, `WebSocket`, DOM events), not async iterables. Wrap them in a standard `ReadableStream`: enqueue in `start`, release the resource in `cancel`. You never touch the `AbortSignal` — on restart/dispose the runtime cancels its reader, which force-unwinds a parked read and runs your `cancel()`:
+
+```js
+$streams: {
+  metrics: {
+    args: (state) => ({ host: state.host }),
+    source: ({ host }) => {
+      const es = new EventSource(`/api/metrics?host=${host}`);
+      return new ReadableStream({
+        start(controller) {
+          es.addEventListener("metric", (e) => controller.enqueue(JSON.parse(e.data)));
+        },
+        cancel() { es.close(); },   // runs on restart / dispose
+      });
+    },
+    fold: (acc, sample) => [...acc, sample].slice(-20),
+    initial: [],
+  },
+},
+```
+
+Hand-rolled async generators remain fully supported when you need producer-side control, but they are only *partially* rescued on abort: a generator parked in an `await` that ignores `signal` cannot be force-unwound from outside. Prefer the `ReadableStream` form for event-API bridging.
+
 Key rules:
 
-- **Cooperative cancellation (MUST)** — `source` must observe the passed `AbortSignal` and stop producing when it fires.
+- **Cooperative cancellation (MUST)** — `source` must observe the passed `AbortSignal` and stop producing when it fires. A `ReadableStream` source satisfies this automatically through its `cancel()` callback (the runtime cancels the reader on abort); only hand-rolled async iterables need to observe `signal` themselves.
 - **Bounded fold** — demand never flows back to the producer (backpressure is deliberately abandoned). For infinite / long-lived streams use a bounded fold — latest, count, last-N (`(acc, chunk) => [...acc.slice(-99), chunk]`), windowed aggregates. Raw accumulation of every chunk is for finite streams only.
 - **`args` is synchronous** — returning a Promise is an error, and wildcard reads inside `args` are rejected.
 - **No self-dependency, no mutual cycles** — `args` reading the stream's own value or status raises an error. Mutual cycles between two streams (A's `args` reads B's value and vice versa) are not detected and restart forever — do not build them. One-way chains (A's value feeding B's `args`) are legitimate.
