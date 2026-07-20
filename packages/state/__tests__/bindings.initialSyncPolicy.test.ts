@@ -407,6 +407,7 @@ describe("BindingSession Phase 2 initial synchronization", () => {
       authority: "state",
       syncOn: "call",
       observable: false,
+      outputOnly: false,
     });
   });
 
@@ -430,10 +431,118 @@ describe("BindingSession Phase 2 initial synchronization", () => {
       authority: "state",
       syncOn: "call",
       observable: true,
+      outputOnly: false,
     });
     const current = session();
     expect(current.initialize([binding])).toEqual([binding]);
     expect(mocks.state.parentCount).toBe(42);
+    expect(current.shouldApplyState(binding)).toBe(true);
+  });
+
+  it("双方向 member の init=element は初期同期のみを支配し、定常の state→element 適用を許可すること", () => {
+    // 09 §3.6: authority は「初期同期」の勝敗のみを決める。two-way member に
+    // init=element を付けても、初期 pull の後は通常の two-way に戻ることを固定
+    // （旧実装は resolvedAuthority を定常ゲートにも使い恒久ブロックしていた）。
+    const tag = nextTag("two-way-element");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = declaration(
+        [{ name: "value", event: "value-change" }],
+        [{ name: "value" }],
+      );
+      value: unknown = "persisted";
+    });
+    const node = document.createElement(tag) as HTMLElement & { value: unknown };
+    document.body.append(node);
+    mocks.state.saved = "seed";
+    const binding = createBinding(node, "saved", ["init=element"]);
+    const current = session();
+
+    expect(current.initialize([binding])).toEqual([]);
+    expect(mocks.state.saved).toBe("persisted");
+    expect(current.shouldApplyState(binding)).toBe(true);
+    expect(current.shouldApplyState(binding)).toBe(true);
+  });
+
+  it("双方向 member の init=auto(未初期化→element) も定常適用を許可すること", () => {
+    const tag = nextTag("two-way-auto");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = declaration(
+        [{ name: "value", event: "value-change" }],
+        [{ name: "value" }],
+      );
+      value: unknown = "persisted";
+    });
+    const node = document.createElement(tag) as HTMLElement & { value: unknown };
+    document.body.append(node);
+    const binding = createBinding(node, "autoSlot", ["init=auto"]);
+    const current = session();
+
+    expect(current.initialize([binding])).toEqual([]);
+    expect(mocks.state.autoSlot).toBe("persisted");
+    expect(current.shouldApplyState(binding)).toBe(true);
+  });
+
+  it("双方向 member の init=none は初期同期せず、次の変更から state 適用を許可すること", () => {
+    const tag = nextTag("two-way-none");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = declaration(
+        [{ name: "value", event: "value-change" }],
+        [{ name: "value" }],
+      );
+      value: unknown = "element-default";
+    });
+    const node = document.createElement(tag) as HTMLElement & { value: unknown };
+    document.body.append(node);
+    const binding = createBinding(node, "noneSlot", ["init=none"]);
+    const current = session();
+
+    expect(current.initialize([binding])).toEqual([]);
+    // authority=none は snapshot を state へ commit しない（§3.5 の inbox のみ）
+    expect("noneSlot" in mocks.state).toBe(false);
+    // 「次の変更から扱う」= 定常適用は許可
+    expect(current.shouldApplyState(binding)).toBe(true);
+  });
+
+  it("output-only member は定常でも state→element を恒久ブロックすること", () => {
+    const tag = nextTag("output-steady");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = declaration([
+        { name: "value", event: "value-change" },
+      ]);
+      value: unknown = "monitor";
+    });
+    const node = document.createElement(tag) as HTMLElement & { value: unknown };
+    document.body.append(node);
+    const binding = createBinding(node, "monitorSlot");
+    const current = session();
+
+    expect(current.initialize([binding])).toEqual([]);
+    expect(mocks.state.monitorSlot).toBe("monitor");
+    expect(current.shouldApplyState(binding)).toBe(false);
+    expect(current.shouldApplyState(binding)).toBe(false);
+  });
+
+  it("sync=connect の element authority は接続 snapshot 解決まで定常適用を保留すること", async () => {
+    const tag = nextTag("two-way-connect");
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = declaration(
+        [{ name: "value", event: "value-change" }],
+        [{ name: "value" }],
+      );
+      value: unknown = "connect-snapshot";
+    });
+    const node = document.createElement(tag) as HTMLElement & { value: unknown };
+    const binding = createBinding(node, "connectSlot", ["init=element", "sync=connect"]);
+    const current = session(document);
+
+    expect(current.initialize([binding])).toEqual([]);
+    // 接続 snapshot 未解決の間は state push を保留（初期競合が未決着）
+    expect(current.shouldApplyState(binding)).toBe(false);
+
+    document.body.append(node);
+    await flushMutations();
+
+    expect(mocks.state.connectSlot).toBe("connect-snapshot");
     expect(current.shouldApplyState(binding)).toBe(true);
   });
 

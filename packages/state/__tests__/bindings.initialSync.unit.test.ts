@@ -74,6 +74,7 @@ describe("initialSync policy resolution", () => {
       authority: "state",
       syncOn: "call",
       observable: false,
+      outputOnly: false,
     });
     expect(hasInitialSyncModifier(binding)).toBe(false);
   });
@@ -87,6 +88,7 @@ describe("initialSync policy resolution", () => {
       authority: "none",
       syncOn: "call",
       observable: false,
+      outputOnly: false,
     });
   });
 
@@ -105,12 +107,12 @@ describe("initialSync policy resolution", () => {
   it("event binding は init=none のみ許可すること", () => {
     const node = document.createElement("button");
     expect(resolveInitialSyncPolicy(createBinding(node, { bindingType: "event", propName: "onclick" })))
-      .toEqual({ authority: "none", syncOn: "call", observable: false });
+      .toEqual({ authority: "none", syncOn: "call", observable: false, outputOnly: false });
     expect(resolveInitialSyncPolicy(createBinding(node, {
       bindingType: "event",
       propName: "onclick",
       propModifiers: ["init=none"],
-    }))).toEqual({ authority: "none", syncOn: "call", observable: false });
+    }))).toEqual({ authority: "none", syncOn: "call", observable: false, outputOnly: false });
     expect(() => resolveInitialSyncPolicy(createBinding(node, {
       bindingType: "event",
       propName: "onclick",
@@ -121,18 +123,18 @@ describe("initialSync policy resolution", () => {
       bindingType: "event",
       propName: "onclick",
       propModifiers: ["sync=connect"],
-    }))).toEqual({ authority: "none", syncOn: "connect", observable: false });
+    }))).toEqual({ authority: "none", syncOn: "connect", observable: false, outputOnly: false });
   });
 
   it("prop 以外の binding type は state / none だけを許可すること", () => {
     const node = document.createTextNode("") as unknown as Element;
     expect(resolveInitialSyncPolicy(createBinding(node, { bindingType: "text", propName: "text" })))
-      .toEqual({ authority: "state", syncOn: "call", observable: false });
+      .toEqual({ authority: "state", syncOn: "call", observable: false, outputOnly: false });
     expect(resolveInitialSyncPolicy(createBinding(node, {
       bindingType: "text",
       propName: "text",
       propModifiers: ["init=none"],
-    }))).toEqual({ authority: "none", syncOn: "call", observable: false });
+    }))).toEqual({ authority: "none", syncOn: "call", observable: false, outputOnly: false });
     expect(() => resolveInitialSyncPolicy(createBinding(node, {
       bindingType: "text",
       propName: "text",
@@ -146,9 +148,10 @@ describe("initialSync policy resolution", () => {
       authority: "state",
       syncOn: "call",
       observable: false,
+      outputOnly: false,
     });
     expect(resolveInitialSyncPolicy(createBinding(node, { propModifiers: ["init=element"] })))
-      .toEqual({ authority: "element", syncOn: "call", observable: false });
+      .toEqual({ authority: "element", syncOn: "call", observable: false, outputOnly: false });
   });
 
   it("wcBindable 宣言外の member と input-only member の sync=connect を診断すること", () => {
@@ -178,6 +181,7 @@ describe("initialSync policy resolution", () => {
       authority: "state",
       syncOn: "call",
       observable: false,
+      outputOnly: false,
     });
   });
 });

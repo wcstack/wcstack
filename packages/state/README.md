@@ -344,7 +344,7 @@ Automatically enabled for:
 
 ### Binding Authority (`#init=` / `#sync=`)
 
-For custom elements that declare `static wcBindable`, every prop binding resolves an **authority** — which side owns the wire. The authority decides both where the initial value comes from *and* whether state→element writes are enabled, for the binding's whole lifetime. It is derived from where the member is declared (on by default via `enableDirectionalInitialSync`):
+For custom elements that declare `static wcBindable`, every prop binding resolves an **authority** — which side wins the **initial sync** when the binding attaches. The steady-state direction is decided separately, by the member's declared shape: an output-only member never accepts state writes (a permanent contract), while a two-way member flows both ways after the initial sync regardless of which side won it. The default authority is derived from where the member is declared (on by default via `enableDirectionalInitialSync`):
 
 | Member declared in | Default authority | Effect |
 |---|---|---|
@@ -357,12 +357,19 @@ For custom elements that declare `static wcBindable`, every prop binding resolve
 
 Override the authority per binding with `#init=`:
 
-| Value | Authority | Allowed on |
+| Value | Initial sync | Allowed on |
 |---|---|---|
-| `init=state` | State-owned: state → element (two-way members still receive element events) | inputs-only, two-way |
-| `init=element` | Element-owned: element snapshot and events → state; state writes are suppressed | output-only, two-way |
+| `init=state` | The state value is written to the element (two-way default) | inputs-only, two-way |
+| `init=element` | The element's snapshot seeds the state instead — on a two-way member the binding then continues as normal two-way (state→element writes flow from the next change on) | output-only, two-way |
 | `init=auto` | `element` if the state slot is uninitialized, otherwise `state` | two-way |
-| `init=none` | No initial sync (event bindings accept only this value) | any |
+| `init=none` | No initial sync — changes flow normally from the next update (event bindings accept only this value) | any |
+
+`#init=` decides only who wins the initial race. The *permanent* suppression of state→element writes comes from the member being declared output-only, never from the modifier. This makes `#init=element` (or `#init=auto`) the declarative fix for **load-before-bind**: an element that loads a persisted value in its own `connectedCallback` — before the binding attaches — is no longer clobbered by the state seed, and later state changes still reach the element (so e.g. `<wcs-storage>` keeps saving):
+
+```html
+<!-- The persisted list seeds `todos`; assigning `todos` later still saves. -->
+<wcs-storage key="todos" type="local" data-wcs="value#init=element: todos"></wcs-storage>
+```
 
 `#sync=` controls **when** the element snapshot is read for element-authority bindings:
 
@@ -377,10 +384,13 @@ Override the authority per binding with `#init=`:
 <x-widget data-wcs="value#init=element,sync=connect: widget.snapshot"></x-widget>
 ```
 
+With `sync=connect`, state→element writes stay suppressed until the connect snapshot has resolved the initial race.
+
 Notes:
 
 - With `enableDirectionalInitialSync: false` (opt-out), writing `#init=`/`#sync=` throws.
 - **Migrating from ≤ 1.20:** do not seed state with placeholder values (`value: []`, `query: ""`) for output-only members — the element's real initial value (often `null`/`undefined`) replaces the seed. Match the seed to the element's actual initial value and null-guard display values with a derived getter.
+- **Until 1.21.x**, `init=element` / `init=auto` / `init=none` suppressed state→element writes for the binding's whole lifetime, which made them unusable on genuinely two-way members. Authority now governs only the initial sync (`docs/architecture-hardening/09-remediation-design.md` §3.6).
 
 ### Radio Binding
 

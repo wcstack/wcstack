@@ -236,6 +236,15 @@ upgrade 中に初期イベントを取り逃しても、event 後の current pro
 > として実装され、**既定 `true`**（恒久 opt-out フラグは残置）。output-only member の element
 > authority 初期読取、`#init=` / `#sync=` modifier を含む。詳細と残作業は
 > [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) を参照。
+>
+> **修正（2026-07-21）**: 初期実装は resolvedAuthority を定常 apply のゲートにも使い、
+> element / none authority の binding で state→element を**恒久**抑止していた（本節の
+> 「双方向 member の modifier は初期同期を支配する」に対する乖離。双方向 member への
+> `init=element` が実質 one-way 化し、`<wcs-storage>` 型の load-before-bind を修飾子で
+> 解決できなかった）。`shouldApplyState` を二相化し、初回相談（初期 sweep / 初回 render /
+> deferred initial apply の選別）だけ authority で答え、定常は output-only member の契約と
+> `sync=connect` の接続 snapshot 未解決の間のみブロックするよう修正済み
+> （10 §D 8 件目、`bindings.initialSyncPolicy.test.ts` / `integration.initialAuthority.test.ts`）。
 
 初期値の競合は timing だけでは解決できない。まず wc-bindable の member direction から既定値を決め、
 双方向 member だけを主対象として binding modifier で上書きする。

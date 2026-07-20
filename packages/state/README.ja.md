@@ -344,7 +344,7 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 
 ### バインディング authority (`#init=` / `#sync=`)
 
-`static wcBindable` を宣言したカスタム要素への prop バインディングは、**authority**（そのワイヤをどちら側が所有するか）を解決します。authority は初期値の出所だけでなく、**そのバインディングの生存期間全体で state→element 書き込みが有効かどうか**を決めます。既定はメンバの宣言位置から導出されます（`enableDirectionalInitialSync` で既定 ON）：
+`static wcBindable` を宣言したカスタム要素への prop バインディングは、**authority**（バインディング attach 時の**初期同期**をどちら側が勝つか）を解決します。定常時の方向は authority とは別に、メンバの宣言形状で決まります: output-only メンバは state からの書き込みを恒久的に受け付けず（契約）、双方向メンバは初期同期の勝者と無関係に以後は両方向に流れます。既定 authority はメンバの宣言位置から導出されます（`enableDirectionalInitialSync` で既定 ON）：
 
 | メンバの宣言位置 | 既定 authority | 効果 |
 |---|---|---|
@@ -357,12 +357,19 @@ property[#modifier]: path[@state][|filter[|filter(args)...]]
 
 authority はバインディング単位で `#init=` により上書きできます：
 
-| 値 | authority | 使える宣言 |
+| 値 | 初期同期 | 使える宣言 |
 |---|---|---|
-| `init=state` | state 所有：state → element（双方向メンバは要素イベントも引き続き受信） | inputs のみ・双方向 |
-| `init=element` | element 所有：要素のスナップショットとイベント → state。state からの書き込みは抑止 | output-only・双方向 |
+| `init=state` | state の値を要素へ書く（双方向の既定） | inputs のみ・双方向 |
+| `init=element` | 要素のスナップショットを state へ入れる — 双方向メンバではその後は通常の双方向に戻る（次の変更から state→element も流れる） | output-only・双方向 |
 | `init=auto` | state スロットが未初期化なら `element`、それ以外は `state` | 双方向 |
-| `init=none` | 初期同期なし（event バインディングはこの値のみ許可） | すべて |
+| `init=none` | 初期同期なし — 次の変更から通常どおり流れる（event バインディングはこの値のみ許可） | すべて |
+
+`#init=` が決めるのは初期競合の勝者だけです。state→element 書き込みの**恒久**抑止は「メンバが output-only 宣言であること」から来るのであって、修飾子からは来ません。これにより `#init=element`（または `#init=auto`）が **load-before-bind** の宣言的な解になります: 要素が自身の `connectedCallback` で永続値をロード済み（バインディング確立より先）でも state 初期値に潰されず、以後の state 変更は要素へ届きます（例えば `<wcs-storage>` の保存は生き続けます）：
+
+```html
+<!-- 永続化済みリストが todos を初期化し、以後の todos 代入は保存もされる -->
+<wcs-storage key="todos" type="local" data-wcs="value#init=element: todos"></wcs-storage>
+```
 
 `#sync=` は element authority のバインディングで要素スナップショットを**いつ**読むかを制御します：
 
@@ -377,10 +384,13 @@ authority はバインディング単位で `#init=` により上書きできま
 <x-widget data-wcs="value#init=element,sync=connect: widget.snapshot"></x-widget>
 ```
 
+`sync=connect` では、接続時スナップショットが初期競合を解決するまで state→element 書き込みも保留されます。
+
 注意：
 
 - `enableDirectionalInitialSync: false`（opt-out）のとき `#init=`/`#sync=` を書くと throw します。
 - **1.20 以前からの移行：** output-only メンバに対して state 側に都合のよい初期値（`value: []`、`query: ""` 等）をシードしないでください — 要素側の実初期値（多くは `null`/`undefined`）がシードを置き換えます。シードは要素の実初期値に合わせ、表示用の値は派生 getter で null ガードしてください。
+- **1.21.x まで**、`init=element` / `init=auto` / `init=none` はバインディングの生存期間全体で state→element 書き込みを抑止しており、真に双方向なメンバには使えませんでした。現在は authority は初期同期のみを支配します（`docs/architecture-hardening/09-remediation-design.md` §3.6）。
 
 ### ラジオボタンバインディング
 
