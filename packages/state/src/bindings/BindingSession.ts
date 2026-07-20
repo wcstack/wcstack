@@ -75,6 +75,15 @@ interface IInternalBindingRecord extends IBindingRecord {
   initialPolicy: IInitialSyncPolicy | null;
   resolvedAuthority: ResolvedInitialAuthority | null;
   initialSettled: boolean;
+  /**
+   * 最初の shouldApplyState 相談（= 初期 state sweep / 初回 render の選別）を
+   * 消費済みか。authority は初期同期のみを支配する（09 §3.6）ため、初回相談は
+   * authority で答え、以降の定常 apply は output-only 契約と connect-snapshot
+   * 未解決だけをブロックする。
+   */
+  initialApplyDone: boolean;
+  /** initialPolicy.outputOnly のミラー（settle 時確定・定常ゲートの分岐を総域にする） */
+  outputOnlyMember: boolean;
   observationPending: boolean;
   eventSequence: number;
   hasProducerValue: boolean;
@@ -350,8 +359,22 @@ export class BindingSession {
     const record = recordByBinding.get(binding);
     if (typeof record === "undefined" || record.session !== this) return true;
     if (!record.options.registerAddress || record.phase === "waiting-definition") return true;
+    if (record.phase === "failed") return false;
     if (record.phase === "active") this.settleInitialRecord(record);
-    return record.resolvedAuthority === "state";
+    // authority は初期同期のみを支配する（09 §3.6: init=element は「snapshot を
+    // state へ入れる」、init=none は「次の変更から扱う」）。settle 後の最初の相談
+    // = 初期 state sweep / 初回 render / deferred initial apply の選別なので
+    // authority で答え、ここで初期適用を消費する。
+    if (!record.initialApplyDone) {
+      record.initialApplyDone = true;
+      return record.resolvedAuthority === "state";
+    }
+    if (record.resolvedAuthority === "state") return true;
+    // 定常: two-way / input member は authority と無関係に state→element を流す。
+    // 恒久ブロックは (1) output-only member の契約（書き込み無意味・DCC/router の
+    // conformance が依存）と (2) sync=connect の接続 snapshot が未解決の間
+    //（初期競合が未決着のうちは state push が element 初期値を潰しうる）だけ。
+    return !record.outputOnlyMember && !record.observationPending;
   }
 
   getRecord(binding: IBindingInfo): IBindingRecord | null {
@@ -622,6 +645,8 @@ export class BindingSession {
         initialPolicy: slot.policy,
         resolvedAuthority: slot.authority,
         initialSettled: true,
+        initialApplyDone: false,
+        outputOnlyMember: slot.policy.outputOnly,
         observationPending: false,
         eventSequence: 0,
         hasProducerValue: false,
@@ -675,6 +700,8 @@ export class BindingSession {
         record.initialPolicy = slot.policy;
         record.resolvedAuthority = slot.authority;
         record.initialSettled = true;
+        record.initialApplyDone = false;
+        record.outputOnlyMember = slot.policy.outputOnly;
         this.records.add(record);
         if (slot.isEvent) {
           try {
@@ -734,6 +761,8 @@ export class BindingSession {
       initialPolicy: null,
       resolvedAuthority: null,
       initialSettled: false,
+      initialApplyDone: false,
+      outputOnlyMember: false,
       observationPending: false,
       eventSequence: 0,
       hasProducerValue: false,
@@ -862,6 +891,7 @@ export class BindingSession {
       record.initialPolicy = policy;
       record.resolvedAuthority = authority;
       record.initialSettled = true;
+      record.outputOnlyMember = policy.outputOnly;
       record.phase = "active";
       if (!policy.observable) return;
       if (

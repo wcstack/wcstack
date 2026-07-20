@@ -217,7 +217,7 @@ describe('compileRowPlan の適格性', () => {
   });
 
   it('observable なポリシー（防御分岐）は不適格になること', () => {
-    overrides.policy = () => ({ authority: 'state', syncOn: 'call', observable: true });
+    overrides.policy = () => ({ authority: 'state', syncOn: 'call', observable: true, outputOnly: false });
     const fragment = fragmentFromHtml('<span data-wcs="className: items.*.v"></span>');
     expect(compileRowPlan(fragmentInfoOf(fragment))).toBeNull();
   });

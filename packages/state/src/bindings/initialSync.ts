@@ -15,6 +15,13 @@ export interface IInitialSyncPolicy {
   readonly authority: InitialAuthority;
   readonly syncOn: InitialSyncOn;
   readonly observable: boolean;
+  /**
+   * wcBindable 宣言が properties のみ（output-only member）であること。
+   * authority は初期同期のみを支配する（docs/architecture-hardening/09 §3.6）が、
+   * output-only member への state→element 書き込みは初期に限らず契約として
+   * 恒久ブロックする。その判定を authority と分離してここに持つ。
+   */
+  readonly outputOnly: boolean;
 }
 
 function readOption(
@@ -60,12 +67,12 @@ export function hasInitialSyncModifier(binding: IBindingInfo): boolean {
 // 頻出ポリシー（修飾子なしの通常バインディング）の凍結シングルトン。リスト行では
 // binding ごとに resolveInitialSyncPolicy が走るため、毎回のオブジェクト割り当てを
 // 避ける（record.initialPolicy は読み取り専用でしか使われない）。
-const STATE_CALL_POLICY: IInitialSyncPolicy = Object.freeze({ authority: "state", syncOn: "call", observable: false });
-const NONE_CALL_POLICY: IInitialSyncPolicy = Object.freeze({ authority: "none", syncOn: "call", observable: false });
+const STATE_CALL_POLICY: IInitialSyncPolicy = Object.freeze({ authority: "state", syncOn: "call", observable: false, outputOnly: false });
+const NONE_CALL_POLICY: IInitialSyncPolicy = Object.freeze({ authority: "none", syncOn: "call", observable: false, outputOnly: false });
 
 function statePolicy(authority: InitialAuthority, syncOn: IInitialSyncPolicy["syncOn"]): IInitialSyncPolicy {
   if (authority === "state" && syncOn === "call") return STATE_CALL_POLICY;
-  return { authority, syncOn, observable: false };
+  return { authority, syncOn, observable: false, outputOnly: false };
 }
 
 export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPolicy {
@@ -82,7 +89,7 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
     if (explicitAuthority !== null && explicitAuthority !== "none") {
       raiseError("Event bindings only allow init=none.");
     }
-    return syncOn === "call" ? NONE_CALL_POLICY : { authority: "none", syncOn, observable: false };
+    return syncOn === "call" ? NONE_CALL_POLICY : { authority: "none", syncOn, observable: false, outputOnly: false };
   }
   // command.<name>: $command.<method> は命令的な command-token 配線。bindingType は
   // "prop" だが propName ("command.<name>") は wcBindable property ではないため、下の
@@ -122,7 +129,7 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
   if (syncOn === "connect" && !hasOutput) {
     raiseError(`sync=connect requires observable property "${binding.propName}".`);
   }
-  return { authority, syncOn, observable: hasOutput };
+  return { authority, syncOn, observable: hasOutput, outputOnly: hasOutput && !hasInput };
 }
 
 export function isBindingStateInitialized(binding: IBindingInfo): boolean {
