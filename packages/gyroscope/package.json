@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/gyroscope",
-  "version": "1.22.1",
+  "version": "1.22.2",
   "description": "Declarative Gyroscope component for Web Components. Framework-agnostic Generic Sensor API (Gyroscope) monitor via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

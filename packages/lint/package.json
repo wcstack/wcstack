@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/lint",
-  "version": "1.22.1",
+  "version": "1.22.2",
   "description": "Static-contract validator CLI (wcs-validate) for wcstack data-wcs bindings and wcstack.manifest.json sidecars. Thin npm wrapper around the wcstack-intellisense validator core.",
   "type": "module",
   "bin": {

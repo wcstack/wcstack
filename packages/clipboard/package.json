@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/clipboard",
-  "version": "1.22.1",
+  "version": "1.22.2",
   "description": "Declarative clipboard component for Web Components. Framework-agnostic Clipboard API primitive via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
