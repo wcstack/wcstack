@@ -14,14 +14,17 @@ import { getStatePathsFromHtml } from "./statePathResolver.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { isInsideForTemplate, getInnermostForPath } from "./forContext.js";
 import { WcsDiagnosticCode } from "../core/diagnostics.js";
+import { getMessages } from "../core/messages.js";
 import type { BindingDiagnostic } from "./bindingValidator.js";
 
 export function validateTemplateSyntax(
   html: string,
   stateTagName: string,
   bindAttrName: string = "data-wcs",
+  locale?: string,
 ): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
+  const msgs = getMessages(locale);
 
   const allPaths = getStatePathsFromHtml(html, stateTagName);
   if (allPaths.length === 0) return diagnostics;
@@ -39,7 +42,7 @@ export function validateTemplateSyntax(
         code: WcsDiagnosticCode.TemplateSyntax,
         start: item.matchStart,
         end: item.matchEnd,
-        message: `wcs-text バインディング: ${item.expression}`,
+        message: msgs.wcsTextInfo(item.expression),
         severity: "info",
       });
     }
@@ -49,7 +52,7 @@ export function validateTemplateSyntax(
         code: WcsDiagnosticCode.TemplateSyntax,
         start: item.matchStart,
         end: item.matchEnd,
-        message: `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${item.expression}--> またはコメント構文の使用を検討してください。`,
+        message: msgs.moustacheFouc(item.expression),
         severity: "info",
       });
     }
@@ -70,7 +73,7 @@ export function validateTemplateSyntax(
           code: WcsDiagnosticCode.TemplateSyntax,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
-          message: `パターンパス "${pathPart}" は <template for> の外側では使用できません`,
+          message: msgs.patternPathOutsideFor(pathPart),
           severity: "warning",
         });
       }
@@ -79,7 +82,7 @@ export function validateTemplateSyntax(
           code: WcsDiagnosticCode.TemplateSyntax,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
-          message: `省略パス "${pathPart}" は <template for> の外側では使用できません`,
+          message: msgs.omittedPathOutsideFor(pathPart),
           severity: "warning",
         });
       }
@@ -88,7 +91,7 @@ export function validateTemplateSyntax(
           code: WcsDiagnosticCode.TemplateSyntax,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
-          message: `解決済みパス "${pathPart}" は UI バインディングでは使用できません。パターンパスを使用してください`,
+          message: msgs.resolvedPathInUi(pathPart),
           severity: "warning",
         });
       }
@@ -102,7 +105,7 @@ export function validateTemplateSyntax(
               code: WcsDiagnosticCode.BindingPathMissing,
               start: item.exprStart,
               end: item.exprStart + pathPart.length,
-              message: `パス "${pathPart}" は状態定義に存在しません（展開: ${expandedPath}）`,
+              message: msgs.pathMissing(pathPart) + msgs.expansionSuffix(expandedPath),
               severity: "warning",
             });
           }
@@ -112,7 +115,7 @@ export function validateTemplateSyntax(
           code: WcsDiagnosticCode.BindingPathMissing,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
-          message: `パス "${pathPart}" は状態定義に存在しません`,
+          message: msgs.pathMissing(pathPart),
           severity: "warning",
         });
       }
@@ -126,7 +129,7 @@ export function validateTemplateSyntax(
           code: WcsDiagnosticCode.FilterUnknown,
           start: item.exprStart + filterOffset,
           end: item.exprStart + filterOffset + filterName.length,
-          message: `フィルタ "${filterName}" は組み込みフィルタに存在しません`,
+          message: msgs.filterUnknown(filterName),
           severity: "warning",
         });
       }

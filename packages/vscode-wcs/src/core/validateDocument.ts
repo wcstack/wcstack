@@ -22,6 +22,11 @@ export interface ValidateDocumentOptions {
   readonly bindAttribute?: string;
   /** state タグ名(既定 wcs-state)。 */
   readonly stateTagName?: string;
+  /**
+   * 診断メッセージのロケール('ja' / 'en'、'ja-JP' 等も可)。既定 ja。
+   * 安定契約は {code, range, severity} — message はロケールで変わってよい。
+   */
+  readonly locale?: string;
 }
 
 /**
@@ -30,18 +35,19 @@ export interface ValidateDocumentOptions {
 export function validateDocument(text: string, options: ValidateDocumentOptions = {}): WcsDiagnostic[] {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
+  const locale = options.locale;
 
   const out: WcsDiagnostic[] = [];
   // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。
-  out.push(...validateBindings(text, bindAttribute, stateTagName));
-  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute));
-  out.push(...validateIoNodes(text, bindAttribute, stateTagName));
-  out.push(...validateDocumentEnv(text));
+  out.push(...validateBindings(text, bindAttribute, stateTagName, locale));
+  out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale));
+  out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
+  out.push(...validateDocumentEnv(text, locale));
   // 単一カテゴリの validator は集約時に code を付与する。
-  for (const d of validateStateTypes(text, stateTagName)) {
+  for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
-  for (const d of validateNestedAssigns(text, stateTagName)) {
+  for (const d of validateNestedAssigns(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
   return sortDiagnostics(out);

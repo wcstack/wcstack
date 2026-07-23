@@ -19,6 +19,7 @@
  */
 
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
+import { getMessages } from '../core/messages.js';
 
 interface ScriptSrcOccurrence {
   /** `@wcstack/<pkg>` のパッケージ名。 */
@@ -39,8 +40,9 @@ interface SignalsRef {
 /**
  * HTML テキストの読み込み構成を検査する。
  */
-export function validateDocumentEnv(html: string): WcsDiagnostic[] {
+export function validateDocumentEnv(html: string, locale?: string): WcsDiagnostic[] {
   const diagnostics: WcsDiagnostic[] = [];
+  const msgs = getMessages(locale);
   // HTML コメント内の説明文・コメントアウトされたタグに誤反応しないよう、
   // オフセットを保ったままコメントを空白化したテキストを走査する。
   const scanText = blankHtmlComments(html);
@@ -54,8 +56,7 @@ export function validateDocumentEnv(html: string): WcsDiagnostic[] {
       diagnostics.push({
         code: WcsDiagnosticCode.ScriptOrder,
         start: later.start, end: later.end, severity: 'warning',
-        message: `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください`
-          + `（後だと配線台帳がライブで captured されません）`,
+        message: msgs.devtoolsAfterState(),
       });
     }
   }
@@ -66,8 +67,7 @@ export function validateDocumentEnv(html: string): WcsDiagnostic[] {
     diagnostics.push({
       code: WcsDiagnosticCode.BaseHrefMissing,
       start: router.start, end: router.end, severity: 'warning',
-      message: `@wcstack/router を使う SPA には <head> 内の <base href="/"> が必要です`
-        + `（無いとディープリンクで basename が誤導出されます）`,
+      message: msgs.baseHrefMissing(),
     });
   }
 
@@ -80,9 +80,7 @@ export function validateDocumentEnv(html: string): WcsDiagnostic[] {
     diagnostics.push({
       code: WcsDiagnosticCode.SignalsDualEntry,
       start: later.start, end: later.end, severity: 'error',
-      message: `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。`
-        + `CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、`
-        + `境界で反応が壊れます — すべて /dom エントリから import してください`,
+      message: msgs.signalsDualEntry(),
     });
   }
 

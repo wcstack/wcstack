@@ -6,6 +6,7 @@
  */
 
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { getMessages } from '../core/messages.js';
 
 /** 診断情報 */
 export interface StateTypeDiagnostic {
@@ -18,7 +19,8 @@ export interface StateTypeDiagnostic {
 /**
  * HTML 内の全 <wcs-state> スクリプトで JSDoc 型と初期値の整合性を検証する。
  */
-export function validateStateTypes(html: string, stateTagName: string = 'wcs-state'): StateTypeDiagnostic[] {
+export function validateStateTypes(html: string, stateTagName: string = 'wcs-state', locale?: string): StateTypeDiagnostic[] {
+  const msgs = getMessages(locale);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics: StateTypeDiagnostic[] = [];
 
@@ -31,7 +33,7 @@ export function validateStateTypes(html: string, stateTagName: string = 'wcs-sta
         diagnostics.push({
           start: absStart,
           end: absEnd,
-          message: `型 "${prop.valueType}" は @type {${prop.rawType}} と互換性がありません`,
+          message: msgs.typeAnnotationIncompatible(prop.valueType, prop.rawType),
           severity: 'warning',
         });
       }

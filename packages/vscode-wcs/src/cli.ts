@@ -8,9 +8,10 @@
  * このファイルは node I/O(fs / argv / stdout / exit)のみを担う薄い shell。
  * 検査ロジックは全て core/cli/runValidation.ts(pure・テスト対象)。
  *
- * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--errors-only] <file> ...
+ * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] <file> ...
  *   *.manifest.json → sidecar manifest として検査
  *   その他(.html 等)→ data-wcs バインディングとして検査
+ *   --lang=ja|en → 診断メッセージの言語(既定 ja。code / range は言語に依らず不変)
  *   --errors-only(別名 --quiet)→ error severity の行だけ表示(warning は count のみ)
  */
 
@@ -23,11 +24,12 @@ function classify(path: string): CliFileInput["kind"] {
 
 /** argv を options とファイル一覧に分ける。IDE の設定に合わせるため attr / state-tag を受ける。 */
 export function parseArgs(argv: readonly string[]): { options: RunValidationOptions; files: string[] } {
-  const options: { bindAttribute?: string; stateTagName?: string; errorsOnly?: boolean } = {};
+  const options: { bindAttribute?: string; stateTagName?: string; errorsOnly?: boolean; locale?: string } = {};
   const files: string[] = [];
   for (const arg of argv) {
     if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
     else if (arg.startsWith("--state-tag=")) options.stateTagName = arg.slice("--state-tag=".length);
+    else if (arg.startsWith("--lang=")) options.locale = arg.slice("--lang=".length);
     else if (arg === "--errors-only" || arg === "--quiet") options.errorsOnly = true;
     else if (!arg.startsWith("-")) files.push(arg);
   }
@@ -37,7 +39,7 @@ export function parseArgs(argv: readonly string[]): { options: RunValidationOpti
 export function main(argv: readonly string[]): number {
   const { options, files } = parseArgs(argv);
   if (files.length === 0) {
-    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] <file> [<file> ...]\n");
+    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] <file> [<file> ...]\n");
     return 2;
   }
 

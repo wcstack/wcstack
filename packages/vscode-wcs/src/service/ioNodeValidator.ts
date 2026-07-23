@@ -17,6 +17,7 @@
  */
 
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
+import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
 import { getStatePathsFromHtml } from './statePathResolver.js';
 import type { PathCandidate } from './stateAnalyzer.js';
@@ -54,8 +55,10 @@ export function validateIoNodes(
   html: string,
   bindAttribute: string = 'data-wcs',
   stateTagName: string = 'wcs-state',
+  locale?: string,
 ): WcsDiagnostic[] {
   const diagnostics: WcsDiagnostic[] = [];
+  const msgs = getMessages(locale);
   const occurrences = findBuiltinTagOccurrences(html);
   if (occurrences.length === 0) return diagnostics;
 
@@ -88,7 +91,7 @@ export function validateIoNodes(
       const end = propIndex === -1 ? exprStart + expr.length : start + property.length;
 
       validateBindingAgainstContract(
-        occ.tagName, contract, parsed, property, start, end, hasManual, getPaths, diagnostics,
+        occ.tagName, contract, parsed, property, start, end, hasManual, getPaths, diagnostics, msgs,
       );
     }
   }
@@ -107,6 +110,7 @@ function validateBindingAgainstContract(
   hasManual: boolean,
   getPaths: () => PathCandidate[],
   diagnostics: WcsDiagnostic[],
+  msgs: WcsMessageCatalog,
 ): void {
   // `#修飾子`（`value#init=element` / `onclick#prevent` 等）を分離してから照合する。
   const hashIndex = property.indexOf('#');
@@ -127,9 +131,8 @@ function validateBindingAgainstContract(
       diagnostics.push({
         code: WcsDiagnosticCode.TagMemberUnknown,
         start, end, severity: 'warning', tag: tagName, member: name,
-        message: `"${name}" は <${tagName}> の command ではありません`
-          + `（宣言済み: ${contract.commands.join(', ') || 'なし'}）`
-          + suggestion(name, contract.commands),
+        message: msgs.tagCommandUnknown(name, tagName, contract.commands.join(', ') || msgs.none())
+          + suggestion(name, contract.commands, msgs),
       });
     }
     return;
@@ -141,9 +144,8 @@ function validateBindingAgainstContract(
       diagnostics.push({
         code: WcsDiagnosticCode.TagMemberUnknown,
         start, end, severity: 'warning', tag: tagName, member: name,
-        message: `eventToken のキー "${name}" は <${tagName}> の wcBindable プロパティではありません。`
-          + `生 DOM イベント名は発火しません — プロパティ名を指定してください`
-          + `（宣言済み: ${contract.properties.join(', ')}）` + suggestion(name, contract.properties),
+        message: msgs.tagEventTokenKeyUnknown(name, tagName, contract.properties.join(', '))
+          + suggestion(name, contract.properties, msgs),
       });
     }
     return;
@@ -156,8 +158,7 @@ function validateBindingAgainstContract(
     diagnostics.push({
       code: WcsDiagnosticCode.TagMemberUnknown,
       start, end, severity: 'warning', tag: tagName, member: property,
-      message: `"${property}" は <${tagName}> の wcBindable メンバーではありません`
-        + `（未知メンバーへのバインドは黙って無視されます）` + suggestion(property, members),
+      message: msgs.tagMemberUnknown(property, tagName) + suggestion(property, members, msgs),
     });
     return;
   }
@@ -169,9 +170,7 @@ function validateBindingAgainstContract(
       diagnostics.push({
         code: WcsDiagnosticCode.TriggerSeededTruthy,
         start, end, severity: 'warning', tag: tagName, statePath: parsed.path,
-        message: `trigger バインド先 "${parsed.path}" が true でシードされています。`
-          + `trigger はエッジ検出なし（truthy 書き込みで即発火・manual もバイパス）のため、`
-          + `バインド時に即発火します。false でシードしてください`,
+        message: msgs.triggerSeededTruthy(parsed.path),
       });
     }
   }
@@ -186,9 +185,7 @@ function validateBindingAgainstContract(
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
         start, end, severity: 'warning', tag: tagName, statePath: parsed.path,
-        message: `<wcs-storage> の value バインド先 "${parsed.path}" が ${cand.rawInitial} で`
-          + `シードされています。初期書き戻しが保存値を上書きします — `
-          + `undefined でシード（\`${parsed.path}: undefined\`）するか manual を付けてください`,
+        message: msgs.storageSeedClobber(parsed.path, cand.rawInitial),
       });
     }
   }
@@ -205,14 +202,14 @@ function normalizeSeed(raw: string): string {
 }
 
 /** 編集距離 2 以内の最近傍メンバーを「もしかして」として提示する。 */
-function suggestion(input: string, candidates: readonly string[]): string {
+function suggestion(input: string, candidates: readonly string[], msgs: WcsMessageCatalog): string {
   let best: string | null = null;
   let bestDistance = 3;
   for (const c of candidates) {
     const d = editDistance(input.toLowerCase(), c.toLowerCase(), bestDistance);
     if (d < bestDistance) { best = c; bestDistance = d; }
   }
-  return best !== null ? `。もしかして: "${best}"` : '';
+  return best !== null ? msgs.didYouMean(best) : '';
 }
 
 /** バウンド付き Levenshtein（bound 以上は bound を返す）。 */
