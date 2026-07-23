@@ -3397,12 +3397,12 @@ function hasInitialSyncModifier(binding) {
 // 頻出ポリシー（修飾子なしの通常バインディング）の凍結シングルトン。リスト行では
 // binding ごとに resolveInitialSyncPolicy が走るため、毎回のオブジェクト割り当てを
 // 避ける（record.initialPolicy は読み取り専用でしか使われない）。
-const STATE_CALL_POLICY = Object.freeze({ authority: "state", syncOn: "call", observable: false });
-const NONE_CALL_POLICY = Object.freeze({ authority: "none", syncOn: "call", observable: false });
+const STATE_CALL_POLICY = Object.freeze({ authority: "state", syncOn: "call", observable: false, outputOnly: false });
+const NONE_CALL_POLICY = Object.freeze({ authority: "none", syncOn: "call", observable: false, outputOnly: false });
 function statePolicy(authority, syncOn) {
     if (authority === "state" && syncOn === "call")
         return STATE_CALL_POLICY;
-    return { authority, syncOn, observable: false };
+    return { authority, syncOn, observable: false, outputOnly: false };
 }
 function resolveInitialSyncPolicy(binding) {
     if (!config.enableDirectionalInitialSync) {
@@ -3417,7 +3417,7 @@ function resolveInitialSyncPolicy(binding) {
         if (explicitAuthority !== null && explicitAuthority !== "none") {
             raiseError("Event bindings only allow init=none.");
         }
-        return syncOn === "call" ? NONE_CALL_POLICY : { authority: "none", syncOn, observable: false };
+        return syncOn === "call" ? NONE_CALL_POLICY : { authority: "none", syncOn, observable: false, outputOnly: false };
     }
     // command.<name>: $command.<method> は命令的な command-token 配線。bindingType は
     // "prop" だが propName ("command.<name>") は wcBindable property ではないため、下の
@@ -3455,7 +3455,7 @@ function resolveInitialSyncPolicy(binding) {
     if (syncOn === "connect" && !hasOutput) {
         raiseError(`sync=connect requires observable property "${binding.propName}".`);
     }
-    return { authority, syncOn, observable: hasOutput };
+    return { authority, syncOn, observable: hasOutput, outputOnly: hasOutput && !hasInput };
 }
 function isBindingStateInitialized(binding) {
     const rootNode = binding.replaceNode.getRootNode();
@@ -3756,9 +3756,25 @@ class BindingSession {
             return true;
         if (!record.options.registerAddress || record.phase === "waiting-definition")
             return true;
+        if (record.phase === "failed")
+            return false;
         if (record.phase === "active")
             this.settleInitialRecord(record);
-        return record.resolvedAuthority === "state";
+        // authority は初期同期のみを支配する（09 §3.6: init=element は「snapshot を
+        // state へ入れる」、init=none は「次の変更から扱う」）。settle 後の最初の相談
+        // = 初期 state sweep / 初回 render / deferred initial apply の選別なので
+        // authority で答え、ここで初期適用を消費する。
+        if (!record.initialApplyDone) {
+            record.initialApplyDone = true;
+            return record.resolvedAuthority === "state";
+        }
+        if (record.resolvedAuthority === "state")
+            return true;
+        // 定常: two-way / input member は authority と無関係に state→element を流す。
+        // 恒久ブロックは (1) output-only member の契約（書き込み無意味・DCC/router の
+        // conformance が依存）と (2) sync=connect の接続 snapshot が未解決の間
+        //（初期競合が未決着のうちは state push が element 初期値を潰しうる）だけ。
+        return !record.outputOnlyMember && !record.observationPending;
     }
     getRecord(binding) {
         const record = recordByBinding.get(binding);
@@ -4026,6 +4042,8 @@ class BindingSession {
                 initialPolicy: slot.policy,
                 resolvedAuthority: slot.authority,
                 initialSettled: true,
+                initialApplyDone: false,
+                outputOnlyMember: slot.policy.outputOnly,
                 observationPending: false,
                 eventSequence: 0,
                 hasProducerValue: false,
@@ -4079,6 +4097,8 @@ class BindingSession {
                 record.initialPolicy = slot.policy;
                 record.resolvedAuthority = slot.authority;
                 record.initialSettled = true;
+                record.initialApplyDone = false;
+                record.outputOnlyMember = slot.policy.outputOnly;
                 this.records.add(record);
                 if (slot.isEvent) {
                     try {
@@ -4137,6 +4157,8 @@ class BindingSession {
             initialPolicy: null,
             resolvedAuthority: null,
             initialSettled: false,
+            initialApplyDone: false,
+            outputOnlyMember: false,
             observationPending: false,
             eventSequence: 0,
             hasProducerValue: false,
@@ -4265,6 +4287,7 @@ class BindingSession {
             record.initialPolicy = policy;
             record.resolvedAuthority = authority;
             record.initialSettled = true;
+            record.outputOnlyMember = policy.outputOnly;
             record.phase = "active";
             if (!policy.observable)
                 return;
@@ -6873,7 +6896,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.21.7";
+var version = "1.22.0";
 var pkg = {
 	version: version};
 
@@ -8858,7 +8881,11 @@ function traceArgs(stateElement, entry) {
  * Rescue levels on abort:
  *   - ReadableStream: FULLY rescued. A parked read() is force-unwound via
  *     reader.cancel(), which both releases the underlying source and settles the
- *     pending read() so the loop unwinds.
+ *     pending read() so the loop unwinds. Anything getReader-bearing is routed
+ *     through this path even when it is ALSO natively async-iterable (Node 18+ /
+ *     Chrome 124+ / Firefox): the spec serializes asyncIterator.return() behind
+ *     the pending next() ([[ongoingPromise]]), so the AsyncIterable rescue below
+ *     cannot force-unwind a parked read on a native ReadableStream.
  *   - AsyncIterable / async generator: PARTIALLY rescued. On abort we call
  *     iterator.return() to trigger the generator's finally/cleanup. But a parked
  *     `await` (the producer stalling before its next yield while IGNORING `signal`)
@@ -8939,19 +8966,24 @@ async function consumeSource(source, args, signal, sink) {
     }
 }
 function iterate(produced, signal) {
-    // Optional chaining: a null/undefined source return value must fall through to the
-    // explicit TypeError below (symmetric with the `?.` on the getReader probe), not
-    // throw an opaque "Cannot read properties of null" from this property access.
+    // Anything ReadableStream-shaped (has getReader) takes the reader path FIRST —
+    // even when it is also async-iterable. On runtimes where ReadableStream
+    // implements native async iteration (Node 18+ / Chrome 124+ / Firefox), the
+    // spec serializes `iterator.return()` behind the pending `next()`
+    // ([[ongoingPromise]]), so the AsyncIterable rescue cannot force-unwind a
+    // parked read: abort would hang the consume task until the producer's next
+    // chunk (or forever on a silent stream), leaking the underlying source.
+    // `reader.cancel()` has no such ordering — routing every getReader-bearing
+    // source through it keeps the FULL rescue promised for ReadableStream.
+    // Optional chaining: a null/undefined source return value must fall through to
+    // the explicit TypeError below, not throw an opaque property access error.
+    if (typeof produced?.getReader === "function") {
+        return readableToAsyncIterable(produced, signal);
+    }
     if (typeof produced?.[Symbol.asyncIterator] === "function") {
         return produced;
     }
-    // Not async-iterable: must be a ReadableStream (read via getReader). Validate so
-    // a wrong source value yields a clear error instead of an opaque "getReader is
-    // not a function" from inside the generator.
-    if (typeof produced?.getReader !== "function") {
-        throw new TypeError("[@wcstack/state] $streams: source must return an AsyncIterable or a ReadableStream (got neither).");
-    }
-    return readableToAsyncIterable(produced, signal);
+    throw new TypeError("[@wcstack/state] $streams: source must return an AsyncIterable or a ReadableStream (got neither).");
 }
 async function* readableToAsyncIterable(stream, signal) {
     const reader = stream.getReader();

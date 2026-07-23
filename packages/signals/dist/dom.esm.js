@@ -1,5 +1,5 @@
-import { e as effect, o as onCleanup, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-DRLhLwcb.esm.js';
-export { D as DisposedError, b as bindNode, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-DRLhLwcb.esm.js';
+import { e as effect, o as onCleanup, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-DLSNUdLY.esm.js';
+export { D as DisposedError, b as bindNode, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-DLSNUdLY.esm.js';
 
 // Fine-grained hyperscript (v1 design notes). The "step before JSX" (docs §4-1).
 //

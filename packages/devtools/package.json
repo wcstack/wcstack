@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/devtools",
-  "version": "1.21.7",
+  "version": "1.22.0",
   "description": "In-page DevTools overlay for wcstack. Inspect state trees, bindings/wiring and update timelines via the DevTools Hook Protocol - one script tag, no build step.",
   "type": "module",
   "main": "./dist/index.esm.js",
