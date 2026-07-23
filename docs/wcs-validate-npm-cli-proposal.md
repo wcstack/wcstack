@@ -62,7 +62,7 @@ VS Code 拡張のメタデータ（`engines.vscode` / `contributes` / activation
 
 1. **パッケージ名**: **`@wcstack/lint`** に決定。bin 名は `wcs-validate` 固定（既存 README / CI と一致）。bin が 1 本だけなので `npx @wcstack/lint` はパッケージ名でもその bin を起動する（npx の単一 bin 既定規則。tarball spec で実機確認済み）。
 2. **バージョン方針**: **公開 npm 群と同一バージョン**に決定（初版は現行ラインの 1.22.0 で作成）。release workflow の unified-version bump が以後も自動で揃える。
-3. **release workflow への組込み**: **workflow 変更不要**と判明。release.yml の Discover は `@wcstack/*` scope を自動検出するため `@wcstack/lint` は自動で対象になり、vscode-wcs の前段ビルドはパッケージ自身の `scripts/build.mjs`（npm ci + build + copy を自己完結）が吸収する。
+3. **release workflow への組込み**: 当初「workflow 変更不要」と判断したが、**v1.22.1 初回発射（2026-07-24）で 1 箇所の修正が必要と判明**。Discover / build / publish は判断どおり自動で通るが、`Commit release artifacts` の `git add packages/*/dist` glob が、lint のビルドが runner 上に生成した **gitignore 対象の `packages/vscode-wcs/dist` を明示指定してしまい exit 1**（従来は release 中に vscode-wcs をビルドしないため glob 不一致で顕在化しなかった）。修正= git add を発見済みパッケージのみのループに変更。失敗 step は publish より前のため npm への部分公開は無く、再実行は安全。
 4. **ドキュメント追随**（残タスク・公開後）: vscode-wcs README（en/ja）の「npx は動かない」節を `npx @wcstack/lint` の正式手順に書き換え。ルート README への掲載は「npm 未公開のものは掲載しない」運用ルール（`docs/project-strategy-2026-07.md` §P0）に従い**公開後**。
 5. **skill 追随**（残タスク・公開後）: wcstack-skill の references に検証ループ（生成 → `npx @wcstack/lint --errors-only` → 修正）の手順を追記（CLAUDE.md の skill 同期規約の対象）。
 6. **動作確認**: **Windows 実機確認済み**。tarball install → `.cmd` shim 経由の `npx wcs-validate` で exit 0/1/2 契約どおり、tarball spec 起動（公開後の `npx @wcstack/lint` と同じ解決規則）も exit 0。
@@ -82,4 +82,5 @@ VS Code 拡張のメタデータ（`engines.vscode` / `contributes` / activation
   - `README.md` / `README.ja.md` — npx 一行・オプション・exit code 契約・生成→検証→修正ループを記載。
 - **`scripts/sync-package-configs.mjs`** — lint を `rollup.config.js` / `eslint.config.js` 両方の DEVIATIONS に追加（自前 src を持たない配布ラッパーのため）。他の自動検出は影響なし（conformance-bindable-inputs は `dist/index.esm.js` 前提で lint を素通し、sync-protocol-types / sync-io-core は明示リスト）。
 - **検証済み**: smoke 6/6 合格、`npm pack` = 4 ファイル 30.8 kB、tarball install 後の Windows `.cmd` shim 経由 `npx wcs-validate` で exit 契約どおり。
-- CI 側は detect-changes が `@wcstack/lint` を自動検出し matrix（npm ci → lint → build → test:coverage）に入る。release.yml も Discover の自動検出で publish 対象になる（workflow 差分ゼロ）。
+- CI 側は detect-changes が `@wcstack/lint` を自動検出し matrix（npm ci → lint → build → test:coverage）に入る。release.yml も Discover の自動検出で publish 対象になる。
+- **追記（2026-07-24 v1.22.1 初回発射の失敗と修正）**: release.yml の `Commit release artifacts` が `git add packages/*/dist` glob だったため、lint ビルドの副産物である gitignore 対象 `packages/vscode-wcs/dist` を明示指定して exit 1。**git add を発見済み（`@wcstack/*`）パッケージのみのループに修正**（§5-3）。教訓=「新パッケージのビルドが他パッケージのビルド副産物を runner に残す」場合、パッケージ横断の glob を使う workflow step は再点検が要る。

@@ -133,11 +133,17 @@ jobs:
         run: node scripts/conformance-bindable-inputs.mjs
 
       # Commit release artifacts locally so npm publish uses the same tree that will be tagged.
+      # Add per discovered package rather than a packages/*/dist glob: building
+      # @wcstack/lint leaves a freshly built packages/vscode-wcs/dist on the
+      # runner, which is gitignored — a glob would name it explicitly and make
+      # `git add` fail (the v1.22.1 first-attempt failure).
       - name: Commit release artifacts
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add packages/*/package.json packages/*/package-lock.json packages/*/dist
+          for pkg in ${{ steps.discover.outputs.list }}; do
+            git add "packages/$pkg/package.json" "packages/$pkg/package-lock.json" "packages/$pkg/dist"
+          done
           git commit -m "chore: bump all packages to v${{ steps.bump.outputs.version }}"
 
       # Publish to npm — idempotent: skip any package whose target version is
