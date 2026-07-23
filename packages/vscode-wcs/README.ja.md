@@ -152,9 +152,6 @@ CLI は npm では [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/
 npx @wcstack/lint [--attr=data-wcs] [--state-tag=wcs-state] [--errors-only] <file> [<file> ...]
 ```
 
-> **Note**: `@wcstack/lint` の初公開は 2026-07-24 以降の次回 wcstack リリースです。
-> npm に載るまでは下記のリポジトリからのビルドを使ってください。
-
 validator 自体を開発する場合や、このリポジトリの CI（`wcs-validate` job はまさに
 この起動方法です）では、ソースからビルドして `node` で起動します:
 

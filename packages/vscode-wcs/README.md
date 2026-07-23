@@ -154,9 +154,6 @@ wrapper around the exact same CLI bundle:
 npx @wcstack/lint [--attr=data-wcs] [--state-tag=wcs-state] [--errors-only] <file> [<file> ...]
 ```
 
-> **Note**: `@wcstack/lint` first ships with the wcstack release following
-> 2026-07-24. Until it is on npm, use the from-repo invocation below.
-
 Alternatively — when working on the validator itself, or in this repo's CI (the
 `wcs-validate` job runs it exactly this way) — build from source and invoke the
 CLI with `node`:

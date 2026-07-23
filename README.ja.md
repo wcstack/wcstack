@@ -289,6 +289,7 @@ const html = await renderToString(`
 - [`@wcstack/camera`](packages/camera/) — `<wcs-camera>`（getUserMedia + 組み込みプレビュー）と `<wcs-recorder>`（MediaRecorder）でカメラ撮影・録画を宣言的に。ライブな `MediaStream` は command-token 引数で要素へ直接バインドし、**シリアライズ可能な状態には決して格納しない** — 派生値（権限、録画フラグ、録画した `Blob`/URL）だけが状態を流れる。
 - [`@wcstack/signals`](packages/signals/) — シグナルベースのきめ細かいリアクティブ**コア**（`@wcstack/state` の JS ファースト版）。`signal`/`computed`/`effect`、非同期の `resource`/`streamResource`、keyed な `For`/`Index`、同じ wc-bindable IO ノードをシグナル経由で駆動する `bindNode` アダプタ。TC39-Signals 準拠、依存ゼロ。
 - [`@wcstack/devtools`](packages/devtools/) — `<wcs-devtools>` によるページ内 DevTools オーバーレイ。state ツリーの検査（通常のリアクティブパイプラインを通るインライン編集付き）、各パスがどの DOM ノードに配線されているかの表示、write / 更新バッチ / command・event トークン発火のライブタイムライン — 購読者ゼロの「空撃ち」警告付き。`<script>` 一行、DevTools Hook Protocol で接続、依存ゼロ。
+- [`@wcstack/lint`](packages/lint/) — 静的契約検査 CLI（`npx @wcstack/lint`・コマンド名 `wcs-validate`）。HTML の `data-wcs` バインディングと `wcstack.manifest.json` sidecar を、VS Code 拡張と同一の validator core でヘッドレスに検査 — IDE と CI で diagnostic code / range が完全一致し、安定した exit code 契約で生成→検証→修正ループに組み込める。依存ゼロ。
 - [`wcstack-intellisense`](packages/vscode-wcs/) — `<wcs-state>` インラインスクリプト向けの VS Code 言語サポート拡張。
 
 ---
@@ -386,6 +387,7 @@ wcstack/
 │   ├── camera/        # @wcstack/camera
 │   ├── signals/       # @wcstack/signals
 │   ├── devtools/      # @wcstack/devtools
+│   ├── lint/          # @wcstack/lint
 │   └── vscode-wcs/    # wcstack-intellisense (VS Code拡張)
 ```
 
