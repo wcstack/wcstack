@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/storage",
-  "version": "1.22.0",
+  "version": "1.22.1",
   "description": "Declarative persistent storage component for Web Components. Framework-agnostic localStorage/sessionStorage via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
