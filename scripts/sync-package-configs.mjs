@@ -22,13 +22,16 @@ const repoRoot = resolve(__dirname, "..");
 
 const DEVIATIONS = {
   "rollup.config.js": {
+    lint: "thin CLI distribution wrapper with no src/ of its own; copies the vscode-wcs cli.cjs bundle (scripts/build.mjs), no rollup build",
     notification: "extra Service Worker bundle entry (src/sw.ts) alongside the standard three outputs",
     router: "imports @rollup/plugin-json (inlines package.json), package-specific build shape",
     server: "imports @rollup/plugin-json, package-specific build shape",
     state: "imports @rollup/plugin-json (inlines package.json), package-specific build shape",
     signals: "no src/auto bootstrap (design decision G2); lazy typescript plugin instantiation",
   },
-  "eslint.config.js": {},
+  "eslint.config.js": {
+    lint: "no src/ TypeScript to lint; `npm run lint` syntax-checks its two build/test scripts via node --check",
+  },
 };
 
 function discoverPackages() {
