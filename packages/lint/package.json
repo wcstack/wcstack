@@ -1,0 +1,41 @@
+{
+  "name": "@wcstack/lint",
+  "version": "1.22.0",
+  "description": "Static-contract validator CLI (wcs-validate) for wcstack data-wcs bindings and wcstack.manifest.json sidecars. Thin npm wrapper around the wcstack-intellisense validator core.",
+  "type": "module",
+  "bin": {
+    "wcs-validate": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "build": "node scripts/build.mjs",
+    "lint": "node --check scripts/build.mjs && node --check scripts/smoke-test.mjs",
+    "test": "node scripts/smoke-test.mjs",
+    "test:coverage": "node scripts/smoke-test.mjs"
+  },
+  "keywords": [
+    "web-components",
+    "wcstack",
+    "lint",
+    "validator",
+    "static-analysis",
+    "data-wcs",
+    "custom-elements",
+    "cli",
+    "zero-dependencies"
+  ],
+  "author": "mogera551",
+  "homepage": "https://wcstack.github.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wcstack/wcstack.git",
+    "directory": "packages/lint"
+  },
+  "bugs": {
+    "url": "https://github.com/wcstack/wcstack/issues"
+  },
+  "license": "MIT"
+}
