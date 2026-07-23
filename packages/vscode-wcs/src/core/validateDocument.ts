@@ -14,6 +14,8 @@ import { validateBindings } from "../service/bindingValidator.js";
 import { validateStateTypes } from "../service/stateTypeValidator.js";
 import { validateNestedAssigns } from "../service/nestedAssignValidator.js";
 import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
+import { validateIoNodes } from "../service/ioNodeValidator.js";
+import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 
 export interface ValidateDocumentOptions {
   /** バインド属性名(既定 data-wcs)。 */
@@ -30,9 +32,11 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const stateTagName = options.stateTagName ?? "wcs-state";
 
   const out: WcsDiagnostic[] = [];
-  // bindingValidator / templateSyntaxValidator は既に code 付き。
+  // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。
   out.push(...validateBindings(text, bindAttribute, stateTagName));
   out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute));
+  out.push(...validateIoNodes(text, bindAttribute, stateTagName));
+  out.push(...validateDocumentEnv(text));
   // 単一カテゴリの validator は集約時に code を付与する。
   for (const d of validateStateTypes(text, stateTagName)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });

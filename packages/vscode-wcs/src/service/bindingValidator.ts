@@ -319,7 +319,7 @@ interface ParsedFilter {
   argsOffset: number;  // '(' の位置（引数全体のオフセット）
 }
 
-interface ParsedBinding {
+export interface ParsedBinding {
   property: string;
   path: string | null;
   targetState: string;
@@ -354,8 +354,10 @@ function findAllBindAttributes(html: string, attrName: string): BindAttrLocation
 
 /**
  * バインディング式を `;` で分割する。
+ * （ioNodeValidator が同一パーサを共有するため export — 二重実装で構文解釈が
+ * 割れると IDE / CI の診断が食い違うので、必ずこちらを使うこと。）
  */
-function splitBindingExpressions(value: string): string[] {
+export function splitBindingExpressions(value: string): string[] {
   const result: string[] = [];
   let current = '';
   let parenDepth = 0;
@@ -376,8 +378,9 @@ function splitBindingExpressions(value: string): string[] {
 
 /**
  * 単一のバインディング式を解析する。
+ * （ioNodeValidator が同一パーサを共有するため export。）
  */
-function parseBindingExpression(expr: string): ParsedBinding {
+export function parseBindingExpression(expr: string): ParsedBinding {
   const colonIndex = expr.indexOf(':');
 
   if (colonIndex === -1) {
