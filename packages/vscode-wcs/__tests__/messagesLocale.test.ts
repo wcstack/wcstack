@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { validateDocument } from '../src/core/validateDocument.js';
 import { runValidation } from '../src/core/cli/runValidation.js';
 import { resolveLocale } from '../src/core/messages.js';
-import { parseArgs } from '../src/cli.js';
+import { parseArgs, resolveCliLocale } from '../src/cli.js';
 import { WcsDiagnosticCode } from '../src/core/diagnostics.js';
 
 const BROKEN = `<wcs-state><script type="module">
@@ -63,11 +63,32 @@ describe('validateDocument: locale 切り替え', () => {
   });
 });
 
-describe('CLI: --lang フラグ', () => {
+describe('CLI: 言語決定則（--lang > 環境 > en）', () => {
   it('parseArgs が --lang=en を locale に写す', () => {
     const { options, files } = parseArgs(['--lang=en', 'app.html']);
     expect(options.locale).toBe('en');
     expect(files).toEqual(['app.html']);
+  });
+
+  it('--lang 明示が環境より優先される', () => {
+    expect(resolveCliLocale('en', { LANG: 'ja_JP.UTF-8' })).toBe('en');
+    expect(resolveCliLocale('ja', { LANG: 'en_US.UTF-8' })).toBe('ja');
+  });
+
+  it('環境変数から検出する（LC_ALL > LC_MESSAGES > LANG、ja 系のみ ja）', () => {
+    expect(resolveLocale(resolveCliLocale(undefined, { LANG: 'ja_JP.UTF-8' }))).toBe('ja');
+    expect(resolveLocale(resolveCliLocale(undefined, { LANG: 'en_US.UTF-8' }))).toBe('en');
+    expect(resolveLocale(resolveCliLocale(undefined, { LANG: 'fr_FR.UTF-8' }))).toBe('en');
+    expect(resolveLocale(resolveCliLocale(undefined, { LANG: 'C.UTF-8' }))).toBe('en');
+    expect(resolveCliLocale(undefined, { LC_ALL: 'en_US', LANG: 'ja_JP' })).toBe('en_US');
+    expect(resolveCliLocale(undefined, { LC_MESSAGES: 'ja_JP', LANG: 'en_US' })).toBe('ja_JP');
+  });
+
+  it('環境変数がなければ Intl か en にフォールバックし、必ず解決可能な文字列を返す', () => {
+    const detected = resolveCliLocale(undefined, {});
+    expect(typeof detected).toBe('string');
+    expect(detected.length).toBeGreaterThan(0);
+    expect(['ja', 'en']).toContain(resolveLocale(detected));
   });
 
   it('runValidation に locale が伝搬して整形行が英語になる', () => {

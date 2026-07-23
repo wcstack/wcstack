@@ -2,14 +2,15 @@
  * core/messages.ts — 診断メッセージの単一正本（ja / en）。
  *
  * HTML パイプラインの全 validator はメッセージ文字列を直接組み立てず、
- * ここのカタログ関数を通す。locale は validateDocument / runValidation の
- * オプション（CLI は --lang、IDE は VS Code の表示言語 or wcstack.messageLanguage 設定）
- * から伝搬する。
+ * ここのカタログ関数を通す。locale の決定はツール層が行う:
+ *   CLI: --lang > 環境(LC_ALL / LC_MESSAGES / LANG / Intl) > en（cli.ts resolveCliLocale）
+ *   IDE: wcstack.messageLanguage 設定 > VS Code 表示言語 > en（wcsCompletionPlugin）
+ * ここでは渡された locale 文字列を ja / en に解決するだけ（ja 系以外はすべて en）。
+ * ライブラリ API として locale 未指定で呼ばれた場合のみ ja（後方互換の既定）。
  *
  * 互換性: 診断の安定契約は {code, range, severity} であり、message は
  * ロケールで変わってよい（docs/architecture-hardening/09-remediation-design.md §8 の
  * IDE/CI 一致条件は code / range に対するもの）。
- * 既定は ja（従来挙動）。'ja' で始まらない locale 指定は en。
  *
  * sidecar パイプライン（Manifest* / Drift*）のメッセージは従来から英語のみ。
  */

@@ -42,9 +42,10 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
     create(context): LanguageServicePluginInstance {
       let bindAttrName = DEFAULT_BIND_ATTR;
       let stateTagName = 'wcs-state';
-      // 診断メッセージ言語。既定は VS Code の表示言語（LSP initialize の locale）。
+      // 診断メッセージ言語。既定は VS Code の表示言語（LSP initialize の locale）、
+      // 取得できなければ en にフォールバック（CLI の決定則と同じ）。
       // wcstack.messageLanguage 設定（"ja" / "en"）が指定されていればそちらを優先。
-      let messageLocale: string | undefined = context.env.locale;
+      let messageLocale: string = context.env.locale ?? 'en';
 
       // 設定から値を取得（変更時も追従）
       const readConfig = () => {
@@ -56,7 +57,7 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
         });
         context.env.getConfiguration?.<string>('wcstack.messageLanguage').then(v => {
           if (v === 'ja' || v === 'en') messageLocale = v;
-          else messageLocale = context.env.locale;
+          else messageLocale = context.env.locale ?? 'en';
         });
       };
       readConfig();
