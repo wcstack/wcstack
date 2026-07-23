@@ -42,22 +42,26 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
     create(context): LanguageServicePluginInstance {
       let bindAttrName = DEFAULT_BIND_ATTR;
       let stateTagName = 'wcs-state';
+      // 診断メッセージ言語。既定は VS Code の表示言語（LSP initialize の locale）、
+      // 取得できなければ en にフォールバック（CLI の決定則と同じ）。
+      // wcstack.messageLanguage 設定（"ja" / "en"）が指定されていればそちらを優先。
+      let messageLocale: string = context.env.locale ?? 'en';
 
       // 設定から値を取得（変更時も追従）
-      context.env.getConfiguration?.<string>('wcstack.bindAttributeName').then(v => {
-        if (v) bindAttrName = v;
-      });
-      context.env.getConfiguration?.<string>('wcstack.stateTagName').then(v => {
-        if (v) stateTagName = v;
-      });
-      context.env.onDidChangeConfiguration?.(() => {
+      const readConfig = () => {
         context.env.getConfiguration?.<string>('wcstack.bindAttributeName').then(v => {
           if (v) bindAttrName = v;
         });
         context.env.getConfiguration?.<string>('wcstack.stateTagName').then(v => {
           if (v) stateTagName = v;
         });
-      });
+        context.env.getConfiguration?.<string>('wcstack.messageLanguage').then(v => {
+          if (v === 'ja' || v === 'en') messageLocale = v;
+          else messageLocale = context.env.locale ?? 'en';
+        });
+      };
+      readConfig();
+      context.env.onDidChangeConfiguration?.(readConfig);
 
       return {
         provideCompletionItems(document, position) {
@@ -296,7 +300,7 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
           // CI CLI と同じ validator core を呼ぶ(§7.1)。両者は同一 {code, range, severity}
           // を生成する。LSP Diagnostic の code 欄に stable code を転送する。
           const text = document.getText();
-          return validateDocument(text, { bindAttribute: bindAttrName, stateTagName }).map(d => ({
+          return validateDocument(text, { bindAttribute: bindAttrName, stateTagName, locale: messageLocale }).map(d => ({
             range: {
               start: document.positionAt(d.start),
               end: document.positionAt(d.end),

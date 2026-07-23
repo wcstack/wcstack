@@ -10,6 +10,7 @@
  */
 
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 
 export interface NestedAssignDiagnostic {
   start: number;
@@ -31,12 +32,13 @@ export interface NestedAssignDiagnostic {
  *   this["prop.sub"] = value （ドットパス — OK）
  *   this.$api(...)           （API 呼び出し — OK）
  */
-export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-state'): NestedAssignDiagnostic[] {
+export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-state', locale?: string): NestedAssignDiagnostic[] {
+  const msgs = getMessages(locale);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics: NestedAssignDiagnostic[] = [];
 
   for (const block of blocks) {
-    const blockDiags = findNestedAssigns(block.content, block.contentStart);
+    const blockDiags = findNestedAssigns(block.content, block.contentStart, msgs);
     diagnostics.push(...blockDiags);
   }
 
@@ -46,7 +48,7 @@ export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-
 /**
  * スクリプト内容からネスト代入パターンを検出する。
  */
-function findNestedAssigns(script: string, baseOffset: number): NestedAssignDiagnostic[] {
+function findNestedAssigns(script: string, baseOffset: number, msgs: WcsMessageCatalog = getMessages()): NestedAssignDiagnostic[] {
   const diagnostics: NestedAssignDiagnostic[] = [];
 
   // this.X.Y...= を検出する正規表現
@@ -79,7 +81,7 @@ function findNestedAssigns(script: string, baseOffset: number): NestedAssignDiag
     diagnostics.push({
       start: assignStart,
       end: assignEnd,
-      message: `ネストされたプロパティへの代入はリアクティブ更新をトリガーしません。this["${suggestedPath}"] を使用してください。`,
+      message: msgs.nestedAssign(suggestedPath),
       severity: 'warning',
     });
   }

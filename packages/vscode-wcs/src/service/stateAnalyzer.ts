@@ -20,6 +20,12 @@ export interface PathCandidate {
   kind: 'data' | 'computed' | 'method' | 'list' | 'command' | 'eventToken';
   /** 値の型ヒント（推定） */
   typeHint?: string;
+  /**
+   * 初期値リテラルの生テキスト（kind: 'data' のみ、トリム済み。例: "true"、"''"、"null"）。
+   * シード値検査（trigger スロットの true シード / storage スロットの空文字シード等）が
+   * 具体値を必要とするため typeHint とは別に公開する。JSON 由来のパスには付かない。
+   */
+  rawInitial?: string;
   /** 所属する state 名（デフォルト: 'default'） */
   stateName: string;
 }
@@ -156,7 +162,7 @@ function extractStringArrayItems(value: string): string[] {
  */
 function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], stateName: string): void {
   // データプロパティ
-  paths.push({ path: prop.name, kind: 'data', typeHint: prop.typeHint, stateName });
+  paths.push({ path: prop.name, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
 
   // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成
   if (prop.value && isArrayLiteral(prop.value)) {
@@ -182,6 +188,7 @@ function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], state
           path: `${prop.name}.${childProp.name}`,
           kind: 'data',
           typeHint: childProp.typeHint,
+          rawInitial: childProp.value?.trim(),
           stateName,
         });
 

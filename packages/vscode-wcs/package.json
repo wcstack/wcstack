@@ -33,6 +33,12 @@
           "type": "string",
           "default": "wcs-state",
           "description": "The custom element tag name for state definition (e.g. \"wcs-state\", \"my-state\")."
+        },
+        "wcstack.messageLanguage": {
+          "type": "string",
+          "enum": ["auto", "ja", "en"],
+          "default": "auto",
+          "description": "Language of wcstack diagnostic messages. \"auto\" follows the VS Code display language (non-Japanese locales get English). Diagnostic codes and ranges are language-independent."
         }
       }
     }
@@ -40,6 +46,7 @@
   "scripts": {
     "build": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
+    "emit:builtin-tags": "node scripts/emit-builtin-tags.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

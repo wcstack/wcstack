@@ -13,6 +13,7 @@ import type { PathCandidate } from './stateAnalyzer.js';
 import { getStatePathsFromHtml } from './statePathResolver.js';
 import { isInsideForTemplate, getInnermostForPath } from './forContext.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
+import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -37,8 +38,9 @@ export interface BindingDiagnostic {
  * @param html - HTML 全文
  * @param attrName - バインド属性名（例: "data-wcs"）
  */
-export function validateBindings(html: string, attrName: string, stateTagName: string = 'wcs-state'): BindingDiagnostic[] {
+export function validateBindings(html: string, attrName: string, stateTagName: string = 'wcs-state', locale?: string): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
+  const msgs = getMessages(locale);
 
   // 状態パスを収集（state 名ごとに分類）
   const statePaths = getStatePathsFromHtml(html, stateTagName);
@@ -77,7 +79,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             code: WcsDiagnosticCode.TemplateSyntax,
             start: bindingStart + filter.offset,
             end: bindingStart + filter.offset + filter.name.length,
-            message: `スプレッドのターゲットにフィルタは使用できません`,
+            message: msgs.spreadFilterNotAllowed(),
             severity: 'error',
           });
         }
@@ -86,7 +88,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             code: WcsDiagnosticCode.TemplateSyntax,
             start: bindingStart,
             end: bindingStart + binding.length,
-            message: `スプレッドにはターゲットパスが必要です`,
+            message: msgs.spreadTargetRequired(),
             severity: 'error',
           });
         }
@@ -106,7 +108,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             code: WcsDiagnosticCode.TokenUndeclared,
             start: pathStart,
             end: pathStart + tokenName.length,
-            message: `イベントトークン "${tokenName}" は $eventTokens に宣言されていません`,
+            message: msgs.eventTokenUndeclared(tokenName),
             severity: 'warning',
           });
         }
@@ -129,7 +131,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               code: WcsDiagnosticCode.TokenMisconfigured,
               start: pathStart,
               end: pathStart + tokenPath.length,
-              message: `command バインディングの右辺には $command.<name>（$commandTokens で宣言）を指定してください`,
+              message: msgs.commandRhsFormat(),
               severity: 'warning',
             });
           } else if (commandNames.size > 0 && !commandNames.has(tokenPath)) {
@@ -137,7 +139,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               code: WcsDiagnosticCode.TokenUndeclared,
               start: pathStart,
               end: pathStart + tokenPath.length,
-              message: `コマンドトークン "${tokenPath}" は $commandTokens に宣言されていません`,
+              message: msgs.commandTokenUndeclared(tokenPath),
               severity: 'warning',
             });
           }
@@ -160,7 +162,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             }
           }
           if (checkPath) {
-            const message = validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames);
+            const message = validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs);
             if (message) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
@@ -168,7 +170,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
                 code: WcsDiagnosticCode.BindingPathMissing,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: `${message}${pathTrimmed.startsWith('.') ? `（展開: ${checkPath}）` : ''}`,
+                message: `${message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}`,
                 severity: 'warning',
               });
             }
@@ -191,7 +193,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
-              message: `パターンパス "${pathTrimmed}" は <template for> の外側では使用できません`,
+              message: msgs.patternPathOutsideFor(pathTrimmed),
               severity: 'warning',
             });
           }
@@ -204,7 +206,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
-              message: `省略パス "${pathTrimmed}" は <template for> の外側では使用できません`,
+              message: msgs.omittedPathOutsideFor(pathTrimmed),
               severity: 'warning',
             });
           }
@@ -217,7 +219,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
-              message: `ループインデックス "${pathTrimmed}" は <template for> の外側では使用できません`,
+              message: msgs.loopIndexOutsideFor(pathTrimmed),
               severity: 'warning',
             });
           }
@@ -230,7 +232,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
               code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
-              message: `解決済みパス "${pathTrimmed}" は UI バインディングでは使用できません。パターンパスを使用してください`,
+              message: msgs.resolvedPathInUi(pathTrimmed),
               severity: 'warning',
             });
           }
@@ -247,13 +249,13 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
             code: WcsDiagnosticCode.TemplateSyntax,
             start: bindingStart + filter.offset,
             end: bindingStart + filter.offset + filter.name.length,
-            message: `イベントハンドラ "${parsed.property}" にフィルタは使用できません`,
+            message: msgs.handlerFilterNotAllowed(parsed.property),
             severity: 'warning',
           });
         }
       } else {
         for (const filter of parsed.filters) {
-          diagnostics.push(...validateFilterUsage(filter, bindingStart));
+          diagnostics.push(...validateFilterUsage(filter, bindingStart, msgs));
         }
 
         // フィルタ間の入力型チェック
@@ -261,7 +263,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
           const pathTrimmed = parsed.path.trim();
           if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
             const chainDiags = validateFilterChainTypes(
-              pathTrimmed, parsed.filters, scopedPaths, bindingStart,
+              pathTrimmed, parsed.filters, scopedPaths, bindingStart, msgs,
             );
             diagnostics.push(...chainDiags);
           }
@@ -271,7 +273,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
       // prop 側 input フィルタの検証（two-way の書き戻し方向。
       // ランタイムの input / output フィルタ集合は同一 — filters/builtinFilters.ts）
       for (const filter of parsed.inputFilters) {
-        diagnostics.push(...validateFilterUsage(filter, bindingStart));
+        diagnostics.push(...validateFilterUsage(filter, bindingStart, msgs));
       }
 
       // プロパティに応じた型チェック
@@ -288,7 +290,7 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
                 code: WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
                 end: pathStart + pathTrimmed.length,
-                message: `"${typeReq.label}" には${typeReq.expectedLabel}が必要です（現在の型: ${resultType}）`,
+                message: msgs.typeExpectation(typeReq.label, typeReq.expected, resultType),
                 severity: typeReq.severity,
               });
             }
@@ -319,7 +321,7 @@ interface ParsedFilter {
   argsOffset: number;  // '(' の位置（引数全体のオフセット）
 }
 
-interface ParsedBinding {
+export interface ParsedBinding {
   property: string;
   path: string | null;
   targetState: string;
@@ -354,8 +356,10 @@ function findAllBindAttributes(html: string, attrName: string): BindAttrLocation
 
 /**
  * バインディング式を `;` で分割する。
+ * （ioNodeValidator が同一パーサを共有するため export — 二重実装で構文解釈が
+ * 割れると IDE / CI の診断が食い違うので、必ずこちらを使うこと。）
  */
-function splitBindingExpressions(value: string): string[] {
+export function splitBindingExpressions(value: string): string[] {
   const result: string[] = [];
   let current = '';
   let parenDepth = 0;
@@ -376,8 +380,9 @@ function splitBindingExpressions(value: string): string[] {
 
 /**
  * 単一のバインディング式を解析する。
+ * （ioNodeValidator が同一パーサを共有するため export。）
  */
-function parseBindingExpression(expr: string): ParsedBinding {
+export function parseBindingExpression(expr: string): ParsedBinding {
   const colonIndex = expr.indexOf(':');
 
   if (colonIndex === -1) {
@@ -444,7 +449,7 @@ function parseFilterSegments(expr: string, segments: string[], searchStart: numb
 /**
  * フィルタ1件の名前・引数個数・引数型を検証する（input / output 共通）。
  */
-function validateFilterUsage(filter: ParsedFilter, bindingStart: number): BindingDiagnostic[] {
+function validateFilterUsage(filter: ParsedFilter, bindingStart: number, msgs: WcsMessageCatalog): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
   const info = filterMap.get(filter.name);
   if (!info) {
@@ -452,7 +457,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
       code: WcsDiagnosticCode.FilterUnknown,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
-      message: `フィルタ "${filter.name}" は組み込みフィルタに存在しません`,
+      message: msgs.filterUnknown(filter.name),
       severity: 'warning',
     });
     return diagnostics;
@@ -465,7 +470,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
       code: WcsDiagnosticCode.FilterArity,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
-      message: `フィルタ "${filter.name}" には最低 ${info.minArgs} 個の引数が必要です（${argCount} 個指定）`,
+      message: msgs.filterMinArgs(filter.name, info.minArgs, argCount),
       severity: 'error',
     });
   } else if (argCount > info.maxArgs) {
@@ -473,7 +478,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
       code: WcsDiagnosticCode.FilterArity,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
-      message: `フィルタ "${filter.name}" の引数は最大 ${info.maxArgs} 個です（${argCount} 個指定）`,
+      message: msgs.filterMaxArgs(filter.name, info.maxArgs, argCount),
       severity: 'error',
     });
   }
@@ -489,7 +494,7 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number): Bindin
           code: WcsDiagnosticCode.FilterArgType,
           start: bindingStart + filter.argsOffset,
           end: bindingStart + filter.argsOffset + filter.name.length,
-          message: `フィルタ "${filter.name}" の第${i + 1}引数は ${expectedArgType} 型が必要です（"${filter.args[i]}" は ${actualArgType} 型）`,
+          message: msgs.filterArgType(filter.name, i + 1, expectedArgType, filter.args[i], actualArgType),
           severity: 'warning',
         });
       }
@@ -536,12 +541,13 @@ function validatePathExistence(
   scopedPaths: PathCandidate[],
   scopedPathSet: Set<string>,
   commandNames: Set<string>,
+  msgs: WcsMessageCatalog,
 ): string | null {
   if (/^\$\d+$/.test(checkPath)) return null;
 
   if (checkPath.startsWith('$command.')) {
     if (commandNames.size > 0 && !commandNames.has(checkPath)) {
-      return `コマンドトークン "${displayPath}" は $commandTokens に宣言されていません`;
+      return msgs.commandTokenUndeclared(displayPath);
     }
     return null;
   }
@@ -551,21 +557,20 @@ function validatePathExistence(
     // $streams 宣言が解析できていない（候補ゼロ）場合は誤警告を避けてスキップ
     const hasNamespace = scopedPaths.some(p => p.path.startsWith(prefix));
     if (hasNamespace && !scopedPathSet.has(checkPath)) {
-      return `パス "${displayPath}" は $streams 宣言に存在しません`;
+      return msgs.streamPathMissing(displayPath);
     }
     return null;
   }
 
   if (!scopedPathSet.has(checkPath)) {
-    return `パス "${displayPath}" は状態定義に存在しません`;
+    return msgs.pathMissing(displayPath);
   }
   return null;
 }
 
 interface TypeRequirement {
   label: string;
-  expected: string;
-  expectedLabel: string;
+  expected: ExpectedTypeKind;
   severity: 'error' | 'warning';
 }
 
@@ -576,19 +581,19 @@ function getExpectedType(property: string): TypeRequirement | null {
   const prop = property.replace(/#.*$/, ''); // 修飾子を除去
 
   if (prop === 'for') {
-    return { label: 'for', expected: 'array', expectedLabel: '配列型のパス', severity: 'error' };
+    return { label: 'for', expected: 'array', severity: 'error' };
   }
   if (prop === 'if' || prop === 'elseif') {
-    return { label: prop, expected: 'boolean', expectedLabel: 'ブーリアン型', severity: 'warning' };
+    return { label: prop, expected: 'boolean', severity: 'warning' };
   }
   if (prop.startsWith('class.')) {
-    return { label: prop, expected: 'boolean', expectedLabel: 'ブーリアン型', severity: 'warning' };
+    return { label: prop, expected: 'boolean', severity: 'warning' };
   }
   if (prop.startsWith('attr.')) {
-    return { label: prop, expected: 'string', expectedLabel: '文字列型', severity: 'warning' };
+    return { label: prop, expected: 'string', severity: 'warning' };
   }
   if (prop.startsWith('style.')) {
-    return { label: prop, expected: 'string', expectedLabel: '文字列型', severity: 'warning' };
+    return { label: prop, expected: 'string', severity: 'warning' };
   }
   return null;
 }
@@ -601,6 +606,7 @@ function validateFilterChainTypes(
   filters: { name: string; offset: number }[],
   statePaths: PathCandidate[],
   bindingStart: number,
+  msgs: WcsMessageCatalog,
 ): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
 
@@ -624,7 +630,7 @@ function validateFilterChainTypes(
           code: WcsDiagnosticCode.FilterInputType,
           start: bindingStart + filter.offset,
           end: bindingStart + filter.offset + filter.name.length,
-          message: `フィルタ "${filter.name}" は ${(info.acceptTypes as string[]).join('|')} 型の入力が必要です（現在の型: ${currentType}）`,
+          message: msgs.filterInputType(filter.name, (info.acceptTypes as string[]).join('|'), currentType),
           severity: 'warning',
         });
       }
