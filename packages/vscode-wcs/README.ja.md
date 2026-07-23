@@ -145,9 +145,18 @@ drift。診断には安定コード（例 `manifest-schema-version` / `manifest-
 単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、エディタと CI で
 結果が一致します。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
 sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します。
-本パッケージの配布先は VS Code Marketplace であり npm には公開していないため、
-`npx wcs-validate` は動きません。リポジトリからビルドして `node` で起動してください
-（このリポジトリ自身の `wcs-validate` CI job もまったく同じ起動方法です）:
+CLI は npm では [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint)
+として配布されています（同一の CLI バンドルを同梱する依存ゼロのラッパー）:
+
+```bash
+npx @wcstack/lint [--attr=data-wcs] [--state-tag=wcs-state] [--errors-only] <file> [<file> ...]
+```
+
+> **Note**: `@wcstack/lint` の初公開は 2026-07-24 以降の次回 wcstack リリースです。
+> npm に載るまでは下記のリポジトリからのビルドを使ってください。
+
+validator 自体を開発する場合や、このリポジトリの CI（`wcs-validate` job はまさに
+この起動方法です）では、ソースからビルドして `node` で起動します:
 
 ```bash
 # 初回のみビルド（リポジトリルートから）
