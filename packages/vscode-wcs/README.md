@@ -146,9 +146,20 @@ codes (e.g. `manifest-schema-version`, `manifest-kind-invalid`).
 A single `validateDocument` entry point drives both the in-editor diagnostics and
 the CLI, so the IDE and CI report identically. The bundled **`wcs-validate`** CLI
 runs the same checks headlessly — over `wcstack.manifest.json` sidecars and/or HTML
-`data-wcs` bindings — for CI. This package ships to the VS Code Marketplace, not
-npm, so `npx wcs-validate` does not work; build it from this repo and invoke the
-CLI with `node` (this is exactly how the repo's own `wcs-validate` CI job runs it):
+`data-wcs` bindings — for CI. It is distributed on npm as
+[**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint), a zero-dependency
+wrapper around the exact same CLI bundle:
+
+```bash
+npx @wcstack/lint [--attr=data-wcs] [--state-tag=wcs-state] [--errors-only] <file> [<file> ...]
+```
+
+> **Note**: `@wcstack/lint` first ships with the wcstack release following
+> 2026-07-24. Until it is on npm, use the from-repo invocation below.
+
+Alternatively — when working on the validator itself, or in this repo's CI (the
+`wcs-validate` job runs it exactly this way) — build from source and invoke the
+CLI with `node`:
 
 ```bash
 # one-time build (from the repo root)
