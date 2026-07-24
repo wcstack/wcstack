@@ -22,6 +22,24 @@ import { setLoopContextSymbol, getByAddressSymbol } from '../src/proxy/symbols';
 const outerUUID = 'nested-outer-uuid';
 const innerUUID = 'nested-inner-uuid';
 
+/**
+ * 子ノード列を「種類の並び」として写す。総数だけの assert では順序の退行
+ * （ネスト行が前行の実ノードの手前に割り込む類）を捕まえられないため、
+ * 並びそのものを固定する。`#wcs-row-end` は行末尾が構造アンカーになる
+ * テンプレートにだけ付く実レンジの終端マーカー。
+ */
+function shapeOf(parent: Node): string[] {
+  return Array.from(parent.childNodes).map((node) => {
+    if (node.nodeType === Node.COMMENT_NODE) {
+      return '#' + (node.textContent ?? '').replace(/^@@/, '').split(':')[0];
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      return '<' + (node as Element).tagName.toLowerCase() + '>';
+    }
+    return `"${node.textContent}"`;
+  });
+}
+
 function createMockStateElement(): IStateElement {
   let version = 0;
   const stateProxy: any = {
@@ -221,21 +239,17 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     const bindingInfo = createOuterBindingInfo(outerPlaceholder);
     applyChangeToFor(bindingInfo, context, outerData);
 
-    // 期待するDOM構造:
-    // container
-    //   <!--for-->                    (外側プレースホルダー)
-    //   <!--@@wcs-for:innerUUID-->    (外側アイテム0の内側プレースホルダー)
-    //   <span>child</span>           (子 'a')
-    //   <span>child</span>           (子 'b')
-    //   <!--@@wcs-for:innerUUID-->    (外側アイテム1の内側プレースホルダー)
-    //   <span>child</span>           (子 'c')
-
     // 内側コンテンツがDOMに存在すること
     const spans = container.querySelectorAll('span');
     expect(spans.length).toBe(3);
 
-    // 外側placeholder + 2つの内側コメント + 3つのspan = 6ノード
-    expect(container.childNodes.length).toBe(6);
+    // 行の末尾が内側 for のアンカーになる形なので、各行に実レンジの終端マーカーが付く。
+    // 外側アイテム0（子 a/b）→ 終端 → 外側アイテム1（子 c）→ 終端、の順であること。
+    expect(shapeOf(container)).toEqual([
+      '#for',
+      '#wcs-for', '<span>', '<span>', '#wcs-row-end',
+      '#wcs-for', '<span>', '#wcs-row-end',
+    ]);
 
     setListIndexesByList(outerData, null);
     setListIndexesByList(children1, null);
@@ -303,10 +317,14 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
     const bindingInfo = createOuterBindingInfo(outerPlaceholder);
     applyChangeToFor(bindingInfo, context, outerData);
 
-    // バッチ挿入パスでも内側コンテンツがDOMに存在すること
+    // バッチ挿入パスでも内側コンテンツがDOMに存在し、行の並びが保たれること
     const spans = container.querySelectorAll('span');
     expect(spans.length).toBe(3);
-    expect(container.childNodes.length).toBe(6);
+    expect(shapeOf(container)).toEqual([
+      '#for',
+      '#wcs-for', '<span>', '<span>', '#wcs-row-end',
+      '#wcs-for', '<span>', '#wcs-row-end',
+    ]);
 
     document.body.removeChild(container);
     setListIndexesByList(outerData, null);
@@ -391,8 +409,10 @@ describe('applyChangeToFor ネストされたforループの回帰テスト', ()
 
     const spans = container.querySelectorAll('span');
     expect(spans.length).toBe(1);
-    // 外側placeholder + 内側コメント + 1 span = 3ノード
-    expect(container.childNodes.length).toBe(3);
+    expect(shapeOf(container)).toEqual([
+      '#for',
+      '#wcs-for', '<span>', '#wcs-row-end',
+    ]);
 
     setListIndexesByList(outerData, null);
     setListIndexesByList(singleChildren, null);

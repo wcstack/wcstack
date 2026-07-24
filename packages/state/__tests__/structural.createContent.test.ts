@@ -39,7 +39,7 @@ function createBindingInfo(node: Node, overrides: Partial<IBindingInfo> = {}): I
   } as IBindingInfo;
 }
 
-function setFragment(fragment: DocumentFragment) {
+function setFragment(fragment: DocumentFragment, rowPlan?: null) {
   const parseBindTextResult: ParseBindTextResult = {
     propName: 'if',
     propSegments: [],
@@ -58,6 +58,10 @@ function setFragment(fragment: DocumentFragment) {
     fragment,
     parseBindTextResult,
     nodeInfos: [],
+    // rowPlan: null を渡すと従来経路（プラン不適格）を強制する。構造ディレクティブを
+    // 含むテンプレートは compileRowPlan が必ず不適格にするため、範囲モードの検証は
+    // この経路で行うのが実態に合う（nodeInfos が空のスタブだとプランが成立してしまう）。
+    ...(rowPlan === null ? { rowPlan: null } : {}),
   });
 }
 
@@ -341,6 +345,111 @@ describe('createContent', () => {
 
     content.mountAfter(placeholder);
     expect(ids()).toEqual(['h1', 'h2', 'h3']);
+  });
+
+  // --- 範囲モード（トップレベルに構造ディレクティブを持つ行） --------------
+  //
+  // この形の content は、ネストした if/for が「自分のアンカー直後」に実ノードを
+  // 挿すため childNodeArray が実レンジより狭い。終端マーカーでレンジを閉じ、
+  // 移動は firstNode..lastNode の DOM レンジで行う。
+
+  /** トップレベルに if プレースホルダを持つフラグメントで content を作る。 */
+  function createRangedContent(placeholder: Node) {
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(document.createComment('@@wcs-if:nested-uuid'));
+    setFragment(fragment, null);
+    return createContent(createBindingInfo(placeholder));
+  }
+
+  it('トップレベルに構造アンカーを持つ行には終端マーカーが付くこと', () => {
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    container.appendChild(placeholder);
+
+    const content = createRangedContent(placeholder);
+    content.mountAfter(placeholder);
+
+    const marker = content.lastNode as Comment;
+    expect(marker.nodeType).toBe(Node.COMMENT_NODE);
+    expect(marker.textContent).toContain('wcs-row-end');
+    // アンカーではなくマーカーが末尾 = 呼び出し側の位置追跡が実ノードを飛ばさない
+    expect(content.firstNode).not.toBe(marker);
+  });
+
+  it('構造ディレクティブ以外のコメントが先頭でも範囲モードにならないこと', () => {
+    // text バインドのコメント等は実ノードを後ろに挿さないので終端マーカーは不要
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    container.appendChild(placeholder);
+
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(document.createComment('@@wcs-text:some-uuid'));
+    setFragment(fragment, null);
+    const content = createContent(createBindingInfo(placeholder));
+    content.mountAfter(placeholder);
+
+    expect((content.lastNode as Comment).data).toBe('@@wcs-text:some-uuid');
+  });
+
+  it('範囲モードではネストが挿した実ノードも一緒に移動すること', () => {
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    const tail = document.createComment('tail');
+    container.appendChild(placeholder);
+    container.appendChild(tail);
+
+    const content = createRangedContent(placeholder);
+    content.mountAfter(placeholder);
+
+    // ネストした if がアンカー直後に実ノードを挿した状態を作る
+    const nested = document.createElement('span');
+    nested.id = 'nested';
+    container.insertBefore(nested, content.firstNode!.nextSibling);
+
+    // tail の後ろへ移動 → アンカー・実ノード・マーカーが塊で動くこと
+    content.mountAfter(tail);
+    const shape = Array.from(container.childNodes).map((n) =>
+      n.nodeType === Node.COMMENT_NODE ? `#${n.textContent?.split(':')[0]}` : `<${(n as Element).id}>`);
+    expect(shape).toEqual(['#placeholder', '#tail', '#@@wcs-if', '<nested>', '#wcs-row-end']);
+  });
+
+  it('範囲モードでも先頭ノードが DOM から外れていれば自分のノードだけ動かすこと', () => {
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    container.appendChild(placeholder);
+
+    const content = createRangedContent(placeholder);
+    content.mountAfter(placeholder);
+
+    // 先頭ノードだけ外部から外される（レンジ走査の起点を失う）
+    (content.firstNode as ChildNode).remove();
+
+    const target = document.createElement('div');
+    const anchor = document.createComment('anchor');
+    target.appendChild(anchor);
+    content.mountAfter(anchor);
+
+    // 例外にならず、自分のトップレベルノードは移動できていること
+    expect(content.lastNode!.parentNode).toBe(target);
+  });
+
+  it('範囲モードで終端マーカーへ到達できなければ自分のノードだけ動かすこと', () => {
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    container.appendChild(placeholder);
+
+    const content = createRangedContent(placeholder);
+    content.mountAfter(placeholder);
+
+    // 終端マーカーだけ外部から外される（走査が last に当たらない）
+    (content.lastNode as ChildNode).remove();
+
+    const target = document.createElement('div');
+    const anchor = document.createComment('anchor');
+    target.appendChild(anchor);
+    content.mountAfter(anchor);
+
+    expect(content.firstNode!.parentNode).toBe(target);
   });
 
   it('unmountで子のif/elseif/else contentもアンマウントされること', () => {

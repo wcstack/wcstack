@@ -57,4 +57,11 @@ export interface IFragmentInfo {
    * （spread / カスタム要素 / 双方向 eligible / ネスト構造等を含む → 従来経路）。
    */
   rowPlan?: IRowPlan | null;
+  /**
+   * トップレベルに構造ディレクティブ（for / if / elseif / else）のプレースホルダを
+   * 持つか。undefined = 未判定でテンプレート単位に一度だけ算出しキャッシュする。
+   * true の content だけが範囲モード（終端マーカー + 範囲移動）になる
+   * （持たない大多数のテンプレートに追加コストを課さないための門）。
+   */
+  topLevelStructural?: boolean;
 }
