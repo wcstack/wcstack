@@ -52,11 +52,6 @@ npm install @wcstack/network
       get imgSrc() {
         return this.lowQuality ? "/thumb.jpg" : "/full.jpg";
       },
-      // 初回スナップショットはバインド確立前に発火するため、一度だけ pull する（「注意・制限」参照）。
-      async $connectedCallback() {
-        await customElements.whenDefined("wcs-network");
-        this.effectiveType = document.querySelector("wcs-network").effectiveType;
-      },
     };
   </script>
 </wcs-state>
@@ -66,7 +61,7 @@ npm install @wcstack/network
 <img data-wcs="attr.src: imgSrc">
 ```
 
-このページの全例に共通するタイミング規則が1つあります: `<wcs-network>` はスナップショットを `wcs-network:change` イベントで公開しますが、*初回*のスナップショットは接続時に同期発火するため、`@wcstack/state` がバインドリスナーを張るより先に流れてしまい、バインドしたパスは*次*の回線変化からしか更新されません。上の `$connectedCallback` ブロックはその初回スナップショットを一度だけ pull しています。これが無いと、読込時点で既に低速回線だった場合にページが適応しません（「注意・制限」参照）。
+このページの全例に共通するタイミング規則が1つあります: `<wcs-network>` はスナップショットを `wcs-network:change` イベントで公開しますが、*初回*のスナップショットは接続時に同期発火するため、`@wcstack/state` がバインドリスナーを張るより先に流れてしまいます。それでも初期値が届くのは、`<wcs-network>` の観測可能プロパティがすべて output-only（`properties` にのみ宣言され `inputs` に無い）だからです — 既定の binding authority が `element` になり、バインド確立時に**イベントを待たずプロパティを直接読みます**（directional initial sync、v1.21.0 以降は既定 ON）。手動 pull は不要です（「注意・制限」参照）。
 
 ### 2. データセーバーを尊重する
 
@@ -74,12 +69,9 @@ npm install @wcstack/network
 <wcs-state>
   <script type="module">
     export default {
+      // 読込時点で既にデータセーバーONでも、初期スナップショットが
+      // バインド確立時に pull されるので追加の配線は要りません。
       saveData: null,
-      // 例1と同じ初期 pull — 読込時点で既にデータセーバーONの場合があるため。
-      async $connectedCallback() {
-        await customElements.whenDefined("wcs-network");
-        this.saveData = document.querySelector("wcs-network").saveData;
-      },
     };
   </script>
 </wcs-state>
@@ -98,12 +90,6 @@ npm install @wcstack/network
     export default {
       netSupported: false,
       effectiveType: null,
-      async $connectedCallback() {
-        await customElements.whenDefined("wcs-network");
-        const net = document.querySelector("wcs-network");
-        this.netSupported = net.supported;
-        this.effectiveType = net.effectiveType;
-      },
     };
   </script>
 </wcs-state>
@@ -112,7 +98,7 @@ npm install @wcstack/network
 <div data-wcs="hidden: netSupported|not">回線: <span data-wcs="textContent: effectiveType"></span></div>
 ```
 
-バインドする state パスは必ず事前に宣言してください — 未宣言パスへのバインドは初期化時に例外になります。例2の `saveData` と異なり `supported` は厳密な boolean（`null` になり得ない）なので、ここでは `|not` が安全です。この例では初期 pull が*必須*です: `supported` は接続時に一度だけ確定し、安定した回線では以後 `change` が二度と発火しないため、pull が無いと対応ブラウザでも UI が永久に隠れたままになります。非対応ブラウザでは pull が `false` を読むだけなので、UI はそのまま隠れ続けます。
+バインドする state パスは必ず事前に宣言してください — 未宣言パスへのバインドは初期化時に例外になります。例2の `saveData` と異なり `supported` は厳密な boolean（`null` になり得ない）なので、ここでは `|not` が安全です。この例は初期スナップショットの pull に**最も強く依存**します: `supported` は接続時に一度だけ確定し、安定した回線では以後 `change` が二度と発火しないため、バインド確立時の pull が唯一の到達経路です（実ブラウザ回帰 = `e2e/tests/monitor-initial-snapshot.spec.ts`）。非対応ブラウザでは pull が `false` を読むだけなので、UI はそのまま隠れ続けます。
 
 ## 観測可能プロパティ（出力）
 
@@ -139,7 +125,7 @@ npm install @wcstack/network
 ## 注意・制限
 
 - **Firefox と Safari は `navigator.connection` を実装していません。** これらのブラウザでは `supported` は `false` のまま、他の4プロパティは `null` のままです — これを例外ケースでなく常態として設計してください。
-- **初回スナップショットはバインドに届きません。** 最初の `wcs-network:change` は `connectedCallback` 中に同期発火しますが、`@wcstack/state` のバインドリスナー確立はそれより後です（バインド構築は後続の microtask に遅延 — `docs/timing-and-firing-contract.md` §4.1 参照）。イベントは後から購読した相手に再送されないため、バインドしたパスは*次*の回線変化からしか更新されません。初期値が重要な場合（`supported` と `saveData` ではほぼ常に重要）は、クイックスタートの各例のように `$connectedCallback` で一度だけ pull してください。これは全 monitor ノード共通の wc-bindable イベント契約の性質であり、本パッケージ固有の癖ではありません。
+- **初回スナップショットの*イベント*はバインドに届きませんが、値は届きます。** 最初の `wcs-network:change` は `connectedCallback` 中に同期発火しますが、`@wcstack/state` のバインドリスナー確立はそれより後です（バインド構築は後続の microtask に遅延 — `docs/timing-and-firing-contract.md` §4.1 参照）。イベントは後から購読した相手に再送されません。それでも初期値が失われないのは、本ノードの観測可能プロパティがすべて output-only（`properties` のみ・`inputs` に無い）で、既定の binding authority が `element` になるためです: バインドは確立時にプロパティを直接読みます（directional initial sync、v1.21.0 以降は既定 ON）。手動 pull は不要で、これは全 monitor ノード共通の挙動です。`enableDirectionalInitialSync: false` に倒した構成でのみ、`$connectedCallback` + `whenDefined` での手動 pull が再び必要になります。
 - **`_gen` 世代ガードが無い。** 他の大半の wcstack IO ノードと異なり、`navigator.connection` の `change` イベント購読・購読解除は完全に同期的です。dispose() とレースしうる非同期probeの解決が存在しません。詳細は `docs/network-tag-design.md` §5。
 - **再接続で再購読。** 要素を取り外して再挿入すると、切断時に `change` リスナーを解除し、再接続時に（その時点の `navigator.connection` に対して）再確立します。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開しますが、`observe()` が同期的なため、この promise は常に即座に settle します。

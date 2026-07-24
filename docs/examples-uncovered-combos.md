@@ -35,7 +35,7 @@ credential / eyedropper / gyroscope / magnetometer / ambient-light-sensor
 
 - **設計判断（実装時に確定）**: `<wcs-sse>` と `$streams` は「SSE を state に取り込む」という**同じ仕事を取り合う競合手段**であり、直結すると不正直な設計になる。よって直列でなく並置比較にし、「要素へ配線するだけならタグ / state 側で fold・switchMap が要るなら `$streams`」という使い分けを主題にする。
 - **見せ場**: ホスト切替。左は `$on` で fold した履歴のリセットが手書き 3 行、右は `args` の依存駆動 restart で自動リセット（switchMap）。sse は README しかない唯一の通信系ノードで初カバー、`$streams`（[state-streams-design.md](./state-streams-design.md)）の初のクロスパッケージ実戦投入。fold は **last-N の有界集計**=「backpressure 放棄・fold 有界化」規範のショーケース。名前付きイベント（`events="metric,deploy"` → `message.event`）も実演。
-- **network の役割（当初案から修正）**: `<wcs-network>` は Network Information API 専用で **online/offline は公開していない**（実装確認済み）。よって「オフラインバナー」ではなく**回線品質タイル**（effectiveType / downlink / rtt / saveData）として使う。初期スナップショットは接続時に同期 dispatch されるためバインド確立前に取り逃す — state の `$connectedCallback` で現在値を一度 pull する。
+- **network の役割（当初案から修正）**: `<wcs-network>` は Network Information API 専用で **online/offline は公開していない**（実装確認済み）。よって「オフラインバナー」ではなく**回線品質タイル**（effectiveType / downlink / rtt / saveData）として使う。初期スナップショットは接続時に同期 dispatch されるためバインド確立前に取り逃す — 当初は state の `$connectedCallback` で現在値を一度 pull していたが、directional initial sync（既定 ON）が構造的に解決したため撤去済み（output-only メンバの既定 authority = `element`）。
 - **サーバー**: `examples/shared/server.js` の api フック（生 req/res）で SSE ストリーミングルートを実装。`/state-dist/` に packages/state のローカルビルドをマウント。
 - **注意**: `$streams` は未リリースのため、リリースまでは state のみローカルビルド参照。**次回 minor リリース後に CDN 一発化する**（README に明記）。
 
@@ -73,8 +73,8 @@ EyeDropper で画面から採色 → パレットに追加（list diffing）→ 
 `<wcs-storage>` は自身の `connectedCallback` でロードして value イベントを dispatch するが、これは state のバインディング確立**前**に起こりうる（イベント取り逃し）。その後 `applyChangeFromBindings` が state 初期値（`null` / `[]`）を要素へ書き込み、write-through save が**永続値をリロードのたびに上書き消去**する。
 
 - **実測**: `examples/state-cross-tab-todo` で todos を追加 → リロードすると localStorage が `[]` に潰され**全消失**（Playwright で確認。既存バグ・本件では未修正）。
-- **回避 idiom**（`state-color-palette` で採用）: 永続スロットを `undefined` で開始（undefined はプロパティ書き込みスキップ=「無意見」規範）+ `$connectedCallback` でロード済み値を一度 pull。
-- **恒久対応の候補**: two-way wcBindable プロパティへの初期 state→element 書き込みを抑制する / storage 側が bind 後に再通知する、など。要設計判断。
+- **回避 idiom**（当時 `state-color-palette` で採用）: 永続スロットを `undefined` で開始（undefined はプロパティ書き込みスキップ=「無意見」規範）+ `$connectedCallback` でロード済み値を一度 pull。
+- **恒久対応**: **解決済み（2026-07-24 時点）**。directional initial sync の `value#init=element:` 修飾子 1 つで完結し、上記 idiom は両 examples・storage README から撤去済み（`state-binding-init-races.md` §1-6）。
 
 ### 4-2. 未 define カスタム要素への初期 apply の黙殺
 
