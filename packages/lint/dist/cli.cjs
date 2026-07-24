@@ -230,7 +230,7 @@ function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
         continue;
       }
       const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
-      if (typeAttr !== "module") {
+      if (typeAttr?.toLowerCase() !== "module") {
         pos = scriptMatch.end;
         continue;
       }
@@ -295,7 +295,7 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
         continue;
       }
       const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
-      if (typeAttr !== "module") {
+      if (typeAttr?.toLowerCase() !== "module") {
         pos = scriptMatch.end;
         continue;
       }
@@ -340,7 +340,7 @@ function findScriptJsonById(html, id) {
     }
     const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
     const idAttr = extractAttribute(scriptMatch.tagContent, "id");
-    if (typeAttr === "application/json" && idAttr === id) {
+    if (typeAttr?.toLowerCase() === "application/json" && idAttr === id) {
       const contentStart = scriptMatch.end;
       const scriptCloseIdx = findCloseTag(html, contentStart, "script");
       if (scriptCloseIdx === -1) return null;
@@ -1513,39 +1513,68 @@ function isValueCompatible(declaredTypes, valueType) {
   return declaredTypes.includes(valueType);
 }
 
+// src/service/scriptPatterns.ts
+var ID = String.raw`[\w$]+`;
+var SUB = String.raw`\s*(?:\?\.)?\s*\[(?!\s*["'])[^\[\]]+\]`;
+var DOT_SEG = String.raw`\s*\??\.\s*${ID}`;
+var CHAIN = String.raw`(?:${DOT_SEG}|${SUB})*`;
+var BRACKETS_ONLY = String.raw`(?:${SUB})+`;
+var CHAIN_ONE_PLUS = String.raw`(?:${DOT_SEG}|${SUB})+`;
+var ROOT_DOT = String.raw`\bthis\s*\??\.\s*(${ID})`;
+var ROOT_BRACKET = String.raw`\bthis\s*(?:\?\.)?\s*\[\s*["']([^"']+)["']\s*\]`;
+var ASSIGN_TAIL = String.raw`\s*(?:(?:\*\*|<<|>>>|>>|&&|\|\||\?\?|[+\-*/%&|^])?=(?!=)|\+\+|--)`;
+var PRE_INCDEC = String.raw`(?:\+\+|--)\s*`;
+function chainToDotted(chain) {
+  const token = new RegExp(String.raw`\s*(?:\??\.\s*(${ID})|(?:\?\.)?\s*\[([^\[\]]+)\])`, "g");
+  let out = "";
+  let match;
+  while ((match = token.exec(chain)) !== null) {
+    if (match[1] !== void 0) {
+      out += `.${match[1]}`;
+    } else {
+      const key = match[2].trim();
+      out += /^\d+$/.test(key) ? `.${key}` : `.<${key}>`;
+    }
+  }
+  return out;
+}
+function hasDotSegment(chain) {
+  return /[.]/.test(chain.replace(/\s*(?:\?\.)?\s*\[[^\[\]]+\]/g, ""));
+}
+function isApiRoot(root) {
+  return root.startsWith("$");
+}
+
 // src/service/nestedAssignValidator.ts
+var NESTED_ASSIGN = new RegExp(`${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`, "g");
+var PRE_NESTED_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`, "g");
 function validateNestedAssigns(html, stateTagName = "wcs-state", locale) {
   const msgs = getMessages(locale);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
-    const blockDiags = findNestedAssigns(block.content, block.contentStart, msgs);
-    diagnostics.push(...blockDiags);
+    findNestedAssigns(block.content, block.contentStart, msgs, diagnostics);
   }
   return diagnostics;
 }
-function findNestedAssigns(script, baseOffset, msgs = getMessages()) {
-  const diagnostics = [];
-  const regex = /\bthis\.(\w+)((?:\.\w+|\[\w+\])+)\s*=[^=]/g;
-  let match;
-  while ((match = regex.exec(script)) !== null) {
-    const fullMatch = match[0];
-    const topProp = match[1];
-    const chainPart = match[2];
-    if (topProp.startsWith("$")) continue;
-    if (!/\.\w+/.test(chainPart)) continue;
-    const assignStart = baseOffset + match.index;
-    const assignEnd = assignStart + fullMatch.length - 1;
-    const dotPath = topProp + chainPart.replace(/\[(\w+)\]/g, ".$1").replace(/^\./, "");
-    const suggestedPath = topProp + chainPart.replace(/\[(\w+)\]/g, ".$1");
-    diagnostics.push({
-      start: assignStart,
-      end: assignEnd,
-      message: msgs.nestedAssign(suggestedPath),
-      severity: "warning"
-    });
+function findNestedAssigns(script, baseOffset, msgs, out) {
+  for (const regex of [NESTED_ASSIGN, PRE_NESTED_INCDEC]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(script)) !== null) {
+      const [full, topProp, chainPart] = match;
+      if (isApiRoot(topProp)) continue;
+      if (!hasDotSegment(chainPart)) continue;
+      const suggestedPath = topProp + chainToDotted(chainPart);
+      const start = baseOffset + match.index;
+      out.push({
+        start,
+        end: start + full.length,
+        message: msgs.nestedAssign(suggestedPath),
+        severity: "warning"
+      });
+    }
   }
-  return diagnostics;
 }
 
 // src/service/arrayMutationValidator.ts
@@ -1558,24 +1587,16 @@ var ALTERNATIVES = {
   splice: (a) => `${a} = ${a}.toSpliced(...)`,
   sort: (a) => `${a} = ${a}.toSorted(...)`,
   reverse: (a) => `${a} = ${a}.toReversed()`,
-  fill: (a) => `${a} = ${a}.with(...)`,
+  fill: (a) => `${a} = ${a}.map(...)`,
   copyWithin: (a) => `${a} = ${a}.map(...)`
 };
-var DOT_ROOT_CALL = new RegExp(
-  String.raw`\bthis\.(\w+)((?:\.\w+|\[\w+\])*)\.(${DESTRUCTIVE_METHODS})(?=\s*\()`,
-  "g"
-);
-var BRACKET_ROOT_CALL = new RegExp(
-  String.raw`\bthis\[\s*["']([^"']+)["']\s*\]((?:\.\w+|\[\w+\])*)\.(${DESTRUCTIVE_METHODS})(?=\s*\()`,
-  "g"
-);
-var INDEX_ASSIGN = new RegExp(
-  String.raw`\bthis\.(\w+)((?:\[\w+\])+)\s*=(?!=)`,
-  "g"
-);
-function chainToDotted(chain) {
-  return chain.replace(/\[(\w+)\]/g, (_, key) => /^\d+$/.test(key) ? `.${key}` : `.<${key}>`);
-}
+var METHOD_TAIL = String.raw`\s*\??\.\s*(${DESTRUCTIVE_METHODS})(?=\s*\()`;
+var DOT_ROOT_CALL = new RegExp(`${ROOT_DOT}(${CHAIN})${METHOD_TAIL}`, "g");
+var BRACKET_ROOT_CALL = new RegExp(`${ROOT_BRACKET}(${CHAIN})${METHOD_TAIL}`, "g");
+var DOT_INDEX_ASSIGN = new RegExp(`${ROOT_DOT}(${BRACKETS_ONLY})${ASSIGN_TAIL}`, "g");
+var BRACKET_INDEX_ASSIGN = new RegExp(`${ROOT_BRACKET}(${BRACKETS_ONLY})${ASSIGN_TAIL}`, "g");
+var PRE_DOT_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${BRACKETS_ONLY})`, "g");
+var PRE_BRACKET_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}(${BRACKETS_ONLY})`, "g");
 function toAccessor(path) {
   return /^[A-Za-z_]\w*$/.test(path) ? `this.${path}` : `this["${path}"]`;
 }
@@ -1590,44 +1611,43 @@ function validateArrayMutations(html, stateTagName = "wcs-state", locale) {
   return diagnostics;
 }
 function findDestructiveCalls(script, baseOffset, msgs, out) {
-  let match;
-  DOT_ROOT_CALL.lastIndex = 0;
-  while ((match = DOT_ROOT_CALL.exec(script)) !== null) {
-    const [full, root, chain, method] = match;
-    pushMutationDiagnostic(out, msgs, baseOffset + match.index, full.length, root + chainToDotted(chain), method);
+  for (const regex of [DOT_ROOT_CALL, BRACKET_ROOT_CALL]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(script)) !== null) {
+      const [full, root, chain, method] = match;
+      if (isApiRoot(root)) continue;
+      const statePath = root + chainToDotted(chain);
+      const start = baseOffset + match.index;
+      out.push({
+        code: WcsDiagnosticCode.ArrayMutation,
+        start,
+        end: start + full.length,
+        message: msgs.arrayMutation(method, ALTERNATIVES[method](toAccessor(statePath))),
+        severity: "warning",
+        statePath
+      });
+    }
   }
-  BRACKET_ROOT_CALL.lastIndex = 0;
-  while ((match = BRACKET_ROOT_CALL.exec(script)) !== null) {
-    const [full, rootPath, chain, method] = match;
-    if (rootPath.startsWith("$")) continue;
-    pushMutationDiagnostic(out, msgs, baseOffset + match.index, full.length, rootPath + chainToDotted(chain), method);
-  }
-}
-function pushMutationDiagnostic(out, msgs, start, length, statePath, method) {
-  out.push({
-    code: WcsDiagnosticCode.ArrayMutation,
-    start,
-    end: start + length,
-    message: msgs.arrayMutation(method, ALTERNATIVES[method](toAccessor(statePath))),
-    severity: "warning",
-    statePath
-  });
 }
 function findIndexAssigns(script, baseOffset, msgs, out) {
-  let match;
-  INDEX_ASSIGN.lastIndex = 0;
-  while ((match = INDEX_ASSIGN.exec(script)) !== null) {
-    const [full, root, chain] = match;
-    const suggestedPath = root + chainToDotted(chain);
-    const start = baseOffset + match.index;
-    out.push({
-      code: WcsDiagnosticCode.ArrayIndexAssign,
-      start,
-      end: start + full.length,
-      message: msgs.arrayIndexAssign(suggestedPath),
-      severity: "warning",
-      statePath: suggestedPath
-    });
+  for (const regex of [DOT_INDEX_ASSIGN, BRACKET_INDEX_ASSIGN, PRE_DOT_INDEX, PRE_BRACKET_INDEX]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(script)) !== null) {
+      const [full, root, chain] = match;
+      if (isApiRoot(root)) continue;
+      const suggestedPath = root + chainToDotted(chain);
+      const start = baseOffset + match.index;
+      out.push({
+        code: WcsDiagnosticCode.ArrayIndexAssign,
+        start,
+        end: start + full.length,
+        message: msgs.arrayIndexAssign(suggestedPath),
+        severity: "warning",
+        statePath: suggestedPath
+      });
+    }
   }
 }
 

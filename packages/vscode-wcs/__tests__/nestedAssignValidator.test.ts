@@ -99,4 +99,67 @@ describe('validateNestedAssigns', () => {
     const diags = validateNestedAssigns(html);
     expect(diags).toHaveLength(0);
   });
+
+  it('複合代入 this.user.count += 1 を検出する', () => {
+    const html = makeHtml(`
+  user: { count: 0 },
+  update() {
+    this.user.count += 1;
+  }`);
+    const diags = validateNestedAssigns(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('this["user.count"]');
+  });
+
+  it('後置インクリメント this.user.count++ を検出する', () => {
+    const html = makeHtml(`
+  user: { count: 0 },
+  update() {
+    this.user.count++;
+  }`);
+    const diags = validateNestedAssigns(html);
+    expect(diags).toHaveLength(1);
+  });
+
+  it('前置インクリメント ++this.user.profile.n を検出する', () => {
+    const html = makeHtml(`
+  user: { profile: { n: 0 } },
+  update() {
+    ++this.user.profile.n;
+  }`);
+    const diags = validateNestedAssigns(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('this["user.profile.n"]');
+  });
+
+  it('式添字チェーン this.rows[this.i].name = を検出し <...> マーカーで提示する', () => {
+    const html = makeHtml(`
+  rows: [{ name: "a" }],
+  i: 0,
+  update() {
+    this.rows[this.i].name = "b";
+  }`);
+    const diags = validateNestedAssigns(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('this["rows.<this.i>.name"]');
+  });
+
+  it('bracket-only チェーン this.items[0] = は検出しない（wcs/array-index-assign の担当）', () => {
+    const html = makeHtml(`
+  items: [1],
+  update() {
+    this.items[0] = 9;
+  }`);
+    const diags = validateNestedAssigns(html);
+    expect(diags).toHaveLength(0);
+  });
+
+  it('$ ルートのネスト代入 this.$a.b = は検出しない', () => {
+    const html = makeHtml(`
+  update() {
+    this.$a.b = 1;
+  }`);
+    const diags = validateNestedAssigns(html);
+    expect(diags).toHaveLength(0);
+  });
 });

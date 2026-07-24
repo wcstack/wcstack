@@ -4,9 +4,11 @@
 バリデータコア（`packages/vscode-wcs`）に実装し、VS Code 拡張と `@wcstack/lint` CLI（`wcs-validate`）の
 両方に同時に反映される（`validateDocument` 単一入口による IDE / CLI parity 構造保証）。
 
-- ステータス: 設計確定（実装待ち）
-- 作成日: 2026-07-24
-- 先行例: `wcs/nested-assign`（`src/service/nestedAssignValidator.ts`）— 同型の非リアクティブ footgun 検出
+- ステータス: 実装済み・Phase 4 敵対的レビュー反映済み（§9 に記録）
+- 作成日: 2026-07-24 / 最終改訂: 2026-07-24（Phase 4 レビュー後の §3/§4/§5/§6 改訂）
+- 先行例: `wcs/nested-assign`（`src/service/nestedAssignValidator.ts`）— 同型の非リアクティブ footgun 検出。
+  Phase 4 で本診断と正規表現部品を共有する形（`service/scriptPatterns.ts`）に統合し、
+  複合代入・インクリメント・式添字へ同時拡張した
 
 ---
 
@@ -51,6 +53,10 @@ generate–validate–fix ループでも人間の手書きでも頻出の footg
 | V5 | インデックス代入 `s.items[0] = {v:9}` 単体 | `["1","2"]` のまま | **更新されない**（A-3 の根拠） |
 | V6 | 対照: ドットパス代入 `s["items.0"] = {v:9}` | `["9","2"]` | 正しく更新（推奨形） |
 | V7 | 対照: `s.items = s.items.toSorted(...)` | `["1","2","3"]` | 正しく更新（推奨形） |
+| V8 | 複合代入 `s.items[0] += 1`（`textContent: items.0` バインド） | 表示 `"1"` のまま | **更新されない**（Phase 4 拡張の根拠） |
+| V9 | インクリメント `s.items[0]++` | 表示 `"1"` のまま | **更新されない**（同上） |
+| V10 | `s["items.0"] += 1`（`for` なし・直バインド構成） | get トラップが `ListIndex not found: items` を throw | ループコンテキスト外の数値解決済みパス **read は不可** |
+| V11 | `s["items.0"] = s.items[0] + 1`（同構成） | set トラップが同じく throw | `for` 未確立の構成では数値パス **write も不可**（V6 は `for` あり構成で成功） |
 
 **結論**: 「変異＋自己再代入」は長さ不変の値リフレッシュ（V3、および
 `integration.diffExpansion.test.ts` の契約テスト「同一参照の再代入は in-place 変異後の
@@ -60,19 +66,22 @@ generate–validate–fix ループでも人間の手書きでも頻出の footg
 安全なケースの方が例外的であるため、**破壊的メソッド呼び出しは無条件で警告する**。
 メッセージは「リアクティブ更新をトリガーしない」と断定してよい（V1/V2/V4 で実証済み）。
 
-> 補足（本診断のスコープ外・ランタイム側への申し送り）: V4 の uncaught 例外
-> （`applyChange` → `getByAddress` で stale アドレス参照）はランタイム側の頑健性課題。
-> 既知の据置項目「applyChangeToFor 矛盾」と関連する可能性がある。
+> 補足（本診断のスコープ外・ランタイム側への申し送り）:
+> ① V4 の uncaught 例外（`applyChange` → `getByAddress` で stale アドレス参照）は
+> ランタイム側の頑健性課題。既知の据置項目「applyChangeToFor 矛盾」と関連する可能性がある。
+> ② V10/V11 の観測より、数値解決済みパス（`items.0`）の read/write は `for` レンダリングで
+> ListIndex が確立している構成でのみ動く。診断メッセージが提示する 2 代替のうち
+> `with()` ＋再代入が普遍的に安全で、ドットパス代入はリスト描画コンテキスト前提。
 
 ## 4. 診断仕様
 
 ### 4.1 診断コード（`core/diagnostics.ts` に追加）
 
 ```ts
-// --- <wcs-state> script: array reactivity hazards ---
+// --- <wcs-state> script: array reactivity hazards ---（概形。実コメントは実装を正とする）
 // 配列破壊的メソッド呼び出し(9種)。Proxy を素通りしリアクティブ更新されない(V1/V2/V4 実証)。
 ArrayMutation: "wcs/array-mutation",
-// 配列インデックスへの直接代入。同上(V5 実証)。正はドットパス代入(V6)。
+// 配列インデックスへの代入(単純・複合・++/--)。同上(V5/V8/V9 実証)。正はドットパス代入(V6)。
 ArrayIndexAssign: "wcs/array-index-assign",
 ```
 
@@ -84,7 +93,8 @@ ArrayIndexAssign: "wcs/array-index-assign",
 - severity: **warning**（両コードとも）
 - range: 生ソース文字オフセット
   - `wcs/array-mutation`: `this` の先頭〜メソッド名末尾（`(` は含めない）
-  - `wcs/array-index-assign`: nested-assign と同様、マッチ全体（`=` の直後の 1 文字手前まで）
+  - `wcs/array-index-assign`: マッチ全体 — 代入演算子の末尾まで（右辺は含まない。
+    複合代入は演算子込み、`++`/`--` は演算子末尾まで。前置形は演算子先頭から）
 - `statePath`: 導出したドットパス（例: `items`、`items.*.tags`）を設定する
   （`WcsDiagnostic` の既存 optional フィールド活用）
 
@@ -99,7 +109,7 @@ arrayIndexAssign(suggestedPath: string): string;
 ```
 
 - ja `arrayMutation`:
-  `配列の破壊的メソッド "${method}" はリアクティブ更新をトリガーしません（自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alternative}）。`
+  `配列の破壊的メソッド "${method}" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alternative}）。`
 - en `arrayMutation`:
   `Destructive array method "${method}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alternative}).`
 - ja `arrayIndexAssign`:
@@ -118,51 +128,67 @@ arrayIndexAssign(suggestedPath: string): string;
 | `splice` | `this.<path> = this.<path>.toSpliced(...)` |
 | `sort` | `this.<path> = this.<path>.toSorted(...)` |
 | `reverse` | `this.<path> = this.<path>.toReversed()` |
-| `fill` | `this.<path> = this.<path>.with(...) / .map(...)` |
+| `fill` | `this.<path> = this.<path>.map(...)` |
 | `copyWithin` | `this.<path> = this.<path>.map(...)` |
+
+（`fill` は範囲充填のため単一置換の `with()` は等価でなく `map(...)` を提示する — Phase 4 指摘で訂正）
 
 ## 5. 検出仕様
 
 対象は `parseWcsScriptBlocks`（`language/htmlParse.ts`）が返す `<wcs-state>` スクリプト
 ブロック内。文脈（イベントハンドラ / getter 本体 / トップレベル）は区別しない（A-4）。
 
+共有正規表現部品は `src/service/scriptPatterns.ts` に置き、nestedAssignValidator と共用する
+（Phase 4 改訂）。共通字句: 識別子は `$` 含み ASCII（`[\w$]+`、ルートの `$` 始まりは API
+名前空間としてスキップ）。トークン間の空白・改行と optional chaining（`?.` / `?.[`）を許容。
+添字は quoted string 始まり以外の任意の式（ネスト bracket なし）—
+`[0]` / `[i]` / `[this.items.length]` / `[i + 1]` を含む。
+
 ### 5.1 パターン M — 破壊的メソッド呼び出し（`wcs/array-mutation`）
 
-検出する形（概形。実装時は nestedAssignValidator の正規表現流儀に合わせる）:
+検出する形（概形。正確な定義は `scriptPatterns.ts` + `arrayMutationValidator.ts` を正とする）:
 
 ```
-this.<prop>(.<prop> | [<ident>])* . <9メソッドのいずれか> \s* (
-this["<dotted.path>"](.<prop> | [<ident>])* . <9メソッドのいずれか> \s* (
+this.<prop> (.<prop> | [<式添字>])* . <9メソッドのいずれか> (?= \s* ( )
+this["<dotted.path>"] (.<prop> | [<式添字>])* . <9メソッドのいずれか> (?= \s* ( )
 ```
 
-- ルートプロパティが `$` で始まる場合はスキップ（`$getAll` 等の API 名前空間）
 - bracket ルート形 `this["items"].push(...)` / ワイルドカードパス形
   `this["items.*.tags"].push(...)` も対象（後者は `statePath` にワイルドカードパスを設定）
 - computed（getter）パスもデータパスと同一に扱う（A-4）
 
 ### 5.2 パターン I — インデックス代入（`wcs/array-index-assign`）
 
-検出する形:
+検出する形（Phase 4 で複合代入・`++`/`--`・bracket ルート・式添字へ拡張）:
 
 ```
-this.<prop>([<ident-or-number>])+ \s* = [^=]
+this.<prop> ([<式添字>])+ \s* ( <複合演算子>? = | ++ | -- )     … 後置形
+this["<dotted.path>"] ([<式添字>])+ \s* ( <複合演算子>? = | ++ | -- )
+(++ | --) \s* this.<prop> ([<式添字>])+                         … 前置形
+(++ | --) \s* this["<dotted.path>"] ([<式添字>])+
 ```
 
-- **bracket-only チェーン限定**。チェーンにドットアクセスが 1 つでも含まれるもの
-  （`this.items[0].name = x`）は既存 `wcs/nested-assign` の担当であり、本診断は発火しない
-  （二重報告禁止。境界は nestedAssignValidator の既存スキップ条件
-  `if (!/\.\w+/.test(chainPart)) continue;` とちょうど相補になる）
-- 添字はリテラル（`[0]`）と識別子（`[i]`）の両方を対象（`\w+`、nested-assign と同じ字句範囲）
-- `suggestedPath` は添字リテラルなら `items.0` 形式、識別子なら `items.<i>` の形で提示
-- `==` / `===` / `!=` / `!==` は代入ではないため除外（`=[^=]`）
+- 複合演算子 = `+ - * / % ** << >> >>> & | ^ && || ??`（つまり `+=` `??=` `>>=` 等の
+  複合代入 15 種）。V8/V9 で単純代入と同じくサイレント no-op であることを実証済み
+- **bracket-only チェーン限定**。チェーンに（添字式の内部を除いて）ドットアクセスが
+  1 つでも含まれるもの（`this.items[0].name = x`）は `wcs/nested-assign` の担当であり、
+  本診断は発火しない（二重報告禁止。境界判定は共有の `hasDotSegment()` で、
+  nested-assign 側は「ドットセグメントあり」のみ発火する相補実装）
+- `suggestedPath` は添字が数値リテラルなら `items.0` 形式、識別子・式なら
+  `items.<i>` / `items.<this.items.length>` の形で提示
+- `==` / `===` / `!=` / `!==` / `>=` / `<=` は代入ではないため除外
+  （演算子部がどの選択肢にも一致しない構造で保証、`=` は `(?!=)` lookahead）
 
 ### 5.3 発火しないことを保証する形（誤検出ガード）
 
 - `const a = [...this.items]; a.push(x); this.items = a;` — 正当イディオム。
   `this.` 直呼びのみ検出するため `a.push` はヒットしない
 - `this.items = this.items.toSorted(...)` — 非破壊メソッドは対象外
+- `this.items.slice().sort(...)` — コピーしてからの破壊的呼び出し（チェーンは `()` を跨げない）
 - `this["items.0"] = x` — 正しいドットパス代入（bracket 内が quoted string のため対象外）
-- `this.$getAll("items.*.p", []).push(...)` — `$` プレフィックスでスキップ
+- `this.obj["key"] = x` / `this.items["0"].push(...)` — quoted キーは対象外（§6）
+- `this.$getAll("items.*.p", []).push(...)` / `this["$streams"][0] = x` — `$` ルートはスキップ
+- 比較演算子（`==` `===` `!=` `!==` `>=` `<=`）は発火しない
 
 ## 6. 既知の限界（ドキュメント化して割り切る）
 
@@ -171,12 +197,28 @@ this.<prop>([<ident-or-number>])+ \s* = [^=]
 2. **文字列リテラル・コメント内のコード片に誤反応しうる**（false positive）:
    `// this.items.push(x) はダメ` のようなコメントにもヒットする。nested-assign と共通の既知限界
 3. **ユーザー定義オブジェクトの独自 `push` 等メソッド**（稀）は誤検出になる
-4. `this.obj["key"] = x`（quoted string キーの bracket 代入）は対象外
+4. `this.obj["key"] = x` / `this.items["0"].push(...)`（quoted string キー）は対象外
    （nested-assign も対象外。現状踏襲）
 5. 長さ不変の「変異＋自己再代入」リフレッシュ（V3 相当）も警告される。これは**意図的**:
    長さが変わるケース（V2/V4）と静的に区別できず、公式推奨イディオムは常に非破壊＋再代入
    であるため。既存契約テストのリフレッシュイディオム（行オブジェクトのフィールド変異）は
    破壊的**メソッド**を使わないため本診断にはヒットしない
+6. **添字式内のネスト bracket は検出不能**（false negative）: `this.items[this.idx[0]] = x`。
+   添字は「bracket を含まない式」まで（Phase 4 拡張の範囲）
+7. **分割代入・間接呼び出しは対象外**（false negative）: `[this.items[0]] = [x]`、
+   `this.items.push.apply(this.items, ...)`。実コードでの頻度が低く割り切り
+8. **Unicode 識別子**（`this.項目一覧.push(...)`）は検出不能。識別子字句が `\w` ベース
+   （ASCII）のため。stateAnalyzer / nested-assign 含む族全体の共通限界であり、
+   直すなら族一括（バックログ）
+9. **オブジェクトの動的キー代入**（`this.map[key] = v`）も本診断が拾う。挙動としては
+   正しい検出（生オブジェクトへの書き込みも非リアクティブ）だが、メッセージ文言は
+   配列を主語にしている
+10. **パーサ層の既知課題**（`htmlParse.ts` 起因、全 script 系診断に共通・据置）:
+    ① HTML コメント内に `</wcs-state>` があると要素範囲が切断され後続スクリプトが
+    未検証になる（`findCloseTag` がコメント非対応）
+    ② 属性値内の `<script type=module>...</script>` 文字列を実ブロックとして誤抽出する
+    （文脈無視スキャン起因の false positive）。
+    なお `type` 属性値の大文字小文字区別は Phase 4 で修正済み（ASCII case-insensitive 化）
 
 ## 7. 実装計画
 
@@ -203,7 +245,9 @@ this.<prop>([<ident-or-number>])+ \s* = [^=]
 - 誤検出ガード（§5.3 の 4 形が発火しないこと）
 - `$` プレフィックススキップ、比較演算子除外
 - 複数 `<wcs-state>` ブロック・`baseOffset` の正しさ（オフセットずれ検証)
-- ja / en 両ロケールのメッセージ（`messagesLocale.test.ts` のカタログ網羅テストに追随）
+- ja / en 両ロケールのメッセージ（arrayMutationValidator.test.ts 内の自前 locale テストで担保。
+  ※Phase 4 訂正: `messagesLocale.test.ts` にキー網羅型のカタログテストは存在しない —
+  同ファイルは抜き取り検査のみ）
 
 既存全テスト green（vscode-wcs、退行なし）を確認。
 
@@ -228,8 +272,48 @@ this.<prop>([<ident-or-number>])+ \s* = [^=]
 ## 8. 受け入れ基準
 
 1. §5 の検出対象が ja / en 両ロケールで期待どおりの code / range / severity / statePath を返す
-2. §5.3 の誤検出ガード 4 形が発火しない
+2. §5.3 の誤検出ガード各形が発火しない
 3. `wcs/nested-assign` との二重報告が無い（境界の相補性がテストで固定されている）
 4. vscode-wcs の既存テスト全 green、カバレッジ閾値（100/97/100/100 基準）維持
 5. `wcs-validate` CLI（packages/lint smoke test）で新コードが観測できる
 6. 診断は warning のため CLI の exit code 契約（error のみ 1）に変化が無いこと
+
+## 9. Phase 4 敵対的レビュー記録（2026-07-24）
+
+初回実装（commit 532f6cc、テスト 38 本・全 349 green・smoke 7/7）に対し、
+独立レビュアー 2 系統（実装反証 / 設計 doc 照合＋テスト変異分析）＋複合代入の
+ランタイム検証（V8-V11）を実施した。
+
+### 修正した指摘（本 doc の §3/§4/§5/§6 は修正後の姿）
+
+| 指摘 | 対応 |
+|---|---|
+| 式添字が両バリデータとも素通り（`this.items[this.items.length] = x` の append 定番形を含む） | 添字を「quoted 以外の任意の式（ネスト bracket なし）」へ拡張（§5 冒頭） |
+| bracket ルートの代入形の非対称（呼び出しは対応・代入は未対応） | `this["items"][0] = x` 形を追加（§5.2） |
+| optional chaining（`?.`）・改行/空白折返しチェーンが FN | 全パターンでトークン間空白と `?.` を許容 |
+| 複合代入 `+=` 等 15 種・`++`/`--`（前置後置）が未検出 | V8/V9 で非リアクティブを実証の上、検出対象へ追加（§5.2）。nested-assign にも同拡張 |
+| `$` 含み識別子（`items$` / `.$list`）が FN | 識別子を `[\w$]+` へ。ルート `$` スキップは明示化（quoted ルート含む） |
+| `fill` の代替提示が意味的に不正確（`with()` は単一置換） | `map(...)` へ訂正（§4.3） |
+| htmlParse の `type` 属性値が case-sensitive 比較（`type="Module"` のブロックを丸ごとスキップ） | ASCII case-insensitive 化（module / application/json 3 箇所）＋テスト追加 |
+| ja `arrayMutation` 文言の doc 乖離（「同一参照の」） | doc 側を実装に合わせて訂正（§4.3） |
+| テスト変異ギャップ: 代替文言 7 メソッド無担保 / bracket ルート range 無担保 / `stateTagName` 未実効 / メッセージ全文未固定 / `push (x)` 空白形未固定 | それぞれ assert 追加（arrayMutation 38 → 62 本・nested 8 → 15 本・htmlParse +1、パッケージ全体 349 → 380 本） |
+| smoke-test ヘッダの「276本」stale | 本数を書かない表現へ修正 |
+| doc §7 Phase 2 の「messagesLocale カタログ網羅テスト」記載が事実と不一致 | doc 訂正（該当テストは存在しない） |
+
+nested-assign の拡張は既存挙動を保存する（プレーン `=` の range は byte 単位で不変、
+既存テスト全 green）。識別子添字の提示パスは `a.i.b`（誤解を招く旧形）から
+`a.<i>.b`（動的添字マーカー、本診断と同一表記）へ統一した。
+
+### 据置と判断した指摘（§6 に記載）
+
+- パーサ層: コメント内 `</wcs-state>` による範囲切断・属性値内 `<script>` 誤抽出
+  （`findCloseTag` / スキャナの文脈対応が必要。全 script 系診断共通の既存課題）
+- Unicode 識別子（族全体の `\w` 依存。直すなら族一括）
+- 分割代入・`.push.apply` 形・添字式内ネスト bracket（頻度低）
+
+### レビューでクリーンと確認されたクラス
+
+lastIndex 再利用・catastrophic backtracking（500KB 病的入力で CLI 全体 115ms）・
+nested-assign との二重報告（構造的に両立不能）・オフセット/CRLF・安定ソート契約・
+配布バンドル整合（dist/cli.cjs に両コード転写済み）・IDE 経路
+（server.ts → wcsCompletionPlugin.provideDiagnostics → validateDocument の配線確認済み）。

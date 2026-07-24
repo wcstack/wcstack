@@ -1,6 +1,6 @@
 // smoke-test.mjs — 配布物 dist/cli.cjs の実行スモークテスト。
 //
-// validator core のロジックは packages/vscode-wcs 側のユニットテスト(276本)が
+// validator core のロジックは packages/vscode-wcs 側のユニットテスト一式が
 // 担保する。ここで検査するのは「npm で配る単一ファイル CLI が、node 直叩きで
 // CLI 契約(exit code / 出力形式 / 安定 diagnostic code)どおりに動くこと」だけ。
 //

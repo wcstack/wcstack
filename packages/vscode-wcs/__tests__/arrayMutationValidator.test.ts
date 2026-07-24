@@ -17,8 +17,21 @@ ${script}
 
 const DESTRUCTIVE_METHODS = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'] as const;
 
+/** メソッド → メッセージに含まれるべき非破壊代替（設計 doc §4.3 の表）。 */
+const METHOD_ALTERNATIVES: Record<(typeof DESTRUCTIVE_METHODS)[number], string> = {
+  push: 'this.items = this.items.concat(item)',
+  pop: 'this.items = this.items.slice(0, -1)',
+  shift: 'this.items = this.items.slice(1)',
+  unshift: 'this.items = [item, ...this.items]',
+  splice: 'this.items = this.items.toSpliced(...)',
+  sort: 'this.items = this.items.toSorted(...)',
+  reverse: 'this.items = this.items.toReversed()',
+  fill: 'this.items = this.items.map(...)',
+  copyWithin: 'this.items = this.items.map(...)',
+};
+
 describe('validateArrayMutations: 破壊的メソッド呼び出し（wcs/array-mutation）', () => {
-  it.each(DESTRUCTIVE_METHODS)('this.items.%s(...) を検出する', (method) => {
+  it.each(DESTRUCTIVE_METHODS)('this.items.%s(...) を検出し、メソッド別代替を提示する', (method) => {
     const html = makeHtml(`
   items: [1, 2, 3],
   update() {
@@ -30,6 +43,19 @@ describe('validateArrayMutations: 破壊的メソッド呼び出し（wcs/array-
     expect(diags[0].severity).toBe('warning');
     expect(diags[0].statePath).toBe('items');
     expect(diags[0].message).toContain(`"${method}"`);
+    expect(diags[0].message).toContain(METHOD_ALTERNATIVES[method]);
+  });
+
+  it('ja メッセージの全文が仕様どおりであること（push）', () => {
+    const html = makeHtml(`
+  items: [],
+  add(item) {
+    this.items.push(item);
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags[0].message).toBe(
+      '配列の破壊的メソッド "push" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: this.items = this.items.concat(item)）。',
+    );
   });
 
   it('メッセージにメソッド別の非破壊代替が含まれること（push → concat）', () => {
@@ -89,7 +115,7 @@ describe('validateArrayMutations: 破壊的メソッド呼び出し（wcs/array-
     expect(diags[0].statePath).toBe('items.<i>');
   });
 
-  it('bracket ルート形 this["items"].push(...) を検出する', () => {
+  it('bracket ルート形 this["items"].push(...) を検出する（range 含む）', () => {
     const html = makeHtml(`
   items: [],
   update() {
@@ -99,6 +125,69 @@ describe('validateArrayMutations: 破壊的メソッド呼び出し（wcs/array-
     expect(diags).toHaveLength(1);
     expect(diags[0].code).toBe(WcsDiagnosticCode.ArrayMutation);
     expect(diags[0].statePath).toBe('items');
+    const expectedStart = html.indexOf('this["items"].push');
+    expect(diags[0].start).toBe(expectedStart);
+    expect(diags[0].end).toBe(expectedStart + 'this["items"].push'.length);
+  });
+
+  it('メソッド名と ( の間に空白があっても検出する', () => {
+    const html = makeHtml(`
+  items: [],
+  update() {
+    this.items.push (1);
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+  });
+
+  it('optional chaining this.items?.push(...) を検出する', () => {
+    const html = makeHtml(`
+  items: [],
+  update() {
+    this.items?.push(1);
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].statePath).toBe('items');
+  });
+
+  it('改行で折り返されたチェーンを検出する', () => {
+    const html = makeHtml(`
+  items: [],
+  update() {
+    this.items
+      .push(2);
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].statePath).toBe('items');
+  });
+
+  it('式添字チェーン this.rows[this.i].push(...) を検出する', () => {
+    const html = makeHtml(`
+  rows: [[1], [2]],
+  i: 0,
+  update() {
+    this.rows[this.i].push(3);
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].statePath).toBe('rows.<this.i>');
+  });
+
+  it('$ 含み識別子: 非ルートセグメント・識別子内 $ は検出、$ ルートはスキップ', () => {
+    const html = makeHtml(`
+  data: { $list: [] },
+  items$: [],
+  update() {
+    this.data.$list.push(3);
+    this.items$.push(2);
+    this.$items.push(1);
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(2);
+    expect(diags[0].statePath).toBe('data.$list');
+    expect(diags[1].statePath).toBe('items$');
   });
 
   it('ワイルドカードパス形 this["items.*.tags"].push(...) を検出する', () => {
@@ -175,13 +264,114 @@ describe('validateArrayMutations: インデックス代入（wcs/array-index-ass
     expect(diags[0].end).toBe(expectedStart + 'this.items[0] ='.length);
   });
 
-  it('比較演算子 ==, ===, != は検出しない', () => {
+  it('比較演算子 ==, ===, !=, !==, >=, <= は検出しない', () => {
     const html = makeHtml(`
   items: [1],
   check() {
     if (this.items[0] == 1) {}
     if (this.items[0] === 1) {}
     if (this.items[0] != 2) {}
+    if (this.items[0] !== 2) {}
+    if (this.items[0] >= 1) {}
+    if (this.items[0] <= 1) {}
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(0);
+  });
+
+  it('ja メッセージの全文が仕様どおりであること（index-assign）', () => {
+    const html = makeHtml(`
+  items: [1],
+  update() {
+    this.items[0] = 9;
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags[0].message).toBe(
+      '配列インデックスへの直接代入はリアクティブ更新をトリガーしません。this["items.0"] のようなドットパス代入、または with() と再代入を使用してください。',
+    );
+  });
+
+  it('式添字 this.items[this.items.length] = x（append イディオム）を検出する', () => {
+    const html = makeHtml(`
+  items: [],
+  add(x) {
+    this.items[this.items.length] = x;
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe(WcsDiagnosticCode.ArrayIndexAssign);
+    expect(diags[0].statePath).toBe('items.<this.items.length>');
+  });
+
+  it('式添字 this.items[i + 1] = を検出する', () => {
+    const html = makeHtml(`
+  items: [1, 2],
+  update(i) {
+    this.items[i + 1] = 9;
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].statePath).toBe('items.<i + 1>');
+  });
+
+  it('bracket ルート形 this["items"][0] = を検出する（range 含む）', () => {
+    const html = makeHtml(`
+  items: [1, 2],
+  update() {
+    this["items"][0] = 9;
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe(WcsDiagnosticCode.ArrayIndexAssign);
+    expect(diags[0].statePath).toBe('items.0');
+    const expectedStart = html.indexOf('this["items"][0] =');
+    expect(diags[0].start).toBe(expectedStart);
+    expect(diags[0].end).toBe(expectedStart + 'this["items"][0] ='.length);
+  });
+
+  it.each(['+=', '-=', '*=', '??=', '>>=', '&&='])('複合代入 this.items[0] %s を検出する', (op) => {
+    const html = makeHtml(`
+  items: [1],
+  update() {
+    this.items[0] ${op} 1;
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe(WcsDiagnosticCode.ArrayIndexAssign);
+    const expectedStart = html.indexOf('this.items[0]');
+    expect(diags[0].start).toBe(expectedStart);
+    expect(diags[0].end).toBe(expectedStart + `this.items[0] ${op}`.length);
+  });
+
+  it('後置インクリメント/デクリメント this.items[0]++ / -- を検出する', () => {
+    const html = makeHtml(`
+  items: [1],
+  update() {
+    this.items[0]++;
+    this.items[0]--;
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(2);
+    expect(diags.every(d => d.code === WcsDiagnosticCode.ArrayIndexAssign)).toBe(true);
+  });
+
+  it('前置インクリメント/デクリメント ++this.items[0] / --this.items[i] を検出する', () => {
+    const html = makeHtml(`
+  items: [1, 2],
+  update(i) {
+    ++this.items[0];
+    --this.items[i];
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(2);
+    expect(diags[0].statePath).toBe('items.0');
+    expect(diags[1].statePath).toBe('items.<i>');
+  });
+
+  it('$ 始まりの quoted ルートの添字代入 this["$streams"][0] = は検出しない', () => {
+    const html = makeHtml(`
+  update() {
+    this["$streams"][0] = 1;
   }`);
     const diags = validateArrayMutations(html);
     expect(diags).toHaveLength(0);
@@ -260,6 +450,26 @@ describe('validateArrayMutations: 誤検出ガード（設計 doc §5.3）', () 
     expect(diags).toHaveLength(0);
   });
 
+  it('quoted キー this.obj["key"] = は検出しない（設計 doc §6）', () => {
+    const html = makeHtml(`
+  obj: {},
+  update() {
+    this.obj["key"] = 1;
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(0);
+  });
+
+  it('チェーン内の quoted 添字 this.items["0"].push は検出しない（設計 doc §6）', () => {
+    const html = makeHtml(`
+  items: [[1]],
+  update() {
+    this.items["0"].push(4);
+  }`);
+    const diags = validateArrayMutations(html);
+    expect(diags).toHaveLength(0);
+  });
+
   it('wcs-state 外の script は対象外', () => {
     const html = `<script type="module">this.items.push(1);</script><div>hello</div>`;
     const diags = validateArrayMutations(html);
@@ -298,6 +508,18 @@ export default { rows: [], g() { this.rows[0] = 1; } };
   }`);
     const diags = validateArrayMutations(html);
     expect(diags).toHaveLength(3);
+  });
+
+  it('カスタム stateTagName の要素だけを検査する', () => {
+    const html = `<my-state><script type="module">
+export default { items: [], f() { this.items.push(1); } };
+</script></my-state>
+<wcs-state><script type="module">
+export default { rows: [], g() { this.rows.push(1); } };
+</script></wcs-state>`;
+    const diags = validateArrayMutations(html, 'my-state');
+    expect(diags).toHaveLength(1);
+    expect(diags[0].statePath).toBe('items');
   });
 });
 
@@ -366,5 +588,35 @@ describe('validateDocument 経由: wcs/nested-assign との境界（二重報告
     const codes = diags.map(d => d.code);
     expect(codes).toContain(WcsDiagnosticCode.ArrayMutation);
     expect(codes).not.toContain(WcsDiagnosticCode.NestedAssign);
+  });
+
+  it('中間ドットチェーン代入 this.a.b[0] = は nested-assign のみ', () => {
+    const html = makeHtml(`
+  a: { b: [1] },
+  update() {
+    this.a.b[0] = 9;
+  }`);
+    const diags = validateDocument(html);
+    const codes = diags.map(d => d.code);
+    expect(codes).toContain(WcsDiagnosticCode.NestedAssign);
+    expect(codes).not.toContain(WcsDiagnosticCode.ArrayIndexAssign);
+  });
+
+  it('複合代入の境界: this.items[0] += は index-assign のみ / this.user.count += は nested-assign のみ', () => {
+    const indexSide = validateDocument(makeHtml(`
+  items: [1],
+  update() {
+    this.items[0] += 1;
+  }`));
+    expect(indexSide.map(d => d.code)).toContain(WcsDiagnosticCode.ArrayIndexAssign);
+    expect(indexSide.map(d => d.code)).not.toContain(WcsDiagnosticCode.NestedAssign);
+
+    const nestedSide = validateDocument(makeHtml(`
+  user: { count: 0 },
+  update() {
+    this.user.count += 1;
+  }`));
+    expect(nestedSide.map(d => d.code)).toContain(WcsDiagnosticCode.NestedAssign);
+    expect(nestedSide.map(d => d.code)).not.toContain(WcsDiagnosticCode.ArrayIndexAssign);
   });
 });

@@ -6,7 +6,13 @@
 
 - **配列破壊的操作の診断** — `<wcs-state>` スクリプト内の配列への破壊的操作を検出する 2 診断を追加（warning、IDE / `wcs-validate` CLI 共通）。設計・検証の正本: `docs/array-mutation-diagnostic-design.md`
   - `wcs/array-mutation` — `this.items.push(...)` 等 9 種の破壊的メソッド呼び出し。リアクティブ更新をトリガーせず、同一参照の自己再代入でも要素の追加・削除は反映されない（動的検証済み）。メッセージでメソッド別の非破壊代替（`concat` / `toSpliced` / `toSorted` 等）を提示
-  - `wcs/array-index-assign` — `this.items[0] = x` 形式のインデックス代入（bracket-only チェーン）。ドットパス代入 `this["items.0"]` を提示。ドットアクセスを含むチェーンは従来どおり `wcs/nested-assign` の担当（二重報告なし）
+  - `wcs/array-index-assign` — `this.items[0] = x` 形式のインデックス代入（bracket-only チェーン）。単純代入に加え複合代入 15 種（`+=` `??=` 等）・前置/後置 `++` `--`・bracket ルート形（`this["items"][0] = x`）・式添字（`this.items[this.items.length] = x` の append イディオム）も検出（いずれも非リアクティブを動的検証済み）。ドットパス代入 `this["items.0"]` と `with()` を提示。ドットアクセスを含むチェーンは従来どおり `wcs/nested-assign` の担当（二重報告なし）
+  - 両診断とも optional chaining（`?.`）・改行/空白折返しチェーン・`$` 含み識別子に対応
+
+### Fixes
+
+- **`wcs/nested-assign` の検出拡張** — 複合代入（`this.user.count += 1`）・前置/後置 `++` `--`・式添字チェーン（`this.rows[this.i].name = x`）が検出されていなかったギャップを解消（ランタイムでは単純代入と同じく非リアクティブ）。識別子添字の提示パスを `a.i.b` から動的添字マーカー `a.<i>.b` へ統一。プレーン `=` の診断 range は不変
+- **`<script>` の `type` 属性値を ASCII case-insensitive で判定** — `type="Module"` / `TYPE="MODULE"` のブロックが全 script 系診断からスキップされていた問題を修正（HTML 仕様準拠。`application/json` 判定も同様）
 
 ## 1.10.0
 
