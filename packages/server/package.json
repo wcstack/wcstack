@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/server",
-  "version": "1.22.3",
+  "version": "1.22.4",
   "description": "Server-side rendering for wcstack Web Components.",
   "type": "module",
   "main": "./dist/index.esm.js",
