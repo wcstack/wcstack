@@ -5316,11 +5316,19 @@ class Content {
     }
     mountAfter(targetNode) {
         const parentNode = targetNode.parentNode;
-        const nextSibling = targetNode.nextSibling;
         if (parentNode) {
+            // マウント済み content にも再突入する（if の true→true 再適用・SSR
+            // ハイドレーション産 content 等）。固定の nextSibling へ一括 insertBefore
+            // すると、マウント済みでは nextSibling が自分の先頭ノードを指すため
+            // 先頭ノードが末尾へ回転する。anchor を進めながら位置一致ノードを
+            // スキップすることで冪等にする（mutation record も発生させない）。
+            let anchor = targetNode;
             for (const node of this._childNodeArray) {
-                markObserverSkipOnAdd(node);
-                parentNode.insertBefore(node, nextSibling);
+                if (anchor.nextSibling !== node) {
+                    markObserverSkipOnAdd(node);
+                    parentNode.insertBefore(node, anchor.nextSibling);
+                }
+                anchor = node;
             }
         }
         this._mounted = true;
@@ -5728,12 +5736,10 @@ function applyChangeToFor(bindingInfo, context, newValue) {
     }
 }
 
-const lastConnectedByNode = new WeakMap();
 function bindingInfoText(bindingInfo) {
     return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.outFilters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
 }
 function applyChangeToIf(bindingInfo, context, rawNewValue) {
-    const currentConnected = bindingInfo.node.isConnected;
     const newValue = Boolean(rawNewValue);
     let content;
     const contents = getContentSetByNode(bindingInfo.node);
@@ -5746,35 +5752,30 @@ function applyChangeToIf(bindingInfo, context, rawNewValue) {
     const ssrMode = inSsr();
     const uuid = bindingInfo.uuid ?? '';
     const keyword = bindingInfo.bindingType; // if, elseif, else
-    try {
-        if (!newValue) {
-            if (config.debug) {
-                console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
-            }
-            deactivateContent(content);
-            content.unmount();
+    if (!newValue) {
+        if (config.debug) {
+            console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
         }
-        if (newValue) {
-            if (config.debug) {
-                console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
-            }
-            if (ssrMode) {
-                const startComment = document.createComment(`@@wcs-${keyword}-start:${uuid}:${bindingInfo.statePathName}`);
-                bindingInfo.node.parentNode.insertBefore(startComment, bindingInfo.node.nextSibling);
-                content.mountAfter(startComment);
-                const endComment = document.createComment(`@@wcs-${keyword}-end:${uuid}:${bindingInfo.statePathName}`);
-                const afterNode = content.lastNode ?? startComment;
-                afterNode.parentNode.insertBefore(endComment, afterNode.nextSibling);
-            }
-            else {
-                content.mountAfter(bindingInfo.node);
-            }
-            const loopContext = getLoopContextByNode(bindingInfo.node);
-            activateContent(content, loopContext, context);
-        }
+        deactivateContent(content);
+        content.unmount();
     }
-    finally {
-        lastConnectedByNode.set(bindingInfo.node, currentConnected);
+    if (newValue) {
+        if (config.debug) {
+            console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
+        }
+        if (ssrMode) {
+            const startComment = document.createComment(`@@wcs-${keyword}-start:${uuid}:${bindingInfo.statePathName}`);
+            bindingInfo.node.parentNode.insertBefore(startComment, bindingInfo.node.nextSibling);
+            content.mountAfter(startComment);
+            const endComment = document.createComment(`@@wcs-${keyword}-end:${uuid}:${bindingInfo.statePathName}`);
+            const afterNode = content.lastNode ?? startComment;
+            afterNode.parentNode.insertBefore(endComment, afterNode.nextSibling);
+        }
+        else {
+            content.mountAfter(bindingInfo.node);
+        }
+        const loopContext = getLoopContextByNode(bindingInfo.node);
+        activateContent(content, loopContext, context);
     }
 }
 
@@ -6896,7 +6897,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.22.4";
+var version = "1.22.5";
 var pkg = {
 	version: version};
 
