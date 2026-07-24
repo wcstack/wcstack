@@ -58,11 +58,19 @@ class Content implements IContent {
 
   mountAfter(targetNode: Node): void {
     const parentNode = targetNode.parentNode;
-    const nextSibling = targetNode.nextSibling;
     if (parentNode) {
+      // マウント済み content にも再突入する（if の true→true 再適用・SSR
+      // ハイドレーション産 content 等）。固定の nextSibling へ一括 insertBefore
+      // すると、マウント済みでは nextSibling が自分の先頭ノードを指すため
+      // 先頭ノードが末尾へ回転する。anchor を進めながら位置一致ノードを
+      // スキップすることで冪等にする（mutation record も発生させない）。
+      let anchor: Node = targetNode;
       for(const node of this._childNodeArray) {
-        markObserverSkipOnAdd(node);
-        parentNode.insertBefore(node, nextSibling);
+        if (anchor.nextSibling !== node) {
+          markObserverSkipOnAdd(node);
+          parentNode.insertBefore(node, anchor.nextSibling);
+        }
+        anchor = node;
       }
     }
     this._mounted = true;
