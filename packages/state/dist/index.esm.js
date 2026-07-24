@@ -5289,8 +5289,16 @@ class Content {
     _firstNode = null;
     _lastNode = null;
     _mounted = false;
-    constructor(content) {
+    /**
+     * 範囲モード。トップレベルに構造ディレクティブを持つ content でのみ true。
+     * この content の実レンジは自分の childNodeArray より広い（ネストした
+     * if/for が自分のアンカー直後に実ノードを挿すため）ので、移動は
+     * firstNode..lastNode の DOM レンジで行う。
+     */
+    _ranged = false;
+    constructor(content, ranged = false) {
         this._content = content;
+        this._ranged = ranged;
         this._childNodeArray = Array.from(this._content.childNodes);
         this._firstNode = this._childNodeArray.length > 0 ? this._childNodeArray[0] : null;
         this._lastNode = this._childNodeArray.length > 0 ? this._childNodeArray[this._childNodeArray.length - 1] : null;
@@ -5314,6 +5322,31 @@ class Content {
         }
         this._mounted = true;
     }
+    /**
+     * 移動対象ノード列。通常は自分のトップレベルノードそのもの（同一参照を返すので
+     * 追加アロケーション無し）。範囲モードでマウント中のときだけ、ネストした構造
+     * ディレクティブが挿した実ノードを含む DOM レンジを収集する。
+     */
+    _movableNodes() {
+        if (!this._ranged || !this._mounted) {
+            return this._childNodeArray;
+        }
+        const first = this._firstNode;
+        const last = this._lastNode;
+        if (first === null || last === null || first.parentNode === null) {
+            return this._childNodeArray;
+        }
+        // 移動でsiblingが変わるため、先に列を確定させてから動かす
+        const nodes = [];
+        for (let node = first; node !== null; node = node.nextSibling) {
+            nodes.push(node);
+            if (node === last) {
+                return nodes;
+            }
+        }
+        // last へ到達しない（想定外の不連続）→ 従来どおり自分のノードだけ動かす
+        return this._childNodeArray;
+    }
     mountAfter(targetNode) {
         const parentNode = targetNode.parentNode;
         if (parentNode) {
@@ -5323,7 +5356,7 @@ class Content {
             // 先頭ノードが末尾へ回転する。anchor を進めながら位置一致ノードを
             // スキップすることで冪等にする（mutation record も発生させない）。
             let anchor = targetNode;
-            for (const node of this._childNodeArray) {
+            for (const node of this._movableNodes()) {
                 if (anchor.nextSibling !== node) {
                     markObserverSkipOnAdd(node);
                     parentNode.insertBefore(node, anchor.nextSibling);
@@ -5391,6 +5424,53 @@ class Content {
     }
 }
 /**
+ * トップレベルに構造ディレクティブのプレースホルダを持つか。
+ *
+ * これを持つ content は、ネストした if/for が「自分のアンカー直後」に実ノードを
+ * 挿すため、自分の childNodeArray が実レンジより狭くなる。その状態だと
+ * (1) 呼び出し側の位置追跡（applyChangeToFor の lastNode）が実ノードの手前で
+ * 止まり後続行が割り込む、(2) 移動時にネスト分を置き去りにする、の 2 つが起きる。
+ * 該当テンプレートにだけ終端マーカーを持たせて実レンジを閉じる。
+ */
+function hasTopLevelStructural(fragment) {
+    // config は setConfig で差し替わりうるので都度組む。テンプレート単位に一度しか
+    // 走らない判定なので、この生成コストが行あたりに乗ることはない。
+    const structural = new RegExp(`^@@(?:${config.commentForPrefix}|${config.commentIfPrefix}`
+        + `|${config.commentElseIfPrefix}|${config.commentElsePrefix}):`);
+    for (let node = fragment.firstChild; node !== null; node = node.nextSibling) {
+        if (node.nodeType !== Node.COMMENT_NODE) {
+            continue;
+        }
+        // Comment の data は常に文字列（textContent の null 分岐を持ち込まない）
+        if (structural.test(node.data)) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * 範囲モードの要否をテンプレート単位で一度だけ判定してキャッシュする。
+ * 大多数のテンプレート（トップレベルが素の要素）は false を引くだけで、
+ * 行ごとの追加コストはゼロ。
+ */
+function resolveRanged(fragmentInfo) {
+    let ranged = fragmentInfo.topLevelStructural;
+    if (typeof ranged === 'undefined') {
+        ranged = fragmentInfo.topLevelStructural = hasTopLevelStructural(fragmentInfo.fragment);
+    }
+    return ranged;
+}
+const ROW_END_PREFIX = 'wcs-row-end';
+/**
+ * 終端マーカーの付与。バインディング初期化の後に足すので nodePath 解決には影響しない
+ * （末尾追加なので既存 index もずれない）。SSR 描画中は付けない — SSR は行ごとに
+ * `@@wcs-for-start/end` を出力しており、そちらがレンジの正本かつハイドレーション
+ * が読む対象なので、余計なコメントを混ぜない。
+ */
+function appendRowEndMarker(cloneFragment, uuid) {
+    cloneFragment.appendChild(document.createComment(`${ROW_END_PREFIX}:${uuid}`));
+}
+/**
  * SSR ハイドレーション用: 既存の DOM ノード配列から Content を生成する。
  * テンプレートからの clone ではなく、SSR で描画済みのノードをそのまま使う。
  */
@@ -5440,6 +5520,9 @@ function createPlanContent(bindingInfo, fragmentInfo, plan) {
         }
     }
     const session = initializeRowBindings(plan, bindings);
+    // プラン経路の content は範囲モードにならない: compileRowPlan は bindingType が
+    // text / prop / event のもの以外（= for / if / elseif / else）を含む時点で不適格に
+    // するため、プラン適格なフラグメントはトップレベル構造アンカーを持ち得ない。
     const content = new Content(cloneFragment);
     setBindingSessionByContent(content, session);
     setBindingsByContent(content, bindings);
@@ -5456,6 +5539,8 @@ function createContent(bindingInfo) {
     if (!fragmentInfo) {
         raiseError(`Fragment with UUID "${bindingInfo.uuid}" not found.`);
     }
+    // SSR 描画中は行ごとの @@wcs-for-start/end がレンジの正本なので終端マーカーは付けない
+    const ranged = !inSsr() && resolveRanged(fragmentInfo);
     let plan = fragmentInfo.rowPlan;
     if (typeof plan === 'undefined' || (plan !== null && plan.directional !== config.enableDirectionalInitialSync)) {
         // 初回 or config（directional）が変わったときだけコンパイル。不適格は null を
@@ -5467,7 +5552,11 @@ function createContent(bindingInfo) {
     }
     const cloneFragment = document.importNode(fragmentInfo.fragment, true);
     const initialInfo = initializeBindingsByFragment(cloneFragment, fragmentInfo.nodeInfos);
-    const content = new Content(cloneFragment);
+    if (ranged) {
+        // uuid は冒頭のガードで非 null が確定している（raiseError は never を返す）
+        appendRowEndMarker(cloneFragment, bindingInfo.uuid);
+    }
+    const content = new Content(cloneFragment, ranged);
     setBindingSessionByContent(content, initialInfo.bindingSession);
     setBindingsByContent(content, initialInfo.bindingInfos);
     const indexBindings = [];
@@ -6897,7 +6986,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.22.5";
+var version = "1.22.6";
 var pkg = {
 	version: version};
 
