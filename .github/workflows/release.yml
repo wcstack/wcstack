@@ -31,24 +31,44 @@ jobs:
           cache: npm
           cache-dependency-path: packages/*/package-lock.json
 
-      # Discover release-target packages: any packages/* whose package.json is
-      # scoped under @wcstack/. Auto-includes new packages; excludes the
-      # vscode-wcs extension (published separately to the VS Code Marketplace).
+      # Discover release-target packages, in two sets.
+      #
+      # `list` — buildable packages: any packages/* scoped under @wcstack/.
+      # These have src, tests, a package-lock.json and a dist, so they go
+      # through install / build / test / rebuild / artifact-commit. Auto-includes
+      # new packages; excludes the vscode-wcs extension (published separately to
+      # the VS Code Marketplace).
+      #
+      # `publish_list` — the above plus the unscoped `wcstack` entry package.
+      # That one is documentation only: no dependencies, no build, no tests, no
+      # dist. It must not enter the build/test loops (they would fail on the
+      # missing lockfile and scripts), but it does have to stay on the shared
+      # version line, so it takes part in bump / verify / publish.
       - name: Discover packages
         id: discover
         run: |
           set -euo pipefail
-          pkgs=$(
+          # The entry package is selected by a flag, not by folding it into the
+          # case pattern: a pattern passed through a variable is not re-parsed,
+          # so `@wcstack/*|wcstack` would match nothing at all (the `|` stops
+          # being an alternation separator) and every list would come back empty.
+          collect() {
+            include_entry="$1"
             for dir in packages/*/; do
               [ -f "${dir}package.json" ] || continue
               name=$(node -p "require('./${dir}package.json').name")
               case "$name" in
                 @wcstack/*) basename "$dir" ;;
+                wcstack)    if [ "$include_entry" = "yes" ]; then basename "$dir"; fi ;;
               esac
             done | sort | tr '\n' ' '
-          )
-          echo "Packages: $pkgs"
+          }
+          pkgs=$(collect no)
+          publish_pkgs=$(collect yes)
+          echo "Buildable packages: $pkgs"
+          echo "Publish targets:    $publish_pkgs"
           echo "list=$pkgs" >> "$GITHUB_OUTPUT"
+          echo "publish_list=$publish_pkgs" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: |
@@ -83,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           versions=$(
-            for pkg in ${{ steps.discover.outputs.list }}; do
+            for pkg in ${{ steps.discover.outputs.publish_list }}; do
               node -p "require('./packages/$pkg/package.json').version"
             done
           )
@@ -96,7 +116,7 @@ jobs:
           esac
           target="$major.$minor.$patch"
           echo "Bumping all packages from max $max to $target"
-          for pkg in ${{ steps.discover.outputs.list }}; do
+          for pkg in ${{ steps.discover.outputs.publish_list }}; do
             (cd "packages/$pkg" && npm version "$target" --no-git-tag-version --allow-same-version)
           done
           echo "version=$target" >> "$GITHUB_OUTPUT"
@@ -106,7 +126,7 @@ jobs:
         run: |
           set -euo pipefail
           expected="${{ steps.bump.outputs.version }}"
-          for pkg in ${{ steps.discover.outputs.list }}; do
+          for pkg in ${{ steps.discover.outputs.publish_list }}; do
             actual=$(node -p "require('./packages/$pkg/package.json').version")
             if [ "$actual" != "$expected" ]; then
               echo "::error::Version mismatch in $pkg: expected $expected, got $actual"
@@ -141,8 +161,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Every publish target got its version bumped, so every package.json is
+          # staged. Lockfiles and dist exist only for the buildable set.
+          for pkg in ${{ steps.discover.outputs.publish_list }}; do
+            git add "packages/$pkg/package.json"
+          done
           for pkg in ${{ steps.discover.outputs.list }}; do
-            git add "packages/$pkg/package.json" "packages/$pkg/package-lock.json" "packages/$pkg/dist"
+            git add "packages/$pkg/package-lock.json" "packages/$pkg/dist"
           done
           git commit -m "chore: bump all packages to v${{ steps.bump.outputs.version }}"
 
@@ -155,7 +180,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${{ steps.bump.outputs.version }}"
-          for pkg in ${{ steps.discover.outputs.list }}; do
+          for pkg in ${{ steps.discover.outputs.publish_list }}; do
             name=$(node -p "require('./packages/$pkg/package.json').name")
             published=$(npm view "$name@$target" version 2>/dev/null || true)
             if [ "$published" = "$target" ]; then
