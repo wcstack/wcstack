@@ -1,5 +1,7 @@
 # wcstack
 
+> 🤖 **AI coding agents**: start with [AGENTS.md](./AGENTS.md).
+
 **What if the browser had these built in?**
 
 wcstack is a thought experiment turned into code. We imagine what future web standards *could* look like — reactive data binding, declarative routing, automatic component loading — and build them as if they already existed in the browser.
@@ -41,6 +43,17 @@ Loop   ← "items.*" →    Template    Wildcard abstracts the index
 ```
 
 This means you can redesign the UI without touching state, refactor state without touching the DOM, and read the HTML to understand everything. It's the same idea as a REST URL — a simple string contract, no shared code.
+
+---
+
+## AI-Assisted Development
+
+Working with an AI coding agent — Claude Code, Codex, Cursor, Copilot, or anything else? Point it at **[AGENTS.md](./AGENTS.md) first**. It is the vendor-neutral entry point for this repository, and it covers both directions:
+
+- **Building an app *with* wcstack** — install the [wcstack-app skill](https://github.com/wcstack/wcstack-skill) for the complete `data-wcs` binding syntax and tag catalog, then gate generated HTML with `npx @wcstack/lint --errors-only` and iterate until it exits `0`.
+- **Working *on* this monorepo** — package layout and commands, generated-file rules, and the protocols that must not be changed casually.
+
+Claude Code reads [CLAUDE.md](./CLAUDE.md) (the more detailed, tool-specific guide) automatically; tell every other agent to start at AGENTS.md.
 
 ---
 
