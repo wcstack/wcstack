@@ -1,5 +1,7 @@
 # @wcstack/state
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 **This is not another convenient frontend framework. It is a different lineage that rearranges the premises of frontend development.**
 
 Most libraries place the coupling point between UI, state, and components inside JavaScript. `@wcstack/state` does not. It assumes no virtual DOM, no compilation step, no hooks, no selectors. UI and state are connected by HTML and path strings alone.

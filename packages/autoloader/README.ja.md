@@ -1,5 +1,7 @@
 # @wcstack/autoloader
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 **もしカスタム要素が勝手に読み込まれたら？**
 
 カスタム要素のタグを書くだけで、ブラウザが自動的にその定義を見つけてくれる未来を想像してみてください。`import` も `customElements.define()` も、煩雑な登録処理も一切不要です。タグを書くだけで、必要なコンポーネントが読み込まれます。

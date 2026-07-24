@@ -1,5 +1,7 @@
 # @wcstack/contacts
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/contacts` は wcstack エコシステム向けのヘッドレスな Contact Picker コンポーネントです。
 
 視覚的な UI ウィジェットではありません。`navigator.contacts.select(properties, options)` を宣言的コマンド+観測可能stateに変える**非同期プリミティブノード**で、Web Share APIに対する`@wcstack/share`と同じ形をしています。

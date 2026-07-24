@@ -1,5 +1,7 @@
 # @wcstack/signals
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/signals` は **signals ベースのきめ細かい(fine-grained)リアクティブコア**です。ランタイム依存ゼロ・buildless・標準ファースト。設計の背景は [`docs/signals-state-design.md`](../../docs/signals-state-design.md) を参照してください。
 
 [`@wcstack/state`](../state/README.ja.md) が UI と状態を HTML のパス文字列で接続する(あなたのコードにリアクティブプリミティブは現れない)のに対し、`@wcstack/signals` はそれを望むケースのために逆の立場をとります。すなわち **リアクティブプリミティブを直接露出**します。DSL も `data-wcs` も無く、JavaScript で `signal()` / `computed()` / `effect()` を呼びます。両者は競合ではなく**補完関係**です — 同じエコシステムの、結合点の違いです。

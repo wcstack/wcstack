@@ -1,5 +1,7 @@
 # @wcstack/server
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 **What if Web Components rendered on the server?**
 
 Imagine a future where your `<wcs-state>` templates are fully rendered before they reach the browser — data is fetched, bindings are resolved, lists are expanded, conditionals are evaluated. The user sees content instantly, and the client picks up exactly where the server left off.

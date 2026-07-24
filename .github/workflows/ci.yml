@@ -60,11 +60,13 @@ jobs:
           fi
 
   protocol-types-sync:
-    # Single-source files that are copied into each package live outside packages/*
-    # (protocol/wc-bindable.ts → src/protocol/wcBindable.ts, config-templates/* →
-    # rollup.config.js / eslint.config.js), so the change-detection matrix above
-    # cannot catch a stale copy — this independent job fails if any generated copy
-    # drifts from its source.
+    # Content mirrored from a single canonical source into many files — copies of
+    # source files that live outside packages/* (protocol/wc-bindable.ts →
+    # src/protocol/wcBindable.ts, config-templates/* → rollup.config.js /
+    # eslint.config.js), and the per-package README AI-agents banner (canonical
+    # text in scripts/sync-readme-agents-banner.mjs). The change-detection matrix
+    # above cannot catch this drift, so this independent job fails if any mirror
+    # drifts from its source (including a new package that ships without the banner).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +76,7 @@ jobs:
       - run: node scripts/sync-protocol-types.mjs --check
       - run: node scripts/sync-io-core.mjs --check
       - run: node scripts/sync-package-configs.mjs --check
+      - run: node scripts/sync-readme-agents-banner.mjs --check
 
   bindable-conformance:
     # settable wcBindable member ⇒ declared in inputs. A runtime check that

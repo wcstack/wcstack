@@ -1,5 +1,7 @@
 # @wcstack/camera
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 Web Components 向けの宣言的な**カメラ取得**（`<wcs-camera>`）と**メディア録画**（`<wcs-recorder>`）。`getUserMedia` + `MediaRecorder` がベース。フレームワーク非依存・ランタイム依存ゼロで、[wc-bindable プロトコル](../../docs)経由で公開します。
 
 > English version: [README.md](./README.md).

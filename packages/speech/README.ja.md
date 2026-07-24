@@ -1,5 +1,7 @@
 # @wcstack/speech
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/speech` は wcstack エコシステム向けの、ヘッドレスな Web Speech コンポーネント2点セットです。
 
 これらは視覚的な UI ウィジェットではありません。`@wcstack/fetch` がネットワークリクエストを、`@wcstack/geolocation` が現在地をリアクティブな状態に変えるのと同じように、ブラウザの Web Speech API を**リアクティブな状態に変える非同期プリミティブノード**です。

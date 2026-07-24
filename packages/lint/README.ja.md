@@ -1,5 +1,7 @@
 # @wcstack/lint
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 [wcstack](https://github.com/wcstack/wcstack) の静的契約検査 CLI。HTML の `data-wcs` バインディングと `wcstack.manifest.json`（sidecar）を headless に検査します。WcStack IntelliSense（VS Code 拡張）と**同一の validator core** を使うため、IDE と CLI の diagnostic code / range は完全に一致します。
 
 [English README is here](./README.md)

@@ -1,5 +1,7 @@
 # @wcstack/gyroscope
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/gyroscope` は wcstack エコシステム向けのヘッドレスな Generic Sensor API（Gyroscope）コンポーネントです。
 
 視覚的な UI ウィジェットではありません。デバイスの角速度読み取りをリアクティブな state に変える**非同期プリミティブノード**です。

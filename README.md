@@ -1,6 +1,8 @@
 # wcstack
 
-> 🤖 **AI coding agents**: start with [AGENTS.md](./AGENTS.md).
+> [!IMPORTANT]
+> ### 🤖 AI coding agents — start with **[AGENTS.md](./AGENTS.md)**
+> The vendor-neutral entry point for this repo. Read it **before** building an app *with* wcstack or working *on* this monorepo. (Claude Code also auto-reads [CLAUDE.md](./CLAUDE.md).)
 
 **What if the browser had these built in?**
 

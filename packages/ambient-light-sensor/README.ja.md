@@ -1,5 +1,7 @@
 # @wcstack/ambient-light-sensor
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/ambient-light-sensor` は wcstack エコシステム向けのヘッドレスな Generic Sensor API（AmbientLightSensor）コンポーネントです。
 
 視覚的な UI ウィジェットではありません。周囲の明るさ読み取りをリアクティブな state に変える**非同期プリミティブノード**です。
