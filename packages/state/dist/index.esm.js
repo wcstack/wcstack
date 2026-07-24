@@ -6896,7 +6896,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.22.2";
+var version = "1.22.3";
 var pkg = {
 	version: version};
 

@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/screen-orientation",
-  "version": "1.22.2",
+  "version": "1.22.3",
   "description": "Declarative Screen Orientation component for Web Components. Framework-agnostic screen.orientation monitor + lock/unlock commands via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",

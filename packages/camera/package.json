@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/camera",
-  "version": "1.22.2",
+  "version": "1.22.3",
   "description": "Declarative camera capture and media recording for Web Components. Binds live MediaStream handles directly to elements (never through serializable state) via getUserMedia + MediaRecorder.",
   "type": "module",
   "main": "./dist/index.esm.js",
