@@ -1,6 +1,6 @@
 // smoke-test.mjs — 配布物 dist/cli.cjs の実行スモークテスト。
 //
-// validator core のロジックは packages/vscode-wcs 側のユニットテスト(276本)が
+// validator core のロジックは packages/vscode-wcs 側のユニットテスト一式が
 // 担保する。ここで検査するのは「npm で配る単一ファイル CLI が、node 直叩きで
 // CLI 契約(exit code / 出力形式 / 安定 diagnostic code)どおりに動くこと」だけ。
 //
@@ -25,8 +25,17 @@ if (!existsSync(cli)) {
 const workDir = mkdtempSync(join(tmpdir(), "wcstack-lint-smoke-"));
 const cleanHtml = join(workDir, "clean.html");
 const brokenManifest = join(workDir, "broken.manifest.json");
+const mutationHtml = join(workDir, "mutation.html");
 writeFileSync(cleanHtml, "<!doctype html>\n<html><body><p>hello</p></body></html>\n");
 writeFileSync(brokenManifest, "{ this is not json\n");
+writeFileSync(mutationHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  items: [],
+  add(item) { this.items.push(item); },
+};
+</script></wcs-state>
+`);
 
 const failures = [];
 let caseCount = 0;
@@ -85,6 +94,12 @@ check("--errors-only keeps error lines visible", ["--lang=en", "--errors-only", 
 check("unreadable file → exit 2", ["--lang=en", join(workDir, "no-such-file.html")], {
   exit: 2,
   stderr: ["cannot read"],
+});
+
+// warning severity は exit code を変えない(CLI 契約)ことも同時に検査する。
+check("destructive array mutation → warning wcs/array-mutation, exit 0", ["--lang=en", mutationHtml], {
+  exit: 0,
+  stdout: [/warning wcs\/array-mutation /, "0 error(s), 1 warning(s)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

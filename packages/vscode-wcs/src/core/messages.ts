@@ -53,6 +53,9 @@ export interface WcsMessageCatalog {
   // --- nestedAssignValidator / stateTypeValidator ---
   nestedAssign(suggestedPath: string): string;
   typeAnnotationIncompatible(valueType: string, rawType: string): string;
+  // --- arrayMutationValidator ---
+  arrayMutation(method: string, alternative: string): string;
+  arrayIndexAssign(suggestedPath: string): string;
   // --- ioNodeValidator ---
   tagMemberUnknown(property: string, tag: string): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
@@ -101,6 +104,10 @@ const ja: WcsMessageCatalog = {
     `<template> 外の {{ }} 構文は FOUC（初期表示時にテンプレート文字列が見える）の原因になります。<!--@@:${e}--> またはコメント構文の使用を検討してください。`,
   nestedAssign: (sp) => `ネストされたプロパティへの代入はリアクティブ更新をトリガーしません。this["${sp}"] を使用してください。`,
   typeAnnotationIncompatible: (vt, rt) => `型 "${vt}" は @type {${rt}} と互換性がありません`,
+  arrayMutation: (m, alt) =>
+    `配列の破壊的メソッド "${m}" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alt}）。`,
+  arrayIndexAssign: (sp) =>
+    `配列インデックスへの直接代入はリアクティブ更新をトリガーしません。this["${sp}"] のようなドットパス代入、または with() と再代入を使用してください。`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   tagCommandUnknown: (name, tag, declared) =>
@@ -153,6 +160,10 @@ const en: WcsMessageCatalog = {
     `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
+  arrayMutation: (m, alt) =>
+    `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
+  arrayIndexAssign: (sp) =>
+    `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   tagCommandUnknown: (name, tag, declared) =>

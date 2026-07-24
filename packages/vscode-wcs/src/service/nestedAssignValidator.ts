@@ -5,12 +5,27 @@
  *
  * Proxy はトップレベルの set のみ検出できるため、
  * `this.user.profile.name = "Bob"` のようなチェーン代入は
- * リアクティブ更新がトリガーされない。
- * 正しくは `this["user.profile.name"] = "Bob"` を使う。
+ * リアクティブ更新がトリガーされない。複合代入（`+=` `??=` 等）と
+ * インクリメント/デクリメント（`++` / `--`、前置・後置）も同様。
+ * 正しくは `this["user.profile.name"]` へのドットパス代入を使う。
+ *
+ * 境界: bracket-only チェーンの代入（this.items[0] = x）は
+ * wcs/array-index-assign（arrayMutationValidator）の担当であり、
+ * ここではドットセグメントを含むチェーンのみ発火する（相補・二重報告なし）。
+ * 正規表現部品は scriptPatterns.ts で共有する（規範: 設計 doc §5）。
  */
 
 import { parseWcsScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
+import {
+  ASSIGN_TAIL,
+  CHAIN_ONE_PLUS,
+  PRE_INCDEC,
+  ROOT_DOT,
+  chainToDotted,
+  hasDotSegment,
+  isApiRoot,
+} from './scriptPatterns.js';
 
 export interface NestedAssignDiagnostic {
   start: number;
@@ -19,18 +34,23 @@ export interface NestedAssignDiagnostic {
   severity: 'warning';
 }
 
+// 後置形: this.user.name = / += / ++ 等。前置形: ++this.user.count。
+const NESTED_ASSIGN = new RegExp(`${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`, 'g');
+const PRE_NESTED_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`, 'g');
+
 /**
  * HTML 内の <wcs-state> スクリプトからネスト代入パターンを検出する。
  *
  * 検出パターン:
- *   this.prop.sub = value
- *   this.prop.sub.deep = value
- *   this.prop[index].sub = value
+ *   this.prop.sub = value / += value / ++
+ *   this.prop[expr].sub = value
+ *   ++this.prop.sub
  *
  * 除外パターン:
  *   this.prop = value        （トップレベル — OK）
  *   this["prop.sub"] = value （ドットパス — OK）
- *   this.$api(...)           （API 呼び出し — OK）
+ *   this.prop[0] = value     （bracket-only — wcs/array-index-assign の担当）
+ *   this.$api(...)           （API 名前空間 — OK）
  */
 export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-state', locale?: string): NestedAssignDiagnostic[] {
   const msgs = getMessages(locale);
@@ -38,8 +58,7 @@ export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-
   const diagnostics: NestedAssignDiagnostic[] = [];
 
   for (const block of blocks) {
-    const blockDiags = findNestedAssigns(block.content, block.contentStart, msgs);
-    diagnostics.push(...blockDiags);
+    findNestedAssigns(block.content, block.contentStart, msgs, diagnostics);
   }
 
   return diagnostics;
@@ -48,43 +67,24 @@ export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-
 /**
  * スクリプト内容からネスト代入パターンを検出する。
  */
-function findNestedAssigns(script: string, baseOffset: number, msgs: WcsMessageCatalog = getMessages()): NestedAssignDiagnostic[] {
-  const diagnostics: NestedAssignDiagnostic[] = [];
-
-  // this.X.Y...= を検出する正規表現
-  // this.prop.sub = value のパターン（2段以上のドットアクセス + 代入）
-  // ただし this["..."] = は除外（ブラケットアクセスは OK）
-  // ==, ===, !=, !== は代入ではないので除外
-  const regex = /\bthis\.(\w+)((?:\.\w+|\[\w+\])+)\s*=[^=]/g;
-
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(script)) !== null) {
-    const fullMatch = match[0];
-    const topProp = match[1];
-    const chainPart = match[2];
-
-    // $ で始まるプロパティは API（$getAll 等）なのでスキップ
-    if (topProp.startsWith('$')) continue;
-
-    // チェーン部分にドットアクセスが含まれているか確認
-    // （[index] のみの場合は配列アクセスなのでスキップ可能だが、
-    //  .prop が1つでもあればネスト代入）
-    if (!/\.\w+/.test(chainPart)) continue;
-
-    const assignStart = baseOffset + match.index;
-    const assignEnd = assignStart + fullMatch.length - 1; // -1 for the char after =
-
-    // ドットパスの推奨形式を生成
-    const dotPath = topProp + chainPart.replace(/\[(\w+)\]/g, '.$1').replace(/^\./,'');
-    const suggestedPath = topProp + chainPart.replace(/\[(\w+)\]/g, '.$1');
-
-    diagnostics.push({
-      start: assignStart,
-      end: assignEnd,
-      message: msgs.nestedAssign(suggestedPath),
-      severity: 'warning',
-    });
+function findNestedAssigns(script: string, baseOffset: number, msgs: WcsMessageCatalog, out: NestedAssignDiagnostic[]): void {
+  for (const regex of [NESTED_ASSIGN, PRE_NESTED_INCDEC]) {
+    regex.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(script)) !== null) {
+      const [full, topProp, chainPart] = match;
+      // `$` 始まりのルートは API 名前空間（$streams 等）なのでスキップ
+      if (isApiRoot(topProp)) continue;
+      // ドットセグメントの無い bracket-only チェーンは array-index-assign の担当
+      if (!hasDotSegment(chainPart)) continue;
+      const suggestedPath = topProp + chainToDotted(chainPart);
+      const start = baseOffset + match.index;
+      out.push({
+        start,
+        end: start + full.length,
+        message: msgs.nestedAssign(suggestedPath),
+        severity: 'warning',
+      });
+    }
   }
-
-  return diagnostics;
 }

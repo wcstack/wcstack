@@ -89,9 +89,9 @@ export function parseWcsScriptBlocks(html: string, stateTagName: string = 'wcs-s
         continue;
       }
 
-      // type="module" であるか確認
+      // type="module" であるか確認（HTML 仕様どおり ASCII case-insensitive）
       const typeAttr = extractAttribute(scriptMatch.tagContent, 'type');
-      if (typeAttr !== 'module') {
+      if (typeAttr?.toLowerCase() !== 'module') {
         pos = scriptMatch.end;
         continue;
       }
@@ -179,7 +179,7 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
       }
 
       const typeAttr = extractAttribute(scriptMatch.tagContent, 'type');
-      if (typeAttr !== 'module') {
+      if (typeAttr?.toLowerCase() !== 'module') {
         pos = scriptMatch.end;
         continue;
       }
@@ -240,7 +240,7 @@ export function findScriptJsonById(html: string, id: string): string | null {
     const typeAttr = extractAttribute(scriptMatch.tagContent, 'type');
     const idAttr = extractAttribute(scriptMatch.tagContent, 'id');
 
-    if (typeAttr === 'application/json' && idAttr === id) {
+    if (typeAttr?.toLowerCase() === 'application/json' && idAttr === id) {
       const contentStart = scriptMatch.end;
       const scriptCloseIdx = findCloseTag(html, contentStart, 'script');
       if (scriptCloseIdx === -1) return null;

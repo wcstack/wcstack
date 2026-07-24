@@ -91,6 +91,13 @@ var WcsDiagnosticCode = {
   NestedAssign: "wcs/nested-assign",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
+  // --- <wcs-state> script: array reactivity hazards ---
+  // 配列破壊的メソッド呼び出し(push 等 9 種)。Proxy を素通りしリアクティブ更新されない。
+  // 同一参照の自己再代入でも要素の追加・削除は反映されない(docs/array-mutation-diagnostic-design.md §3)。
+  ArrayMutation: "wcs/array-mutation",
+  // 配列インデックスへの直接代入(bracket-only チェーン)。同上。正はドットパス代入。
+  // ドットアクセスを含むチェーン代入は NestedAssign の担当(相補・二重報告なし)。
+  ArrayIndexAssign: "wcs/array-index-assign",
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",
@@ -223,7 +230,7 @@ function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
         continue;
       }
       const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
-      if (typeAttr !== "module") {
+      if (typeAttr?.toLowerCase() !== "module") {
         pos = scriptMatch.end;
         continue;
       }
@@ -288,7 +295,7 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
         continue;
       }
       const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
-      if (typeAttr !== "module") {
+      if (typeAttr?.toLowerCase() !== "module") {
         pos = scriptMatch.end;
         continue;
       }
@@ -333,7 +340,7 @@ function findScriptJsonById(html, id) {
     }
     const typeAttr = extractAttribute(scriptMatch.tagContent, "type");
     const idAttr = extractAttribute(scriptMatch.tagContent, "id");
-    if (typeAttr === "application/json" && idAttr === id) {
+    if (typeAttr?.toLowerCase() === "application/json" && idAttr === id) {
       const contentStart = scriptMatch.end;
       const scriptCloseIdx = findCloseTag(html, contentStart, "script");
       if (scriptCloseIdx === -1) return null;
@@ -898,6 +905,8 @@ var ja = {
   moustacheFouc: (e) => `<template> \u5916\u306E {{ }} \u69CB\u6587\u306F FOUC\uFF08\u521D\u671F\u8868\u793A\u6642\u306B\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u6587\u5B57\u5217\u304C\u898B\u3048\u308B\uFF09\u306E\u539F\u56E0\u306B\u306A\u308A\u307E\u3059\u3002<!--@@:${e}--> \u307E\u305F\u306F\u30B3\u30E1\u30F3\u30C8\u69CB\u6587\u306E\u4F7F\u7528\u3092\u691C\u8A0E\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   nestedAssign: (sp) => `\u30CD\u30B9\u30C8\u3055\u308C\u305F\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u306E\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
+  arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
+  arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u672A\u77E5\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u30D0\u30A4\u30F3\u30C9\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
@@ -938,6 +947,8 @@ var en = {
   moustacheFouc: (e) => `{{ }} outside a <template> causes FOUC (the raw template string is visible before binding). Consider the comment syntax <!--@@:${e}--> instead.`,
   nestedAssign: (sp) => `Assigning to a nested property does not trigger a reactive update. Use this["${sp}"] instead.`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
+  arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
+  arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
@@ -1502,39 +1513,142 @@ function isValueCompatible(declaredTypes, valueType) {
   return declaredTypes.includes(valueType);
 }
 
+// src/service/scriptPatterns.ts
+var ID = String.raw`[\w$]+`;
+var SUB = String.raw`\s*(?:\?\.)?\s*\[(?!\s*["'])[^\[\]]+\]`;
+var DOT_SEG = String.raw`\s*\??\.\s*${ID}`;
+var CHAIN = String.raw`(?:${DOT_SEG}|${SUB})*`;
+var BRACKETS_ONLY = String.raw`(?:${SUB})+`;
+var CHAIN_ONE_PLUS = String.raw`(?:${DOT_SEG}|${SUB})+`;
+var ROOT_DOT = String.raw`\bthis\s*\??\.\s*(${ID})`;
+var ROOT_BRACKET = String.raw`\bthis\s*(?:\?\.)?\s*\[\s*["']([^"']+)["']\s*\]`;
+var ASSIGN_TAIL = String.raw`\s*(?:(?:\*\*|<<|>>>|>>|&&|\|\||\?\?|[+\-*/%&|^])?=(?!=)|\+\+|--)`;
+var PRE_INCDEC = String.raw`(?:\+\+|--)\s*`;
+function chainToDotted(chain) {
+  const token = new RegExp(String.raw`\s*(?:\??\.\s*(${ID})|(?:\?\.)?\s*\[([^\[\]]+)\])`, "g");
+  let out = "";
+  let match;
+  while ((match = token.exec(chain)) !== null) {
+    if (match[1] !== void 0) {
+      out += `.${match[1]}`;
+    } else {
+      const key = match[2].trim();
+      out += /^\d+$/.test(key) ? `.${key}` : `.<${key}>`;
+    }
+  }
+  return out;
+}
+function hasDotSegment(chain) {
+  return /[.]/.test(chain.replace(/\s*(?:\?\.)?\s*\[[^\[\]]+\]/g, ""));
+}
+function isApiRoot(root) {
+  return root.startsWith("$");
+}
+
 // src/service/nestedAssignValidator.ts
+var NESTED_ASSIGN = new RegExp(`${ROOT_DOT}(${CHAIN_ONE_PLUS})${ASSIGN_TAIL}`, "g");
+var PRE_NESTED_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`, "g");
 function validateNestedAssigns(html, stateTagName = "wcs-state", locale) {
   const msgs = getMessages(locale);
   const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
   for (const block of blocks) {
-    const blockDiags = findNestedAssigns(block.content, block.contentStart, msgs);
-    diagnostics.push(...blockDiags);
+    findNestedAssigns(block.content, block.contentStart, msgs, diagnostics);
   }
   return diagnostics;
 }
-function findNestedAssigns(script, baseOffset, msgs = getMessages()) {
+function findNestedAssigns(script, baseOffset, msgs, out) {
+  for (const regex of [NESTED_ASSIGN, PRE_NESTED_INCDEC]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(script)) !== null) {
+      const [full, topProp, chainPart] = match;
+      if (isApiRoot(topProp)) continue;
+      if (!hasDotSegment(chainPart)) continue;
+      const suggestedPath = topProp + chainToDotted(chainPart);
+      const start = baseOffset + match.index;
+      out.push({
+        start,
+        end: start + full.length,
+        message: msgs.nestedAssign(suggestedPath),
+        severity: "warning"
+      });
+    }
+  }
+}
+
+// src/service/arrayMutationValidator.ts
+var DESTRUCTIVE_METHODS = "push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin";
+var ALTERNATIVES = {
+  push: (a) => `${a} = ${a}.concat(item)`,
+  unshift: (a) => `${a} = [item, ...${a}]`,
+  pop: (a) => `${a} = ${a}.slice(0, -1)`,
+  shift: (a) => `${a} = ${a}.slice(1)`,
+  splice: (a) => `${a} = ${a}.toSpliced(...)`,
+  sort: (a) => `${a} = ${a}.toSorted(...)`,
+  reverse: (a) => `${a} = ${a}.toReversed()`,
+  fill: (a) => `${a} = ${a}.map(...)`,
+  copyWithin: (a) => `${a} = ${a}.map(...)`
+};
+var METHOD_TAIL = String.raw`\s*\??\.\s*(${DESTRUCTIVE_METHODS})(?=\s*\()`;
+var DOT_ROOT_CALL = new RegExp(`${ROOT_DOT}(${CHAIN})${METHOD_TAIL}`, "g");
+var BRACKET_ROOT_CALL = new RegExp(`${ROOT_BRACKET}(${CHAIN})${METHOD_TAIL}`, "g");
+var DOT_INDEX_ASSIGN = new RegExp(`${ROOT_DOT}(${BRACKETS_ONLY})${ASSIGN_TAIL}`, "g");
+var BRACKET_INDEX_ASSIGN = new RegExp(`${ROOT_BRACKET}(${BRACKETS_ONLY})${ASSIGN_TAIL}`, "g");
+var PRE_DOT_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_DOT}(${BRACKETS_ONLY})`, "g");
+var PRE_BRACKET_INDEX = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}(${BRACKETS_ONLY})`, "g");
+function toAccessor(path) {
+  return /^[A-Za-z_]\w*$/.test(path) ? `this.${path}` : `this["${path}"]`;
+}
+function validateArrayMutations(html, stateTagName = "wcs-state", locale) {
+  const msgs = getMessages(locale);
+  const blocks = parseWcsScriptBlocks(html, stateTagName);
   const diagnostics = [];
-  const regex = /\bthis\.(\w+)((?:\.\w+|\[\w+\])+)\s*=[^=]/g;
-  let match;
-  while ((match = regex.exec(script)) !== null) {
-    const fullMatch = match[0];
-    const topProp = match[1];
-    const chainPart = match[2];
-    if (topProp.startsWith("$")) continue;
-    if (!/\.\w+/.test(chainPart)) continue;
-    const assignStart = baseOffset + match.index;
-    const assignEnd = assignStart + fullMatch.length - 1;
-    const dotPath = topProp + chainPart.replace(/\[(\w+)\]/g, ".$1").replace(/^\./, "");
-    const suggestedPath = topProp + chainPart.replace(/\[(\w+)\]/g, ".$1");
-    diagnostics.push({
-      start: assignStart,
-      end: assignEnd,
-      message: msgs.nestedAssign(suggestedPath),
-      severity: "warning"
-    });
+  for (const block of blocks) {
+    findDestructiveCalls(block.content, block.contentStart, msgs, diagnostics);
+    findIndexAssigns(block.content, block.contentStart, msgs, diagnostics);
   }
   return diagnostics;
+}
+function findDestructiveCalls(script, baseOffset, msgs, out) {
+  for (const regex of [DOT_ROOT_CALL, BRACKET_ROOT_CALL]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(script)) !== null) {
+      const [full, root, chain, method] = match;
+      if (isApiRoot(root)) continue;
+      const statePath = root + chainToDotted(chain);
+      const start = baseOffset + match.index;
+      out.push({
+        code: WcsDiagnosticCode.ArrayMutation,
+        start,
+        end: start + full.length,
+        message: msgs.arrayMutation(method, ALTERNATIVES[method](toAccessor(statePath))),
+        severity: "warning",
+        statePath
+      });
+    }
+  }
+}
+function findIndexAssigns(script, baseOffset, msgs, out) {
+  for (const regex of [DOT_INDEX_ASSIGN, BRACKET_INDEX_ASSIGN, PRE_DOT_INDEX, PRE_BRACKET_INDEX]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(script)) !== null) {
+      const [full, root, chain] = match;
+      if (isApiRoot(root)) continue;
+      const suggestedPath = root + chainToDotted(chain);
+      const start = baseOffset + match.index;
+      out.push({
+        code: WcsDiagnosticCode.ArrayIndexAssign,
+        start,
+        end: start + full.length,
+        message: msgs.arrayIndexAssign(suggestedPath),
+        severity: "warning",
+        statePath: suggestedPath
+      });
+    }
+  }
 }
 
 // src/service/templateSyntax.ts
@@ -2859,6 +2973,7 @@ function validateDocument(text, options = {}) {
   out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
   out.push(...validateDocumentEnv(text, locale));
+  out.push(...validateArrayMutations(text, stateTagName, locale));
   for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }

@@ -13,6 +13,7 @@ import { WcsDiagnostic, WcsDiagnosticCode, sortDiagnostics } from "./diagnostics
 import { validateBindings } from "../service/bindingValidator.js";
 import { validateStateTypes } from "../service/stateTypeValidator.js";
 import { validateNestedAssigns } from "../service/nestedAssignValidator.js";
+import { validateArrayMutations } from "../service/arrayMutationValidator.js";
 import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
@@ -43,6 +44,8 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   out.push(...validateTemplateSyntax(text, stateTagName, bindAttribute, locale));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale));
   out.push(...validateDocumentEnv(text, locale));
+  // arrayMutationValidator は 2 コード持ちのため validator 側で code を付与して返す。
+  out.push(...validateArrayMutations(text, stateTagName, locale));
   // 単一カテゴリの validator は集約時に code を付与する。
   for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });

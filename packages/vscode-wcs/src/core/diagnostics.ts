@@ -53,6 +53,13 @@ export const WcsDiagnosticCode = {
   NestedAssign: "wcs/nested-assign",
   TypeAnnotation: "wcs/type-annotation",
   TemplateSyntax: "wcs/template-syntax",
+  // --- <wcs-state> script: array reactivity hazards ---
+  // 配列破壊的メソッド呼び出し(push 等 9 種)。Proxy を素通りしリアクティブ更新されない。
+  // 同一参照の自己再代入でも要素の追加・削除は反映されない(docs/array-mutation-diagnostic-design.md §3)。
+  ArrayMutation: "wcs/array-mutation",
+  // 配列インデックスへの直接代入(bracket-only チェーン)。同上。正はドットパス代入。
+  // ドットアクセスを含むチェーン代入は NestedAssign の担当(相補・二重報告なし)。
+  ArrayIndexAssign: "wcs/array-index-assign",
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
   TagMemberUnknown: "wcs/tag-member-unknown",

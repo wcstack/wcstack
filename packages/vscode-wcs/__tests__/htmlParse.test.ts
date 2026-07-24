@@ -14,6 +14,19 @@ export default { count: 0 };
     expect(blocks[0].stateName).toBe('default');
   });
 
+  it('タグ名・type 属性値の大文字小文字を区別しない（HTML 仕様準拠）', () => {
+    const html = `<wcs-state>
+  <SCRIPT TYPE="MODULE">export default { a: 1 };</SCRIPT>
+</wcs-state>
+<wcs-state name="b">
+  <script type="Module">export default { b: 2 };</script>
+</wcs-state>`;
+    const blocks = parseWcsScriptBlocks(html);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].content).toContain('a: 1');
+    expect(blocks[1].content).toContain('b: 2');
+  });
+
   it('name 属性を持つ <wcs-state> から stateName を取得する', () => {
     const html = `<wcs-state name="cart">
   <script type="module">
