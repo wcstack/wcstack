@@ -288,6 +288,61 @@ describe('createContent', () => {
     expect((container.childNodes[1] as HTMLElement).id).toBe('remount');
   });
 
+  it('マウント済みcontentへmountAfterを再実行してもノード順が変わらないこと', () => {
+    // if の true→true 再適用で再突入するケース。旧実装は捕捉済み nextSibling へ
+    // 一括 insertBefore していたため先頭ノードが末尾へ回転した(回帰テスト)。
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    container.appendChild(placeholder);
+
+    const fragment = document.createDocumentFragment();
+    for (const id of ['r1', 'r2', 'r3']) {
+      const span = document.createElement('span');
+      span.id = id;
+      fragment.appendChild(span);
+    }
+
+    setFragment(fragment);
+    const bindingInfo = createBindingInfo(placeholder);
+    const content = createContent(bindingInfo);
+    content.mountAfter(placeholder);
+
+    const ids = () => Array.from(container.children).map((el) => el.id);
+    expect(ids()).toEqual(['r1', 'r2', 'r3']);
+
+    content.mountAfter(placeholder);
+    expect(ids()).toEqual(['r1', 'r2', 'r3']);
+
+    content.mountAfter(placeholder);
+    expect(ids()).toEqual(['r1', 'r2', 'r3']);
+  });
+
+  it('位置がずれたノードがある場合はmountAfter再実行で正しい順序に復元されること', () => {
+    const container = document.createElement('div');
+    const placeholder = document.createComment('placeholder');
+    container.appendChild(placeholder);
+
+    const fragment = document.createDocumentFragment();
+    for (const id of ['h1', 'h2', 'h3']) {
+      const span = document.createElement('span');
+      span.id = id;
+      fragment.appendChild(span);
+    }
+
+    setFragment(fragment);
+    const bindingInfo = createBindingInfo(placeholder);
+    const content = createContent(bindingInfo);
+    content.mountAfter(placeholder);
+
+    // h2 を末尾へ移動させて順序を崩す
+    container.appendChild(container.children[1]);
+    const ids = () => Array.from(container.children).map((el) => el.id);
+    expect(ids()).toEqual(['h1', 'h3', 'h2']);
+
+    content.mountAfter(placeholder);
+    expect(ids()).toEqual(['h1', 'h2', 'h3']);
+  });
+
   it('unmountで子のif/elseif/else contentもアンマウントされること', () => {
     const placeholder = document.createComment('placeholder');
     const fragment = document.createDocumentFragment();

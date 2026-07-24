@@ -172,7 +172,7 @@ describe('applyChangeToIf', () => {
     expect(deactivateContentMock).toHaveBeenCalledWith(content as any);
   });
 
-  it('同じ値で連続呼び出しの場合は何もしないこと', () => {
+  it('同じ値(true)で連続呼び出しの場合もmountAfterが再実行されること(冪等性はContent.mountAfter側で保証)', () => {
     const node = document.createComment('if');
     const bindingInfo = createBindingInfo(node, 'test-uuid-3');
 

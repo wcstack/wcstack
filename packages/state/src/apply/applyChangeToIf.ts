@@ -7,8 +7,6 @@ import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
 import { IApplyContext } from "./types";
 
-const lastConnectedByNode: WeakMap<Node, boolean> = new WeakMap();
-
 function bindingInfoText(bindingInfo: IBindingInfo): string {
   return `${bindingInfo.bindingType} ${bindingInfo.statePathName} ${bindingInfo.outFilters.map(f => f.filterName).join('|')} ${bindingInfo.node.isConnected ? '(connected)' : '(disconnected)'}`;
 }
@@ -18,7 +16,6 @@ export function applyChangeToIf(
   context: IApplyContext,
   rawNewValue: unknown,
 ): void {
-  const currentConnected = bindingInfo.node.isConnected;
   const newValue = Boolean(rawNewValue);
   let content: IContent | undefined;
   const contents = getContentSetByNode(bindingInfo.node);
@@ -30,33 +27,29 @@ export function applyChangeToIf(
   const ssrMode = inSsr();
   const uuid = bindingInfo.uuid ?? '';
   const keyword = bindingInfo.bindingType; // if, elseif, else
-  try {
-    if (!newValue) {
-      if (config.debug) {
-        console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
-      }
-      deactivateContent(content);
-      content.unmount();
+  if (!newValue) {
+    if (config.debug) {
+      console.log(`unmount if content : ${bindingInfoText(bindingInfo)}`);
     }
-    if (newValue) {
-      if (config.debug) {
-        console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
-      }
-      if (ssrMode) {
-        const startComment = document.createComment(`@@wcs-${keyword}-start:${uuid}:${bindingInfo.statePathName}`);
-        bindingInfo.node.parentNode!.insertBefore(startComment, bindingInfo.node.nextSibling);
-        content.mountAfter(startComment);
-        const endComment = document.createComment(`@@wcs-${keyword}-end:${uuid}:${bindingInfo.statePathName}`);
-        const afterNode = content.lastNode ?? startComment;
-        afterNode.parentNode!.insertBefore(endComment, afterNode.nextSibling);
-      } else {
-        content.mountAfter(bindingInfo.node);
-      }
-      const loopContext = getLoopContextByNode(bindingInfo.node);
-      activateContent(content, loopContext, context);
+    deactivateContent(content);
+    content.unmount();
+  }
+  if (newValue) {
+    if (config.debug) {
+      console.log(`mount if content : ${bindingInfoText(bindingInfo)}`);
     }
-  } finally {
-    lastConnectedByNode.set(bindingInfo.node, currentConnected);
+    if (ssrMode) {
+      const startComment = document.createComment(`@@wcs-${keyword}-start:${uuid}:${bindingInfo.statePathName}`);
+      bindingInfo.node.parentNode!.insertBefore(startComment, bindingInfo.node.nextSibling);
+      content.mountAfter(startComment);
+      const endComment = document.createComment(`@@wcs-${keyword}-end:${uuid}:${bindingInfo.statePathName}`);
+      const afterNode = content.lastNode ?? startComment;
+      afterNode.parentNode!.insertBefore(endComment, afterNode.nextSibling);
+    } else {
+      content.mountAfter(bindingInfo.node);
+    }
+    const loopContext = getLoopContextByNode(bindingInfo.node);
+    activateContent(content, loopContext, context);
   }
 }
 
