@@ -10,6 +10,8 @@ wcstack is a thought experiment turned into code. We imagine what future web sta
 
 No framework. Just HTML tags that *should* exist.
 
+**🌐 [wcstack.github.io](https://wcstack.github.io)** — landing page, live demos, and the full package tour.
+
 ---
 
 ## Rules of the Game
