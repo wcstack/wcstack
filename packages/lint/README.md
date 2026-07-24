@@ -1,5 +1,7 @@
 # @wcstack/lint
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 Static-contract validator CLI for [wcstack](https://github.com/wcstack/wcstack): checks HTML `data-wcs` bindings and `wcstack.manifest.json` sidecars headlessly, with the **same validator core** as the WcStack IntelliSense VS Code extension — the IDE and this CLI report identical diagnostic codes and ranges.
 
 [日本語版 README はこちら](./README.ja.md)

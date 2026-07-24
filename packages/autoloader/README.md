@@ -1,5 +1,7 @@
 # @wcstack/autoloader
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 **What if custom elements loaded themselves?**
 
 Imagine a future where you just write a custom element tag and the browser figures out where to find it. No `import`, no `customElements.define()`, no registration boilerplate. You write the tag, it loads.

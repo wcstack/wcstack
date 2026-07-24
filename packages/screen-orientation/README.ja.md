@@ -1,5 +1,7 @@
 # @wcstack/screen-orientation
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/screen-orientation` は wcstack エコシステム向けのヘッドレスな Screen Orientation コンポーネントです。
 
 視覚的な UI ウィジェットではありません。`screen.orientation` をリアクティブな state に変え、`lock()`/`unlock()` を宣言的コマンドとして公開する**非同期プリミティブノード**です。

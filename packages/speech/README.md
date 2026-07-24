@@ -1,5 +1,7 @@
 # @wcstack/speech
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/speech` is a headless Web Speech component pair for the wcstack ecosystem.
 
 These are not visual UI widgets. They are **async primitive nodes** that turn the browser's Web Speech APIs into reactive state — the same way `@wcstack/fetch` turns a network request into reactive state and `@wcstack/geolocation` turns the device's location into reactive state.

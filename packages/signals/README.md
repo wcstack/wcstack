@@ -1,5 +1,7 @@
 # @wcstack/signals
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 `@wcstack/signals` is a **signals-based, fine-grained reactive core** — zero runtime dependencies, buildless, standards-first. See [`docs/signals-state-design.md`](../../docs/signals-state-design.md) for the design rationale.
 
 Where [`@wcstack/state`](../state/README.md) connects UI and state through HTML path strings (no reactive primitives in your code), `@wcstack/signals` takes the opposite stance for the cases that want it: it **exposes the reactive primitives directly**. There is no DSL and no `data-wcs`; you call `signal()`, `computed()`, `effect()` in JavaScript. The two packages are complementary, not competing — same ecosystem, different coupling point.

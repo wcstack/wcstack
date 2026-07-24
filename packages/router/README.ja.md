@@ -1,5 +1,7 @@
 # @wcstack/router
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 **もしルーティングがただのHTMLタグだったら？**
 
 アプリのナビゲーション構造をマークアップだけで定義できる未来を想像してみてください。ネストされたルート、レイアウト、型付きパラメータ — これらすべてがネイティブなHTML要素として存在します。ルーター設定オブジェクトも、JavaScriptの煩雑な手続きも不要です。タグそのものが、「どこに何を配置するか」を明確に示します。

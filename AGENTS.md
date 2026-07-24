@@ -35,7 +35,7 @@ If your task is to generate an application that *uses* wcstack (rather than modi
 
 ### Things that bite
 
-- **Generated files**: `rollup.config.js`, `eslint.config.js`, `src/protocol/wcBindable.ts`, and IO-core copies are synced from single sources by `scripts/sync-*.mjs`. Never edit the copies; edit the template/source and run the sync script (CI fails on drift).
+- **Generated files**: `rollup.config.js`, `eslint.config.js`, `src/protocol/wcBindable.ts`, and IO-core copies are synced from single sources by `scripts/sync-*.mjs`. Never edit the copies; edit the template/source and run the sync script (CI fails on drift). The AI-agents banner directly below each published package README's H1 is likewise managed — its text lives in `scripts/sync-readme-agents-banner.mjs`; edit the rest of the README freely, but change that one line only via the script (`node scripts/sync-readme-agents-banner.mjs`).
 - **CI validates all HTML**: the `wcs-validate` CI job runs the static-contract validator over every `*.html` / `*.manifest.json` in `examples/` and `packages/` and fails on error-severity findings. Do not commit intentionally-broken fixtures — generate them in a temp dir at test runtime.
 - **Protocols are the heart of the project**: `wc-bindable-protocol`, `command-token`, and `event-token` (see `docs/` and per-package READMEs — the normative references) must not be changed casually. Component packages follow a Core (framework-agnostic logic) / Shell (custom element) split.
 - When changing `data-wcs` syntax, protocols, or router behavior, the wcstack-app skill's references (separate repo above) must be updated to match.

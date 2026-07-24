@@ -1,5 +1,7 @@
 # @wcstack/server
 
+> 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
+
 **Web Components がサーバーでレンダリングされたら？**
 
 `<wcs-state>` テンプレートがブラウザに届く前に完全にレンダリングされる世界を想像してください。データは取得済み、バインディングは解決済み、リストは展開済み、条件分岐は評価済み。ユーザーは即座にコンテンツを目にし、クライアントはサーバーが中断した地点からシームレスに引き継ぎます。
