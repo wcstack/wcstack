@@ -1,0 +1,32 @@
+{
+  "name": "wcstack",
+  "version": "1.22.6",
+  "description": "Entry point for wcstack - 41 zero-dependency Web Components packages. Reactive data binding, declarative routing and 30+ Web APIs as HTML tags. Buildless: one CDN script tag per package. Run `npm view wcstack readme` for the full authoring guide.",
+  "keywords": [
+    "web-components",
+    "custom-elements",
+    "reactive",
+    "data-binding",
+    "state-management",
+    "router",
+    "spa",
+    "buildless",
+    "zero-dependencies",
+    "declarative",
+    "wcstack"
+  ],
+  "author": "mogera551",
+  "homepage": "https://wcstack.github.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wcstack/wcstack.git",
+    "directory": "packages/wcstack"
+  },
+  "bugs": {
+    "url": "https://github.com/wcstack/wcstack/issues"
+  },
+  "license": "MIT",
+  "files": [
+    "README.md"
+  ]
+}
