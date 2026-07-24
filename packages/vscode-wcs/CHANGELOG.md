@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- **配列破壊的操作の診断** — `<wcs-state>` スクリプト内の配列への破壊的操作を検出する 2 診断を追加（warning、IDE / `wcs-validate` CLI 共通）。設計・検証の正本: `docs/array-mutation-diagnostic-design.md`
+  - `wcs/array-mutation` — `this.items.push(...)` 等 9 種の破壊的メソッド呼び出し。リアクティブ更新をトリガーせず、同一参照の自己再代入でも要素の追加・削除は反映されない（動的検証済み）。メッセージでメソッド別の非破壊代替（`concat` / `toSpliced` / `toSorted` 等）を提示
+  - `wcs/array-index-assign` — `this.items[0] = x` 形式のインデックス代入（bracket-only チェーン）。ドットパス代入 `this["items.0"]` を提示。ドットアクセスを含むチェーンは従来どおり `wcs/nested-assign` の担当（二重報告なし）
+
 ## 1.10.0
 
 `@wcstack/state` の現行実装（command-token / event-token / spread / `$streams`）への追従。
