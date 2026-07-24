@@ -54,15 +54,14 @@ Primitive values (strings, numbers, booleans) work with just a `value` binding f
 <wcs-state>
   <script type="module">
     export default {
-      // undefined on purpose — a "" / null initial would be written back
-      // through the two-way binding and overwrite the saved value on
-      // reload (see "5. Load-before-bind" below)
-      username: undefined,
+      // null is what an empty key loads as — seed the element's real initial
+      // value, not a convenient one (see "5. Load-before-bind" below)
+      username: null,
     };
   </script>
 </wcs-state>
 
-<wcs-storage key="username" data-wcs="value: username"></wcs-storage>
+<wcs-storage key="username" data-wcs="value#init=element: username"></wcs-storage>
 
 <input data-wcs="value: username" placeholder="Username">
 <p>Saved: <span data-wcs="textContent: username"></span></p>
@@ -73,7 +72,7 @@ This is the default mode:
 - Set a `key` to auto-load on connection
 - Bind to `value` for two-way persistence
 - Optionally bind `loading` and `error` as well
-- Start the bound state slot as `undefined` — see [5. Load-before-bind](#5-load-before-bind-the-persistent-slot-idiom) for the full idiom
+- Add `#init=element` to the `value` binding so the stored value wins the initial sync — see [5. Load-before-bind](#5-load-before-bind-initelement) for why
 
 ### 2. Persisting objects with `$trackDependency`
 
@@ -145,14 +144,14 @@ localStorage changes are automatically detected from other tabs:
 <wcs-state>
   <script type="module">
     export default {
-      // undefined on purpose — see "5. Load-before-bind" below
-      sharedCounter: undefined,
+      // see "5. Load-before-bind" below
+      sharedCounter: null,
     };
   </script>
 </wcs-state>
 
 <wcs-storage key="shared-counter"
-  data-wcs="value: sharedCounter">
+  data-wcs="value#init=element: sharedCounter">
 </wcs-storage>
 
 <!-- Changes from other tabs update this value automatically -->
@@ -161,47 +160,36 @@ localStorage changes are automatically detected from other tabs:
 
 > **Note**: The `storage` event only fires for changes made in other tabs of the same origin. Since sessionStorage is not shared across tabs, cross-tab sync only works with localStorage.
 
-### 5. Load-before-bind: the persistent-slot idiom
+### 5. Load-before-bind: `#init=element`
 
 `<wcs-storage>` loads and announces the persisted value in its own `connectedCallback`. Depending on script loading, that can happen **before** `<wcs-state>` finishes attaching its bindings — with two consequences:
 
-1. **Clobber**: if the bound state slot starts as `""` / `0` / `null` / `[]`, the initial state→element apply writes that value into `value`, and the write-through save **overwrites the persisted data on every reload**.
-2. **Missed load**: the value event announcing the loaded data fired before anyone was listening, so the state slot can stay at its initial value.
+1. **Clobber**: `value` is the one *bidirectional* member on this element, so its default binding authority is `state`. The initial state→element apply writes the state slot's seed into `value`, and the write-through save **overwrites the persisted data on every reload**.
+2. **Missed load**: the value event announcing the loaded data fired before anyone was listening, so the state slot can stay at its seed.
 
-The idiom that closes both:
+One modifier closes both. `#init=element` makes the **element** the authority for the initial sync:
 
 ```html
 <wcs-state>
   <script type="module">
     export default {
-      // 1. undefined = "no opinion": the initial apply is skipped,
-      //    so the persisted value is never clobbered
-      todos: undefined,
-      // reads go through a normalizing getter
+      // An empty key loads as null, so that is the honest seed. Reads go
+      // through a normalizing getter instead of a convenient [] seed.
+      todos: null,
       get list() {
         return Array.isArray(this.todos) ? this.todos : [];
-      },
-      // 2. pull the value <wcs-storage> already loaded, once
-      $connectedCallback() {
-        (async () => {
-          await customElements.whenDefined("wcs-storage");
-          const el = document.querySelector("wcs-storage");
-          if (!el) return;
-          await el.connectedCallbackPromise;
-          if (!Array.isArray(this.todos) && Array.isArray(el.value)) {
-            this.todos = el.value;
-          }
-        })();
       },
     };
   </script>
 </wcs-state>
 
-<wcs-storage key="todos" type="local" data-wcs="value: todos"></wcs-storage>
+<wcs-storage key="todos" type="local" data-wcs="value#init=element: todos"></wcs-storage>
 ```
 
-- Rule of thumb: **a state slot bound two-way to `value` must start as `undefined`** — never `""` / `0` / `null` / `[]`.
-- The `$connectedCallback` pull is only needed when the persisted value must render on first paint. If the slot is only ever written after user interaction, `undefined` alone is enough.
+- `#init=element` **skips the initial state→element write** (no clobber) and **pulls the element's current `value` into the state slot** (no missed load).
+- Authority governs the *initial sync only*: every later `todos` assignment still flows state→element, so auto-save keeps working.
+- Seed the slot with the element's real initial value (`null` for an empty key) and null-guard reads through a derived getter. A convenient `[]` / `""` seed does not survive the initial pull anyway.
+- Needs `enableDirectionalInitialSync`, on by default since v1.21.0. If you explicitly disable it, `#init=` throws; seed `undefined` and pull once in `$connectedCallback` instead.
 - Working examples: `examples/state-cross-tab-todo`, `examples/state-color-palette`.
 
 ## State Surface vs Command Surface

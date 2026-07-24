@@ -38,11 +38,6 @@ npm install @wcstack/screen-orientation
   <script type="module">
     export default {
       portrait: true,
-      // 初回スナップショットはバインド確立前に発火するため、一度だけ pull する（下記 Notes 参照）。
-      async $connectedCallback() {
-        await customElements.whenDefined("wcs-screen-orientation");
-        this.portrait = document.querySelector("wcs-screen-orientation").portrait;
-      },
     };
   </script>
 </wcs-state>
@@ -53,7 +48,7 @@ npm install @wcstack/screen-orientation
 </template>
 ```
 
-この例にはひとつのタイミング規則が適用されます: `<wcs-screen-orientation>`は`wcs-orientation:change`イベントでスナップショットを公開しますが、**最初の**スナップショットは接続時に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に。そのためbindされたパスは**次の**向き変化からしか更新されません。`$connectedCallback`ブロックはその初回スナップショットを一度だけpullします。これが無いと、読み込み時点で既に横向きだった場合にこのページは反応しません（詳細はNotes & limitationsを参照）。
+この例にはひとつのタイミング規則が適用されます: `<wcs-screen-orientation>`は`wcs-orientation:change`イベントでスナップショットを公開しますが、**最初の**スナップショットは接続時に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に。それでも初期値が届くのは、このノードの観測可能プロパティがすべて output-only（`properties` にのみ宣言され `inputs` に無い）だからです — 既定の binding authority が `element` になり、バインド確立時に**イベントを待たずプロパティを直接読みます**（directional initial sync、v1.21.0 以降は既定 ON）。読み込み時点で既に横向きでも手動 pull なしで反応します（詳細はNotes & limitationsを参照）。
 
 ### 2. コマンドで向きをロックする
 
@@ -102,7 +97,7 @@ export default {
 
 - 監視に**secure-context制約は無し**（`@wcstack/geolocation`/`@wcstack/permission`とは異なる）。
 - **`lock()`にはフルスクリーンまたはインストール済みPWAという文脈が必要です — デスクトップ/モバイルの区別ではありません。** 通常タブでの呼び出しはデスクトップ・モバイルを問わずrejectされるのが通例です（エラー名はブラウザと原因により`NotAllowedError`/`NotSupportedError`/`SecurityError`などと異なるため、名前で分岐しないでください）。Safariはそもそも`lock()`を実装していません。best-effortであることを前提にUIを設計し、ロックを実際に効かせたい場面では`@wcstack/fullscreen`のような明示的なフルスクリーン導線と組み合わせてください。
-- **初回スナップショットはbindingに届きません。** 最初の`wcs-orientation:change`は`connectedCallback`中に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に（bindingのセットアップは後続のmicrotaskへ遅延されます。`docs/timing-and-firing-contract.md` §4.1参照）。イベントは後から購読した相手へ再送されないため、bindされたパスは**次の**向き変化からしか更新されません。初期値が重要な場合（`portrait`/`landscape`/`type`/`angle`はほぼ常にそうです）、Quick Startの例のように`$connectedCallback`で一度pullしてください。これは本パッケージ固有の癖ではなく、すべてのmonitor系ノードが共有するwc-bindableイベント契約の性質です。発火・世代管理の全体像（初回スナップショット・`lock()`の世代順序・`error`の重複排除）は`docs/timing-and-firing-contract.md` §7を参照してください。
+- **初回スナップショットの*イベント*はbindingに届きませんが、値は届きます。** 最初の`wcs-orientation:change`は`connectedCallback`中に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に（bindingのセットアップは後続のmicrotaskへ遅延されます。`docs/timing-and-firing-contract.md` §4.1参照）。イベントは後から購読した相手へ再送されません。それでも初期値が失われないのは、本ノードの観測可能プロパティがすべて output-only（`properties` のみ・`inputs` に無い）で、既定の binding authority が `element` になるためです: bindingは確立時にプロパティを直接読みます（directional initial sync、v1.21.0 以降は既定 ON）。したがって`portrait`/`landscape`/`type`/`angle`は手動pullなしで初回描画から正しく、これは全monitor系ノード共通の挙動です。`enableDirectionalInitialSync: false` に倒した構成でのみ、`$connectedCallback` + `whenDefined` の手動pullが再び必要になります。発火・世代管理の全体像（初回スナップショット・`lock()`の世代順序・`error`の重複排除）は`docs/timing-and-firing-contract.md` §7を参照してください。
 - **`errorInfo` taxonomy（additive）。** `error`と並んで、`<wcs-screen-orientation>`は*同一の*`lock()`/`unlock()`失敗を安定した`WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類したserializableな`errorInfo`（`wcs-orientation:error-info-changed` —— イベント名前空間はタグ名ではなく`wcs-orientation:`である点に注意）を公開します。`error`の形状は変えません。`screen.orientation`やメソッド自体の不在（synthetic な "unsupported"）→ `capability-missing`（phase `probe`）、通常タブでの lock reject である`NotAllowedError` / `NotSupportedError` / `SecurityError`は全て単一の`not-allowed`（phase `execute`、`recoverable: false` —— 上述の「名前で分岐するな」モデルに一致）へ畳まれ、`AbortError`（より新しい`lock()`による supersede）→ `aborted`（phase `execute`、`recoverable: true` —— 新しい`lock()`は成功しうる）、それ以外（`InvalidStateError`、生の throw、`.name`欠如など）→ `orientation-error`（phase `execute`）となります。`errorInfo`は`error`とまったく同じタイミングで遷移し（回復時に`null`へクリア）、共有の`WcsIoErrorInfo`型と`WCS_SCREEN_ORIENTATION_ERROR_CODE`定数はexportされています。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true`を宣言。監視が同期的なため`connectedCallbackPromise`は常に即座にsettleします。
 

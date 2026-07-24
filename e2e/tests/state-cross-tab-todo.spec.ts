@@ -33,9 +33,11 @@ test.describe("examples/state-cross-tab-todo", () => {
   });
 
   // load-before-bind clobber の回帰テスト (docs/state-binding-init-races.md §1)。
-  // storage の load はバインディング確立前に発火しうるため、state 初期値が
-  // null/[] だと write-through 保存がリロードのたびに永続値を上書き消去する。
-  // デモは「undefined 初期値 + $connectedCallback pull」の idiom で回避している。
+  // storage の load はバインディング確立前に発火しうるため、初期 apply が state
+  // 側のシード値を書き戻すと write-through 保存がリロードのたびに永続値を消す。
+  // デモは `value#init=element:` で初期同期の authority を要素側に倒して回避する。
+  // 同居する「別タブ同期」テストが保存方向 (state→element) の生存も担保する
+  // = authority は初期同期のみを支配するという契約の e2e 面。
   test("リロードしても todo が消えない(load-before-bind clobber 回帰)", async ({ context }) => {
     const page = await context.newPage();
     const errors = collectErrors(page);

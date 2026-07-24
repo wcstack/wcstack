@@ -39,11 +39,6 @@ npm install @wcstack/screen-orientation
   <script type="module">
     export default {
       portrait: true,
-      // The initial snapshot fires before bindings attach — pull it once (see Notes).
-      async $connectedCallback() {
-        await customElements.whenDefined("wcs-screen-orientation");
-        this.portrait = document.querySelector("wcs-screen-orientation").portrait;
-      },
     };
   </script>
 </wcs-state>
@@ -54,7 +49,7 @@ npm install @wcstack/screen-orientation
 </template>
 ```
 
-One timing rule applies to this example: `<wcs-screen-orientation>` publishes its snapshot through `wcs-orientation:change` events, and the *first* snapshot fires synchronously at connect — before `@wcstack/state` has attached its binding listeners — so bound paths only start updating from the *next* orientation change. The `$connectedCallback` block pulls that initial snapshot once; without it, this page would not react when the device is already in landscape at load time (see Notes & limitations).
+One timing rule applies to this example: `<wcs-screen-orientation>` publishes its snapshot through `wcs-orientation:change` events, and the *first* snapshot fires synchronously at connect — before `@wcstack/state` has attached its binding listeners. The initial value still arrives, because every observable property on this node is output-only (declared in `properties`, absent from `inputs`): that makes the default binding authority `element`, so the binding **reads the property directly when it attaches** instead of waiting for an event it already missed (directional initial sync, on by default since v1.21.0). A device already in landscape at load time is reflected with no manual pull (see Notes & limitations).
 
 ### 2. Lock orientation on command
 
@@ -103,7 +98,7 @@ In a plain tab like this, clicking the button will not actually lock anything: c
 
 - **No secure-context requirement** for monitoring (unlike `@wcstack/geolocation`/`@wcstack/permission`).
 - **`lock()` needs a fullscreen or installed-PWA context — not a desktop-vs-mobile split.** A plain-tab call typically rejects on both desktop and mobile (as `NotAllowedError` / `NotSupportedError` / `SecurityError` depending on browser and cause — do not branch on the name); Safari does not implement `lock()` at all. Design any UI around it being best-effort, and pair it with an explicit fullscreen entry point (e.g. `@wcstack/fullscreen`) when the lock actually needs to take hold.
-- **The initial snapshot does not reach bindings.** The first `wcs-orientation:change` fires synchronously during `connectedCallback` — before `@wcstack/state` attaches its binding listeners (binding setup is deferred to a later microtask; see `docs/timing-and-firing-contract.md` §4.1) — and events are not replayed to late subscribers, so bound paths update only from the *next* orientation change. If the initial value matters (it does for `portrait`/`landscape`/`type`/`angle`), pull it once in `$connectedCallback` as the Quick Start example does. This is a property of the wc-bindable event contract shared by all monitor nodes, not a quirk of this package. See `docs/timing-and-firing-contract.md` §7 for the full firing/generation contract (initial snapshot, `lock()` generation ordering, `error` dedup).
+- **The initial snapshot *event* misses bindings, but the value still arrives.** The first `wcs-orientation:change` fires synchronously during `connectedCallback` — before `@wcstack/state` attaches its binding listeners (binding setup is deferred to a later microtask; see `docs/timing-and-firing-contract.md` §4.1) — and events are not replayed to late subscribers. The value is not lost, because every observable property here is output-only (`properties` only, never `inputs`), which makes the default binding authority `element`: the binding reads the property directly when it attaches (directional initial sync, on by default since v1.21.0). So `portrait`/`landscape`/`type`/`angle` are correct on first paint with no manual pull, and this holds for every monitor node. Only if you explicitly set `enableDirectionalInitialSync: false` do you need the older `$connectedCallback` + `whenDefined` pull again. See `docs/timing-and-firing-contract.md` §7 for the full firing/generation contract (initial snapshot, `lock()` generation ordering, `error` dedup).
 - **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-screen-orientation>` publishes a serializable `errorInfo` (`wcs-orientation:error-info-changed` — note the `wcs-orientation:` namespace, not the tag name) that classifies the *same* `lock()`/`unlock()` failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape. A missing `screen.orientation` / method (synthetic "unsupported") → `capability-missing` (phase `probe`); the plain-tab lock rejections `NotAllowedError` / `NotSupportedError` / `SecurityError` all fold to a single `not-allowed` (phase `execute`, `recoverable: false` — matching the "don't branch on the name" model above); an `AbortError` (superseded by a newer `lock()`) → `aborted` (phase `execute`, `recoverable: true` — a fresh `lock()` may still succeed); anything else (e.g. `InvalidStateError`, a raw throw, a missing `.name`) → `orientation-error` (phase `execute`). `errorInfo` transitions exactly when `error` does (cleared to `null` on recovery); the shared `WcsIoErrorInfo` type and the `WCS_SCREEN_ORIENTATION_ERROR_CODE` constants are exported.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true`; since monitoring is synchronous, `connectedCallbackPromise` always settles immediately.
 

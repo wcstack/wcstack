@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: monitor initial snapshot reaches bindings without a manual pull</title>
+  <!-- Monitor I/O nodes publish their first snapshot synchronously while
+       connecting, so the announcing event fires before <wcs-state> attaches its
+       listeners. Their wcBindable members are output-only (declared in
+       `properties`, absent from `inputs`), so the default binding authority is
+       `element`: the binding READS the property when it attaches instead of
+       waiting for an event it already missed (directional initial sync, on by
+       default since v1.21.0).
+
+       This fixture deliberately contains NO $connectedCallback pull — the older
+       README idiom. If the declarative pull ever regresses, the bound paths stay
+       at their seeds and the assertions below fail.
+
+       I/O nodes are defined BEFORE state on purpose: that is the ordering where
+       the snapshot is already published when the bindings attach, i.e. the case
+       the manual pull used to exist for. -->
+  <script type="module" src="/packages/network/dist/auto.min.js"></script>
+  <script type="module" src="/packages/screen-orientation/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        // Seeds are the "nothing arrived" sentinels the assertions rule out.
+        netSupported: false,
+        effectiveType: null,
+        orientationType: null,
+        portrait: null,
+      };
+    </script>
+  </wcs-state>
+
+  <wcs-network data-wcs="supported: netSupported; effectiveType: effectiveType"></wcs-network>
+  <wcs-screen-orientation data-wcs="type: orientationType; portrait: portrait"></wcs-screen-orientation>
+
+  <p>net.supported: <span id="net-supported" data-wcs="textContent: netSupported"></span></p>
+  <p>net.effectiveType: <span id="net-effective" data-wcs="textContent: effectiveType"></span></p>
+  <p>orientation.type: <span id="orient-type" data-wcs="textContent: orientationType"></span></p>
+  <p>orientation.portrait: <span id="orient-portrait" data-wcs="textContent: portrait"></span></p>
+</body>
+</html>

@@ -107,17 +107,13 @@
       // event. A fresh key loads as null, so reads go through `list` (the
       // normalized getter) while writes assign `this.todos`. Always REPLACE this
       // array (never mutate in place):
-      // the `value: todos` binding only fires on a parent assignment, and only then
+      // the `value` binding only fires on a parent assignment, and only then
       // does the new array get persisted + broadcast to the storage event.
       //
-      // Starts as `undefined` ON PURPOSE (load-before-bind guard): the storage
-      // node loads and announces the persisted list in its connectedCallback,
-      // which can happen BEFORE these bindings attach. A null/[] initial here
-      // would then be written back through the two-way binding and CLOBBER the
-      // persisted todos on every reload. `undefined` means "no opinion" —
-      // property writes are skipped — and $connectedCallback below pulls the
-      // already-loaded value once.
-      todos: undefined,
+      // Seeded with the element's real initial value (an empty key loads as
+      // null). The load-before-bind race is handled declaratively by
+      // `#init=element` on the binding below — see the <wcs-storage> tag.
+      todos: null,
       // <wcs-storage> surfaces a quota/serialize failure here (it never throws).
       storageError: null,
 
@@ -140,22 +136,6 @@
       $eventTokens: ["liveSignal"],
 
       draft: "",
-
-      // Pull the list <wcs-storage> already loaded (its load event fires in its
-      // own connectedCallback — possibly before our bindings attached). Fire-and-
-      // forget; if the load event DID land through the binding, the guard makes
-      // this a no-op.
-      $connectedCallback() {
-        (async () => {
-          await customElements.whenDefined("wcs-storage");
-          const el = document.querySelector("wcs-storage");
-          if (!el) return;
-          await el.connectedCallbackPromise;
-          if (!Array.isArray(this.todos) && Array.isArray(el.value)) {
-            this.todos = el.value;
-          }
-        })();
-      },
 
       // ---- derived ----
       // Normalize the storage value (null on an empty key) into an array. Every
@@ -256,9 +236,16 @@
 <!-- DURABLE: two-way `value` binding. Auto-loads on connect, auto-saves on every
      `todos` reassignment, and auto-syncs the value from other tabs (native
      `storage` event). No `manual`, no trigger, no command — the binding is the
-     whole integration. -->
+     whole integration.
+
+     `#init=element` settles the load-before-bind race: `value` is a two-way
+     member, so its default authority is `state` and the initial apply would
+     write our seed into storage, wiping the persisted list on every reload.
+     Element authority skips that initial write and pulls the already-loaded
+     value into `todos` instead. It governs the INITIAL sync only — later
+     `todos` assignments still flow state→element, so auto-save keeps working. -->
 <wcs-storage key="wcs-cross-tab-todos" type="local"
-  data-wcs="value: todos; error: storageError"></wcs-storage>
+  data-wcs="value#init=element: todos; error: storageError"></wcs-storage>
 
 <!-- EPHEMERAL: opens the channel on connect (name set, not manual). `command.post`
      lets state push a payload (announce); `eventToken.message` delivers an incoming
@@ -271,10 +258,12 @@
 <!-- ============================================================
      UI
      ============================================================ -->
-<template data-wcs="if: bcError">
+<!-- `|truthy` because the error outputs hold an Error object (or null), not a
+     boolean — the filter states the intent instead of leaning on coercion. -->
+<template data-wcs="if: bcError|truthy">
   <p class="notice">This browser has no <code>BroadcastChannel</code> — the durable list still works across tabs, but live activity signals are off.</p>
 </template>
-<template data-wcs="if: storageError">
+<template data-wcs="if: storageError|truthy">
   <p class="notice">Could not write to localStorage (it may be full or blocked). Changes won't persist.</p>
 </template>
 
