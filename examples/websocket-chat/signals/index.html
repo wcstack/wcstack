@@ -33,35 +33,28 @@
        (`@wcstack/signals/dom`) re-exports the whole headless core
        (signal/computed/effect/bindNode/…) on top of the DOM helpers
        (h/render/For), so the single `/dom` import is enough.
-       `@wcstack/websocket/auto` registers <wcs-ws>. -->
+       `@wcstack/websocket` is imported for its CORE CLASS only — this variant
+       registers no custom element at all (see the note in the script). -->
   <script type="importmap">
   {
     "imports": {
       "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
-      "@wcstack/websocket/auto": "https://esm.run/@wcstack/websocket/auto"
+      "@wcstack/websocket": "https://esm.run/@wcstack/websocket"
     }
   }
   </script>
 </head>
 <body>
-  <!-- Headless IO node. bindNode() adapts its wcBindable properties into
-       signals; config attributes stay on the element. -->
-  <wcs-ws
-    id="ws"
-    auto-reconnect
-    reconnect-interval="3000"
-    max-reconnects="10"
-  ></wcs-ws>
-
   <main>
     <section class="hero">
       <span class="eyebrow">@wcstack/signals</span>
-      <h1>Real-time communication<br>with signals + &lt;wcs-ws&gt;</h1>
+      <h1>Real-time communication<br>with signals + WebSocketCore</h1>
       <p class="lead">
-        <code>bindNode()</code> adapts the headless <code>&lt;wcs-ws&gt;</code> node into
-        signals (<code>connected</code> / <code>message</code> / <code>error</code>), and
+        <code>bindNode()</code> adapts <code>WebSocketCore</code> — the exact core behind
+        the <code>&lt;wcs-ws&gt;</code> element the other variants use — into signals
+        (<code>connected</code> / <code>message</code> / <code>error</code>), and
         fine-grained <code>h()</code> / <code>For()</code> views render the chat —
-        no proxy state, no virtual DOM.
+        no element, no registry, no virtual DOM.
       </p>
     </section>
 
@@ -70,25 +63,35 @@
   </main>
 
   <script type="module">
-    import "@wcstack/websocket/auto"; // registers <wcs-ws> before we bind it
+    import { WebSocketCore } from "@wcstack/websocket";
     import { signal, computed, effect, bindNode, h, render, For, createRoot } from "@wcstack/signals/dom";
 
     createRoot(() => {
-      const wsEl = document.getElementById("ws");
-
-      // Adapt the headless <wcs-ws> node into signals. bindNode discovers the
-      // wc-bindable descriptor and exposes the outputs as read signals.
-      const bound = bindNode(wsEl);
+      // The IO node consumed as a plain class — the Core IS the node; <wcs-ws>
+      // is its element shell (async-io-node-guidelines §3.9). It extends
+      // EventTarget and dispatches its events on itself, so bindNode discovers
+      // the same wc-bindable descriptor from the class. No custom element, no
+      // customElements registry — and therefore no definition timing to manage
+      // (docs/signals-definition-timing.md, floor 3): the import above is the
+      // only dependency.
+      const core = new WebSocketCore();
+      const bound = bindNode(core);
       const connected = bound.signals.connected;
       const loading = bound.signals.loading;
       const error = bound.signals.error;
       const message = bound.signals.message;
 
-      // Connect by writing the `url` input reactively (the element owns the
-      // socket lifecycle, including auto-reconnect).
+      // Lifecycle is manual on a Core (the element variants get this from the
+      // shell's `url` attribute on connect): one command starts the socket, and
+      // the reconnect policy — attributes on <wcs-ws> elsewhere — rides along
+      // as connect options. Auto-reconnect then lives inside the Core, same as
+      // in every other variant.
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      const url = computed(() => `${proto}://${location.host}/ws`);
-      bound.bindInput("url", url);
+      core.connect(`${proto}://${location.host}/ws`, {
+        autoReconnect: true,
+        reconnectInterval: 3000,
+        maxReconnects: 10,
+      });
 
       // --- Local view state ---------------------------------------------------
       const echoInput = signal("");
@@ -136,17 +139,18 @@
       const hasLog = computed(() => log.get().length > 0);
 
       // --- Actions -------------------------------------------------------------
-      // Sending goes through the element's public command, sendMessage().
+      // Commands are plain methods on the Core (never-throw: sending while
+      // disconnected lands on the `error` signal instead of throwing).
       const sendEcho = () => {
         const text = echoInput.peek().trim();
         if (!text || !connected.peek()) return;
-        wsEl.sendMessage(JSON.stringify({ type: "echo", content: text }));
+        core.send(JSON.stringify({ type: "echo", content: text }));
         echoInput.set("");
       };
       const sendBroadcast = () => {
         const text = broadcastInput.peek().trim();
         if (!text || !connected.peek()) return;
-        wsEl.sendMessage(JSON.stringify({
+        core.send(JSON.stringify({
           type: "broadcast",
           content: text,
           from: nickname.peek().trim() || "anonymous",

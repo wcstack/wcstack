@@ -1,12 +1,20 @@
 # vanilla + websocket デモ
 
 [websocket-chat](../README.ja.md) シナリオのフレームワーク不使用ベースライン。
-素の JavaScript と手組みの DOM を、同じヘッドレス `<wcs-ws>` ノードの上に載せています。
+素の JavaScript と手組みの DOM を、同じ IO ロジックの上に載せています — ただし
+**`WebSocketCore` を直接**消費し、要素は一切使いません。
 
-`@wc-bindable/core` の `bind()` が要素の wcBindable 出力
-（`connected` / `loading` / `error` / `message`）を小さなビュー状態オブジェクトへ
-流し込み、送信は要素の公開コマンド `sendMessage()` を直接呼びます。
-エンジンなし・ビルドなし — アプリ全体が 1 つの `<script type="module">` です。
+`bind()` が要求するのは consumer 側の `EventTarget` 面と
+`constructor.wcBindable` 宣言だけで、wcstack の Core はまさにそれです
+（規範化されたサーフェス —
+[async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.md)
+参照）。つまりアダプタはヘッドレスな Core を一級ターゲットとして束縛できます:
+カスタム要素なし・`customElements` レジストリ非関与・定義タイミング管理不要。
+`bind()` が Core の wcBindable 出力（`connected` / `loading` / `error` /
+`message`）を小さなビュー状態オブジェクトへ流し込み、
+`core.connect(url, options)` がソケットを開始し（auto-reconnect 込み）、送信は
+Core の `send()` コマンドを直接呼びます。エンジンなし・ビルドなし — アプリ全体
+が 1 つの `<script type="module">` です。
 
 ## 使用しているもの
 
@@ -36,7 +44,10 @@ node examples/websocket-chat/vanilla/server.js
 
 ## このデモが示すもの
 
-- リアクティブエンジン**なし**で消費する可搬な IO ノードとしての `<wcs-ws>`
+- リアクティブエンジン**なし**・**要素もなし**で消費する可搬な IO ノード:
+  `bind(new WebSocketCore(), …)` がヘッドレスな Core を直接束縛
 - 最小の wc-bindable コンシューマとしての `bind()`（プロパティをミラー → 描画）
-- `sendMessage()` コマンドメソッドによる送信
-- 要素の内部で完結する `auto-reconnect`
+  — プロトコルが要求するのは `EventTarget` 面だけ、の実演
+- Core の手動ライフサイクル: `core.connect(url, { autoReconnect, … })` が要素
+  variant の属性を置き換える。送信は Core の `send()` コマンド
+- Core の内部で完結する `auto-reconnect`

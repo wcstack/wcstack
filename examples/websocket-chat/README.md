@@ -1,17 +1,22 @@
 # websocket-chat — one scenario, five stacks
 
 The same real-time Echo / Broadcast chat, built five ways on top of the same
-`<wcs-ws>` IO node and the same WebSocket server. The point: **the IO node is
-portable** — connection management, auto-reconnect and JSON parsing live inside
-the custom element, and each stack only decides how to *render* its state.
+IO logic and the same WebSocket server. The point: **the IO node is portable**
+— connection management, auto-reconnect and JSON parsing live inside
+`WebSocketCore`, and each stack only decides how to *consume* it. Three
+variants bind the `<wcs-ws>` element that wraps it (declaratively with
+`data-wcs`, or via the framework `@wc-bindable` adapters); two consume the
+Core class directly with no element at all — signals through wcstack's own
+`bindNode()`, vanilla through `@wc-bindable/core`'s `bind()`, which only
+requires the `EventTarget` surface the Core already is.
 
-| Variant | Stack | Port | Build |
-|---------|-------|------|-------|
-| [`vanilla/`](vanilla/) | Plain JS + `@wc-bindable/core` `bind()` | 3304 | none (CDN) |
-| [`state/`](state/) | `@wcstack/state` (`data-wcs` binding) | 3300 | none (CDN) |
-| [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | 3305 | none (CDN) |
-| [`react/`](react/) | React 19 + `@wc-bindable/react` | 3301 | Vite |
-| [`vue/`](vue/) | Vue 3 + `@wc-bindable/vue` | 3302 | Vite |
+| Variant | Stack | Consumes | Port | Build |
+|---------|-------|----------|------|-------|
+| [`vanilla/`](vanilla/) | Plain JS + `@wc-bindable/core` `bind()` | `WebSocketCore` directly | 3304 | none (CDN) |
+| [`state/`](state/) | `@wcstack/state` (`data-wcs` binding) | `<wcs-ws>` element | 3300 | none (CDN) |
+| [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | `WebSocketCore` directly | 3305 | none (CDN) |
+| [`react/`](react/) | React 19 + `@wc-bindable/react` | `<wcs-ws>` element | 3301 | Vite |
+| [`vue/`](vue/) | Vue 3 + `@wc-bindable/vue` | `<wcs-ws>` element | 3302 | Vite |
 
 `shared/` holds the demo server (static files + `/ws` endpoint), the `ws`
 dependency and the common stylesheet. When copying a single variant out of this

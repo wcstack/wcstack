@@ -1,12 +1,21 @@
 # signals + websocket demo
 
 The [websocket-chat](../README.md) scenario on `@wcstack/signals`: fine-grained
-signals driving real DOM, with the same headless `<wcs-ws>` node underneath.
+signals driving real DOM, with the same IO logic underneath — consumed as
+**`WebSocketCore` directly**, no element at all.
 
-`bindNode()` adapts the element's wcBindable outputs (`connected` / `loading` /
+Every other variant binds the `<wcs-ws>` element; this one imports the Core
+class that element wraps and hands it straight to `bindNode()` (Cores are
+`EventTarget`s carrying the same wc-bindable descriptor — a normative surface,
+see [async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.md)).
+Because no custom element is involved, there is no `customElements` registry,
+no upgrade, and no definition timing to manage: the import is the only
+dependency. `bindNode()` adapts the Core's outputs (`connected` / `loading` /
 `error` / `message`) into read signals, an `effect()` routes incoming messages
-into a keyed log rendered by `For()`, and the `url` input is written reactively
-with `bindInput()`. Fully buildless — everything is imported from the CDN.
+into a keyed log rendered by `For()`, and `core.connect(url, options)` starts
+the socket (auto-reconnect included — connection management and JSON parsing
+live in the Core, exactly as in the element variants). Fully buildless —
+everything is imported from the CDN.
 
 ## What it uses
 
@@ -36,8 +45,11 @@ Same as the [state variant](../state/README.md#websocket-protocol).
 
 ## What the demo shows
 
-- `bindNode()` adapting a wc-bindable IO node into signals
+- **Core-direct binding**: `bindNode(new WebSocketCore())` — the wc-bindable IO
+  node consumed with no element and no `customElements` registry
+- manual Core lifecycle: `core.connect(url, { autoReconnect, … })` replaces the
+  element variants' `url` attribute (the reconnect policy moves into options)
 - `effect()` routing a message stream into view state (log vs stats heartbeat)
 - keyed list rendering with `For()` (log rows are never rebuilt)
-- reactive input writing with `bindInput()` (`url` starts the connection)
-- sending via the `sendMessage()` command method
+- sending via the Core's `send()` command (never-throw: sending while
+  disconnected lands on the `error` signal)

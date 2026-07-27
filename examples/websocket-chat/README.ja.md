@@ -1,17 +1,22 @@
 # websocket-chat — 1 つのシナリオ、5 つのスタック
 
-同じリアルタイム Echo / Broadcast チャットを、同じ `<wcs-ws>` IO ノードと同じ
+同じリアルタイム Echo / Broadcast チャットを、同じ IO ロジックと同じ
 WebSocket サーバーの上に 5 通りの方法で実装したデモ群です。ポイントは
-**IO ノードの可搬性** — 接続管理・自動再接続・JSON パースはカスタム要素の中に
-封じられ、各スタックはその状態を*どう描画するか*だけを決めます。
+**IO ノードの可搬性** — 接続管理・自動再接続・JSON パースは `WebSocketCore` の
+中に封じられ、各スタックはそれを*どう消費するか*だけを決めます。3 variant は
+それを包む `<wcs-ws>` 要素を束縛し（`data-wcs` で宣言的に、またはフレームワーク
+用 `@wc-bindable` アダプタ経由で）、2 variant は Core クラスを要素なしで直接
+消費します — signals は wcstack 自前の `bindNode()` で、vanilla は
+`@wc-bindable/core` の `bind()` で（`bind()` が要求するのは Core が元々備える
+`EventTarget` 面だけです）。
 
-| Variant | スタック | ポート | ビルド |
-|---------|---------|--------|--------|
-| [`vanilla/`](vanilla/) | 素の JS + `@wc-bindable/core` の `bind()` | 3304 | 不要 (CDN) |
-| [`state/`](state/) | `@wcstack/state` (`data-wcs` バインディング) | 3300 | 不要 (CDN) |
-| [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | 3305 | 不要 (CDN) |
-| [`react/`](react/) | React 19 + `@wc-bindable/react` | 3301 | Vite |
-| [`vue/`](vue/) | Vue 3 + `@wc-bindable/vue` | 3302 | Vite |
+| Variant | スタック | 消費するもの | ポート | ビルド |
+|---------|---------|--------------|--------|--------|
+| [`vanilla/`](vanilla/) | 素の JS + `@wc-bindable/core` の `bind()` | `WebSocketCore` 直接 | 3304 | 不要 (CDN) |
+| [`state/`](state/) | `@wcstack/state` (`data-wcs` バインディング) | `<wcs-ws>` 要素 | 3300 | 不要 (CDN) |
+| [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | `WebSocketCore` 直接 | 3305 | 不要 (CDN) |
+| [`react/`](react/) | React 19 + `@wc-bindable/react` | `<wcs-ws>` 要素 | 3301 | Vite |
+| [`vue/`](vue/) | Vue 3 + `@wc-bindable/vue` | `<wcs-ws>` 要素 | 3302 | Vite |
 
 `shared/` にはデモサーバー（静的配信 + `/ws` エンドポイント）、`ws` 依存、
 共通スタイルシートが入っています。1 つの variant だけをリポジトリ外へコピー

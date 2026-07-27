@@ -1,12 +1,20 @@
 # vanilla + websocket demo
 
 The framework-free baseline of the [websocket-chat](../README.md) scenario:
-plain JavaScript and hand-built DOM on top of the same headless `<wcs-ws>` node.
+plain JavaScript and hand-built DOM on top of the same IO logic — consumed as
+**`WebSocketCore` directly**, no element at all.
 
-`@wc-bindable/core`'s `bind()` streams the element's wcBindable outputs
-(`connected` / `loading` / `error` / `message`) into a small view-state object,
-and sending goes through the element's public `sendMessage()` command. No
-engine, no build step — the whole app is one `<script type="module">`.
+`bind()` only requires the consumer-side `EventTarget` surface plus a
+`constructor.wcBindable` declaration, and a wcstack Core is exactly that
+(a normative surface — see
+[async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.md)),
+so the adapter binds the headless Core as a first-class target: no custom
+element, no `customElements` registry, no definition timing. `bind()` streams
+the Core's wcBindable outputs (`connected` / `loading` / `error` / `message`)
+into a small view-state object, `core.connect(url, options)` starts the socket
+(auto-reconnect included), and sending goes through the Core's `send()`
+command. No engine, no build step — the whole app is one
+`<script type="module">`.
 
 ## What it uses
 
@@ -36,7 +44,10 @@ Same as the [state variant](../state/README.md#websocket-protocol).
 
 ## What the demo shows
 
-- `<wcs-ws>` as a portable IO node consumed WITHOUT any reactive engine
-- `bind()` as the minimal wc-bindable consumer (mirror properties → render)
-- sending via the `sendMessage()` command method
-- `auto-reconnect` handled entirely inside the element
+- the portable IO node consumed WITHOUT any reactive engine — and without the
+  element: `bind(new WebSocketCore(), …)` binds the headless Core directly
+- `bind()` as the minimal wc-bindable consumer (mirror properties → render),
+  demonstrating that the protocol only needs the `EventTarget` surface
+- manual Core lifecycle: `core.connect(url, { autoReconnect, … })` replaces the
+  element variants' attributes; sending via the Core's `send()` command
+- `auto-reconnect` handled entirely inside the Core

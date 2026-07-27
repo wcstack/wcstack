@@ -1,13 +1,21 @@
 # signals + websocket デモ
 
 [websocket-chat](../README.ja.md) シナリオの `@wcstack/signals` 版。
-fine-grained なシグナルが実 DOM を直接駆動し、その下には同じヘッドレス
-`<wcs-ws>` ノードがいます。
+fine-grained なシグナルが実 DOM を直接駆動し、その下には同じ IO ロジックが
+います — ただしこの variant は **`WebSocketCore` を直接**消費し、要素を一切
+使いません。
 
-`bindNode()` が要素の wcBindable 出力（`connected` / `loading` / `error` /
-`message`）を読み取りシグナルへ適応し、`effect()` が受信メッセージを keyed な
-ログ（`For()` で描画）へ振り分け、`url` 入力は `bindInput()` でリアクティブに
-書き込みます。完全ビルドレス — すべて CDN から import します。
+他の variant はすべて `<wcs-ws>` 要素を束縛しますが、ここではその要素が包む
+Core クラスを import してそのまま `bindNode()` に渡します（Core は同じ
+wc-bindable descriptor を持つ `EventTarget` — 規範化されたサーフェスです。
+[async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.md)
+参照）。カスタム要素が関与しないので `customElements` レジストリも upgrade も
+無く、定義タイミングの管理が不要 — 依存は import だけです。`bindNode()` が
+Core の出力（`connected` / `loading` / `error` / `message`）を読み取りシグナル
+へ適応し、`effect()` が受信メッセージを keyed なログ（`For()` で描画）へ
+振り分け、`core.connect(url, options)` がソケットを開始します（auto-reconnect
+込み — 接続管理と JSON パースは要素 variant と同じく Core の中にあります）。
+完全ビルドレス — すべて CDN から import します。
 
 ## 使用しているもの
 
@@ -37,8 +45,11 @@ node examples/websocket-chat/signals/server.js
 
 ## このデモが示すもの
 
-- wc-bindable な IO ノードをシグナルへ適応する `bindNode()`
+- **Core 直接束縛**: `bindNode(new WebSocketCore())` — wc-bindable な IO ノードを
+  要素なし・`customElements` レジストリ非関与で消費
+- Core の手動ライフサイクル: `core.connect(url, { autoReconnect, … })` が要素
+  variant の `url` 属性を置き換える（再接続ポリシーは options に移る）
 - メッセージストリームをビュー状態へ振り分ける `effect()`（ログ vs stats ハートビート）
 - `For()` による keyed リスト描画（ログ行は再構築されない）
-- `bindInput()` によるリアクティブな入力書き込み（`url` が接続を開始）
-- `sendMessage()` コマンドメソッドによる送信
+- Core の `send()` コマンドによる送信（never-throw: 未接続での送信は例外でなく
+  `error` シグナルに流れる）
