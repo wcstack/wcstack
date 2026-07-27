@@ -228,6 +228,8 @@ const result = await eyedropper.open();
 eyedropper.abort();
 ```
 
+The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
+
 ## License
 
 MIT

@@ -231,6 +231,8 @@ core.observe(document.querySelector("#panel"), { box: "border-box", round: true 
 core.disconnect();
 ```
 
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+
 ## 注意・制限
 
 - **単一対象。** 各 `<wcs-resize>` は厳密に 1 要素を監視し、状態は単一の値面にマップされます。多数の対象には多数の要素を使ってください。

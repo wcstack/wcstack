@@ -399,6 +399,8 @@ unbind();
 
 Node.js、Deno、Cloudflare Workers など、`EventTarget` と `fetch` が利用可能な環境で動作します。
 
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+
 ## Capability と error taxonomy
 
 **`errorInfo`** は追加的な wc-bindable プロパティです（上のプロパティ表を参照）。既存の

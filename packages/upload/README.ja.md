@@ -407,6 +407,8 @@ const result = await core.upload("/api/upload", files, {
 
 `UploadCore` は同じ非同期状態をプロパティとして公開し、同じイベントを発火します。
 
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+
 ## 手動 bootstrap
 
 ```ts

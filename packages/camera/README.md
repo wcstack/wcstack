@@ -144,6 +144,8 @@ DevTools open; they are not a supported styling hook.
 
 `CameraCore` and `RecorderCore` are exported for non-DOM use (`bind()` from `@wc-bindable/core`). The Shells are thin wrappers.
 
+The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
+
 ## Notes & gotchas
 
 - **Secure context (https) required.** `getUserMedia` is unavailable on `file://` / plain `http://`.

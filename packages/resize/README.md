@@ -233,6 +233,8 @@ core.observe(document.querySelector("#panel"), { box: "border-box", round: true 
 core.disconnect();
 ```
 
+The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
+
 ## Notes & limitations
 
 - **Single target.** Each `<wcs-resize>` observes exactly one element so the state maps to a single value surface. For many targets, use many elements.

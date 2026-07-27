@@ -275,6 +275,8 @@ await core.exitPictureInPicture();
 core.dispose();                 // detach listeners
 ```
 
+The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
+
 ## Notes & limitations
 
 - **`<video>`-only.** `target` must resolve to an `HTMLVideoElement`. Any other element is treated as unresolved: `error` is set to `{ message: "target must be a <video> element." }`, never throws.

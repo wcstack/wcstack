@@ -143,6 +143,8 @@ wcs-recorder:state(paused) ~ .rec-dot      { animation: none; opacity: .4; }
 
 `CameraCore` / `RecorderCore` を非 DOM 用途向けにエクスポートしています（`@wc-bindable/core` の `bind()`）。Shell は薄いラッパです。
 
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+
 ## 注意・落とし穴
 
 - **セキュアコンテキスト（https）必須。** `getUserMedia` は `file://` / 素の `http://` では使えません。
