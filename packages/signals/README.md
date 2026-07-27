@@ -426,8 +426,8 @@ Zero runtime dependencies. Measured gzipped sizes of the minified bundles:
 
 | Entry | gzip |
 |---|---|
-| Shared reactive core chunk (`core-*.esm.min.js`) | **≈ 2.5 KB** |
-| `./dom` layer chunk (`dom.esm.min.js`, on top of the shared core) | **≈ 2.1 KB** |
+| Shared reactive core chunk (`core-*.esm.min.js`) | **≈ 3.1 KB** |
+| `./dom` layer chunk (`dom.esm.min.js`, on top of the shared core) | **≈ 3.8 KB** |
 
 Both published entries import the **one** shared core chunk (see [Buildless](#buildless-import-maps)), so a page using both pays for the core only once. `package.json` declares `"sideEffects": false`, so a bundler tree-shakes away anything you don't import.
 
