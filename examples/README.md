@@ -16,10 +16,21 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 
 **Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
 scripts execute in document order, so this guarantees every custom element is
-defined before state attaches its bindings. (state defers a binding on a
-not-yet-defined element via `customElements.whenDefined` and settles its initial
-sync once the class arrives, so this ordering is a best practice rather than a
-hard requirement.)
+defined before state attaches its bindings — and the guarantee is worth more
+than tidiness:
+
+- A **property / spread binding** on a not-yet-defined element is deferred via
+  `customElements.whenDefined` and re-applied with the *latest* value once the
+  class arrives, so nothing is lost there.
+- A **command-token emit is not replayed**. Its subscription is deferred the same
+  way, so if state is wired first and a slow (or failed) CDN fetch leaves an I/O
+  element undefined, a click that fires `$command.x.emit()` inside that window
+  reaches zero subscribers and is silently dropped.
+
+Loading state last closes that window: nothing is wired to the UI until every
+element is defined. When you cannot control the order (a snippet pasted into a
+larger page), gate the emit on `await customElements.whenDefined(tag)` — see
+[`state-tilt-maze/`](state-tilt-maze/).
 
 ## Demo list
 

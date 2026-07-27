@@ -38,9 +38,11 @@
     wcs-infinite-scroll { display: block; min-height: 1px; }
   </style>
 
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
-  <!-- <wcs-infinite-scroll> ships inside @wcstack/fetch — no extra package needed. -->
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them.
+       (<wcs-infinite-scroll> ships inside @wcstack/fetch — no extra package.) -->
   <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 

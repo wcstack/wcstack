@@ -16,9 +16,21 @@ React / Vue variant（Vite 使用）のみです。
 
 **script の順序**: I/O ノード系パッケージを `@wcstack/state` より*先*に並べて
 ください。module script は文書順で実行されるため、state がバインディングを
-確立する時点で全カスタム要素の define が保証されます（state は未 define 要素
-へのバインディングを `customElements.whenDefined` で保留し、クラスが揃った時点で
-初期同期を確定させるため、この順序は必須要件ではなくベストプラクティスです）。
+確立する時点で全カスタム要素の define が保証されます。これは体裁の問題では
+ありません:
+
+- **プロパティ / spread バインディング**は、未 define 要素に対しては
+  `customElements.whenDefined` で保留され、クラスが揃った時点で*最新値*で
+  再適用されます。取りこぼしはありません。
+- **command-token の emit はリプレイされません**。購読も同じく保留されるため、
+  state を先に読み込むと、CDN が遅い（あるいは片方だけ失敗した）ときに
+  「UI は配線済みだが I/O 要素は未 define」という窓が開き、その間のクリックで
+  撃った `$command.x.emit()` は購読者ゼロのまま黙って捨てられます。
+
+state を最後に読み込めばこの窓は閉じます — 全要素が define されるまで UI には
+何も配線されないからです。順序を制御できない場合（大きなページに断片を貼る等）は
+`await customElements.whenDefined(tag)` で emit をゲートしてください
+（[`state-tilt-maze/`](state-tilt-maze/) 参照）。
 
 ## デモ一覧
 

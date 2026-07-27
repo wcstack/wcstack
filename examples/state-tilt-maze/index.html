@@ -41,11 +41,13 @@
     .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
   </style>
 
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them. -->
   <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 
@@ -215,11 +217,15 @@
       // subscription is simply silent (and on every other platform
       // requestPermission() resolves "granted" immediately). Both sensors
       // are best-effort — on failure the drag fallback plays on.
-      // The whenDefined gate closes a slow-CDN race: command.* subscriptions
+      // The whenDefined gate covers a slow-CDN race: command.* subscriptions
       // are deferred until the custom element is defined, and an emit() fired
-      // before that has no subscribers (tokens are not replayed). Awaiting is
-      // gesture-safe — user activation is a time window, not the synchronous
-      // task, so requestPermission still runs inside it.
+      // before that has no subscribers (tokens are not replayed). Loading the
+      // sensor packages before state (see <head>) already closes that window
+      // here, so this await resolves immediately — it is kept because this
+      // handler is the snippet people copy into pages whose script order they
+      // do not control. Awaiting is gesture-safe — user activation is a time
+      // window, not the synchronous task, so requestPermission still runs
+      // inside it.
       async startGame() {
         await Promise.all(["wcs-tilt", "wcs-accelerometer"]
           .map((t) => customElements.whenDefined(t)));

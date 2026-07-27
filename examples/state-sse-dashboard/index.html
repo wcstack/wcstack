@@ -47,9 +47,10 @@
 
        Module scripts execute in document order, so listing the I/O nodes
        BEFORE state keeps their elements defined by the time state initializes
-       its bindings. (state defers a binding on a not-yet-defined element via
-       customElements.whenDefined and settles it once the class arrives, so
-       this ordering is a best practice rather than a hard requirement.) -->
+       its bindings. Property bindings survive the other order (they are
+       deferred via customElements.whenDefined and re-applied), but a
+       command-token emit fired at an undefined element is dropped — tokens are
+       not replayed. See examples/README.md "Script order". -->
   <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
