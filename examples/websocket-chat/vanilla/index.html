@@ -29,36 +29,30 @@
     }
   </style>
 
-  <!-- Resolve the wc-bindable core adapter from the CDN (buildless). -->
+  <!-- Resolve the wc-bindable core adapter and the IO node's CORE CLASS from
+       the CDN (buildless). No custom element is registered on this page:
+       bind() only requires the consumer-side EventTarget surface, so the
+       headless WebSocketCore is a first-class bind target. -->
   <script type="importmap">
   {
     "imports": {
-      "@wc-bindable/core": "https://esm.run/@wc-bindable/core"
+      "@wc-bindable/core": "https://esm.run/@wc-bindable/core",
+      "@wcstack/websocket": "https://esm.run/@wcstack/websocket"
     }
   }
   </script>
-  <!-- Registers <wcs-ws> (the headless WebSocket node). -->
-  <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
 </head>
 <body>
-  <!-- Headless IO node: it owns the socket, the reconnection and the JSON
-       parsing. Config attributes stay on the element; the script below only
-       mirrors its outputs and calls sendMessage(). -->
-  <wcs-ws
-    id="ws"
-    auto-reconnect
-    reconnect-interval="3000"
-    max-reconnects="10"
-  ></wcs-ws>
-
   <main>
     <section class="hero">
       <span class="eyebrow">Vanilla JS</span>
-      <h1>Real-time communication<br>with vanilla JS + &lt;wcs-ws&gt;</h1>
+      <h1>Real-time communication<br>with vanilla JS + WebSocketCore</h1>
       <p class="lead">
         The framework-free baseline: <code>@wc-bindable/core</code>'s <code>bind()</code>
-        streams the connection state and incoming messages of <code>&lt;wcs-ws&gt;</code>
-        into a plain object that drives hand-built DOM — no engine, no build step.
+        streams the connection state and incoming messages of <code>WebSocketCore</code>
+        — the exact core behind the <code>&lt;wcs-ws&gt;</code> element, bound here with
+        no element at all — into a plain object that drives hand-built DOM —
+        no engine, no build step, no registry.
       </p>
     </section>
 
@@ -123,12 +117,19 @@
 
   <script type="module">
     import { bind } from "@wc-bindable/core";
+    import { WebSocketCore } from "@wcstack/websocket";
 
-    const ws = document.getElementById("ws");
+    // The IO node consumed as a plain class — the Core IS the node; <wcs-ws>
+    // is its element shell (async-io-node-guidelines §3.9). It extends
+    // EventTarget and dispatches its events on itself, which is exactly the
+    // surface bind() requires — so no custom element, no customElements
+    // registry, and no definition timing to manage: the import above is the
+    // only dependency.
+    const ws = new WebSocketCore();
 
     // ----------------------------------------------------------------------
-    // View state — a single plain object, mirrored from <wcs-ws> by bind()
-    // and pushed into the DOM by the small render helpers below.
+    // View state — a single plain object, mirrored from WebSocketCore by
+    // bind() and pushed into the DOM by the small render helpers below.
     // ----------------------------------------------------------------------
     const state = {
       connected: false,
@@ -189,9 +190,11 @@
     }
 
     // ----------------------------------------------------------------------
-    // Mirror the <wcs-ws> wcBindable properties into local state. `message`
-    // arrives already JSON-parsed (the element does that); `stats` heartbeats
-    // update the badges instead of the log, matching the other variants.
+    // Mirror the Core's wcBindable properties into local state. bind() reads
+    // the declaration from `ws.constructor.wcBindable` — same mechanism as on
+    // the element. `message` arrives already JSON-parsed (the Core does that);
+    // `stats` heartbeats update the badges instead of the log, matching the
+    // other variants.
     // ----------------------------------------------------------------------
     bind(ws, (name, value) => {
       switch (name) {
@@ -211,15 +214,15 @@
     });
 
     // ----------------------------------------------------------------------
-    // Sending goes through the element's public command, sendMessage(). The
-    // node refuses silently when the socket is not OPEN, but the buttons are
-    // disabled in that case anyway.
+    // Sending goes through the Core's send() command. It never throws — a
+    // send while the socket is not OPEN lands on the `error` property — but
+    // the buttons are disabled in that case anyway.
     // ----------------------------------------------------------------------
     function sendEcho() {
       const input = $("echo-input");
       const text = input.value.trim();
       if (!text || !state.connected) return;
-      ws.sendMessage(JSON.stringify({ type: "echo", content: text }));
+      ws.send(JSON.stringify({ type: "echo", content: text }));
       input.value = "";
       renderSendButtons();
     }
@@ -228,7 +231,7 @@
       const input = $("broadcast-input");
       const text = input.value.trim();
       if (!text || !state.connected) return;
-      ws.sendMessage(JSON.stringify({
+      ws.send(JSON.stringify({
         type: "broadcast",
         content: text,
         from: $("nickname").value.trim() || "anonymous",
@@ -261,10 +264,16 @@
     // Random default nickname, like the other variants.
     $("nickname").value = "user-" + Math.random().toString(36).slice(2, 6);
 
-    // Connect last: setting `url` starts the connection (bind() is already
-    // watching, so the loading → connected transitions all reach the UI).
+    // Connect last: bind() is already watching, so the loading → connected
+    // transitions all reach the UI. Lifecycle is manual on a Core (the element
+    // shell does this from its `url` attribute) — the reconnect policy, which
+    // the element variants declare as attributes, rides along as options.
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws.url = `${proto}://${location.host}/ws`;
+    ws.connect(`${proto}://${location.host}/ws`, {
+      autoReconnect: true,
+      reconnectInterval: 3000,
+      maxReconnects: 10,
+    });
   </script>
 </body>
 </html>

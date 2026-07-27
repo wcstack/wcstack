@@ -3,14 +3,16 @@
 The same real-time Echo / Broadcast chat, built five ways on top of the same
 IO logic and the same WebSocket server. The point: **the IO node is portable**
 — connection management, auto-reconnect and JSON parsing live inside
-`WebSocketCore`, and each stack only decides how to *consume* it: four variants
-bind the `<wcs-ws>` element that wraps it (declaratively with `data-wcs`, or
-via a `@wc-bindable` adapter), while the signals variant consumes the Core
-class directly — no element at all.
+`WebSocketCore`, and each stack only decides how to *consume* it. Three
+variants bind the `<wcs-ws>` element that wraps it (declaratively with
+`data-wcs`, or via the framework `@wc-bindable` adapters); two consume the
+Core class directly with no element at all — signals through wcstack's own
+`bindNode()`, vanilla through `@wc-bindable/core`'s `bind()`, which only
+requires the `EventTarget` surface the Core already is.
 
 | Variant | Stack | Consumes | Port | Build |
 |---------|-------|----------|------|-------|
-| [`vanilla/`](vanilla/) | Plain JS + `@wc-bindable/core` `bind()` | `<wcs-ws>` element | 3304 | none (CDN) |
+| [`vanilla/`](vanilla/) | Plain JS + `@wc-bindable/core` `bind()` | `WebSocketCore` directly | 3304 | none (CDN) |
 | [`state/`](state/) | `@wcstack/state` (`data-wcs` binding) | `<wcs-ws>` element | 3300 | none (CDN) |
 | [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | `WebSocketCore` directly | 3305 | none (CDN) |
 | [`react/`](react/) | React 19 + `@wc-bindable/react` | `<wcs-ws>` element | 3301 | Vite |

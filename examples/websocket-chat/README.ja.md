@@ -3,14 +3,16 @@
 同じリアルタイム Echo / Broadcast チャットを、同じ IO ロジックと同じ
 WebSocket サーバーの上に 5 通りの方法で実装したデモ群です。ポイントは
 **IO ノードの可搬性** — 接続管理・自動再接続・JSON パースは `WebSocketCore` の
-中に封じられ、各スタックはそれを*どう消費するか*だけを決めます: 4 variant は
-それを包む `<wcs-ws>` 要素を束縛し（`data-wcs` で宣言的に、または
-`@wc-bindable` アダプタ経由で）、signals variant は Core クラスを直接消費します
-— 要素は一切使いません。
+中に封じられ、各スタックはそれを*どう消費するか*だけを決めます。3 variant は
+それを包む `<wcs-ws>` 要素を束縛し（`data-wcs` で宣言的に、またはフレームワーク
+用 `@wc-bindable` アダプタ経由で）、2 variant は Core クラスを要素なしで直接
+消費します — signals は wcstack 自前の `bindNode()` で、vanilla は
+`@wc-bindable/core` の `bind()` で（`bind()` が要求するのは Core が元々備える
+`EventTarget` 面だけです）。
 
 | Variant | スタック | 消費するもの | ポート | ビルド |
 |---------|---------|--------------|--------|--------|
-| [`vanilla/`](vanilla/) | 素の JS + `@wc-bindable/core` の `bind()` | `<wcs-ws>` 要素 | 3304 | 不要 (CDN) |
+| [`vanilla/`](vanilla/) | 素の JS + `@wc-bindable/core` の `bind()` | `WebSocketCore` 直接 | 3304 | 不要 (CDN) |
 | [`state/`](state/) | `@wcstack/state` (`data-wcs` バインディング) | `<wcs-ws>` 要素 | 3300 | 不要 (CDN) |
 | [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | `WebSocketCore` 直接 | 3305 | 不要 (CDN) |
 | [`react/`](react/) | React 19 + `@wc-bindable/react` | `<wcs-ws>` 要素 | 3301 | Vite |
