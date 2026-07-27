@@ -8,8 +8,7 @@
     "start": "npm run build && node server.js"
   },
   "dependencies": {
-    "@wc-bindable/core": "^0.3.0",
-    "@wc-bindable/react": "^0.3.0",
+    "@wc-bindable/react": "^0.8.0",
     "@wcstack/websocket": "^1.8.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

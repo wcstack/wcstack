@@ -8,8 +8,7 @@
     "start": "npm run build && node server.js"
   },
   "dependencies": {
-    "@wc-bindable/core": "^0.3.0",
-    "@wc-bindable/vue": "^0.3.0",
+    "@wc-bindable/vue": "^0.8.0",
     "@wcstack/websocket": "^1.8.1",
     "vue": "^3.5.13"
   },
