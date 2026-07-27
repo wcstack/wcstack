@@ -219,6 +219,8 @@ console.log(gate.defined, gate.missing);
 gate.dispose();          // clear the timeout and stop watching
 ```
 
+The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
+
 ## License
 
 MIT

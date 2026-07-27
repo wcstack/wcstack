@@ -129,6 +129,8 @@ createRoot(() => {
 
 動作する完全版は [`examples/signals-live-search`](../../examples/signals-live-search/README.ja.md) にあります。
 
+> 冒頭の `await customElements.whenDefined(…)` は「**自分がロードしていない**要素に束縛する」ときの形です(パッケージが届かなければ永遠に待ちます)。アプリがノードを自分で持つ場合は、副作用 import + [`mountNode`](#mountnode--ヘッドレスノードの生成から接続まで) を推奨します — await 不要で、ロード失敗は静かなハングではなく明示的なモジュールエラーになります。
+
 ### 6. keyed リスト — `For` / `Index`
 
 素のリアクティブ child(`() => items.map(render)`)は変更のたびにサブツリーを丸ごと再生成します。リストには `For`(値/同一性キー)か `Index`(位置キー)を使ってください。各行は安定した DOM 行として保たれ、その場で reconcile されるので、並び替えは行の再生成ではなく移動になります(行ごとの DOM・focus・入力状態を保持)。各行は自身の所有権スコープで走るため、削除された行はその effect だけを破棄します。
@@ -210,6 +212,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `Index<T>` | `(list, each) => ListView` | 位置キーのリスト。`each(item: () => T, index: number)` は単一 Node を返す。スロット単位で行を再利用(スロットの値は signal で更新)し、末尾で grow/shrink。 |
 | `SignalsElement` | `abstract` 基底(遅延 `extends HTMLElement`) | ライフサイクル基底。`render()` を実装、必要なら `getMountPoint()` を上書き。`HTMLElement` は遅延解決され、`./dom` モジュールは非 DOM 環境でも評価可能 — [SSR / 非DOM](#ssr--非dom-dom-エントリは-dom-無しで読み込める)参照。 |
 | `createSignalsElement` | `() => SignalsElementClass` | `SignalsElement` 基底を(memoize して)呼び出し時に構築。DOM が無ければ分かりやすい Error を投げる。SSR セーフな基底取得手段。 |
+| `mountNode` | `(tagName, { attrs?, parent?, descriptor? }?) => MountedNode` | **定義済み**カスタム要素を生成し、`attrs` を設定、`bindNode` してから接続(既定 `document.body`)。`BoundNode` 全サーフェス + `el` / `unmount()` を返す。タグ未定義なら原因の分かる Error を即 throw — [`mountNode`](#mountnode--ヘッドレスノードの生成から接続まで)参照。 |
 
 `setProp` のルール: `style` は文字列またはオブジェクト(camelCase / kebab-case / `--custom` キー)を受け付ける。`class` / `className` は `class` **属性**として設定(SVG でも動く・`null`/`false` でクリア)。書き込み可能な DOM プロパティに解決するキーはプロパティ代入(`null`/`undefined` は `""` に正規化され、`id`/`src` 等の文字列プロパティがリテラル `"null"` ではなくクリアされる)、それ以外は属性(`true` → 空属性、`null`/`false` → 削除)。
 
@@ -280,6 +283,48 @@ const r = resource(
 id.set(2); // ノードの abort コマンド経由で進行中の fetch を abort し、再 fetch
 ```
 
+#### `mountNode` — ヘッドレスノードの生成から接続まで
+
+`bindNode` は**既に存在する**要素を適応します — つまり定義タイミングの保証は呼び出し側の責任です: descriptor は呼び出し時に `el.constructor.wcBindable` から読まれ、upgrade 前の要素はこれを持ちません。アプリがヘッドレス IO ノードを自分で持つ場合、`mountNode` はこの問題系をまるごと消します。定義モジュールを import してから、生成→束縛→接続を1呼び出しで: モジュール評価順が定義を保証するので、`whenDefined` も HTML との順序結合も不要です。
+
+```typescript
+import "@wcstack/fetch/auto";                    // <wcs-fetch> を定義 — module graph が順序を保証
+import { mountNode } from "@wcstack/signals/dom";
+
+const fetcher = mountNode("wcs-fetch", { attrs: { url: "/api/people" } });
+fetcher.signals.value.get();                     // BoundNode 全サーフェス
+fetcher.el;                                      // 生成された要素(接続済み)
+fetcher.unmount();                               // dispose() + 要素を除去
+```
+
+内部の順序が安全契約です: `attrs` は接続**前**に設定され(Shell は `connectedCallback` で設定を読む。`true` → 空属性、`false` → 属性なし、その他は文字列化)、アダプタは接続**前**に購読するので、`connectedCallback` から発火するイベントも取りこぼしません。`parent` の既定は `document.body`。未定義タグは(`whenDefined` の静かな永久保留と違い)**原因の分かる Error を即 throw** します。`descriptor` を明示すると定義チェックはスキップされます(非カスタム要素ターゲット向け・`bindNode` と同じ逃げ道)。**オプショナル**なパッケージは dynamic import と合成します — `whenDefined` と違いロード失敗で *reject* します:
+
+```typescript
+const tilt = signal(null);
+import("@wcstack/tilt/auto")
+  .then(() => tilt.set(mountNode("wcs-tilt")))
+  .catch(() => {/* 縮退モード — アプリは動き続ける */});
+```
+
+`bindNode` と同様、アダプタはリアクティブオーナーに紐付きません — teardown は明示的(`unmount()` は冪等)で、`onCleanup(() => fetcher.unmount())` と合成できます。`MountedNode` では `dispose()` は **`unmount()` のエイリアス**です: mountNode は要素のライフサイクルを所有するので、パッケージ共通の teardown 動詞が「接続されたまま IO が生きている要素」を残すことはありません。定義タイミングの全体契約(どのロード状況でどのイディオムか)は [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md) を参照してください。
+
+#### Core を直接束縛する(要素なし)
+
+wcstack の I/O ノードはフレームワーク非依存の **Core** とカスタム要素の **Shell** に分層しており、Core 単体で完結した wc-bindable ノードです: `extends EventTarget`・既定で自分自身にイベントを dispatch(`constructor(target?)`・`target ?? this`)・観測プロパティは getter・`static wcBindable` 保持。よって `bindNode` は第2引数なしで `core.constructor` から descriptor を解決します:
+
+```typescript
+import { FetchCore } from "@wcstack/fetch";
+
+const core = new FetchCore();
+const bound = bindNode(core);   // FetchCore.wcBindable から解決 — 要素は一切関与しない
+core.fetch("/api/user");        // command は素のメソッド
+bound.signals.value.get();
+```
+
+カスタム要素が存在しないので、**定義タイミング問題は丸ごと消滅**します: `customElements` レジストリに一切触れず、`whenDefined` も upgrade 待ちも無く、依存は import だけです。これは本パッケージの建国実証でもあります — アダプタは要素が関与する前に、無改変の実 `FetchCore` で検証されました(`__tests__/integration.fetchCore.test.ts`)。
+
+Shell と比べて失うもの: 要素接続ライフサイクル(Core の `observe()`/`dispose()` や start/stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成)、属性ベース設定、`:state()` CSS 反映(Shell/ElementInternals 専用機能)。向くのは純ロジックノード(fetch・websocket・timer・defined・raf など)で、要素結合ノード(intersection/resize の観測対象・camera プレビュー・fullscreen)では Shell が引き続き価値を持ちます。Core の構造サーフェス — `EventTarget` 継承・自己 dispatch 既定・`static wcBindable`・getter で読める observable・`observe()`/`dispose()`/`ready`・never-throw — は **wcstack I/O ノード横断の規範**([`docs/async-io-node-guidelines.md`](../../docs/async-io-node-guidelines.md) §3.9)で semver 保護されます。コンストラクタの**設定引数**だけはパッケージ個別です — 各パッケージ README のヘッドレス利用節を参照してください。
+
 ## JSX を使う(opt-in)
 
 `h` は古典的な JSX ファクトリの形なので、JSX は**使えるが同梱しない** — オプトインは利用者の選択であり、buildless 経路を抜けることを意味します(JSX はトランスパイル必須)。パッケージが出荷するのは土台(`h` + `Fragment`)のみで、`.tsx` も `jsx-runtime` 型も含みません。
@@ -332,7 +377,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 | **エラー契約** | `DisposedError` / `isDisposedError` | **Stable** — ブランドベース・realm セーフ。 |
 | **リソース** | `resource` / `streamResource` | **Stable**(概ね)。形は確定済み。ただし `streamResource` の協調キャンセル契約に注意(`source` は `AbortSignal` を必ず honor すること — [注意・制限](#注意制限)参照)。 |
 | **wc-bindable アダプタ** | `bindNode` / `nodeSource` | **Evolving / experimental** — 実行時挙動は安定だが、**型サーフェス**(`bindNode<NodeShape>`・`NodeShape`)はまだ調整余地あり。 |
-| **DOM レイヤ** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` | **Evolving / experimental** — 今すぐ使えるが、安定昇格までにシグネチャや要素ファクトリの形が変わりうる。 |
+| **DOM レイヤ** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` | **Evolving / experimental** — 今すぐ使えるが、安定昇格までにシグネチャや要素ファクトリの形が変わりうる。 |
 | **開発モード** | `globalThis.__WCS_DEV__` と各警告コード | **Experimental** — 診断専用。警告の集合や文言はいつでも変わりうる。本番では一切動かない。 |
 
 **deprecation ポリシー。** **1.x** の系列内では、**安定**な API は後方互換を維持します: 非互換な変更は、導入の最低 1 マイナーリリース前に deprecation として告知します。**evolving / experimental** とマークされた API は、マイナーリリースで変わりうる(シグネチャ・型の形・警告文言)ので、現在の形に依存する場合は厳密なバージョンを pin してください。
@@ -349,14 +394,14 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 
 ## ヘッドレス利用
 
-リアクティブコアは DOM 非依存です — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` はすべてプレーンな JS(Node・worker・テスト)で動きます。`document` に触れるのは `/dom` エントリ(`h` / `For` / `Index` / `SignalsElement`)だけです。
+リアクティブコアは DOM 非依存です — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` はすべてプレーンな JS(Node・worker・テスト)で動きます。`document` に触れるのは `/dom` エントリ(`h` / `For` / `Index` / `SignalsElement` / `mountNode`)だけです。I/O ノードパッケージの **Core** クラスはそれ自体が `wcBindable` を持つ `EventTarget` なので、完全に要素なしのパイプラインも組めます — [Core を直接束縛する](#core-を直接束縛する要素なし)参照。
 
 ### SSR / 非DOM: `./dom` エントリは DOM 無しで読み込める
 
 2 つのエントリは**評価時**の要件が異なります:
 
 - **`.` エントリ(`@wcstack/signals`)** — 完全に非 DOM。SSR・Node・Web Worker で DOM グローバル無しに評価・実行できます。
-- **`./dom` エントリ(`@wcstack/signals/dom`)** — DOM 無しでも**評価**できます: SSR 前処理(や worker)でヘッドレス再エクスポート目的に import しても `ReferenceError: HTMLElement is not defined` で落ちません。DOM に触れる*サーフェス* — `h` / `render` / `For` / `Index` と `SignalsElement` 基底 — は実際に**使用**する時点で DOM グローバルを**要求**します。
+- **`./dom` エントリ(`@wcstack/signals/dom`)** — DOM 無しでも**評価**できます: SSR 前処理(や worker)でヘッドレス再エクスポート目的に import しても `ReferenceError: HTMLElement is not defined` で落ちません。DOM に触れる*サーフェス* — `h` / `render` / `For` / `Index`・`SignalsElement` 基底・`mountNode`(DOM 無しで呼ぶと分かりやすい Error) — は実際に**使用**する時点で DOM グローバルを**要求**します。
 
 `SignalsElement` は `HTMLElement` を遅延解決します: 基底クラスはモジュールロード時ではなく初回のサブクラス化/使用時に構築されます。よってブラウザでは `class X extends SignalsElement {}` が従来どおり動き、非 DOM 文脈での `import "@wcstack/signals/dom"` も安全です。両環境で動くコードでは基底を明示取得する `createSignalsElement()` を使ってください — 呼び出し時に(memoize して)基底を構築し、`HTMLElement` が無ければ生の `ReferenceError` ではなく**分かりやすい Error** を投げます:
 
@@ -371,7 +416,7 @@ class MyEl extends Base { protected render() { /* … */ } }
 
 - **言語ターゲット: ES2022。** 出荷バンドルはモダン構文(private class field・`??`・top-level `const`/`class`)とランタイム機能を使います: `queueMicrotask`(effect スケジューリング)・`AbortController` / `AbortSignal`(`resource` / `streamResource` のキャンセル)・`WeakMap` / `WeakSet`(`bindNode` / DOM キャッシュ)、そして `streamResource` のみ `ReadableStream` + async iteration。
 - **最低ブラウザ(evergreen):** Chrome / Edge **94+**・Firefox **90+**・**Safari 16.4+**(現実的な下限 — `ReadableStream` の async iteration・Custom Elements・private field 対応がこのあたりで揃う)。Custom Elements(`SignalsElement`)には実 DOM が必要ですが、それ以外は DOM 無しで動きます。
-- **2 エントリ・2 環境。** `.` エントリ(`@wcstack/signals`: コア / `resource` / `streamResource` / `bindNode` / `nodeSource`)は**非 DOM** — SSR・Node・Web Worker で動きます。`./dom` エントリ(`@wcstack/signals/dom`: `h` / `render` / `For` / `Index` / `SignalsElement`)も DOM 無しで**評価**できるようになりました(SSR 前処理での import で落ちない)が、DOM に触れるサーフェスは使用時に DOM グローバル(`document`・`HTMLElement`)を要求します。[SSR / 非DOM](#ssr--非dom-dom-エントリは-dom-無しで読み込める)参照。
+- **2 エントリ・2 環境。** `.` エントリ(`@wcstack/signals`: コア / `resource` / `streamResource` / `bindNode` / `nodeSource`)は**非 DOM** — SSR・Node・Web Worker で動きます。`./dom` エントリ(`@wcstack/signals/dom`: `h` / `render` / `For` / `Index` / `SignalsElement` / `mountNode`)も DOM 無しで**評価**できるようになりました(SSR 前処理での import で落ちない)が、DOM に触れるサーフェスは使用時に DOM グローバル(`document`・`HTMLElement`)を要求します。[SSR / 非DOM](#ssr--非dom-dom-エントリは-dom-無しで読み込める)参照。
 
 ## バンドルサイズ
 

@@ -19,6 +19,8 @@
 
 import { signal, effect, onCleanup, createRoot, hasOwner, ReadSignal, WriteSignal } from "./reactive.js";
 import { isDev, warnDev } from "./dev.js";
+import { bindNode } from "./bindNode.js";
+import type { BoundNode, NodeShape, DefaultNodeShape, WcBindableDescriptor } from "./bindNode.js";
 
 // `@wcstack/signals/dom` re-exports the headless core (signals, resource,
 // streamResource, bindNode, nodeSource) so UI code can import everything from one
@@ -1017,4 +1019,117 @@ function toNodes(value: unknown): Node[] {
   };
   visit(value);
   return out;
+}
+
+// --- mountNode: create + bind + mount a headless wc-bindable node -------------
+//
+// `bindNode` adapts an EXISTING element, which forces its caller to guarantee the
+// custom element class is already registered (the descriptor is read from
+// `el.constructor.wcBindable` at call time — an un-upgraded element has none).
+// `mountNode` closes that gap for the common signals shape where the app OWNS its
+// headless IO nodes: it creates the element AFTER the definition exists (so it is
+// upgraded at construction), binds it, then connects it. The recommended pairing
+// is a side-effect import of the package's `/auto` entry in the same module —
+// module evaluation order then guarantees the definition:
+//
+//   import "@wcstack/fetch/auto";
+//   const fetcher = mountNode("wcs-fetch", { attrs: { url: "/api/people" } });
+//   fetcher.signals.value.get();
+//
+// The internal order is deliberate: attributes are set BEFORE connect (shells read
+// their config in `connectedCallback`), and the adapter subscribes BEFORE connect,
+// so an event fired from `connectedCallback` is already observed — the missed-event
+// window is structurally zero, not merely closed by bindNode's re-seed. Like
+// `bindNode`, the adapter is NOT auto-registered with a reactive owner; teardown is
+// explicit via `unmount()` — to which `dispose()` is aliased, see MountedNode —
+// (compose with `onCleanup(() => m.unmount())` if the node should die with a
+// scope). See docs/signals-definition-timing.md for the full definition-timing
+// contract (optional packages via dynamic import, the remaining whenDefined /
+// <wcs-defined> territory).
+
+export interface MountNodeOptions {
+  /**
+   * Attributes set on the element BEFORE it is connected (declarative pre-connect
+   * config, e.g. `{ url: "/api", timeout: 5000 }`). HTML boolean-attribute
+   * semantics: `true` sets an empty attribute, `false` omits it; other values are
+   * stringified.
+   */
+  attrs?: Record<string, string | number | boolean>;
+  /** Parent to append the element to. Default: `document.body`. */
+  parent?: Node;
+  /**
+   * Explicit wc-bindable descriptor forwarded to `bindNode`. When given, the
+   * tag-definition check is skipped — the escape hatch for binding a
+   * non-custom-element tag, mirroring `bindNode`'s second parameter.
+   */
+  descriptor?: WcBindableDescriptor;
+}
+
+export interface MountedNode<S extends NodeShape = DefaultNodeShape> extends BoundNode<S> {
+  /** The created element (connected until `unmount()`). */
+  readonly el: HTMLElement;
+  /**
+   * Full teardown: dispose the adapter AND remove the element from the DOM
+   * (disconnect stops the shell's IO). Idempotent. On a `MountedNode`,
+   * `dispose()` is an alias of this — mountNode owns the element's lifecycle,
+   * so the package-wide teardown verb must not leave a connected element with
+   * live IO behind (a silent leak for callers habituated to `bindNode`).
+   */
+  unmount(): void;
+}
+
+export function mountNode<S extends NodeShape = DefaultNodeShape>(
+  tagName: string,
+  options: MountNodeOptions = {},
+): MountedNode<S> {
+  // Call-time DOM guard (not module-time): `./dom` must evaluate in non-DOM realms
+  // (SSR pre-pass / worker) — same contract (and message shape) as `createSignalsElement`.
+  if (typeof document === "undefined" || typeof customElements === "undefined") {
+    throw new Error(
+      "@wcstack/signals/dom: mountNode requires a DOM (document/customElements is not defined). " +
+        "It creates and connects a live element, so it is browser-only; inject a DOM " +
+        "(e.g. happy-dom) before calling, or keep headless work on `@wcstack/signals`.",
+    );
+  }
+  const { attrs, parent, descriptor } = options;
+  // Custom element names are lowercase; the registry is exact-key while
+  // createElement ASCII-lowercases — normalize once so mountNode(el.tagName)
+  // (uppercase in HTML documents) hits the same definition the element would.
+  const tag = tagName.toLowerCase();
+  // Fail loud with the actual cause. Without this, bindNode's generic "no
+  // wc-bindable descriptor" error hides that the tag simply isn't defined yet.
+  if (!descriptor && !customElements.get(tag)) {
+    throw new Error(
+      `mountNode: "<${tag}>" is not defined. Import its defining module first (e.g. a side-effect ` +
+        `\`import "@wcstack/<pkg>/auto"\` in this module — evaluation order then guarantees the definition). ` +
+        `For a tag loaded by someone else, await customElements.whenDefined("${tag}") or gate with ` +
+        `<wcs-defined> before mounting. Binding a non-custom-element tag requires an explicit \`descriptor\`.`,
+    );
+  }
+
+  const el = document.createElement(tag);
+  if (attrs) {
+    for (const [name, value] of Object.entries(attrs)) {
+      if (value === false) {
+        continue; // boolean-attribute semantics: false = absent
+      }
+      el.setAttribute(name, value === true ? "" : String(value));
+    }
+  }
+  const bound = bindNode<S>(el, descriptor);
+  (parent ?? document.body).appendChild(el);
+  const unmount = (): void => {
+    bound.dispose();
+    el.remove();
+  };
+  return {
+    ...bound,
+    el,
+    unmount,
+    // Override the inherited adapter-only dispose(): on a MountedNode it would be
+    // a silent PARTIAL teardown (signals inert, but the created element stays
+    // connected with its shell's IO still running). mountNode owns the element,
+    // so dispose === unmount.
+    dispose: unmount,
+  };
 }

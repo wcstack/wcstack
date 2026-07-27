@@ -205,6 +205,8 @@ await share.share({ title: "Article", url: location.href });
 share.dispose(); // 進行中の share() を無効化し、stale な resolve を破棄する
 ```
 
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+
 ## ライセンス
 
 MIT
