@@ -16,9 +16,26 @@ React / Vue variant（Vite 使用）のみです。
 
 **script の順序**: I/O ノード系パッケージを `@wcstack/state` より*先*に並べて
 ください。module script は文書順で実行されるため、state がバインディングを
-確立する時点で全カスタム要素の define が保証されます（state は未 define 要素
-へのバインディングを `customElements.whenDefined` で保留し、クラスが揃った時点で
-初期同期を確定させるため、この順序は必須要件ではなくベストプラクティスです）。
+確立する時点で全カスタム要素の define が保証されます。これは体裁の問題では
+ありません:
+
+- **プロパティ / spread バインディング**は、未 define 要素に対しては
+  `customElements.whenDefined` で保留され、クラスが揃った時点で*最新値*で
+  再適用されます。取りこぼしはありません。
+- **command-token の emit はリプレイされません**。購読も同じく保留されるため、
+  state を先に読み込むと、CDN が遅い（あるいは片方だけ失敗した）ときに
+  「UI は配線済みだが I/O 要素は未 define」という窓が開き、その間のクリックで
+  撃った `$command.x.emit()` は購読者ゼロのまま黙って捨てられます。
+
+state を最後に読み込めばこの窓は閉じます — 全要素が define されるまで UI には
+何も配線されないからです。順序を制御できない場合（大きなページに断片を貼る、
+`@wcstack/autoloader` 経由でタグが後から来る等）は、emit する UI 側を
+[`@wcstack/defined`](../packages/defined/) でゲートしてください。
+`<wcs-defined>` の `pending` を `disabled:` に束ねれば、購読が存在する前に
+ボタンを押せなくなります。ハンドラ内で `customElements.whenDefined()` を
+await するのは避けてください — あの Promise は「永久に register されない
+タグ」に対して reject しないため、import 失敗時にハンドラが永久停止します
+（[`state-tilt-maze/`](state-tilt-maze/) 参照）。
 
 ## デモ一覧
 
@@ -37,7 +54,7 @@ React / Vue variant（Vite 使用）のみです。
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | 任意の静的サーバー（secure context 必須） | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
 | [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state（`$streams`）+ network — 1 フィード・2 流儀 | `node examples/state-sse-dashboard/server.js` | :3000 |
-| [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + state（センサーゲーム） | 任意の静的サーバー（secure context 必須） | — |
+| [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + defined + state（センサーゲーム） | 任意の静的サーバー（secure context 必須） | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × `state-tilt-maze` と同じ 4 センサーノード（コア差し替え比較） | 任意の静的サーバー（secure context 必須） | — |
 | [`ssr/`](ssr/) | @wcstack/server（SSR + ハイドレーション） | `cd examples/ssr && npm install && node server.js` | :3001 |

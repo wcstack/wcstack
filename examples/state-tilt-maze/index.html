@@ -41,16 +41,20 @@
     .notes li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
   </style>
 
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them. -->
   <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+  <!-- The readiness gate over the two sensor tags above (see <wcs-defined> below). -->
+  <script type="module" src="https://esm.run/@wcstack/defined/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 
 <h1>wcstack: tilt ball maze</h1>
-<p class="lead">tilt + accelerometer + raf + wakelock + state — tilt your phone to roll the ball to the flag. Even the game loop is a declarative tag.</p>
+<p class="lead">tilt + accelerometer + raf + wakelock + defined + state — tilt your phone to roll the ball to the flag. Even the game loop and the "are the sensor packages loaded yet?" gate are declarative tags.</p>
 
 <!-- ============================================================
      App State — maze data, physics, and page logic
@@ -113,6 +117,13 @@
 
       wakelockHeld: false,
 
+      // Sensor-package readiness, watched by <wcs-defined> below. Seeded with
+      // "both still pending" so Start is disabled on the very first paint,
+      // before the gate reports.
+      sensorsReady: false,
+      sensorsPending: ["wcs-tilt", "wcs-accelerometer"],
+      sensorsMissing: [],
+
       // One command token fans out to every sensor-enabling command — the
       // subscriptions are declared on the I/O nodes below (command.* bindings).
       $commandTokens: ["startSensors"],
@@ -145,9 +156,20 @@
       get timeText() { return (this.timeMs / 1000).toFixed(1) + " s"; },
       get controlText() {
         if (this.sensorActive) return "control: device tilt";
+        if (this.sensorsFailed) return "control: drag (sensor packages failed to load)";
         if (this.tiltPermission === "denied") return "control: drag (tilt permission denied)";
         return "control: drag the board";
       },
+
+      // --- sensor-package readiness (from <wcs-defined>) ------------------
+      // Start is held ONLY while the gate is still resolving. A package that
+      // times out lands in `missing`, which enables Start anyway: the drag
+      // fallback is a designed feature of this game, so a failed sensor import
+      // must never lock the player out. (`defined` alone would do exactly
+      // that — hence the gate is on `pending`, not on `defined`.)
+      get sensorsResolving() { return this.sensorsPending.length > 0; },
+      get sensorsFailed() { return this.sensorsMissing.length > 0; },
+      get startLabel() { return this.sensorsResolving ? "Loading sensors…" : "Start"; },
       get wakeText() { return this.wakelockHeld ? "screen: kept awake" : "screen: normal"; },
 
       // --- game loop (one step per <wcs-raf> frame) -----------------------
@@ -215,14 +237,21 @@
       // subscription is simply silent (and on every other platform
       // requestPermission() resolves "granted" immediately). Both sensors
       // are best-effort — on failure the drag fallback plays on.
-      // The whenDefined gate closes a slow-CDN race: command.* subscriptions
-      // are deferred until the custom element is defined, and an emit() fired
-      // before that has no subscribers (tokens are not replayed). Awaiting is
-      // gesture-safe — user activation is a time window, not the synchronous
-      // task, so requestPermission still runs inside it.
-      async startGame() {
-        await Promise.all(["wcs-tilt", "wcs-accelerometer"]
-          .map((t) => customElements.whenDefined(t)));
+      // No await here, and that is the point. command.* subscriptions are
+      // deferred until the custom element is defined, and an emit() fired
+      // before that has no subscribers (tokens are not replayed) — so the
+      // emit has to happen after the sensor packages have registered. The
+      // <wcs-defined> gate below expresses that as a disabled button instead
+      // of an await inside the handler, which buys two things:
+      //   1. no load-failure hang. customElements.whenDefined() never rejects
+      //      for a tag that is never registered, so awaiting it would park
+      //      this handler FOREVER on a failed CDN fetch — taking the drag
+      //      fallback down with it. <wcs-defined>'s timeout turns that case
+      //      into `missing`, and Start becomes clickable in drag-only mode.
+      //   2. the handler stays fully synchronous, which is the safest shape
+      //      for iOS's gesture-gated requestPermission().
+      startGame() {
+        // A no-op if the sensor tags never registered — the drag fallback plays on.
         this.$command.startSensors.emit();
         this.restart();
       },
@@ -277,6 +306,17 @@
      across tab switches is handled inside the node. -->
 <wcs-wakelock data-wcs="active: isPlaying; held: wakelockHeld"></wcs-wakelock>
 
+<!-- Readiness gate for the two sensor packages. It watches TAG REGISTRATION,
+     not the sensors themselves: until <wcs-tilt> / <wcs-accelerometer> are
+     defined, their command.* subscriptions do not exist yet and a startSensors
+     emit would be dropped (tokens are not replayed) — so Start stays disabled.
+     timeout=5000 is what CSS :not(:defined) and a bare whenDefined() cannot do:
+     a package that never arrives moves into `missing` instead of pending
+     forever, and Start unlocks in drag-only mode. A late arrival is still
+     promoted back out of `missing`, so a merely slow CDN self-heals. -->
+<wcs-defined tags="wcs-tilt,wcs-accelerometer" timeout="5000"
+  data-wcs="defined: sensorsReady; pending: sensorsPending; missing: sensorsMissing"></wcs-defined>
+
 <!-- ============================================================
      HUD
      ============================================================ -->
@@ -308,7 +348,9 @@
       <p>Tilt your phone to roll the ball to the flag ⚑.<br>
         Avoid the holes. Shake to restart.<br>
         No sensors? Drag on the board instead.</p>
-      <button type="button" data-wcs="onclick: startGame">Start</button>
+      <!-- Held until <wcs-defined> settles, so the tap can never land before the
+           sensor tags' command.* subscriptions exist. -->
+      <button type="button" data-wcs="onclick: startGame; disabled: sensorsResolving; textContent: startLabel"></button>
     </div>
   </template>
 
@@ -334,6 +376,7 @@
   <li>iOS grants tilt via the Start button's tap (gesture-gated permission, absorbed by <code>&lt;wcs-tilt&gt;</code>).</li>
   <li>Shake detection uses <code>&lt;wcs-accelerometer&gt;</code> (Chromium/Android); elsewhere the Retry button covers it.</li>
   <li>Desktop: drag the board, or emulate orientation in DevTools &gt; Sensors.</li>
+  <li>Start is disabled until <code>&lt;wcs-defined&gt;</code> settles. Block <code>esm.run/@wcstack/tilt</code> in DevTools &gt; Network to watch the 5s timeout fire: Start unlocks anyway and the HUD reports drag-only control.</li>
 </ul>
 
 </body>

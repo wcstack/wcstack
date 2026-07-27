@@ -16,10 +16,26 @@ single `@wcstack/signals/dom` entry) — except the React/Vue variants of
 
 **Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
 scripts execute in document order, so this guarantees every custom element is
-defined before state attaches its bindings. (state defers a binding on a
-not-yet-defined element via `customElements.whenDefined` and settles its initial
-sync once the class arrives, so this ordering is a best practice rather than a
-hard requirement.)
+defined before state attaches its bindings — and the guarantee is worth more
+than tidiness:
+
+- A **property / spread binding** on a not-yet-defined element is deferred via
+  `customElements.whenDefined` and re-applied with the *latest* value once the
+  class arrives, so nothing is lost there.
+- A **command-token emit is not replayed**. Its subscription is deferred the same
+  way, so if state is wired first and a slow (or failed) CDN fetch leaves an I/O
+  element undefined, a click that fires `$command.x.emit()` inside that window
+  reaches zero subscribers and is silently dropped.
+
+Loading state last closes that window: nothing is wired to the UI until every
+element is defined. When you cannot control the order — a snippet pasted into a
+larger page, or tags arriving through `@wcstack/autoloader` — gate the control
+that emits with [`@wcstack/defined`](../packages/defined/): bind
+`<wcs-defined>`'s `pending` to a `disabled:` and the button cannot be clicked
+before the subscriptions exist. Prefer it over awaiting
+`customElements.whenDefined()` inside the handler, which never rejects for a tag
+that is never registered and so parks the handler forever on a failed import.
+See [`state-tilt-maze/`](state-tilt-maze/).
 
 ## Demo list
 
@@ -38,7 +54,7 @@ hard requirement.)
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | any static server (secure context) | — |
 | [`state-search/`](state-search/) | fetch + debounce + state | `node examples/state-search/server.js` | :3000 |
 | [`state-sse-dashboard/`](state-sse-dashboard/) | sse + state (`$streams`) + network — one feed, two idioms | `node examples/state-sse-dashboard/server.js` | :3000 |
-| [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + state (sensor game) | any static server (secure context) | — |
+| [`state-tilt-maze/`](state-tilt-maze/) | tilt + accelerometer + raf + wakelock + defined + state (sensor game) | any static server (secure context) | — |
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × the same 4 sensor nodes as `state-tilt-maze` (core swap comparison) | any static server (secure context) | — |
 | [`ssr/`](ssr/) | @wcstack/server (SSR + hydration) | `cd examples/ssr && npm install && node server.js` | :3001 |

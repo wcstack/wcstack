@@ -33,9 +33,13 @@
     registers) until you retry — so you can see <wcs-defined> distinguish
     "still loading" from "load failed" via its timeout. No setTimeout glue.
   -->
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them.
+       (This is about the wcstack tags only — demo-chart / demo-table are the
+       tags this demo deliberately registers late.) -->
   <script type="module" src="https://esm.run/@wcstack/defined/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 

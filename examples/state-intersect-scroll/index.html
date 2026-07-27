@@ -34,9 +34,11 @@
     wcs-intersect { display: block; height: 1px; }
   </style>
 
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them. -->
   <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/intersection/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 

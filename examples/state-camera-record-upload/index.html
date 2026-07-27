@@ -31,10 +31,12 @@
     .banner { padding: 0.85rem 1.1rem; border-radius: 8px; font-size: 0.9rem; background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
   </style>
 
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them. -->
   <script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/camera/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 

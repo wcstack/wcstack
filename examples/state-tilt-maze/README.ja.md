@@ -1,11 +1,11 @@
-# tilt + accelerometer + raf + wakelock デモ（ボール迷路）
+# tilt + accelerometer + raf + wakelock + defined デモ（ボール迷路）
 
 木製の迷路おもちゃ、あれの wcstack 版です。スマホを傾けてボールを転がし、
-4 つの穴を避けて旗までたどり着く。5 パッケージすべてに本物の役割があり、
-**ゲームループまでもが宣言的なタグ**です。
+4 つの穴を避けて旗までたどり着く。6 パッケージすべてに本物の役割があり、
+**ゲームループもロードゲートも宣言的なタグ**です。
 
-> 同じゲームの `@wcstack/signals` コア版もあります — 迷路も I/O ノード
-> （無改変）も同一: コア差し替えで何が変わるかの比較は
+> 同じゲームの `@wcstack/signals` コア版もあります — 迷路も 4 つのセンサー
+> I/O ノード（無改変）も同一: コア差し替えで何が変わるかの比較は
 > [`examples/signals-tilt-maze`](../signals-tilt-maze/) を参照。
 
 | パッケージ | 役割 |
@@ -14,6 +14,7 @@
 | `@wcstack/raf` | `<wcs-raf>` が 1 フレーム = 1 物理ステップを駆動（一級の `dt` 付き） |
 | `@wcstack/accelerometer` | シェイク検出（\|accel\| が 9.8 m/s² から大きく乖離）→ リスタート |
 | `@wcstack/wakelock` | `phase === "playing"` の**あいだだけ**画面を消灯させない |
+| `@wcstack/defined` | センサータグが register するまで Start を抑制。timeout 付きなので、import 失敗時はハングせず縮退する |
 | `@wcstack/state` | 物理・衝突・フェーズ管理・描画のすべて |
 
 ## はじめかた
@@ -67,14 +68,24 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD チ
   `$command.startSensors` トークンを 1 回 emit するだけ。各要素は自分の
   メソッドを HTML 側で購読しています（`<wcs-tilt>` に
   `command.requestPermission` + `command.start`、`<wcs-accelerometer>` に
-  `command.start`）— state は DOM に一切触れません。emit の前に
-  `whenDefined` ゲートを挟んでいます（command 購読は要素定義まで遅延され、
-  それより早い emit は購読者ゼロで空撃ちになるため。user activation は
-  時間窓なので、この await を挟んでも iOS の許可ゲートは満たされます）。
-  許可を await せずに `start()` を撃っても安全です: ゲートはイベント
-  **配送**側にあってリスナー登録側には無いため、未許可の購読はただ沈黙
-  するだけです（それ以外の環境では `requestPermission()` が即 `"granted"`
-  を返します）。
+  `command.start`）— state は DOM に一切触れません。許可を await せずに
+  `start()` を撃っても安全です: ゲートはイベント**配送**側にあって
+  リスナー登録側には無いため、未許可の購読はただ沈黙するだけです
+  （それ以外の環境では `requestPermission()` が即 `"granted"` を返します）。
+- **ロードゲートは `await` ではなくタグ。** command 購読は要素定義まで遅延され、
+  それより早い emit は購読者ゼロの空撃ちになる（トークンはリプレイされない）ため、
+  `<wcs-tilt>` / `<wcs-accelerometer>` の register 前に emit してはいけません。
+  `<wcs-defined>` はこれをボタンの `disabled: sensorsResolving` として表現します。
+  ハンドラ内で `customElements.whenDefined()` を await するより 2 点優れています:
+  **(1)** あの Promise は「永久に register されないタグ」に対して reject しない —
+  CDN 取得に失敗するとハンドラが永久に停止し、ドラッグフォールバックまで道連れに
+  なります。`timeout="5000"` ならタグは `missing` に落ち、Start はドラッグ専用
+  モードで解放されます（遅れて到着した場合は `missing` から昇格し直すので、
+  単に遅いだけの CDN は自己修復します）。**(2)** `startGame()` が完全に同期の
+  ままでいられる — iOS のジェスチャー依存 `requestPermission()` にとって最も
+  安全な形です。ゲートを `defined` ではなく `pending` に掛けている点にも注意:
+  `defined` に掛けると、ドラッグで遊べる設計なのにセンサー無しのプレイヤーを
+  締め出してしまいます。
 - **シェイクは導出シグナル。** `<wcs-accelerometer>` は `x/y/z` を流すだけ。
   `step()` が `|accel|` を計算し、重力（9.81 m/s²）からの大きな乖離を
   シェイクとみなします（クールダウン 1.2 秒）。デスクトップではセンサーが
