@@ -424,8 +424,8 @@ class MyEl extends Base { protected render() { /* … */ } }
 
 | エントリ | gzip |
 |---|---|
-| 共有リアクティブコア chunk(`core-*.esm.min.js`) | **≈ 2.5 KB** |
-| `./dom` レイヤ chunk(`dom.esm.min.js`・共有コアの上乗せ分) | **≈ 2.1 KB** |
+| 共有リアクティブコア chunk(`core-*.esm.min.js`) | **≈ 3.1 KB** |
+| `./dom` レイヤ chunk(`dom.esm.min.js`・共有コアの上乗せ分) | **≈ 3.8 KB** |
 
 公開される両エントリは**1 つ**の共有コア chunk を import する([Buildless](#buildlessimport-map)参照)ので、両方使うページでもコアの分は一度だけです。`package.json` は `"sideEffects": false` を宣言するので、import しないものはバンドラが tree-shake で除去します。
 
