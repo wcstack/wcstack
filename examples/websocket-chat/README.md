@@ -11,7 +11,7 @@ the custom element, and each stack only decides how to *render* its state.
 | [`state/`](state/) | `@wcstack/state` (`data-wcs` binding) | 3300 | none (CDN) |
 | [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | 3305 | none (CDN) |
 | [`react/`](react/) | React 19 + `@wc-bindable/react` | 3301 | Vite |
-| [`vue/`](vue/) | Vue 3 + native custom-element binding | 3302 | Vite |
+| [`vue/`](vue/) | Vue 3 + `@wc-bindable/vue` | 3302 | Vite |
 
 `shared/` holds the demo server (static files + `/ws` endpoint), the `ws`
 dependency and the common stylesheet. When copying a single variant out of this

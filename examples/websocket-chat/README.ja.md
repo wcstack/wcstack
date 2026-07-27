@@ -11,7 +11,7 @@ WebSocket サーバーの上に 5 通りの方法で実装したデモ群です�
 | [`state/`](state/) | `@wcstack/state` (`data-wcs` バインディング) | 3300 | 不要 (CDN) |
 | [`signals/`](signals/) | `@wcstack/signals` (`bindNode()` + `h()`/`For()`) | 3305 | 不要 (CDN) |
 | [`react/`](react/) | React 19 + `@wc-bindable/react` | 3301 | Vite |
-| [`vue/`](vue/) | Vue 3 + ネイティブなカスタム要素バインディング | 3302 | Vite |
+| [`vue/`](vue/) | Vue 3 + `@wc-bindable/vue` | 3302 | Vite |
 
 `shared/` にはデモサーバー（静的配信 + `/ws` エンドポイント）、`ws` 依存、
 共通スタイルシートが入っています。1 つの variant だけをリポジトリ外へコピー
