@@ -129,6 +129,8 @@ createRoot(() => {
 
 A full, runnable version of this lives in [`examples/signals-live-search`](../../examples/signals-live-search/README.md).
 
+> The `await customElements.whenDefined(…)` above is the shape for binding an element **you did not load** (and it waits forever if the package never arrives). When your app owns the node, prefer a side-effect import plus [`mountNode`](#mountnode--create-bind-and-mount-a-headless-node-wcstacksignalsdom) — no await, and a load failure is a loud module error instead of a silent hang.
+
 ### 6. Keyed lists — `For` / `Index`
 
 A bare reactive child (`() => items.map(render)`) rebuilds its whole subtree on every change. For lists, use `For` (keyed by value/identity) or `Index` (keyed by position) — each keeps a stable DOM row per item and reconciles in place, so reordering moves rows instead of rebuilding them (preserving per-row DOM, focus, and input state). Each row runs under its own ownership scope, so a removed row disposes exactly its effects.
@@ -210,6 +212,7 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 | `Index<T>` | `(list, each) => ListView` | Position-keyed list. `each(item: () => T, index: number)` returns one Node. Rows are reused per slot (the value at a slot updates via a signal); grows/shrinks at the tail. |
 | `SignalsElement` | `abstract` base (lazy `extends HTMLElement`) | Lifecycle base; implement `render()`, optionally `getMountPoint()`. `HTMLElement` is resolved lazily so the `./dom` module evaluates in non-DOM environments — see [SSR / non-DOM](#ssr--non-dom-the-dom-entry-loads-without-a-dom). |
 | `createSignalsElement` | `() => SignalsElementClass` | Build (memoized) the `SignalsElement` base at call time. Resolves `HTMLElement` when called; throws a clear error if no DOM. The SSR-safe way to obtain the base. |
+| `mountNode` | `(tagName, { attrs?, parent?, descriptor? }?) => MountedNode` | Create a **defined** custom element, set `attrs`, `bindNode` it, then append (default `document.body`). Returns the full `BoundNode` plus `el` / `unmount()`. Throws a descriptive error if the tag isn't defined yet — see [`mountNode`](#mountnode--create-bind-and-mount-a-headless-node-wcstacksignalsdom). |
 
 `setProp` rules: `style` accepts a string or an object (camelCase / kebab-case / `--custom` keys); `class` / `className` are set as the `class` **attribute** (works for SVG too; `null`/`false` clear it); a key that resolves to a writable DOM property is assigned as a property (with `null`/`undefined` normalized to `""` so a string prop like `id`/`src` clears instead of landing the literal `"null"`); otherwise it's an attribute (`true` → empty attr, `null`/`false` → removed).
 
@@ -282,6 +285,31 @@ const r = resource(
 id.set(2); // aborts the in-flight fetch via the node's abort command, then refetches
 ```
 
+#### `mountNode` — create, bind, and mount a headless node (`@wcstack/signals/dom`)
+
+`bindNode` adapts an element that already exists — which makes **you** responsible for definition timing: the descriptor is read from `el.constructor.wcBindable` at call time, and an un-upgraded element has none. When the app owns its headless IO nodes, `mountNode` removes that whole class of problems. Import the defining module, then create-bind-connect in one call: module evaluation order guarantees the definition — no `whenDefined`, no ordering coupling with the HTML.
+
+```typescript
+import "@wcstack/fetch/auto";                    // defines <wcs-fetch> — the module graph guarantees the order
+import { mountNode } from "@wcstack/signals/dom";
+
+const fetcher = mountNode("wcs-fetch", { attrs: { url: "/api/people" } });
+fetcher.signals.value.get();                     // the full BoundNode surface
+fetcher.el;                                      // the created element (connected)
+fetcher.unmount();                               // dispose() + remove the element
+```
+
+The internal order is the safety contract: `attrs` are set **before** connect (shells read their config in `connectedCallback`; `true` → empty attribute, `false` → omitted, other values stringified), and the adapter subscribes **before** connect, so an event fired from `connectedCallback` is already observed. `parent` defaults to `document.body`. An undefined tag throws a **descriptive error immediately** (vs. `whenDefined`'s silent forever-pending); an explicit `descriptor` skips the check (non-custom-element targets, mirroring `bindNode`). An **optional** package composes with dynamic import, which — unlike `whenDefined` — *rejects* on load failure:
+
+```typescript
+const tilt = signal(null);
+import("@wcstack/tilt/auto")
+  .then(() => tilt.set(mountNode("wcs-tilt")))
+  .catch(() => {/* degraded mode — the app keeps running */});
+```
+
+Like `bindNode`, the adapter is not tied to a reactive owner — teardown is explicit (`unmount()` is idempotent), composable with `onCleanup(() => fetcher.unmount())`. On a `MountedNode`, `dispose()` is an **alias of `unmount()`**: mountNode owns the element's lifecycle, so the package-wide teardown verb never leaves a connected element with live IO behind. See [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md) for the full definition-timing contract (which idiom for which loading situation).
+
 ## Using JSX (opt-in)
 
 `h` is the classic JSX factory shape, so JSX is **available but not shipped** — opting in is your choice and means leaving the buildless path (JSX must be transpiled). The package ships only the substrate (`h` + `Fragment`); there is no `.tsx` and no `jsx-runtime` types.
@@ -334,7 +362,7 @@ The package version is **1.x**, but the public surface is split into a **stable*
 | **Error contract** | `DisposedError` / `isDisposedError` | **Stable** — brand-based, realm-safe. |
 | **Resources** | `resource` / `streamResource` | **Stable** (mostly). The shapes are settled; note the `streamResource` cooperative-cancellation contract (the `source` MUST honor its `AbortSignal` — see [Notes & limitations](#notes--limitations)). |
 | **wc-bindable adapter** | `bindNode` / `nodeSource` | **Evolving / experimental** — runtime behaviour is stable, but the **typed surface** (`bindNode<NodeShape>`, `NodeShape`) may still be tuned. |
-| **DOM layer** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` | **Evolving / experimental** — usable today; signatures and the element factory shape may adjust before they are promoted to stable. |
+| **DOM layer** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` | **Evolving / experimental** — usable today; signatures and the element factory shape may adjust before they are promoted to stable. |
 | **Development mode** | `globalThis.__WCS_DEV__` + the warning codes | **Experimental** — diagnostics only; the set of warnings and their wording may change at any time. It never runs in production. |
 
 **Deprecation policy.** Within the **1.x** line, the **stable** APIs keep backward compatibility: any incompatible change is announced as a deprecation at least one minor release before it lands. APIs marked **evolving / experimental** may change in a minor release (signatures, type shapes, or warning wording) — pin an exact version if you depend on their current shape.
@@ -351,14 +379,14 @@ The package version is **1.x**, but the public surface is split into a **stable*
 
 ## Headless usage
 
-The reactive core has no DOM dependency — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` all work in plain JS (Node, workers, tests). Only the `/dom` entry (`h` / `For` / `Index` / `SignalsElement`) touches `document`.
+The reactive core has no DOM dependency — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` all work in plain JS (Node, workers, tests). Only the `/dom` entry (`h` / `For` / `Index` / `SignalsElement` / `mountNode`) touches `document`.
 
 ### SSR / non-DOM: the `./dom` entry loads without a DOM
 
 The two entries have distinct **evaluation-time** requirements:
 
 - **`.` entry (`@wcstack/signals`)** — fully non-DOM. It evaluates and runs in SSR, Node, and Web Workers with no DOM globals.
-- **`./dom` entry (`@wcstack/signals/dom`)** — **evaluates** without a DOM too: importing it for the headless re-exports in an SSR pre-pass (or a worker) no longer throws `ReferenceError: HTMLElement is not defined`. The DOM-touching *surface* — `h` / `render` / `For` / `Index` and the `SignalsElement` base — still **requires** DOM globals when actually **used**.
+- **`./dom` entry (`@wcstack/signals/dom`)** — **evaluates** without a DOM too: importing it for the headless re-exports in an SSR pre-pass (or a worker) no longer throws `ReferenceError: HTMLElement is not defined`. The DOM-touching *surface* — `h` / `render` / `For` / `Index`, the `SignalsElement` base, and `mountNode` (which throws a clear error when called without a DOM) — still **requires** DOM globals when actually **used**.
 
 `SignalsElement` resolves `HTMLElement` lazily: the base class is built on first subclass/use, not at module load. So `class X extends SignalsElement {}` still works as before in a browser, while `import "@wcstack/signals/dom"` is safe in a non-DOM context. To obtain the base explicitly (e.g. in code that runs in both), call `createSignalsElement()` — it builds the (memoized) base when called, and **throws a clear error** if there is no `HTMLElement`, instead of a raw `ReferenceError`:
 
@@ -373,7 +401,7 @@ class MyEl extends Base { protected render() { /* … */ } }
 
 - **Language target: ES2022.** The shipped bundles use modern syntax (private class fields, `??`, top-level `const`/`class`) and runtime features: `queueMicrotask` (effect scheduling), `AbortController` / `AbortSignal` (`resource` / `streamResource` cancellation), `WeakMap` / `WeakSet` (`bindNode` / DOM caches), and — for `streamResource` only — `ReadableStream` + async iteration.
 - **Minimum browsers (evergreen):** Chrome / Edge **94+**, Firefox **90+**, **Safari 16.4+** (the practical floor — `ReadableStream` async iteration and Custom Elements / private-field support all align around there). Custom Elements (`SignalsElement`) require a real DOM; everything else runs without one.
-- **Two entries, two environments.** The `.` entry (`@wcstack/signals`: core / `resource` / `streamResource` / `bindNode` / `nodeSource`) is **non-DOM** — it runs in SSR, Node, and Web Workers. The `./dom` entry (`@wcstack/signals/dom`: `h` / `render` / `For` / `Index` / `SignalsElement`) now also **evaluates** without a DOM (so an SSR pre-pass importing it does not crash), but its DOM-touching surface requires DOM globals (`document`, `HTMLElement`) when used. See [SSR / non-DOM](#ssr--non-dom-the-dom-entry-loads-without-a-dom).
+- **Two entries, two environments.** The `.` entry (`@wcstack/signals`: core / `resource` / `streamResource` / `bindNode` / `nodeSource`) is **non-DOM** — it runs in SSR, Node, and Web Workers. The `./dom` entry (`@wcstack/signals/dom`: `h` / `render` / `For` / `Index` / `SignalsElement` / `mountNode`) now also **evaluates** without a DOM (so an SSR pre-pass importing it does not crash), but its DOM-touching surface requires DOM globals (`document`, `HTMLElement`) when used. See [SSR / non-DOM](#ssr--non-dom-the-dom-entry-loads-without-a-dom).
 
 ## Bundle size
 
