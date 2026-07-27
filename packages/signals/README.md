@@ -310,6 +310,23 @@ import("@wcstack/tilt/auto")
 
 Like `bindNode`, the adapter is not tied to a reactive owner — teardown is explicit (`unmount()` is idempotent), composable with `onCleanup(() => fetcher.unmount())`. On a `MountedNode`, `dispose()` is an **alias of `unmount()`**: mountNode owns the element's lifecycle, so the package-wide teardown verb never leaves a connected element with live IO behind. See [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md) for the full definition-timing contract (which idiom for which loading situation).
 
+#### Binding a Core directly (no element)
+
+Every wcstack IO node splits into a framework-agnostic **Core** and a custom-element **Shell** — and the Core alone is a complete wc-bindable node: it `extends EventTarget`, dispatches its events on itself by default (`constructor(target?)`, `target ?? this`), exposes its observable properties as getters, and carries `static wcBindable` — so `bindNode` resolves the descriptor from `core.constructor` with no second argument:
+
+```typescript
+import { FetchCore } from "@wcstack/fetch";
+
+const core = new FetchCore();
+const bound = bindNode(core);   // descriptor read from FetchCore.wcBindable — no element involved
+core.fetch("/api/user");        // commands are plain methods
+bound.signals.value.get();
+```
+
+Because no custom element exists, the **definition-timing question disappears entirely**: nothing touches the `customElements` registry — no `whenDefined`, no upgrade to wait for; the import is the only dependency. This is also this package's founding demonstration — the adapter was validated against an unmodified `FetchCore` before any element was involved (`__tests__/integration.fetchCore.test.ts`).
+
+Relative to the Shell you give up: element-connected lifecycle (drive the Core's `observe()`/`dispose()` — or its start/stop commands — yourself, e.g. `onCleanup(() => core.dispose())`), attribute-based config, and `:state()` CSS reflection (a Shell/ElementInternals feature). It fits pure-logic nodes (fetch, websocket, timer, defined, raf, …); element-coupled nodes (intersection/resize targets, camera preview, fullscreen) keep earning their Shell. Note that per-package **Core constructor signatures are not yet a normatively stable adopter surface** — the Shell remains each package's primary documented interface; pin exact versions if you build on Core signatures (see [Stability](#stability)).
+
 ## Using JSX (opt-in)
 
 `h` is the classic JSX factory shape, so JSX is **available but not shipped** — opting in is your choice and means leaving the buildless path (JSX must be transpiled). The package ships only the substrate (`h` + `Fragment`); there is no `.tsx` and no `jsx-runtime` types.
@@ -379,7 +396,7 @@ The package version is **1.x**, but the public surface is split into a **stable*
 
 ## Headless usage
 
-The reactive core has no DOM dependency — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` all work in plain JS (Node, workers, tests). Only the `/dom` entry (`h` / `For` / `Index` / `SignalsElement` / `mountNode`) touches `document`.
+The reactive core has no DOM dependency — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` all work in plain JS (Node, workers, tests). Only the `/dom` entry (`h` / `For` / `Index` / `SignalsElement` / `mountNode`) touches `document`. The IO-node packages' **Core** classes are themselves `EventTarget`s carrying `wcBindable`, so fully element-free pipelines are possible — see [Binding a Core directly](#binding-a-core-directly-no-element).
 
 ### SSR / non-DOM: the `./dom` entry loads without a DOM
 

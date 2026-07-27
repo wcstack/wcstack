@@ -15,8 +15,9 @@
 | アプリが**必須**ノードを自分でロードする | `import "@wcstack/<pkg>/auto"`（副作用 import）+ `mountNode(tag)` | モジュールグラフごと評価失敗 = **うるさく死ぬ**（正しい） |
 | アプリが**オプショナル**ノードを自分でロードする | `import("@wcstack/<pkg>/auto").then(() => mountNode(tag)).catch(縮退)` | `import()` が **reject** = パッケージ単位の失敗境界 |
 | **自分がロードしないタグ**に束縛する（autoloader 経由・state と混在するページ・第三者のスクリプト） | `await customElements.whenDefined(tag)` の後に `bindNode(el)`、または `<wcs-defined>` でゲート | whenDefined は**永久保留**（reject しない）— UX が必要なら `<wcs-defined>` の timeout で `missing` 化 |
+| 純ロジックノードを **JS だけ**で使う（要素・`:state()`・state 併用が不要） | **Core 直接**: `import { XxxCore }` + `bindNode(new XxxCore())`（§3.4） | import の失敗規則そのまま（static = 評価失敗・dynamic = reject）。**レジストリ非関与 = 定義タイミング問題が存在しない** |
 
-決定表の含意: `whenDefined` は「第一推奨」ではなく「自分がロードしないタグ専用の最後の手段」。アプリがノードを所有するなら、順序保証は実行時の協調ではなく **module graph（ES モジュールの評価順保証）** に載せる。
+決定表の含意: `whenDefined` は「第一推奨」ではなく「自分がロードしないタグ専用の最後の手段」。アプリがノードを所有するなら、順序保証は実行時の協調ではなく **module graph（ES モジュールの評価順保証）** に載せる。さらに要素そのものが不要なら、Core 直接利用（§3.4 の床3）で定義タイミング問題は消滅する。
 
 ---
 
@@ -29,7 +30,7 @@
 - **宣言的レイヤ（state）は待てる** — バインディングは属性というデータであり、解釈するランタイムが upgrade まで配線を遅延できる（command-token の購読はタグ定義まで deferred）。
 - **命令的 API（signals）は待てない** — 値を今すぐ返す同期 API は descriptor を今すぐ必要とする。
 
-したがってこの制約は signals で I/O ノードを使う限りどの場面でも付いてくる。`nodeSource` は第1引数に**構築済みの** `BoundNode` を要求する（内部で `bindNode` を呼ぶのではない）ため、同じ制約を上流の `bindNode` 呼び出しから継承する。`bindNode(el, descriptor)` に手書き descriptor を渡せば定義前束縛も理論上可能だが、プロトコル宣言の複製になるため標準イディオムとしては採らない（非カスタム要素ターゲット向けの逃げ道として残す）。
+したがってこの制約は signals で I/O ノードを**要素として**使う限りどの場面でも付いてくる（要素を作らない Core 直接利用 = §3.4 の床3は、この制約の外にある正規の脱出口）。`nodeSource` は第1引数に**構築済みの** `BoundNode` を要求する（内部で `bindNode` を呼ぶのではない）ため、同じ制約を上流の `bindNode` 呼び出しから継承する。`bindNode(el, descriptor)` に手書き descriptor を渡せば定義前束縛も理論上可能だが、プロトコル宣言の複製になるため標準イディオムとしては採らない（非カスタム要素ターゲット向けの逃げ道として残す）。
 
 ## 2. 従来イディオムの実態と故障セマンティクス
 
@@ -73,6 +74,35 @@ import("@wcstack/tilt/auto")
 ### 3.3 自分がロードしないタグ: `whenDefined` / `<wcs-defined>`
 
 autoloader 経由の遅延登録、state と signals が混在するページで他者がロードするタグ、実行時に注入されるコンテンツ — ここでは import による順序保証が構造的に不可能なので、`whenDefined`（+`AbortSignal.timeout` との race）か `<wcs-defined>` ゲートが引き続き唯一の手段。
+
+### 3.4 床3: Core 直接利用 — 要素を作らない
+
+I/O ノードは Core（フレームワーク非依存ロジック）/ Shell（カスタム要素）に分層しており、**Core 単体で完結した wc-bindable ノード**である。形は全パッケージ統一（DefinedCore / TiltCore / RafCore で確認）: `extends EventTarget`・`constructor(target?)` は `target ?? this`（既定で自分自身に dispatch）・`static wcBindable` 保持・観測プロパティは public getter。よって `bindNode(new XxxCore())` は **descriptor 省略でも** `core.constructor.wcBindable` が解決し、seed も正しく読める。これは後付けの裏技ではなく signals の建国実証そのもの — `packages/signals/__tests__/integration.fetchCore.test.ts` は無改変の実 FetchCore を要素なしで束縛し DOM 更新まで通す PoC 起点のテストである。
+
+```js
+import { DefinedCore } from "@wcstack/defined";
+import { bindNode } from "@wcstack/signals/dom";
+
+// <wcs-defined> と同じ timeout→missing・遅延昇格ロジックを、要素もレジストリも無しで
+const gate = bindNode(new DefinedCore(["wcs-tilt", "wcs-accelerometer"], "all", 5000));
+gate.signals.pending.get();
+```
+
+床モデル（本書の全体像）:
+
+| 床 | 形 | 定義タイミング問題 |
+|---|---|---|
+| 1 | `data-wcs` + Shell（state） | ランタイムが upgrade まで配線を遅延（利用者は意識しない） |
+| 2 | `bindNode` / `mountNode` + Shell（signals） | §0 決定表で管理（import 順序・gate） |
+| 3 | `bindNode` + Core 直接（signals） | **存在しない**（`customElements` レジストリ非関与） |
+
+適用判断:
+
+- **向く**: 純ロジックノード（fetch / websocket / sse / broadcast / timer / debounce / defined / raf …）を JS だけで使う場合。
+- **Shell が価値を持ち続ける**: 要素結合ノード（intersection / resize の観測対象・camera のプレビュー内包・fullscreen / pip / pointer-lock のターゲット）、`:state()` CSS 反映（Shell / ElementInternals 専用 — 例: tilt-maze の `wcs-raf:state(running)` チップ）、HTML 宣言性・state との併用・autoloader・属性ベース設定。
+- **代償**: ライフサイクルが手動になる（`observe()` / `dispose()` ないし start / stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成）。
+
+留保（未決）: Core は各パッケージの公開エントリからエクスポート済みで、`observe()/dispose()/ready` の骨格は [async-io-node-guidelines.md](./async-io-node-guidelines.md) が規範化しているが、**Core コンストラクタ形状の semver 安定性は adopter surface として明文化されていない**。床3を推奨イディオムへ正式昇格させるにはこの規範化（各パッケージ README への Core 節追加を含む）が先。現時点の利用者向け正本は signals README の「Binding a Core directly」節。
 
 ## 4. examples への適用方針
 

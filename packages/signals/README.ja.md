@@ -308,6 +308,23 @@ import("@wcstack/tilt/auto")
 
 `bindNode` と同様、アダプタはリアクティブオーナーに紐付きません — teardown は明示的(`unmount()` は冪等)で、`onCleanup(() => fetcher.unmount())` と合成できます。`MountedNode` では `dispose()` は **`unmount()` のエイリアス**です: mountNode は要素のライフサイクルを所有するので、パッケージ共通の teardown 動詞が「接続されたまま IO が生きている要素」を残すことはありません。定義タイミングの全体契約(どのロード状況でどのイディオムか)は [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md) を参照してください。
 
+#### Core を直接束縛する(要素なし)
+
+wcstack の I/O ノードはフレームワーク非依存の **Core** とカスタム要素の **Shell** に分層しており、Core 単体で完結した wc-bindable ノードです: `extends EventTarget`・既定で自分自身にイベントを dispatch(`constructor(target?)`・`target ?? this`)・観測プロパティは getter・`static wcBindable` 保持。よって `bindNode` は第2引数なしで `core.constructor` から descriptor を解決します:
+
+```typescript
+import { FetchCore } from "@wcstack/fetch";
+
+const core = new FetchCore();
+const bound = bindNode(core);   // FetchCore.wcBindable から解決 — 要素は一切関与しない
+core.fetch("/api/user");        // command は素のメソッド
+bound.signals.value.get();
+```
+
+カスタム要素が存在しないので、**定義タイミング問題は丸ごと消滅**します: `customElements` レジストリに一切触れず、`whenDefined` も upgrade 待ちも無く、依存は import だけです。これは本パッケージの建国実証でもあります — アダプタは要素が関与する前に、無改変の実 `FetchCore` で検証されました(`__tests__/integration.fetchCore.test.ts`)。
+
+Shell と比べて失うもの: 要素接続ライフサイクル(Core の `observe()`/`dispose()` や start/stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成)、属性ベース設定、`:state()` CSS 反映(Shell/ElementInternals 専用機能)。向くのは純ロジックノード(fetch・websocket・timer・defined・raf など)で、要素結合ノード(intersection/resize の観測対象・camera プレビュー・fullscreen)では Shell が引き続き価値を持ちます。なお各パッケージの **Core コンストラクタ形状はまだ規範的に安定した adopter surface ではありません** — 各パッケージの第一のドキュメント化された interface は Shell です。Core のシグネチャに依存する場合は厳密なバージョンを pin してください([安定性](#安定性stability)参照)。
+
 ## JSX を使う(opt-in)
 
 `h` は古典的な JSX ファクトリの形なので、JSX は**使えるが同梱しない** — オプトインは利用者の選択であり、buildless 経路を抜けることを意味します(JSX はトランスパイル必須)。パッケージが出荷するのは土台(`h` + `Fragment`)のみで、`.tsx` も `jsx-runtime` 型も含みません。
@@ -377,7 +394,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 
 ## ヘッドレス利用
 
-リアクティブコアは DOM 非依存です — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` はすべてプレーンな JS(Node・worker・テスト)で動きます。`document` に触れるのは `/dom` エントリ(`h` / `For` / `Index` / `SignalsElement` / `mountNode`)だけです。
+リアクティブコアは DOM 非依存です — `signal` / `computed` / `effect` / `resource` / `streamResource` / `bindNode` / `nodeSource` はすべてプレーンな JS(Node・worker・テスト)で動きます。`document` に触れるのは `/dom` エントリ(`h` / `For` / `Index` / `SignalsElement` / `mountNode`)だけです。I/O ノードパッケージの **Core** クラスはそれ自体が `wcBindable` を持つ `EventTarget` なので、完全に要素なしのパイプラインも組めます — [Core を直接束縛する](#core-を直接束縛する要素なし)参照。
 
 ### SSR / 非DOM: `./dom` エントリは DOM 無しで読み込める
 
