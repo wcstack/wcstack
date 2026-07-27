@@ -102,7 +102,7 @@ gate.signals.pending.get();
 - **Shell が価値を持ち続ける**: 要素結合ノード（intersection / resize の観測対象・camera のプレビュー内包・fullscreen / pip / pointer-lock のターゲット）、`:state()` CSS 反映（Shell / ElementInternals 専用 — 例: tilt-maze の `wcs-raf:state(running)` チップ）、HTML 宣言性・state との併用・autoloader・属性ベース設定。
 - **代償**: ライフサイクルが手動になる（`observe()` / `dispose()` ないし start / stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成）。
 
-留保（未決）: Core は各パッケージの公開エントリからエクスポート済みで、`observe()/dispose()/ready` の骨格は [async-io-node-guidelines.md](./async-io-node-guidelines.md) が規範化しているが、**Core コンストラクタ形状の semver 安定性は adopter surface として明文化されていない**。床3を推奨イディオムへ正式昇格させるにはこの規範化（各パッケージ README への Core 節追加を含む）が先。現時点の利用者向け正本は signals README の「Binding a Core directly」節。
+規範化済み（2026-07-28）: [async-io-node-guidelines.md](./async-io-node-guidelines.md) **§3.9** が Core を公開 headless adopter surface として規範化した — entry export（MUST）・構造保証（EventTarget 継承・自己 dispatch 既定・`static wcBindable`・public getter・`observe()/dispose()/ready`・never-throw）の semver 保護・headless 構築可能（MUST）・各パッケージ README の headless（Core）節（MUST）。棚卸しで全 I/O ノード 38 Core の逸脱ゼロを確認済み。これにより**床3は正式な推奨イディオム**。コンストラクタの設定引数の形だけはパッケージ個別（各 README が正）。利用者向け正本は signals README の「Binding a Core directly」節。
 
 ## 4. examples への適用方針
 

@@ -323,7 +323,7 @@ bound.signals.value.get();
 
 カスタム要素が存在しないので、**定義タイミング問題は丸ごと消滅**します: `customElements` レジストリに一切触れず、`whenDefined` も upgrade 待ちも無く、依存は import だけです。これは本パッケージの建国実証でもあります — アダプタは要素が関与する前に、無改変の実 `FetchCore` で検証されました(`__tests__/integration.fetchCore.test.ts`)。
 
-Shell と比べて失うもの: 要素接続ライフサイクル(Core の `observe()`/`dispose()` や start/stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成)、属性ベース設定、`:state()` CSS 反映(Shell/ElementInternals 専用機能)。向くのは純ロジックノード(fetch・websocket・timer・defined・raf など)で、要素結合ノード(intersection/resize の観測対象・camera プレビュー・fullscreen)では Shell が引き続き価値を持ちます。なお各パッケージの **Core コンストラクタ形状はまだ規範的に安定した adopter surface ではありません** — 各パッケージの第一のドキュメント化された interface は Shell です。Core のシグネチャに依存する場合は厳密なバージョンを pin してください([安定性](#安定性stability)参照)。
+Shell と比べて失うもの: 要素接続ライフサイクル(Core の `observe()`/`dispose()` や start/stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成)、属性ベース設定、`:state()` CSS 反映(Shell/ElementInternals 専用機能)。向くのは純ロジックノード(fetch・websocket・timer・defined・raf など)で、要素結合ノード(intersection/resize の観測対象・camera プレビュー・fullscreen)では Shell が引き続き価値を持ちます。Core の構造サーフェス — `EventTarget` 継承・自己 dispatch 既定・`static wcBindable`・getter で読める observable・`observe()`/`dispose()`/`ready`・never-throw — は **wcstack I/O ノード横断の規範**([`docs/async-io-node-guidelines.md`](../../docs/async-io-node-guidelines.md) §3.9)で semver 保護されます。コンストラクタの**設定引数**だけはパッケージ個別です — 各パッケージ README のヘッドレス利用節を参照してください。
 
 ## JSX を使う(opt-in)
 

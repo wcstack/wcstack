@@ -19,6 +19,7 @@
 8. **API 解決は呼び出し時**。グローバル API（`navigator.x` 等）はキャッシュせず呼ぶたびに解決する（テストで差し替え可能・unsupported 環境を正しく報告）
 9. **テストカバレッジ 100 / 97+ / 100 / 100**（statements / branches / functions / lines）。テスト記述は日本語
 10. **出力状態の CSS 反映（CustomStateSet）**。boolean 出力 observable・派生 boolean getter・`error` の存在を Shell が `ElementInternals.states` に反映し `:state()` で選択可能にする。反映は Shell のみで行い Core に持ち込まない。`attachInternals` 不在環境では静かに無効化する（§4.5）
+11. **Core は公開ヘッドレスサーフェス**。Core クラスをパッケージの entry（`exports.ts`）から export し、その構造保証（§3.9）を semver 保護の公開 API として扱う。README に headless（Core）利用の節を持つ（§9）
 
 ---
 
@@ -174,6 +175,18 @@ private _api() {
 - Core は「最初のプローブが settle したら解決する」`get ready(): Promise<void>` を持つ。unsupported なら `Promise.resolve()`
 - `observe()` はこの promise を返す
 
+### 3.9 Core は公開アダプタサーフェス（headless adopter surface）
+
+Core は Shell の実装詳細ではなく、**要素なしで直接使ってよい公開サーフェス**である。`@wcstack/signals` の `bindNode(new XxxCore())` は descriptor 省略で Core を束縛でき（`core.constructor.wcBindable` 解決）、`customElements` レジストリに一切触れないため定義タイミング問題が存在しない（[signals-definition-timing.md](./signals-definition-timing.md) §3.4 の床3）。この利用形を支えるため、次を保証する:
+
+- Core クラスをパッケージ entry（`exports.ts`）から export する（MUST）
+- **構造保証**（いずれも既存規範の adopter 向け再掲・MUST）: `EventTarget` 継承（§3.1）・`target` 省略時は自己 dispatch（§3.1）・`static wcBindable` 宣言（§3.2）・observable プロパティは public getter で読める（§4.2 の delegation 前提であり、bindNode の初期 seed もこれを読む）・`observe()`/`dispose()`/`ready` ライフサイクル（§3.5・§3.8）・never-throw（§3.6）
+- **headless 構築可能**（MUST）: `target` および DOM 要素を渡さずに構築できる。設定引数を持つ場合も（例: `DefinedCore(tags, mode, timeoutMs, target?)`・`DebounceCore(prefix, target?, options?)`）`target` は省略可能に保つ
+- **semver**: 上記の構造保証と Core クラス名は公開 API として semver 保護する。**コンストラクタの設定引数の形・順序はパッケージ個別**であり、各パッケージの README / 設計ドキュメントが正（構造保証の外）
+- README に headless（Core）節を持つ（§9・MUST）
+
+実態（2026-07-28 棚卸し）: 全 I/O ノード 38 Core が `extends EventTarget`・`target ?? this`・entry export を満たす（逸脱ゼロ）。コンストラクタが `(target?)` 単独でないのは defined / debounce / permission / raf / wakelock の5つで、いずれも `target` 省略可＝headless 構築可能。利用者向けの説明の正本は `@wcstack/signals` README の「Binding a Core directly」節。
+
 ---
 
 ## 4. Shell（`<wcs-xxx>` カスタム要素）の規約
@@ -302,6 +315,7 @@ export class Wcs<Name> extends HTMLElement {
 ## 9. ドキュメント
 
 - `README.md`（英語）/ `README.ja.md`（日本語）を両方書く。既存ノードの構成（概要・インストール・属性表・イベント表・コマンド表・Design Notes）に合わせる
+- **headless（Core）節**を README に持つ（MUST・§3.9）: Core クラス名・headless 構築の最小例（実コンストラクタ引数）・ライフサイクルが手動になる旨（`observe()`/`dispose()` ないし start/stop コマンド）・`@wcstack/signals` README「Binding a Core directly」へのリンク
 - ルート README のノード一覧に追加する
 - **タイミング/発火の挙動**（いつ・何回・何が同期で何が microtask か）を持つノードは、[timing-and-firing-contract.md](./timing-and-firing-contract.md) に §1/§2 と同じ粒度で1節追加する（MUST）。example の長文コメントで内部挙動を説明しそうになったら、まずこの契約書に項目を足し、コメントはそこへリンクする
 
@@ -320,6 +334,7 @@ export class Wcs<Name> extends HTMLElement {
 - [ ] API は呼び出し時解決（キャッシュしない）
 - [ ] SSR: `ready` / `connectedCallbackPromise` / `hasConnectedCallbackPromise`
 - [ ] config / bootstrap / registerComponents / exports が規約どおり
+- [ ] Core が entry から export され、headless 構築可能（`target` 省略可）・README に headless（Core）節あり（§3.9）
 - [ ] テスト 100/97+/100/100、日本語記述、Fake double
 - [ ] README ja/en・ルート README 更新・（必要なら）timing 契約に1節追加
 - [ ] 設計ドキュメント `docs/<name>-tag-design.md` あり、逸脱は理由が記録済み
