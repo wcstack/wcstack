@@ -1,11 +1,12 @@
-# tilt + accelerometer + raf + wakelock demo (ball maze)
+# tilt + accelerometer + raf + wakelock + defined demo (ball maze)
 
 The classic wooden labyrinth toy, as a wcstack composite: tilt your phone to
-roll a ball past four holes to the flag. Five packages, and each one has a
-real job — **including the game loop, which is a declarative tag**.
+roll a ball past four holes to the flag. Six packages, and each one has a
+real job — **including the game loop and the load gate, which are both
+declarative tags**.
 
 > The same game also exists with `@wcstack/signals` as the reactive core —
-> same maze, same unmodified I/O nodes: see
+> same maze, same four unmodified sensor I/O nodes: see
 > [`examples/signals-tilt-maze`](../signals-tilt-maze/) for the side-by-side
 > comparison of what a core swap changes.
 
@@ -15,6 +16,7 @@ real job — **including the game loop, which is a declarative tag**.
 | `@wcstack/raf` | `<wcs-raf>` drives one physics step per frame, shipping a first-class `dt` |
 | `@wcstack/accelerometer` | shake detection (\|accel\| far from 9.8 m/s²) → restart |
 | `@wcstack/wakelock` | screen stays awake *while* `phase === "playing"` |
+| `@wcstack/defined` | holds Start until the sensor tags register — with a timeout, so a failed import degrades instead of hanging |
 | `@wcstack/state` | physics, collision, phases, and every pixel of rendering |
 
 ## Getting Started
@@ -68,13 +70,25 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD chi
   emits one `$command.startSensors` token, and the elements subscribe their
   own methods to it in HTML (`command.requestPermission` + `command.start` on
   `<wcs-tilt>`, `command.start` on `<wcs-accelerometer>`) — state touches no
-  DOM. The emit runs in the click's gesture context (after a `whenDefined`
-  gate — command subscriptions are deferred until the element is defined, and
-  an emit fired before that has no subscribers; user activation is a time
-  window, so the await keeps iOS's permission gate satisfied). Firing
-  `start()` without awaiting the permission is safe because that gate is on
-  event *dispatch*, not listener registration — an ungranted subscription is
-  simply silent (and every other platform resolves `"granted"` immediately).
+  DOM. Firing `start()` without awaiting the permission is safe because that
+  gate is on event *dispatch*, not listener registration — an ungranted
+  subscription is simply silent (and every other platform resolves
+  `"granted"` immediately).
+- **The load gate is a tag, not an `await`.** Command subscriptions are
+  deferred until the element is defined, and an emit fired before that has no
+  subscribers (tokens are not replayed) — so the emit must not happen before
+  `<wcs-tilt>` / `<wcs-accelerometer>` register. `<wcs-defined>` expresses
+  that as `disabled: sensorsResolving` on the button, which beats awaiting
+  `customElements.whenDefined()` inside the handler on two counts: **(1)** that
+  promise never rejects for a tag that is never registered, so a failed CDN
+  fetch would park the handler forever and take the drag fallback down with
+  it — the `timeout="5000"` moves the tag to `missing` instead, and Start
+  unlocks in drag-only mode (a late arrival is still promoted back out of
+  `missing`, so a merely slow CDN self-heals); **(2)** `startGame()` stays
+  fully synchronous, the safest shape for iOS's gesture-gated
+  `requestPermission()`. Note the gate is on `pending`, not on `defined` —
+  gating on `defined` would lock a sensorless player out of a game that is
+  designed to be playable by dragging.
 - **Shake detection is a derived signal.** `<wcs-accelerometer>` just streams
   `x/y/z`; `step()` computes `|accel|` and treats a large deviation from
   gravity (9.81 m/s²) as a shake, with a 1.2s cooldown. On desktop the sensor

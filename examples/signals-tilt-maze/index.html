@@ -51,8 +51,12 @@
   }
   </script>
 
-  <!-- The SAME unmodified I/O nodes as the state version of this demo
-       (examples/state-tilt-maze). Only the reactive core behind them changes. -->
+  <!-- The SAME four unmodified sensor I/O nodes as the state version of this
+       demo (examples/state-tilt-maze). Only the reactive core behind them
+       changes. The readiness gate differs by necessity: the state version
+       declares it as a <wcs-defined> tag, while here the equivalent await sits
+       at the top of the module (bindNode needs the class at call time, so this
+       core has to wait before it can bind at all). -->
   <script type="module" src="https://esm.run/@wcstack/tilt/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
