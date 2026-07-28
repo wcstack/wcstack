@@ -1,5 +1,5 @@
-import { e as effect, o as onCleanup, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-DLSNUdLY.esm.js';
-export { D as DisposedError, b as bindNode, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-DLSNUdLY.esm.js';
+import { e as effect, o as onCleanup, b as bindNode, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-Tyc87CCz.esm.js';
+export { D as DisposedError, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-Tyc87CCz.esm.js';
 
 // Fine-grained hyperscript (v1 design notes). The "step before JSX" (docs §4-1).
 //
@@ -788,6 +788,53 @@ function toNodes(value) {
     visit(value);
     return out;
 }
+function mountNode(tagName, options = {}) {
+    // Call-time DOM guard (not module-time): `./dom` must evaluate in non-DOM realms
+    // (SSR pre-pass / worker) — same contract (and message shape) as `createSignalsElement`.
+    if (typeof document === "undefined" || typeof customElements === "undefined") {
+        throw new Error("@wcstack/signals/dom: mountNode requires a DOM (document/customElements is not defined). " +
+            "It creates and connects a live element, so it is browser-only; inject a DOM " +
+            "(e.g. happy-dom) before calling, or keep headless work on `@wcstack/signals`.");
+    }
+    const { attrs, parent, descriptor } = options;
+    // Custom element names are lowercase; the registry is exact-key while
+    // createElement ASCII-lowercases — normalize once so mountNode(el.tagName)
+    // (uppercase in HTML documents) hits the same definition the element would.
+    const tag = tagName.toLowerCase();
+    // Fail loud with the actual cause. Without this, bindNode's generic "no
+    // wc-bindable descriptor" error hides that the tag simply isn't defined yet.
+    if (!descriptor && !customElements.get(tag)) {
+        throw new Error(`mountNode: "<${tag}>" is not defined. Import its defining module first (e.g. a side-effect ` +
+            `\`import "@wcstack/<pkg>/auto"\` in this module — evaluation order then guarantees the definition). ` +
+            `For a tag loaded by someone else, await customElements.whenDefined("${tag}") or gate with ` +
+            `<wcs-defined> before mounting. Binding a non-custom-element tag requires an explicit \`descriptor\`.`);
+    }
+    const el = document.createElement(tag);
+    if (attrs) {
+        for (const [name, value] of Object.entries(attrs)) {
+            if (value === false) {
+                continue; // boolean-attribute semantics: false = absent
+            }
+            el.setAttribute(name, value === true ? "" : String(value));
+        }
+    }
+    const bound = bindNode(el, descriptor);
+    (parent ?? document.body).appendChild(el);
+    const unmount = () => {
+        bound.dispose();
+        el.remove();
+    };
+    return {
+        ...bound,
+        el,
+        unmount,
+        // Override the inherited adapter-only dispose(): on a MountedNode it would be
+        // a silent PARTIAL teardown (signals inert, but the created element stays
+        // connected with its shell's IO still running). mountNode owns the element,
+        // so dispose === unmount.
+        dispose: unmount,
+    };
+}
 
-export { For, Fragment, Index, SignalsElement, createRoot, createSignalsElement, effect, h, onCleanup, render, signal };
+export { For, Fragment, Index, SignalsElement, bindNode, createRoot, createSignalsElement, effect, h, mountNode, onCleanup, render, signal };
 //# sourceMappingURL=dom.esm.js.map

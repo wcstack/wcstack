@@ -58,36 +58,6 @@ interface ResourceOptions<T, A> {
 type ResourceSource<T, A> = (args: A, signal: AbortSignal) => Promise<T> | T;
 declare function resource<T, A = void>(source: ResourceSource<T, A>, options?: ResourceOptions<T, A>): ResourceState<T>;
 
-type StreamStatus = "idle" | "active" | "done" | "error";
-interface StreamResourceState<T> {
-    value: ReadSignal<T | undefined>;
-    status: ReadSignal<StreamStatus>;
-    /** Last error, or `null` when there is none. Initial value is `null`; a (re)start resets it to `null`. */
-    error: ReadSignal<unknown>;
-    /** Abort the in-flight stream and stop reacting to `args`. */
-    dispose(): void;
-}
-interface StreamResourceOptions<T, C, A> {
-    /** Reactive inputs. Reading signals here wires restart-on-change. */
-    args?: () => A;
-    /** Combine the running value with each chunk. Default: latest (replace). */
-    fold?: (acc: T | undefined, chunk: C) => T;
-    /** Seed value, and the value `value` is reset to on each (re)start. */
-    initial?: T;
-}
-type StreamProducer<C> = AsyncIterable<C> | ReadableStream<C>;
-/**
- * Produce a stream for the current `args`. The `signal` aborts on restart/dispose —
- * the source **MUST honor it** (this is a hard contract, not a suggestion): a
- * `ReadableStream` is fully cancelled via `reader.cancel()`, and an async generator
- * should observe `signal` (e.g. reject/break on `signal.aborted`) so a parked `await`
- * can unwind. On abort the adapter also calls the iterator's `return()` to run a
- * generator's `finally`, but a generator that parks forever while ignoring `signal`
- * cannot be force-unwound and will leak. See the module header's CONTRACT.
- */
-type StreamSource<C, A> = (args: A, signal: AbortSignal) => StreamProducer<C> | Promise<StreamProducer<C>>;
-declare function streamResource<T, C = T, A = void>(source: StreamSource<C, A>, options?: StreamResourceOptions<T, C, A>): StreamResourceState<T>;
-
 interface WcBindableProperty<V = unknown> {
     readonly name: string;
     readonly event: string;
@@ -244,6 +214,36 @@ declare function nodeSource<T, A = void, S extends NodeShape = DefaultNodeShape>
     abort?: string;
 }): ResourceSource<T, A>;
 
+type StreamStatus = "idle" | "active" | "done" | "error";
+interface StreamResourceState<T> {
+    value: ReadSignal<T | undefined>;
+    status: ReadSignal<StreamStatus>;
+    /** Last error, or `null` when there is none. Initial value is `null`; a (re)start resets it to `null`. */
+    error: ReadSignal<unknown>;
+    /** Abort the in-flight stream and stop reacting to `args`. */
+    dispose(): void;
+}
+interface StreamResourceOptions<T, C, A> {
+    /** Reactive inputs. Reading signals here wires restart-on-change. */
+    args?: () => A;
+    /** Combine the running value with each chunk. Default: latest (replace). */
+    fold?: (acc: T | undefined, chunk: C) => T;
+    /** Seed value, and the value `value` is reset to on each (re)start. */
+    initial?: T;
+}
+type StreamProducer<C> = AsyncIterable<C> | ReadableStream<C>;
+/**
+ * Produce a stream for the current `args`. The `signal` aborts on restart/dispose —
+ * the source **MUST honor it** (this is a hard contract, not a suggestion): a
+ * `ReadableStream` is fully cancelled via `reader.cancel()`, and an async generator
+ * should observe `signal` (e.g. reject/break on `signal.aborted`) so a parked `await`
+ * can unwind. On abort the adapter also calls the iterator's `return()` to run a
+ * generator's `finally`, but a generator that parks forever while ignoring `signal`
+ * cannot be force-unwound and will leak. See the module header's CONTRACT.
+ */
+type StreamSource<C, A> = (args: A, signal: AbortSignal) => StreamProducer<C> | Promise<StreamProducer<C>>;
+declare function streamResource<T, C = T, A = void>(source: StreamSource<C, A>, options?: StreamResourceOptions<T, C, A>): StreamResourceState<T>;
+
 declare const Fragment: unique symbol;
 type Child = unknown;
 type Props = Record<string, unknown> | null;
@@ -306,6 +306,36 @@ type SignalsElementClass = typeof SignalsElementType;
  */
 declare function createSignalsElement(): SignalsElementClass;
 declare const SignalsElement: SignalsElementClass;
+interface MountNodeOptions {
+    /**
+     * Attributes set on the element BEFORE it is connected (declarative pre-connect
+     * config, e.g. `{ url: "/api", timeout: 5000 }`). HTML boolean-attribute
+     * semantics: `true` sets an empty attribute, `false` omits it; other values are
+     * stringified.
+     */
+    attrs?: Record<string, string | number | boolean>;
+    /** Parent to append the element to. Default: `document.body`. */
+    parent?: Node;
+    /**
+     * Explicit wc-bindable descriptor forwarded to `bindNode`. When given, the
+     * tag-definition check is skipped — the escape hatch for binding a
+     * non-custom-element tag, mirroring `bindNode`'s second parameter.
+     */
+    descriptor?: WcBindableDescriptor;
+}
+interface MountedNode<S extends NodeShape = DefaultNodeShape> extends BoundNode<S> {
+    /** The created element (connected until `unmount()`). */
+    readonly el: HTMLElement;
+    /**
+     * Full teardown: dispose the adapter AND remove the element from the DOM
+     * (disconnect stops the shell's IO). Idempotent. On a `MountedNode`,
+     * `dispose()` is an alias of this — mountNode owns the element's lifecycle,
+     * so the package-wide teardown verb must not leave a connected element with
+     * live IO behind (a silent leak for callers habituated to `bindNode`).
+     */
+    unmount(): void;
+}
+declare function mountNode<S extends NodeShape = DefaultNodeShape>(tagName: string, options?: MountNodeOptions): MountedNode<S>;
 
-export { DisposedError, For, Fragment, Index, SignalsElement, bindNode, computed, createRoot, createSignalsElement, effect, flushSync, h, isDisposedError, nodeSource, onCleanup, render, resource, signal, streamResource };
-export type { BoundNode, Child, Cleanup, Component, DefaultNodeShape, EffectHandle, Equals, EventStreamOptions, ForEach, ForOptions, IndexEach, ListAccessor, ListView, NodeShape, Props, ReadSignal, ResourceOptions, ResourceSource, ResourceState, SignalsElementClass, StreamProducer, StreamResourceOptions, StreamResourceState, StreamSource, StreamStatus, WcBindableDescriptor, WcBindableProperty, WriteSignal };
+export { DisposedError, For, Fragment, Index, SignalsElement, bindNode, computed, createRoot, createSignalsElement, effect, flushSync, h, isDisposedError, mountNode, nodeSource, onCleanup, render, resource, signal, streamResource };
+export type { BoundNode, Child, Cleanup, Component, DefaultNodeShape, EffectHandle, Equals, EventStreamOptions, ForEach, ForOptions, IndexEach, ListAccessor, ListView, MountNodeOptions, MountedNode, NodeShape, Props, ReadSignal, ResourceOptions, ResourceSource, ResourceState, SignalsElementClass, StreamProducer, StreamResourceOptions, StreamResourceState, StreamSource, StreamStatus, WcBindableDescriptor, WcBindableProperty, WriteSignal };
