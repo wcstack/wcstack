@@ -152,6 +152,11 @@ fetch → 失敗 → 待つ → 再実行）を組む利用者は同じ意味論
 drain フック + `$streamStatus` / `$streamError` 名前空間 + ライフサイクル契約の雛形を再利用できる。
 新規実装は lane の写像と宣言バリデーションが中心になる見込み。
 
+**(d) の詳細設計は [state-event-lane-design.md](../state-event-lane-design.md) に分離した**
+（未採択）。上記サブゲート 1〜4 はそこで G1〜G4 として推奨付きで展開され、
+段階分割・受け入れ条件・却下案（新コンビネータ語彙 / `$streams` への event-token 供給 /
+`data-wcs` 修飾子）まで降ろしてある。
+
 ### 2〜4
 
 2. operation identity / idempotency key を公開 API にする範囲。
