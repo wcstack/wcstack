@@ -17,6 +17,19 @@ const catalog = Array.from({ length: TOTAL }, (_, i) => ({
   price: 1000 + ((i * 137) % 90) * 100,
 }));
 
+// Failure injection, so the retry path is actually demoable (and so the deadlock
+// this demo used to have is reproducible):
+//   FAIL_PAGE=1 node server.js   page 1 returns 503 for its first FAIL_TIMES (default
+//                                2) requests. The feed starts EMPTY, so there is
+//                                nothing to scroll — only the retry clock can recover
+//                                it. Raise FAIL_TIMES above maxRetries (3) to spend
+//                                the budget and land on the Retry button.
+//   FLAKY=0.4   node server.js   every page fails with 40% probability.
+const FAIL_PAGE = Number(process.env.FAIL_PAGE || 0);
+const FAIL_TIMES = Number(process.env.FAIL_TIMES || 2);
+const FLAKY = Number(process.env.FLAKY || 0);
+const injectedFailures = new Map();
+
 createDemoServer({
   port: Number(process.env.PORT || 3000),
   root: __dirname,
@@ -29,9 +42,19 @@ createDemoServer({
       const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 20));
       const start = (page - 1) * limit;
       const slice = catalog.slice(start, start + limit);
-      console.log(`[items] page=${page} limit=${limit} -> ${slice.length} items`);
       // Small randomized delay (300–600ms) so the bottom spinner is actually visible on a fast network.
       await delay(300 + Math.floor(Math.random() * 300));
+
+      const failed = injectedFailures.get(page) ?? 0;
+      const injected = (FAIL_PAGE === page && failed < FAIL_TIMES) || (FLAKY > 0 && Math.random() < FLAKY);
+      if (injected) {
+        injectedFailures.set(page, failed + 1);
+        console.log(`[items] page=${page} -> injected 503 (failure ${failed + 1})`);
+        jsonResponse(res, { error: "Injected failure" }, 503);
+        return true;
+      }
+
+      console.log(`[items] page=${page} limit=${limit} -> ${slice.length} items`);
       jsonResponse(res, slice);
       return true;
     }

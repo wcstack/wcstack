@@ -48,7 +48,7 @@ See [`state-tilt-maze/`](state-tilt-maze/).
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js` (open 2 tabs) | :3000 |
 | [`state-custom-states/`](state-custom-states/) | fetch + websocket + state (`:state()` showcase) | `node examples/state-custom-states/server.js` (needs the [websocket-chat shared install](websocket-chat/README.md#setup)) | :3303 |
 | [`state-devtools-playground/`](state-devtools-playground/) | devtools + state + timer (overlay inspector demo) | any static server | — |
-| [`state-intersect-scroll/`](state-intersect-scroll/) | fetch + intersection + state | `node examples/state-intersect-scroll/server.js` | :3000 |
+| [`state-intersect-scroll/`](state-intersect-scroll/) | fetch + intersection + timer + state (bounded retry on a clock) | `node examples/state-intersect-scroll/server.js` | :3000 |
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | any static server | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | any static server | — |
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | any static server (secure context) | — |
