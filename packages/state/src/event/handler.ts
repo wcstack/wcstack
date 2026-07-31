@@ -8,6 +8,7 @@ import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
+import { captureHandlerRejection } from "./captureHandlerRejection";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
 
 // onclick: $command.<name> のように、DOM イベントから command token を直接 emit する形式かを判定する。
@@ -44,7 +45,7 @@ const stateEventHandlerFunction = (
   const loopContext = getLoopContextByNode(node);
   const isCommand = isCommandTokenPath(handlerName);
   stateElement.createStateAsync("writable", async (state) => {
-    state[setLoopContextSymbol](loopContext, () => {
+    const results = state[setLoopContextSymbol](loopContext, () => {
       const indexes = loopContext?.listIndex.indexes ?? [];
       if (isCommand) {
         // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
@@ -60,6 +61,9 @@ const stateEventHandlerFunction = (
       }
       return Reflect.apply(handler, state, [event, ...indexes]);
     });
+    // eventTokenHandler と同じく、この経路もハンドラの完了を待たない。async な
+    // state メソッド / command subscriber の reject を unhandled にせず報告へ落とす。
+    captureHandlerRejection(results, `"${handlerName}" of state "${stateName}"`);
   });
 }
 

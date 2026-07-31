@@ -22,11 +22,13 @@ beforeAll(() => {
  *
  * という **同期** の push/pop であり、`callback()` が Promise を返した時点で
  * finally が走る。つまりループコンテキストは await の手前で失われる。
- * `setLoopContextAsync` も `await _setLoopContext(...)` であって、await するのは
- * **finally が走った後の Promise** なので、この性質は変わらない。
  *
  * 本ファイルは「そうなっているはず」を実測に置き換え、失敗モード（loud か silent か）
- * と回避策（$resolve への明示指定）の成否を固定する。挙動を変更する意図はない。
+ * と回避策（$resolve への明示指定）の成否を固定する。
+ *
+ * 追記: 最後のケースが実証した「reject が unhandled になる」性質は
+ * `event/captureHandlerRejection.ts` で塞いだため、現在は console.error への報告に
+ * 変わっている（同ケースはその回帰テストを兼ねる）。
  */
 
 const ROW_TAG = "poc-async-row";
@@ -238,13 +240,11 @@ describe("PoC: async $on ハンドラとループコンテキスト（G1）", ()
     h.teardown();
   });
 
-  it("★ 発火経路は async ハンドラを await しない（戻り Promise は emit の外へ出ない）", async () => {
-    // G1-B を実装する場合に必ず塞ぐ必要がある現状の性質が 2 つある:
-    //   (1) dispatch 経路はハンドラの完了を待たない
-    //   (2) ハンドラの Promise は Token.emit の戻り値配列にしか現れず、
-    //       eventTokenHandler はそれを捨てる → reject すれば unhandled になる
-    // ここでは emit を包んで戻り値を捕まえ、(1)(2) を実測しつつ reject を
-    // 自分で握って握り潰す（テスト実行を汚さずに性質だけ固定する）。
+  it("★ 発火経路は async ハンドラを await しないが、reject は捕捉して報告される", async () => {
+    // 性質 (1): dispatch 経路はハンドラの完了を待たない（これは仕様であり変えない）。
+    // 性質 (2): ハンドラの Promise は Token.emit の戻り値配列にしか現れない。
+    //   → かつては呼び出し側がそれを捨てており reject が unhandled になっていた。
+    //     現在は captureHandlerRejection がここを掴んで console.error に落とす。
     const gate = deferred<void>();
     let settled = false;
     const h = await mount(async () => {
@@ -261,22 +261,31 @@ describe("PoC: async $on ハンドラとループコンテキスト（G1）", ()
       return emitted;
     };
 
-    h.rows[0].dispatchEvent(new CustomEvent("row-picked", { detail: 0 }));
-    await new Promise((r) => setTimeout(r, 10));
+    const errors: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => { errors.push(args); };
 
-    // (1) dispatch も、その後のタスク境界も、ハンドラの完了を待っていない。
-    expect(settled).toBe(false);
-    // (2) 完了を知る唯一の手掛かりは emit の戻り値配列（呼び出し側は捨てている）。
-    expect(emitted).toHaveLength(1);
-    expect(emitted[0]).toBeInstanceOf(Promise);
+    try {
+      h.rows[0].dispatchEvent(new CustomEvent("row-picked", { detail: 0 }));
+      await new Promise((r) => setTimeout(r, 10));
 
-    // 捕まえた Promise を自分で握って reject を回収する。捕まえていなければ
-    // この reject はそのまま unhandled rejection になっていた。
-    const caught = (emitted[0] as Promise<unknown>).catch((e: Error) => e.message);
-    gate.resolve();
-    expect(await caught).toBe("poc: handler rejected");
-    expect(settled).toBe(true);
+      // (1) dispatch も、その後のタスク境界も、ハンドラの完了を待っていない。
+      expect(settled).toBe(false);
+      // (2) ハンドラの戻り Promise は emit の戻り値配列に現れる。
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toBeInstanceOf(Promise);
 
-    h.teardown();
+      gate.resolve();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(settled).toBe(true);
+
+      // reject は unhandled にならず、どのハンドラで落ちたかが分かる形で報告される。
+      expect(errors).toHaveLength(1);
+      expect(String(errors[0][0])).toContain('$on."rowPicked" of state "default"');
+      expect((errors[0][1] as Error).message).toBe("poc: handler rejected");
+    } finally {
+      console.error = originalConsoleError;
+      h.teardown();
+    }
   });
 });

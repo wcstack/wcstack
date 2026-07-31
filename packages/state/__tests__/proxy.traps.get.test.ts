@@ -3,11 +3,10 @@ import { get } from '../src/proxy/traps/get';
 import { createListIndex } from '../src/list/createListIndex';
 import { createStateAddress } from '../src/address/StateAddress';
 import { getPathInfo } from '../src/address/PathInfo';
-import { setLoopContextAsyncSymbol, setLoopContextSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
+import { setLoopContextSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, connectedCallbackSymbol, disconnectedCallbackSymbol, updatedCallbackSymbol } from '../src/proxy/symbols';
 
 vi.mock('../src/proxy/methods/setLoopContext', () => ({
-  setLoopContext: vi.fn(),
-  setLoopContextAsync: vi.fn()
+  setLoopContext: vi.fn()
 }));
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
@@ -54,7 +53,7 @@ vi.mock('../src/proxy/apis/updatedCallback', () => ({
   updatedCallback: vi.fn()
 }));
 
-import { setLoopContext, setLoopContextAsync } from '../src/proxy/methods/setLoopContext';
+import { setLoopContext } from '../src/proxy/methods/setLoopContext';
 import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { hasByAddress } from '../src/proxy/methods/hasByAddress';
 import { setByAddress } from '../src/proxy/methods/setByAddress';
@@ -68,7 +67,6 @@ import { disconnectedCallback } from '../src/proxy/apis/disconnectedCallback';
 import { updatedCallback } from '../src/proxy/apis/updatedCallback';
 
 const setLoopContextMock = vi.mocked(setLoopContext);
-const setLoopContextAsyncMock = vi.mocked(setLoopContextAsync);
 const getByAddressMock = vi.mocked(getByAddress);
 const hasByAddressMock = vi.mocked(hasByAddress);
 const setByAddressMock = vi.mocked(setByAddress);
@@ -113,21 +111,6 @@ describe('proxy/traps/get', () => {
       lastAddressStack: { listIndex }
     } as any;
     expect(() => get({}, '$1', {}, handler)).toThrow('ListIndex not found: $1');
-  });
-
-  it('$$setLoopContextAsync が setLoopContextAsync を呼び出すこと', async () => {
-    setLoopContextAsyncMock.mockImplementationOnce(async (_handler, _loopContext, callback) => {
-      return callback();
-    });
-    const handler = {} as any;
-    const loopContext = { name: 'loop' };
-
-    const fn = get({}, setLoopContextAsyncSymbol, {}, handler) as (loopContext: any) => Promise<any>;
-    const result = await fn(loopContext);
-
-    expect(setLoopContextAsyncMock).toHaveBeenCalledTimes(1);
-    expect(setLoopContextAsyncMock).toHaveBeenCalledWith(handler, loopContext, expect.any(Function));
-    expect(result).toBeUndefined();
   });
 
   it('$$setLoopContext が setLoopContext を呼び出すこと', () => {

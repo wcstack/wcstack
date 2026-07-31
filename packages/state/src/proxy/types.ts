@@ -2,7 +2,7 @@ import { IAbsoluteStateAddress, IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 import { ILoopContext } from "../list/types";
 import { IState } from "../types";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "./symbols";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "./symbols";
 
 export interface IStateHandler extends ProxyHandler<IState> {
   readonly stateName: string;
@@ -26,7 +26,6 @@ export interface IStateHandler extends ProxyHandler<IState> {
 }
 
 export interface IStateProxy extends IState {
-  [setLoopContextAsyncSymbol](loopContext: ILoopContext | null, callback: () => Promise<any>): Promise<any>;
   [setLoopContextSymbol](loopContext: ILoopContext | null, callback: () => any): any;
   [getByAddressSymbol](address: IStateAddress): any;
   [hasByAddressSymbol](address: IStateAddress): boolean;
