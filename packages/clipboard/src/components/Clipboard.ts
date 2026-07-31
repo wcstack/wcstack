@@ -6,6 +6,7 @@ import {
 import { ClipboardCore } from "../core/ClipboardCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 // Named WcsClipboard (not `Clipboard`) so the class does not shadow the global
 // DOM `Clipboard` interface (the type of `navigator.clipboard`), matching the
@@ -188,6 +189,8 @@ export class WcsClipboard extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

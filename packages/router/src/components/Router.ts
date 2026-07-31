@@ -7,6 +7,7 @@ import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
 import { normalizeBasename, normalizePathname } from "../normalizePathname.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 interface NavigateEventLike {
   canIntercept: boolean;
@@ -288,6 +289,9 @@ export class Router extends HTMLElement implements IRouter {
   }
 
   async connectedCallback() {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
+    // await より前に同期で行い、初期化が古い値を読まないようにする。
+    upgradeProperties(this);
     if (!this._initialized) {
       this._disconnectedDuringInit = false;
       await this._initialize();

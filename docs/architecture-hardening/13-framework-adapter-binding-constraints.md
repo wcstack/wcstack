@@ -1,7 +1,8 @@
 # framework adapter のバインド成立制約
 
 - **作成日**: 2026-08-01
-- **状態**: 設計判断記録（調査結果と推奨方針。実装は未着手。実機再現は未実施）
+- **状態**: 設計判断記録。**Phase A1（Shell の property upgrade）は実装済み**（§4 Phase A1）。
+  A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。A2-A4 は未着手
 - **対象**: `static wcBindable` を宣言する全 Shell、`@wc-bindable` の framework adapter、
   `@wcstack/autoloader` を前提とする配布経路
 - **外部仕様スナップショット**:
@@ -123,24 +124,39 @@ adapter を使わず直接束縛する経路と、[棚卸し §5.6](12-wc-bindab
 定義が遅れる 3 経路（autoloader の動的 import、CDN の `<script type="module">`、code-split）で、
 1.1 と 1.2 が実際に再現するかを確認する。最初の成果物は再現テストであり、この時点では修正しない。
 
-### Phase A1: Shell の property upgrade（wcstack 単独）
+### Phase A1: Shell の property upgrade（wcstack 単独）— 実装済み（2026-08-01）
 
-`connectedCallback` で own プロパティを取り込み直す共通ヘルパを入れる。`static wcBindable.inputs` に
+`connectedCallback` の先頭で own プロパティを取り込み直す共通ヘルパを入れた。`static wcBindable.inputs` に
 入力名が既に宣言されているため、宣言を舐めるだけで機械適用できる。
 
+正本は `/protocol/upgrade-properties.ts` で、`scripts/sync-protocol-types.mjs` が
+`packages/<pkg>/src/protocol/upgradeProperties.ts` として配る（protocol 型と同じ配布経路・CI の `--check` 対象）。
+
 ```ts
-protected _upgradeProperties(): void {
-  for (const { name } of (this.constructor as typeof HTMLElement & { wcBindable: IWcBindable }).wcBindable.inputs ?? []) {
-    if (!Object.prototype.hasOwnProperty.call(this, name)) continue;
-    const value = (this as any)[name];
-    delete (this as any)[name];
-    (this as any)[name] = value;
+export function upgradeProperties(element: object): void {
+  const inputs = (element as { constructor?: { wcBindable?: IWcBindable } }).constructor?.wcBindable?.inputs;
+  if (inputs === undefined) return;
+  for (const input of inputs) {
+    const name = input.name;
+    if (!Object.prototype.hasOwnProperty.call(element, name)) continue;
+    if (!hasAccessorOnPrototype(element, name)) continue;   // public class field を壊さない
+    const record = element as Record<string, unknown>;
+    const value = record[name];
+    delete record[name];
+    record[name] = value;
   }
 }
 ```
 
-挙動変更は「今まで捨てていた値が届くようになる」方向のみで、既存の属性経路には影響しない。ノードごとに
-回帰テストを 1 本足す。
+適用範囲は `static wcBindable` を宣言する 38 Shell（`<wcs-throttle>` は `<wcs-debounce>` を継承するため自動的に
+covered、`<wcs-route>` は `inputs` を持たないため対象外）。`<wcs-router>` は `async connectedCallback` なので
+最初の `await` より前に同期で呼ぶ。
+
+挙動変更は「今まで捨てていた値が届くようになる」方向のみで、既存の属性経路には影響しない。
+
+**副産物**: この作業で `raf` が `scripts/sync-protocol-types.mjs` の配布対象リストから漏れており、
+`packages/raf/src/protocol/wcBindable.ts` が AUTO-GENERATED バナー付きのまま `--check` の対象外で
+drift していたことが判明した（登録漏れ）。リストに追加して解消済み。
 
 ### Phase A2: 遅延定義構成の利用手順を明文化
 
@@ -165,10 +181,12 @@ core が「まだ upgrade していない」と「wc-bindable ではない」を
 
 ### Shell
 
-- upgrade 前に property 代入した値が、upgrade 後に属性へ反映され、要素の動作に効く。
-- 上記が `wcBindable.inputs` の全入力について成立する。
-- 既に属性で与えられている場合、property upgrade が値を上書きしない（優先順位を固定する）。
-- object を受け取る入力について、属性フォールバック時に沈黙して壊れないことを README で明示する。
+- [x] upgrade 前に property 代入した値が、upgrade 後に setter を通って反映される。
+- [x] own プロパティが無い通常経路では何もしない（冪等・再接続で副作用が出ない）。
+- [x] prototype 側が accessor でない own プロパティは触らない（public class field を壊さない）。
+- [x] `inputs` 宣言を持たない要素、`wcBindable` を持たない要素で例外を投げない。
+- 上記は `__tests__/protocol.upgradeProperties.test.ts`（生成配布される共有適合テスト）が各パッケージで固定する。
+- [ ] object を受け取る入力について、属性フォールバック時に沈黙して壊れないことを README で明示する（Phase A2）。
 
 ### 遅延定義
 
@@ -206,7 +224,9 @@ core が「まだ upgrade していない」と「wc-bindable ではない」を
 | 「React / Vue / Svelte / Solid と相互運用できる」という公開主張の裏付け | 高い |
 | 値の意味分類（doc 11 / 12）との結合度 | 低い（独立に進行できる） |
 
-Phase A1 は本書で挙げた中で唯一、上流も metadata も待たずに直せる実欠陥である。着手するならここから。
+Phase A1 は本書で挙げた中で唯一、上流も metadata も待たずに直せる実欠陥だった。実装済み。
+残るのは A2（利用手順の明文化）、A3（上流提案）、A4（代替束縛経路の文書化）で、いずれも文書と提案であり
+runtime 変更を伴わない。
 
 ## 参照
 

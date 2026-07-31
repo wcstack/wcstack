@@ -1,6 +1,7 @@
 import { IWcBindable, WakeLockKind } from "../types.js";
 import { WakeLockCore } from "../core/WakeLockCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-wakelock>` — declarative Screen Wake Lock.
@@ -176,6 +177,8 @@ export class WcsWakeLock extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     // Headless resource: no layout box (mirrors the @wcstack sensor convention).
     this.style.display = "none";
     // Propagate the requested lock type to the Core. Currently a no-op in effect:

@@ -1,6 +1,7 @@
 import { IWcBindable, WcsMagnetometerErrorDetail } from "../types.js";
 import { MagnetometerCore } from "../core/MagnetometerCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-magnetometer>` — declarative Generic Sensor API (`Magnetometer`)
@@ -170,6 +171,8 @@ export class WcsMagnetometer extends HTMLElement {
   // `<wcs-permission name="magnetometer">`: the caller decides when to start,
   // typically gated on `granted`.
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     // No asynchronous probe to await (docs/async-io-node-guidelines.md §3.8);
     // kept for SSR uniformity with other IO nodes.

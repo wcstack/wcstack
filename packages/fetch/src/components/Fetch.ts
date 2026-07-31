@@ -5,6 +5,7 @@ import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class Fetch extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -405,6 +406,8 @@ export class Fetch extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

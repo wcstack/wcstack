@@ -4,6 +4,7 @@ import { IWcBindable, StorageType } from "../types.js";
 import { StorageCore } from "../core/StorageCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class Storage extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -240,6 +241,8 @@ export class Storage extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

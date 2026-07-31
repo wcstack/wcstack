@@ -3,6 +3,7 @@ import { IWcBindable, WcsWorkerErrorDetail } from "../types.js";
 import { WorkerCore } from "../core/WorkerCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 // Named WcsWorker (not `Worker`) to avoid shadowing the global `Worker`
 // constructor and to match the <wcs-broadcast> WcsBroadcast / <wcs-ws>
@@ -237,6 +238,8 @@ export class WcsWorker extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

@@ -1,6 +1,7 @@
 import { IWcBindable, WcsSseMessage } from "../types.js";
 import { SseCore } from "../core/SseCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class WcsSse extends HTMLElement {
   // SSR (§4.1/§4.4): wc-bindable アダプタはこのフラグを見て connectedCallbackPromise を
@@ -236,6 +237,8 @@ export class WcsSse extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     // §4.4: observe() の戻り（即解決の ready）を connectedCallbackPromise として保持。
     // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は下の

@@ -16,13 +16,15 @@
 // WcBindableDescriptor (design decision G2, guarded by bindNode.compat.test.ts).
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const canonicalPath = join(repoRoot, "protocol", "wc-bindable.ts");
 const canonicalReaderPath = join(repoRoot, "protocol", "wc-bindable-reader.ts");
+const canonicalUpgradePath = join(repoRoot, "protocol", "upgrade-properties.ts");
+const canonicalUpgradeTestPath = join(repoRoot, "protocol", "upgrade-properties.test.ts");
 
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
@@ -48,6 +50,10 @@ const TARGET_PACKAGES = [
 
 const READER_TARGET_PACKAGES = ["state"];
 
+// custom element の Shell を持つパッケージ（= connectedCallback で property upgrade が要る）。
+// state / server は Shell が wcBindable.inputs を宣言しないため対象外。
+const UPGRADE_TARGET_PACKAGES = TARGET_PACKAGES.filter((pkg) => pkg !== "state" && pkg !== "server");
+
 const banner = (sourceName) =>
   "// ===========================================================================\n" +
   "// AUTO-GENERATED FILE - DO NOT EDIT.\n" +
@@ -63,8 +69,8 @@ function expectedContent(sourcePath, sourceName) {
   return banner(sourceName) + normalize(readFileSync(sourcePath, "utf8"));
 }
 
-function destFor(pkg, fileName) {
-  return join(repoRoot, "packages", pkg, "src", "protocol", fileName);
+function destFor(pkg, fileName, dir = ["src", "protocol"]) {
+  return join(repoRoot, "packages", pkg, ...dir, fileName);
 }
 
 function main() {
@@ -72,14 +78,25 @@ function main() {
   const typeContent = expectedContent(canonicalPath, "wc-bindable.ts");
   const readerContent = expectedContent(canonicalReaderPath, "wc-bindable-reader.ts")
     .replace('from "./wc-bindable.js"', 'from "./wcBindable.js"');
+  const upgradeContent = expectedContent(canonicalUpgradePath, "upgrade-properties.ts")
+    .replace('from "./wc-bindable.js"', 'from "./wcBindable.js"');
+  const upgradeTestContent = expectedContent(canonicalUpgradeTestPath, "upgrade-properties.test.ts")
+    .replace('from "./upgrade-properties.js"', 'from "../src/protocol/upgradeProperties.js"');
   const targets = [
     ...TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindable.ts", content: typeContent })),
     ...READER_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindableReader.ts", content: readerContent })),
+    ...UPGRADE_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "upgradeProperties.ts", content: upgradeContent })),
+    ...UPGRADE_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "protocol.upgradeProperties.test.ts",
+      content: upgradeTestContent,
+      dir: ["__tests__"],
+    })),
   ];
   const stale = [];
 
-  for (const { pkg, fileName, content } of targets) {
-    const dest = destFor(pkg, fileName);
+  for (const { pkg, fileName, content, dir } of targets) {
+    const dest = destFor(pkg, fileName, dir);
     const current = existsSync(dest) ? normalize(readFileSync(dest, "utf8")) : null;
     if (current === content) continue;
 
@@ -89,7 +106,7 @@ function main() {
     }
     mkdirSync(dirname(dest), { recursive: true });
     writeFileSync(dest, content);
-    console.log(`  synced  packages/${pkg}/src/protocol/${fileName}`);
+    console.log(`  synced  ${dest.slice(repoRoot.length + 1).split(sep).join("/")}`);
   }
 
   if (checkOnly) {

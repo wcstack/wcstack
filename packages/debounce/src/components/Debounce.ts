@@ -3,6 +3,7 @@ import { IWcBindable, DebounceOptions } from "../types.js";
 import { DebounceCore } from "../core/DebounceCore.js";
 import { makeDebounceProperties } from "../wcBindableFactory.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 const DEFAULT_WAIT = 250;
 
@@ -234,6 +235,8 @@ export class Debounce extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

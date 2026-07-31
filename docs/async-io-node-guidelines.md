@@ -21,6 +21,7 @@
 10. **出力状態の CSS 反映（CustomStateSet）**。boolean 出力 observable・派生 boolean getter・`error` の存在を Shell が `ElementInternals.states` に反映し `:state()` で選択可能にする。反映は Shell のみで行い Core に持ち込まない。`attachInternals` 不在環境では静かに無効化する（§4.5）
 11. **Core は公開ヘッドレスサーフェス**。Core クラスをパッケージの entry（`exports.ts`）から export し、その構造保証（§3.9）を semver 保護の公開 API として扱う。README に headless（Core）利用の節を持つ（§9）
 12. **producer snapshot contract**。state-like object / array は公開後に producer が変更せず、logical state の変更時は fresh value を割り当ててから通知する。event は occurrence を同値ガードせず、handle は owner と release point を明示する（§3.3.1）。入力側で受け取った値の扱いは §3.3.2
+13. **property upgrade**。Shell は `connectedCallback` の先頭で `upgradeProperties(this)` を呼び、upgrade 前に代入された input を取り込み直す（§4.1.1）
 
 ---
 
@@ -304,6 +305,7 @@ export class Wcs<Name> extends HTMLElement {
   // コマンド（Core へ委譲）
 
   connectedCallback() {
+    upgradeProperties(this);                          // §4.1.1（MUST・先頭で呼ぶ）
     this.style.display = "none";
     if (config.autoTrigger) registerAutoTrigger();
     this._connectedCallbackPromise = this._core.observe(/* 属性から解決した設定 */);
@@ -313,6 +315,20 @@ export class Wcs<Name> extends HTMLElement {
 }
 ```
 
+### 4.1.1 property upgrade（MUST）
+
+`connectedCallback` の**先頭**で `upgradeProperties(this)` を呼ぶ（MUST）。`src/protocol/upgradeProperties.ts` は
+`/protocol/upgrade-properties.ts` から `scripts/sync-protocol-types.mjs` が配る生成コピーで、手で書き換えない。
+
+未定義タグの要素は素の `HTMLElement` なので、upgrade 前の `el.url = "..."` は own データプロパティを作る。
+upgrade 後もそれが prototype の accessor を隠し続けるため、setter は二度と呼ばれず値は静かに消える。
+常にプロパティ代入を行う framework（Angular の `[prop]`、Lit の `.prop=`、Solid の `prop:`）× 遅延定義
+（autoloader / CDN / code-split）で常態的に起きる
+（[framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md) §1.2）。
+
+- 対象は `wcBindable.inputs` に宣言した入力だけである。宣言していない settable surface は救済されない。
+- `await` を含む `connectedCallback` では、最初の `await` より前に同期で呼ぶ（MUST）。
+- 冪等なので毎回の接続で呼んでよい。prototype 側が accessor でない own プロパティは触らない。
 
 - Shell は **薄く**保つ。ロジックは Core に置く。Shell の責務は「属性 ↔ Core 設定の橋渡し」「Core observable の委譲」「ライフサイクル駆動」「reactive command-property」だけ
 - `this.style.display = "none"`（IO ノードは非表示。`intersection` など layout box が必要な例外は `display:contents` 等を使い理由を書く）
