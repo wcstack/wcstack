@@ -3,6 +3,7 @@ import { IWcBindable, GeoOptions, GeoPermissionState, WcsGeoPositionDetail, WcsG
 import { GeolocationCore } from "../core/GeolocationCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 // Named WcsGeolocation (not `Geolocation`) so the class does not shadow the
 // global DOM `Geolocation` interface (the type of `navigator.geolocation`), and
@@ -14,7 +15,7 @@ export class WcsGeolocation extends HTMLElement {
     ...GeolocationCore.wcBindable,
     properties: [
       ...GeolocationCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-geo:trigger-changed" },
+      { name: "trigger", event: "wcs-geo:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. Each input carries its mirrored `attribute`
     // hint (boolean flags reflect idempotently, so a binding system that writes
@@ -272,6 +273,8 @@ export class WcsGeolocation extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

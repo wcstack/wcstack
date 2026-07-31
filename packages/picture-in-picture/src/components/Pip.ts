@@ -1,6 +1,7 @@
 import { IWcBindable } from "../types.js";
 import { PipCore } from "../core/PipCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-pip target="...">` — declarative Picture-in-Picture control.
@@ -183,6 +184,8 @@ export class WcsPip extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this._observe();
   }
 

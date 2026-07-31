@@ -28,12 +28,12 @@ export class DefinedCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "defined", event: "wcs-defined:change", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.defined },
-      { name: "pending", event: "wcs-defined:change", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.pending },
-      { name: "missing", event: "wcs-defined:change", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.missing },
-      { name: "count", event: "wcs-defined:change", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.count },
-      { name: "total", event: "wcs-defined:change", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.total },
-      { name: "error", event: "wcs-defined:change", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.error },
+      { name: "defined", event: "wcs-defined:change", semantics: "state", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.defined },
+      { name: "pending", event: "wcs-defined:change", semantics: "state", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.pending },
+      { name: "missing", event: "wcs-defined:change", semantics: "state", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.missing },
+      { name: "count", event: "wcs-defined:change", semantics: "state", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.count },
+      { name: "total", event: "wcs-defined:change", semantics: "state", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.total },
+      { name: "error", event: "wcs-defined:change", semantics: "state", getter: (e: Event) => (e as CustomEvent<DefinedSnapshot>).detail.error },
     ],
     // No commands: whenDefined is a pure observer (read-only). See class docs.
     commands: [],

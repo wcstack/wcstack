@@ -4,7 +4,7 @@
 - **状態**: 一部採択・実装済み。phase 0-6 の PoC 実装は完了し、phase 2（方向認識初期同期）/ phase 3
   （因果伝播）は既定 `true` に反転済み。opt-in → 既定化 / IO 族横展開の進捗と残作業は
   [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) が追跡する。未実装の設計提案は
-  各論点 doc（01-08、11）に残る。
+  各論点 doc（01-08、11、13）に残る。
 - **対象スナップショット**:
   - wcstack: `27371dca55888c864028042e71d8a7e7149365b4`（v1.20.0）
   - wc-bindable-protocol: `5ec0deef212578a072b2f669d2a5554f254253e0`
@@ -49,6 +49,13 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
 - [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md) —
   非同期 commit の正しさ、React snapshot の不変性、live resource の寿命を分離し、React adapter、
   I/O node、protocol metadata の責務を整理する。`state` / `event` / `handle` の棚卸しと段階導入案を含む。
+- [wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.md) —
+  Phase 0 の固定スナップショット。231 propertyを `state` 210、`event` 20、`handle` 1へ分類し、
+  camera / recorder / fetch など優先8領域の mutation・stale commit・resource ownership を監査する。
+  §5.6 に adapter 別の失敗モード（signals の同値 dedupe、RxJS の replay と資源保持、Qwik の serialization）を持つ。
+- [framework adapter のバインド成立制約](13-framework-adapter-binding-constraints.md) —
+  値の意味ではなく「バインドが成立するか」の軸。遅延 upgrade で全 adapter が沈黙して bind に失敗する問題、
+  upgrade 前 property 代入が accessor を隠す Shell 側の欠陥、コロンを含むイベント名の表現可能性を扱う。
 
 ## 横断原則
 

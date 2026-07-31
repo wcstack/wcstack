@@ -3,6 +3,7 @@ import { IWcBindable, SpeakOptions, SpeechVoiceInfo, WcsSpeakErrorDetail } from 
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { SpeakCore } from "../core/SpeakCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-speak>` — declarative text-to-speech. Wraps SpeakCore and exposes:
@@ -277,6 +278,8 @@ export class WcsSpeak extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

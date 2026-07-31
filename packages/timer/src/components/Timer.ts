@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { IWcBindable } from "../types.js";
 import { TimerCore } from "../core/TimerCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class Timer extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -9,7 +10,7 @@ export class Timer extends HTMLElement {
     ...TimerCore.wcBindable,
     properties: [
       ...TimerCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-timer:trigger-changed" },
+      { name: "trigger", event: "wcs-timer:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. `attribute` is a purely descriptive hint
     // (per SPEC-extensions.md the binding core does not act on it) naming the
@@ -250,6 +251,8 @@ export class Timer extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

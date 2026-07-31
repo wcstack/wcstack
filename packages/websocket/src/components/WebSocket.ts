@@ -3,6 +3,7 @@ import { IWcBindable } from "../types.js";
 import { WebSocketCore } from "../core/WebSocketCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class WcsWebSocket extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -10,8 +11,8 @@ export class WcsWebSocket extends HTMLElement {
     ...WebSocketCore.wcBindable,
     properties: [
       ...WebSocketCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-ws:trigger-changed" },
-      { name: "send", event: "wcs-ws:send-changed" },
+      { name: "trigger", event: "wcs-ws:trigger-changed", semantics: "state" },
+      { name: "send", event: "wcs-ws:send-changed", semantics: "state" },
     ],
     inputs: [
       { name: "url", attribute: "url" },
@@ -264,6 +265,8 @@ export class WcsWebSocket extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

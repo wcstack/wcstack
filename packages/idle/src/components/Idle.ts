@@ -1,6 +1,7 @@
 import { IdleScreenState, IdleUserState, IWcBindable } from "../types.js";
 import { IdleCore } from "../core/IdleCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-idle>` — declarative Idle Detection API primitive.
@@ -150,6 +151,8 @@ export class WcsIdle extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     // No auto-start (§6) — observe() is a synchronous no-op, kept only for
     // API uniformity with other IO nodes' lifecycle.

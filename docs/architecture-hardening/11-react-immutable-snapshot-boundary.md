@@ -1,7 +1,7 @@
 # React の不変スナップショットと wc-bindable I/O 境界
 
 - **作成日**: 2026-08-01
-- **状態**: 設計判断記録（現状評価と推奨方針。実装は未着手）
+- **状態**: 設計判断記録（Phase 0 棚卸し・Phase 1 producer contract 完了。runtime 実装は未着手）
 - **対象**: `wcBindable.properties` を公開する非同期 I/O ノード、`@wc-bindable/react`、
   将来の framework adapter / remote adapter
 - **外部仕様スナップショット**:
@@ -167,6 +167,10 @@ handle — live / opaque resource。外部状態と独自 lifecycle を持つ。
 最初の成果物は分類表とし、runtime behavior は変えない。少なくとも camera、recorder、fetch、worker、
 websocket、broadcast、clipboard、credential を個別確認する。
 
+Phase 0 の固定スナップショットは
+[wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.md) に記録した。
+固定231 propertyを `state` 210、`event` 20、`handle` 1へ分類し、動的 DCC は別枠の `state` family とした。
+
 ### Phase 1: producer snapshot contract
 
 `docs/async-io-node-guidelines.md` に state-like output の規範を追加する。
@@ -179,6 +183,14 @@ websocket、broadcast、clipboard、credential を個別確認する。
 
 既存ノードは一括破壊変更せず、棚卸しで実 mutation が見つかったものから修正する。
 
+Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+§3.3.1 に追加した。新規ノード・新規 observable property は MUST、既存ノードは
+[Phase 0 棚卸し](12-wc-bindable-observable-inventory.md) から段階移行とする。
+
+出力側の規範だけでは、consumer の reactive store が包んだ値が input 経由で producer に入り込む経路を塞げない。
+その双対を同ガイドライン §3.3.2（input value contract）に置いた。本書の対象は producer → consumer の観測面なので、
+入力側の詳細はガイドラインを正とする。
+
 ### Phase 2: additive semantics metadata
 
 後方互換な optional metadata または manifest sidecar で分類を公開する。概念例は次のとおり。
@@ -189,9 +201,13 @@ websocket、broadcast、clipboard、credential を個別確認する。
 { name: "streamReady", event: "wcs-camera:stream-ready", semantics: "handle" }
 ```
 
-これは採択済み schema ではない。配置は wc-bindable 本体、wcstack manifest、別 sidecar のいずれかを決定ゲートで
-選ぶ。未知 field を無視できる forward-compatible な形を維持し、既存 adapter の observation semantics を
-暗黙に変更しない。
+配置は決定ゲート 1 で **declaration の additive optional field** に確定した（§8）。`/protocol/wc-bindable.ts` の
+`IWcBindableProperty` に `semantics?: "state" | "event" | "handle"` を追加し、`scripts/sync-protocol-types.mjs` が
+各パッケージへ配る形とした。`@wc-bindable/core@0.8.0` の descriptor 検証は `name` / `event` / `getter` のみを見て
+未知 field を素通しするため、既存 adapter の observation semantics は変わらない。
+
+実装済みの範囲は、棚卸しで `event` / `handle` に分類した 21 property（9 パッケージ）である。`state` は
+決定ゲート 2 の互換優先方針により未注釈のままとした。runtime 挙動は変えていない。
 
 ### Phase 3: React adapter
 
@@ -260,15 +276,29 @@ resource lifecycle は残るためである。
 ## 8. 決定ゲート
 
 1. **分類の配置**: wc-bindable declaration の optional field、wcstack manifest、別 sidecar のどれに置くか。
+   → **決定（2026-08-01）: declaration の additive optional field**。sidecar は
+   [`wcstack.manifest.json` schema](../wcstack-manifest-schema.md) 自身の不変条件により
+   「optional な情報を runtime correctness の必須入力に昇格させない」ものであり、tooling 用の artifact である。
+   本件の目的は汎用 adapter が**実行時**に受け皿を選べるようにすることなので、sidecar は要件を満たさない。
+   sidecar は将来 declaration の写しとして drift 検査に使う。
 2. **legacy fallback**: semantics metadata がない property を `state` とみなすか、現行 raw update として扱うか。
+   → **決定（2026-08-01）: 互換優先。未指定は「未指定」であり `state` ではない**。読み手は semantics を
+   見つけられない場合、この field が存在しなかった時と同じ動作を維持しなければならない（dedupe・cache・
+   serialize を推測で始めない）。明示された値だけが読み手の扱いを変える根拠になる。
 3. **React architecture**: 現行の local-state 転写を維持するか、cached external store へ移行するか。
 4. **resource lifetime**: managed object URL を producer 所有のままにするか、Blob を渡して consumer 所有へ寄せるか。
 5. **規範の強さ**: producer snapshot contract を新規ノードの MUST とし、既存ノードは段階移行にするか。
-6. **React API**: 現行 `[ref, values]` を維持するか、event / handle 用 surface を追加するか。
+6. **adapter API**: 現行 `[ref, values]` を維持するか、event / handle 用 surface を追加するか。
 
-推奨は、ゲート 1 を sidecar または additive field、ゲート 2 を互換優先、ゲート 3 は現行方式をテストで固定して
+ゲート 1・2 は上記のとおり確定済み。残りの推奨は、ゲート 3 は現行方式をテストで固定して
 external-store 化の利益を先に測定、ゲート 5 を「新規 MUST / 既存は棚卸し後に移行」、ゲート 6 を既存 API
 維持から開始、とする。ゲート 4 は resource ごとに判断する。
+
+ゲート 6 は当初 React API の設計判断として立てたが、Phase 0 の adapter 調査により複数 adapter に共通する要求で
+あることが分かった（[棚卸し §5.6](12-wc-bindable-observable-inventory.md)）。values から外した event / handle を
+「利用者が要素のイベントを直接聴く」で代替する逃げ道は、コロンを含む wcstack のイベント名を束縛できない
+framework では成立しない。したがってゲート 6 は、React 単独ではなく adapter 横断の surface 設計として上流へ
+提示する。
 
 ## 9. 実施価値と優先度
 

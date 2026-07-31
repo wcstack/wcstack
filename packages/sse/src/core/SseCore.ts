@@ -13,17 +13,17 @@ export class SseCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "message", event: "wcs-sse:message" },
-      { name: "connected", event: "wcs-sse:connected-changed" },
-      { name: "loading", event: "wcs-sse:loading-changed" },
-      { name: "error", event: "wcs-sse:error" },
+      { name: "message", event: "wcs-sse:message", semantics: "event" },
+      { name: "connected", event: "wcs-sse:connected-changed", semantics: "state" },
+      { name: "loading", event: "wcs-sse:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-sse:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` via an explicit `kind`
       // discriminator (invalid-argument / connection-error, split by phase +
       // recoverable). The existing `error` property/event are unchanged. Fires
       // wcs-sse:error-info-changed. No lane — SSE is a session/streaming monitor.
-      { name: "errorInfo", event: "wcs-sse:error-info-changed" },
-      { name: "readyState", event: "wcs-sse:readystate-changed" },
+      { name: "errorInfo", event: "wcs-sse:error-info-changed", semantics: "state" },
+      { name: "readyState", event: "wcs-sse:readystate-changed", semantics: "state" },
     ],
     commands: [
       { name: "connect" },

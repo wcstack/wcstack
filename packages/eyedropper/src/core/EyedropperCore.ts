@@ -31,15 +31,15 @@ export class EyedropperCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: "wcs-eyedropper:complete", getter: (e: Event) => (e as CustomEvent).detail.value },
-      { name: "loading", event: "wcs-eyedropper:loading-changed" },
-      { name: "error", event: "wcs-eyedropper:error" },
-      { name: "cancelled", event: "wcs-eyedropper:cancelled-changed" },
+      { name: "value", event: "wcs-eyedropper:complete", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.value },
+      { name: "loading", event: "wcs-eyedropper:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-eyedropper:error", semantics: "state" },
+      { name: "cancelled", event: "wcs-eyedropper:cancelled-changed", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output; the existing `error` property/event are unchanged.
       // Fires its own `wcs-eyedropper:error-info-changed` event; no getter, so the
       // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
-      { name: "errorInfo", event: "wcs-eyedropper:error-info-changed" },
+      { name: "errorInfo", event: "wcs-eyedropper:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "open", async: true },

@@ -33,23 +33,23 @@ export class RecorderCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "recording", event: "wcs-recorder:recording-changed" },
-      { name: "paused", event: "wcs-recorder:paused-changed" },
-      { name: "duration", event: "wcs-recorder:duration-changed" },
-      { name: "mimeType", event: "wcs-recorder:mimetype-changed" },
-      { name: "blob", event: "wcs-recorder:recorded", getter: (e: Event) => (e as CustomEvent).detail?.blob ?? null },
-      { name: "objectURL", event: "wcs-recorder:recorded", getter: (e: Event) => (e as CustomEvent).detail?.objectURL ?? null },
-      { name: "error", event: "wcs-recorder:error" },
+      { name: "recording", event: "wcs-recorder:recording-changed", semantics: "state" },
+      { name: "paused", event: "wcs-recorder:paused-changed", semantics: "state" },
+      { name: "duration", event: "wcs-recorder:duration-changed", semantics: "state" },
+      { name: "mimeType", event: "wcs-recorder:mimetype-changed", semantics: "state" },
+      { name: "blob", event: "wcs-recorder:recorded", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail?.blob ?? null },
+      { name: "objectURL", event: "wcs-recorder:recorded", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail?.objectURL ?? null },
+      { name: "error", event: "wcs-recorder:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (the DOMException name /
       // "unsupported"/"NoStreamError"/"RecorderError" sentinel); the existing `error`
       // property/event are unchanged. Fires wcs-recorder:error-info-changed. No lane —
       // recording is command-driven.
-      { name: "errorInfo", event: "wcs-recorder:error-info-changed" },
+      { name: "errorInfo", event: "wcs-recorder:error-info-changed", semantics: "state" },
       // event-token: detail = the assembled clip { blob, objectURL, mimeType, duration }.
-      { name: "recorded", event: "wcs-recorder:recorded", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "recorded", event: "wcs-recorder:recorded", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
       // event-token (timeslice mode): detail = the streamed Blob chunk.
-      { name: "dataavailable", event: "wcs-recorder:dataavailable", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "dataavailable", event: "wcs-recorder:dataavailable", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
     ],
     commands: [
       { name: "attachStream" },

@@ -1,6 +1,7 @@
 import { IWcBindable } from "../types.js";
 import { PointerLockCore } from "../core/PointerLockCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-pointer-lock target="...">` — declarative Pointer Lock API control.
@@ -149,6 +150,8 @@ export class WcsPointerLock extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this._applyDisplayAndObserve();
   }
 

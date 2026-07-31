@@ -24,9 +24,9 @@ export class RouteCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "params", event: "wcs-route:params-changed" },
-      { name: "typedParams", event: "wcs-route:params-changed", getter: (e: Event) => (e as CustomEvent).detail.typedParams },
-      { name: "active", event: "wcs-route:active-changed" },
+      { name: "params", event: "wcs-route:params-changed", semantics: "state" },
+      { name: "typedParams", event: "wcs-route:params-changed", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.typedParams },
+      { name: "active", event: "wcs-route:active-changed", semantics: "state" },
     ],
   };
 

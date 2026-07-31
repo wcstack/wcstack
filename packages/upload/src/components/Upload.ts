@@ -3,6 +3,7 @@ import { IWcBindable, WcsUploadError } from "../types.js";
 import { UploadCore } from "../core/UploadCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class WcsUpload extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -10,8 +11,8 @@ export class WcsUpload extends HTMLElement {
     ...UploadCore.wcBindable,
     properties: [
       ...UploadCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-upload:trigger-changed" },
-      { name: "files", event: "wcs-upload:files-changed" },
+      { name: "trigger", event: "wcs-upload:trigger-changed", semantics: "state" },
+      { name: "files", event: "wcs-upload:files-changed", semantics: "state" },
     ],
     // Shell-level input surface. The Core declares only the portable `url` / `method` /
     // `fieldName`; the Shell adds the DOM-driven settable surface. No `attribute` hints
@@ -336,6 +337,8 @@ export class WcsUpload extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

@@ -1,5 +1,6 @@
 import { IWcBindable, IntersectOptions, WcsIntersectEntry } from "../types.js";
 import { IntersectionCore } from "../core/IntersectionCore.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-intersect>` — declarative IntersectionObserver.
@@ -34,7 +35,7 @@ export class WcsIntersect extends HTMLElement {
     ...IntersectionCore.wcBindable,
     properties: [
       ...IntersectionCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-intersect:trigger-changed" },
+      { name: "trigger", event: "wcs-intersect:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. Each input carries its mirrored `attribute`
     // hint; `trigger` has none — it is a momentary command-property, not a
@@ -375,6 +376,8 @@ export class WcsIntersect extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.addEventListener("wcs-intersect:change", this._onChange);
     if (!this.manual) {
       this.observe();

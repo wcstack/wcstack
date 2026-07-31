@@ -4,6 +4,7 @@ import { IWcBindable, StorageType } from "../types.js";
 import { StorageCore } from "../core/StorageCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class Storage extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -11,7 +12,7 @@ export class Storage extends HTMLElement {
     ...StorageCore.wcBindable,
     properties: [
       ...StorageCore.wcBindable.properties,
-      { name: "trigger", event: STORAGE_EVENTS.triggerChanged },
+      { name: "trigger", event: STORAGE_EVENTS.triggerChanged, semantics: "state" },
     ],
     // Shell-level input surface. The Core declares only the portable `key` / `type`;
     // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
@@ -240,6 +241,8 @@ export class Storage extends HTMLElement {
   }
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

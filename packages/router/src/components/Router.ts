@@ -7,6 +7,7 @@ import { IWcBindable } from "../types.js";
 import { applyRoute } from "../applyRoute.js";
 import { getNavigation } from "../Navigation.js";
 import { normalizeBasename, normalizePathname } from "../normalizePathname.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 interface NavigateEventLike {
   canIntercept: boolean;
@@ -26,8 +27,8 @@ export class Router extends HTMLElement implements IRouter {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
-      { name: "path", event: "wcs-router:path-changed" },
+      { name: "navigateUrl", event: "wcs-router:navigate-url-changed", semantics: "state" },
+      { name: "path", event: "wcs-router:path-changed", semantics: "state" },
     ],
     // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
     // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ
@@ -288,6 +289,9 @@ export class Router extends HTMLElement implements IRouter {
   }
 
   async connectedCallback() {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
+    // await より前に同期で行い、初期化が古い値を読まないようにする。
+    upgradeProperties(this);
     if (!this._initialized) {
       this._disconnectedDuringInit = false;
       await this._initialize();

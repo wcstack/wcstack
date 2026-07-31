@@ -5,6 +5,7 @@ import {
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { ListenCore } from "../core/ListenCore.js";
 import { registerListenAutoTrigger } from "../listenAutoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-listen>` — declarative speech-to-text. Wraps ListenCore and exposes the
@@ -21,7 +22,7 @@ export class WcsListen extends HTMLElement {
     ...ListenCore.wcBindable,
     properties: [
       ...ListenCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-listen:trigger-changed" },
+      { name: "trigger", event: "wcs-listen:trigger-changed", semantics: "state" },
     ],
     inputs: [
       { name: "lang", attribute: "lang" },
@@ -250,6 +251,8 @@ export class WcsListen extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerListenAutoTrigger();

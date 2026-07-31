@@ -1,5 +1,6 @@
 import { IWcBindable, ResizeOptions, ResizeBoxOption, WcsResizeEntry } from "../types.js";
 import { ResizeCore } from "../core/ResizeCore.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 const BOX_VALUES: ReadonlyArray<ResizeBoxOption> = ["content-box", "border-box", "device-pixel-content-box"];
 
@@ -41,7 +42,7 @@ export class WcsResize extends HTMLElement {
     ...ResizeCore.wcBindable,
     properties: [
       ...ResizeCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-resize:trigger-changed" },
+      { name: "trigger", event: "wcs-resize:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. Each input carries its mirrored `attribute`
     // hint; `trigger` has none — it is a momentary command-property, not a
@@ -331,6 +332,8 @@ export class WcsResize extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.addEventListener("wcs-resize:change", this._onChange);
     if (!this.manual) {
       this.observe();

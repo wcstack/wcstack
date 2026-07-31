@@ -1,6 +1,7 @@
 import { IWcBindable, WcsAmbientLightSensorErrorDetail } from "../types.js";
 import { AmbientLightSensorCore } from "../core/AmbientLightSensorCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-ambient-light-sensor>` — declarative Generic Sensor API (`AmbientLightSensor`)
@@ -155,6 +156,8 @@ export class WcsAmbientLightSensor extends HTMLElement {
   // `<wcs-permission name="ambient-light-sensor">`: the caller decides when to start,
   // typically gated on `granted`.
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     // No asynchronous probe to await (§3.8); kept for SSR uniformity with
     // other IO nodes.

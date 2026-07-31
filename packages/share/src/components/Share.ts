@@ -1,6 +1,7 @@
 import { IWcBindable, WcsShareData } from "../types.js";
 import { ShareCore } from "../core/ShareCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-share>` — declarative Web Share API primitive.
@@ -132,6 +133,8 @@ export class WcsShare extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     this._connectedCallbackPromise = this._core.observe();
   }

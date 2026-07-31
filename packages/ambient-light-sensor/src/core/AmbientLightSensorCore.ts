@@ -43,13 +43,13 @@ export class AmbientLightSensorCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "illuminance", event: "wcs-ambient-light-sensor:reading", getter: (e: Event) => (e as CustomEvent).detail.illuminance },
-      { name: "error", event: "wcs-ambient-light-sensor:error" },
+      { name: "illuminance", event: "wcs-ambient-light-sensor:reading", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.illuminance },
+      { name: "error", event: "wcs-ambient-light-sensor:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error.error` (the Error.name /
       // "unsupported"); the existing `error` property/event are unchanged. Fires
       // wcs-ambient-light-sensor:error-info-changed. No lane — the sensor is a monitor.
-      { name: "errorInfo", event: "wcs-ambient-light-sensor:error-info-changed" },
+      { name: "errorInfo", event: "wcs-ambient-light-sensor:error-info-changed", semantics: "state" },
     ],
     commands: [{ name: "start" }, { name: "stop" }],
   };

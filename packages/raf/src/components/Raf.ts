@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { IWcBindable } from "../types.js";
 import { RafCore } from "../core/RafCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 export class Raf extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -9,7 +10,7 @@ export class Raf extends HTMLElement {
     ...RafCore.wcBindable,
     properties: [
       ...RafCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-raf:trigger-changed" },
+      { name: "trigger", event: "wcs-raf:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. `attribute` is a purely descriptive hint
     // (per SPEC-extensions.md the binding core does not act on it) naming the
@@ -207,6 +208,8 @@ export class Raf extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
       registerAutoTrigger();

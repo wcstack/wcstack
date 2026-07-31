@@ -32,21 +32,21 @@ export class GeolocationCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "position", event: "wcs-geo:position" },
-      { name: "latitude", event: "wcs-geo:position", getter: (e: Event) => (e as CustomEvent).detail.latitude },
-      { name: "longitude", event: "wcs-geo:position", getter: (e: Event) => (e as CustomEvent).detail.longitude },
-      { name: "accuracy", event: "wcs-geo:position", getter: (e: Event) => (e as CustomEvent).detail.accuracy },
-      { name: "coords", event: "wcs-geo:position", getter: (e: Event) => (e as CustomEvent).detail.coords },
-      { name: "timestamp", event: "wcs-geo:position", getter: (e: Event) => (e as CustomEvent).detail.timestamp },
-      { name: "watching", event: "wcs-geo:watching-changed" },
-      { name: "loading", event: "wcs-geo:loading-changed" },
-      { name: "error", event: "wcs-geo:error" },
-      { name: "permission", event: "wcs-geo:permission-changed" },
+      { name: "position", event: "wcs-geo:position", semantics: "state" },
+      { name: "latitude", event: "wcs-geo:position", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.latitude },
+      { name: "longitude", event: "wcs-geo:position", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.longitude },
+      { name: "accuracy", event: "wcs-geo:position", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.accuracy },
+      { name: "coords", event: "wcs-geo:position", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.coords },
+      { name: "timestamp", event: "wcs-geo:position", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.timestamp },
+      { name: "watching", event: "wcs-geo:watching-changed", semantics: "state" },
+      { name: "loading", event: "wcs-geo:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-geo:error", semantics: "state" },
+      { name: "permission", event: "wcs-geo:permission-changed", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from the normalized `error` (spec code
       // 1/2/3 → permission-denied / position-unavailable / timeout); the existing
       // `error` property/event are unchanged. Fires `wcs-geo:error-info-changed`.
-      { name: "errorInfo", event: "wcs-geo:error-info-changed" },
+      { name: "errorInfo", event: "wcs-geo:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "getCurrentPosition", async: true },

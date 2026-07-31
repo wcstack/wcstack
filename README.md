@@ -358,6 +358,28 @@ For debugging, add the `debug-states` attribute to a tag to mirror its states as
 
 ---
 
+## Using wcstack elements inside React / Vue / Svelte / Solid
+
+Every I/O node implements [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol), so a thin adapter (`@wc-bindable/react`, `/vue`, `/svelte`, `/solid`, …) wires an element's outputs into framework state without per-element glue. Three rules make that work:
+
+**1. Import the definition before you render.** Adapters check `isWcBindable(el)` once on mount and never retry, so an element that upgrades later stays silently unbound. A static import at the app entry is the reliable fix:
+
+```ts
+import "@wcstack/websocket/auto";   // main.tsx / main.js — before the app renders
+```
+
+If the definition genuinely has to arrive late (autoloader, CDN tag, code-split), gate the mount on `customElements.whenDefined("wcs-ws")`. `connectedCallbackPromise` is not a substitute — it covers connection, not definition.
+
+**2. Pass object-valued inputs as properties.** DOM attributes only hold strings, and several frameworks fall back to attributes when the property is not on the element yet, which stringifies your payload. Use `.prop` (Vue), `prop:` (Solid), `.prop=` (Lit), or assign through a ref.
+
+**3. Unwrap reactive proxies before handing values in.** Vue's `reactive`, Svelte's `$state` and Qwik's `useStore` wrap plain objects in proxies, and a proxy cannot cross a structured-clone boundary — `<wcs-worker>` and `<wcs-broadcast>` will report a `DataCloneError` instead of sending. Pass `toRaw()` / `$state.snapshot()` / `unwrap()` results.
+
+Live handles such as `<wcs-camera>`'s `MediaStream` are deliberately not snapshot state: take them from the element event via a ref. Note that Angular templates and JSX cannot bind event names containing a colon, so `addEventListener` (or `Renderer2.listen`) is the portable path.
+
+Full guide, per-framework snippets and the reasoning: [docs/framework-adapter-integration.md](docs/framework-adapter-integration.md). Working demos: [examples/websocket-chat](examples/websocket-chat/) (React 19 and Vue 3 against the same server as the vanilla, state and signals variants).
+
+---
+
 ## Project Structure
 
 ```

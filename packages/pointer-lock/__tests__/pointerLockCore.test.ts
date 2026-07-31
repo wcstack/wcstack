@@ -389,8 +389,8 @@ describe("PointerLockCore", () => {
 
     it("error / errorInfo が observable な失敗出力(event 付き)として宣言される", () => {
       expect(PointerLockCore.wcBindable.properties).toHaveLength(3);
-      expect(PointerLockCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-pointer-lock:error" });
-      expect(PointerLockCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-pointer-lock:error-info-changed" });
+      expect(PointerLockCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-pointer-lock:error", semantics: "state" });
+      expect(PointerLockCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-pointer-lock:error-info-changed", semantics: "state" });
     });
   });
 

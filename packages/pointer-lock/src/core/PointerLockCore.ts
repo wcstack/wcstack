@@ -39,15 +39,15 @@ export class PointerLockCore extends EventTarget {
     // getter needed (docs/pointer-lock-tag-design.md §2). This differs from
     // FullscreenCore's `{ active }`-shaped detail + getter.
     properties: [
-      { name: "active", event: "wcs-pointer-lock:change" },
+      { name: "active", event: "wcs-pointer-lock:change", semantics: "state" },
       // `error` / `errorInfo` are observable failure outputs. Historically `error`
       // was an imperative getter with no event; both are now bindable (event-backed)
       // so `data-wcs` / bind() can observe a request/exit failure. `errorInfo` is the
       // additive serializable taxonomy (stable code / phase / recoverable) derived
       // from `error`; the `error` value shape is unchanged. No lane — pointer-lock
       // drives a referenced element, not a competing operation.
-      { name: "error", event: "wcs-pointer-lock:error" },
-      { name: "errorInfo", event: "wcs-pointer-lock:error-info-changed" },
+      { name: "error", event: "wcs-pointer-lock:error", semantics: "state" },
+      { name: "errorInfo", event: "wcs-pointer-lock:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "requestPointerLock", async: true },

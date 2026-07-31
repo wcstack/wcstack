@@ -30,21 +30,21 @@ export class SpeakCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "voices", event: "wcs-speak:voices-changed" },
-      { name: "speaking", event: "wcs-speak:speaking-changed" },
-      { name: "paused", event: "wcs-speak:paused-changed" },
-      { name: "pending", event: "wcs-speak:pending-changed" },
-      { name: "charIndex", event: "wcs-speak:boundary", getter: (e: Event) => (e as CustomEvent).detail?.charIndex ?? null },
-      { name: "spokenWord", event: "wcs-speak:boundary", getter: (e: Event) => (e as CustomEvent).detail?.word ?? null },
-      { name: "error", event: "wcs-speak:error" },
+      { name: "voices", event: "wcs-speak:voices-changed", semantics: "state" },
+      { name: "speaking", event: "wcs-speak:speaking-changed", semantics: "state" },
+      { name: "paused", event: "wcs-speak:paused-changed", semantics: "state" },
+      { name: "pending", event: "wcs-speak:pending-changed", semantics: "state" },
+      { name: "charIndex", event: "wcs-speak:boundary", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail?.charIndex ?? null },
+      { name: "spokenWord", event: "wcs-speak:boundary", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail?.word ?? null },
+      { name: "error", event: "wcs-speak:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error.error` (the
       // SpeechSynthesisErrorEvent.error code / "unsupported"); the existing `error`
       // property/event are unchanged. Fires wcs-speak:error-info-changed. No lane —
       // speak() is a momentary queue submission with no competing async operation to
       // serialize.
-      { name: "errorInfo", event: "wcs-speak:error-info-changed" },
-      { name: "unsupported", event: "wcs-speak:unsupported-changed" },
+      { name: "errorInfo", event: "wcs-speak:error-info-changed", semantics: "state" },
+      { name: "unsupported", event: "wcs-speak:unsupported-changed", semantics: "state" },
     ],
     commands: [
       { name: "speak" },

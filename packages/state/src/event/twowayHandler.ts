@@ -11,6 +11,7 @@ import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
+import { beginOccurrenceWrite, endOccurrenceWrite } from "../proxy/occurrenceWrite";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
@@ -19,9 +20,9 @@ const producerValueObserversByNode = new WeakMap<Node, Map<string, Set<(value: u
 
 const DEFAULT_GETTER = (e: Event) => (e as CustomEvent).detail;
 
-function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean): string {
+function getHandlerKey(binding: IBindingInfo, eventName: string, hasGetter: boolean, isOccurrence: boolean): string {
   const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-  return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}`;
+  return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
 }
 
 function getEventName(binding: IBindingInfo): string {
@@ -60,12 +61,26 @@ function getValueGetter(binding: IBindingInfo): ((event: Event) => any) | null {
   return null;
 }
 
+/**
+ * producer が `semantics: "event"` を宣言した property か。occurrence は同じ payload でも
+ * 「もう一度起きた」ことに意味があるため、state への書き込みで same-value guard を通さない
+ * （docs/async-io-node-guidelines.md §3.3.1 の `event`）。宣言が無い property は従来どおり
+ * — 未指定は「未指定」であって state ではないので、挙動は変えない。
+ */
+function isOccurrenceProperty(binding: IBindingInfo): boolean {
+  const customTagName = getCustomElement(binding.node as Element);
+  if (customTagName === null) return false;
+  const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
+  return propDesc?.semantics === "event";
+}
+
 const twowayEventHandlerFunction = (
   stateName: string,
   propName: string,
   statePathName: string,
   inFilters: IFilterInfo[],
   valueGetter: ((event: Event) => any) | null,
+  isOccurrence: boolean,
 ) => (event: Event): any => {
   const node = event.target as Element;
   if (node === null) {
@@ -156,11 +171,18 @@ const twowayEventHandlerFunction = (
 
   const loopContext = getLoopContextByNode(node);
   const commitToState = (): void => {
-    stateElement.createState("writable", (state) => {
-      state[setLoopContextSymbol](loopContext, () => {
-        state[statePathName] = filteredNewValue;
+    // occurrence は同値でも取りこぼしてはならない（§3.3.1 `event`）。トークンは
+    // setByAddress の最初のガード評価で消費されるため、この write 1 回だけに効く。
+    if (isOccurrence) beginOccurrenceWrite();
+    try {
+      stateElement.createState("writable", (state) => {
+        state[setLoopContextSymbol](loopContext, () => {
+          state[statePathName] = filteredNewValue;
+        });
       });
-    });
+    } finally {
+      if (isOccurrence) endOccurrenceWrite();
+    }
   };
   if (propagationContext !== null) {
     runWithPropagationContext(propagationContext, commitToState);
@@ -208,7 +230,8 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
   if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
-    const key = getHandlerKey(binding, eventName, valueGetter !== null);
+    const isOccurrence = isOccurrenceProperty(binding);
+    const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrence);
     let twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       twowayEventHandler = twowayEventHandlerFunction(
@@ -216,7 +239,8 @@ export function attachTwowayEventHandler(binding: IBindingInfo): void {
         binding.propName,
         binding.statePathName,
         binding.inFilters,
-        valueGetter
+        valueGetter,
+        isOccurrence
       );
       handlerByHandlerKey.set(key, twowayEventHandler);
     }
@@ -241,7 +265,7 @@ export function detachTwowayEventHandler(binding: IBindingInfo): void {
   if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
     const eventName = getEventName(binding);
     const valueGetter = getValueGetter(binding);
-    const key = getHandlerKey(binding, eventName, valueGetter !== null);
+    const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrenceProperty(binding));
     const twowayEventHandler = handlerByHandlerKey.get(key);
     if (typeof twowayEventHandler === "undefined") {
       return;

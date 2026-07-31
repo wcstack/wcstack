@@ -40,15 +40,15 @@ export class CredentialCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: "wcs-credential:complete", getter: (e: Event) => (e as CustomEvent).detail.value },
-      { name: "loading", event: "wcs-credential:loading-changed" },
-      { name: "error", event: "wcs-credential:error" },
-      { name: "cancelled", event: "wcs-credential:cancelled-changed" },
+      { name: "value", event: "wcs-credential:complete", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.value },
+      { name: "loading", event: "wcs-credential:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-credential:error", semantics: "state" },
+      { name: "cancelled", event: "wcs-credential:cancelled-changed", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output; the existing `error` property/event are unchanged.
       // Fires its own `wcs-credential:error-info-changed` event; no getter, so the
       // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
-      { name: "errorInfo", event: "wcs-credential:error-info-changed" },
+      { name: "errorInfo", event: "wcs-credential:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "get", async: true },

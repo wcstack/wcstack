@@ -356,6 +356,28 @@ wcs-permission:state(denied) ~ .help   { display: block; }
 
 ---
 
+## React / Vue / Svelte / Solid のアプリから使う
+
+すべての I/O ノードは [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol) を実装しているので、薄いアダプター（`@wc-bindable/react` / `/vue` / `/svelte` / `/solid` ほか）を挟むだけで、要素の出力をフレームワークの状態へ配線できます。要素ごとの糊コードは不要です。そのために必要な規則は 3 つです。
+
+**1. render より前に定義を読み込む。** アダプターは mount 時に一度だけ `isWcBindable(el)` を判定し、再試行しません。後から upgrade された要素は、エラーも出さずに永久に無反応のままになります。確実なのはアプリのエントリでの静的 import です。
+
+```ts
+import "@wcstack/websocket/auto";   // main.tsx / main.js — アプリの描画より前に
+```
+
+autoloader・CDN タグ・code-split などで定義が遅れるのが避けられない場合は、`customElements.whenDefined("wcs-ws")` を待ってから mount してください。`connectedCallbackPromise` は接続を待つもので、定義の待機には使えません。
+
+**2. object を渡す input はプロパティとして渡す。** DOM 属性は文字列しか持てず、要素が未 upgrade だと属性側へフォールバックするフレームワークがあるため、payload が文字列化されます。Vue の `.prop`、Solid の `prop:`、Lit の `.prop=`、または ref 経由の代入を使ってください。
+
+**3. reactive な Proxy は raw にしてから渡す。** Vue の `reactive`、Svelte の `$state`、Qwik の `useStore` は plain object を Proxy で包みます。Proxy は structured clone を越えられないため、`<wcs-worker>` や `<wcs-broadcast>` は送信の代わりに `DataCloneError` を報告します。`toRaw()` / `$state.snapshot()` / `unwrap()` を通してください。
+
+`<wcs-camera>` の `MediaStream` のような live handle は、意図的に snapshot state に載せていません。ref で要素を掴んでイベントから受け取ってください。なお Angular のテンプレートと JSX はコロンを含むイベント名を束縛できないため、`addEventListener`（または `Renderer2.listen`）が可搬な経路になります。
+
+詳細な手順・フレームワーク別のコード・判断の根拠は [docs/framework-adapter-integration.md](docs/framework-adapter-integration.md) にあります。動くデモは [examples/websocket-chat](examples/websocket-chat/)（React 19 と Vue 3 が、vanilla / state / signals と同じサーバーに繋ぎます）。
+
+---
+
 ## プロジェクト構成
 
 ```

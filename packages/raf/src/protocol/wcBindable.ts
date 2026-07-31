@@ -17,10 +17,28 @@
 // SINGLE SOURCE OF TRUTH: edit only this file (/protocol/wc-bindable.ts), then run
 // `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
 // (packages/<pkg>/src/protocol/wcBindable.ts). Those copies are generated — do not edit them.
+/**
+ * Observation semantics of a `properties` entry.
+ *
+ *   "state"  — current value. A snapshot may cache it, and equality-based dedupe is safe.
+ *   "event"  — occurrence. Repeated identical payloads are distinct occurrences; never dedupe.
+ *   "handle" — live / opaque resource with its own lifecycle (e.g. MediaStream). Not
+ *              snapshot-safe and not necessarily serializable; consumers need an explicit
+ *              ref / callback surface rather than a value slot.
+ */
+export type WcBindableSemantics = "state" | "event" | "handle";
+
 export interface IWcBindableProperty {
   readonly name: string;
   readonly event: string;
   readonly getter?: (event: Event) => any;
+  /**
+   * Optional, additive, forward-compatible. An absent value means **unspecified**, NOT
+   * "state": a reader that finds no `semantics` MUST keep the behavior it had before this
+   * field existed (deliver the update as-is; do not start deduping, caching or serializing
+   * on assumption). Only an explicit value licenses a reader to change its handling.
+   */
+  readonly semantics?: WcBindableSemantics;
 }
 
 export interface IWcBindableInput {
@@ -35,7 +53,8 @@ export interface IWcBindableCommand {
 
 export interface IWcBindable {
   readonly protocol: "wc-bindable";
-  readonly version: 1;
+  /** Integer protocol version. All versions >= 1 are core-compatible. */
+  readonly version: number;
   readonly properties: readonly IWcBindableProperty[];
   readonly inputs?: readonly IWcBindableInput[];
   readonly commands?: readonly IWcBindableCommand[];

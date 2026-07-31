@@ -1,6 +1,7 @@
 import { CredentialGetOptions, IWcBindable, StorableCredential } from "../types.js";
 import { CredentialCore } from "../core/CredentialCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-credential>` — declarative Credential Management API primitive
@@ -115,6 +116,8 @@ export class WcsCredential extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     this._connectedCallbackPromise = this._core.observe();
   }

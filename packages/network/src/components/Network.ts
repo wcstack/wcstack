@@ -1,5 +1,6 @@
 import { IWcBindable } from "../types.js";
 import { NetworkCore } from "../core/NetworkCore.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 /**
  * `<wcs-network>` — declarative Network Information API monitor.
@@ -109,6 +110,8 @@ export class WcsNetwork extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     this._connectedCallbackPromise = this._core.observe();
   }

@@ -22,15 +22,15 @@ export class FullscreenCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "active", event: "wcs-fullscreen:change", getter: (e: Event) => (e as CustomEvent).detail.active },
+      { name: "active", event: "wcs-fullscreen:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.active },
       // `error` / `errorInfo` are observable failure outputs. Historically `error`
       // was an imperative getter with no event; both are now bindable (event-backed)
       // so `data-wcs` / bind() can observe a request/exit failure. `errorInfo` is the
       // additive serializable taxonomy (stable code / phase / recoverable) derived
       // from `error`; the `error` value shape is unchanged. No lane — fullscreen
       // drives a referenced element, not a competing operation.
-      { name: "error", event: "wcs-fullscreen:error" },
-      { name: "errorInfo", event: "wcs-fullscreen:error-info-changed" },
+      { name: "error", event: "wcs-fullscreen:error", semantics: "state" },
+      { name: "errorInfo", event: "wcs-fullscreen:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "requestFullscreen", async: true },

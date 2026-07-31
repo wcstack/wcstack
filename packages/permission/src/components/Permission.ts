@@ -1,5 +1,6 @@
 import { IWcBindable, PermissionStateOrUnsupported, WcsPermissionDescriptor } from "../types.js";
 import { PermissionCore } from "../core/PermissionCore.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 // Named WcsPermission (not `Permission`) so the class does not shadow any global,
 // and to match the <wcs-geo> / <wcs-ws> convention (WcsGeolocation /
@@ -164,6 +165,8 @@ export class WcsPermission extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     // Begin observing (or revive the subscription after a reconnect). The
     // returned promise is held as connectedCallbackPromise for SSR. query() never

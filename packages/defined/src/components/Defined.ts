@@ -1,5 +1,6 @@
 import { DefinedMode, IWcBindable } from "../types.js";
 import { DefinedCore } from "../core/DefinedCore.js";
+import { upgradeProperties } from "../protocol/upgradeProperties.js";
 
 // Named WcsDefined (not `Defined`) to match the <wcs-permission> / <wcs-geo>
 // convention (WcsPermission / WcsGeolocation) and avoid shadowing any global.
@@ -158,6 +159,8 @@ export class WcsDefined extends HTMLElement {
   // --- Lifecycle ---
 
   connectedCallback(): void {
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    upgradeProperties(this);
     this.style.display = "none";
     // Begin the watch (or revive it after a reconnect). The returned promise is
     // held as connectedCallbackPromise for SSR. whenDefined failures surface as
