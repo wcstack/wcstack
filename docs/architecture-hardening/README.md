@@ -4,7 +4,7 @@
 - **状態**: 一部採択・実装済み。phase 0-6 の PoC 実装は完了し、phase 2（方向認識初期同期）/ phase 3
   （因果伝播）は既定 `true` に反転済み。opt-in → 既定化 / IO 族横展開の進捗と残作業は
   [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) が追跡する。未実装の設計提案は
-  各論点 doc（01-08）に残る。
+  各論点 doc（01-08、11）に残る。
 - **対象スナップショット**:
   - wcstack: `27371dca55888c864028042e71d8a7e7149365b4`（v1.20.0）
   - wc-bindable-protocol: `5ec0deef212578a072b2f669d2a5554f254253e0`
@@ -43,6 +43,12 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
   opt-in → 既定化 / IO 族横展開の進捗と残作業を追跡する living document（Phase 2/3 既定化済み、
   errorInfo 27/35 ノード適用＋defer 3＋非該当 5、5a CI ゲート化済み、5b は explicit opt-in 確定。
   残 = リリース時 dist rebuild / defer ノード判断 / lane trace ブリッジ）。
+
+## 追加の境界設計
+
+- [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md) —
+  非同期 commit の正しさ、React snapshot の不変性、live resource の寿命を分離し、React adapter、
+  I/O node、protocol metadata の責務を整理する。`state` / `event` / `handle` の棚卸しと段階導入案を含む。
 
 ## 横断原則
 
