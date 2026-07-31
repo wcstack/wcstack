@@ -242,7 +242,7 @@ structured clone 境界での失敗は never-throw で `error` に落とし、ra
 
 ### 残る作業
 
-1. `@wcstack/state` の同値ガードを `semantics: "event"` で迂回する（下記 §6.2）。
+1. ~~`@wcstack/state` の同値ガードを `semantics: "event"` で迂回する~~ → 実施済み（§6.2）。
 2. `state` を含む全 231 property の明示注釈（DevTools / remote / SSR 向け。互換性への影響は無い）。
 3. React adapter の現行 local-state 転写を characterization test で固定する（上流リポジトリ）。
 4. event / handle の追加 surface を設計し、既存 `[ref, values]` API を壊さず試す（上流リポジトリ）。
@@ -257,9 +257,19 @@ JSON payload の `message` は毎回 fresh object で影響を受けないが、
 `copied` / `fired` のような primitive occurrence は現状**取りこぼす**。
 
 これは §5.1 で signals adapter について指摘したのと同じ失敗であり、wcstack 内で再現・修正・回帰テストまで
-完結できる。ガードは `setByAddress` の汎用パスにあるため、書き込みの出所が `semantics: "event"` の
-wc-bindable property であることを伝える経路の設計が必要になる。runtime 変更なので Phase 2 の宣言追加とは
-別コミット・別レビューとする。
+完結できる。
+
+**実施済み（2026-08-01）**。ガードは `setByAddress` の汎用パスにあるため、書き込みの出所を伝える経路として
+`packages/state/src/proxy/occurrenceWrite.ts` の one-shot トークンを置いた。`twowayHandler` が occurrence
+property の commit を `beginOccurrenceWrite()` / `endOccurrenceWrite()` で挟み、`setByAddress` が先頭で
+`consumeOccurrenceWrite()` して fast path・一般パス双方のガード判定に使う。
+
+one-shot にしたのは、フラグを書き込みの呼び出しスタック全体へ張ると、その内側で走る `$updatedCallback` や
+依存伝播が行う無関係な同値書き込みまでガードを失うためである。トークンは最初のガード評価で消費されるので、
+影響は目的の 1 write に閉じる。
+
+config フラグは追加していない。`semantics` は本 Phase で導入した宣言であり、既存の declaration は 1 つも
+`event` を宣言していなかったため、挙動が変わるのは新たに宣言した property だけで、構造的に opt-in になる。
 
 ## 7. Phase 0 完了条件
 

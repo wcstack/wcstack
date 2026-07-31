@@ -33,6 +33,7 @@ import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
+import { consumeOccurrenceWrite } from "../occurrenceWrite";
 
 // Phase 3: 書き込み時点の因果 context を update record に付与する。
 // binding 経由の書き込みは呼び出し元の dynamic scope から context を引き継ぎ、
@@ -172,6 +173,10 @@ export function setByAddress(
 ): any {
   const stateElement = handler.stateElement;
   const path = address.pathInfo.path;
+  // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
+  // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
+  // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
+  const skipSameValueGuard = consumeOccurrenceWrite();
 
   // --- fast path: 宣言済み getter/setter でも swap 対象でもない、親を持つ葉パス ---
   // 従来は same-value guard の値読み・hasByAddress・実書き込みがそれぞれ親チェーンを
@@ -189,7 +194,7 @@ export function setByAddress(
         : lastSegment;
       let devOldValue: unknown;
       let devHasOldValue = false;
-      if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+      if (!skipSameValueGuard && config.sameValueGuard && (value === null || typeof value !== "object")) {
         // hasByAddress と同じ「初期化済みスロットか」判定（undefined 格納と未初期化を区別）
         const has = key !== undefined && key in parentValue;
         const oldValue = key !== undefined ? (parentValue as Record<PropertyKey, unknown>)[key] : undefined;
@@ -249,7 +254,7 @@ export function setByAddress(
   // （参照型のために追加の get はしない — protocol §4.2）
   let devOldValue: unknown;
   let devHasOldValue = false;
-  if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+  if (!skipSameValueGuard && config.sameValueGuard && (value === null || typeof value !== "object")) {
     const oldValue = getByAddress(target, address, receiver, handler);
     if (hasByAddress(target, address, receiver, handler) && Object.is(oldValue, value)) {
       return true;
