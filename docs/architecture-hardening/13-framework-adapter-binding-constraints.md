@@ -1,8 +1,11 @@
 # framework adapter のバインド成立制約
 
 - **作成日**: 2026-08-01
-- **状態**: 設計判断記録。**Phase A1（Shell の property upgrade）は実装済み**（§4 Phase A1）。
-  A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。A2-A4 は未着手
+- **状態**: 設計判断記録。**Phase A1-A4 まで実施済み**（A1 = Shell の property upgrade 実装、
+  A2 / A4 = [組み込み手順](../framework-adapter-integration.md)、
+  A3 = [`bind()` 定義待ちの提案文書](../spec-proposal-bind-definition-timing.md)）。
+  A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。
+  残るのは upstream への提案提出と wcstack-app スキルの追随
 - **対象**: `static wcBindable` を宣言する全 Shell、`@wc-bindable` の framework adapter、
   `@wcstack/autoloader` を前提とする配布経路
 - **外部仕様スナップショット**:
@@ -158,24 +161,40 @@ covered、`<wcs-route>` は `inputs` を持たないため対象外）。`<wcs-r
 `packages/raf/src/protocol/wcBindable.ts` が AUTO-GENERATED バナー付きのまま `--check` の対象外で
 drift していたことが判明した（登録漏れ）。リストに追加して解消済み。
 
-### Phase A2: 遅延定義構成の利用手順を明文化
+### Phase A2: 遅延定義構成の利用手順を明文化 — 実施済み（2026-08-01）
 
-adapter を使う場合は `customElements.whenDefined()` か `<wcs-defined>` でゲートしてから mount する、を
-README と wcstack-app スキルに書く。既存の `connectedCallbackPromise` / `hasConnectedCallbackPromise` は
-接続後の初期スナップショット取得用で、定義前の待機には使えないことも併記する。
+利用手順の正本を [framework アプリへの組み込み手順](../framework-adapter-integration.md) として置いた。
+静的 import が最も確実であること、避けられない場合は `customElements.whenDefined()` で
+**adapter を呼ぶコンポーネントがマウントされる前に**ゲートすること、
+`connectedCallbackPromise` / `hasConnectedCallbackPromise` / `<wcs-defined>` / `setTimeout` が
+代用にならない理由を明記した。object 入力の属性フォールバック（§2）と reactive proxy の raw 化（§3）も
+同じ文書にまとめてある。
 
-### Phase A3: 上流への提案
+ルート README（en / ja）には 3 規則の要約と本文書へのリンクを追加した。
+wcstack-app スキルは別リポジトリ（wcstack/wcstack-skill）なので、そちらの追随は別作業として残る。
 
-`bind()` に定義待ちの選択肢（`syncOn: "define"` 相当、または `whenDefined` 後の再試行）を提案する。
-core が「まだ upgrade していない」と「wc-bindable ではない」を区別できれば、18 個の adapter を個別に直さずに済む。
+### Phase A3: 上流への提案 — 提案文書作成済み（2026-08-01）
+
+[`bind()` に「まだ定義されていない」を扱わせる提案](../spec-proposal-bind-definition-timing.md) を書いた。
+案 A（`syncOn: "define"` の追加・推奨）/ 案 B（戻り値で `pending` を区別）/ 案 C（別関数）を比較し、
+規範文言案・適合テスト条件・非目標まで含めてある。既定挙動を変えず core 1 箇所で済む案 A を推している。
 [棚卸し §5.6](12-wc-bindable-observable-inventory.md) の semantics metadata 提案とは独立に出せる。
 
-### Phase A4: イベント名の代替経路
+upstream リポジトリへの issue / PR 提出は未実施。
 
-命名は変更しない（破壊変更のため）。代わりに、コロンを束縛できない framework 向けの受け方
-（Angular は `Renderer2.listen` / 手動 `addEventListener`、React は ref + `addEventListener`）を
-ドキュメント化する。親設計の決定ゲート 6 で event / handle surface を追加する場合、その surface は
-テンプレート構文に依存しない形にする。
+### Phase A4: イベント名の代替経路 — 実施済み（2026-08-01）
+
+命名は変更しない（破壊変更のため）。代わりに、コロンを束縛できない framework 向けの受け方を
+[組み込み手順 §4](../framework-adapter-integration.md) に書いた。adapter 経由なら影響しないこと、
+Angular（`Unsupported event target`）と React（JSX の名前空間解釈）はテンプレートで書けないこと、
+どの framework でも ref + `addEventListener`（Angular は `Renderer2.listen`）が可搬な経路であること、
+この経路が必要になる代表例が `handle` 分類の `streamReady` であることを、実コード付きで示している。
+
+Vue / Svelte / Solid のテンプレート構文でコロン付き名が書けるかは framework とバージョンに依存するため、
+実測していない事実として断定せず、可搬な経路を推奨する形にした。
+
+親設計の決定ゲート 6 で event / handle surface を追加する場合、その surface はテンプレート構文に
+依存しない形にする。
 
 ## 5. 検証条件
 
@@ -186,7 +205,8 @@ core が「まだ upgrade していない」と「wc-bindable ではない」を
 - [x] prototype 側が accessor でない own プロパティは触らない（public class field を壊さない）。
 - [x] `inputs` 宣言を持たない要素、`wcBindable` を持たない要素で例外を投げない。
 - 上記は `__tests__/protocol.upgradeProperties.test.ts`（生成配布される共有適合テスト）が各パッケージで固定する。
-- [ ] object を受け取る入力について、属性フォールバック時に沈黙して壊れないことを README で明示する（Phase A2）。
+- [x] object を受け取る入力について、属性フォールバック時に沈黙して壊れることを利用者向けに明示する
+  （[組み込み手順 §2](../framework-adapter-integration.md)・ルート README）。
 
 ### 遅延定義
 
@@ -225,8 +245,9 @@ core が「まだ upgrade していない」と「wc-bindable ではない」を
 | 値の意味分類（doc 11 / 12）との結合度 | 低い（独立に進行できる） |
 
 Phase A1 は本書で挙げた中で唯一、上流も metadata も待たずに直せる実欠陥だった。実装済み。
-残るのは A2（利用手順の明文化）、A3（上流提案）、A4（代替束縛経路の文書化）で、いずれも文書と提案であり
-runtime 変更を伴わない。
+A2 / A3 / A4 も文書として着地した。残るのは本リポジトリ外の 2 件——
+[提案文書](../spec-proposal-bind-definition-timing.md) の upstream への提出と、
+wcstack-app スキル（別リポジトリ）への追随である。
 
 ## 参照
 
