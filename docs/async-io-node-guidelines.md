@@ -3,7 +3,7 @@
 - **対象**: `@wcstack` に新しい非同期IOノードパッケージ（Web API を宣言的タグ化したもの。`@wcstack/fetch` / `geolocation` / `clipboard` / `sse` / `broadcast` / `worker` / `wakelock` / `intersection` / `resize` / `speech` / `permission` / `notification` ほか）を追加する実装者
 - **状態**: 規範ドキュメント（normative）。「MUST / SHOULD / MAY」は RFC 2119 の意味で使う。新規ノードはここに反した実装をしてはならない（MUST NOT）。やむを得ず逸脱する場合は、その理由をパッケージの設計ドキュメント（`docs/<name>-tag-design.md`）に記録すること
 - **なぜ存在するか**: 既存ノードは全て同じ骨格（Core/Shell 分離・wc-bindable 準拠・never-throw・`_gen` 世代ガード・SSR 対応）を共有している。この一貫性が「1つ覚えれば全部使える」という DX と、`state` binder からの相互運用性を支えている。新規ノードがこの骨格を踏襲しないと、利用者は個別に内部を読まねばならず、エコシステムの価値が崩れる。本書はその骨格を1枚に集約し、レビューのチェックリストにする
-- **関連**: タイミング・発火の契約は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。実行意味論（実行形・レーン・排他モード・キャンセル・再試行・タイムアウト）の規範は [async-execution-model.md](./async-execution-model.md)。observable の snapshot 境界は [React の不変スナップショットと wc-bindable I/O 境界](./architecture-hardening/11-react-immutable-snapshot-boundary.md) と [observable 棚卸し](./architecture-hardening/12-react-snapshot-observable-inventory.md)。プロトコル本体は各 SPEC（wc-bindable / command-token / event-token）。設計検討の様式は既存の `docs/*-tag-design.md` を参照
+- **関連**: タイミング・発火の契約は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。実行意味論（実行形・レーン・排他モード・キャンセル・再試行・タイムアウト）の規範は [async-execution-model.md](./async-execution-model.md)。observable の snapshot 境界は [React の不変スナップショットと wc-bindable I/O 境界](./architecture-hardening/11-react-immutable-snapshot-boundary.md) と [observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md)。プロトコル本体は各 SPEC（wc-bindable / command-token / event-token）。設計検討の様式は既存の `docs/*-tag-design.md` を参照
 
 ---
 
@@ -20,7 +20,7 @@
 9. **テストカバレッジ 100 / 97+ / 100 / 100**（statements / branches / functions / lines）。テスト記述は日本語
 10. **出力状態の CSS 反映（CustomStateSet）**。boolean 出力 observable・派生 boolean getter・`error` の存在を Shell が `ElementInternals.states` に反映し `:state()` で選択可能にする。反映は Shell のみで行い Core に持ち込まない。`attachInternals` 不在環境では静かに無効化する（§4.5）
 11. **Core は公開ヘッドレスサーフェス**。Core クラスをパッケージの entry（`exports.ts`）から export し、その構造保証（§3.9）を semver 保護の公開 API として扱う。README に headless（Core）利用の節を持つ（§9）
-12. **producer snapshot contract**。state-like object / array は公開後に producer が変更せず、logical state の変更時は fresh value を割り当ててから通知する。event は occurrence を同値ガードせず、handle は owner と release point を明示する（§3.3.1）
+12. **producer snapshot contract**。state-like object / array は公開後に producer が変更せず、logical state の変更時は fresh value を割り当ててから通知する。event は occurrence を同値ガードせず、handle は owner と release point を明示する（§3.3.1）。入力側で受け取った値の扱いは §3.3.2
 
 ---
 
@@ -132,7 +132,7 @@ private _setState(v: T): void {
 ### 3.3.1 producer snapshot contract（MUST）
 
 この節は新規ノードと新規 observable property に適用する。既存ノードは
-[observable 棚卸し](./architecture-hardening/12-react-snapshot-observable-inventory.md) を起点に段階移行し、
+[observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md) を起点に段階移行し、
 既存の配送・getter・resource lifetime を一括で破壊変更してはならない（MUST NOT）。
 
 #### `state`
@@ -190,6 +190,26 @@ deep clone / deep freeze する根拠にはならない。deep equality、deep c
 `blob:` URL のように値自体は primitive でも backing resource を producer が破棄するものは、通常の state より強い
 lifetime 契約を必要とする。producer は supersede / dispose 時の revoke point と、過去の値の有効性を保証するかを
 README と test に固定する（MUST）。consumer lifecycle まで保証できない場合は best-effort current value と明記する。
+
+### 3.3.2 input value contract（MUST）
+
+§3.3.1 は producer → consumer の出力側を規範化する。入力側（consumer → producer）には双対の問題がある。
+framework の reactive store は値を Proxy で包むため、consumer が `el.post = store.message` と書くと Core は
+Proxy を受け取る。Vue の `reactive`、Svelte の `$state`、Solid の store、Alpine、MobX、Qwik の `useStore` が
+該当し、包まれるのは plain object / array / Map / Set である（`MediaStream`・`Error`・`Blob`・`ArrayBuffer` などの
+platform object は対象外なので影響しない）。
+
+- Core は input として受け取った値を、そのまま structured clone 境界（`Worker.postMessage`、
+  `BroadcastChannel.postMessage`、IndexedDB ほか）へ渡してよい（MAY）。ただし Proxy は structured clone できず
+  `DataCloneError` になるため、never-throw（§3.6）で `error` / `errorInfo` に落ちる経路を必ず持つ（MUST）。
+  例外を投げて利用者コードを壊してはならない（MUST NOT）。
+- Core が framework 固有の unwrap（`toRaw` / `$state.snapshot` / `unwrap`）を実装してはならない（MUST NOT）。
+  依存を持ち込むうえ、どの framework の Proxy かを判定する一般的手段がない。zero runtime dependency の原則にも反する。
+- object を受け取る input を持つノードは、reactive store の値は raw 化してから渡すことを README に明記する
+  （MUST）。scalar の属性バック input は文字列化されるため対象外でよい。
+- 入力値を保持して後から state として再公開する場合、受け取り時に own snapshot へ変換する（SHOULD）。
+  consumer 側の store が後から変更されても producer の state が黙って変わらないようにするためで、§3.3.1 の
+  「公開後に変更しない」を入力経路から破られないようにする措置である。
 
 ### 3.4 `_gen` 世代ガード（MUST）
 

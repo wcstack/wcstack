@@ -1,13 +1,14 @@
-# React snapshot 向け wc-bindable observable 棚卸し
+# wc-bindable observable 棚卸し
 
 - **作成日**: 2026-08-01
 - **状態**: Phase 0 完了（分類スナップショット。runtime behavior は未変更）
 - **基準 commit**: wcstack `6eea3a5b52ef032d2ed6f2d7824bb45e6c000935`
 - **親設計**: [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
+- **外部仕様スナップショット**: `@wc-bindable/core@0.8.0`。adapter 実装の参照は §5.6 に記す
 
 ## 1. 目的と範囲
 
-`static wcBindable.properties` に同じ形で並んでいる observable を、React adapter が値の型や property 名から
+`static wcBindable.properties` に同じ形で並んでいる observable を、adapter が値の型や property 名から
 推測せず扱えるよう、次の意味へ分類する。
 
 - **state** — current value。初期 property read が成立し、次の通知まで producer 側の意味が安定する。
@@ -16,6 +17,12 @@
 
 本棚卸しは意味分類であり、payload の deep immutability を保証するものではない。`state` に分類した object / array も、
 現行 protocol が保証するのは property read と event 配送であって deep clone / deep freeze ではない。
+
+分類の動機は親設計の React 不変スナップショットだが、成果物は adapter-neutral である。`@wc-bindable` は
+core と remote を除いて18個の framework / reactive-store adapter を公開しており、同じ `properties` 配列を
+それぞれ別の受け皿（React local state、Vue `reactive`、TC39 `Signal.State`、RxJS `BehaviorSubject`、
+Qwik `useStore` ほか）へ写す。§5.6 のとおり、この分類が無いと state / event / handle の取り違えは
+React だけでなく複数 adapter で同時に別々の壊れ方をする。
 
 調査対象は次のとおりである。
 
@@ -118,6 +125,13 @@ ownership 規律は protocol 上まだ明文化されていない。
 汎用 adapter が state から区別できない。型判定や property-name allowlist ではなく、additive metadata または
 sidecar が必要である。
 
+これは「あると良い」ではなく、公開済み adapter が既に別々の壊れ方をしている問題である。`@wc-bindable/signals` は
+`Signal.State.prototype.set` をそのまま呼ぶため、既定の `Object.is` 等値で**同値の occurrence が消える**。
+`@wc-bindable/rxjs` は property ごとに `BehaviorSubject` を持つため、遅延購読者に**過去の occurrence を replay** し、
+かつ last value を無期限に保持する。前者は event を state として扱った場合の取りこぼし、後者は逆向きの誤発火であり、
+どちらも adapter 側の実装品質ではなく分類情報の不在に起因する。§3 で `event` に分類した20 property が
+そのまま影響範囲になる。
+
 ### 5.2 `streamReady` の宣言と説明の不一致
 
 camera は stream を「reactive value ではない direct channel」と説明する一方、`streamReady` を通常の
@@ -129,16 +143,60 @@ event に分類した property も、多くは getter に最後の payload を�
 React values としての現在値利用と、同じ内容の再読を失わない occurrence 利用を同じ property が兼ねる。
 将来 adapter が event を values から除外する場合、callback / stream surface を追加してから段階移行する必要がある。
 
+現在値利用と occurrence 利用の分岐は adapter ごとに逆向きになる。値ベースの store（signals、VanJS）は同値を
+落とすので occurrence 利用が壊れ、replay ベースの store（RxJS `BehaviorSubject`）は現在値利用に寄せた結果として
+過去の occurrence を再配送する。React の local-state 転写は payload が毎回 fresh object であるかぎり両立するため、
+React だけを見ていると本 hotspot は顕在化しない。
+
 ### 5.4 managed URL
 
 fetch / recorder の `objectURL` は primitive string でも、次の commit で古い URL の意味が失われる。
 snapshot identity だけでは解決しない。Blob の consumer ownership、retain / release、best-effort current value の
 いずれを採るかを node ごとに決める必要がある。
 
+adapter によっては、これは陳腐化ではなくリークとして現れる。`@wc-bindable/rxjs` の `BehaviorSubject` は
+last value を購読の有無に関わらず保持し続けるため、producer が revoke 済みの URL 文字列と、`blob` property が
+参照する `Blob` 実体を unbind まで抱え込む。親設計 §1.3 が「object identity だけでは検出も修復もできない」と
+述べた資源寿命問題の、最も観測しやすい実例である。
+
 ### 5.5 opaque state
 
 `Credential`、`File`、任意 fetch / upload response などは state として保持できても serializable とは限らない。
 React local state には流せるが、SSR、DevTools、remote adapter では projection または capability failure が必要になる。
+
+resumability を前提とする adapter ではこれが即時の failure になる。`@wc-bindable/qwik` は全 property を
+`useStore` へ書き込むが、Qwik の state は serializable であることが要件である。非 serializable 値をそのまま
+置くと serialization が失敗し、`noSerialize()` で明示した場合は resume 後に `undefined` になる。
+`streamReady`（handle）、`error`（platform `Error`）、
+`blob`、`value`（`Credential` / `File` / 任意 response）が該当する。`errorInfo` のような serializable projection を
+用意する既存方針は、React ではなくこの経路で最も効く。
+
+### 5.6 adapter 別の失敗モード
+
+次表は、同じ `properties` 配列を各 adapter がどの受け皿へ写すかと、分類が無い場合に何が壊れるかをまとめる。
+`@wc-bindable/react` と `@wc-bindable/vue` は npm 0.8.0 の配布物、それ以外は upstream `main` の実装を読んだ結果であり、
+親設計が固定した commit とは版がずれ得る。
+
+| adapter | 受け皿 | 分類不在時の失敗 |
+| --- | --- | --- |
+| react | `useState` へ callback 転写。update ごとに新しい outer object | payload が毎回 fresh なら state / event が偶然両立する。同値 payload を deps 比較する consumer では event が落ちる |
+| vue | `reactive({...})` を1個作り property を代入 | outer identity 問題は構造的に発生しない。plain object / array は読み出し時に proxy 化され identity が変わる（platform object は対象外） |
+| signals | property ごとに `Signal.State` | `set()` の既定 `Object.is` 等値で同値 occurrence が消える |
+| rxjs | property ごとに `BehaviorSubject` | 遅延購読者へ過去 occurrence を replay。last value を無期限保持し handle / managed URL を抱え込む |
+| qwik | `useStore` | serializable 要件により handle / opaque state が resume 後 `undefined` になる |
+| angular | `{ name, value }` を `EventEmitter` で配送 | 集約は consumer 側。分類情報が届かないため state / event の判断を利用者コードが毎回やり直す |
+| solid / preact / svelte ほか | 新しい outer object または利用者定義の store | React と同型か、受け皿が userland 依存になり保証が消える |
+
+metadata が無い間、どの adapter も既定動作を選べない。分類が届けば、signals は event に等値比較を外す、rxjs は
+`Subject` を選ぶ、qwik は `noSerialize()` を付ける、vue は `shallowRef` / `markRaw` を選ぶ、といった対応が
+adapter 側の実装だけで成立する。
+
+なお `event` / `handle` を values から外して別 surface へ移す場合、その surface を「利用者が要素のイベントを
+直接聴く」で代替できない framework がある。wcstack のイベント名はコロンを含むため、Angular テンプレートでは
+`target:event` と解釈され束縛できない。したがって親設計の決定ゲート6（event / handle 用 surface の追加）は
+React API の設計判断ではなく、複数 adapter に共通する要求である。この制約自体は値の意味分類ではなく
+バインド成立可否の問題なので、[framework adapter のバインド成立制約](13-framework-adapter-binding-constraints.md)
+で扱う。
 
 ## 6. Phase 1 完了と次の作業
 
@@ -151,6 +209,11 @@ Phase 1 として producer snapshot contract を
 3. arbitrary payload は clone を強制せず、公開後に producer が変更しない ownership transfer とする。
 4. event と handle を state-like property と区別する。
 5. property read と event payload は同じ logical state を表す。
+
+あわせて、同ガイドライン §3.3.2 に入力側の契約を追加した。producer が出力を変更しない規範だけでは、
+consumer 側の reactive store が包んだ値（Vue `reactive`、Svelte `$state`、Qwik `useStore` などの Proxy）が
+input 経由で producer に入り込む経路を塞げないためである。Core 側に framework 固有の unwrap は持ち込まず、
+structured clone 境界での失敗は never-throw で `error` に落とし、raw 化は利用者の責務として README に明記する。
 
 Phase 2 以降は、次の順で小さな PoC を行う。
 
@@ -167,3 +230,13 @@ Phase 2 以降は、次の順で小さな PoC を行う。
 - [x] camera、recorder、fetch、worker、websocket、broadcast、clipboard、credential を実装まで確認した。
 - [x] post-publication mutation、stale commit、resource owner の観点を記録した。
 - [x] runtime behavior と protocol typeを変更していない。
+
+## 参照
+
+- [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
+- [framework adapter のバインド成立制約](13-framework-adapter-binding-constraints.md)
+- [非同期 I/O ノード作成ガイドライン §3.3.1](../async-io-node-guidelines.md)
+- [`@wc-bindable/signals`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/packages/signals/src/index.ts)
+- [`@wc-bindable/rxjs`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/packages/rxjs/src/index.ts)
+- [`@wc-bindable/qwik`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/packages/qwik/src/index.ts)
+- [Qwik — State（serialization と `noSerialize()`）](https://qwik.dev/docs/components/state/)

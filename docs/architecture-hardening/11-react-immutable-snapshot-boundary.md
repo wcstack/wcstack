@@ -168,7 +168,7 @@ handle — live / opaque resource。外部状態と独自 lifecycle を持つ。
 websocket、broadcast、clipboard、credential を個別確認する。
 
 Phase 0 の固定スナップショットは
-[React snapshot 向け wc-bindable observable 棚卸し](12-react-snapshot-observable-inventory.md) に記録した。
+[wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.md) に記録した。
 固定231 propertyを `state` 210、`event` 20、`handle` 1へ分類し、動的 DCC は別枠の `state` family とした。
 
 ### Phase 1: producer snapshot contract
@@ -185,7 +185,11 @@ Phase 0 の固定スナップショットは
 
 Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
 §3.3.1 に追加した。新規ノード・新規 observable property は MUST、既存ノードは
-[Phase 0 棚卸し](12-react-snapshot-observable-inventory.md) から段階移行とする。
+[Phase 0 棚卸し](12-wc-bindable-observable-inventory.md) から段階移行とする。
+
+出力側の規範だけでは、consumer の reactive store が包んだ値が input 経由で producer に入り込む経路を塞げない。
+その双対を同ガイドライン §3.3.2（input value contract）に置いた。本書の対象は producer → consumer の観測面なので、
+入力側の詳細はガイドラインを正とする。
 
 ### Phase 2: additive semantics metadata
 
@@ -272,11 +276,17 @@ resource lifecycle は残るためである。
 3. **React architecture**: 現行の local-state 転写を維持するか、cached external store へ移行するか。
 4. **resource lifetime**: managed object URL を producer 所有のままにするか、Blob を渡して consumer 所有へ寄せるか。
 5. **規範の強さ**: producer snapshot contract を新規ノードの MUST とし、既存ノードは段階移行にするか。
-6. **React API**: 現行 `[ref, values]` を維持するか、event / handle 用 surface を追加するか。
+6. **adapter API**: 現行 `[ref, values]` を維持するか、event / handle 用 surface を追加するか。
 
 推奨は、ゲート 1 を sidecar または additive field、ゲート 2 を互換優先、ゲート 3 は現行方式をテストで固定して
 external-store 化の利益を先に測定、ゲート 5 を「新規 MUST / 既存は棚卸し後に移行」、ゲート 6 を既存 API
 維持から開始、とする。ゲート 4 は resource ごとに判断する。
+
+ゲート 6 は当初 React API の設計判断として立てたが、Phase 0 の adapter 調査により複数 adapter に共通する要求で
+あることが分かった（[棚卸し §5.6](12-wc-bindable-observable-inventory.md)）。values から外した event / handle を
+「利用者が要素のイベントを直接聴く」で代替する逃げ道は、コロンを含む wcstack のイベント名を束縛できない
+framework では成立しない。したがってゲート 6 は、React 単独ではなく adapter 横断の surface 設計として上流へ
+提示する。
 
 ## 9. 実施価値と優先度
 
