@@ -86,11 +86,18 @@ lane は非同期 operation の概念である。同期ハンドラのままで�
 | **B. ハンドラが Promise を返すことを認め、state がそれを await する** | `handler: async (state, event) => { ... }` | **採用推奨**。await するのは **state 自身のハンドラ**であって、ハンドラが呼んだ command ではない。command-token の「呼び出しを await しない」規範はそのまま守られる — この区別が G1 の答えの本体 |
 | **C. 明示的な完了通知** | `handler` が `done()` を受け取る | ✗ 冗長。B が使えるなら B |
 
-**B の前例と制約（実装で確認済みの事実）**:
+**B の前例と制約（PoC で実測済み — `packages/state/__tests__/poc.asyncOnLoopContext.test.ts`、9 ケース）**:
 
 - **前例あり**: `State._callStateConnectedCallback` が既に `createStateAsync("writable", async (state) => { await state[connectedCallbackSymbol]() })` を実行している。writable proxy スコープ内での await は出荷済みのパターンである。
-- **proxy の寿命は問題ない**: `_createState` は毎回 proxy を生成するだけで teardown を持たない（`finally` は空）。await を跨いでも proxy は生きている。
-- **ループコンテキストは跨げない（要設計）**: `setLoopContextSymbol(loopContext, fn)` は**同期スコープ**で push/pop する。await の後に書いた state 書き込みは loop context を失う。したがって B を採る場合、**`for` 内の要素から発火した event-token の async ハンドラは、await 後に相対パス（`.id` 等）を解決できない**。取りうる選択肢は (i) async ハンドラでは相対パス解決を禁止し raiseError、(ii) `listIndexes` 引数から明示解決させる、(iii) loop context を await を跨いで復元する仕組みを足す。**(i) を既定、(ii) を回避策**とし、(iii) は第 1 段スコープ外とするのが妥当と考える。
+- **proxy の寿命は問題ない**: `_createState` は毎回 proxy を生成するだけで teardown を持たない（`finally` は空）。await を跨いでも proxy は生きている（PoC「絶対パスの読み書きは await を跨いでも影響を受けない」）。
+- **ループコンテキストは await を跨げない**: `setLoopContextSymbol(loopContext, fn)` は**同期スコープ**で push/pop する。`callback()` が Promise を返した時点で `finally` の `popAddress()` / `clearLoopContext()` が走るためである。
+  - ⚠ **`setLoopContextAsync` はこれを解決しない**。実体は `await _setLoopContext(...)` であり、await するのは *finally が走った後の Promise* である。名前から期待される「コンテキストを await を跨いで保持する」挙動は持たない。**実装時にここを踏まないこと**（必要なら名前か実装のどちらかを直すのが別課題）。
+- **失敗モードは loud である（重要）**: await 後の `state.$1` は `raiseError("No active state reference to get list index …")` で落ち、wildcard パス `state["items.*.id"]` の読みも、`state["items.*.flag"] = v` の書きも throw する。**黙って別の行を指すことはない**。G1-B のリスク評価はこの一点で大きく下がる — 誤用は実行時に必ず露見する。
+- **回避策 (ii) は動作する**: `$resolve(path, indexes, value?)` に `$on` の `listIndexes` 引数を渡せば、await 後でも読み書きできる（PoC で `items.*.flag` への書き込みと読み戻しを確認）。`listIndexes` は素の数値配列なので await を跨いで生き残る。
+- **並行実行は安全**: 2 行から同時に発火した async ハンドラが互いの `listIndexes` を汚さないことを確認した（待ち時間を変えて完了順を入れ替えても取り違えなし）。インデックスが proxy 状態ではなく引数で運ばれているため。
+- **現状の発火経路はハンドラを await しない**: dispatch もその後のタスク境界も完了を待たず、ハンドラの Promise は `Token.emit` の戻り値配列にしか現れず `eventTokenHandler` はそれを捨てる。**したがって今日 async ハンドラが reject すると unhandled rejection になる**。B を実装するなら、この Promise を掴んで never-throw で `$laneError` に正規化することが必須要件になる（§8-2 L8）。
+
+**結論**: 選択肢 (i)「async ハンドラでは loop context 依存の解決を禁止」＋ (ii)「`$resolve` + `listIndexes` を回避策とする」の組み合わせで**実用可能**である。(i) は既に runtime が raiseError で強制しており、新たに実装するものは無い。(iii)（loop context を await を跨いで復元する）は不要 — 第 1 段スコープ外のままでよい。
 
 ### G2. lane の identity をどう決めるか
 
@@ -288,7 +295,7 @@ element の CustomEvent
 | L6 | `retry.when` | `false` を返すと再試行しない |
 | L7 | `max: Infinity` / `0` / 非整数 | 宣言時に raiseError（§8 の MUST を宣言時に強制） |
 | L8 | async ハンドラの reject | 浮いた rejection にならず `$laneError` へ正規化 |
-| L9 | loop context | `for` 内から発火した async ハンドラの await 後の相対パス解決が raiseError（G1 (i)） |
+| L9 | loop context | `for` 内から発火した async ハンドラの await 後の `$1` / wildcard 解決が raiseError（G1 (i)）／`$resolve` + `listIndexes` は成功する（G1 (ii)）。**`poc.asyncOnLoopContext.test.ts` が既に固定済み** |
 | L10 | disconnect | 実行中の operation が torn-down 要素へ書き込まない |
 | L11 | `_state` 再 set | 旧 lane が abort され二重配線しない |
 | L12 | SSR | `inSsr()` で lane を起動しない |
@@ -324,7 +331,7 @@ element の CustomEvent
 
 ## 10. 残課題
 
-1. **G1 の決着**。本書の推奨は B（state が自分のハンドラだけを await する）だが、`$connectedCallback` 以外に async writable スコープの前例が無く、loop context の制限（G1 (iii)）が実用上どれだけ痛いかは実測していない。**Phase B の前に `for` 内 event-token の async ハンドラで PoC を 1 本書くべき**。
+1. **G1 の決着**。~~PoC を書くべき~~ → **PoC 実施済み**（`packages/state/__tests__/poc.asyncOnLoopContext.test.ts`、9 ケース green）。失敗モードが loud であること・回避策 (ii) が動くこと・並行実行が安全であることを確認したため、**技術的な障害は解消した**。残るのは「B を採るか」という設計判断そのもの（＝この案の採否）だけであり、新たな調査項目は無い。副産物として `setLoopContextAsync` の名前と実装の乖離（§3 G1 の ⚠）が別課題として残る。
 2. **`OperationLane` の state への複製配布**。現状 `scripts/sync-io-core.mjs` は I/O ノードの `src/core/` を配布先としている。state は I/O ノードではないため、配布先の一般化かコピー方針の明文化が要る。
 3. **`$laneStatus` / `$laneError` を出すか**（G5）。第 1 段では `$laneError` のみ必要（L8 の受け皿）。`$laneStatus` は保留。
 4. **他の宣言面への波及**。`onclick:` ハンドラや `$commandTokens` にも同じ需要が出た場合、`$on` だけの拡張が非対称に見える。第 1 段では `$on` に限定し、需要が実証されてから広げる。
@@ -342,3 +349,4 @@ element の CustomEvent
 - [state-redesign-council.md](./state-redesign-council.md) — no-regret 原則と「良いとこ取り統合は禁句」（§9-1 の根拠）
 - `io-core/operation-lane.ts` — 実行プリミティブの実装（実行可能な参照仕様）
 - `examples/state-intersect-scroll` + `e2e/tests/state-intersect-scroll.spec.ts` — §1 の実測対象であり、§8-1 Phase E の実地検証対象
+- `packages/state/__tests__/poc.asyncOnLoopContext.test.ts` — G1 の PoC（特性化テスト）。async `$on` ハンドラと loop context の現在の挙動を固定する
