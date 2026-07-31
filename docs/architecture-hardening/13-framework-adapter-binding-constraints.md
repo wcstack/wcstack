@@ -5,7 +5,8 @@
   A2 / A4 = [組み込み手順](../framework-adapter-integration.md)、
   A3 = [`bind()` 定義待ちの提案文書](../spec-proposal-bind-definition-timing.md)）。
   A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。
-  残るのは upstream への提案提出と wcstack-app スキルの追随
+  A3 の提案は [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22) として提出済み。
+  残るのは wcstack-app スキル（別リポジトリ）の追随
 - **対象**: `static wcBindable` を宣言する全 Shell、`@wc-bindable` の framework adapter、
   `@wcstack/autoloader` を前提とする配布経路
 - **外部仕様スナップショット**:
@@ -180,7 +181,8 @@ wcstack-app スキルは別リポジトリ（wcstack/wcstack-skill）なので�
 規範文言案・適合テスト条件・非目標まで含めてある。既定挙動を変えず core 1 箇所で済む案 A を推している。
 [棚卸し §5.6](12-wc-bindable-observable-inventory.md) の semantics metadata 提案とは独立に出せる。
 
-upstream リポジトリへの issue / PR 提出は未実施。
+upstream への提出済み: [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)
+（2026-08-01・英文）。実装 PR は先方の案の選択待ち。
 
 ### Phase A4: イベント名の代替経路 — 実施済み（2026-08-01）
 

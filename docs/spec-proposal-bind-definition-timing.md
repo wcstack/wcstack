@@ -4,7 +4,8 @@
   Initial sync・Teardown Contract の各節。あわせて各 framework adapter の推奨実装。
 - **提案元の文脈**: wcstack（`<wcs-*>` 全 38 タグと `@wcstack/autoloader`）。CDN 一発・buildless で
   custom element を後から定義する配布形態を前提にしている。
-- **状態**: wcstack 側は回避策（利用者に `customElements.whenDefined()` を要求する手順）を
+- **状態**: **upstream へ提出済み**（[wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)・2026-08-01）。
+  wcstack 側は回避策（利用者に `customElements.whenDefined()` を要求する手順）を
   [framework アプリへの組み込み手順](./framework-adapter-integration.md) に明文化済み。本提案は、
   その回避策を利用者に強いなくても済むよう core 側に語彙を足すもの。
 - **調査時点のスナップショット**: `@wc-bindable/core@0.8.0`、および upstream `main` の
