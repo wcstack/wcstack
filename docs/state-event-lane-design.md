@@ -1,6 +1,7 @@
 # 設計提案: `$on` の実行レーン宣言 — state 側からの lane / retry
 
-- **状態**: **設計提案（未採択・未実装）**。[architecture-hardening/04](./architecture-hardening/04-async-execution-and-wc-bindable.md) 決定ゲート 1 (d)「userland 宣言」を、採否を判断できる粒度まで降ろしたもの。本書は**新しい実行意味論を提案しない** — [async-execution-model.md](./async-execution-model.md) が既に規範化した語彙の**配置**だけを論点にする。
+- **状態**: **不採用（2026-07-31 決裁）**。理由は §0-1。本書は棄却の理由と、再検討する場合の条件を残すための記録として維持する。実装は行わない。
+- **元の位置づけ**: [architecture-hardening/04](./architecture-hardening/04-async-execution-and-wc-bindable.md) 決定ゲート 1 (d)「userland 宣言」を、採否を判断できる粒度まで降ろしたもの。本書は**新しい実行意味論を提案しない** — [async-execution-model.md](./async-execution-model.md) が既に規範化した語彙の**配置**だけを論点にしていた。
 - **対象**: `@wcstack/state` の core 拡張。`$on` ハンドラに排他モードと再試行ポリシーを宣言できるようにする案。
 - **本書が変えないもの（最重要）**:
   - **プロトコルに一切手を入れない**。wc-bindable / command-token / event-token の語彙・型・構文は不変更（04 冒頭の MUST NOT を継承する）。とりわけ **command-token の「呼び出しを await しない」規範**（[spec-proposal-command-token-arguments.md](./spec-proposal-command-token-arguments.md)）は維持する。
@@ -9,7 +10,60 @@
 
 ---
 
-## 0. 要旨
+## 0-1. 決裁 — 不採用（2026-07-31）
+
+**棄却の主因は、lane の粒度が wcstack のイディオムと噛み合わないことである。**
+
+lane が直列化するのは **`$on` ハンドラの実行**である。ところが本書 §1 が題材にした `examples/state-intersect-scroll` の実際の並行性は**ノード間**にあり、`pageFetch.loading` という state プロパティを介して仲介されている。
+
+```js
+sentinelChanged: (state) => {
+  if (state["pageFetch.loading"]) return;   // 守っている相手は「別ノードの実行」
+  state.page = state.page + 1;              // ハンドラ自身は同期で即終わる
+}
+```
+
+このハンドラに `lane: "exhaust"` を宣言しても、ハンドラは同期で即終了するため**自分自身と重なりようがなく no-op になる**。fetch を実行しているのは url バインド経由の auto-fetch であって、ハンドラではない。
+
+つまり lane が意味を持つのは「**ハンドラが自分で非同期処理を所有して await する**」書き方をしたときだけである。ところが wcstack の看板イディオムは逆で、「**ノードが非同期を所有し、state はプロパティを小突くだけ**」である。lane はそこに掴むところがない。
+
+ハンドラ所有に寄せることは技術的には可能である（`state.$command.X.emit()[0]` は subscriber の戻り値＝実際には `Fetch.fetch()` が返す Promise そのもの）。しかしこれを await するイディオムを推奨すると、「**runtime は command を await しない**」という規範の裏口から `emit()` の戻り値を仕様面に昇格させることになり、本書冒頭の「プロトコルに一切手を入れない」という前提が実質的に崩れる。**この案の唯一の正当化根拠（既存語彙の露出であって発明ではない）を壊す代償は払えない。**
+
+### 実測 3 欠陥に照らした効果
+
+| §1-1 の欠陥 | lane 宣言で防げたか |
+|---|---|
+| デッドロック（失敗時に `rearm` 不発） | **×** エッジの欠落であって並行性の問題ではない |
+| 予算外の自己持続リトライ経路（ライブロック） | **△** クラスとしては防げるが、ハンドラ所有に書き換えた場合に限る |
+| 予算を起動時に数えた | **○** lane が attempt を数えるので消える |
+
+3 件中まるごと効くのは 1 件。かつ実際の修正はいずれも数行だった。
+
+### その他の棄却理由（従）
+
+- **動機の実例が n=1**。宣言面（`$commandTokens` / `$eventTokens` / `$on` / `$streams` / `$streamStatus` / `$streamError` に `$laneError` が加わる）を増やす判断は、同型の問題が 2 例目に出てからで遅くない。
+- **`$on` の同期性という単純さを失う**代償が、得られる保証に見合わない（§3 G1 の制約は loud で安全だが、制約は制約である）。
+- **lane の二重化**（ノード内 lane と state lane）の説明責任が恒久的に残る。
+- **`interval` を宣言できない**不整合（§3 G4）を毎回説明する必要がある。
+
+### 再検討する条件
+
+次のいずれかが満たされたら本書を再開してよい。
+
+1. 「ハンドラが自分で await する」形の非同期が userland に自然に現れるユースケースが**2 例以上**出てきたとき。
+2. 予算外の再試行経路が**別のデモ／アプリでも**再発したとき（＝ n=1 でなくなったとき）。
+3. command-token に「完了を観測する」正式な手段が別の理由で入ったとき（そのとき lane の掴みどころが生まれる）。
+
+### 本書から切り出して実施したもの
+
+lane と独立に価値があるものだけを別途実施した（PR 参照）。
+
+- **`$on` / `onXxx:` ハンドラの reject 捕捉**（§3 G1 の実測で判明した unhandled rejection）→ `src/event/captureHandlerRejection.ts`。新しい宣言面は不要。
+- **`setLoopContextAsync` の削除**（名前が実装より多くを約束しており、production の呼び出し元も無かった）。
+
+---
+
+## 0. 要旨（不採用となった提案の内容・以下は記録）
 
 wcstack には**排他代数がすでに存在する**。`latest` / `queue` / `exhaust` / `overlap` は §5 で規範化され、`OperationTicket` / CommitGuard / terminal CAS を含む実装が `io-core/operation-lane.ts` にある。再試行も §8 が `max` / `interval` / `resetOn` / `excludeWhen` の 4 要素で規範化済みである。
 
@@ -91,11 +145,11 @@ lane は非同期 operation の概念である。同期ハンドラのままで�
 - **前例あり**: `State._callStateConnectedCallback` が既に `createStateAsync("writable", async (state) => { await state[connectedCallbackSymbol]() })` を実行している。writable proxy スコープ内での await は出荷済みのパターンである。
 - **proxy の寿命は問題ない**: `_createState` は毎回 proxy を生成するだけで teardown を持たない（`finally` は空）。await を跨いでも proxy は生きている（PoC「絶対パスの読み書きは await を跨いでも影響を受けない」）。
 - **ループコンテキストは await を跨げない**: `setLoopContextSymbol(loopContext, fn)` は**同期スコープ**で push/pop する。`callback()` が Promise を返した時点で `finally` の `popAddress()` / `clearLoopContext()` が走るためである。
-  - ⚠ **`setLoopContextAsync` はこれを解決しない**。実体は `await _setLoopContext(...)` であり、await するのは *finally が走った後の Promise* である。名前から期待される「コンテキストを await を跨いで保持する」挙動は持たない。**実装時にここを踏まないこと**（必要なら名前か実装のどちらかを直すのが別課題）。
+  - ⚠ かつて存在した `setLoopContextAsync` はこれを解決しなかった。実体は `await _setLoopContext(...)` で、await する対象は *finally が既に走った後の Promise* だった。名前から期待される「コンテキストを await 跨ぎで保持する」挙動は持たない。production の呼び出し元も無かったため **2026-07-31 に削除済み**（§0-1「本書から切り出して実施したもの」）。同等の機能が必要になったら、名前どおりに動く実装を新規に起こすこと。
 - **失敗モードは loud である（重要）**: await 後の `state.$1` は `raiseError("No active state reference to get list index …")` で落ち、wildcard パス `state["items.*.id"]` の読みも、`state["items.*.flag"] = v` の書きも throw する。**黙って別の行を指すことはない**。G1-B のリスク評価はこの一点で大きく下がる — 誤用は実行時に必ず露見する。
 - **回避策 (ii) は動作する**: `$resolve(path, indexes, value?)` に `$on` の `listIndexes` 引数を渡せば、await 後でも読み書きできる（PoC で `items.*.flag` への書き込みと読み戻しを確認）。`listIndexes` は素の数値配列なので await を跨いで生き残る。
 - **並行実行は安全**: 2 行から同時に発火した async ハンドラが互いの `listIndexes` を汚さないことを確認した（待ち時間を変えて完了順を入れ替えても取り違えなし）。インデックスが proxy 状態ではなく引数で運ばれているため。
-- **現状の発火経路はハンドラを await しない**: dispatch もその後のタスク境界も完了を待たず、ハンドラの Promise は `Token.emit` の戻り値配列にしか現れず `eventTokenHandler` はそれを捨てる。**したがって今日 async ハンドラが reject すると unhandled rejection になる**。B を実装するなら、この Promise を掴んで never-throw で `$laneError` に正規化することが必須要件になる（§8-2 L8）。
+- **発火経路はハンドラを await しない**: dispatch もその後のタスク境界も完了を待たず、ハンドラの Promise は `Token.emit` の戻り値配列にしか現れない。当時は `eventTokenHandler` がそれを捨てており、**async ハンドラが reject すると unhandled rejection になっていた**。→ この 1 点は lane と独立に価値があるため切り出して修正済み（`src/event/captureHandlerRejection.ts`。state 名・ハンドラ名付きの `console.error` へ正規化）。「await しない」こと自体は仕様であり変えていない。
 
 **結論**: 選択肢 (i)「async ハンドラでは loop context 依存の解決を禁止」＋ (ii)「`$resolve` + `listIndexes` を回避策とする」の組み合わせで**実用可能**である。(i) は既に runtime が raiseError で強制しており、新たに実装するものは無い。(iii)（loop context を await を跨いで復元する）は不要 — 第 1 段スコープ外のままでよい。
 

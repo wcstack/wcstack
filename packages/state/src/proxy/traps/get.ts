@@ -37,8 +37,8 @@ import { getByAddress } from "../methods/getByAddress";
 import { hasByAddress } from "../methods/hasByAddress";
 import { getListIndex } from "../methods/getListIndex";
 import { setByAddress } from "../methods/setByAddress";
-import { setLoopContext, setLoopContextAsync } from "../methods/setLoopContext";
-import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextAsyncSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
+import { setLoopContext } from "../methods/setLoopContext";
+import { connectedCallbackSymbol, disconnectedCallbackSymbol, getByAddressSymbol, hasByAddressSymbol, setByAddressSymbol, setLoopContextSymbol, updatedCallbackSymbol } from "../symbols";
 import { IStateHandler } from "../types";
 
 // `$streamStatus.<name>` / `$streamError.<name>` の dotted パス判定用プレフィックス
@@ -175,12 +175,6 @@ export function get(
     }
     let api: unknown;
     switch (prop) {
-      case setLoopContextAsyncSymbol: {
-        api = (loopContext: any, callback = async (): Promise<any> => {}): Promise<any> => {
-          return setLoopContextAsync(handler, loopContext, callback);
-        };
-        break;
-      }
       case setLoopContextSymbol: {
         api = (loopContext: any, callback = (): any => {}): any => {
           return setLoopContext(handler, loopContext, callback);

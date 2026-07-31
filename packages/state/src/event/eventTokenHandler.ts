@@ -32,6 +32,7 @@ import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration, ReadBindableResult } from "../protocol/wcBindableReader";
 import { IBindingInfo } from "../types";
+import { captureHandlerRejection } from "./captureHandlerRejection";
 import { getOrCreateEventToken } from "./eventTokenRegistry";
 
 interface IEventTokenListener {
@@ -104,11 +105,14 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
     }
     const loopContext = getLoopContextByNode(element);
     stateElement.createStateAsync("writable", async (state) => {
-      state[setLoopContextSymbol](loopContext, () => {
+      const results = state[setLoopContextSymbol](loopContext, () => {
         const indexes = loopContext?.listIndex.indexes ?? [];
         const token = getOrCreateEventToken(stateElement, tokenName);
         return token.emit(state, event, ...indexes);
       });
+      // この経路はハンドラの完了を待たない（emit の戻り値はここでしか見えない）。
+      // async な $on ハンドラの reject を unhandled にせず報告へ落とす。
+      captureHandlerRejection(results, `$on."${tokenName}" of state "${stateName}"`);
     });
   };
 
