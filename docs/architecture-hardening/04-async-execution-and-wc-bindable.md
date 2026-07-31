@@ -17,6 +17,10 @@
   world / operation generation を定義している。
 - `docs/async-io-node-guidelines.md` は Core / Shell 分離、never-throw 境界、`_gen` による古い結果の抑止、
   `observe()` / `dispose()`、ready、SSR を推奨している。
+- `io-core/operation-lane.ts` は本書 §1 / §2 の実行契約（`OperationTicket` / `OperationAttempt` /
+  CommitGuard / terminal CAS、4 policy 全て）を型付き実装として持ち、`scripts/sync-io-core.mjs` が
+  各ノードの `src/core/` へ複製配布している（`packages/fetch/src/core/operationLane.ts` が採用第一号）。
+  **排他代数の実体は既に存在し、欠けているのは公開面である** — この事実は決定ゲート 1 の前提になる。
 - これらは良い基礎だが、wc-bindable の property 観測、input 宣言、command 呼び出し、remote wire の
   どの意味に対応するかを混同しないための境界整理が必要である。
 
@@ -100,7 +104,61 @@ wc-bindable の capability negotiation を使い、Extension 1 非対応 peer �
 
 ## 決定ゲート
 
-1. lane を I/O タグ宣言、binding 属性、両者のどこで選択するか。
+### 1. lane をどこで選択するか
+
+選択肢は 4 つあり、排他ではない（複数を採用する場合は優先順位も決める必要がある）。
+
+| 配置 | 形 | 効果 | 代償 |
+| --- | --- | --- | --- |
+| (a) I/O タグ宣言 | Core が `new OperationLane(key, policy)` を固定 | 現状。ノードの意味論が 1 箇所に閉じる | 利用者は選べない |
+| (b) binding 属性 | `data-wcs="command.fetch#exhaust: $command.refetch"` 等 | 端点ごとに選べる | `data-wcs` は配線であって DSL ではないという既存方針（`feedback_data_wcs_wiring`）に抵触しうる |
+| (c) タグ属性 | `<wcs-fetch lane="exhaust">` | HTML から見える。既存の属性入力と同型 | 入力面が増える。属性が実行意味論を変える初の例になる |
+| (d) userland 宣言（`$on` / state 側） | `$on: { name: { lane, retry, handler } }` | **state が持つ再試行・ガードのロジックが規範に載る** | `$on` の非同期契約（下記）を先に決める必要がある |
+
+**(d) を明示的な選択肢として立てる根拠。** `latest` / `exhaust` / `retry` は本書と
+`async-execution-model.md` §5 / §8 が既に規範化した語彙であり、`io-core/operation-lane.ts` が
+実装も持っている。しかしその語彙が届くのはノードの内側だけで、**ノードをまたぐ実行**（可視性エッジ →
+fetch → 失敗 → 待つ → 再実行）を組む利用者は同じ意味論を毎回手書きしている。
+`examples/state-intersect-scroll` はその実例で、`$on.sentinelChanged` の `!loading` ガードは
+`exhaust` policy の手書き実装であり、その正しさは「microtask が task に先行する」という
+スケジューラの性質に依存している（[timing-and-firing-contract.md](../timing-and-firing-contract.md) §3）。
+同デモの `retryAttempt` / `maxRetries` / `<wcs-timer manual once>` は §8 の
+`max` / `interval` / `resetOn` / `excludeWhen` を手で組んだものである。
+手書きの代償も実測されている: 当初の実装は交差エッジからも「ついでの」再試行を撃っており、
+これが**予算を一切消費しないリトライ経路**になっていた（エラー表示行の出現・消滅がレイアウトを変え、
+センチネルが observer マージンを跨ぎ、それ自体が次のエッジを生む自己持続ループ。
+`e2e/tests/state-intersect-scroll.spec.ts` のリクエスト列で失敗サイクルあたり 1 回として検出）。
+「すべての再試行経路が予算に載っている」ことは lane が宣言で保証できる不変条件であり、
+手書きでは経路が増えるたびに人手で守るしかない。
+(d) はこれらを新語彙の発明ではなく**既存語彙の露出**として扱う案であり、
+「良いとこ取り統合は禁句」（[state-redesign-council.md](../state-redesign-council.md)）にも抵触しない。
+
+**(d) を採る場合に先に決めること（サブゲート）。**
+
+1. `$on` ハンドラが Promise を返すことを認めるか。lane は非同期 operation の概念であり、
+   同期ハンドラのままでは `latest` / `exhaust` が意味を持つ範囲が「同期実行中」に限られる。
+   ただし command-token は「呼び出しを await しない」を規範化済み（`spec-proposal-command-token-arguments.md`）で、
+   これを変えると protocol 側の非目標（本書冒頭の MUST NOT）に触れる。ハンドラの非同期化を
+   **state ローカルの契約**に閉じ込められるか否かがこのサブゲートの本体。
+2. lane の identity を何にするか。`$on` のトークン名で 1 レーンか、宣言側で `laneKey` を指定させるか。
+   複数トークンが 1 レーンを共有する形（credential の `get`/`store` 先例）を認めるか。
+3. `retry` の判定入力。fetch は既に `errorInfo: { code, phase, recoverable }` を additive property として
+   露出しており（`WcsIoErrorInfo`）、`when: (info) => info.recoverable` を書ける。この taxonomy を
+   全ノード必須にするか、任意のままにするか。
+4. 待ち時間の供給元。`<wcs-timer>` を内部で使うのか、state ランタイムが独自にタイマーを持つのか。
+   後者はノード体系の外に時間を持ち込むことになるため、「時間もノードである」という現行方針との整合を要する。
+
+なお (d) は `$streams`（`docs/state-streams-design.md`）が作った宣言マップ + registry +
+drain フック + `$streamStatus` / `$streamError` 名前空間 + ライフサイクル契約の雛形を再利用できる。
+新規実装は lane の写像と宣言バリデーションが中心になる見込み。
+
+**(d) の詳細設計は [state-event-lane-design.md](../state-event-lane-design.md) に分離した**
+（未採択）。上記サブゲート 1〜4 はそこで G1〜G4 として推奨付きで展開され、
+段階分割・受け入れ条件・却下案（新コンビネータ語彙 / `$streams` への event-token 供給 /
+`data-wcs` 修飾子）まで降ろしてある。
+
+### 2〜4
+
 2. operation identity / idempotency key を公開 API にする範囲。
 3. stale 結果を完全に破棄するか、診断履歴だけに残すか。
 4. Extension 1 adapter の対応範囲と capability 不足時の失敗方法。
@@ -113,3 +171,5 @@ wc-bindable の capability negotiation を使い、Extension 1 非対応 peer �
 - [非同期実行モデル](../async-execution-model.md)
 - [非同期 I/O ノード指針](../async-io-node-guidelines.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
+- [発火タイミング契約](../timing-and-firing-contract.md) — 決定ゲート 1 (d) が置き換えたい「手書きガードの正しさの根拠」
+- `examples/state-intersect-scroll` — ノードをまたぐ実行を userland で手書きした実例（決定ゲート 1 (d) の動機）

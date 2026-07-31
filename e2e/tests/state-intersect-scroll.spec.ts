@@ -1,0 +1,133 @@
+import { test, expect, type Page } from "@playwright/test";
+import { collectErrors } from "./helpers";
+
+// state + fetch + intersection + timer: 失敗ページの復帰経路を実ブラウザで検証する。
+//
+// 回帰対象: page1 が失敗するとフィードが空 → スクロールする対象が無い →
+// IntersectionObserver は可視性の「変化」でしか発火しない → 復帰する手段が消える、
+// というデッドロック。<wcs-timer manual once> によるリトライ時計がそれを解く。
+// **どのテストもスクロールしない** — スクロールで直るなら回帰が再現しないため。
+
+const PAGE_SIZE = 20;
+
+// 87件 = 20*4 + 7。最後のページが部分ページ(=終端シグナル)になる examples/ と同じ形状。
+const catalog = Array.from({ length: 87 }, (_, i) => ({
+  id: i + 1,
+  name: `Item #${i + 1}`,
+  category: "peripherals",
+  price: 1000 + i,
+}));
+
+// 注入した 503 に対して Chromium 自身が出す "Failed to load resource" は想定内のノイズ
+// (アプリのエラーではない)。それ以外が残っていないことを assert する。
+function appErrors(errors: string[]): string[] {
+  return errors.filter((e) => !/Failed to load resource/.test(e));
+}
+
+interface ItemsRoute {
+  /** /api/items に届いたリクエストの page パラメータを到着順に。 */
+  readonly requests: () => string[];
+  /** /api/items に届いたリクエスト総数。 */
+  readonly requestCount: () => number;
+  /** これ以降のリクエストを成功させる。 */
+  readonly stopFailing: () => void;
+}
+
+/**
+ * /api/items をテストごとに横取りする(serve.mjs にモックを足さない = 並列実行でも隔離される)。
+ * `failFirst` 回だけ 503 を返し、その後は正常なページを返す。
+ */
+async function routeItems(page: Page, failFirst: number): Promise<ItemsRoute> {
+  const seen: string[] = [];
+  let remainingFailures = failFirst;
+  await page.route("**/api/items*", async (route) => {
+    const url = new URL(route.request().url());
+    if (remainingFailures > 0) {
+      remainingFailures--;
+      seen.push(`${url.searchParams.get("page")}:503`);
+      await route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"injected"}' });
+      return;
+    }
+    seen.push(`${url.searchParams.get("page")}:200`);
+    const p = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const limit = Math.max(1, Number(url.searchParams.get("limit")) || PAGE_SIZE);
+    const slice = catalog.slice((p - 1) * limit, (p - 1) * limit + limit);
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(slice) });
+  });
+  return {
+    requests: () => [...seen],
+    requestCount: () => seen.length,
+    stopFailing: () => { remainingFailures = 0; },
+  };
+}
+
+test.describe("examples/state-intersect-scroll", () => {
+  test("page1 が失敗してもリトライ時計がスクロール無しでフィードを復帰させる", async ({ page }) => {
+    const errors = collectErrors(page);
+    const items = await routeItems(page, 2);   // maxRetries(3) の予算内で回復する
+
+    await page.goto("/examples/state-intersect-scroll/");
+
+    // 失敗が確定すると、予算が残っている間は "retrying…" が出る(Retry ボタンではない)。
+    await expect(page.locator(".end-msg", { hasText: "retrying" })).toBeVisible();
+    await expect(page.locator(".retry-btn")).toHaveCount(0);
+
+    // ここから **一切スクロールしない**。リトライ時計だけで page1 が着地すること。
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE, { timeout: 15_000 });
+    await expect(page.locator(".meter b").first()).toHaveText(String(PAGE_SIZE));
+    await expect(page.locator(".end-msg", { hasText: "retrying" })).toHaveCount(0);
+
+    // page1 は 3 回叩かれている(初回 + リトライ 2 回)。
+    expect(items.requestCount()).toBeGreaterThanOrEqual(3);
+
+    expect(appErrors(errors)).toEqual([]);
+  });
+
+  test("リトライ予算を使い切ると Retry ボタンに引き継がれ、押せば復帰する", async ({ page }) => {
+    const errors = collectErrors(page);
+    const items = await routeItems(page, Number.MAX_SAFE_INTEGER);
+
+    await page.goto("/examples/state-intersect-scroll/");
+
+    // maxRetries=3 * interval=1500ms を消化すると自動リトライは止まり、
+    // スケジュールが人間(ボタン)に渡る。
+    const retryButton = page.locator(".retry-btn");
+    await expect(retryButton).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".end-msg", { hasText: "retrying" })).toHaveCount(0);
+
+    // 初回 1 + maxRetries(3) = 4 でちょうど止まること。ボタンが出た時点で保留中の
+    // tick が残っていない(= 予算は「発射済みリトライ数」で数えている)ことも含む。
+    const settled = items.requestCount();
+    expect(items.requests()).toEqual(["1:503", "1:503", "1:503", "1:503"]);
+    // 予算切れ後は自動リクエストが止まっていること(無限リトライの禁止 —
+    // docs/async-execution-model.md §8 の `max` は有限であることが MUST)。
+    await page.waitForTimeout(3_000);
+    expect(items.requestCount()).toBe(settled);
+
+    // 人間がスケジューラになる: ボタンで予算が戻り、同じ url が再実行される。
+    items.stopFailing();
+    await retryButton.click();
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE, { timeout: 15_000 });
+    expect(items.requestCount()).toBeGreaterThan(settled);
+
+    expect(appErrors(errors)).toEqual([]);
+  });
+
+  test("正常系: 初期ページが描画され、末尾までスクロールすると全87件で終端する", async ({ page }) => {
+    const errors = collectErrors(page);
+    await routeItems(page, 0);
+
+    await page.goto("/examples/state-intersect-scroll/");
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE);
+
+    // 5ページ(20*4 + 7)。短いページが来ると noMore が立ちセンチネルが停止する。
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(0, 20_000);
+      await page.waitForTimeout(400);
+    }
+    await expect(page.locator(".item")).toHaveCount(catalog.length, { timeout: 15_000 });
+    await expect(page.locator(".end-msg", { hasText: "End of list" })).toBeVisible();
+
+    expect(appErrors(errors)).toEqual([]);
+  });
+});

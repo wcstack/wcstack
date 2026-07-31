@@ -48,7 +48,7 @@ await するのは避けてください — あの Promise は「永久に regis
 | [`state-cross-tab-todo/`](state-cross-tab-todo/) | storage + broadcast + state | `node examples/state-cross-tab-todo/server.js`（2 タブで開く） | :3000 |
 | [`state-custom-states/`](state-custom-states/) | fetch + websocket + state（`:state()` ショーケース） | `node examples/state-custom-states/server.js`（[websocket-chat の shared インストール](websocket-chat/README.ja.md#セットアップ)が必要） | :3303 |
 | [`state-devtools-playground/`](state-devtools-playground/) | devtools + state + timer（オーバーレイインスペクタのデモ） | 任意の静的サーバー | — |
-| [`state-intersect-scroll/`](state-intersect-scroll/) | fetch + intersection + state | `node examples/state-intersect-scroll/server.js` | :3000 |
+| [`state-intersect-scroll/`](state-intersect-scroll/) | fetch + intersection + timer + state（時計に載せた有界リトライ） | `node examples/state-intersect-scroll/server.js` | :3000 |
 | [`state-notification-chat/`](state-notification-chat/) | notification + permission + state | 任意の静的サーバー | — |
 | [`state-permission-banner/`](state-permission-banner/) | geolocation + permission + state | 任意の静的サーバー | — |
 | [`state-pomodoro/`](state-pomodoro/) | timer + wakelock + notification + state | 任意の静的サーバー（secure context 必須） | — |
