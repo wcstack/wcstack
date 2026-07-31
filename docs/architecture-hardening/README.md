@@ -49,6 +49,9 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
 - [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md) —
   非同期 commit の正しさ、React snapshot の不変性、live resource の寿命を分離し、React adapter、
   I/O node、protocol metadata の責務を整理する。`state` / `event` / `handle` の棚卸しと段階導入案を含む。
+- [React snapshot 向け wc-bindable observable 棚卸し](12-react-snapshot-observable-inventory.md) —
+  Phase 0 の固定スナップショット。231 propertyを `state` 210、`event` 20、`handle` 1へ分類し、
+  camera / recorder / fetch など優先8領域の mutation・stale commit・resource ownership を監査する。
 
 ## 横断原則
 

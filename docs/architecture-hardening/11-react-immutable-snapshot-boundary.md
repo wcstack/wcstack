@@ -1,7 +1,7 @@
 # React の不変スナップショットと wc-bindable I/O 境界
 
 - **作成日**: 2026-08-01
-- **状態**: 設計判断記録（現状評価と推奨方針。実装は未着手）
+- **状態**: 設計判断記録（Phase 0 の棚卸し完了。runtime 実装は未着手）
 - **対象**: `wcBindable.properties` を公開する非同期 I/O ノード、`@wc-bindable/react`、
   将来の framework adapter / remote adapter
 - **外部仕様スナップショット**:
@@ -166,6 +166,10 @@ handle — live / opaque resource。外部状態と独自 lifecycle を持つ。
 
 最初の成果物は分類表とし、runtime behavior は変えない。少なくとも camera、recorder、fetch、worker、
 websocket、broadcast、clipboard、credential を個別確認する。
+
+Phase 0 の固定スナップショットは
+[React snapshot 向け wc-bindable observable 棚卸し](12-react-snapshot-observable-inventory.md) に記録した。
+固定231 propertyを `state` 210、`event` 20、`handle` 1へ分類し、動的 DCC は別枠の `state` family とした。
 
 ### Phase 1: producer snapshot contract
 
