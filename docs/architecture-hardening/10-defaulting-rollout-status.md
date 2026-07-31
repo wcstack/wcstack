@@ -157,6 +157,21 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
   - これにより `state-binding-init-races.md` §1 の恒久対応（案 A 中期課題）が `value#init=element:`（1 修飾子）で完結する。storage README §5 idiom と `examples/state-cross-tab-todo` / `state-color-palette` の `$connectedCallback` pull はリリース後に簡素化可能（examples は CDN の公開版を読むためリリースまで現状維持）。
   - **【完了 2026-07-24】この簡素化を実施**（修正は v1.22.0 に含まれ、当時の「リリースまで現状維持」の理由は失効）。storage README(en/ja) §1/§4/§5 を `value#init=element:` に書き換え、2 examples から `$connectedCallback` pull を撤去。**併せて monitor 系の手動 pull も撤去**: network / screen-orientation README(en/ja) は observable プロパティが全て output-only ＝ 既定 authority が `element` のため手動 pull が元々不要だった（`timing-and-firing-contract.md` §7.1/§10.1/§10.2/§11.2 も「イベントは届かないが値は届く」に訂正）。実ブラウザ回帰を新設: `e2e/tests/monitor-initial-snapshot.spec.ts`（`<wcs-network>` の `supported` は connect 時に一度確定し以後 change が飛ばないため、pull が退行すると seed の `false` のまま = 退行検出器になる）。
 
+- **【リリース後 TODO・2026-08-01 追加】wcstack-app スキルの追随**: スキルは
+  [wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill) 別リポジトリにあり、
+  `SKILL.md` frontmatter の `wcstack-version` で**検証済みリリース**を印として持ち、
+  scaffold は全て `https://esm.run/@wcstack/<pkg>/auto`（= 公開版）を読む。したがって
+  examples と同じクラスの成果物であり、未リリースの main に追従させると印が実態と乖離し、
+  CDN が配っていない挙動を書くことになる。スキル側 README も「PRs that fix drift against a
+  **released** wcstack version」と明記している。⇒ **リリース後にまとめて当てる**。
+  - 現状の印は **1.22.6**、npm の最新は **1.23.0**（2026-08-01 確認）。既に 1 リリース分の
+    ドリフトがあるため、次回リリース後の追随は 1.22.6 → 新版の差分を一括で扱う。
+  - 本ディレクトリ 11-13 由来で効きうる差分は少ない。`semantics` 宣言は producer 側の面で
+    アプリ構築用スキルには基本不要、property upgrade と framework 組み込み手順も HTML ファーストの
+    アプリ構築には無関係。**唯一効くのは occurrence 伝播**（`semantics: "event"` の property は
+    同値 primitive でも state へ届く）で、gotcha 表に同値ガード前提の記述があれば要更新。
+  - 追随時は `SKILL.md` の `wcstack-version` と README の版記述も同時に更新する。
+
 ### E. ドキュメント / normative 更新【完了 2026-07-16】
 
 - `03-two-way-echo-control.md` ヘッダ / `09` §3.6（directional）/ §4（propagation）/ §8 に実装ステータス
@@ -179,8 +194,10 @@ phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展
 **すべて完了/確定済み（2026-07-16）**。残りは:
 
 1. **D（release build + 依存回帰）** — リリース時にまとめて実施（examples 回帰は 2026-07-17 に先行実施済み、§D）
-2. **defer 3 の個別判断** — permission / network（capability-only errorInfo の価値）、defined（error 面の再設計）
-3. **lane trace → devtoolsSink ブリッジ** — 未着手 followup（§F、既定化ブロッカーではない）
+2. **wcstack-app スキルの追随** — **リリース後**に実施（§D 末尾）。CDN の公開版を読む成果物なので、
+   examples と同じくリリースまで現状維持が正しい
+3. **defer 3 の個別判断** — permission / network（capability-only errorInfo の価値）、defined（error 面の再設計）
+4. **lane trace → devtoolsSink ブリッジ** — 未着手 followup（§F、既定化ブロッカーではない）
 
 ---
 

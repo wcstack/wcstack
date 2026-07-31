@@ -6,7 +6,8 @@
   A3 = [`bind()` 定義待ちの提案文書](../spec-proposal-bind-definition-timing.md)）。
   A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。
   A3 の提案は [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22) として提出済み。
-  残るのは wcstack-app スキル（別リポジトリ）の追随
+  残るのは wcstack-app スキル（別リポジトリ）の追随で、これは**リリース後**に行う
+  （[10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) §D 末尾）
 - **対象**: `static wcBindable` を宣言する全 Shell、`@wc-bindable` の framework adapter、
   `@wcstack/autoloader` を前提とする配布経路
 - **外部仕様スナップショット**:
