@@ -63,11 +63,11 @@ export class RafCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "tick", event: "wcs-raf:tick", getter: (e: Event) => (e as CustomEvent).detail.count },
-      { name: "elapsed", event: "wcs-raf:tick", getter: (e: Event) => (e as CustomEvent).detail.elapsed },
-      { name: "dt", event: "wcs-raf:tick", getter: (e: Event) => (e as CustomEvent).detail.dt },
-      { name: "running", event: "wcs-raf:running-changed" },
-      { name: "suspended", event: "wcs-raf:suspended-changed" },
+      { name: "tick", event: "wcs-raf:tick", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.count },
+      { name: "elapsed", event: "wcs-raf:tick", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.elapsed },
+      { name: "dt", event: "wcs-raf:tick", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.dt },
+      { name: "running", event: "wcs-raf:running-changed", semantics: "state" },
+      { name: "suspended", event: "wcs-raf:suspended-changed", semantics: "state" },
     ],
     commands: [
       { name: "start" },

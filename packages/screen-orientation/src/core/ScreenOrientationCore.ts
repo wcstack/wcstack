@@ -34,30 +34,32 @@ export class ScreenOrientationCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "type", event: "wcs-orientation:change", getter: (e: Event) => (e as CustomEvent).detail.type },
-      { name: "angle", event: "wcs-orientation:change", getter: (e: Event) => (e as CustomEvent).detail.angle },
+      { name: "type", event: "wcs-orientation:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.type },
+      { name: "angle", event: "wcs-orientation:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.angle },
       {
         name: "portrait",
         event: "wcs-orientation:change",
+        semantics: "state",
         getter: (e: Event) => (e as CustomEvent).detail.type?.startsWith("portrait") ?? false,
       },
       {
         name: "landscape",
         event: "wcs-orientation:change",
+        semantics: "state",
         getter: (e: Event) => (e as CustomEvent).detail.type?.startsWith("landscape") ?? false,
       },
       // never-throw (§3.6, async-io-node-guidelines): lock()/unlock() failures
       // land here instead of rejecting/throwing. Mirrors the `error` property
       // every other bidirectional IO node exposes (FetchCore, GeolocationCore,
       // NotificationCore) so `hidden@error`-style bindings work uniformly.
-      { name: "error", event: "wcs-orientation:error" },
+      { name: "error", event: "wcs-orientation:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (capability-missing / not-allowed
       // / aborted / orientation-error); the existing `error` property/event are
       // unchanged. Fires wcs-orientation:error-info-changed. No lane — monitoring is a
       // synchronous subscribe and lock()/unlock() are a single command path, not
       // competing operations.
-      { name: "errorInfo", event: "wcs-orientation:error-info-changed" },
+      { name: "errorInfo", event: "wcs-orientation:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "lock", async: true },

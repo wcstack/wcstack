@@ -46,20 +46,20 @@ export class TiltCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "alpha", event: "wcs-tilt:change", getter: (e: Event) => (e as CustomEvent).detail.alpha },
-      { name: "beta", event: "wcs-tilt:change", getter: (e: Event) => (e as CustomEvent).detail.beta },
-      { name: "gamma", event: "wcs-tilt:change", getter: (e: Event) => (e as CustomEvent).detail.gamma },
-      { name: "absolute", event: "wcs-tilt:change", getter: (e: Event) => (e as CustomEvent).detail.absolute },
-      { name: "permissionState", event: "wcs-tilt:permission-changed" },
+      { name: "alpha", event: "wcs-tilt:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.alpha },
+      { name: "beta", event: "wcs-tilt:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.beta },
+      { name: "gamma", event: "wcs-tilt:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.gamma },
+      { name: "absolute", event: "wcs-tilt:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.absolute },
+      { name: "permissionState", event: "wcs-tilt:permission-changed", semantics: "state" },
       // never-throw (§3.6): requestPermission() failures land here instead of
       // rejecting/throwing. Mirrors idle (same batch2) and the accelerometer
       // family (batch5) — see docs/io-node-batch-implementation-plan.md.
-      { name: "error", event: "wcs-tilt:error" },
+      { name: "error", event: "wcs-tilt:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error.error` (the wrapped rejection's
       // Error.name); the existing `error` property/event are unchanged. Fires
       // wcs-tilt:error-info-changed. No lane — this is a monitor node.
-      { name: "errorInfo", event: "wcs-tilt:error-info-changed" },
+      { name: "errorInfo", event: "wcs-tilt:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "requestPermission", async: true },

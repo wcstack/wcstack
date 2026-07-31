@@ -26,11 +26,11 @@ export class NetworkCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "effectiveType", event: "wcs-network:change", getter: (e: Event) => (e as CustomEvent).detail.effectiveType },
-      { name: "downlink", event: "wcs-network:change", getter: (e: Event) => (e as CustomEvent).detail.downlink },
-      { name: "rtt", event: "wcs-network:change", getter: (e: Event) => (e as CustomEvent).detail.rtt },
-      { name: "saveData", event: "wcs-network:change", getter: (e: Event) => (e as CustomEvent).detail.saveData },
-      { name: "supported", event: "wcs-network:change", getter: (e: Event) => (e as CustomEvent).detail.supported },
+      { name: "effectiveType", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.effectiveType },
+      { name: "downlink", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.downlink },
+      { name: "rtt", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.rtt },
+      { name: "saveData", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.saveData },
+      { name: "supported", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.supported },
     ],
     // Pure monitor: navigator.connection has no request()/action method to invoke.
     commands: [],

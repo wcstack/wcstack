@@ -26,14 +26,14 @@ export class WorkerCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "message", event: "wcs-worker:message" },
-      { name: "error", event: "wcs-worker:error" },
+      { name: "message", event: "wcs-worker:message", semantics: "event" },
+      { name: "error", event: "wcs-worker:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (name + message); the existing
       // `error` property/event are unchanged. Fires wcs-worker:error-info-changed. No
       // lane — the worker is a command-driven owner, not a concurrent-operation node.
-      { name: "errorInfo", event: "wcs-worker:error-info-changed" },
-      { name: "running", event: "wcs-worker:running-changed" },
+      { name: "errorInfo", event: "wcs-worker:error-info-changed", semantics: "state" },
+      { name: "running", event: "wcs-worker:running-changed", semantics: "state" },
     ],
     commands: [
       { name: "start" },

@@ -8,14 +8,14 @@ export class StorageCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: STORAGE_EVENTS.valueChanged, getter: (e: Event) => (e as CustomEvent).detail },
-      { name: "loading", event: STORAGE_EVENTS.loadingChanged },
-      { name: "error", event: STORAGE_EVENTS.error },
+      { name: "value", event: STORAGE_EVENTS.valueChanged, semantics: "state", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "loading", event: STORAGE_EVENTS.loadingChanged, semantics: "state" },
+      { name: "error", event: STORAGE_EVENTS.error, semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (invalid-argument / quota-exceeded
       // / not-allowed / storage-error); the existing `error` property/event are unchanged.
       // Fires wcs-storage:error-info-changed. No lane — load/save/remove don't compete.
-      { name: "errorInfo", event: STORAGE_EVENTS.errorInfoChanged },
+      { name: "errorInfo", event: STORAGE_EVENTS.errorInfoChanged, semantics: "state" },
     ],
     inputs: [
       { name: "key" },

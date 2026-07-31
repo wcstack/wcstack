@@ -56,21 +56,21 @@ export class NotificationCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "permission", event: "wcs-notify:permission-change" },
-      { name: "granted", event: "wcs-notify:permission-change", getter: (e: Event) => (e as CustomEvent).detail === "granted" },
-      { name: "denied", event: "wcs-notify:permission-change", getter: (e: Event) => (e as CustomEvent).detail === "denied" },
-      { name: "prompt", event: "wcs-notify:permission-change", getter: (e: Event) => (e as CustomEvent).detail === "prompt" },
-      { name: "unsupported", event: "wcs-notify:permission-change", getter: (e: Event) => (e as CustomEvent).detail === "unsupported" },
-      { name: "error", event: "wcs-notify:error" },
+      { name: "permission", event: "wcs-notify:permission-change", semantics: "state" },
+      { name: "granted", event: "wcs-notify:permission-change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "granted" },
+      { name: "denied", event: "wcs-notify:permission-change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "denied" },
+      { name: "prompt", event: "wcs-notify:permission-change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "prompt" },
+      { name: "unsupported", event: "wcs-notify:permission-change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "unsupported" },
+      { name: "error", event: "wcs-notify:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error.error` (the stable code the
       // Core's `_err()` already produces); the existing `error` property/event are
       // unchanged. Fires wcs-notify:error-info-changed. No lane — show is a
       // momentary, last-value-wins send, not a competing async operation.
-      { name: "errorInfo", event: "wcs-notify:error-info-changed" },
-      { name: "clicked", event: "wcs-notify:click", getter: (e: Event) => (e as CustomEvent).detail },
-      { name: "closed", event: "wcs-notify:close", getter: (e: Event) => (e as CustomEvent).detail },
-      { name: "shown", event: "wcs-notify:show", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "errorInfo", event: "wcs-notify:error-info-changed", semantics: "state" },
+      { name: "clicked", event: "wcs-notify:click", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "closed", event: "wcs-notify:close", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "shown", event: "wcs-notify:show", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
     ],
     commands: [
       { name: "request", async: true },

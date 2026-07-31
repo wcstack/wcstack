@@ -34,15 +34,15 @@ export class ContactsCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: "wcs-contacts:complete", getter: (e: Event) => (e as CustomEvent).detail.value },
-      { name: "loading", event: "wcs-contacts:loading-changed" },
-      { name: "error", event: "wcs-contacts:error" },
-      { name: "cancelled", event: "wcs-contacts:cancelled-changed" },
+      { name: "value", event: "wcs-contacts:complete", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.value },
+      { name: "loading", event: "wcs-contacts:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-contacts:error", semantics: "state" },
+      { name: "cancelled", event: "wcs-contacts:cancelled-changed", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output; the existing `error` property/event are unchanged.
       // Fires its own `wcs-contacts:error-info-changed` event; no getter, so the
       // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
-      { name: "errorInfo", event: "wcs-contacts:error-info-changed" },
+      { name: "errorInfo", event: "wcs-contacts:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "select", async: true },

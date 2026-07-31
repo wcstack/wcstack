@@ -6,9 +6,9 @@ export class RenderCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "html", event: "wcs-render:html-changed" },
-      { name: "loading", event: "wcs-render:loading-changed" },
-      { name: "error", event: "wcs-render:error" },
+      { name: "html", event: "wcs-render:html-changed", semantics: "state" },
+      { name: "loading", event: "wcs-render:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-render:error", semantics: "state" },
     ],
   };
 

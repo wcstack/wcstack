@@ -37,23 +37,24 @@ export class IdleCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "userState", event: "wcs-idle:change", getter: (e: Event) => (e as CustomEvent).detail.userState },
-      { name: "screenState", event: "wcs-idle:change", getter: (e: Event) => (e as CustomEvent).detail.screenState },
+      { name: "userState", event: "wcs-idle:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.userState },
+      { name: "screenState", event: "wcs-idle:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.screenState },
       {
         name: "active",
         event: "wcs-idle:change",
+        semantics: "state",
         getter: (e: Event) => (e as CustomEvent).detail.userState === "active",
       },
       // never-throw (§3.6): requestPermission()/start() failures land here
       // instead of rejecting/throwing. Mirrors every other bidirectional IO
       // node in this batch (fetch, share, screen-orientation).
-      { name: "error", event: "wcs-idle:error" },
+      { name: "error", event: "wcs-idle:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (capability-missing / not-allowed
       // / idle-error); the existing `error` property/event are unchanged. Fires
       // wcs-idle:error-info-changed. No lane — requestPermission()/start()/stop() form a
       // single command path (a 2nd start() supersedes the 1st), not competing operations.
-      { name: "errorInfo", event: "wcs-idle:error-info-changed" },
+      { name: "errorInfo", event: "wcs-idle:error-info-changed", semantics: "state" },
     ],
     // No `inputs`: the Core has no settable `threshold` state — `threshold` is a
     // per-call argument to `start(threshold)`, not a property/setter. The DOM-driven

@@ -23,9 +23,9 @@ export class TimerCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "tick", event: "wcs-timer:tick", getter: (e: Event) => (e as CustomEvent).detail.count },
-      { name: "elapsed", event: "wcs-timer:tick", getter: (e: Event) => (e as CustomEvent).detail.elapsed },
-      { name: "running", event: "wcs-timer:running-changed" },
+      { name: "tick", event: "wcs-timer:tick", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.count },
+      { name: "elapsed", event: "wcs-timer:tick", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.elapsed },
+      { name: "running", event: "wcs-timer:running-changed", semantics: "state" },
     ],
     commands: [
       { name: "start" },

@@ -33,15 +33,15 @@ export class PipCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "active", event: "wcs-pip:change", getter: (e: Event) => (e as CustomEvent).detail.active },
+      { name: "active", event: "wcs-pip:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.active },
       // `error` / `errorInfo` are observable failure outputs. Historically `error`
       // was an imperative getter with no event; both are now bindable (event-backed)
       // so `data-wcs` / bind() can observe a request/exit failure. `errorInfo` is the
       // additive serializable taxonomy (stable code / phase / recoverable) derived
       // from `error`; the `error` value shape is unchanged. No lane — Picture-in-Picture
       // drives a referenced `<video>`, not a competing operation (fullscreen と同型)。
-      { name: "error", event: "wcs-pip:error" },
-      { name: "errorInfo", event: "wcs-pip:error-info-changed" },
+      { name: "error", event: "wcs-pip:error", semantics: "state" },
+      { name: "errorInfo", event: "wcs-pip:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "requestPictureInPicture", async: true },

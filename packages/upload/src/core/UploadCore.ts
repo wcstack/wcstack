@@ -20,17 +20,17 @@ export class UploadCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: "wcs-upload:response", getter: (e: Event) => (e as CustomEvent).detail.value },
-      { name: "loading", event: "wcs-upload:loading-changed" },
-      { name: "progress", event: "wcs-upload:progress" },
-      { name: "error", event: "wcs-upload:error" },
-      { name: "status", event: "wcs-upload:response", getter: (e: Event) => (e as CustomEvent).detail.status },
+      { name: "value", event: "wcs-upload:response", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.value },
+      { name: "loading", event: "wcs-upload:loading-changed", semantics: "state" },
+      { name: "progress", event: "wcs-upload:progress", semantics: "state" },
+      { name: "error", event: "wcs-upload:error", semantics: "state" },
+      { name: "status", event: "wcs-upload:response", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.status },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output; the existing `error` property/event are unchanged.
       // Fires its own `wcs-upload:error-info-changed` event; no getter, so the bound
       // value is the event detail (mirrors `error` / `loading`). An abort() is not a
       // failure — it clears loading without setting error/errorInfo.
-      { name: "errorInfo", event: "wcs-upload:error-info-changed" },
+      { name: "errorInfo", event: "wcs-upload:error-info-changed", semantics: "state" },
     ],
     inputs: [
       { name: "url" },

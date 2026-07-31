@@ -38,6 +38,8 @@ const TARGET_PACKAGES = [
   "idle", "tilt",
   // batch 5 (Generic Sensor family)
   "accelerometer", "gyroscope", "magnetometer", "ambient-light-sensor",
+  // frame-source primitive
+  "raf",
   // flagship packages that also expose the protocol
   "router", "server",
   // reactive engine / consumer

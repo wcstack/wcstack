@@ -14,7 +14,7 @@ export class WcsGeolocation extends HTMLElement {
     ...GeolocationCore.wcBindable,
     properties: [
       ...GeolocationCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-geo:trigger-changed" },
+      { name: "trigger", event: "wcs-geo:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. Each input carries its mirrored `attribute`
     // hint (boolean flags reflect idempotently, so a binding system that writes

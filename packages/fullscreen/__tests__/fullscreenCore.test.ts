@@ -43,8 +43,8 @@ describe("FullscreenCore", () => {
       const ev = new CustomEvent("wcs-fullscreen:change", { detail: { active: true } });
       expect(prop.getter!(ev)).toBe(true);
       // error / errorInfo は observable な失敗出力(event 付き)。
-      expect(FullscreenCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-fullscreen:error" });
-      expect(FullscreenCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-fullscreen:error-info-changed" });
+      expect(FullscreenCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-fullscreen:error", semantics: "state" });
+      expect(FullscreenCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-fullscreen:error-info-changed", semantics: "state" });
     });
 
     it("commands に requestFullscreen/exitFullscreen が async 宣言される", () => {

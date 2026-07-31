@@ -201,9 +201,13 @@ Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-
 { name: "streamReady", event: "wcs-camera:stream-ready", semantics: "handle" }
 ```
 
-これは採択済み schema ではない。配置は wc-bindable 本体、wcstack manifest、別 sidecar のいずれかを決定ゲートで
-選ぶ。未知 field を無視できる forward-compatible な形を維持し、既存 adapter の observation semantics を
-暗黙に変更しない。
+配置は決定ゲート 1 で **declaration の additive optional field** に確定した（§8）。`/protocol/wc-bindable.ts` の
+`IWcBindableProperty` に `semantics?: "state" | "event" | "handle"` を追加し、`scripts/sync-protocol-types.mjs` が
+各パッケージへ配る形とした。`@wc-bindable/core@0.8.0` の descriptor 検証は `name` / `event` / `getter` のみを見て
+未知 field を素通しするため、既存 adapter の observation semantics は変わらない。
+
+実装済みの範囲は、棚卸しで `event` / `handle` に分類した 21 property（9 パッケージ）である。`state` は
+決定ゲート 2 の互換優先方針により未注釈のままとした。runtime 挙動は変えていない。
 
 ### Phase 3: React adapter
 
@@ -272,13 +276,21 @@ resource lifecycle は残るためである。
 ## 8. 決定ゲート
 
 1. **分類の配置**: wc-bindable declaration の optional field、wcstack manifest、別 sidecar のどれに置くか。
+   → **決定（2026-08-01）: declaration の additive optional field**。sidecar は
+   [`wcstack.manifest.json` schema](../wcstack-manifest-schema.md) 自身の不変条件により
+   「optional な情報を runtime correctness の必須入力に昇格させない」ものであり、tooling 用の artifact である。
+   本件の目的は汎用 adapter が**実行時**に受け皿を選べるようにすることなので、sidecar は要件を満たさない。
+   sidecar は将来 declaration の写しとして drift 検査に使う。
 2. **legacy fallback**: semantics metadata がない property を `state` とみなすか、現行 raw update として扱うか。
+   → **決定（2026-08-01）: 互換優先。未指定は「未指定」であり `state` ではない**。読み手は semantics を
+   見つけられない場合、この field が存在しなかった時と同じ動作を維持しなければならない（dedupe・cache・
+   serialize を推測で始めない）。明示された値だけが読み手の扱いを変える根拠になる。
 3. **React architecture**: 現行の local-state 転写を維持するか、cached external store へ移行するか。
 4. **resource lifetime**: managed object URL を producer 所有のままにするか、Blob を渡して consumer 所有へ寄せるか。
 5. **規範の強さ**: producer snapshot contract を新規ノードの MUST とし、既存ノードは段階移行にするか。
 6. **adapter API**: 現行 `[ref, values]` を維持するか、event / handle 用 surface を追加するか。
 
-推奨は、ゲート 1 を sidecar または additive field、ゲート 2 を互換優先、ゲート 3 は現行方式をテストで固定して
+ゲート 1・2 は上記のとおり確定済み。残りの推奨は、ゲート 3 は現行方式をテストで固定して
 external-store 化の利益を先に測定、ゲート 5 を「新規 MUST / 既存は棚卸し後に移行」、ゲート 6 を既存 API
 維持から開始、とする。ゲート 4 は resource ごとに判断する。
 

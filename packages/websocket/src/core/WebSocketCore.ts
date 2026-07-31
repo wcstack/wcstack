@@ -26,17 +26,17 @@ export class WebSocketCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "message", event: "wcs-ws:message" },
-      { name: "connected", event: "wcs-ws:connected-changed" },
-      { name: "loading", event: "wcs-ws:loading-changed" },
-      { name: "error", event: "wcs-ws:error" },
+      { name: "message", event: "wcs-ws:message", semantics: "event" },
+      { name: "connected", event: "wcs-ws:connected-changed", semantics: "state" },
+      { name: "loading", event: "wcs-ws:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-ws:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (invalid-argument / invalid-state
       // / connection-error); the existing `error` property/event are unchanged. Fires
       // wcs-ws:error-info-changed. No lane — WebSocket is a persistent session/monitor
       // node, not a competing operation.
-      { name: "errorInfo", event: "wcs-ws:error-info-changed" },
-      { name: "readyState", event: "wcs-ws:readystate-changed" },
+      { name: "errorInfo", event: "wcs-ws:error-info-changed", semantics: "state" },
+      { name: "readyState", event: "wcs-ws:readystate-changed", semantics: "state" },
     ],
     commands: [
       { name: "connect" },

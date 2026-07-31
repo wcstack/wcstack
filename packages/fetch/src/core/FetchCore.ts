@@ -34,19 +34,19 @@ export class FetchCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.value },
-      { name: "loading", event: "wcs-fetch:loading-changed" },
-      { name: "error", event: "wcs-fetch:error" },
-      { name: "status", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.status },
+      { name: "value", event: "wcs-fetch:response", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.value },
+      { name: "loading", event: "wcs-fetch:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-fetch:error", semantics: "state" },
+      { name: "status", event: "wcs-fetch:response", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.status },
       // Managed object URL for a `responseType: "blob"` response (null otherwise).
       // The Core revokes the previous URL on each new response and on dispose, so
       // a consumer can bind it straight into <img src> without lifecycle glue.
-      { name: "objectURL", event: "wcs-fetch:response", getter: (e: Event) => (e as CustomEvent).detail.objectURL },
+      { name: "objectURL", event: "wcs-fetch:response", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.objectURL },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output — the existing `error` property/event are unchanged.
       // Fires on its own `wcs-fetch:error-info-changed` event; no getter, so the
       // bound value is the event detail (mirrors `error` / `loading`).
-      { name: "errorInfo", event: "wcs-fetch:error-info-changed" },
+      { name: "errorInfo", event: "wcs-fetch:error-info-changed", semantics: "state" },
     ],
     inputs: [
       { name: "url" },

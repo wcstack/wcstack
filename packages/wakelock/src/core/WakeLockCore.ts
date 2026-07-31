@@ -42,14 +42,14 @@ export class WakeLockCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "held", event: "wcs-wakelock:held-changed" },
-      { name: "error", event: "wcs-wakelock:error" },
+      { name: "held", event: "wcs-wakelock:held-changed", semantics: "state" },
+      { name: "error", event: "wcs-wakelock:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from the raw `error` (not-allowed / wakelock-error);
       // the existing `error` property/event are unchanged. Fires
       // wcs-wakelock:error-info-changed. No lane — the wake lock is a pure sink (request /
       // release do not compete).
-      { name: "errorInfo", event: "wcs-wakelock:error-info-changed" },
+      { name: "errorInfo", event: "wcs-wakelock:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "request", async: true },

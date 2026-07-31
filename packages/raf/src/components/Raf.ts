@@ -9,7 +9,7 @@ export class Raf extends HTMLElement {
     ...RafCore.wcBindable,
     properties: [
       ...RafCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-raf:trigger-changed" },
+      { name: "trigger", event: "wcs-raf:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. `attribute` is a purely descriptive hint
     // (per SPEC-extensions.md the binding core does not act on it) naming the

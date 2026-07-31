@@ -1,7 +1,7 @@
 # wc-bindable observable 棚卸し
 
 - **作成日**: 2026-08-01
-- **状態**: Phase 0 完了（分類スナップショット。runtime behavior は未変更）
+- **状態**: Phase 0 完了（分類スナップショット）／ Phase 2 の宣言追加まで実施済み（§6.1）。runtime behavior は未変更
 - **基準 commit**: wcstack `6eea3a5b52ef032d2ed6f2d7824bb45e6c000935`
 - **親設計**: [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
 - **外部仕様スナップショット**: `@wc-bindable/core@0.8.0`。adapter 実装の参照は §5.6 に記す
@@ -119,9 +119,13 @@ ownership 規律は protocol 上まだ明文化されていない。
 
 ## 5. Phase 0 で判明した互換性 hotspot
 
-### 5.1 metadata 不在
+### 5.1 metadata 不在（Phase 2 で解消）
 
-現行 `IWcBindableProperty` は `name`、`event`、optional `getter` だけを持つ。20個の event と1個の handle を
+> **更新（2026-08-01）**: 本 hotspot は Phase 2 で解消した。`IWcBindableProperty` に
+> `semantics?: "state" | "event" | "handle"` を追加し、下記 20 event + 1 handle に注釈を付与済み。
+> 以下は決定当時の記述として残す。
+
+棚卸し時点の `IWcBindableProperty` は `name`、`event`、optional `getter` だけを持つ。20個の event と1個の handle を
 汎用 adapter が state から区別できない。型判定や property-name allowlist ではなく、additive metadata または
 sidecar が必要である。
 
@@ -215,13 +219,47 @@ consumer 側の reactive store が包んだ値（Vue `reactive`、Svelte `$state
 input 経由で producer に入り込む経路を塞げないためである。Core 側に framework 固有の unwrap は持ち込まず、
 structured clone 境界での失敗は never-throw で `error` に落とし、raw 化は利用者の責務として README に明記する。
 
-Phase 2 以降は、次の順で小さな PoC を行う。
+## 6.1 Phase 2 の着地（2026-08-01）
 
-1. `streamReady: handle` と `message: event` を表現できる additive metadata / sidecar の配置を決める。
-2. metadata 未対応 peer は現行どおり全 property を配送する互換 fallback を固定する。
-3. React adapter の現行 local-state 転写を characterization test で固定する。
-4. event / handle の追加 surface を設計し、既存 `[ref, values]` API を壊さず試す。
+配置は decision gate 1 のとおり **declaration の additive optional field** に確定した。sidecar は
+[`wcstack.manifest.json` schema](../wcstack-manifest-schema.md) 自身の不変条件により runtime correctness の
+必須入力になれず、「adapter が実行時に受け皿を選ぶ」という本件の目的を満たさないためである。
+
+実施した内容は次のとおり。
+
+1. `/protocol/wc-bindable.ts`（SSOT）の `IWcBindableProperty` に
+   `semantics?: "state" | "event" | "handle"` と `WcBindableSemantics` 型を追加し、
+   `scripts/sync-protocol-types.mjs` で 38 個の生成コピーへ配布した（CI の `--check` ゲートが既存）。
+2. §3 で `event` / `handle` に分類した 21 property（9 パッケージ）へ注釈を付与した。
+   broadcast / sse / websocket / worker の `message`、camera の `ended` と `streamReady`（handle）、
+   recorder の `recorded` / `dataavailable`、clipboard の 5 property、debounce・throttle の `fired`、
+   notification の 3 property、speech の `charIndex` / `spokenWord` / `result`。
+3. 各パッケージに `__tests__/wcBindableSemantics.test.ts` を追加し、`event` / `handle` の集合を固定した。
+4. ガイドライン §3.3 と §3.3.1 を更新し、新規ノードの `event` / `handle` 宣言を MUST とした。
+
+`state` は decision gate 2（互換優先）に従い未注釈のままとした。未指定は「未指定」であって `state` ではなく、
+読み手は field が無かったときと同じ動作を維持する。runtime 挙動と protocol version は変更していない。
+
+### 残る作業
+
+1. `@wcstack/state` の同値ガードを `semantics: "event"` で迂回する（下記 §6.2）。
+2. `state` を含む全 231 property の明示注釈（DevTools / remote / SSR 向け。互換性への影響は無い）。
+3. React adapter の現行 local-state 転写を characterization test で固定する（上流リポジトリ）。
+4. event / handle の追加 surface を設計し、既存 `[ref, values]` API を壊さず試す（上流リポジトリ）。
 5. managed URL の lifetime は adapter 変更と分離して node ごとに決める。
+
+## 6.2 最初の consumer は `@wcstack/state` 自身
+
+Phase 2 の注釈を最初に消費すべきは外部 adapter ではなく wcstack 自身である。`@wcstack/state` は
+`config.sameValueGuard`（既定 ON）により、**primitive 値が `Object.is` 同値なら set / 依存伝播 / DOM 適用を
+まるごとスキップする**（`packages/state/src/proxy/methods/setByAddress.ts`）。参照型は素通しなので、
+JSON payload の `message` は毎回 fresh object で影響を受けないが、同じ文字列の再受信、`charIndex` の同値、
+`copied` / `fired` のような primitive occurrence は現状**取りこぼす**。
+
+これは §5.1 で signals adapter について指摘したのと同じ失敗であり、wcstack 内で再現・修正・回帰テストまで
+完結できる。ガードは `setByAddress` の汎用パスにあるため、書き込みの出所が `semantics: "event"` の
+wc-bindable property であることを伝える経路の設計が必要になる。runtime 変更なので Phase 2 の宣言追加とは
+別コミット・別レビューとする。
 
 ## 7. Phase 0 完了条件
 

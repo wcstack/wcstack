@@ -10,8 +10,8 @@ export class WcsUpload extends HTMLElement {
     ...UploadCore.wcBindable,
     properties: [
       ...UploadCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-upload:trigger-changed" },
-      { name: "files", event: "wcs-upload:files-changed" },
+      { name: "trigger", event: "wcs-upload:trigger-changed", semantics: "state" },
+      { name: "files", event: "wcs-upload:files-changed", semantics: "state" },
     ],
     // Shell-level input surface. The Core declares only the portable `url` / `method` /
     // `fieldName`; the Shell adds the DOM-driven settable surface. No `attribute` hints

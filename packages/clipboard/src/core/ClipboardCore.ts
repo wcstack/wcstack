@@ -33,21 +33,21 @@ export class ClipboardCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "text", event: "wcs-clipboard:read", getter: (e: Event) => (e as CustomEvent).detail.text },
-      { name: "items", event: "wcs-clipboard:read", getter: (e: Event) => (e as CustomEvent).detail.items },
-      { name: "loading", event: "wcs-clipboard:loading-changed" },
-      { name: "error", event: "wcs-clipboard:error" },
-      { name: "readPermission", event: "wcs-clipboard:read-permission-changed" },
-      { name: "writePermission", event: "wcs-clipboard:write-permission-changed" },
-      { name: "monitoring", event: "wcs-clipboard:monitoring-changed" },
+      { name: "text", event: "wcs-clipboard:read", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail.text },
+      { name: "items", event: "wcs-clipboard:read", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail.items },
+      { name: "loading", event: "wcs-clipboard:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-clipboard:error", semantics: "state" },
+      { name: "readPermission", event: "wcs-clipboard:read-permission-changed", semantics: "state" },
+      { name: "writePermission", event: "wcs-clipboard:write-permission-changed", semantics: "state" },
+      { name: "monitoring", event: "wcs-clipboard:monitoring-changed", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from the normalized `error` (`name` →
       // capability-missing / not-allowed / clipboard-error); the existing `error`
       // property/event are unchanged. Fires `wcs-clipboard:error-info-changed`.
-      { name: "errorInfo", event: "wcs-clipboard:error-info-changed" },
-      { name: "copied", event: "wcs-clipboard:copied", getter: (e: Event) => (e as CustomEvent).detail },
-      { name: "cut", event: "wcs-clipboard:cut", getter: (e: Event) => (e as CustomEvent).detail },
-      { name: "pasted", event: "wcs-clipboard:pasted", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "errorInfo", event: "wcs-clipboard:error-info-changed", semantics: "state" },
+      { name: "copied", event: "wcs-clipboard:copied", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "cut", event: "wcs-clipboard:cut", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "pasted", event: "wcs-clipboard:pasted", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
     ],
     commands: [
       { name: "writeText", async: true },

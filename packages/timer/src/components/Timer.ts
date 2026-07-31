@@ -9,7 +9,7 @@ export class Timer extends HTMLElement {
     ...TimerCore.wcBindable,
     properties: [
       ...TimerCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-timer:trigger-changed" },
+      { name: "trigger", event: "wcs-timer:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. `attribute` is a purely descriptive hint
     // (per SPEC-extensions.md the binding core does not act on it) naming the

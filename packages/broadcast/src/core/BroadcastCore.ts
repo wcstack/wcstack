@@ -29,14 +29,14 @@ export class BroadcastCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "message", event: "wcs-broadcast:message" },
-      { name: "error", event: "wcs-broadcast:error" },
+      { name: "message", event: "wcs-broadcast:message", semantics: "event" },
+      { name: "error", event: "wcs-broadcast:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (the DOMException.name /
       // synthetic name); the existing `error` property/event are unchanged. Fires
       // wcs-broadcast:error-info-changed. No lane — post/message are concurrent-
       // independent (mirrors ClipboardCore).
-      { name: "errorInfo", event: "wcs-broadcast:error-info-changed" },
+      { name: "errorInfo", event: "wcs-broadcast:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "open" },

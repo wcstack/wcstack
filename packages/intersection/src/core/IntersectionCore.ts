@@ -28,11 +28,11 @@ export class IntersectionCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "entry", event: "wcs-intersect:change" },
-      { name: "intersecting", event: "wcs-intersect:change", getter: (e: Event) => (e as CustomEvent).detail.isIntersecting },
-      { name: "ratio", event: "wcs-intersect:change", getter: (e: Event) => (e as CustomEvent).detail.intersectionRatio },
-      { name: "visible", event: "wcs-intersect:visible-changed" },
-      { name: "observing", event: "wcs-intersect:observing-changed" },
+      { name: "entry", event: "wcs-intersect:change", semantics: "state" },
+      { name: "intersecting", event: "wcs-intersect:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.isIntersecting },
+      { name: "ratio", event: "wcs-intersect:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.intersectionRatio },
+      { name: "visible", event: "wcs-intersect:visible-changed", semantics: "state" },
+      { name: "observing", event: "wcs-intersect:observing-changed", semantics: "state" },
     ],
     commands: [
       { name: "observe" },

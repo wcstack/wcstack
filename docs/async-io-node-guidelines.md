@@ -110,7 +110,7 @@ static wcBindable: IWcBindable = {
 ```
 
 - `properties`: `{ name, event, getter? }`。`event` は `wcs-<name>:<kind>` 形式。Core はプロトコル上 `properties` のみ解釈する。`inputs` / `commands` は記述的メタ（ツール・codegen 用）
-- 現行 schema は `state` / `event` / `handle` を表現しない。metadata の配置が決まるまでは tag-design doc と README に分類を明記し、型や property 名から adapter が推測する前提を置かない
+- `properties[].semantics`（`"state" | "event" | "handle"`）で観測意味論を宣言する。**`event` と `handle` は宣言必須（MUST）**。省略は「未指定」であって `state` の意味ではなく、読み手は省略時に現行動作を維持する。`state` の明示は現状 optional（§3.3.1）。型や property 名から adapter が推測する前提を置かない
 - `commands`: `{ name, async? }`。非同期コマンドは `async: true`
 - monitor 専用ノードは `commands: []` とし、その旨をコメントで明記する
 
@@ -169,6 +169,8 @@ deep clone / deep freeze する根拠にはならない。deep equality、deep c
 
 `event` は current level ではなく occurrence である。
 
+- declaration に `semantics: "event"` を宣言する（MUST）。宣言が無い property を汎用 consumer が occurrence として
+  扱うことは期待できない。
 - 同じ payload が連続しても各 occurrence を dispatch する（MUST）。same-value guard を置いてはならない（MUST NOT）。
 - 最後の payload を getter に保持して既存 consumer と互換を保つことはできる（MAY）。ただし getter の値だけでは
   occurrence count を表現できないことを README に明記する（MUST）。
@@ -179,11 +181,14 @@ deep clone / deep freeze する根拠にはならない。deep equality、deep c
 
 `handle` は `MediaStream` のように外部状態と独自 lifecycle を持つ live resource である。
 
+- declaration に `semantics: "handle"` を宣言する（MUST）。source comment / README だけの明記では、
+  汎用 adapter は通常の state と区別できない。
 - producer / consumer のどちらが owner か、交換・停止・dispose 時に誰が release するかを設計文書と README に
   記録する（MUST）。
 - clone / freeze / serializable projection により通常の state へ見せかけてはならない（MUST NOT）。
 - state snapshot とは別の ref / callback / direct-channel surface で渡す（SHOULD）。現行 protocol の制約で
-  `wcBindable.properties` に置く場合は、少なくとも source comment と README で handle と明記する（MUST）。
+  `wcBindable.properties` に置く場合は、`semantics: "handle"` に加えて README でも live resource である旨と
+  その lifecycle を明記する（MUST）。
 
 #### managed resource value
 
@@ -307,6 +312,7 @@ export class Wcs<Name> extends HTMLElement {
   get connectedCallbackPromise() { return this._connectedCallbackPromise; }
 }
 ```
+
 
 - Shell は **薄く**保つ。ロジックは Core に置く。Shell の責務は「属性 ↔ Core 設定の橋渡し」「Core observable の委譲」「ライフサイクル駆動」「reactive command-property」だけ
 - `this.style.display = "none"`（IO ノードは非表示。`intersection` など layout box が必要な例外は `display:contents` 等を使い理由を書く）

@@ -26,8 +26,8 @@ export class Router extends HTMLElement implements IRouter {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
-      { name: "path", event: "wcs-router:path-changed" },
+      { name: "navigateUrl", event: "wcs-router:navigate-url-changed", semantics: "state" },
+      { name: "path", event: "wcs-router:path-changed", semantics: "state" },
     ],
     // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
     // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ

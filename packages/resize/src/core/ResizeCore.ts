@@ -26,10 +26,10 @@ export class ResizeCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "entry", event: "wcs-resize:change" },
-      { name: "width", event: "wcs-resize:change", getter: (e: Event) => (e as CustomEvent).detail.width },
-      { name: "height", event: "wcs-resize:change", getter: (e: Event) => (e as CustomEvent).detail.height },
-      { name: "observing", event: "wcs-resize:observing-changed" },
+      { name: "entry", event: "wcs-resize:change", semantics: "state" },
+      { name: "width", event: "wcs-resize:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.width },
+      { name: "height", event: "wcs-resize:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.height },
+      { name: "observing", event: "wcs-resize:observing-changed", semantics: "state" },
     ],
     commands: [
       { name: "observe" },

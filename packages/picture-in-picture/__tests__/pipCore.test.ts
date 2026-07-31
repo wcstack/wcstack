@@ -637,8 +637,8 @@ describe("PipCore", () => {
       const names = PipCore.wcBindable.properties.map((p) => p.name);
       expect(names).toEqual(["active", "error", "errorInfo"]);
       // error / errorInfo は event 付きで宣言され、data-wcs / bind() で観測できる。
-      expect(PipCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-pip:error" });
-      expect(PipCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-pip:error-info-changed" });
+      expect(PipCore.wcBindable.properties[1]).toEqual({ name: "error", event: "wcs-pip:error", semantics: "state" });
+      expect(PipCore.wcBindable.properties[2]).toEqual({ name: "errorInfo", event: "wcs-pip:error-info-changed", semantics: "state" });
     });
 
     it("active の getter が event.detail.active を読む", () => {

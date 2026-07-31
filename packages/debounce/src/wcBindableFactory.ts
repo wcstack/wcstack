@@ -18,8 +18,8 @@ import { IWcBindableProperty } from "./types.js";
  */
 export function makeDebounceProperties(prefix: string): IWcBindableProperty[] {
   return [
-    { name: "value", event: `${prefix}:settled`, getter: (e: Event) => (e as CustomEvent).detail.value },
-    { name: "fired", event: `${prefix}:fired`, getter: (e: Event) => (e as CustomEvent).detail.args },
-    { name: "pending", event: `${prefix}:pending-changed` },
+    { name: "value", event: `${prefix}:settled`, semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.value },
+    { name: "fired", event: `${prefix}:fired`, semantics: "event", getter: (e: Event) => (e as CustomEvent).detail.args },
+    { name: "pending", event: `${prefix}:pending-changed`, semantics: "state" },
   ];
 }

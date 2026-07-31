@@ -28,22 +28,22 @@ export class CameraCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "active", event: "wcs-camera:active-changed" },
-      { name: "permission", event: "wcs-camera:permission-changed" },
-      { name: "audioPermission", event: "wcs-camera:audio-permission-changed" },
-      { name: "deviceId", event: "wcs-camera:device-changed" },
-      { name: "devices", event: "wcs-camera:devices-changed" },
-      { name: "error", event: "wcs-camera:error" },
+      { name: "active", event: "wcs-camera:active-changed", semantics: "state" },
+      { name: "permission", event: "wcs-camera:permission-changed", semantics: "state" },
+      { name: "audioPermission", event: "wcs-camera:audio-permission-changed", semantics: "state" },
+      { name: "deviceId", event: "wcs-camera:device-changed", semantics: "state" },
+      { name: "devices", event: "wcs-camera:devices-changed", semantics: "state" },
+      { name: "error", event: "wcs-camera:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error` (the DOMException name /
       // "unsupported" sentinel); the existing `error` property/event are unchanged.
       // Fires wcs-camera:error-info-changed. No lane — acquisition is switchMap'd by
       // `_gen`, so there is no per-node operation policy to attach here.
-      { name: "errorInfo", event: "wcs-camera:error-info-changed" },
+      { name: "errorInfo", event: "wcs-camera:error-info-changed", semantics: "state" },
       // Direct-channel handle: event-token only — never bound as a reactive value.
-      { name: "streamReady", event: "wcs-camera:stream-ready", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "streamReady", event: "wcs-camera:stream-ready", semantics: "handle", getter: (e: Event) => (e as CustomEvent).detail },
       // event-token: a bare signal (detail is always null) — surface detail, not the raw Event.
-      { name: "ended", event: "wcs-camera:ended", getter: (e: Event) => (e as CustomEvent).detail },
+      { name: "ended", event: "wcs-camera:ended", semantics: "event", getter: (e: Event) => (e as CustomEvent).detail },
     ],
     commands: [
       { name: "start" },

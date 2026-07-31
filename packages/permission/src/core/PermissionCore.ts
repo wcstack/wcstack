@@ -25,11 +25,11 @@ export class PermissionCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "state", event: "wcs-permission:change" },
-      { name: "granted", event: "wcs-permission:change", getter: (e: Event) => (e as CustomEvent).detail === "granted" },
-      { name: "denied", event: "wcs-permission:change", getter: (e: Event) => (e as CustomEvent).detail === "denied" },
-      { name: "prompt", event: "wcs-permission:change", getter: (e: Event) => (e as CustomEvent).detail === "prompt" },
-      { name: "unsupported", event: "wcs-permission:change", getter: (e: Event) => (e as CustomEvent).detail === "unsupported" },
+      { name: "state", event: "wcs-permission:change", semantics: "state" },
+      { name: "granted", event: "wcs-permission:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "granted" },
+      { name: "denied", event: "wcs-permission:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "denied" },
+      { name: "prompt", event: "wcs-permission:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "prompt" },
+      { name: "unsupported", event: "wcs-permission:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail === "unsupported" },
     ],
     // No commands: the Permissions API is read-only (query-only). See class docs.
     commands: [],

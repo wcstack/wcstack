@@ -10,8 +10,8 @@ export class WcsWebSocket extends HTMLElement {
     ...WebSocketCore.wcBindable,
     properties: [
       ...WebSocketCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-ws:trigger-changed" },
-      { name: "send", event: "wcs-ws:send-changed" },
+      { name: "trigger", event: "wcs-ws:trigger-changed", semantics: "state" },
+      { name: "send", event: "wcs-ws:send-changed", semantics: "state" },
     ],
     inputs: [
       { name: "url", attribute: "url" },

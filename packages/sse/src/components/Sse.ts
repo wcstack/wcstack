@@ -11,7 +11,7 @@ export class WcsSse extends HTMLElement {
     ...SseCore.wcBindable,
     properties: [
       ...SseCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-sse:trigger-changed" },
+      { name: "trigger", event: "wcs-sse:trigger-changed", semantics: "state" },
     ],
     inputs: [
       { name: "url", attribute: "url" },

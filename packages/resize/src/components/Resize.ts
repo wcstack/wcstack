@@ -41,7 +41,7 @@ export class WcsResize extends HTMLElement {
     ...ResizeCore.wcBindable,
     properties: [
       ...ResizeCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-resize:trigger-changed" },
+      { name: "trigger", event: "wcs-resize:trigger-changed", semantics: "state" },
     ],
     // Shell-level settable surface. Each input carries its mirrored `attribute`
     // hint; `trigger` has none — it is a momentary command-property, not a

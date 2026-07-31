@@ -11,7 +11,7 @@ export class Storage extends HTMLElement {
     ...StorageCore.wcBindable,
     properties: [
       ...StorageCore.wcBindable.properties,
-      { name: "trigger", event: STORAGE_EVENTS.triggerChanged },
+      { name: "trigger", event: STORAGE_EVENTS.triggerChanged, semantics: "state" },
     ],
     // Shell-level input surface. The Core declares only the portable `key` / `type`;
     // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:

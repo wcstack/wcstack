@@ -21,7 +21,7 @@ export class WcsListen extends HTMLElement {
     ...ListenCore.wcBindable,
     properties: [
       ...ListenCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-listen:trigger-changed" },
+      { name: "trigger", event: "wcs-listen:trigger-changed", semantics: "state" },
     ],
     inputs: [
       { name: "lang", attribute: "lang" },

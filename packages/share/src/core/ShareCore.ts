@@ -30,15 +30,15 @@ export class ShareCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "value", event: "wcs-share:complete", getter: (e: Event) => (e as CustomEvent).detail.value },
-      { name: "loading", event: "wcs-share:loading-changed" },
-      { name: "error", event: "wcs-share:error" },
-      { name: "cancelled", event: "wcs-share:cancelled-changed" },
+      { name: "value", event: "wcs-share:complete", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.value },
+      { name: "loading", event: "wcs-share:loading-changed", semantics: "state" },
+      { name: "error", event: "wcs-share:error", semantics: "state" },
+      { name: "cancelled", event: "wcs-share:cancelled-changed", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output; the existing `error` property/event are unchanged.
       // Fires its own `wcs-share:error-info-changed` event; no getter, so the bound
       // value is the event detail (mirrors `error` / `loading` / `cancelled`).
-      { name: "errorInfo", event: "wcs-share:error-info-changed" },
+      { name: "errorInfo", event: "wcs-share:error-info-changed", semantics: "state" },
     ],
     commands: [
       { name: "share", async: true },

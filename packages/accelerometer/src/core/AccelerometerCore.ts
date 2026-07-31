@@ -44,15 +44,15 @@ export class AccelerometerCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "x", event: "wcs-accelerometer:reading", getter: (e: Event) => (e as CustomEvent).detail.x },
-      { name: "y", event: "wcs-accelerometer:reading", getter: (e: Event) => (e as CustomEvent).detail.y },
-      { name: "z", event: "wcs-accelerometer:reading", getter: (e: Event) => (e as CustomEvent).detail.z },
-      { name: "error", event: "wcs-accelerometer:error" },
+      { name: "x", event: "wcs-accelerometer:reading", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.x },
+      { name: "y", event: "wcs-accelerometer:reading", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.y },
+      { name: "z", event: "wcs-accelerometer:reading", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.z },
+      { name: "error", event: "wcs-accelerometer:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error.error` (the Error.name /
       // "unsupported"); the existing `error` property/event are unchanged. Fires
       // wcs-accelerometer:error-info-changed. No lane — the sensor is a monitor.
-      { name: "errorInfo", event: "wcs-accelerometer:error-info-changed" },
+      { name: "errorInfo", event: "wcs-accelerometer:error-info-changed", semantics: "state" },
     ],
     commands: [{ name: "start" }, { name: "stop" }],
   };

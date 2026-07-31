@@ -12,7 +12,7 @@ export class Fetch extends HTMLElement {
     ...FetchCore.wcBindable,
     properties: [
       ...FetchCore.wcBindable.properties,
-      { name: "trigger", event: "wcs-fetch:trigger-changed" },
+      { name: "trigger", event: "wcs-fetch:trigger-changed", semantics: "state" },
     ],
     // Shell-level input surface. The Core declares only the portable `url` / `method`;
     // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:

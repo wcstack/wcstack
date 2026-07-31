@@ -78,19 +78,19 @@ export class ListenCore extends EventTarget {
     protocol: "wc-bindable",
     version: 1,
     properties: [
-      { name: "interimTranscript", event: "wcs-listen:interim-changed" },
-      { name: "finalTranscript", event: "wcs-listen:final-changed" },
-      { name: "result", event: "wcs-listen:result" },
-      { name: "listening", event: "wcs-listen:listening-changed" },
-      { name: "permission", event: "wcs-listen:permission-changed" },
-      { name: "error", event: "wcs-listen:error" },
+      { name: "interimTranscript", event: "wcs-listen:interim-changed", semantics: "state" },
+      { name: "finalTranscript", event: "wcs-listen:final-changed", semantics: "state" },
+      { name: "result", event: "wcs-listen:result", semantics: "event" },
+      { name: "listening", event: "wcs-listen:listening-changed", semantics: "state" },
+      { name: "permission", event: "wcs-listen:permission-changed", semantics: "state" },
+      { name: "error", event: "wcs-listen:error", semantics: "state" },
       // Serializable failure taxonomy (stable code / phase / recoverable), or null.
       // Additive bindable output derived from `error.error` (the
       // SpeechRecognitionErrorEvent.error code / "unsupported"); the existing `error`
       // property/event are unchanged. Fires wcs-listen:error-info-changed. No lane —
       // recognition has no competing async operation to serialize.
-      { name: "errorInfo", event: "wcs-listen:error-info-changed" },
-      { name: "unsupported", event: "wcs-listen:unsupported-changed" },
+      { name: "errorInfo", event: "wcs-listen:error-info-changed", semantics: "state" },
+      { name: "unsupported", event: "wcs-listen:unsupported-changed", semantics: "state" },
     ],
     commands: [
       { name: "start" },
