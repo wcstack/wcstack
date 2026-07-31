@@ -179,6 +179,7 @@ lane が直列化するのは `$on` ハンドラの実行だが、wcstack のイ
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [wc-bindable Extensions（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC-extensions.md)
 - [wc-bindable remote README（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/remote/README.md)
+- [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
 - [非同期実行モデル](../async-execution-model.md)
 - [非同期 I/O ノード指針](../async-io-node-guidelines.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
