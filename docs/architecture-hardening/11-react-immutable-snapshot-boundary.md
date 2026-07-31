@@ -1,7 +1,7 @@
 # React の不変スナップショットと wc-bindable I/O 境界
 
 - **作成日**: 2026-08-01
-- **状態**: 設計判断記録（Phase 0 の棚卸し完了。runtime 実装は未着手）
+- **状態**: 設計判断記録（Phase 0 棚卸し・Phase 1 producer contract 完了。runtime 実装は未着手）
 - **対象**: `wcBindable.properties` を公開する非同期 I/O ノード、`@wc-bindable/react`、
   将来の framework adapter / remote adapter
 - **外部仕様スナップショット**:
@@ -182,6 +182,10 @@ Phase 0 の固定スナップショットは
 - platform `Error` / `Event` を公開する場合、可能なら `errorInfo` のような serializable projection も提供する。
 
 既存ノードは一括破壊変更せず、棚卸しで実 mutation が見つかったものから修正する。
+
+Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+§3.3.1 に追加した。新規ノード・新規 observable property は MUST、既存ノードは
+[Phase 0 棚卸し](12-react-snapshot-observable-inventory.md) から段階移行とする。
 
 ### Phase 2: additive semantics metadata
 

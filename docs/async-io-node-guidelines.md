@@ -3,7 +3,7 @@
 - **対象**: `@wcstack` に新しい非同期IOノードパッケージ（Web API を宣言的タグ化したもの。`@wcstack/fetch` / `geolocation` / `clipboard` / `sse` / `broadcast` / `worker` / `wakelock` / `intersection` / `resize` / `speech` / `permission` / `notification` ほか）を追加する実装者
 - **状態**: 規範ドキュメント（normative）。「MUST / SHOULD / MAY」は RFC 2119 の意味で使う。新規ノードはここに反した実装をしてはならない（MUST NOT）。やむを得ず逸脱する場合は、その理由をパッケージの設計ドキュメント（`docs/<name>-tag-design.md`）に記録すること
 - **なぜ存在するか**: 既存ノードは全て同じ骨格（Core/Shell 分離・wc-bindable 準拠・never-throw・`_gen` 世代ガード・SSR 対応）を共有している。この一貫性が「1つ覚えれば全部使える」という DX と、`state` binder からの相互運用性を支えている。新規ノードがこの骨格を踏襲しないと、利用者は個別に内部を読まねばならず、エコシステムの価値が崩れる。本書はその骨格を1枚に集約し、レビューのチェックリストにする
-- **関連**: タイミング・発火の契約は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。実行意味論（実行形・レーン・排他モード・キャンセル・再試行・タイムアウト）の規範は [async-execution-model.md](./async-execution-model.md)。プロトコル本体は各 SPEC（wc-bindable / command-token / event-token）。設計検討の様式は既存の `docs/*-tag-design.md` を参照
+- **関連**: タイミング・発火の契約は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。実行意味論（実行形・レーン・排他モード・キャンセル・再試行・タイムアウト）の規範は [async-execution-model.md](./async-execution-model.md)。observable の snapshot 境界は [React の不変スナップショットと wc-bindable I/O 境界](./architecture-hardening/11-react-immutable-snapshot-boundary.md) と [observable 棚卸し](./architecture-hardening/12-react-snapshot-observable-inventory.md)。プロトコル本体は各 SPEC（wc-bindable / command-token / event-token）。設計検討の様式は既存の `docs/*-tag-design.md` を参照
 
 ---
 
@@ -20,6 +20,7 @@
 9. **テストカバレッジ 100 / 97+ / 100 / 100**（statements / branches / functions / lines）。テスト記述は日本語
 10. **出力状態の CSS 反映（CustomStateSet）**。boolean 出力 observable・派生 boolean getter・`error` の存在を Shell が `ElementInternals.states` に反映し `:state()` で選択可能にする。反映は Shell のみで行い Core に持ち込まない。`attachInternals` 不在環境では静かに無効化する（§4.5）
 11. **Core は公開ヘッドレスサーフェス**。Core クラスをパッケージの entry（`exports.ts`）から export し、その構造保証（§3.9）を semver 保護の公開 API として扱う。README に headless（Core）利用の節を持つ（§9）
+12. **producer snapshot contract**。state-like object / array は公開後に producer が変更せず、logical state の変更時は fresh value を割り当ててから通知する。event は occurrence を同値ガードせず、handle は owner と release point を明示する（§3.3.1）
 
 ---
 
@@ -35,6 +36,7 @@
   - **command 専用**（state → element のみ）か
   - **双方向**（command-token と event-token の両方）か → 例: `notification`（show コマンド＋click イベント）
 - **observable surface**: どのプロパティを公開するか。複合状態は「1イベント＋派生 getter」に分解する（§4.2）
+- **observable semantics**: 各 property を `state` / `event` / `handle` のどれとして扱うか。object / array の owner、公開後 mutation の有無、live resource の停止・交換・release point も表にする（§3.3.1）
 - **desired / actual の二相**が必要か → 例: `wakelock`（取得要求 `desired` と実際に保持中 `actual` を分離）
 - **同値ガードのみで十分か**、debounce/throttle は利用者責務にするか（基本は利用者責務。filter で `notice@x|debounce(1000)` のように書かせる）
 - **permission / secure-context** の扱い。既存の4値 surface（`prompt` / `granted` / `denied` / `unsupported`）を流用するか
@@ -108,6 +110,7 @@ static wcBindable: IWcBindable = {
 ```
 
 - `properties`: `{ name, event, getter? }`。`event` は `wcs-<name>:<kind>` 形式。Core はプロトコル上 `properties` のみ解釈する。`inputs` / `commands` は記述的メタ（ツール・codegen 用）
+- 現行 schema は `state` / `event` / `handle` を表現しない。metadata の配置が決まるまでは tag-design doc と README に分類を明記し、型や property 名から adapter が推測する前提を置かない
 - `commands`: `{ name, async? }`。非同期コマンドは `async: true`
 - monitor 専用ノードは `commands: []` とし、その旨をコメントで明記する
 
@@ -125,6 +128,68 @@ private _setState(v: T): void {
 
 - イベントは必ず `bubbles: true`
 - **イベント性のもの（クリック・メッセージ等、毎回発火が意味を持つ）は同値ガードしない**。状態性のもの（permission・loading 等）はガードする。どちらかを設計ドキュメントで明示する
+
+### 3.3.1 producer snapshot contract（MUST）
+
+この節は新規ノードと新規 observable property に適用する。既存ノードは
+[observable 棚卸し](./architecture-hardening/12-react-snapshot-observable-inventory.md) を起点に段階移行し、
+既存の配送・getter・resource lifetime を一括で破壊変更してはならない（MUST NOT）。
+
+#### `state`
+
+`state` はある時点の current value であり、初期 property read と後続 event の両方から読める。
+
+- producer は一度公開した object / array / binary instance を後から in-place mutation してはならない（MUST NOT）。
+- logical state を変更するときは fresh object / array を構築し、private field へ割り当ててから event を発火する（MUST）。
+- event 発火時の public getter と event detail / custom getter は同じ logical state を表さなければならない（MUST）。
+  defensive copy を返す場合、reference identity まで同じである必要はないが、内容と ownership が食い違ってはならない。
+- arbitrary payload を一律に clone しない。参照渡しする場合、producer は公開後に変更しない ownership transfer とし、
+  consumer は read-only として扱う（producer MUST、consumer SHOULD）。
+- `ArrayBuffer` など producer が再利用・書き換えを続ける値は、そのまま state として公開してはならない（MUST NOT）。
+  node 固有の理由がある場合だけ明示的に copy するか、`event` / `handle` として設計する。
+- platform `Error` / `Event` / credential など opaque value を公開する場合、可能なら `errorInfo` のような
+  serializable projection も提供する（SHOULD）。opaque value 自体を汎用 serializable state と説明してはならない。
+
+```ts
+private _setItems(items: readonly Item[]): void {
+  const next = items.map((item) => ({ ...item }));
+  this._items = next;
+  this._target.dispatchEvent(new CustomEvent("wcs-x:items-changed", {
+    detail: next,
+    bubbles: true,
+  }));
+}
+```
+
+この例の copy は node が mutable input を所有 snapshot へ変換するためのものである。汎用 adapter が全 payload を
+deep clone / deep freeze する根拠にはならない。deep equality、deep clone、deep freeze は一律に強制しない
+（MUST NOT）。開発時に adapter の outer snapshot だけを shallow freeze する判断は producer 契約の外である。
+
+#### `event`
+
+`event` は current level ではなく occurrence である。
+
+- 同じ payload が連続しても各 occurrence を dispatch する（MUST）。same-value guard を置いてはならない（MUST NOT）。
+- 最後の payload を getter に保持して既存 consumer と互換を保つことはできる（MAY）。ただし getter の値だけでは
+  occurrence count を表現できないことを README に明記する（MUST）。
+- event を state snapshot の同値比較で dedupe する前提を置いてはならない（MUST NOT）。callback / stream / event-token
+  で受ける surface を正とする。
+
+#### `handle`
+
+`handle` は `MediaStream` のように外部状態と独自 lifecycle を持つ live resource である。
+
+- producer / consumer のどちらが owner か、交換・停止・dispose 時に誰が release するかを設計文書と README に
+  記録する（MUST）。
+- clone / freeze / serializable projection により通常の state へ見せかけてはならない（MUST NOT）。
+- state snapshot とは別の ref / callback / direct-channel surface で渡す（SHOULD）。現行 protocol の制約で
+  `wcBindable.properties` に置く場合は、少なくとも source comment と README で handle と明記する（MUST）。
+
+#### managed resource value
+
+`blob:` URL のように値自体は primitive でも backing resource を producer が破棄するものは、通常の state より強い
+lifetime 契約を必要とする。producer は supersede / dispose 時の revoke point と、過去の値の有効性を保証するかを
+README と test に固定する（MUST）。consumer lifecycle まで保証できない場合は best-effort current value と明記する。
 
 ### 3.4 `_gen` 世代ガード（MUST）
 
@@ -263,6 +328,8 @@ export class Wcs<Name> extends HTMLElement {
 
 - **command-token**（state → element 起動）: `commands` に宣言したメソッドを `command.<method>:` で起動。引数は位置引数として素通し（MUST、await しない、undefined 引数も素通し）。`spec-proposal-command-token-arguments.md` 参照
 - **event-token**（element → state）: `properties` のイベントが state 側に流れる。キー名は wcBindable property 名
+- `event` semantics の property は同一 payload でも occurrence ごとに流す。`handle` semantics の property は
+  state の値として保持する前提を置かず、owner / release contract に従う
 - 同じ Web API で「reactive 版（同値ガード有・宣言的）」と「imperative 版（同値でも発火・命令的）」の両方が要るなら両方提供してよい（例: speech の `say`/`speak`、notification の `notice`/`notify`）
 
 ---
@@ -305,6 +372,9 @@ export class Wcs<Name> extends HTMLElement {
 - 必ずテストすること:
   - never-throw（API 不在・reject・secure-context 外で例外が出ない）
   - 同値ガード（同値書き込みでイベントが出ない／イベント性は毎回出る）
+  - state-like object / array（後続 update 後も過去に公開した値が変化しない・logical state の変更時は fresh value）
+  - property read と event payload / getter が同じ logical state を表す
+  - handle / managed resource（交換・dispose の release point と、過去値の有効性）
   - `_gen` ガード（disconnect 後に resolve した非同期が状態を変えない・dispose→observe で復活）
   - `observe()` 冪等性
   - SSR（`connectedCallbackPromise` / `ready` が settle する）
@@ -316,6 +386,7 @@ export class Wcs<Name> extends HTMLElement {
 
 - `README.md`（英語）/ `README.ja.md`（日本語）を両方書く。既存ノードの構成（概要・インストール・属性表・イベント表・コマンド表・Design Notes）に合わせる
 - **headless（Core）節**を README に持つ（MUST・§3.9）: Core クラス名・headless 構築の最小例（実コンストラクタ引数）・ライフサイクルが手動になる旨（`observe()`/`dispose()` ないし start/stop コマンド）・`@wcstack/signals` README「Binding a Core directly」へのリンク
+- observable ごとに `state` / `event` / `handle`、値の owner、serializability、resource release point を記録する（MUST・§3.3.1）
 - ルート README のノード一覧に追加する
 - **タイミング/発火の挙動**（いつ・何回・何が同期で何が microtask か）を持つノードは、[timing-and-firing-contract.md](./timing-and-firing-contract.md) に §1/§2 と同じ粒度で1節追加する（MUST）。example の長文コメントで内部挙動を説明しそうになったら、まずこの契約書に項目を足し、コメントはそこへリンクする
 
@@ -329,6 +400,9 @@ export class Wcs<Name> extends HTMLElement {
 - [ ] Shell は薄く、Core を `new Core(this)` で包むだけ
 - [ ] never-throw（全公開メソッドが例外を投げない）
 - [ ] 状態 setter に同値ガード（イベント性は除外し、その旨明記）
+- [ ] state-like object / array は公開後に producer が変更せず、logical state の変更時に fresh value を公開する
+- [ ] event は同一 payload の occurrence を失わず、handle / managed resource は owner と release point が文書・testで固定されている
+- [ ] property read と event payload / getter が同じ logical state を表す
 - [ ] `_gen` 世代ガードで非同期の stale 書き込みを防いでいる
 - [ ] `observe()` 冪等・`dispose()` で復活可能
 - [ ] API は呼び出し時解決（キャッシュしない）

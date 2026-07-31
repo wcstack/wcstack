@@ -140,10 +140,11 @@ snapshot identity だけでは解決しない。Blob の consumer ownership、re
 `Credential`、`File`、任意 fetch / upload response などは state として保持できても serializable とは限らない。
 React local state には流せるが、SSR、DevTools、remote adapter では projection または capability failure が必要になる。
 
-## 6. 次の作業
+## 6. Phase 1 完了と次の作業
 
-Phase 1 は runtime の一括変更ではなく、先に producer snapshot contract を
-`docs/async-io-node-guidelines.md` へ追加する。
+Phase 1 として producer snapshot contract を
+[非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+§3.3.1 へ追加した。runtime の一括変更は行わず、次を新規ノード・新規 observable property の規範とした。
 
 1. producer は公開済み state value を in-place mutation しない。
 2. logical state が変わる場合は fresh object / array を割り当ててから通知する。
@@ -151,7 +152,7 @@ Phase 1 は runtime の一括変更ではなく、先に producer snapshot contr
 4. event と handle を state-like property と区別する。
 5. property read と event payload は同じ logical state を表す。
 
-その後、次の順で小さな PoC を行う。
+Phase 2 以降は、次の順で小さな PoC を行う。
 
 1. `streamReady: handle` と `message: event` を表現できる additive metadata / sidecar の配置を決める。
 2. metadata 未対応 peer は現行どおり全 property を配送する互換 fallback を固定する。
