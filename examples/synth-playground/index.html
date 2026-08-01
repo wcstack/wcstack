@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>wcs-synth playground — a synthesizer made of HTML tags</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0 auto; max-width: 860px; padding: 24px 16px 64px;
+      background: #12161c; color: #cfd8dc;
+      font: 15px/1.6 system-ui, sans-serif;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; color: #eceff1; }
+    h1 small { font-weight: normal; color: #789; font-size: 13px; }
+    h2 { font-size: 15px; margin: 28px 0 8px; color: #90caf9; }
+    p.hint { margin: 4px 0 20px; color: #789; font-size: 13px; }
+    .panel {
+      background: #1a2027; border: 1px solid #2a333d; border-radius: 10px;
+      padding: 16px; margin-bottom: 24px;
+    }
+    .controls {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px 16px; margin: 12px 0;
+    }
+    .controls label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #9ab;
+    }
+    .controls label span { flex: 0 0 72px; }
+    .controls input[type="range"] { flex: 1; accent-color: #3ddc84; min-width: 0; }
+    wcs-scope { margin: 12px 0; height: 110px; }
+    wcs-keys { margin-top: 8px; }
+    kbd {
+      background: #263238; border: 1px solid #37474f; border-radius: 3px;
+      padding: 0 4px; font-size: 12px;
+    }
+    a { color: #90caf9; }
+  </style>
+</head>
+<body>
+  <h1>wcs-synth playground <small>— a synthesizer made of HTML tags</small></h1>
+  <p class="hint">
+    Nesting is the signal chain (signal flows downward); anything nesting can't
+    express is routed by id (<code>out="bus"</code>, <code>param="frequency"</code>).
+    Play with the on-screen keys, your computer keyboard
+    (<kbd>A</kbd>–<kbd>;</kbd> = notes, <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd>… = sharps,
+    <kbd>Z</kbd>/<kbd>X</kbd> = octave), or a MIDI keyboard.
+    View source: the page <em>is</em> the patch.
+  </p>
+
+  <h2>Poly synth — 8 voices, 3 osc → filter (LFO) → env → bus → delay</h2>
+  <div class="panel">
+    <wcs-synth id="synth" volume="0.7">
+      <wcs-voice poly="8">
+        <wcs-osc type="sawtooth" note detune="-7" out="vcf"></wcs-osc>
+        <wcs-osc type="sawtooth" note detune="7" out="vcf"></wcs-osc>
+        <wcs-osc type="square" note transpose="-12" out="vcf"></wcs-osc>
+        <wcs-filter id="vcf" type="lowpass" frequency="1400" q="4">
+          <wcs-lfo id="lfo" type="sine" rate="4" depth="0" param="frequency"></wcs-lfo>
+          <wcs-env id="amp" attack="0.01" decay="0.25" sustain="0.55" release="0.35" out="bus"></wcs-env>
+        </wcs-filter>
+      </wcs-voice>
+
+      <wcs-mixer id="bus" gain="0.8">
+        <wcs-delay id="fx" time="0.28" feedback="0.35" mix="0.2"></wcs-delay>
+      </wcs-mixer>
+
+      <div class="controls">
+        <label><span>cutoff</span><input type="range" min="80" max="8000" step="1" data-ctrl="vcf:frequency"></label>
+        <label><span>resonance</span><input type="range" min="0.1" max="20" step="0.1" data-ctrl="vcf:q"></label>
+        <label><span>lfo rate</span><input type="range" min="0.1" max="16" step="0.1" data-ctrl="lfo:rate"></label>
+        <label><span>lfo depth</span><input type="range" min="0" max="2000" step="1" data-ctrl="lfo:depth"></label>
+        <label><span>attack</span><input type="range" min="0.001" max="1" step="0.001" data-ctrl="amp:attack"></label>
+        <label><span>release</span><input type="range" min="0.02" max="2" step="0.01" data-ctrl="amp:release"></label>
+        <label><span>delay mix</span><input type="range" min="0" max="1" step="0.01" data-ctrl="fx:mix"></label>
+        <label><span>volume</span><input type="range" min="0" max="1" step="0.01" data-ctrl="synth:volume"></label>
+      </div>
+
+      <wcs-scope master></wcs-scope>
+      <wcs-keys octaves="2" octave="4"></wcs-keys>
+      <wcs-midi></wcs-midi>
+    </wcs-synth>
+  </div>
+
+  <h2>Mono bass — legato + glide, keys only (computer keyboard stays on the poly synth)</h2>
+  <div class="panel">
+    <wcs-synth id="bass" volume="0.6">
+      <wcs-osc type="square" note glide="0.06" out="bflt"></wcs-osc>
+      <wcs-osc type="sawtooth" note transpose="-12" glide="0.06" out="bflt"></wcs-osc>
+      <wcs-filter id="bflt" type="lowpass" frequency="500" q="8">
+        <wcs-env attack="0.005" decay="0.15" sustain="0.7" release="0.2"></wcs-env>
+      </wcs-filter>
+
+      <div class="controls">
+        <label><span>cutoff</span><input type="range" min="60" max="4000" step="1" data-ctrl="bflt:frequency"></label>
+        <label><span>resonance</span><input type="range" min="0.1" max="20" step="0.1" data-ctrl="bflt:q"></label>
+      </div>
+
+      <wcs-scope master></wcs-scope>
+      <wcs-keys octaves="2" octave="2" keyboard="off"></wcs-keys>
+    </wcs-synth>
+  </div>
+
+  <p class="hint">
+    Toy experiment — see <a href="README.md">README</a> for the tag reference.
+    Audio starts on your first click / key press (browser autoplay policy).
+  </p>
+
+  <script type="module" src="./wcs-synth.js"></script>
+  <script type="module">
+    // Sliders drive the tags by writing attributes — same surface as markup.
+    for (const input of document.querySelectorAll("input[data-ctrl]")) {
+      const [id, attr] = input.dataset.ctrl.split(":");
+      const el = document.getElementById(id);
+      if (!el) continue;
+      input.value = el.getAttribute(attr) ?? input.value;
+      input.addEventListener("input", () => el.setAttribute(attr, input.value));
+    }
+  </script>
+</body>
+</html>
