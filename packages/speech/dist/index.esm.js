@@ -238,21 +238,21 @@ class SpeakCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "voices", event: "wcs-speak:voices-changed" },
-            { name: "speaking", event: "wcs-speak:speaking-changed" },
-            { name: "paused", event: "wcs-speak:paused-changed" },
-            { name: "pending", event: "wcs-speak:pending-changed" },
-            { name: "charIndex", event: "wcs-speak:boundary", getter: (e) => e.detail?.charIndex ?? null },
-            { name: "spokenWord", event: "wcs-speak:boundary", getter: (e) => e.detail?.word ?? null },
-            { name: "error", event: "wcs-speak:error" },
+            { name: "voices", event: "wcs-speak:voices-changed", semantics: "state" },
+            { name: "speaking", event: "wcs-speak:speaking-changed", semantics: "state" },
+            { name: "paused", event: "wcs-speak:paused-changed", semantics: "state" },
+            { name: "pending", event: "wcs-speak:pending-changed", semantics: "state" },
+            { name: "charIndex", event: "wcs-speak:boundary", semantics: "event", getter: (e) => e.detail?.charIndex ?? null },
+            { name: "spokenWord", event: "wcs-speak:boundary", semantics: "event", getter: (e) => e.detail?.word ?? null },
+            { name: "error", event: "wcs-speak:error", semantics: "state" },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output derived from `error.error` (the
             // SpeechSynthesisErrorEvent.error code / "unsupported"); the existing `error`
             // property/event are unchanged. Fires wcs-speak:error-info-changed. No lane —
             // speak() is a momentary queue submission with no competing async operation to
             // serialize.
-            { name: "errorInfo", event: "wcs-speak:error-info-changed" },
-            { name: "unsupported", event: "wcs-speak:unsupported-changed" },
+            { name: "errorInfo", event: "wcs-speak:error-info-changed", semantics: "state" },
+            { name: "unsupported", event: "wcs-speak:unsupported-changed", semantics: "state" },
         ],
         commands: [
             { name: "speak" },
@@ -722,6 +722,48 @@ function registerAutoTrigger() {
     document.addEventListener("click", handleClick$1);
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 /**
  * `<wcs-speak>` — declarative text-to-speech. Wraps SpeakCore and exposes:
  *
@@ -970,6 +1012,8 @@ class WcsSpeak extends HTMLElement {
     }
     // --- Lifecycle ---
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         if (config.autoTrigger) {
             registerAutoTrigger();
@@ -1016,19 +1060,19 @@ class ListenCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "interimTranscript", event: "wcs-listen:interim-changed" },
-            { name: "finalTranscript", event: "wcs-listen:final-changed" },
-            { name: "result", event: "wcs-listen:result" },
-            { name: "listening", event: "wcs-listen:listening-changed" },
-            { name: "permission", event: "wcs-listen:permission-changed" },
-            { name: "error", event: "wcs-listen:error" },
+            { name: "interimTranscript", event: "wcs-listen:interim-changed", semantics: "state" },
+            { name: "finalTranscript", event: "wcs-listen:final-changed", semantics: "state" },
+            { name: "result", event: "wcs-listen:result", semantics: "event" },
+            { name: "listening", event: "wcs-listen:listening-changed", semantics: "state" },
+            { name: "permission", event: "wcs-listen:permission-changed", semantics: "state" },
+            { name: "error", event: "wcs-listen:error", semantics: "state" },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output derived from `error.error` (the
             // SpeechRecognitionErrorEvent.error code / "unsupported"); the existing `error`
             // property/event are unchanged. Fires wcs-listen:error-info-changed. No lane —
             // recognition has no competing async operation to serialize.
-            { name: "errorInfo", event: "wcs-listen:error-info-changed" },
-            { name: "unsupported", event: "wcs-listen:unsupported-changed" },
+            { name: "errorInfo", event: "wcs-listen:error-info-changed", semantics: "state" },
+            { name: "unsupported", event: "wcs-listen:unsupported-changed", semantics: "state" },
         ],
         commands: [
             { name: "start" },
@@ -1466,7 +1510,7 @@ class WcsListen extends HTMLElement {
         ...ListenCore.wcBindable,
         properties: [
             ...ListenCore.wcBindable.properties,
-            { name: "trigger", event: "wcs-listen:trigger-changed" },
+            { name: "trigger", event: "wcs-listen:trigger-changed", semantics: "state" },
         ],
         inputs: [
             { name: "lang", attribute: "lang" },
@@ -1673,6 +1717,8 @@ class WcsListen extends HTMLElement {
     }
     // --- Lifecycle ---
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         if (config.autoTrigger) {
             registerListenAutoTrigger();

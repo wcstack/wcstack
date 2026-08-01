@@ -23,7 +23,6 @@ interface ILoopContextStack {
     createLoopContext(elementStateAddress: IStateAddress, callback: (loopContext: ILoopContext) => void | Promise<void>): void | Promise<void>;
 }
 
-declare const setLoopContextAsyncSymbol: unique symbol;
 declare const setLoopContextSymbol: unique symbol;
 declare const getByAddressSymbol: unique symbol;
 declare const hasByAddressSymbol: unique symbol;
@@ -33,7 +32,6 @@ declare const disconnectedCallbackSymbol: unique symbol;
 declare const updatedCallbackSymbol: unique symbol;
 
 interface IStateProxy extends IState {
-    [setLoopContextAsyncSymbol](loopContext: ILoopContext | null, callback: () => Promise<any>): Promise<any>;
     [setLoopContextSymbol](loopContext: ILoopContext | null, callback: () => any): any;
     [getByAddressSymbol](address: IStateAddress): any;
     [hasByAddressSymbol](address: IStateAddress): boolean;

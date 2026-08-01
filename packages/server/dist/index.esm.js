@@ -233,7 +233,7 @@ async function renderToString(html, options) {
     }
 }
 
-var version = "1.23.0";
+var version = "1.24.0";
 var pkg = {
 	version: version};
 
@@ -244,9 +244,9 @@ class RenderCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "html", event: "wcs-render:html-changed" },
-            { name: "loading", event: "wcs-render:loading-changed" },
-            { name: "error", event: "wcs-render:error" },
+            { name: "html", event: "wcs-render:html-changed", semantics: "state" },
+            { name: "loading", event: "wcs-render:loading-changed", semantics: "state" },
+            { name: "error", event: "wcs-render:error", semantics: "state" },
         ],
     };
     _html = null;

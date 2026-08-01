@@ -167,9 +167,9 @@ class RouteCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "params", event: "wcs-route:params-changed" },
-            { name: "typedParams", event: "wcs-route:params-changed", getter: (e) => e.detail.typedParams },
-            { name: "active", event: "wcs-route:active-changed" },
+            { name: "params", event: "wcs-route:params-changed", semantics: "state" },
+            { name: "typedParams", event: "wcs-route:params-changed", semantics: "state", getter: (e) => e.detail.typedParams },
+            { name: "active", event: "wcs-route:active-changed", semantics: "state" },
         ],
     };
     _target;
@@ -1518,6 +1518,48 @@ function normalizeBasename(path) {
     return p;
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 /**
  * AppRoutes - Root component for @wcstack/router
  *
@@ -1528,8 +1570,8 @@ class Router extends HTMLElement {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "navigateUrl", event: "wcs-router:navigate-url-changed" },
-            { name: "path", event: "wcs-router:path-changed" },
+            { name: "navigateUrl", event: "wcs-router:navigate-url-changed", semantics: "state" },
+            { name: "path", event: "wcs-router:path-changed", semantics: "state" },
         ],
         // `navigateUrl` は observable output であると同時に settable な書き込み面でもある
         // （setter が navigate() を起動し、完了後に自分で null へ戻す）。properties にだけ
@@ -1771,6 +1813,9 @@ class Router extends HTMLElement {
         }
     }
     async connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
+        // await より前に同期で行い、初期化が古い値を読まないようにする。
+        upgradeProperties(this);
         if (!this._initialized) {
             this._disconnectedDuringInit = false;
             await this._initialize();
@@ -2239,7 +2284,7 @@ function bootstrapRouter(config) {
     registerComponents();
 }
 
-var version = "1.23.0";
+var version = "1.24.0";
 var pkg = {
 	version: version};
 

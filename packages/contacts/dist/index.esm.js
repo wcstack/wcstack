@@ -445,15 +445,15 @@ class ContactsCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "value", event: "wcs-contacts:complete", getter: (e) => e.detail.value },
-            { name: "loading", event: "wcs-contacts:loading-changed" },
-            { name: "error", event: "wcs-contacts:error" },
-            { name: "cancelled", event: "wcs-contacts:cancelled-changed" },
+            { name: "value", event: "wcs-contacts:complete", semantics: "state", getter: (e) => e.detail.value },
+            { name: "loading", event: "wcs-contacts:loading-changed", semantics: "state" },
+            { name: "error", event: "wcs-contacts:error", semantics: "state" },
+            { name: "cancelled", event: "wcs-contacts:cancelled-changed", semantics: "state" },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output; the existing `error` property/event are unchanged.
             // Fires its own `wcs-contacts:error-info-changed` event; no getter, so the
             // bound value is the event detail (mirrors `error` / `loading` / `cancelled`).
-            { name: "errorInfo", event: "wcs-contacts:error-info-changed" },
+            { name: "errorInfo", event: "wcs-contacts:error-info-changed", semantics: "state" },
         ],
         commands: [
             { name: "select", async: true },
@@ -653,6 +653,48 @@ class ContactsCore extends EventTarget {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 /**
  * `<wcs-contacts>` — declarative Contact Picker API primitive.
  *
@@ -761,6 +803,8 @@ class WcsContacts extends HTMLElement {
     }
     // --- Lifecycle ---
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         this._connectedCallbackPromise = this._core.observe();
     }

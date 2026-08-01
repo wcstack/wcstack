@@ -436,17 +436,17 @@ class UploadCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "value", event: "wcs-upload:response", getter: (e) => e.detail.value },
-            { name: "loading", event: "wcs-upload:loading-changed" },
-            { name: "progress", event: "wcs-upload:progress" },
-            { name: "error", event: "wcs-upload:error" },
-            { name: "status", event: "wcs-upload:response", getter: (e) => e.detail.status },
+            { name: "value", event: "wcs-upload:response", semantics: "state", getter: (e) => e.detail.value },
+            { name: "loading", event: "wcs-upload:loading-changed", semantics: "state" },
+            { name: "progress", event: "wcs-upload:progress", semantics: "state" },
+            { name: "error", event: "wcs-upload:error", semantics: "state" },
+            { name: "status", event: "wcs-upload:response", semantics: "state", getter: (e) => e.detail.status },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output; the existing `error` property/event are unchanged.
             // Fires its own `wcs-upload:error-info-changed` event; no getter, so the bound
             // value is the event detail (mirrors `error` / `loading`). An abort() is not a
             // failure — it clears loading without setting error/errorInfo.
-            { name: "errorInfo", event: "wcs-upload:error-info-changed" },
+            { name: "errorInfo", event: "wcs-upload:error-info-changed", semantics: "state" },
         ],
         inputs: [
             { name: "url" },
@@ -786,14 +786,56 @@ function registerAutoTrigger() {
     document.addEventListener("click", handleClick);
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 class WcsUpload extends HTMLElement {
     static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...UploadCore.wcBindable,
         properties: [
             ...UploadCore.wcBindable.properties,
-            { name: "trigger", event: "wcs-upload:trigger-changed" },
-            { name: "files", event: "wcs-upload:files-changed" },
+            { name: "trigger", event: "wcs-upload:trigger-changed", semantics: "state" },
+            { name: "files", event: "wcs-upload:files-changed", semantics: "state" },
         ],
         // Shell-level input surface. The Core declares only the portable `url` / `method` /
         // `fieldName`; the Shell adds the DOM-driven settable surface. No `attribute` hints
@@ -1082,6 +1124,8 @@ class WcsUpload extends HTMLElement {
         // observedAttributes のコメント参照。
     }
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         if (config.autoTrigger) {
             registerAutoTrigger();

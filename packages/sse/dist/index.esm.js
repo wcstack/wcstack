@@ -110,17 +110,17 @@ class SseCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "message", event: "wcs-sse:message" },
-            { name: "connected", event: "wcs-sse:connected-changed" },
-            { name: "loading", event: "wcs-sse:loading-changed" },
-            { name: "error", event: "wcs-sse:error" },
+            { name: "message", event: "wcs-sse:message", semantics: "event" },
+            { name: "connected", event: "wcs-sse:connected-changed", semantics: "state" },
+            { name: "loading", event: "wcs-sse:loading-changed", semantics: "state" },
+            { name: "error", event: "wcs-sse:error", semantics: "state" },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output derived from `error` via an explicit `kind`
             // discriminator (invalid-argument / connection-error, split by phase +
             // recoverable). The existing `error` property/event are unchanged. Fires
             // wcs-sse:error-info-changed. No lane — SSE is a session/streaming monitor.
-            { name: "errorInfo", event: "wcs-sse:error-info-changed" },
-            { name: "readyState", event: "wcs-sse:readystate-changed" },
+            { name: "errorInfo", event: "wcs-sse:error-info-changed", semantics: "state" },
+            { name: "readyState", event: "wcs-sse:readystate-changed", semantics: "state" },
         ],
         commands: [
             { name: "connect" },
@@ -477,6 +477,48 @@ class SseCore extends EventTarget {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 class WcsSse extends HTMLElement {
     // SSR (§4.1/§4.4): wc-bindable アダプタはこのフラグを見て connectedCallbackPromise を
     // 待ってからスナップショットを取る。SSE には同期接続しか無いが、骨格を全 IO ノードで
@@ -486,7 +528,7 @@ class WcsSse extends HTMLElement {
         ...SseCore.wcBindable,
         properties: [
             ...SseCore.wcBindable.properties,
-            { name: "trigger", event: "wcs-sse:trigger-changed" },
+            { name: "trigger", event: "wcs-sse:trigger-changed", semantics: "state" },
         ],
         inputs: [
             { name: "url", attribute: "url" },
@@ -690,6 +732,8 @@ class WcsSse extends HTMLElement {
         }
     }
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         // §4.4: observe() の戻り（即解決の ready）を connectedCallbackPromise として保持。
         // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は下の

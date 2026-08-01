@@ -434,19 +434,19 @@ class FetchCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "value", event: "wcs-fetch:response", getter: (e) => e.detail.value },
-            { name: "loading", event: "wcs-fetch:loading-changed" },
-            { name: "error", event: "wcs-fetch:error" },
-            { name: "status", event: "wcs-fetch:response", getter: (e) => e.detail.status },
+            { name: "value", event: "wcs-fetch:response", semantics: "state", getter: (e) => e.detail.value },
+            { name: "loading", event: "wcs-fetch:loading-changed", semantics: "state" },
+            { name: "error", event: "wcs-fetch:error", semantics: "state" },
+            { name: "status", event: "wcs-fetch:response", semantics: "state", getter: (e) => e.detail.status },
             // Managed object URL for a `responseType: "blob"` response (null otherwise).
             // The Core revokes the previous URL on each new response and on dispose, so
             // a consumer can bind it straight into <img src> without lifecycle glue.
-            { name: "objectURL", event: "wcs-fetch:response", getter: (e) => e.detail.objectURL },
+            { name: "objectURL", event: "wcs-fetch:response", semantics: "state", getter: (e) => e.detail.objectURL },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output — the existing `error` property/event are unchanged.
             // Fires on its own `wcs-fetch:error-info-changed` event; no getter, so the
             // bound value is the event detail (mirrors `error` / `loading`).
-            { name: "errorInfo", event: "wcs-fetch:error-info-changed" },
+            { name: "errorInfo", event: "wcs-fetch:error-info-changed", semantics: "state" },
         ],
         inputs: [
             { name: "url" },
@@ -878,13 +878,55 @@ function registerAutoTrigger() {
     document.addEventListener("click", handleClick);
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 class Fetch extends HTMLElement {
     static hasConnectedCallbackPromise = true;
     static wcBindable = {
         ...FetchCore.wcBindable,
         properties: [
             ...FetchCore.wcBindable.properties,
-            { name: "trigger", event: "wcs-fetch:trigger-changed" },
+            { name: "trigger", event: "wcs-fetch:trigger-changed", semantics: "state" },
         ],
         // Shell-level input surface. The Core declares only the portable `url` / `method`;
         // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
@@ -1250,6 +1292,8 @@ class Fetch extends HTMLElement {
         }
     }
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         if (config.autoTrigger) {
             registerAutoTrigger();

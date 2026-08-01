@@ -1918,7 +1918,6 @@ function setLastListValueByAbsoluteStateAddress(address, value) {
     lastListValueByAbsoluteStateAddress.set(address, value);
 }
 
-const setLoopContextAsyncSymbol = Symbol("$$setLoopContextAsync");
 const setLoopContextSymbol = Symbol("$$setLoopContext");
 const getByAddressSymbol = Symbol("$$getByAddress");
 const hasByAddressSymbol = Symbol("$$hasByAddress");
@@ -2489,6 +2488,54 @@ function detachCheckboxEventHandler(binding) {
     return false;
 }
 
+/**
+ * captureHandlerRejection.ts
+ *
+ * state 側ハンドラ（`$on` の event-token subscriber、`onXxx:` の state メソッド、
+ * DOM イベント起点の command-token emit）の戻り値を受け取り、Promise が混ざって
+ * いれば reject を捕捉して報告する。
+ *
+ * なぜ必要か:
+ * 発火経路はハンドラの完了を待たない。戻り値は `Token.emit` の結果配列にしか現れず、
+ * 呼び出し側（eventTokenHandler / handler）はそれを捨てている。そのため **async
+ * ハンドラが reject すると unhandled rejection になり**、しかも「どのハンドラで
+ * 落ちたか」の手掛かりがスタックにしか残らない（特性化:
+ * `__tests__/poc.asyncOnLoopContext.test.ts`）。
+ *
+ * 握り潰しではない:
+ * 可視性は `console.error` で保たれ、state 名・ハンドラ名が付く分むしろ特定は容易に
+ * なる。非同期の失敗を「例外の伝播」ではなく「診断可能な報告」に落とすのは
+ * never-throw（async-io-node-guidelines.md §3.6）と同じ方針であり、I/O ノードが
+ * `error` プロパティへ流すのと同じ位置づけの、state 側ハンドラ版にあたる。
+ *
+ * 同期 throw はここを通らない（従来どおり呼び出し元へ伝播する）。プログラマエラーを
+ * loud に落とす `raiseError` の挙動は一切変えない。
+ */
+function isThenable(value) {
+    return ((typeof value === "object" || typeof value === "function") &&
+        value !== null &&
+        typeof value.then === "function");
+}
+/**
+ * @param result   ハンドラ呼び出しの戻り値。`Token.emit` の結果配列（subscriber ごとの
+ *                 戻り値）と、単一ハンドラの戻り値の両方を受ける。
+ * @param describe 報告に載せるハンドラの識別名（例: `$on."rowFailed" of state "default"`）。
+ */
+function captureHandlerRejection(result, describe) {
+    // emit は subscriber ごとの戻り値配列。単一ハンドラの戻り値はそのまま届く。
+    const values = Array.isArray(result) ? result : [result];
+    for (const value of values) {
+        if (!isThenable(value)) {
+            continue;
+        }
+        // Promise.resolve は native Promise をそのまま返すため、catch の登録によって
+        // 元の Promise が handled になる（thenable は同値の Promise に包まれる）。
+        Promise.resolve(value).catch((error) => {
+            console.error(`[wcstack/state] ${describe} rejected.`, error);
+        });
+    }
+}
+
 // command-token / event-token が共有する pub/sub プリミティブ。
 // _subscribers は Set のため挿入順を保持する。
 // emit() は subscribe() された順に呼び出され、戻り値配列も同じ順序で返る。
@@ -2654,11 +2701,14 @@ function attachEventTokenHandler(binding) {
         }
         const loopContext = getLoopContextByNode(element);
         stateElement.createStateAsync("writable", async (state) => {
-            state[setLoopContextSymbol](loopContext, () => {
+            const results = state[setLoopContextSymbol](loopContext, () => {
                 const indexes = loopContext?.listIndex.indexes ?? [];
                 const token = getOrCreateEventToken(stateElement, tokenName);
                 return token.emit(state, event, ...indexes);
             });
+            // この経路はハンドラの完了を待たない（emit の戻り値はここでしか見えない）。
+            // async な $on ハンドラの reject を unhandled にせず報告へ落とす。
+            captureHandlerRejection(results, `$on."${tokenName}" of state "${stateName}"`);
         });
     };
     element.addEventListener(eventName, handler);
@@ -2736,7 +2786,7 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathI
     const loopContext = getLoopContextByNode(node);
     const isCommand = isCommandTokenPath(handlerName);
     stateElement.createStateAsync("writable", async (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
+        const results = state[setLoopContextSymbol](loopContext, () => {
             const indexes = loopContext?.listIndex.indexes ?? [];
             if (isCommand) {
                 // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
@@ -2752,6 +2802,9 @@ const stateEventHandlerFunction = (stateName, handlerName, modifiers, statePathI
             }
             return Reflect.apply(handler, state, [event, ...indexes]);
         });
+        // eventTokenHandler と同じく、この経路もハンドラの完了を待たない。async な
+        // state メソッド / command subscriber の reject を unhandled にせず報告へ落とす。
+        captureHandlerRejection(results, `"${handlerName}" of state "${stateName}"`);
     });
 };
 function attachEventHandler(binding) {
@@ -3026,14 +3079,53 @@ function matchWriteReceipt(node, member) {
     return null;
 }
 
+/**
+ * occurrenceWrite.ts
+ *
+ * wc-bindable の `semantics: "event"` を宣言した property から届いた値を state へ書き込む
+ * 間だけ、same-value guard（`config.sameValueGuard`・既定 ON）を 1 回分だけ無効化する
+ * one-shot トークン。
+ *
+ * 背景:
+ * same-value guard は primitive が `Object.is` 同値なら set / enqueue / 依存伝播 / DOM 適用 /
+ * `$updatedCallback` をまるごとスキップする。current value（state）にとっては正しい最適化だが、
+ * occurrence（同じ payload でも「もう一度起きた」ことに意味がある）へ適用すると発生を取りこぼす。
+ * どちらであるかは producer の declaration が `semantics` で宣言する
+ * （docs/architecture-hardening/12-wc-bindable-observable-inventory.md）。
+ *
+ * one-shot にしている理由:
+ * フラグを書き込みの呼び出しスタック全体へ張ると、その内側で走る `$updatedCallback` や
+ * 依存伝播が行う無関係な書き込みまでガードを失う。`setByAddress` が最初のガード評価で
+ * トークンを消費するため、影響は目的の 1 write に閉じる。
+ */
+let pending = false;
+/** 直後の 1 write を occurrence として扱う。必ず `endOccurrenceWrite` と対で使う。 */
+function beginOccurrenceWrite() {
+    pending = true;
+}
+/** 未消費のトークンを破棄する（write が setByAddress へ到達しなかった場合の後始末）。 */
+function endOccurrenceWrite() {
+    pending = false;
+}
+/**
+ * ガード評価側が呼ぶ。`true` を返したら、その 1 回だけ same-value guard を飛ばす。
+ * トークンは呼んだ時点で消費される。
+ */
+function consumeOccurrenceWrite() {
+    if (!pending)
+        return false;
+    pending = false;
+    return true;
+}
+
 const handlerByHandlerKey = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
 const bindingRegistry = createHandlerBindingRegistry();
 const producerValueObserversByNode = new WeakMap();
 const DEFAULT_GETTER = (e) => e.detail;
-function getHandlerKey(binding, eventName, hasGetter) {
+function getHandlerKey(binding, eventName, hasGetter, isOccurrence) {
     const filterKey = binding.inFilters.map(f => f.filterName + '(' + f.args.join(',') + ')').join('|');
-    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}`;
+    return `${binding.stateName}::${binding.propName}::${binding.statePathName}::${eventName}::${filterKey}::${hasGetter ? 'g' : 'n'}::${isOccurrence ? 'o' : 's'}`;
 }
 function getEventName(binding) {
     const tagName = binding.node.tagName.toLowerCase();
@@ -3069,7 +3161,20 @@ function getValueGetter(binding) {
     }
     return null;
 }
-const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters, valueGetter) => (event) => {
+/**
+ * producer が `semantics: "event"` を宣言した property か。occurrence は同じ payload でも
+ * 「もう一度起きた」ことに意味があるため、state への書き込みで same-value guard を通さない
+ * （docs/async-io-node-guidelines.md §3.3.1 の `event`）。宣言が無い property は従来どおり
+ * — 未指定は「未指定」であって state ではないので、挙動は変えない。
+ */
+function isOccurrenceProperty(binding) {
+    const customTagName = getCustomElement(binding.node);
+    if (customTagName === null)
+        return false;
+    const propDesc = readBindableDeclaration(binding.node)?.knownProperties.get(binding.propName);
+    return propDesc?.semantics === "event";
+}
+const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilters, valueGetter, isOccurrence) => (event) => {
     const node = event.target;
     if (node === null) {
         console.warn(`[@wcstack/state] event.target is null.`);
@@ -3155,11 +3260,21 @@ const twowayEventHandlerFunction = (stateName, propName, statePathName, inFilter
     }
     const loopContext = getLoopContextByNode(node);
     const commitToState = () => {
-        stateElement.createState("writable", (state) => {
-            state[setLoopContextSymbol](loopContext, () => {
-                state[statePathName] = filteredNewValue;
+        // occurrence は同値でも取りこぼしてはならない（§3.3.1 `event`）。トークンは
+        // setByAddress の最初のガード評価で消費されるため、この write 1 回だけに効く。
+        if (isOccurrence)
+            beginOccurrenceWrite();
+        try {
+            stateElement.createState("writable", (state) => {
+                state[setLoopContextSymbol](loopContext, () => {
+                    state[statePathName] = filteredNewValue;
+                });
             });
-        });
+        }
+        finally {
+            if (isOccurrence)
+                endOccurrenceWrite();
+        }
     };
     if (propagationContext !== null) {
         runWithPropagationContext(propagationContext, commitToState);
@@ -3203,10 +3318,11 @@ function attachTwowayEventHandler(binding) {
     if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
         const eventName = getEventName(binding);
         const valueGetter = getValueGetter(binding);
-        const key = getHandlerKey(binding, eventName, valueGetter !== null);
+        const isOccurrence = isOccurrenceProperty(binding);
+        const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrence);
         let twowayEventHandler = handlerByHandlerKey.get(key);
         if (typeof twowayEventHandler === "undefined") {
-            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters, valueGetter);
+            twowayEventHandler = twowayEventHandlerFunction(binding.stateName, binding.propName, binding.statePathName, binding.inFilters, valueGetter, isOccurrence);
             handlerByHandlerKey.set(key, twowayEventHandler);
         }
         binding.node.addEventListener(eventName, twowayEventHandler);
@@ -3228,7 +3344,7 @@ function detachTwowayEventHandler(binding) {
     if (isPossibleTwoWay(binding.node, binding.propName) && binding.propModifiers.indexOf('ro') === -1) {
         const eventName = getEventName(binding);
         const valueGetter = getValueGetter(binding);
-        const key = getHandlerKey(binding, eventName, valueGetter !== null);
+        const key = getHandlerKey(binding, eventName, valueGetter !== null, isOccurrenceProperty(binding));
         const twowayEventHandler = handlerByHandlerKey.get(key);
         if (typeof twowayEventHandler === "undefined") {
             return;
@@ -6986,7 +7102,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.23.0";
+var version = "1.24.0";
 var pkg = {
 	version: version};
 
@@ -10258,6 +10374,10 @@ function _setByAddressWithSwap(target, address, absAddress, value, receiver, han
 function setByAddress(target, address, value, receiver, handler) {
     const stateElement = handler.stateElement;
     const path = address.pathInfo.path;
+    // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
+    // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
+    // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
+    const skipSameValueGuard = consumeOccurrenceWrite();
     // --- fast path: 宣言済み getter/setter でも swap 対象でもない、親を持つ葉パス ---
     // 従来は same-value guard の値読み・hasByAddress・実書き込みがそれぞれ親チェーンを
     // 解決していた（キャッシュヒットでも getByAddress 呼び出しの固定費 ×3）。
@@ -10274,7 +10394,7 @@ function setByAddress(target, address, value, receiver, handler) {
                 : lastSegment;
             let devOldValue;
             let devHasOldValue = false;
-            if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+            if (!skipSameValueGuard && config.sameValueGuard && (value === null || typeof value !== "object")) {
                 // hasByAddress と同じ「初期化済みスロットか」判定（undefined 格納と未初期化を区別）
                 const has = key !== undefined && key in parentValue;
                 const oldValue = key !== undefined ? parentValue[key] : undefined;
@@ -10334,7 +10454,7 @@ function setByAddress(target, address, value, receiver, handler) {
     // （参照型のために追加の get はしない — protocol §4.2）
     let devOldValue;
     let devHasOldValue = false;
-    if (config.sameValueGuard && (value === null || typeof value !== "object")) {
+    if (!skipSameValueGuard && config.sameValueGuard && (value === null || typeof value !== "object")) {
         const oldValue = getByAddress(target, address, receiver, handler);
         if (hasByAddress(target, address, receiver, handler) && Object.is(oldValue, value)) {
             return true;
@@ -10716,7 +10836,7 @@ function updatedCallback(target, refs, receiver, handler) {
  * setLoopContext.ts
  *
  * StateClassの内部APIとして、ループコンテキスト（ILoopContext）を一時的に設定し、
- * 指定した同期/非同期コールバックをそのスコープ内で実行するための関数です。
+ * 指定したコールバックをそのスコープ内で実行するための関数です。
  *
  * 主な役割:
  * - handler.loopContextにループコンテキストを一時的に設定
@@ -10727,9 +10847,26 @@ function updatedCallback(target, refs, receiver, handler) {
  * 設計ポイント:
  * - ループバインディングや多重ループ時のスコープ管理を安全に行う
  * - finallyで状態復元を保証し、例外発生時も安全
- * - 非同期処理にも対応
+ *
+ * **スコープは同期である（重要）**:
+ * push/pop は `callback()` の同期リターンで完結する。callback が Promise を返した
+ * 場合、finally はその Promise が settle する *前* に走るため、await を跨いだ先では
+ * ループコンテキストは既に外れている。したがって async なハンドラが await の後に
+ * `$1` や wildcard パス（`items.*.id`）を触ると raiseError になる。
+ *
+ * これは silent な取り違えではなく loud な失敗であり、意図した挙動である
+ * （特性化テスト: `__tests__/poc.asyncOnLoopContext.test.ts`）。await の後に行位置が
+ * 必要な場合は、ハンドラ引数で受け取った listIndexes を
+ * `$resolve(path, indexes, value?)` に渡すこと。listIndexes は素の数値配列なので
+ * await を跨いでも安全に持ち回せる。
+ *
+ * 補足: かつて `setLoopContextAsync` という変種が存在したが、実体は
+ * `await _setLoopContext(...)`（= finally が既に走った後の Promise を await するだけ）
+ * であり、名前が示唆する「コンテキストを await 跨ぎで保持する」挙動は持っていなかった。
+ * production の呼び出し元も無かったため削除した。同等の機能が必要になった場合は、
+ * 「名前どおりに動く」実装を新規に起こすこと。
  */
-function _setLoopContext(handler, loopContext, callback) {
+function setLoopContext(handler, loopContext, callback) {
     if (typeof handler.loopContext !== "undefined") {
         raiseError('already in loop context');
     }
@@ -10746,12 +10883,6 @@ function _setLoopContext(handler, loopContext, callback) {
     finally {
         handler.clearLoopContext();
     }
-}
-function setLoopContext(handler, loopContext, callback) {
-    return _setLoopContext(handler, loopContext, callback);
-}
-async function setLoopContextAsync(handler, loopContext, callback) {
-    return await _setLoopContext(handler, loopContext, callback);
 }
 
 /**
@@ -10870,12 +11001,6 @@ function get(target, prop, receiver, handler) {
         }
         let api;
         switch (prop) {
-            case setLoopContextAsyncSymbol: {
-                api = (loopContext, callback = async () => { }) => {
-                    return setLoopContextAsync(handler, loopContext, callback);
-                };
-                break;
-            }
             case setLoopContextSymbol: {
                 api = (loopContext, callback = () => { }) => {
                     return setLoopContext(handler, loopContext, callback);

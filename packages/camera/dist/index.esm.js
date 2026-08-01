@@ -294,22 +294,22 @@ class CameraCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "active", event: "wcs-camera:active-changed" },
-            { name: "permission", event: "wcs-camera:permission-changed" },
-            { name: "audioPermission", event: "wcs-camera:audio-permission-changed" },
-            { name: "deviceId", event: "wcs-camera:device-changed" },
-            { name: "devices", event: "wcs-camera:devices-changed" },
-            { name: "error", event: "wcs-camera:error" },
+            { name: "active", event: "wcs-camera:active-changed", semantics: "state" },
+            { name: "permission", event: "wcs-camera:permission-changed", semantics: "state" },
+            { name: "audioPermission", event: "wcs-camera:audio-permission-changed", semantics: "state" },
+            { name: "deviceId", event: "wcs-camera:device-changed", semantics: "state" },
+            { name: "devices", event: "wcs-camera:devices-changed", semantics: "state" },
+            { name: "error", event: "wcs-camera:error", semantics: "state" },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output derived from `error` (the DOMException name /
             // "unsupported" sentinel); the existing `error` property/event are unchanged.
             // Fires wcs-camera:error-info-changed. No lane — acquisition is switchMap'd by
             // `_gen`, so there is no per-node operation policy to attach here.
-            { name: "errorInfo", event: "wcs-camera:error-info-changed" },
+            { name: "errorInfo", event: "wcs-camera:error-info-changed", semantics: "state" },
             // Direct-channel handle: event-token only — never bound as a reactive value.
-            { name: "streamReady", event: "wcs-camera:stream-ready", getter: (e) => e.detail },
+            { name: "streamReady", event: "wcs-camera:stream-ready", semantics: "handle", getter: (e) => e.detail },
             // event-token: a bare signal (detail is always null) — surface detail, not the raw Event.
-            { name: "ended", event: "wcs-camera:ended", getter: (e) => e.detail },
+            { name: "ended", event: "wcs-camera:ended", semantics: "event", getter: (e) => e.detail },
         ],
         commands: [
             { name: "start" },
@@ -638,6 +638,48 @@ class CameraCore extends EventTarget {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 /**
  * `<wcs-camera>` — declarative camera capture with a built-in preview.
  *
@@ -856,6 +898,8 @@ class WcsCamera extends HTMLElement {
     };
     // --- Lifecycle ---
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this._connected = true;
         this._connectedCallbackPromise = this._core.observe(this._constraints());
         if (this.autostart) {
@@ -928,23 +972,23 @@ class RecorderCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "recording", event: "wcs-recorder:recording-changed" },
-            { name: "paused", event: "wcs-recorder:paused-changed" },
-            { name: "duration", event: "wcs-recorder:duration-changed" },
-            { name: "mimeType", event: "wcs-recorder:mimetype-changed" },
-            { name: "blob", event: "wcs-recorder:recorded", getter: (e) => e.detail?.blob ?? null },
-            { name: "objectURL", event: "wcs-recorder:recorded", getter: (e) => e.detail?.objectURL ?? null },
-            { name: "error", event: "wcs-recorder:error" },
+            { name: "recording", event: "wcs-recorder:recording-changed", semantics: "state" },
+            { name: "paused", event: "wcs-recorder:paused-changed", semantics: "state" },
+            { name: "duration", event: "wcs-recorder:duration-changed", semantics: "state" },
+            { name: "mimeType", event: "wcs-recorder:mimetype-changed", semantics: "state" },
+            { name: "blob", event: "wcs-recorder:recorded", semantics: "state", getter: (e) => e.detail?.blob ?? null },
+            { name: "objectURL", event: "wcs-recorder:recorded", semantics: "state", getter: (e) => e.detail?.objectURL ?? null },
+            { name: "error", event: "wcs-recorder:error", semantics: "state" },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output derived from `error` (the DOMException name /
             // "unsupported"/"NoStreamError"/"RecorderError" sentinel); the existing `error`
             // property/event are unchanged. Fires wcs-recorder:error-info-changed. No lane —
             // recording is command-driven.
-            { name: "errorInfo", event: "wcs-recorder:error-info-changed" },
+            { name: "errorInfo", event: "wcs-recorder:error-info-changed", semantics: "state" },
             // event-token: detail = the assembled clip { blob, objectURL, mimeType, duration }.
-            { name: "recorded", event: "wcs-recorder:recorded", getter: (e) => e.detail },
+            { name: "recorded", event: "wcs-recorder:recorded", semantics: "event", getter: (e) => e.detail },
             // event-token (timeslice mode): detail = the streamed Blob chunk.
-            { name: "dataavailable", event: "wcs-recorder:dataavailable", getter: (e) => e.detail },
+            { name: "dataavailable", event: "wcs-recorder:dataavailable", semantics: "event", getter: (e) => e.detail },
         ],
         commands: [
             { name: "attachStream" },
@@ -1385,6 +1429,8 @@ class WcsRecorder extends HTMLElement {
     }
     // --- Lifecycle ---
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         this._connectedCallbackPromise = this._core.observe();
     }

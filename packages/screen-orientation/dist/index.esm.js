@@ -131,30 +131,32 @@ class ScreenOrientationCore extends EventTarget {
         protocol: "wc-bindable",
         version: 1,
         properties: [
-            { name: "type", event: "wcs-orientation:change", getter: (e) => e.detail.type },
-            { name: "angle", event: "wcs-orientation:change", getter: (e) => e.detail.angle },
+            { name: "type", event: "wcs-orientation:change", semantics: "state", getter: (e) => e.detail.type },
+            { name: "angle", event: "wcs-orientation:change", semantics: "state", getter: (e) => e.detail.angle },
             {
                 name: "portrait",
                 event: "wcs-orientation:change",
+                semantics: "state",
                 getter: (e) => e.detail.type?.startsWith("portrait") ?? false,
             },
             {
                 name: "landscape",
                 event: "wcs-orientation:change",
+                semantics: "state",
                 getter: (e) => e.detail.type?.startsWith("landscape") ?? false,
             },
             // never-throw (§3.6, async-io-node-guidelines): lock()/unlock() failures
             // land here instead of rejecting/throwing. Mirrors the `error` property
             // every other bidirectional IO node exposes (FetchCore, GeolocationCore,
             // NotificationCore) so `hidden@error`-style bindings work uniformly.
-            { name: "error", event: "wcs-orientation:error" },
+            { name: "error", event: "wcs-orientation:error", semantics: "state" },
             // Serializable failure taxonomy (stable code / phase / recoverable), or null.
             // Additive bindable output derived from `error` (capability-missing / not-allowed
             // / aborted / orientation-error); the existing `error` property/event are
             // unchanged. Fires wcs-orientation:error-info-changed. No lane — monitoring is a
             // synchronous subscribe and lock()/unlock() are a single command path, not
             // competing operations.
-            { name: "errorInfo", event: "wcs-orientation:error-info-changed" },
+            { name: "errorInfo", event: "wcs-orientation:error-info-changed", semantics: "state" },
         ],
         commands: [
             { name: "lock", async: true },
@@ -389,6 +391,48 @@ class ScreenOrientationCore extends EventTarget {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/upgrade-properties.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+function hasAccessorOnPrototype(target, name) {
+    let proto = Object.getPrototypeOf(target);
+    while (proto !== null) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+        if (descriptor !== undefined) {
+            return typeof descriptor.get === "function" || typeof descriptor.set === "function";
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+/**
+ * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
+ * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
+ *
+ * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
+ * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
+ * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ */
+function upgradeProperties(element) {
+    const declaration = element.constructor?.wcBindable;
+    const inputs = declaration?.inputs;
+    if (inputs === undefined)
+        return;
+    for (const input of inputs) {
+        const name = input.name;
+        if (!Object.prototype.hasOwnProperty.call(element, name))
+            continue;
+        if (!hasAccessorOnPrototype(element, name))
+            continue;
+        const record = element;
+        const value = record[name];
+        delete record[name];
+        record[name] = value;
+    }
+}
+
 /**
  * `<wcs-screen-orientation>` — declarative Screen Orientation API monitor +
  * command node.
@@ -504,6 +548,8 @@ class WcsScreenOrientation extends HTMLElement {
     }
     // --- Lifecycle ---
     connectedCallback() {
+        // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+        upgradeProperties(this);
         this.style.display = "none";
         this._connectedCallbackPromise = this._core.observe();
     }
