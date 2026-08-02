@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>audio-graph PoC harness</title>
+</head>
+<body>
+  <!--
+    Phase B PoC harness. Deliberately contains no <wcs-*> tags and no DOM wiring:
+    the point is that AudioGraphCore reaches sound from a plain-object Patch alone
+    (docs/architecture-hardening/14-handle-graph-wiring.md, gate G1).
+    The spec drives everything through page.evaluate.
+  -->
+  <p>audio-graph PoC — driven by e2e/tests/audio-graph-poc.spec.ts</p>
+  <script type="module">
+    import { AudioGraphCore, structureKey, midiToFreq } from "./AudioGraphCore.js";
+    import { instrument } from "./instrument.js";
+    import { FakeAudioContext } from "./FakeAudioContext.js";
+
+    window.PoC = { AudioGraphCore, structureKey, midiToFreq, instrument, FakeAudioContext };
+
+    // Signal analysis helpers, kept next to the harness so the spec stays about
+    // assertions rather than DSP.
+    window.PoC.rms = (data, from = 0, to = data.length) => {
+      let sum = 0;
+      for (let i = from; i < to; i++) sum += data[i] * data[i];
+      return Math.sqrt(sum / Math.max(1, to - from));
+    };
+    window.PoC.zeroCrossings = (data, from = 0, to = data.length) => {
+      let n = 0;
+      for (let i = from + 1; i < to; i++) if ((data[i - 1] < 0) !== (data[i] < 0)) n++;
+      return n;
+    };
+    // OfflineAudioContext.suspend() only accepts render-quantum boundaries.
+    window.PoC.quantum = (seconds, sampleRate) =>
+      (Math.round((seconds * sampleRate) / 128) * 128) / sampleRate;
+
+    window.__pocReady = true;
+  </script>
+</body>
+</html>
