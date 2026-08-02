@@ -58,6 +58,7 @@ const PACKAGE_FILES = {
   "ambient-light-sensor": CAPABILITY_ONLY,
   notification: CAPABILITY_ONLY,
   midi: CAPABILITY_ONLY,
+  audio: CAPABILITY_ONLY,
   wakelock: CAPABILITY_ONLY,
   tilt: CAPABILITY_ONLY,
   "screen-orientation": CAPABILITY_ONLY,

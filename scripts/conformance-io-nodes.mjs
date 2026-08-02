@@ -27,7 +27,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PKGDIR = join(ROOT, "packages");
 
 const IO_NODES = [
-  "accelerometer", "ambient-light-sensor", "broadcast", "camera", "clipboard",
+  "accelerometer", "ambient-light-sensor", "audio", "broadcast", "camera", "clipboard",
   "contacts", "credential", "debounce", "defined", "eyedropper", "fetch",
   "fullscreen", "geolocation", "gyroscope", "idle", "intersection", "magnetometer",
   "midi", "network", "notification", "permission", "picture-in-picture", "pointer-lock",

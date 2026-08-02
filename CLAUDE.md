@@ -36,6 +36,7 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/permission`** (`<wcs-permission>`) — Permissions API monitor
 - **`@wcstack/notification`** (`<wcs-notify>`) — Desktop notifications (Service Worker support)
 - **`@wcstack/midi`** (`<wcs-midi>`) — Web MIDI input/output (one tag for both directions; message decoding with velocity-0 note-off normalization)
+- **`@wcstack/audio`** (`<wcs-audio>` + 10 node tags) — Web Audio graphs written as markup. Nesting is the signal chain, `out=`/`param=` route by id, `<wcs-voice poly="N">` gives polyphony. The patch is a **descriptor** (`Patch` plain object) that `AudioGraphCore` consumes; `AudioNode` handles never cross the protocol boundary. See [ADR-14](docs/architecture-hardening/14-handle-graph-wiring.md)
 - **`@wcstack/intersection`** (`<wcs-intersect>`) — IntersectionObserver visibility
 - **`@wcstack/resize`** (`<wcs-resize>`) — ResizeObserver element-size
 - **`@wcstack/wakelock`** (`<wcs-wakelock>`) — Screen Wake Lock

@@ -29,7 +29,7 @@ const canonicalUpgradeTestPath = join(repoRoot, "protocol", "upgrade-properties.
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
   // 34 async-IO node packages
-  "broadcast", "camera", "clipboard", "debounce", "defined", "fetch",
+  "audio", "broadcast", "camera", "clipboard", "debounce", "defined", "fetch",
   "geolocation", "intersection", "midi", "network", "notification", "permission", "resize",
   "speech", "sse", "storage", "timer", "upload", "wakelock", "websocket", "worker",
   // batch 1 (target-resolution) / batch 4 (minimal monitor)
