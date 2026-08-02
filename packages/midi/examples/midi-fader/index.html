@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>wcs-midi — a MIDI controller drives the page</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0 auto; max-width: 720px; padding: 24px 16px 64px;
+      background: #12161c; color: #cfd8dc;
+      font: 15px/1.6 system-ui, sans-serif;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; color: #eceff1; }
+    h2 { font-size: 15px; margin: 28px 0 8px; color: #90caf9; }
+    p.hint { margin: 4px 0 20px; color: #789; font-size: 13px; }
+    .panel {
+      background: #1a2027; border: 1px solid #2a333d; border-radius: 10px;
+      padding: 16px; margin-bottom: 20px;
+    }
+    .row { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+    .row > span:first-child { flex: 0 0 110px; color: #9ab; font-size: 12px; }
+    meter { flex: 1; height: 18px; }
+    output { font-variant-numeric: tabular-nums; color: #3ddc84; }
+    ul { margin: 8px 0 0; padding-left: 20px; color: #9ab; font-size: 13px; }
+    button {
+      background: #263238; color: #cfd8dc; border: 1px solid #37474f;
+      border-radius: 6px; padding: 8px 14px; font: inherit; cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #546e7a; display: inline-block; }
+
+    /* Output state comes straight from CustomStateSet — no binding involved. */
+    wcs-midi:state(connected) ~ .status .dot { background: #3ddc84; }
+    wcs-midi:state(denied) ~ .status .dot { background: #ef5350; }
+    wcs-midi:state(unsupported) ~ .status .dot { background: #78909c; }
+  </style>
+</head>
+<body>
+  <h1>wcs-midi — a controller drives the page</h1>
+  <p class="hint">
+    Plug in any MIDI controller and press <b>Connect MIDI</b>. Notes and control
+    changes land in <code>&lt;wcs-state&gt;</code> without a line of MIDI code on
+    this page. Chromium only — Web MIDI is not implemented in Firefox or Safari.
+  </p>
+
+  <wcs-state>
+    <script type="module">
+      export default {
+        held: [],
+        lastNote: null,
+        velocity: 0,
+        cc: null,
+        ccValue: 0,
+        connected: false,
+        permission: "prompt",
+        devices: [],
+
+        // Path getter — runs per element inside the devices loop.
+        get "devices.*.label"() {
+          const name = this["devices.*.name"] || this["devices.*.id"];
+          return `${this["devices.*.direction"]} — ${name}`;
+        },
+
+        get heldLabel() {
+          return this.held.length === 0 ? "—" : this.held.join(", ");
+        },
+        get velocityPercent() {
+          return Math.round(this.velocity * 100);
+        },
+
+        $commandTokens: ["requestMidi"],
+        $eventTokens: ["onMidi"],
+
+        // requestMIDIAccess() may prompt, so it is fired from a real click.
+        connect() {
+          this.$command.requestMidi.emit();
+        },
+
+        $on: {
+          onMidi: (state, event) => {
+            const { type, note, velocity, control, value } = event.detail;
+            if (type === "noteon") {
+              state.held = [...state.held, note];
+              state.lastNote = note;
+              state.velocity = velocity;
+            } else if (type === "noteoff") {
+              state.held = state.held.filter((n) => n !== note);
+            } else if (type === "controlchange") {
+              state.cc = control;
+              state.ccValue = value;
+            }
+          },
+        },
+      };
+    </script>
+
+    <wcs-midi
+      data-wcs="
+        eventToken.message: onMidi;
+        command.request: $command.requestMidi;
+        connected: connected;
+        permission: permission;
+        devices: devices
+      "></wcs-midi>
+
+    <div class="status panel">
+      <div class="row">
+        <span>status</span>
+        <span class="dot"></span>
+        <span data-wcs="textContent: permission"></span>
+      </div>
+      <button data-wcs="onclick: connect; disabled: connected">Connect MIDI</button>
+      <ul>
+        <template data-wcs="for: devices">
+          <li data-wcs="textContent: .label"></li>
+        </template>
+      </ul>
+    </div>
+
+    <h2>Notes</h2>
+    <div class="panel">
+      <div class="row"><span>held</span><output data-wcs="textContent: heldLabel"></output></div>
+      <div class="row"><span>last note</span><output data-wcs="textContent: lastNote"></output></div>
+      <div class="row">
+        <span>velocity</span>
+        <meter min="0" max="100" data-wcs="value: velocityPercent"></meter>
+        <output data-wcs="textContent: velocityPercent"></output>
+      </div>
+    </div>
+
+    <h2>Control change</h2>
+    <div class="panel">
+      <div class="row"><span>controller</span><output data-wcs="textContent: cc"></output></div>
+      <div class="row">
+        <span>value</span>
+        <meter min="0" max="127" data-wcs="value: ccValue"></meter>
+        <output data-wcs="textContent: ccValue"></output>
+      </div>
+    </div>
+  </wcs-state>
+
+  <p class="hint">
+    Note the shape of this page: <code>&lt;wcs-midi&gt;</code> produces state and
+    nothing else — it has no rendering of its own. Every pixel above is ordinary
+    HTML bound to paths.
+  </p>
+
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/midi/auto"></script>
+</body>
+</html>

@@ -7,6 +7,7 @@ single-package demos live in that package's own `examples/` directory instead:
 - `packages/fetch/examples/` — `pagination` (5-stack comparison), `users-crud`, `infinite-scroll`
 - `packages/speech/examples/` — `speech-echo`, `speak-highlight`
 - `packages/defined/examples/` — `defined-loader`
+- `packages/midi/examples/` — `midi-fader`
 - `packages/state/examples/` — binding basics
 
 Every demo is buildless and loads packages straight from the CDN
@@ -58,6 +59,7 @@ See [`state-tilt-maze/`](state-tilt-maze/).
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × the same 4 sensor nodes as `state-tilt-maze` (core swap comparison) | any static server (secure context) | — |
 | [`ssr/`](ssr/) | @wcstack/server (SSR + hydration) | `cd examples/ssr && npm install && node server.js` | :3001 |
+| [`synth-playground/`](synth-playground/) | 🎹 audio + midi + state (a modular synth written as markup) | any static server | — |
 
 Demos marked "any static server" have no backend at all — any way of serving
 the directory over `http://localhost` works, e.g.:

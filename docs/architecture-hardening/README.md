@@ -56,6 +56,11 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
 - [framework adapter のバインド成立制約](13-framework-adapter-binding-constraints.md) —
   値の意味ではなく「バインドが成立するか」の軸。遅延 upgrade で全 adapter が沈黙して bind に失敗する問題、
   upgrade 前 property 代入が accessor を隠す Shell 側の欠陥、コロンを含むイベント名の表現可能性を扱う。
+- [ライブハンドルのグラフを DOM で配線する](14-handle-graph-wiring.md) — ✅ **採択（2026-08-02）**。
+  handle が 1 本から N 本になり、しかもハンドル同士が結線される場合に、そのトポロジを誰が所有し
+  どう記述するか。Web Audio（[examples/synth-playground](../../examples/synth-playground/)）が持ち込んだ
+  G1〜G6 を決定。横断原則 3「値、イベント、コマンド、ライブハンドルの意味を混ぜない」の初の実地試験であり、
+  結論は「トポロジは descriptor、ハンドルは Core が所有して境界に出さない」＝ **新しい観測意味論を増やさない**。
 
 ## 横断原則
 

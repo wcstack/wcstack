@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>@wcstack/audio — offline rendering harness</title>
+</head>
+<body>
+  <!--
+    Renders <wcs-audio> patches through an OfflineAudioContext, which needs no
+    user gesture, runs faster than realtime and produces a deterministic buffer.
+    That is what lets "it makes a sound" be an assertion over sample values in
+    CI rather than something a human has to listen for.
+
+    The context is injected via bootstrapAudio({ createContext }) — the same
+    public seam an adopter would use. Note the single import: pulling in both
+    /auto and the ESM entry would load two copies of the module and the config
+    set on one would not reach the elements registered by the other.
+
+    The page defines no patch of its own: each test supplies markup, so one
+    fixture covers every case.
+  -->
+  <div id="stage"></div>
+
+  <script type="module">
+    import { bootstrapAudio, releaseSharedContext } from "/packages/audio/dist/index.esm.js";
+
+    const SR = 48000;
+
+    bootstrapAudio();
+
+    const rms = (data, from = 0, to = data.length) => {
+      let sum = 0;
+      for (let i = from; i < to; i++) sum += data[i] * data[i];
+      return Math.sqrt(sum / Math.max(1, to - from));
+    };
+
+    const zeroCrossings = (data, from = 0, to = data.length) => {
+      let n = 0;
+      for (let i = from + 1; i < to; i++) if ((data[i - 1] < 0) !== (data[i] < 0)) n++;
+      return n;
+    };
+
+    // OfflineAudioContext.suspend() only accepts render-quantum boundaries.
+    const quantum = (seconds) => (Math.round((seconds * SR) / 128) * 128) / SR;
+
+    /**
+     * Mount `html`, render `seconds` of it offline, and hand each scheduled
+     * callback the root element at that point on the audio clock.
+     *
+     * steps: [{ at: seconds, run: (root, trace) => void }]
+     */
+    window.renderPatch = async ({ html, seconds = 1, steps = [], onReady }) => {
+      const ctx = new OfflineAudioContext(1, Math.ceil(SR * seconds), SR);
+      releaseSharedContext();
+      bootstrapAudio({ createContext: () => ctx });
+
+      const stage = document.getElementById("stage");
+      stage.innerHTML = "";
+      stage.innerHTML = html;
+      const root = stage.querySelector("wcs-audio");
+      await root.connectedCallbackPromise;
+      onReady?.(root);
+
+      const trace = {};
+      for (const step of steps) {
+        ctx.suspend(quantum(step.at)).then(() => {
+          step.run(root, trace);
+          ctx.resume();
+        });
+      }
+
+      const buffer = await ctx.startRendering();
+      return { data: buffer.getChannelData(0), trace, root };
+    };
+
+    window.audioProbe = { rms, zeroCrossings, quantum, SR };
+    window.__audioReady = true;
+  </script>
+</body>
+</html>

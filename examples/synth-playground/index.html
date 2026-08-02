@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>synth playground — a synthesizer made of HTML tags</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0 auto; max-width: 860px; padding: 24px 16px 64px;
+      background: #12161c; color: #cfd8dc;
+      font: 15px/1.6 system-ui, sans-serif;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; color: #eceff1; }
+    h1 small { font-weight: normal; color: #789; font-size: 13px; }
+    h2 { font-size: 15px; margin: 28px 0 8px; color: #90caf9; }
+    p.hint { margin: 4px 0 20px; color: #789; font-size: 13px; }
+    .panel {
+      background: #1a2027; border: 1px solid #2a333d; border-radius: 10px;
+      padding: 16px; margin-bottom: 24px;
+    }
+    .controls {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px 16px; margin: 12px 0;
+    }
+    .controls label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #9ab;
+    }
+    .controls label span { flex: 0 0 72px; }
+    .controls input[type="range"] { flex: 1; accent-color: #3ddc84; min-width: 0; }
+    demo-scope { margin: 12px 0; }
+    demo-keys { margin-top: 8px; }
+    kbd {
+      background: #263238; border: 1px solid #37474f; border-radius: 3px;
+      padding: 0 4px; font-size: 12px;
+    }
+    a { color: #90caf9; }
+    .status { font-size: 12px; color: #789; display: flex; align-items: center; gap: 8px; }
+    .led { width: 10px; height: 10px; border-radius: 50%; background: #546e7a; }
+    /* Output state straight from CustomStateSet — no binding involved. */
+    wcs-audio:state(running) ~ .status .led { background: #3ddc84; }
+    wcs-audio:state(unsupported) ~ .status .led { background: #ef5350; }
+  </style>
+</head>
+<body>
+  <h1>synth playground <small>— a synthesizer made of HTML tags</small></h1>
+  <p class="hint">
+    Nesting is the signal chain (signal flows downward); anything nesting can't
+    express is routed by id (<code>out="bus"</code>, <code>param="frequency"</code>).
+    Play with the on-screen keys, your computer keyboard
+    (<kbd>A</kbd>–<kbd>;</kbd> = notes, <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd>… = sharps,
+    <kbd>Z</kbd>/<kbd>X</kbd> = octave), or a MIDI keyboard.
+    View source: the page <em>is</em> the patch.
+  </p>
+
+  <wcs-state>
+    <script type="module">
+      export default {
+        cutoff: 1400,
+        resonance: 4,
+        lfoRate: 4,
+        lfoDepth: 0,
+        attack: 0.01,
+        release: 0.35,
+        delayMix: 0.2,
+        volume: 0.7,
+        bassCutoff: 500,
+        bassResonance: 8,
+        activeVoices: 0,
+
+        $eventTokens: ["onMidi"],
+        $on: {
+          // The MIDI node produces state; deciding what a message means to this
+          // page is the page's job.
+          onMidi: (state, event) => {
+            const { type, note, velocity } = event.detail;
+            const synth = document.getElementById("synth");
+            if (type === "noteon") synth.noteOn(note, velocity);
+            else if (type === "noteoff") synth.noteOff(note);
+          },
+        },
+      };
+    </script>
+
+    <h2>Poly synth — 8 voices, 3 osc → filter (LFO) → env → bus → delay</h2>
+    <div class="panel">
+      <wcs-audio id="synth" data-wcs="volume: volume; voices: activeVoices">
+        <wcs-voice poly="8">
+          <wcs-osc type="sawtooth" note detune="-7" out="vcf"></wcs-osc>
+          <wcs-osc type="sawtooth" note detune="7" out="vcf"></wcs-osc>
+          <wcs-osc type="square" note transpose="-12" out="vcf"></wcs-osc>
+
+          <wcs-biquad id="vcf" type="lowpass" data-wcs="frequency: cutoff; q: resonance">
+            <wcs-lfo id="lfo" type="sine" param="frequency"
+                     data-wcs="rate: lfoRate; depth: lfoDepth"></wcs-lfo>
+            <wcs-env id="amp" decay="0.25" sustain="0.55" out="bus"
+                     data-wcs="attack: attack; release: release"></wcs-env>
+          </wcs-biquad>
+        </wcs-voice>
+
+        <wcs-gain id="bus" gain="0.8">
+          <wcs-delay id="fx" time="0.28" feedback="0.35" data-wcs="mix: delayMix"></wcs-delay>
+        </wcs-gain>
+
+        <wcs-analyser id="scope" master></wcs-analyser>
+
+        <!-- Ordinary DOM among the patch. Adding it must not silence the synth
+             — that is exactly the mutation filter's job. -->
+        <div class="controls">
+          <label><span>cutoff</span><input type="range" min="80" max="8000" step="1" data-wcs="value: cutoff"></label>
+          <label><span>resonance</span><input type="range" min="0.1" max="20" step="0.1" data-wcs="value: resonance"></label>
+          <label><span>lfo rate</span><input type="range" min="0.1" max="16" step="0.1" data-wcs="value: lfoRate"></label>
+          <label><span>lfo depth</span><input type="range" min="0" max="2000" step="1" data-wcs="value: lfoDepth"></label>
+          <label><span>attack</span><input type="range" min="0.001" max="1" step="0.001" data-wcs="value: attack"></label>
+          <label><span>release</span><input type="range" min="0.02" max="2" step="0.01" data-wcs="value: release"></label>
+          <label><span>delay mix</span><input type="range" min="0" max="1" step="0.01" data-wcs="value: delayMix"></label>
+          <label><span>volume</span><input type="range" min="0" max="1" step="0.01" data-wcs="value: volume"></label>
+        </div>
+      </wcs-audio>
+
+      <div class="status">
+        <span class="led"></span>
+        <span data-wcs="textContent: activeVoices"></span> voices sounding
+      </div>
+
+      <demo-scope for="scope"></demo-scope>
+      <demo-keys octaves="2" octave="4" for="synth"></demo-keys>
+      <wcs-midi auto data-wcs="eventToken.message: onMidi"></wcs-midi>
+    </div>
+
+    <h2>Mono bass — legato + glide, keys only</h2>
+    <div class="panel">
+      <wcs-audio id="bass" volume="0.6">
+        <wcs-osc type="square" note glide="0.06" out="bflt"></wcs-osc>
+        <wcs-osc type="sawtooth" note transpose="-12" glide="0.06" out="bflt"></wcs-osc>
+        <wcs-biquad id="bflt" type="lowpass" data-wcs="frequency: bassCutoff; q: bassResonance">
+          <wcs-env attack="0.005" decay="0.15" sustain="0.7" release="0.2"></wcs-env>
+        </wcs-biquad>
+
+        <wcs-analyser id="bscope" master></wcs-analyser>
+
+        <div class="controls">
+          <label><span>cutoff</span><input type="range" min="60" max="4000" step="1" data-wcs="value: bassCutoff"></label>
+          <label><span>resonance</span><input type="range" min="0.1" max="20" step="0.1" data-wcs="value: bassResonance"></label>
+        </div>
+      </wcs-audio>
+
+      <demo-scope for="bscope"></demo-scope>
+      <demo-keys octaves="2" octave="2" keyboard="off" for="bass"></demo-keys>
+    </div>
+  </wcs-state>
+
+  <p class="hint">
+    Built from <a href="https://www.npmjs.com/package/@wcstack/audio">@wcstack/audio</a>
+    and <a href="https://www.npmjs.com/package/@wcstack/midi">@wcstack/midi</a>.
+    The keyboard and the scope are this demo's own components — wcstack I/O nodes
+    carry no rendering, so drawing is the page's job. See the
+    <a href="README.md">README</a>. Audio starts on your first click or key press.
+  </p>
+
+  <script type="module" src="https://esm.run/@wcstack/audio/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/midi/auto"></script>
+  <script type="module" src="./demo-ui.js"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</body>
+</html>
