@@ -7,6 +7,7 @@
 - `packages/fetch/examples/` — `pagination`（5 スタック比較）, `users-crud`, `infinite-scroll`
 - `packages/speech/examples/` — `speech-echo`, `speak-highlight`
 - `packages/defined/examples/` — `defined-loader`
+- `packages/midi/examples/` — `midi-fader`
 - `packages/state/examples/` — バインディングの基礎
 
 すべてのデモはビルドレスで、パッケージを CDN から直接ロードします

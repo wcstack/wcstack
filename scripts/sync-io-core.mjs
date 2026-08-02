@@ -57,6 +57,7 @@ const PACKAGE_FILES = {
   magnetometer: CAPABILITY_ONLY,
   "ambient-light-sensor": CAPABILITY_ONLY,
   notification: CAPABILITY_ONLY,
+  midi: CAPABILITY_ONLY,
   wakelock: CAPABILITY_ONLY,
   tilt: CAPABILITY_ONLY,
   "screen-orientation": CAPABILITY_ONLY,

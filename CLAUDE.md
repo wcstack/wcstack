@@ -35,6 +35,7 @@ Each package lives under `packages/` and is independently built, tested, version
 - **`@wcstack/geolocation`** (`<wcs-geo>`) — Geolocation API
 - **`@wcstack/permission`** (`<wcs-permission>`) — Permissions API monitor
 - **`@wcstack/notification`** (`<wcs-notify>`) — Desktop notifications (Service Worker support)
+- **`@wcstack/midi`** (`<wcs-midi>`) — Web MIDI input/output (one tag for both directions; message decoding with velocity-0 note-off normalization)
 - **`@wcstack/intersection`** (`<wcs-intersect>`) — IntersectionObserver visibility
 - **`@wcstack/resize`** (`<wcs-resize>`) — ResizeObserver element-size
 - **`@wcstack/wakelock`** (`<wcs-wakelock>`) — Screen Wake Lock

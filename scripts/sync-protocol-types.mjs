@@ -30,7 +30,7 @@ const canonicalUpgradeTestPath = join(repoRoot, "protocol", "upgrade-properties.
 const TARGET_PACKAGES = [
   // 34 async-IO node packages
   "broadcast", "camera", "clipboard", "debounce", "defined", "fetch",
-  "geolocation", "intersection", "network", "notification", "permission", "resize",
+  "geolocation", "intersection", "midi", "network", "notification", "permission", "resize",
   "speech", "sse", "storage", "timer", "upload", "wakelock", "websocket", "worker",
   // batch 1 (target-resolution) / batch 4 (minimal monitor)
   "screen-orientation", "fullscreen", "picture-in-picture", "pointer-lock",

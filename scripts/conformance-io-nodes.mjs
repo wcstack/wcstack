@@ -30,7 +30,7 @@ const IO_NODES = [
   "accelerometer", "ambient-light-sensor", "broadcast", "camera", "clipboard",
   "contacts", "credential", "debounce", "defined", "eyedropper", "fetch",
   "fullscreen", "geolocation", "gyroscope", "idle", "intersection", "magnetometer",
-  "network", "notification", "permission", "picture-in-picture", "pointer-lock",
+  "midi", "network", "notification", "permission", "picture-in-picture", "pointer-lock",
   "resize", "screen-orientation", "share", "speech", "sse", "storage", "tilt",
   "timer", "upload", "wakelock", "websocket", "worker",
 ];
