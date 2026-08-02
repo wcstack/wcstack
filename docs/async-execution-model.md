@@ -6,7 +6,7 @@
   - **プロトコルには一切手を入れない**。wc-bindable-protocol（`IWcBindableProperty` / `IWcBindableCommand`）・command-token・event-token の語彙・型・構文の変更を本書は行わない（本書に基づく実装もこれらを変更してはならない — MUST NOT）
   - **既存ノードの実行時挙動の変更を要求しない**。既存実装は §12 で追認し、本書の規範と食い違う点は「逸脱」として記録する（既存実装が正）。適合のためのリファクタは任意
 - **なぜ存在するか**: [async-io-node-guidelines.md](./async-io-node-guidelines.md) は骨格（Core/Shell 分離・never-throw・`_gen` 世代ガード・`observe()/dispose()/ready`）を規範化した。しかし次の論点はノードごとの暗黙実装に留まっていた — (1) **排他方式**（古い実行と新しい実行の優先関係）、(2) **キャンセルの第一級手段**、(3) **再試行ポリシー**、(4) **タイムアウト**、(5) **エラー envelope と利用者中断の区別**。この5点が暗黙のままだと、新規ノードのたびに同じ問題（古い結果が新しい結果を上書きする・入力が連続変化する・切断後に処理が完了する・完了順が保証されない）を独自解決することになり、微妙に違う意味論が増殖する。本書はこれらに**名前と正規形**を与え、ノード集を「非同期処理の共通実行モデル」として揃える
-- **関連**: 骨格規約は [async-io-node-guidelines.md](./async-io-node-guidelines.md)（本書はその §3.3/§3.4/§3.6 を実行意味論の側から拡張する）。ノード別の発火タイミングの正本は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。複数オペレーションの並行追跡（本書のスコープ外）は [multi-promise-io-node-design.md](./multi-promise-io-node-design.md)
+- **関連**: 骨格規約は [async-io-node-guidelines.md](./async-io-node-guidelines.md)（本書はその §3.3/§3.4/§3.6 を実行意味論の側から拡張する）。本書の lane / commit 規則を順序付き入力・出力トレースと適合ベクトルへ写像する横断検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。ノード別の発火タイミングの正本は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。複数オペレーションの並行追跡（本書のスコープ外）は [multi-promise-io-node-design.md](./multi-promise-io-node-design.md)
 
 ---
 

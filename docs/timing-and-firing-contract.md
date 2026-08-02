@@ -3,6 +3,7 @@
 - **対象**: `@wcstack/state` の binder と、wc-bindable 準拠の非同期プリミティブタグ群（`@wcstack/fetch` / `@wcstack/intersection` ほか）を組み合わせて使うアプリ・example 作者
 - **状態**: 参照ドキュメント（リファレンス）。各項目は現行の参照実装の挙動を記述する。挙動を変える場合はこの文書も更新すること
 - **なぜ存在するか**: examples（特に [`state-search`](../examples/state-search) / [`state-intersect-scroll`](../examples/state-intersect-scroll)）は、各 README の API 表には載っていない「いつ・何回イベントが出るか」「何が同期で何が microtask か」「どの操作が冪等か」に依存して正しさを成立させている。これらが暗黙のままだとデモの長文コメントが文書不在の応急処置になり、利用者は内部実装を読まないと再現できない。本書はその契約を一枚に集約する
+- **関連**: 本書の発火順を test input / settle boundary として適合ベクトルへ写像する横断検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。I/O ノードの実行形・lane・commit 規則は [async-execution-model.md](./async-execution-model.md)
 - **TL;DR**: ① `loading-changed(true)` は「送信ごとに1回・await 前・無条件」。② auto-fetch は **microtask に遅延＋同一 url を de-dup**、明示トリガーは **即時・無条件（de-dup 迂回）**。③ `IntersectionObserver` のコールバックは **task**、`page` 前進が予約する auto-fetch は **microtask** なので前者は必ず後。④ `observe()` は同一 target+options で**冪等（新コールバックを出さない）**、強制再観測は `reobserve()`。⑤ data-wcs の初期バインド適用は別 microtask（`getBindingsReady()` で待てる）
 
 ---

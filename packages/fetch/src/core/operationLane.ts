@@ -20,10 +20,11 @@
  * 各パッケージのバンドルへ inline される (zero-runtime-dep / 自己完結 CDN を維持)。
  * 編集はこの正典に対して行い、`node scripts/sync-io-core.mjs` で再配布する。
  *
- * PoC 実装対象は fetch の `latest` policy のみ。queue / exhaust / overlap は
- * 「全 policy の lane unit」(§8 完了条件) として `operationLane.test.ts` が
- * 直接検証する。lane 自体は promise を実行せず、bookkeeping と guard の
- * 状態機械に徹する — 実際の非同期処理は Core が駆動し lane に照合する。
+ * 初期 PoC は fetch の `latest` policy から開始した。現在は4 policy 全てを
+ * `operationLane.test.ts` が直接検証し、生成コピーを fetch / upload / share /
+ * contacts / credential / eyedropper が利用する。lane 自体は promise を実行せず、
+ * bookkeeping と guard の状態機械に徹する — 実際の非同期処理は Core が駆動し
+ * lane に照合する。
  */
 
 /** §5: 排他モードの語彙。async-execution-model.md §5 の 4 モードに対応 (parallel は予約語・スコープ外)。 */
