@@ -1,10 +1,9 @@
 # synth-playground — a modular synthesizer made of HTML tags
 
-A **toy experiment**, not a published wcstack package: oscillators, filters,
-envelopes, LFOs, a mixer and a delay as custom elements over the Web Audio
-API, wired the wcstack way — declaratively, in markup, with zero build and
-zero dependencies. Play it from the on-screen keys, your computer keyboard,
-or a MIDI keyboard.
+An 8-voice polyphonic synth and a mono bass, built from
+[`@wcstack/audio`](../../packages/audio/) and [`@wcstack/midi`](../../packages/midi/)
+with zero build and zero dependencies. Play it from the on-screen keys, your
+computer keyboard, or a MIDI keyboard.
 
 ```bash
 npx serve examples/synth-playground
@@ -12,80 +11,46 @@ npx serve examples/synth-playground
 ```
 
 Audio starts on your first click / key press (browser autoplay policy).
-Checked in Chromium; `<wcs-midi>` needs Web MIDI (Chromium-only).
+`<wcs-midi>` needs Web MIDI (Chromium-only); everything else works anywhere.
 
-## Wiring model
+> This started as a throwaway experiment with its own 1,000-line `wcs-synth.js`.
+> That file is gone — the tags it prototyped are now a published package, and the
+> decision that made the promotion possible is recorded in
+> [ADR-14](../../docs/architecture-hardening/14-handle-graph-wiring.md).
 
-Two rules cover every patch:
+## What to look at
 
-1. **Nesting is the signal chain.** A parent tag's audio output feeds each
-   nested child, so signal flows *downward* through the markup. A leaf tag
-   (no chain children, no `out=`) connects to the synth's master output.
+**The page is the patch.** View source and you can read the whole instrument:
+nesting is the signal chain, `out="bus"` sends audio across the graph, and
+`param="frequency"` hangs an LFO on the filter it modulates.
 
-   ```html
-   <wcs-synth>
-     <wcs-osc type="sawtooth" frequency="220">  <!-- source          -->
-       <wcs-filter type="lowpass" frequency="800">  <!-- ...filtered -->
-         <wcs-gain gain="0.5"></wcs-gain>       <!-- ...attenuated, then out -->
-       </wcs-filter>
-     </wcs-osc>
-   </wcs-synth>
-   ```
+**Structure is declared, values are reactive.** Every slider is an ordinary
+`<input>` bound to `<wcs-state>` with `data-wcs`; the state drives the audio
+nodes as plain property writes. Nothing on this page calls a Web Audio API.
 
-2. **Anything nesting can't express is routed by id.**
-   - `out="bus"` — send audio to the element with that id (many-to-one:
-     that's how several chains meet in a `<wcs-mixer>`).
-   - `out="vcf.frequency"` — drive any AudioParam anywhere.
-   - `param="frequency"` — modulator shorthand: drive the *parent's* param
-     (an LFO nested inside a filter, vibrato nested inside an oscillator).
+**Ordinary DOM lives inside the patch.** The `.controls` grid sits between
+`<wcs-gain>` and `<wcs-analyser>`. Adding markup there does *not* rebuild the
+graph — a structural change would cut every sounding voice, so the root filters
+its mutation observer down to audio elements.
 
-Polyphony: wrap a patch in `<wcs-voice poly="8">` and its subtree becomes a
-template — one fresh audio graph per held note, with envelope release and
-oldest-note stealing. Outside a voice the graph is live and monophonic
-(last-note priority, legato + optional `glide`).
+**Drawing is the page's job.** `demo-ui.js` holds `<demo-keys>` and
+`<demo-scope>` — deliberately *not* part of the package. wcstack I/O nodes carry
+no rendering, so `<wcs-analyser>` produces data and the demo paints it.
 
-## Tags
+**MIDI is independent.** `<wcs-midi>` turns messages into state; the `$on`
+handler decides that a note-on should play this synth. Nothing couples the two
+packages together.
 
-| Tag | Web Audio | Attributes |
-|-----|-----------|------------|
-| `<wcs-synth>` | AudioContext (shared) + master gain + limiter | `volume` |
-| `<wcs-voice>` | per-note graph instancing | `poly` |
-| `<wcs-osc>` | OscillatorNode | `type` `frequency` `detune` `note` (follow notes) `transpose` (semitones) `glide` (s) |
-| `<wcs-noise>` | looped white-noise buffer | — |
-| `<wcs-filter>` | BiquadFilterNode | `type` `frequency` `q` `gain` `detune` |
-| `<wcs-gain>` | GainNode | `gain` |
-| `<wcs-mixer>` | GainNode (named bus) | `gain` |
-| `<wcs-delay>` | DelayNode + feedback + dry/wet | `time` `feedback` `mix` |
-| `<wcs-shaper>` | WaveShaperNode (soft clip) | `amount` |
-| `<wcs-env>` | ADSR; in the chain = VCA, with `param=` = param envelope | `attack` `decay` `sustain` `release` `depth` `param` |
-| `<wcs-lfo>` | OscillatorNode + depth gain (always a modulator) | `type` `rate` `depth` `param` |
-| `<wcs-scope>` | AnalyserNode passthrough + canvas | `mode` (`wave`/`fft`) `master` (tap the master out) |
-| `<wcs-keys>` | on-screen keyboard (pointer, glissando, multi-touch) + computer keyboard (<kbd>A</kbd>–<kbd>;</kbd>, <kbd>Z</kbd>/<kbd>X</kbd> octave) | `octaves` `octave` `keyboard="off"` `for` |
-| `<wcs-midi>` | Web MIDI note input | `channel` `for` |
+## The patch
 
-All numeric attributes are live: change them (devtools, sliders, anything
-that writes attributes) and every running instance — including sounding
-voices — retunes with a short smoothing ramp.
+```
+poly synth (8 voices)
+  3 × wcs-osc ──out="vcf"──▶ wcs-biquad (lowpass)
+                               ├── wcs-lfo   param="frequency"   (cutoff wobble)
+                               └── wcs-env   out="bus"           (VCA)
+  wcs-gain#bus ──▶ wcs-delay ──▶ master
+  wcs-analyser[master] ──▶ demo-scope
 
-## Notes on the design
-
-- Each tag is a descriptor + attribute reactivity; the synth root compiles
-  the DOM into an audio graph (two passes: instantiate along the nesting,
-  then resolve id wires). `<wcs-voice>` re-runs that compiler per note, which
-  is what makes "markup as patch template" cheap.
-- Audio leaving a voice (default out *and* `out=` sends) is funneled through
-  a per-voice gain so note stealing can fade the whole voice.
-- A gateless voice patch gets an implicit 5 ms/80 ms safety envelope so it
-  can't sustain forever.
-- One AudioContext is shared by all `<wcs-synth>` elements (browsers cap
-  concurrent contexts); each synth keeps its own master gain + compressor
-  (ear protection). Master analyser taps are re-kicked on resume — Chromium
-  can silently drop edges into a sink-only AnalyserNode wired while the
-  context is suspended.
-- Structural changes (adding/removing tags, editing `out=`/`param=`) rebuild
-  the whole graph and cut sounding voices; parameter changes never rebuild.
-
-Fun follow-ups if the toy earns a second session: `wc-bindable` surfaces so
-`<wcs-state>` can drive a patch (`data-wcs="frequency: cutoff"`), a
-step-sequencer tag, pitch bend / mod wheel in `<wcs-midi>`, and an
-`<wcs-adsr-pad>` XY controller.
+mono bass
+  2 × wcs-osc (glide) ──out="bflt"──▶ wcs-biquad ──▶ wcs-env ──▶ master
+```

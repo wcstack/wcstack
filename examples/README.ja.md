@@ -59,7 +59,7 @@ await するのは避けてください — あの Promise は「永久に regis
 | [`signals-live-search/`](signals-live-search/) | signals + fetch | `node examples/signals-live-search/server.js` | :3000 |
 | [`signals-tilt-maze/`](signals-tilt-maze/) | signals × `state-tilt-maze` と同じ 4 センサーノード（コア差し替え比較） | 任意の静的サーバー（secure context 必須） | — |
 | [`ssr/`](ssr/) | @wcstack/server（SSR + ハイドレーション） | `cd examples/ssr && npm install && node server.js` | :3001 |
-| [`synth-playground/`](synth-playground/) | 🎹 お遊び: Web Audio を実験的 `<wcs-*>` タグ群にしたモジュラーシンセ（パッケージ非依存） | 任意の静的サーバー | — |
+| [`synth-playground/`](synth-playground/) | 🎹 audio + midi + state（マークアップで書くモジュラーシンセ） | 任意の静的サーバー | — |
 
 「任意の静的サーバー」のデモにはバックエンドが一切ありません —
 `http://localhost` で配信できれば何でも動きます。例:
