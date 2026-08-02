@@ -567,10 +567,10 @@ the results land in bindable state.
 
 - **30+ I/O tags** — `<wcs-fetch>` `<wcs-ws>` `<wcs-sse>` `<wcs-camera>` `<wcs-geo>` `<wcs-intersect>` … [full list](#packages)
 - **Standards only** — plain custom elements, zero runtime dependencies, no bundler
-- **Works inside React / Vue / Svelte / Solid** — every tag speaks [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol); thin adapters (written by the wcstack author — not a third-party ecosystem) wire outputs into framework state. [The 3 rules](docs/framework-adapter-integration.md)
-- **Opt-in upper layers** — like the binding style? [`@wcstack/state`](packages/state/), [`@wcstack/router`](packages/router/) and [`@wcstack/signals`](packages/signals/) scale it to a whole app
+- **Works inside React / Vue / Svelte / Solid** — every tag speaks [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol); thin adapters (written by the wcstack author — not a third-party ecosystem) wire outputs into framework state. [The 3 rules](./framework-adapter-integration.md)
+- **Opt-in upper layers** — like the binding style? [`@wcstack/state`](../packages/state/), [`@wcstack/router`](../packages/router/) and [`@wcstack/signals`](../packages/signals/) scale it to a whole app
 
-🌐 [Live demos](https://wcstack.github.io) · 📦 [npm](https://www.npmjs.com/org/wcstack) · 🤖 AI agents: start at [AGENTS.md](./AGENTS.md)
+🌐 [Live demos](https://wcstack.github.io) · 📦 [npm](https://www.npmjs.com/org/wcstack) · 🤖 AI agents: start at [AGENTS.md](../AGENTS.md)
 ```
 
 **ja（README.ja.md）**
@@ -591,10 +591,10 @@ I/O はタグがやり、結果はバインド可能な状態として届きま�
 
 - **30+ の I/O タグ** — `<wcs-fetch>` `<wcs-ws>` `<wcs-sse>` `<wcs-camera>` `<wcs-geo>` `<wcs-intersect>` …（[一覧](#パッケージ)）
 - **Web 標準だけ** — 素のカスタム要素・ランタイム依存ゼロ・バンドラー不要
-- **React / Vue / Svelte / Solid の中でも** — 全タグが wc-bindable-protocol を実装。薄いアダプタ（wcstack 作者の自作です — 第三者エコシステムではありません）で FW の状態に配線できます。[3 つのルール](docs/framework-adapter-integration.md)
+- **React / Vue / Svelte / Solid の中でも** — 全タグが wc-bindable-protocol を実装。薄いアダプタ（wcstack 作者の自作です — 第三者エコシステムではありません）で FW の状態に配線できます。[3 つのルール](./framework-adapter-integration.md)
 - **上位レイヤーは opt-in** — 気に入ったら `@wcstack/state`（data-wcs バインディング）・`@wcstack/router`・`@wcstack/signals` でアプリ全体へ
 
-🌐 [ライブデモ](https://wcstack.github.io) · 📦 npm · 🤖 AI エージェントはまず [AGENTS.md](./AGENTS.md)
+🌐 [ライブデモ](https://wcstack.github.io) · 📦 npm · 🤖 AI エージェントはまず [AGENTS.md](../AGENTS.md)
 ```
 
 設計判断: (1) 最初のコードは `<wcs-fetch>`（全買い手が痛みを知る API・サーバ不要で読める・fetch README の Quick Start と同一構文で嘘がない）。(2) 「What if…」H1 と Five Rules・Core Insight は削除せず 2 スクリーン目以降に温存（思想は購入理由でないが差別化資産）。(3) アダプタ自作の開示を bullet 内に恒常組み込み — HN で突かれる前に常設で言う。
