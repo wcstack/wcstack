@@ -45,6 +45,8 @@ React だけでなく複数 adapter で同時に別々の壊れ方をする。
   serializability と remote transport 対応は別軸である。
 
 分類結果は `state` 210、`event` 20、`handle` 1、合計231である。
+
+> **追補（2026-08-03・@wcstack/audio 追加時）**: 新規の `@wcstack/audio` は 11 タグを持つが、`handle` を **1件も増やさない**。ライブな `AudioNode` のグラフを内部に抱えながら、公開するのは `state`（context 状態・発音数・warnings・error）と `event`（noteOn / noteOff / analyser frame）だけで、ハンドルは Core が所有・破棄する。worker / websocket / broadcast と同じ形であり、§5.6 の adapter 別失敗モード（signals の同値 dedupe・RxJS の replay による資源保持・Qwik の serialize）を1つも新規に持ち込まない。判断の経緯は [ADR-14](14-handle-graph-wiring.md) G2。
 これは Phase 2 の metadata schema を採択する決定ではなく、配置・fallback・公開 API は後続の決定ゲートで確定する。
 
 ## 3. 全 surface の分類

@@ -42,6 +42,8 @@
 - **同値ガードのみで十分か**、debounce/throttle は利用者責務にするか（基本は利用者責務。filter で `notice@x|debounce(1000)` のように書かせる）
 - **permission / secure-context** の扱い。既存の4値 surface（`prompt` / `granted` / `denied` / `unsupported`）を流用するか
 - **autoTrigger**（クリック起動ショートカット）を持つか
+- **外部クロックを持つか**（オーディオスレッド等、メインスレッドの sync / microtask / task で表現できない独自の時間軸）。持つ場合は **desired のみ公開し、実効になる時刻を規定しない**（[timing-and-firing-contract.md §19.1](./timing-and-firing-contract.md)）。実効値を読み戻して publish してはならない（MUST NOT）— 読み値がレンダー単位に依存し、同値ガードが機能しなくなる
+- **ライブハンドルを扱うか**。扱う場合、既定は **Core が所有し、プロトコル境界に出さない**（worker / websocket / broadcast と同じ）。外へ渡す必要が実際に生じたときだけ command-token 引数素通しを足す（camera が唯一の例）。ハンドルが相互に接続されてグラフを成す場合は [ADR-14](./architecture-hardening/14-handle-graph-wiring.md) を先に読むこと — トポロジは値ではなく descriptor として表現する
 
 設計が固まったら `architecture-review` スキルや `protocol-spec-review` スキルでレビューしてから実装に入ることを推奨する。
 

@@ -386,3 +386,51 @@ Shell は constructor（= upgrade 時）で自分自身の `*-changed` / `:error
 つまり `wcs-raf` の tick は vsync に揃うが、`@wcstack/state` の event → `$on` → updater パイプラインを通った描画反映は**ちょうど 1 フレーム遅れる**。updater 自体は `queueMicrotask`（§4 の通り）だが、上流のどこかにタスク境界が存在することを意味する（未特定 — state 側の調査候補。同一フレーム flush にできれば全 I/O ノードのイベント駆動更新から 1 フレームの視覚遅延が消える）。
 
 帰結: (1) これは raf 固有ではなく、event-token / two-way 経由の書き込み一般の特性（旧 `<wcs-timer interval="16">` ループでも同じだった＝raf 移行による退行ではない）。(2) dt ベースの物理・ロジックの正しさには影響しない。視覚遅延 +1 フレーム（~16.7ms）のみ。(3) 検証方法: examples の迷路デモに対する Playwright プローブ（tick リスナーから `setTimeout(0)` で DOM を読む／次フレームで読む）。
+
+---
+
+## 19. @wcstack/audio — 適用時刻と再構築の契約（2026-08-03）
+
+対象: `<wcs-audio>` の値適用がいつ可聴になるか、どの DOM 変更がグラフ再構築を誘発するか。設計は [audio-tag-design.md](./audio-tag-design.md)、根拠は [ADR-14](./architecture-hardening/14-handle-graph-wiring.md)（G4/G5 採択済み）。
+
+### 19.1 外部クロックを持つノードは desired のみ公開し、適用時刻を規定しない（横断契約）
+
+**この節は audio 固有ではなく、独自クロック（オーディオスレッド等）を持つ全ノードに適用する。**
+
+> 入力プロパティへの書き込みは同期に受理され、getter は直ちに新しい値を返す（desired）。**その値が可聴（ないし実効）になる時刻は当該 API のレンダー単位と出力レイテンシに依存し、本契約では規定しない。** 実効値（actual）は公開しない。
+
+§18.4 の raf は「ちょうど 1 フレーム」と実測で固定できたが、audio のレンダークォンタム（128 サンプル）＋ `outputLatency` はハードウェア依存で固定値にできない。したがって「規定しない」ことを契約とする。
+
+帰結:
+- 同値ガードは **desired 値**で行う（`param.value` を読み戻さない）。
+- パラメータ更新は `setTargetAtTime(v, currentTime, 0.02)` で平滑化する。**この 20ms はクリック音防止のための契約の一部**であり、実装詳細ではない。
+- §15 wakelock の desired/actual 二相の**片側だけ**を公開する形（wakelock は actual 側の `held` を公開した。ここは逆）。
+
+### 19.2 rebuild を誘発する DOM 変更は列挙されたものだけ（MUST NOT 拡大）
+
+| 変更 | 反応 |
+|---|---|
+| 数値属性 / プロパティ（`frequency` `gain` `attack` …） | **live 更新**。発音中のボイスを含む全インスタンスへ適用 |
+| 構造属性（`id` `out` `param` `note` `master` `poly`） | **rebuild** |
+| audio タグの追加 / 削除 / 移動 | **rebuild** |
+| それ以外の DOM 変更 | **何もしない（MUST NOT rebuild）** |
+
+最後の行は装飾ではない。ルートの `MutationObserver` は `subtree: true` で張るが、**変異したノードが audio 要素かどうかで絞り込む**。絞り込まないと、コントロール用の `<div>` を1つ足しただけで発音中の音が切れる（原型 `wcs-synth.js` の実挙動）。
+
+### 19.3 rebuild は可聴な断絶を伴う
+
+グラフ再構築は発音中の全ボイスを破棄する。これは実装上の都合ではなく**契約として明示する**副作用であり、「構造は宣言するものであってアニメーションさせるものではない」という設計意図の裏返しである。
+
+### 19.4 rebuild は microtask で coalesce し、`setPatch` は冪等
+
+- 連続した DOM 編集は1回の再構築に束ねる。task ではなく microtask（§3 の横断契約）。
+- `setPatch()` は**トポロジだけを直列化した構造ハッシュ**で rebuild と live 更新を自動判別する。数値はハッシュに含めない。したがって呼び出し側は変更の種類を分類せずいつでもパッチ全体を再投入してよく、変化の無い再投入はコストゼロ（§12.2 resize の冪等 `observe()` と同型）。
+- 実際に `setPatch` が呼ばれる経路は2つある（各要素の `connectedCallback` と `MutationObserver` の配送）。構造ハッシュが一致する2回目以降は rebuild しないので、**ノードが作り直されるのは1度だけ**。
+
+### 19.5 `dispose()` は終端ではない
+
+`dispose()` はグラフを破棄し共有 context の `statechange` 購読も外すが、その後の `observe()` / `setPatch()` は作り直す。要素が DOM 内で移動しただけで二度と鳴らなくなるのは受け入れられないため（§11.3 permission の `dispose()` → `observe()` 再開と同型）。
+
+### 19.6 ボイス回収は audio クロック基準（タイマー非依存）
+
+解放済みボイスは `freeAt = noteOff + release * 3 + 0.3`（audio クロック）を過ぎたときにだけ回収する。**wall-clock タイマーは使わない**: バックグラウンドタブでは `setTimeout` が約1分間隔まで絞られる一方オーディオは鳴り続けるため、タイマー方式だと押鍵ごとにボイスが漏れる。

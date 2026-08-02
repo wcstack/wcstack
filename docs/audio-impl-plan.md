@@ -1,6 +1,11 @@
 # 実装計画: `@wcstack/midi` → `@wcstack/audio`
 
-- **状態**: 🟢 実行中（2026-08-02）。前提の [handle graph wiring ADR](./architecture-hardening/14-handle-graph-wiring.md) は G1〜G6 すべて採択済みで、全 Phase が着手可能。
+- **状態**: ✅ 完了（2026-08-03）。Phase A〜E すべて着地。
+  - **Phase A** `@wcstack/midi`: 127 tests / カバレッジ 100-100-100-100 / conformance 逸脱なし
+  - **Phase B** PoC: 6/6（3回反復 18/18）
+  - **Phase C** `@wcstack/audio`: 186 tests / カバレッジ 100-98.75-100-100 / conformance 逸脱なし / 実ブラウザ e2e 7本
+  - **Phase D** example 移植: `wcs-synth.js` 削除・e2e 6本
+  - **Phase E** 規範追補: timing-and-firing-contract §19 / guidelines §1 / 棚卸し 12 / CLAUDE.md
 - **設計正本**: [midi-tag-design.md](./midi-tag-design.md) / [audio-tag-design.md](./audio-tag-design.md) / [ADR 14](./architecture-hardening/14-handle-graph-wiring.md)
 - **原型**: [examples/synth-playground/wcs-synth.js](../examples/synth-playground/wcs-synth.js)（1063行 JS・Playwright スモーク 14/14 安定）。挙動は実証済みであり、本計画は **「動く原型を wcstack の骨格に載せ替える」** 作業を規定する。ゼロからの設計ではない。
 
