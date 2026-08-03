@@ -14,11 +14,11 @@
 //   node scripts/npm-trust-setup.mjs --run     # execute them (OTP prompts pass through)
 //
 // Requires npm >= 11.5.1 — `npm trust` does not exist in npm 10, which is what
-// Node 22 bundles. Idempotent: re-registering a configured package is a no-op,
-// and --check is read-only.
+// Node 22 bundles. --check is read-only, and --run registers only what is still
+// missing, so an interrupted run is resumed by re-running it.
 //
-// A package that has never been published cannot be registered; publish its
-// first version manually, then re-run. --check reports those separately.
+// A package that has never been published cannot be registered; it is reported
+// separately and skipped until its first release goes out.
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -66,15 +66,22 @@ const WIN = process.platform === "win32";
 // the Node install directory):
 //   WCS_NPM="npx npm@11" node scripts/npm-trust-setup.mjs --run
 // Auth is read from the user's ~/.npmrc either way.
-const CLI = (process.env.WCS_NPM ?? (WIN ? "npm.cmd" : "npm")).split(" ");
+const LOCAL_NPM = WIN ? "npm.cmd" : "npm";
+const CLI = (process.env.WCS_NPM ?? LOCAL_NPM).split(" ");
 
-function npm(args, opts = {}) {
-  return spawnSync(CLI[0], [...CLI.slice(1), ...args], {
+function spawnNpm(cli, args, opts = {}) {
+  return spawnSync(cli[0], [...cli.slice(1), ...args], {
     encoding: "utf8",
     shell: WIN,
     ...opts,
   });
 }
+
+// `npm trust` — needs the overridable, version-gated CLI.
+const npm = (args, opts) => spawnNpm(CLI, args, opts);
+// Reads that any npm can do. Kept on the local binary so a `npx npm@11`
+// override does not pay npx startup twice per package.
+const localNpm = (args, opts) => spawnNpm([LOCAL_NPM], args, opts);
 
 function requireNpm11() {
   const { stdout } = npm(["--version"]);
@@ -93,43 +100,43 @@ function requireNpm11() {
 
 const targets = publishTargets();
 
+// Trusted publishing can only be configured for a package that already exists
+// on the registry, so a package awaiting its first release is not a failure —
+// it is simply not registrable yet, and saying so is the whole point of
+// separating this from a real error. `npm view` is an unauthenticated read, so
+// this classification holds even before `npm login`.
+const isPublished = (name) => localNpm(["view", name, "version"]).status === 0;
+
+// "configured" | "unregistered" | "unpublished" for one package.
+function classify(name) {
+  if (!isPublished(name)) return "unpublished";
+  const { status, stdout, stderr } = npm(["trust", "list", name]);
+  const output = `${stdout ?? ""}${stderr ?? ""}`;
+  // `npm trust list` is an authenticated read. Without a login every package
+  // comes back as an error, which would otherwise be reported as 45
+  // unregistered packages — a report that looks like real data.
+  if (/E401|ENEEDAUTH|must be logged in/i.test(output)) {
+    console.error("not logged in to npm — run `npm login`, then re-run");
+    process.exit(1);
+  }
+  return status === 0 && /github/i.test(output) ? "configured" : "unregistered";
+}
+
 if (check) {
   requireNpm11();
-  const configured = [];
-  const missing = [];
-  const unpublished = [];
-  for (const name of targets) {
-    const { status, stdout, stderr } = npm(["trust", "list", name]);
-    const output = `${stdout ?? ""}${stderr ?? ""}`;
-    // `npm trust list` is an authenticated read. Without a login every package
-    // comes back as an error, which would otherwise be reported as 45
-    // unregistered packages — a report that looks like real data.
-    if (/E401|ENEEDAUTH|must be logged in/i.test(output)) {
-      console.error("not logged in to npm — run `npm login`, then re-run --check");
-      process.exit(1);
-    }
-    if (status !== 0) {
-      // A 404 means the package is not on the registry yet, which is a
-      // different problem from "published but unregistered" — it needs a manual
-      // first publish before it can be registered at all.
-      (/E404|not found/i.test(output) ? unpublished : missing).push(name);
-    } else if (/github/i.test(output)) {
-      configured.push(name);
-    } else {
-      missing.push(name);
-    }
-  }
-  for (const name of configured) console.log(`ok         ${name}`);
-  for (const name of missing) console.log(`UNREGISTERED ${name}`);
-  for (const name of unpublished) console.log(`UNPUBLISHED  ${name}`);
+  const by = { configured: [], unregistered: [], unpublished: [] };
+  for (const name of targets) by[classify(name)].push(name);
+  for (const name of by.configured) console.log(`ok           ${name}`);
+  for (const name of by.unregistered) console.log(`UNREGISTERED ${name}`);
+  for (const name of by.unpublished) console.log(`UNPUBLISHED  ${name}`);
   console.log(
-    `\n${configured.length}/${targets.length} configured` +
-      (missing.length ? `, ${missing.length} unregistered` : "") +
-      (unpublished.length ? `, ${unpublished.length} not yet on the registry` : ""),
+    `\n${by.configured.length}/${targets.length} configured` +
+      (by.unregistered.length ? `, ${by.unregistered.length} unregistered` : "") +
+      (by.unpublished.length ? `, ${by.unpublished.length} awaiting a first release` : ""),
   );
   // Non-zero while any target is still publishing on a token, so this doubles
   // as the go/no-go gate for dropping NODE_AUTH_TOKEN from release.yml.
-  process.exit(missing.length + unpublished.length === 0 ? 0 : 1);
+  process.exit(targets.length === by.configured.length ? 0 : 1);
 }
 
 const argsFor = (name) => [
@@ -150,20 +157,50 @@ if (!run) {
 }
 
 requireNpm11();
-let failed = 0;
+
+// Classify first, then register only what needs it. Registration prompts for a
+// 2FA OTP per package and an OTP is valid for ~30s, so a run over 45 packages
+// is expected to be interrupted part-way — re-running must not walk the whole
+// list again asking for an OTP on packages that are already done. Packages
+// awaiting a first release are skipped rather than attempted: the registration
+// would come back as a bare E404, which reads like a broken script instead of
+// "this package has not been released yet".
+const pending = [];
+const unpublished = [];
+let alreadyConfigured = 0;
 for (const name of targets) {
+  const state = classify(name);
+  if (state === "configured") alreadyConfigured += 1;
+  else if (state === "unpublished") unpublished.push(name);
+  else pending.push(name);
+}
+console.log(
+  `${alreadyConfigured}/${targets.length} already configured` +
+    (pending.length ? ` — registering ${pending.length}` : "") +
+    (unpublished.length ? `, skipping ${unpublished.length} awaiting a first release` : ""),
+);
+
+let failed = 0;
+for (const name of pending) {
   console.log(`\n=== ${name}`);
-  // stdio inherited so the 2FA OTP prompt reaches the terminal. Each command is
-  // its own registration, so a failure part-way is resumable: re-run and the
-  // already-configured packages are no-ops.
+  // stdio inherited so the 2FA OTP prompt reaches the terminal.
   const { status } = npm(argsFor(name), { stdio: "inherit" });
   if (status !== 0) {
     failed += 1;
     console.error(`failed: ${name}`);
   }
 }
-if (failed) {
-  console.error(`\n${failed}/${targets.length} failed — re-run to retry (configured ones are no-ops)`);
-  process.exit(1);
+if (unpublished.length) {
+  console.error(
+    `\n${unpublished.length} package(s) awaiting a first release — publish, then re-run:\n` +
+      unpublished.map((n) => `  ${n}`).join("\n"),
+  );
 }
-console.log(`\nAll ${targets.length} packages registered.`);
+if (failed) {
+  console.error(`\n${failed}/${pending.length} failed — re-run to retry the rest`);
+}
+const done = alreadyConfigured + pending.length - failed;
+console.log(`\n${done}/${targets.length} packages registered.`);
+// Non-zero while anything is still unregistered, so this agrees with the
+// --check gate instead of reporting a clean run that leaves packages on tokens.
+process.exit(done === targets.length ? 0 : 1);
