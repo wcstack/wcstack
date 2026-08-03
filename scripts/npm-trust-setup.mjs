@@ -20,6 +20,13 @@
 // Node 22 bundles. --check is read-only, and --run registers only what is still
 // missing, so an interrupted run is resumed by re-running it.
 //
+// The OTP session npm opens is short, and every package costs one round trip,
+// so CLI startup is not free at this list length: `npx npm@11` adds ~0.9s per
+// call against ~0.2s for an installed copy. Worth doing once:
+//   npm install npm@11 --prefix .npm-tools --no-save
+//   WCS_NPM="node .npm-tools/node_modules/npm/bin/npm-cli.js" \
+//     node scripts/npm-trust-setup.mjs --check
+//
 // A package that has never been published cannot be registered; it is reported
 // separately and skipped until its first release goes out.
 
@@ -139,10 +146,35 @@ const isPublished = (name) => localNpm(["view", name, "version"]).status === 0;
 // session expired" and "this package does not exist" decides what to do next.
 const unreadable = new Map();
 
+// npm asks for the one-time password by opening a browser flow, and it only
+// offers that flow when it is attached to a terminal. Reads here run with piped
+// stdio so their output can be classified, which makes them non-interactive:
+// they fail with EOTP instead of prompting. So the first EOTP hands one call
+// back to the terminal, the user completes the OTP there, and the short session
+// that opens covers the rest of the sweep.
+let primed = false;
+function primeSession(name) {
+  if (primed) return false;
+  primed = true;
+  console.error(
+    "\nnpm needs a one-time password for trust operations and can only ask for it\n" +
+      "on a terminal. Complete it once below; the session it opens covers the rest\n" +
+      "of this run.\n",
+  );
+  return npm(["trust", "list", name], { stdio: "inherit" }).status === 0;
+}
+
+function readTrust(name) {
+  const { status, stdout, stderr } = npm(["trust", "list", name]);
+  return { status, output: `${stdout ?? ""}${stderr ?? ""}` };
+}
+
 function classify(name) {
   if (!isPublished(name)) return "unpublished";
-  const { status, stdout, stderr } = npm(["trust", "list", name]);
-  const output = `${stdout ?? ""}${stderr ?? ""}`;
+  let { status, output } = readTrust(name);
+  if (status !== 0 && /EOTP/i.test(output) && primeSession(name)) {
+    ({ status, output } = readTrust(name));
+  }
   if (status !== 0) {
     unreadable.set(name, output.trim());
     return "unknown";
@@ -157,11 +189,14 @@ function reportUnreadable() {
     const line = error.split("\n").find((l) => /npm error/i.test(l)) ?? error.split("\n")[0] ?? "";
     console.error(`  ${name}: ${line.trim()}`);
   }
-  if ([...unreadable.values()].some((e) => /EOTP|E401|ENEEDAUTH/i.test(e))) {
+  if ([...unreadable.values()].some((e) => /EOTP/i.test(e))) {
     console.error(
-      "\n`npm trust` needs a live authenticated session, and one OTP window does not\n" +
-        "cover every package. Run `npm login` again, then resume on just these:",
+      "\nThe one-time password could not be completed. npm opens it as a browser\n" +
+        "flow and only offers it on a terminal, so run this directly in a shell —\n" +
+        "not through a wrapper that captures output. Then resume on just these:",
     );
+  } else if ([...unreadable.values()].some((e) => /E401|ENEEDAUTH/i.test(e))) {
+    console.error("\nNot logged in — run `npm login`, then resume on just these:");
   } else {
     console.error("\nResume on just these:");
   }

@@ -6,6 +6,8 @@ examples/**/dist/
 packages/*/examples/**/dist/
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+# Local npm 11 copy for scripts/npm-trust-setup.mjs (Node 22 bundles npm 10)
+/.npm-tools/
 # Playwright artifacts when run from the repo root instead of e2e/
 /test-results/
 /playwright-report/
