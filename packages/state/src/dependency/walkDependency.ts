@@ -13,6 +13,7 @@ import { IListDiff, IListIndex } from "../list/types";
 import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
+import { getTopologicalRanks } from "./topologicalRank";
 import { SearchType } from "./types";
 
 const MAX_DEPENDENCY_DEPTH = 1000;
@@ -98,6 +99,8 @@ type Context = {
   readonly stateProxy: IStateProxy,
   readonly searchType: SearchType,
   readonly listExpansion: ListExpansion,
+  /** パス → トポロジカル順位。訪問順の決定に使う（topologicalRank.ts 参照） */
+  readonly ranks: ReadonlyMap<string, number>,
 }
 
 /**
@@ -190,160 +193,189 @@ function getMovedRowExpansionPaths(
   return result ?? EMPTY_PATH_INFOS;
 }
 
-type StackEntry = { address: IStateAddress, depth: number };
-
 function _walkDependency(
   context: Context,
   startAddress: IStateAddress,
   callback: (address: IStateAddress) => void
 ): void {
-  const stack: StackEntry[] = [{ address: startAddress, depth: 0 }];
+  // rank ごとのバケットで訪問する。辺 (u → v) では必ず rank(u) < rank(v) なので、
+  // バケット r を処理する時点で rank < r のパスは全て dirty 化済みになる
+  // ＝ ここでリスト実体を読んでも入力が揃っている（topologicalRank.ts 参照）。
+  const buckets: (IStateAddress[] | undefined)[] = [];
+  const ranks = context.ranks;
 
-  while (stack.length > 0) {
-    const { address, depth } = stack.pop()!;
-    if (depth > MAX_DEPENDENCY_DEPTH) {
-      raiseError(`Maximum dependency depth of ${MAX_DEPENDENCY_DEPTH} exceeded. Possible circular dependency detected at path: ${address.pathInfo.path}`);
+  const enqueue = (address: IStateAddress, minRank: number): void => {
+    let rank = ranks.get(address.pathInfo.path) ?? minRank;
+    if (rank < minRank) {
+      // 循環など rank が先行関係を表せないケース。現在のバケットに載せて
+      // 同一ループ内で処理する（打ち切りは visited が担う）。
+      rank = minRank;
     }
-    if (context.visited.has(address)) {
+    (buckets[rank] ??= []).push(address);
+  };
+
+  enqueue(startAddress, 0);
+
+  // 依存アドレスを収集するための一時バッファ（アドレスごとに使い回す）
+  const nextEntries: IStateAddress[] = [];
+
+  for (let rank = 0; rank < buckets.length; rank++) {
+    const bucket = buckets[rank];
+    if (bucket === undefined) {
       continue;
     }
-    context.visited.add(address);
-    callback(address);
-    const sourcePath = address.pathInfo.path;
-    const nextDepth = depth + 1;
-
-    // 依存アドレスを逆順でpushするための一時バッファ
-    const nextEntries: StackEntry[] = [];
-
-    /**
-     * パスから依存関係をたどる
-     * users.*.name <= users.* <= users
-     * ただし、users がリストであれば users.* の依存関係は展開する
-     */
-    const staticDeps = context.staticMap.get(sourcePath);
-    if (staticDeps) {
-      for(const dep of staticDeps) {
-        const depPathInfo = getPathInfo(dep);
-        if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
-          //expand indexes
-          const newValue = context.stateProxy[getByAddressSymbol](address);
-          const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
-          const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
-          const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-          const listDiff = createListDiff(address.listIndex, lastValue, newValue);
-          const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
-          for(const listIndex of selection.fullRows) {
-            const depAddress = createStateAddress(depPathInfo, listIndex);
-            context.result.add(depAddress);
-            nextEntries.push({ address: depAddress, depth: nextDepth });
-          }
-          if (selection.movedRows !== null) {
-            const movedPathInfos = getMovedRowExpansionPaths(context, dep, depPathInfo);
-            if (movedPathInfos === null) {
-              // ネスト配下に index 依存 getter: 安全側で行全体を展開（従来挙動）
-              for(const listIndex of selection.movedRows) {
-                const depAddress = createStateAddress(depPathInfo, listIndex);
-                context.result.add(depAddress);
-                nextEntries.push({ address: depAddress, depth: nextDepth });
-              }
-            } else if (movedPathInfos.length > 0) {
-              // 位置のみ変わった行は index 依存 getter のパスだけを展開する
-              for(const listIndex of selection.movedRows) {
-                for(const pathInfo of movedPathInfos) {
-                  const depAddress = createStateAddress(pathInfo, listIndex);
-                  context.result.add(depAddress);
-                  nextEntries.push({ address: depAddress, depth: nextDepth });
-                }
-              }
-            }
-            // movedPathInfos が空: index を読む getter が subtree に無い =
-            // 位置のみ変わった行の値は不変。展開・dirty 化とも不要。
-          }
-        } else {
-          const depAddress = createStateAddress(depPathInfo, address.listIndex);
-          context.result.add(depAddress);
-          nextEntries.push({ address: depAddress, depth: nextDepth });
-        }
+    // 同一バケットへの push（循環時）で伸びるため length は都度読む
+    for (let cursor = 0; cursor < bucket.length; cursor++) {
+      const address = bucket[cursor];
+      if (context.visited.has(address)) {
+        continue;
+      }
+      context.visited.add(address);
+      callback(address);
+      nextEntries.length = 0;
+      _collectDependencies(context, address, nextEntries);
+      for (let i = 0; i < nextEntries.length; i++) {
+        enqueue(nextEntries[i], rank + 1);
       }
     }
-    /**
-     * 動的依存関係をたどる
-     * 動的依存関係は、getterの実行時に決定される
-     *
-     * source,           target
-     *
-     * products.*.price => products.*.tax
-     * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
-     *
-     * products.*.price => products.summary
-     * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
-     *
-     * categories.*.name => categories.*.products.*.categoryName
-     * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
-     */
-    const dynamicDeps = context.dynamicMap.get(sourcePath);
-    if (dynamicDeps) {
-      for(const dep of dynamicDeps) {
-        const depPathInfo = getPathInfo(dep);
-        const listIndexes: (IListIndex | null)[] = [];
-        if (depPathInfo.wildcardCount > 0) {
-          // ワイルドカードを含む依存関係の処理
-          // 同じ親を持つかをパスの集合積で判定する
-          // polyfills.tsにてSetのintersectionメソッドを定義している
-          const wildcardLen = calcWildcardLen(address.pathInfo, depPathInfo);
-          const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
-          if (expandable) {
-            let listIndex: IListIndex | null;
-            if (wildcardLen > 0) {
-              // categories.*.name => categories.*.products.*.categoryName
-              // ワイルドカードを含む同じ親（products.*）を持つのが、
-              // さらに下位にワイルドカードがあるので展開する
-              if (address.listIndex === null) {
-                raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
-              }
-              listIndex = address.listIndex!.at(wildcardLen - 1);
-            } else {
-              // selectedIndex => items.*.selected
-              // 同じ親を持たない場合はnullから開始
-              listIndex = null;
+  }
+}
+
+/**
+ * address の依存アドレスを nextEntries に集め、context.result にも登録する。
+ * リスト展開（list → list.*）と動的依存のワイルドカード展開はここで値を読むが、
+ * 呼び出し元がトポロジカル順を保証しているため入力は揃っている。
+ */
+function _collectDependencies(
+  context: Context,
+  address: IStateAddress,
+  nextEntries: IStateAddress[],
+): void {
+  const sourcePath = address.pathInfo.path;
+
+  /**
+   * パスから依存関係をたどる
+   * users.*.name <= users.* <= users
+   * ただし、users がリストであれば users.* の依存関係は展開する
+   */
+  const staticDeps = context.staticMap.get(sourcePath);
+  if (staticDeps) {
+    for(const dep of staticDeps) {
+      const depPathInfo = getPathInfo(dep);
+      if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
+        //expand indexes
+        const newValue = context.stateProxy[getByAddressSymbol](address);
+        const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
+        const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
+        const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
+        const listDiff = createListDiff(address.listIndex, lastValue, newValue);
+        const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
+        for(const listIndex of selection.fullRows) {
+          const depAddress = createStateAddress(depPathInfo, listIndex);
+          context.result.add(depAddress);
+          nextEntries.push(depAddress);
+        }
+        if (selection.movedRows !== null) {
+          const movedPathInfos = getMovedRowExpansionPaths(context, dep, depPathInfo);
+          if (movedPathInfos === null) {
+            // ネスト配下に index 依存 getter: 安全側で行全体を展開（従来挙動）
+            for(const listIndex of selection.movedRows) {
+              const depAddress = createStateAddress(depPathInfo, listIndex);
+              context.result.add(depAddress);
+              nextEntries.push(depAddress);
             }
-            const expandContext: ExpandContext = {
-              stateName: context.stateName,
-              stateElement: context.stateElement,
-              targetPathInfo: depPathInfo,
-              targetListIndexes: [],
-              wildcardPaths: depPathInfo.wildcardPaths,
-              wildcardParentPaths: depPathInfo.wildcardParentPaths,
-              stateProxy: context.stateProxy,
-              searchType: context.searchType,
-            };
-            _walkExpandWildcard(expandContext, wildcardLen, listIndex);
-            listIndexes.push(...expandContext.targetListIndexes);
-          } else {
-            // products.*.price => products.*.tax
-            // ワイルドカードを含む同じ親（products.*）を持つので、リストインデックスは引き継ぐ
+          } else if (movedPathInfos.length > 0) {
+            // 位置のみ変わった行は index 依存 getter のパスだけを展開する
+            for(const listIndex of selection.movedRows) {
+              for(const pathInfo of movedPathInfos) {
+                const depAddress = createStateAddress(pathInfo, listIndex);
+                context.result.add(depAddress);
+                nextEntries.push(depAddress);
+              }
+            }
+          }
+          // movedPathInfos が空: index を読む getter が subtree に無い =
+          // 位置のみ変わった行の値は不変。展開・dirty 化とも不要。
+        }
+      } else {
+        const depAddress = createStateAddress(depPathInfo, address.listIndex);
+        context.result.add(depAddress);
+        nextEntries.push(depAddress);
+      }
+    }
+  }
+  /**
+   * 動的依存関係をたどる
+   * 動的依存関係は、getterの実行時に決定される
+   *
+   * source,           target
+   *
+   * products.*.price => products.*.tax
+   * get "products.*.tax"() { return this["products.*.price"] * 0.1; }
+   *
+   * products.*.price => products.summary
+   * get "products.summary"() { return this.$getAll("products.*.price", []).reduce(sum); }
+   *
+   * categories.*.name => categories.*.products.*.categoryName
+   * get "categories.*.products.*.categoryName"() { return this["categories.*.name"]; }
+   */
+  const dynamicDeps = context.dynamicMap.get(sourcePath);
+  if (dynamicDeps) {
+    for(const dep of dynamicDeps) {
+      const depPathInfo = getPathInfo(dep);
+      const listIndexes: (IListIndex | null)[] = [];
+      if (depPathInfo.wildcardCount > 0) {
+        // ワイルドカードを含む依存関係の処理
+        // 同じ親を持つかをパスの集合積で判定する
+        // polyfills.tsにてSetのintersectionメソッドを定義している
+        const wildcardLen = calcWildcardLen(address.pathInfo, depPathInfo);
+        const expandable = (depPathInfo.wildcardCount - wildcardLen) >= 1;
+        if (expandable) {
+          let listIndex: IListIndex | null;
+          if (wildcardLen > 0) {
+            // categories.*.name => categories.*.products.*.categoryName
+            // ワイルドカードを含む同じ親（products.*）を持つのが、
+            // さらに下位にワイルドカードがあるので展開する
             if (address.listIndex === null) {
               raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
             }
-            const listIndex = address.listIndex.at(wildcardLen - 1);
-            listIndexes.push(listIndex);
+            listIndex = address.listIndex!.at(wildcardLen - 1);
+          } else {
+            // selectedIndex => items.*.selected
+            // 同じ親を持たない場合はnullから開始
+            listIndex = null;
           }
+          const expandContext: ExpandContext = {
+            stateName: context.stateName,
+            stateElement: context.stateElement,
+            targetPathInfo: depPathInfo,
+            targetListIndexes: [],
+            wildcardPaths: depPathInfo.wildcardPaths,
+            wildcardParentPaths: depPathInfo.wildcardParentPaths,
+            stateProxy: context.stateProxy,
+            searchType: context.searchType,
+          };
+          _walkExpandWildcard(expandContext, wildcardLen, listIndex);
+          listIndexes.push(...expandContext.targetListIndexes);
         } else {
-          // products.*.tax => currentTaxRate
-          // 同じ親を持たないので、リストインデックスはnull
-          listIndexes.push(null);
+          // products.*.price => products.*.tax
+          // ワイルドカードを含む同じ親（products.*）を持つので、リストインデックスは引き継ぐ
+          if (address.listIndex === null) {
+            raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
+          }
+          const listIndex = address.listIndex.at(wildcardLen - 1);
+          listIndexes.push(listIndex);
         }
-        for(const listIndex of listIndexes) {
-          const depAddress = createStateAddress(depPathInfo, listIndex);
-          context.result.add(depAddress);
-          nextEntries.push({ address: depAddress, depth: nextDepth });
-        }
+      } else {
+        // products.*.tax => currentTaxRate
+        // 同じ親を持たないので、リストインデックスはnull
+        listIndexes.push(null);
       }
-    }
-
-    // 逆順でpushして、元の再帰と同じ探索順序を保つ
-    for(let i = nextEntries.length - 1; i >= 0; i--) {
-      stack.push(nextEntries[i]);
+      for(const listIndex of listIndexes) {
+        const depAddress = createStateAddress(depPathInfo, listIndex);
+        context.result.add(depAddress);
+        nextEntries.push(depAddress);
+      }
     }
   }
 }
@@ -369,7 +401,11 @@ export function walkDependency(
     callback(startAddress);
     return [];
   }
+  // パス単位のトポロジカル順位。値を一切読まずに求まり、依存グラフは追記のみで
+  // 成長するため epoch でメモ化される（topologicalRank.ts）。
+  const ranks = getTopologicalRanks(startPath, staticDependency, dynamicDependency, MAX_DEPENDENCY_DEPTH);
   const context: Context = {
+    ranks: ranks,
     stateName: stateName,
     stateElement: stateElement,
     staticMap: staticDependency,

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Calendar</title>
+    <link rel="stylesheet" href="../shared/theme.css"/>
+    <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+    <style>
+      .calendar-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .calendar-nav .month-label {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #ffffff;
+      }
+      table.calendar td {
+        text-align: center;
+        height: 2.75rem;
+        border: 1px solid #2a2a4a;
+      }
+      table.calendar td.weekend {
+        color: #f0a0c0;
+      }
+      table.calendar td.blank {
+        background-color: #141a2e;
+      }
+      table.calendar td.today {
+        background-color: #4c3fbf;
+        color: #ffffff;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+const now = new Date();
+const TODAY = { year: now.getFullYear(), month: now.getMonth() + 1, date: now.getDate() };
+
+export default {
+  // The only mutable state of the whole calendar.
+  year: TODAY.year,
+  month: TODAY.month, // 1-12
+  dayNames: DAY_NAMES,
+
+  // All getters are cached per (path, index tuple), so every cell is computed
+  // once and recomputed only when one of its inputs is invalidated.
+  // Dependency graph:
+  // year, month -> offset, lastDate, monthLabel
+  // offset, lastDate -> weekCount -> weeks -> weeks.*.days
+  // offset, lastDate, $1, $2 -> weeks.*.days.*.date
+  // weeks.*.days.*.date -> weeks.*.days.*.text, weeks.*.days.*.isBlank
+  // $2 -> weeks.*.days.*.dayOfWeek -> weeks.*.days.*.isWeekend
+  // weeks.*.days.*.date, year, month -> weeks.*.days.*.isToday
+
+  // Weekday of the 1st (0 = Sun) == number of leading blank cells
+  get offset() {
+    return new Date(this.year, this.month - 1, 1).getDay();
+  },
+
+  // Day 0 of the next month == last day of this month
+  get lastDate() {
+    return new Date(this.year, this.month, 0).getDate();
+  },
+
+  get weekCount() {
+    return Math.ceil((this.offset + this.lastDate) / 7);
+  },
+
+  get monthLabel() {
+    return MONTH_NAMES[this.month - 1] + " " + this.year;
+  },
+
+  // Rows of the grid. The value is the row number; the shape is what matters.
+  get weeks() {
+    return Array.from({ length: this.weekCount }, (_, week) => week);
+  },
+
+  // Seven cells per row. A fresh array per week, so each row keeps its own
+  // list-index ledger.
+  get "weeks.*.days"() {
+    return Array.from({ length: 7 }, (_, day) => day);
+  },
+
+  // Cell position -> date of the month. this.$1 is the row (week) index and
+  // this.$2 is the column (weekday) index of the cell being computed, so the
+  // serial number of the cell is $1 * 7 + $2. Cells outside the month are null.
+  get "weeks.*.days.*.date"() {
+    const date = this.$1 * 7 + this.$2 - this.offset + 1;
+    return (date >= 1 && date <= this.lastDate) ? date : null;
+  },
+
+  // What the cell prints: the day number, or nothing for a padding cell
+  get "weeks.*.days.*.text"() {
+    return this["weeks.*.days.*.date"] ?? "";
+  },
+
+  // The column index alone determines the weekday
+  get "weeks.*.days.*.dayOfWeek"() {
+    return DAY_NAMES[this.$2];
+  },
+
+  get "weeks.*.days.*.isBlank"() {
+    return this["weeks.*.days.*.date"] === null;
+  },
+
+  get "weeks.*.days.*.isWeekend"() {
+    const dayOfWeek = this["weeks.*.days.*.dayOfWeek"];
+    return dayOfWeek === "Sun" || dayOfWeek === "Sat";
+  },
+
+  get "weeks.*.days.*.isToday"() {
+    return this.year === TODAY.year
+      && this.month === TODAY.month
+      && this["weeks.*.days.*.date"] === TODAY.date;
+  },
+
+  // Moving the month is a plain assignment; the whole grid follows.
+  prevMonth() {
+    if (this.month === 1) {
+      this.year -= 1;
+      this.month = 12;
+    } else {
+      this.month -= 1;
+    }
+  },
+
+  nextMonth() {
+    if (this.month === 12) {
+      this.year += 1;
+      this.month = 1;
+    } else {
+      this.month += 1;
+    }
+  },
+
+  goToday() {
+    this.year = TODAY.year;
+    this.month = TODAY.month;
+  }
+};
+      </script>
+    </wcs-state>
+
+    <div class="example-container">
+      <p class="example-title">@wcstack/state</p>
+      <h1>Calendar</h1>
+
+      <div class="calendar-nav">
+        <button data-wcs="onclick: prevMonth">&#9664; Prev</button>
+        <span class="month-label">{{ monthLabel }}</span>
+        <button data-wcs="onclick: nextMonth">Next &#9654;</button>
+      </div>
+
+      <table class="calendar">
+        <thead>
+          <tr>
+            <template data-wcs="for: dayNames">
+              <th>{{ . }}</th>
+            </template>
+          </tr>
+        </thead>
+        <tbody>
+          <template data-wcs="for: weeks">
+            <tr>
+              <template data-wcs="for: weeks.*.days">
+                <!-- apply class based on computed booleans of the cell -->
+                <td data-wcs="
+                  class.today  : .isToday;
+                  class.blank  : .isBlank;
+                  class.weekend: .isWeekend;
+                  attr.title   : .dayOfWeek;
+                ">{{ .text }}</td>
+              </template>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+
+      <div class="actions">
+        <button data-wcs="onclick: goToday">Today</button>
+      </div>
+    </div>
+  </body>
+</html>
