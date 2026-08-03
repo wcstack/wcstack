@@ -1,6 +1,6 @@
 {
   "name": "wcstack",
-  "version": "1.24.0",
+  "version": "1.25.0",
   "description": "Entry point for wcstack - 41 zero-dependency Web Components packages. Reactive data binding, declarative routing and 30+ Web APIs as HTML tags. Buildless: one CDN script tag per package. Run `npm view wcstack readme` for the full authoring guide.",
   "keywords": [
     "web-components",
