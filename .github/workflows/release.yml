@@ -24,10 +24,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # No registry-url on purpose. It makes setup-node write an .npmrc whose
+      # `_authToken=${NODE_AUTH_TOKEN}` expands to an empty string once the
+      # token is gone, and npm reads that empty value as "auth is already
+      # configured" and never starts the OIDC exchange — publishing then fails
+      # with ENEEDAUTH (actions/setup-node#1551). registry.npmjs.org is npm's
+      # default anyway, so dropping the input costs nothing.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
           cache: npm
           cache-dependency-path: packages/*/package-lock.json
 
@@ -181,20 +186,21 @@ jobs:
       # already on the registry, so a run that failed partway through the loop
       # can be safely re-run without EPUBLISH conflicts on the published half.
       #
-      # Auth is mid-migration to Trusted Publishing (OIDC). npm >= 11.5.1 prefers
-      # the OIDC exchange whenever the package has a trusted publisher registered
-      # (`permissions.id-token: write`, above), and falls back to NODE_AUTH_TOKEN
-      # when it does not — so the token stays here until every package in
-      # publish_list is registered. Register with scripts/npm-trust-setup.mjs;
-      # once `--check` reports all packages configured and one release has gone
-      # out green, drop NODE_AUTH_TOKEN, drop `--provenance` (OIDC publishes
-      # attest automatically), and strip the empty `_authToken=` line that
-      # setup-node's registry-url writes — an empty token reads as "auth is
-      # configured" and suppresses the OIDC exchange entirely
-      # (actions/setup-node#1551).
+      # Auth is Trusted Publishing (OIDC): npm exchanges the workflow's id-token
+      # (`permissions.id-token: write`, above) for a credential scoped to this
+      # one publish. There is no token here to fall back to, so every package in
+      # publish_list must have a trusted publisher registered for
+      # wcstack/wcstack + release.yml — verify with
+      # `node scripts/npm-trust-setup.mjs --verify`, which reads how each
+      # package was actually published rather than how it is configured.
+      # `--provenance` is not passed: a trusted publish attests automatically.
+      #
+      # A package npm has never seen cannot have a trusted publisher — npm only
+      # accepts the configuration for one that already exists — so a newly added
+      # package needs a manual first publish before it can ride this workflow.
+      # The guard below states that outright, because npm's bare ENEEDAUTH reads
+      # as a broken workflow rather than as a missing setup step.
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           target="${{ steps.bump.outputs.version }}"
@@ -204,8 +210,12 @@ jobs:
             if [ "$published" = "$target" ]; then
               echo "::group::publish — $name (already at $target, skipping)"
             else
+              if ! npm view "$name" version >/dev/null 2>&1; then
+                echo "::error::$name is not on the registry yet, so it has no trusted publisher and this workflow cannot publish it. Publish its first version manually, then register it with scripts/npm-trust-setup.mjs --run."
+                exit 1
+              fi
               echo "::group::publish — $name"
-              (cd "packages/$pkg" && npm publish --access public --provenance)
+              (cd "packages/$pkg" && npm publish --access public)
             fi
             echo "::endgroup::"
           done

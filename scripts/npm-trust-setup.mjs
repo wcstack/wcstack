@@ -12,6 +12,7 @@
 //   node scripts/npm-trust-setup.mjs           # print the npm trust commands
 //   node scripts/npm-trust-setup.mjs --check   # report which packages are configured
 //   node scripts/npm-trust-setup.mjs --run     # execute them (OTP prompts pass through)
+//   node scripts/npm-trust-setup.mjs --verify  # report how each was actually published
 //
 // Both modes take optional package names to narrow the sweep; a pass that could
 // not verify everything prints the exact command to resume on the remainder.
@@ -46,13 +47,15 @@ const WORKFLOW = "release.yml";
 
 const check = process.argv.includes("--check");
 const run = process.argv.includes("--run");
+const verify = process.argv.includes("--verify");
 
 // Optional package names narrow the sweep. `npm trust` reads and writes both
 // need a live OTP session, and one window does not cover 45 packages — so a
 // pass that ends with packages unverified prints the command to resume on just
 // those, after another `npm login`. Stateless on purpose: caching "this one is
-// configured" across runs would let a revoked publisher read as verified, and
-// this report is the gate for dropping NODE_AUTH_TOKEN.
+// configured" across runs would let a revoked publisher read as verified — and
+// release.yml has no token to fall back on, so an unregistered package is a
+// failed release.
 const only = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--")));
 
 // Publish targets, mirroring release.yml's `publish_list`.
@@ -123,6 +126,40 @@ if (unknownNames.length) {
   process.exit(1);
 }
 const targets = only.size ? allTargets.filter((n) => only.has(n)) : allTargets;
+
+// How the latest published version was actually authenticated, read from the
+// registry's publisher record. An OIDC publish is attributed to GitHub Actions
+// and carries a trustedPublisher block; a token publish is attributed to the
+// account that owns the token. This is the outcome, not the configuration —
+// stronger evidence than "a trusted publisher is registered" — and `npm view`
+// is unauthenticated, so it costs no OTP window.
+if (verify) {
+  const oidc = [];
+  const token = [];
+  const unknown = [];
+  for (const name of targets) {
+    const { status, stdout } = localNpm(["view", name, "_npmUser", "--json"]);
+    const raw = (stdout ?? "").replace(/^﻿/, "").trim();
+    let user;
+    try {
+      user = status === 0 && raw ? JSON.parse(raw) : null;
+    } catch {
+      user = null;
+    }
+    if (user && typeof user === "object" && user.trustedPublisher) oidc.push(name);
+    else if (user) token.push([name, typeof user === "string" ? user : (user.name ?? "?")]);
+    else unknown.push(name);
+  }
+  for (const name of oidc) console.log(`oidc         ${name}`);
+  for (const [name, who] of token) console.log(`TOKEN        ${name} (published by ${who})`);
+  for (const name of unknown) console.log(`UNKNOWN      ${name}`);
+  console.log(
+    `\n${oidc.length}/${targets.length} published via trusted publishing` +
+      (token.length ? `, ${token.length} via token` : "") +
+      (unknown.length ? `, ${unknown.length} unreadable` : ""),
+  );
+  process.exit(oidc.length === targets.length ? 0 : 1);
+}
 
 // Trusted publishing can only be configured for a package that already exists
 // on the registry, so a package awaiting its first release is not a failure —
@@ -219,9 +256,9 @@ if (check) {
       (by.unknown.length ? `, ${by.unknown.length} unreadable` : ""),
   );
   reportUnreadable();
-  // Non-zero unless every target is known-configured, so this doubles as the
-  // go/no-go gate for dropping NODE_AUTH_TOKEN from release.yml. An unreadable
-  // package holds the gate shut — it is not evidence of anything.
+  // Non-zero unless every target is known-configured, because release.yml has
+  // no token to fall back on and an unregistered package fails the release. An
+  // unreadable package holds the gate shut — it is not evidence of anything.
   process.exit(targets.length === by.configured.length ? 0 : 1);
 }
 
