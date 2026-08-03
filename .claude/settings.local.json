@@ -49,7 +49,17 @@
       "PowerShell(Remove-Item -Recurse -Force -Confirm:$false \"d:\\\\git\\\\wcstack\\\\wcstack\\\\packages\\\\pointer-lock\\\\node_modules\" -ErrorAction SilentlyContinue)",
       "Bash(grep '\\\\.ts$')",
       "Bash(grep -E \"\\\\.md$\")",
-      "Bash(grep -E '\\\\.\\(ts|js|json|md\\)$')"
+      "Bash(grep -E '\\\\.\\(ts|js|json|md\\)$')",
+      "Bash(git rebase *)",
+      "Bash(node scripts/sync-package-configs.mjs --check)",
+      "Bash(node scripts/sync-protocol-types.mjs --check)",
+      "Bash(node scripts/sync-io-core.mjs --check)",
+      "Bash(node scripts/conformance-io-nodes.mjs)",
+      "Bash(node scripts/conformance-bindable-inputs.mjs)",
+      "Bash(npx eslint *)",
+      "Bash(gh pr *)",
+      "Bash(git fetch *)",
+      "Bash(node -e ' *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kikuzawa\\Documents\\git\\wcstack\\wcstack\\packages\\auth0\\src",

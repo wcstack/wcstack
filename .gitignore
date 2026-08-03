@@ -5,3 +5,7 @@ coverage/
 examples/**/dist/
 packages/*/examples/**/dist/
 .claude/scheduled_tasks.lock
+.claude/settings.local.json
+# Playwright artifacts when run from the repo root instead of e2e/
+/test-results/
+/playwright-report/
