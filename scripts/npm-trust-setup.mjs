@@ -13,6 +13,9 @@
 //   node scripts/npm-trust-setup.mjs --check   # report which packages are configured
 //   node scripts/npm-trust-setup.mjs --run     # execute them (OTP prompts pass through)
 //
+// Both modes take optional package names to narrow the sweep; a pass that could
+// not verify everything prints the exact command to resume on the remainder.
+//
 // Requires npm >= 11.5.1 — `npm trust` does not exist in npm 10, which is what
 // Node 22 bundles. --check is read-only, and --run registers only what is still
 // missing, so an interrupted run is resumed by re-running it.
@@ -36,6 +39,14 @@ const WORKFLOW = "release.yml";
 
 const check = process.argv.includes("--check");
 const run = process.argv.includes("--run");
+
+// Optional package names narrow the sweep. `npm trust` reads and writes both
+// need a live OTP session, and one window does not cover 45 packages — so a
+// pass that ends with packages unverified prints the command to resume on just
+// those, after another `npm login`. Stateless on purpose: caching "this one is
+// configured" across runs would let a revoked publisher read as verified, and
+// this report is the gate for dropping NODE_AUTH_TOKEN.
+const only = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--")));
 
 // Publish targets, mirroring release.yml's `publish_list`.
 function publishTargets() {
@@ -98,7 +109,13 @@ function requireNpm11() {
   }
 }
 
-const targets = publishTargets();
+const allTargets = publishTargets();
+const unknownNames = [...only].filter((n) => !allTargets.includes(n));
+if (unknownNames.length) {
+  console.error(`not a publish target: ${unknownNames.join(", ")}`);
+  process.exit(1);
+}
+const targets = only.size ? allTargets.filter((n) => only.has(n)) : allTargets;
 
 // Trusted publishing can only be configured for a package that already exists
 // on the registry, so a package awaiting its first release is not a failure —
@@ -107,35 +124,69 @@ const targets = publishTargets();
 // this classification holds even before `npm login`.
 const isPublished = (name) => localNpm(["view", name, "version"]).status === 0;
 
-// "configured" | "unregistered" | "unpublished" for one package.
+// "configured" | "unregistered" | "unpublished" | "unknown" for one package.
+//
+// `npm trust list` is an authenticated read against a privileged endpoint, and
+// it fails in ways that have nothing to do with whether a trust config exists:
+// no login (E401), and — the one that actually bit — an expired OTP session
+// (EOTP), which starts returning errors part-way through a 45-package sweep.
+// A failed read must never be reported as "unregistered": acting on that report
+// means re-registering packages that are already configured, which the registry
+// rejects with a 409. So "unregistered" is only ever concluded from a
+// successful read that came back without a publisher block.
+// name → npm's error output, for every package whose trust config could not be
+// read. Reported rather than summarised away: the distinction between "your
+// session expired" and "this package does not exist" decides what to do next.
+const unreadable = new Map();
+
 function classify(name) {
   if (!isPublished(name)) return "unpublished";
   const { status, stdout, stderr } = npm(["trust", "list", name]);
   const output = `${stdout ?? ""}${stderr ?? ""}`;
-  // `npm trust list` is an authenticated read. Without a login every package
-  // comes back as an error, which would otherwise be reported as 45
-  // unregistered packages — a report that looks like real data.
-  if (/E401|ENEEDAUTH|must be logged in/i.test(output)) {
-    console.error("not logged in to npm — run `npm login`, then re-run");
-    process.exit(1);
+  if (status !== 0) {
+    unreadable.set(name, output.trim());
+    return "unknown";
   }
-  return status === 0 && /github/i.test(output) ? "configured" : "unregistered";
+  return /type:\s*github/i.test(output) ? "configured" : "unregistered";
+}
+
+function reportUnreadable() {
+  if (unreadable.size === 0) return;
+  console.error(`\n${unreadable.size} package(s) could not be read:`);
+  for (const [name, error] of unreadable) {
+    const line = error.split("\n").find((l) => /npm error/i.test(l)) ?? error.split("\n")[0] ?? "";
+    console.error(`  ${name}: ${line.trim()}`);
+  }
+  if ([...unreadable.values()].some((e) => /EOTP|E401|ENEEDAUTH/i.test(e))) {
+    console.error(
+      "\n`npm trust` needs a live authenticated session, and one OTP window does not\n" +
+        "cover every package. Run `npm login` again, then resume on just these:",
+    );
+  } else {
+    console.error("\nResume on just these:");
+  }
+  const mode = run ? "--run" : "--check";
+  console.error(`\n  node scripts/npm-trust-setup.mjs ${mode} ${[...unreadable.keys()].join(" ")}\n`);
 }
 
 if (check) {
   requireNpm11();
-  const by = { configured: [], unregistered: [], unpublished: [] };
+  const by = { configured: [], unregistered: [], unpublished: [], unknown: [] };
   for (const name of targets) by[classify(name)].push(name);
   for (const name of by.configured) console.log(`ok           ${name}`);
   for (const name of by.unregistered) console.log(`UNREGISTERED ${name}`);
   for (const name of by.unpublished) console.log(`UNPUBLISHED  ${name}`);
+  for (const name of by.unknown) console.log(`UNKNOWN      ${name}`);
   console.log(
     `\n${by.configured.length}/${targets.length} configured` +
       (by.unregistered.length ? `, ${by.unregistered.length} unregistered` : "") +
-      (by.unpublished.length ? `, ${by.unpublished.length} awaiting a first release` : ""),
+      (by.unpublished.length ? `, ${by.unpublished.length} awaiting a first release` : "") +
+      (by.unknown.length ? `, ${by.unknown.length} unreadable` : ""),
   );
-  // Non-zero while any target is still publishing on a token, so this doubles
-  // as the go/no-go gate for dropping NODE_AUTH_TOKEN from release.yml.
+  reportUnreadable();
+  // Non-zero unless every target is known-configured, so this doubles as the
+  // go/no-go gate for dropping NODE_AUTH_TOKEN from release.yml. An unreadable
+  // package holds the gate shut — it is not evidence of anything.
   process.exit(targets.length === by.configured.length ? 0 : 1);
 }
 
@@ -172,12 +223,15 @@ for (const name of targets) {
   const state = classify(name);
   if (state === "configured") alreadyConfigured += 1;
   else if (state === "unpublished") unpublished.push(name);
-  else pending.push(name);
+  else if (state === "unregistered") pending.push(name);
+  // "unknown" is deliberately not registered: a package whose config could not
+  // be read may already be configured, and re-registering it is the 409.
 }
 console.log(
   `${alreadyConfigured}/${targets.length} already configured` +
     (pending.length ? ` — registering ${pending.length}` : "") +
-    (unpublished.length ? `, skipping ${unpublished.length} awaiting a first release` : ""),
+    (unpublished.length ? `, skipping ${unpublished.length} awaiting a first release` : "") +
+    (unreadable.size ? `, skipping ${unreadable.size} unreadable` : ""),
 );
 
 let failed = 0;
@@ -196,11 +250,13 @@ if (unpublished.length) {
       unpublished.map((n) => `  ${n}`).join("\n"),
   );
 }
+reportUnreadable();
 if (failed) {
-  console.error(`\n${failed}/${pending.length} failed — re-run to retry the rest`);
+  console.error(`\n${failed}/${pending.length} registration(s) failed — re-run to retry the rest`);
 }
 const done = alreadyConfigured + pending.length - failed;
-console.log(`\n${done}/${targets.length} packages registered.`);
-// Non-zero while anything is still unregistered, so this agrees with the
-// --check gate instead of reporting a clean run that leaves packages on tokens.
+console.log(`\n${done}/${targets.length} packages known registered.`);
+// Non-zero while anything is unregistered or unverified, so this agrees with
+// the --check gate instead of reporting a clean run that leaves packages on
+// tokens.
 process.exit(done === targets.length ? 0 : 1);
