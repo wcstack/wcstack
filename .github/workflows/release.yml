@@ -31,6 +31,12 @@ jobs:
           cache: npm
           cache-dependency-path: packages/*/package-lock.json
 
+      # npm Trusted Publishing (OIDC) requires npm >= 11.5.1, and Node 22 still
+      # bundles npm 10.x. Upgrade the CLI only: the Node runtime stays on 22 so
+      # build and test run on the same version ci.yml validated the PR against.
+      - name: Upgrade npm CLI (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@11
+
       # Discover release-target packages, in two sets.
       #
       # `list` — buildable packages: any packages/* scoped under @wcstack/.
@@ -174,6 +180,18 @@ jobs:
       # Publish to npm — idempotent: skip any package whose target version is
       # already on the registry, so a run that failed partway through the loop
       # can be safely re-run without EPUBLISH conflicts on the published half.
+      #
+      # Auth is mid-migration to Trusted Publishing (OIDC). npm >= 11.5.1 prefers
+      # the OIDC exchange whenever the package has a trusted publisher registered
+      # (`permissions.id-token: write`, above), and falls back to NODE_AUTH_TOKEN
+      # when it does not — so the token stays here until every package in
+      # publish_list is registered. Register with scripts/npm-trust-setup.mjs;
+      # once `--check` reports all packages configured and one release has gone
+      # out green, drop NODE_AUTH_TOKEN, drop `--provenance` (OIDC publishes
+      # attest automatically), and strip the empty `_authToken=` line that
+      # setup-node's registry-url writes — an empty token reads as "auth is
+      # configured" and suppresses the OIDC exchange entirely
+      # (actions/setup-node#1551).
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
