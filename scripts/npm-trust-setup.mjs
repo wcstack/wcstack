@@ -53,8 +53,9 @@ const verify = process.argv.includes("--verify");
 // need a live OTP session, and one window does not cover 45 packages — so a
 // pass that ends with packages unverified prints the command to resume on just
 // those, after another `npm login`. Stateless on purpose: caching "this one is
-// configured" across runs would let a revoked publisher read as verified, and
-// this report is the gate for dropping NODE_AUTH_TOKEN.
+// configured" across runs would let a revoked publisher read as verified — and
+// release.yml has no token to fall back on, so an unregistered package is a
+// failed release.
 const only = new Set(process.argv.slice(2).filter((a) => !a.startsWith("--")));
 
 // Publish targets, mirroring release.yml's `publish_list`.
@@ -255,9 +256,9 @@ if (check) {
       (by.unknown.length ? `, ${by.unknown.length} unreadable` : ""),
   );
   reportUnreadable();
-  // Non-zero unless every target is known-configured, so this doubles as the
-  // go/no-go gate for dropping NODE_AUTH_TOKEN from release.yml. An unreadable
-  // package holds the gate shut — it is not evidence of anything.
+  // Non-zero unless every target is known-configured, because release.yml has
+  // no token to fall back on and an unregistered package fails the release. An
+  // unreadable package holds the gate shut — it is not evidence of anything.
   process.exit(targets.length === by.configured.length ? 0 : 1);
 }
 
