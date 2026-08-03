@@ -57,23 +57,25 @@ export default {
   // All getters are cached per (path, index tuple), so every cell is computed
   // once and recomputed only when one of its inputs is invalidated.
   // Dependency graph:
-  // year, month -> geometry, monthLabel
-  // geometry -> weeks -> weeks.*.days
-  // geometry, $1, $2 -> weeks.*.days.*.date
+  // year, month -> offset, lastDate, monthLabel
+  // offset, lastDate -> weekCount -> weeks -> weeks.*.days
+  // offset, lastDate, $1, $2 -> weeks.*.days.*.date
   // weeks.*.days.*.date -> weeks.*.days.*.text, weeks.*.days.*.isBlank
   // $2 -> weeks.*.days.*.dayOfWeek -> weeks.*.days.*.isWeekend
   // weeks.*.days.*.date, year, month -> weeks.*.days.*.isToday
 
-  // The shape of the month, derived in one place:
-  //   offset    weekday of the 1st (0 = Sun) == number of leading blank cells
-  //   lastDate  day 0 of the next month == last day of this month
-  //   weekCount rows needed to cover offset + lastDate
-  // Keeping these three in a single record (rather than three sibling getters)
-  // means every consumer below hangs off one edge of the dependency graph.
-  get geometry() {
-    const offset = new Date(this.year, this.month - 1, 1).getDay();
-    const lastDate = new Date(this.year, this.month, 0).getDate();
-    return { offset, lastDate, weekCount: Math.ceil((offset + lastDate) / 7) };
+  // Weekday of the 1st (0 = Sun) == number of leading blank cells
+  get offset() {
+    return new Date(this.year, this.month - 1, 1).getDay();
+  },
+
+  // Day 0 of the next month == last day of this month
+  get lastDate() {
+    return new Date(this.year, this.month, 0).getDate();
+  },
+
+  get weekCount() {
+    return Math.ceil((this.offset + this.lastDate) / 7);
   },
 
   get monthLabel() {
@@ -82,7 +84,7 @@ export default {
 
   // Rows of the grid. The value is the row number; the shape is what matters.
   get weeks() {
-    return Array.from({ length: this.geometry.weekCount }, (_, week) => week);
+    return Array.from({ length: this.weekCount }, (_, week) => week);
   },
 
   // Seven cells per row. A fresh array per week, so each row keeps its own
@@ -95,9 +97,8 @@ export default {
   // this.$2 is the column (weekday) index of the cell being computed, so the
   // serial number of the cell is $1 * 7 + $2. Cells outside the month are null.
   get "weeks.*.days.*.date"() {
-    const { offset, lastDate } = this.geometry;
-    const date = this.$1 * 7 + this.$2 - offset + 1;
-    return (date >= 1 && date <= lastDate) ? date : null;
+    const date = this.$1 * 7 + this.$2 - this.offset + 1;
+    return (date >= 1 && date <= this.lastDate) ? date : null;
   },
 
   // What the cell prints: the day number, or nothing for a padding cell
