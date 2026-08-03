@@ -6,6 +6,7 @@ on:
     paths:
       - "examples/**"
       - "packages/**/dist/**"
+      - "packages/**/src/**"
       - "e2e/**"
   workflow_dispatch:
 
@@ -17,11 +18,54 @@ jobs:
         working-directory: e2e
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: e2e/package-lock.json
+      # serve.mjs rewrites the examples' CDN URLs to packages/*/dist so the suite
+      # exercises this tree rather than whatever esm.run last published — but dist
+      # is only committed on release, so without a build here the pages would load
+      # the last released bundles and the suite would silently validate stale code.
+      # An example that depends on an unreleased fix fails; worse, a regression
+      # introduced in src passes. Only packages this PR touches are rebuilt;
+      # everything else is unchanged, so its committed dist already matches its src.
+      - name: Build the dist bundles of packages changed by this PR
+        working-directory: .
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          # workflow_dispatch has no PR payload: nothing to diff against, so the
+          # run falls back to the committed dist.
+          if [ -z "${BASE_SHA:-}" ]; then
+            echo "no base SHA (not a pull_request event) — using the committed dist"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE_SHA" HEAD)
+
+          built=0
+          for dir in packages/*/; do
+            [ -f "${dir}package.json" ] || continue
+            name=$(node -p "require('./${dir}package.json').name")
+            case "$name" in
+              @wcstack/*) ;;
+              *) continue ;;
+            esac
+            pkg=$(basename "$dir")
+            # A change to the shared root tsconfig rebuilds every package.
+            if echo "$changed" | grep -qx 'tsconfig.json' \
+              || echo "$changed" | grep -qE "^packages/${pkg}/src/"; then
+              echo "::group::build ${pkg}"
+              (cd "$dir" && npm ci && npm run build)
+              echo "::endgroup::"
+              built=$((built + 1))
+            fi
+          done
+          echo "rebuilt ${built} package(s)"
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm test

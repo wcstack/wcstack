@@ -2,7 +2,8 @@
 
 Status: **実装済み（静的分岐のみ・保守的版）** — §7 実装記録を参照
 Date: 2026-07-12
-Related: docs/state-redesign-council.md（判断表②の主張の訂正を含む）, docs/async-execution-model.md
+Related: docs/state-redesign-council.md（判断表②の主張の訂正を含む）, docs/async-execution-model.md,
+docs/dependency-walk-ordering.md（同じウォークの訪問順序契約）
 
 ## 1. 問題
 
