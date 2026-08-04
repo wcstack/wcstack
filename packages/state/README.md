@@ -1621,32 +1621,55 @@ The definition element is hidden; each instance clones the template into its own
 [data-wc-definition] { display: none; }
 ```
 
-### `$bindables` and wc-bindable Protocol
+### `$bindables` / `$commands` and the wc-bindable Protocol
 
-The `$bindables` array declares which state properties are exposed as component properties with change events, following the [wc-bindable protocol](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md):
+`$bindables` declares which state **properties** are exposed as component properties with change events. `$commands` declares which state **methods** are exposed as invocable commands. Together they build the [wc-bindable protocol](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md) declaration:
 
 ```javascript
 export default {
   count: 0,
-  increment() { this.count++; },
-  $bindables: ["count"]
+  bumpBy(step) { this.count += step; },
+  $bindables: ["count"],
+  $commands: ["bumpBy"]
 };
 ```
 
 This generates:
 
-- `static wcBindable` on the class — protocol metadata for framework adapters. Each `$bindables` member is declared in both `properties` and `inputs` (two-way), so parent-state → DCC writes keep working under directional initial sync — see [Binding Authority](#binding-authority-init--sync)
-- Getter/setter on the prototype — reads/writes go through the reactive proxy
-- `CustomEvent` dispatch — `my-counter:count-changed` fires on every mutation
+- `static wcBindable` on the class — protocol metadata for framework adapters. Each `$bindables` member is declared in both `properties` and `inputs` (two-way), so parent-state → DCC writes keep working under directional initial sync — see [Binding Authority](#binding-authority-init--sync). Each `$commands` member becomes a `commands` entry
+- Getter/setter on the prototype for `$bindables`, a method for `$commands` — both go through the reactive proxy
+- `CustomEvent` dispatch — `my-counter:count-changed` fires on every mutation of a `$bindables` member
 
-The declaration is validated when the component is defined, with the same strictness as `$commandTokens`. Each of the following raises:
+`commands` entries are always declared `async: true`. A DCC method chains on the inner `<wcs-state>`'s initialization, so it returns a Promise whether or not the state method itself was written `async`.
+
+Both declarations are validated when the component is defined, with the same strictness as `$commandTokens`. Each of the following raises:
 
 - not an array
 - an entry that is not a non-empty string
 - an entry starting with `$` (internal properties are never exposed on the component prototype)
 - a duplicated entry — this one used to fail silently: a duplicate name makes the whole `wcBindable` declaration unreadable, so the element would quietly stop being two-way bindable
+- an entry that does not exist on the state (own properties and the prototype chain are both searched; `$streams` names count as existing since their value properties are materialized per instance)
+- a method listed in `$bindables`, or a value property listed in `$commands`
 
-Known limitation: `commands` is not generated, so DCC methods cannot be driven by [command tokens](#command-token-method-binding). Use an `onclick` binding inside the component instead.
+### Driving a DCC Method
+
+A `$commands` member can be invoked from the parent state with a [command token](#command-token-method-binding), exactly like an I/O node:
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["bump"],
+      fire() { this.$command.bump.emit(3); }
+    };
+  </script>
+</wcs-state>
+
+<button data-wcs="onclick: fire">bump</button>
+<my-counter data-wcs="command.bumpBy: $command.bump"></my-counter>
+```
+
+Positional arguments pass through verbatim, so `emit(3)` calls `bumpBy(3)` on the component's state.
 
 ### Binding to DCC Properties
 
@@ -1682,6 +1705,7 @@ Properties prefixed with `$` are internal and not exposed on the component proto
 | Property | Purpose |
 |----------|---------|
 | `$bindables` | Declares observable properties |
+| `$commands` | Declares invocable methods |
 | `$connectedCallback` | Lifecycle hook (runs on each instance) |
 | `$disconnectedCallback` | Cleanup hook |
 | `$updatedCallback` | Called after state mutations |

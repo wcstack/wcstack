@@ -40,6 +40,7 @@ export const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 export const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 
 export const STATE_BINDABLES_NAME = "$bindables";
+export const STATE_COMMANDS_NAME = "$commands";
 export const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 export const STATE_COMMAND_NAMESPACE_NAME = "$command";
 export const STATE_EVENT_TOKENS_NAME = "$eventTokens";

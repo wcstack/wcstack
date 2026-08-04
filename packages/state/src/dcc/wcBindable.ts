@@ -3,9 +3,15 @@ export type {
   IWcBindable, IWcBindableProperty, IWcBindableInput, IWcBindableCommand,
 } from "../protocol/wcBindable.js";
 // This module also uses the types in its runtime helpers below, so import them into scope.
-import type { IWcBindable, IWcBindableInput, IWcBindableProperty } from "../protocol/wcBindable.js";
+import type {
+  IWcBindable, IWcBindableCommand, IWcBindableInput, IWcBindableProperty,
+} from "../protocol/wcBindable.js";
 
-export function createWcBindable(tagName: string, bindables: string[]): IWcBindable {
+export function createWcBindable(
+  tagName: string,
+  bindables: string[],
+  commands: string[] = [],
+): IWcBindable {
   const properties: IWcBindableProperty[] = bindables.map((propName) => ({
     name: propName,
     event: `${tagName}:${propName}-changed`,
@@ -17,12 +23,24 @@ export function createWcBindable(tagName: string, bindables: string[]): IWcBinda
   const inputs: IWcBindableInput[] = bindables.map((propName) => ({
     name: propName,
   }));
-  return {
+  const declaration: IWcBindable = {
     protocol: "wc-bindable",
     version: 1,
     properties,
     inputs,
   };
+  if (commands.length === 0) {
+    return declaration;
+  }
+  // `async: true` is uniform on purpose: dccPropertyFactories.callFn always chains on the
+  // inner <wcs-state>'s initializePromise, so a DCC command returns a Promise whether or not
+  // the underlying state method was declared `async`. Reporting the state method's own
+  // asyncness would describe something callers never observe.
+  const declaredCommands: IWcBindableCommand[] = commands.map((name) => ({
+    name,
+    async: true,
+  }));
+  return { ...declaration, commands: declaredCommands };
 }
 
 export function createBindableEventMap(tagName: string, bindables: string[]): Record<string, string> {
