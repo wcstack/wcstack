@@ -66,6 +66,26 @@ describe('dcc/defineDCC', () => {
     });
   });
 
+  // §2.4: State の getterPaths / setterPaths 収集はプロトタイプチェーンを歩くのに、
+  // アクセサ生成は own descriptor だけを見ていた。走査範囲を揃える。
+  it('プロトタイプチェーン上のgetter/メソッドもプロトタイプに生えること', () => {
+    class Base {
+      get fromBase() { return 'base'; }
+      baseMethod() { return 'bm'; }
+    }
+    class StateClass extends Base {
+      own = 1;
+    }
+    const tag = uniqueTag();
+    const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');
+    defineDCC(host, shadow, new StateClass() as any);
+
+    const proto = (customElements.get(tag) as any).prototype;
+    expect(Object.getOwnPropertyDescriptor(proto, 'own')?.get).toBeTypeOf('function');
+    expect(Object.getOwnPropertyDescriptor(proto, 'fromBase')?.get).toBeTypeOf('function');
+    expect(typeof proto.baseMethod).toBe('function');
+  });
+
   it('不正な$bindables宣言はdefineDCCの時点でエラーになること', () => {
     const tag = uniqueTag();
     const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');
@@ -286,9 +306,15 @@ describe('dcc/defineDCC', () => {
         const instance = document.createElement(tag) as any;
         document.body.appendChild(instance);
 
+        // §2.7: initializePromise を待たずに同期で設定される。待っていた頃は
+        // state ロード完了までマップが空で、$connectedCallback 内の初期変更が
+        // 変更イベントを出さなかった。
+        expect(capturedMap).toEqual({
+          count: `${tag}:count-changed`,
+        });
+
         await mockInitPromise;
         await new Promise(resolve => setTimeout(resolve, 0));
-
         expect(capturedMap).toEqual({
           count: `${tag}:count-changed`,
         });

@@ -541,6 +541,33 @@ describe('State component', () => {
     );
   });
 
+  // §2.6: 併記すると _initialize がそちらを採用し、bindWebComponent が setInitialState で
+  // 渡した innerState proxy ごと捨てられて親↔子マッピングが無言で死ぬ。
+  it.each([
+    ['state', { 'bind-component': 'outer', state: '{}' }, /cannot be combined with state/],
+    ['src', { 'bind-component': 'outer', src: './a.js' }, /cannot be combined with src/],
+    ['json', { 'bind-component': 'outer', json: '{}' }, /cannot be combined with json/],
+  ])('bind-componentと%s属性の併記はエラーになること', async (_label, attrs, pattern) => {
+    const stateEl = createStateElement(attrs as Record<string, string>);
+    createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(pattern);
+  });
+
+  it('bind-componentとinner scriptの併記はエラーになること', async () => {
+    const stateEl = createStateElement({ 'bind-component': 'outer' });
+    const script = document.createElement('script');
+    script.setAttribute('type', 'module');
+    stateEl.appendChild(script);
+    createHostWithState(stateEl);
+    (stateEl as any)._rootNode = stateEl.getRootNode();
+
+    await expect((stateEl as any)._initializeBindWebComponent()).rejects.toThrow(
+      /cannot be combined with <script type="module">/
+    );
+  });
+
   it('bind-componentのプロパティがない場合はエラーになること', async () => {
     const stateEl = createStateElement({ 'bind-component': 'outer' });
     const host = createHostWithState(stateEl);

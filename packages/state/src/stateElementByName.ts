@@ -63,6 +63,12 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
       // 初めてルートノードに登録する場合
       // enable-ssr 属性があり、サーバーサイドでない場合はハイドレーション
       const enableSsr = !inSsr() && (element as unknown as Element).hasAttribute?.('enable-ssr');
+      // instanceof ではなく constructor.name で判定するのは意図的。SSR では
+      // @wcstack/server の installGlobals が happy-dom の一部だけを globalThis に載せるが、
+      // そのリスト（GLOBALS_KEYS）に `Document` は入っていない。Node にも `Document` は
+      // 無いので `rootNode instanceof Document` は ReferenceError になる。
+      // `ShadowRoot` はリストに含まれるため他所では instanceof を使っている
+      // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §3.3）。
       if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
         const ready = new Promise<void>((resolve) => {
           queueMicrotask(async () => {
