@@ -1620,32 +1620,55 @@ JavaScript のクラス定義なしで、**HTML だけ**でカスタム要素を
 [data-wc-definition] { display: none; }
 ```
 
-### `$bindables` と wc-bindable プロトコル
+### `$bindables` / `$commands` と wc-bindable プロトコル
 
-`$bindables` 配列は、変更イベント付きのコンポーネントプロパティとして公開する状態プロパティを宣言します。[wc-bindable プロトコル](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md)に準拠しています：
+`$bindables` は変更イベント付きのコンポーネント**プロパティ**として公開する状態プロパティを、`$commands` は起動可能な**コマンド**として公開する状態メソッドを宣言します。この 2 つで [wc-bindable プロトコル](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md)の宣言が組み立てられます：
 
 ```javascript
 export default {
   count: 0,
-  increment() { this.count++; },
-  $bindables: ["count"]
+  bumpBy(step) { this.count += step; },
+  $bindables: ["count"],
+  $commands: ["bumpBy"]
 };
 ```
 
 これにより以下が生成されます：
 
-- クラスの `static wcBindable` — フレームワークアダプタ用のプロトコルメタデータ。各 `$bindables` メンバは `properties` と `inputs` の両方に宣言され（双方向）、方向認識初期同期の下でも親 state → DCC の書き込みが機能します — [バインディング authority](#バインディング-authority-init--sync) 参照
-- プロトタイプの getter/setter — リアクティブプロキシ経由で読み書き
-- `CustomEvent` のディスパッチ — 値が変更されるたびに `my-counter:count-changed` が発火
+- クラスの `static wcBindable` — フレームワークアダプタ用のプロトコルメタデータ。各 `$bindables` メンバは `properties` と `inputs` の両方に宣言され（双方向）、方向認識初期同期の下でも親 state → DCC の書き込みが機能します — [バインディング authority](#バインディング-authority-init--sync) 参照。各 `$commands` メンバは `commands` エントリになります
+- `$bindables` はプロトタイプの getter/setter、`$commands` はメソッド — いずれもリアクティブプロキシ経由
+- `CustomEvent` のディスパッチ — `$bindables` メンバが変更されるたびに `my-counter:count-changed` が発火
 
-宣言はコンポーネント定義時に `$commandTokens` と同じ強度で検証されます。次はいずれもエラーになります。
+`commands` エントリは常に `async: true` です。DCC のメソッドは内側の `<wcs-state>` の初期化に chain するため、状態側のメソッドが `async` でなくても戻り値は Promise になります。
+
+どちらの宣言もコンポーネント定義時に `$commandTokens` と同じ強度で検証されます。次はいずれもエラーになります。
 
 - 配列でない
 - 非空文字列でないエントリ
 - `$` 始まりのエントリ（内部プロパティはコンポーネントの prototype に公開されません）
 - 重複したエントリ — これは従来サイレントに壊れていました。重複名があると `wcBindable` 宣言全体が読み取り不能になり、その要素が黙って双方向バインド不可になります
+- 状態に存在しないエントリ（自身とプロトタイプチェーンの両方を探索します。`$streams` の名前は値プロパティがインスタンスごとに実体化されるため「存在する」と見なされます）
+- `$bindables` にメソッドを書いた場合、または `$commands` に値プロパティを書いた場合
 
-既知の制約：`commands` は生成されないため、DCC のメソッドを [command token](#command-tokenメソッドバインディング) で起動することはできません。コンポーネント内側の `onclick` バインディングを使ってください。
+### DCC のメソッドを起動する
+
+`$commands` メンバは、I/O ノードと同じように親 state から [command token](#command-tokenメソッドバインディング) で起動できます：
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      $commandTokens: ["bump"],
+      fire() { this.$command.bump.emit(3); }
+    };
+  </script>
+</wcs-state>
+
+<button data-wcs="onclick: fire">bump</button>
+<my-counter data-wcs="command.bumpBy: $command.bump"></my-counter>
+```
+
+位置引数はそのまま素通しされるので、`emit(3)` はコンポーネント側の状態の `bumpBy(3)` を呼びます。
 
 ### DCC プロパティへのバインディング
 
@@ -1681,6 +1704,7 @@ export default {
 | プロパティ | 用途 |
 |----------|---------|
 | `$bindables` | 観測可能プロパティの宣言 |
+| `$commands` | 起動可能メソッドの宣言 |
 | `$connectedCallback` | ライフサイクルフック（各インスタンスで実行） |
 | `$disconnectedCallback` | クリーンアップフック |
 | `$updatedCallback` | 状態変更後に呼ばれる |

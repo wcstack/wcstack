@@ -95,6 +95,43 @@ describe('dcc/defineDCC', () => {
     expect(customElements.get(tag)).toBeUndefined();
   });
 
+  // §1.6 / gate G2: prototype にメソッドは生えるのに commands を宣言していなかったため、
+  // applyChangeToCommand が必ず raiseError していた（event-token は動くので双対性が崩れていた）。
+  it('$commandsがある場合、wcBindable.commandsが生成されること', () => {
+    const tag = uniqueTag();
+    const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');
+    defineDCC(host, shadow, { count: 0, inc() { /* noop */ }, $bindables: ['count'], $commands: ['inc'] });
+
+    const DCCClass = customElements.get(tag) as any;
+    expect(DCCClass.wcBindable.commands).toEqual([{ name: 'inc', async: true }]);
+    expect(typeof DCCClass.prototype.inc).toBe('function');
+  });
+
+  it('$commandsだけでもwcBindableが生成されること', () => {
+    const tag = uniqueTag();
+    const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');
+    defineDCC(host, shadow, { inc() { /* noop */ }, $commands: ['inc'] });
+
+    const DCCClass = customElements.get(tag) as any;
+    expect(DCCClass.wcBindable.properties).toEqual([]);
+    expect(DCCClass.wcBindable.commands).toEqual([{ name: 'inc', async: true }]);
+    // $bindables が無いので変更イベントは配線しない
+    expect(DCCClass.bindableEventMap).toEqual({});
+  });
+
+  it('$streams由来の$bindablesにもアクセサが生えること', () => {
+    const tag = uniqueTag();
+    const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');
+    defineDCC(host, shadow, {
+      $streams: { ticks: { source: () => [] } },
+      $bindables: ['ticks'],
+    });
+
+    const proto = (customElements.get(tag) as any).prototype;
+    expect(Object.getOwnPropertyDescriptor(proto, 'ticks')?.get).toBeTypeOf('function');
+    expect(Object.getOwnPropertyDescriptor(proto, 'ticks')?.set).toBeTypeOf('function');
+  });
+
   it('$bindablesがない場合、wcBindableはnullになること', () => {
     const tag = uniqueTag();
     const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');

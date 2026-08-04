@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>fixture: driving a DCC method with a command token</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md
+       §1.6 (gate G2). defineDCC always put the state's methods on the prototype but
+       never declared them in wcBindable.commands, and applyChangeToCommand refuses
+       any method that is not declared -- so `command.<m>:` on a DCC was a guaranteed
+       raiseError while the dual event-token direction worked. $commands closes that.
+
+       The page drives the same DCC method twice from the parent: once through a
+       command token, once through a plain property write, so a regression in either
+       direction is visible. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+[data-wc-definition] { display: none; }
+  </style>
+</head>
+<body>
+  <my-counter data-wc-definition>
+    <template shadowrootmode="open">
+      <span class="own">{{ count }}</span>
+      <wcs-state>
+        <script type="module">
+export default {
+  count: 0,
+  bumpBy(step) { this.count += step; },
+  $bindables: [ "count" ],
+  $commands: [ "bumpBy" ]
+};
+        </script>
+      </wcs-state>
+    </template>
+  </my-counter>
+
+  <wcs-state>
+    <script type="module">
+export default {
+  seed: 10,
+  $commandTokens: [ "bump" ],
+  fire() { this.$command.bump.emit(3); }
+};
+    </script>
+  </wcs-state>
+
+  <button id="fire" data-wcs="onclick: fire">bump</button>
+  <div id="mirror" data-wcs="textContent: seed"></div>
+  <div id="live">
+    <my-counter data-wcs="count: seed; command.bumpBy: $command.bump"></my-counter>
+  </div>
+</body>
+</html>

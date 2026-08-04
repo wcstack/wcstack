@@ -2,9 +2,9 @@
 
 - **作成日**: 2026-08-05
 - **状態**: 監査記録＋**修正進行中**（2026-08-05）。§7 の decision gate G1-G4 は 4 件とも決着済み。
-  実装済み = §1.1 / §1.2 / §1.3 / §1.4 / §1.5 / §2.4 / §2.6 / §2.7 / §3.5 / §3.6、
-  部分 = §2.3 / §2.5、訂正 = §3.3（本書の誤り）。
-  残り = §1.6・§2.3 存在検査（G2）/ §2.1 / §2.2 / §3.1・§3.2・§3.4（G3）。**§1 の確定欠陥は全て解消**。
+  実装済み = §1.1〜§1.6 / §2.3 / §2.4 / §2.6 / §2.7 / §3.5 / §3.6、
+  部分 = §2.5、訂正 = §3.3（本書の誤り）。
+  残り = §2.1 / §2.2 / §3.1・§3.2・§3.4（G3）。**§1 の確定欠陥は全て解消**。
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
@@ -42,10 +42,10 @@
 | §1.3 | DCC が再接続で `attachShadow` を呼び直して throw | ✅ 修正済み |
 | §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ✅ 修正済み（G4 = DCC 側で解決。実装は遅延構築） |
 | §1.5 | `$bindables` 重複で wcBindable 宣言が丸ごと棄却される | ✅ 修正済み |
-| §1.6 | DCC メソッドに command-token を張れない | ⛔ 未着手（G2 = `$commands` 明示宣言に決定） |
+| §1.6 | DCC メソッドに command-token を張れない | ✅ 修正済み（G2 = `$commands` 明示宣言） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ⛔ 未着手 |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ⛔ 未着手 |
-| §2.3 | `$bindables` だけ宣言検証が無い | 🟡 部分修正（構造検証は実装。存在検査は残件・理由は §2.3） |
+| §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
 | §2.4 | prototype チェーンの扱いが State と DCC で違う | ✅ 修正済み |
 | §2.5 | inner `<wcs-state>` が `:not([name])` 固定 | 🟡 部分修正（挙動は不変、`console.warn` で可視化） |
 | §2.6 | bind-component と state ソース属性の二重指定 | ✅ 修正済み |
@@ -64,7 +64,8 @@
 | [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.1（台帳書き込みと listIndex 解決を除去） |
 | [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1（内部チャネルを分離） |
 | [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
-| [`dcc/processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts)（新規） | §1.5 / §2.3 |
+| [`dcc/processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts)（新規） | §1.5 / §2.3 / §1.6 |
+| [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
 | [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
 | [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 |
 | [`components/types.ts`](../../packages/state/src/components/types.ts) | §3.5 |
@@ -73,7 +74,7 @@
 
 回帰テストは
 [`webComponent.bindWebComponent.semantics.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.semantics.test.ts)（新規・§6 の穴を塞ぐ）、
-[`dcc.processBindablesDeclaration.test.ts`](../../packages/state/__tests__/dcc.processBindablesDeclaration.test.ts)（新規）、
+[`dcc.processDccDeclarations.test.ts`](../../packages/state/__tests__/dcc.processDccDeclarations.test.ts)（新規）、
 [`src.getAllPropertyDescriptors.test.ts`](../../packages/state/__tests__/src.getAllPropertyDescriptors.test.ts)（新規）、
 `dcc.defineDCC.test.ts` / `webComponent.bindWebComponent.test.ts` / `components.State.test.ts`（追記）。
 新規テスト（unit / e2e とも）はいずれも修正前のコードに対して失敗することを確認済み。
@@ -214,12 +215,12 @@ probe 実測: `$bindables: ["count","count"]` → `readBindableDeclaration()` �
 結果、双方向バインド不可・spread 不可・`resolveInitialSyncPolicy` が「非 bindable 要素」として素通し。
 **エラーも警告も出ない。自前のファクトリが自前の reader に棄却されている。**
 
-**修正**: `processBindablesDeclaration()` を新設し、`defineDCC` が
+**修正**: `processDccDeclarations()`（当初は `processBindablesDeclaration()`）を新設し、`defineDCC` が
 `createWcBindable` を呼ぶ前に宣言を検証して fail-fast させる（§2.3 と同一の修正）。
 
-### 1.6 DCC のメソッドに command-token を張れない（構造的に不可能）
+### 1.6 DCC のメソッドに command-token を張れない（構造的に不可能） ✅ 修正済み
 
-- [`defineDCC.ts:78-80`](../../packages/state/src/dcc/defineDCC.ts) はメソッドを prototype に生やす
+- [`defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) はメソッドを prototype に生やす
 - しかし `createWcBindable` は `properties` / `inputs` のみを生成し **`commands` を作らない**
 - [`applyChangeToCommand.ts:73-75`](../../packages/state/src/apply/applyChangeToCommand.ts) は
   `declaredCommands` 未宣言なら `raiseError`
@@ -234,6 +235,18 @@ README「Declarative Custom Components (DCC)」節にこの制約の記載は無
 なお 1.5 と 1.6 は同じ根（`createWcBindable` が①の宣言仕様の一部しか実装していない）から出ている。
 [10-defaulting-rollout-status.md §7 件目](10-defaulting-rollout-status.md) が記録した
 「`inputs` を作っていなかった」欠陥と**同じクラスの 3 件目・4 件目**にあたる。
+
+**修正（G2 = (a) `$commands` 明示宣言）**: `$bindables` と対になる `$commands: ["bumpBy"]` を導入し、
+宣言されたものだけを `commands` に載せる。`$commands` は §2.3 と同じ構造検証に加え
+「state 上に実在する **関数** であること」も検査する（`$bindables` 側は逆に「関数でないこと」）。
+
+`async` は一律 `true`。`callFn` が常に `initializePromise` に chain するため、state 側のメソッドが
+同期でも呼び出し側から見た戻り値は Promise になる。state メソッド自身の asyncness を報告すると
+呼び出し側が観測しないものを記述することになる。
+
+宣言モジュールは `$bindables` 専用ではなくなったので
+`processBindablesDeclaration.ts` → [`processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts) に改名した。
+回帰は実ブラウザで固定（[`e2e/tests/state-dcc-command.spec.ts`](../../e2e/tests/state-dcc-command.spec.ts)）。
 
 ---
 
@@ -271,18 +284,22 @@ getter 由来の派生値も同様。wcBindable の `properties[].event` は「�
 （probe 実測: `["nosuch"]` がそのまま `properties` / `inputs` に載る → 親からの書き込みが expando に着地して消える）、
 `$` 始まりの名前も無検証（`isInternalProperty` で prototype には生えないのに wcBindable には載る）。
 
-**修正**: [`processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts) を新設し、
+**修正**: [`processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts) を新設し、
 `$commandTokens` と同じ強度で **非配列 / 非文字列・空文字列 / `$` 始まり / 重複** を `raiseError` する。
 
-**残件 — 存在検査は入れていない。** §2.4（走査範囲の不一致）は解消したので、残る障害は 1 つだけ。
-`$streams` が生成する値プロパティはインスタンス側の `bindProperty` で後から実体化されるため、
-`defineDCC` の時点では素の state オブジェクト上に存在しない。素直に落とすと
-`$streams` × `$bindables` の組み合わせが一律エラーになる。
+**存在検査**（G2 と同時に実施）: `getAllPropertyDescriptors`（§2.4 で共有化した走査）に
+名前が無ければ `raiseError`。併せて種別も見て、`$bindables` にメソッドを書いた場合と
+`$commands` に値プロパティを書いた場合をそれぞれ相手側の宣言へ誘導する。
 
-ただしこの組み合わせは**現状すでに壊れている**（アクセサが生えないので DCC プロパティが死んでいる）ので、
-取りうる道は「エラーにする」か「stream 名にもアクセサを生やして動くようにする」の 2 択。
-後者を選ぶなら stream プロパティが settable かどうか（＝ `inputs` に載せてよいか）の判断が要るため、
-**§2.1 / G2 と同じ「DCC が wc-bindable のどこまでを生成するか」の議論に合流させる**。
+`$streams` については「stream 名も実在として許可し、アクセサも生やす」を採った。
+値プロパティはインスタンス側で実体化されるため `defineDCC` の時点では descriptor が無く、
+素直に落とすと `$streams` × `$bindables` が一律エラーになる。この組み合わせは従来
+**アクセサが生えず黙って死んでいた**ので、エラーにするより動くようにするほうが素直だと判断した。
+descriptor が無い名前は `streamBackedBindables` として `defineDCC` が別途 getter/setter を生やす。
+
+> 残る論点: stream 由来メンバも `properties` + `inputs` の両方に載る（＝ settable 扱い）。
+> producer 駆動の値に書き込む意味は薄いが、`$streams` の実行時も `Reflect.set` で書いているため
+> 現状は整合している。変更イベントが完全一致パスでしか出ない点（§2.1）は stream 由来でも同じ。
 
 ### 2.4 prototype チェーンの扱いが State と DCC で違う ✅ 修正済み
 
@@ -381,15 +398,15 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 |---|---|---|---|---|
 | P0 | 1.2 分岐条件を「`<stateProp>.*` バインドが 1 件以上あるか」に変更 | 数行 | ✅ | 意味論の変更を伴わない純粋な条件バグ |
 | P0 | 1.3 DCC `connectedCallback` に再接続ガード | 数行 | ✅ | `if (this._shadow !== null) return;` |
-| P0 | 1.5 / 2.3 `createWcBindable` に `$commandTokens` 相当の宣言検証 | 小 | ✅ | `processBindablesDeclaration` を新設。存在検査のみ残件 |
+| P0 | 1.5 / 2.3 `createWcBindable` に `$commandTokens` 相当の宣言検証 | 小 | ✅ | `processDccDeclarations` を新設。存在検査も G2 と同時に実施済み |
 | P1 | 1.4 DCC の shadow 構築を接続前に可能にする | 中 | ✅ | §7 G4 = (a)。実装は遅延構築（理由は §1.4） |
-| P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ⛔ | §7 G2 = (a) `$commands` 明示宣言に決定。§2.3 の存在検査も同時に |
+| P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ✅ | §7 G2 = (a) `$commands` 明示宣言。§2.3 の存在検査も同時に実施 |
 | P2 | 1.1 `this.state` の意味論統一 | 大 | ✅ | 内部チャネルと公開 API を分離（§7 G1 = (b)） |
 | P2 | 2.1 変更イベントの発火範囲 | 中 | ⛔ | サブパス変更をどう畳むかの仕様判断 |
 | P3 | 2.4 走査を共有 / 2.6 併記の fail-fast / 2.7 同期設定 / 3.5 型 / 3.6 README | 小 | ✅ | |
 | P3 | 2.5 命名規約の統一 | 小 | 🟡 | 診断 warn のみ実施。規約の統一は §7 G3 と併せて |
 | P3 | 3.1 / 3.2 / 3.4 | 小 | ⛔ | §7 G3 = (b) 分離を明文化に決定 |
-| — | 2.3 の存在検査 | 小 | ⛔ | 2.4 は解消したが `$streams` × `$bindables` の扱いが未決（§2.3 末尾） |
+| — | 2.3 の存在検査 | 小 | ✅ | `$streams` 名は許可しアクセサも生成する（§2.3 末尾） |
 
 ## 6. 回帰テストの穴
 
@@ -407,7 +424,7 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 - 🟡 10-defaulting-rollout-status.md §209 の `bindable-conformance` job は
   「dist export に現れない宣言ファクトリ（DCC `createWcBindable`）は state の unit test が固定」としているが、
   その unit test は `properties`/`inputs` の同一集合しか見ておらず、`commands` と重複名は対象外だった →
-  重複名は `dcc.processBindablesDeclaration.test.ts` が固定。`commands` は 1.6 が未着手なので依然として対象外
+  重複名も `commands` も `dcc.processDccDeclarations.test.ts` が固定するようになった
 
 ## 7. Decision gate
 
@@ -430,16 +447,16 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 不要になり削除。`innerState.get` からも listIndex 解決と台帳書き込みが落ちて、読みごとの
 `createAbsoluteStateAddress` 割り当てが 1 個減った。
 
-### G2: DCC の commands — ✅ **(a) `$commands` 明示宣言を追加**
+### G2: DCC の commands — ✅ **(a) `$commands` 明示宣言を追加**（実装済み）
 
 `$bindables` と対になる `$commands: ["inc"]` を導入し、宣言されたものだけを
-`wcBindable.commands` に載せる。**未実装**。
+`wcBindable.commands` に載せる。
 
 - 却下 (b)「prototype 上の関数を自動宣言」— 内部ヘルパまで公開面に出る。
   「data-wcs は配線であって DSL ではない」という既存方針に照らしても明示宣言が整合的
 - 却下 (c)「生成しない方針を規範化」— §1.6 の非対称（event-token は動くのに command-token だけ不可）が残る
 
-§2.3 の存在検査（`$streams` × `$bindables`）もこの作業に合流させる。
+§2.3 の存在検査（`$streams` × `$bindables`）も同時に実施した。
 
 ### G3: ②と③の関係 — ✅ **(b) 分離を規範として明文化**
 

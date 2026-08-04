@@ -3,7 +3,7 @@ import { DCC_DEFINITION_ATTRIBUTE, STATE_BINDABLES_NAME } from "../define";
 import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { getterFn, setterFn, callFn, isInternalProperty } from "./dccPropertyFactories";
-import { processBindablesDeclaration } from "./processBindablesDeclaration";
+import { processDccDeclarations } from "./processDccDeclarations";
 import { createWcBindable, createBindableEventMap, IWcBindable } from "./wcBindable";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
@@ -28,10 +28,10 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
   template.innerHTML = shadowRoot.innerHTML;
   const shadowRootMode = shadowRoot.mode as ShadowRootMode;
 
-  // $bindables から wcBindable + bindableEventMap を生成
-  const bindables: string[] = processBindablesDeclaration(state);
-  const wcBindable: IWcBindable | null = bindables.length > 0
-    ? createWcBindable(tagName, bindables)
+  // $bindables / $commands から wcBindable + bindableEventMap を生成
+  const { bindables, commands, streamBackedBindables } = processDccDeclarations(state);
+  const wcBindable: IWcBindable | null = (bindables.length > 0 || commands.length > 0)
+    ? createWcBindable(tagName, bindables, commands)
     : null;
   const bindableEventMap: Record<string, string> = bindables.length > 0
     ? createBindableEventMap(tagName, bindables)
@@ -133,6 +133,18 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
       newDesc.set = setterFn(name);
     }
     Object.defineProperty(DCCElement.prototype, name, newDesc);
+  }
+
+  // `$streams` の値プロパティはインスタンス側の processStreamsDeclaration で実体化されるため、
+  // defineDCC の時点では state 上に descriptor が無い。$bindables に載っているのに
+  // アクセサが生えないと宣言だけが生きて要素側が expando を掴むので、ここで補う（§2.3）。
+  for (const name of streamBackedBindables) {
+    Object.defineProperty(DCCElement.prototype, name, {
+      configurable: true,
+      enumerable: true,
+      get: getterFn(name),
+      set: setterFn(name),
+    });
   }
 
   // カスタム要素登録
