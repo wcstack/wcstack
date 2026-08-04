@@ -66,6 +66,15 @@ describe('dcc/defineDCC', () => {
     });
   });
 
+  it('不正な$bindables宣言はdefineDCCの時点でエラーになること', () => {
+    const tag = uniqueTag();
+    const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');
+    expect(() => defineDCC(host, shadow, { count: 0, $bindables: ['count', 'count'] }))
+      .toThrow('is duplicated');
+    // 落ちた場合はカスタム要素を登録しない
+    expect(customElements.get(tag)).toBeUndefined();
+  });
+
   it('$bindablesがない場合、wcBindableはnullになること', () => {
     const tag = uniqueTag();
     const { host, shadow } = createHostWithShadowRoot(tag, '<p>test</p>');
@@ -160,6 +169,45 @@ describe('dcc/defineDCC', () => {
       document.body.removeChild(instance);
     });
 
+    // 回帰: shadow tree は host の切断後も保持されるため、再接続で attachShadow を
+    // 呼び直すと NotSupportedError になる。`if` の false→true 再マウントと `for` の
+    // 行プーリングはどちらも同一ノードを unmount → mount する
+    // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.3）。
+    it('再接続してもattachShadowが呼び直されず内容も重複しないこと', () => {
+      const tag = uniqueTag();
+      const { host, shadow } = createHostWithShadowRoot(tag, '<p>hello</p>');
+      defineDCC(host, shadow, { count: 0 });
+
+      const instance = document.createElement(tag);
+      document.body.appendChild(instance);
+      const firstShadow = instance.shadowRoot;
+      expect(firstShadow).not.toBeNull();
+      expect(firstShadow!.querySelectorAll('p').length).toBe(1);
+
+      instance.remove();
+      expect(() => document.body.appendChild(instance)).not.toThrow();
+
+      // 同一 shadow が維持され、テンプレートが二重に流し込まれていない
+      expect(instance.shadowRoot).toBe(firstShadow);
+      expect(instance.shadowRoot!.querySelectorAll('p').length).toBe(1);
+      instance.remove();
+    });
+
+    it('closedモードでも再接続でthrowしないこと', () => {
+      const tag = uniqueTag();
+      const { host, shadow } = createHostWithShadowRoot(tag, '<p>hello</p>', 'closed');
+      defineDCC(host, shadow, { count: 0 });
+
+      const instance = document.createElement(tag) as any;
+      document.body.appendChild(instance);
+      const stateElementBefore = instance.stateElement;
+      instance.remove();
+      expect(() => document.body.appendChild(instance)).not.toThrow();
+      // closed では shadowRoot が露出しないため stateElement ゲッター経由で同一性を見る
+      expect(instance.stateElement).toBe(stateElementBefore);
+      instance.remove();
+    });
+
     it('stateElementゲッターがwcs-stateを返すこと', () => {
       const tag = uniqueTag();
       const { host, shadow } = createHostWithShadowRoot(tag, '<p>hello</p><wcs-state></wcs-state>');
@@ -190,6 +238,27 @@ describe('dcc/defineDCC', () => {
       expect(Cls.bindableEventMap).toEqual({
         count: `${tag}:count-changed`,
       });
+    });
+
+    // §2.5: stateTagSelector は `:not([name])` なので name 付き <wcs-state> は一致しない。
+    // 黙って壊れる代わりに warn を出す。
+    it('$bindablesがあるのに無名のwcs-stateが無い場合はconsole.warnで通知されること', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const tag = uniqueTag();
+      const { host, shadow } = createHostWithShadowRoot(
+        tag,
+        `<p>hello</p><${config.tagNames.state} name="scoped"></${config.tagNames.state}>`,
+      );
+      defineDCC(host, shadow, { count: 0, $bindables: ['count'] });
+
+      const instance = document.createElement(tag);
+      document.body.appendChild(instance);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('has no <'),
+      );
+      instance.remove();
+      warnSpy.mockRestore();
     });
 
     it('connectedCallbackでbindableEventMapがstateElementに設定されること', async () => {

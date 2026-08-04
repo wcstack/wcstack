@@ -21,10 +21,18 @@ export function bindWebComponent(
   state: Record<string, any>
 ): void {
   setStateElementByWebComponent(component, stateProp, innerStateElement);
-  if (component.hasAttribute(config.bindAttributeName)) {
-    const bindings = (getBindingsByNode(component) ?? []).filter(
-      binding => binding.propSegments[0] === stateProp
-    );
+  // 分岐は「data-wcs 属性の有無」ではなく「<stateProp>.* バインドが 1 件以上あるか」で決める。
+  // 属性はあってもマッピング対象が 0 件（例: data-wcs="class.on: flag" だけ）の場合、
+  // buildPrimaryMappingRule は primaryMappingRule を 1 件も作らないまま return するため、
+  // outerState の lastValue / $postUpdate 意味論だけが残る。その状態では
+  // component[stateProp] の read が常に undefined・write が完全な no-op になる
+  // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.2）。
+  const bindings = component.hasAttribute(config.bindAttributeName)
+    ? (getBindingsByNode(component) ?? []).filter(
+        binding => binding.propSegments[0] === stateProp
+      )
+    : [];
+  if (bindings.length > 0) {
     buildPrimaryMappingRule(component, stateProp, bindings);
     const outerState = createOuterState(component, stateProp);
     const innerState = createInnerState(component, stateProp);
