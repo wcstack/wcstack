@@ -5,7 +5,9 @@ import { raiseError } from "../raiseError";
 import { getterFn, setterFn, callFn, isInternalProperty } from "./dccPropertyFactories";
 import { processBindablesDeclaration } from "./processBindablesDeclaration";
 import { createWcBindable, createBindableEventMap, IWcBindable } from "./wcBindable";
-import { State } from "../components/State";
+import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
+// 具象 State ではなくインターフェースに依存する（dcc → components の逆参照を断つ、§3.5）。
+import type { IStateElement } from "../components/types";
 
 export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: IState): void {
   const tagName = hostElement.tagName.toLowerCase();
@@ -56,13 +58,16 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
       this._shadow = this.attachShadow({ mode: DCCElement.shadowRootMode });
       this._shadow.appendChild(DCCElement.template.content.cloneNode(true));
 
-      // bindableEventMap の設定
+      // bindableEventMap の設定。
+      // initializePromise は待たない。待つと state のロード完了まで map が空のままで、
+      // $connectedCallback 内で行った初期変更が変更イベントを出さない
+      // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.7）。
+      // setBindableEventMap はフィールド代入だけで state を参照しないので、
+      // <wcs-state> の初期化前に呼んでも安全。
       if (Object.keys(DCCElement.bindableEventMap).length > 0) {
-        const stateEl = this._shadow.querySelector(stateTagSelector) as State | null;
+        const stateEl = this._shadow.querySelector(stateTagSelector) as IStateElement | null;
         if (stateEl) {
-          stateEl.initializePromise.then(() => {
-            stateEl.setBindableEventMap(DCCElement.bindableEventMap);
-          });
+          stateEl.setBindableEventMap(DCCElement.bindableEventMap);
         } else {
           // $bindables を宣言しているのに束ねる先が無い。stateTagSelector は
           // `:not([name])` なので name 付きの <wcs-state> は一致せず、この分岐に落ちると
@@ -73,13 +78,17 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
       }
     }
 
-    get stateElement() {
-      return this._shadow?.querySelector(stateTagSelector) as State | null;
+    get stateElement(): IStateElement | null {
+      return (this._shadow?.querySelector(stateTagSelector) ?? null) as IStateElement | null;
     }
   };
 
-  // state プロパティを走査して DCC クラスのプロトタイプにgetter/setter/methodを定義
-  const descriptors = Object.getOwnPropertyDescriptors(state);
+  // state プロパティを走査して DCC クラスのプロトタイプにgetter/setter/methodを定義。
+  // 走査範囲は State の getterPaths / setterPaths 収集と同じ「自身＋プロトタイプチェーン」に
+  // 揃える。own descriptor だけを見ていた頃は、クラスインスタンスや Object.create(proto) の
+  // state で「getterPaths には載るのにアクセサが生えない」乖離が出ていた
+  // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.4）。
+  const descriptors = getAllPropertyDescriptors(state);
   for (const [name, desc] of Object.entries(descriptors)) {
     if (isInternalProperty(name)) continue;
 

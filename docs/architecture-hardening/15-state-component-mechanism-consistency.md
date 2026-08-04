@@ -45,23 +45,34 @@
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ⛔ 未着手 |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ⛔ 未着手 |
 | §2.3 | `$bindables` だけ宣言検証が無い | 🟡 部分修正（構造検証は実装。存在検査は残件・理由は §2.3） |
-| §2.4 | prototype チェーンの扱いが State と DCC で違う | ⛔ 未着手 |
+| §2.4 | prototype チェーンの扱いが State と DCC で違う | ✅ 修正済み |
 | §2.5 | inner `<wcs-state>` が `:not([name])` 固定 | 🟡 部分修正（挙動は不変、`console.warn` で可視化） |
-| §2.6 | bind-component と state ソース属性の二重指定 | ⛔ 未着手 |
-| §2.7 | `bindableEventMap` の設定タイミング | ⛔ 未着手 |
-| §3.1-3.6 | 設計・衛生 | ⛔ 未着手 |
+| §2.6 | bind-component と state ソース属性の二重指定 | ✅ 修正済み |
+| §2.7 | `bindableEventMap` の設定タイミング | ✅ 修正済み |
+| §3.1 / §3.2 / §3.4 | 相互排他・wcBindable の要求範囲・重複定義の作法 | ⛔ 未着手（**G3 待ち**） |
+| §3.3 | root 判定が 2 系統 | ❌ **本書の誤り**（SSR で必要。コメントを追加して訂正） |
+| §3.5 | 型・レイヤ（`IStateElement` に setter が無い） | ✅ 修正済み |
+| §3.6 | `src/` 配下の README が実装と食い違う | ✅ 修正済み |
 
 修正の実装は以下。
 
-- [`webComponent/bindWebComponent.ts`](../../packages/state/src/webComponent/bindWebComponent.ts) — §1.2
-- [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) — §1.3 / §2.5
-- [`dcc/processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts)（新規） — §1.5 / §2.3
+| ファイル | 対象 |
+|---|---|
+| [`webComponent/bindWebComponent.ts`](../../packages/state/src/webComponent/bindWebComponent.ts) | §1.2 |
+| [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §2.4 / §2.5 / §2.7 / §3.5 |
+| [`dcc/processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts)（新規） | §1.5 / §2.3 |
+| [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
+| [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 |
+| [`components/types.ts`](../../packages/state/src/components/types.ts) | §3.5 |
+| [`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts) | §3.3（コメントのみ・挙動不変） |
+| `src/dcc/README.md` / `src/webComponent/README.md` | §3.6（実装の現状に書き直し） |
 
 回帰テストは
 [`webComponent.bindWebComponent.semantics.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.semantics.test.ts)（新規・§6 の穴を塞ぐ）、
 [`dcc.processBindablesDeclaration.test.ts`](../../packages/state/__tests__/dcc.processBindablesDeclaration.test.ts)（新規）、
-`dcc.defineDCC.test.ts` / `webComponent.bindWebComponent.test.ts`（追記）。
-新規テストはいずれも修正前のコードに対して失敗することを確認済み。
+[`src.getAllPropertyDescriptors.test.ts`](../../packages/state/__tests__/src.getAllPropertyDescriptors.test.ts)（新規）、
+`dcc.defineDCC.test.ts` / `webComponent.bindWebComponent.test.ts` / `components.State.test.ts`（追記）。
+P0 の新規テストはいずれも修正前のコードに対して失敗することを確認済み。
 
 ---
 
@@ -224,21 +235,30 @@ getter 由来の派生値も同様。wcBindable の `properties[].event` は「�
 **修正**: [`processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts) を新設し、
 `$commandTokens` と同じ強度で **非配列 / 非文字列・空文字列 / `$` 始まり / 重複** を `raiseError` する。
 
-**残件 — 存在検査は入れていない。** `$streams` が生成する値プロパティはインスタンス側の `bindProperty` で
-後から実体化されるため、`defineDCC` の時点では素の state オブジェクト上に存在しない。
-`!(name in state)` で落とすと正当な組み合わせまで落としうる。さらに `in` は prototype チェーンを歩くので、
-§2.4（own descriptor のみを見る）を直さない限り「検査は通るがアクセサは生えない」名前が残り、検査として
-不完全になる。**§2.4 と同時に扱うべき残件**として据え置く。
+**残件 — 存在検査は入れていない。** §2.4（走査範囲の不一致）は解消したので、残る障害は 1 つだけ。
+`$streams` が生成する値プロパティはインスタンス側の `bindProperty` で後から実体化されるため、
+`defineDCC` の時点では素の state オブジェクト上に存在しない。素直に落とすと
+`$streams` × `$bindables` の組み合わせが一律エラーになる。
 
-### 2.4 prototype チェーンの扱いが State と DCC で違う
+ただしこの組み合わせは**現状すでに壊れている**（アクセサが生えないので DCC プロパティが死んでいる）ので、
+取りうる道は「エラーにする」か「stream 名にもアクセサを生やして動くようにする」の 2 択。
+後者を選ぶなら stream プロパティが settable かどうか（＝ `inputs` に載せてよいか）の判断が要るため、
+**§2.1 / G2 と同じ「DCC が wc-bindable のどこまでを生成するか」の議論に合流させる**。
 
-- [`State.getAllPropertyDescriptors`](../../packages/state/src/components/State.ts)（37-45 行）は
-  prototype チェーンを歩いて getterPaths / setterPaths を収集する
-- [`defineDCC.ts:71`](../../packages/state/src/dcc/defineDCC.ts) は `Object.getOwnPropertyDescriptors(state)` の own のみ
+### 2.4 prototype チェーンの扱いが State と DCC で違う ✅ 修正済み
 
-state をクラスインスタンスや `Object.create(proto)` で書くと両者が食い違う。
-オブジェクトリテラルが規約なので現状は顕在化しにくいが、`$commandTokens` の doc コメントが
-「クラス形式は未サポート」と明記している一方、DCC 側には同等の明文が無い。
+- `State` は prototype チェーンを歩いて getterPaths / setterPaths を収集していた
+- `defineDCC` は `Object.getOwnPropertyDescriptors(state)` の own のみ
+
+state をクラスインスタンスや `Object.create(proto)` で書くと両者が食い違い、
+「getterPaths には載るのに DCC prototype にアクセサが生えない」状態になる。
+オブジェクトリテラルが規約なので顕在化しにくいが、走査が 2 本ある事実そのものが
+§2.3 の存在検査を入れられない理由にもなっていた。
+
+**修正**: 走査を [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)
+に切り出して両者で共有した。同名は手前（自身に近い側）が勝つ — プロパティ解決の実際の優先順位と一致する。
+元の実装は遠いプロトタイプが後勝ちで上書きしていたが、名前の集合しか見ない
+getterPaths / setterPaths には影響が無かったため露見していなかった。
 
 ### 2.5 DCC の inner `<wcs-state>` は `:not([name])` 固定 🟡 部分修正
 
@@ -252,17 +272,23 @@ state をクラスインスタンスや `Object.create(proto)` で書くと両�
 **修正**: 挙動は変えず、`$bindables` を宣言しているのに無名の `<wcs-state>` が見つからない場合に
 `console.warn` を出すようにした（従来は分岐が無言で落ちていた）。命名規約そのものの統一は §3 と併せて未着手。
 
-### 2.6 bind-component と state ソース属性の二重指定が片方を無言で捨てる
+### 2.6 bind-component と state ソース属性の二重指定が片方を無言で捨てる ✅ 修正済み
 
 `_initializeBindWebComponent()` → `setInitialState()` → `_resolveSetState()`
 （[`State.ts:628-634`](../../packages/state/src/components/State.ts)）だが、
 `_initialize()` は `state` / `src` / `json` / inner `<script>` があればそちらを採用し `_setStatePromise` を await しない
-（`State.ts:213-240`）。結果、`createInnerState` で作った proxy ごと破棄され、親↔子マッピングが死ぬ。バリデーション無し。
+（`State.ts:213-240`）。結果、`createInnerState` で作った proxy ごと破棄され、親↔子マッピングが死ぬ。
 
-### 2.7 `bindableEventMap` の設定タイミング
+**修正**: `_initializeBindWebComponent` で `state` / `src` / `json` / inner `<script type="module">`
+との併記を検出して `raiseError` する。併記は必ず設定ミスなので fail-fast が正しい。
 
-[`defineDCC.ts:58`](../../packages/state/src/dcc/defineDCC.ts) は `initializePromise.then()` で設定するため、
-`$connectedCallback` 内で行った初期変更はイベントを出さない。
+### 2.7 `bindableEventMap` の設定タイミング ✅ 修正済み
+
+`defineDCC` は `initializePromise.then()` で設定していたため、
+`$connectedCallback` 内で行った初期変更はイベントを出さなかった。
+
+**修正**: `connectedCallback` 内で同期的に設定する。`setBindableEventMap` はフィールド代入だけで
+state を参照しないので、`<wcs-state>` の初期化前に呼んでも安全。
 
 ---
 
@@ -273,20 +299,28 @@ state をクラスインスタンスや `Object.create(proto)` で書くと両�
 - **3.2** wcBindable の要求範囲が機構ごとに揃っていない。spread（`...:`）と command-token は
   wcBindable 必須で未宣言なら `raiseError` するが、bind-component コンポーネントは wcBindable を持たないので
   `state.msg: x` は通る。**同じ「コンポーネント」なのに書ける構文が違う**
-- **3.3** root 判定が 2 系統。`instanceof ShadowRoot`（`State.ts:268,357` / `setByAddress.ts:237`）と
-  `rootNode.constructor.name === 'ShadowRoot' | 'Document' | 'HTMLDocument'`
-  （[`stateElementByName.ts:66,81`](../../packages/state/src/stateElementByName.ts)）。後者は文字列比較で
-  `DocumentFragment` を取りこぼす
+- **3.3** ~~root 判定が 2 系統~~ ❌ **本書の誤り（2026-08-05 訂正）**。
+  `instanceof ShadowRoot`（`State.ts:268,357` / `setByAddress.ts:237`）と
+  `rootNode.constructor.name === ...`（[`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts)）の
+  併存を「揃っていない」と書いたが、後者は**必要**だった。SSR では `@wcstack/server` の
+  `installGlobals` が happy-dom の一部だけを `globalThis` に載せ、その `GLOBALS_KEYS` に
+  `Document` は入っていない。Node にも `Document` は無いので `rootNode instanceof Document` は
+  ReferenceError になる。`ShadowRoot` はリストに含まれるため他所の instanceof は成立する。
+  **対応 = コード側に理由コメントを追加**（統一はしない）。
+  なお `DocumentFragment` root で bindings が組まれない点は事実だが、fragment は
+  `setRootNodeByFragment` で別途対応先が与えられるため、ここでの取りこぼしではない
 - **3.4** 重複定義時の作法が不揃い。DCC タグ重複は `console.warn` してスキップ（`defineDCC.ts:16-20`）、
   state 名重複は `raiseError`（`stateElementByName.ts:91-93`）
-- **3.5** 型・レイヤ。`IStateElement` に `bindableEventMap`（readonly）はあるが `setBindableEventMap` が無く、
-  `defineDCC` が具象 `State` を import して cast している（dcc → components の逆参照。
-  型としてのみ使うため tsc が elide し実行時循環は無いが依存の向きは逆）。
-  `IDCCElement.stateElement` の型も `IStateElement` と `State` で二重定義になっている
-- **3.6** [`src/dcc/README.md`](../../packages/state/src/dcc/README.md) が設計メモのまま残り実装と食い違う
-  （`typeof func.constructor.name === "AsyncFunction"` は常に false、イベントを host ではなく stateElement に
-  dispatch する旧仕様など）。[`src/webComponent/README.md`](../../packages/state/src/webComponent/README.md) も断片のみ。
-  正本は `packages/state/README.md`
+- **3.5** ✅ 修正済み。`IStateElement` に `bindableEventMap`（readonly）はあるが `setBindableEventMap` が無く、
+  `defineDCC` が具象 `State` を import して cast していた（dcc → components の逆参照）。
+  インターフェースに setter を追加し、`defineDCC` は `import type { IStateElement }` のみに依存する。
+  `stateElement` の型も `dccPropertyFactories` 側と揃った
+- **3.6** ✅ 修正済み。[`src/dcc/README.md`](../../packages/state/src/dcc/README.md) が設計メモのまま残り
+  実装と食い違っていた（`typeof func.constructor.name === "AsyncFunction"` は常に false、
+  イベントを host ではなく stateElement に dispatch する旧仕様など）。
+  [`src/webComponent/README.md`](../../packages/state/src/webComponent/README.md) も断片のみだった。
+  どちらも「正本は `packages/state/README.md`」と明示したうえで実装側の補足に書き直し、
+  未修正の制約は本書へリンクする形にした
 
 ---
 
@@ -313,8 +347,10 @@ state をクラスインスタンスや `Object.create(proto)` で書くと両�
 | P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ⛔ | どのメソッドを command とするかの仕様判断が要る（§7 G2） |
 | P2 | 1.1 `this.state` の意味論統一 | 大 | ⛔ | 内部チャネルと公開 API の分離（§7 G1） |
 | P2 | 2.1 変更イベントの発火範囲 | 中 | ⛔ | サブパス変更をどう畳むかの仕様判断 |
-| P3 | 2.4 / 2.6 / 2.7 / §3 | 小 | ⛔ | 個別に軽い。2.3 の存在検査は 2.4 と同時に |
+| P3 | 2.4 走査を共有 / 2.6 併記の fail-fast / 2.7 同期設定 / 3.5 型 / 3.6 README | 小 | ✅ | |
 | P3 | 2.5 命名規約の統一 | 小 | 🟡 | 診断 warn のみ実施。規約の統一は §7 G3 と併せて |
+| P3 | 3.1 / 3.2 / 3.4 | 小 | ⛔ | §7 G3 待ち |
+| — | 2.3 の存在検査 | 小 | ⛔ | 2.4 は解消したが `$streams` × `$bindables` の扱いが未決（§2.3 末尾） |
 
 ## 6. 回帰テストの穴
 

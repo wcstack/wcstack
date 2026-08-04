@@ -31,18 +31,7 @@ import { getCustomElement } from "../getCustomElement";
 import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
-
-type Descriptors = Record<string, PropertyDescriptor>;
-
-function getAllPropertyDescriptors(obj: object): Descriptors {
-  let descriptors: Descriptors = {};
-  let proto = obj;
-  while (proto && proto !== Object.prototype) {
-    Object.assign(descriptors, Object.getOwnPropertyDescriptors(proto));
-    proto = Object.getPrototypeOf(proto);
-  }
-  return descriptors;
-}
+import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 
 function getStateInfo(
   state: IState
@@ -277,6 +266,19 @@ export class State extends HTMLElementBase implements IStateElement {
       // LightDOMの場合、名前空間が上位スコープと共有されるためnameが必須
       if (!(parentNode instanceof ShadowRoot) && !this.hasAttribute("name")) {
         raiseError(`"bind-component" in Light DOM requires a "name" attribute to avoid namespace conflicts with the parent scope.`);
+      }
+      // bind-component はコンポーネント側の state プロパティを唯一のソースにする。
+      // state / src / json / inner <script> と併記すると、この後の _initialize が
+      // そちらを採用して _setStatePromise を await しないため、bindWebComponent が
+      // setInitialState で渡した innerState proxy ごと捨てられ、親↔子マッピングが
+      // 無言で死ぬ。併記は必ず設定ミスなので fail-fast させる
+      // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.6）。
+      const conflicting = ["state", "src", "json"].filter((name) => this.hasAttribute(name));
+      if (this.querySelector('script[type="module"]') !== null) {
+        conflicting.push('<script type="module">');
+      }
+      if (conflicting.length > 0) {
+        raiseError(`"bind-component" cannot be combined with ${conflicting.join(", ")}. The component's "${this.getAttribute("bind-component")}" property is the only state source.`);
       }
       const boundComponentStateProp = this.getAttribute("bind-component")!;
       await customElements.whenDefined(customTagName.toLowerCase());

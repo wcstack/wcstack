@@ -1,207 +1,42 @@
+# dcc/ — Declarative Custom Components
 
-構文はこんな感じ
+**正本は [`packages/state/README.md`](../../README.md) の "Declarative Custom Components (DCC)" 節。**
+ここは実装側の補足のみを置く。
 
-```html
+`data-wc-definition` を持つホストの Declarative Shadow DOM の中に `<wcs-state>` があると、
+`State.connectedCallback` が定義モードとして検出し（`components/State.ts` の `_initializeDCC`）、
+state をロードして `defineDCC()` を呼ぶ。定義用の `<wcs-state>` はそこで処理を打ち切る。
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <title>Declarative Custom Components</title>
-  <script type="module" src="../../dist/auto.js"></script>
-  <style>
-:not(:defined) {
-  display: none;
-}
-[data-wc-definition] {
-  display: none;
-}
-  </style>
-</head>
-<body>
-  <!-- コンポーネント定義、非表示 -->
-  <my-component data-wc-definition>
-    <template shadowrootmode="open">
-      <p>This is a declarative shadow DOM example.</p>
-      <p>{{ count }}</p>
-      <button data-wcs="onclick: inc">inc</button>
-      <wcs-state>
-        <script type="module">
-export default {
-  count: 0,
-  inc() { this.count++ },
-  $bindables: ["count"]
-};          
-        </script>
-      </wcs-state>
-    </template>
-  </my-component>
+## ファイル
 
-  <!-- コンポーネント実体 -->
-  <my-component></my-component>
+| ファイル | 役割 |
+|---|---|
+| `defineDCC.ts` | shadow の内容を template に取り込み、state から prototype を組み立てて `customElements.define` する |
+| `dccPropertyFactories.ts` | prototype に生やす getter / setter / メソッドのファクトリ。いずれも `stateElement` 経由で reactive proxy を叩く |
+| `processBindablesDeclaration.ts` | `$bindables` 宣言の検証（`$commandTokens` と同じ強度） |
+| `wcBindable.ts` | `$bindables` から `static wcBindable` と `bindableEventMap` を生成 |
 
-</body>
-</html>  
+## 実装上の要点
 
-```
+- **prototype の走査範囲**は `getAllPropertyDescriptors`（自身＋プロトタイプチェーン）。
+  `State` の getterPaths / setterPaths 収集と同じ走査を共有する。
+- **`$` 始まりのプロパティは prototype に生やさない**（`isInternalProperty`）。
+  `$bindables` 側でも `$` 始まりの名前は宣言時にエラーにする。
+- **再接続で `attachShadow` を呼び直さない。** shadow tree は host の切断後も保持されるため、
+  2 回目は `NotSupportedError` になる。`if` の再マウントと `for` の行プーリングで日常的に踏む。
+- **変更イベントの発火**は `proxy/methods/setByAddress.ts` が担う。`bindableEventMap` に
+  完全一致するパスへの書き込みで、shadow の host に `CustomEvent` を dispatch する
+  （`bubbles: true` / `composed` なし。host 自身が起点なので shadow 境界は越えない）。
+- **inner `<wcs-state>` は無名であること。** セレクタが `:not([name])` のため、
+  `name` を付けると `stateElement` が解決できない。`$bindables` 宣言時は警告を出す。
 
-```js
-// getter/setterの断片
+## 既知の制約
 
-function getterFn(name) {
-  return function () {
-    let value;
-    this.stateElement.createState("readonly", (state) => {
-      value = state[name];
-    });
-    return value;
-  }
-}
+実装と設計の食い違いは
+[`docs/architecture-hardening/15-state-component-mechanism-consistency.md`](../../../../docs/architecture-hardening/15-state-component-mechanism-consistency.md)
+に集約してある。未修正の主なものは以下。
 
-function setterFn(name) {
-  return function (value) {
-    this.stateElement.createState("writable", (state) => {
-      state[name] = value;
-    });
-  }
-}
-
-// 非同期は要検討
-function callFn(name) {
-  return function (...args) {
-    let func;
-    this.stateElement.createState("readonly", (state) => {
-      func = state[name];
-    })
-    if (typeof func !== "function") return;
-    if (typeof func.constructor.name === "AsyncFunction") {
-      this.stateElement.createStateAsync("writable", async (state) => {
-        await state[name](...args);
-      });
-    } else {
-      this.stateElement.createState("writable", (state) => {
-        state[name](...args);
-      });
-    }
-  }
-}
-
-
-```
-
-DCC定義判定の断片
-
-```js:State.ts
-
-class {
-  connectedCallback() {
-    // DCC定義判定
-    const parentElement = this.parentNode;
-    const isParentShadowRoot = (parentElement instanceof ShadowRoot);
-    const hasDefinition = 
-      isParentShadowRoot ? parentElement.host.hasAttribute("data-wc-definition") : false;
-    if (isParentShadowRoot && hasDefinition) {
-      // DCC定義
-      // 以降処理は行わない
-      return;
-    }
-  }
-}
-```
-
-DCCクラス例
-
-```js
-
-// stateElement内
-const fragment = document.createDocumentFragment();
-fragment.appendChild(parentElement.shadowRoot.cloneNode(true));
-class extends HTMLElement {
-  static fragment = fragment;
-  static shadowRootMode = shadowRootMode;
-  constructor() {
-    super();
-  }
-  connectedCallback() {
-    if (this.hasAttribute("data-wc-definition")) return;
-    this.attachShadow({ mode: this.constructor.shadowRootMode });
-    this.shadowRoot.appendChild(this.constructor.fragment.cloneNode(true));
-  }
-  get stateElement() {
-    const stateElement = this.shadowRoot.querySelector("wcs-state:not([name])");
-    return stateElement;
-  }
-}
-
-```
-
-DCCクラスにgetter/setterを生やす
-
-```js
-const dccClass = class {...}; 
-const descriptors = Object.getOwnPropertyDescriptors(stateObj);
-for(const [name, desc] of Object.entries(descriptors)) {
-  const newDesc = { configurable: true, enumerable: true };
-  if (typeof desc.value === "function") {
-    newDesc.value = callFn(name);
-  } else {
-    newDesc.get = getterFn(name);
-    newDesc.set = setterFn(name);
-  }
-  Object.defineProperty(dccClass.prototype, name, newDesc);
-}
-```
-
-wcBindableの生成
-
-```js
-const tagName = component.tagName.toLowerCase();
-const bindables = stateObj["$bindables"] ?? [];
-const wcBindable = {
-  protocol: "wc-bindable",
-  version: 1,
-  properties: []
-};
-for(const propName of bindables) {
-  const prop = {
-    name: propName,
-    event: `${tagName}:${propName}-changed`
-  }
-  wcBindable.properties.push(prop);
-}
-return wcBindable;
-```
-
-wcBindableのカスタムイベントマップ、bindableEventMap
-stateElementが持つ
-
-```js
-const bindableEventMap = {};
-for(const propName of bindables) {
-  bindableEventMap[propName] = `${tagName}:${propName}-changed`;
-}
-return bindableEventMap;
-```
-
-CustomEvent
-
-```js
-function _setByAddress(
-  target   : object, 
-  address  : IStateAddress,
-  absAddress: IAbsoluteStateAddress,
-  value    : any, 
-  receiver : any,
-  handler  : IStateHandler
-): any {
-  try {
-
-  } finally {
-    if (address.pathInfo.path in handler.stateElement.bindableEventMap) {
-      const eventName = handler.stateElement.bindableEventMap[address.pathInfo.path];
-      handler.stateElement.dispatchEvent(new CustomEvent(eventName, {
-        detail: value,
-        bubbles: true,
-      }));
-    }
-  }
+- `wcBindable.commands` を生成しないため、DCC のメソッドを command-token で起動できない（§1.6）
+- fragment 内（未接続）の要素へのバインド適用は `_shadow` 未設定のため無言で捨てられる（§1.4）
+- 変更イベントは完全一致パスでしか出ない（サブパス変更・配列の in-place 変異では発火しない、§2.1）
+- getter は同期・setter とメソッドは `initializePromise` 待ちで非対称（§2.2）

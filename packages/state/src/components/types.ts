@@ -16,7 +16,14 @@ export interface IStateElement {
   readonly version: number;
   readonly rootNode: Node;
   readonly boundComponentStateProp: string | null;
+  /**
+   * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
+   * 唯一の書き手は defineDCC で、読み手は setByAddress。
+   * getter だけを公開して setter をインターフェースから落としていたため
+   * defineDCC が具象 State に依存していた（§3.5）。
+   */
   readonly bindableEventMap: Record<string, string>;
+  setBindableEventMap(map: Record<string, string>): void;
   readonly commandTokenNames: ReadonlySet<string>;
   readonly eventTokenNames: ReadonlySet<string>;
   /**
