@@ -3,6 +3,7 @@ import { DCC_DEFINITION_ATTRIBUTE, STATE_BINDABLES_NAME } from "../define";
 import { config } from "../config";
 import { raiseError } from "../raiseError";
 import { getterFn, setterFn, callFn, isInternalProperty } from "./dccPropertyFactories";
+import { processBindablesDeclaration } from "./processBindablesDeclaration";
 import { createWcBindable, createBindableEventMap, IWcBindable } from "./wcBindable";
 import { State } from "../components/State";
 
@@ -25,9 +26,7 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
   const shadowRootMode = shadowRoot.mode as ShadowRootMode;
 
   // $bindables から wcBindable + bindableEventMap を生成
-  const bindables: string[] = Array.isArray(state[STATE_BINDABLES_NAME])
-    ? state[STATE_BINDABLES_NAME]
-    : [];
+  const bindables: string[] = processBindablesDeclaration(state);
   const wcBindable: IWcBindable | null = bindables.length > 0
     ? createWcBindable(tagName, bindables)
     : null;
@@ -48,6 +47,12 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
 
     connectedCallback() {
       if (this.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) return;
+      // 再接続では shadow を張り直さない。shadow tree は host の切断後も保持されるため
+      // 2 回目の attachShadow は NotSupportedError で throw する。`if` の false→true 再マウントと
+      // `for` の行プーリングはどちらも同一ノードを unmount → mount するので日常的に踏む
+      // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.3）。
+      // closed mode では this.shadowRoot が null なので、判定はこのフィールドで行う。
+      if (this._shadow !== null) return;
       this._shadow = this.attachShadow({ mode: DCCElement.shadowRootMode });
       this._shadow.appendChild(DCCElement.template.content.cloneNode(true));
 
@@ -58,6 +63,12 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
           stateEl.initializePromise.then(() => {
             stateEl.setBindableEventMap(DCCElement.bindableEventMap);
           });
+        } else {
+          // $bindables を宣言しているのに束ねる先が無い。stateTagSelector は
+          // `:not([name])` なので name 付きの <wcs-state> は一致せず、この分岐に落ちると
+          // 変更イベントが一切出ないまま静かに壊れる
+          // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.5）。
+          console.warn(`[@wcstack/state] DCC: "${tagName}" declares ${STATE_BINDABLES_NAME} but its template has no <${config.tagNames.state}> without a "name" attribute. Change events will not be dispatched.`);
         }
       }
     }

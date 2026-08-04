@@ -1,8 +1,10 @@
 # state のコンポーネント機構 3 系統の整合性監査
 
 - **作成日**: 2026-08-05
-- **状態**: 監査記録。**未採択・未修正**。本書は「何が食い違っているか」の固定であり、
-  どう直すかの決定は §7 の decision gate を通してから行う。
+- **状態**: 監査記録＋**P0 実施済み**（2026-08-05、branch `fix/state-component-mechanism-p0`）。
+  §1.2 / §1.3 / §1.5 と §2.3 の大半・§2.5 の診断性を修正した。§1.1 / §1.4 / §1.6 および
+  §2 の残り・§3 は未着手で、いずれも §7 の decision gate を通してから行う。
+  対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
   [`dcc/`](../../packages/state/src/dcc/) /
@@ -30,6 +32,39 @@
 
 ---
 
+## 0. 対応状況
+
+| 論点 | 内容 | 状態 |
+|---|---|---|
+| §1.1 | `this.state` の意味論が mapped / plain で二重 | ⛔ 未着手（**G1 待ち**） |
+| §1.2 | outer-state 分岐条件が `data-wcs` 属性の有無 | ✅ 修正済み |
+| §1.3 | DCC が再接続で `attachShadow` を呼び直して throw | ✅ 修正済み |
+| §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ⛔ 未着手（**G4 待ち**） |
+| §1.5 | `$bindables` 重複で wcBindable 宣言が丸ごと棄却される | ✅ 修正済み |
+| §1.6 | DCC メソッドに command-token を張れない | ⛔ 未着手（**G2 待ち**） |
+| §2.1 | 変更イベントが完全一致パスでしか出ない | ⛔ 未着手 |
+| §2.2 | DCC アクセサの同期／非同期が非対称 | ⛔ 未着手 |
+| §2.3 | `$bindables` だけ宣言検証が無い | 🟡 部分修正（構造検証は実装。存在検査は残件・理由は §2.3） |
+| §2.4 | prototype チェーンの扱いが State と DCC で違う | ⛔ 未着手 |
+| §2.5 | inner `<wcs-state>` が `:not([name])` 固定 | 🟡 部分修正（挙動は不変、`console.warn` で可視化） |
+| §2.6 | bind-component と state ソース属性の二重指定 | ⛔ 未着手 |
+| §2.7 | `bindableEventMap` の設定タイミング | ⛔ 未着手 |
+| §3.1-3.6 | 設計・衛生 | ⛔ 未着手 |
+
+修正の実装は以下。
+
+- [`webComponent/bindWebComponent.ts`](../../packages/state/src/webComponent/bindWebComponent.ts) — §1.2
+- [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) — §1.3 / §2.5
+- [`dcc/processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts)（新規） — §1.5 / §2.3
+
+回帰テストは
+[`webComponent.bindWebComponent.semantics.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.semantics.test.ts)（新規・§6 の穴を塞ぐ）、
+[`dcc.processBindablesDeclaration.test.ts`](../../packages/state/__tests__/dcc.processBindablesDeclaration.test.ts)（新規）、
+`dcc.defineDCC.test.ts` / `webComponent.bindWebComponent.test.ts`（追記）。
+新規テストはいずれも修正前のコードに対して失敗することを確認済み。
+
+---
+
 ## 1. 実害が確定している非整合
 
 ### 1.1 bind-component の外向き proxy が 2 種類あり、意味論が正反対
@@ -53,7 +88,7 @@ mapped の意味論自体は**内部チャネルとしては筋が通ってい�
 子に必要なのは「再読み込みしろ」という通知だけであり `$postUpdate` で足りる。
 **問題は内部チャネルと公開 API に同じ proxy を使っていること**であって、mapped の実装が間違っているわけではない。
 
-### 1.2 上記の分岐条件そのものが誤っている
+### 1.2 上記の分岐条件そのものが誤っている ✅ 修正済み
 
 分岐は `component.hasAttribute(config.bindAttributeName)` であって「`<stateProp>.*` バインドが 1 件以上あるか」ではない。
 
@@ -71,9 +106,14 @@ probe 実測:
 - 同条件で `data-wcs` を外すと read/write とも正常
 
 既存の [`webComponent.bindWebComponent.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.test.ts)
-は outerState / innerState / MappingRule を全てモックしているため、この経路の意味論は 1 度も検証されていない。
+は outerState / innerState / MappingRule を全てモックしているため、この経路の意味論は 1 度も検証されていなかった。
 
-### 1.3 DCC 要素は再接続すると必ず throw する
+**修正**: 分岐条件を「`<stateProp>.*` バインドが 1 件以上あるか」に変更した。
+`data-wcs` があってもマッピング対象が 0 件なら plain 分岐に入り、read / write が inner state へ素通しする。
+併せて実モジュールで read / write の結果そのものを固定する
+`webComponent.bindWebComponent.semantics.test.ts` を追加した（§6 の穴）。
+
+### 1.3 DCC 要素は再接続すると必ず throw する ✅ 修正済み
 
 [`defineDCC.ts:49-52`](../../packages/state/src/dcc/defineDCC.ts) の `connectedCallback` は
 `this._shadow` / `this.shadowRoot` のガード無しに `attachShadow` を呼ぶ。
@@ -96,6 +136,10 @@ Shadow root cannot be created on a host which already hosts a shadow tree.
 （[`State.ts:347-371`](../../packages/state/src/components/State.ts)）のと真逆の作りであり、
 **同一パッケージ内でライフサイクル規律が揃っていない**ことがそのまま欠陥になっている。
 
+**修正**: `connectedCallback` の冒頭に `if (this._shadow !== null) return;` を置いた。
+shadow tree は host の切断後も保持されるので、2 回目以降は何もしないのが正しい。
+closed mode では `this.shadowRoot` が `null` になるため、判定はフィールド側で行う。
+
 ### 1.4 リスト内の DCC は初期値を無言で落とす
 
 `for` の全追加高速パスは fragment に組んでから `activateContent` し
@@ -110,7 +154,7 @@ DCC の `stateElement` getter は `_shadow`（`connectedCallback` で初めて�
 **「define 待ち」しか持たず「connect 待ち」が無い**。I/O ノード Shell は素のフィールド代入なので
 未接続でも値が Core に残る ＝ **この失敗は DCC 固有**。
 
-### 1.5 `$bindables` の重複で wcBindable 宣言が丸ごと無効化される
+### 1.5 `$bindables` の重複で wcBindable 宣言が丸ごと無効化される ✅ 修正済み
 
 [`createWcBindable`](../../packages/state/src/dcc/wcBindable.ts) は重複名を素通しする。
 一方 reader の [`readNamedList`](../../packages/state/src/protocol/wcBindableReader.ts)（118-129 行）は
@@ -119,6 +163,9 @@ DCC の `stateElement` getter は `_shadow`（`connectedCallback` で初めて�
 probe 実測: `$bindables: ["count","count"]` → `readBindableDeclaration()` が `null`。
 結果、双方向バインド不可・spread 不可・`resolveInitialSyncPolicy` が「非 bindable 要素」として素通し。
 **エラーも警告も出ない。自前のファクトリが自前の reader に棄却されている。**
+
+**修正**: `processBindablesDeclaration()` を新設し、`defineDCC` が
+`createWcBindable` を呼ぶ前に宣言を検証して fail-fast させる（§2.3 と同一の修正）。
 
 ### 1.6 DCC のメソッドに command-token を張れない（構造的に不可能）
 
@@ -162,7 +209,7 @@ getter 由来の派生値も同様。wcBindable の `properties[].event` は「�
 `commitProducerValue` 経由で親 state に commit されうる。
 既定は `state` authority（properties と inputs の両方に載るため）なので通常経路では当たらない。
 
-### 2.3 `$bindables` だけ宣言検証が無い
+### 2.3 `$bindables` だけ宣言検証が無い 🟡 部分修正
 
 | 宣言 | 検証 |
 |---|---|
@@ -174,6 +221,15 @@ getter 由来の派生値も同様。wcBindable の `properties[].event` は「�
 （probe 実測: `["nosuch"]` がそのまま `properties` / `inputs` に載る → 親からの書き込みが expando に着地して消える）、
 `$` 始まりの名前も無検証（`isInternalProperty` で prototype には生えないのに wcBindable には載る）。
 
+**修正**: [`processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts) を新設し、
+`$commandTokens` と同じ強度で **非配列 / 非文字列・空文字列 / `$` 始まり / 重複** を `raiseError` する。
+
+**残件 — 存在検査は入れていない。** `$streams` が生成する値プロパティはインスタンス側の `bindProperty` で
+後から実体化されるため、`defineDCC` の時点では素の state オブジェクト上に存在しない。
+`!(name in state)` で落とすと正当な組み合わせまで落としうる。さらに `in` は prototype チェーンを歩くので、
+§2.4（own descriptor のみを見る）を直さない限り「検査は通るがアクセサは生えない」名前が残り、検査として
+不完全になる。**§2.4 と同時に扱うべき残件**として据え置く。
+
 ### 2.4 prototype チェーンの扱いが State と DCC で違う
 
 - [`State.getAllPropertyDescriptors`](../../packages/state/src/components/State.ts)（37-45 行）は
@@ -184,14 +240,17 @@ state をクラスインスタンスや `Object.create(proto)` で書くと両�
 オブジェクトリテラルが規約なので現状は顕在化しにくいが、`$commandTokens` の doc コメントが
 「クラス形式は未サポート」と明記している一方、DCC 側には同等の明文が無い。
 
-### 2.5 DCC の inner `<wcs-state>` は `:not([name])` 固定
+### 2.5 DCC の inner `<wcs-state>` は `:not([name])` 固定 🟡 部分修正
 
-[`defineDCC.ts:39`](../../packages/state/src/dcc/defineDCC.ts)。`name` を付けると `stateElement` が常に `null` になり、
-全 getter が `undefined`、全 setter が no-op になる（警告なし）。
+[`defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) の `stateTagSelector`。`name` を付けると
+`stateElement` が常に `null` になり、全 getter が `undefined`、全 setter が no-op になる。
 
 逆に bind-component は Light DOM で `name` を**必須**とする
 （[`State.ts:278`](../../packages/state/src/components/State.ts)）。
 同じ「コンポーネント内 state」なのに命名規約が正反対で、相互バリデーションも無い。
+
+**修正**: 挙動は変えず、`$bindables` を宣言しているのに無名の `<wcs-state>` が見つからない場合に
+`console.warn` を出すようにした（従来は分岐が無言で落ちていた）。命名規約そのものの統一は §3 と併せて未着手。
 
 ### 2.6 bind-component と state ソース属性の二重指定が片方を無言で捨てる
 
@@ -245,26 +304,30 @@ state をクラスインスタンスや `Object.create(proto)` で書くと両�
 
 ## 5. 修正の見立て（順序と規模）
 
-| 優先 | 項目 | 規模 | 備考 |
-|---|---|---|---|
-| P0 | 1.2 分岐条件を「`<stateProp>.*` バインドが 1 件以上あるか」に変更 | 数行 | 意味論の変更を伴わない純粋な条件バグ |
-| P0 | 1.3 DCC `connectedCallback` に再接続ガード | 数行 | `if (this._shadow) return;` 相当 |
-| P0 | 1.5 / 2.3 `createWcBindable` に `$commandTokens` 相当の宣言検証 | 小 | 1 箇所で 2 件が閉じる |
-| P1 | 1.4 未接続要素への apply を connect 待ちに退避 | 中 | `applyChange` の deferred 機構を connect まで拡張。②専用の逃げも可 |
-| P1 | 1.6 DCC の `commands` 生成 | 小〜中 | どのメソッドを command とするかの仕様判断が要る（§7 G2） |
-| P2 | 1.1 `this.state` の意味論統一 | 大 | 内部チャネルと公開 API の分離。§7 G1 |
-| P2 | 2.1 変更イベントの発火範囲 | 中 | サブパス変更をどう畳むかの仕様判断 |
-| P3 | 2.4-2.7 / §3 | 小 | 個別に軽い |
+| 優先 | 項目 | 規模 | 状態 | 備考 |
+|---|---|---|---|---|
+| P0 | 1.2 分岐条件を「`<stateProp>.*` バインドが 1 件以上あるか」に変更 | 数行 | ✅ | 意味論の変更を伴わない純粋な条件バグ |
+| P0 | 1.3 DCC `connectedCallback` に再接続ガード | 数行 | ✅ | `if (this._shadow !== null) return;` |
+| P0 | 1.5 / 2.3 `createWcBindable` に `$commandTokens` 相当の宣言検証 | 小 | ✅ | `processBindablesDeclaration` を新設。存在検査のみ残件 |
+| P1 | 1.4 未接続要素への apply を connect 待ちに退避 | 中 | ⛔ | `applyChange` の deferred 機構を connect まで拡張。②専用の逃げも可（§7 G4） |
+| P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ⛔ | どのメソッドを command とするかの仕様判断が要る（§7 G2） |
+| P2 | 1.1 `this.state` の意味論統一 | 大 | ⛔ | 内部チャネルと公開 API の分離（§7 G1） |
+| P2 | 2.1 変更イベントの発火範囲 | 中 | ⛔ | サブパス変更をどう畳むかの仕様判断 |
+| P3 | 2.4 / 2.6 / 2.7 / §3 | 小 | ⛔ | 個別に軽い。2.3 の存在検査は 2.4 と同時に |
+| P3 | 2.5 命名規約の統一 | 小 | 🟡 | 診断 warn のみ実施。規約の統一は §7 G3 と併せて |
 
 ## 6. 回帰テストの穴
 
-- `webComponent.bindWebComponent.test.ts` は依存を全てモックするため、outerState / innerState の
-  **意味論の組み合わせ**を検証していない。1.2 はこの穴に落ちている
-- `__e2e__/dcc/index.html` は単発の DCC インスタンスのみで、**リスト内 DCC / 条件付き DCC が無い**。
-  1.3 / 1.4 はこの穴に落ちている
-- 10-defaulting-rollout-status.md §209 の `bindable-conformance` job は
+- ✅ `webComponent.bindWebComponent.test.ts` は依存を全てモックするため、outerState / innerState の
+  **意味論の組み合わせ**を検証していなかった。1.2 はこの穴に落ちていた →
+  実モジュールで read / write の結果を固定する `webComponent.bindWebComponent.semantics.test.ts` を追加
+- 🟡 `__e2e__/dcc/index.html` は単発の DCC インスタンスのみで、**リスト内 DCC / 条件付き DCC が無い**。
+  1.3 / 1.4 はこの穴に落ちている → 1.3 は unit test（`dcc.defineDCC.test.ts` の再接続 2 本）で塞いだが、
+  **e2e は未追加**。1.4 の修正時に合わせて追加すること
+- 🟡 10-defaulting-rollout-status.md §209 の `bindable-conformance` job は
   「dist export に現れない宣言ファクトリ（DCC `createWcBindable`）は state の unit test が固定」としているが、
-  その unit test は `properties`/`inputs` の同一集合しか見ておらず、`commands` と重複名は対象外
+  その unit test は `properties`/`inputs` の同一集合しか見ておらず、`commands` と重複名は対象外だった →
+  重複名は `dcc.processBindablesDeclaration.test.ts` が固定。`commands` は 1.6 が未着手なので依然として対象外
 
 ## 7. Decision gate
 

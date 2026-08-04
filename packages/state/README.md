@@ -1639,6 +1639,15 @@ This generates:
 - Getter/setter on the prototype — reads/writes go through the reactive proxy
 - `CustomEvent` dispatch — `my-counter:count-changed` fires on every mutation
 
+The declaration is validated when the component is defined, with the same strictness as `$commandTokens`. Each of the following raises:
+
+- not an array
+- an entry that is not a non-empty string
+- an entry starting with `$` (internal properties are never exposed on the component prototype)
+- a duplicated entry — this one used to fail silently: a duplicate name makes the whole `wcBindable` declaration unreadable, so the element would quietly stop being two-way bindable
+
+Known limitation: `commands` is not generated, so DCC methods cannot be driven by [command tokens](#command-token-method-binding). Use an `onclick` binding inside the component instead.
+
 ### Binding to DCC Properties
 
 Other `<wcs-state>` instances can bind to DCC properties just like any Web Component:

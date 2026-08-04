@@ -97,14 +97,6 @@ describe('bindWebComponent', () => {
   });
 
   describe('data-wcs属性がある場合（バインディングあり）', () => {
-    it('bindingsが空配列でも正常に動作すること', () => {
-      const component = createComponentWithShadow(true);
-      const stateEl = createMockStateElement();
-      getBindingsByNodeMock.mockReturnValue([]);
-
-      expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
-    });
-
     it('正常系: バインディングを処理してouterプロパティを設定すること', () => {
       const component = createComponentWithShadow(true);
       const stateEl = createMockStateElement();
@@ -167,26 +159,58 @@ describe('bindWebComponent', () => {
       expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1]);
     });
 
-    it('getBindingsByNodeがnullを返す場合でも正常に動作すること', () => {
-      const component = createComponentWithShadow(true);
-      const stateEl = createMockStateElement();
-      getBindingsByNodeMock.mockReturnValue(null as any);
-
-      expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
-
-      // buildPrimaryMappingRuleには空配列が渡される
-      expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', []);
-    });
-
     it('createPlainOuterStateが呼ばれないこと', () => {
       const component = createComponentWithShadow(true);
       const stateEl = createMockStateElement();
-      getBindingsByNodeMock.mockReturnValue([]);
+      const binding = createMockBinding(['outer', 'title'], 'name');
+      getBindingsByNodeMock.mockReturnValue([binding]);
 
       bindWebComponent(stateEl, component, 'outer', {});
 
       expect(createPlainOuterState).not.toHaveBeenCalled();
       expect(meltFrozenObject).not.toHaveBeenCalled();
+    });
+  });
+
+  // 回帰: 分岐は data-wcs 属性の有無ではなく <stateProp>.* バインディングの件数で決まる。
+  // 属性だけあってマッピング対象が 0 件のとき mapped 分岐に落ちると、
+  // primaryMappingRule が 1 件も無いまま outerState の lastValue / $postUpdate 意味論だけが残り、
+  // component[stateProp] の read が常に undefined・write が no-op になる
+  // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.2）。
+  describe('data-wcs属性はあるが <stateProp>.* バインディングが0件の場合', () => {
+    it('別 stateProp のバインディングしか無いときは plain 分岐になること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      const other = createMockBinding(['class', 'on'], 'flag');
+      getBindingsByNodeMock.mockReturnValue([other]);
+
+      bindWebComponent(stateEl, component, 'outer', { title: 'test' });
+
+      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
+      expect(createOuterState).not.toHaveBeenCalled();
+      expect(createInnerState).not.toHaveBeenCalled();
+      expect(buildPrimaryMappingRule).not.toHaveBeenCalled();
+      expect(meltFrozenObject).toHaveBeenCalledWith({ title: 'test' });
+    });
+
+    it('bindingsが空配列のときは plain 分岐になること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      getBindingsByNodeMock.mockReturnValue([]);
+
+      expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
+      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
+      expect(createOuterState).not.toHaveBeenCalled();
+    });
+
+    it('getBindingsByNodeがnullを返す場合も plain 分岐になること', () => {
+      const component = createComponentWithShadow(true);
+      const stateEl = createMockStateElement();
+      getBindingsByNodeMock.mockReturnValue(null as any);
+
+      expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
+      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
+      expect(buildPrimaryMappingRule).not.toHaveBeenCalled();
     });
   });
 
