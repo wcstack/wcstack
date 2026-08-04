@@ -1,9 +1,10 @@
 # state のコンポーネント機構 3 系統の整合性監査
 
 - **作成日**: 2026-08-05
-- **状態**: 監査記録＋**P0 実施済み**（2026-08-05、branch `fix/state-component-mechanism-p0`）。
-  §1.2 / §1.3 / §1.5 と §2.3 の大半・§2.5 の診断性を修正した。§1.1 / §1.4 / §1.6 および
-  §2 の残り・§3 は未着手で、いずれも §7 の decision gate を通してから行う。
+- **状態**: 監査記録＋**修正進行中**（2026-08-05）。§7 の decision gate G1-G4 は 4 件とも決着済み。
+  実装済み = §1.1 / §1.2 / §1.3 / §1.5 / §2.4 / §2.6 / §2.7 / §3.5 / §3.6、
+  部分 = §2.3 / §2.5、訂正 = §3.3（本書の誤り）。
+  残り = §1.4（G4）/ §1.6・§2.3 存在検査（G2）/ §2.1 / §2.2 / §3.1・§3.2・§3.4（G3）。
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
@@ -36,12 +37,12 @@
 
 | 論点 | 内容 | 状態 |
 |---|---|---|
-| §1.1 | `this.state` の意味論が mapped / plain で二重 | ⛔ 未着手（**G1 待ち**） |
+| §1.1 | `this.state` の意味論が mapped / plain で二重 | ✅ 修正済み（G1 = 内部チャネル分離） |
 | §1.2 | outer-state 分岐条件が `data-wcs` 属性の有無 | ✅ 修正済み |
 | §1.3 | DCC が再接続で `attachShadow` を呼び直して throw | ✅ 修正済み |
-| §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ⛔ 未着手（**G4 待ち**） |
+| §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ⛔ 未着手（G4 = constructor 前倒しに決定） |
 | §1.5 | `$bindables` 重複で wcBindable 宣言が丸ごと棄却される | ✅ 修正済み |
-| §1.6 | DCC メソッドに command-token を張れない | ⛔ 未着手（**G2 待ち**） |
+| §1.6 | DCC メソッドに command-token を張れない | ⛔ 未着手（G2 = `$commands` 明示宣言に決定） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ⛔ 未着手 |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ⛔ 未着手 |
 | §2.3 | `$bindables` だけ宣言検証が無い | 🟡 部分修正（構造検証は実装。存在検査は残件・理由は §2.3） |
@@ -49,7 +50,7 @@
 | §2.5 | inner `<wcs-state>` が `:not([name])` 固定 | 🟡 部分修正（挙動は不変、`console.warn` で可視化） |
 | §2.6 | bind-component と state ソース属性の二重指定 | ✅ 修正済み |
 | §2.7 | `bindableEventMap` の設定タイミング | ✅ 修正済み |
-| §3.1 / §3.2 / §3.4 | 相互排他・wcBindable の要求範囲・重複定義の作法 | ⛔ 未着手（**G3 待ち**） |
+| §3.1 / §3.2 / §3.4 | 相互排他・wcBindable の要求範囲・重複定義の作法 | ⛔ 未着手（G3 = 分離を明文化に決定） |
 | §3.3 | root 判定が 2 系統 | ❌ **本書の誤り**（SSR で必要。コメントを追加して訂正） |
 | §3.5 | 型・レイヤ（`IStateElement` に setter が無い） | ✅ 修正済み |
 | §3.6 | `src/` 配下の README が実装と食い違う | ✅ 修正済み |
@@ -58,7 +59,10 @@
 
 | ファイル | 対象 |
 |---|---|
-| [`webComponent/bindWebComponent.ts`](../../packages/state/src/webComponent/bindWebComponent.ts) | §1.2 |
+| [`webComponent/bindWebComponent.ts`](../../packages/state/src/webComponent/bindWebComponent.ts) | §1.2 / §1.1 |
+| [`webComponent/outerState.ts`](../../packages/state/src/webComponent/outerState.ts) | §1.1（mapped 専用 proxy と lastValue 台帳を削除し 1 本化） |
+| [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.1（台帳書き込みと listIndex 解決を除去） |
+| [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1（内部チャネルを分離） |
 | [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §2.4 / §2.5 / §2.7 / §3.5 |
 | [`dcc/processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts)（新規） | §1.5 / §2.3 |
 | [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
@@ -78,26 +82,43 @@ P0 の新規テストはいずれも修正前のコードに対して失敗す�
 
 ## 1. 実害が確定している非整合
 
-### 1.1 bind-component の外向き proxy が 2 種類あり、意味論が正反対
+### 1.1 bind-component の外向き proxy が 2 種類あり、意味論が正反対 ✅ 修正済み
 
-[`bindWebComponent.ts:24`](../../packages/state/src/webComponent/bindWebComponent.ts) の分岐は
-**「要素に `data-wcs` 属性があるか」だけ**で決まる。
+`bindWebComponent` の分岐は**「要素に `data-wcs` 属性があるか」だけ**で決まっていた。
 
 | 分岐 | 実装 | `get` | `set` |
 |---|---|---|---|
-| mapped（`data-wcs` あり） | [`outerState.ts:16-38`](../../packages/state/src/webComponent/outerState.ts) | `lastValue` キャッシュ（ライブ読みではない） | **値を捨てて** `$postUpdate(path)` のみ |
-| plain（`data-wcs` なし） | [`plainOuterState.ts:12-33`](../../packages/state/src/webComponent/plainOuterState.ts) | inner state proxy へ素通し | inner state proxy へ実書き込み |
+| mapped（`data-wcs` あり） | 旧 `outerState.ts` | `lastValue` キャッシュ（ライブ読みではない） | **値を捨てて** `$postUpdate(path)` のみ |
+| plain（`data-wcs` なし） | 旧 `plainOuterState.ts` | inner state proxy へ素通し | inner state proxy へ実書き込み |
 
 この proxy は `this.state` としてコンポーネント作者に露出される。つまり
 **同一のコンポーネント実装が、親ページ側が `data-wcs` を書いたかどうかで動作を変える**。
-`$stateReadyCallback` は両分岐で呼ばれる（`bindWebComponent.ts:46-56`）ので、作者は当然 `this.state` を触る。
-README の「`this.state.message = "..."` で即反映」（`packages/state/README.md:1142`）が成立するのは plain 分岐だけ。
+`$stateReadyCallback` は両分岐で呼ばれるので、作者は当然 `this.state` を触る。
+README の「`this.state.message = "..."` で即反映」が成立するのは plain 分岐だけだった。
 
-mapped の意味論自体は**内部チャネルとしては筋が通っている**。親 state が変わると
-[`applyChangeToWebComponent.ts:16`](../../packages/state/src/apply/applyChangeToWebComponent.ts) が
-`element["state"]["path"] = v` を実行するが、値の正本は親 state 側にあるので、
-子に必要なのは「再読み込みしろ」という通知だけであり `$postUpdate` で足りる。
-**問題は内部チャネルと公開 API に同じ proxy を使っていること**であって、mapped の実装が間違っているわけではない。
+mapped の意味論自体は**内部チャネルとしては筋が通っていた**。親 state が変わると
+`applyChangeToWebComponent` が `element["state"]["path"] = v` を実行するが、値の正本は親 state 側に
+あるので、子に必要なのは「読み直せ」という通知だけであり `$postUpdate` で足りる。
+**問題は内部チャネルと公開 API に同じ proxy を使っていたこと**であって、mapped の実装が
+間違っていたわけではない。
+
+**修正（G1 = (b) 内部チャネルを分離）**:
+
+- 公開 proxy は 1 種類だけになり、mapped / plain の区別が消えた
+  （[`outerState.ts`](../../packages/state/src/webComponent/outerState.ts)）。
+  mapped でも素通し先の innerState proxy がマッピング経由で親 state に解決するので、
+  read はライブ・write は親に届く
+- 内部チャネルは [`applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) が
+  `getStateElementByWebComponent` で state element を直接引いて `$postUpdate` する形に分離した。
+  `element[stateProp]` を一切触らない（この関数が選ばれるのは `isWebComponentComplete` が真のときだけなので、
+  state element は必ず登録済み）
+- 不要になった mapped 専用 proxy と `lastValueByAbsoluteStateAddress.ts` は削除。
+  `innerState.get` からも listIndex 解決と台帳書き込みが落ち、読みごとの
+  `createAbsoluteStateAddress` 割り当てが 1 個減った
+
+回帰は実ブラウザで固定した
+（[`e2e/tests/state-bind-component-write.spec.ts`](../../e2e/tests/state-bind-component-write.spec.ts)）。
+修正前は mapped な要素の `element.state.name` が `undefined` を返して落ちる。
 
 ### 1.2 上記の分岐条件そのものが誤っている ✅ 修正済み
 
@@ -343,13 +364,13 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 | P0 | 1.2 分岐条件を「`<stateProp>.*` バインドが 1 件以上あるか」に変更 | 数行 | ✅ | 意味論の変更を伴わない純粋な条件バグ |
 | P0 | 1.3 DCC `connectedCallback` に再接続ガード | 数行 | ✅ | `if (this._shadow !== null) return;` |
 | P0 | 1.5 / 2.3 `createWcBindable` に `$commandTokens` 相当の宣言検証 | 小 | ✅ | `processBindablesDeclaration` を新設。存在検査のみ残件 |
-| P1 | 1.4 未接続要素への apply を connect 待ちに退避 | 中 | ⛔ | `applyChange` の deferred 機構を connect まで拡張。②専用の逃げも可（§7 G4） |
-| P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ⛔ | どのメソッドを command とするかの仕様判断が要る（§7 G2） |
-| P2 | 1.1 `this.state` の意味論統一 | 大 | ⛔ | 内部チャネルと公開 API の分離（§7 G1） |
+| P1 | 1.4 DCC の shadow 構築を constructor へ前倒し | 中 | ⛔ | §7 G4 = (a) に決定。§1.3 の再接続ガードを包含する |
+| P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ⛔ | §7 G2 = (a) `$commands` 明示宣言に決定。§2.3 の存在検査も同時に |
+| P2 | 1.1 `this.state` の意味論統一 | 大 | ✅ | 内部チャネルと公開 API を分離（§7 G1 = (b)） |
 | P2 | 2.1 変更イベントの発火範囲 | 中 | ⛔ | サブパス変更をどう畳むかの仕様判断 |
 | P3 | 2.4 走査を共有 / 2.6 併記の fail-fast / 2.7 同期設定 / 3.5 型 / 3.6 README | 小 | ✅ | |
 | P3 | 2.5 命名規約の統一 | 小 | 🟡 | 診断 warn のみ実施。規約の統一は §7 G3 と併せて |
-| P3 | 3.1 / 3.2 / 3.4 | 小 | ⛔ | §7 G3 待ち |
+| P3 | 3.1 / 3.2 / 3.4 | 小 | ⛔ | §7 G3 = (b) 分離を明文化に決定 |
 | — | 2.3 の存在検査 | 小 | ⛔ | 2.4 は解消したが `$streams` × `$bindables` の扱いが未決（§2.3 末尾） |
 
 ## 6. 回帰テストの穴
@@ -360,6 +381,10 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 - 🟡 `__e2e__/dcc/index.html` は単発の DCC インスタンスのみで、**リスト内 DCC / 条件付き DCC が無い**。
   1.3 / 1.4 はこの穴に落ちている → 1.3 は unit test（`dcc.defineDCC.test.ts` の再接続 2 本）で塞いだが、
   **e2e は未追加**。1.4 の修正時に合わせて追加すること
+- ✅ bind-component は unit / e2e とも「親 → 子の初期配送」しか見ておらず、
+  **公開プロパティ経由の read / write が 1 度も踏まれていなかった**。1.1 はこの穴に落ちていた →
+  [`e2e/tests/state-bind-component-write.spec.ts`](../../e2e/tests/state-bind-component-write.spec.ts) を追加。
+  実ブラウザで mapped な要素の `element.state.x` の read / write 両方向を固定する
 - 🟡 10-defaulting-rollout-status.md §209 の `bindable-conformance` job は
   「dist export に現れない宣言ファクトリ（DCC `createWcBindable`）は state の unit test が固定」としているが、
   その unit test は `properties`/`inputs` の同一集合しか見ておらず、`commands` と重複名は対象外だった →
@@ -367,19 +392,53 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 
 ## 7. Decision gate
 
-- **G1: `this.state` の意味論をどうするか** — (a) mapped でも実書き込みを通す / (b) 内部チャネル用の
-  proxy を `this.state` から分離し公開面は plain 意味論に統一 / (c) mapped は read-only と規範化して
-  書き込みを `raiseError`。README の記述と `$stateReadyCallback` の存在は (a)(b) を示唆するが、
-  mapped の値の正本は親 state なので (c) も筋は通る
-- **G2: DCC のメソッドを command として公開するか** — 公開するなら `$bindables` と対になる
-  `$commands` 宣言を足すのか、prototype 上の関数を全て自動宣言するのか。
-  「data-wcs は配線であって DSL ではない」（feedback）に照らすと明示宣言が整合的
-- **G3: ②と③を統合するか、分離を明文化するか** — 現状は「HTML だけで書きたいなら②、JS クラスがあるなら③」
-  という暗黙の使い分けだが、README にも SPEC にも書かれていない。統合しないなら
-  **相互排他と適用条件を規範として明記する**必要がある（3.1 の無言 return もここに含む）
-- **G4: 未接続要素への apply を汎用機構にするか** — 1.4 は②固有の症状だが、原因
-  （`applyChange` に connect 待ちが無い）は汎用。汎用側を直すと全機構に影響するため、
-  ②専用の逃げ（`_shadow` を constructor で用意する等）と比較する
+**4 件とも 2026-08-05 に決着した。** 以下は決定内容と、選ばなかった案を残す理由。
+
+### G1: `this.state` の意味論 — ✅ **(b) 内部チャネルを分離**（実装済み）
+
+公開面は plain 意味論に一本化し、mapped でも read はライブ・write は innerState 経由で
+親 state に届く。親 → 子の再読込通知は `applyChangeToWebComponent` が
+`getStateElementByWebComponent` で state element を直接引いて `$postUpdate` を呼ぶ形に移した。
+`element[stateProp]` を経由しなくなったので、公開 proxy に「値を捨てる」制約が要らなくなった。
+
+- 却下 (a)「mapped でも実書き込みを通す」— proxy の意味論は直るが、親 → 子の通知が
+  同じ経路を通り続けるため親 state への冗長な書き戻しが 1 往復増え、
+  echo 抑止（same-value guard / propagation context）への依存が残る
+- 却下 (c)「mapped は read-only」— 実装は最小だが、README の記述と `$stateReadyCallback` の
+  用途に反し、利用者側の書き換えを強いる
+
+副産物として mapped 専用 proxy（旧 `outerState.ts`）と `lastValueByAbsoluteStateAddress.ts` が
+不要になり削除。`innerState.get` からも listIndex 解決と台帳書き込みが落ちて、読みごとの
+`createAbsoluteStateAddress` 割り当てが 1 個減った。
+
+### G2: DCC の commands — ✅ **(a) `$commands` 明示宣言を追加**
+
+`$bindables` と対になる `$commands: ["inc"]` を導入し、宣言されたものだけを
+`wcBindable.commands` に載せる。**未実装**。
+
+- 却下 (b)「prototype 上の関数を自動宣言」— 内部ヘルパまで公開面に出る。
+  「data-wcs は配線であって DSL ではない」という既存方針に照らしても明示宣言が整合的
+- 却下 (c)「生成しない方針を規範化」— §1.6 の非対称（event-token は動くのに command-token だけ不可）が残る
+
+§2.3 の存在検査（`$streams` × `$bindables`）もこの作業に合流させる。
+
+### G3: ②と③の関係 — ✅ **(b) 分離を規範として明文化**
+
+統合はしない。README/SPEC に「HTML だけなら DCC、JS クラスがあるなら bind-component」という
+使い分けと、機構ごとに使える構文の対応表を書く。§3.1 の無言 return は `raiseError` に、
+§3.4 の DCC タグ重複 `console.warn` は `raiseError` に揃える。**未実装**。
+
+### G4: 未接続要素への apply — ✅ **(a) DCC 側で constructor に前倒し**
+
+`attachShadow` と template clone を constructor へ移し、未接続でもアクセサが動くようにする。
+shadow への子追加は constructor でも仕様上許される（light DOM の子追加とは違う）。
+影響が DCC に閉じ、§1.3 の再接続ガードも自然に包含する。**未実装**。
+
+- 却下「`applyChange` を connect 待ちまで拡張」— 原因は汎用だが、全機構・全 I/O ノードの
+  適用タイミングが変わる。§1.4 は DCC 固有の症状（他の Shell は素のフィールド代入なので
+  未接続でも値が残る）なので、汎用側を動かす理由が弱い
+- 却下「DCC 側に pending バッファ」— constructor を触らずに済むが、状態とフラッシュ順序の
+  契約が増える
 
 ## 8. probe の再現手順
 

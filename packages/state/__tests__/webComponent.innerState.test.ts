@@ -12,28 +12,18 @@ vi.mock('../src/webComponent/MappingRule', () => ({
 vi.mock('../src/list/loopContextByNode', () => ({
   getLoopContextByNode: vi.fn()
 }));
-vi.mock('../src/address/AbsoluteStateAddress', () => ({
-  createAbsoluteStateAddress: vi.fn()
-}));
-vi.mock('../src/webComponent/lastValueByAbsoluteStateAddress', () => ({
-  setLastValueByAbsoluteStateAddress: vi.fn()
-}));
 
 import { createInnerState } from '../src/webComponent/innerState';
 import { getStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { getOuterAbsolutePathInfo } from '../src/webComponent/MappingRule';
 import { getLoopContextByNode } from '../src/list/loopContextByNode';
-import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
-import { setLastValueByAbsoluteStateAddress } from '../src/webComponent/lastValueByAbsoluteStateAddress';
 import { setLoopContextSymbol } from '../src/proxy/symbols';
 
 const getStateElementByWebComponentMock = vi.mocked(getStateElementByWebComponent);
 const getAbsolutePathInfoMock = vi.mocked(getAbsolutePathInfo);
 const getOuterAbsolutePathInfoMock = vi.mocked(getOuterAbsolutePathInfo);
 const getLoopContextByNodeMock = vi.mocked(getLoopContextByNode);
-const createAbsoluteStateAddressMock = vi.mocked(createAbsoluteStateAddress);
-const setLastValueMock = vi.mocked(setLastValueByAbsoluteStateAddress);
 
 describe('innerState', () => {
   beforeEach(() => {
@@ -178,18 +168,14 @@ describe('innerState', () => {
         },
         pathInfo: { path: 'users.*', wildcardCount: 0 }
       } as any;
-      const absStateAddress = {} as any;
-
       getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
       getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
       getLoopContextByNodeMock.mockReturnValue(null);
-      createAbsoluteStateAddressMock.mockReturnValue(absStateAddress);
 
       const value = proxy['user'];
 
       expect(value).toBe('test-value');
       expect(getOuterAbsolutePathInfoMock).toHaveBeenCalledWith(component, innerAbsPathInfo);
-      expect(setLastValueMock).toHaveBeenCalledWith(absStateAddress, 'test-value');
     });
 
     it('thenプロパティはundefinedを返すこと', () => {
@@ -207,13 +193,17 @@ describe('innerState', () => {
       expect(() => proxy['user']).toThrow(/not found in inner state/);
     });
 
-    it('loopContextありでwildcardCountが正の場合はlistIndexが設定されること', () => {
+    // loopContext は setLoopContextSymbol で state proxy に渡すだけになった。
+    // 以前はここで listIndex を解決して lastValue 台帳に積んでいたが、その台帳の
+    // 唯一の読み手だった mapped 専用 outerState を廃止したため走査ごと不要になった
+    // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.1 / G1）。
+    it('loopContextはそのままsetLoopContextSymbolへ渡されること', () => {
       const { proxy } = createTestProxy();
 
-      const innerAbsPathInfo = {} as any;
-      const listIndex = { index: 0 } as any;
+      const loopContext = { listIndex: { at: vi.fn() } } as any;
+      const setLoopContext = vi.fn((_ctx: any, cb: Function) => cb());
       const stateProxy = {
-        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        [setLoopContextSymbol]: setLoopContext,
         'users.*.name': 'Alice'
       };
       const outerAbsPathInfo = {
@@ -223,66 +213,13 @@ describe('innerState', () => {
         pathInfo: { path: 'users.*.name', wildcardCount: 1 }
       } as any;
 
-      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
-      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
-      getLoopContextByNodeMock.mockReturnValue({
-        listIndex: { at: vi.fn(() => listIndex) }
-      } as any);
-      createAbsoluteStateAddressMock.mockReturnValue({} as any);
-
-      proxy['user.name'];
-
-      expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(outerAbsPathInfo, listIndex);
-    });
-
-    it('loopContextがnullの場合はlistIndexがnullのままであること', () => {
-      const { proxy } = createTestProxy();
-
-      const stateProxy = {
-        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
-        'users.*': 'value'
-      };
-      const outerAbsPathInfo = {
-        stateElement: {
-          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
-        },
-        pathInfo: { path: 'users.*', wildcardCount: 1 }
-      } as any;
-
       getAbsolutePathInfoMock.mockReturnValue({} as any);
       getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
-      getLoopContextByNodeMock.mockReturnValue(null);
-      createAbsoluteStateAddressMock.mockReturnValue({} as any);
+      getLoopContextByNodeMock.mockReturnValue(loopContext);
 
-      proxy['user'];
-
-      expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(outerAbsPathInfo, null);
-    });
-
-    it('loopContextありでwildcardCountが0の場合はlistIndexがnullのままであること', () => {
-      const { proxy } = createTestProxy();
-
-      const stateProxy = {
-        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
-        'userName': 'Bob'
-      };
-      const outerAbsPathInfo = {
-        stateElement: {
-          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
-        },
-        pathInfo: { path: 'userName', wildcardCount: 0 }
-      } as any;
-
-      getAbsolutePathInfoMock.mockReturnValue({} as any);
-      getOuterAbsolutePathInfoMock.mockReturnValue(outerAbsPathInfo);
-      getLoopContextByNodeMock.mockReturnValue({
-        listIndex: { at: vi.fn() }
-      } as any);
-      createAbsoluteStateAddressMock.mockReturnValue({} as any);
-
-      proxy['userName'];
-
-      expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(outerAbsPathInfo, null);
+      expect(proxy['user.name']).toBe('Alice');
+      expect(setLoopContext).toHaveBeenCalledWith(loopContext, expect.any(Function));
+      expect(loopContext.listIndex.at).not.toHaveBeenCalled();
     });
 
     it('Symbolプロパティの場合はReflect.getを使用すること', () => {

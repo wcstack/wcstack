@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: writing through a bind-component's public state</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md
+       §1.1 (gate G1). The component is *mapped*: the host binds state.name to
+       user.name. Before the fix, `element.state` handed out a proxy whose reads
+       returned a stale cache and whose writes were discarded, so the very same
+       component behaved differently depending on whether the host page had
+       written a data-wcs binding on it. The public surface is now pass-through
+       in both cases; the parent→child refresh notification moved to an internal
+       channel that never touches this property. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <script type="module">
+    class MyEditor extends HTMLElement {
+      state = { name: "" };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot.innerHTML = `
+<wcs-state bind-component="state"></wcs-state>
+<span id="inner-view">{{ name }}</span>
+`;
+      }
+    }
+    customElements.define("my-editor", MyEditor);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default { user: { name: "Alice" } };
+    </script>
+  </wcs-state>
+
+  <div id="host-view">{{ user.name }}</div>
+  <my-editor data-wcs="state.name: user.name"></my-editor>
+</body>
+</html>

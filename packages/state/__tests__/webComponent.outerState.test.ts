@@ -3,26 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
   getStateElementByWebComponent: vi.fn()
 }));
-vi.mock('../src/address/AbsolutePathInfo', () => ({
-  getAbsolutePathInfo: vi.fn()
-}));
-vi.mock('../src/address/AbsoluteStateAddress', () => ({
-  createAbsoluteStateAddress: vi.fn()
-}));
-vi.mock('../src/webComponent/lastValueByAbsoluteStateAddress', () => ({
-  getLastValueByAbsoluteStateAddress: vi.fn()
-}));
 
 import { createOuterState } from '../src/webComponent/outerState';
 import { getStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
-import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
-import { createAbsoluteStateAddress } from '../src/address/AbsoluteStateAddress';
-import { getLastValueByAbsoluteStateAddress } from '../src/webComponent/lastValueByAbsoluteStateAddress';
 
 const getStateElementByWebComponentMock = vi.mocked(getStateElementByWebComponent);
-const getAbsolutePathInfoMock = vi.mocked(getAbsolutePathInfo);
-const createAbsoluteStateAddressMock = vi.mocked(createAbsoluteStateAddress);
-const getLastValueMock = vi.mocked(getLastValueByAbsoluteStateAddress);
 
 describe('outerState', () => {
   beforeEach(() => {
@@ -48,26 +33,22 @@ describe('outerState', () => {
   });
 
   describe('get trap', () => {
-    it('文字列プロパティで値を取得できること', () => {
+    it('文字列プロパティでcreateState経由で値を取得できること', () => {
       const component = document.createElement('div');
       document.body.appendChild(component);
-      const innerStateElement = { name: 'default' } as any;
+
+      const stateProxy: Record<string, any> = { count: 42 };
+      const innerStateElement = {
+        name: 'default',
+        createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+      } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
-
-      const innerAbsPathInfo = { pathInfo: { path: 'count' } } as any;
-      const absStateAddress = {} as any;
-
-      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
-      createAbsoluteStateAddressMock.mockReturnValue(absStateAddress);
-      getLastValueMock.mockReturnValue(42);
 
       const outerState = createOuterState(component, 'state');
       const value = outerState['count'];
 
       expect(value).toBe(42);
-      expect(getAbsolutePathInfoMock).toHaveBeenCalledWith(innerStateElement, expect.objectContaining({ path: 'count' }));
-      expect(createAbsoluteStateAddressMock).toHaveBeenCalledWith(innerAbsPathInfo, null);
-      expect(getLastValueMock).toHaveBeenCalledWith(absStateAddress);
+      expect(innerStateElement.createState).toHaveBeenCalledWith('readonly', expect.any(Function));
     });
 
     it('Symbolプロパティの場合はReflect.getを使用すること', () => {
@@ -82,24 +63,22 @@ describe('outerState', () => {
   });
 
   describe('set trap', () => {
-    it('文字列プロパティで$postUpdateが呼び出されること', () => {
+    it('文字列プロパティでcreateState経由で値を設定できること', () => {
       const component = document.createElement('div');
       document.body.appendChild(component);
-      const stateProxy = { $postUpdate: vi.fn() };
+
+      const stateProxy: Record<string, any> = {};
       const innerStateElement = {
         name: 'default',
         createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
       } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
 
-      const innerAbsPathInfo = { pathInfo: { path: 'value' } } as any;
-      getAbsolutePathInfoMock.mockReturnValue(innerAbsPathInfo);
-
       const outerState = createOuterState(component, 'state');
       outerState['value'] = 'new-value';
 
-      expect(innerStateElement.createState).toHaveBeenCalledWith('readonly', expect.any(Function));
-      expect(stateProxy.$postUpdate).toHaveBeenCalledWith('value');
+      expect(innerStateElement.createState).toHaveBeenCalledWith('writable', expect.any(Function));
+      expect(stateProxy['value']).toBe('new-value');
     });
 
     it('Symbolプロパティの場合はReflect.setを使用すること', () => {
