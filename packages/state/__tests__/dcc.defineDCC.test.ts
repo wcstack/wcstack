@@ -240,14 +240,69 @@ describe('dcc/defineDCC', () => {
       document.body.removeChild(instance);
     });
 
-    it('shadowRootが無い場合のstateElementゲッターはnullishを返すこと', () => {
+    it('テンプレートに無名のwcs-stateが無ければstateElementゲッターはnullishを返すこと', () => {
       const tag = uniqueTag();
       const { host, shadow } = createHostWithShadowRoot(tag, '<p>hello</p>');
       defineDCC(host, shadow, { count: 0 });
 
       const instance = document.createElement(tag) as any;
-      // connectedCallback前は_shadowがない
       expect(instance.stateElement).toBeFalsy();
+    });
+
+    it('定義要素ではshadowを張らずstateElementもnullishであること', () => {
+      const tag = uniqueTag();
+      const { host, shadow } = createHostWithShadowRoot(tag, `<p>hello</p>`);
+      defineDCC(host, shadow, { count: 0 });
+
+      // 定義要素自身も upgrade されるが、DSD の shadow を持っているので張り直さない
+      expect((host as any).stateElement).toBeFalsy();
+      expect(host.shadowRoot).toBe(shadow);
+    });
+
+    // §1.4 / gate G4: `for` の全追加パスは行を fragment に組んでからバインドを適用し、
+    // fragment を DOM に挿すのは最後。適用時点で行は未接続なので、shadow を
+    // connectedCallback まで作らないと stateElement が null になり書き込みが無言で消える。
+    it('未接続でもアクセサが解決し、書き込みは接続後に適用されること', async () => {
+      const tag = uniqueTag();
+      const mockStateTag = `dcc-mock-lazy-${tag}`;
+      const writes: Array<[string, unknown]> = [];
+      let resolveInit!: () => void;
+      const initPromise = new Promise<void>((resolve) => { resolveInit = resolve; });
+      customElements.define(mockStateTag, class extends HTMLElement {
+        get initializePromise() { return initPromise; }
+        setBindableEventMap() { /* noop */ }
+        connectedCallback() { resolveInit(); }
+        createState(_mutability: string, callback: (state: any) => void) {
+          callback(new Proxy({} as any, {
+            set(_target, prop, value) { writes.push([String(prop), value]); return true; },
+          }));
+        }
+      });
+
+      const origStateTag = config.tagNames.state;
+      (config as any).tagNames = { ...config.tagNames, state: mockStateTag };
+      try {
+        const { host, shadow } = createHostWithShadowRoot(tag, `<${mockStateTag}></${mockStateTag}>`);
+        defineDCC(host, shadow, { count: 0 });
+
+        const instance = document.createElement(tag) as any;
+        // 未接続でも shadow が構築され stateElement が解決する
+        expect(instance.stateElement).not.toBeNull();
+
+        instance.count = 5;
+        await Promise.resolve();
+        // まだ接続していないので initializePromise は未解決 = 適用されない（捨てられてもいない）
+        expect(writes).toEqual([]);
+
+        document.body.appendChild(instance);
+        await initPromise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(writes).toEqual([['count', 5]]);
+        instance.remove();
+      } finally {
+        (config as any).tagNames = { ...config.tagNames, state: origStateTag };
+      }
     });
 
     it('$bindablesがある場合にbindableEventMapが設定されること', async () => {
