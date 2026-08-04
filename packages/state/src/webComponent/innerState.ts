@@ -1,12 +1,9 @@
 import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
-import { createAbsoluteStateAddress } from "../address/AbsoluteStateAddress";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateElement } from "../components/types";
 import { getLoopContextByNode } from "../list/loopContextByNode";
-import { IListIndex } from "../list/types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
-import { setLastValueByAbsoluteStateAddress } from "./lastValueByAbsoluteStateAddress";
 import { getOuterAbsolutePathInfo } from "./MappingRule";
 import { meltFrozenObject } from "./meltFrozenObject";
 import { getStateElementByWebComponent } from "./stateElementByWebComponent";
@@ -43,16 +40,6 @@ class InnerStateProxyHandler implements ProxyHandler<IInnerState> {
         outerAbsPathInfo.stateElement.createState("readonly", (state) => {
           state[setLoopContextSymbol](loopContext, () => {
             value = state[outerAbsPathInfo.pathInfo.path];
-            let listIndex: IListIndex | null = null;
-            if (loopContext !== null && loopContext.listIndex !== null) {
-              if (outerAbsPathInfo.pathInfo.wildcardCount > 0) {
-                // wildcardPathSetとloopContextのpathInfoSetのintersectionのうち、segment数が最も多いものをouterAbsPathInfoにする
-                // 例: outerPathInfoが "todos.*.name"で、loopContextのpathInfoSetに "todos.0.name", "todos.1.name"がある場合、"todos.0.name"や"todos.1.name"をouterAbsPathInfoにする
-                listIndex = loopContext.listIndex.at(outerAbsPathInfo.pathInfo.wildcardCount - 1);
-              }
-            }
-            const absStateAddress = createAbsoluteStateAddress(outerAbsPathInfo, listIndex);
-            setLastValueByAbsoluteStateAddress(absStateAddress, value);
           });
         });
         return value;

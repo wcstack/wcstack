@@ -10,10 +10,6 @@ vi.mock('../src/webComponent/outerState', () => {
   const outerState = {};
   return { createOuterState: vi.fn(() => outerState) };
 });
-vi.mock('../src/webComponent/plainOuterState', () => {
-  const plainOuterState = {};
-  return { createPlainOuterState: vi.fn(() => plainOuterState) };
-});
 vi.mock('../src/webComponent/innerState', () => {
   const innerState = {};
   return { createInnerState: vi.fn(() => innerState) };
@@ -35,7 +31,6 @@ import { bindWebComponent } from '../src/webComponent/bindWebComponent';
 import { getBindingsByNode } from '../src/bindings/getBindingsByNode';
 import { buildPrimaryMappingRule } from '../src/webComponent/MappingRule';
 import { createOuterState } from '../src/webComponent/outerState';
-import { createPlainOuterState } from '../src/webComponent/plainOuterState';
 import { createInnerState } from '../src/webComponent/innerState';
 import { setStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
 import { markWebComponentAsComplete } from '../src/webComponent/completeWebComponent';
@@ -159,7 +154,7 @@ describe('bindWebComponent', () => {
       expect(buildPrimaryMappingRule).toHaveBeenCalledWith(component, 'outer', [binding1]);
     });
 
-    it('createPlainOuterStateが呼ばれないこと', () => {
+    it('生stateのmeltは行わずinnerStateをsetInitialStateに渡すこと', () => {
       const component = createComponentWithShadow(true);
       const stateEl = createMockStateElement();
       const binding = createMockBinding(['outer', 'title'], 'name');
@@ -167,15 +162,15 @@ describe('bindWebComponent', () => {
 
       bindWebComponent(stateEl, component, 'outer', {});
 
-      expect(createPlainOuterState).not.toHaveBeenCalled();
+      expect(createInnerState).toHaveBeenCalledWith(component, 'outer');
       expect(meltFrozenObject).not.toHaveBeenCalled();
     });
   });
 
   // 回帰: 分岐は data-wcs 属性の有無ではなく <stateProp>.* バインディングの件数で決まる。
   // 属性だけあってマッピング対象が 0 件のとき mapped 分岐に落ちると、
-  // primaryMappingRule が 1 件も無いまま outerState の lastValue / $postUpdate 意味論だけが残り、
-  // component[stateProp] の read が常に undefined・write が no-op になる
+  // primaryMappingRule が 1 件も無い innerState proxy が state の実体になり、
+  // 親にも子にも解決先が無い状態になる
   // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.2）。
   describe('data-wcs属性はあるが <stateProp>.* バインディングが0件の場合', () => {
     it('別 stateProp のバインディングしか無いときは plain 分岐になること', () => {
@@ -186,8 +181,6 @@ describe('bindWebComponent', () => {
 
       bindWebComponent(stateEl, component, 'outer', { title: 'test' });
 
-      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
-      expect(createOuterState).not.toHaveBeenCalled();
       expect(createInnerState).not.toHaveBeenCalled();
       expect(buildPrimaryMappingRule).not.toHaveBeenCalled();
       expect(meltFrozenObject).toHaveBeenCalledWith({ title: 'test' });
@@ -199,8 +192,8 @@ describe('bindWebComponent', () => {
       getBindingsByNodeMock.mockReturnValue([]);
 
       expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
-      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
-      expect(createOuterState).not.toHaveBeenCalled();
+      expect(createInnerState).not.toHaveBeenCalled();
+      expect(meltFrozenObject).toHaveBeenCalled();
     });
 
     it('getBindingsByNodeがnullを返す場合も plain 分岐になること', () => {
@@ -209,9 +202,22 @@ describe('bindWebComponent', () => {
       getBindingsByNodeMock.mockReturnValue(null as any);
 
       expect(() => bindWebComponent(stateEl, component, 'outer', {})).not.toThrow();
-      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
+      expect(createInnerState).not.toHaveBeenCalled();
       expect(buildPrimaryMappingRule).not.toHaveBeenCalled();
     });
+  });
+
+  // G1: 外向き proxy は分岐に関わらず同一。mapped 専用の lastValue / $postUpdate 意味論は廃止した。
+  it('どちらの分岐でも同じ createOuterState が使われること', () => {
+    const mapped = createComponentWithShadow(true);
+    getBindingsByNodeMock.mockReturnValue([createMockBinding(['outer', 'title'], 'name')]);
+    bindWebComponent(createMockStateElement(), mapped, 'outer', {});
+
+    const plain = createComponentWithShadow(false);
+    bindWebComponent(createMockStateElement(), plain, 'outer', {});
+
+    expect(createOuterState).toHaveBeenNthCalledWith(1, mapped, 'outer');
+    expect(createOuterState).toHaveBeenNthCalledWith(2, plain, 'outer');
   });
 
   describe('data-wcs属性がない場合（バインディングなし）', () => {
@@ -226,19 +232,19 @@ describe('bindWebComponent', () => {
       expect(stateEl.setInitialState).toHaveBeenCalledWith({ count: 0, name: 'test', melted: true });
     });
 
-    it('createPlainOuterStateでouterプロパティを設定すること', () => {
+    it('createOuterStateでouterプロパティを設定すること', () => {
       const component = createComponentWithShadow(false);
       const stateEl = createMockStateElement();
-      const plainOuterState = (createPlainOuterState as any)();
-      vi.mocked(createPlainOuterState).mockReturnValue(plainOuterState);
+      const outerState = (createOuterState as any)();
+      vi.mocked(createOuterState).mockReturnValue(outerState);
 
       bindWebComponent(stateEl, component, 'outer', {});
 
-      expect(createPlainOuterState).toHaveBeenCalledWith(component, 'outer');
-      expect((component as any).outer).toBe(plainOuterState);
+      expect(createOuterState).toHaveBeenCalledWith(component, 'outer');
+      expect((component as any).outer).toBe(outerState);
     });
 
-    it('バインディング関連の関数が呼ばれないこと', () => {
+    it('マッピング関連の関数が呼ばれないこと', () => {
       const component = createComponentWithShadow(false);
       const stateEl = createMockStateElement();
 
@@ -246,7 +252,6 @@ describe('bindWebComponent', () => {
 
       expect(getBindingsByNode).not.toHaveBeenCalled();
       expect(buildPrimaryMappingRule).not.toHaveBeenCalled();
-      expect(createOuterState).not.toHaveBeenCalled();
       expect(createInnerState).not.toHaveBeenCalled();
     });
   });

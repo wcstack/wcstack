@@ -8,7 +8,6 @@ import { createInnerState } from "./innerState";
 import { buildPrimaryMappingRule } from "./MappingRule";
 import { meltFrozenObject } from "./meltFrozenObject";
 import { createOuterState } from "./outerState";
-import { createPlainOuterState } from "./plainOuterState";
 import { setStateElementByWebComponent } from "./stateElementByWebComponent";
 import { IOuterState } from "./types";
 
@@ -32,25 +31,22 @@ export function bindWebComponent(
         binding => binding.propSegments[0] === stateProp
       )
     : [];
+  // 分岐が決めるのは「子の state の中身」だけ。mapped なら親 state へ解決する
+  // innerState proxy、plain なら melt 済みのローカル state。
   if (bindings.length > 0) {
     buildPrimaryMappingRule(component, stateProp, bindings);
-    const outerState = createOuterState(component, stateProp);
-    const innerState = createInnerState(component, stateProp);
-    innerStateElement.setInitialState(innerState);
-    Object.defineProperty(component, stateProp, {
-      get: getOuter(outerState),
-      enumerable: true,
-      configurable: true,
-    });
+    innerStateElement.setInitialState(createInnerState(component, stateProp));
   } else {
     innerStateElement.setInitialState(meltFrozenObject(state));
-    const outerState = createPlainOuterState(component, stateProp);
-    Object.defineProperty(component, stateProp, {
-      get: getOuter(outerState),
-      enumerable: true,
-      configurable: true,
-    });
   }
+  // 外向きに露出する proxy は両者で同一。mapped でも read はライブ・write は
+  // innerState 経由で親 state に届く（§1.1 / G1）。
+  const outerState = createOuterState(component, stateProp);
+  Object.defineProperty(component, stateProp, {
+    get: getOuter(outerState),
+    enumerable: true,
+    configurable: true,
+  });
   markWebComponentAsComplete(component, innerStateElement);
   if (WEBCOMPONENT_STATE_READY_CALLBACK_NAME in component) {
     const func = (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME];
