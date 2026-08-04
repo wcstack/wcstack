@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>fixture: DCC inside for/if</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md
+       §1.3 and §1.4 (gate G4). The existing __e2e__/dcc page only ever renders a
+       single, permanently-connected instance, which is why both defects survived.
+
+       §1.4 — the for fast path builds every new row inside a DocumentFragment,
+       applies its bindings, and only then inserts the fragment. The rows are
+       still disconnected while `count` is written, so a DCC that waits for
+       connectedCallback to build its shadow silently drops the seeded value and
+       the cells render 0 instead of 1/2/3.
+
+       §1.3 — toggling the `if` unmounts and remounts the very same nodes, so an
+       unguarded attachShadow throws NotSupportedError on the way back in. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+[data-wc-definition] { display: none; }
+  </style>
+</head>
+<body>
+  <my-cell data-wc-definition>
+    <template shadowrootmode="open">
+      <span class="cell">{{ count }}</span>
+      <wcs-state>
+        <script type="module">
+export default {
+  count: 0,
+  $bindables: [ "count" ]
+};
+        </script>
+      </wcs-state>
+    </template>
+  </my-cell>
+
+  <wcs-state>
+    <script type="module">
+export default {
+  rows: [ { n: 1 }, { n: 2 }, { n: 3 } ],
+  show: true,
+  toggle() { this.show = !this.show; }
+};
+    </script>
+  </wcs-state>
+
+  <button id="toggle" data-wcs="onclick: toggle">toggle</button>
+  <template data-wcs="if: show">
+    <div id="list">
+      <template data-wcs="for: rows">
+        <my-cell data-wcs="count: rows.*.n"></my-cell>
+      </template>
+    </div>
+  </template>
+</body>
+</html>

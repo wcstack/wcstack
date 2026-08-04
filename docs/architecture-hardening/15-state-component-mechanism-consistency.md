@@ -2,9 +2,9 @@
 
 - **作成日**: 2026-08-05
 - **状態**: 監査記録＋**修正進行中**（2026-08-05）。§7 の decision gate G1-G4 は 4 件とも決着済み。
-  実装済み = §1.1 / §1.2 / §1.3 / §1.5 / §2.4 / §2.6 / §2.7 / §3.5 / §3.6、
+  実装済み = §1.1 / §1.2 / §1.3 / §1.4 / §1.5 / §2.4 / §2.6 / §2.7 / §3.5 / §3.6、
   部分 = §2.3 / §2.5、訂正 = §3.3（本書の誤り）。
-  残り = §1.4（G4）/ §1.6・§2.3 存在検査（G2）/ §2.1 / §2.2 / §3.1・§3.2・§3.4（G3）。
+  残り = §1.6・§2.3 存在検査（G2）/ §2.1 / §2.2 / §3.1・§3.2・§3.4（G3）。**§1 の確定欠陥は全て解消**。
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
@@ -40,7 +40,7 @@
 | §1.1 | `this.state` の意味論が mapped / plain で二重 | ✅ 修正済み（G1 = 内部チャネル分離） |
 | §1.2 | outer-state 分岐条件が `data-wcs` 属性の有無 | ✅ 修正済み |
 | §1.3 | DCC が再接続で `attachShadow` を呼び直して throw | ✅ 修正済み |
-| §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ⛔ 未着手（G4 = constructor 前倒しに決定） |
+| §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ✅ 修正済み（G4 = DCC 側で解決。実装は遅延構築） |
 | §1.5 | `$bindables` 重複で wcBindable 宣言が丸ごと棄却される | ✅ 修正済み |
 | §1.6 | DCC メソッドに command-token を張れない | ⛔ 未着手（G2 = `$commands` 明示宣言に決定） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ⛔ 未着手 |
@@ -63,7 +63,7 @@
 | [`webComponent/outerState.ts`](../../packages/state/src/webComponent/outerState.ts) | §1.1（mapped 専用 proxy と lastValue 台帳を削除し 1 本化） |
 | [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.1（台帳書き込みと listIndex 解決を除去） |
 | [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1（内部チャネルを分離） |
-| [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §2.4 / §2.5 / §2.7 / §3.5 |
+| [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
 | [`dcc/processBindablesDeclaration.ts`](../../packages/state/src/dcc/processBindablesDeclaration.ts)（新規） | §1.5 / §2.3 |
 | [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
 | [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 |
@@ -76,7 +76,7 @@
 [`dcc.processBindablesDeclaration.test.ts`](../../packages/state/__tests__/dcc.processBindablesDeclaration.test.ts)（新規）、
 [`src.getAllPropertyDescriptors.test.ts`](../../packages/state/__tests__/src.getAllPropertyDescriptors.test.ts)（新規）、
 `dcc.defineDCC.test.ts` / `webComponent.bindWebComponent.test.ts` / `components.State.test.ts`（追記）。
-P0 の新規テストはいずれも修正前のコードに対して失敗することを確認済み。
+新規テスト（unit / e2e とも）はいずれも修正前のコードに対して失敗することを確認済み。
 
 ---
 
@@ -172,7 +172,7 @@ Shadow root cannot be created on a host which already hosts a shadow tree.
 shadow tree は host の切断後も保持されるので、2 回目以降は何もしないのが正しい。
 closed mode では `this.shadowRoot` が `null` になるため、判定はフィールド側で行う。
 
-### 1.4 リスト内の DCC は初期値を無言で落とす
+### 1.4 リスト内の DCC は初期値を無言で落とす ✅ 修正済み
 
 `for` の全追加高速パスは fragment に組んでから `activateContent` し
 （[`applyChangeToFor.ts:244,266`](../../packages/state/src/apply/applyChangeToFor.ts)）、
@@ -185,6 +185,24 @@ DCC の `stateElement` getter は `_shadow`（`connectedCallback` で初めて�
 [`applyChange.ts:137-145`](../../packages/state/src/apply/applyChange.ts) の未定義要素ガードは
 **「define 待ち」しか持たず「connect 待ち」が無い**。I/O ノード Shell は素のフィールド代入なので
 未接続でも値が Core に残る ＝ **この失敗は DCC 固有**。
+
+**修正（G4 = (a) DCC 側で解決）**: shadow を `_ensureShadow()` で遅延構築し、
+`connectedCallback` と `stateElement` getter の両方から呼ぶ。未接続でもアクセサが
+`stateElement` を解決できるので、書き込みは inner `<wcs-state>` の `initializePromise` に
+積まれ、接続・state ロード後に適用される。pending バッファは要らない。
+
+> **決定との差分**: G4 は「constructor へ前倒し」で決着したが、実装は constructor ではなく
+> 遅延構築を採った。目的（未接続でもアクセサが動く・影響が DCC に閉じる）は同じで、
+> constructor 版だと (1) 定義要素の判定に属性を読む必要があり constructor の作法に反する、
+> (2) 同一タグの `data-wc-definition` が 2 つある場合、DSD の shadow を既に持つ 2 つ目に
+> `attachShadow` して throw する、の 2 点を踏むため。冪等なので §1.3 の再接続ガードも兼ねる。
+
+実装中に判明した追加の落とし穴: `template.content` は inert なテンプレート所有ドキュメントに
+属するため、その clone はカスタム要素として **upgrade されていない**。ホストが接続済みなら
+`appendChild` で upgrade されるが、未接続の shadow に挿した場合は契機が無く、内側の
+`<wcs-state>` が素の `HTMLElement` のまま残って `createState is not a function` で落ちる。
+`_ensureShadow` の末尾で `customElements.upgrade` を明示的に呼ぶ。
+これは unit test では踏めず（happy-dom は clone 時に upgrade する）、e2e で初めて出た。
 
 ### 1.5 `$bindables` の重複で wcBindable 宣言が丸ごと無効化される ✅ 修正済み
 
@@ -364,7 +382,7 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 | P0 | 1.2 分岐条件を「`<stateProp>.*` バインドが 1 件以上あるか」に変更 | 数行 | ✅ | 意味論の変更を伴わない純粋な条件バグ |
 | P0 | 1.3 DCC `connectedCallback` に再接続ガード | 数行 | ✅ | `if (this._shadow !== null) return;` |
 | P0 | 1.5 / 2.3 `createWcBindable` に `$commandTokens` 相当の宣言検証 | 小 | ✅ | `processBindablesDeclaration` を新設。存在検査のみ残件 |
-| P1 | 1.4 DCC の shadow 構築を constructor へ前倒し | 中 | ⛔ | §7 G4 = (a) に決定。§1.3 の再接続ガードを包含する |
+| P1 | 1.4 DCC の shadow 構築を接続前に可能にする | 中 | ✅ | §7 G4 = (a)。実装は遅延構築（理由は §1.4） |
 | P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ⛔ | §7 G2 = (a) `$commands` 明示宣言に決定。§2.3 の存在検査も同時に |
 | P2 | 1.1 `this.state` の意味論統一 | 大 | ✅ | 内部チャネルと公開 API を分離（§7 G1 = (b)） |
 | P2 | 2.1 変更イベントの発火範囲 | 中 | ⛔ | サブパス変更をどう畳むかの仕様判断 |
@@ -378,9 +396,10 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 - ✅ `webComponent.bindWebComponent.test.ts` は依存を全てモックするため、outerState / innerState の
   **意味論の組み合わせ**を検証していなかった。1.2 はこの穴に落ちていた →
   実モジュールで read / write の結果を固定する `webComponent.bindWebComponent.semantics.test.ts` を追加
-- 🟡 `__e2e__/dcc/index.html` は単発の DCC インスタンスのみで、**リスト内 DCC / 条件付き DCC が無い**。
-  1.3 / 1.4 はこの穴に落ちている → 1.3 は unit test（`dcc.defineDCC.test.ts` の再接続 2 本）で塞いだが、
-  **e2e は未追加**。1.4 の修正時に合わせて追加すること
+- ✅ `__e2e__/dcc/index.html` は単発の DCC インスタンスのみで、**リスト内 DCC / 条件付き DCC が無かった**。
+  1.3 / 1.4 はこの穴に落ちていた → [`e2e/tests/state-dcc-in-list.spec.ts`](../../e2e/tests/state-dcc-in-list.spec.ts) を追加。
+  `for` 3 行 + `if` トグルで両方を踏む。**この e2e が無ければ 1.4 の修正が不完全なまま通っていた**
+  （template clone の upgrade 漏れは happy-dom では再現しない、§1.4 末尾）
 - ✅ bind-component は unit / e2e とも「親 → 子の初期配送」しか見ておらず、
   **公開プロパティ経由の read / write が 1 度も踏まれていなかった**。1.1 はこの穴に落ちていた →
   [`e2e/tests/state-bind-component-write.spec.ts`](../../e2e/tests/state-bind-component-write.spec.ts) を追加。
@@ -428,11 +447,10 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 使い分けと、機構ごとに使える構文の対応表を書く。§3.1 の無言 return は `raiseError` に、
 §3.4 の DCC タグ重複 `console.warn` は `raiseError` に揃える。**未実装**。
 
-### G4: 未接続要素への apply — ✅ **(a) DCC 側で constructor に前倒し**
+### G4: 未接続要素への apply — ✅ **(a) DCC 側で解決**（実装済み）
 
-`attachShadow` と template clone を constructor へ移し、未接続でもアクセサが動くようにする。
-shadow への子追加は constructor でも仕様上許される（light DOM の子追加とは違う）。
-影響が DCC に閉じ、§1.3 の再接続ガードも自然に包含する。**未実装**。
+未接続でもアクセサが動くようにする。影響が DCC に閉じ、§1.3 の再接続ガードも自然に包含する。
+実装は constructor 前倒しではなく `_ensureShadow()` の遅延構築を採った（理由は §1.4）。
 
 - 却下「`applyChange` を connect 待ちまで拡張」— 原因は汎用だが、全機構・全 I/O ノードの
   適用タイミングが変わる。§1.4 は DCC 固有の症状（他の Shell は素のフィールド代入なので

@@ -6,6 +6,7 @@ import { getterFn, setterFn, callFn, isInternalProperty } from "./dccPropertyFac
 import { processBindablesDeclaration } from "./processBindablesDeclaration";
 import { createWcBindable, createBindableEventMap, IWcBindable } from "./wcBindable";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
+import { getCustomElementRegistry, upgradeCustomElement } from "../platform/customElementRegistry";
 // 具象 State ではなくインターフェースに依存する（dcc → components の逆参照を断つ、§3.5）。
 import type { IStateElement } from "../components/types";
 
@@ -47,16 +48,46 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
 
     private _shadow: ShadowRoot | null = null;
 
-    connectedCallback() {
-      if (this.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) return;
-      // 再接続では shadow を張り直さない。shadow tree は host の切断後も保持されるため
-      // 2 回目の attachShadow は NotSupportedError で throw する。`if` の false→true 再マウントと
-      // `for` の行プーリングはどちらも同一ノードを unmount → mount するので日常的に踏む
-      // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.3）。
-      // closed mode では this.shadowRoot が null なので、判定はこのフィールドで行う。
-      if (this._shadow !== null) return;
+    /**
+     * shadow を遅延構築する。定義要素（`data-wc-definition`）では null を返す。
+     *
+     * connectedCallback ではなくここで張るのは、**接続前にアクセサが呼ばれる**ため
+     * （§1.4）。`for` の全追加パスは行を fragment に組み立ててからバインドを適用し、
+     * fragment を DOM に挿すのは最後なので、`element.count = v` の時点で行はまだ未接続。
+     * shadow が無いと `stateElement` が null になり、setterFn が無言で書き込みを捨てていた。
+     * ここで構築しておけば、書き込みは inner `<wcs-state>` の initializePromise に
+     * 積まれ、接続・state ロード後に適用される。
+     *
+     * 冪等なので再接続でも張り直さない。shadow tree は host の切断後も保持され、
+     * 2 回目の attachShadow は NotSupportedError になる（§1.3）。`if` の false→true
+     * 再マウントと `for` の行プーリングはどちらも同一ノードを unmount → mount する。
+     * closed mode では `this.shadowRoot` が null なので判定はフィールド側で行う。
+     *
+     * G4 は「constructor へ前倒し」で決着したが、実装は constructor ではなく
+     * この遅延構築を採った。目的（未接続でもアクセサが動く）は同じで、constructor 版だと
+     * (1) 定義要素の判定に属性を読む必要があり constructor の作法に反する、
+     * (2) 同一タグの `data-wc-definition` が 2 つある場合、DSD の shadow を既に持つ
+     * 2 つ目に attachShadow して throw する、の 2 点を踏むため。
+     */
+    private _ensureShadow(): ShadowRoot | null {
+      if (this._shadow !== null) return this._shadow;
+      if (this.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) return null;
       this._shadow = this.attachShadow({ mode: DCCElement.shadowRootMode });
       this._shadow.appendChild(DCCElement.template.content.cloneNode(true));
+      // template.content は inert なテンプレート所有ドキュメントに属するため、その clone は
+      // カスタム要素として upgrade されていない。ホストが接続済みなら appendChild の時点で
+      // upgrade されるが、未接続の shadow に挿した場合は upgrade 契機が無く、内側の
+      // <wcs-state> が素の HTMLElement のまま残って createState が生えない。明示的に upgrade する。
+      const registry = getCustomElementRegistry();
+      if (registry !== null) {
+        upgradeCustomElement(registry, this._shadow);
+      }
+      return this._shadow;
+    }
+
+    connectedCallback() {
+      const shadow = this._ensureShadow();
+      if (shadow === null) return;
 
       // bindableEventMap の設定。
       // initializePromise は待たない。待つと state のロード完了まで map が空のままで、
@@ -65,7 +96,7 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
       // setBindableEventMap はフィールド代入だけで state を参照しないので、
       // <wcs-state> の初期化前に呼んでも安全。
       if (Object.keys(DCCElement.bindableEventMap).length > 0) {
-        const stateEl = this._shadow.querySelector(stateTagSelector) as IStateElement | null;
+        const stateEl = shadow.querySelector(stateTagSelector) as IStateElement | null;
         if (stateEl) {
           stateEl.setBindableEventMap(DCCElement.bindableEventMap);
         } else {
@@ -79,7 +110,8 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
     }
 
     get stateElement(): IStateElement | null {
-      return (this._shadow?.querySelector(stateTagSelector) ?? null) as IStateElement | null;
+      // 未接続でも shadow を構築して解決する（§1.4）。
+      return (this._ensureShadow()?.querySelector(stateTagSelector) ?? null) as IStateElement | null;
     }
   };
 
