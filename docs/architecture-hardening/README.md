@@ -4,7 +4,7 @@
 - **状態**: 一部採択・実装済み。phase 0-6 の PoC 実装は完了し、phase 2（方向認識初期同期）/ phase 3
   （因果伝播）は既定 `true` に反転済み。opt-in → 既定化 / IO 族横展開の進捗と残作業は
   [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) が追跡する。未実装の設計提案は
-  各論点 doc（01-08、11、13）に残る。
+  各論点 doc（01-08、11、13、15）に残る。
 - **対象スナップショット**:
   - wcstack: `27371dca55888c864028042e71d8a7e7149365b4`（v1.20.0）
   - wc-bindable-protocol: `5ec0deef212578a072b2f669d2a5554f254253e0`
@@ -61,6 +61,12 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
   どう記述するか。Web Audio（[examples/synth-playground](../../examples/synth-playground/)）が持ち込んだ
   G1〜G6 を決定。横断原則 3「値、イベント、コマンド、ライブハンドルの意味を混ぜない」の初の実地試験であり、
   結論は「トポロジは descriptor、ハンドルは Core が所有して境界に出さない」＝ **新しい観測意味論を増やさない**。
+- [state のコンポーネント機構 3 系統の整合性監査](15-state-component-mechanism-consistency.md) — **未採択・未修正**。
+  13 の「バインドが成立するか」軸を wcstack 内部へ向けたもの。`@wcstack/state` が持つ
+  wc-bindable protocol / DCC / bind-component の 3 機構が互いに整合していない箇所を固定する。
+  根本原因は (1) DCC の `createWcBindable` が①の宣言仕様を部分実装している、
+  (2) bind-component の内部チャネル proxy がそのまま公開 API `this.state` になっている、
+  (3) ライフサイクル規律が機構間で共有されていない、の 3 つ。decision gate G1-G4 は未決。
 
 ## 横断原則
 
