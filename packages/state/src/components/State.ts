@@ -450,6 +450,10 @@ export class State extends HTMLElementBase implements IStateElement {
     }
   }
 
+  get initialized(): boolean {
+    return this._initialized;
+  }
+
   get initializePromise(): Promise<void> {
     return this._initializePromise;
   }

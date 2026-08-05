@@ -15,6 +15,11 @@ export function createWcBindable(
   const properties: IWcBindableProperty[] = bindables.map((propName) => ({
     name: propName,
     event: `${tagName}:${propName}-changed`,
+    // Read the member off the element instead of trusting event.detail. The event is a
+    // notification, not a carrier: a sub-path write (`user.name = "x"` against a `user`
+    // member) has no single value to put in detail, and a state-side setter may normalize
+    // what was written. Both cases are correct through the property.
+    getter: (event: Event) => (event.target as unknown as Record<string, unknown>)[propName],
   }));
   // Every $bindables member gets both a getter and a setter on the DCC prototype,
   // so declare it in inputs as well — a property declared only in `properties` is

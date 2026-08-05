@@ -117,6 +117,18 @@ describe('State component', () => {
     expect(() => stateEl.createState('readonly', () => {})).toThrow(/State rootNode is not available/);
   });
 
+  // §2.2: initializePromise の同期版。DCC の setter が「今すぐ書いてよいか」を判断する。
+  it('initializedはconnect前false・初期化後trueになること', async () => {
+    const stateEl = createStateElement();
+    expect(stateEl.initialized).toBe(false);
+
+    stateEl.setInitialState({ count: 0 });
+    await stateEl.connectedCallback();
+    await stateEl.initializePromise;
+
+    expect(stateEl.initialized).toBe(true);
+  });
+
   it('commandTokenNamesは初期状態で空Set、setInitialState後に$commandTokens宣言を反映すること', async () => {
     const stateEl = createStateElement();
     expect(stateEl.commandTokenNames.size).toBe(0);

@@ -4,6 +4,12 @@ import { BindingType } from "../types";
 
 export interface IStateElement {
   readonly name: string;
+  /**
+   * state のロードが完了しているか。`initializePromise` の同期版で、
+   * DCC のアクセサが「今すぐ読み書きしてよいか」を判断するのに使う。
+   * optional なのはテスト用モック互換のため（undefined は「不明＝未初期化扱い」）。
+   */
+  readonly initialized?: boolean;
   readonly initializePromise: Promise<void>;
   readonly connectedCallbackPromise: Promise<void>;
   readonly listPaths: Set<string>;

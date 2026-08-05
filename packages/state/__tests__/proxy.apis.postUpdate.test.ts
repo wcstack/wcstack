@@ -51,7 +51,7 @@ describe('postUpdate', () => {
 
   it('PostFunctionを返すこと', () => {
     const handler = {
-      stateElement: { name: 'default', staticDependency: new Map(), dynamicDependency: new Map(), listPaths: new Set() },
+      stateElement: { name: 'default', staticDependency: new Map(), dynamicDependency: new Map(), listPaths: new Set(), bindableEventMap: {} },
       stateName: 'default'
     } as any;
 
@@ -60,9 +60,9 @@ describe('postUpdate', () => {
   });
 
   it('PostFunctionがアドレス解決・キュー登録・依存関係�E琁E��実行すること', () => {
-    const resolvedAddress = { pathInfo: { path: 'count' } };
+    const resolvedAddress = { pathInfo: { path: 'count', segments: ['count'] } };
     const listIndex = null;
-    const stateAddress = { pathInfo: { path: 'count' }, listIndex: null };
+    const stateAddress = { pathInfo: { path: 'count', segments: ['count'] }, listIndex: null };
     const absPathInfo = { path: 'default.count' };
     const absAddress = { absPathInfo, listIndex: null };
     const updater = { enqueueAbsoluteAddress: vi.fn() };
@@ -79,7 +79,7 @@ describe('postUpdate', () => {
     const dynamicDep = new Map();
     const listPaths = new Set<string>();
     const handler = {
-      stateElement: { name: 'default', staticDependency: staticDep, dynamicDependency: dynamicDep, listPaths },
+      stateElement: { name: 'default', staticDependency: staticDep, dynamicDependency: dynamicDep, listPaths, bindableEventMap: {} },
       stateName: 'default'
     } as any;
     const target = {};
@@ -100,8 +100,8 @@ describe('postUpdate', () => {
   });
 
   it('walkDependencyコールバックがキャチE��ュ無効化とキュー登録を行うこと', () => {
-    const resolvedAddress = { pathInfo: { path: 'count' } };
-    const stateAddress = { pathInfo: { path: 'count' }, listIndex: null };
+    const resolvedAddress = { pathInfo: { path: 'count', segments: ['count'] } };
+    const stateAddress = { pathInfo: { path: 'count', segments: ['count'] }, listIndex: null };
     const absPathInfo = { path: 'default.count' };
     const absAddress = { absPathInfo, listIndex: null };
     const updater = { enqueueAbsoluteAddress: vi.fn() };
@@ -127,7 +127,7 @@ describe('postUpdate', () => {
     });
 
     const handler = {
-      stateElement: { name: 'default', staticDependency: new Map(), dynamicDependency: new Map(), listPaths: new Set() },
+      stateElement: { name: 'default', staticDependency: new Map(), dynamicDependency: new Map(), listPaths: new Set(), bindableEventMap: {} },
       stateName: 'default'
     } as any;
 

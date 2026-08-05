@@ -19,6 +19,7 @@
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { WILDCARD } from "../../define";
+import { dispatchBindableEvent } from "../../dcc/dispatchBindableEvent";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { raiseError } from "../../raiseError";
@@ -230,17 +231,8 @@ export function setByAddress(
             dirty: false
           });
         }
-        // DCC bindable イベントディスパッチ
-        const eventName = stateElement.bindableEventMap[path];
-        if (eventName) {
-          const rootNode = stateElement.rootNode;
-          if (rootNode instanceof ShadowRoot) {
-            rootNode.host.dispatchEvent(new CustomEvent(eventName, {
-              detail: value,
-              bubbles: true,
-            }));
-          }
-        }
+        // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
+        dispatchBindableEvent(stateElement, address.pathInfo, { value });
       }
     }
   }
@@ -290,17 +282,8 @@ export function setByAddress(
         dirty: false
       });
     }
-    // DCC bindable イベントディスパッチ
-    const eventName = stateElement.bindableEventMap[address.pathInfo.path];
-    if (eventName) {
-      const rootNode = stateElement.rootNode;
-      if (rootNode instanceof ShadowRoot) {
-        rootNode.host.dispatchEvent(new CustomEvent(eventName, {
-          detail: value,
-          bubbles: true,
-        }));
-      }
-    }
+    // DCC bindable イベントディスパッチ（完全一致 ＋ サブパス → 先頭セグメント、§2.1）
+    dispatchBindableEvent(stateElement, address.pathInfo, { value });
   }
 }
 

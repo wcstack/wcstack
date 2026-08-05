@@ -56,7 +56,7 @@ describe('dcc/defineDCC', () => {
     expect(DCCClass.wcBindable).toEqual({
       protocol: 'wc-bindable',
       version: 1,
-      properties: [{ name: 'count', event: `${tag}:count-changed` }],
+      properties: [{ name: 'count', event: `${tag}:count-changed`, getter: expect.any(Function) }],
       inputs: [{ name: 'count' }],
     });
     expect(DCCClass.bindableEventMap).toEqual({

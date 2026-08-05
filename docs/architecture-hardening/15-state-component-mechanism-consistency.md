@@ -1,10 +1,10 @@
 # state のコンポーネント機構 3 系統の整合性監査
 
 - **作成日**: 2026-08-05
-- **状態**: 監査記録＋**修正進行中**（2026-08-05）。§7 の decision gate G1-G4 は 4 件とも決着済み。
-  実装済み = §1.1〜§1.6 / §2.3 / §2.4 / §2.6 / §2.7 / §3.1 / §3.2 / §3.4 / §3.5 / §3.6、
+- **状態**: 監査記録＋**修正完了**（2026-08-05〜06）。§7 の decision gate G1-G4 は 4 件とも決着・実装済み。
+  実装済み = §1.1〜§1.6 / §2.1〜§2.4 / §2.6 / §2.7 / §3.1 / §3.2 / §3.4 / §3.5 / §3.6、
   部分 = §2.5、訂正 = §3.3（本書の誤り）。
-  残り = §2.1 / §2.2（どちらも gate 無し）。**§1 の確定欠陥と decision gate 対象は全て解消**。
+  **監査で挙げた項目は全て解消**（§2.5 は診断性のみ・§3.3 は本書の誤りとして撤回）。
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
@@ -43,8 +43,8 @@
 | §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ✅ 修正済み（G4 = DCC 側で解決。実装は遅延構築） |
 | §1.5 | `$bindables` 重複で wcBindable 宣言が丸ごと棄却される | ✅ 修正済み |
 | §1.6 | DCC メソッドに command-token を張れない | ✅ 修正済み（G2 = `$commands` 明示宣言） |
-| §2.1 | 変更イベントが完全一致パスでしか出ない | ⛔ 未着手 |
-| §2.2 | DCC アクセサの同期／非同期が非対称 | ⛔ 未着手 |
+| §2.1 | 変更イベントが完全一致パスでしか出ない | ✅ 修正済み（サブパス ＋ `$postUpdate` ＋ property getter） |
+| §2.2 | DCC アクセサの同期／非同期が非対称 | ✅ 修正済み（setter を同期化。`callFn` は意図的に Promise 維持） |
 | §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
 | §2.4 | prototype チェーンの扱いが State と DCC で違う | ✅ 修正済み |
 | §2.5 | inner `<wcs-state>` が `:not([name])` 固定 | 🟡 部分修正（挙動は不変、`console.warn` で可視化） |
@@ -68,7 +68,10 @@
 | [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
 | [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
 | [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 / §3.1 |
-| [`components/types.ts`](../../packages/state/src/components/types.ts) | §3.5 |
+| [`components/types.ts`](../../packages/state/src/components/types.ts) | §3.5 / §2.2（`initialized`） |
+| [`dcc/dispatchBindableEvent.ts`](../../packages/state/src/dcc/dispatchBindableEvent.ts)（新規） | §2.1 |
+| [`dcc/dccPropertyFactories.ts`](../../packages/state/src/dcc/dccPropertyFactories.ts) | §2.2 |
+| [`proxy/methods/setByAddress.ts`](../../packages/state/src/proxy/methods/setByAddress.ts) / [`proxy/apis/postUpdate.ts`](../../packages/state/src/proxy/apis/postUpdate.ts) | §2.1 |
 | [`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts) | §3.3（コメントのみ・挙動不変） |
 | `src/dcc/README.md` / `src/webComponent/README.md` | §3.6（実装の現状に書き直し） |
 
@@ -252,25 +255,55 @@ README「Declarative Custom Components (DCC)」節にこの制約の記載は無
 
 ## 2. 契約の乖離（実害はケース依存）
 
-### 2.1 DCC の変更イベントは完全一致パスでしか出ない
+### 2.1 DCC の変更イベントは完全一致パスでしか出ない ✅ 修正済み
 
-[`setByAddress.ts:234,294`](../../packages/state/src/proxy/methods/setByAddress.ts) は
-`bindableEventMap[address.pathInfo.path]` の完全一致で判定する。
+`setByAddress` は `bindableEventMap[address.pathInfo.path]` の完全一致で判定していた。
 `$bindables: ["user"]` で `user.name` を書いても発火しない。配列の in-place 変異・`$postUpdate`・
-getter 由来の派生値も同様。wcBindable の `properties[].event` は「変更で発火する」契約なので乖離している。
+getter 由来の派生値も同様。wcBindable の `properties[].event` は「変更で発火する」契約なので乖離していた。
 
-### 2.2 DCC アクセサの同期／非同期が非対称
+**修正**: 判定を [`dispatchBindableEvent.ts`](../../packages/state/src/dcc/dispatchBindableEvent.ts) に
+切り出し、3 経路をカバーした。
+
+1. **完全一致** — 従来どおり。`detail` は書き込んだ値
+2. **サブパス** — `user.name` / `items.*.done` が `user` / `items` メンバを撃つ。
+   `$bindables` のエントリは常にフラットなトップレベル名（dotted 名は §2.3 の存在検査で落ちる）なので、
+   先頭セグメントを見れば足りる。この場合 `detail` は付けない — メンバ全体ではない値を載せると誤解を招く
+3. **`$postUpdate`** — in-place 変異を通知する正規の idiom。`postUpdate` からも撃つ
+
+併せて `createWcBindable` が各 property に
+`getter: (event) => event.target[name]` を宣言するようにした。
+これで**イベントは通知、値は要素から読む**という形に揃い、`detail` に依存しなくなる。
+サブパス書き込みには載せられる単一の値が無く、state 側の setter が正規化した場合も
+`detail` は正規化前になるため、`detail` は元々信頼できない経路だった。
+
+**残る非カバー**: `$postUpdate` を伴わない in-place 変異（`items.push(...)`）。
+set トラップを通らないのでここでも捕まらないが、これはリアクティブコア全体の規範
+（in-place 変異は `$postUpdate` で通知する）と同じであり、DCC 固有の乖離ではない。
+
+### 2.2 DCC アクセサの同期／非同期が非対称 ✅ 修正済み
 
 - `getterFn` は同期。state 未初期化なら `console.warn` して `undefined` を返す
 - `setterFn` / `callFn` は `initializePromise.then()` 経由で**非同期**
 
-（[`dccPropertyFactories.ts:7-59`](../../packages/state/src/dcc/dccPropertyFactories.ts)）
+（[`dccPropertyFactories.ts`](../../packages/state/src/dcc/dccPropertyFactories.ts)）
 
 `el.count = 5; el.count` は旧値を返す。また
-[`readProducerSnapshot`](../../packages/state/src/bindings/BindingSession.ts)（916-933 行）は
+[`readProducerSnapshot`](../../packages/state/src/bindings/BindingSession.ts) は
 `target[name]` を同期読みするため、`#init=element` / `#init=auto` では `undefined` が
 `commitProducerValue` 経由で親 state に commit されうる。
 既定は `state` authority（properties と inputs の両方に載るため）なので通常経路では当たらない。
+
+**修正**: `IStateElement` に `initialized`（`initializePromise` の同期版）を足し、
+`setterFn` は**初期化済みなら同期で書く**ようにした。未初期化のときだけ従来どおり
+`initializePromise` に積む — §1.4 の「未接続の行に書かれた値を捨てない」経路はそのまま残る。
+
+`getterFn` も未初期化を「まだ値が無い」正常系として扱い、warn せず `undefined` を返す。
+fragment 上の行に対する初期スナップショット読み（`readProducerSnapshot`）は必ずここを通るため、
+warn を出すと通常フローが騒がしくなる（§1.4 の e2e で実際に大量に出ていた）。
+真のエラーだけが warn として残る。
+
+`callFn` は**意図的に常に Promise** のままにした。同期に倒すと戻り値の型が
+初期化状態で変わってしまい、§1.6 で `commands` に一律 `async: true` を宣言したこととも矛盾する。
 
 ### 2.3 `$bindables` だけ宣言検証が無い 🟡 部分修正
 
@@ -413,7 +446,7 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 | P1 | 1.4 DCC の shadow 構築を接続前に可能にする | 中 | ✅ | §7 G4 = (a)。実装は遅延構築（理由は §1.4） |
 | P1 | 1.6 DCC の `commands` 生成 | 小〜中 | ✅ | §7 G2 = (a) `$commands` 明示宣言。§2.3 の存在検査も同時に実施 |
 | P2 | 1.1 `this.state` の意味論統一 | 大 | ✅ | 内部チャネルと公開 API を分離（§7 G1 = (b)） |
-| P2 | 2.1 変更イベントの発火範囲 | 中 | ⛔ | サブパス変更をどう畳むかの仕様判断 |
+| P2 | 2.1 変更イベントの発火範囲 | 中 | ✅ | サブパスは先頭セグメントのメンバに畳む。`$postUpdate` も撃つ |
 | P3 | 2.4 走査を共有 / 2.6 併記の fail-fast / 2.7 同期設定 / 3.5 型 / 3.6 README | 小 | ✅ | |
 | P3 | 2.5 命名規約の統一 | 小 | 🟡 | 診断 warn のみ実施。規約の統一は §7 G3 と併せて |
 | P3 | 3.1 / 3.2 / 3.4 | 小 | ✅ | §7 G3 = (b) 分離を規範として明文化 |
