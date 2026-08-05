@@ -36,6 +36,14 @@ state をロードして `defineDCC()` を呼ぶ。定義用の `<wcs-state>` �
 - **inner `<wcs-state>` は無名であること。** セレクタが `:not([name])` のため、
   `name` を付けると `stateElement` が解決できない。`$bindables` 宣言時は警告を出す。
 
+## bind-component との排他
+
+DCC と `bind-component` はコンポーネントごとにどちらか一方だけを使う。
+`data-wc-definition` ホストの中の `<wcs-state bind-component>` は `raiseError`（§3.1）。
+同じタグ名の重複定義も `raiseError`（§3.4。先勝ちで別テンプレートのインスタンスが生えるのを防ぐ）。
+機構の選び方と、機構ごとに使える構文の対応表は
+[`packages/state/README.md` の「Choosing a Component Mechanism」](../../README.md#choosing-a-component-mechanism)。
+
 ## 既知の制約
 
 実装と設計の食い違いは

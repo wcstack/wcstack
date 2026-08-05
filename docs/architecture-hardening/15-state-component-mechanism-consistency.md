@@ -2,9 +2,9 @@
 
 - **作成日**: 2026-08-05
 - **状態**: 監査記録＋**修正進行中**（2026-08-05）。§7 の decision gate G1-G4 は 4 件とも決着済み。
-  実装済み = §1.1〜§1.6 / §2.3 / §2.4 / §2.6 / §2.7 / §3.5 / §3.6、
+  実装済み = §1.1〜§1.6 / §2.3 / §2.4 / §2.6 / §2.7 / §3.1 / §3.2 / §3.4 / §3.5 / §3.6、
   部分 = §2.5、訂正 = §3.3（本書の誤り）。
-  残り = §2.1 / §2.2 / §3.1・§3.2・§3.4（G3）。**§1 の確定欠陥は全て解消**。
+  残り = §2.1 / §2.2（どちらも gate 無し）。**§1 の確定欠陥と decision gate 対象は全て解消**。
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
@@ -50,7 +50,7 @@
 | §2.5 | inner `<wcs-state>` が `:not([name])` 固定 | 🟡 部分修正（挙動は不変、`console.warn` で可視化） |
 | §2.6 | bind-component と state ソース属性の二重指定 | ✅ 修正済み |
 | §2.7 | `bindableEventMap` の設定タイミング | ✅ 修正済み |
-| §3.1 / §3.2 / §3.4 | 相互排他・wcBindable の要求範囲・重複定義の作法 | ⛔ 未着手（G3 = 分離を明文化に決定） |
+| §3.1 / §3.2 / §3.4 | 相互排他・wcBindable の要求範囲・重複定義の作法 | ✅ 修正済み（G3 = 分離を規範として明文化） |
 | §3.3 | root 判定が 2 系統 | ❌ **本書の誤り**（SSR で必要。コメントを追加して訂正） |
 | §3.5 | 型・レイヤ（`IStateElement` に setter が無い） | ✅ 修正済み |
 | §3.6 | `src/` 配下の README が実装と食い違う | ✅ 修正済み |
@@ -67,7 +67,7 @@
 | [`dcc/processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts)（新規） | §1.5 / §2.3 / §1.6 |
 | [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
 | [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
-| [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 |
+| [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 / §3.1 |
 | [`components/types.ts`](../../packages/state/src/components/types.ts) | §3.5 |
 | [`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts) | §3.3（コメントのみ・挙動不変） |
 | `src/dcc/README.md` / `src/webComponent/README.md` | §3.6（実装の現状に書き直し） |
@@ -350,11 +350,20 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 
 ## 3. 設計・衛生
 
-- **3.1** DCC 定義内の `bind-component` は無言で無視される（[`State.ts:356-361`](../../packages/state/src/components/State.ts)
-  が DCC 検出で先に `return` する）
-- **3.2** wcBindable の要求範囲が機構ごとに揃っていない。spread（`...:`）と command-token は
-  wcBindable 必須で未宣言なら `raiseError` するが、bind-component コンポーネントは wcBindable を持たないので
-  `state.msg: x` は通る。**同じ「コンポーネント」なのに書ける構文が違う**
+- **3.1** ✅ 修正済み（G3）。DCC 定義内の `bind-component` は DCC 検出の `return` で無言に無視されていた。
+  DCC の state はテンプレートに属しインスタンスごとにロードされるので、定義時点のホストのプロパティを
+  ソースにする bind-component とは両立しない。`raiseError` に変更した
+- **3.2** ✅ 修正済み（G3）。wcBindable の要求範囲が機構ごとに揃っていなかった。spread（`...:`）と
+  command-token は wcBindable 必須で未宣言なら `raiseError` するが、bind-component コンポーネントは
+  wcBindable を持たないので `state.msg: x` は通る。**同じ「コンポーネント」なのに書ける構文が違う**。
+
+  これは欠陥ではなく設計上の帰結だと整理した。bind-component は宣言されたプロパティ面ではなく
+  **パス**で配線する機構なので、`wcBindable` 宣言を要求する構文が使えないのは筋が通っている。
+  統合はせず、**規範として明文化**した — README.md / README.ja.md に
+  「Choosing a Component Mechanism / コンポーネント機構の選び方」節を新設し、
+  定義方法・state の在処・`static wcBindable` の有無・親からの値バインド／メソッド起動・spread の可否・
+  自身の読み書き の 6 軸で対応表を置き、排他であることと選択の目安を書いた。
+  `src/dcc/README.md` と `src/webComponent/README.md` からも相互に参照する
 - **3.3** ~~root 判定が 2 系統~~ ❌ **本書の誤り（2026-08-05 訂正）**。
   `instanceof ShadowRoot`（`State.ts:268,357` / `setByAddress.ts:237`）と
   `rootNode.constructor.name === ...`（[`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts)）の
@@ -365,8 +374,10 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
   **対応 = コード側に理由コメントを追加**（統一はしない）。
   なお `DocumentFragment` root で bindings が組まれない点は事実だが、fragment は
   `setRootNodeByFragment` で別途対応先が与えられるため、ここでの取りこぼしではない
-- **3.4** 重複定義時の作法が不揃い。DCC タグ重複は `console.warn` してスキップ（`defineDCC.ts:16-20`）、
-  state 名重複は `raiseError`（`stateElementByName.ts:91-93`）
+- **3.4** ✅ 修正済み（G3）。重複定義時の作法が不揃いだった。DCC タグ重複は `console.warn` してスキップ、
+  state 名重複は `raiseError`（`stateElementByName.ts`）。DCC 側を `raiseError` に揃えた。
+  警告で済ませると先勝ちで**別テンプレートのインスタンスが生える**ため、
+  「動いているように見えて中身が違う」状態になる。これは authoring error として落とすのが正しい
 - **3.5** ✅ 修正済み。`IStateElement` に `bindableEventMap`（readonly）はあるが `setBindableEventMap` が無く、
   `defineDCC` が具象 `State` を import して cast していた（dcc → components の逆参照）。
   インターフェースに setter を追加し、`defineDCC` は `import type { IStateElement }` のみに依存する。
@@ -405,7 +416,7 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 | P2 | 2.1 変更イベントの発火範囲 | 中 | ⛔ | サブパス変更をどう畳むかの仕様判断 |
 | P3 | 2.4 走査を共有 / 2.6 併記の fail-fast / 2.7 同期設定 / 3.5 型 / 3.6 README | 小 | ✅ | |
 | P3 | 2.5 命名規約の統一 | 小 | 🟡 | 診断 warn のみ実施。規約の統一は §7 G3 と併せて |
-| P3 | 3.1 / 3.2 / 3.4 | 小 | ⛔ | §7 G3 = (b) 分離を明文化に決定 |
+| P3 | 3.1 / 3.2 / 3.4 | 小 | ✅ | §7 G3 = (b) 分離を規範として明文化 |
 | — | 2.3 の存在検査 | 小 | ✅ | `$streams` 名は許可しアクセサも生成する（§2.3 末尾） |
 
 ## 6. 回帰テストの穴
@@ -460,9 +471,13 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 
 ### G3: ②と③の関係 — ✅ **(b) 分離を規範として明文化**
 
-統合はしない。README/SPEC に「HTML だけなら DCC、JS クラスがあるなら bind-component」という
+統合はしない。README に「HTML だけなら DCC、JS クラスがあるなら bind-component」という
 使い分けと、機構ごとに使える構文の対応表を書く。§3.1 の無言 return は `raiseError` に、
-§3.4 の DCC タグ重複 `console.warn` は `raiseError` に揃える。**未実装**。
+§3.4 の DCC タグ重複 `console.warn` は `raiseError` に揃える。**実装済み**。
+
+対応表の軸は 定義方法 / state の在処 / `static wcBindable` の有無 / 親からの値バインド /
+親からのメソッド起動 / spread の可否 / 自身の読み書き の 6 つ。SPEC には書いていない —
+これは wcstack 内の機構選択であって wc-bindable プロトコルの規範ではないため。
 
 ### G4: 未接続要素への apply — ✅ **(a) DCC 側で解決**（実装済み）
 

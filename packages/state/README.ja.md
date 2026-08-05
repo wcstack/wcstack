@@ -1576,6 +1576,24 @@ chip.payload = null          → element.data = null かつ removeAttribute("dat
 - ミラーはベストエフォート: `setAttribute` の失敗は握りつぶされ（`debug` 警告付き）、プロパティ書き込みをブロックしない
 - ネイティブ HTML 要素は `inputs` を完全に無視する —— ミラーは `static wcBindable` を公開するカスタム要素でのみ有効になる
 
+## コンポーネント機構の選び方
+
+カスタム要素に独自の状態を持たせる機構は 2 つあり、**排他**です。コンポーネントごとにどちらか一方を選びます。
+
+| | [DCC](#宣言的カスタムコンポーネント-dcc) | [`bind-component`](#web-component-バインディング) |
+|---|---|---|
+| 要素の定義方法 | HTML だけ（`data-wc-definition` + Declarative Shadow DOM） | 自分で書く `class extends HTMLElement` |
+| 状態の在処 | テンプレート内のインライン `<script type="module">`（インスタンスごとにロード） | コンポーネントインスタンスのプロパティ（`this.state`） |
+| `static wcBindable` | `$bindables` / `$commands` から生成 | **無し** — wc-bindable の producer ではない |
+| 親から値をバインド | `count: parentCount`（双方向・変更イベントあり） | `state.msg: user.name`（パスマッピング） |
+| 親からメソッド起動 | `command.bumpBy: $command.bump` | 不可 — クラス側に公開して自分で呼ぶ |
+| spread（`...: obj`） | 使える | 使えない（`wcBindable` 宣言が必要） |
+| コンポーネント自身の読み書き | 要素の `this.count` | `this.state.msg` |
+
+判断の目安は「**JavaScript クラスが無いなら DCC、既にクラスを書いているなら `bind-component`**」です。併用はエラーになります。`data-wc-definition` ホストの中に `<wcs-state bind-component>` を置くのは設定ミスです — DCC の状態はテンプレートに属し、インスタンスごとにロードされるためです。
+
+`bind-component` のコンポーネントが wc-bindable プロトコルの外に留まっているのは意図的です。宣言されたプロパティ面ではなく**パス**で配線するのがこの機構だからで、`wcBindable` 宣言を必要とする spread と command token が使えないのはその帰結です。
+
 ## 宣言的カスタムコンポーネント (DCC)
 
 JavaScript のクラス定義なしで、**HTML だけ**でカスタム要素を定義できます。`data-wc-definition` と Declarative Shadow DOM (`<template shadowrootmode>`) を使い、リアクティブな状態を持つ再利用可能なコンポーネントをインラインで宣言します。
