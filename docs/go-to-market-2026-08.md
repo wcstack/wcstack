@@ -132,7 +132,7 @@ LP の語り順は **Compose → Reuse → Verify → Expand**（配線できる
 | # | 施策 | 変更点 |
 |---|---|---|
 | 2-1 | 5 スタック比較の記事化 | websocket-chat 流用・書くのは文章だけ（初版通り）。**対訳ペア（React コード ↔ wcstack コード）フレーミングを追加**＝AI の学習信号としても機能 |
-| 2-2 改 | 楔デモ | **LP 埋め込みの初手は `<wcs-intersect>` 静的デモ**（ゼロインフラ・ノー FW 層にも見せられる・Before 40 行/After 数行の並置）。**その直後に配線版（intersect→fetch→state の無限スクロール）を並置**（R3 追加）— `examples/state-intersect-scroll`（e2e 付き・main 済み）流用で新規開発ほぼゼロ。「HTML を見るだけで非同期処理の構造が分かる」実行グラフとして見せる＝§2-2 条件 2「タグ + 無 JS 配線」の最小実証。**React ws 楔（StackBlitz・55 行→15 行・消える 7 エッジケース表）は記事 2 本目**。設計詳細・実コード・30 秒動線は評議会成果物に完備。WS relay 常設の可否は D8 |
+| 2-2 改 | 楔デモ | **LP 埋め込みの初手は `<wcs-intersect>` 静的デモ**（ゼロインフラ・ノー FW 層にも見せられる・Before 40 行/After 数行の並置）。その直後の高度例は `examples/state-intersect-scroll`（e2e 付き）を使い、intersection→`$streams` の switchMap 型 page fetch と有界 retry を見せる。これは「タグ + 無 JS 配線」の実証ではなく、state の非同期 producer 境界を含む実行グラフとして位置づける。**React ws 楔（StackBlitz・55 行→15 行・消える 7 エッジケース表）は記事 2 本目**。設計詳細・実コード・30 秒動線は評議会成果物に完備。WS relay 常設の可否は D8 |
 | 2-3 昇格 | 41 タグのロングテールページを manifest から機械生成 | **AI チャネル観点で優先度引き上げ**: AI の検索クエリ形状（「camera recording web component」等の API 形）に正確に一致。「キオスク・スターターキット」ページをこの旗艦にする（買い手①-キオスク向けソリューション面） |
 | 2-4 | NOT リストの明文化 | 初版通り |
 | **2-5 新** | **エラーメッセージ内誘導** | lint 0/9 実測の壁を破る本命（確度: 高）。state のバインディング解析エラーに「正構文の提示（did you mean `class.done:`）+ `npx @wcstack/lint` への言及」を埋め込む。コンソール出力は AI が誤った瞬間に必ず読む全帯域面・インストール不要。9 ランの実誤り 4 類型は全てパーサ検出可能域。工数 2〜5 日 |

@@ -8,6 +8,11 @@
   - **既存 `$on` の挙動を変えない**。関数を直に書く現行形は完全に維持され、宣言オブジェクト形は additive な opt-in とする。
 - **参照仕様**: 排他モードと再試行の規範は [async-execution-model.md](./async-execution-model.md) §5 / §8。実装済みの実行プリミティブは `io-core/operation-lane.ts`（`scripts/sync-io-core.mjs` が各ノードへ複製配布）。宣言マップを state に増設する手順の先例は [state-streams-design.md](./state-streams-design.md)。
 
+> **後日更新（2026-08-06）**: 本書が題材にした `examples/state-intersect-scroll` の
+> 手書き fetch/timer 版は、`$streams` の switchMap 型依存 restart と producer 内の有界 retry を
+> 使う形へ refactor された。以下の `pageFetch.loading`、`retryAttempt`、`<wcs-timer>` は
+> 不採用案を判断した時点の歴史的記録であり、現行 example の構造ではない。
+
 ---
 
 ## 0-1. 決裁 — 不採用（2026-07-31）
@@ -402,5 +407,5 @@ element の CustomEvent
 - [state-streams-design.md](./state-streams-design.md) — 宣言マップ増設の先例。骨格の大半を再利用できる
 - [state-redesign-council.md](./state-redesign-council.md) — no-regret 原則と「良いとこ取り統合は禁句」（§9-1 の根拠）
 - `io-core/operation-lane.ts` — 実行プリミティブの実装（実行可能な参照仕様）
-- `examples/state-intersect-scroll` + `e2e/tests/state-intersect-scroll.spec.ts` — §1 の実測対象であり、§8-1 Phase E の実地検証対象
+- `examples/state-intersect-scroll` + `e2e/tests/state-intersect-scroll.spec.ts` — §1 の refactor 前実測対象。現行 example は `$streams` 実地例
 - `packages/state/__tests__/poc.asyncOnLoopContext.test.ts` — G1 の PoC（特性化テスト）。async `$on` ハンドラと loop context の現在の挙動を固定する

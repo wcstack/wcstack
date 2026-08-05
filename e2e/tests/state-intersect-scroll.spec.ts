@@ -1,12 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { collectErrors } from "./helpers";
 
-// state + fetch + intersection + timer: 失敗ページの復帰経路を実ブラウザで検証する。
+// state + intersection + $streams: 失敗ページの復帰経路を実ブラウザで検証する。
 //
 // 回帰対象: page1 が失敗するとフィードが空 → スクロールする対象が無い →
 // IntersectionObserver は可視性の「変化」でしか発火しない → 復帰する手段が消える、
-// というデッドロック。<wcs-timer manual once> によるリトライ時計がそれを解く。
-// **どのテストもスクロールしない** — スクロールで直るなら回帰が再現しないため。
+// というデッドロック。stream producer 内の abort 対応 delay/retry がそれを解く。
+// **失敗系テストはスクロールしない** — スクロールで直るなら回帰が再現しないため。
 
 const PAGE_SIZE = 20;
 
@@ -62,7 +62,64 @@ async function routeItems(page: Page, failFirst: number): Promise<ItemsRoute> {
 }
 
 test.describe("examples/state-intersect-scroll", () => {
-  test("page1 が失敗してもリトライ時計がスクロール無しでフィードを復帰させる", async ({ page }) => {
+  test("依存更新が in-flight page を abort し、最新の stream run だけを commit する", async ({ page }) => {
+    const errors = collectErrors(page);
+    let requestCount = 0;
+    let releaseFirst!: () => void;
+    const holdFirst = new Promise<void>((resolve) => { releaseFirst = resolve; });
+
+    await page.route("**/api/items*", async (route) => {
+      requestCount++;
+      if (requestCount === 1) {
+        // 最初の fetch を parked にし、その間に retryNonce を変更して
+        // $streams の dependency-driven restart を起こす。
+        await holdFirst;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            catalog.slice(0, PAGE_SIZE).map((item) => ({ ...item, id: item.id + 900 })),
+          ),
+        }).catch(() => { /* AbortController が既に request を閉じていれば正常。 */ });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(catalog.slice(0, PAGE_SIZE)),
+      });
+    });
+
+    try {
+      await page.goto("/examples/state-intersect-scroll/");
+      await expect.poll(() => requestCount).toBe(1);
+
+      await page.evaluate(() => {
+        const stateElement = document.querySelector("wcs-state") as unknown as {
+          createState: (mutability: "writable", callback: (state: { retryNonce: number }) => void) => void;
+        };
+        stateElement.createState("writable", (state) => {
+          state.retryNonce++;
+        });
+      });
+
+      await expect.poll(() => requestCount).toBe(2);
+      await expect(page.locator(".item")).toHaveCount(PAGE_SIZE);
+      await expect(page.locator(".item-id").first()).toHaveText("1");
+
+      // 旧 run を解放しても stale な 901..920 は反映されない。
+      releaseFirst();
+      await page.waitForTimeout(100);
+      await expect(page.locator(".item")).toHaveCount(PAGE_SIZE);
+      await expect(page.locator(".item-id").first()).toHaveText("1");
+      expect(appErrors(errors)).toEqual([]);
+    } finally {
+      releaseFirst();
+    }
+  });
+
+  test("page1 が失敗しても stream の有界リトライがスクロール無しでフィードを復帰させる", async ({ page }) => {
     const errors = collectErrors(page);
     const items = await routeItems(page, 2);   // maxRetries(3) の予算内で回復する
 
@@ -72,13 +129,14 @@ test.describe("examples/state-intersect-scroll", () => {
     await expect(page.locator(".end-msg", { hasText: "retrying" })).toBeVisible();
     await expect(page.locator(".retry-btn")).toHaveCount(0);
 
-    // ここから **一切スクロールしない**。リトライ時計だけで page1 が着地すること。
+    // ここから **一切スクロールしない**。stream producer だけで page1 が着地すること。
     await expect(page.locator(".item")).toHaveCount(PAGE_SIZE, { timeout: 15_000 });
     await expect(page.locator(".meter b").first()).toHaveText(String(PAGE_SIZE));
     await expect(page.locator(".end-msg", { hasText: "retrying" })).toHaveCount(0);
 
-    // page1 は 3 回叩かれている(初回 + リトライ 2 回)。
-    expect(items.requestCount()).toBeGreaterThanOrEqual(3);
+    // page1 は正確に3回(初回 + リトライ2回)。交差 edge からの予算外 retry は無い。
+    expect(items.requests().filter((entry) => entry.startsWith("1:")))
+      .toEqual(["1:503", "1:503", "1:200"]);
 
     expect(appErrors(errors)).toEqual([]);
   });
@@ -115,7 +173,7 @@ test.describe("examples/state-intersect-scroll", () => {
 
   test("正常系: 初期ページが描画され、末尾までスクロールすると全87件で終端する", async ({ page }) => {
     const errors = collectErrors(page);
-    await routeItems(page, 0);
+    const items = await routeItems(page, 0);
 
     await page.goto("/examples/state-intersect-scroll/");
     await expect(page.locator(".item")).toHaveCount(PAGE_SIZE);
@@ -127,6 +185,10 @@ test.describe("examples/state-intersect-scroll", () => {
     }
     await expect(page.locator(".item")).toHaveCount(catalog.length, { timeout: 15_000 });
     await expect(page.locator(".end-msg", { hasText: "End of list" })).toBeVisible();
+
+    // loading/error guard を外しても、commit 済み件数から page を導出するため
+    // switchMap restart がページを飛ばさず、各ページをちょうど1回ずつ要求する。
+    expect(items.requests()).toEqual(["1:200", "2:200", "3:200", "4:200", "5:200"]);
 
     expect(appErrors(errors)).toEqual([]);
   });

@@ -6,7 +6,8 @@ state 側で**追記（append）**していくため、リストはちらつき�
 
 `<wcs-infinite-scroll>` は **`@wcstack/fetch` に同梱**されており、追加パッケージは不要です。
 こちらは高レベル・全部入りの選択肢。手配線する低レベル版は姉妹デモ
-[`state-intersect-scroll`](../state-intersect-scroll) を参照してください。
+`@wcstack/state` の `$streams` と低レベル intersection primitive を使う
+[`state-intersect-scroll`](../../../../examples/state-intersect-scroll) を参照してください。
 
 ## はじめに
 
@@ -46,7 +47,7 @@ scroll ──▶ <wcs-infinite-scroll>  （センチネルがビューポート�
 
 - **`value` は「置換」であって「追記」ではない。** `<wcs-fetch>` は最新レスポンスだけを公開する。無限スクロールは全ページが要るので、リストに `value` を直接バインドしない。`eventToken.value: pageArrived` で各レスポンスを `$on` に渡し、`items.concat(...)` で蓄積する。蓄積は state の責務、タグはスクロール検出だけを持つ。
 - **`manual` は必須。** url getter は `page+1` を返すので毎回 url が変わる。`manual` がないとその url 変化で自動 fetch が走り二重ロードになる。`manual` ならセンチネルの `trigger=true` だけがリクエストを起動する。
-- **静的 `url`（＝ page 1）で初回ロードを決定的にする。** センチネルの trigger は一発勝負だ——`set trigger` は `url` が空のとき書き込みを黙って捨て、`IntersectionObserver` はセンチネルが見えっぱなし（空リスト）の間は再発火しない。url バインド（`@wcstack/state`）とセンチネルの初回オブザーバコールバックは順序保証のない別々の非同期パイプラインで走るため、バインド適用前にセンチネルが先に発火すると空 url に対して trigger され、ページが永久に来ない（スピナーが回りっぱなし）。静的 `url="/api/items?page=1&limit=20"` がこの race を消す。`manual` がこの静的 url の自動 fetch を抑え、`page` 前進に応じてバインドが page 2 以降へ書き換える。（`state-intersect-scroll` デモに同等の手当ては不要——`manual` なし fetch はバインド url が後から届いたとき `attributeChangedCallback` で自己回復する。）
+- **静的 `url`（＝ page 1）で初回ロードを決定的にする。** センチネルの trigger は一発勝負だ——`set trigger` は `url` が空のとき書き込みを黙って捨て、`IntersectionObserver` はセンチネルが見えっぱなし（空リスト）の間は再発火しない。url バインド（`@wcstack/state`）とセンチネルの初回オブザーバコールバックは順序保証のない別々の非同期パイプラインで走るため、バインド適用前にセンチネルが先に発火すると空 url に対して trigger され、ページが永久に来ない（スピナーが回りっぱなし）。静的 `url="/api/items?page=1&limit=20"` がこの race を消す。`manual` がこの静的 url の自動 fetch を抑え、`page` 前進に応じてバインドが page 2 以降へ書き換える。（`state-intersect-scroll` は `$streams` producer 自身が page 1 を eager に要求し、別途 bind された `<wcs-fetch>` を trigger しないため、同じ race は無い。）
 - **センチネルには実箱が要る。** `<wcs-infinite-scroll>` は既定 `display:inline` で、中身が無いと 0×0 に潰れ、`IntersectionObserver` が不安定に観測する（初回交差を取りこぼし得る）。デモでは `display:block; min-height:1px` を与えて初回観測を決定的にしている。
 - **`page` の前進はレスポンス後。** `page++` は `$on.pageArrived` の成功時のみ。早すぎるとページ抜け、エラー時に進めると失敗ページを丸ごと飛ばす。失敗時は `page` を据え置き、次のスクロールで同じ url を再試行する。
 - **終端契約＝短いページ。** サーバは素の配列を返し、`pageSize` 未満ならカタログ終端。`noMore` がセンチネルの `disabled` を立て、`applyChangeToProperty` が要素の `disabled` プロパティを代入 → setter が属性へ反映 → 観測ロジックが再評価され観測停止する。

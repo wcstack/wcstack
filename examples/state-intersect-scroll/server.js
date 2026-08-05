@@ -21,9 +21,9 @@ const catalog = Array.from({ length: TOTAL }, (_, i) => ({
 // this demo used to have is reproducible):
 //   FAIL_PAGE=1 node server.js   page 1 returns 503 for its first FAIL_TIMES (default
 //                                2) requests. The feed starts EMPTY, so there is
-//                                nothing to scroll — only the retry clock can recover
-//                                it. Raise FAIL_TIMES above maxRetries (3) to spend
-//                                the budget and land on the Retry button.
+//                                nothing to scroll — only the stream producer's retry
+//                                schedule can recover it. Raise FAIL_TIMES above
+//                                maxRetries (3) to land on the Retry button.
 //   FLAKY=0.4   node server.js   every page fails with 40% probability.
 const FAIL_PAGE = Number(process.env.FAIL_PAGE || 0);
 const FAIL_TIMES = Number(process.env.FAIL_TIMES || 2);

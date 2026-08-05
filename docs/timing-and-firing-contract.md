@@ -1,10 +1,10 @@
 # wcstack タイミングと発火の契約 (Timing & Firing Contract)
 
-- **対象**: `@wcstack/state` の binder と、wc-bindable 準拠の非同期プリミティブタグ群（`@wcstack/fetch` / `@wcstack/intersection` ほか）を組み合わせて使うアプリ・example 作者
+- **対象**: `@wcstack/state` の binder / `$streams` と、wc-bindable 準拠の非同期プリミティブタグ群（`@wcstack/fetch` / `@wcstack/intersection` ほか）を組み合わせて使うアプリ・example 作者
 - **状態**: 参照ドキュメント（リファレンス）。各項目は現行の参照実装の挙動を記述する。挙動を変える場合はこの文書も更新すること
 - **なぜ存在するか**: examples（特に [`state-search`](../examples/state-search) / [`state-intersect-scroll`](../examples/state-intersect-scroll)）は、各 README の API 表には載っていない「いつ・何回イベントが出るか」「何が同期で何が microtask か」「どの操作が冪等か」に依存して正しさを成立させている。これらが暗黙のままだとデモの長文コメントが文書不在の応急処置になり、利用者は内部実装を読まないと再現できない。本書はその契約を一枚に集約する
 - **関連**: 本書の発火順を test input / settle boundary として適合ベクトルへ写像する横断検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。I/O ノードの実行形・lane・commit 規則は [async-execution-model.md](./async-execution-model.md)
-- **TL;DR**: ① `loading-changed(true)` は「送信ごとに1回・await 前・無条件」。② auto-fetch は **microtask に遅延＋同一 url を de-dup**、明示トリガーは **即時・無条件（de-dup 迂回）**。③ `IntersectionObserver` のコールバックは **task**、`page` 前進が予約する auto-fetch は **microtask** なので前者は必ず後。④ `observe()` は同一 target+options で**冪等（新コールバックを出さない）**、強制再観測は `reobserve()`。⑤ data-wcs の初期バインド適用は別 microtask（`getBindingsReady()` で待てる）
+- **TL;DR**: ① `loading-changed(true)` は「送信ごとに1回・await 前・無条件」。② auto-fetch は **microtask に遅延＋同一 url を de-dup**、明示トリガーは **即時・無条件（de-dup 迂回）**。③ `$streams.args` の依存変更は updater drain 後に旧 run を abort して再起動する（switchMap 型）。④ `observe()` は同一 target+options で**冪等（新コールバックを出さない）**、強制再観測は `reobserve()`。⑤ data-wcs の初期バインド適用は別 microtask（`getBindingsReady()` で待てる）
 
 ---
 
@@ -18,7 +18,7 @@
 | **microtask** | `queueMicrotask` / Promise の `.then` / `await` 直後 | 現在のタスク終了後、**次の task より前**にすべて排出 |
 | **task** | `IntersectionObserver` コールバック、`setTimeout`、ユーザー入力 | microtask 排出後 |
 
-**鍵となる不変条件**: 「現在の task 中に積まれた microtask は、次の task が走る前に必ず全部終わる」。本書のいくつかの正しさ（特に §3 のページスキップ防止）はこの一点に立つ。
+**鍵となる不変条件**: 「現在の task 中に積まれた microtask は、次の task が走る前に必ず全部終わる」。auto-fetch と binding 初期化の発火順を読むときは、この順序を前提にする。
 
 ---
 
@@ -40,12 +40,12 @@
 ### 1.3 明示トリガーは即時・無条件（de-dup を迂回）
 `fetch()` 呼び出し / `trigger=true` / `fetch` コマンド / `data-fetchtarget` クリックは **同期で即実行**し、`_lastFetchedUrl` の同値ガードを**通らない**。
 
-→ **帰結**: 「同じ url をもう一度実行する」は auto-fetch では表現できず（de-dup される）、**明示 fetch でしか表現できない**。`state-intersect-scroll` のエラーリトライ（失敗ページの url は不変なので `command.fetch` で再実行）がこれに依存する。
+→ **帰結**: `<wcs-fetch>` で「同じ url をもう一度実行する」は auto-fetch では表現できず（de-dup される）、**明示 fetch でしか表現できない**。
 
 ### 1.4 `response` はエラーでも発火する / `value` はエラーで null
 `wcs-fetch:response`（= `value` プロパティのイベント）は **HTTP/ネットワークエラーでも発火**する（`value=null`、`status` にエラーコード、network エラーは `status=0`）。成功判定は必ず `status` を見る（2xx 判定）。`error` は HTTP 非2xx・network throw の両方で埋まり、abort/supersede のときだけ null。
 
-→ **帰結**: `eventToken.value` ＋ `$on` で蓄積する設計（両 infinite-scroll example）は、ハンドラ先頭で status を弾かないと `null` を append して壊れる。
+→ **帰結**: `eventToken.value` ＋ `$on` で蓄積する設計（`packages/fetch/examples/infinite-scroll`）は、ハンドラ先頭で status を弾かないと `null` を append して壊れる。
 
 ### 1.5 `trigger` は url 空なら無言で無視
 `url` が空のときの `trigger=true` は **何もせず**（fetch 走らず・イベント無し・フラグは false のまま）。url を入れてから再度 `true` を書けば実行される。
@@ -77,18 +77,20 @@
 
 ---
 
-## 3. 横断契約: microtask が task に先行する（ページスキップ防止）
+## 3. 横断契約: `$streams` restart と同値 page 選択（ページスキップ防止）
 
-`state-intersect-scroll`（full-auto）の `page` 前進ガード `!loading` の正しさの根拠。
+`state-intersect-scroll` は `$streams` の switchMap 型 restart を使う。ここで交差 edge ごとに
+`page++` すると、page N の in-flight run を後発 edge が abort し、N+1 へ飛ばすため誤りである。
+デモは次の組み合わせで ordered append を守る。
 
-1. `sentinelChanged`（task: IntersectionObserver コールバック）で `page++`
-2. `page` 変化 → url バインド → 属性変化 → auto-fetch を **microtask に予約**（§1.2）
-3. その microtask が `loading=true` を立てる
-4. **次の** `sentinelChanged`（task）が走るより前に、3 の microtask は必ず排出済み（§0 の不変条件）
+1. `sentinelChanged`（IntersectionObserver task）は `page = floor(items.length / pageSize) + 1` とする
+2. page N の実行中／失敗後は `items.length` が不変なので N を再代入するだけ。既定 ON の primitive same-value guard が enqueue 自体を no-op にし、stream は restart しない
+3. 成功 chunk を `$updatedCallback` が `items` へ commit し、`reobserve()` する
+4. 新しい可視性 callback では式が N+1 を返す。`page` 更新の updater drain 後、`$streams.args` の依存 hit が旧 run を abort し、新しい args で run を開始する
 
-→ よって急な2回目の enter は `loading=true` を見て弾かれ、`page` を二度進めて**ページを飛ばすことはない**。守っているのは「microtask < task」の順序であって、サーバ冪等性や `observe()` 冪等性ではない（混同しない）。
-
-同型の初期ロード: connect 時 auto-fetch（microtask）が `loading=true` を立ててから、最初の `sentinelChanged`（task）が走るので、page 1 も二重前進しない。
+→ `!loading` / `!error` の手書き exhaust guard は不要で、交差 edge は失敗ページの予算外 retry にもならない。
+同じ page を意図的に retry するボタンだけが別依存 `retryNonce` を更新する。実際に依存が変わった場合の
+cancel / restart / stale-drop 契約は [`packages/state/docs/streams.md`](../packages/state/docs/streams.md) が規範である。
 
 ---
 
@@ -124,7 +126,7 @@ binder は `undefined` を properties/inputs に書かない（書き込み自�
 | [`state-search`](../examples/state-search) | §1.1（loading エッジで送信数を計数）/ §1.2（debounced url 変化で auto-fetch）/ §1.4（abort 時は response 無し → stale 防止） |
 | [`users-crud`](../packages/fetch/examples/users-crud) | §1.3（`refreshList` command で再取得）/ §1.4（response はエラーでも発火 → status で成功判定）/ §1.5（空 url の detail 抑止） |
 | [`infinite-scroll`](../packages/fetch/examples/infinite-scroll) | §1.2/§1.4（append は status 判定）/ §2.1（センチネルは box 必須・初回 task で発火） |
-| [`state-intersect-scroll`](../examples/state-intersect-scroll) | §1.2+§1.3（happy path は auto、エラーは明示 fetch）/ §2.2+§2.3（reobserve で自己修復）/ §3（page-skip 防止） |
+| [`state-intersect-scroll`](../examples/state-intersect-scroll) | §2.2+§2.3（reobserve で自己修復）/ §3（`$streams` restart と同値 page 選択で page-skip 防止） |
 
 ---
 
