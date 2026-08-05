@@ -399,6 +399,74 @@ describe("$listKeys: キー一致行のオブジェクト値展開", () => {
     });
     host.remove();
   });
+
+  it("for に描画されていないリストでもワイルドカード読みが追随すること", async () => {
+    // 書き込み側が読み手と別の listIndex 台帳を作ると、行オブジェクトの値は
+    // 正しいのに $getAll / getter だけ旧値のまま残る（設計書 §8.1）。
+    const { host, shadowRoot, stateElement } = await mount(
+      {
+        items: [{ id: 1, v: 1 }, { id: 2, v: 2 }],
+        $listKeys: KEYED,
+        get total(this: any) {
+          return this.$getAll("items.*.v", []).reduce((a: number, b: number) => a + b, 0);
+        },
+      },
+      `<div data-wcs="textContent: total"></div>`, // items は for で描画しない
+    );
+    expect(shadowRoot.querySelector("div")!.textContent).toBe("3");
+
+    stateElement.createState("writable", (s: any) => {
+      s.items = [{ id: 1, v: 10 }, { id: 2, v: 2 }];
+    });
+    await flush();
+
+    expect(shadowRoot.querySelector("div")!.textContent).toBe("12");
+    stateElement.createState("readonly", (s: any) => {
+      expect(s.$getAll("items.*.v", [])).toEqual([10, 2]);
+      expect(s.total).toBe(12);
+    });
+    host.remove();
+  });
+
+  // pin: 非表示（deactivate 済み）の for 配下は、行の同一性が保たれる更新を
+  // 再表示時に取り戻せない。これは $listKeys 固有ではなく、行参照を保つ手書き
+  // マージ（§7.0 のイディオム）でも同じに壊れる既存の穴で、本機能のスコープ外。
+  // $listKeys は行同一性を保つ機能なので、この組み合わせを踏みやすくはする。
+  it.each([
+    ["$listKeys でキー突合", true],
+    ["行参照を保つ手書きマージ", false],
+  ])("非表示中の行内更新は再表示で反映されない（既存の穴・%s）", async (_label, keyed) => {
+    const initial: any = { show: true, items: [{ id: 1, name: "a" }, { id: 2, name: "b" }] };
+    if (keyed) initial.$listKeys = KEYED;
+    const { host, shadowRoot, stateElement } = await mount(
+      initial,
+      `<template data-wcs="if: show">${ROW_TPL}</template>`,
+    );
+    expect(inputs(shadowRoot).map((i) => i.value)).toEqual(["a", "b"]);
+
+    stateElement.createState("writable", (s: any) => { s.show = false; });
+    await flush();
+    stateElement.createState("writable", (s: any) => {
+      if (keyed) {
+        s.items = [{ id: 1, name: "A" }, { id: 2, name: "b" }];
+      } else {
+        const cur = s.items;
+        cur[0].name = "A";
+        s.items = [...cur];
+      }
+    });
+    await flush();
+    stateElement.createState("writable", (s: any) => { s.show = true; });
+    await flush();
+
+    // state 側は正しく更新されている
+    stateElement.createState("readonly", (s: any) => {
+      expect(s.items.map((r: any) => r.name)).toEqual(["A", "b"]);
+    });
+    // DOM は非表示中に落ちた更新を取り戻せず旧値のまま（現行挙動の固定）
+    expect(inputs(shadowRoot).map((i) => i.value)).toEqual(["a", "b"]);
+    host.remove();
+  });
 });
 
 describe("$listKeys: 異常時は即エラー（§5）", () => {

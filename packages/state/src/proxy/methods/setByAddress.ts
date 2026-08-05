@@ -22,7 +22,6 @@ import { DELIMITER, WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";
 import { createListDiff } from "../../list/createListDiff";
-import { getLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
 import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/mergeKeyedList";
 import { IListIndex } from "../../list/types";
 import { getPathInfo } from "../../address/PathInfo";
@@ -192,19 +191,28 @@ function setKeyedListByAddress(
     target   : object,
     address  : IStateAddress,
     merge    : IKeyedListMerge,
+    oldList  : readonly unknown[],
     receiver : any,
     handler  : IStateHandler
 ): any {
-  const stateElement = handler.stateElement;
   const listPath = address.pathInfo.path;
+  // diff の基準は「マージ相手にした配列」= 書き込み直前に格納されていた配列。
+  // 読み手（applyChangeToFor / $getAll / resolve）は現在格納されている配列の
+  // listIndex 台帳（listIndexesByList）へ収束するため、同じ基準で引くことで
+  // 書き込みが dirty 化・キャッシュするアドレスと読み手のアドレスが一致する。
+  // lastValue（最後に *適用* された配列）を基準にすると、for が未マウントで
+  // lastValue が空のときに別台帳を作ってしまい、値は入っているのにワイルドカード
+  // 読みだけ旧値のまま残る（設計書 §8.1）。
+  // 格納より前に引くのは、格納時の walkDependency（listExpansion: "diff"）が
+  // 先にハイブリッド配列の台帳を作ってしまうと、後から上書きした台帳との間で
+  // 同じ分裂が起きるため。先に確定させておけば以降は全経路がこれに合流する。
+  if (getListIndexesByList(oldList) === null) {
+    // 一度も描画されていないリストは台帳自体が無い。先に生やしておかないと
+    // isSameList 経路が空の oldIndexes をそのまま新台帳にしてしまう。
+    createListDiff(address.listIndex, null, oldList);
+  }
+  const diff = createListDiff(address.listIndex, oldList, merge.list);
   const result = setByAddressCore(target, address, merge.list, receiver, handler, listPath);
-  // 適用時に applyChangeToFor が使うのと同じ (lastValue, newList) の組で diff を引く。
-  // createListDiff はこの組でメモ化されるため、後段の walkDependency / for は
-  // キャッシュヒットになり、listIndex オブジェクトも一致する。
-  const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
-  const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
-  const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-  const diff = createListDiff(address.listIndex, lastValue, merge.list);
   const elementPathInfo = getPathInfo(listPath + DELIMITER + WILDCARD);
   for (const match of merge.matched) {
     const fieldWrites = collectFieldWrites(match.oldRow, match.newRow);
@@ -243,7 +251,8 @@ export function setByAddress(
       const oldValue = getByAddress(target, address, receiver, handler);
       const merge = mergeKeyedList(address.pathInfo.path, keySpec, oldValue, value);
       if (merge !== null) {
-        return setKeyedListByAddress(target, address, merge, receiver, handler);
+        // merge が非 null なのは oldValue が非空配列のときだけ（mergeKeyedList 参照）
+        return setKeyedListByAddress(target, address, merge, oldValue as readonly unknown[], receiver, handler);
       }
     }
   }
