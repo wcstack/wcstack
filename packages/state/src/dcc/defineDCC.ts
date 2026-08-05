@@ -18,9 +18,11 @@ export function defineDCC(hostElement: Element, shadowRoot: ShadowRoot, state: I
     raiseError(`DCC: "${tagName}" is not a valid custom element name (must contain a hyphen).`);
   }
   if (customElements.get(tagName)) {
-    // 既に登録済みならスキップ（重複定義の検知のため警告は出す）
-    console.warn(`[@wcstack/state] DCC: "${tagName}" is already registered. Skipping redefinition.`);
-    return;
+    // 重複定義は authoring error として落とす。従来は warn してスキップしていたが、
+    // 先勝ちで別テンプレートのインスタンスが生えるため「動いているように見えて中身が違う」
+    // 状態になる。state 名の重複（stateElementByName）が raiseError なのと作法を揃える
+    // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §3.4）。
+    raiseError(`DCC: "${tagName}" is already registered. A custom element name can only be defined once.`);
   }
 
   // ShadowRoot は cloneNode 不可のため、template 経由で内容をクローン

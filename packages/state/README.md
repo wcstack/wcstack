@@ -1577,6 +1577,24 @@ Notes:
 - Mirror is best-effort: a `setAttribute` failure is swallowed (with a `debug` warning) and does not block the property write
 - Native HTML elements ignore `inputs` entirely — the mirror only activates for custom elements that expose `static wcBindable`
 
+## Choosing a Component Mechanism
+
+Two mechanisms give a custom element its own state, and they are **mutually exclusive** — pick one per component:
+
+| | [DCC](#declarative-custom-components-dcc) | [`bind-component`](#web-component-binding) |
+|---|---|---|
+| How the element is defined | HTML only (`data-wc-definition` + Declarative Shadow DOM) | A JavaScript `class extends HTMLElement` you write |
+| Where the state lives | An inline `<script type="module">` in the template, loaded per instance | A property on the component instance (`this.state`) |
+| `static wcBindable` | Generated from `$bindables` / `$commands` | **None** — the element is not a wc-bindable producer |
+| Parent binds a value | `count: parentCount` (two-way, change events) | `state.msg: user.name` (path mapping) |
+| Parent invokes a method | `command.bumpBy: $command.bump` | Not available — expose it on the class and call it yourself |
+| Spread (`...: obj`) | Available | Not available (requires a `wcBindable` declaration) |
+| Component reads/writes its own state | `this.count` on the element | `this.state.msg` |
+
+The rule of thumb: **if the component has no JavaScript class, use DCC; if you are already writing a class, use `bind-component`.** Combining them raises — a `<wcs-state bind-component>` inside a `data-wc-definition` host is a configuration error, because DCC state belongs to the template and is loaded per instance.
+
+`bind-component` components deliberately stay outside the wc-bindable protocol: they are wired by **path**, not by a declared property surface. That is why spread and command tokens, both of which need a `wcBindable` declaration, do not apply to them.
+
 ## Declarative Custom Components (DCC)
 
 Define custom elements **entirely in HTML** — no JavaScript class definition needed. Using `data-wc-definition` and Declarative Shadow DOM (`<template shadowrootmode>`), you can declare reusable components with reactive state inline.

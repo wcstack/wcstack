@@ -358,6 +358,13 @@ export class State extends HTMLElementBase implements IStateElement {
       const parentNode = this.parentNode;
       if (parentNode instanceof ShadowRoot &&
           parentNode.host.hasAttribute(DCC_DEFINITION_ATTRIBUTE)) {
+        // DCC と bind-component は排他。DCC の state はテンプレートに属し、
+        // インスタンスごとにロードされるので、定義時点のホストのプロパティを
+        // ソースにする bind-component とは両立しない。従来はこの return で
+        // 無言に無視していた（docs/architecture-hardening/15 §3.1）。
+        if (this.hasAttribute("bind-component")) {
+          raiseError(`"bind-component" cannot be used inside a [${DCC_DEFINITION_ATTRIBUTE}] host. DCC state comes from the template, not from a component property.`);
+        }
         await this._initializeDCC(parentNode.host, parentNode);
         return;
       }
