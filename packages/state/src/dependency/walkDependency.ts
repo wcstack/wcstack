@@ -99,6 +99,13 @@ type Context = {
   readonly stateProxy: IStateProxy,
   readonly searchType: SearchType,
   readonly listExpansion: ListExpansion,
+  /**
+   * この書き込みでキー突合による値展開が成立したリストパス（$listKeys）。
+   * 変化フィールドは per-path 書き込みで個別に dirty 化済みなので、
+   * 「diff に変化が見えない再代入」の全行フォールバックを適用しない
+   * （docs/state-list-key-design.md §2.2）。
+   */
+  readonly keyedMergePath: string | null,
   /** パス → トポロジカル順位。訪問順の決定に使う（topologicalRank.ts 参照） */
   readonly ranks: ReadonlyMap<string, number>,
 }
@@ -139,6 +146,12 @@ function selectExpansionIndexes(
   if (listDiff.addIndexSet.size === 0 && listDiff.changeIndexSet.size === 0) {
     // 追加も移動も無い。削除も無ければ「変化が見えない再代入」= リフレッシュ意図
     if (listDiff.deleteIndexSet.size === 0) {
+      // ただしキー突合による値展開が成立した書き込みでは、変化フィールドは
+      // per-path 書き込みで個別に dirty 化済み。全行展開は純粋な無駄になる
+      // （無変化ポーリングをゼロコストにする — 設計書 §2.2）。
+      if (context.keyedMergePath === sourcePath) {
+        return { fullRows: EMPTY_INDEXES, movedRows: null };
+      }
       return { fullRows: listDiff.newIndexes, movedRows: null };
     }
     // 削除のみ: 残存行は位置も値も不変なので展開しない
@@ -390,7 +403,7 @@ export function walkDependency(
   stateProxy: IStateProxy,
   searchType: SearchType,
   callback: (address: IStateAddress) => void,
-  options?: { listExpansion?: ListExpansion }
+  options?: { listExpansion?: ListExpansion, keyedMergePath?: string | null }
 ): IStateAddress[] {
   // 依存ゼロの葉パス（staticMap / dynamicMap にエントリ無し）は context や Set を
   // 割り当てず、開始アドレスの callback だけで完結する。リスト行の値書き込み
@@ -416,6 +429,7 @@ export function walkDependency(
     stateProxy: stateProxy,
     searchType: searchType,
     listExpansion: options?.listExpansion ?? "full",
+    keyedMergePath: options?.keyedMergePath ?? null,
   };
   _walkDependency(context, startAddress, callback);
   return Array.from(context.result);

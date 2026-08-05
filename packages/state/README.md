@@ -507,7 +507,42 @@ Structural directives use `<template>` elements:
 </template>
 ```
 
-The `for:` directive uses a **value-based diff algorithm** — each array element's value itself serves as the identity key. There is no need for an explicit `key` attribute (like React's `key` or Vue's `:key`). When the array is reassigned, the differ matches old and new elements by value, reusing existing DOM nodes for unchanged items and efficiently adding, removing, or reordering the rest.
+The `for:` directive uses a **value-based diff algorithm** — each array element's value itself serves as the identity key. When the array is reassigned, the differ matches old and new elements by value, reusing existing DOM nodes for unchanged items and efficiently adding, removing, or reordering the rest.
+
+This means **no explicit `key` attribute is needed for adding, removing, or reordering rows** (like React's `key` or Vue's `:key`) — as long as row objects keep their references. Non-destructive array methods (`toSorted`, `toReversed`, `filter`, `with`, `toSpliced`) all preserve element references, so sorting and filtering are keyed by construction, and the whole class of "wrong key" bugs cannot occur.
+
+The exception is data that arrives as **freshly created objects** — `fetch(...).json()`, `JSON.parse` from storage, a WebSocket/SSE full snapshot, or a Worker `postMessage`. Those rows never match by reference, so every row is torn down and rebuilt. See [`$listKeys`](#listkeys--identity-for-refetched-rows) below.
+
+#### `$listKeys` — identity for refetched rows
+
+When rows carry DOM state the bindings do not own — focus, an in-flight IME composition, `<details>` open state, inner scroll position, `<canvas>` contents, `<video>` playback — rebuilding the rows loses it. Declare a key so the framework can recognize rows across a refresh:
+
+```js
+{
+  items: [],
+  $listKeys: {
+    "items": "id",                        // field name
+    "items.*.children": (row) => row.uid, // or a function, for composite keys
+  },
+}
+```
+
+With a key declared, assigning a new array **keeps the existing row objects** and writes only the fields that actually changed into them. The row's DOM is reused rather than rebuilt:
+
+```js
+// Every row object is new, but rows are matched by id — DOM, focus and
+// <details> state survive, and only the fields that differ are written.
+this.items = await (await fetch("/api/items")).json();
+```
+
+Notes:
+
+- **Opt-in and per-path.** Lists without a declaration behave exactly as before, at no cost.
+- **Nesting is opt-in too.** Only declared paths are matched by key; undeclared nested arrays are replaced by reference as usual. This lets you adopt it one list at a time.
+- **A no-op refresh is free.** If nothing changed, no field is written and no DOM work happens at all.
+- **Rows must be plain objects**, and keys must be present and unique. Duplicate keys, missing keys, and class instances raise an error immediately rather than degrading silently.
+- **Fields dropped from a row are cleared with `null`**, which is this package's vocabulary for an explicit clear (`undefined` means "the state has no opinion" and skips the write).
+- The stored array is rebuilt from matched row objects, so `this.items !== theArrayYouAssigned` afterwards.
 
 #### Dot Shorthand
 

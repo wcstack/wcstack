@@ -17,6 +17,7 @@ import { processEventTokensDeclaration } from "../event/processEventTokensDeclar
 import { clearEventTokenRegistry } from "../event/eventTokenRegistry";
 import { processOnDeclaration } from "../event/processOnDeclaration";
 import { processStreamsDeclaration } from "../stream/processStreamsDeclaration";
+import { ListKeyMap, processListKeysDeclaration } from "../list/listKeys";
 import { clearStreamNamespace } from "../stream/streamNamespace";
 import { abortAllStreams, clearStreamRegistry } from "../stream/streamRegistry";
 import { startStreams } from "../stream/streamRuntime";
@@ -81,6 +82,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _setStatePromise: Promise<Record<string, any>> | null = null;
   private _resolveSetState: ((value: Record<string, any>) => void) | null = null;
   private _listPaths: Set<string> = new Set<string>();
+  private _listKeys: ListKeyMap | null = null;
   private _elementPaths: Set<string> = new Set<string>();
   private _getterPaths: Set<string> = new Set<string>();
   private _setterPaths: Set<string> = new Set<string>();
@@ -165,6 +167,9 @@ export class State extends HTMLElementBase implements IStateElement {
     clearStreamNamespace(this);
     clearStreamRegistry(this);
     processStreamsDeclaration(this, value);
+    // $listKeys: 宣言が無ければ null のままで、setByAddress のキー突合経路には
+    // 一切入らない（docs/state-list-key-design.md §7-1）。再 set で必ず置き換える。
+    this._listKeys = processListKeysDeclaration(value);
     // 接続中の再 set（S13）は新宣言で即再起動する。
     // 初回（_initialize 中）は _initialized が false なのでここでは起動されず、
     // connectedCallback 側の startStreams（$connectedCallback 完了後）が担う。
@@ -453,6 +458,10 @@ export class State extends HTMLElementBase implements IStateElement {
 
   get listPaths(): Set<string> {
     return this._listPaths;
+  }
+
+  get listKeys(): ListKeyMap | null {
+    return this._listKeys;
   }
 
   get elementPaths(): Set<string> {
