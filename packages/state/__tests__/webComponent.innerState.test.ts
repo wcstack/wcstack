@@ -159,12 +159,12 @@ describe('innerState', () => {
 
       const innerAbsPathInfo = { pathInfo: { path: 'user' } } as any;
       const stateProxy = {
-        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: () => any) => cb()),
         'users.*': 'test-value'
       };
       const outerAbsPathInfo = {
         stateElement: {
-          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+          createState: vi.fn((_mode: string, cb: (proxy: any) => any) => cb(stateProxy))
         },
         pathInfo: { path: 'users.*', wildcardCount: 0 }
       } as any;
@@ -201,14 +201,14 @@ describe('innerState', () => {
       const { proxy } = createTestProxy();
 
       const loopContext = { listIndex: { at: vi.fn() } } as any;
-      const setLoopContext = vi.fn((_ctx: any, cb: Function) => cb());
+      const setLoopContext = vi.fn((_ctx: any, cb: () => any) => cb());
       const stateProxy = {
         [setLoopContextSymbol]: setLoopContext,
         'users.*.name': 'Alice'
       };
       const outerAbsPathInfo = {
         stateElement: {
-          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+          createState: vi.fn((_mode: string, cb: (proxy: any) => any) => cb(stateProxy))
         },
         pathInfo: { path: 'users.*.name', wildcardCount: 1 }
       } as any;
@@ -357,12 +357,12 @@ describe('innerState', () => {
 
       const innerAbsPathInfo = {} as any;
       const stateProxy = {
-        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: Function) => cb()),
+        [setLoopContextSymbol]: vi.fn((_ctx: any, cb: () => any) => cb()),
         'users.*': undefined as any,
       };
       const outerAbsPathInfo = {
         stateElement: {
-          createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+          createState: vi.fn((_mode: string, cb: (proxy: any) => any) => cb(stateProxy))
         },
         pathInfo: { path: 'users.*' }
       } as any;
