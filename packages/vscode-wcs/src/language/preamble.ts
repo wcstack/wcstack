@@ -69,7 +69,12 @@ interface WcsStateApi {
   readonly $7: number; readonly $8: number; readonly $9: number;
 }
 type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T>;
-function defineState<T extends Record<string, any>>(def: T & ThisType<_WcsThis<T>>): T { return def; }
+// $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
+// キー指定の関数引数に文脈型を与えるためだけの宣言（noImplicitAny 下の偽エラー回避）。
+type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
+function defineState<T extends Record<string, any>>(
+  def: T & { $listKeys?: _WcsListKeys } & ThisType<_WcsThis<T>>
+): T { return def; }
 // --- end preamble ---
 `;
 

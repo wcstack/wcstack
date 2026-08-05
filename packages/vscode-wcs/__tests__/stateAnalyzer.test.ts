@@ -340,6 +340,90 @@ export default {
     expect(pathNames).not.toContain('$updatedCallback');
   });
 
+  const LIST_KEYS_SCRIPT = `
+export default {
+  items: [],
+  $listKeys: {
+    "items": "id",
+    "items.*.children": (row) => row.uid,
+  },
+};`;
+
+  it('$listKeys のリストパスから .* / .length 候補を実体化する', () => {
+    const paths = analyzeStatePaths(LIST_KEYS_SCRIPT);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('items.*');
+    expect(pathNames).toContain('items.length');
+    expect(paths.find(p => p.path === 'items.*')?.kind).toBe('list');
+  });
+
+  it('$listKeys の文字列キー指定から行のキーフィールド候補を導出する', () => {
+    const paths = analyzeStatePaths(LIST_KEYS_SCRIPT);
+    const keyField = paths.find(p => p.path === 'items.*.id');
+    expect(keyField).toBeDefined();
+    expect(keyField!.kind).toBe('data');
+  });
+
+  it('$listKeys の関数キー指定ではリストパスのみ導出する（フィールド名は不明）', () => {
+    const paths = analyzeStatePaths(LIST_KEYS_SCRIPT);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('items.*.children');
+    expect(pathNames).toContain('items.*.children.*');
+    expect(pathNames).toContain('items.*.children.length');
+    expect(pathNames.filter(p => p.startsWith('items.*.children.*.'))).toHaveLength(0);
+  });
+
+  it('$listKeys 自体や宣言オブジェクトの中身はパスにしない', () => {
+    const paths = analyzeStatePaths(LIST_KEYS_SCRIPT);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).not.toContain('$listKeys');
+    expect(pathNames).not.toContain('listKeys');
+    expect(pathNames).not.toContain('$listKeys.items');
+  });
+
+  it('明示宣言された同名プロパティが $listKeys の実体化より優先される', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [{ id: 1, name: "a" }],
+  $listKeys: { "items": "id" },
+};`);
+    expect(paths.filter(p => p.path === 'items')).toHaveLength(1);
+    expect(paths.filter(p => p.path === 'items.*')).toHaveLength(1);
+    expect(paths.filter(p => p.path === 'items.*.id')).toHaveLength(1);
+    expect(paths.map(p => p.path)).toContain('items.*.name');
+  });
+
+  it('$streams 実体化されたリストにも $listKeys の宣言が効く', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  $streams: {
+    rows: { source(a, s) { return x; }, initial: [] },
+  },
+  $listKeys: { "rows": "id" },
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('rows.*.id');
+    expect(paths.filter(p => p.path === 'rows.*')).toHaveLength(1);
+  });
+
+  it('ランタイムが弾く $listKeys 宣言からは候補を作らない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  $listKeys: {
+    "items.*": "id",
+    "bad..path": "id",
+    "rows": "a.b",
+  },
+};`);
+    const pathNames = paths.map(p => p.path);
+    // 末尾 `*`（要素パス）／空セグメントは宣言自体が無効
+    expect(pathNames).not.toContain('items.*.*');
+    expect(pathNames).not.toContain('bad..path');
+    // キーフィールド名が非フラットなら行のフィールド候補だけ落とす（リストパスは有効）
+    expect(pathNames).toContain('rows.*');
+    expect(pathNames).not.toContain('rows.*.a.b');
+  });
+
   it('JSON のトップレベル $ キーはパスにしない', () => {
     const paths = analyzeJsonPaths('{"count": 0, "$streams": {"metrics": {}}}');
     const pathNames = paths.map(p => p.path);

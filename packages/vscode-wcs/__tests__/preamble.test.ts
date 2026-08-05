@@ -88,6 +88,36 @@ defineState({
     expect(messages(diags)).toEqual([]);
   });
 
+  it('$listKeys のキー指定（フィールド名・関数）が型エラーにならない', () => {
+    const diags = typecheck(`
+defineState({
+  items: [] as { id: number; name: string }[],
+  $listKeys: {
+    "items": "id",
+    "items.*.children": (row) => row.uid,
+  },
+  async load() {
+    this.items = await (await fetch("/api/items")).json();
+  },
+});
+`);
+    expect(messages(diags)).toEqual([]);
+  });
+
+  it('$listKeys を宣言しても他のプロパティのパス型推論が壊れない', () => {
+    const diags = typecheck(`
+defineState({
+  items: [] as { id: number; name: string }[],
+  $listKeys: { "items": "id" },
+  check() {
+    const name: string = this["items.*.name"];
+    void name;
+  },
+});
+`);
+    expect(messages(diags)).toEqual([]);
+  });
+
   it('$ 予約キーはドットパスアクセサに含まれない（$streams.metrics は型エラー）', () => {
     const diags = typecheck(`
 defineState({

@@ -35,6 +35,7 @@ export interface PathCandidate {
 const RESERVED_STREAMS_KEY = '$streams';
 const RESERVED_COMMAND_TOKENS_KEY = '$commandTokens';
 const RESERVED_EVENT_TOKENS_KEY = '$eventTokens';
+const RESERVED_LIST_KEYS_KEY = '$listKeys';
 
 /**
  * export default { ... } のオブジェクトリテラルからパス候補を生成する。
@@ -50,12 +51,15 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
   const topLevelProps = parseTopLevelProperties(objectContent);
   // `$streams` の値プロパティ実体化はループ後に処理する（明示宣言されたプロパティが優先）
   const pendingStreamValues: PropertyInfo[] = [];
+  // `$listKeys` のリストパス実体化も同様に後処理（明示宣言・$streams 実体化が優先）
+  const pendingListKeys: PropertyInfo[] = [];
 
   for (const prop of topLevelProps) {
     // トップレベルの `$` プレフィックスキーは予約名（$streams/$commandTokens/$eventTokens/
-    // $on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の候補だけを導出する。
+    // $listKeys/$on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の候補だけを
+    // 導出する。
     if (prop.name.startsWith('$')) {
-      collectReservedKeyPaths(prop, paths, pendingStreamValues, stateName);
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName);
       continue;
     }
 
@@ -81,6 +85,12 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
     pushDataPropertyPaths(streamValue, paths, stateName);
   }
 
+  // $listKeys 宣言によるリストパスの実体化（processListKeysDeclaration §3 相当）。
+  // $streams 実体化の後に走らせて、stream 由来のリストにキー宣言が付くケースも拾う。
+  for (const listKeyEntry of pendingListKeys) {
+    pushListKeyPaths(listKeyEntry, paths, stateName);
+  }
+
   return paths;
 }
 
@@ -91,12 +101,15 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
  *   `$streamStatus.<name>` / `$streamError.<name>`（読み取り専用名前空間パス）
  * - `$commandTokens: ["a", ...]` → `$command.<a>`（kind: 'command'）
  * - `$eventTokens: ["a", ...]` → `<a>`（kind: 'eventToken'）
+ * - `$listKeys: { "<listPath>": "<field>" }` → `<listPath>` / `<listPath>.*` /
+ *   `<listPath>.length` ＋ 文字列キー指定なら `<listPath>.*.<field>`（実体化・後処理）
  * - その他（`$on` / `$bindables` / ライフサイクル等）→ 候補なし
  */
 function collectReservedKeyPaths(
   prop: PropertyInfo,
   paths: PathCandidate[],
   pendingStreamValues: PropertyInfo[],
+  pendingListKeys: PropertyInfo[],
   stateName: string,
 ): void {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
@@ -132,6 +145,54 @@ function collectReservedKeyPaths(
     }
     return;
   }
+
+  if (prop.name === RESERVED_LIST_KEYS_KEY && prop.kind === 'data' && prop.value && isObjectLiteral(prop.value)) {
+    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (entry.kind !== 'data') continue;
+      pendingListKeys.push(entry);
+    }
+    return;
+  }
+}
+
+/**
+ * `$listKeys: { "<listPath>": "<field>" | (row) => ... }` の1エントリからパス候補を導出する。
+ *
+ * 宣言は「そのパスはキーで同一性を判定するリストである」という作者の明示なので、初期値が
+ * 空配列（`items: []`）で要素の形が読めないケースでも `<listPath>.*` 系を補完・検証に出せる。
+ * 文字列キー指定なら行のキーフィールド（`<listPath>.*.<field>`）も確定する。
+ * 既存候補（明示宣言・`$streams` 実体化）があるパスは上書きしない。
+ *
+ * ランタイム（@wcstack/state list/listKeys.ts processListKeysDeclaration §3.1）が
+ * raiseError で弾く形の宣言 — 空パス / 空セグメント / 末尾 `*` / `.` `*` を含むキー
+ * フィールド名 — からは候補を作らない。壊れた宣言を静的側が追認しないため。
+ */
+function pushListKeyPaths(entry: PropertyInfo, paths: PathCandidate[], stateName: string): void {
+  const listPath = entry.name;
+  const segments = listPath.split('.');
+  if (listPath.length === 0 || segments.some(s => s.length === 0) || segments[segments.length - 1] === '*') {
+    return;
+  }
+  const has = (path: string): boolean => paths.some(p => p.stateName === stateName && p.path === path);
+
+  if (!has(listPath)) paths.push({ path: listPath, kind: 'data', typeHint: 'array', stateName });
+  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: 'list', stateName });
+  if (!has(`${listPath}.length`)) {
+    paths.push({ path: `${listPath}.length`, kind: 'data', typeHint: 'number', stateName });
+  }
+
+  const keyField = extractStringLiteralValue(entry.value);
+  if (keyField === null || keyField.includes('.') || keyField.includes('*')) return;
+  if (!has(`${listPath}.*.${keyField}`)) {
+    paths.push({ path: `${listPath}.*.${keyField}`, kind: 'data', stateName });
+  }
+}
+
+/** 値が単一の文字列リテラルならその中身を返す（`$listKeys` のキーフィールド名用）。 */
+function extractStringLiteralValue(value: string | undefined): string | null {
+  if (!value) return null;
+  const match = value.trim().match(/^["']([^"'\\]*)["']$/);
+  return match && match[1].length > 0 ? match[1] : null;
 }
 
 /**
