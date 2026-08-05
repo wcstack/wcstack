@@ -283,6 +283,10 @@ export function applyChangeToFor(
       if (content === null) {
         raiseError(`Content not found for ListIndex: ${index.index} at path "${listPathInfo.path}"`);
       }
+      // 祖先の unmount（if の非表示など）で解体された行は、ここで物理的に
+      // 戻されるだけでは binding が dispose 済みのまま復活しない。位置合わせの
+      // 前に判定しておき（mountAfter が mounted を立てる）、戻した後に再活性化する。
+      const unmountedByAncestor = !content.mounted;
       // Stable contents are already in correct relative order — but only
       // trust that after physical verification (see isPhysicallyAfter).
       // Contents out of order (and everything unverifiable) settle via the
@@ -291,6 +295,16 @@ export function applyChangeToFor(
         && isPhysicallyAfter(lastNode, content.firstNode);
       if (!stable && lastNode.nextSibling !== content.firstNode) {
         content.mountAfter(lastNode);
+      }
+      if (unmountedByAncestor) {
+        // 再活性化しないと、行の同一性が保たれる更新が以後すべて無視される
+        // （docs/state-deactivated-content-stale-update.md）。activate は
+        // disposed record の再構築を含むので、プール再利用と同じ経路で戻る。
+        const revivedContent = content;
+        const stateAddress = createStateAddress(elementPathInfo, index);
+        loopContextStack.createLoopContext(stateAddress, (loopContext) => {
+          activateContent(revivedContent, loopContext, context);
+        });
       }
     }
     lastNode = content.lastNode || lastNode;

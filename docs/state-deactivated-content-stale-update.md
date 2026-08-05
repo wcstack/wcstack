@@ -1,74 +1,87 @@
-# 非表示中に落ちた更新が再表示で復元されない（deactivate 済みコンテンツの stale）
+# 非表示を跨いだ `for` 行のバインディングが復活しない
 
-/ 対象: `@wcstack/state` / 状態: **未修正**（現行挙動を pin テストで固定）/ 起票: 2026-08-06
+/ 対象: `@wcstack/state` / 状態: **修正済み**（2026-08-06）/ 起票: 2026-08-06
 
 ## 1. 症状
 
-`if` で非表示にしている間にリスト行の値を更新すると、再表示しても DOM に旧値が残る。
-state 側は正しく更新されている。
+`if` で非表示にしたリストを再表示すると、行は元どおり表示されるが**行のバインディングが死んでいる**。
+行オブジェクトの参照が保たれる更新は、以後すべて DOM に反映されない。
 
 ```js
 // <template data-wcs="if: show">
 //   <ul><template data-wcs="for: items">
-//     <li><input data-wcs="value: .name"></li>
+//     <li><span data-wcs="textContent: .name"></span></li>
 //   </template></ul>
 // </template>
 show = false;
-items = [{ id: 1, name: "A" }, { id: 2, name: "b" }];  // 行の同一性は保たれる更新
-show = true;
-// → state: ["A", "b"]（正しい）
-// → DOM  : ["a", "b"]（旧値のまま）
+show = true;                       // 表示は元どおり
+items[0].name = "Z"; items = [...items];  // 行の同一性を保つ更新
+// → state: ["Z", "b"] / DOM: ["a", "b"]  ← 以後ずっと反映されない
 ```
 
-## 2. 再現条件
+起票時は「非表示中に落ちた更新が再表示で復元されない」= 一度きりの stale と見ていたが、
+実測すると**非表示を挟んだだけで以後の更新がすべて落ちる**（更新の有無に関わらず壊れる）。
 
-| 更新の綴り | 再表示後の DOM |
+| 状況 | 修正前 |
 |---|---|
-| `$listKeys` のキー突合 | ❌ 旧値 |
-| 行参照を保つ手書き id マージ（`Object.assign(cur, fresh)` + コピー再代入） | ❌ 旧値 |
-| 全行置換（参照が変わる） | ✅ 新値 |
-| `if` 直下の非リストパス（`textContent: title`） | ✅ 新値 |
+| 非表示中に行の同一性を保って更新 → 再表示 | ❌ 旧値 |
+| 非表示 → 再表示だけ → その後に行内更新 | ❌ 反映されない（恒久） |
+| 全行置換（参照が変わる） | ✅ 反映される（行を作り直すため） |
+| `if` 直下の非リストパス（`textContent: title`） | ✅ 反映される |
+| `if` を挟まない `for` | ✅ 反映される |
 
-条件は **「行オブジェクトの参照が保たれる更新」×「対象の `for` が非表示（deactivate 済み）」**。
-`$listKeys` に固有ではなく、[list-replacement-dependency-scaling.md](list-replacement-dependency-scaling.md)
-§7.0 が「常に正しい」と規定した per-path 書き込みイディオムでも同じに壊れる。
+`$listKeys`（[state-list-key-design.md](state-list-key-design.md)）に固有ではない。ただし
+`$listKeys` は「行オブジェクトの参照を保つ」ことを正常系にする機能なので、この穴を踏む確率を上げる。
 
-## 3. 原因
+## 2. 原因
 
-3 つが噛み合って更新が消える。
+1. **非表示は行 binding ごと解体する。** `applyChangeToIf(false)` は `deactivateContent` に加えて
+   `Content.unmount()` を呼ぶ。`unmount()` はネストした構造ディレクティブの content を再帰的に
+   unmount し、各 content の binding session を `dispose()` する。行 binding は台帳から外れる
+   （devtools の `state:binding-removed` で実測）。
+2. **非表示中の書き込みは配送先が居ない。** 行 binding が台帳に無いので、更新は
+   `applyChangeFromBindings` の disconnected スキップにすら到達せず落ちる。
+3. **再表示は行を物理的に戻すだけ。** `activateContent(ifContent)` が再活性化するのは
+   if コンテンツ自身の binding のみ。その中の `for` は `applyChangeToFor` に入るが、行の同一性が
+   保たれていれば diff は空で、既存行は位置合わせの `mountAfter`（`isPhysicallyAfter` が
+   切断ノードを false と判定するため必ず通る）で DOM に戻るだけ。**dispose 済みの record は
+   再構築されない。**
 
-1. **非表示中の適用は捨てられる。** `applyChangeFromBindings`（`apply/applyChangeFromBindings.ts`）は
-   `binding.replaceNode.isConnected === false` のバインディングをスキップする。`if` が false の間、
-   行の DOM は文書から切り離されているため、per-path 書き込みで dirty 化された行内バインディングは
-   適用されずに落ちる。
-2. **再 activate は「そのコンテンツ自身の」バインディングしか再適用しない。** `applyChangeToIf` →
-   `activateContent`（`structural/activateContent.ts`）が回すのは if コンテンツ直下のバインディング群で、
-   `for` 配下の行 content は対象外。表 4 行目（`if` 直下の単純パス）が直るのはこの経路のため。
-3. **`for` は「変化なし」と判断する。** 2 で再適用される `for` バインディングは
-   `applyChangeToFor` に入るが、行の同一性が保たれているので `createListDiff` の
-   add / change / delete がすべて空になり、既存の行 content を再マウントするだけで
-   値の再適用は起きない。参照が変わる更新（表 3 行目）が直るのは、行が作り直されるから。
+全行置換だけが直るのは、行が `createContent`（またはプール取り出し）から作り直され、
+追加行として `activateContent` を通るため。
 
-## 4. なぜ今書き残すか
+## 3. 修正
 
-`$listKeys`（[state-list-key-design.md](state-list-key-design.md)）は「行オブジェクトの参照を保つ」ことを
-**正常系にする**機能なので、この穴を踏む確率を大きく上げる。タブ・アコーディオン・モーダルの中の
-リストを裏でポーリング更新する、という構成はごく普通に現れる。
+`apply/applyChangeToFor.ts` の既存行経路で、位置合わせの前に `!content.mounted`
+（= 祖先の `unmount()` で解体された行）を判定し、DOM へ戻したあとに `activateContent` する。
 
-## 5. 直し方の候補（未検討・未採択）
+```ts
+const unmountedByAncestor = !content.mounted;
+...
+if (!stable && lastNode.nextSibling !== content.firstNode) {
+  content.mountAfter(lastNode);
+}
+if (unmountedByAncestor) {
+  loopContextStack.createLoopContext(stateAddress, (loopContext) => {
+    activateContent(revivedContent, loopContext, context);
+  });
+}
+```
 
-| 案 | 内容 | 懸念 |
-|---|---|---|
-| A | 再 activate 時に配下の行 content まで再帰的に再適用する | 大きなリストの表示切り替えが O(全行) になる。現在の「再マウントだけ」の軽さを失う |
-| B | deactivate 中に落ちた適用を content 単位で dirty マークし、再 activate 時にマーク分だけ再適用する | 台帳が増える。マークの寿命管理（unmount 済み content の GC）が要る |
-| C | deactivate 時に配下の行バインディングも registry から確実に外し、再 activate で全バインディングを無条件再適用する | A と同じコスト。ただし `isConnected` によるサイレントスキップという曖昧さは消える |
+`BindingSession.activate` は disposed record の再構築（プール再利用と同じ経路）を含むため、
+アドレス台帳への再登録と現在値の再適用がまとめて行われる。ネストした `for` は、親行の
+再活性化がその `for` バインディングを再適用することで自然に再帰する。
 
-いずれも `structural/activateContent.ts` と `apply/applyChangeToFor.ts` の責務分担に触るため、
-`$listKeys` とは独立した変更として扱う。
+コストは既存行あたり boolean 1 回。復活の実作業は実際に解体された行にしか発生しない。
 
-## 6. 現行挙動の pin
+## 4. 回帰テスト
 
-`packages/state/__tests__/integration.listKeys.test.ts` の
-「非表示中の行内更新は再表示で反映されない（既存の穴・…）」が、`$listKeys` 版と手書きマージ版の
-両方で現行挙動（state は新値・DOM は旧値）を固定している。修正する際はこの pin を期待値ごと
-書き換えること。
+`packages/state/__tests__/integration.ifRemountRowBindings.test.ts`
+
+- 非表示中に行の同一性を保ったまま更新 → 再表示で新しい値
+- 非表示 → 再表示だけ → その後の行内更新が届く
+- 再表示後も行 DOM が再利用され、非バインド DOM 状態（`<details>` の開閉）が保たれる
+- ネストした `for` の行も再表示後に更新が届く
+
+`integration.listKeys.test.ts` の「非表示中のキー付き代入が、再表示で反映されること」が
+`$listKeys` 経由でも成立することを押さえる。

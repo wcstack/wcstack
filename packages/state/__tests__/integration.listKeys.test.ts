@@ -428,43 +428,29 @@ describe("$listKeys: キー一致行のオブジェクト値展開", () => {
     host.remove();
   });
 
-  // pin: 非表示（deactivate 済み）の for 配下は、行の同一性が保たれる更新を
-  // 再表示時に取り戻せない。これは $listKeys 固有ではなく、行参照を保つ手書き
-  // マージ（§7.0 のイディオム）でも同じに壊れる既存の穴で、本機能のスコープ外。
-  // $listKeys は行同一性を保つ機能なので、この組み合わせを踏みやすくはする。
-  it.each([
-    ["$listKeys でキー突合", true],
-    ["行参照を保つ手書きマージ", false],
-  ])("非表示中の行内更新は再表示で反映されない（既存の穴・%s）", async (_label, keyed) => {
-    const initial: any = { show: true, items: [{ id: 1, name: "a" }, { id: 2, name: "b" }] };
-    if (keyed) initial.$listKeys = KEYED;
+  // 非表示（if:false）を跨いだ行 binding の復活は
+  // integration.ifRemountRowBindings.test.ts が正典。ここではキー突合経由でも
+  // 同じに成立することだけ確認する。
+  it("非表示中のキー付き代入が、再表示で反映されること", async () => {
     const { host, shadowRoot, stateElement } = await mount(
-      initial,
+      { show: true, items: [{ id: 1, name: "a" }, { id: 2, name: "b" }], $listKeys: KEYED },
       `<template data-wcs="if: show">${ROW_TPL}</template>`,
     );
+    const before = lis(shadowRoot);
     expect(inputs(shadowRoot).map((i) => i.value)).toEqual(["a", "b"]);
 
     stateElement.createState("writable", (s: any) => { s.show = false; });
     await flush();
     stateElement.createState("writable", (s: any) => {
-      if (keyed) {
-        s.items = [{ id: 1, name: "A" }, { id: 2, name: "b" }];
-      } else {
-        const cur = s.items;
-        cur[0].name = "A";
-        s.items = [...cur];
-      }
+      s.items = [{ id: 1, name: "A" }, { id: 2, name: "b" }];
     });
     await flush();
     stateElement.createState("writable", (s: any) => { s.show = true; });
     await flush();
 
-    // state 側は正しく更新されている
-    stateElement.createState("readonly", (s: any) => {
-      expect(s.items.map((r: any) => r.name)).toEqual(["A", "b"]);
-    });
-    // DOM は非表示中に落ちた更新を取り戻せず旧値のまま（現行挙動の固定）
-    expect(inputs(shadowRoot).map((i) => i.value)).toEqual(["a", "b"]);
+    expect(inputs(shadowRoot).map((i) => i.value)).toEqual(["A", "b"]);
+    // キー突合なので行 DOM も再利用される
+    expect(lis(shadowRoot)).toEqual(before);
     host.remove();
   });
 });
