@@ -46,6 +46,7 @@ export const STATE_COMMAND_NAMESPACE_NAME = "$command";
 export const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 export const STATE_ON_NAME = "$on";
 export const STATE_STREAMS_NAME = "$streams";
+export const STATE_LIST_KEYS_NAME = "$listKeys";
 export const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
 export const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
 export const DCC_DEFINITION_ATTRIBUTE = "data-wc-definition";

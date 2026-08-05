@@ -18,10 +18,15 @@
 
 import { createAbsoluteStateAddress } from "../../address/AbsoluteStateAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
-import { WILDCARD } from "../../define";
+import { DELIMITER, WILDCARD } from "../../define";
 import { dispatchBindableEvent } from "../../dcc/dispatchBindableEvent";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList } from "../../list/listIndexesByList";
+import { createListDiff } from "../../list/createListDiff";
+import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/mergeKeyedList";
+import { IListIndex } from "../../list/types";
+import { getPathInfo } from "../../address/PathInfo";
+import { createStateAddress } from "../../address/StateAddress";
 import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { IStateHandler, IStateProxy } from "../types";
@@ -44,7 +49,8 @@ function notifyWrite(
   address  : IStateAddress,
   absAddress: IAbsoluteStateAddress,
   receiver : any,
-  handler  : IStateHandler
+  handler  : IStateHandler,
+  keyedMergePath: string | null
 ): void {
   const propagationContext = config.enablePropagationContext
     ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
@@ -72,7 +78,7 @@ function notifyWrite(
     },
     // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
     // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
-    { listExpansion: "diff" }
+    { listExpansion: "diff", keyedMergePath }
   )
 }
 
@@ -82,7 +88,8 @@ function _setByAddress(
   absAddress: IAbsoluteStateAddress,
   value    : any,
   receiver : any,
-  handler  : IStateHandler
+  handler  : IStateHandler,
+  keyedMergePath: string | null
 ): any {
   try {
     if (address.pathInfo.path in target) {
@@ -118,17 +125,18 @@ function _setByAddress(
       }
     }
   } finally {
-    notifyWrite(address, absAddress, receiver, handler);
+    notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
   }
 }
 
 function _setByAddressWithSwap(
-  target   : object, 
+  target   : object,
   address  : IStateAddress,
   absAddress: IAbsoluteStateAddress,
-  value    : any, 
+  value    : any,
   receiver : any,
-  handler  : IStateHandler
+  handler  : IStateHandler,
+  keyedMergePath: string | null
 ) {
   // elementsの場合はswapInfoを準備
   let parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
@@ -142,7 +150,7 @@ function _setByAddressWithSwap(
     setSwapInfoByAddress(parentAddress, swapInfo);
   }
   try {
-    return _setByAddress(target, address, absAddress, value, receiver, handler);
+    return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath);
   } finally {
     const index = swapInfo.value.indexOf(value);
     const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
@@ -165,12 +173,100 @@ function _setByAddressWithSwap(
   }
 }
 
+/**
+ * `$listKeys` 宣言済みリストパスへの配列代入を「キー一致行のオブジェクト値展開」に
+ * 変換する（docs/state-list-key-design.md §2）。
+ *
+ * 1. キー突合して、一致行は旧オブジェクトを据え置いたハイブリッド配列を作る
+ * 2. ハイブリッド配列を通常の書き込み経路で格納する
+ * 3. createListDiff で listIndex を確定し、変化フィールドだけを per-path 書き込みで発行
+ *
+ * 3 を格納後に行うのが要点。フィールド書き込みは `list.*.field` を親経由で解決する
+ * ため、親（ハイブリッド配列）が既に格納されていなければ正しい行に届かない。
+ * また per-path 書き込みは再び setByAddress に入るので、ネストしたリストパスが
+ * 宣言されていればそのレベルのキー突合が再帰的に走る（§4）。
+ *
+ * 未宣言時のコストは stateElement.listKeys の null 判定 1 回のみ（§7-1）。
+ */
+function setKeyedListByAddress(
+    target   : object,
+    address  : IStateAddress,
+    merge    : IKeyedListMerge,
+    oldList  : readonly unknown[],
+    receiver : any,
+    handler  : IStateHandler
+): any {
+  const listPath = address.pathInfo.path;
+  // diff の基準は「マージ相手にした配列」= 書き込み直前に格納されていた配列。
+  // 読み手（applyChangeToFor / $getAll / resolve）は現在格納されている配列の
+  // listIndex 台帳（listIndexesByList）へ収束するため、同じ基準で引くことで
+  // 書き込みが dirty 化・キャッシュするアドレスと読み手のアドレスが一致する。
+  // lastValue（最後に *適用* された配列）を基準にすると、for が未マウントで
+  // lastValue が空のときに別台帳を作ってしまい、値は入っているのにワイルドカード
+  // 読みだけ旧値のまま残る（設計書 §8.1）。
+  // 格納より前に引くのは、格納時の walkDependency（listExpansion: "diff"）が
+  // 先にハイブリッド配列の台帳を作ってしまうと、後から上書きした台帳との間で
+  // 同じ分裂が起きるため。先に確定させておけば以降は全経路がこれに合流する。
+  if (getListIndexesByList(oldList) === null) {
+    // 一度も描画されていないリストは台帳自体が無い。先に生やしておかないと
+    // isSameList 経路が空の oldIndexes をそのまま新台帳にしてしまう。
+    createListDiff(address.listIndex, null, oldList);
+  }
+  const diff = createListDiff(address.listIndex, oldList, merge.list);
+  const result = setByAddressCore(target, address, merge.list, receiver, handler, listPath);
+  const elementPathInfo = getPathInfo(listPath + DELIMITER + WILDCARD);
+  for (const match of merge.matched) {
+    const fieldWrites = collectFieldWrites(match.oldRow, match.newRow);
+    if (fieldWrites.length === 0) {
+      continue;
+    }
+    // createListDiff の契約上 newIndexes の長さはハイブリッド配列と一致するため
+    // 通常 undefined にはならない。仮に不変条件が破れても、per-path 書き込みを
+    // 諦めるだけで値そのものは行オブジェクトへ反映する（skip すると state だけが
+    // 旧値のまま残り、本機能が塞ごうとしている stale を作ってしまう）。
+    const listIndex: IListIndex | undefined = diff.newIndexes[match.position];
+    for (const write of fieldWrites) {
+      if (typeof listIndex === "undefined") {
+        match.oldRow[write.field] = write.value;
+        continue;
+      }
+      const fieldPathInfo = getPathInfo(elementPathInfo.path + DELIMITER + write.field);
+      const fieldAddress = createStateAddress(fieldPathInfo, listIndex);
+      setByAddress(target, fieldAddress, write.value, receiver, handler);
+    }
+  }
+  return result;
+}
+
 export function setByAddress(
     target   : object,
     address  : IStateAddress,
     value    : any,
     receiver : any,
     handler  : IStateHandler
+): any {
+  const listKeys = handler.stateElement.listKeys;
+  if (listKeys != null && Array.isArray(value)) {
+    const keySpec = listKeys.get(address.pathInfo.path);
+    if (typeof keySpec !== "undefined") {
+      const oldValue = getByAddress(target, address, receiver, handler);
+      const merge = mergeKeyedList(address.pathInfo.path, keySpec, oldValue, value);
+      if (merge !== null) {
+        // merge が非 null なのは oldValue が非空配列のときだけ（mergeKeyedList 参照）
+        return setKeyedListByAddress(target, address, merge, oldValue as readonly unknown[], receiver, handler);
+      }
+    }
+  }
+  return setByAddressCore(target, address, value, receiver, handler, null);
+}
+
+function setByAddressCore(
+    target   : object,
+    address  : IStateAddress,
+    value    : any,
+    receiver : any,
+    handler  : IStateHandler,
+    keyedMergePath: string | null
 ): any {
   const stateElement = handler.stateElement;
   const path = address.pathInfo.path;
@@ -224,7 +320,7 @@ export function setByAddress(
         }
         return Reflect.set(parentValue, key, value);
       } finally {
-        notifyWrite(address, absAddress, receiver, handler);
+        notifyWrite(address, absAddress, receiver, handler, keyedMergePath);
         if (cacheable) {
           setCacheEntryByAbsoluteStateAddress(absAddress, {
             value: value,
@@ -271,9 +367,9 @@ export function setByAddress(
   }
   try {
     if (isSwappable) {
-      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler);
+      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath);
     } else {
-      return _setByAddress(target, address, absAddress, value, receiver, handler);
+      return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath);
     }
   } finally {
     if (cacheable) {

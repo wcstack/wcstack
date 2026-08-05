@@ -1,3 +1,4 @@
+import { ListKeyMap } from "../list/listKeys";
 import { ILoopContextStack } from "../list/types";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { BindingType } from "../types";
@@ -53,6 +54,13 @@ export interface IStateElement {
    */
   readonly indexDependentGetterPaths?: ReadonlySet<string>;
   addIndexDependentGetterPath?(path: string): void;
+  /**
+   * `$listKeys` 宣言から生成した「リストパス → キー指定」表。
+   * 宣言が無ければ null / undefined で、setByAddress のキー突合経路に一切入らない
+   * （docs/state-list-key-design.md §7-1 のゼロコスト契約）。
+   * optional なのはテスト用モック互換のため（undefined は「宣言なし」扱い）。
+   */
+  readonly listKeys?: ListKeyMap | null;
   setPathInfo(path: string, bindingType: BindingType): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;
