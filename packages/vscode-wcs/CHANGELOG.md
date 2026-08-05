@@ -4,6 +4,11 @@
 
 ### Features
 
+- **`$listKeys` 宣言対応** — `@wcstack/state` のリストキー宣言（`$listKeys: { "<listPath>": "<field>" | (row) => key }`）への追従
+  - 宣言されたリストパスを `<listPath>` / `<listPath>.*` / `<listPath>.length` として実体化。初期値が空配列（`items: []`）で要素の形が読めないケースでも `for: items.*.children` 等が補完・検証に載る
+  - 文字列キー指定からは行のキーフィールド（`<listPath>.*.<field>`）も導出。関数キー指定はフィールド名が確定しないためリストパスのみ
+  - ランタイム（`list/listKeys.ts`）が raiseError で弾く形の宣言 — 空パス / 空セグメント / 末尾 `*` / 非フラットなキーフィールド名 — からは候補を作らず、壊れた宣言を静的側が追認しない
+  - preamble の `defineState` にキー指定の文脈型を追加（`(row) => row.uid` が `noImplicitAny` 下で偽エラーにならない）
 - **配列破壊的操作の診断** — `<wcs-state>` スクリプト内の配列への破壊的操作を検出する 2 診断を追加（warning、IDE / `wcs-validate` CLI 共通）。設計・検証の正本: `docs/array-mutation-diagnostic-design.md`
   - `wcs/array-mutation` — `this.items.push(...)` 等 9 種の破壊的メソッド呼び出し。リアクティブ更新をトリガーせず、同一参照の自己再代入でも要素の追加・削除は反映されない（動的検証済み）。メッセージでメソッド別の非破壊代替（`concat` / `toSpliced` / `toSorted` 等）を提示
   - `wcs/array-index-assign` — `this.items[0] = x` 形式のインデックス代入（bracket-only チェーン）。単純代入に加え複合代入 15 種（`+=` `??=` 等）・前置/後置 `++` `--`・bracket ルート形（`this["items"][0] = x`）・式添字（`this.items[this.items.length] = x` の append イディオム）も検出（いずれも非リアクティブを動的検証済み）。ドットパス代入 `this["items.0"]` と `with()` を提示。ドットアクセスを含むチェーンは従来どおり `wcs/nested-assign` の担当（二重報告なし）

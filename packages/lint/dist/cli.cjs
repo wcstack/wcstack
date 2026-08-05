@@ -418,15 +418,17 @@ function extractAttribute(tagContent, attrName) {
 var RESERVED_STREAMS_KEY = "$streams";
 var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
 var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
+var RESERVED_LIST_KEYS_KEY = "$listKeys";
 function analyzeStatePaths(scriptContent, stateName = "default") {
   const objectContent = extractDefaultExportObject(scriptContent);
   if (!objectContent) return [];
   const paths = [];
   const topLevelProps = parseTopLevelProperties(objectContent);
   const pendingStreamValues = [];
+  const pendingListKeys = [];
   for (const prop of topLevelProps) {
     if (prop.name.startsWith("$")) {
-      collectReservedKeyPaths(prop, paths, pendingStreamValues, stateName);
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName);
       continue;
     }
     if (prop.kind === "method") {
@@ -443,9 +445,12 @@ function analyzeStatePaths(scriptContent, stateName = "default") {
     if (paths.some((p) => p.stateName === stateName && p.path === streamValue.name)) continue;
     pushDataPropertyPaths(streamValue, paths, stateName);
   }
+  for (const listKeyEntry of pendingListKeys) {
+    pushListKeyPaths(listKeyEntry, paths, stateName);
+  }
   return paths;
 }
-function collectReservedKeyPaths(prop, paths, pendingStreamValues, stateName) {
+function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName) {
   if (prop.name === RESERVED_STREAMS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
     const entries = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const entry of entries) {
@@ -474,6 +479,36 @@ function collectReservedKeyPaths(prop, paths, pendingStreamValues, stateName) {
     }
     return;
   }
+  if (prop.name === RESERVED_LIST_KEYS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
+    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (entry.kind !== "data") continue;
+      pendingListKeys.push(entry);
+    }
+    return;
+  }
+}
+function pushListKeyPaths(entry, paths, stateName) {
+  const listPath = entry.name;
+  const segments = listPath.split(".");
+  if (listPath.length === 0 || segments.some((s) => s.length === 0) || segments[segments.length - 1] === "*") {
+    return;
+  }
+  const has = (path) => paths.some((p) => p.stateName === stateName && p.path === path);
+  if (!has(listPath)) paths.push({ path: listPath, kind: "data", typeHint: "array", stateName });
+  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: "list", stateName });
+  if (!has(`${listPath}.length`)) {
+    paths.push({ path: `${listPath}.length`, kind: "data", typeHint: "number", stateName });
+  }
+  const keyField = extractStringLiteralValue(entry.value);
+  if (keyField === null || keyField.includes(".") || keyField.includes("*")) return;
+  if (!has(`${listPath}.*.${keyField}`)) {
+    paths.push({ path: `${listPath}.*.${keyField}`, kind: "data", stateName });
+  }
+}
+function extractStringLiteralValue(value) {
+  if (!value) return null;
+  const match = value.trim().match(/^["']([^"'\\]*)["']$/);
+  return match && match[1].length > 0 ? match[1] : null;
 }
 function findStreamInitialProperty(entryValue) {
   const defProps = parseTopLevelProperties(extractObjectContent(entryValue));

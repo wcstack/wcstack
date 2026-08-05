@@ -40,7 +40,7 @@ describe('outerState', () => {
       const stateProxy: Record<string, any> = { count: 42 };
       const innerStateElement = {
         name: 'default',
-        createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+        createState: vi.fn((_mode: string, cb: (proxy: any) => any) => cb(stateProxy))
       } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
 
@@ -70,7 +70,7 @@ describe('outerState', () => {
       const stateProxy: Record<string, any> = {};
       const innerStateElement = {
         name: 'default',
-        createState: vi.fn((_mode: string, cb: Function) => cb(stateProxy))
+        createState: vi.fn((_mode: string, cb: (proxy: any) => any) => cb(stateProxy))
       } as any;
       getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
 

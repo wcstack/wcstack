@@ -30,22 +30,20 @@ jobs:
       # is only committed on release, so without a build here the pages would load
       # the last released bundles and the suite would silently validate stale code.
       # An example that depends on an unreleased fix fails; worse, a regression
-      # introduced in src passes. Only packages this PR touches are rebuilt;
-      # everything else is unchanged, so its committed dist already matches its src.
-      - name: Build the dist bundles of packages changed by this PR
+      # introduced in src passes.
+      #
+      # Which packages need rebuilding is read off the tree, not off this PR's
+      # diff: a package is stale whenever its src moved after its dist was last
+      # committed. Diffing against the PR base got this wrong as soon as src
+      # changes piled up between releases — a PR touching only tests or another
+      # package left the stale dist in place and the suite ran the last release's
+      # bundles (the DCC e2e specs failing on PR #136). Reading the tree also
+      # makes workflow_dispatch behave like a PR run instead of always falling
+      # back to the committed dist.
+      - name: Build the dist bundles of packages whose src outpaces their dist
         working-directory: .
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-
-          # workflow_dispatch has no PR payload: nothing to diff against, so the
-          # run falls back to the committed dist.
-          if [ -z "${BASE_SHA:-}" ]; then
-            echo "no base SHA (not a pull_request event) — using the committed dist"
-            exit 0
-          fi
-          changed=$(git diff --name-only "$BASE_SHA" HEAD)
 
           built=0
           for dir in packages/*/; do
@@ -56,14 +54,20 @@ jobs:
               *) continue ;;
             esac
             pkg=$(basename "$dir")
-            # A change to the shared root tsconfig rebuilds every package.
-            if echo "$changed" | grep -qx 'tsconfig.json' \
-              || echo "$changed" | grep -qE "^packages/${pkg}/src/"; then
-              echo "::group::build ${pkg}"
-              (cd "$dir" && npm ci && npm run build)
-              echo "::endgroup::"
-              built=$((built + 1))
+            distSha=$(git log -1 --format=%H -- "${dir}dist")
+            # A package that has never committed a dist has nothing to compare
+            # against; build it so the suite never loads a missing bundle.
+            if [ -n "$distSha" ]; then
+              # A change to the shared root tsconfig rebuilds every package.
+              if [ -z "$(git log --oneline "${distSha}..HEAD" -- "${dir}src")" ] \
+                && [ -z "$(git log --oneline "${distSha}..HEAD" -- tsconfig.json)" ]; then
+                continue
+              fi
             fi
+            echo "::group::build ${pkg}"
+            (cd "$dir" && npm ci && npm run build)
+            echo "::endgroup::"
+            built=$((built + 1))
           done
           echo "rebuilt ${built} package(s)"
       - run: npm ci
