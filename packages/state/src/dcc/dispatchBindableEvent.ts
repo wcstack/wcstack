@@ -24,6 +24,10 @@ import { IStateElement } from "../components/types";
  * 配列の in-place 変異（`items.push(...)`）は set トラップを通らないため、ここでも捕まらない。
  * これはリアクティブコア全体の規範（in-place 変異は `$postUpdate` で通知する）と同じで、
  * 正しい idiom を踏めば 3 で発火する。
+ *
+ * `$listKeys` を宣言したリストは、配列代入がキー突合後に per-path 書き込みへ分解されるため
+ * （docs/state-list-key-design.md §2）、1 回の代入で `1 + 変化行数` 回発火する。値は要素から
+ * 読む契約なので結果は変わらない。詳細は上記 §2.1 の「`$listKeys` との相互作用」。
  */
 export function dispatchBindableEvent(
   stateElement: IStateElement,
