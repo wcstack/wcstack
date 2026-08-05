@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>fixture: sub-path writes must fire the DCC change event</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §2.1.
+       bindableEventMap was matched on the exact written path, so `$bindables: ["user"]`
+       plus `user.name = "..."` dispatched nothing and the host never learned the member
+       had changed -- even though wc-bindable's properties[].event promises a dispatch on
+       change. The inner view still updated (the DCC's own bindings see the write), so the
+       discriminator is the *outer* view: it stays "Alice" against the old code. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+[data-wc-definition] { display: none; }
+  </style>
+</head>
+<body>
+  <my-card data-wc-definition>
+    <template shadowrootmode="open">
+      <span class="inner">{{ user.name }}</span>
+      <button class="rename" data-wcs="onclick: rename">rename</button>
+      <wcs-state>
+        <script type="module">
+export default {
+  user: { name: "" },
+  // パス文字列で書く。`this.user.name = ...` は素のオブジェクトへの in-place 変異で
+  // set トラップを通らない（リアクティブコア共通の規範）。
+  rename() { this["user.name"] = "Bob"; },
+  $bindables: [ "user" ]
+};
+        </script>
+      </wcs-state>
+    </template>
+  </my-card>
+
+  <wcs-state>
+    <script type="module">
+export default { person: { name: "Alice" } };
+    </script>
+  </wcs-state>
+
+  <div id="outer">{{ person.name }}</div>
+  <div id="live">
+    <my-card data-wcs="user: person"></my-card>
+  </div>
+</body>
+</html>

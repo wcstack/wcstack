@@ -46,10 +46,13 @@ DCC と `bind-component` はコンポーネントごとにどちらか一方だ�
 
 ## 既知の制約
 
-実装と設計の食い違いは
+設計判断の経緯と、意図的に残した制約は
 [`docs/architecture-hardening/15-state-component-mechanism-consistency.md`](../../../../docs/architecture-hardening/15-state-component-mechanism-consistency.md)
-に集約してある。未修正の主なものは以下。
+に集約してある。
 
-- 変更イベントは完全一致パスでしか出ない（サブパス変更・配列の in-place 変異では発火しない、§2.1）。
-  `$streams` 由来の `$bindables` メンバもこの制約下にある
-- getter は同期・setter とメソッドは `initializePromise` 待ちで非対称（§2.2）
+- **`$postUpdate` を伴わない in-place 変異**（`items.push(...)`）は変更イベントを出さない。
+  set トラップを通らないため。リアクティブコア全体の規範と同じで、DCC 固有の制約ではない（§2.1）
+- **`callFn` は常に Promise を返す。** 初期化状態で戻り値の型が変わらないようにするためで、
+  `wcBindable.commands` が一律 `async: true` を宣言しているのと対（§2.2）
+- **inner `<wcs-state>` に `name` を付けると `stateElement` が解決できない。**
+  `$bindables` 宣言時は警告を出すが、挙動自体は変えていない（§2.5）

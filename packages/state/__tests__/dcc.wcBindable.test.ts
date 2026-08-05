@@ -9,14 +9,23 @@ describe('dcc/wcBindable', () => {
         protocol: 'wc-bindable',
         version: 1,
         properties: [
-          { name: 'count', event: 'my-component:count-changed' },
-          { name: 'name', event: 'my-component:name-changed' },
+          { name: 'count', event: 'my-component:count-changed', getter: expect.any(Function) },
+          { name: 'name', event: 'my-component:name-changed', getter: expect.any(Function) },
         ],
         inputs: [
           { name: 'count' },
           { name: 'name' },
         ],
       });
+    });
+
+    // イベントは「変わった」という通知で、値は要素から読む。サブパス書き込み
+    // （`user` メンバに対する `user.name = "x"`）には detail に載せられる単一の値が無く、
+    // state 側の setter が正規化した場合も detail は正規化前になる（§2.1）。
+    it('propertiesのgetterがevent.targetからメンバを読むこと', () => {
+      const [property] = createWcBindable('my-component', ['count']).properties;
+      const target = { count: 42 };
+      expect(property.getter!({ target } as unknown as Event)).toBe(42);
     });
 
     it('$bindables は getter/setter 両面を持つため properties と inputs の両方に宣言されること', () => {

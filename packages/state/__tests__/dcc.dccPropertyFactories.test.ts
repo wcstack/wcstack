@@ -2,10 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { getterFn, setterFn, callFn, isInternalProperty } from '../src/dcc/dccPropertyFactories';
 
 describe('dcc/dccPropertyFactories', () => {
-  function createMockElement() {
+  function createMockElement(initialized = true) {
     const stateObj: Record<string, any> = {};
     return {
       stateElement: {
+        initialized,
         initializePromise: Promise.resolve(),
         createState: vi.fn((mutability: string, callback: (state: any) => void) => {
           callback(stateObj);
@@ -34,9 +35,23 @@ describe('dcc/dccPropertyFactories', () => {
       expect(result).toBeUndefined();
     });
 
+    // §2.2: state のロード前は「まだ値が無い」だけなので警告しない。
+    // fragment 上の行に対する初期スナップショット読みが必ずここを通るため。
+    it('未初期化のstateElementでは警告せずundefinedを返すこと', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { stateElement, stateObj } = createMockElement(false);
+      stateObj.count = 42;
+
+      expect(getterFn('count').call({ stateElement } as any)).toBeUndefined();
+      expect(stateElement.createState).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
     it('createStateがエラーの場合はconsole.warnで通知してundefinedを返すこと', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const stateElement = {
+        initialized: true,
         createState: () => { throw new Error('not initialized'); },
       };
       const getter = getterFn('count');
@@ -51,11 +66,22 @@ describe('dcc/dccPropertyFactories', () => {
   });
 
   describe('setterFn', () => {
-    it('stateElementに値を書き込むsetterを返すこと', async () => {
+    // §2.2: getter は同期なので、setter を常に initializePromise 経由にすると
+    // `el.count = 5; el.count` が旧値を返す。初期化済みなら同期で書く。
+    it('初期化済みなら同期で書き込むこと', () => {
       const { stateElement, stateObj } = createMockElement();
-      const setter = setterFn('count');
-      setter.call({ stateElement } as any, 99);
-      // initializePromise.then 経由なのでマイクロタスクを待つ
+      setterFn('count').call({ stateElement } as any, 99);
+      expect(stateObj.count).toBe(99);
+      expect(stateElement.createState).toHaveBeenCalledWith('writable', expect.any(Function));
+    });
+
+    // §1.4: 未接続の行に書かれた値が捨てられないための遅延経路は残す。
+    it('未初期化なら初期化後に書き込むこと', async () => {
+      const { stateElement, stateObj } = createMockElement(false);
+      setterFn('count').call({ stateElement } as any, 99);
+      expect(stateObj.count).toBeUndefined();
+
+      await Promise.resolve();
       await Promise.resolve();
       expect(stateObj.count).toBe(99);
       expect(stateElement.createState).toHaveBeenCalledWith('writable', expect.any(Function));
