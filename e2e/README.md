@@ -42,20 +42,23 @@ examples の `index.html` は `https://esm.run/@wcstack/*` (CDN) を参照して
 場合は該当パッケージで `npm run build` してから実行してください。
 
 また、examples の一部は自前の `server.js` (port 3000 固定・同時起動不可) で `/api/*` を
-提供するため、`serve.mjs` が同形のモック API (`/api/search`, `/api/users`) を最小フィクスチャで
-代替しています (レスポンス形状は各デモの `server.js` に準拠、人工遅延なし)。
+提供するため、`serve.mjs` が同形のモック API (`/api/search`, `/api/users`, `/api/metrics`) を
+最小フィクスチャで代替します。テスト単位の失敗注入が必要な `state-intersect-scroll` は
+Playwright の `page.route()` で `/api/items` を隔離して横取りします。
 
 ## 対象 / スキップ examples
 
-### テスト対象 (3)
+### テスト対象 (5)
 
 | example | 検証内容 |
 |---|---|
 | `state-search` | state + fetch + debounce。初期全件フェッチの一覧描画、`locale` フィルタ、eventToken のリクエストカウンタ、入力 → 300ms デバウンス → 再フェッチの絞り込み |
 | `users-crud` (packages/fetch/examples) | state + fetch。一覧 auto-fetch、行クリック → computed url → 詳細フェッチ、manual POST → 成功バナー → command-token による一覧リロード |
 | `state-cross-tab-todo` | state + storage + broadcast。2 ページ (=2 タブ) 間で localStorage 経由のリスト同期と BroadcastChannel 経由の live シグナル |
+| `state-sse-dashboard` | state `$streams` + SSE。host 変更時の switchMap 型 cancel/restart、旧 connection の close、最新 feed だけの反映 |
+| `state-intersect-scroll` | state `$streams` + intersection。in-flight cancel / stale-drop、順序付き pagination、有界 retry、予算切れ停止、手動復帰、全87件の終端 |
 
-### スキップ (16)
+### スキップ (15)
 
 dist が存在しないためスキップした example はありません (vscode-wcs を除く全パッケージに dist あり)。
 スキップ理由はすべて実行環境の制約です:
@@ -72,7 +75,7 @@ dist が存在しないためスキップした example はありません (vsco
 | `state-permission-banner` | Geolocation 権限が必要 |
 | `speak-highlight` / `speech-echo` (packages/speech/examples) | SpeechSynthesis / SpeechRecognition (headless では音声環境なし) |
 | `defined-loader` (packages/defined/examples) | 追加候補 (API 不要の静的構成。未対象なだけで技術的障害なし) |
-| `infinite-scroll` (packages/fetch/examples) / `state-intersect-scroll` | 追加候補 (各 `server.js` の API をモックすれば対象化可能) |
+| `infinite-scroll` (packages/fetch/examples) | 追加候補 (`server.js` の API をモックすれば対象化可能) |
 
 ## CI
 

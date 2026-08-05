@@ -36,220 +36,164 @@
     wcs-intersect { display: block; height: 1px; }
   </style>
 
-  <!-- I/O nodes before state: module scripts execute in document order, so
-       the elements are guaranteed to be defined before state binds to them. -->
-  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <!-- The intersection element must be defined before state binds to it. -->
   <script type="module" src="https://esm.run/@wcstack/intersection/auto"></script>
-  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>
 <body>
 
 <h1>wcstack: infinite scroll <small>— &lt;wcs-intersect&gt;</small></h1>
-<p class="lead">state + fetch + intersection + timer — the full-auto take: a <code>&lt;wcs-intersect&gt;</code> sentinel advances the page number and a no-<code>manual</code> <code>&lt;wcs-fetch&gt;</code> auto-loads it. The url binding is the trigger on the happy path; a failed page is retried on a <code>&lt;wcs-timer&gt;</code> clock, because scroll alone can't schedule it.</p>
+<p class="lead">state + intersection + <code>$streams</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, while a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry.</p>
 
 <!-- ============================================================
      App State
      ============================================================ -->
 <wcs-state>
   <script type="module">
+    const RETRY_INTERVAL = 1500;
+
+    function abortableDelay(ms, signal) {
+      return new Promise((resolve, reject) => {
+        if (signal.aborted) {
+          reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+          return;
+        }
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+        };
+        const timer = setTimeout(() => {
+          signal.removeEventListener("abort", onAbort);
+          resolve();
+        }, ms);
+        signal.addEventListener("abort", onAbort, { once: true });
+      });
+    }
+
+    // One stream run owns one logical page request. Changing an args dependency
+    // aborts this generator (and its fetch/delay) before $streams starts the newest
+    // run: the switchMap semantics advertised by @wcstack/state.
+    async function* loadPage({ page, pageSize, maxRetries }, signal) {
+      const url = `/api/items?page=${page}&limit=${pageSize}`;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+          yield { kind: "loading", attempt, page };
+        }
+
+        let failure;
+        try {
+          const response = await fetch(url, { signal });
+          if (!response.ok) {
+            throw new Error(`Page ${page} failed with HTTP ${response.status}`);
+          }
+          const items = await response.json();
+          yield { kind: "success", attempt, page, items };
+          return;
+        } catch (error) {
+          if (signal.aborted) return;
+          failure = error;
+        }
+
+        if (attempt === maxRetries) throw failure;
+
+        // This progress chunk keeps retry state observable without moving the
+        // schedule back into $on. The retry budget and delay belong to the producer.
+        yield { kind: "retrying", attempt: attempt + 1, page };
+        try {
+          await abortableDelay(RETRY_INTERVAL, signal);
+        } catch (error) {
+          if (signal.aborted) return;
+          throw error;
+        }
+      }
+    }
+
     export default {
       pageSize: 20,
-      // `page` is the page currently loaded / in flight. It is the SINGLE driver of
-      // the url, and the sentinel is the only thing that advances it — so with no
-      // `manual`, auto-fetch fires exactly once per page (page 1 on connect, the rest
-      // on scroll). No trigger, no fetch command: the page number IS the control.
+      // `page` is the requested page. It changes only after the previous page has
+      // committed because sentinelChanged derives it from items.length.
       page: 1,
-      // The accumulated feed. <wcs-fetch>.value is REPLACED on every response, so we
-      // never bind value into the list directly — we append each page here instead.
       items: [],
-      // Set once a short page (< pageSize) comes back: that's the end of the feed.
       noMore: false,
-
-      pageFetch: { loading: false, error: null },
-
-      // Auto-retries already DISPATCHED for the page in flight (not merely armed —
-      // see retryTick). Spent budget = only a human (the Retry button) can restart
-      // the feed. Reset by a page landing.
-      retryAttempt: 0,
       maxRetries: 3,
+      // The Retry button increments this dependency to restart a failed page without
+      // pretending its page number changed.
+      retryNonce: 0,
 
-      // rearm    -> #sentinel's reobserve(): force a fresh observation (see pageArrived).
-      // refetch  -> #page-fetch's fetch(), used to retry a failed page (from the retry
-      //             clock, from a scroll, or from the Retry button); the happy path
-      //             stays binding-driven.
-      // armRetry -> #retry-timer's start(): schedule ONE delayed tick.
-      $commandTokens: ["rearm", "refetch", "armRetry"],
-      // sentinelChanged -> wcs-intersect:change (visibility edge).
-      // pageArrived     -> wcs-fetch:response (one page landed, success or failure).
-      // retryTick       -> wcs-timer:tick (the retry delay elapsed).
-      $eventTokens: ["sentinelChanged", "pageArrived", "retryTick"],
+      $commandTokens: ["rearm"],
+      $eventTokens: ["sentinelChanged"],
 
-      // url depends ONLY on `page`. <wcs-fetch> has no `manual`, so it auto-fetches on
-      // connect (page 1) and again whenever this url changes. Because `page` advances
-      // only on intersection, that url change happens exactly when we want the next
-      // page — the binding itself drives the fetch, with nothing imperative.
-      get "pageFetch.url"() {
-        return "/api/items?page=" + this.page + "&limit=" + this.pageSize;
+      $streams: {
+        // page/pageSize/retryNonce/maxRetries are captured dependencies. A change
+        // aborts the old source and starts loadPage with the newest snapshot.
+        pageResult: {
+          args: (state) => ({
+            page: state.page,
+            pageSize: state.pageSize,
+            retryNonce: state.retryNonce,
+            maxRetries: state.maxRetries,
+          }),
+          source: loadPage,
+        },
       },
 
-      // Centered spinner: from mount until the first page lands. Derived from "no
-      // items yet" so it shows immediately — no flag to set or reset.
       get showInitialSpinner() {
         return this.items.length === 0 && !this.noMore && !this.showError && !this.showRetrying;
       },
-      // Bottom spinner: only for follow-up pages, so it never doubles up with the
-      // centered initial spinner (which owns the items-empty state).
       get loadingMore() {
-        return this["pageFetch.loading"] && this.items.length > 0;
+        return this["$streamStatus.pageResult"] === "active"
+          && this.items.length > 0
+          && !this.showRetrying;
       },
-      // The auto-retry budget is spent (async-execution-model.md §8: `max` MUST be
-      // finite). From here only the Retry button can move the feed.
-      get retriesExhausted() {
-        return this.retryAttempt >= this.maxRetries;
-      },
-      // Settled on a failure with budget left: a retry tick is already scheduled.
       get showRetrying() {
-        return !!this["pageFetch.error"] && !this["pageFetch.loading"] && !this.retriesExhausted;
+        return this["$streamStatus.pageResult"] === "active"
+          && this.pageResult?.kind === "retrying";
       },
-      // Settled on a failure with the budget spent: hand the schedule to the user.
       get showError() {
-        return !!this["pageFetch.error"] && !this["pageFetch.loading"] && this.retriesExhausted;
+        return this["$streamStatus.pageResult"] === "error";
       },
       get loadedCount() {
         return this.items.length;
       },
 
-      // Manual escape hatch once the auto-retry budget is spent: refill the budget
-      // and re-run the same url. An outage that outlasts `maxRetries` is then
-      // recoverable without a reload — and it is the only path left when the feed
-      // is empty, since an empty page has nothing to scroll.
       retryNow() {
-        this.retryAttempt = 0;
-        this.$command.refetch.emit();
+        this.retryNonce = this.retryNonce + 1;
       },
 
       $on: {
-        // The intersect tag only reports visibility. Here we turn the enter edge into
-        // a page advance: bumping `page` changes the url, and the no-`manual` fetch
-        // reacts by loading that page. That's the whole full-auto trick — the page
-        // number, not a trigger, is the single source that drives fetching.
         sentinelChanged: (state, event) => {
-          // wcs-intersect:change fires on BOTH enter and leave; only act on enter.
-          if (!event.detail?.isIntersecting) return;
-          // Don't advance while a page is in flight. This guard prevents a cascade —
-          // and also a page-skip: advancing `page` schedules the next auto-fetch in a
-          // microtask that flips loading=true BEFORE the next IntersectionObserver
-          // callback (a task), so a rapid second enter sees loading=true and is ignored
-          // rather than bumping `page` twice. On first load the connect-time auto-fetch
-          // has already set loading=true before this fires, so page 1 isn't double-advanced.
-          if (state.noMore || state["pageFetch.loading"]) return;
-          // A pending failure is the retry CLOCK's business, not the sentinel's — bail
-          // out and let it (or the Retry button) drive recovery. Retrying here instead
-          // would be a livelock, and not a hypothetical one: showing and hiding the
-          // "retrying…" line changes the layout, which moves the sentinel across the
-          // observer's margin, which produces an intersection edge — a self-sustaining
-          // retry loop that never spends the budget. (Measured: e2e trace showed one
-          // such unbudgeted refetch per failure cycle.) Advancing `page` here would be
-          // worse still: it would skip the failed page forever.
-          if (state["pageFetch.error"]) return;
-          // Normal path: advance the page → url changes → auto-fetch the next page.
-          state.page = state.page + 1;
-        },
+          if (!event.detail?.isIntersecting || state.noMore) return;
 
-        // Append ONLY — `page` is NOT advanced here (that is the sentinel's job).
-        // Advancing it here too would change the url on every response and cascade
-        // through the whole catalog with no scrolling.
-        pageArrived: (state, event) => {
-          const status = event.detail?.status ?? 0;
-          if (status < 200 || status >= 300) {
-            // FAILURE. Both HTTP errors and network errors funnel through
-            // wcs-fetch:response (value=null, status=4xx/5xx or 0 respectively), so
-            // this branch is where every failed page lands. `page` is left put so the
-            // same url is retried rather than skipped.
-            //
-            // Arm the retry clock HERE instead of waiting for the next scroll. The
-            // sentinel is an EDGE detector, and after a failed page there may be no
-            // edge left to detect: IntersectionObserver only fires on a visibility
-            // *change*, and a feed that failed on page 1 has no content to scroll. The
-            // clock is the only thing that can un-stick that state — "Scroll to retry"
-            // with nothing to scroll is a deadlock, not an instruction.
-            //
-            // Policy per docs/async-execution-model.md §8: `max` finite (maxRetries),
-            // `interval` fixed (the house default — backoff is opt-in and no node
-            // ships it), `resetOn` = a page landing, `excludeWhen` = budget spent
-            // (then the Retry button takes over).
-            if (state.retryAttempt < state.maxRetries) {
-              // start() is idempotent while running, so a failure that races an
-              // already-armed clock re-uses the pending tick instead of stacking one.
-              state.$command.armRetry.emit();
-            }
-            return;
-          }
-          const batch = event.detail?.value ?? [];
-          // resetOn: a page that landed is the forward signal that refills the budget.
-          state.retryAttempt = 0;
-          state.items = state.items.concat(batch);
-          if (batch.length < state.pageSize) {
-            state.noMore = true;
-            return;
-          }
-          // Re-arm: IntersectionObserver only fires on a visibility *change*. If the
-          // page we just appended didn't push the sentinel out of view (a short list,
-          // a tall viewport), no further change event would come and loading would
-          // stall. reobserve() forces a fresh observation: it rebuilds the observer so
-          // a new initial callback fires for the CURRENT visibility — re-firing
-          // sentinelChanged (advance `page`) if the sentinel is still visible, or
-          // reporting not-intersecting (wait for scroll) if it scrolled out. A bare
-          // observe() can't do this (it's idempotent for an unchanged target); that's
-          // exactly what <wcs-intersect>'s reobserve() command is for, and why the
-          // higher-level <wcs-infinite-scroll> — which has no such command — can't self-heal.
-          state.$command.rearm.emit();   // reobserve() -> new observer -> fresh callback
+          // Derive, don't increment. While a page is active (or failed), items.length
+          // has not changed, so repeated enter edges write the same primitive page and
+          // are no-ops. After success, the committed length selects the next page.
+          // This removes the hand-written !loading / !error exhaust gates without
+          // allowing page skips.
+          state.page = Math.floor(state.items.length / state.pageSize) + 1;
         },
+      },
 
-        // The retry clock fired. <wcs-timer manual once> is the `delay` this demo was
-        // missing: a failure arms it, one tick later the same url runs again. The
-        // guards make the tick a no-op when the situation resolved itself in the
-        // meantime (an opportunistic scroll retry already succeeded, a request is
-        // still in flight, or we reached the end of the feed).
-        retryTick: (state) => {
-          if (state.noMore || state["pageFetch.loading"]) return;
-          if (!state["pageFetch.error"]) return;
-          // Spend the budget when a retry is actually DISPATCHED, not when it is
-          // armed. Counting at arm time would make `retriesExhausted` true while a
-          // tick was still pending, flashing the Retry button underneath a retry
-          // that was already on its way (and a guard-skipped tick would burn budget
-          // without ever issuing a request).
-          state.retryAttempt = state.retryAttempt + 1;
-          state.$command.refetch.emit();
-        },
+      // The stream value is a page-local result because restart resets it. Commit a
+      // successful page into the long-lived feed, then re-arm the edge detector.
+      $updatedCallback(paths) {
+        if (!paths.includes("pageResult") || this.pageResult?.kind !== "success") return;
+
+        const batch = this.pageResult.items;
+        this.items = this.items.concat(batch);
+        if (batch.length < this.pageSize) {
+          this.noMore = true;
+          return;
+        }
+        this.$command.rearm.emit();
       },
     };
   </script>
 </wcs-state>
 
-<!-- ============================================================
-     Headless nodes (no UI)
-     ============================================================ -->
-<!-- No `manual`: the fetch auto-runs on connect (page 1) and on every url change.
-     url derives only from `page`, which advances only on intersection, so auto-fetch
-     fires exactly once per page — the url binding itself is the trigger on the happy
-     path. command.fetch is wired for ONE job: retrying a failed page (auto-fetch would
-     de-dup the unchanged url; an explicit fetch bypasses that). -->
-<wcs-fetch id="page-fetch"
-  data-wcs="url: pageFetch.url; command.fetch: $command.refetch; loading: pageFetch.loading; error: pageFetch.error; eventToken.value: pageArrived"></wcs-fetch>
-
-<!-- The retry clock — the scheduling primitive the sentinel cannot provide.
-     `manual` so it never runs by itself; `once` (sugar for repeat="1") makes every
-     start() exactly ONE delayed tick, i.e. a plain `delay` combinator.
-
-     `interval` is a STATIC attribute on purpose. Binding it would make the period a
-     value that lands on the updater's microtask drain, while `command.start` fires
-     synchronously from `$on` — the timer would start on the PREVIOUS period. A fixed
-     interval is also the house default for retries (async-execution-model.md §8:
-     backoff is opt-in and no node ships it yet), so nothing is lost. -->
-<wcs-timer id="retry-timer" manual once interval="1500"
-  data-wcs="command.start: $command.armRetry; eventToken.tick: retryTick"></wcs-timer>
+<!-- $updatedCallback observes paths that participate in bindings. This hidden
+     binding is the page-local stream result -> long-lived items commit boundary. -->
+<output hidden aria-hidden="true" data-wcs="textContent: pageResult"></output>
 
 <!-- ============================================================
      Feed
@@ -291,9 +235,8 @@
 <!-- The sentinel. target="self" observes this element itself (display:block) with a
      240px preload margin. On enter it emits wcs-intersect:change; state turns that
      into a page load and re-arms via reobserve(). No `once` — we need it repeatedly.
-     Note it is an EDGE source, not a clock: it can only report that visibility
-     changed, so it cannot schedule anything on its own. That is why failures are
-     recovered by <wcs-timer> above and not by "scroll to retry". -->
+     It remains only an edge source; retry scheduling belongs to the abort-aware
+     $streams producer rather than to intersection events. -->
 <wcs-intersect id="sentinel" target="self" root-margin="240px 0px"
   data-wcs="eventToken.intersecting: sentinelChanged; command.reobserve: $command.rearm"></wcs-intersect>
 

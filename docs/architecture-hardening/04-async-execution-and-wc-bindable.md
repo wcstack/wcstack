@@ -5,6 +5,12 @@
 - **外部仕様スナップショット**: wc-bindable-protocol
   `5ec0deef212578a072b2f669d2a5554f254253e0`、`@wc-bindable/core@0.8.0`
 
+> **後日更新（2026-08-06）**: 本書の決定ゲート 1 が分析した
+> `examples/state-intersect-scroll` は、その後 `$streams` の依存駆動 restart を使う形へ
+> refactor された。§1 の `!loading` / `!error` / `<wcs-timer>` に関する記述は
+> refactor 前の実測記録であり、現行 example の説明ではない。現行設計は example README と
+> [`packages/state/docs/streams.md`](../../packages/state/docs/streams.md) を参照。
+
 ## 問題
 
 古い要求が新しい要求より後に完了すると、現在の入力と無関係な結果で state を巻き戻す。
@@ -183,5 +189,5 @@ lane が直列化するのは `$on` ハンドラの実行だが、wcstack のイ
 - [非同期実行モデル](../async-execution-model.md)
 - [非同期 I/O ノード指針](../async-io-node-guidelines.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
-- [発火タイミング契約](../timing-and-firing-contract.md) — 決定ゲート 1 (d) が置き換えたい「手書きガードの正しさの根拠」
-- `examples/state-intersect-scroll` — ノードをまたぐ実行を userland で手書きした実例（決定ゲート 1 (d) の動機）
+- [発火タイミング契約](../timing-and-firing-contract.md) — 現行 example の `$streams` restart と同値 page 選択、および refactor 前の発火順分析
+- `examples/state-intersect-scroll` — 現行は `$streams` 実例。本書中の手書き版は決定ゲート 1 (d) の歴史的動機
