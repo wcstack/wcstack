@@ -36,6 +36,15 @@ Shadow DOM を持たないコンポーネントでも使えるが、名前空間
 `name` 属性が必須（`<wcs-state bind-component="state" name="light-user">`）。
 バインドは `@light-user` で state 名を明示する。
 
+## DCC との排他
+
+`bind-component` と DCC はコンポーネントごとにどちらか一方だけを使う。
+`bind-component` のコンポーネントは `static wcBindable` を持たない ＝ wc-bindable の producer では
+ないため、spread（`...: obj`）と command token は使えない。宣言されたプロパティ面ではなく
+**パス**で配線するのがこの機構であり、これは意図的な設計。
+機構の選び方と対応表は
+[`packages/state/README.md` の「Choosing a Component Mechanism」](../../README.md#choosing-a-component-mechanism)。
+
 ## 既知の制約
 
 実装と設計の食い違いは

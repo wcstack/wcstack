@@ -96,6 +96,20 @@ describe('State DCC検出', () => {
     await expect((stateEl as any).connectedCallback()).rejects.toThrow(/DCC/);
   });
 
+  // §3.1: DCC の state はテンプレートに属しインスタンスごとにロードされるので、
+  // 定義時点のホストのプロパティをソースにする bind-component とは両立しない。
+  // 従来は DCC 分岐の return で無言に無視していた。
+  it('DCC定義内のbind-componentはエラーになること', async () => {
+    const { stateEl } = createDCCSetup(
+      { 'bind-component': 'state' },
+      '<script type="module">export default {}</script>',
+    );
+
+    await expect((stateEl as any).connectedCallback())
+      .rejects.toThrow(/"bind-component" cannot be used inside a \[data-wc-definition\] host/);
+    expect(defineDCCMock).not.toHaveBeenCalled();
+  });
+
   it('DCC検出後にinitializePromiseとconnectedCallbackPromiseが解決されること', async () => {
     const { stateEl } = createDCCSetup({}, '<script type="module">export default {}</script>');
     await (stateEl as any).connectedCallback();
