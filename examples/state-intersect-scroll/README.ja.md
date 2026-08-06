@@ -51,6 +51,11 @@ $updatedCallback
   -> command.reobserve
        v
 現在の可視性を再通知、または次の scroll を待つ
+
+既存 item がある状態で error 確定
+  -> 実際の scroll で sentinel を leave（1回だけ arm）
+  -> 再 enter で retryNonce を増加
+  -> 同じ page を新しい有界予算で restart
 ```
 
 ## 要点
@@ -66,15 +71,37 @@ $updatedCallback
   async generator `loadPage` が有限の `1 + maxRetries` attempt と abort 対応の固定 delay を所有します。
   retry 進捗は通常の stream 値として yield し、最終失敗は
   `$streamStatus.pageResult === "error"` と `$streamError.pageResult` に現れます。
-- **手動 Retry も依存駆動です。** ボタンは `retryNonce` を増やします。page 番号は変えずに、error 状態の
-  stream を新しい予算で restart できます。
+- **自動予算後の Retry も依存駆動です。** ボタンは `retryNonce` を増やします。既存 item があれば、
+  sentinel から実際に離れて戻る scroll も同じ書き込みを行います。page 番号は変えずに、error 状態の
+  stream を新しい予算で restart します。
 - **ページ単位と feed 全体の寿命を分離します。** `$streams` の値は restart ごとに reset されるため、
   `pageResult` は現在ページだけを保持します。成功値は `$updatedCallback` が長寿命の `items` へ commit します。
-  hidden な `pageResult` binding はこの commit 境界を明示します（`$updatedCallback` は binding に参加する path を観測します）。
+  `$updatedCallback` は binding 駆動なので、表示中の stream status meter をこの commit 境界の明示的な
+  観測点にしています。hidden なダミー購読は使いません。
 - **再観測で short-page stall を防ぎます。** full page の成功後に `reobserve()` を呼び、sentinel が境界を
   跨いでいなくても現在の可視性を再通知させます。partial page は `noMore` を立てて終了します。
-- **retry 予算は有限です。** `maxRetries: 3` なら恒久失敗時は正確に4 request で止まり、その後は人間へ
-  schedule を返します。交差 edge は同じ page を書くだけなので、予算外 retry 経路を作れません。
+- **retry 予算は有限です。** `maxRetries: 3` なら恒久失敗時は正確に4 request で停止します。error 時に
+  `reobserve()` は呼びません。可視 sentinel を再観測すると、error layout 自体が無限 retry scheduler に
+  なり得るためです。復帰にはボタン、または error 確定後に scroll 位置が変わる `leave → enter` が必要です。
+  空 feed では scroll できないため、引き続きボタンが必要です。
+
+## 意図的に残る命令的境界
+
+この例は、`$streams` が RxJS 規模のデータフロー代数を持つと主張するものではありません。
+残っている命令的処理は、現行 API の実際の境界です。
+
+- producer 内の `fold` は依存 restart ごとに `initial` へ戻ります。page run を跨いで結果を畳み込めないため、
+  `items = items.concat(batch)` は feed 全体の長寿命 state へ commit する命令的処理です。
+- `$streams` が持つのは switchMap 型 restart であり、`retryWhen`、timer、merge、occurrence operator は
+  ありません。そのため attempt loop と abort 対応 delay は producer が所有します。
+- `retryNonce` は「同じ page をもう一度」を occurrence から変化する依存値へ変換します。これは意図的ですが、
+  value ベースの restart API が必要とする符号化であることに変わりはありません。
+- commit-before-reobserve はグラフの型ではなく `$updatedCallback` の文順で表します。ただし `reobserve()` が
+  発火するのは後続 observer task であり、page は commit 済み件数から冪等に導出されるため、2文間の同期 race に
+  正しさを依存させてはいません。
+
+宣言的なのは依存・cancel の edge です。run を跨ぐ蓄積、retry policy、終端 commit は命令的に残ります。
+これらを隠すのではなく消すには、state-only effect/watch API と時間・合成 operator が必要です。
 
 ## テスト
 
@@ -86,8 +113,9 @@ cd e2e
 npx playwright test state-intersect-scroll
 ```
 
-失敗系テストは意図的に一切スクロールしません。active run の cancel と stale 結果の破棄、予算内の自動復帰、
-`1 + maxRetries` での厳密な停止、手動復帰、layout 起点の retry loop が無いことを検証します。
+失敗系テストは active run の cancel と stale 結果の破棄、予算内の自動復帰、`1 + maxRetries` での厳密な停止、
+ボタン復帰、layout 起点の retry loop が無いことを検証します。別のテストでは40件 commit 後に page 3 の予算を
+使い切らせ、自動再試行せず停止すること、その後の sentinel `leave → enter` が page 3 を再試行することを確認します。
 正常系は各 page を1回ずつ要求して87件すべてを読み、partial page で終了します。
 
 ## 関連

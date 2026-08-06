@@ -52,6 +52,11 @@ $updatedCallback
   -> command.reobserve
        v
 fresh visibility callback, or wait for scroll
+
+settled error with existing items
+  -> a real scroll leaves the sentinel (arm once)
+  -> re-enter increments retryNonce
+  -> restart the same page with a fresh bounded budget
 ```
 
 ## Key Points
@@ -68,18 +73,40 @@ fresh visibility callback, or wait for scroll
   `loadPage` async generator therefore owns a finite `1 + maxRetries` attempt loop and an abort-aware
   fixed delay. Retry progress is yielded as ordinary stream values; final failure appears through
   `$streamStatus.pageResult === "error"` and `$streamError.pageResult`.
-- **Manual retry is also dependency-driven.** The Retry button increments `retryNonce`. The page stays
-  unchanged, but the dependency write restarts an errored stream with a fresh retry budget.
+- **Retry after the automatic budget is dependency-driven.** The Retry button increments `retryNonce`.
+  With existing items, scrolling away from the sentinel and back does the same after a genuine leave edge.
+  The page stays unchanged, but the dependency write restarts an errored stream with a fresh retry budget.
 - **Page-local and feed-long lifetimes stay separate.** `$streams` resets its value on restart, so
   `pageResult` contains only the current page operation. `$updatedCallback` commits a successful result
-  into the long-lived `items` array. The hidden `pageResult` binding makes that commit boundary explicit,
-  because `$updatedCallback` observes paths participating in bindings.
+  into the long-lived `items` array. `$updatedCallback` is binding-driven, so the visible stream-status
+  meter is the explicit observation point for this commit boundary. No hidden dummy subscriber is used.
 - **Re-observation prevents short-page stalls.** A successful full page calls `reobserve()`. A new
   observer reports current visibility even if the sentinel never crossed the boundary, so a tall viewport
   can continue loading; a partial page sets `noMore` instead.
 - **The retry budget is finite.** A permanently failing page makes exactly four requests with
-  `maxRetries: 3`, then hands scheduling to the user. Intersection edges cannot create an unbudgeted retry
-  path because they keep writing the unchanged page number.
+  `maxRetries: 3`, then stops. The demo deliberately does not call `reobserve()` on error: doing so while
+  the sentinel is visible would turn error layout into an infinite retry scheduler. Recovery requires the
+  button, or a scroll-position-changing `leave → enter` after the settled error. An empty feed therefore
+  still requires the button.
+
+## Deliberate Imperative Boundary
+
+This example is not a claim that `$streams` is an RxJS-sized dataflow algebra. The remaining imperative
+parts are real API boundaries:
+
+- The producer-local `fold` resets to `initial` on every dependency restart. It cannot fold page results
+  across page runs, so `items = items.concat(batch)` is an imperative commit into feed-long state.
+- `$streams` has switchMap-style restart, but no `retryWhen`, timer, merge, or occurrence operator. The
+  producer therefore owns the attempt loop and abort-aware delay.
+- `retryNonce` converts “run the same page again” from an occurrence into a changing dependency value.
+  This is intentional, but it is still an encoding necessitated by the value-based restart API.
+- Commit-before-reobserve is expressed by statement order in `$updatedCallback`, not by a graph type.
+  `reobserve()` only schedules a later observer task, and deriving `page` from committed length is
+  idempotent, so correctness does not depend on a synchronous race between those two statements.
+
+The graph is declarative at dependency and cancellation edges; cross-run accumulation, retry policy, and
+the terminal commit remain imperative. A state-only effect/watch API plus temporal/composition operators
+would be needed to remove those boundaries rather than merely hide them.
 
 ## Tests
 
@@ -91,10 +118,11 @@ cd e2e
 npx playwright test state-intersect-scroll
 ```
 
-The failure tests intentionally never scroll. They verify active-run cancellation and stale-result dropping,
-recovery within the retry budget, exact stopping after `1 + maxRetries`, manual recovery, and the absence of
-a layout-driven retry loop. The happy-path test loads all 87 items exactly once and reaches the partial-page
-terminator.
+The failure tests verify active-run cancellation and stale-result dropping, recovery within the retry
+budget, exact stopping after `1 + maxRetries`, button recovery, and the absence of a layout-driven retry
+loop. A separate test exhausts page 3 after 40 committed items, proves that it stays stopped, then verifies
+that a deliberate sentinel `leave → enter` retries page 3. The happy-path test loads all 87 items exactly
+once and reaches the partial-page terminator.
 
 ## See Also
 

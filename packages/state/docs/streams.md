@@ -140,7 +140,8 @@ get isStreaming() {
 Observation guarantees:
 
 - Intermediate statuses are not guaranteed to be observable. Transitions coalesced into one update batch (e.g. `active → done` within the same tick) may render only the final value — the same contract as every other binding update.
-- `$updatedCallback` receives `<name>`, `$streamStatus.<name>`, and `$streamError.<name>` as ordinary update paths.
+- Stream values and companion paths participate in ordinary binding updates as `<name>`, `$streamStatus.<name>`, and `$streamError.<name>`.
+- `$updatedCallback` is **binding-driven**: its `paths` list contains paths whose live DOM bindings were actually applied in that drain. Declaring a `$streams` entry does not by itself subscribe `$updatedCallback` to its value or companions. If a callback must react to stream completion, bind a meaningful value or status in the UI (for example, a visible status indicator). There is currently no state-only `$watch` / `$effects` declaration.
 
 ---
 
@@ -170,6 +171,7 @@ Details:
 
 - **Coalescing** — multiple dependency writes within one tick trigger exactly **one** restart.
 - **Status is irrelevant** — `done` and `error` streams also restart when a dependency is written. This is the retry story: there is no automatic reconnection; retrying = touching a dependency.
+- **Restart is value-driven** — there is no occurrence-only restart command. “Run again with the same arguments” must be represented by changing an additional dependency (for example, a generation counter), or by replacing the state declaration.
 - **Computed dependencies work** — if `args` reads a getter, changes to the getter's own dependencies trigger the restart.
 - **Stream chaining is legitimate** — stream B's `args` may read stream A's value, or `$streamStatus.A`. A's chunk arrivals (or status transitions) then restart B, chaining switchMaps naturally.
 - **Canonical form for namespace reads in `args` / getters** is the dotted bracket form `state["$streamStatus.a"]`. The chained form `state.$streamStatus.a` returns the value but does **not** register a dependency — the chain breaks silently.
