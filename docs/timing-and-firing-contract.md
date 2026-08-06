@@ -91,7 +91,13 @@
 → `!loading` / `!error` の手書き exhaust guard は不要で、通常の交差 edge は失敗ページの予算外 retry にもならない。
 同じ page を意図的に retry する操作は、別依存 `retryNonce` を更新する。これは occurrence（同じ引数でもう一度）を
 value 差分へ符号化する現行 `$streams` restart API の境界である。ボタンに加え、既存 item がある error 状態では、
-error 確定時から scrollY が変わった sentinel `leave` だけを1回 arm し、後続 `enter` が `retryNonce` を更新する。
+「error 確定時から scrollY が動いた」証拠を伴う sentinel edge が `retryNonce` を更新する。証拠は2系統あり、
+scrollY が動いた `leave` は後続 `enter` を1回 arm し、scrollY が動いた `enter` はそれ自体で成立する。
+後者は、error UI の layout shift 自体が sentinel を band 外へ押し出した場合の救済である — その leave は
+scrollY 不変のまま発火して arm できず、以後ユーザーが離れても新しい leave edge は出ない（IntersectionObserver は
+遷移でしか発火しない）ため、arm だけを資格にすると戻りの一往復が黙って無効化される。前者は、戻りの enter が
+ちょうど `errorScrollY` へ着地する場合（clamp された最下部への fling 等）の救済である。layout 起因の edge は
+scrollY が動かないためどちらの資格も満たさず、error 描画だけで retry が予約されることはない。
 
 error 時に `reobserve()` してはならない。sentinel が可視のままだと新 observer の初回 callback が即 retry し、
 再び予算を使い切るたびに同じ循環を起こす layout 駆動の無限 retry になる。したがって「error でも rearm」は不採用とし、

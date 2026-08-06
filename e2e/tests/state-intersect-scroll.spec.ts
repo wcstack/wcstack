@@ -8,6 +8,8 @@ import { collectErrors } from "./helpers";
 // というデッドロック。stream producer 内の abort 対応 delay/retry がそれを解く。
 // page1 の失敗系はスクロールしない。別ケースで、既存 item 後の失敗だけが明示的な
 // sentinel leave → enter により復帰し、layout だけでは retry しないことも検証する。
+// さらに、error UI の挿入自体が sentinel を band 外へ押し出す(= leave edge が
+// scrollY 不変のまま出る)場合でも、一往復のスクロールで復帰できることを検証する。
 
 const PAGE_SIZE = 20;
 
@@ -238,6 +240,51 @@ test.describe("examples/state-intersect-scroll", () => {
     expect(items.requests().filter((entry) => entry.startsWith("3:")))
       .toEqual(["3:503", "3:503", "3:503", "3:503", "3:200"]);
     await expect(page.locator(".stream-status")).toHaveText("done");
+
+    expect(appErrors(errors)).toEqual([]);
+  });
+
+  test("error 描画が sentinel を band 外へ押し出しても、一往復のスクロールで同じ page を再試行する", async ({ page }) => {
+    const errors = collectErrors(page);
+    const items = await routeItems(page, Number.MAX_SAFE_INTEGER, 3);
+
+    await page.goto("/examples/state-intersect-scroll/");
+    // 確定 error の UI を強制的に高くし、その挿入自体が sentinel を 240px の観測
+    // band の外へ押し出すようにする。この leave edge は scrollY 不変のまま出るので
+    // arm できず、以後ユーザーが上へ去っても(sentinel は既に band 外のため)新しい
+    // leave edge は出ない。arm だけを retry の資格にすると、この構成では最初の
+    // 一往復が黙って無効化される。実アプリでは error 文言が伸びるだけで再現する。
+    await page.addStyleTag({ content: ".end-msg.error { padding-bottom: 600px; }" });
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE);
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE * 2, { timeout: 15_000 });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+    await expect(page.locator(".retry-btn")).toBeVisible({ timeout: 20_000 });
+    // 前提の成立確認: error 挿入が sentinel を実際に band 外へ押し出している。
+    await expect.poll(() => page.evaluate(() => {
+      const rect = document.getElementById("sentinel")!.getBoundingClientRect();
+      return rect.top > window.innerHeight + 240;
+    })).toBe(true);
+    // layout 起因の leave は scrollY が動いていないため retry を予約しない。
+    const settled = items.requestCount();
+    await page.waitForTimeout(2_000);
+    expect(items.requestCount()).toBe(settled);
+
+    // 一往復: 戻りの enter が「error 確定時から scrollY が動いた」ことを自ら証明し、
+    // arm 無しでも retryNonce を更新する。
+    items.stopFailing();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+    // 復帰後は rearm の初回 callback が次ページを続けて選び得るため、件数は下限で
+    // 検証し、page 3 のリクエスト列は正確に一致させる。
+    await expect.poll(async () => page.locator(".item").count(), { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(PAGE_SIZE * 3);
+    expect(items.requests().filter((entry) => entry.startsWith("3:")))
+      .toEqual(["3:503", "3:503", "3:503", "3:503", "3:200"]);
 
     expect(appErrors(errors)).toEqual([]);
   });

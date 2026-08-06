@@ -54,8 +54,10 @@ $updatedCallback
 fresh visibility callback, or wait for scroll
 
 settled error with existing items
-  -> a real scroll leaves the sentinel (arm once)
-  -> re-enter increments retryNonce
+  -> a sentinel edge carrying moved-scrollY evidence increments retryNonce
+       | leave at a moved scrollY: arms the next enter
+       | enter at a moved scrollY: qualifies by itself
+       | edge at an unchanged scrollY (error layout shift): ignored
   -> restart the same page with a fresh bounded budget
 ```
 
@@ -64,18 +66,24 @@ settled error with existing items
 - **This uses the advertised switchMap semantics.** `page`, `pageSize`, `maxRetries`, and `retryNonce`
   are read by `$streams.pageResult.args`. Changing one aborts the current fetch or retry delay and starts
   a run with the newest dependency snapshot. Stale runs cannot commit a page.
-- **There is no hand-written loading/error exhaust gate.** The sentinel handler has no
-  `if (loading) return` or `if (error) return`. It derives the requested page from committed item count.
+- **There is no hand-written loading/error exhaust gate on pagination.** Instead of guarding with
+  `if (loading) return`, the sentinel handler derives the requested page from committed item count.
   Until a page succeeds, repeated enter edges write the same primitive and do nothing; after success,
   they select exactly the next page. A naive `page++` would be incorrect with switchMap because a second
-  edge could cancel page N and jump to N+1.
+  edge could cancel page N and jump to N+1. The `showError` branch that does exist is retry
+  qualification — deciding whether an edge counts as a user gesture — not an exhaust gate.
 - **`$streams` is switchMap, not retryWhen.** It deliberately has no automatic reconnection. The
   `loadPage` async generator therefore owns a finite `1 + maxRetries` attempt loop and an abort-aware
   fixed delay. Retry progress is yielded as ordinary stream values; final failure appears through
   `$streamStatus.pageResult === "error"` and `$streamError.pageResult`.
 - **Retry after the automatic budget is dependency-driven.** The Retry button increments `retryNonce`.
-  With existing items, scrolling away from the sentinel and back does the same after a genuine leave edge.
-  The page stays unchanged, but the dependency write restarts an errored stream with a fresh retry budget.
+  With existing items, scrolling away from the sentinel and back does the same. The qualification is
+  "scrollY moved since the error settled", carried by either edge: a leave at a moved scrollY arms the
+  next enter, and an enter at a moved scrollY qualifies by itself. The second clause matters when the
+  error UI's own insertion pushed the sentinel out of the observer band — that leave fires at an
+  unchanged scrollY and cannot arm, and the user's departure produces no further edge, so an arm-only
+  design would silently swallow the first round trip. The page stays unchanged, but the dependency
+  write restarts an errored stream with a fresh retry budget.
 - **Page-local and feed-long lifetimes stay separate.** `$streams` resets its value on restart, so
   `pageResult` contains only the current page operation. `$updatedCallback` commits a successful result
   into the long-lived `items` array. `$updatedCallback` is binding-driven, so the visible stream-status
@@ -86,7 +94,7 @@ settled error with existing items
 - **The retry budget is finite.** A permanently failing page makes exactly four requests with
   `maxRetries: 3`, then stops. The demo deliberately does not call `reobserve()` on error: doing so while
   the sentinel is visible would turn error layout into an infinite retry scheduler. Recovery requires the
-  button, or a scroll-position-changing `leave → enter` after the settled error. An empty feed therefore
+  button, or a sentinel edge at a moved scrollY after the settled error. An empty feed therefore
   still requires the button.
 
 ## Deliberate Imperative Boundary
@@ -103,6 +111,15 @@ parts are real API boundaries:
 - Commit-before-reobserve is expressed by statement order in `$updatedCallback`, not by a graph type.
   `reobserve()` only schedules a later observer task, and deriving `page` from committed length is
   idempotent, so correctness does not depend on a synchronous race between those two statements.
+- The scroll-retry qualification reads `window.scrollY` — an out-of-band viewport source the state
+  module otherwise never touches, and one that assumes the document itself is the scroll container.
+  The real requirement is "did the user scroll between these two intersection edges", which only a
+  driver observing scroll could decide; `<wcs-intersect>` has no qualified re-entry event, so the
+  state module approximates it from edge-time scroll positions. Edges are also the only trigger: a
+  round trip that never crosses the observer band produces no event at all, so no edge-keyed
+  qualification can see it — scrolling on past the previous spot recovers. An I/O node emitting a
+  qualified `retryRequested` event token would collapse both fields and the `window` read into one
+  `$on` line.
 
 The graph is declarative at dependency and cancellation edges; cross-run accumulation, retry policy, and
 the terminal commit remain imperative. A state-only effect/watch API plus temporal/composition operators
@@ -121,8 +138,10 @@ npx playwright test state-intersect-scroll
 The failure tests verify active-run cancellation and stale-result dropping, recovery within the retry
 budget, exact stopping after `1 + maxRetries`, button recovery, and the absence of a layout-driven retry
 loop. A separate test exhausts page 3 after 40 committed items, proves that it stays stopped, then verifies
-that a deliberate sentinel `leave → enter` retries page 3. The happy-path test loads all 87 items exactly
-once and reaches the partial-page terminator.
+that a deliberate sentinel `leave → enter` retries page 3. Another forces the error UI itself to push the
+sentinel out of the observer band — the configuration where the only leave edge fires at an unchanged
+scrollY — and proves a single scroll round trip still retries. The happy-path test loads all 87 items
+exactly once and reaches the partial-page terminator.
 
 ## See Also
 

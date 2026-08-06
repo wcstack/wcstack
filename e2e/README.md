@@ -56,7 +56,7 @@ Playwright の `page.route()` で `/api/items` を隔離して横取りします
 | `users-crud` (packages/fetch/examples) | state + fetch。一覧 auto-fetch、行クリック → computed url → 詳細フェッチ、manual POST → 成功バナー → command-token による一覧リロード |
 | `state-cross-tab-todo` | state + storage + broadcast。2 ページ (=2 タブ) 間で localStorage 経由のリスト同期と BroadcastChannel 経由の live シグナル |
 | `state-sse-dashboard` | state `$streams` + SSE。host 変更時の switchMap 型 cancel/restart、旧 connection の close、最新 feed だけの反映 |
-| `state-intersect-scroll` | state `$streams` + intersection。in-flight cancel / stale-drop、順序付き pagination、有界 retry、予算切れ停止、手動復帰、全87件の終端 |
+| `state-intersect-scroll` | state `$streams` + intersection。in-flight cancel / stale-drop、順序付き pagination、有界 retry、予算切れ停止、手動復帰、scroll 一往復での error page 再試行 (error UI が sentinel を band 外へ押し出す構成含む)、全87件の終端 |
 
 ### スキップ (15)
 
