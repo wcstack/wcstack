@@ -120,6 +120,12 @@
       // The Retry button increments this dependency to restart a failed page without
       // pretending its page number changed.
       retryNonce: 0,
+      // A failed page may be retried by scrolling away and back, but only after a
+      // real scroll changed scrollY while the stream was settled in error. This
+      // prevents error layout/reobserve callbacks from becoming an infinite retry
+      // scheduler when the sentinel remains visible.
+      scrollRetryArmed: false,
+      errorScrollY: 0,
 
       $commandTokens: ["rearm"],
       $eventTokens: ["sentinelChanged"],
@@ -158,12 +164,31 @@
       },
 
       retryNow() {
+        this.scrollRetryArmed = false;
         this.retryNonce = this.retryNonce + 1;
       },
 
       $on: {
         sentinelChanged: (state, event) => {
-          if (!event.detail?.isIntersecting || state.noMore) return;
+          const isIntersecting = event.detail?.isIntersecting === true;
+
+          if (state.showError) {
+            if (!isIntersecting) {
+              // Merely inserting the error UI can move the sentinel. Arm only when
+              // the user has also moved the viewport since this error settled.
+              if (window.scrollY !== state.errorScrollY) {
+                state.scrollRetryArmed = true;
+              }
+              return;
+            }
+            if (state.scrollRetryArmed) {
+              state.scrollRetryArmed = false;
+              state.retryNonce = state.retryNonce + 1;
+            }
+            return;
+          }
+
+          if (!isIntersecting || state.noMore) return;
 
           // Derive, don't increment. While a page is active (or failed), items.length
           // has not changed, so repeated enter edges write the same primitive page and
@@ -176,8 +201,18 @@
 
       // The stream value is a page-local result because restart resets it. Commit a
       // successful page into the long-lived feed, then re-arm the edge detector.
+      // $updatedCallback is binding-driven, so the visible stream-status meter below
+      // is also the explicit observation point for this imperative commit boundary.
       $updatedCallback(paths) {
-        if (!paths.includes("pageResult") || this.pageResult?.kind !== "success") return;
+        if (!paths.includes("$streamStatus.pageResult")) return;
+
+        const status = this["$streamStatus.pageResult"];
+        if (status === "error") {
+          this.scrollRetryArmed = false;
+          this.errorScrollY = window.scrollY;
+          return;
+        }
+        if (status !== "done" || this.pageResult?.kind !== "success") return;
 
         const batch = this.pageResult.items;
         this.items = this.items.concat(batch);
@@ -191,16 +226,13 @@
   </script>
 </wcs-state>
 
-<!-- $updatedCallback observes paths that participate in bindings. This hidden
-     binding is the page-local stream result -> long-lived items commit boundary. -->
-<output hidden aria-hidden="true" data-wcs="textContent: pageResult"></output>
-
 <!-- ============================================================
      Feed
      ============================================================ -->
 <div class="meter" role="status">
   <span>Loaded <b data-wcs="textContent: loadedCount"></b> items</span>
   <span>over <b data-wcs="textContent: page"></b> pages</span>
+  <span>stream <b class="stream-status" data-wcs="textContent: $streamStatus.pageResult"></b></span>
 </div>
 
 <ul class="item-list">
@@ -223,8 +255,9 @@
 <template data-wcs="if: showRetrying">
   <p class="end-msg">Couldn't load — retrying…</p>
 </template>
-<!-- Auto-retry budget spent. The button is not a nicety: when the feed failed while
-     empty there is nothing to scroll, so a human is the only scheduler left. -->
+<!-- Auto-retry budget spent. With existing items, leaving and re-entering the
+     sentinel retries the same page. When the feed is empty there is nothing to
+     scroll, so the explicit button remains the recovery path. -->
 <template data-wcs="if: showError">
   <p class="end-msg error">Couldn't load.<button type="button" class="retry-btn" data-wcs="onclick: retryNow">Retry</button></p>
 </template>
@@ -235,8 +268,8 @@
 <!-- The sentinel. target="self" observes this element itself (display:block) with a
      240px preload margin. On enter it emits wcs-intersect:change; state turns that
      into a page load and re-arms via reobserve(). No `once` — we need it repeatedly.
-     It remains only an edge source; retry scheduling belongs to the abort-aware
-     $streams producer rather than to intersection events. -->
+     It remains an edge source. Producer retries own the bounded delay/budget; after
+     that budget is spent, an explicit leave -> enter edge may restart the same page. -->
 <wcs-intersect id="sentinel" target="self" root-margin="240px 0px"
   data-wcs="eventToken.intersecting: sentinelChanged; command.reobserve: $command.rearm"></wcs-intersect>
 

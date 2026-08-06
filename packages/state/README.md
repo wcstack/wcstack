@@ -1491,6 +1491,8 @@ Event tokens share the same `Token` pub/sub primitive as command tokens — `nam
 
 Command tokens and event tokens carry discrete interactions. **`$streams`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$updatedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects.
 
+`$updatedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. There is currently no state-only `$watch` / `$effects` declaration; see the [stream reference](docs/streams.md) for the observation contract.
+
 ```html
 <wcs-state>
   <script type="module">
@@ -1806,14 +1808,14 @@ State objects can define `$connectedCallback`, `$disconnectedCallback`, and `$up
 |---|---|---|
 | `$connectedCallback` | After state initialization on first connect; on every reconnect thereafter | Yes (awaited) |
 | `$disconnectedCallback` | When the element is removed from the DOM | No (sync only) |
-| `$updatedCallback(paths, indexesListByPath)` | After state updates are applied | Yes (not awaited) |
+| `$updatedCallback(paths, indexesListByPath)` | After updates are applied to live bindings | Yes (not awaited) |
 
 All hooks except `$disconnectedCallback` support `async` — you can use `async/await` in any of them. Since the reactive proxy detects every property assignment as a change, standard `async/await` with direct property updates is sufficient for asynchronous operations — loading flags, fetched data, and error messages are all just property assignments, without requiring additional abstractions for async state management.
 
 - `this` inside hooks is the state proxy with full read/write access
 - `$connectedCallback` is called **every time** the element is connected (including re-insertion after removal), making it suitable for setup that should be re-established
 - `$disconnectedCallback` is called synchronously — use it for cleanup such as clearing timers, removing event listeners, or releasing resources
-- `$updatedCallback(paths, indexesListByPath)` receives the updated path list. For wildcard updates, `indexesListByPath` contains the updated index sets. Can be `async`, but the return value is not awaited
+- `$updatedCallback(paths, indexesListByPath)` receives the paths whose live bindings were applied in that drain. Unbound state writes do not invoke it or appear in `paths`. For wildcard updates, `indexesListByPath` contains the updated index sets. Can be `async`, but the return value is not awaited
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
 ## Configuration

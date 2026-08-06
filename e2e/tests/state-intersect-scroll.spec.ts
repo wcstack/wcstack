@@ -6,7 +6,8 @@ import { collectErrors } from "./helpers";
 // 回帰対象: page1 が失敗するとフィードが空 → スクロールする対象が無い →
 // IntersectionObserver は可視性の「変化」でしか発火しない → 復帰する手段が消える、
 // というデッドロック。stream producer 内の abort 対応 delay/retry がそれを解く。
-// **失敗系テストはスクロールしない** — スクロールで直るなら回帰が再現しないため。
+// page1 の失敗系はスクロールしない。別ケースで、既存 item 後の失敗だけが明示的な
+// sentinel leave → enter により復帰し、layout だけでは retry しないことも検証する。
 
 const PAGE_SIZE = 20;
 
@@ -35,21 +36,22 @@ interface ItemsRoute {
 
 /**
  * /api/items をテストごとに横取りする(serve.mjs にモックを足さない = 並列実行でも隔離される)。
- * `failFirst` 回だけ 503 を返し、その後は正常なページを返す。
+ * `failFirst` 回だけ 503 を返し、その後は正常なページを返す。`failPage` 指定時は
+ * そのページだけを失敗注入の対象にする。
  */
-async function routeItems(page: Page, failFirst: number): Promise<ItemsRoute> {
+async function routeItems(page: Page, failFirst: number, failPage?: number): Promise<ItemsRoute> {
   const seen: string[] = [];
   let remainingFailures = failFirst;
   await page.route("**/api/items*", async (route) => {
     const url = new URL(route.request().url());
-    if (remainingFailures > 0) {
+    const p = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    if (remainingFailures > 0 && (failPage === undefined || p === failPage)) {
       remainingFailures--;
       seen.push(`${url.searchParams.get("page")}:503`);
       await route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"injected"}' });
       return;
     }
     seen.push(`${url.searchParams.get("page")}:200`);
-    const p = Math.max(1, Number(url.searchParams.get("page")) || 1);
     const limit = Math.max(1, Number(url.searchParams.get("limit")) || PAGE_SIZE);
     const slice = catalog.slice((p - 1) * limit, (p - 1) * limit + limit);
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(slice) });
@@ -189,6 +191,53 @@ test.describe("examples/state-intersect-scroll", () => {
     // loading/error guard を外しても、commit 済み件数から page を導出するため
     // switchMap restart がページを飛ばさず、各ページをちょうど1回ずつ要求する。
     expect(items.requests()).toEqual(["1:200", "2:200", "3:200", "4:200", "5:200"]);
+
+    expect(appErrors(errors)).toEqual([]);
+  });
+
+  test("既存 item 後の失敗は自動再試行せず、sentinel を離れて戻ると同じ page を再試行する", async ({ page }) => {
+    const errors = collectErrors(page);
+    const items = await routeItems(page, Number.MAX_SAFE_INTEGER, 3);
+
+    await page.goto("/examples/state-intersect-scroll/");
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE);
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE * 2, { timeout: 15_000 });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+    const retryButton = page.locator(".retry-btn");
+    await expect(retryButton).toBeVisible({ timeout: 20_000 });
+    expect(items.requests().filter((entry) => entry.startsWith("3:")))
+      .toEqual(["3:503", "3:503", "3:503", "3:503"]);
+
+    // Error rendering or an observer callback alone must not create an unbounded
+    // retry loop while the sentinel is still visible.
+    const settled = items.requestCount();
+    await page.waitForTimeout(3_000);
+    expect(items.requestCount()).toBe(settled);
+
+    // A deliberate leave after the settled error arms one scroll retry. Re-entering
+    // changes retryNonce (not page), so page 3 receives a fresh bounded stream run.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => {
+      let armed = false;
+      const stateElement = document.querySelector("wcs-state") as unknown as {
+        createState: (
+          mutability: "readonly",
+          callback: (state: { scrollRetryArmed: boolean }) => void,
+        ) => void;
+      };
+      stateElement.createState("readonly", (state) => { armed = state.scrollRetryArmed; });
+      return armed;
+    })).toBe(true);
+
+    items.stopFailing();
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(page.locator(".item")).toHaveCount(PAGE_SIZE * 3, { timeout: 15_000 });
+    expect(items.requests().filter((entry) => entry.startsWith("3:")))
+      .toEqual(["3:503", "3:503", "3:503", "3:503", "3:200"]);
+    await expect(page.locator(".stream-status")).toHaveText("done");
 
     expect(appErrors(errors)).toEqual([]);
   });

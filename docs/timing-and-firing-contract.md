@@ -88,9 +88,16 @@
 3. 成功 chunk を `$updatedCallback` が `items` へ commit し、`reobserve()` する
 4. 新しい可視性 callback では式が N+1 を返す。`page` 更新の updater drain 後、`$streams.args` の依存 hit が旧 run を abort し、新しい args で run を開始する
 
-→ `!loading` / `!error` の手書き exhaust guard は不要で、交差 edge は失敗ページの予算外 retry にもならない。
-同じ page を意図的に retry するボタンだけが別依存 `retryNonce` を更新する。実際に依存が変わった場合の
-cancel / restart / stale-drop 契約は [`packages/state/docs/streams.md`](../packages/state/docs/streams.md) が規範である。
+→ `!loading` / `!error` の手書き exhaust guard は不要で、通常の交差 edge は失敗ページの予算外 retry にもならない。
+同じ page を意図的に retry する操作は、別依存 `retryNonce` を更新する。これは occurrence（同じ引数でもう一度）を
+value 差分へ符号化する現行 `$streams` restart API の境界である。ボタンに加え、既存 item がある error 状態では、
+error 確定時から scrollY が変わった sentinel `leave` だけを1回 arm し、後続 `enter` が `retryNonce` を更新する。
+
+error 時に `reobserve()` してはならない。sentinel が可視のままだと新 observer の初回 callback が即 retry し、
+再び予算を使い切るたびに同じ循環を起こす layout 駆動の無限 retry になる。したがって「error でも rearm」は不採用とし、
+実際の `leave → enter` または Retry ボタンを recovery edge とする。空 feed は scroll 不能なのでボタンだけが残る。
+依存が変わった場合の cancel / restart / stale-drop 契約は
+[`packages/state/docs/streams.md`](../packages/state/docs/streams.md) が規範である。
 
 ---
 

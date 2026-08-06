@@ -234,7 +234,8 @@ status / error の変化時、runtime は registry を書き換えたうえで *
 ### 4-4. 観測保証
 
 - 中間 status の観測は保証しない。coalesce により同一 tick 内の `active → done` 遷移は最終値しか binding に見えないことがある（updater の既存契約と同じ）。
-- `$updatedCallback` の paths には `<name>` / `$streamStatus.<name>` / `$streamError.<name>` が通常の更新として載る。
+- `<name>` / `$streamStatus.<name>` / `$streamError.<name>` は通常の binding 更新 path として扱う。
+- `$updatedCallback` は binding 駆動であり、その drain で実際に適用された live DOM binding の path だけが載る。`$streams` 宣言自体は callback の state-only 購読を生成しない。stream 完了を callback で扱う場合は、表示上意味のある value/status binding を明示する。現行 API に `$watch` / `$effects` はない。
 - 既知エッジ（第 1 段の許容）: 再 set で stream 宣言自体が**消えた**場合、その `$streamStatus.<name>` 等の binding には削除の通知が飛ばず直前表示が残る（以後の読みは undefined 解決）。宣言の同名入れ替えは §4-3 の dedup 基準により正しく追従する。
 
 ---
@@ -392,7 +393,7 @@ happy-dom + vitest（既存パターン）。fake source ヘルパ（手動 reso
 | S14 | fold throw | error 経路 + producer が abort される（P6 との差分） |
 | S15 | 宣言バリデーション | §1-2 の各違反が raiseError |
 | S16 | stream 値に依存する computed | チャンク到着で computed が dirty 化・再計算 |
-| S17 | `$updatedCallback` | paths に `<name>` / `$streamStatus.<name>` が載る |
+| S17 | `$updatedCallback` | binding 済みの `<name>` / `$streamStatus.<name>` が更新されたとき paths に載る。未 binding path は載らない |
 | S18 | stream 間連鎖 | A の値を B の args が読む → A の更新で B が restart |
 
 ---
