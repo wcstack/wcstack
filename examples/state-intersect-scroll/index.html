@@ -120,10 +120,12 @@
       // The Retry button increments this dependency to restart a failed page without
       // pretending its page number changed.
       retryNonce: 0,
-      // A failed page may be retried by scrolling away and back, but only after a
-      // real scroll changed scrollY while the stream was settled in error. This
-      // prevents error layout/reobserve callbacks from becoming an infinite retry
-      // scheduler when the sentinel remains visible.
+      // A failed page may be retried by scrolling away and back. A layout-driven
+      // observer callback fires at an unchanged scrollY, so "scrollY moved since
+      // the error settled" is the evidence of a real scroll. Two edges can carry
+      // that evidence: a leave at a moved scrollY arms the next enter, and an
+      // enter at a moved scrollY qualifies by itself. Error layout alone
+      // satisfies neither, so it cannot become a retry scheduler.
       scrollRetryArmed: false,
       errorScrollY: 0,
 
@@ -181,7 +183,15 @@
               }
               return;
             }
-            if (state.scrollRetryArmed) {
+            // The arm alone is not sufficient evidence: when the error layout
+            // itself pushed the sentinel out, that leave fired at errorScrollY
+            // and could not arm, and the user's later departure produces no
+            // further edge because the sentinel is already outside the band.
+            // The moved-scrollY check on the enter recovers that round trip.
+            // The arm is still needed for the converse case: a return that
+            // lands back on errorScrollY exactly (e.g. a fling clamped to the
+            // bottom), where only the earlier leave carried the evidence.
+            if (state.scrollRetryArmed || window.scrollY !== state.errorScrollY) {
               state.scrollRetryArmed = false;
               state.retryNonce = state.retryNonce + 1;
             }
@@ -214,6 +224,9 @@
         }
         if (status !== "done" || this.pageResult?.kind !== "success") return;
 
+        // No idempotency guard on this concat: the stream runtime's notification
+        // ledger delivers one "done" per run (same-status re-notifications are
+        // dropped), and a run for the same page cannot reach "done" twice.
         const batch = this.pageResult.items;
         this.items = this.items.concat(batch);
         if (batch.length < this.pageSize) {
@@ -229,6 +242,9 @@
 <!-- ============================================================
      Feed
      ============================================================ -->
+<!-- Load-bearing: $updatedCallback is binding-driven, and the stream-status
+     binding below is the subscription that delivers "$streamStatus.pageResult"
+     to it. Removing it stops the feed's commit callback. -->
 <div class="meter" role="status">
   <span>Loaded <b data-wcs="textContent: loadedCount"></b> items</span>
   <span>over <b data-wcs="textContent: page"></b> pages</span>
@@ -269,7 +285,7 @@
      240px preload margin. On enter it emits wcs-intersect:change; state turns that
      into a page load and re-arms via reobserve(). No `once` — we need it repeatedly.
      It remains an edge source. Producer retries own the bounded delay/budget; after
-     that budget is spent, an explicit leave -> enter edge may restart the same page. -->
+     that budget is spent, a sentinel edge at a moved scrollY may restart the same page. -->
 <wcs-intersect id="sentinel" target="self" root-margin="240px 0px"
   data-wcs="eventToken.intersecting: sentinelChanged; command.reobserve: $command.rearm"></wcs-intersect>
 
