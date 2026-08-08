@@ -42,7 +42,7 @@ await するのは避けてください — あの Promise は「永久に regis
 
 | デモ | 組み合わせ | 起動 | URL |
 |------|-----------|------|-----|
-| [`websocket-chat/`](websocket-chat/) | websocket × 5 スタック (vanilla / state / signals / React / Vue) | [README](websocket-chat/README.ja.md) 参照 | :3300–:3305 |
+| [`websocket-chat/`](websocket-chat/) | websocket × 5 スタック (vanilla / state / signals / React / Vue) | [README](websocket-chat/README.ja.md) 参照 | :3300–:3302, :3304–:3305 |
 | [`router-spa/`](router-spa/) | router + fetch + state（SPA カタログ: URL ⇄ state ブリッジ） | `node examples/router-spa/server.js` | :3000 |
 | [`state-camera-record-upload/`](state-camera-record-upload/) | camera + permission + upload + state | 任意の静的サーバー（secure context 必須） | — |
 | [`state-color-palette/`](state-color-palette/) | eyedropper + clipboard + storage + state | 任意の静的サーバー（EyeDropper は Chromium 限定） | — |

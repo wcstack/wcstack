@@ -32,7 +32,7 @@ Open http://localhost:3000 in your browser.
 - **One adapter, any IO node.** `mountNode("wcs-fetch")` creates the element, binds it
   and connects it — in that order, so the adapter is subscribed before
   `connectedCallback` can fire anything. It reads the registered class's `wcBindable`
-  descriptor and turns the node's output properties (`value` / `loading` / `error` /
+  descriptor and turns the node's output properties (e.g. `value` / `loading` / `error` /
   `status`) into read-only signals. The `<wcs-fetch>` element has **no idea** a signal
   core is behind the binding — that is the whole point: IO is the node, reactivity is
   the core.

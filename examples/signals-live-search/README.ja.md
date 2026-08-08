@@ -30,7 +30,7 @@ node examples/signals-live-search/server.js
 - **アダプタ1枚で任意の IO ノード。** `mountNode("wcs-fetch")` が要素の生成・束縛・接続を
   この順で行います（接続より先に購読するので `connectedCallback` 発火の取りこぼし窓がない）。
   アダプタは登録済みクラスの `wcBindable` 記述子を読み、出力プロパティ（`value` / `loading` /
-  `error` / `status`）を読み取り専用 signal にします。`<wcs-fetch>` は背後に signal コアが
+  `error` / `status` など）を読み取り専用 signal にします。`<wcs-fetch>` は背後に signal コアが
   いることを**一切知りません**。これが要点＝「IO はノード、反応性はコア」。
 - **ノードを所有するのはページ側 — 順序はモジュールグラフに載せる。** `mountNode` の実行前に
   `<wcs-fetch>` が定義済みであることを保証するのは、モジュール先頭の副作用 import

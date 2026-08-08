@@ -111,8 +111,6 @@
             entry.text = msg.content;
           } else if (msg.type === "broadcast") {
             entry.text = `[${msg.from}] ${msg.content}`;
-          } else if (msg.type === "connected") {
-            entry.text = `WebSocket connected (${msg.clients} clients)`;
           } else if (msg.type === "stats") {
             // stats are not added to the log (shown in the status bar)
             return;
@@ -249,12 +247,6 @@
             </template>
             <template data-wcs="if: messageLog.*.type|eq(broadcast)">
               <div class="log-entry log-broadcast">
-                <span class="log-time" data-wcs="textContent: messageLog.*.time"></span>
-                <span data-wcs="textContent: messageLog.*.text"></span>
-              </div>
-            </template>
-            <template data-wcs="if: messageLog.*.type|eq(connected)">
-              <div class="log-entry log-connected">
                 <span class="log-time" data-wcs="textContent: messageLog.*.time"></span>
                 <span data-wcs="textContent: messageLog.*.text"></span>
               </div>

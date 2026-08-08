@@ -36,7 +36,7 @@ export function App() {
   const [messageLog, setMessageLog] = useState<LogEntry[]>([]);
   const [echoInput, setEchoInput] = useState("");
   const [broadcastInput, setBroadcastInput] = useState("");
-  const [nickname] = useState("react-" + Math.random().toString(36).slice(2, 6));
+  const [nickname, setNickname] = useState("react-" + Math.random().toString(36).slice(2, 6));
 
   const ref = useCallback((node: WcsWebSocket | null) => {
     elRef.current = node;
@@ -61,8 +61,6 @@ export function App() {
       entry.text = msg.content ?? "";
     } else if (msg.type === "broadcast") {
       entry.text = `[${msg.from}] ${msg.content}`;
-    } else if (msg.type === "connected") {
-      entry.text = `WebSocket connected (${msg.clients} clients)`;
     } else {
       entry.text = JSON.stringify(msg);
     }
@@ -177,7 +175,7 @@ export function App() {
                 type="text"
                 placeholder="Nickname"
                 value={nickname}
-                readOnly
+                onChange={(e) => setNickname(e.target.value)}
                 style={{ maxWidth: 180 }}
               />
             </div>

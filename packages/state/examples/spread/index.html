@@ -36,9 +36,6 @@
         connectedCallback() {
           this.render();
         }
-        attributeChangedCallback() {
-          this.render();
-        }
         render() {
           this.textContent = `[${this.method ?? '?'} ${this.url ?? '?'}] value=${JSON.stringify(this.value)} loading=${this.loading} status=${this.status}`;
         }

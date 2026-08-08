@@ -83,4 +83,4 @@ node examples/state-cross-tab-todo/server.js
 
 - [`@wcstack/storage`](../../packages/storage/README.ja.md) — 永続化 + ネイティブ `storage` クロスタブ同期
 - [`@wcstack/broadcast`](../../packages/broadcast/README.ja.md) — `BroadcastChannel` ラッパー、structured-clone ペイロード、自己除外
-- [`state-fetch`](../state-fetch) — このデモが土台にする spread / command-token / event-token 配線
+- [`users-crud`](../../packages/fetch/examples/users-crud/README.ja.md) — このデモが土台にする spread / command-token / event-token 配線

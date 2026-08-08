@@ -83,4 +83,4 @@ The two inbound paths are independent: the list only ever comes from storage, th
 
 - [`@wcstack/storage`](../../packages/storage/README.md) — persistence + native cross-tab `storage` sync
 - [`@wcstack/broadcast`](../../packages/broadcast/README.md) — `BroadcastChannel` wrapper, structured-clone payloads, self-exclusion
-- [`state-fetch`](../state-fetch) — the spread / command-token / event-token wiring this demo builds on
+- [`users-crud`](../../packages/fetch/examples/users-crud/README.md) — the spread / command-token / event-token wiring this demo builds on

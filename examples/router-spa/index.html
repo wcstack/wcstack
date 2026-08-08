@@ -101,7 +101,7 @@
       // The router already matched :productId(int) to stamp the right
       // <wcs-head>; this regex is the same int-only contract on the state side.
       get productId() {
-        const m = this.path.match(/^\/products\/(\d+)$/);
+        const m = this.path.match(/^\/products\/(-?\d+)$/);
         return m ? Number(m[1]) : null;
       },
       get isList() {
@@ -197,7 +197,7 @@
           <code>&lt;wcs-route path="/about"&gt;</code> and needs no state at all.</p>
         <p>The product pages work the other way around: their DOM lives in
           <code>&lt;template data-wcs="if: ..."&gt;</code> blocks <b>rendered by state</b>, and the router
-          only tells state where we are, through a two-way <code>path</code> binding on
+          only tells state where we are, through a one-way (output-only) <code>path</code> binding on
           <code>&lt;wcs-router&gt;</code>. Each side does what it is best at.</p>
       </section>
     </wcs-route>

@@ -6,7 +6,7 @@
  * visible difference is the code behind them.
  *
  *   Buildless demos link it:   <link rel="stylesheet" href="/shared/style.css">
- *   Vite demos import it:      import "../shared/style.css";
+ *   Vite demos import it:      import "../../shared/style.css";   (entries live in <demo>/src/)
  *
  * Canonical markup each demo produces:
  *

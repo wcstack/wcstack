@@ -73,7 +73,7 @@ cd examples/websocket-chat/vue
 npm run dev
 ```
 
-Vite dev server starts with HMR. WebSocket server must be started separately.
+Vite dev server starts with HMR. The `/ws` endpoint lives on the demo server, so start it separately (`node server.js`) — `vite.config.js` proxies `/ws` to it.
 
 ## Environment variables
 
@@ -98,6 +98,8 @@ const { ref: wsEl, values: ws } = useWcBindable({
   <p>Status: {{ ws.connected ? 'Connected' : 'Disconnected' }}</p>
 </template>
 ```
+
+`<wcs-ws>` must be defined before this component renders; the demo does `import "@wcstack/websocket/auto";` once in `src/main.js` (see [docs/framework-adapter-integration.md](../../../docs/framework-adapter-integration.md) §1 — the adapter binds nothing, and reports nothing, if the element is not yet upgraded).
 
 ## WebSocket protocol
 

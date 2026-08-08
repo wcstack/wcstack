@@ -1,30 +1,32 @@
-# `$streams` — fetch body streaming デモ
+# `$streams` — fetch body streaming demo
 
-**`@wcstack/state`** の `$streams`（外部の async producer を fold して reactive プロパティに適合させる core 拡張）のデモ。チャンク送出される HTTP レスポンス本文（`response.body`）を `TextDecoderStream` で文字列化し、`fold` でテキストとして累積表示します。
+[日本語版](./README.ja.md)
 
-## はじめに
+A demo of `$streams` in **`@wcstack/state`** — the core extension that folds an external async producer into a reactive property. It decodes a chunked HTTP response body (`response.body`) through `TextDecoderStream` and accumulates the text with `fold`.
 
-`$streams` はリリース済みなので、他のデモと同じく CDN（`https://esm.run/@wcstack/state/auto`）から読み込みます。ビルドは不要ですが、チャンク送出のストリーミングルート（`/api/story`）だけは静的配信では賄えないため、同梱の server.js を起動してください。
+## Getting Started
+
+`$streams` is released, so this demo loads state from the CDN (`https://esm.run/@wcstack/state/auto`) like every other one. No build is needed — but the chunked streaming route (`/api/story`) cannot be served statically, so start the bundled server.js.
 
 ```bash
 cd packages/state
-node examples/streams/server.js    # ポート 3000（PORT 環境変数で変更可）
+node examples/streams/server.js    # port 3000 (override with the PORT env var)
 ```
 
-ブラウザで http://localhost:3000/streams/ を開きます（`/` は examples ギャラリー）。
+Open http://localhost:3000/streams/ in a browser (`/` is the examples gallery).
 
-## 見どころ
+## What to look at
 
-- **依存駆動 restart（switchMap）** — prompt の `<input>`（two-way `value: prompt`）を `args` が読んでいるため、1 キーストロークごとに旧 run が AbortSignal で abort され、`story` が `initial` にリセットされて新しい args で張り直されます。
-- **再試行 = 依存の叩き直し** — 自動再接続はありません。**Regenerate** ボタンは `seed` をインクリメントするだけ（`args` が読む依存パスへの書き込み）。`done` / `error` からも同じ操作で再起動します。
-- **コンパニオン名前空間** — ステータスチップは `$streamStatus.story` を HTML で直接 binding。JS 側の getter は dotted ブラケット形 `this["$streamStatus.story"]` で読みます（依存捕捉される正規形）。
-- **error 時の直前値保持** — prompt に `error` を含めるとサーバーが途中で切断します。`$streamStatus.story` が `error` になり `$streamError.story` にエラーが格納されますが、**累積済みのテキストはリセットされません**。
+- **Dependency-driven restart (switchMap)** — `args` reads the prompt `<input>` (two-way `value: prompt`), so every keystroke aborts the running producer through its AbortSignal, resets `story` to `initial`, and starts a new run with the fresh args.
+- **Retry = poke a dependency** — there is no auto-reconnect. The **Regenerate** button only increments `seed`, i.e. it writes to a path `args` reads. The same action restarts the stream from `done` / `error`.
+- **Companion namespaces** — the status chip binds `$streamStatus.story` directly in HTML; the JS getters read it in the dotted bracket form `this["$streamStatus.story"]` (the canonical, dependency-tracked spelling).
+- **The last value survives an error** — put `error` in the prompt and the server drops the connection mid-stream. `$streamStatus.story` turns `error` and `$streamError.story` is filled, but **the text folded so far is not reset**.
 
-## ポイント
+## Notes
 
-- **協調キャンセル契約** — `source` は渡された AbortSignal を必ず尊重すること（MUST）。この例では `fetch(url, { signal })` に渡すだけで、restart / 切断時に HTTP リクエストごと中断されます。server.js 側もクライアント abort（`close`）で送出を止めるので、restart を連打してもサーバーの仕事は積み上がりません。
-- **有界 fold 規範** — この例の全文累積（`(acc, chunk) => acc + chunk`）は**有限ストリームだから**許されます。無限 / 長寿命ストリームでは latest・last-N・ウィンドウ集計など有界な fold を使ってください。
-- **ReadableStream の消費** — `source` は `AsyncIterable` / `ReadableStream`（またはその Promise）を返せます。`Symbol.asyncIterator` を持たない ReadableStream は `getReader()` フォールバックで消費されます。
-- **fold は新しい値を返す** — 文字列連結は毎回新しい値になるのでこの規範（in-place 変異の禁止）を自然に満たします。
+- **Cooperative cancellation contract** — `source` MUST honor the AbortSignal it is given. Here that is just handing it to `fetch(url, { signal })`, which tears the HTTP request down on restart or disconnect. server.js also stops emitting on client abort (`close`), so hammering restart does not pile work up on the server.
+- **Bounded fold rule** — accumulating the whole text (`(acc, chunk) => acc + chunk`) is acceptable here **only because the stream is finite**. For infinite / long-lived streams use a bounded fold: latest, last-N, or a windowed aggregate.
+- **Consuming a ReadableStream** — `source` may return an `AsyncIterable` / `ReadableStream` (or a Promise of either). A ReadableStream without `Symbol.asyncIterator` is consumed through the `getReader()` fallback.
+- **fold returns a new value** — string concatenation produces a new value every time, so it satisfies that rule (no in-place mutation) naturally.
 
-> 設計はリポジトリルートの `docs/state-streams-design.md`、実装は `packages/state/src/stream/` を参照してください。
+> See `docs/state-streams-design.md` at the repository root for the design, and `packages/state/src/stream/` for the implementation.

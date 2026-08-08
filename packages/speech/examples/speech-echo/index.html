@@ -72,12 +72,15 @@
       get micLabel() {
         return this.listening ? "■ Stop" : "🎤 Start listening";
       },
-      get hasUnsupported() {
-        return this.listenUnsupported;
-      },
       get permissionNote() {
+        if (this.listenUnsupported) return "SpeechRecognition is unavailable in this browser (Chrome only).";
         if (this.permission === "denied") return "Microphone permission denied — enable it in site settings.";
         return "";
+      },
+      // The `not` filter accepts booleans only, so the notice hides itself on
+      // this projection rather than on the message string.
+      get hasPermissionNote() {
+        return this.permissionNote !== "";
       },
     };
   </script>
@@ -92,7 +95,7 @@
      (only the reactive `say` path does), so gating must happen before .emit(). -->
 <wcs-speak data-wcs="command.speak: $command.echo"></wcs-speak>
 
-<p class="notice" data-wcs="textContent: permissionNote"></p>
+<p class="notice" data-wcs="textContent: permissionNote; hidden: hasPermissionNote|not"></p>
 
 <section>
   <div class="controls">

@@ -38,8 +38,11 @@ npm install @wcstack/midi
 ### 1. Play notes from a MIDI keyboard
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+<!-- I/O node before state: module scripts execute in document order, so
+     <wcs-midi> is defined before state binds to it. A command-token emit into
+     a not-yet-defined element is never replayed. -->
 <script type="module" src="https://esm.run/@wcstack/midi/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

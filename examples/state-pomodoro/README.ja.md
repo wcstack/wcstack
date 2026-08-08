@@ -14,7 +14,7 @@ npx serve examples/state-pomodoro
 
 - **宣言的なゲームクロック**: `<wcs-timer interval="1000" manual>` はただの 1 秒メトロノーム。`tick` イベント（detail は `{ count, elapsed }`）が event token で state に流れ込み、ポモドーロの状態機械は state 側の約 20 行に収まります。
 - **意図に紐づく wake lock**: `<wcs-wakelock data-wcs="active: keepAwake; held: wakelockHeld">` — `active`（desired・入力）と `held`（actual・出力）は意図的に分離された一方向サーフェスです。一時停止でロック解放・再開で再取得。OS 側の解放も UI は `held` を読むので必ず見えます。
-- **通知がコントロールになる**: セッション終了通知は `data.next` を载せ、クリックが `eventToken.clicked` で state に戻ります — 別タブにいてもクリックで次のセッションが始まります。
+- **通知がコントロールになる**: セッション終了通知は `data.next` を載せ、クリックが `eventToken.clicked` で state に戻ります — 別タブにいてもクリックで次のセッションが始まります。
 - **permission 監視内蔵**: `<wcs-notify>` は Permissions API を自前で監視します（`granted` / `prompt` / `denied` / `unsupported` 出力）。`<wcs-permission>` 要素は不要です。
 - **デモ用の短い時間**: *6 sec / 3 sec (demo)* を選ぶと、集中 → 休憩 → 集中の 1 サイクルを数秒で確認できます。
 

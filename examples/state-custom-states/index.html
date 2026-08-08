@@ -183,6 +183,10 @@
       // ------------------------------------------------------------
       mode: "fast",
       attempt: 0,
+      // <wcs-fetch> owns this path and overwrites the seed on its first apply
+      // (its `value` starts as null, "no response yet"). The seed is `[]` rather
+      // than null so the declaration still states the shape `for: widgets`
+      // iterates — the runtime coerces a non-array to [] either way.
       widgets: [],
 
       get widgetsUrl() {
@@ -218,8 +222,9 @@
 <section class="demo-card">
   <h2>1. Async data loading — <code>&lt;wcs-fetch&gt;</code></h2>
   <p>
-    Click a button below to hit the mock warehouse API. The spinner, the dimmed list
-    while a refetch is in flight, and the error banner are wired purely from
+    The page hits the mock warehouse API once on load; the buttons below re-fetch it in
+    fast / slow / failing modes. The spinner, the dimmed list while a refetch is in
+    flight, and the error banner are wired purely from
     <code>:state(loading)</code> / <code>:state(error)</code> on <code>#widgets-fetch</code>.
   </p>
 
@@ -247,7 +252,7 @@
       </template>
     </template>
     <template data-wcs="if: hasWidgets|not">
-      <li class="empty-hint">No widgets loaded yet — click a button above.</li>
+      <li class="empty-hint">No widgets to show — try a button above.</li>
     </template>
   </ul>
 </section>
