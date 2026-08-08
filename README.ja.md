@@ -337,6 +337,8 @@ const html = await renderToString(`
 
 `<script>` タグ1つ。カスタム要素1つ。あとはHTML。以上。
 
+> Content-Security-Policy を敷いている場合: 上記の内包 `<script type="module">` は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。state を `src="./state.js"` に切り出せば追加ディレクティブは不要になります。機能別のディレクティブ表は [docs/csp.md](docs/csp.md)。
+
 ---
 
 ## コンポーネント状態で CSS を切り替える — `:state()`

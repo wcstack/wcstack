@@ -339,6 +339,8 @@ const html = await renderToString(`
 
 One `<script>` tag. One custom element. Pure HTML. That's it.
 
+> Enforcing a Content-Security-Policy? The inline `<script type="module">` above is evaluated through a `blob:` URL and needs `script-src blob:`; moving the state into `src="./state.js"` needs no extra directive. Per-feature directive table: [docs/csp.md](docs/csp.md).
+
 ---
 
 ## Styling on component state — `:state()`

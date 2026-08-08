@@ -220,6 +220,8 @@
 
 解決順序: `state` → `src` (.json / .js) → `json` → 内包 `<script>` → `setInitialState()` 待機。
 
+> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.md](../../docs/csp.md)。
+
 ### 名前付き状態
 
 複数の状態要素を `name` 属性で共存できます。バインディングでは `@name` で参照します：
