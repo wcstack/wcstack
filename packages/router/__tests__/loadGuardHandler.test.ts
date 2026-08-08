@@ -250,6 +250,72 @@ describe('wcs-guard-handler', () => {
     }
   });
 
+  it('CSP 違反が観測された場合は blob: 許可を促すメッセージで失敗すること', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const notifyMock = vi.fn();
+    const mockRoute: Partial<IRoute> = {
+      notifyGuardHandlerLoadFailed: notifyMock,
+    };
+
+    // createObjectURL は購読開始後・import 前に呼ばれるので、ここで違反を発火させれば
+    // 実ブラウザで CSP がブロックしたのと同じ順序を再現できる
+    const original = URL.createObjectURL;
+    (URL as any).createObjectURL = vi.fn(() => {
+      const violation = new Event('securitypolicyviolation');
+      (violation as any).effectiveDirective = 'script-src-elem';
+      document.dispatchEvent(violation);
+      return `data:application/javascript;base64,${btoa('export default {')}`;
+    });
+
+    const script = document.createElement('script');
+    script.setAttribute('type', 'module');
+    script.text = 'export default {';
+
+    try {
+      loadGuardHandler(script, mockRoute as IRoute);
+      await vi.waitFor(() => {
+        expect(notifyMock).toHaveBeenCalled();
+      });
+
+      const error = errorSpy.mock.calls[0][1] as Error;
+      expect(error.message).toMatch(/blocked by Content-Security-Policy/);
+      expect(error.message).toMatch(/script-src must allow blob:/);
+      // ガードはインライン専用で src= に逃がせないことを明示する
+      expect(error.message).toMatch(/inline-only/);
+    } finally {
+      (URL as any).createObjectURL = original;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('CSP 以外の失敗では CSP 断定をせず参照先のみ添えること', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const notifyMock = vi.fn();
+    const mockRoute: Partial<IRoute> = {
+      notifyGuardHandlerLoadFailed: notifyMock,
+    };
+
+    const script = document.createElement('script');
+    script.setAttribute('type', 'module');
+    script.text = 'this is not valid JavaScript @#$%';
+
+    loadGuardHandler(script, mockRoute as IRoute);
+    // script-src 以外の違反は判定に使わない（誤って CSP 断定しない）
+    const unrelated = new Event('securitypolicyviolation');
+    (unrelated as any).effectiveDirective = 'style-src';
+    document.dispatchEvent(unrelated);
+
+    await vi.waitFor(() => {
+      expect(notifyMock).toHaveBeenCalled();
+    });
+
+    const error = errorSpy.mock.calls[0][1] as Error;
+    expect(error.message).toMatch(/failed to import guard script/);
+    expect(error.message).not.toMatch(/blocked by Content-Security-Policy/);
+    expect(error.message).toMatch(/docs\/csp\.md/);
+    errorSpy.mockRestore();
+  });
+
   it('default exportが関数でない場合にnotifyGuardHandlerLoadFailedを呼ぶこと', async () => {
     const notifyMock = vi.fn();
     const guardHandlerSetter = vi.fn();

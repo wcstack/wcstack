@@ -2,29 +2,11 @@ import typescript from '@rollup/plugin-typescript';
 import terser from '@rollup/plugin-terser';
 import json from '@rollup/plugin-json';
 import dts from 'rollup-plugin-dts';
-import { promises as fs } from 'fs';
-import { fileURLToPath } from 'url';
-import path from 'path';
 
 const typescriptPlugin = typescript({
   tsconfig: './tsconfig.json',
   declaration: false,
   declarationMap: false,
-});
-
-const copyAutoPlugin = () => ({
-  name: 'copy-auto',
-  async writeBundle() {
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const srcDir = path.join(__dirname, 'src', 'auto');
-    const distDir = path.join(__dirname, 'dist');
-
-    await fs.mkdir(distDir, { recursive: true });
-    await Promise.all([
-      fs.copyFile(path.join(srcDir, 'auto.js'), path.join(distDir, 'auto.js')),
-      fs.copyFile(path.join(srcDir, 'auto.min.js'), path.join(distDir, 'auto.min.js')),
-    ]);
-  },
 });
 
 export default [
@@ -36,13 +18,18 @@ export default [
       format: 'esm',
       sourcemap: true,
     },
-    plugins: [json(), typescriptPlugin, copyAutoPlugin()],
+    plugins: [json(), typescriptPlugin],
   },
-  // ESM minified build
+  // No dist/index.esm.min.js on purpose — see config-templates/rollup.config.js
+  // for the rule. It was reachable only through the old auto stub's relative
+  // import (now gone) or a raw CDN path; it is in no `exports` entry.
+  // Single-tag bootstrap — bundled self-contained, never a stub that imports a
+  // sibling dist file. The whole point is that one `integrity` attribute on
+  // <script src=".../auto.min.js"> covers every line that runs (docs/sri.md).
   {
-    input: 'src/exports.ts',
+    input: 'src/auto.ts',
     output: {
-      file: 'dist/index.esm.min.js',
+      file: 'dist/auto.min.js',
       format: 'esm',
       sourcemap: true,
     },

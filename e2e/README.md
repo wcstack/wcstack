@@ -48,12 +48,13 @@ examples の `index.html` は `https://esm.run/@wcstack/*` (CDN) を参照して
 | HTML 内の参照 | 書き換え先 |
 |---|---|
 | `https://esm.run/@wcstack/<pkg>/auto` | `/packages/<pkg>/dist/auto.min.js` |
-| `https://esm.run/@wcstack/<pkg>` | `/packages/<pkg>/dist/index.esm.min.js` |
+| `https://esm.run/@wcstack/<pkg>` | `/packages/<pkg>/dist/index.esm.js` |
 
 正規表現はインライン import map 内の URL にもそのまま適用されます (`@version` ピンは除去)。
-`auto.min.js` は `./index.esm.min.js` を相対 import するため、`dist/` 配下からの配信で
-そのまま解決されます。**dist はコミット済みのものを使う**ので、パッケージのソースを変更した
-場合は該当パッケージで `npm run build` してから実行してください。
+`auto.min.js` は外部 import ゼロの自己完結バンドルなので、単体で解決します (以前は
+`./index.esm.min.js` を相対 import していました)。素のエントリが `index.esm.js` を指すのは、
+`exports["."]` の解決先がそれだからです。**dist はコミット済みのものを使う**ので、
+パッケージのソースを変更した場合は該当パッケージで `npm run build` してから実行してください。
 
 また、examples の一部は自前の `server.js` (port 3000 固定・同時起動不可) で `/api/*` を
 提供するため、`serve.mjs` が同形のモック API (`/api/search`, `/api/users`, `/api/metrics`) を

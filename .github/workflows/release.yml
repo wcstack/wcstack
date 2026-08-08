@@ -163,6 +163,19 @@ jobs:
       - name: Bindable settable-surface conformance (rebuilt dist)
         run: node scripts/conformance-bindable-inputs.mjs
 
+      # Subresource Integrity digests for every package's single-tag bootstrap.
+      #
+      # Computed here, from the freshly rebuilt tree that is about to be
+      # committed, tagged and published — deliberately not from a CDN response.
+      # Asking the CDN for the hash of the file the CDN itself serves is
+      # circular and defeats the point of SRI, which is to not have to trust it.
+      #
+      # This runs after the rebuild so the digests cover bundles carrying the
+      # bumped VERSION constant, and before the artifact commit so a drifted
+      # digest cannot reach the tag.
+      - name: Generate SRI digests
+        run: node scripts/generate-sri.mjs --version "${{ steps.bump.outputs.version }}" --out-json sri.json --out-notes sri-notes.md
+
       # Commit release artifacts locally so npm publish uses the same tree that will be tagged.
       # Add per discovered package rather than a packages/*/dist glob: building
       # @wcstack/lint leaves a freshly built packages/vscode-wcs/dist on the
@@ -227,11 +240,32 @@ jobs:
           git push origin HEAD:main
           git push origin "v${{ steps.bump.outputs.version }}"
 
-      # Create GitHub Release
+      # Create GitHub Release.
+      #
+      # The changelog is fetched from the release-notes API and concatenated
+      # here rather than passed as --generate-notes alongside --notes-file.
+      # The API documents that a supplied body is prepended to generated notes,
+      # but that leaves the result depending on how gh forwards the two flags
+      # together; building the body ourselves makes the order explicit and
+      # cannot regress under a gh update. The tag already exists at this point
+      # (pushed by the previous step), which is what generate-notes needs.
+      #
+      # sri.json rides along as an asset for tooling — and, being served from
+      # GitHub rather than the CDN, it is the independent source that makes
+      # verifying a jsDelivr response meaningful.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${{ steps.bump.outputs.version }}" \
-            --title "v${{ steps.bump.outputs.version }}" \
-            --generate-notes
+          set -euo pipefail
+          tag="v${{ steps.bump.outputs.version }}"
+          gh api "repos/${{ github.repository }}/releases/generate-notes" \
+            -f tag_name="$tag" \
+            --jq .body > generated-notes.md
+          cat sri-notes.md > release-notes.md
+          printf '\n---\n\n' >> release-notes.md
+          cat generated-notes.md >> release-notes.md
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes-file release-notes.md \
+            sri.json

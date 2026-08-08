@@ -339,6 +339,18 @@ const html = await renderToString(`
 
 One `<script>` tag. One custom element. Pure HTML. That's it.
 
+> Enforcing a Content-Security-Policy? The inline `<script type="module">` above is evaluated through a `blob:` URL and needs `script-src blob:`; moving the state into `src="./state.js"` needs no extra directive. Per-feature directive table: [docs/csp.md](docs/csp.md).
+
+For production, pin the version and add an `integrity` attribute. `dist/auto.min.js` is a self-contained bundle with zero imports, so **one hash covers every line of wcstack that runs** — the usual ESM caveat, where `integrity` protects only the entry and not what it imports, does not apply:
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@1.25.0/dist/auto.min.js"
+        integrity="sha384-..."></script>
+```
+
+Digests for every package ship in each GitHub Release (and as an attached `sri.json`), computed from the published tree rather than read back from the CDN. Details, and what the hash deliberately does not cover: [docs/sri.md](docs/sri.md).
+
 ---
 
 ## Styling on component state — `:state()`

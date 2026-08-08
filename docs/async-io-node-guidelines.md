@@ -398,10 +398,11 @@ upgrade 後もそれが prototype の accessor を隠し続けるため、setter
 ルートの方針に従う: `rimraf dist` → `tsc` → `rollup -c`。Rollup は `src/exports.ts` から:
 
 - `dist/index.esm.js`
-- `dist/index.esm.min.js`（Terser）
 - `dist/index.d.ts`（rollup-plugin-dts）
 
-`src/auto/` のプリビルドスクリプトを `dist/` へコピーする。Service Worker など追加エントリがあるノードは rollup 出力を増やし、`package.json` の `exports` にサブパス（例: `"./sw"`）を足す（notification 参照）。
+加えて `src/auto.ts` を独立エントリとして `dist/auto.min.js`（Terser）を出力する。これは**外部 import ゼロの自己完結バンドル**でなければならない（MUST）。`src/auto.ts` から兄弟の dist ファイルを相対 import してはならない（MUST NOT）— `integrity` 1 属性でランタイム全体を覆えるという性質が壊れる（[sri.md](./sri.md)）。`dist/index.esm.min.js` は出力しない（`exports` に無く、消費者は旧 auto スタブだけだった）。
+
+Service Worker など追加エントリがあるノードは rollup 出力を増やし、`package.json` の `exports` にサブパス（例: `"./sw"`）を足す（notification 参照）。
 
 `package.json` は `"type": "module"`（ESM only、CommonJS 非対応）。バージョンはクライアントパッケージ（state/fetch/autoloader/router）と揃えてリリースする（`feedback_version_alignment` 参照）。
 

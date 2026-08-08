@@ -167,6 +167,7 @@ Place as a child of `<wcs-route>` to declaratively define a guard decision funct
 - The function can return `Promise<boolean>` for async checks
 - `<wcs-guard-handler>` placed outside a `<wcs-route>` is ignored
 - If no `<script type="module">` is present, `guardHandler` is not set
+- **Under a Content-Security-Policy**, the guard script is evaluated through a `blob:` URL, so `script-src blob:` is required. Guards are inline-only — there is no `src=` escape hatch as there is for `<wcs-state>`. See [docs/csp.md](../../docs/csp.md)
 
 #### Typed Parameters
 

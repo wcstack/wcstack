@@ -220,6 +220,8 @@ That's it. No build, no bootstrap code, no framework.
 
 Resolution order: `state` → `src` (.json / .js) → `json` → inner `<script>` → wait for `setInitialState()`.
 
+> **Under a Content-Security-Policy:** form 5 (inline `<script type="module">`) is evaluated through a `blob:` URL and therefore requires `script-src blob:`. A page nonce does not cover it. If you enforce a strict CSP, use form 4 (`src="./state.js"`) instead — it needs no extra directive. See [docs/csp.md](../../docs/csp.md).
+
 ### Named State
 
 Multiple state elements can coexist with the `name` attribute. Bindings reference them with `@name`:

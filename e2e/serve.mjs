@@ -25,11 +25,15 @@ const MIME_TYPES = {
 // both <script src="https://esm.run/..."> and import-map entries (the regex runs
 // over the whole HTML text, inline import maps included). An optional @version
 // pin is dropped; deeper subpaths than /auto are left untouched.
+//
+// The bare entry maps to index.esm.js, which is what `exports["."]` resolves to;
+// there is no index.esm.min.js any more, because the bootstrap is now a
+// self-contained bundle and nothing else imported the minified named-export one.
 function rewriteCdn(html) {
   return html.replace(
     /https:\/\/esm\.run\/@wcstack\/([\w-]+)(?:@[^/"'\s]+)?(\/auto)?(?=["'\s])/g,
     (_m, pkg, auto) =>
-      auto ? `/packages/${pkg}/dist/auto.min.js` : `/packages/${pkg}/dist/index.esm.min.js`,
+      auto ? `/packages/${pkg}/dist/auto.min.js` : `/packages/${pkg}/dist/index.esm.js`,
   );
 }
 
