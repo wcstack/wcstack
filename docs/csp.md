@@ -3,7 +3,7 @@
 - **対象**: CSP を敷いたページで wcstack を使う利用者、および CSP に触れる変更を入れる実装者
 - **状態**: 規範ドキュメント（normative）。表に載っているディレクティブ要求は実装の事実であり、変更する場合は本書も同時に更新すること（MUST）
 - **なぜ存在するか**: wcstack はタグを置くだけで動くことを売りにしているが、**厳格な CSP 下では既定の書き方の一部が動かない**。特に `<wcs-state>` のインライン `<script>` は blob: URL 経由で評価されるため `script-src blob:` を要求する。この事実がどこにも書かれていないと、利用者は原因不明の初期化失敗に突き当たる
-- **関連**: [async-io-node-guidelines.md](./async-io-node-guidelines.md) / 各パッケージの README
+- **関連**: [sri.md](./sri.md)（配信経路の改竄検出。本書と同じく「直パスに寄せる」が答えになる） / [async-io-node-guidelines.md](./async-io-node-guidelines.md) / 各パッケージの README
 
 ---
 
@@ -46,6 +46,8 @@ CSP はリダイレクト**先も再照合する**（リダイレクト後は pa
 https://cdn.jsdelivr.net/npm/@wcstack/state/auto            → 404
 https://cdn.jsdelivr.net/npm/@wcstack/state@1.25.0/dist/auto.min.js → 200
 ```
+
+直パスに寄せる利点は CSP のホスト数だけではない。`esm.run` は再バンドルを行う `+esm` エンドポイントに飛ぶため SRI が原理的に効かず、直パスなら `integrity` を付けられる。詳細は [sri.md](./sri.md)。
 
 ## 2. import map は nonce 必須（SRI は使えない）
 

@@ -339,6 +339,16 @@ const html = await renderToString(`
 
 > Content-Security-Policy を敷いている場合: 上記の内包 `<script type="module">` は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。state を `src="./state.js"` に切り出せば追加ディレクティブは不要になります。機能別のディレクティブ表は [docs/csp.md](docs/csp.md)。
 
+本番ではバージョンを固定して `integrity` を付けてください。`dist/auto.min.js` は import ゼロの自己完結バンドルなので、**ハッシュ 1 個で実行される wcstack のコード全体をカバーできます** — 「integrity はエントリしか守らず import 先は対象外」という ESM の通例が当てはまりません:
+
+```html
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@1.25.0/dist/auto.min.js"
+        integrity="sha384-..."></script>
+```
+
+全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.md](docs/sri.md)。
+
 ---
 
 ## コンポーネント状態で CSS を切り替える — `:state()`

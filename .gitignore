@@ -11,3 +11,10 @@ packages/*/examples/**/dist/
 # Playwright artifacts when run from the repo root instead of e2e/
 /test-results/
 /playwright-report/
+# Release-time SRI output (scripts/generate-sri.mjs). Published as GitHub
+# Release body/asset, never committed — the digests belong to a tag, and a
+# stale copy on main would be a hash nothing on the CDN matches.
+/sri.json
+/sri-notes.md
+/generated-notes.md
+/release-notes.md
