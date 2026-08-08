@@ -79,7 +79,7 @@ http://localhost:3001 を開いてください。
 
 | ファイル | 説明 |
 |---|---|
-| `package.json` | 依存パッケージ: `@wcstack/server`, `@wcstack/state` |
+| `package.json` | 依存パッケージ: `@wcstack/server`（`@wcstack/state` は推移的依存） |
 | `server.js` | SSR レンダリングと `/api/users` エンドポイントを持つ Node.js サーバー |
 | `template.html` | `<wcs-state enable-ssr>` とバインディングを含むソーステンプレート |
 

@@ -61,10 +61,6 @@
 
       // --- bound back from the nodes (derived VALUES only) ---
       camPerm: "prompt",
-      granted: false,
-      prompt: false,
-      denied: false,
-      unsupported: false,
       camActive: false,
       camError: null,
       recording: false,
@@ -94,6 +90,14 @@
       stopRecording() { this.$command.recStop.emit(); },
       upload() { if (this.clipFiles) this.$command.doUpload.emit(); },
 
+      // The permission booleans are derived here, from the one `camPerm` path —
+      // never bound from a second element. That is what keeps the pill's text,
+      // the pill's colour class and the denied banner from disagreeing.
+      get granted() { return this.camPerm === "granted"; },
+      get prompt() { return this.camPerm === "prompt"; },
+      get denied() { return this.camPerm === "denied"; },
+      get unsupported() { return this.camPerm === "unsupported"; },
+
       get camStatus() {
         if (this.camError) return `Camera error: ${this.camError.name}`;
         if (this.camActive) return "Camera live.";
@@ -112,6 +116,11 @@
       get hasClip() {
         return !!this.clipUrl;
       },
+      // The `not` filter accepts booleans only, and clipFiles is null / File[],
+      // so the upload button inverts this projection instead of clipFiles itself.
+      get hasFiles() {
+        return !!this.clipFiles;
+      },
       get uploadText() {
         if (this.upLoading) return `Uploading… ${this.upProgress}%`;
         if (this.upError) return "Upload failed.";
@@ -122,9 +131,11 @@
   </script>
 </wcs-state>
 
-<!-- The watcher: camera permission as pure state (read-only, no prompt). -->
-<wcs-permission name="camera"
-  data-wcs="state: camPerm; granted: granted; prompt: prompt; denied: denied; unsupported: unsupported"></wcs-permission>
+<!-- The watcher: camera permission as pure state (read-only, no prompt).
+     <wcs-camera> refines the SAME path below (getUserMedia is authoritative in
+     browsers where the Permissions API cannot answer for the camera), so only
+     `state` is bound here — the booleans are derived from camPerm in state. -->
+<wcs-permission name="camera" data-wcs="state: camPerm"></wcs-permission>
 
 <!-- Denied banner, shown only when blocked. -->
 <template data-wcs="if: denied">
@@ -133,7 +144,7 @@
 
 <section>
   <!-- The camera OWNS its preview <video> internally; srcObject never crosses state.
-       `keep-alive: recording` keeps the stream alive while recording even if the tab
+       `keepAlive: recording` keeps the stream alive while recording even if the tab
        is hidden — a declarative fix for the visibility/recording coordination. -->
   <wcs-camera
     data-wcs="
@@ -179,7 +190,7 @@
   <section>
     <video class="playback" controls data-wcs="src: clipUrl"></video>
     <div class="row">
-      <button data-wcs="onclick: upload; disabled: clipFiles|not">⤴ Upload clip</button>
+      <button data-wcs="onclick: upload; disabled: hasFiles|not">⤴ Upload clip</button>
       <span class="status" data-wcs="textContent: uploadText"></span>
     </div>
   </section>

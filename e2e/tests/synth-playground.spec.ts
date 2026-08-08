@@ -106,19 +106,26 @@ test.describe("examples/synth-playground", () => {
       const bass = document.getElementById("bass") as any;
       const synth = document.getElementById("synth") as any;
       bass.noteOn(36);
+      // ページ内で AudioContext は 1 個を共有する。正本は audioContext.ts の
+      // Symbol.for レジストリで、Core は公開 getter を持たないので、レジストリの
+      // 実体と両ルートが掴んでいる context を突き合わせる。
+      const shared = (globalThis as any)[Symbol.for("@wcstack/audio.context")] ?? null;
       return {
         bassWarnings: bass.warnings.length,
         // モノフォニック（voice 無し）なので voices は 0 のまま
         bassVoices: bass.voices,
         synthVoices: synth.voices,
-        // ページ内で AudioContext は共有される
-        sharedContext: bass.audioCore.context === synth.audioCore.context,
+        sharedIsAudioContext: shared instanceof BaseAudioContext,
+        bassOnShared: shared !== null && bass.audioCore._ctx === shared,
+        synthOnShared: shared !== null && synth.audioCore._ctx === shared,
       };
     });
 
     expect(result.bassWarnings).toBe(0);
     expect(result.bassVoices).toBe(0);
     expect(result.synthVoices).toBe(0);
-    expect(result.sharedContext).toBe(true);
+    expect(result.sharedIsAudioContext).toBe(true);
+    expect(result.bassOnShared).toBe(true);
+    expect(result.synthOnShared).toBe(true);
   });
 });

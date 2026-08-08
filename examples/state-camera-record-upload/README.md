@@ -6,6 +6,8 @@
 
 Open `index.html` over a secure context (`localhost` or `https://`). `getUserMedia` will not prompt on `file://`. No build step — everything loads from `esm.run`.
 
+**⤴ Upload clip** POSTs the recording to `https://httpbin.org/post`, a public request-echo service — the only network call this demo makes. Point `<wcs-upload url=…>` at your own endpoint before recording anything you would not publish.
+
 ## What it shows
 
 - **`<wcs-camera>` owns its preview.** It acquires the stream and renders the `<video>` internally (`srcObject` is assigned in its shadow root), so the non-serializable handle never crosses the state boundary.
@@ -14,6 +16,6 @@ Open `index.html` over a secure context (`localhost` or `https://`). `getUserMed
 
 ## Key Points
 
-- **`keep-alive: recording`** — a one-line, declarative fix for the visibility/recording problem: while `recording` is true the camera is kept alive even if the tab is hidden; otherwise the stream is suspended on hidden and re-acquired on return.
+- **`keepAlive: recording`** — a one-line, declarative fix for the visibility/recording problem: while `recording` is true the camera is kept alive even if the tab is hidden; otherwise the stream is suspended on hidden and re-acquired on return. (The matching attribute is `keep-alive`.)
 - **Two roles, two elements.** `<wcs-permission name="camera">` *watches* the grant as pure state; `<wcs-camera>` is the one that *acquires* (prompts via `getUserMedia`).
 - **Stream ownership stays with the camera.** The recorder *borrows* the stream and never stops its tracks — only the camera releases it (on stop / disconnect), clearing the hardware indicator.

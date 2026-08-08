@@ -40,7 +40,7 @@
   <script type="module">
     export default {
       // command-token: fires <wcs-speak>.speak(text) / .cancel() from state.
-      $commandTokens: ["say", "stopSpeak"],
+      $commandTokens: ["speakNow", "stopSpeak"],
 
       text: "The quick brown fox jumps over the lazy dog.",
 
@@ -51,7 +51,7 @@
       unsupported: false,
 
       speak() {
-        this.$command.say.emit(this.text);
+        this.$command.speakNow.emit(this.text);
       },
       stop() {
         this.$command.stopSpeak.emit();
@@ -77,7 +77,7 @@
 
 <!-- The async primitive: text → speech, with word-boundary outputs bound back to state. -->
 <wcs-speak
-  data-wcs="command.speak: $command.say; command.cancel: $command.stopSpeak; charIndex: pos; spokenWord: word; speaking: speaking; unsupported: unsupported"></wcs-speak>
+  data-wcs="command.speak: $command.speakNow; command.cancel: $command.stopSpeak; charIndex: pos; spokenWord: word; speaking: speaking; unsupported: unsupported"></wcs-speak>
 
 <section>
   <textarea data-wcs="value: text"></textarea>

@@ -103,7 +103,7 @@ npm install @wcstack/permission
 | プロパティ    | イベント               | 説明                                                                |
 | ------------- | ---------------------- | ------------------------------------------------------------------- |
 | `state`       | `wcs-permission:change`| `"prompt"` / `"granted"` / `"denied"` / `"unsupported"`、live 追従。 |
-| `granted`     | `wcs-permission:change`| `state === "granted"` のとき `true`。`hidden@granted` 等に便利。     |
+| `granted`     | `wcs-permission:change`| `state === "granted"` のとき `true`。`hidden: granted` 等に便利。    |
 | `denied`      | `wcs-permission:change`| `state === "denied"` のとき `true`。                                |
 | `prompt`      | `wcs-permission:change`| `state === "prompt"` のとき `true`。                                |
 | `unsupported` | `wcs-permission:change`| この環境で query できないとき `true`。                              |

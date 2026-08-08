@@ -55,4 +55,4 @@ scroll ──▶ <wcs-infinite-scroll>  (sentinel enters viewport)
 
 ## See also
 
-The fetch firing/timing behaviours this demo leans on (auto-fetch de-dup, `response` firing on errors too, the sentinel needing a layout box) are documented in [docs/timing-and-firing-contract.md](../../docs/timing-and-firing-contract.md).
+The fetch firing/timing behaviours this demo leans on (auto-fetch de-dup, `response` firing on errors too, the sentinel needing a layout box) are documented in [docs/timing-and-firing-contract.md](../../../../docs/timing-and-firing-contract.md).

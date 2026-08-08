@@ -115,8 +115,6 @@
           text = "Echo: " + msg.content;
         } else if (msg.type === "broadcast") {
           text = `[${msg.from}] ${msg.content}`;
-        } else if (msg.type === "connected") {
-          text = `WebSocket connected (${msg.clients} clients)`;
         } else {
           text = JSON.stringify(msg);
         }
@@ -268,7 +266,7 @@
                 {
                   class:
                     "log-entry " +
-                    ({ echo: "log-echo", broadcast: "log-broadcast", connected: "log-connected" }[entry.type] || "log-stats"),
+                    ({ echo: "log-echo", broadcast: "log-broadcast" }[entry.type] || "log-stats"),
                 },
                 h("span", { class: "log-time" }, entry.time + " "),
                 entry.text,

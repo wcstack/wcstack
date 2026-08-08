@@ -22,7 +22,9 @@ http://localhost:3000 でアクセスできます。
 ## ポイント
 
 - **1 fetch = 1 state スロット**: 各 `<wcs-fetch>` は `...:` スプレッド（`...: listFetch` など）で配線し、`wcBindable` のプロパティと入力を一括でバインドします。テンプレートが読む出力（`value` / `loading` / `error` / `status`）と、デフォルトから変えたい入力だけを初期化します。未初期化（`undefined`）のパスは「無指定」として扱われ、要素のデフォルトが保たれます。
-- **空 url は auto-fetch を抑制する**: `get "detailFetch.url"()` は未選択時（初期表示、およびフィルタで選択が解除されたとき）に `""` を返します。`<wcs-fetch>` は空 url を「リクエストなし」とみなして auto-fetch をスキップするため、詳細ペインは待機状態のままになります。この契約は重要で、抑制されなければ相対 `""` がページ自身に解決され、HTML を JSON として読みに行ってしまいます。
+- **空 url は auto-fetch を抑制する**: `get "detailFetch.url"()` は未選択時（初期表示、およびフィルタで選択が解除されたとき）に `""` を返します。`<wcs-fetch>` は空 url を「リクエストなし」とみなして auto-fetch をスキップするため、詳細リクエストは発行されません（初回表示ではペインは待機状態のまま、フィルタ後は直前に読み込んだカードがそのまま残ります）。この契約は重要で、抑制されなければ相対 `""` がページ自身に解決され、HTML を JSON として読みに行ってしまいます。
+
+  なお空 url は要素の出力をリセットしません。これを state 側から `detailFetch.value = null` で取り繕ってはいけません — `<wcs-fetch>` は自身の出力の唯一の権威であり、マウント中の詳細バインディングがまだ読んでいる値を null にすると例外になります。また同値ガードが比較するのは「最後に実際に fetch した url」なので（[タイミング契約](../../../../docs/timing-and-firing-contract.md) §1.2）、間に空 url を挟んでも同じ url の再実行にはなりません。再実行には明示的な `fetch()` / `trigger` / コマンドが必要です。
 - **スプレッド順序と `manual: true`**: `createFetch` スロットは `manual: true` を設定します。スプレッドは `manual` より先に `url` を書き込みますが、`<wcs-fetch>` は auto-fetch の判定を microtask に合体させ、*最終状態* を読み直すため、後から書かれた `manual: true` が勝ち、ロード時に不用意な POST は走りません（フレームワーク側で保証。`packages/fetch` の「microtask coalesce」テスト参照）。
 - **コマンドトークン vs `data-fetchtarget`**: 一覧の再読み込みは **コマンドトークン**（`userResponded` ハンドラからの `$command.refreshList.emit()`、`command.fetch: $command.refreshList` で配線）で行います。一方、作成ボタンは **`data-fetchtarget="create-fetch"`** という autoTrigger 属性 — クリック起点で fetch を実行するショートカット — を使います。素のボタンには属性、コードからはトークンを使い分けます。
 - **イベントトークンと status ガード**: `eventToken.value: userResponded` で `create-fetch` のレスポンスを state が受け取ります。`wcs-fetch:response` は成功時専用ではなく、HTTP/ネットワークエラー時にも発火します（`value=null`、`status=`エラーコード）。`$on` ハンドラは `status` が 2xx であることを確認してからフォームをリセットするので、POST 失敗時は入力が保持されます。

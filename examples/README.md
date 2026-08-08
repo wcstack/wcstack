@@ -42,7 +42,7 @@ See [`state-tilt-maze/`](state-tilt-maze/).
 
 | Demo | Combines | Run | URL |
 |------|----------|-----|-----|
-| [`websocket-chat/`](websocket-chat/) | websocket × 5 stacks (vanilla / state / signals / React / Vue) | see its [README](websocket-chat/README.md) | :3300–:3305 |
+| [`websocket-chat/`](websocket-chat/) | websocket × 5 stacks (vanilla / state / signals / React / Vue) | see its [README](websocket-chat/README.md) | :3300–:3302, :3304–:3305 |
 | [`router-spa/`](router-spa/) | router + fetch + state (SPA catalog: URL ⇄ state bridge) | `node examples/router-spa/server.js` | :3000 |
 | [`state-camera-record-upload/`](state-camera-record-upload/) | camera + permission + upload + state | any static server (secure context) | — |
 | [`state-color-palette/`](state-color-palette/) | eyedropper + clipboard + storage + state | any static server (EyeDropper is Chromium-only) | — |

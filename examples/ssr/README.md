@@ -23,6 +23,8 @@ Open http://localhost:3001
 - When `auto.js` loads in the browser, the existing DOM is hydrated (not re-rendered)
 - Event handlers become active (buttons work)
 - State changes trigger reactive DOM updates
+- Hydration only happens when the browser's `@wcstack/state` matches the server's on major/minor; on a mismatch the client discards the SSR output and renders from scratch
+- So `server.js` reads the version back out of the `<wcs-ssr version>` it just rendered and pins the CDN tag to it (`https://esm.run/@wcstack/state@<version>/auto`) instead of tracking `latest`
 
 ### Features Demonstrated
 
@@ -78,7 +80,7 @@ Browser Request
 
 | File | Description |
 |---|---|
-| `package.json` | Dependencies: `@wcstack/server`, `@wcstack/state` |
+| `package.json` | Dependency: `@wcstack/server` (which brings in `@wcstack/state`) |
 | `server.js` | Node.js server with SSR rendering and `/api/users` endpoint |
 | `template.html` | Source template with `<wcs-state enable-ssr>` and bindings |
 

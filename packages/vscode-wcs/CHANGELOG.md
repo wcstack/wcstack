@@ -18,6 +18,10 @@
 
 - **`wcs/nested-assign` の検出拡張** — 複合代入（`this.user.count += 1`）・前置/後置 `++` `--`・式添字チェーン（`this.rows[this.i].name = x`）が検出されていなかったギャップを解消（ランタイムでは単純代入と同じく非リアクティブ）。識別子添字の提示パスを `a.i.b` から動的添字マーカー `a.<i>.b` へ統一。プレーン `=` の診断 range は不変
 - **`<script>` の `type` 属性値を ASCII case-insensitive で判定** — `type="Module"` / `TYPE="MODULE"` のブロックが全 script 系診断からスキップされていた問題を修正（HTML 仕様準拠。`application/json` 判定も同様）
+- **state スクリプト走査のトークン境界** — コメント・文字列・テンプレートリテラルの中身を空白に潰した鏡像（オフセットは原文と一致）に対して走査するようにした。従来は生ソースに正規表現をかけていたため、`// note: メモ` のようなコメント内・文字列内の `word:` をトップレベルプロパティと誤認し、そこから次の `,` までを「値」として飲み込んで実在の宣言を丸ごと見失っていた（見失った宣言へのバインディングが `wcs/binding-path-missing` の誤検出になる）
+- **getter / setter 本体のスキップ** — getter はメソッドと違い本体を読み飛ばしていなかったため、本体内の `word:`（`return "https:"` 等）で走査位置がずれ、以降の宣言が候補から落ちていた。あわせて `set "ws.message"(value)` 形式の setter を宣言として認識する（従来は構文自体が未対応）。get / set のペアは 1 候補に畳む
+- **単独の省略パス `.` の展開** — `<forPath>.*.` と末尾区切り付きに展開していたため、`{{ . }}` / `textContent: .` が要素の実在にかかわらず常に「パスが存在しない」warning になっていた。ランタイム（`@wcstack/state` の `structural/expandShorthandPaths.ts`）と同じく `<forPath>.*` に展開する
+- **入れ子 `<template>` の内外判定** — 直近の開始位置と終了位置の比較で判定していたため、内側の `</template>` より後ろが外側 `<template>` の中でも「テンプレート外」と誤判定され、FOUC info と `<template for>` 外の省略パス warning が同時に誤発火していた。`forContext.ts` と同じ深度カウントに統一
 
 ## 1.10.0
 

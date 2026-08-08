@@ -101,14 +101,15 @@ export default { users: [{ name: "A" }] };
     expect(forDiag).toBeUndefined();
   });
 
-  it('if: に非ブーリアンパスを指定すると warning を出す', () => {
+  it('else: が続く if: に非ブーリアンパスを指定すると warning を出す', () => {
     const html = `
 <wcs-state>
   <script type="module">
 export default { count: 0 };
   </script>
 </wcs-state>
-<template data-wcs="if: count"></template>`;
+<template data-wcs="if: count"></template>
+<template data-wcs="else:"></template>`;
     const diags = validateBindings(html, 'data-wcs');
     const ifDiag = diags.find(d => d.message.includes('"if"'));
     expect(ifDiag).toBeDefined();
@@ -116,14 +117,15 @@ export default { count: 0 };
     expect(ifDiag!.message).toContain('ブーリアン型');
   });
 
-  it('if: users.length は number なので warning', () => {
+  it('else: が続く if: users.length は number なので warning', () => {
     const html = `
 <wcs-state>
   <script type="module">
 export default { users: [{ name: "A" }] };
   </script>
 </wcs-state>
-<template data-wcs="if: users.length"></template>`;
+<template data-wcs="if: users.length"></template>
+<template data-wcs="else:"></template>`;
     const diags = validateBindings(html, 'data-wcs');
     const ifDiag = diags.find(d => d.message.includes('"if"'));
     expect(ifDiag).toBeDefined();
@@ -156,7 +158,7 @@ export default { count: 0 };
     expect(ifDiag).toBeUndefined();
   });
 
-  it('JSDoc @type {boolean|null} は if: で warning（null を含むため）', () => {
+  it('JSDoc @type {boolean|null} は else: が続く if: で warning（null を含むため）', () => {
     const html = `
 <wcs-state>
   <script type="module">
@@ -166,11 +168,59 @@ export default {
 };
   </script>
 </wcs-state>
-<template data-wcs="if: ok"></template>`;
+<template data-wcs="if: ok"></template>
+<template data-wcs="else:"></template>`;
     const diags = validateBindings(html, 'data-wcs');
     const ifDiag = diags.find(d => d.message.includes('"if"'));
     expect(ifDiag).toBeDefined();
     expect(ifDiag!.message).toContain('boolean|null');
+  });
+
+  it('単独の if: は Boolean() 強制変換なので非ブーリアンでも warning を出さない', () => {
+    // ランタイム（apply/applyChangeToIf.ts）は `Boolean(rawNewValue)` で受けるため、
+    // else チェーンの無い if は任意の型を取れる。
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { count: 0, items: null };
+  </script>
+</wcs-state>
+<template data-wcs="if: count"></template>
+<template data-wcs="if: items"></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.find(d => d.message.includes('"if"'))).toBeUndefined();
+  });
+
+  it('elseif: が続く if: は warning（否定フラグメントに not が付くため）', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { count: 0 };
+  </script>
+</wcs-state>
+<template data-wcs="if: count"></template>
+<template data-wcs="elseif: count|gt(1)"></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const ifDiag = diags.find(d => d.message.includes('"if"'));
+    expect(ifDiag).toBeDefined();
+    expect(ifDiag!.message).toContain('ブーリアン型');
+  });
+
+  it('入れ子の else: は外側の if: をチェーンしない（別スコープ）', () => {
+    // ランタイムは template.content ごとに再帰してチェーンを組み直す
+    // （structural/collectStructuralFragments.ts）。
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { count: 0, ok: true };
+  </script>
+</wcs-state>
+<template data-wcs="if: count">
+  <template data-wcs="if: ok"></template>
+  <template data-wcs="else:"></template>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.find(d => d.message.includes('"if"'))).toBeUndefined();
   });
 
   it('JSDoc @type {boolean} は if: で OK', () => {
@@ -713,5 +763,34 @@ export default { count: 0, name: "a", items: [{ label: "x" }] };
     const diags = validateBindings(html, 'data-wcs');
     expect(diags).toHaveLength(1);
     expect(diags[0].message).toContain('ループインデックス');
+  });
+});
+
+describe('validateBindings — 省略パス `.` の展開', () => {
+  const STATE = `
+<wcs-state>
+  <script type="module">
+export default { tags: ["a", "b"], rows: [{ name: "x" }] };
+  </script>
+</wcs-state>`;
+
+  it('単独の `.` は `<forPath>.*` に展開して警告を出さない', () => {
+    // ランタイム: state/src/structural/expandShorthandPaths.ts は `.` を
+    // 末尾区切りなしの `tags.*` に展開する。
+    const html = `${STATE}\n<template data-wcs="for: tags"><li data-wcs="textContent: ."></li></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('`.name` は従来どおり `<forPath>.*.name` に展開する', () => {
+    const html = `${STATE}\n<template data-wcs="for: rows"><li data-wcs="textContent: .name"></li></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('展開先が存在しない `.` の warning には末尾区切りなしの展開先を出す', () => {
+    const html = `${STATE}\n<template data-wcs="for: missingList"><li data-wcs="textContent: ."></li></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('（展開: missingList.*）'))).toBe(true);
   });
 });

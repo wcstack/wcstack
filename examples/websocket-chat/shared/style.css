@@ -196,7 +196,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .log-echo { background: var(--log-echo-bg, rgba(22, 163, 74, 0.08)); color: var(--brand-strong); }
 .log-broadcast { background: var(--log-broadcast-bg, rgba(14, 165, 233, 0.08)); color: var(--log-broadcast-color, #0369a1); }
-.log-connected { background: rgba(34, 197, 94, 0.12); color: #15803d; font-weight: 600; }
 
 .log-stats {
   background: rgba(0, 0, 0, 0.04);

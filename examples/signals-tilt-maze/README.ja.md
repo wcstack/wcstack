@@ -33,9 +33,10 @@ npx serve examples/signals-tilt-maze
 | レンダリング | HTML テンプレート + 構造 `if:`/`for:` | `h()` — 実 DOM を一度構築、バインディング単位の effect |
 | 毎フレームの DOM 仕事 | バインド済みパスごとのパイプライン更新 | `style` effect **1 個**だけ再実行（`transform: translate(...)`） |
 | センサー有効化コマンド | command-token: `$command.startSensors` の emit 1 回が HTML 側の `command.*` 購読にファンアウト | ブリッジ経由の `tilt.command("requestPermission")` |
+| センサーパッケージの準備待ち | `<wcs-defined tags="…" timeout="5000">` ゲート → pending の間は Start を disabled | センサーごとの動的 `import()`（5 秒の上限も同じ） → 解決まで Start を disabled |
 | `:state()` スタイリング（game loop チップ） | 同一 | 同一 — CSS なのでコアは無関係 |
 
-真似する価値のある規律が 2 つ:
+真似する価値のある規律が 3 つ:
 
 - **step 内は `peek()`。** 物理はすべての signal（tilt・accel・phase・pos）を
   `peek()` で読むため、駆動 effect の依存はタイマー tick ただ 1 つ。センサー
@@ -45,6 +46,15 @@ npx serve examples/signals-tilt-maze
   コストは的を絞った `style` 書き込み 1 回 — diff なし、ホットパスに proxy
   トラップなし。「リアルタイム描画は signals 向き」というトレードを具体化
   したものです。
+- **定義タイミングはランタイムのゲートではなくモジュールグラフに載せる。** 副作用 import は
+  `<wcs-raf>` だけで、モジュール本体が bind する時点で定義済みです。static import は
+  all-or-nothing の辺（fetch が失敗するとモジュール自体が評価されない）であり、これは
+  ゲームループには正しく、それ以外には誤った取引です。そのため tilt・accelerometer・
+  wakelock は `import()` で読み、その **reject** が各縮退の分岐点になります。失うのは
+  その機能だけで、センサーが無ければドラッグ操作のみ、wakelock が無ければ画面が暗くなる、
+  という粒度です。`customElements.whenDefined()` は reject しないため、await すると
+  来ないパッケージにページ全体が張り付きます。詳細は
+  [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md)。
 
 ## 検証済み
 

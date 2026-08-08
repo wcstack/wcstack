@@ -57,7 +57,7 @@ $on: {
 - `disconnectedCallback` で全トラックを `track.stop()` し、ハードウェアインジケータを消します。ストリームのリークは本ノード固有の唯一の失敗様式です。
 - 要素を DOM 内で移動（remove → 再 append）すると `disconnectedCallback`（dispose・トラック停止）の後に `connectedCallback`（再 observe）が走ります。`autostart` 付きなら reconnect 時に再取得します（再プロンプトの可能性あり）。移動をまたいでストリームを維持したい場合は `autostart` を使わず自分で再 `start()` するか、要素を detach しないでください。
 - 制約変更（`device-id`・`facing-mode`・`switchCamera()`）は **再取得**（stop → 新 `getUserMedia`）を起こし、世代カウンタでガードするため、supersede された取得が orphan ストリームを生かしたまま残すことはありません。
-- ページ非表示中はストリームを suspend し、復帰時に再取得します——`keep-alive` がある場合を除く。`keep-alive: recording` をバインドすると録画中はカメラを生かし続けられます。
+- ページ非表示中はストリームを suspend し、復帰時に再取得します——`keep-alive` がある場合を除く。`keepAlive: recording` をバインドすると録画中はカメラを生かし続けられます。
 
 ## `<wcs-recorder>`
 

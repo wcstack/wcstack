@@ -28,10 +28,10 @@ nesting is the signal chain, `out="bus"` sends audio across the graph, and
 `<input>` bound to `<wcs-state>` with `data-wcs`; the state drives the audio
 nodes as plain property writes. Nothing on this page calls a Web Audio API.
 
-**Ordinary DOM lives inside the patch.** The `.controls` grid sits between
-`<wcs-gain>` and `<wcs-analyser>`. Adding markup there does *not* rebuild the
-graph — a structural change would cut every sounding voice, so the root filters
-its mutation observer down to audio elements.
+**Ordinary DOM lives inside the patch.** The `.controls` grid sits inside
+`<wcs-audio>`, right after `<wcs-analyser>`. Adding markup there does *not*
+rebuild the graph — a structural change would cut every sounding voice, so the
+root filters its mutation observer down to audio elements.
 
 **Drawing is the page's job.** `demo-ui.js` holds `<demo-keys>` and
 `<demo-scope>` — deliberately *not* part of the package. wcstack I/O nodes carry

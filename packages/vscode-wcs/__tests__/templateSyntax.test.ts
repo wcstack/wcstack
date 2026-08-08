@@ -108,3 +108,34 @@ describe('findCommentBindingAtOffset', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('insideTemplate の入れ子判定', () => {
+  const NESTED = `<template data-wcs="for: regions">
+  <template data-wcs="for: regions.*.states">
+    <span>{{ .name }}</span>
+  </template>
+  <b>{{ . }}</b>
+</template>
+<p>{{ total }}</p>`;
+
+  it('内側の </template> の後でも外側 <template> 内なら true', () => {
+    const matches = findAllMustacheSyntax(NESTED);
+    expect(matches.find(m => m.expression === '.')!.insideTemplate).toBe(true);
+  });
+
+  it('外側の </template> の後は false', () => {
+    const matches = findAllMustacheSyntax(NESTED);
+    expect(matches.find(m => m.expression === 'total')!.insideTemplate).toBe(false);
+  });
+
+  it('コメントバインディングでも入れ子を追跡する', () => {
+    const html = `<template data-wcs="for: regions">
+  <template data-wcs="for: regions.*.states"><!--@@: .name--></template>
+  <!--@@: .population-->
+</template>
+<!--@@: total-->`;
+    const matches = findAllCommentBindings(html);
+    expect(matches.find(m => m.expression === '.population')!.insideTemplate).toBe(true);
+    expect(matches.find(m => m.expression === 'total')!.insideTemplate).toBe(false);
+  });
+});

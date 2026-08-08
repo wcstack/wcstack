@@ -86,7 +86,6 @@
         },
       },
 
-      get bannerClass() { return this.permState; },
       get bannerText() {
         if (this.denied) return "Notifications are blocked. Enable them in your browser's site settings.";
         if (this.unsupported) return "The Notifications API is not available in this browser.";
@@ -107,7 +106,7 @@
 <wcs-notify
   data-wcs="command.request: $command.request; command.notify: $command.notify; eventToken.clicked: opened"></wcs-notify>
 
-<!-- Banner: shown only while NOT granted. `hidden@granted` — straight from the watcher. -->
+<!-- Banner: shown only while NOT granted. `hidden: granted` — straight from the watcher. -->
 <section data-wcs="hidden: granted">
   <div class="banner" data-wcs="class.prompt: prompt; class.denied: denied; class.unsupported: unsupported">
     <span data-wcs="textContent: bannerText"></span>

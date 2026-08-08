@@ -1,27 +1,4 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''description'''',''''''''\\)\\)\")",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''full_name'''',''''''''\\)\\)\")",
-      "WebFetch(domain:lit.dev)",
-      "WebFetch(domain:hybrids.js.org)",
-      "WebFetch(domain:stenciljs.com)",
-      "WebFetch(domain:minze.dev)",
-      "WebFetch(domain:atomicojs.dev)",
-      "Bash(git log:*)",
-      "Bash(npx rollup:*)",
-      "Bash(xargs cat:*)",
-      "Bash(timeout 3 node examples/websocket-chat/state/server.js)",
-      "Bash(node --input-type=module -e \":*)",
-      "Bash(node -e \"console.log\\(Buffer.from\\(''b37a4f2cc0624f1690f64606cf39594db2bec4ea'',''hex''\\).toString\\(''base64''\\)\\)\")",
-      "Bash(node examples/websocket-chat/react/server.js)",
-      "Bash(node examples/websocket-chat/vue/server.js)",
-      "Bash(kill %1 %2)",
-      "Bash(kill %1)",
-      "Bash(gh run:*)",
-      "Bash(node -p 'JSON.stringify\\({name:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).name, version:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).version, private:require\\('\\\\''./packages/__TRACKED_VAR__/package.json'\\\\''\\).private||false}\\)')"
-    ]
-  },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   }

@@ -23,8 +23,8 @@ interface ItemsResponse {
 
 /**
  * The wcBindable properties `<wcs-fetch>` mirrors into React state. `status` is
- * not used by the UI here, but every demo mirrors it to show <wcs-fetch> exposes
- * the HTTP status too.
+ * mirrored like every other demo to show <wcs-fetch> exposes the HTTP status
+ * too — it is rendered in the state-machine strip below.
  */
 interface FetchValues {
   value: ItemsResponse | null;

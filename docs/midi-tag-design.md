@@ -42,7 +42,7 @@ permission タグが monitor 専用だったのは Permissions API に `request`
 - **producer snapshot contract**: `data` は受信ごとに**新しい `Uint8Array` を割り当てて publish する**（プラットフォームのバッファを再利用しない）。RxJS の replay がバッファを抱え込んでも安全にする。
 
 ### 2.1 note on / note off の正規化【罠】
-MIDI では「velocity 0 の note-on」が note-off として使われる。派生 getter の `type` は**これを `"noteoff"` に正規化する**（synth-playground の [`_onMessage`](../examples/synth-playground/wcs-synth.js#L1019-L1026) と同じ扱い）。生の status バイトが必要な利用者は `data[0]` を読める。
+MIDI では「velocity 0 の note-on」が note-off として使われる。派生 getter の `type` は**これを `"noteoff"` に正規化する**（原型 synth-playground の `wcs-synth.js` の `_onMessage` と同じ扱い）。生の status バイトが必要な利用者は `data[0]` を読める。
 
 ---
 
@@ -121,7 +121,7 @@ $on: {
 - **初回スナップショット消失は起きない**。`requestMIDIAccess()` は async であり、`connectedCallback` 中の同期 dispatch が無い（permission §11.2 と同型・screen-orientation §7.1 の問題を回避）。
 - `message` は同値ガード**なし**（occurrence）。`devices` / `connected` / `permission` / `error` は同値ガード**あり**。
 - `_gen` 世代ガード: `request()` ごと＋ `dispose()` で bump。dispose 後に解決した `requestMIDIAccess` が listener を張らない。
-- `dispose()` は全 `input.onmidimessage = null` ＋ `access.onstatechange = null`。**synth-playground はこれを実装済み**（[wcs-synth.js:996-1001](../examples/synth-playground/wcs-synth.js#L996-L1001)）。
+- `dispose()` は全 `input.onmidimessage = null` ＋ `access.onstatechange = null`。**原型 synth-playground の `wcs-synth.js` で実証済み**（正本の実装は [`packages/midi/src/core/MidiCore.ts`](../packages/midi/src/core/MidiCore.ts) の `dispose()`）。
 
 ---
 

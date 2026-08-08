@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import { getWcsManifest, WCS_MANIFEST_VERSION } from "../src/manifest";
 import { outputBuiltinFilters } from "../src/filters/builtinFilters";
 import { builtinFilterMeta } from "../src/filters/filterMeta";
+import * as stateDefine from "../src/define";
 
 describe("wcs-manifest（単一正本・A2-1）", () => {
   it("filters は実装（builtinFilters のキー）から自動導出される＝実装が唯一の正本", () => {
@@ -70,5 +71,15 @@ describe("wcs-manifest（単一正本・A2-1）", () => {
     expect(m.reservedStateApi).toContain("$streams");
     expect(m.reservedStateApi).toContain("$streamStatus");
     expect(m.reservedStateApi).toContain("$streamError");
+  });
+
+  it("予約名は define.ts の `$` 定数を過不足なく網羅する（新しい予約キーの取りこぼしを検出）", () => {
+    // define.ts に `$` 始まりの定数を足したら、必ず reservedLifecycle か reservedStateApi の
+    // どちらかに入れること（vscode-wcs の validator もこの manifest を正本として追随する）。
+    const declared = Object.values(stateDefine)
+      .filter((v): v is string => typeof v === "string" && v.startsWith("$"))
+      .sort();
+    const m = getWcsManifest();
+    expect([...m.reservedLifecycle, ...m.reservedStateApi].sort()).toEqual(declared);
   });
 });

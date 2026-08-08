@@ -436,7 +436,9 @@ function analyzeStatePaths(scriptContent, stateName = "default") {
       continue;
     }
     if (prop.kind === "getter") {
-      paths.push({ path: prop.name, kind: "computed", stateName });
+      if (!paths.some((p) => p.stateName === stateName && p.path === prop.name)) {
+        paths.push({ path: prop.name, kind: "computed", stateName });
+      }
       continue;
     }
     pushDataPropertyPaths(prop, paths, stateName);
@@ -524,46 +526,32 @@ function extractStringArrayItems(value) {
   }
   return items;
 }
+var MAX_OBJECT_NEST_DEPTH = 5;
 function pushDataPropertyPaths(prop, paths, stateName) {
-  paths.push({ path: prop.name, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
+  pushDataPropertyPathsAt(prop.name, prop, paths, stateName, 0);
+}
+function pushDataPropertyPathsAt(path, prop, paths, stateName, depth) {
+  paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${prop.name}.*`, kind: "list", stateName });
-    paths.push({ path: `${prop.name}.length`, kind: "data", typeHint: "number", stateName });
+    paths.push({ path: `${path}.*`, kind: "list", stateName });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
     const elementProps = extractArrayElementProperties(prop.value);
     for (const childProp of elementProps) {
       paths.push({
-        path: `${prop.name}.*.${childProp.name}`,
+        path: `${path}.*.${childProp.name}`,
         kind: "data",
         typeHint: childProp.typeHint,
         stateName
       });
     }
+    return;
   }
   if (prop.value && isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
-      if (childProp.kind === "data") {
-        paths.push({
-          path: `${prop.name}.${childProp.name}`,
-          kind: "data",
-          typeHint: childProp.typeHint,
-          rawInitial: childProp.value?.trim(),
-          stateName
-        });
-        if (childProp.value && isArrayLiteral(childProp.value)) {
-          paths.push({ path: `${prop.name}.${childProp.name}.*`, kind: "list", stateName });
-          paths.push({ path: `${prop.name}.${childProp.name}.length`, kind: "data", typeHint: "number", stateName });
-          const grandchildProps = extractArrayElementProperties(childProp.value);
-          for (const gc of grandchildProps) {
-            paths.push({
-              path: `${prop.name}.${childProp.name}.*.${gc.name}`,
-              kind: "data",
-              typeHint: gc.typeHint,
-              stateName
-            });
-          }
-        }
-      }
+      if (childProp.kind !== "data") continue;
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, stateName, depth + 1);
     }
   }
 }
@@ -611,35 +599,44 @@ function inferJsonTypeHint(value) {
   return void 0;
 }
 function extractDefaultExportObject(script) {
-  const match = script.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
+  const scan = maskCommentsAndStrings(script);
+  const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
   if (!match) return null;
-  const startIndex = script.indexOf(match[1], match.index);
-  return extractBracedContent(script, startIndex);
+  const startIndex = scan.indexOf(match[1], match.index);
+  return extractBracedContent(script, scan, startIndex);
 }
 function parseTopLevelProperties(objectContent) {
   const props = [];
-  const regex = /(?:get\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\(\s*\))|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/g;
+  const scan = maskCommentsAndStrings(objectContent);
+  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
   let match;
-  while ((match = regex.exec(objectContent)) !== null) {
-    const getterName = match[1] ?? match[2] ?? match[3];
-    if (getterName) {
-      props.push({ name: getterName, kind: "getter" });
+  while ((match = regex.exec(scan)) !== null) {
+    const indices = match.indices;
+    const nameAt = (group) => {
+      const span = indices[group];
+      return span ? objectContent.slice(span[0], span[1]) : void 0;
+    };
+    const skipBody = () => {
+      const braceStart = match.index + match[0].length - 1;
+      const body = extractBracedContent(objectContent, scan, braceStart);
+      regex.lastIndex = braceStart + body.length + 2;
+    };
+    const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
+    if (accessorName) {
+      props.push({ name: accessorName, kind: "getter" });
+      skipBody();
       continue;
     }
-    const methodName = match[4];
+    const methodName = nameAt(4);
     if (methodName) {
       props.push({ name: methodName, kind: "method" });
-      const braceStart = objectContent.indexOf("{", match.index + match[0].length - 1);
-      if (braceStart !== -1) {
-        const body = extractBracedContent(objectContent, braceStart);
-        regex.lastIndex = braceStart + body.length + 2;
-      }
+      skipBody();
       continue;
     }
-    const propName = match[5] ?? match[6] ?? match[7];
+    const propName = nameAt(5) ?? nameAt(6) ?? nameAt(7);
     if (propName) {
       const valueStartIndex = match.index + match[0].length;
-      const value = extractFullValue(objectContent, valueStartIndex);
+      const value = extractFullValue(objectContent, scan, valueStartIndex);
       const jsdocType = extractJsDocType(objectContent, match.index);
       const typeHint = jsdocType ?? inferTypeHint(value);
       props.push({ name: propName, kind: "data", value, typeHint });
@@ -648,15 +645,48 @@ function parseTopLevelProperties(objectContent) {
   }
   return props;
 }
-function extractFullValue(content, startIndex) {
+function maskCommentsAndStrings(source) {
+  const out = source.split("");
+  const len = source.length;
+  const blank = (i2) => {
+    if (source[i2] !== "\n" && source[i2] !== "\r") out[i2] = " ";
+  };
+  let i = 0;
+  while (i < len) {
+    const ch = source[i];
+    if (ch === "/" && source[i + 1] === "/") {
+      i += 2;
+      while (i < len && source[i] !== "\n") blank(i++);
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < len && !(source[i] === "*" && source[i + 1] === "/")) blank(i++);
+      i += 2;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      i++;
+      while (i < len && source[i] !== ch) {
+        if (source[i] === "\\") blank(i++);
+        if (i < len) blank(i++);
+      }
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+function extractFullValue(content, scan, startIndex) {
   let depth = 0;
   let i = startIndex;
-  const len = content.length;
+  const len = scan.length;
   let inString = null;
   while (i < len) {
-    const ch = content[i];
+    const ch = scan[i];
     if (inString) {
-      if (ch === inString && !isEscaped(content, i)) {
+      if (ch === inString && !isEscaped(scan, i)) {
         inString = null;
       }
       i++;
@@ -676,13 +706,13 @@ function extractFullValue(content, startIndex) {
   }
   return content.slice(startIndex, i).trim();
 }
-function extractBracedContent(text, openBraceIndex) {
+function extractBracedContent(text, scan, openBraceIndex) {
   let depth = 0;
   let inString = null;
-  for (let i = openBraceIndex; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = openBraceIndex; i < scan.length; i++) {
+    const ch = scan[i];
     if (inString) {
-      if (ch === inString && !isEscaped(text, i)) {
+      if (ch === inString && !isEscaped(scan, i)) {
         inString = null;
       }
       continue;
@@ -708,16 +738,18 @@ function isObjectLiteral(value) {
 }
 function extractObjectContent(value) {
   const trimmed = value.trim();
-  const start = trimmed.indexOf("{");
+  const scan = maskCommentsAndStrings(trimmed);
+  const start = scan.indexOf("{");
   if (start === -1) return "";
-  return extractBracedContent(trimmed, start);
+  return extractBracedContent(trimmed, scan, start);
 }
 function extractArrayElementProperties(value) {
   const trimmed = value.trim();
   if (!trimmed.startsWith("[")) return [];
-  const objectStart = trimmed.indexOf("{");
+  const scan = maskCommentsAndStrings(trimmed);
+  const objectStart = scan.indexOf("{");
   if (objectStart === -1) return [];
-  const objectContent = extractBracedContent(trimmed, objectStart);
+  const objectContent = extractBracedContent(trimmed, scan, objectStart);
   const props = [];
   const allProps = parseTopLevelProperties(objectContent);
   for (const prop of allProps) {
@@ -1013,6 +1045,11 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
     pathsByState.set(p.stateName, list);
   }
   const attrs = findAllBindAttributes(html, attrName);
+  let structuralTemplates = null;
+  const getStructuralTemplates = () => {
+    structuralTemplates ??= collectStructuralTemplates(html, attrName);
+    return structuralTemplates;
+  };
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
@@ -1098,7 +1135,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
           if (pathTrimmed.startsWith(".")) {
             const forPath = getInnermostForPath(html, attr.valueStart, attrName);
             if (forPath && !forPath.startsWith(".")) {
-              checkPath = `${forPath}.*.${pathTrimmed.slice(1)}`;
+              checkPath = pathTrimmed === "." ? `${forPath}.*` : `${forPath}.*.${pathTrimmed.slice(1)}`;
             } else {
               checkPath = "";
             }
@@ -1207,7 +1244,10 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
         if (pathTrimmed && !pathTrimmed.startsWith(".") && !isLiteral(pathTrimmed)) {
           const resultType = resolveResultType(pathTrimmed, parsed.filters, scopedPaths);
           if (resultType !== null) {
-            const typeReq = getExpectedType(parsed.property);
+            const typeReq = getExpectedType(
+              parsed.property,
+              () => isNegatedByElseChain(getStructuralTemplates(), attr.valueStart)
+            );
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
@@ -1387,12 +1427,54 @@ function validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSe
   }
   return null;
 }
-function getExpectedType(property) {
+function collectStructuralTemplates(html, attrName) {
+  const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const attrRegex = new RegExp(`${escaped}\\s*=\\s*(["'])`, "i");
+  const tagRegex = /<template(?:\s[^>]*)?>|<\/template\s*>/gi;
+  const templates = [];
+  let depth = 0;
+  let match;
+  while ((match = tagRegex.exec(html)) !== null) {
+    if (match[0].startsWith("</")) {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    const attrMatch = attrRegex.exec(match[0]);
+    if (attrMatch) {
+      const quote = attrMatch[1];
+      const valueStart = match.index + attrMatch.index + attrMatch[0].length;
+      const valueEnd = html.indexOf(quote, valueStart);
+      if (valueEnd !== -1) {
+        const first = splitBindingExpressions(html.slice(valueStart, valueEnd))[0] ?? "";
+        const prop = first.split(":")[0].replace(/#.*$/, "").trim();
+        const type = prop === "if" || prop === "elseif" || prop === "else" ? prop : "other";
+        templates.push({ valueStart, depth, type });
+      }
+    }
+    depth++;
+  }
+  return templates;
+}
+function isNegatedByElseChain(templates, valueStart) {
+  const index = templates.findIndex((t) => t.valueStart === valueStart);
+  if (index === -1) return false;
+  const selfDepth = templates[index].depth;
+  for (let i = index + 1; i < templates.length; i++) {
+    const next = templates[i];
+    if (next.depth > selfDepth) continue;
+    if (next.depth < selfDepth) return false;
+    if (next.type === "elseif" || next.type === "else") return true;
+    if (next.type === "if") return false;
+  }
+  return false;
+}
+function getExpectedType(property, isNegatedIf) {
   const prop = property.replace(/#.*$/, "");
   if (prop === "for") {
     return { label: "for", expected: "array", severity: "error" };
   }
   if (prop === "if" || prop === "elseif") {
+    if (!isNegatedIf()) return null;
     return { label: prop, expected: "boolean", severity: "warning" };
   }
   if (prop.startsWith("class.")) {
@@ -1731,20 +1813,18 @@ function findAllCommentBindings(html, commentTextPrefix = "wcs-text") {
   return results;
 }
 function isInsideTag(html, offset, tagName) {
-  const openRegex = new RegExp(`<${tagName}[\\s>]`, "gi");
-  const closeRegex = new RegExp(`</${tagName}>`, "gi");
-  let lastOpenEnd = -1;
-  let lastCloseEnd = -1;
+  const tagRegex = new RegExp(`<(/?)${tagName}[\\s>]`, "gi");
+  let depth = 0;
   let match;
-  while ((match = openRegex.exec(html)) !== null) {
+  while ((match = tagRegex.exec(html)) !== null) {
     if (match.index > offset) break;
-    lastOpenEnd = match.index;
+    if (match[1]) {
+      depth = Math.max(0, depth - 1);
+    } else {
+      depth++;
+    }
   }
-  while ((match = closeRegex.exec(html)) !== null) {
-    if (match.index > offset) break;
-    lastCloseEnd = match.index;
-  }
-  return lastOpenEnd > lastCloseEnd;
+  return depth > 0;
 }
 
 // src/service/templateSyntaxValidator.ts
@@ -1814,7 +1894,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
       if (pathPart.startsWith(".")) {
         const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
         if (forPath && !forPath.startsWith(".")) {
-          const expandedPath = `${forPath}.*.${pathPart.slice(1)}`;
+          const expandedPath = pathPart === "." ? `${forPath}.*` : `${forPath}.*.${pathPart.slice(1)}`;
           if (!isValidTemplatePath(expandedPath, pathSet, defaultPaths)) {
             diagnostics.push({
               code: WcsDiagnosticCode.BindingPathMissing,

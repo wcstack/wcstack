@@ -69,15 +69,17 @@
         bassResonance: 8,
         activeVoices: 0,
 
+        $commandTokens: ["play", "stop"],
         $eventTokens: ["onMidi"],
         $on: {
           // The MIDI node produces state; deciding what a message means to this
-          // page is the page's job.
+          // page is the page's job. The command tokens carry that decision to
+          // <wcs-audio> without state ever holding a reference to the element —
+          // emit arguments reach noteOn / noteOff verbatim.
           onMidi: (state, event) => {
             const { type, note, velocity } = event.detail;
-            const synth = document.getElementById("synth");
-            if (type === "noteon") synth.noteOn(note, velocity);
-            else if (type === "noteoff") synth.noteOff(note);
+            if (type === "noteon") state.$command.play.emit(note, velocity);
+            else if (type === "noteoff") state.$command.stop.emit(note);
           },
         },
       };
@@ -85,7 +87,12 @@
 
     <h2>Poly synth — 8 voices, 3 osc → filter (LFO) → env → bus → delay</h2>
     <div class="panel">
-      <wcs-audio id="synth" data-wcs="volume: volume; voices: activeVoices">
+      <wcs-audio id="synth" data-wcs="
+        command.noteOn: $command.play;
+        command.noteOff: $command.stop;
+        volume: volume;
+        voices: activeVoices
+      ">
         <wcs-voice poly="8">
           <wcs-osc type="sawtooth" note detune="-7" out="vcf"></wcs-osc>
           <wcs-osc type="sawtooth" note detune="7" out="vcf"></wcs-osc>

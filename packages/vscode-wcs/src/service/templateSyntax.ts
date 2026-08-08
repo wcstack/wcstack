@@ -136,23 +136,25 @@ export function findCommentBindingAtOffset(
 
 /**
  * 指定位置が特定のタグ内にあるかを簡易判定する。
+ *
+ * 開始・終了タグを出現順に数えて深度で判定する（forContext.ts の
+ * getForTemplateDepthAt と同じ方針）。`<template>` は入れ子になるので、
+ * 直近の開始／終了位置の比較では内側の `</template>` を外側の閉じと
+ * 取り違えて「テンプレート外」と誤判定する。
  */
 function isInsideTag(html: string, offset: number, tagName: string): boolean {
-  const openRegex = new RegExp(`<${tagName}[\\s>]`, 'gi');
-  const closeRegex = new RegExp(`</${tagName}>`, 'gi');
+  const tagRegex = new RegExp(`<(/?)${tagName}[\\s>]`, 'gi');
 
-  let lastOpenEnd = -1;
-  let lastCloseEnd = -1;
-
+  let depth = 0;
   let match: RegExpExecArray | null;
-  while ((match = openRegex.exec(html)) !== null) {
+  while ((match = tagRegex.exec(html)) !== null) {
     if (match.index > offset) break;
-    lastOpenEnd = match.index;
-  }
-  while ((match = closeRegex.exec(html)) !== null) {
-    if (match.index > offset) break;
-    lastCloseEnd = match.index;
+    if (match[1]) {
+      depth = Math.max(0, depth - 1);
+    } else {
+      depth++;
+    }
   }
 
-  return lastOpenEnd > lastCloseEnd;
+  return depth > 0;
 }

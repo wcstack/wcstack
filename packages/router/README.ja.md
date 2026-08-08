@@ -364,7 +364,7 @@ bootstrapRouter({
 
 1. `<wcs-router basename="/app">` の `basename` 属性
 2. `<base href="/app/">` がある場合は `new URL(document.baseURI).pathname` から導出
-3. どちらも無い場合は **空文字** `""`（= ルート直下で動く想定）
+3. どちらも無い場合、`document.baseURI` は現在のドキュメント URL なので basename は `location.pathname` から導出される。**空文字** `""` になるのはドキュメント自体がルートで読み込まれた場合だけで、`/products/3` を直接開けば basename は `/products/3` になる。深いリンクを成立させるには `<base href="/">` か `basename` 属性が必要
 
 ### 1.2 basename の正規化（重要）
 

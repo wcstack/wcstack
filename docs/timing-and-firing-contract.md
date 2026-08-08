@@ -35,7 +35,7 @@
 `url` 変化（属性経由）と connect 時の自動 fetch は `queueMicrotask` に集約される（`_scheduleAutoFetch`）。
 
 - **同一 tick の複数入力は最終状態で1回に集約**: spread が `url` の次に `manual` を書いても、microtask 時点の最終状態で判定するので順序由来の誤 fetch が起きない
-- **same-value ガード**: `url === _lastFetchedUrl` の auto-fetch はスキップ。`"abc"→""→"abc"` は再 fetch される（直前値 `""` と異なるため）が、`"abc"→"abc"` はスキップ
+- **same-value ガード**: `url === _lastFetchedUrl` の auto-fetch はスキップ。`_lastFetchedUrl` が覚えているのは「直前の url」ではなく**最後に実際に fetch した url**（`fetch()` 内でのみ書かれ、disconnect でのみ null に戻る）。したがって間に挟まる非 fetch 状態（url 空など）は `_lastFetchedUrl` を更新しないので、`"abc"→""→"abc"` も `"abc"→"abc"` と同じく**スキップされる**。同じ url をもう一度取りたい場合は明示トリガー（§1.3 の `fetch()` / `trigger=true` / `fetch` コマンド）か、`_lastFetchedUrl` を null に戻す再マウントが要る
 
 ### 1.3 明示トリガーは即時・無条件（de-dup を迂回）
 `fetch()` 呼び出し / `trigger=true` / `fetch` コマンド / `data-fetchtarget` クリックは **同期で即実行**し、`_lastFetchedUrl` の同値ガードを**通らない**。

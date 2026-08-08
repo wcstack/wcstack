@@ -36,8 +36,8 @@ credential / eyedropper / gyroscope / magnetometer / ambient-light-sensor
 - **設計判断（実装時に確定）**: `<wcs-sse>` と `$streams` は「SSE を state に取り込む」という**同じ仕事を取り合う競合手段**であり、直結すると不正直な設計になる。よって直列でなく並置比較にし、「要素へ配線するだけならタグ / state 側で fold・switchMap が要るなら `$streams`」という使い分けを主題にする。
 - **見せ場**: ホスト切替。左は `$on` で fold した履歴のリセットが手書き 3 行、右は `args` の依存駆動 restart で自動リセット（switchMap）。sse は README しかない唯一の通信系ノードで初カバー、`$streams`（[state-streams-design.md](./state-streams-design.md)）の初のクロスパッケージ実戦投入。fold は **last-N の有界集計**=「backpressure 放棄・fold 有界化」規範のショーケース。名前付きイベント（`events="metric,deploy"` → `message.event`）も実演。
 - **network の役割（当初案から修正）**: `<wcs-network>` は Network Information API 専用で **online/offline は公開していない**（実装確認済み）。よって「オフラインバナー」ではなく**回線品質タイル**（effectiveType / downlink / rtt / saveData）として使う。初期スナップショットは接続時に同期 dispatch されるためバインド確立前に取り逃す — 当初は state の `$connectedCallback` で現在値を一度 pull していたが、directional initial sync（既定 ON）が構造的に解決したため撤去済み（output-only メンバの既定 authority = `element`）。
-- **サーバー**: `examples/shared/server.js` の api フック（生 req/res）で SSE ストリーミングルートを実装。`/state-dist/` に packages/state のローカルビルドをマウント。
-- **注意**: `$streams` は未リリースのため、リリースまでは state のみローカルビルド参照。**次回 minor リリース後に CDN 一発化する**（README に明記）。
+- **サーバー**: `examples/shared/server.js` の api フック（生 req/res）で SSE ストリーミングルートを実装。
+- **CDN 一発化済み**: `$streams` は v1.19.0 で公開済みのため、ローカルビルド参照は不要（3 パッケージとも `https://esm.run/@wcstack/<pkg>/auto`）。
 
 ### 2-2. `state-pomodoro` = timer + wakelock + notification + state
 

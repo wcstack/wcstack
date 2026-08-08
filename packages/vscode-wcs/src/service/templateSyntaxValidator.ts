@@ -99,7 +99,11 @@ export function validateTemplateSyntax(
       if (pathPart.startsWith(".")) {
         const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
         if (forPath && !forPath.startsWith(".")) {
-          const expandedPath = `${forPath}.*.${pathPart.slice(1)}`;
+          // 単独の `.` は行そのもの＝`<forPath>.*`（末尾に区切りは付かない）。
+          // ランタイム: state/src/structural/expandShorthandPaths.ts
+          const expandedPath = pathPart === "."
+            ? `${forPath}.*`
+            : `${forPath}.*.${pathPart.slice(1)}`;
           if (!isValidTemplatePath(expandedPath, pathSet, defaultPaths)) {
             diagnostics.push({
               code: WcsDiagnosticCode.BindingPathMissing,

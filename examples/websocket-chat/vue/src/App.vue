@@ -60,8 +60,6 @@ watch(() => ws.message, (msg) => {
     entry.text = msg.content ?? "";
   } else if (msg.type === "broadcast") {
     entry.text = `[${msg.from}] ${msg.content}`;
-  } else if (msg.type === "connected") {
-    entry.text = `WebSocket connected (${msg.clients} clients)`;
   } else {
     entry.text = JSON.stringify(msg);
   }

@@ -38,8 +38,11 @@ npm install @wcstack/midi
 ### 1. MIDI キーボードで音符を受ける
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+<!-- I/O ノードを state より先に: module スクリプトは文書順に実行されるため、
+     state が束縛する前に <wcs-midi> が定義済みになる。未定義の要素へ撃った
+     command-token の emit は replay されない -->
 <script type="module" src="https://esm.run/@wcstack/midi/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

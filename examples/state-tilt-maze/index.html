@@ -118,10 +118,14 @@
       wakelockHeld: false,
 
       // Sensor-package readiness, watched by <wcs-defined> below. Seeded with
-      // "both still pending" so Start is disabled on the very first paint,
-      // before the gate reports.
+      // the element's real initial values: `defined` / `pending` / `missing` are
+      // output-only, so <wcs-defined> overwrites these the moment bindings
+      // attach. Seeding "both still pending" instead would make @wcstack/defined
+      // itself a fail-closed single point of failure — if only that CDN fetch
+      // failed, the gate would never report and Start would stay disabled
+      // forever, the one lockout this demo is designed to avoid.
       sensorsReady: false,
-      sensorsPending: ["wcs-tilt", "wcs-accelerometer"],
+      sensorsPending: [],
       sensorsMissing: [],
 
       // One command token fans out to every sensor-enabling command — the

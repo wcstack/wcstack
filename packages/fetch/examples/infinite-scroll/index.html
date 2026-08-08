@@ -138,8 +138,9 @@
      trigger against an empty url and the page would never load (spinner stuck). A
      static page-1 url removes that race: the trigger always has a url, whoever wins.
      `manual` keeps this static url from auto-fetching; the binding rewrites it to
-     page 2+ as `page` advances. (Demo B needs no equivalent — a no-`manual` fetch
-     self-heals via attributeChangedCallback when the bound url finally arrives.) -->
+     page 2+ as `page` advances. (`state-intersect-scroll` has no equivalent race
+     because its `$streams` producer eagerly owns the page-1 request; it does not
+     trigger a separately bound `<wcs-fetch>`.) -->
 <wcs-fetch id="page-fetch" manual url="/api/items?page=1&amp;limit=20"
   data-wcs="url: pageFetch.url; loading: pageFetch.loading; error: pageFetch.error; eventToken.value: pageArrived"></wcs-fetch>
 

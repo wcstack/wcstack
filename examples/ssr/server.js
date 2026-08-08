@@ -25,6 +25,20 @@ let cachedHtml = null;
 
 // --- Page rendering ---
 
+// The client only hydrates when its @wcstack/state agrees with the server's on
+// major.minor (Ssr.verifyVersion); otherwise it throws the server output away
+// and renders from scratch. The version used here is whatever npm resolved for
+// the transitive @wcstack/state, so the CDN tag cannot be left floating on
+// `latest`. The rendered markup already carries it in <wcs-ssr version="...">,
+// which is why the pin is read back from the output instead of imported —
+// importing @wcstack/state in Node fails (it touches HTMLElement at load).
+function stateScriptUrl(ssrBody) {
+  const version = ssrBody.match(/<wcs-ssr\b[^>]*\sversion="([^"]+)"/)?.[1];
+  return version
+    ? `https://esm.run/@wcstack/state@${version}/auto`
+    : "https://esm.run/@wcstack/state/auto";
+}
+
 function wrapPage(ssrBody) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -59,7 +73,7 @@ function wrapPage(ssrBody) {
 
 ${ssrBody}
 
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+<script type="module" src="${stateScriptUrl(ssrBody)}"></script>
 </body>
 </html>`;
 }

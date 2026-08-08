@@ -69,7 +69,7 @@ cd examples/websocket-chat/react
 npm run dev
 ```
 
-Vite dev server starts with HMR. WebSocket server must be started separately.
+Vite dev server starts with HMR. The `/ws` endpoint lives on the demo server, so start it separately (`node server.js`) — `vite.config.js` proxies `/ws` to it.
 
 ## Environment variables
 
@@ -96,6 +96,8 @@ function App() {
   );
 }
 ```
+
+`<wcs-ws>` must be defined before this component renders; the demo does `import "@wcstack/websocket/auto";` once in `src/main.tsx` (see [docs/framework-adapter-integration.md](../../../docs/framework-adapter-integration.md) §1 — the adapter binds nothing, and reports nothing, if the element is not yet upgraded).
 
 ## WebSocket protocol
 

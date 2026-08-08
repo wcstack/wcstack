@@ -57,8 +57,8 @@
 </head>
 <body>
 
-<h1>wcstack: live metrics — one SSE feed, two idioms</h1>
-<p class="lead">sse + state($streams) + network — the same server-sent event stream consumed twice: left through the <code>&lt;wcs-sse&gt;</code> tag, right through a state-side <code>$streams</code> fold. Switch hosts and watch who has to remember to reset.</p>
+<h1>wcstack: live metrics — one SSE endpoint, two idioms</h1>
+<p class="lead">sse + state($streams) + network — the same server-sent event endpoint consumed two ways: left through the <code>&lt;wcs-sse&gt;</code> tag, right through a state-side <code>$streams</code> fold. Each idiom holds its <em>own</em> <code>EventSource</code>, and the server samples per connection, so the two charts move independently. Switch hosts and watch who has to remember to reset.</p>
 
 <!-- ============================================================
      App State
@@ -102,6 +102,17 @@
             return new ReadableStream({
               start(controller) {
                 es.addEventListener("metric", (e) => controller.enqueue(JSON.parse(e.data)));
+                // EventSource retries by itself and only reaches CLOSED when the
+                // failure is terminal (bad status / wrong content-type); a dropped
+                // connection leaves readyState at CONNECTING, and ignoring that is
+                // exactly what lets native reconnection happen. controller.error()
+                // is the ONLY way this source can reach $streamStatus "error", and
+                // it does NOT run cancel() below — hence the explicit close here.
+                es.addEventListener("error", () => {
+                  if (es.readyState !== EventSource.CLOSED) return;
+                  es.close();
+                  controller.error(new Error("EventSource closed: /api/metrics is unreachable."));
+                });
               },
               cancel() {
                 es.close();

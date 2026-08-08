@@ -13,8 +13,8 @@ const url = computed(() => `/api/items?page=${page.value}&limit=${LIMIT}`);
 // fetch()/AbortController here — writing the `:url` (in the template) makes
 // <wcs-fetch> refetch and abort the previous in-flight request, so
 // stale-response protection lives in the element.
-// status is not used by the UI here, but every demo mirrors it to show
-// <wcs-fetch> exposes the HTTP status too.
+// status is mirrored like every other demo to show <wcs-fetch> exposes the
+// HTTP status too — rendered in the state-machine strip below.
 const { ref: fetcherRef, values } = useWcBindable({
   value: null,
   loading: false,

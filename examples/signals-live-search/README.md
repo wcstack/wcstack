@@ -29,11 +29,19 @@ Open http://localhost:3000 in your browser.
 
 ## Key points
 
-- **One adapter, any IO node.** `bindNode(fetchEl)` reads the element's
-  `wcBindable` descriptor (`fetchEl.constructor.wcBindable`) and turns its output
-  properties (`value` / `loading` / `error` / `status`) into read-only signals. The
-  `<wcs-fetch>` element has **no idea** a signal core is behind the binding — that is
-  the whole point: IO is the node, reactivity is the core.
+- **One adapter, any IO node.** `mountNode("wcs-fetch")` creates the element, binds it
+  and connects it — in that order, so the adapter is subscribed before
+  `connectedCallback` can fire anything. It reads the registered class's `wcBindable`
+  descriptor and turns the node's output properties (e.g. `value` / `loading` / `error` /
+  `status`) into read-only signals. The `<wcs-fetch>` element has **no idea** a signal
+  core is behind the binding — that is the whole point: IO is the node, reactivity is
+  the core.
+- **The page owns the node, so the module graph orders it.** What guarantees
+  `<wcs-fetch>` is defined before `mountNode` runs is the side-effect
+  `import "@wcstack/fetch/auto"` at the top of the module — not
+  `await customElements.whenDefined()`, which is the shape for a tag someone *else*
+  loads: it never rejects, so a package that fails to arrive would hang the page
+  silently. See [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md).
 - **Fine-grained `h`, no VDOM.** `h(tag, props, ...children)` creates real DOM once;
   a prop or child given as a **function/signal** is wired to a targeted `effect`, so
   only that one binding updates. No reconciler is shipped.

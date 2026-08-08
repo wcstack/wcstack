@@ -46,8 +46,9 @@ node examples/websocket-chat/state/server.js
 
 ## このデモで確認できること
 
+- `...: ws` スプレッドによる `<wcs-ws>` バインダブル面の一括配線（各プロパティは state の `ws.<name>` に対応）
 - `<wcs-ws>` の `message` / `connected` / `loading` / `error` を `<wcs-state>` に束縛
-- `send` プロパティを使った state 起点のメッセージ送信
+- command-token プロトコルによるメッセージ送信：state 側の `$commandTokens: ["wsSend"]`、要素側の `command.sendMessage: $command.wsSend`、呼び出し側の `this.$command.wsSend.emit(json)`
 - `auto-reconnect` による自動再接続
 - JSON メッセージの自動パース
 - メッセージ種別ごとの条件分岐表示（`for:` + `if:` + `eq` フィルタ）

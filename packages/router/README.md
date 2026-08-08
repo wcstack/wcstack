@@ -364,7 +364,7 @@ bootstrapRouter({
 
 1. The `basename` attribute on `<wcs-router basename="/app">`
 2. If `<base href="/app/">` exists, derive from `new URL(document.baseURI).pathname`
-3. If neither exists, use **empty string** `""` (assumes running at root)
+3. If neither exists, `document.baseURI` is the current document URL, so the basename is still derived from `location.pathname`. It becomes **empty string** `""` only when the document itself was loaded at the root — a direct load of `/products/3` yields the basename `/products/3`, so an app that must survive deep links needs `<base href="/">` or an explicit `basename` attribute
 
 ### 1.2 basename normalization (important)
 
