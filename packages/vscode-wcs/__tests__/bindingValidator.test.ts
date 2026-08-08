@@ -715,3 +715,32 @@ export default { count: 0, name: "a", items: [{ label: "x" }] };
     expect(diags[0].message).toContain('ループインデックス');
   });
 });
+
+describe('validateBindings — 省略パス `.` の展開', () => {
+  const STATE = `
+<wcs-state>
+  <script type="module">
+export default { tags: ["a", "b"], rows: [{ name: "x" }] };
+  </script>
+</wcs-state>`;
+
+  it('単独の `.` は `<forPath>.*` に展開して警告を出さない', () => {
+    // ランタイム: state/src/structural/expandShorthandPaths.ts は `.` を
+    // 末尾区切りなしの `tags.*` に展開する。
+    const html = `${STATE}\n<template data-wcs="for: tags"><li data-wcs="textContent: ."></li></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('`.name` は従来どおり `<forPath>.*.name` に展開する', () => {
+    const html = `${STATE}\n<template data-wcs="for: rows"><li data-wcs="textContent: .name"></li></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags).toHaveLength(0);
+  });
+
+  it('展開先が存在しない `.` の warning には末尾区切りなしの展開先を出す', () => {
+    const html = `${STATE}\n<template data-wcs="for: missingList"><li data-wcs="textContent: ."></li></template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    expect(diags.some(d => d.message.includes('（展開: missingList.*）'))).toBe(true);
+  });
+});

@@ -432,3 +432,98 @@ export default {
     expect(pathNames).not.toContain('$streams.metrics');
   });
 });
+
+describe('analyzeStatePaths — トップレベル走査のトークン境界', () => {
+  it('行コメント内の `word:` をプロパティにせず、後続の宣言も見失わない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  // note: 行コメント内のコロン
+  count: 0,
+  total: 0,
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).not.toContain('note');
+    expect(pathNames).toContain('count');
+    expect(pathNames).toContain('total');
+  });
+
+  it('ブロックコメント内の `word:` をプロパティにせず、後続の宣言も見失わない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  /* memo: ブロックコメント内のコロン
+     more: 複数行 */
+  count: 0,
+  total: 0,
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).not.toContain('memo');
+    expect(pathNames).not.toContain('more');
+    expect(pathNames).toContain('count');
+    expect(pathNames).toContain('total');
+  });
+
+  it('文字列リテラル内の `word:` をプロパティにせず、後続の宣言も見失わない', () => {
+    // 既定引数に `)` を含むメソッドは走査対象の構文として認識できないため、
+    // 走査位置が本体内に入る。その中の文字列が構文として読まれないことを確かめる。
+    const paths = analyzeStatePaths(`
+export default {
+  count: 0,
+  format(value = String(0)) {
+    return "ratio: " + value;
+  },
+  total: 0,
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).not.toContain('ratio');
+    expect(pathNames).toContain('count');
+    expect(pathNames).toContain('total');
+  });
+
+  it('文字列リテラル内の `//` をコメント開始と誤認しない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  endpoint: "https://example.com/api",
+  ready: false,
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('endpoint');
+    expect(pathNames).toContain('ready');
+  });
+
+  it('getter 本体をスキップして後続の宣言を見失わない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  a: 1,
+  get u() { return "https:"; },
+  b: 2,
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).not.toContain('https');
+    expect(pathNames).toContain('a');
+    expect(pathNames).toContain('u');
+    expect(pathNames).toContain('b');
+  });
+
+  it('setter をアクセサとして認識する', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  set "form.name"(value) { this._name = value; },
+};`);
+    expect(paths.map(p => p.path)).toContain('form.name');
+    expect(paths.find(p => p.path === 'form.name')?.kind).toBe('computed');
+  });
+
+  it('get/set ペアは 1 つの候補にまとめ、引数名をメソッドとして拾わない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  _last: null,
+  get "ws.message"() { return this._last; },
+  set "ws.message"(value) { this._last = value; },
+  ready: false,
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(paths.filter(p => p.path === 'ws.message')).toHaveLength(1);
+    expect(pathNames).not.toContain('value');
+    expect(pathNames).toContain('ready');
+  });
+});

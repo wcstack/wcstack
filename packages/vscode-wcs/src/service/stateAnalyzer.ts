@@ -70,8 +70,11 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
     }
 
     if (prop.kind === 'getter') {
-      // computed getter: "users.*.ageCategory" のようなパス
-      paths.push({ path: prop.name, kind: 'computed', stateName });
+      // computed getter / setter: "users.*.ageCategory" のようなパス。
+      // get/set のペアは同じパスを 2 度宣言するので候補は 1 つに畳む。
+      if (!paths.some(p => p.stateName === stateName && p.path === prop.name)) {
+        paths.push({ path: prop.name, kind: 'computed', stateName });
+      }
       continue;
     }
 
@@ -356,6 +359,7 @@ function inferJsonTypeHint(value: unknown): string | undefined {
 
 interface PropertyInfo {
   name: string;
+  /** `getter` は get / set 双方（どちらも計算パスの宣言なので区別しない）。 */
   kind: 'data' | 'getter' | 'method';
   value?: string;
   typeHint?: string;
@@ -370,51 +374,67 @@ interface SimpleProperty {
  * `export default { ... }` からオブジェクトリテラルの中身を抽出する。
  */
 function extractDefaultExportObject(script: string): string | null {
+  const scan = maskCommentsAndStrings(script);
   // defineState({ ... }) または { ... } を検出
-  const match = script.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
+  const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
   if (!match) return null;
 
-  const startIndex = script.indexOf(match[1], match.index!);
-  return extractBracedContent(script, startIndex);
+  const startIndex = scan.indexOf(match[1], match.index!);
+  return extractBracedContent(script, scan, startIndex);
 }
 
 /**
  * オブジェクトリテラルのトップレベルプロパティを解析する。
  * トークンベースでスキャンし、ネストされた括弧をスキップする。
+ *
+ * 走査はマスク済みの鏡像（コメント・文字列リテラルの中身を空白に潰したもの）に対して
+ * 行い、名前と値のテキストは原文から切り出す。鏡像は原文と長さ・オフセットが一致する。
  */
 function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
   const props: PropertyInfo[] = [];
+  const scan = maskCommentsAndStrings(objectContent);
   // 名前は `$` プレフィックスを含めて捕捉する（`\w` だけだと `$streams:` の
-  // `streams` 部分にマッチして偽のパスが生まれる）
-  const regex = /(?:get\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\(\s*\))|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/g;
+  // `streams` 部分にマッチして偽のパスが生まれる）。
+  // `d` フラグ必須 — 引用符付きキーは鏡像では中身が空白なので、名前は
+  // match.indices が示す範囲を原文から取り直す。
+  const regex = /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?([$\w]+)\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
 
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(objectContent)) !== null) {
-    // getter: get "path"() or get path()
-    const getterName = match[1] ?? match[2] ?? match[3];
-    if (getterName) {
-      props.push({ name: getterName, kind: 'getter' });
+  while ((match = regex.exec(scan)) !== null) {
+    const indices = match.indices!;
+    const nameAt = (group: number): string | undefined => {
+      const span = indices[group];
+      return span ? objectContent.slice(span[0], span[1]) : undefined;
+    };
+    // 本体 `{ ... }` を読み飛ばして走査位置をその直後へ送る（本体内の `word:` を
+    // トップレベルのプロパティと誤認しないため）。
+    const skipBody = (): void => {
+      const braceStart = match!.index + match![0].length - 1;
+      const body = extractBracedContent(objectContent, scan, braceStart);
+      regex.lastIndex = braceStart + body.length + 2; // +2 for { and }
+    };
+
+    // accessor: get/set "path"() or get/set path()
+    const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
+    if (accessorName) {
+      props.push({ name: accessorName, kind: 'getter' });
+      skipBody();
       continue;
     }
 
     // method: name(args) {
-    const methodName = match[4];
+    const methodName = nameAt(4);
     if (methodName) {
       props.push({ name: methodName, kind: 'method' });
-      // メソッド本体をスキップ
-      const braceStart = objectContent.indexOf('{', match.index + match[0].length - 1);
-      if (braceStart !== -1) {
-        const body = extractBracedContent(objectContent, braceStart);
-        regex.lastIndex = braceStart + body.length + 2; // +2 for { and }
-      }
+      skipBody();
       continue;
     }
 
     // data property: name: value
-    const propName = match[5] ?? match[6] ?? match[7];
+    const propName = nameAt(5) ?? nameAt(6) ?? nameAt(7);
     if (propName) {
       const valueStartIndex = match.index + match[0].length;
-      const value = extractFullValue(objectContent, valueStartIndex);
+      const value = extractFullValue(objectContent, scan, valueStartIndex);
       // JSDoc @type アノテーションがあれば優先、なければ値から推定
       const jsdocType = extractJsDocType(objectContent, match.index);
       const typeHint = jsdocType ?? inferTypeHint(value);
@@ -428,19 +448,71 @@ function parseTopLevelProperties(objectContent: string): PropertyInfo[] {
 }
 
 /**
- * プロパティ値のフルテキストを抽出する（ネストされた括弧を追跡）。
+ * 行コメント・ブロックコメント・文字列/テンプレートリテラルの「中身」を空白に
+ * 置換した鏡像を返す。改行と長さは保つので、鏡像上で求めたオフセットはそのまま
+ * 原文に使える。コメントの開始終了記号と引用符自体は残すため、走査側は原文と
+ * 同じトークン境界を見られる。
+ *
+ * 正規表現リテラルは解釈しない（`/["']/` のような値は文字列の開始とみなされる）。
  */
-function extractFullValue(content: string, startIndex: number): string {
+function maskCommentsAndStrings(source: string): string {
+  const out = source.split('');
+  const len = source.length;
+  const blank = (i: number): void => {
+    // 改行は残す（鏡像の行構造を原文と一致させる）
+    if (source[i] !== '\n' && source[i] !== '\r') out[i] = ' ';
+  };
+
+  let i = 0;
+  while (i < len) {
+    const ch = source[i];
+
+    if (ch === '/' && source[i + 1] === '/') {
+      i += 2;
+      while (i < len && source[i] !== '\n') blank(i++);
+      continue;
+    }
+
+    if (ch === '/' && source[i + 1] === '*') {
+      i += 2;
+      while (i < len && !(source[i] === '*' && source[i + 1] === '/')) blank(i++);
+      i += 2;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'" || ch === '`') {
+      i++;
+      while (i < len && source[i] !== ch) {
+        if (source[i] === '\\') blank(i++);
+        if (i < len) blank(i++);
+      }
+      i++;
+      continue;
+    }
+
+    i++;
+  }
+
+  return out.join('');
+}
+
+/**
+ * プロパティ値のフルテキストを抽出する（ネストされた括弧を追跡）。
+ *
+ * @param content - 原文（返す値のテキストはここから切り出す）
+ * @param scan - content のマスク済み鏡像（境界判定はこちらで行う）
+ */
+function extractFullValue(content: string, scan: string, startIndex: number): string {
   let depth = 0;
   let i = startIndex;
-  const len = content.length;
+  const len = scan.length;
   let inString: string | null = null;
 
   while (i < len) {
-    const ch = content[i];
+    const ch = scan[i];
 
     if (inString) {
-      if (ch === inString && !isEscaped(content, i)) {
+      if (ch === inString && !isEscaped(scan, i)) {
         inString = null;
       }
       i++;
@@ -465,16 +537,19 @@ function extractFullValue(content: string, startIndex: number): string {
 
 /**
  * `{ ... }` の中身（外側の括弧を除く）を抽出する。
+ *
+ * @param text - 原文（返す中身のテキストはここから切り出す）
+ * @param scan - text のマスク済み鏡像（括弧の数え上げはこちらで行う）
  */
-function extractBracedContent(text: string, openBraceIndex: number): string {
+function extractBracedContent(text: string, scan: string, openBraceIndex: number): string {
   let depth = 0;
   let inString: string | null = null;
 
-  for (let i = openBraceIndex; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = openBraceIndex; i < scan.length; i++) {
+    const ch = scan[i];
 
     if (inString) {
-      if (ch === inString && !isEscaped(text, i)) {
+      if (ch === inString && !isEscaped(scan, i)) {
         inString = null;
       }
       continue;
@@ -514,9 +589,10 @@ function isObjectLiteral(value: string): boolean {
  */
 function extractObjectContent(value: string): string {
   const trimmed = value.trim();
-  const start = trimmed.indexOf('{');
+  const scan = maskCommentsAndStrings(trimmed);
+  const start = scan.indexOf('{');
   if (start === -1) return '';
-  return extractBracedContent(trimmed, start);
+  return extractBracedContent(trimmed, scan, start);
 }
 
 /**
@@ -527,10 +603,11 @@ function extractArrayElementProperties(value: string): SimpleProperty[] {
   if (!trimmed.startsWith('[')) return [];
 
   // 最初のオブジェクトリテラル { ... } を探す
-  const objectStart = trimmed.indexOf('{');
+  const scan = maskCommentsAndStrings(trimmed);
+  const objectStart = scan.indexOf('{');
   if (objectStart === -1) return [];
 
-  const objectContent = extractBracedContent(trimmed, objectStart);
+  const objectContent = extractBracedContent(trimmed, scan, objectStart);
 
   // オブジェクトの全プロパティを行単位で解析
   const props: SimpleProperty[] = [];

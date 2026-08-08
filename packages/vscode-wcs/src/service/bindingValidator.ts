@@ -156,7 +156,11 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
           if (pathTrimmed.startsWith('.')) {
             const forPath = getInnermostForPath(html, attr.valueStart, attrName);
             if (forPath && !forPath.startsWith('.')) {
-              checkPath = `${forPath}.*.${pathTrimmed.slice(1)}`;
+              // 単独の `.` は行そのもの＝`<forPath>.*`（末尾に区切りは付かない）。
+              // ランタイム: state/src/structural/expandShorthandPaths.ts
+              checkPath = pathTrimmed === '.'
+                ? `${forPath}.*`
+                : `${forPath}.*.${pathTrimmed.slice(1)}`;
             } else {
               checkPath = ''; // 展開できない場合はスキップ
             }
