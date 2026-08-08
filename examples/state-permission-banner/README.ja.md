@@ -10,7 +10,7 @@
 
 - **`<wcs-permission name="geolocation">` が監視**: 許可状態を `state` / `granted` / `prompt` / `denied` / `unsupported` として state 化する。read-only でコマンドもプロンプトも無い。
 - **`<wcs-geo>` が取得**: クリックで command-token 経由（`$command.locate.emit()` → `getCurrentPosition()`）に位置を取得し、`latitude` / `longitude` / `loading` を state へバインドバック。
-- **`hidden@granted` のバナー**: 監視された state からブール 1 つでバナーを出し分ける。未許可なら表示、許可された瞬間に消える。live `change` 追従により、ブラウザ設定で許可を変えるとリロード無しで UI が更新される。
+- **`hidden: granted` のバナー**: 監視された state からブール 1 つでバナーを出し分ける。未許可なら表示、許可された瞬間に消える。live `change` 追従により、ブラウザ設定で許可を変えるとリロード無しで UI が更新される。
 
 ## ポイント
 

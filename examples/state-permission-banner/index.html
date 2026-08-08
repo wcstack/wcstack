@@ -67,9 +67,6 @@
       },
 
       // --- derived UI, computed from the watched permission state ---
-      get bannerClass() {
-        return this.permState;   // matches .banner.{prompt,denied,unsupported}
-      },
       get bannerText() {
         if (this.denied) return "Location is blocked. Enable it in your browser's site settings to continue.";
         if (this.unsupported) return "The Permissions API is not available in this browser.";
@@ -95,7 +92,7 @@
 <wcs-geo manual
   data-wcs="command.getCurrentPosition: $command.locate; latitude: lat; longitude: lng; loading: geoLoading"></wcs-geo>
 
-<!-- Banner: shown only while NOT granted. `hidden@granted` — one boolean, straight from the watcher. -->
+<!-- Banner: shown only while NOT granted. `hidden: granted` — one boolean, straight from the watcher. -->
 <section data-wcs="hidden: granted">
   <div class="banner" data-wcs="class.prompt: prompt; class.denied: denied; class.unsupported: unsupported">
     <span data-wcs="textContent: bannerText"></span>

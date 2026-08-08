@@ -11,7 +11,7 @@ Open `index.html` in a browser (any static server, or `localhost`). No build ste
 - **`notify` command-token (state → element)**: `this.$command.notify.emit("New message #1", { body, tag, data })`. The positional args pass straight through to `notify(title, options)` — the same argument-forwarding contract used by `<wcs-speak>`/`<wcs-fetch>`.
 - **`clicked` event-token (element → state)**: the OS notification click flows back into `$on.opened(state, event)`, where `event.detail` is `{ tag, data, action }`. The demo reads `data.room` to show which message was opened.
 - **`request` command-token**: `<wcs-notify>` is self-contained — it owns `Notification.requestPermission()`. Unlike `<wcs-permission>` (no `request`), the Notifications API *has* a request standard, so the command-token applies here.
-- **`<wcs-permission name="notifications">` banner**: `hidden@granted` hides the prompt the moment the grant flips, with live `change` tracking.
+- **`<wcs-permission name="notifications">` banner**: `hidden: granted` hides the prompt the moment the grant flips, with live `change` tracking.
 
 ## Key Points
 

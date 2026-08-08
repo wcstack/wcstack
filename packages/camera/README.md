@@ -57,7 +57,7 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 - On `disconnectedCallback` every track is stopped (`track.stop()`), clearing the hardware indicator. Leaking a stream is the one failure mode unique to this node.
 - Moving the element in the DOM (remove → re-append) runs `disconnectedCallback` (dispose, stop tracks) then `connectedCallback` (observe again). With `autostart` it re-acquires on reconnect (and may re-prompt). To keep a stream across a move, avoid `autostart` and re-`start()` yourself, or don't detach the element.
 - A constraints change (`device-id`, `facing-mode`, `switchCamera()`) **re-acquires** (stop → new `getUserMedia`), guarded by a generation counter so a superseded acquire cannot leave an orphan stream live.
-- While the page is hidden the stream is suspended and re-acquired on return — unless `keep-alive` is set. Bind `keep-alive: recording` to keep the camera alive while recording.
+- While the page is hidden the stream is suspended and re-acquired on return — unless `keep-alive` is set. Bind `keepAlive: recording` to keep the camera alive while recording.
 
 ## `<wcs-recorder>`
 

@@ -6,6 +6,8 @@
 
 セキュアコンテキスト（`localhost` または `https://`）で `index.html` を開いてください。`file://` では `getUserMedia` がプロンプトしません。ビルド不要——すべて `esm.run` から読み込みます。
 
+**⤴ Upload clip** は録画クリップを公開エコーサービス `https://httpbin.org/post` へ POST します（このデモ唯一の外部通信）。人に見せたくないものを録る前に `<wcs-upload url=…>` を自前のエンドポイントへ向けてください。
+
 ## 何を示すか
 
 - **`<wcs-camera>` がプレビューを所有。** ストリームを取得し `<video>` を内部で描画します（`srcObject` を shadow root 内で代入）。シリアライズ不能なハンドルは state 境界を越えません。
@@ -14,6 +16,6 @@
 
 ## ポイント
 
-- **`keep-alive: recording`** —— 可視性と録画の問題への一行の宣言的な解。`recording` が true の間はタブが非表示でもカメラを生かし、そうでなければ非表示で suspend・復帰で再取得します。
+- **`keepAlive: recording`** —— 可視性と録画の問題への一行の宣言的な解。`recording` が true の間はタブが非表示でもカメラを生かし、そうでなければ非表示で suspend・復帰で再取得します（対応する属性名は `keep-alive`）。
 - **2 つの役割・2 つの要素。** `<wcs-permission name="camera">` は許可を純粋な state として*監視*し、`<wcs-camera>` が `getUserMedia` で*取得*（プロンプト）します。
 - **ストリームの所有権はカメラ側。** recorder はストリームを*借用*しトラックを止めません。解放するのはカメラだけ（停止 / 切断時）で、ハードウェアインジケータを消します。

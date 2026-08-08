@@ -10,7 +10,7 @@ Open `index.html` in a browser (any static server, or just the file). No build s
 
 - **`<wcs-permission name="geolocation">` watches** the grant and reports `state` / `granted` / `prompt` / `denied` / `unsupported` as state. It is read-only: no commands, no prompt.
 - **`<wcs-geo>` acquires** the fix on click via command-token (`$command.locate.emit()` → `getCurrentPosition()`), binding `latitude` / `longitude` / `loading` back.
-- **Banner with `hidden@granted`**: the banner is one boolean away from the watched state — shown while not granted, gone the moment the grant flips. Live `change` tracking means flipping the permission in browser settings updates the UI without a reload.
+- **Banner with `hidden: granted`**: the banner is one boolean away from the watched state — shown while not granted, gone the moment the grant flips. Live `change` tracking means flipping the permission in browser settings updates the UI without a reload.
 
 ## Key Points
 

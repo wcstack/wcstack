@@ -103,7 +103,7 @@ See `examples/state-permission-banner` for the full demo.
 | Property      | Event                  | Description                                                              |
 | ------------- | ---------------------- | ----------------------------------------------------------------------- |
 | `state`       | `wcs-permission:change`| `"prompt"` / `"granted"` / `"denied"` / `"unsupported"`, tracked live.   |
-| `granted`     | `wcs-permission:change`| `true` when `state === "granted"`. Convenience for `hidden@granted` etc. |
+| `granted`     | `wcs-permission:change`| `true` when `state === "granted"`. Convenience for `hidden: granted` etc. |
 | `denied`      | `wcs-permission:change`| `true` when `state === "denied"`.                                       |
 | `prompt`      | `wcs-permission:change`| `true` when `state === "prompt"`.                                       |
 | `unsupported` | `wcs-permission:change`| `true` when the permission cannot be queried in this environment.       |

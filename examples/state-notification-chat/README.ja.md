@@ -11,7 +11,7 @@
 - **`notify` command-token（state → 要素）**: `this.$command.notify.emit("New message #1", { body, tag, data })`。位置引数はそのまま `notify(title, options)` へ素通しされる（`<wcs-speak>`/`<wcs-fetch>` と同じ引数転送契約）。
 - **`clicked` event-token（要素 → state）**: OS 通知のクリックが `$on.opened(state, event)` に流れ込む。`event.detail` は `{ tag, data, action }`。デモは `data.room` を読んでどのメッセージが開かれたか表示する。
 - **`request` command-token**: `<wcs-notify>` は自己完結 —— `Notification.requestPermission()` を自分で所有する。`request()` 標準を持たない `<wcs-permission>`（`request` 無し）と違い、Notifications API には request 標準があるので command-token が成立する。
-- **`<wcs-permission name="notifications">` バナー**: `hidden@granted` で許可された瞬間にプロンプトを消す。live `change` 追従つき。
+- **`<wcs-permission name="notifications">` バナー**: `hidden: granted` で許可された瞬間にプロンプトを消す。live `change` 追従つき。
 
 ## ポイント
 
