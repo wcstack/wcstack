@@ -221,56 +221,56 @@ function extractStringArrayItems(value: string): string[] {
 }
 
 /**
+ * ネストしたオブジェクトリテラルを展開する最大深度。
+ * JSON 側（collectJsonPaths）と同じ予算にして、両解析の到達範囲を揃える。
+ */
+const MAX_OBJECT_NEST_DEPTH = 5;
+
+/**
  * データプロパティ1つ分のパス候補を生成する
  * （配列ならワイルドカード・`.length`・要素子パス、オブジェクトなら子パスも展開）。
  */
 function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], stateName: string): void {
+  pushDataPropertyPathsAt(prop.name, prop, paths, stateName, 0);
+}
+
+/**
+ * `path` に紐づくデータプロパティのパス候補を生成し、オブジェクトリテラルなら
+ * 子プロパティへ再帰する（`MAX_OBJECT_NEST_DEPTH` まで）。
+ */
+function pushDataPropertyPathsAt(
+  path: string,
+  prop: PropertyInfo,
+  paths: PathCandidate[],
+  stateName: string,
+  depth: number,
+): void {
   // データプロパティ
-  paths.push({ path: prop.name, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
+  paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
 
   // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${prop.name}.*`, kind: 'list', stateName });
-    paths.push({ path: `${prop.name}.length`, kind: 'data', typeHint: 'number', stateName });
+    paths.push({ path: `${path}.*`, kind: 'list', stateName });
+    paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number', stateName });
     const elementProps = extractArrayElementProperties(prop.value);
     for (const childProp of elementProps) {
       paths.push({
-        path: `${prop.name}.*.${childProp.name}`,
+        path: `${path}.*.${childProp.name}`,
         kind: 'data',
         typeHint: childProp.typeHint,
         stateName,
       });
     }
+    return;
   }
 
-  // オブジェクトの場合、子パスを生成
+  // オブジェクトの場合、子パスを生成（さらにネストしたオブジェクトも辿る）
   if (prop.value && isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
-      if (childProp.kind === 'data') {
-        paths.push({
-          path: `${prop.name}.${childProp.name}`,
-          kind: 'data',
-          typeHint: childProp.typeHint,
-          rawInitial: childProp.value?.trim(),
-          stateName,
-        });
-
-        // ネストした配列
-        if (childProp.value && isArrayLiteral(childProp.value)) {
-          paths.push({ path: `${prop.name}.${childProp.name}.*`, kind: 'list', stateName });
-          paths.push({ path: `${prop.name}.${childProp.name}.length`, kind: 'data', typeHint: 'number', stateName });
-          const grandchildProps = extractArrayElementProperties(childProp.value);
-          for (const gc of grandchildProps) {
-            paths.push({
-              path: `${prop.name}.${childProp.name}.*.${gc.name}`,
-              kind: 'data',
-              typeHint: gc.typeHint,
-              stateName,
-            });
-          }
-        }
-      }
+      if (childProp.kind !== 'data') continue;
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, stateName, depth + 1);
     }
   }
 }

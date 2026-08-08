@@ -54,6 +54,13 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
 
+  // if/elseif の型要求判定にだけ要る構造テンプレート一覧は遅延収集する。
+  let structuralTemplates: StructuralTemplate[] | null = null;
+  const getStructuralTemplates = (): StructuralTemplate[] => {
+    structuralTemplates ??= collectStructuralTemplates(html, attrName);
+    return structuralTemplates;
+  };
+
   const filterNameSet = new Set(BUILTIN_FILTERS.map(f => f.name));
 
   for (const attr of attrs) {
@@ -286,7 +293,10 @@ export function validateBindings(html: string, attrName: string, stateTagName: s
         if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
           const resultType = resolveResultType(pathTrimmed, parsed.filters, scopedPaths);
           if (resultType !== null) {
-            const typeReq = getExpectedType(parsed.property);
+            const typeReq = getExpectedType(
+              parsed.property,
+              () => isNegatedByElseChain(getStructuralTemplates(), attr.valueStart),
+            );
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
@@ -572,6 +582,76 @@ function validatePathExistence(
   return null;
 }
 
+/** 構造ディレクティブを持つ `<template>` 1 つ分（if チェーン判定用）。 */
+interface StructuralTemplate {
+  /** バインド属性値の開始オフセット（findAllBindAttributes の valueStart と一致）。 */
+  valueStart: number;
+  /** `<template>` のネスト深さ（0 = 最上位）。ランタイムはネストごとに別チェーンを組む。 */
+  depth: number;
+  /** 先頭バインディングのプロパティ名（構造ディレクティブ以外は 'other'）。 */
+  type: 'if' | 'elseif' | 'else' | 'other';
+}
+
+/**
+ * HTML 内のバインド属性付き `<template>` を出現順に収集する。
+ * ランタイム（structural/collectStructuralFragments.ts）は同じ順序でチェーンを組む。
+ */
+function collectStructuralTemplates(html: string, attrName: string): StructuralTemplate[] {
+  const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const attrRegex = new RegExp(`${escaped}\\s*=\\s*(["'])`, 'i');
+  const tagRegex = /<template(?:\s[^>]*)?>|<\/template\s*>/gi;
+  const templates: StructuralTemplate[] = [];
+  let depth = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = tagRegex.exec(html)) !== null) {
+    if (match[0].startsWith('</')) {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    const attrMatch = attrRegex.exec(match[0]);
+    if (attrMatch) {
+      const quote = attrMatch[1];
+      const valueStart = match.index + attrMatch.index + attrMatch[0].length;
+      const valueEnd = html.indexOf(quote, valueStart);
+      if (valueEnd !== -1) {
+        // 構造ディレクティブは単独バインディング必須（parseBindTextsForElement.ts）。
+        const first = splitBindingExpressions(html.slice(valueStart, valueEnd))[0] ?? '';
+        const prop = first.split(':')[0].replace(/#.*$/, '').trim();
+        const type = prop === 'if' || prop === 'elseif' || prop === 'else' ? prop : 'other';
+        templates.push({ valueStart, depth, type });
+      }
+    }
+    depth++;
+  }
+
+  return templates;
+}
+
+/**
+ * `if:` / `elseif:` の条件値が else チェーンによって `not` 否定されるかを判定する。
+ *
+ * ランタイムは `elseif` / `else` を直前の `if` / `elseif` にぶら下げ、その条件へ `not` を
+ * 付けた否定フラグメントを作る（collectStructuralFragments.ts）。`not` は boolean 以外で
+ * raise するため、後続に `elseif` / `else` がある条件だけが boolean 必須になる。
+ * ネストした `<template>` は別スコープで再帰処理されるのでチェーンに加わらない。
+ */
+function isNegatedByElseChain(templates: StructuralTemplate[], valueStart: number): boolean {
+  const index = templates.findIndex(t => t.valueStart === valueStart);
+  if (index === -1) return false;
+
+  const selfDepth = templates[index].depth;
+  for (let i = index + 1; i < templates.length; i++) {
+    const next = templates[i];
+    if (next.depth > selfDepth) continue;   // 子孫＝別スコープ
+    if (next.depth < selfDepth) return false; // 親を抜けた＝チェーン終了
+    if (next.type === 'elseif' || next.type === 'else') return true;
+    if (next.type === 'if') return false;   // 新しいチェーンの開始
+    // 'other'（for など）はチェーンを切らない — ランタイムも直前の if を保持する。
+  }
+  return false;
+}
+
 interface TypeRequirement {
   label: string;
   expected: ExpectedTypeKind;
@@ -580,14 +660,22 @@ interface TypeRequirement {
 
 /**
  * プロパティ名から期待される型を返す。型制約がない場合は null。
+ *
+ * @param isNegatedIf - `if` / `elseif` の値が else チェーンで `not` 否定されるか
+ *   （遅延評価。if / elseif 以外では呼ばれない）
  */
-function getExpectedType(property: string): TypeRequirement | null {
+function getExpectedType(property: string, isNegatedIf: () => boolean): TypeRequirement | null {
   const prop = property.replace(/#.*$/, ''); // 修飾子を除去
 
   if (prop === 'for') {
     return { label: 'for', expected: 'array', severity: 'error' };
   }
   if (prop === 'if' || prop === 'elseif') {
+    // 単独の if / elseif はランタイムが Boolean() で強制変換する（apply/applyChangeToIf.ts）
+    // ので任意の型を受け付ける。後続に elseif / else が続く場合だけ、その条件へ `not`
+    // フィルタが後付けされ（structural/collectStructuralFragments.ts）、boolean 以外は
+    // 実行時に raise する。型を要求できるのはその場合だけ。
+    if (!isNegatedIf()) return null;
     return { label: prop, expected: 'boolean', severity: 'warning' };
   }
   if (prop.startsWith('class.')) {

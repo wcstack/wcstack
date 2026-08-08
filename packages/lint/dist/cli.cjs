@@ -526,46 +526,32 @@ function extractStringArrayItems(value) {
   }
   return items;
 }
+var MAX_OBJECT_NEST_DEPTH = 5;
 function pushDataPropertyPaths(prop, paths, stateName) {
-  paths.push({ path: prop.name, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
+  pushDataPropertyPathsAt(prop.name, prop, paths, stateName, 0);
+}
+function pushDataPropertyPathsAt(path, prop, paths, stateName, depth) {
+  paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim(), stateName });
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${prop.name}.*`, kind: "list", stateName });
-    paths.push({ path: `${prop.name}.length`, kind: "data", typeHint: "number", stateName });
+    paths.push({ path: `${path}.*`, kind: "list", stateName });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", stateName });
     const elementProps = extractArrayElementProperties(prop.value);
     for (const childProp of elementProps) {
       paths.push({
-        path: `${prop.name}.*.${childProp.name}`,
+        path: `${path}.*.${childProp.name}`,
         kind: "data",
         typeHint: childProp.typeHint,
         stateName
       });
     }
+    return;
   }
   if (prop.value && isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
-      if (childProp.kind === "data") {
-        paths.push({
-          path: `${prop.name}.${childProp.name}`,
-          kind: "data",
-          typeHint: childProp.typeHint,
-          rawInitial: childProp.value?.trim(),
-          stateName
-        });
-        if (childProp.value && isArrayLiteral(childProp.value)) {
-          paths.push({ path: `${prop.name}.${childProp.name}.*`, kind: "list", stateName });
-          paths.push({ path: `${prop.name}.${childProp.name}.length`, kind: "data", typeHint: "number", stateName });
-          const grandchildProps = extractArrayElementProperties(childProp.value);
-          for (const gc of grandchildProps) {
-            paths.push({
-              path: `${prop.name}.${childProp.name}.*.${gc.name}`,
-              kind: "data",
-              typeHint: gc.typeHint,
-              stateName
-            });
-          }
-        }
-      }
+      if (childProp.kind !== "data") continue;
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, stateName, depth + 1);
     }
   }
 }
@@ -1059,6 +1045,11 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
     pathsByState.set(p.stateName, list);
   }
   const attrs = findAllBindAttributes(html, attrName);
+  let structuralTemplates = null;
+  const getStructuralTemplates = () => {
+    structuralTemplates ??= collectStructuralTemplates(html, attrName);
+    return structuralTemplates;
+  };
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
@@ -1253,7 +1244,10 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale) {
         if (pathTrimmed && !pathTrimmed.startsWith(".") && !isLiteral(pathTrimmed)) {
           const resultType = resolveResultType(pathTrimmed, parsed.filters, scopedPaths);
           if (resultType !== null) {
-            const typeReq = getExpectedType(parsed.property);
+            const typeReq = getExpectedType(
+              parsed.property,
+              () => isNegatedByElseChain(getStructuralTemplates(), attr.valueStart)
+            );
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
@@ -1433,12 +1427,54 @@ function validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSe
   }
   return null;
 }
-function getExpectedType(property) {
+function collectStructuralTemplates(html, attrName) {
+  const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const attrRegex = new RegExp(`${escaped}\\s*=\\s*(["'])`, "i");
+  const tagRegex = /<template(?:\s[^>]*)?>|<\/template\s*>/gi;
+  const templates = [];
+  let depth = 0;
+  let match;
+  while ((match = tagRegex.exec(html)) !== null) {
+    if (match[0].startsWith("</")) {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    const attrMatch = attrRegex.exec(match[0]);
+    if (attrMatch) {
+      const quote = attrMatch[1];
+      const valueStart = match.index + attrMatch.index + attrMatch[0].length;
+      const valueEnd = html.indexOf(quote, valueStart);
+      if (valueEnd !== -1) {
+        const first = splitBindingExpressions(html.slice(valueStart, valueEnd))[0] ?? "";
+        const prop = first.split(":")[0].replace(/#.*$/, "").trim();
+        const type = prop === "if" || prop === "elseif" || prop === "else" ? prop : "other";
+        templates.push({ valueStart, depth, type });
+      }
+    }
+    depth++;
+  }
+  return templates;
+}
+function isNegatedByElseChain(templates, valueStart) {
+  const index = templates.findIndex((t) => t.valueStart === valueStart);
+  if (index === -1) return false;
+  const selfDepth = templates[index].depth;
+  for (let i = index + 1; i < templates.length; i++) {
+    const next = templates[i];
+    if (next.depth > selfDepth) continue;
+    if (next.depth < selfDepth) return false;
+    if (next.type === "elseif" || next.type === "else") return true;
+    if (next.type === "if") return false;
+  }
+  return false;
+}
+function getExpectedType(property, isNegatedIf) {
   const prop = property.replace(/#.*$/, "");
   if (prop === "for") {
     return { label: "for", expected: "array", severity: "error" };
   }
   if (prop === "if" || prop === "elseif") {
+    if (!isNegatedIf()) return null;
     return { label: prop, expected: "boolean", severity: "warning" };
   }
   if (prop.startsWith("class.")) {

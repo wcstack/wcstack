@@ -91,6 +91,31 @@ export default {
     expect(pathNames).toContain('cart.items.*.price');
   });
 
+  it('2 階層より深いネストしたオブジェクトも展開する', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  createFetch: {
+    url: "/api/users",
+    body: { name: "", email: "", role: "viewer" },
+  },
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('createFetch.body');
+    expect(pathNames).toContain('createFetch.body.name');
+    expect(pathNames).toContain('createFetch.body.email');
+    expect(pathNames).toContain('createFetch.body.role');
+  });
+
+  it('ネストしたオブジェクトの展開は深さ 5 で打ち切る（analyzeJsonPaths と同じ予算）', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  a: { b: { c: { d: { e: { f: { g: 1 } } } } } },
+};`);
+    const pathNames = paths.map(p => p.path);
+    expect(pathNames).toContain('a.b.c.d.e.f');
+    expect(pathNames).not.toContain('a.b.c.d.e.f.g');
+  });
+
   it('computed getter のパスを生成する', () => {
     const paths = analyzeStatePaths(`
 export default {
