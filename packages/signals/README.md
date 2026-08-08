@@ -31,16 +31,17 @@ The public API is shaped after the [TC39 Signals proposal](https://github.com/tc
 npm install @wcstack/signals
 ```
 
-Or buildless via an import map (both entries share one reactive core chunk — see [Buildless](#buildless-import-maps)):
+Or buildless via an import map. Map the **single** `/dom` entry and import everything from it — it re-exports the whole headless core on top of the DOM helpers, so the page has exactly one reactive instance. Mapping the `.` and `./dom` entries to two esm.run URLs on the same page duplicates the core and breaks reactivity across the seam — see [Buildless](#buildless-import-maps):
 
 ```html
 <script type="importmap">
 { "imports": {
-    "@wcstack/signals": "https://esm.run/@wcstack/signals",
     "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom"
 } }
 </script>
 ```
+
+On such a page, read `@wcstack/signals` in the Quick-start snippets below as `@wcstack/signals/dom` — the core exports are identical.
 
 ## Quick start
 
@@ -367,7 +368,12 @@ A step-by-step guide (esbuild / tsc / Vite setups, a verifying `.tsx` example, t
 
 ## Buildless (import maps)
 
-Both entries ship as production code-split bundles that import **one shared reactive-core chunk**, so on a buildless page you can import the headless core from `@wcstack/signals` and the DOM layer from `@wcstack/signals/dom` and still get a **single** reactive instance (one tracking context). Map both specifiers; the shared `core-*.esm.js` chunk is resolved by relative path, so serve the whole `dist/` (or use a CDN that does). Bundler users dedupe via the module graph and may use either entry.
+Both entries ship as production code-split bundles that import **one shared reactive-core chunk** — but that chunk is imported by **relative path** (`./core-*.esm.js`), so whether a buildless page ends up with one reactive instance depends on how the files are served.
+
+- **Map the single `/dom` entry (the recommended CDN form).** `@wcstack/signals/dom` re-exports the entire headless core (`signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `resource` / `streamResource` / `bindNode` / `nodeSource`) alongside the DOM helpers, so one specifier covers everything and the single instance is structural — nothing depends on chunk sharing. The signals demos in this repo all import from this one entry.
+- **Mapping both specifiers only works from a path-preserving origin.** `.` and `./dom` keep sharing the core only if their relative `./core-*.esm.js` import resolves to the **same URL** — i.e. the whole `dist/` is served as files (self-hosted, or version-pinned path URLs such as `https://cdn.jsdelivr.net/npm/@wcstack/signals@1.25.0/dist/index.esm.js` + `…/dist/dom.esm.js`, both pinned to the same version). A *transforming* ESM endpoint like `https://esm.run/@wcstack/signals` bundles each entry into its own self-contained file, so mapping both esm.run entries ships **two** reactive cores: a signal created through one is invisible to an effect from the other.
+
+Bundler users dedupe via the module graph and may use either entry.
 
 ## Stability
 
@@ -429,7 +435,7 @@ Zero runtime dependencies. Measured gzipped sizes of the minified bundles:
 | Shared reactive core chunk (`core-*.esm.min.js`) | **≈ 3.1 KB** |
 | `./dom` layer chunk (`dom.esm.min.js`, on top of the shared core) | **≈ 3.8 KB** |
 
-Both published entries import the **one** shared core chunk (see [Buildless](#buildless-import-maps)), so a page using both pays for the core only once. `package.json` declares `"sideEffects": false`, so a bundler tree-shakes away anything you don't import.
+Both published entries import the **one** shared core chunk, so a page that loads `dist/` as files pays for the core only once — a transforming ESM CDN endpoint (esm.run) instead inlines a copy per entry, which is why a buildless page should map only `/dom` (see [Buildless](#buildless-import-maps)). `package.json` declares `"sideEffects": false`, so a bundler tree-shakes away anything you don't import.
 
 ## Development mode (diagnostics)
 

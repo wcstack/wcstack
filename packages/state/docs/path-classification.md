@@ -267,14 +267,14 @@ export default {
 | `data-wcs` inside `for` | ✅ | ✅ | ✅ | ✅ | ❌ ^3 | ✅ |
 | `{{ }}` / `<!--@@:-->` outside `for` | ✅ | ✅ | ❌ ^1 | ❌ ^2 | ❌ ^3 | ✅ |
 | `{{ }}` / `<!--@@:-->` inside `for` | ✅ | ✅ | ✅ | ✅ | ❌ ^3 | ✅ |
-| `for:` value (iteration target) | ✅ | ✅ | ✅ ^4 | ⚠ ^5 | ❌ | ❌ |
+| `for:` value (iteration target) | ✅ | ✅ | ✅ ^4 | ⚠ ^5 | ❌ | ✅ ^4 |
 | `if:` / `elseif:` value | ✅ | ✅ | ⚠ ^6 | ✅ | ❌ | ✅ |
 | Event handler `onclick:` value | — | — | — | — | — | — |
 
 ^1 No loop context to resolve `*`
 ^2 No parent `for` to expand against
 ^3 UI bindings do not use concrete indices (the loop context automatically resolves `*`)
-^4 Possible inside nested `for` (e.g., `for: users.*.items` — `*` resolved by the parent `for: users` context)
+^4 A pattern path is possible inside a nested `for` (e.g., `for: users.*.items` — `*` resolved by the parent `for: users` context). A computed getter returning an array is a legal iteration target too, in static form (`get weeks()` → `for: weeks`) or pattern form (`get "weeks.*.days"()` → `for: weeks.*.days`, which carries the same nested-`for` requirement) — see `packages/state/examples/calendar`
 ^5 Only possible inside nested `for` (e.g., `for: .products`)
 ^6 Only possible inside `for` template
 
