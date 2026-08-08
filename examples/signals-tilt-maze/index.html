@@ -46,10 +46,16 @@
        The SAME four unmodified I/O nodes as the state version of this demo
        (examples/state-tilt-maze); only the reactive core behind them changes.
        The page module loads all four itself, so their definitions ride the
-       module graph instead of a runtime gate: <wcs-raf> / <wcs-wakelock> are
-       static imports (required — no loop, no game), the two sensors are
-       dynamic imports whose rejection is the drag-only fallback boundary.
-       See docs/signals-definition-timing.md §0. -->
+       module graph instead of a runtime gate, and the split follows what the
+       game actually needs: only <wcs-raf> is a static import, because without
+       frames there is no game to degrade to. Tilt, accelerometer and wakelock
+       are dynamic imports — each one's rejection costs exactly its own feature
+       and nothing else. See docs/signals-definition-timing.md §0.
+       The preloads are a fetch hint only: a miss is not a module error, so the
+       failure boundaries above are unchanged. -->
+  <link rel="modulepreload" href="https://esm.run/@wcstack/tilt/auto">
+  <link rel="modulepreload" href="https://esm.run/@wcstack/accelerometer/auto">
+  <link rel="modulepreload" href="https://esm.run/@wcstack/wakelock/auto">
   <script type="importmap">
   {
     "imports": {
@@ -86,12 +92,12 @@
 </ul>
 
 <script type="module">
-  // Required nodes: the game loop and the wake lock. A side-effect import puts
-  // their definitions on the module graph, so the tags in the page are already
-  // upgraded when the body of this module runs — no await — and a failed CDN
-  // fetch is a loud module error (without frames there is no game at all).
+  // The one REQUIRED node. A side-effect import puts its definition on the
+  // module graph, so <wcs-raf> is already upgraded when this module's body runs
+  // — no await — and a failed CDN fetch is a loud module error. That is the
+  // right trade only because there is no game without frames: a static import
+  // is an all-or-nothing edge, so anything optional must not be one.
   import "@wcstack/raf/auto";
-  import "@wcstack/wakelock/auto";
   import { signal, computed, effect, createRoot, bindNode, h, render } from "@wcstack/signals/dom";
 
   // --- maze data (identical to the state version) -------------------------
@@ -129,35 +135,40 @@
 
   // --- bind the unmodified I/O nodes -----------------------------------------
   // The tags stay in the page (same shape as the state version) and bindNode
-  // adapts them in place; the static imports above are what guarantee they are
-  // upgraded by now.
+  // adapts them in place; the static import above is what guarantees <wcs-raf>
+  // is upgraded by now.
   const loop = bindNode(document.getElementById("loop"));
-  const wake = bindNode(document.getElementById("wake"));
 
-  // The two sensors are OPTIONAL, so their packages load through a dynamic
+  // Everything else is OPTIONAL, so each package loads through a dynamic
   // import: it REJECTS when the package never arrives, which is the failure
   // boundary customElements.whenDefined() cannot give (it never rejects, so
   // awaiting it would park this module — drag fallback and all — forever).
-  // Until a sensor lands its signal holds null, and every reader below treats
-  // null as "no sensor" (docs/signals-definition-timing.md §3.2).
+  // Until a node lands its signal holds null, and every reader below treats
+  // null as "not available" (docs/signals-definition-timing.md §3.2).
   const tilt = signal(null);
   const accel = signal(null);
+  const wake = signal(null);
   const sensorsFailed = signal(false);
-  // Start is held only WHILE the sensor packages are in flight: the tap must not
-  // land before <wcs-tilt> exists (iOS grants tilt from that gesture), and a
+  // Start is held only WHILE the two sensor packages are in flight: the tap must
+  // not land before <wcs-tilt> exists (iOS grants tilt from that gesture), and a
   // package that never arrives has to unlock it anyway — drag-only is a designed
   // mode of this game. The 5s cap mirrors the state version's
   // <wcs-defined timeout="5000">, since import() otherwise rejects only on the
-  // browser's own network timeout.
+  // browser's own network timeout. The wake lock never gates Start: it changes
+  // nothing about how the game plays.
   const sensorsResolving = signal(true);
 
-  function loadSensor(spec, id, node) {
-    const ready = import(spec)
+  function load(spec, id, node) {
+    return import(spec)
       .then(() => node.set(bindNode(document.getElementById(id))))
       .catch((err) => {
-        sensorsFailed.set(true);
-        console.warn(`[tilt-maze] ${spec} unavailable — drag-only play`, err);
+        console.warn(`[tilt-maze] ${spec} unavailable`, err);
+        throw err;
       });
+  }
+
+  function loadSensor(spec, id, node) {
+    const ready = load(spec, id, node).catch(() => sensorsFailed.set(true));
     // Cap the WAIT, not the load: `ready` keeps running past the race, so a
     // merely slow CDN still self-heals (as <wcs-defined> promotes a late
     // arrival back out of `missing`).
@@ -168,6 +179,8 @@
     loadSensor("@wcstack/tilt/auto", "tilt", tilt),
     loadSensor("@wcstack/accelerometer/auto", "accel", accel),
   ]).then(() => sensorsResolving.set(false));
+
+  load("@wcstack/wakelock/auto", "wake", wake).catch(() => {});
 
   // --- reactive state: ONLY what the DOM renders --------------------------
   const phase = signal("idle");              // idle | playing | clear | fell
@@ -193,7 +206,7 @@
     if (tilt.get()?.signals.permissionState.get() === "denied") return "control: drag (tilt permission denied)";
     return "control: drag the board";
   });
-  const wakeText = computed(() => (wake.signals.held.get() ? "screen: kept awake" : "screen: normal"));
+  const wakeText = computed(() => (wake.get()?.signals.held.get() ? "screen: kept awake" : "screen: normal"));
 
   // --- one physics step per <wcs-raf> frame ---------------------------------
   // Everything inside reads via peek(): the driving effect depends ONLY on the
@@ -254,19 +267,22 @@
 
   // --- actions ----------------------------------------------------------------
   function startGame() {
-    // The bridge's command surface — the state version fires the same three
-    // calls by emitting one command token (its command.* bindings fan out).
-    // start() without awaiting the permission is safe: the iOS gate is on
-    // event DISPATCH, not on listener registration, so an ungranted
-    // subscription is simply silent until the user grants.
-    // `?.` covers a sensor package that never loaded — the drag fallback plays
-    // on, exactly as the state version's emit no-ops with no subscribers.
+    // The bridge's command surface — the state version fires the same calls by
+    // emitting one command token (its command.* bindings fan out). `?.` covers a
+    // sensor package that never loaded: the drag fallback plays on, exactly as
+    // the state version's emit no-ops with no subscribers.
+    //
+    // requestPermission() must be issued synchronously from this click (iOS
+    // gates it on a user gesture), but start() has to wait for its result:
+    // start() is idempotent, so a listener registered before the grant can
+    // never be re-registered afterwards. Where there is no gate the promise
+    // resolves "granted" immediately, so this ordering is right everywhere.
     const t = tilt.peek();
-    t?.command("requestPermission");
-    t?.command("start");
+    t?.command("requestPermission").then(() => t.command("start"));
     accel.peek()?.command("start");
     restart();
   }
+
   function restart() {
     vx = 0; vy = 0; simBeta = 0; simGamma = 0;
     pos.set({ x: START.x, y: START.y });
@@ -338,7 +354,19 @@
     });
 
     // "keep the screen awake while playing" — signal → input, one line
-    effect(() => wake.set("active", phase.get() === "playing"));
+    effect(() => wake.get()?.set("active", phase.get() === "playing"));
+
+    // A sensor that arrives after Start still has to be switched on: binding a
+    // node is not the same as subscribing it, and startGame() already ran.
+    // start() only — requestPermission() outside a gesture latches "denied".
+    effect(() => {
+      const t = tilt.get();
+      if (t && phase.peek() !== "idle" && t.signals.permissionState.get() === "granted") t.command("start");
+    });
+    effect(() => {
+      const a = accel.get();
+      if (a && phase.peek() !== "idle") a.command("start");
+    });
 
     const view = h("div", null,
       h("div", { class: "hud", role: "status" },

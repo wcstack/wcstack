@@ -48,12 +48,15 @@ Three disciplines worth copying:
   frame cost is one targeted `style` write — no diffing, no proxy traps in the
   hot path. This is the "real-time rendering leans signals" trade made
   concrete.
-- **Definition timing rides the module graph, not a runtime gate.** The required
-  nodes (`<wcs-raf>` / `<wcs-wakelock>`) are side-effect imports, so they are
-  defined before the module body binds them. The two optional sensors use
-  `import()`, whose *rejection* is what the drag-only fallback hangs off —
-  `customElements.whenDefined()` never rejects, so awaiting it would park the
-  whole page on a package that never arrives. See
+- **Definition timing rides the module graph, not a runtime gate.** Only
+  `<wcs-raf>` is a side-effect import, so it is defined before the module body
+  binds it. A static import is an all-or-nothing edge — the module never
+  evaluates if the fetch fails — which is the right trade for the game loop and
+  the wrong one for anything else, so tilt, accelerometer and the wake lock use
+  `import()` instead. Its *rejection* is what each fallback hangs off, and it
+  costs exactly its own feature: no sensors means drag-only play, no wake lock
+  means the screen dims. `customElements.whenDefined()` never rejects, so
+  awaiting it would park the whole page on a package that never arrives. See
   [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md).
 
 ## Verified

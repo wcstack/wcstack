@@ -43,6 +43,8 @@
 
 顕在化した問題（signals-tilt-maze）: 4タグ全部を `await Promise.all(whenDefined×4)` していたため、センサーパッケージが1つでも落ちると promise が解決せず、**ドラッグフォールバック含めアプリ全体が一切マウントされない**。state 版（state-tilt-maze）が `<wcs-defined timeout>` で解いた故障モードそのものを、signals 版は抱えたままだった。
 
+**現状（解消済み）**: 表の 2 行目に挙げた 2 デモは §3 の形へ移行済みで、`whenDefined` を使う箇所はリポジトリ内に残っていない。signals-live-search は §3.1 の `mountNode`（タグを HTML から撤去）、signals-tilt-maze は §4 の比較デモ例外に従いタグを HTML に残したまま「必須ノードのみ static import／オプショナルは §3.2 の dynamic import」に分割した。この分割の粒度は**その import が落ちたときに何を失うか**で決める点に注意する。signals-tilt-maze の移行時、wakelock を「必須」と見なして static import に含めた第一版は、装飾的なパッケージ 1 つの CDN 失敗で再びページ全体を白紙にしていた（＝この節の故障モードの再導入）。static import に載せてよいのは、それ無しではアプリが成立しないノードだけである。
+
 重要な切り分け: **順序問題を解くのは static import であり、createElement ではない**。static import + HTML 内タグでも順序は安全（`define()` 時に接続済み要素は同期 upgrade される）。`mountNode` が追加で消すのは残りの結合 — パーサ生成タグが定義より先に存在する可能性そのもの、HTML 側へのタグ設置、`getElementById` の間接参照 — である。
 
 ## 3. 推奨イディオム（§0 の展開）
@@ -107,6 +109,13 @@ gate.signals.pending.get();
 ## 4. examples への適用方針
 
 比較デモ（signals-tilt-maze・websocket-chat）は「state 版と同じタグが HTML に並ぶ」対称性自体に展示価値があるため、機械的な全面置換はしない。新規の signals 単独デモ・README の正典レシピは §0 の決定表に従う（README §3 には whenDefined が「自分がロードしないタグ用の形」である旨の注記を追加済み）。
+
+適用結果:
+
+| デモ | 着地 |
+|---|---|
+| examples/signals-live-search | §3.1 `mountNode`。単独デモなのでタグは HTML から撤去し、`import "@wcstack/fetch/auto"` + `mountNode("wcs-fetch")` に統一 |
+| examples/signals-tilt-maze | §4 の例外どおりタグは HTML に残す。`<wcs-raf>` のみ static import（無ければゲーム自体が成立しない）、tilt / accelerometer / wakelock は §3.2 の dynamic import。センサー 2 つは §3.2 の留保どおり `Promise.race` で 5 秒上限を付け、state 版の `<wcs-defined timeout="5000">` と待ち時間を揃える |
 
 ## 5. `mountNode` API（as-built・v1.22.6 時点で Unreleased）
 

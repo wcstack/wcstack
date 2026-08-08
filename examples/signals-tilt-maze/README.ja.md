@@ -46,11 +46,14 @@ npx serve examples/signals-tilt-maze
   コストは的を絞った `style` 書き込み 1 回 — diff なし、ホットパスに proxy
   トラップなし。「リアルタイム描画は signals 向き」というトレードを具体化
   したものです。
-- **定義タイミングはランタイムのゲートではなくモジュールグラフに載せる。** 必須ノード
-  （`<wcs-raf>` / `<wcs-wakelock>`）は副作用 import なので、モジュール本体が bind する
-  時点で定義済みです。オプショナルなセンサー 2 つは `import()` で読み、その **reject**
-  がドラッグ縮退の分岐点になります — `customElements.whenDefined()` は reject しないため、
-  await すると来ないパッケージにページ全体が張り付きます。詳細は
+- **定義タイミングはランタイムのゲートではなくモジュールグラフに載せる。** 副作用 import は
+  `<wcs-raf>` だけで、モジュール本体が bind する時点で定義済みです。static import は
+  all-or-nothing の辺（fetch が失敗するとモジュール自体が評価されない）であり、これは
+  ゲームループには正しく、それ以外には誤った取引です。そのため tilt・accelerometer・
+  wakelock は `import()` で読み、その **reject** が各縮退の分岐点になります。失うのは
+  その機能だけで、センサーが無ければドラッグ操作のみ、wakelock が無ければ画面が暗くなる、
+  という粒度です。`customElements.whenDefined()` は reject しないため、await すると
+  来ないパッケージにページ全体が張り付きます。詳細は
   [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md)。
 
 ## 検証済み
