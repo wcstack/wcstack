@@ -34,9 +34,10 @@ as the [state version](../state-tilt-maze/README.md#getting-started).
 | Rendering | HTML templates + structural `if:`/`for:` | `h()` — real DOM built once, per-binding effects |
 | Per-frame DOM work | binding pipeline update per bound path | **one** `style` effect re-runs (`transform: translate(...)`) |
 | Sensor enable commands | command-token: one `$command.startSensors` emit fans out to `command.*` subscriptions in HTML | `tilt.command("requestPermission")` via the bridge |
+| Sensor-package readiness | `<wcs-defined tags="…" timeout="5000">` gate → Start disabled while pending | one dynamic `import()` per sensor package (same 5s cap) → Start disabled while pending |
 | `:state()` styling (`game loop` chip) | identical | identical — it's CSS, the core is irrelevant |
 
-Two disciplines worth copying:
+Three disciplines worth copying:
 
 - **`peek()` inside the step.** The physics reads every signal (tilt, accel,
   phase, pos) with `peek()`, so the driving effect depends on exactly one
@@ -47,6 +48,13 @@ Two disciplines worth copying:
   frame cost is one targeted `style` write — no diffing, no proxy traps in the
   hot path. This is the "real-time rendering leans signals" trade made
   concrete.
+- **Definition timing rides the module graph, not a runtime gate.** The required
+  nodes (`<wcs-raf>` / `<wcs-wakelock>`) are side-effect imports, so they are
+  defined before the module body binds them. The two optional sensors use
+  `import()`, whose *rejection* is what the drag-only fallback hangs off —
+  `customElements.whenDefined()` never rejects, so awaiting it would park the
+  whole page on a package that never arrives. See
+  [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md).
 
 ## Verified
 

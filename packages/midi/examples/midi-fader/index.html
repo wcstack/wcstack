@@ -146,7 +146,11 @@
     HTML bound to paths.
   </p>
 
-  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <!-- I/O nodes before state: module scripts execute in document order, so
+       the elements are guaranteed to be defined before state binds to them.
+       The Connect button emits a command token, and a command-token emit into a
+       not-yet-defined element is never replayed. -->
   <script type="module" src="https://esm.run/@wcstack/midi/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </body>
 </html>

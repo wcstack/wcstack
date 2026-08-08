@@ -27,10 +27,17 @@ node examples/signals-live-search/server.js
 
 ## ポイント
 
-- **アダプタ1枚で任意の IO ノード。** `bindNode(fetchEl)` は要素の `wcBindable` 記述子
-  （`fetchEl.constructor.wcBindable`）を読み、出力プロパティ（`value` / `loading` / `error` /
-  `status`）を読み取り専用 signal にします。`<wcs-fetch>` は背後に signal コアがいることを
-  **一切知りません**。これが要点＝「IO はノード、反応性はコア」。
+- **アダプタ1枚で任意の IO ノード。** `mountNode("wcs-fetch")` が要素の生成・束縛・接続を
+  この順で行います（接続より先に購読するので `connectedCallback` 発火の取りこぼし窓がない）。
+  アダプタは登録済みクラスの `wcBindable` 記述子を読み、出力プロパティ（`value` / `loading` /
+  `error` / `status`）を読み取り専用 signal にします。`<wcs-fetch>` は背後に signal コアが
+  いることを**一切知りません**。これが要点＝「IO はノード、反応性はコア」。
+- **ノードを所有するのはページ側 — 順序はモジュールグラフに載せる。** `mountNode` の実行前に
+  `<wcs-fetch>` が定義済みであることを保証するのは、モジュール先頭の副作用 import
+  （`import "@wcstack/fetch/auto"`）です。`await customElements.whenDefined()` は**他人が**
+  ロードするタグ用の形であり、reject しないため、来ないパッケージを待つとページが静かに
+  ハングします。詳細は
+  [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md)。
 - **fine-grained な `h`、VDOM なし。** `h(tag, props, ...children)` は real DOM を一度生成し、
   関数/signal で渡した prop・child だけを effect に紐付けて更新。reconciler は出荷しません。
 - **JSX 形だが JSX は出荷しない。** `h` は classic JSX factory（利用者が自分の tsconfig で

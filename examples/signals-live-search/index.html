@@ -40,15 +40,17 @@
   <script type="importmap">
   {
     "imports": {
-      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom"
+      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
+      "@wcstack/fetch/auto": "https://esm.run/@wcstack/fetch/auto"
     }
   }
   </script>
 
   <!-- The real IO node: published @wcstack/fetch defines <wcs-fetch>. The signals
        core consumes it through the wc-bindable protocol — it has no idea a signal
-       is behind the binding. -->
-  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+       is behind the binding. This page OWNS that node, so it loads the package as
+       a side-effect import from the module below rather than a <script> tag here:
+       the definition then rides the module graph (see docs/signals-definition-timing.md). -->
 </head>
 <body>
 
@@ -73,19 +75,23 @@
 <section>
   <h2>Live people search <span class="muted">— signals ↔ &lt;wcs-fetch&gt;</span></h2>
 
-  <!-- Headless, hidden IO node. We never wire it with data-wcs (that's @wcstack/state).
-       Instead the signals adapter listens to its wc-bindable property events. -->
-  <wcs-fetch id="search-fetch"></wcs-fetch>
-
+  <!-- No <wcs-fetch> tag here: the script below creates, binds and connects it with
+       mountNode(). It stays a headless, hidden IO node either way — we never wire it
+       with data-wcs (that's @wcstack/state); the signals adapter listens to its
+       wc-bindable property events. -->
   <div id="search-app"></div>
 </section>
 
 <script type="module">
+  // Defines <wcs-fetch>. A side-effect import, not an await: this page owns the
+  // node, so module evaluation order — not a runtime readiness gate — is what
+  // guarantees the class exists before the code below mounts it.
+  import "@wcstack/fetch/auto";
   // One entry for everything: /dom re-exports the headless core (signal,
   // computed, effect, …) alongside the DOM helpers, so a single CDN import
   // yields a single reactive instance.
   import {
-    signal, computed, effect, createRoot, bindNode,
+    signal, computed, effect, createRoot, mountNode,
     h, render, For, SignalsElement,
   } from "@wcstack/signals/dom";
 
@@ -115,16 +121,20 @@
 
   /* ---------------------------------------------------------------
      Part 2: drive a real <wcs-fetch> with signals.
-     - bindNode turns the element's wc-bindable properties (value /
-       loading / error / status) into read-only signals.
+     - mountNode creates the element, binds it and connects it — in that
+       order, so the adapter is subscribed before connectedCallback can
+       fire anything. Its wc-bindable properties (value / loading /
+       error / status) become read-only signals.
      - a `query` signal sets the element's `url`; <wcs-fetch> auto-
        fetches on url change and re-dispatches its events, which the
        adapter folds back into the signals. Typing fast aborts the
        in-flight request (FetchCore cancels the superseded one).
+     `await customElements.whenDefined()` is the shape for a tag someone
+     ELSE loads: it never rejects, so a package that fails to arrive would
+     park this whole module forever. Here the import above already settled
+     that (docs/signals-definition-timing.md §0).
      --------------------------------------------------------------- */
-  await customElements.whenDefined("wcs-fetch");
-  const fetchEl = document.getElementById("search-fetch");
-  const bound = bindNode(fetchEl); // descriptor read from fetchEl.constructor.wcBindable
+  const bound = mountNode("wcs-fetch"); // descriptor read from the registered class
 
   const query = signal("");
   const people = computed(() => bound.signals.value.get() ?? []);
