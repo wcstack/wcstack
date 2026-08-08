@@ -19,23 +19,9 @@ export default [
     },
     plugins: [typescriptPlugin],
   },
-  // ESM minified build
-  {
-    input: "src/exports.ts",
-    output: {
-      file: "dist/index.esm.min.js",
-      format: "esm",
-      sourcemap: true,
-    },
-    plugins: [
-      typescript({
-        tsconfig: "./tsconfig.json",
-        declaration: false,
-        declarationMap: false,
-      }),
-      terser(),
-    ],
-  },
+  // No dist/index.esm.min.js on purpose — see config-templates/rollup.config.js
+  // for the rule. It was reachable only through the old auto stub's relative
+  // import (now gone) or a raw CDN path; it is in no `exports` entry.
   // Service Worker helper entry (separate: runs in ServiceWorkerGlobalScope, not
   // the DOM, so consumers import it from their sw.js — see `@wcstack/notification/sw`).
   {

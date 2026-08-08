@@ -20,24 +20,9 @@ export default [
     },
     plugins: [json(), typescriptPlugin],
   },
-  // ESM minified build
-  {
-    input: 'src/exports.ts',
-    output: {
-      file: 'dist/index.esm.min.js',
-      format: 'esm',
-      sourcemap: true,
-    },
-    plugins: [
-      json(),
-      typescript({
-        tsconfig: './tsconfig.json',
-        declaration: false,
-        declarationMap: false,
-      }),
-      terser(),
-    ],
-  },
+  // No dist/index.esm.min.js on purpose — see config-templates/rollup.config.js
+  // for the rule. It was reachable only through the old auto stub's relative
+  // import (now gone) or a raw CDN path; it is in no `exports` entry.
   // Single-tag bootstrap — bundled self-contained, never a stub that imports a
   // sibling dist file. The whole point is that one `integrity` attribute on
   // <script src=".../auto.min.js"> covers every line that runs (docs/sri.md).

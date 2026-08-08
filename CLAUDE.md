@@ -85,12 +85,13 @@ npx vitest run __tests__/someFile.test.ts
 
 Each package follows the same build flow: `rimraf dist .tsc-out` → `tsc` → `rollup -c`
 
-Rollup produces three outputs from `src/exports.ts`:
-- `dist/index.esm.js` — ESM bundle
-- `dist/index.esm.min.js` — Minified ESM bundle (via Terser)
+Rollup produces two outputs from `src/exports.ts`:
+- `dist/index.esm.js` — ESM bundle, and what `exports["."]` resolves to
 - `dist/index.d.ts` — Bundled type declarations (via rollup-plugin-dts)
 
-Most packages also ship a pre-built bootstrap pair (`src/auto/auto.js` and `auto.min.js`) that a Rollup `copy-auto` plugin copies into `dist/` during the build. These let a page activate the component with a single `<script>` tag (no manual registration).
+Most packages add a third entry from `src/auto.ts` — `dist/auto.min.js`, exposed as `exports["./auto"]`. It lets a page activate the component with a single `<script>` tag (no manual registration), and is **bundled self-contained with no static imports**, so one `integrity` attribute covers the whole runtime. `src/auto.ts` must import only from `./exports`; a relative import of a sibling dist file would silently destroy that property. See [docs/sri.md](docs/sri.md).
+
+There is deliberately no `dist/index.esm.min.js`: it appeared in no `exports` map, and its only consumer was the old auto stub. A minified named-export bundle now exists only where there is no self-contained auto bundle (`@wcstack/signals`, which has no `src/auto.ts` by design).
 
 ## Testing
 
