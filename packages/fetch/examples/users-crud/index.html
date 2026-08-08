@@ -105,24 +105,32 @@
       },
       // Empty-url contract: when no user is selected (initial load, or after a
       // filter clears the selection) this returns "". wcs-fetch treats an empty
-      // url as "no request" and suppresses the auto-fetch, so the detail pane
-      // stays idle. If it did NOT suppress, the relative "" would resolve to the
-      // page itself and the fetch would try to parse the HTML document as JSON.
+      // url as "no request" and suppresses the auto-fetch, so no detail request
+      // is issued — on first load the pane stays idle, and after a filter the
+      // last loaded card simply stays up. If it did NOT suppress, the relative ""
+      // would resolve to the page itself and the fetch would try to parse the
+      // HTML document as JSON.
       get "detailFetch.url"() {
         const id = this.selectedUserId;
         return id ? "/api/users/" + id : "";
       },
 
+      // Never null detailFetch.value to "reset" the pane: the `if: detailReady`
+      // card is still mounted at that moment, so its detailFetch.value.* bindings
+      // would read through null and throw, aborting the whole batch — the new url
+      // would never reach <wcs-fetch>. Let the card show the last loaded user
+      // until the next response replaces it (stale-while-revalidate, same as the
+      // dimmed list rows); <wcs-fetch> is the sole authority over its outputs.
       selectUser() {
-        this["detailFetch.value"] = null;
         // `*` resolves to the index of the clicked row within the `for:` loop, so
         // listRows.*.id reads the id of the user that was actually clicked.
         this.selectedUserId = this["listRows.*.id"];
       },
 
+      // Clearing the selection is enough here — it empties the url getter, which
+      // suppresses the detail request. Nulling the value would hit the trap above.
       filterBy(role) {
         this.filterRole = role;
-        this["detailFetch.value"] = null;
         this.selectedUserId = null;
       },
 

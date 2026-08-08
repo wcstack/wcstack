@@ -112,6 +112,11 @@
       get hasClip() {
         return !!this.clipUrl;
       },
+      // The `not` filter accepts booleans only, and clipFiles is null / File[],
+      // so the upload button inverts this projection instead of clipFiles itself.
+      get hasFiles() {
+        return !!this.clipFiles;
+      },
       get uploadText() {
         if (this.upLoading) return `Uploading… ${this.upProgress}%`;
         if (this.upError) return "Upload failed.";
@@ -179,7 +184,7 @@
   <section>
     <video class="playback" controls data-wcs="src: clipUrl"></video>
     <div class="row">
-      <button data-wcs="onclick: upload; disabled: clipFiles|not">⤴ Upload clip</button>
+      <button data-wcs="onclick: upload; disabled: hasFiles|not">⤴ Upload clip</button>
       <span class="status" data-wcs="textContent: uploadText"></span>
     </div>
   </section>
