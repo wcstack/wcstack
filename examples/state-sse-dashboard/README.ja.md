@@ -1,9 +1,9 @@
 # state + sse + network デモ（ライブメトリクス・2 つの流儀）
 
-1 本の Server-Sent Events フィードを、同じページで 2 通りに消費します:
+同じ Server-Sent Events **エンドポイント**を、同じページで 2 通りに消費します。それぞれの流儀が**自分の** `EventSource` を張り、サーバーは接続ごとにサンプルを生成するため、2 つのパネルの数値が一致することはありません — 同じ形のフィードを独立に 2 回読んでいます:
 
 - **左パネル** — `<wcs-sse>`: *タグ*が接続を所有します。名前付きイベントは `eventToken.message` で state に流れ、`$on` ハンドラで畳み込みます。
-- **右パネル** — `$streams`: *state* が接続を所有します。`EventSource` を async iterable にブリッジし、単一のリアクティブプロパティに fold します。
+- **右パネル** — `$streams`: *state* が接続を所有します。`EventSource` を **`ReadableStream`** にブリッジし、単一のリアクティブプロパティに fold します。ブリッジの形として選ぶべきは `ReadableStream` です: abort 時に停止中の read が `reader.cancel()` で強制的に巻き戻される（完全救済）のに対し、`await` で停止中の async generator は部分救済にとどまり、abort そのものではなく次に再開したときにしか止まりません。
 
 `<wcs-sse>` と `$streams` は同じ仕事を取り合う競合手段です。だからこのデモはあえて両者を**並置**し、直列にはつなぎません — どちらをいつ選ぶかを見せるのが主題です。
 
@@ -26,5 +26,5 @@ http://localhost:3000 を開いてください。3 パッケージ（`state` / `
 
 - **名前付き SSE イベント**: `events="metric,deploy"` はすべての名前付きイベントを単一の `message` 出力に集約します。どれが発火したかは `message.event` が教えてくれます。時折届く `deploy` イベントが左パネルのバナーを駆動します。
 - **有界 fold**: 両パネルとも last-20 窓＋累計カウントだけを保持します。このスタックは backpressure を明示的に放棄しているため、長寿命ストリームでは**有界**の集約が契約です。
-- **ネイティブ再接続**: `<wcs-sse>` は再接続ロジックを持ちません — サーバーを落として再起動すると、`EventSource` が自力で復帰するのが見えます（`retry: 3000` ヒントはストリーム側から送っています）。
+- **ネイティブ再接続と、その打ち切り**: `<wcs-sse>` は再接続ロジックを持ちません — サーバーを落として再起動すると、`EventSource` が自力で復帰するのが見えます（`retry: 3000` ヒントはストリーム側から送っています）。右パネルのブリッジも同じ理由で一過性の `error` イベント（`readyState` がまだ `CONNECTING`）を無視し、`readyState` が `CLOSED` に達したとき — ステータス異常や content-type 不一致といった終端的な失敗のとき — だけ `controller.error()` を呼びます。`$streamStatus.metrics` を `error` にし `$streamError.metrics` を表示させる経路はこれ 1 本だけです。
 - **network タイル**: `<wcs-network>` は Network Information API の純粋なモニタです — 接続の*品質*（`effectiveType` / `downlink` / `rtt` / `saveData`）であって online/offline ではありません。属性もコマンドもありません。初期スナップショットは接続時に同期 dispatch されるのでバインディング確立前に飛ぶことがありますが、取りこぼしません — 5 つとも output-only な `wcBindable` メンバであり、要素が authority なので、各バインディングは確立時に現在値を読み取り、以降の変化はイベントで受けます。

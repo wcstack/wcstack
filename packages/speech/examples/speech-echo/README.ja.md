@@ -11,7 +11,7 @@
 - **マイクのトグル**: `data-listentarget` の DOM autoTrigger（`start()` / `stop()` トグル）。
 - **ライブ文字起こし**: `interimTranscript`（灰色・途中）と `finalTranscript`（確定）を state に束縛。
 - **読み返し**: `$command.echo.emit(transcript)` で認識テキストを発話。
-- **echo ループ対策**: `<wcs-speak data-wcs="manual: listening">` が録音中はリアクティブ発話パスをミュートし、合成音声が再認識されないようにします。
+- **echo ループ対策**: `echoIt()` が `listening` の間は echo の emit を拒否し、合成音声が拾われて再認識されないようにします。このガードが `<wcs-speak>` ではなく state 側にあるのは、`speak()` が命令的で `manual` を尊重しないためです（`manual` が効くのはリアクティブな `say` パスだけ）。リアクティブ側をゲートしたい場合は `<wcs-speak data-wcs="say: transcript; manual: listening">` と束縛します。
 
 ## ポイント
 

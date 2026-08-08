@@ -46,8 +46,9 @@ The server accepts WebSocket connections at `/ws`.
 
 ## What the demo shows
 
+- the whole `<wcs-ws>` bindable surface wired in one go with the `...: ws` spread (every property lands under `ws.<name>` in state)
 - `message`, `connected`, `loading`, and `error` bound from `<wcs-ws>` into `<wcs-state>`
-- sending messages via the `send` property from state
+- sending messages via the command-token protocol: `$commandTokens: ["wsSend"]` in state, `command.sendMessage: $command.wsSend` on the element, `this.$command.wsSend.emit(json)` at the call site
 - `auto-reconnect` for automatic reconnection
 - automatic JSON parsing of incoming messages
 - conditional rendering by message type (`for:` + `if:` + `eq` filter)

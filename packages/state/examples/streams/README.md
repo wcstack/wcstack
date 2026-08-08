@@ -4,11 +4,10 @@
 
 ## はじめに
 
-`$streams` は未リリースのため、CDN（`https://esm.run/@wcstack/state/auto`）ではなく**ローカルビルド**を読み込みます。server.js が `packages/state/dist` を `/state-dist/` で配信するので、先にビルドしてください。
+`$streams` はリリース済みなので、他のデモと同じく CDN（`https://esm.run/@wcstack/state/auto`）から読み込みます。ビルドは不要ですが、チャンク送出のストリーミングルート（`/api/story`）だけは静的配信では賄えないため、同梱の server.js を起動してください。
 
 ```bash
 cd packages/state
-npm run build                      # dist を生成（$streams を含むローカルビルド）
 node examples/streams/server.js    # ポート 3000（PORT 環境変数で変更可）
 ```
 

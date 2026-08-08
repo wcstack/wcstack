@@ -1,35 +1,28 @@
 /**
  * Demo server for the $streams example (fetch body streaming).
  *
- * Self-contained, modeled on the repo-root examples/shared/server.js. The other
- * examples under packages/state/examples are plain static pages pulling the
- * released package from the CDN, but this demo needs two things a static host
- * cannot provide:
+ * Self-contained, modeled on the repo-root examples/shared/server.js. Like the
+ * other examples under packages/state/examples, the page pulls the released
+ * package straight from the CDN; the one thing a plain static host cannot
+ * provide is the streaming route:
  *
- *   1. GET /api/story?prompt=...&seed=...
- *      A chunked text route that emits a fake "LLM style" story a few words at
- *      a time (~60ms apart), stops producing as soon as the client aborts
- *      (cooperative cancellation made observable), and — when the prompt
- *      contains "error" — destroys the connection mid-stream so the
- *      $streamError path (error keeps the folded text) can be seen.
- *
- *   2. /state-dist/*
- *      The LOCAL packages/state/dist build. $streams is not released yet, so
- *      the page must import the local bundle instead of the CDN
- *      (run `npm run build` in packages/state first).
+ *   GET /api/story?prompt=...&seed=...
+ *   A chunked text route that emits a fake "LLM style" story a few words at a
+ *   time (~60ms apart), stops producing as soon as the client aborts
+ *   (cooperative cancellation made observable), and — when the prompt contains
+ *   "error" — destroys the connection mid-stream so the $streamError path
+ *   (error keeps the folded text) can be seen.
  *
  * Everything else under packages/state/examples is served statically, so the
  * gallery at "/" keeps working from this server too.
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
-const examplesRoot = resolve(here, "..");            // packages/state/examples
-const distRoot = resolve(here, "..", "..", "dist");  // packages/state/dist
+const examplesRoot = resolve(here, "..");  // packages/state/examples
 const PORT = Number(process.env.PORT || 3000);
 
 const CHUNK_INTERVAL_MS = 60;       // one word per tick — slow enough to watch
@@ -139,13 +132,6 @@ async function serveFrom(root, res, relPath) {
 
 // --- server -------------------------------------------------------------------
 
-if (!existsSync(resolve(distRoot, "auto.js"))) {
-  console.warn(
-    "[streams demo] packages/state/dist not found — run `npm run build` in packages/state first\n" +
-    "               ($streams is unreleased; this demo imports the local build, not the CDN).",
-  );
-}
-
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -153,11 +139,6 @@ const server = createServer(async (req, res) => {
 
     if (path === "/api/story" && req.method === "GET") {
       return handleStory(res, url);
-    }
-
-    // Local unreleased build, mounted off to the side so example paths stay clean.
-    if (path.startsWith("/state-dist/")) {
-      return await serveFrom(distRoot, res, "." + path.slice("/state-dist".length));
     }
 
     let rel;
@@ -174,5 +155,4 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 $streams demo running at http://localhost:${PORT}/streams/`);
   console.log(`   gallery: http://localhost:${PORT}/`);
-  console.log(`   /state-dist/ serves the local packages/state/dist build (unreleased $streams)`);
 });
