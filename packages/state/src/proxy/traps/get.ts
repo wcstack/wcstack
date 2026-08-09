@@ -23,6 +23,7 @@ import { createStateAddress } from "../../address/StateAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { DELIMITER, INDEX_BY_INDEX_NAME, STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_STREAM_STATUS_NAMESPACE_NAME } from "../../define";
+import { listIndexAtWildcard } from "../../list/wildcardLevel";
 import { raiseError } from "../../raiseError";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
 import { connectedCallback } from "../apis/connectedCallback";
@@ -80,7 +81,13 @@ export function get(
       handler.stateElement.addIndexDependentGetterPath?.(lastInfo.path);
     }
     const listIndex = lastAddress?.listIndex;
-    return listIndex?.indexes[index] ?? raiseError(`ListIndex not found: ${prop.toString()}`);
+    if (typeof listIndex === "undefined" || listIndex === null) {
+      raiseError(`ListIndex not found: ${prop.toString()}`);
+    }
+    // `$1` は「このスコープの」1 段目。base 深さ Δ を持つ子スコープでも
+    // 番号がずれないよう末尾から数える（list/wildcardLevel.ts）
+    const indexListIndex = listIndexAtWildcard(listIndex, index, lastAddress!.pathInfo.wildcardCount);
+    return indexListIndex?.index ?? raiseError(`ListIndex not found: ${prop.toString()}`);
   }
   if (typeof prop === "string") {
     if (prop[0] === '$') {

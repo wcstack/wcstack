@@ -402,6 +402,8 @@ memo すると後から来た本物の read が memo に当たって**購読者�
 親スコープのループと子スコープのループが**両方**掛かる入れ子形（規則 `state.items: rows.*.children` の上で
 子も `for`）は対象外で、`getOuterRowPathInfo` がワイルドカード段数の不一致として弾く。
 両者の行 listIndex は親子チェーンが繋がっていない別インスタンスなので、合成すると行の同一性が壊れる。
+この形の調査と実装設計案は [state-bind-component-nested-for-design.md](../state-bind-component-nested-for-design.md)
+（提案・未着手）。現状の失敗は例外ではなく `getBindingsReady` が永久に未解決になる形で出る。
 
 回帰は happy-dom
 （[`integration.bindComponentListRow.test.ts`](../../packages/state/__tests__/integration.bindComponentListRow.test.ts)）で

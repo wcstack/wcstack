@@ -68,7 +68,7 @@ describe('getAll', () => {
     const listIndex2 = createListIndex(null, 2);
     setListIndexesByList(list, [listIndex0, listIndex1, listIndex2]);
 
-    // getByAddress: 1回目はリスト取征EgetAll冁E、E-4回目はresolve冁E�E個別値取征E
+    // getByAddress: 1回目はリスト取征EgetAll冁E、E-4回目はresolve冁E�E個別値取征E
     getByAddressMock
       .mockReturnValueOnce(list)       // walkWildcardPattern: items のリスト取征E
       .mockReturnValueOnce(list)       // resolve: items のリスト取征E
@@ -84,7 +84,7 @@ describe('getAll', () => {
     expect(result).toEqual(['a', 'b', 'c']);
   });
 
-  it('indexes を指定して特定�E要素のみ取得できること', () => {
+  it('indexes を指定して特定�E要素のみ取得できること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
@@ -107,7 +107,7 @@ describe('getAll', () => {
     expect(result).toEqual(['b']);
   });
 
-  it('indexes 未持E��時にコンチE��ストから�E動解決すること', () => {
+  it('indexes 未持E��時にコンチE��ストから�E動解決すること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
 
@@ -116,12 +116,13 @@ describe('getAll', () => {
     const listIndex1 = createListIndex(null, 1);
     setListIndexesByList(list, [listIndex0, listIndex1]);
 
-    // lastAddressStack にワイルドカードパスのコンチE��ストを設宁E
+    // lastAddressStack にワイルドカードパスのコンチE��ストを設宁E
     const contextListIndex = createListIndex(null, 0);
     const lastAddress = {
       pathInfo: {
         path: 'items.*.name',
         indexByWildcardPath: { 'items': 0 },
+        wildcardCount: 1,
       },
       listIndex: contextListIndex,
     };
@@ -139,7 +140,7 @@ describe('getAll', () => {
     expect(result).toEqual(['x']);
   });
 
-  it('indexes 未持E��でコンチE��ストにめElistIndex がなぁE��合�E空配�Eになること', () => {
+  it('indexes 未持E��でコンチE��ストにめElistIndex がなぁE��合�E空配�Eになること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     // lastAddressStack なぁEↁEgetContextListIndex ぁEnull を返す
@@ -161,11 +162,11 @@ describe('getAll', () => {
     const getAllFn = getAll(target, '$getAll', target, handler as any);
     const result = getAllFn('items.*');
 
-    // indexes が空配�Eとして扱われ、�E要素が返る
+    // indexes が空配�Eとして扱われ、�E要素が返る
     expect(result).toEqual(['a', 'b']);
   });
 
-  it('getterパスの場合�E動的依存関係を登録すること', () => {
+  it('getterパスの場合�E動的依存関係を登録すること', () => {
     mockStateElement = createStateElement();
     mockStateElement.getterPaths.add('computed');
     setStateElementByName(document, 'default', mockStateElement);
@@ -192,7 +193,7 @@ describe('getAll', () => {
     expect(mockStateElement.addDynamicDependency).toHaveBeenCalledWith('items.*', 'computed');
   });
 
-  it('addressStackLength>0でlastAddressStackがnullなら依存関係を登録しなぁE��と', () => {
+  it('addressStackLength>0でlastAddressStackがnullなら依存関係を登録しなぁE��と', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement, { addressStackLength: 1, lastAddressStack: null });
@@ -213,7 +214,7 @@ describe('getAll', () => {
     expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
   });
 
-  it('addressStackLength>0で同一パスの場合�E依存関係を登録しなぁE��と', () => {
+  it('addressStackLength>0で同一パスの場合�E依存関係を登録しなぁE��と', () => {
     mockStateElement = createStateElement();
     mockStateElement.getterPaths.add('items.*');
     setStateElementByName(document, 'default', mockStateElement);
@@ -240,7 +241,7 @@ describe('getAll', () => {
     expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
   });
 
-  it('2回目の呼び出しで lastValue との差刁E��計算されること', () => {
+  it('2回目の呼び出しで lastValue との差刁E��計算されること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
@@ -281,29 +282,29 @@ describe('getAll', () => {
     expect(result2).toEqual(['a', 'b', 'c']);
   });
 
-  it('多重ワイルドカードで indexes 持E��あり�E場合に再帰皁E��解決できること', () => {
+  it('多重ワイルドカードで indexes 持E��あり�E場合に再帰皁E��解決できること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
-    // 外�EリスチE
+    // 外�EリスチE
     const outerList = [['a', 'b'], ['c', 'd']];
     const outerIndex0 = createListIndex(null, 0);
     const outerIndex1 = createListIndex(null, 1);
     setListIndexesByList(outerList, [outerIndex0, outerIndex1]);
 
-    // 冁E�EリスチE
+    // 冁E�EリスチE
     const innerList = ['c', 'd'];
     const innerIndex0 = createListIndex(outerIndex1, 0);
     const innerIndex1 = createListIndex(outerIndex1, 1);
     setListIndexesByList(innerList, [innerIndex0, innerIndex1]);
 
     getByAddressMock
-      .mockReturnValueOnce(outerList)    // walkWildcardPattern: 外�Eリスト取征E
-      .mockReturnValueOnce(innerList)    // walkWildcardPattern: 冁E�Eリスト取征E(index=1)
-      .mockReturnValueOnce(outerList)    // resolve: 外�Eリスト取征E
-      .mockReturnValueOnce(innerList)    // resolve: 冁E�Eリスト取征E
+      .mockReturnValueOnce(outerList)    // walkWildcardPattern: 外�Eリスト取征E
+      .mockReturnValueOnce(innerList)    // walkWildcardPattern: 冁E�Eリスト取征E(index=1)
+      .mockReturnValueOnce(outerList)    // resolve: 外�Eリスト取征E
+      .mockReturnValueOnce(innerList)    // resolve: 冁E�Eリスト取征E
       .mockReturnValueOnce('d');         // resolve: categories.*.items.* index=[1,1]
 
     const getAllFn = getAll(target, '$getAll', target, handler as any);
@@ -312,7 +313,7 @@ describe('getAll', () => {
     expect(result).toEqual(['d']);
   });
 
-  it('listDiff.newIndexes ぁEnull の場合�Eエラーになること', () => {
+  it('listDiff.newIndexes ぁEnull の場合�Eエラーになること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
@@ -320,7 +321,7 @@ describe('getAll', () => {
 
     getByAddressMock.mockReturnValueOnce([]);
 
-    // createListDiff ぁEnewIndexes: null を返すようモチE��
+    // createListDiff ぁEnewIndexes: null を返すようモチE��
     createListDiffMock.mockReturnValueOnce({
       oldIndexes: [],
       newIndexes: [],
@@ -334,7 +335,7 @@ describe('getAll', () => {
     expect(() => getAllFn('items.*', [0])).toThrow(/ListIndex not found/);
   });
 
-  it('indexes 持E��で篁E��外�EインチE��クスを指定した場合�Eエラーになること', () => {
+  it('indexes 持E��で篁E��外�EインチE��クスを指定した場合�Eエラーになること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
@@ -352,7 +353,7 @@ describe('getAll', () => {
     expect(() => getAllFn('items.*', [99])).toThrow(/ListIndex not found/);
   });
 
-  it('oldValue に listIndexes がなぁE��合�E空配�EがoldIndexesとして使われること', () => {
+  it('oldValue に listIndexes がなぁE��合�E空配�EがoldIndexesとして使われること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);
@@ -373,14 +374,14 @@ describe('getAll', () => {
     expect(result1).toEqual(['a']);
 
     // 2回目の呼び出し前に list1 の listIndexes をクリア
-    // getListIndexesByList(oldValue) ぁEnull ↁE|| [] 刁E��を通る
+    // getListIndexesByList(oldValue) ぁEnull ↁE|| [] 刁E��を通る
     setListIndexesByList(list1, null);
 
     const list2 = ['b'];
     const li2_0 = createListIndex(null, 0);
     setListIndexesByList(list2, [li2_0]);
 
-    // createListDiff をモチE��して oldIndexes=[] でも正常動作させる
+    // createListDiff をモチE��して oldIndexes=[] でも正常動作させる
     createListDiffMock.mockReturnValueOnce({
       oldIndexes: [],
       newIndexes: [li2_0],
@@ -398,7 +399,7 @@ describe('getAll', () => {
     expect(result2).toEqual(['b']);
   });
 
-  it('ワイルドカードなし�Eパスでも値を取得できること', () => {
+  it('ワイルドカードなし�Eパスでも値を取得できること', () => {
     mockStateElement = createStateElement();
     setStateElementByName(document, 'default', mockStateElement);
     const handler = createHandler(mockStateElement);

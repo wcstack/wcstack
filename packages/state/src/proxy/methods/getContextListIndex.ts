@@ -17,6 +17,7 @@
  */
 
 import { IListIndex } from "../../list/types";
+import { listIndexAtWildcard } from "../../list/wildcardLevel";
 import { IStateHandler } from "../types";
 
 export function getContextListIndex(
@@ -34,5 +35,8 @@ export function getContextListIndex(
   if (typeof index === "undefined") {
     return null;
   }
-  return address.listIndex?.at(index) ?? null;
+  if (address.listIndex === null) {
+    return null;
+  }
+  return listIndexAtWildcard(address.listIndex, index, address.pathInfo.wildcardCount);
 }

@@ -2,6 +2,7 @@ import { calcWildcardLen } from "../address/calcWildcardLen";
 import { IBindingInfo } from "../types";
 import { getLoopContextByNode } from "./loopContextByNode";
 import { IListIndex, ILoopContext } from "./types";
+import { listIndexAtWildcard } from "./wildcardLevel";
 
 const listIndexByBindingInfoByLoopContext: WeakMap<ILoopContext, WeakMap<IBindingInfo, IListIndex | null>> = new WeakMap();
 
@@ -25,7 +26,7 @@ export function getListIndexByBindingInfo(bindingInfo: IBindingInfo): IListIndex
   try {
     const wildcardLen = calcWildcardLen(loopContext.pathInfo, bindingInfo.statePathInfo);
     if (wildcardLen > 0) {
-      listIndex = loopContext.listIndex.at(wildcardLen - 1);
+      listIndex = listIndexAtWildcard(loopContext.listIndex, wildcardLen - 1, loopContext.pathInfo.wildcardCount);
     }
     return listIndex;
   } finally {

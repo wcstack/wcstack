@@ -1,5 +1,6 @@
 import { calcWildcardLen } from "../../address/calcWildcardLen";
 import { IStateAddress } from "../../address/types";
+import { listIndexAtWildcard } from "../../list/wildcardLevel";
 import { IStateHandler } from "../types";
 
 export function checkDependency(
@@ -28,9 +29,18 @@ export function checkDependency(
         if (address.pathInfo.wildcardCount > 0 && lastInfo.wildcardCount > 0) {
           const sharedLen = calcWildcardLen(address.pathInfo, lastInfo);
           if (sharedLen > 0) {
+            // 共有ワイルドカード段の突き合わせ。base 深さ Δ を持つ子スコープでは
+            // 先頭起点だと Δ 段目（＝親子で常に同一の base）を比べてしまい、
+            // 本物の他行読み取りを取りこぼす。末尾起点で数える（list/wildcardLevel.ts）
             let crossRow = false;
+            const hereChain = address.listIndex ?? null;
+            const thereChain = lastAddress!.listIndex ?? null;
             for (let level = 0; level < sharedLen; level++) {
-              if (address.listIndex?.at(level) !== lastAddress!.listIndex?.at(level)) {
+              const here = hereChain !== null
+                ? listIndexAtWildcard(hereChain, level, address.pathInfo.wildcardCount) : null;
+              const there = thereChain !== null
+                ? listIndexAtWildcard(thereChain, level, lastInfo.wildcardCount) : null;
+              if (here !== there) {
                 crossRow = true;
                 break;
               }
