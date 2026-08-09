@@ -122,4 +122,45 @@ describe("bind-component: 親 state 起点の変更配送 (integration)", () => 
 
     host.remove();
   });
+
+  /**
+   * 完了台帳のキーが stateProp 名になったことで、`data-wcs="state: user"` のように
+   * stateProp をそのままプロパティ名に書いた形（propSegments が 1 セグメント）も
+   * ゲートを通ってしまう。applyChangeToWebComponent は「先頭＝束ね先、残り＝子のパス」を
+   * 前提にしており残余が空だと raiseError するため、updater の drain（例外を捕まえない）を
+   * 突き抜けて同じバッチの無関係な更新まで巻き添えにする。
+   * この形は元から無言の no-op なので、そのまま no-op に留めることを固定する。
+   */
+  it("stateProp と同名の 1 セグメントバインディングが同じバッチの他の更新を巻き添えにしないこと", async () => {
+    const tag = uniqueTag("bcd-editor");
+    defineEditor(tag, { name: "" }, `<span id="inner-view" data-wcs="textContent: name"></span>`);
+
+    const host = document.createElement(uniqueTag("bcd-host"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `
+      <wcs-state json='{"user":{"name":"Alice"}}'></wcs-state>
+      <div id="host-view" data-wcs="textContent: user.name"></div>
+      <${tag} data-wcs="state: user"></${tag}>
+    `;
+    document.body.appendChild(host);
+
+    const parentStateElement = shadowRoot.querySelector("wcs-state") as State;
+    await parentStateElement.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    await flush();
+
+    const hostView = () => (shadowRoot.querySelector("#host-view") as HTMLElement).textContent;
+    expect(hostView()).toBe("Alice");
+
+    // バインドされたパスそのものへの書き込み。同じバッチに #host-view の更新も乗る。
+    parentStateElement.createState("writable", (s: any) => {
+      s.user = { name: "Carol" };
+    });
+    await flush();
+
+    // 1 セグメント側は従来どおり何も起きないが、同じバッチの更新は完走する
+    expect(hostView()).toBe("Carol");
+
+    host.remove();
+  });
 });

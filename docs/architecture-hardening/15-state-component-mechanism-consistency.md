@@ -297,6 +297,17 @@ innerState 経由で親をライブ読みする経路、後者は子自身の `s
   （適用側が先頭セグメントで束ね先の state 要素を引くため）。node 台帳へは積まない
   （プレフィックスを保った結果、再バインド時にプライマリ抽出フィルタへ混入してしまうため）
 
+**ゲートは propSegments の長さ 1 を除外する**。台帳のキーが stateProp 名になった以上、
+`data-wcs="state: user"`（stateProp をそのままプロパティ名に書いた形＝ propSegments が 1 セグメント）も
+ゲートを通ってしまう。`applyChangeToWebComponent` は「先頭セグメント＝束ね先の state 要素、
+残り＝子側のパス」を前提にしており残余が空だと raiseError するため、`updater` の drain
+（例外を捕まえない）を突き抜けて**同じバッチに乗った無関係な更新まで巻き添えで落ちる**。
+この形は修正前から無言の no-op（公開プロパティは getter のみなので代入が strict TypeError になり
+`applyChangeToProperty` の try/catch が握り潰す）なので、そのまま no-op に留める。
+実測で「1 タグの誤設定が同一バッチの別バインディングを更新不能にする」ことを確認済み。
+なお `data-wcs="<stateProp>: <path>"` を bind 時に fail-fast させる案（§2.6 の併記禁止と同じ扱い）は
+breaking なので本修正には含めていない。
+
 **登録できない 2 ケースは登録だけ諦める**（翻訳が本務なので read は落とさない ＝ この機構が
 入る前と同じ挙動に留める。`config.debug` 時のみ `console.warn`）。
 
