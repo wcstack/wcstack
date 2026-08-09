@@ -1,10 +1,12 @@
 # state のコンポーネント機構 3 系統の整合性監査
 
 - **作成日**: 2026-08-05
-- **状態**: 監査記録＋**修正完了**（2026-08-05〜06）。§7 の decision gate G1-G4 は 4 件とも決着・実装済み。
-  実装済み = §1.1〜§1.6 / §2.1〜§2.4 / §2.6 / §2.7 / §3.1 / §3.2 / §3.4 / §3.5 / §3.6、
+- **状態**: 監査記録＋**修正完了**（2026-08-05〜06、および §1.7 を 2026-08-10）。
+  §7 の decision gate G1-G4 は 4 件とも決着・実装済み。
+  実装済み = §1.1〜§1.7 / §2.1〜§2.4 / §2.6 / §2.7 / §3.1 / §3.2 / §3.4 / §3.5 / §3.6、
   部分 = §2.5、訂正 = §3.3（本書の誤り）。
   **監査で挙げた項目は全て解消**（§2.5 は診断性のみ・§3.3 は本書の誤りとして撤回）。
+  ただし §1.7 は、G1 の修正自体が片肺で着地していたことを後日発見した記録である。
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
@@ -43,6 +45,7 @@
 | §1.4 | fragment 内（未接続）の DCC が初期値を落とす | ✅ 修正済み（G4 = DCC 側で解決。実装は遅延構築） |
 | §1.5 | `$bindables` 重複で wcBindable 宣言が丸ごと棄却される | ✅ 修正済み |
 | §1.6 | DCC メソッドに command-token を張れない | ✅ 修正済み（G2 = `$commands` 明示宣言） |
+| §1.7 | §1.1 で分離した内部チャネルが一度も選ばれていない（親→子の配送が丸ごと不成立） | ✅ 修正済み（2026-08-10・後日発見） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ✅ 修正済み（サブパス ＋ `$postUpdate` ＋ property getter） |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ✅ 修正済み（setter を同期化。`callFn` は意図的に Promise 維持） |
 | §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
@@ -63,6 +66,8 @@
 | [`webComponent/outerState.ts`](../../packages/state/src/webComponent/outerState.ts) | §1.1（mapped 専用 proxy と lastValue 台帳を削除し 1 本化） |
 | [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.1（台帳書き込みと listIndex 解決を除去） |
 | [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1（内部チャネルを分離） |
+| [`webComponent/completeWebComponent.ts`](../../packages/state/src/webComponent/completeWebComponent.ts) / [`apply/applyChange.ts`](../../packages/state/src/apply/applyChange.ts) | §1.7（チャネル選択ゲートのキーを stateProp 名に） |
+| [`webComponent/MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts) | §1.7（派生バインディングを BindingSession 経由で購読者登録） |
 | [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
 | [`dcc/processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts)（新規） | §1.5 / §2.3 / §1.6 |
 | [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
@@ -250,6 +255,56 @@ README「Declarative Custom Components (DCC)」節にこの制約の記載は無
 宣言モジュールは `$bindables` 専用ではなくなったので
 `processBindablesDeclaration.ts` → [`processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts) に改名した。
 回帰は実ブラウザで固定（[`e2e/tests/state-dcc-command.spec.ts`](../../e2e/tests/state-dcc-command.spec.ts)）。
+
+### 1.7 §1.1 で分離した内部チャネルが一度も選ばれていなかった ✅ 修正済み（2026-08-10・後日発見）
+
+G1 は公開 proxy の一本化（§1.1）と内部通知チャネルの分離（`applyChangeToWebComponent`）を対にした修正だった。
+公開面は意図どおり直ったが、**分離した内部チャネルを選ぶゲートが壊れており、親 state 起点の変更は
+子コンポーネントに一度も届いていなかった**。断線は 3 箇所に分かれていた。
+
+1. **完了台帳のキー取り違え**（本丸）。`markWebComponentAsComplete` は
+   `(component, 内側の IStateElement)` で記録し、`applyChange` は
+   `(component, context.stateElement ＝ 親スコープの IStateElement)` で照会していた。
+   標準の Shadow 構成でこの 2 つが一致することはないので `isWebComponentComplete` は恒久 `false`。
+   **どちらも同じ `IStateElement` 型なので TypeScript が取り違えを検出できない**。
+2. **フォールバックの自己相殺**。ゲートが偽なら `applyChangeToProperty` に落ちるが、そこでの
+   旧値読みは §1.1 で素通しにした公開 proxy を通るライブ読みなので、既に親の新値を返す。
+   `oldValue !== newValue` が偽になり書き込みごとスキップされ、子側の再描画も enqueue されない。
+3. **サブパスの派生バインディングが購読者になっていない**。`MappingRule` は子が読んだサブパス
+   （inner `user.name` ＝ outer `person.name`）の規則を遅延導出し、対応するバインディングを
+   `addBindingByNode` で node 台帳に積んでいたが、**その台帳を読む消費者は
+   `bindWebComponent` のプライマリ抽出フィルタだけ**で、しかも当時の `propSegments` は
+   stateProp プレフィックスを欠いていたためそのフィルタにも掛からない。
+   絶対アドレス台帳には一切載らないので updater からは不可視だった。
+
+**なぜ気づかれなかったか**（§6 の「テストの穴」の再発）。既存の回帰は
+「初期配送」と「公開プロパティ経由の write」の 2 方向しか固定していない。前者は子のバインディングが
+innerState 経由で親をライブ読みする経路、後者は子自身の `setByAddress` が子アドレスを enqueue する経路で、
+**どちらも子側のコードが動くので内部チャネルを通らない**。単体テストは `isWebComponentComplete` を
+丸ごとモックしており、実引数が合っているかは検証対象外だった。
+
+**修正**:
+
+- 完了台帳のキーを `IStateElement` → **state プロパティ名**に変更
+  （[`completeWebComponent.ts`](../../packages/state/src/webComponent/completeWebComponent.ts)）。
+  完了はプロパティ単位の事実（`defineProperty(component, stateProp, …)` が済んだか）なので粒度が正しく、
+  かつ型が違う（`string` vs `IStateElement`）ので今回の取り違えが**書けなくなる**。
+  ゲートが正しく真になると 2 の経路自体を通らなくなる
+- 派生バインディングを `addBindingByNode` ではなく、**プライマリを所有する `BindingSession`** に
+  `initialize({ registerAddress: true })` で登録（[`MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts)）。
+  絶対アドレス台帳への登録・teardown・ノード削除時の破棄が既存のライフサイクルにそのまま乗るため、
+  台帳エントリが component を強参照したまま残らない。`propSegments` は stateProp を保つ
+  （適用側が先頭セグメントで束ね先の state 要素を引くため）。node 台帳へは積まない
+  （プレフィックスを保った結果、再バインド時にプライマリ抽出フィルタへ混入してしまうため）
+
+回帰は happy-dom
+（[`integration.bindComponentDelivery.test.ts`](../../packages/state/__tests__/integration.bindComponentDelivery.test.ts)）と
+実ブラウザ（[`e2e/tests/state-bind-component-parent-write.spec.ts`](../../e2e/tests/state-bind-component-parent-write.spec.ts)）の
+両方で固定した。判別子は **Shadow 内のビュー**であること — 親スコープのビューは親自身のバインディングなので
+断線していても更新され、それを見ていると壊れていることに気づけない。
+葉のマッピング（`state.name: user.name`）とオブジェクトのマッピング下のサブパス読み
+（`state.user: user` ＋ 子が `user.name`）の 2 形を覆う。後者だけが 3 の断線を踏む。
+いずれも修正前のコードに対して失敗することを確認済み。
 
 ---
 

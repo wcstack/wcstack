@@ -3,7 +3,8 @@ import { getPathInfo } from "../address/PathInfo";
 import { IAbsolutePathInfo } from "../address/types";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { IBindingInfo } from "../binding/types";
-import { addBindingByNode } from "../bindings/getBindingsByNode";
+import { getBindingSession } from "../bindings/BindingSession";
+import { config } from "../config";
 import { IStateElement } from "../components/types";
 import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
@@ -119,15 +120,42 @@ export function getOuterAbsolutePathInfo(webComponent: Element, innerAbsPathInfo
   innerMapping.set(innerAbsPathInfo, outerAbsPathInfo);
   outerMapping.set(outerAbsPathInfo, innerAbsPathInfo);
 
-  // ルールに対応するバインディングを生成
+  // ルールに対応するバインディングを生成し、親スコープの購読者として登録する。
+  //
+  // 子が読んだサブパス（inner "user.name" ＝ outer "person.name"）は、子が
+  // そのパスに関心を宣言したということ。親がそこへ書いたときに子へ再読込通知が
+  // 届くよう、プライマリと同じ形のバインディングを立てて絶対アドレス台帳に載せる。
+  //
+  // propSegments は stateProp（プライマリの先頭セグメント）を保つ必要がある。
+  // 適用側は先頭セグメントで束ね先の state 要素を引く（apply/applyChangeToWebComponent.ts）
+  // ため、inner パスだけにすると通知先を解決できない。
+  //
+  // 登録はプライマリを所有する BindingSession 経由で行う。台帳登録・teardown・
+  // ノード削除時の破棄（MutationObserver 配送）が既存のライフサイクルにそのまま乗り、
+  // 絶対アドレス台帳のエントリが component を強参照したまま残るのを防ぐ。
+  // node 台帳（addBindingByNode）へは積まない — stateProp を保った結果、
+  // 再バインド時に buildPrimaryMappingRule のプライマリ抽出フィルタへ混入するため。
+  const propSegments = [primaryBinding.propSegments[0], ...innerAbsPathInfo.pathInfo.segments];
   const newBinding: IBindingInfo = {
     ...primaryBinding,
-    propName: innerAbsPathInfo.pathInfo.path,
-    propSegments: innerAbsPathInfo.pathInfo.segments,
+    propName: propSegments.join(DELIMITER),
+    propSegments,
     statePathName: outerAbsPathInfo.pathInfo.path,
     statePathInfo: outerAbsPathInfo.pathInfo,
   }
-  addBindingByNode(webComponent, newBinding);
+  // セッションが引けないのは内部的な想定外（プライマリは親スコープの収集で必ず
+  // session.initialize を通っている）。ここは翻訳が本務なので read を落とさず、
+  // 登録だけ諦める ＝ この機構が入る前と同じ挙動に留める。debug 時のみ観測可能にする。
+  const session = getBindingSession(primaryBinding);
+  if (session === null) {
+    if (config.debug) {
+      console.warn(`No binding session for the primary mapping rule; parent→child notification for "${outerAbsPathInfo.pathInfo.path}" is not registered.`, { webComponent, primaryBinding });
+    }
+    return outerAbsPathInfo;
+  }
+  // 戻り値（初期 apply 対象）は使わない。この導出は子の read の最中に起きるので、
+  // 子は既に最新値を読んでおり、ここでの再通知は冗長かつ再入になる。
+  session.initialize([newBinding], { registerAddress: true });
 
   return outerAbsPathInfo;
 }

@@ -47,7 +47,7 @@ export function bindWebComponent(
     enumerable: true,
     configurable: true,
   });
-  markWebComponentAsComplete(component, innerStateElement);
+  markWebComponentAsComplete(component, stateProp);
   if (WEBCOMPONENT_STATE_READY_CALLBACK_NAME in component) {
     const func = (component as any)[WEBCOMPONENT_STATE_READY_CALLBACK_NAME];
     if (typeof func === 'function') {

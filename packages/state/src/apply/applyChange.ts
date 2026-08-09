@@ -62,7 +62,7 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     return;
   }
   if (fnByBinding.has(binding)) {
-    if (isWebComponentComplete(binding.replaceNode as Element, context.stateElement)) {
+    if (isWebComponentComplete(binding.replaceNode as Element, binding.propSegments[0])) {
       fn = applyChangeToWebComponent;
       fnByBinding.set(binding, fn); // 確定したのでキャッシュ
     } else {
@@ -80,7 +80,7 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     if (typeof fn === 'undefined') {
       const customTag = getCustomElement(binding.replaceNode);
       if (customTag) {
-        if (isWebComponentComplete(binding.replaceNode as Element, context.stateElement)) {
+        if (isWebComponentComplete(binding.replaceNode as Element, firstSegment)) {
           fn = applyChangeToWebComponent;
           fnByBinding.set(binding, fn); // 確定したのでキャッシュ
         } else {
