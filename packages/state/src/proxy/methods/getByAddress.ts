@@ -28,8 +28,10 @@ import { STATE_COMMAND_NAMESPACE_NAME, STATE_STREAM_ERROR_NAMESPACE_NAME, STATE_
 import { raiseError } from "../../raiseError";
 import { collectStreamDependency } from "../../stream/argsTrace";
 import { getStreamErrorNamespace, getStreamStatusNamespace } from "../../stream/streamNamespace";
+import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
 import { IStateHandler } from "../types";
 import { checkDependency } from "./checkDependency";
+import { isCacheable } from "./isCacheable";
 
 /**
  * namespace 配下のパスは raw state を持たないため、proxy の get トラップと同じ
@@ -84,6 +86,15 @@ function _getByAddress(
       } finally {
         handler.popAddress();
       }
+    } else if (stateElement.hasMappedComponentState === true) {
+      // target は innerState proxy。get トラップにはパス文字列しか渡らないので、
+      // 解決済みの listIndex を動的スコープで越境させる（§1.8）
+      pushCrossBoundaryAddress(stateElement, address);
+      try {
+        return Reflect.get(target, address.pathInfo.path);
+      } finally {
+        popCrossBoundaryAddress();
+      }
     } else {
       return Reflect.get(target, address.pathInfo.path);
     }
@@ -131,8 +142,7 @@ export function getByAddress(
   // $streams の args トレース中のみ絶対アドレスを捕捉（collector 非活性なら即 return）
   collectStreamDependency(handler.stateElement, address);
   const stateElement = handler.stateElement;
-  const cacheable = address.pathInfo.wildcardCount > 0 || 
-                    stateElement.getterPaths.has(address.pathInfo.path);
+  const cacheable = isCacheable(stateElement, address);
   if (cacheable) {
     return _getByAddressWithCache(target, address, receiver, handler, stateElement);
   } else {

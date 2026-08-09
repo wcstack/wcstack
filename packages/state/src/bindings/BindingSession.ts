@@ -19,6 +19,7 @@ import { getCustomElementRegistry, upgradeCustomElement } from "../platform/cust
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
+import { getOuterRowPathInfo } from "../webComponent/outerListPath";
 import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
@@ -71,6 +72,12 @@ interface IInternalBindingRecord extends IBindingRecord {
    */
   patternPathInfo: IAbsolutePathInfo | null;
   patternListIndex: IListIndex | null;
+  /**
+   * mapped な `bind-component` の行バインディングを、値の正本を持つ親スコープの
+   * 絶対パス情報にも登録したときの控え（listIndex は patternListIndex と同一）。
+   * plain な state では常に null（§1.8）。
+   */
+  outerPatternPathInfo: IAbsolutePathInfo | null;
   pendingDefinitions: number;
   initialPolicy: IInitialSyncPolicy | null;
   resolvedAuthority: ResolvedInitialAuthority | null;
@@ -641,6 +648,7 @@ export class BindingSession {
         address: null,
         patternPathInfo: null,
         patternListIndex: null,
+        outerPatternPathInfo: null,
         pendingDefinitions: 0,
         initialPolicy: slot.policy,
         resolvedAuthority: slot.authority,
@@ -757,6 +765,7 @@ export class BindingSession {
       address: null,
       patternPathInfo: null,
       patternListIndex: null,
+      outerPatternPathInfo: null,
       pendingDefinitions: 0,
       initialPolicy: null,
       resolvedAuthority: null,
@@ -964,6 +973,15 @@ export class BindingSession {
       addBindingByPattern(absolutePathInfo, listIndex, binding);
       record.patternPathInfo = absolutePathInfo;
       record.patternListIndex = listIndex;
+      // mapped な bind-component の子スコープが回している行は、値の正本が親 state に
+      // ある。親が行へ書いたときの enqueue は親の絶対パス情報で起きるので、同じ
+      // listIndex（親子で共有されている）で親側のパターン台帳にも購読者として載せる。
+      // これが無いと親起点の行フィールド書き込みが子に一切届かない（§1.8）。
+      const outerPathInfo = getOuterRowPathInfo(stateElement, binding.statePathInfo);
+      if (outerPathInfo !== null) {
+        addBindingByPattern(outerPathInfo, listIndex, binding);
+        record.outerPatternPathInfo = outerPathInfo;
+      }
     } else {
       const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
       addBindingByAbsoluteStateAddress(address, binding);
@@ -1020,6 +1038,10 @@ export class BindingSession {
     } else if (record.patternListIndex !== null) {
       try {
         removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);
+        if (record.outerPatternPathInfo !== null) {
+          removeBindingByPattern(record.outerPatternPathInfo, record.patternListIndex, binding);
+          record.outerPatternPathInfo = null;
+        }
         record.patternPathInfo = null;
         record.patternListIndex = null;
         // 相対アドレス（getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の

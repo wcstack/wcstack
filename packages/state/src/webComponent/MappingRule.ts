@@ -153,9 +153,11 @@ export function getOuterAbsolutePathInfo(webComponent: Element, innerAbsPathInfo
   //     子が配列マッピングの上で for を回している場合（規則 state.items: rows に対し
   //     子の行が items.*.name を読む → outer は rows.*.name）。派生バインディングの
   //     node は親スコープにあるコンポーネント要素で、ループは子の Shadow 内なので
-  //     コンポーネントからは行を特定できない。この形の親→子配送は元から成立して
-  //     おらず（子側の for が初期化されない）、ここで登録を試みると
-  //     getAbsoluteStateAddressByBinding が raiseError して無言の不成立が例外に化ける。
+  //     コンポーネントからは行を特定できない ＝ この 1 本では行を表現できない。
+  //     ここで登録を試みると getAbsoluteStateAddressByBinding が raiseError する。
+  //     この形の親→子配送は派生バインディングではなく、子の行バインディング自身を
+  //     親のパターン台帳（(absolutePathInfo, listIndex)）へ相乗りさせて成立させる
+  //     （BindingSession.registerAddress / webComponent/outerListPath.ts、§1.8）。
   const skipRegistration = (reason: string): void => {
     if (config.debug) {
       console.warn(`parent→child notification for "${outerAbsPathInfo.pathInfo.path}" is not registered: ${reason}.`, { webComponent, primaryBinding });

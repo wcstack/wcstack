@@ -1194,6 +1194,34 @@ customElements.define("my-component", MyComponent);
 </template>
 ```
 
+### Rendering a List Inside the Component
+
+An array can be bound into a component and iterated with `for:` **inside** it. The outer state
+stays the source of truth; row additions, removals, reordering and row-field writes flow both ways.
+
+```html
+<!-- Host -->
+<wcs-state json='{"rows":[{"name":"Alice"},{"name":"Bob"}]}'></wcs-state>
+<my-list data-wcs="state.items: rows"></my-list>
+```
+
+```javascript
+// Component (Shadow DOM)
+this.shadowRoot.innerHTML = `
+  <wcs-state bind-component="state"></wcs-state>
+  <ul>
+    <template data-wcs="for: items">
+      <li data-wcs="textContent: .name"></li>
+    </template>
+  </ul>
+`;
+```
+
+- Replacing `rows` or writing a single row field (`rows.0.name`) both reach the rows inside the component
+- Writing `items.*.name` from inside the component reaches the host's `rows`
+- **Limitation**: nesting is not supported — a component that sits inside a host `for:` *and* runs its own
+  `for:` over a mapped array has no way to relate the outer row to the inner one
+
 ## Command Token (Method Binding)
 
 Property binding (`state.message: user.name`) covers data flowing into a component, but it does not cover **invoking a method on a component from state** — `<wcs-fetch>.fetch()`, `<wcs-dialog>.open()`, and so on. **Command tokens** fill that gap with a typed pub/sub channel:

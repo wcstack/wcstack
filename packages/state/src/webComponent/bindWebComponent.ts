@@ -35,6 +35,9 @@ export function bindWebComponent(
   // innerState proxy、plain なら melt 済みのローカル state。
   if (bindings.length > 0) {
     buildPrimaryMappingRule(component, stateProp, bindings);
+    // 値の正本が親スコープにあることを state 要素に記録する。越境アドレスの受け渡しと
+    // リストパスの外向き伝播はこのフラグでのみ有効になる（§1.8）。
+    innerStateElement.markComponentStateMapped?.();
     innerStateElement.setInitialState(createInnerState(component, stateProp));
   } else {
     innerStateElement.setInitialState(meltFrozenObject(state));

@@ -1193,6 +1193,34 @@ customElements.define("my-component", MyComponent);
 </template>
 ```
 
+### コンポーネント側でリストを描画する
+
+配列をコンポーネントに束ね、`for:` をコンポーネントの内側で回すこともできます。
+値の正本は外側の状態のままで、行の追加・削除・並べ替え・行フィールドの書き込みは双方向に届きます。
+
+```html
+<!-- ホスト側 -->
+<wcs-state json='{"rows":[{"name":"Alice"},{"name":"Bob"}]}'></wcs-state>
+<my-list data-wcs="state.items: rows"></my-list>
+```
+
+```javascript
+// コンポーネント側（Shadow DOM）
+this.shadowRoot.innerHTML = `
+  <wcs-state bind-component="state"></wcs-state>
+  <ul>
+    <template data-wcs="for: items">
+      <li data-wcs="textContent: .name"></li>
+    </template>
+  </ul>
+`;
+```
+
+- ホストが `rows` を差し替えても、行フィールド（`rows.0.name`）だけを書いても、コンポーネント内の行に反映されます
+- コンポーネント側から `items.*.name` を書き戻すと、ホストの `rows` に届きます
+- **制限**: コンポーネント自身がホスト側の `for` の中にあり、さらにコンポーネント内でも `for` を回す
+  入れ子構成には対応していません（内外の行の対応付けが決まらないため）
+
 ## Command Token（メソッドバインディング）
 
 プロパティバインディング（`state.message: user.name`）はコンポーネントへ流れ込むデータを扱いますが、**state からコンポーネントのメソッドを起動する**こと —— `<wcs-fetch>.fetch()`、`<wcs-dialog>.open()` など —— はカバーしません。**command token** は型付きの pub/sub チャネルでこの隙間を埋めます：
