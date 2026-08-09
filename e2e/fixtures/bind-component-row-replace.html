@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: replacing a list whose rows contain a bind-component</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.9.
+
+       The README's "Loop with Components" shape: a `for:` in the host scope whose rows each
+       hold a component bound by path. Replacing the array used to kill the list outright.
+
+       Row content is pooled, so a rebuilt row runs apply *before* it goes back into the DOM.
+       `stateElementByWebComponent` is keyed by the element, so it still pointed at the
+       previous (already disconnected) state element, and notifying it raised. Neither the
+       updater's drain nor applyChangeToFor's row loop catches, so one row took the rest of
+       the batch with it: the `for` went empty and never came back, whatever you wrote next.
+
+       Two components are on the page because the fix has two halves and they fail
+       differently. #by-ctor builds its shadow in the constructor, so the same <wcs-state>
+       instance is reconnected -- nothing re-binds it, and without the reconnect reload its
+       view stays stale. #by-cc rebuilds the shadow on every connectedCallback, so it gets a
+       fresh state element and would pass on the first half alone. Assert both. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    const MARKUP = `
+<wcs-state bind-component="state"></wcs-state>
+<span class="row-view">{{ row.id }}</span>
+`;
+    // shadow を constructor で 1 回だけ組む（<wcs-state> は再接続で使い回される）
+    class RowByCtor extends HTMLElement {
+      state = { row: {} };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+        this.shadowRoot.innerHTML = MARKUP;
+      }
+    }
+    customElements.define("row-by-ctor", RowByCtor);
+
+    // shadow を connectedCallback で組み直す（<wcs-state> は毎回新しくなる）
+    class RowByCc extends HTMLElement {
+      state = { row: {} };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot.innerHTML = MARKUP;
+      }
+    }
+    customElements.define("row-by-cc", RowByCc);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  groups: [{ id: "g1" }, { id: "g2" }],
+  replaceAll() { this.groups = [{ id: "g9" }]; },
+  renameFirst() { this["groups.0.id"] = "g9x"; },
+  grow() { this.groups = [{ id: "gA" }, { id: "gB" }, { id: "gC" }]; },
+  clear() { this.groups = []; },
+};
+    </script>
+  </wcs-state>
+
+  <ul id="host-view">
+    <template data-wcs="for: groups">
+      <li>
+        <span class="gid">{{ groups.*.id }}</span>
+        <row-by-ctor class="ctor" data-wcs="state.row: groups.*"></row-by-ctor>
+        <row-by-cc class="cc" data-wcs="state.row: groups.*"></row-by-cc>
+      </li>
+    </template>
+  </ul>
+
+  <button id="replace" data-wcs="onclick: replaceAll">replace</button>
+  <button id="rename" data-wcs="onclick: renameFirst">rename first</button>
+  <button id="grow" data-wcs="onclick: grow">grow</button>
+  <button id="clear" data-wcs="onclick: clear">clear</button>
+</body>
+</html>

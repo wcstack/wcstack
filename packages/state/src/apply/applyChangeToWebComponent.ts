@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
 import { IBindingInfo } from "../types";
@@ -20,6 +21,8 @@ import { IApplyContext } from "./types";
  *
  * この関数が選ばれるのは `isWebComponentComplete` が真のときだけなので
  * （apply/applyChange.ts）、`bindWebComponent` は完了済み ＝ state element は登録済み。
+ * ただし**登録済みと使用可能は別**で、切断済みの state element が台帳に残っている
+ * 窓がある（§1.9）。下の使用可能判定を参照。
  */
 export function applyChangeToWebComponent(binding: IBindingInfo, _context: IApplyContext, _newValue: unknown): void {
   const element = binding.node as Element;
@@ -31,6 +34,28 @@ export function applyChangeToWebComponent(binding: IBindingInfo, _context: IAppl
   const innerStateElement = getStateElementByWebComponent(element, firstSegment);
   if (innerStateElement === null) {
     raiseError(`State element not bound to "${firstSegment}" on web component.`);
+  }
+  // 切断済みの state element には送らない。
+  //
+  // リスト行にコンポーネントがあるとき、行の再生成では **DOM に戻る前に** apply が走る。
+  // 行の content（と中のコンポーネント要素）は再利用されるので、要素をキーにした
+  // 台帳 `stateElementByWebComponent` は前回の state element を指したままで、
+  // その要素は既に切断されている（`rootNode` を失っている）。そこへ `createState` すると
+  // raiseError し、**updater の drain も applyChangeToFor の行ループも例外を捕まえない**ため、
+  // 1 つの行が同じバッチの残り全部を道連れにする — 実測では for が空になったまま、
+  // 以後どんな更新でも復帰しなくなる（§1.9）。
+  //
+  // ここは値を運ばない再読込通知なので、切断中の子に送る意味がそもそも無い。
+  // 子が DOM に戻れば、子のバインディングが innerState 経由で親をライブ読みするため
+  // 現在値はそのとき正しく入る（初期配送と同じ経路）。よって no-op で落として良い。
+  if (innerStateElement.hasRootNode === false) {
+    if (config.debug) {
+      console.debug(
+        `[@wcstack/state] skipped parent→child notification for a disconnected state element on <${element.tagName.toLowerCase()}>.`,
+        { element, stateProp: firstSegment, path: restSegments.join(DELIMITER) },
+      );
+    }
+    return;
   }
   innerStateElement.createState("readonly", (state) => {
     state.$postUpdate(restSegments.join(DELIMITER));

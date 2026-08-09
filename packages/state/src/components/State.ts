@@ -27,6 +27,7 @@ import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { propagateListPathToOuterState } from "../webComponent/outerListPath";
+import { getPrimaryInnerPaths, resetDerivedMappingRules } from "../webComponent/MappingRule";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 import { getCustomElement } from "../getCustomElement";
@@ -306,6 +307,35 @@ export class State extends HTMLElementBase implements IStateElement {
     }
   }
 
+  /**
+   * mapped な `bind-component` が切断 → 再接続したときに、束ねているパスを読み直させる（§1.9）。
+   *
+   * リスト行の content は再利用されるので、行が作り直されると子はこの経路を通る
+   * （`_initialized` が真なので `_initializeBindWebComponent` / `_initialize` は走らず、
+   * 子のバインディングは張り直されない）。切断中に親で起きた変更の通知は
+   * `applyChangeToWebComponent` が切断済みを理由に落としているため、ここで読み直さないと
+   * 子のビューだけが古い値のまま取り残される。何が変わったかは分からないので、
+   * プライマリ規則の粒度で丸ごと読み直す。
+   *
+   * 読み直しの前に派生規則の memo を捨てる。派生規則の購読者（親スコープに立つ
+   * バインディング）は切断で teardown されており、memo が残っていると導出が二度と
+   * 走らないため購読者も張り直されない ＝ 以後この子だけがサブパスの書き込みを
+   * 受け取れなくなる。捨てておけば、直後の読み直しで導出と購読者登録が走る。
+   */
+  private _reloadMappedPathsAfterReconnect(): void {
+    if (!this._hasMappedComponentState || this._boundComponent === null) {
+      return;
+    }
+    // mapped ＝ プライマリ規則が 1 件以上あることと同義（bindWebComponent の分岐）
+    const innerPaths = getPrimaryInnerPaths(this._boundComponent);
+    resetDerivedMappingRules(this._boundComponent);
+    this.createState("readonly", (state) => {
+      for (const path of innerPaths) {
+        state.$postUpdate(path);
+      }
+    });
+  }
+
   private async _callStateConnectedCallback(): Promise<void> {
     await this.createStateAsync("writable", async (state) => {
       // stateに"$connectedCallback"があるか確認し、connectedCallbackAPIを呼び出す
@@ -384,6 +414,7 @@ export class State extends HTMLElementBase implements IStateElement {
       // createState が rootNode 経由でこの要素を解決できるようにするために必要
       // （$connectedCallback の再実行と $streams の initial からの再起動が依存する、設計書 §2-3）。
       setStateElementByName(this._rootNode, this._name, this);
+      this._reloadMappedPathsAfterReconnect();
     }
     // enable-ssr (クライアント側): SSR で $connectedCallback 済みなのでスキップ
     // inSsr() (サーバー側): レンダリング中なので実行する
@@ -510,6 +541,14 @@ export class State extends HTMLElementBase implements IStateElement {
       raiseError('State rootNode is not available.');
     }
     return this._rootNode;
+  }
+
+  /**
+   * `rootNode` を保持しているか ＝ `createState` を呼んでよいか（§1.9）。
+   * disconnect で落ち、connect の冒頭で復活する。
+   */
+  get hasRootNode(): boolean {
+    return this._rootNode !== null;
   }
 
   get boundComponentStateProp(): string | null {

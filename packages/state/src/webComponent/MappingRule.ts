@@ -58,6 +58,52 @@ export function buildPrimaryMappingRule(webComponent: Element, stateName: string
   outerMappingByElement.set(webComponent, outerMappingRule);
 }
 
+/**
+ * プライマリ規則だけを残して、遅延導出された派生規則の memo を捨てる（§1.9）。
+ *
+ * 派生規則は導出と同時に「親スコープの購読者」を立てる。その購読者は子の切断で
+ * teardown されるが、memo は要素をキーに残り続けるため、再接続後は**導出が二度と
+ * 走らず購読者も張り直されない** — 親がサブパスへ書いても子に届かなくなる。
+ * リスト行の content 再利用で実際に踏む（行を差し替えると、その行の子だけが
+ * 以後の行フィールド書き込みを受け取れない）。
+ *
+ * `buildPrimaryMappingRule` は再バインド時に同じことをしている（台帳を作り直す）。
+ * 再接続では bindWebComponent が走らないので、ここで同じ状態に戻す。
+ */
+export function resetDerivedMappingRules(webComponent: Element): void {
+  const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
+  if (typeof primaryMappingRuleSet === 'undefined') {
+    return;
+  }
+  const innerMappingRule = new Map<IAbsolutePathInfo, IAbsolutePathInfo>();
+  const outerMappingRule = new Map<IAbsolutePathInfo, IAbsolutePathInfo>();
+  for (const rule of primaryMappingRuleSet) {
+    innerMappingRule.set(rule.innerAbsPathInfo, rule.outerAbsPathInfo);
+    outerMappingRule.set(rule.outerAbsPathInfo, rule.innerAbsPathInfo);
+  }
+  innerMappingByElement.set(webComponent, innerMappingRule);
+  outerMappingByElement.set(webComponent, outerMappingRule);
+}
+
+/**
+ * このコンポーネントに張られたプライマリ規則の**内側パス**を列挙する。
+ *
+ * 切断 → 再接続を跨いだ子（行 content の再利用で起きる）は、切断中に親で起きた変更の
+ * 通知を受け取れていない。再接続時に「束ねているパスを読み直せ」と撃つための入力で、
+ * 何が変わったかは分からないのでプライマリ規則の粒度で丸ごと読み直す（§1.9）。
+ */
+export function getPrimaryInnerPaths(webComponent: Element): string[] {
+  const primaryMappingRuleSet = primaryMappingRuleSetByElement.get(webComponent);
+  if (typeof primaryMappingRuleSet === 'undefined') {
+    return [];
+  }
+  const paths: string[] = [];
+  for (const rule of primaryMappingRuleSet) {
+    paths.push(rule.innerAbsPathInfo.pathInfo.path);
+  }
+  return paths;
+}
+
 export function getInnerAbsolutePathInfo(webComponent: Element, outerAbsPathInfo: IAbsolutePathInfo): IAbsolutePathInfo | null {
   const mapping = outerMappingByElement.get(webComponent);
   if (typeof mapping === 'undefined') {

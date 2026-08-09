@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyChangeToWebComponent } from '../src/apply/applyChangeToWebComponent';
 import { setStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
 import { getPathInfo } from '../src/address/PathInfo';
+import { config } from '../src/config';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -29,11 +30,12 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
   } as IBindingInfo;
 }
 
-function bindProbeStateElement(element: Element, stateProp: string) {
+function bindProbeStateElement(element: Element, stateProp: string, hasRootNode?: boolean) {
   const posted: string[] = [];
   const mutabilities: string[] = [];
   const stateElement = {
     name: 'default',
+    hasRootNode,
     createState(mutability: string, callback: (state: any) => void) {
       mutabilities.push(mutability);
       callback({ $postUpdate: (path: string) => { posted.push(path); } });
@@ -90,6 +92,50 @@ describe('applyChangeToWebComponent', () => {
     applyChangeToWebComponent(binding, dummyContext, 'Alice');
 
     expect(posted).toEqual(['user.name']);
+  });
+
+  // §1.9: 台帳に載っていること（登録済み）と使えることは別。要素をキーにした台帳には
+  // 切断済みの state element が残る窓があり、そこへ createState すると raiseError する。
+  // updater の drain も applyChangeToFor の行ループも例外を捕まえないので、1 行が
+  // 同じバッチの残り全部を道連れにする。切断中の子への再読込通知は意味が無いので no-op。
+  it('切断済みの state element には通知せず no-op になること', () => {
+    const el = document.createElement('div');
+    const { posted, mutabilities } = bindProbeStateElement(el, 'state', false);
+
+    const binding = createBinding(el, ['state', 'title']);
+    expect(() => applyChangeToWebComponent(binding, dummyContext, 'x')).not.toThrow();
+
+    expect(posted).toEqual([]);
+    expect(mutabilities).toEqual([]);
+  });
+
+  it('切断済みのスキップは config.debug で観測できること', () => {
+    const el = document.createElement('div');
+    bindProbeStateElement(el, 'state', false);
+    const logged: unknown[][] = [];
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation((...args: unknown[]) => {
+      logged.push(args);
+    });
+    config.debug = true;
+    try {
+      applyChangeToWebComponent(createBinding(el, ['state', 'title']), dummyContext, 'x');
+    } finally {
+      config.debug = false;
+      debugSpy.mockRestore();
+    }
+    expect(logged).toHaveLength(1);
+    expect(logged[0][0]).toContain('skipped parent→child notification');
+    expect(logged[0][1]).toMatchObject({ stateProp: 'state', path: 'title' });
+  });
+
+  it('hasRootNode 未実装のモックは従来どおり通知されること', () => {
+    const el = document.createElement('div');
+    const { posted } = bindProbeStateElement(el, 'state', undefined);
+
+    const binding = createBinding(el, ['state', 'title']);
+    applyChangeToWebComponent(binding, dummyContext, 'x');
+
+    expect(posted).toEqual(['title']);
   });
 
   it('通知は値に依存しないこと', () => {
