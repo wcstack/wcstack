@@ -1,13 +1,14 @@
 # state のコンポーネント機構 3 系統の整合性監査
 
 - **作成日**: 2026-08-05
-- **状態**: 監査記録＋**修正完了**（2026-08-05〜06、および §1.7 / §1.8 を 2026-08-10）。
+- **状態**: 監査記録＋**修正完了**（2026-08-05〜06、および §1.7 / §1.8 / §1.9 を 2026-08-10）。
   §7 の decision gate G1-G4 は 4 件とも決着・実装済み。
-  実装済み = §1.1〜§1.8 / §2.1〜§2.4 / §2.6 / §2.7 / §3.1 / §3.2 / §3.4 / §3.5 / §3.6、
+  実装済み = §1.1〜§1.9 / §2.1〜§2.4 / §2.6 / §2.7 / §3.1 / §3.2 / §3.4 / §3.5 / §3.6、
   部分 = §2.5、訂正 = §3.3（本書の誤り）。
   **監査で挙げた項目は全て解消**（§2.5 は診断性のみ・§3.3 は本書の誤りとして撤回）。
-  ただし §1.7 は、G1 の修正自体が片肺で着地していたことを後日発見した記録であり、
-  §1.8 はその §1.7 が「サポート範囲外」として残した形を成立させた記録である。
+  §1.7 は G1 の修正自体が片肺で着地していたことを後日発見した記録、
+  §1.8 はその §1.7 が「サポート範囲外」として残した形を成立させた記録、
+  §1.9 は §1.8 の spike 中に見つけた**監査時点から存在した別の欠陥**の記録である。
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
@@ -48,6 +49,7 @@
 | §1.6 | DCC メソッドに command-token を張れない | ✅ 修正済み（G2 = `$commands` 明示宣言） |
 | §1.7 | §1.1 で分離した内部チャネルが一度も選ばれていない（親→子の配送が丸ごと不成立） | ✅ 修正済み（2026-08-10・後日発見） |
 | §1.8 | 子スコープが親のリストを `for` で回せない（越境で listIndex が落ち、初期描画から不成立） | ✅ 修正済み（2026-08-10・§1.7 の残件） |
+| §1.9 | 行にコンポーネントを持つリストの差し替えで `for` が死ぬ（README 記載の形・復帰不能） | ✅ 修正済み（2026-08-10・§1.8 の spike 中に発見） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ✅ 修正済み（サブパス ＋ `$postUpdate` ＋ property getter） |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ✅ 修正済み（setter を同期化。`callFn` は意図的に Promise 維持） |
 | §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
@@ -74,6 +76,8 @@
 | [`webComponent/outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts)（新規） / [`components/State.ts`](../../packages/state/src/components/State.ts) | §1.8（`for` パスのリスト宣言を親 state へ伝播） |
 | [`bindings/BindingSession.ts`](../../packages/state/src/bindings/BindingSession.ts) | §1.8（行バインディングを親のパターン台帳へ相乗り） |
 | [`proxy/methods/isCacheable.ts`](../../packages/state/src/proxy/methods/isCacheable.ts)（新規） | §1.8（mapped な state ではキャッシュを二重に持たない） |
+| [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) / [`components/types.ts`](../../packages/state/src/components/types.ts) | §1.9（切断済み state element へ通知しない・`hasRootNode`） |
+| [`components/State.ts`](../../packages/state/src/components/State.ts) / [`webComponent/MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts) | §1.9（再接続でマップ済みパスを読み直す・派生規則の memo を捨てる） |
 | [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
 | [`dcc/processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts)（新規） | §1.5 / §2.3 / §1.6 |
 | [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
@@ -406,6 +410,57 @@ memo すると後から来た本物の read が memo に当たって**購読者�
 state 要素インスタンス単位で成立する必要がある）・`$getAll` の横断読み・従来の成立形と
 plain コンポーネントの非回帰を覆う。実ブラウザは
 [`e2e/tests/state-bind-component-list.spec.ts`](../../e2e/tests/state-bind-component-list.spec.ts)。
+
+### 1.9 行にコンポーネントを持つリストの差し替えで `for` が死ぬ ✅ 修正済み（2026-08-10）
+
+README の ["Loop with Components"](../../packages/state/README.md) の形
+（`<template data-wcs="for: groups">` の各行に `<my-row data-wcs="state.row: groups.*">`）で
+**配列を差し替えると行が 1 つも描画されなくなり、以後どんな更新でも復帰しない**。
+§1.8 の spike 中に発見した別件で、§1.7 / §1.8 のいずれよりも前から存在する。
+
+行の content はプールで再利用されるので、作り直された行は **DOM に戻る前に** apply が走る。
+`stateElementByWebComponent` は要素をキーにした台帳なので、この時点では前回の
+（既に切断された）state element を指したままで、そこへ `createState` すると
+`State rootNode is not available.` で raiseError する。**updater の drain も
+`applyChangeToFor` の行ループも例外を捕まえない**ため、1 行が同じバッチの残り全部を
+道連れにする。これは §1.7 で潰した「1 タグの誤設定が同一バッチの別バインディングを
+更新不能にする」と同じ構図。
+
+切り分け（happy-dom 実測）:
+
+| `for` 行の中身 | リスト差し替え |
+|---|---|
+| `<span>` のみ / 素のカスタム要素 / shadow だけ持つ要素 / shadow 内に**独立した** `<wcs-state>` | ✅ |
+| shadow 内に **`<wcs-state bind-component>`** | ❌ 行が全滅し、再置換でも復帰しない |
+
+**修正は 3 つで、どれも欠けると別々の形で落ちる。**
+
+1. **切断済みの state element には通知しない**
+   （[`applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts)）。
+   `IStateElement.hasRootNode` を足して判定する（**登録済みと使用可能は別**）。
+   ここは値を運ばない再読込通知なので、切断中の子に送る意味がそもそも無い
+2. **再接続時にマップ済みパスを読み直す**
+   （[`State._reloadMappedPathsAfterReconnect`](../../packages/state/src/components/State.ts)）。
+   1 だけでは、shadow を **constructor で組む**コンポーネントのビューが古いまま残る。
+   この形では `<wcs-state>` が再接続で使い回され、`_initialized` が真なので
+   `_initializeBindWebComponent` も `_initialize` も走らない ＝ 子のバインディングは
+   張り直されない。切断中の通知を 1 で落としている以上、ここで読み直さないと誰も直さない。
+   `connectedCallback` で shadow を組み直す形は新しい state element になるので
+   1 だけでも通ってしまう — **両方の形をテストしないと 2 の欠落が見えない**
+3. **派生マッピング規則の memo を捨てる**
+   （[`MappingRule.resetDerivedMappingRules`](../../packages/state/src/webComponent/MappingRule.ts)）。
+   1 と 2 を入れても、差し替え後の行だけが**行フィールドの書き込み**を受け取れない。
+   派生規則（§1.7 の 3）は導出と同時に親スコープへ購読者を立てるが、その購読者は子の切断で
+   teardown される一方 **memo は要素をキーに残る**ので、再接続後は導出が二度と走らず
+   購読者も張り直されない。`buildPrimaryMappingRule` は再バインド時に同じ後始末をしている。
+   再接続では bindWebComponent が走らないので、読み直しの直前に同じ状態へ戻す
+
+回帰は happy-dom
+（[`integration.bindComponentRowReplace.test.ts`](../../packages/state/__tests__/integration.bindComponentRowReplace.test.ts)）と
+実ブラウザ（[`e2e/tests/state-bind-component-row-replace.spec.ts`](../../e2e/tests/state-bind-component-row-replace.spec.ts)）の
+両方で固定した。どちらも **shadow を constructor で組む形と connectedCallback で組む形の
+両方**を並べている（上記 2 の理由）。判別子は Shadow 内のビュー — 親スコープの行は
+親自身のバインディングなので、子への配送が死んでいても更新される。
 
 ---
 
