@@ -74,5 +74,8 @@ function resolveOuterAbsolutePathInfo(
     return null;
   }
   const innerAbsPathInfo = getAbsolutePathInfo(innerStateElement, innerPathInfo);
-  return getOuterAbsolutePathInfo(component, innerAbsPathInfo);
+  // 参照専用で引く。ここはバインディング登録の最中（registerAddress → setPathInfo /
+  // 行の相乗り登録）から呼ばれるので、翻訳のついでに購読者登録まで走らせると
+  // `session.initialize` がセッション操作の内側から再入する。
+  return getOuterAbsolutePathInfo(component, innerAbsPathInfo, false);
 }

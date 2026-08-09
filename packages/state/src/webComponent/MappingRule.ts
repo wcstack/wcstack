@@ -66,7 +66,27 @@ export function getInnerAbsolutePathInfo(webComponent: Element, outerAbsPathInfo
   return mapping.get(outerAbsPathInfo) ?? null;
 }
 
-export function getOuterAbsolutePathInfo(webComponent: Element, innerAbsPathInfo: IAbsolutePathInfo): IAbsolutePathInfo | null {
+/**
+ * 内側のパスを外側のパスへ翻訳する。規則が無ければプライマリ規則から導出する。
+ *
+ * `registerSubscriber` は導出に**副作用を持たせるか**の切り替え。既定（子の read /
+ * write からの呼び出し）では導出した規則を台帳に memo し、対応するバインディングを
+ * 親スコープの購読者として登録する。`false` を渡すと**参照専用**になり、台帳にも
+ * 購読者にも触れない。
+ *
+ * 参照専用が要るのは、バインディング登録の最中（`BindingSession.registerAddress` →
+ * `setPathInfo` / 行の相乗り登録）に翻訳だけしたい場合。ここで購読者登録まで走ると
+ * `session.initialize` がセッション操作の内側から再入する。
+ *
+ * 参照専用の結果を台帳に memo しないのは、後から来た**本物の read が memo に当たって
+ * 購読者登録を永久に飛ばしてしまう**ため。導出のやり直しは初回だけで、以降は本物の
+ * read が張った memo に当たる（行 2 本目以降の登録は先頭行の read が埋めた台帳を引く）。
+ */
+export function getOuterAbsolutePathInfo(
+  webComponent: Element,
+  innerAbsPathInfo: IAbsolutePathInfo,
+  registerSubscriber: boolean = true,
+): IAbsolutePathInfo | null {
   let innerMapping = innerMappingByElement.get(webComponent);
   if (typeof innerMapping === 'undefined') {
     innerMapping = new Map<IAbsolutePathInfo, IAbsolutePathInfo>();
@@ -118,6 +138,10 @@ export function getOuterAbsolutePathInfo(webComponent: Element, innerAbsPathInfo
     raiseError(`State element with name "${primaryBinding.stateName}" not found for web component.`);
   }
   const outerAbsPathInfo = getAbsolutePathInfo(outerStateElement, outerPathInfo);
+  if (!registerSubscriber) {
+    // 参照専用: 台帳にも購読者にも触れず、翻訳結果だけ返す
+    return outerAbsPathInfo;
+  }
   innerMapping.set(innerAbsPathInfo, outerAbsPathInfo);
   outerMapping.set(outerAbsPathInfo, innerAbsPathInfo);
 

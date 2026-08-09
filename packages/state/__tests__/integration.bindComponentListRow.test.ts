@@ -225,6 +225,66 @@ describe("bind-component: 子スコープの for が親スコープのリスト�
     host.remove();
   });
 
+  it("同じコンポーネントの複数インスタンスが別々のリストに独立して追随すること", async () => {
+    // リストであることの伝播も行の購読も state 要素インスタンス単位で成立する必要がある。
+    // テンプレート単位で 1 回しか登録されないと 2 つ目以降が無言で死ぬ。
+    const tag = uniqueTag("bclr-list");
+    defineComponent(tag, { items: [] }, LIST_TEMPLATE);
+
+    const host = document.createElement(uniqueTag("bclr-host"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `
+      <wcs-state json='{"left":[{"name":"a"}],"right":[{"name":"x"},{"name":"y"}]}'></wcs-state>
+      <${tag} id="c1" data-wcs="state.items: left"></${tag}>
+      <${tag} id="c2" data-wcs="state.items: right"></${tag}>
+    `;
+    document.body.appendChild(host);
+
+    const parentStateElement = shadowRoot.querySelector("wcs-state") as State;
+    await parentStateElement.connectedCallbackPromise;
+    await State.getBindingsReady(shadowRoot);
+    for (const id of ["#c1", "#c2"]) {
+      const childShadow = (shadowRoot.querySelector(id) as HTMLElement).shadowRoot!;
+      await (childShadow.querySelector("wcs-state") as State).connectedCallbackPromise;
+      await State.getBindingsReady(childShadow);
+    }
+    await flush();
+
+    const view = (id: string) =>
+      Array.from(
+        (shadowRoot.querySelector(id) as HTMLElement).shadowRoot!.querySelectorAll("#inner-view li"),
+      ).map((li) => li.textContent);
+
+    expect(view("#c1")).toEqual(["a"]);
+    expect(view("#c2")).toEqual(["x", "y"]);
+    expect([...parentStateElement.listPaths]).toEqual(expect.arrayContaining(["left", "right"]));
+
+    parentStateElement.createState("writable", (s: any) => {
+      s["left.0.name"] = "A";
+      s["right.1.name"] = "Y";
+    });
+    await flush();
+
+    expect(view("#c1")).toEqual(["A"]);
+    expect(view("#c2")).toEqual(["x", "Y"]);
+
+    host.remove();
+  });
+
+  it("子から $getAll でマップ先のリストを横断的に読めること", async () => {
+    const { host, childStateElement } = await mountListComponent(
+      '{"rows":[{"name":"a"},{"name":"b"},{"name":"c"}]}',
+    );
+
+    let names: unknown;
+    childStateElement.createState("readonly", (s: any) => {
+      names = s.$getAll("items.*.name", []);
+    });
+    expect(names).toEqual(["a", "b", "c"]);
+
+    host.remove();
+  });
+
   it("コンポーネント自身が親の for の中にいる形（従来の成立形）が壊れていないこと", async () => {
     const tag = uniqueTag("bclr-row");
     defineComponent(tag, { row: {} }, `<span id="inner-view" data-wcs="textContent: row.name"></span>`);

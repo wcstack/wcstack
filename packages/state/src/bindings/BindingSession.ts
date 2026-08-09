@@ -1036,12 +1036,17 @@ export class BindingSession {
         // Cleanup is best-effort; one faulty resource must not retain the rest.
       }
     } else if (record.patternListIndex !== null) {
+      // 親スコープへの相乗り分は独立した資源なので、子側の解除が失敗しても取り残さない
+      if (record.outerPatternPathInfo !== null) {
+        try {
+          removeBindingByPattern(record.outerPatternPathInfo, record.patternListIndex, binding);
+        } catch {
+          // Cleanup is best-effort.
+        }
+        record.outerPatternPathInfo = null;
+      }
       try {
         removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);
-        if (record.outerPatternPathInfo !== null) {
-          removeBindingByPattern(record.outerPatternPathInfo, record.patternListIndex, binding);
-          record.outerPatternPathInfo = null;
-        }
         record.patternPathInfo = null;
         record.patternListIndex = null;
         // 相対アドレス（getValue）と絶対アドレス（applyChangeToFor / updatedCallback 経由の

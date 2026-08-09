@@ -19,19 +19,23 @@
 import { IStateAddress } from "../address/types";
 import { IStateElement } from "../components/types";
 
-interface ICrossBoundaryEntry {
-  readonly stateElement: IStateElement;
-  readonly address: IStateAddress;
-}
-
-const stack: ICrossBoundaryEntry[] = [];
+// 行ごとの読み書きで通るため、エントリオブジェクトを割り当てずに 2 本の並行配列で持つ
+// （リスト描画は「行数 × 行内バインディング数」回ここを通る）。
+const stateElementStack: (IStateElement | undefined)[] = [];
+const addressStack: (IStateAddress | undefined)[] = [];
+let depth = 0;
 
 export function pushCrossBoundaryAddress(stateElement: IStateElement, address: IStateAddress): void {
-  stack.push({ stateElement, address });
+  stateElementStack[depth] = stateElement;
+  addressStack[depth] = address;
+  depth++;
 }
 
 export function popCrossBoundaryAddress(): void {
-  stack.pop();
+  depth--;
+  // 参照を残さない（state 要素・listIndex を保持し続けないため）
+  stateElementStack[depth] = undefined;
+  addressStack[depth] = undefined;
 }
 
 /**
@@ -40,12 +44,13 @@ export function popCrossBoundaryAddress(): void {
  * 最上位になるため、同一性の照合だけで取り違えを防げる。
  */
 export function getCrossBoundaryAddress(stateElement: IStateElement, path: string): IStateAddress | null {
-  const entry = stack[stack.length - 1];
-  if (typeof entry === "undefined") {
+  if (depth === 0) {
     return null;
   }
-  if (entry.stateElement !== stateElement || entry.address.pathInfo.path !== path) {
+  const top = depth - 1;
+  const address = addressStack[top];
+  if (stateElementStack[top] !== stateElement || address?.pathInfo.path !== path) {
     return null;
   }
-  return entry.address;
+  return address;
 }

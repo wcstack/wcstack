@@ -386,6 +386,14 @@ breaking なので本修正には含めていない。
   無効化も親の依存 walk が担うので、子側の複製には無効化が届かない。二重に持たないのが唯一の整合手段で、
   失うのは重複していた一段だけ（親のキャッシュはそのまま効く）
 
+**翻訳の参照は副作用を持たせない**（レビュー指摘）。上の 2・3 はどちらも
+`BindingSession.registerAddress` の内側からマッピングを引く。`getOuterAbsolutePathInfo` は
+規則を導出するついでに**購読者バインディングを `session.initialize` で登録する**ので、そのまま呼ぶと
+セッション操作の内側から `initialize` が再入する（入れ子形で実測: 再入 1 回）。
+`registerSubscriber: false` を足して参照専用の経路を分けた。参照専用の結果を台帳に memo しないのが要点で、
+memo すると後から来た本物の read が memo に当たって**購読者登録を永久に飛ばす**（行 2 本目以降の登録は
+先頭行の read が張った台帳に当たるので、導出のやり直しは初回だけ）。
+
 **サポート範囲**。成立するのは「コンポーネントが親の `for` の外にいて、子が mapped な配列を回す」形。
 親スコープのループと子スコープのループが**両方**掛かる入れ子形（規則 `state.items: rows.*.children` の上で
 子も `for`）は対象外で、`getOuterRowPathInfo` がワイルドカード段数の不一致として弾く。
@@ -394,7 +402,10 @@ breaking なので本修正には含めていない。
 回帰は happy-dom
 （[`integration.bindComponentListRow.test.ts`](../../packages/state/__tests__/integration.bindComponentListRow.test.ts)）で
 初期描画・リスト置換・親からの行フィールド書き込み・子からの書き戻し・行ノードの再利用・
-台帳の後始末・親スコープとの併用・従来の成立形と plain コンポーネントの非回帰を覆う。
+台帳の後始末・親スコープとの併用・**同一コンポーネントの複数インスタンス**（伝播も購読も
+state 要素インスタンス単位で成立する必要がある）・`$getAll` の横断読み・従来の成立形と
+plain コンポーネントの非回帰を覆う。実ブラウザは
+[`e2e/tests/state-bind-component-list.spec.ts`](../../e2e/tests/state-bind-component-list.spec.ts)。
 
 ---
 
