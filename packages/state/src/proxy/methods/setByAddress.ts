@@ -31,6 +31,7 @@ import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
 import { IStateHandler, IStateProxy } from "../types";
 import { getByAddress } from "./getByAddress";
+import { isCacheable } from "./isCacheable";
 import { hasByAddress } from "./hasByAddress";
 import { getSwapInfoByAddress, setSwapInfoByAddress } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
@@ -39,6 +40,7 @@ import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
+import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
 
 // Phase 3: 書き込み時点の因果 context を update record に付与する。
@@ -106,6 +108,15 @@ function _setByAddress(
         } finally {
           handler.endUntrack();
           handler.popAddress();
+        }
+      } else if (handler.stateElement.hasMappedComponentState === true) {
+        // target は innerState proxy。set トラップにはパス文字列しか渡らないので、
+        // 解決済みの listIndex を動的スコープで越境させる（§1.8）
+        pushCrossBoundaryAddress(handler.stateElement, address);
+        try {
+          return Reflect.set(target, address.pathInfo.path, value);
+        } finally {
+          popCrossBoundaryAddress();
         }
       } else {
         return Reflect.set(target, address.pathInfo.path, value);
@@ -301,8 +312,7 @@ function setByAddressCore(
         devOldValue = oldValue;
         devHasOldValue = true;
       }
-      const cacheable = address.pathInfo.wildcardCount > 0 ||
-                        stateElement.getterPaths.has(path);
+      const cacheable = isCacheable(stateElement, address);
       const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
       const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
       if (devtoolsSink !== null) {
@@ -352,8 +362,7 @@ function setByAddressCore(
   }
   // --- end same-value guard ---
   const isSwappable = stateElement.elementPaths.has(address.pathInfo.path);
-  const cacheable = address.pathInfo.wildcardCount > 0 ||
-                    stateElement.getterPaths.has(address.pathInfo.path);
+  const cacheable = isCacheable(stateElement, address);
   const absPathInfo = getAbsolutePathInfo(stateElement, address.pathInfo);
   const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
   if (devtoolsSink !== null) {

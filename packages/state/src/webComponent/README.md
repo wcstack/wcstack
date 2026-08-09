@@ -15,6 +15,8 @@
 | `innerState.ts` | 子側の state proxy。ローカル getter/setter → マッピング → ローカル値 の順で解決する |
 | `outerState.ts` | 公開プロパティ（`element[prop]`）の proxy。read / write とも子の state proxy へ素通し |
 | `MappingRule.ts` | 親パス ↔ 子パスの対応表。プライマリ規則から部分パスの規則を派生させる |
+| `crossBoundaryAddress.ts` | 越境直前のアドレスを渡す動的スコープ（Proxy トラップで落ちる listIndex の補完） |
+| `outerListPath.ts` | 子の `for` パス・行パスを親スコープのパスへ翻訳する |
 | `meltFrozenObject.ts` | `Object.freeze` された初期 state を書き込み可能に複製する |
 | `stateElementByWebComponent.ts` / `completeWebComponent.ts` | 台帳 |
 
@@ -50,6 +52,27 @@ outer proxy が死ぬため。§1.2）。
 **プライマリを所有する `BindingSession`** に登録する。これで親がそのサブパスへ書いたときにも
 通知が届く。セッション経由にしているのは、台帳登録・teardown・ノード削除時の破棄を
 既存のライフサイクルに乗せ、絶対アドレス台帳のエントリが要素を強参照したまま残らないようにするため。
+
+## 子スコープが親のリストを `for` で回す
+
+規則 `state.items: rows` に対して子が `<template data-wcs="for: items">` を持つ形（§1.8）。
+値の正本は親、行の同一性（`IListIndex`）は**配列オブジェクトの同一性**で親子が共有している
+（`listIndexesByList` は配列を鍵にした WeakMap）。成立に必要なのは 4 点。
+
+1. **越境をアドレスで行う** — Proxy のトラップにはパス文字列しか渡らないので、
+   `crossBoundaryAddress` で直前アドレスを渡し、innerState が外側のワイルドカードパスの
+   ループ文脈に組み直す。`getLoopContextByNode` はコンポーネント要素にぶら下がる文脈しか引けず、
+   子スコープのループはその内側にあるため引けない
+2. **`for` パスのリスト宣言を親へ伝播** — `State.setPathInfo` から `outerListPath` 経由。
+   親の依存 walk（`rows → rows.*` の行展開）と swap 判定は親自身の `listPaths` / `elementPaths` を見る
+3. **行バインディングを親のパターン台帳へ相乗り** — `BindingSession.registerAddress` が
+   同じ listIndex で親の `rows.*.name` にも購読者として載せる。親起点の行フィールド書き込みはこれで届く
+4. **mapped な state ではキャッシュを持たない** — 正本は親にあり無効化も親が担うので、
+   子側に複製を持つと無効化が届かない（`proxy/methods/isCacheable.ts`）
+
+**対象外**: コンポーネント自身が親の `for` の中にいて、さらに子でも `for` を回す入れ子形。
+親スコープの行 listIndex と子スコープの行 listIndex は親子チェーンが繋がっていない別物なので、
+ワイルドカードの段数が合わず `getOuterRowPathInfo` が弾く。
 
 ## Light DOM
 

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: a bind-component child iterating the host's list</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.8.
+
+       An array is bound into the component (state.items: rows) and the `for:` runs *inside*
+       the component's shadow root. Three things have to line up for that to work, and none
+       of them did:
+
+         1. The Proxy trap on the inner state only receives a path string, so the resolved
+            listIndex was dropped at the boundary and the row read raised
+            "ListIndex not found: rows.*.name" -- which left the child's binding
+            initialization unresolved, so not a single row rendered.
+         2. `for:` registers listPaths/elementPaths on the state element that owns the
+            binding, so the parent -- which actually holds the array -- never learned that
+            `rows` is a list, and its dependency walk could not expand per-row addresses.
+         3. Nothing in the parent's ledger subscribed to a row on the child's behalf, so a
+            row-field write (rows.0.name) reached no one.
+
+       The discriminator is the *shadow* content: #host-view is the parent's own binding and
+       moves either way. Row identity is asserted through data-row-id, which is stamped once
+       per rendered <li> from the row object, so a full re-render would show up as changed
+       ids rather than as changed text. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    class ListView extends HTMLElement {
+      state = { items: [] };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot.innerHTML = `
+<wcs-state bind-component="state"></wcs-state>
+<ul id="list-view">
+  <template data-wcs="for: items">
+    <li data-wcs="textContent: .name; attr.data-row-id: .id"></li>
+  </template>
+</ul>
+`;
+      }
+    }
+    customElements.define("list-view", ListView);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  rows: [
+    { id: "r1", name: "Alice" },
+    { id: "r2", name: "Bob" },
+  ],
+  // パス文字列で書く（`this.rows[0].name = ...` は set トラップを通らない in-place 変異）
+  renameFirst() { this["rows.0.name"] = "Carol"; },
+  replaceAll() {
+    this.rows = [
+      { id: "r3", name: "Dave" },
+      { id: "r4", name: "Erin" },
+      { id: "r5", name: "Frank" },
+    ];
+  },
+  swap() { this.rows = [this.rows[1], this.rows[0]]; },
+};
+    </script>
+  </wcs-state>
+
+  <ul id="host-view">
+    <template data-wcs="for: rows">
+      <li data-wcs="textContent: .name"></li>
+    </template>
+  </ul>
+  <button id="rename" data-wcs="onclick: renameFirst">rename first</button>
+  <button id="replace" data-wcs="onclick: replaceAll">replace all</button>
+  <button id="swap" data-wcs="onclick: swap">swap</button>
+
+  <list-view data-wcs="state.items: rows"></list-view>
+</body>
+</html>

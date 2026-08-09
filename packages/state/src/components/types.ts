@@ -24,6 +24,19 @@ export interface IStateElement {
   readonly rootNode: Node;
   readonly boundComponentStateProp: string | null;
   /**
+   * `bind-component` で束ねられているコンポーネント要素（親スコープ側のノード）。
+   * マッピング規則の引き当てに使う。optional なのはテスト用モック互換のため。
+   */
+  readonly boundComponent?: Element | null;
+  /**
+   * この state の実体が innerState proxy（＝ 値の正本が親スコープの state にある
+   * mapped な `bind-component`）か。真のときだけ越境アドレスの受け渡しと
+   * リストパスの外向き伝播が働く（§1.8）。
+   * optional なのはテスト用モック互換のため（undefined は plain 扱い）。
+   */
+  readonly hasMappedComponentState?: boolean;
+  markComponentStateMapped?(): void;
+  /**
    * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
    * 唯一の書き手は defineDCC で、読み手は setByAddress。
    * getter だけを公開して setter をインターフェースから落としていたため

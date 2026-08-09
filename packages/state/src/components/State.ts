@@ -26,6 +26,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
+import { propagateListPathToOuterState } from "../webComponent/outerListPath";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 import { getCustomElement } from "../getCustomElement";
@@ -94,6 +95,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _rootNode: Node | null = null;
   private _boundComponent: Element | null = null;
   private _boundComponentStateProp: string | null = null;
+  private _hasMappedComponentState: boolean = false;
   private _bindableEventMap: Record<string, string> = {};
   private _commandTokenNames: Set<string> = new Set<string>();
   private _eventTokenNames: Set<string> = new Set<string>();
@@ -514,6 +516,22 @@ export class State extends HTMLElementBase implements IStateElement {
     return this._boundComponentStateProp;
   }
 
+  get boundComponent(): Element | null {
+    return this._boundComponent;
+  }
+
+  get hasMappedComponentState(): boolean {
+    return this._hasMappedComponentState;
+  }
+
+  /**
+   * この state の実体が innerState proxy であることを記録する。唯一の呼び手は
+   * `bindWebComponent` の mapped 分岐（§1.8）。
+   */
+  markComponentStateMapped(): void {
+    this._hasMappedComponentState = true;
+  }
+
   get bindableEventMap(): Record<string, string> {
     return this._bindableEventMap;
   }
@@ -580,8 +598,15 @@ export class State extends HTMLElementBase implements IStateElement {
 
   setPathInfo(path: string, bindingType: BindingType): void {
     if (bindingType === "for") {
+      const isNewListPath = !this._listPaths.has(path);
       this._listPaths.add(path);
       this._elementPaths.add(path + '.' + WILDCARD);
+      // mapped な bind-component の子が回している for は、配列の実体を親スコープが
+      // 持っている。親の依存 walk / swap 判定はどちらも「その state 要素の」
+      // listPaths・elementPaths を見るので、マップ先のパスにも同じ宣言を届ける（§1.8）。
+      if (isNewListPath && this._hasMappedComponentState) {
+        propagateListPathToOuterState(this, path);
+      }
     }
     if (!this._pathSet.has(path)) {
       const pathInfo = getPathInfo(path);

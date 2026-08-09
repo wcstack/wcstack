@@ -1,9 +1,13 @@
 import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { getPathInfo } from "../address/PathInfo";
+import { createStateAddress } from "../address/StateAddress";
+import { IAbsolutePathInfo, IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
 import { getLoopContextByNode } from "../list/loopContextByNode";
+import { ILoopContext } from "../list/types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
+import { getCrossBoundaryAddress } from "./crossBoundaryAddress";
 import { getOuterAbsolutePathInfo } from "./MappingRule";
 import { meltFrozenObject } from "./meltFrozenObject";
 import { getStateElementByWebComponent } from "./stateElementByWebComponent";
@@ -15,6 +19,39 @@ class InnerStateProxyHandler implements ProxyHandler<IInnerState> {
   constructor(webComponent: Element, stateName: string) {
     this._webComponent = webComponent;
     this._innerStateElement = getStateElementByWebComponent(webComponent, stateName) ?? raiseError('State element not found for web component.');
+  }
+
+  /**
+   * 親スコープで読み書きするときのループ文脈を決める。
+   *
+   * 1. コンポーネント自身が親スコープの `for` の中にいる形（`state.row: rows.*`）は
+   *    従来どおりノードのループ文脈。行を決めているのは親スコープ側のループ。
+   * 2. そうでなく外側のパスにワイルドカードが残る形は、子スコープの `for` が
+   *    回している行。越境直前のアドレスから listIndex を引き継いで文脈を組む
+   *    （§1.8）。listIndex 台帳は配列オブジェクトの同一性で引かれるため、
+   *    親子は同じ `IListIndex` を共有していて、そのまま流用できる。
+   *
+   * どちらでも決められない場合は null。従来どおり親側の解決に委ね、
+   * ワイルドカードが解けなければ raiseError になる（無言の取り違えを作らない）。
+   */
+  private _outerLoopContext(innerPathInfo: IPathInfo, outerAbsPathInfo: IAbsolutePathInfo): ILoopContext | null {
+    const nodeLoopContext = getLoopContextByNode(this._webComponent);
+    if (nodeLoopContext !== null) {
+      return nodeLoopContext;
+    }
+    const outerWildcardCount = outerAbsPathInfo.pathInfo.wildcardCount;
+    if (outerWildcardCount === 0) {
+      return null;
+    }
+    const address = getCrossBoundaryAddress(this._innerStateElement, innerPathInfo.path);
+    const listIndex = address?.listIndex ?? null;
+    // 段数が合わない ＝ 親スコープのループと子スコープのループが混在する入れ子形。
+    // 両者の listIndex は親子チェーンが繋がっていない別物なので合成できない。
+    if (listIndex === null || listIndex.length !== outerWildcardCount) {
+      return null;
+    }
+    const outerWildcardPath = outerAbsPathInfo.pathInfo.wildcardPaths[outerWildcardCount - 1];
+    return createStateAddress(getPathInfo(outerWildcardPath), listIndex) as ILoopContext;
   }
 
   get(target: IInnerState, prop: string | symbol, receiver: any): any {
@@ -35,7 +72,7 @@ class InnerStateProxyHandler implements ProxyHandler<IInnerState> {
       const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
       const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
       if (outerAbsPathInfo !== null) {
-        const loopContext = getLoopContextByNode(this._webComponent);
+        const loopContext = this._outerLoopContext(innerPathInfo, outerAbsPathInfo);
         let value = undefined;
         outerAbsPathInfo.stateElement.createState("readonly", (state) => {
           state[setLoopContextSymbol](loopContext, () => {
@@ -66,7 +103,7 @@ class InnerStateProxyHandler implements ProxyHandler<IInnerState> {
       const innerAbsPathInfo = getAbsolutePathInfo(this._innerStateElement, innerPathInfo);
       const outerAbsPathInfo = getOuterAbsolutePathInfo(this._webComponent, innerAbsPathInfo);
       if (outerAbsPathInfo !== null) {
-        const loopContext = getLoopContextByNode(this._webComponent);
+        const loopContext = this._outerLoopContext(innerPathInfo, outerAbsPathInfo);
         outerAbsPathInfo.stateElement.createState("writable", (state) => {
           state[setLoopContextSymbol](loopContext, () => {
             state[outerAbsPathInfo.pathInfo.path] = value;
