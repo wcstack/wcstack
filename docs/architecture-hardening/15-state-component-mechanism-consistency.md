@@ -297,6 +297,20 @@ innerState 経由で親をライブ読みする経路、後者は子自身の `s
   （適用側が先頭セグメントで束ね先の state 要素を引くため）。node 台帳へは積まない
   （プレフィックスを保った結果、再バインド時にプライマリ抽出フィルタへ混入してしまうため）
 
+**登録できない 2 ケースは登録だけ諦める**（翻訳が本務なので read は落とさない ＝ この機構が
+入る前と同じ挙動に留める。`config.debug` 時のみ `console.warn`）。
+
+- プライマリのセッションが引けない（内部的な想定外）
+- 導出した outer パスがワイルドカードを含むのに listIndex が定まらない。
+  **子が配列マッピングの上で `for` を回している形**がこれにあたる（規則 `state.items: rows` に対し
+  子の行が `items.*.name` を読む → outer は `rows.*.name`）。派生バインディングの `node` は
+  親スコープにあるコンポーネント要素で、ループは子の Shadow 内にあるため、
+  コンポーネントの DOM 位置からは行を特定できない。
+  **この形の bind-component は本修正の前から成立していない**（子側の `for` の初期化自体が
+  完了せず、行が 1 つも描画されない）。ガードが無いと `getAbsoluteStateAddressByBinding` が
+  raiseError し、元は無言だった不成立が例外に化けるため、明示的に登録をスキップする。
+  配列を子コンポーネントへ束ねて子側で `for` を回す構成は、現状サポート範囲外。
+
 回帰は happy-dom
 （[`integration.bindComponentDelivery.test.ts`](../../packages/state/__tests__/integration.bindComponentDelivery.test.ts)）と
 実ブラウザ（[`e2e/tests/state-bind-component-parent-write.spec.ts`](../../e2e/tests/state-bind-component-parent-write.spec.ts)）の

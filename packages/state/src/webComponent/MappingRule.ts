@@ -5,6 +5,7 @@ import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAdd
 import { IBindingInfo } from "../binding/types";
 import { getBindingSession } from "../bindings/BindingSession";
 import { config } from "../config";
+import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { IStateElement } from "../components/types";
 import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
@@ -143,14 +144,30 @@ export function getOuterAbsolutePathInfo(webComponent: Element, innerAbsPathInfo
     statePathName: outerAbsPathInfo.pathInfo.path,
     statePathInfo: outerAbsPathInfo.pathInfo,
   }
-  // セッションが引けないのは内部的な想定外（プライマリは親スコープの収集で必ず
-  // session.initialize を通っている）。ここは翻訳が本務なので read を落とさず、
-  // 登録だけ諦める ＝ この機構が入る前と同じ挙動に留める。debug 時のみ観測可能にする。
+  // 登録できないケースは登録だけ諦める。ここは翻訳が本務なので read を落とさない
+  // ＝ この機構が入る前と同じ挙動に留める（debug 時のみ観測可能にする）。2 通りある。
+  //
+  // (a) セッションが引けない: 内部的な想定外（プライマリは親スコープの収集で必ず
+  //     session.initialize を通っている）。
+  // (b) 導出した outer パスがワイルドカードを含むのに listIndex が決まらない:
+  //     子が配列マッピングの上で for を回している場合（規則 state.items: rows に対し
+  //     子の行が items.*.name を読む → outer は rows.*.name）。派生バインディングの
+  //     node は親スコープにあるコンポーネント要素で、ループは子の Shadow 内なので
+  //     コンポーネントからは行を特定できない。この形の親→子配送は元から成立して
+  //     おらず（子側の for が初期化されない）、ここで登録を試みると
+  //     getAbsoluteStateAddressByBinding が raiseError して無言の不成立が例外に化ける。
+  const skipRegistration = (reason: string): void => {
+    if (config.debug) {
+      console.warn(`parent→child notification for "${outerAbsPathInfo.pathInfo.path}" is not registered: ${reason}.`, { webComponent, primaryBinding });
+    }
+  };
   const session = getBindingSession(primaryBinding);
   if (session === null) {
-    if (config.debug) {
-      console.warn(`No binding session for the primary mapping rule; parent→child notification for "${outerAbsPathInfo.pathInfo.path}" is not registered.`, { webComponent, primaryBinding });
-    }
+    skipRegistration('no binding session for the primary mapping rule');
+    return outerAbsPathInfo;
+  }
+  if (outerAbsPathInfo.pathInfo.wildcardCount > 0 && getListIndexByBindingInfo(newBinding) === null) {
+    skipRegistration('the derived outer path is a wildcard path but no list index resolves from the component');
     return outerAbsPathInfo;
   }
   // 戻り値（初期 apply 対象）は使わない。この導出は子の read の最中に起きるので、
