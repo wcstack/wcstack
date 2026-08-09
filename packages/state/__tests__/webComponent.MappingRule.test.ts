@@ -19,12 +19,21 @@ vi.mock('../src/stateElementByName', () => ({
 vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
   getStateElementByWebComponent: vi.fn()
 }));
+vi.mock('../src/bindings/BindingSession', () => ({
+  getBindingSession: vi.fn()
+}));
+vi.mock('../src/list/getListIndexByBindingInfo', () => ({
+  getListIndexByBindingInfo: vi.fn()
+}));
 
 import { buildPrimaryMappingRule, getInnerAbsolutePathInfo, getOuterAbsolutePathInfo } from '../src/webComponent/MappingRule';
 import { getAbsolutePathInfo } from '../src/address/AbsolutePathInfo';
 import { getPathInfo } from '../src/address/PathInfo';
 import { getAbsoluteStateAddressByBinding } from '../src/binding/getAbsoluteStateAddressByBinding';
 import { getBindingsByNode, addBindingByNode } from '../src/bindings/getBindingsByNode';
+import { getBindingSession } from '../src/bindings/BindingSession';
+import { getListIndexByBindingInfo } from '../src/list/getListIndexByBindingInfo';
+import { config } from '../src/config';
 import { getStateElementByName } from '../src/stateElementByName';
 import { getStateElementByWebComponent } from '../src/webComponent/stateElementByWebComponent';
 import { IBindingInfo } from '../src/binding/types';
@@ -34,6 +43,8 @@ const getPathInfoMock = vi.mocked(getPathInfo);
 const getAbsoluteStateAddressByBindingMock = vi.mocked(getAbsoluteStateAddressByBinding);
 const getBindingsByNodeMock = vi.mocked(getBindingsByNode);
 const addBindingByNodeMock = vi.mocked(addBindingByNode);
+const getBindingSessionMock = vi.mocked(getBindingSession);
+const getListIndexByBindingInfoMock = vi.mocked(getListIndexByBindingInfo);
 const getStateElementByNameMock = vi.mocked(getStateElementByName);
 const getStateElementByWebComponentMock = vi.mocked(getStateElementByWebComponent);
 
@@ -257,7 +268,8 @@ describe('MappingRule', () => {
       } as any;
       const usersNamePathInfo = {
         path: 'users.*.name',
-        segments: ['users', '*', 'name']
+        segments: ['users', '*', 'name'],
+        wildcardCount: 1
       } as any;
 
       const innerUserAbsPathInfo = { stateElement: innerStateElement, pathInfo: userPathInfo } as any;
@@ -282,16 +294,108 @@ describe('MappingRule', () => {
       getPathInfoMock.mockReturnValueOnce(usersNamePathInfo);
       getAbsolutePathInfoMock.mockReturnValueOnce(outerUsersNameAbsPathInfo);
 
+      const session = { initialize: vi.fn() };
+      getBindingSessionMock.mockReturnValue(session as any);
+      // ワイルドカード付き outer パスでも、コンポーネント自身の位置から行が定まれば登録する
+      getListIndexByBindingInfoMock.mockReturnValue({} as any);
+
       const result = getOuterAbsolutePathInfo(component, innerUserNameAbsPathInfo);
 
       expect(result).toBe(outerUsersNameAbsPathInfo);
       expect(getPathInfoMock).toHaveBeenCalledWith('users.*.name');
       expect(getAbsolutePathInfoMock).toHaveBeenCalledWith(outerStateElement, usersNamePathInfo);
-      expect(addBindingByNodeMock).toHaveBeenCalledWith(component, expect.objectContaining({
-        propName: 'user.name',
-        propSegments: ['user', 'name'],
-        statePathName: 'users.*.name'
-      }));
+      // 派生バインディングはプライマリを所有する session に登録される。
+      // propSegments は stateProp（'state'）を保つ ＝ 適用側が束ね先の state 要素を引ける。
+      expect(session.initialize).toHaveBeenCalledWith(
+        [expect.objectContaining({
+          propName: 'state.user.name',
+          propSegments: ['state', 'user', 'name'],
+          statePathName: 'users.*.name'
+        })],
+        { registerAddress: true }
+      );
+      // node 台帳には積まない（再バインド時に buildPrimaryMappingRule の
+      // プライマリ抽出フィルタへ混入してしまうため）
+      expect(addBindingByNodeMock).not.toHaveBeenCalled();
+    });
+
+    /**
+     * session が引けないのは内部的な想定外。翻訳が本務なので read は落とさず、
+     * 親→子通知の登録だけ諦める（この機構が入る前と同じ挙動）。
+     */
+    function setupSubPathDerivation() {
+      const innerStateElement = { name: 'inner' } as any;
+      const outerStateElement = { name: 'outer' } as any;
+      const binding: IBindingInfo = {
+        propName: 'state.user',
+        propSegments: ['state', 'user'],
+        statePathName: 'users.*',
+        stateName: 'default',
+        node: component,
+        replaceNode: component
+      } as any;
+      const userPathInfo = { path: 'user', segments: ['user'], cumulativePathInfoSet: new Set() } as any;
+      const userNamePathInfo = {
+        path: 'user.name',
+        segments: ['user', 'name'],
+        cumulativePathInfoSet: new Set([userPathInfo])
+      } as any;
+      const usersNamePathInfo = { path: 'users.*.name', segments: ['users', '*', 'name'], wildcardCount: 1 } as any;
+      const innerUserAbsPathInfo = { stateElement: innerStateElement, pathInfo: userPathInfo } as any;
+      const innerUserNameAbsPathInfo = { stateElement: innerStateElement, pathInfo: userNamePathInfo } as any;
+      const outerUsersAbsPathInfo = { pathInfo: { path: 'users.*', segments: ['users', '*'] } } as any;
+      const outerUsersNameAbsPathInfo = { stateElement: outerStateElement, pathInfo: usersNamePathInfo } as any;
+
+      getStateElementByWebComponentMock.mockReturnValue(innerStateElement);
+      getPathInfoMock.mockReturnValueOnce(userPathInfo);
+      getAbsolutePathInfoMock.mockReturnValueOnce(innerUserAbsPathInfo);
+      getAbsoluteStateAddressByBindingMock.mockReturnValueOnce({ absolutePathInfo: outerUsersAbsPathInfo } as any);
+      buildPrimaryMappingRule(component, 'state', [binding]);
+
+      component.getRootNode = vi.fn(() => document);
+      getStateElementByNameMock.mockReturnValue(outerStateElement);
+      getPathInfoMock.mockReturnValueOnce(usersNamePathInfo);
+      getAbsolutePathInfoMock.mockReturnValueOnce(outerUsersNameAbsPathInfo);
+
+      return { innerUserNameAbsPathInfo, outerUsersNameAbsPathInfo };
+    }
+
+    it('session が引けなくてもマッピング自体は解決されること', () => {
+      const { innerUserNameAbsPathInfo, outerUsersNameAbsPathInfo } = setupSubPathDerivation();
+      getBindingSessionMock.mockReturnValue(null);
+
+      expect(getOuterAbsolutePathInfo(component, innerUserNameAbsPathInfo)).toBe(outerUsersNameAbsPathInfo);
+    });
+
+    /**
+     * 子が配列マッピングの上で for を回している場合、導出される outer パスは
+     * ワイルドカード付き（rows.*.name）だが、派生バインディングの node は親スコープの
+     * コンポーネント要素なので行が定まらない。登録を試みると
+     * getAbsoluteStateAddressByBinding が raiseError するため、翻訳だけ返して登録は諦める。
+     */
+    it('ワイルドカード outer パスで listIndex が定まらない場合は登録せずマッピングだけ返すこと', () => {
+      const { innerUserNameAbsPathInfo, outerUsersNameAbsPathInfo } = setupSubPathDerivation();
+      const session = { initialize: vi.fn() };
+      getBindingSessionMock.mockReturnValue(session as any);
+      getListIndexByBindingInfoMock.mockReturnValue(null);
+
+      expect(getOuterAbsolutePathInfo(component, innerUserNameAbsPathInfo)).toBe(outerUsersNameAbsPathInfo);
+      expect(session.initialize).not.toHaveBeenCalled();
+    });
+
+    it('session が引けない場合 debug 時のみ warn すること', () => {
+      const { innerUserNameAbsPathInfo, outerUsersNameAbsPathInfo } = setupSubPathDerivation();
+      getBindingSessionMock.mockReturnValue(null);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const originalDebug = config.debug;
+      config.debug = true;
+      try {
+        expect(getOuterAbsolutePathInfo(component, innerUserNameAbsPathInfo)).toBe(outerUsersNameAbsPathInfo);
+        expect(warn).toHaveBeenCalledTimes(1);
+      } finally {
+        config.debug = originalDebug;
+        warn.mockRestore();
+      }
     });
 
     it('マッチするプライマリルールが見つからない場合は詳細なエラーメッセージを表示すること', () => {

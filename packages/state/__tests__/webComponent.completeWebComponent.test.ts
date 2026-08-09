@@ -4,42 +4,42 @@ import { markWebComponentAsComplete, isWebComponentComplete } from '../src/webCo
 describe('completeWebComponent', () => {
   it('初期状態ではisWebComponentCompleteがfalseを返すこと', () => {
     const component = document.createElement('div');
-    const stateElement = {} as any;
-    expect(isWebComponentComplete(component, stateElement)).toBe(false);
+    expect(isWebComponentComplete(component, 'state')).toBe(false);
   });
 
   it('markWebComponentAsComplete後にisWebComponentCompleteがtrueを返すこと', () => {
     const component = document.createElement('div');
-    const stateElement = {} as any;
-    markWebComponentAsComplete(component, stateElement);
-    expect(isWebComponentComplete(component, stateElement)).toBe(true);
+    markWebComponentAsComplete(component, 'state');
+    expect(isWebComponentComplete(component, 'state')).toBe(true);
   });
 
-  it('異なるstateElementではfalseを返すこと', () => {
+  it('異なるstatePropではfalseを返すこと', () => {
     const component = document.createElement('div');
-    const stateElement1 = {} as any;
-    const stateElement2 = {} as any;
-    markWebComponentAsComplete(component, stateElement1);
-    expect(isWebComponentComplete(component, stateElement1)).toBe(true);
-    expect(isWebComponentComplete(component, stateElement2)).toBe(false);
+    markWebComponentAsComplete(component, 'state');
+    expect(isWebComponentComplete(component, 'state')).toBe(true);
+    expect(isWebComponentComplete(component, 'other')).toBe(false);
   });
 
   it('異なるwebComponentではfalseを返すこと', () => {
     const component1 = document.createElement('div');
     const component2 = document.createElement('div');
-    const stateElement = {} as any;
-    markWebComponentAsComplete(component1, stateElement);
-    expect(isWebComponentComplete(component1, stateElement)).toBe(true);
-    expect(isWebComponentComplete(component2, stateElement)).toBe(false);
+    markWebComponentAsComplete(component1, 'state');
+    expect(isWebComponentComplete(component1, 'state')).toBe(true);
+    expect(isWebComponentComplete(component2, 'state')).toBe(false);
   });
 
-  it('同じwebComponentに複数のstateElementを登録できること', () => {
+  it('同じwebComponentに複数のstatePropを登録できること', () => {
     const component = document.createElement('div');
-    const stateElement1 = {} as any;
-    const stateElement2 = {} as any;
-    markWebComponentAsComplete(component, stateElement1);
-    markWebComponentAsComplete(component, stateElement2);
-    expect(isWebComponentComplete(component, stateElement1)).toBe(true);
-    expect(isWebComponentComplete(component, stateElement2)).toBe(true);
+    markWebComponentAsComplete(component, 'state');
+    markWebComponentAsComplete(component, 'other');
+    expect(isWebComponentComplete(component, 'state')).toBe(true);
+    expect(isWebComponentComplete(component, 'other')).toBe(true);
+  });
+
+  it('同じstatePropを二度登録しても冪等であること', () => {
+    const component = document.createElement('div');
+    markWebComponentAsComplete(component, 'state');
+    markWebComponentAsComplete(component, 'state');
+    expect(isWebComponentComplete(component, 'state')).toBe(true);
   });
 });

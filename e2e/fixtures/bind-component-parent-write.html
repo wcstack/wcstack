@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: parent-originated writes must reach a bind-component's view</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.1
+       (gate G1) from the direction its regression test never exercised.
+
+       state-bind-component-write.spec.ts drives the component's *public* property, so the
+       child's own setByAddress enqueues the child's address and the shadow view refreshes
+       on the child's own steam. Initial delivery works for the same reason in reverse: the
+       child's bindings read the parent live while they are being set up. Neither path proves
+       that a write made *only* on the parent reaches the child.
+
+       It did not. `isWebComponentComplete` was keyed by the inner IStateElement but queried
+       with the parent scope's one -- same type, so nothing caught it -- and the internal
+       notification channel was therefore never selected. The property fallback then read
+       oldValue back through the pass-through proxy, saw the parent's new value, and skipped
+       the write as a no-op.
+
+       The discriminator here is the *shadow* view. #host-view updates either way because the
+       parent's own binding is fine; #leaf-view / #obj-view only move if the notification
+       actually crosses the boundary. Two shapes are covered: a leaf mapping (state.name ->
+       user.name) and a sub-path read below an object mapping (state.user -> user, child reads
+       user.name), because the latter additionally needs the lazily derived rule to be
+       registered as a parent-scope subscriber. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    // 葉のマッピング: 親の user.name を子の name に束ねる
+    class LeafEditor extends HTMLElement {
+      state = { name: "" };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot.innerHTML = `
+<wcs-state bind-component="state"></wcs-state>
+<span id="leaf-view">{{ name }}</span>
+`;
+      }
+    }
+    customElements.define("leaf-editor", LeafEditor);
+
+    // オブジェクトのマッピング: 親の user を子の user に束ね、子はその下の name を読む。
+    // user.name のルールは子が最初に読んだ時点で遅延導出される。
+    class ObjEditor extends HTMLElement {
+      state = { user: {} };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        this.shadowRoot.innerHTML = `
+<wcs-state bind-component="state"></wcs-state>
+<span id="obj-view">{{ user.name }}</span>
+`;
+      }
+    }
+    customElements.define("obj-editor", ObjEditor);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  user: { name: "Alice" },
+  // パス文字列で書く。`this.user.name = ...` は素のオブジェクトへの in-place 変異で
+  // set トラップを通らない（リアクティブコア共通の規範）。
+  rename() { this["user.name"] = "Bob"; },
+  replaceUser() { this.user = { name: "Carol" }; },
+};
+    </script>
+  </wcs-state>
+
+  <div id="host-view">{{ user.name }}</div>
+  <button id="rename" data-wcs="onclick: rename">rename</button>
+  <button id="replace" data-wcs="onclick: replaceUser">replace</button>
+
+  <leaf-editor data-wcs="state.name: user.name"></leaf-editor>
+  <obj-editor data-wcs="state.user: user"></obj-editor>
+</body>
+</html>

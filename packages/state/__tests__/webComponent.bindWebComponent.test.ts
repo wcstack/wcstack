@@ -88,7 +88,7 @@ describe('bindWebComponent', () => {
 
     expect(() => bindWebComponent(stateEl, component, 'outer', state)).not.toThrow();
     expect(stateEl.setInitialState).toHaveBeenCalled();
-    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
+    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, 'outer');
   });
 
   describe('data-wcs属性がある場合（バインディングあり）', () => {
@@ -263,7 +263,7 @@ describe('bindWebComponent', () => {
 
     bindWebComponent(stateEl, component, 'outer', {});
 
-    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
+    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, 'outer');
   });
 
   it('data-wcs属性がない場合もmarkWebComponentAsCompleteが呼ばれること', () => {
@@ -272,7 +272,7 @@ describe('bindWebComponent', () => {
 
     bindWebComponent(stateEl, component, 'outer', {});
 
-    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, stateEl);
+    expect(markWebComponentAsComplete).toHaveBeenCalledWith(component, 'outer');
   });
 
   describe('$stateReadyCallback', () => {

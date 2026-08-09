@@ -48,6 +48,24 @@ const deferredSelectBindingByBinding: WeakMap<IBindingInfo, boolean> = new WeakM
 // registry 照会を省略できる。scoped registry を導入する場合はこの不可逆前提を再検討。
 const definedApplyVerifiedByBinding: WeakMap<IBindingInfo, boolean> = new WeakMap();
 
+/**
+ * このバインディングを「値を運ばない親→子の再読込通知」（applyChangeToWebComponent）へ
+ * 回してよいか。
+ *
+ * 長さ 1 の propSegments を除くのが要点。`data-wcs="state: user"` のように
+ * bind-component の stateProp をそのままプロパティ名に書いた形は、完了台帳のキーが
+ * stateProp 名になった以上ゲートを通ってしまうが、applyChangeToWebComponent は
+ * 「先頭セグメント＝束ね先の state 要素、残り＝子側のパス」を前提にしており
+ * 残余が空だと raiseError する。updater の drain は例外を捕まえないので、
+ * 誤設定タグ 1 つが同じバッチの無関係な更新まで巻き添えにしてしまう。
+ * ここで弾いておけば従来どおり applyChangeToProperty に落ち、挙動は変わらない
+ * （getter だけの公開プロパティへの代入が握り潰される ＝ 無言の no-op）。
+ */
+function isWebComponentCompleteForBinding(binding: IBindingInfo): boolean {
+  return binding.propSegments.length > 1
+    && isWebComponentComplete(binding.replaceNode as Element, binding.propSegments[0]);
+}
+
 function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
   const value = getValue(context.state, binding);
   const filteredValue = getFilteredValue(value, binding.outFilters);
@@ -62,7 +80,7 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     return;
   }
   if (fnByBinding.has(binding)) {
-    if (isWebComponentComplete(binding.replaceNode as Element, context.stateElement)) {
+    if (isWebComponentCompleteForBinding(binding)) {
       fn = applyChangeToWebComponent;
       fnByBinding.set(binding, fn); // 確定したのでキャッシュ
     } else {
@@ -80,7 +98,7 @@ function _applyChange(binding: IBindingInfo, context: IApplyContext): void {
     if (typeof fn === 'undefined') {
       const customTag = getCustomElement(binding.replaceNode);
       if (customTag) {
-        if (isWebComponentComplete(binding.replaceNode as Element, context.stateElement)) {
+        if (isWebComponentCompleteForBinding(binding)) {
           fn = applyChangeToWebComponent;
           fnByBinding.set(binding, fn); // 確定したのでキャッシュ
         } else {
