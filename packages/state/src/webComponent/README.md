@@ -70,9 +70,30 @@ outer proxy が死ぬため。§1.2）。
 4. **mapped な state ではキャッシュを持たない** — 正本は親にあり無効化も親が担うので、
    子側に複製を持つと無効化が届かない（`proxy/methods/isCacheable.ts`）
 
-**対象外**: コンポーネント自身が親の `for` の中にいて、さらに子でも `for` を回す入れ子形。
-親スコープの行 listIndex と子スコープの行 listIndex は親子チェーンが繋がっていない別物なので、
-ワイルドカードの段数が合わず `getOuterRowPathInfo` が弾く。
+## 入れ子形（コンポーネント自身も親の `for` の中）
+
+規則 `state.items: groups.*.children` に対して子が `for: items` を持つ形（§1.10）。
+親から見た行は arity 2、子から見た行は arity 1 だが、`listIndexesByList` は 1 つの配列につき
+1 組の listIndex しか持てない。そこで子スコープを「親ループの内側のネストしたループ」として扱う。
+
+- **base listIndex**（`baseListIndex.ts`）＝ ホストコンポーネントの親スコープ行（深さ Δ）。
+  子が作る listIndex はすべてこれを親に持つので、`groups[i].children` の台帳は arity Δ+1 になり
+  親が要求するものと同一になる。**キャッシュしない** — 行 content はプールで再利用され、
+  同じ要素が別の行に付け替わるため
+- **末尾起点の段解決**（`list/wildcardLevel.ts`）＝ 「パス上のワイルドカード位置 → チェーン段」を
+  `at(i)` でなく `at(i - W)` で引く。Δ=0 では同じ要素を指すので既存スコープの挙動は変わらない。
+  ただし**範囲外要求のガードは必須**（`$2` を 1 段ループで読む形が黙って `$1` を返すのを防ぐ）
+- **行を作りうる全経路で base を親に渡す**（`applyChangeToFor` / `walkDependency` ×2 /
+  `getAll` / `setByAddress`）。`createListDiff` は既存台帳を再利用するので、取りこぼしは
+  初期描画では見えず**行を追加したときだけ**台帳に arity が混在する
+- **Δ はユーザーランドに漏らさない** — `$1` / イベントハンドラのインデックス /
+  `$updatedCallback` / `$getAll` はスコープ内の位置を報告する。コンポーネントの作者は
+  自分がリストの中に置かれるかを知らずに書くため。`$resolve` は台帳の配列位置で引くので無改造
+
+境界を跨ぐと適用順のトポロジカル保証が無く、**親起点の行通知がその行を外す子の `for` より
+先に来る**。消えた行の読みは `undefined`（＝ プロパティ書き込みをスキップする値）になり、
+直後の `for` が整合させる。詳細は
+[docs/state-bind-component-nested-for-design.md](../../../../docs/state-bind-component-nested-for-design.md)。
 
 ## Light DOM
 

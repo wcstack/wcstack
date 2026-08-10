@@ -50,6 +50,7 @@
 | §1.7 | §1.1 で分離した内部チャネルが一度も選ばれていない（親→子の配送が丸ごと不成立） | ✅ 修正済み（2026-08-10・後日発見） |
 | §1.8 | 子スコープが親のリストを `for` で回せない（越境で listIndex が落ち、初期描画から不成立） | ✅ 修正済み（2026-08-10・§1.7 の残件） |
 | §1.9 | 行にコンポーネントを持つリストの差し替えで `for` が死ぬ（README 記載の形・復帰不能） | ✅ 修正済み（2026-08-10・§1.8 の spike 中に発見） |
+| §1.10 | 親スコープの `for` の中のコンポーネントが子でも `for` を回せない（無言のハング） | ✅ 修正済み（2026-08-11・§1.8 の残件） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ✅ 修正済み（サブパス ＋ `$postUpdate` ＋ property getter） |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ✅ 修正済み（setter を同期化。`callFn` は意図的に Promise 維持） |
 | §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
@@ -78,6 +79,13 @@
 | [`proxy/methods/isCacheable.ts`](../../packages/state/src/proxy/methods/isCacheable.ts)（新規） | §1.8（mapped な state ではキャッシュを二重に持たない） |
 | [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) / [`components/types.ts`](../../packages/state/src/components/types.ts) | §1.9（切断済み state element へ通知しない・`hasRootNode`） |
 | [`components/State.ts`](../../packages/state/src/components/State.ts) / [`webComponent/MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts) | §1.9（再接続でマップ済みパスを読み直す・派生規則の memo を捨てる） |
+| [`list/wildcardLevel.ts`](../../packages/state/src/list/wildcardLevel.ts)（新規） | §1.10（ワイルドカード位置 → チェーン段の変換を末尾起点に集約。Δ=0 で挙動不変） |
+| [`webComponent/baseListIndex.ts`](../../packages/state/src/webComponent/baseListIndex.ts)（新規） | §1.10（子スコープの base 深さ Δ と、行生成時の親 listIndex） |
+| [`list/getListIndexByBindingInfo.ts`](../../packages/state/src/list/getListIndexByBindingInfo.ts) / [`list/getIndexValueByLoopContext.ts`](../../packages/state/src/list/getIndexValueByLoopContext.ts) / [`proxy/methods/getContextListIndex.ts`](../../packages/state/src/proxy/methods/getContextListIndex.ts) / [`proxy/methods/checkDependency.ts`](../../packages/state/src/proxy/methods/checkDependency.ts) / [`proxy/traps/get.ts`](../../packages/state/src/proxy/traps/get.ts) / [`dependency/walkDependency.ts`](../../packages/state/src/dependency/walkDependency.ts) | §1.10（末尾起点への書き換え 7 箇所） |
+| [`apply/applyChangeToFor.ts`](../../packages/state/src/apply/applyChangeToFor.ts) / [`dependency/walkDependency.ts`](../../packages/state/src/dependency/walkDependency.ts) / [`proxy/apis/getAll.ts`](../../packages/state/src/proxy/apis/getAll.ts) / [`proxy/methods/setByAddress.ts`](../../packages/state/src/proxy/methods/setByAddress.ts) | §1.10（行生成 5 経路すべてで base を親に渡す） |
+| [`list/loopContext.ts`](../../packages/state/src/list/loopContext.ts) / [`webComponent/outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts) / [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.10（段数の検査を Δ 込みに） |
+| [`event/handler.ts`](../../packages/state/src/event/handler.ts) / [`event/eventTokenHandler.ts`](../../packages/state/src/event/eventTokenHandler.ts) / [`proxy/apis/updatedCallback.ts`](../../packages/state/src/proxy/apis/updatedCallback.ts) / [`proxy/apis/getAll.ts`](../../packages/state/src/proxy/apis/getAll.ts) | §1.10（Δ をユーザーランドに漏らさない） |
+| [`proxy/methods/getByAddress.ts`](../../packages/state/src/proxy/methods/getByAddress.ts) | §1.10 副産物（親が居ないパスの読みを `undefined` に。生の `TypeError` がバッチを道連れにするのを断つ） |
 | [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
 | [`dcc/processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts)（新規） | §1.5 / §2.3 / §1.6 |
 | [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
@@ -400,10 +408,9 @@ memo すると後から来た本物の read が memo に当たって**購読者�
 
 **サポート範囲**。成立するのは「コンポーネントが親の `for` の外にいて、子が mapped な配列を回す」形。
 親スコープのループと子スコープのループが**両方**掛かる入れ子形（規則 `state.items: rows.*.children` の上で
-子も `for`）は対象外で、`getOuterRowPathInfo` がワイルドカード段数の不一致として弾く。
-両者の行 listIndex は親子チェーンが繋がっていない別インスタンスなので、合成すると行の同一性が壊れる。
-この形の調査と実装設計案は [state-bind-component-nested-for-design.md](../state-bind-component-nested-for-design.md)
-（提案・未着手）。現状の失敗は例外ではなく `getBindingsReady` が永久に未解決になる形で出る。
+子も `for`）は当初対象外だった（`getOuterRowPathInfo` がワイルドカード段数の不一致として弾いていた）。
+**2026-08-11 に §1.10 で解決済み** — 子の行 listIndex を親スコープの行に親付けすることで、
+「合成できない別インスタンス」という前提そのものを解消した。
 
 回帰は happy-dom
 （[`integration.bindComponentListRow.test.ts`](../../packages/state/__tests__/integration.bindComponentListRow.test.ts)）で
@@ -463,6 +470,60 @@ README の ["Loop with Components"](../../packages/state/README.md) の形
 両方で固定した。どちらも **shadow を constructor で組む形と connectedCallback で組む形の
 両方**を並べている（上記 2 の理由）。判別子は Shadow 内のビュー — 親スコープの行は
 親自身のバインディングなので、子への配送が死んでいても更新される。
+
+### 1.10 親スコープの `for` の中のコンポーネントが子でも `for` を回せない ✅ 修正済み（2026-08-11）
+
+§1.8 が「対象外」として残した入れ子形（`state.items: groups.*.children` の上で子が `for: items`）。
+症状は例外ではなく**無言のハング**だった — `ListIndex not found: groups.*.children.*.name` が
+unhandled rejection として外に出るだけで `getBindingsReady` は解決も reject もせず、
+`await` の先が丸ごと動かない。
+
+壁は「**1 つの配列オブジェクトに 2 つの深さが要求される**」こと。親から見た
+`groups[i].children` の行は arity 2、子から見た `items` の行は arity 1。しかし
+`listIndexesByList` は配列オブジェクト同一性の WeakMap なので、1 つの配列につき
+listIndex 台帳は 1 組しか持てない。台帳を二重化する案は、§1.7 で潰した
+「同じ物の二重表現」に戻るので採れない。
+
+**解決の考え方**: 子スコープを「親ループの内側にある、ただのネストしたループ」として扱う。
+それが事実だからだ。子が作る listIndex を **base listIndex**（＝ホストコンポーネントの
+親スコープ行、深さ Δ）に親付けすると、`groups[i].children` の台帳は arity Δ+1 になり、
+親が `groups.*.children.*` に要求するものと**同一の組**になる。
+
+実装で効いたのは、Δ を各所へ配管せずに済む書き換え。「パス上のワイルドカード位置 →
+チェーン上の段」の変換を**先頭起点から末尾起点へ**移す（`at(i)` → `at(i - W)`）。
+`IListIndex.at()` は負値を受けるので、Δ=0 では両者が同じ要素を指す ＝
+**既存スコープに対しては挙動変更ゼロの純粋なリファクタ**になり、Δ>0 が後から成立する。
+この「Δ=0 で不変」は推論で終わらせず、一時プローブで**全テストを計測**して確認した
+（実経路の食い違いゼロ）。ただし**範囲外要求だけは別**で、
+「1 段ループの中で `$2`」が raiseError から「黙って `$1` を返す」に退行するため、
+明示の範囲ガードが要る（既存テスト 1 本がこれを捕まえた）。
+
+Δ は境界の内側に閉じ込める。`$1` / イベントハンドラのインデックス / `$updatedCallback` /
+`$getAll` はスコープ内の位置を報告する — コンポーネントの作者は、自分がリストの中に
+置かれるかどうかを知らずに書くからだ。`$resolve` は台帳の配列位置で引くので無改造。
+
+**base はキャッシュしてはいけない**（行 content はプールで再利用され、同じ要素が別の行に
+付け替わる ＝ §1.9 で踏んだ memo の罠と同型）。また**リストの行を作りうる全 5 経路**で
+base を親に渡す必要がある — `createListDiff` は既存台帳があれば再利用するので、
+取りこぼしは初期描画では見えず**行を追加したときだけ**台帳に arity が混在する。
+
+**副産物として §1.7 / §1.9 と同型の 3 度目を潰した**: 消えた行を指す読みが生の
+`TypeError: Reflect.get called on non-object` になり、updater の drain も行ループも
+捕まえないので同じバッチの無関係な更新まで道連れにしていた。親スコープ起点の行通知は
+その行を外す子の `for` より**先に**適用される（同一スコープならトポロジカル順で `for` が
+先に来るが、境界を跨ぐと順序を保証するものが無い）。親が居ないパスの読みを `undefined`
+にして解消 — `undefined` は既にプロパティ書き込みをスキップする値なので DOM は触られず、
+直後の `for` が整合させる。
+
+詳細と、実装中に発見した別件（**バインディング初期化中の例外が ready promise を
+永久に未解決のまま残す**構造は未修正）は
+[state-bind-component-nested-for-design.md](../state-bind-component-nested-for-design.md)。
+
+回帰は happy-dom
+（[`integration.bindComponentNestedFor.test.ts`](../../packages/state/__tests__/integration.bindComponentNestedFor.test.ts)・
+[`webComponent.baseListIndex.test.ts`](../../packages/state/__tests__/webComponent.baseListIndex.test.ts)）。
+**実ブラウザ e2e は未実施** — content プール再利用まわりは「実ブラウザのみ再現」の実績が
+ある領域なので、リリース前に足すこと。
 
 ---
 

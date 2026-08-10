@@ -1,8 +1,11 @@
-# bind-component の入れ子 `for` — 調査と実装設計案
+# bind-component の入れ子 `for` — 調査と実装
 
-status: **提案（未着手）**
-関連: [ADR-15 §1.7 / §1.8 / §1.9](architecture-hardening/15-state-component-mechanism-consistency.md)、
+status: **実装済み（2026-08-11・未リリース）**
+関連: [ADR-15 §1.7 / §1.8 / §1.9 / §1.10](architecture-hardening/15-state-component-mechanism-consistency.md)、
 [packages/state/src/webComponent/README.md](../packages/state/src/webComponent/README.md)
+
+本書は調査 → 設計 → 実装の記録。設計の前提が**計測で確認された**こと、および
+実装中に**別件として発見した課題**（§8）が要点。
 
 ---
 
@@ -134,7 +137,21 @@ listIndexes[Δ+i]      listIndexes[(Δ+W) + (i-W)] = listIndexes[Δ+i]   ✔
 前提となるのは「変換を受ける address は `listIndex.length === Δ + pathInfo.wildcardCount` を満たす」
 こと。今日の実装ではこれは成り立っている（loopContext はスタック検証で強制、getter address は
 `getListIndex()` が W 段ちょうどのチェーンを返す、`for` バインディングのパスはコンテナ側なので
-W ＝ 囲むループ段数）。**ただし推論であって計測ではない** — §6 の検証計画で assertion 化する。
+W ＝ 囲むループ段数）。ただしこれは推論だったので、**実装の第一歩として計測した**。
+
+**計測結果（2026-08-11）**: `listIndexAtWildcard` に「新旧両方を計算して食い違いを報告する」
+一時プローブを仕込み、全 2168 テストを走らせた。**実経路での食い違いはゼロ**。
+検出された 2 件はどちらも合成入力で、内訳は次のとおり。
+
+1. **1 段ループの中で `$2` を読む**（範囲外要求）。先頭起点では `at(1)` が
+   チェーン長を超えて null → raiseError だったが、末尾起点では `at(1-1)=at(0)` に化けて
+   **黙って `$1` を返してしまう**。これは本物の意味論差なので、`listIndexAtWildcard` に
+   `wildcardPos >= wildcardCount` の範囲ガードを明示的に持たせた。**このガードは必須**
+2. **モックが `pathInfo.wildcardCount` を持っていなかった** 2 件（型定義上は必須）。
+   モック側を型どおりに直した
+
+つまり「末尾アンカー化は Δ=0 で挙動不変」は**確認済みの事実**であり、
+(A) だけを挙動変更ゼロの単独コミットとして先に着地させた。
 
 ### 3.3 base の取得
 
@@ -247,56 +264,130 @@ context か handler から引ける。
 | **子に配列のコピーを渡す** | 値の二重化。§1.8 でキャッシュ層を外した判断（正本は親に 1 つ）と正面から衝突する |
 | **親に台帳を先に作らせる** | 子は既存台帳を再利用するので初期描画は通るが、子スコープ内の段数変換は結局 Δ が要る。順序依存が増えるだけ |
 
-## 6. リスクと検証計画
-
-### 主リスク
-
-1. **末尾アンカーが Δ=0 で不変である保証**が推論ベース。
-   → 対策: 変換 7 箇所に `config.debug` 下の assertion
-   `listIndex.length === Δ + pathInfo.wildcardCount` を入れ、**既存の全テストを debug 有効で走らせて
-   違反ゼロを確認する**。推論を計測に変える。実装の第一歩をこれにする
-2. **(B) の 5 箇所取りこぼし**。混在は初期描画では見えず、**行を追加したときだけ**壊れる。
-   → 対策: 「初期描画 → 行追加 → 行削除 → リスト差し替え → 並べ替え」を 1 本のテストで通す
-3. **性能**。`getBaseListIndex` は `getLoopContextByNode` の parentNode walk を含む。
-   → 対策: `hasMappedComponentState` の早期 return で通常 state のホットパスには載せない
-   （§1.8 の `crossBoundaryAddress` と同じ方針）。jsfb ベンチで非回帰確認
+## 6. 検証
 
 ### テスト
 
-happy-dom 統合テストを新規に 1 本（`integration.bindComponentNestedFor.test.ts`）:
+happy-dom 統合テスト
+[`integration.bindComponentNestedFor.test.ts`](../packages/state/__tests__/integration.bindComponentNestedFor.test.ts)（20 ケース）:
 
 - 初期描画（2 グループ × 各行）
 - 親からの行フィールド書き込み → 子の該当行だけが更新
 - 子からの書き戻し → 親 state に届く
-- 親のリスト（`groups`）差し替え
-- 子のリスト（`groups.*.children`）差し替え
-- 並べ替え（親側・子側の両方）
+- 子のリスト（`groups.*.children`）差し替え・**行追加 / 行削除**
+- 親のリスト（`groups`）差し替え・並べ替え・**並べ替え後の行書き込み**
+- 行削除で未処理例外が出ないこと（§8.1）
+- `$1` とイベントハンドラのインデックスが**子スコープのもの**であること
+- `$resolve` の往復
+- Δ=0 の既存形との併存（同じコンポーネントを親 `for` の外でも使う）
 - **shadow を constructor で組む形と connectedCallback で組む形の両方**（§1.9 の教訓）
-- Δ=0 の既存形（§1.7 / §1.8 / plain コンポーネント）の非回帰
 
-実ブラウザ e2e を 1 本。`packages/state/dist` はビルド後に `git checkout -- dist/` で戻す。
+base listIndex 自体は
+[`webComponent.baseListIndex.test.ts`](../packages/state/__tests__/webComponent.baseListIndex.test.ts)
+で単体固定（キャッシュしないことを含む）。
 
 **判別子は必ず Shadow 内のビュー**（§1.7 の罠）。親スコープの行は親自身のバインディングなので、
 子への配送が死んでいても更新される。
 
-## 7. 推奨する進め方
+結果: 全 2190 テスト green、`tsc --noEmit` / `eslint` / `rollup` ビルドとも通過。
+新規 3 モジュール（`wildcardLevel.ts` / `baseListIndex.ts` / 変更した `loopContext.ts`）は
+カバレッジ 100%。
 
-この設計は「正しいが安くはない」。ホットパス 15 ファイルに触る一方、
-回避策（ループを親に残して行だけをコンポーネントに渡す）は既に存在し、
-README の "Loop with Components" がまさにその形になっている。
+**実ブラウザ e2e は未実施**（§8.4）。
 
-段階を分けることを勧める。
+### 残るリスク
 
-- **Phase 0（独立して価値がある・小さい）** — 今の失敗が
-  「`getBindingsReady` が永久に未解決」なのを、**その場で分かるエラー**に格上げする。
-  `_outerLoopContext` が決められなかった時点で、入れ子形と分かる診断メッセージを出す。
-  Phase 1 をやるかどうかに関係なく入れてよい。
-  ついでに「バインディング初期化中の例外が ready promise を未解決のまま残す」構造は
-  §1.7 / §1.9 と同じ「1 件の失敗が全体を巻き込む」構図なので、別件として起票の価値がある
-- **Phase 1** — §6 の assertion だけを入れて全テストを debug で走らせ、
-  §3.2 の前提が本当に成り立つかを**測る**。ここで崩れたら設計を見直す（安い撤退点）
-- **Phase 2** — (A) 末尾アンカー化だけを単独でマージする。Δ=0 なので**挙動変更ゼロのはず**であり、
-  既存テストがそのまま回帰網になる
-- **Phase 3** — (B)〜(E) と新規テスト
+1. **(B) の 5 箇所取りこぼし**。混在は初期描画では見えず、**行を追加したときだけ**壊れる。
+   → 統合テストで「初期描画 → 行追加 → 行削除 → リスト差し替え → 並べ替え」を通している
+2. **性能**。`getBaseListIndex` は `getLoopContextByNode` の parentNode walk を含む。
+   `hasMappedComponentState` の早期 return で通常 state のホットパスには載せていない
+   （§1.8 の `crossBoundaryAddress` と同じ方針）が、**jsfb ベンチでの非回帰確認は未実施**
 
-Phase 1 で前提が崩れた場合は、入れ子形は非対応のまま Phase 0 の診断だけを残すのが妥当。
+## 7. 実装の経緯
+
+計画どおり 4 段階で進め、各段階を独立してコミットした。
+
+| 段階 | 内容 | 結果 |
+|---|---|---|
+| Phase 1 | 一時プローブで §3.2 の前提を**計測** | 実経路の食い違いゼロ。範囲ガードの必要性を発見 |
+| Phase 2 | (A) 末尾アンカー化を単独コミット | 2168 テスト green・挙動変更ゼロ |
+| Phase 3 | (B)〜(E) + 統合テスト | 入れ子形が成立 |
+| 追加 | §8.1 の stale read を修正 | 未処理例外ゼロ |
+
+Phase 0 として計画していた「入れ子形と分かる診断メッセージ」は**不要になった**（形自体が成立したため）。
+ただしその動機だった構造的欠陥は残っている — §8.2。
+
+## 8. 実装中に発見した課題
+
+### 8.1 消えた行の読みが生の `TypeError` になり、バッチ全体を巻き添えにする（修正済み）
+
+入れ子形で子スコープのリストから行を減らすと、
+`TypeError: Reflect.get called on non-object` が**未処理例外**として出ていた。
+適用順をトレースして判明した実際の並び:
+
+```
+1. groups.*.children → state.items   （親→子の再読込通知）
+2. items.*.name                      （行 0・OK）
+3. items.*.name                      （行 1 = 削除済み → 例外）
+4. items  (for)                      ← 行を実際に外すのはここ
+5. items.*.name                      （行 0・再適用）
+```
+
+**親スコープ起点の行通知が、その行を外す子の `for` より先に適用される。**
+同一スコープならトポロジカル順（`items` → `items.*` → `items.*.name`）で `for` が先に来るので
+この窓は開かない。素の入れ子 `for`（コンポーネント無し）でも Δ=0 の既存形でも再現せず、
+**親の通知と子の `for` が別経路で流れる入れ子形でだけ**開く。
+
+[`getByAddress`](../packages/state/src/proxy/methods/getByAddress.ts) で
+**親が居ないパスの読みを `undefined` にした**。`undefined` は既に
+「state に意見が無い」＝プロパティ書き込みをスキップする値なので DOM は触られず、
+直後に `for` が行ごと外して整合する。
+
+重要なのは見た目の問題ではないこと。生の `TypeError` は
+**updater の drain も `applyChangeToFor` の行ループも捕まえない**ので、
+stale な読み 1 本が同じバッチの無関係な更新まで道連れにする —
+§1.7 / §1.9 で 2 度潰したのと同じ構図の 3 度目である。
+
+### 8.2 バインディング初期化中の例外が ready promise を永久に未解決のまま残す（未修正・別件）
+
+修正前の入れ子形は `ListIndex not found` を投げていたが、その例外は
+**unhandled rejection として外に出るだけで `State.getBindingsReady` は解決も reject もしなかった**。
+結果、症状は「エラーが出る」ではなく「**無言でハングする**」になり、
+`await State.getBindingsReady(...)` の先が丸ごと動かなくなる。
+
+入れ子形自体は成立したのでこの経路は踏まなくなったが、**構造は残っている** —
+バインディング初期化で何か 1 つでも投げれば同じことが起きる。
+§8.1・§1.7・§1.9 と同じ「1 件の失敗が全体を巻き込む」系統で、
+起票して個別に扱う価値がある。少なくとも ready promise を reject させれば、
+無言のハングは「原因の分かる失敗」になる。
+
+### 8.3 `listIndexAtWildcard` の範囲ガードは落とせない
+
+末尾アンカー化は Δ=0 で挙動不変 —— **ただし範囲外要求を除く**。
+`at(pos)` は範囲外で null を返すが、`at(pos - W)` は負値に化けて
+**末尾から数え直した別の段を返してしまう**。具体的には
+「1 段ループの中で `$2` を読む」が raiseError から「黙って `$1` を返す」に退行する。
+`wildcardPos >= wildcardCount` の明示ガードで塞いだ。
+既存テスト 1 本がこれを捕まえた ＝ **カバレッジが設計の穴を検出した**（§1.8 と同じ効き方）。
+
+### 8.4 実ブラウザ e2e が未実施
+
+§1.8 / §1.9 はどちらも happy-dom と実ブラウザの両方で固定している。
+本件は happy-dom のみ。特に content プール再利用まわりは
+「実ブラウザのみ再現」の実績がある領域（ADR-15 の罠: `template.content` の clone は
+upgrade されない）なので、リリース前に
+`e2e/tests/state-bind-component-nested-for.spec.ts` 相当を足すこと。
+
+### 8.5 テスト作成上の罠: happy-dom の `textContent = 0` は `""` になる
+
+`$1` の検証中に `textContent: $1` が行 0 で空文字になり、Δ が漏れているように見えた。
+切り分けた結果、**happy-dom で `element.textContent = 0` が `""` になる**非準拠挙動だった
+（`= 1` は `"1"`。実ブラウザは `"0"`）。wcstack 側の挙動ではない。
+数値 0 を DOM 経由で判別子に使わないこと。
+
+### 8.6 型定義より緩いモックが 2 件
+
+`pathInfo.wildcardCount` を持たないモックが 2 件あり、末尾アンカー化で初めて露見した
+（`0 - undefined = NaN`）。`IPathInfo` 上は必須のフィールドで、モック側を直した。
+**`as any` を通したモックは型検査の網に載らない**ので、この種の乖離は
+実際に読むコードが増えたときにだけ表面化する。
