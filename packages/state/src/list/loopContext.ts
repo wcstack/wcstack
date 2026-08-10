@@ -8,6 +8,11 @@ type LoopContextCallback<T> = (loopContext: ILoopContext) => T | Promise<T>;
 class LoopContextStack {
   private _loopContextStack: (ILoopContext | undefined)[] = Array(MAX_LOOP_DEPTH).fill(undefined);
   private _length: number = 0;
+  private _getBaseDepth: () => number;
+
+  constructor(getBaseDepth: () => number) {
+    this._getBaseDepth = getBaseDepth;
+  }
 
   createLoopContext(
     elementStateAddress: IStateAddress,
@@ -32,13 +37,16 @@ class LoopContextStack {
       }
     } else {
       // With no active loop context the address must be self-contained: the
-      // listIndex chain supplies one index per wildcard. Top-level lists
-      // (wildcardCount 1) always satisfy this. A nested list re-rendered
-      // directly (e.g. replaced via $resolve from outside the loop) also
-      // satisfies it — the for binding's listIndex carries the full ancestor
-      // chain.
-      if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount) {
-        raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}).`);
+      // listIndex chain supplies one index per wildcard, plus this scope's base
+      // depth Δ. Top-level lists (wildcardCount 1) always satisfy this. A nested
+      // list re-rendered directly (e.g. replaced via $resolve from outside the
+      // loop) also satisfies it — the for binding's listIndex carries the full
+      // ancestor chain. Δ is non-zero only for a mapped bind-component child
+      // whose host sits inside a parent-scope `for`
+      // (docs/state-bind-component-nested-for-design.md).
+      const expectedLength = loopContext.pathInfo.wildcardCount + this._getBaseDepth();
+      if (loopContext.listIndex.length !== expectedLength) {
+        raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}, base depth ${this._getBaseDepth()}).`);
       }
     }
     this._loopContextStack[this._length] = loopContext;
@@ -61,7 +69,7 @@ class LoopContextStack {
   }  
 }
 
-export function createLoopContextStack(): ILoopContextStack {
-  return new LoopContextStack();
+export function createLoopContextStack(getBaseDepth: () => number = () => 0): ILoopContextStack {
+  return new LoopContextStack(getBaseDepth);
 }
 

@@ -26,6 +26,7 @@
 
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { setLoopContextSymbol } from "../proxy/symbols";
+import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { getCustomElement } from "../getCustomElement";
@@ -106,7 +107,8 @@ export function attachEventTokenHandler(binding: IBindingInfo): boolean {
     const loopContext = getLoopContextByNode(element);
     stateElement.createStateAsync("writable", async (state) => {
       const results = state[setLoopContextSymbol](loopContext, () => {
-        const indexes = loopContext?.listIndex.indexes ?? [];
+        const indexes = loopContext !== null
+          ? getScopedIndexes(loopContext.listIndex, loopContext.pathInfo.wildcardCount) : [];
         const token = getOrCreateEventToken(stateElement, tokenName);
         return token.emit(state, event, ...indexes);
       });

@@ -101,6 +101,20 @@ function _getByAddress(
   } else {
     const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
     const parentValue = getByAddress(target, parentAddress, receiver, handler);
+    // 親が居ないパスの読みは undefined（＝「state に意見が無い」）。`Reflect.get` に
+    // そのまま渡すと生の `TypeError: Reflect.get called on non-object` になり、
+    // updater の drain も行ループも捕まえないので **1 本の stale な読みが同じバッチの
+    // 無関係な更新まで道連れにする**（§1.7 / §1.9 と同じ構図）。
+    //
+    // 実際に踏むのは「消えた行を指すバインディングが、その行を消す `for` より先に
+    // 適用される」形。同一スコープならトポロジカル順で `for` が先に来るので起きないが、
+    // bind-component は親スコープの通知と子スコープの `for` が別経路で流れるため
+    // 順序が保証されない（docs/state-bind-component-nested-for-design.md）。
+    // undefined はプロパティ書き込みがスキップされる値なので DOM は触られず、
+    // 直後に `for` が行ごと外して整合する。
+    if (parentValue === null || typeof parentValue === "undefined") {
+      return undefined;
+    }
     const lastSegment = address.pathInfo.segments[address.pathInfo.segments.length - 1];
     if (lastSegment === WILDCARD) {
       const index = address.listIndex?.index ?? raiseError(`address.listIndex?.index is undefined path: ${address.pathInfo.path}`);

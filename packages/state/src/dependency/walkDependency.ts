@@ -14,6 +14,7 @@ import { listIndexAtWildcard } from "../list/wildcardLevel";
 import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
+import { getListParentListIndex } from "../webComponent/baseListIndex";
 import { getTopologicalRanks } from "./topologicalRank";
 import { SearchType } from "./types";
 
@@ -62,7 +63,8 @@ function _walkExpandWildcard(
   const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
   const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
   const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
-  const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
+  const listDiff = createListDiff(
+    getListParentListIndex(context.stateElement, parentAddress.listIndex), lastValue, newValue);
 
   const loopIndexes = getIndexes(listDiff, context.searchType);
   if (currentWildcardIndex === context.wildcardPaths.length - 1) {
@@ -282,7 +284,8 @@ function _collectDependencies(
         const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
         const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-        const listDiff = createListDiff(address.listIndex, lastValue, newValue);
+        const listDiff = createListDiff(
+          getListParentListIndex(context.stateElement, address.listIndex), lastValue, newValue);
         const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
         for(const listIndex of selection.fullRows) {
           const depAddress = createStateAddress(depPathInfo, listIndex);

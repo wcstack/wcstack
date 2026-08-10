@@ -22,36 +22,37 @@ class InnerStateProxyHandler implements ProxyHandler<IInnerState> {
   }
 
   /**
-   * 親スコープで読み書きするときのループ文脈を決める。
+   * 親スコープで読み書きするときのループ文脈を決める。候補は 2 つある。
    *
-   * 1. コンポーネント自身が親スコープの `for` の中にいる形（`state.row: rows.*`）は
-   *    従来どおりノードのループ文脈。行を決めているのは親スコープ側のループ。
-   * 2. そうでなく外側のパスにワイルドカードが残る形は、子スコープの `for` が
-   *    回している行。越境直前のアドレスから listIndex を引き継いで文脈を組む
-   *    （§1.8）。listIndex 台帳は配列オブジェクトの同一性で引かれるため、
-   *    親子は同じ `IListIndex` を共有していて、そのまま流用できる。
+   * 1. **越境直前のアドレスの listIndex**。子スコープの `for` が回している行
+   *    （§1.8）。子の listIndex は base（＝ホストの親スコープ行）を親に持つので
+   *    チェーン長は Δ+W_inner ＝ W_outer になり、そのまま外側の文脈として使える
+   *    （docs/state-bind-component-nested-for-design.md）。
+   * 2. **コンポーネント要素のノードループ文脈**。コンポーネント自身が親の `for` の
+   *    中にいるが、読んでいるパスは子スコープのループの外という形（`state.row: rows.*`）。
    *
-   * どちらでも決められない場合は null。従来どおり親側の解決に委ね、
-   * ワイルドカードが解けなければ raiseError になる（無言の取り違えを作らない）。
+   * 1 を先に見るのは、内側ほど具体的だから。入れ子形では 2 も非 null（＝Δ 段だけ）に
+   * なるが、それでは外側パスの段数に足りない。段数が一致する候補だけを採るのが
+   * 判定の本体で、両方外れたら null（親側の解決に委ね、解けなければ raiseError。
+   * 無言の取り違えを作らない）。
    */
   private _outerLoopContext(innerPathInfo: IPathInfo, outerAbsPathInfo: IAbsolutePathInfo): ILoopContext | null {
+    const outerWildcardCount = outerAbsPathInfo.pathInfo.wildcardCount;
     const nodeLoopContext = getLoopContextByNode(this._webComponent);
-    if (nodeLoopContext !== null) {
+    if (nodeLoopContext !== null && nodeLoopContext.listIndex.length === outerWildcardCount) {
       return nodeLoopContext;
     }
-    const outerWildcardCount = outerAbsPathInfo.pathInfo.wildcardCount;
-    if (outerWildcardCount === 0) {
-      return null;
+    if (outerWildcardCount > 0) {
+      const address = getCrossBoundaryAddress(this._innerStateElement, innerPathInfo.path);
+      const listIndex = address?.listIndex ?? null;
+      if (listIndex !== null && listIndex.length === outerWildcardCount) {
+        const outerWildcardPath = outerAbsPathInfo.pathInfo.wildcardPaths[outerWildcardCount - 1];
+        return createStateAddress(getPathInfo(outerWildcardPath), listIndex) as ILoopContext;
+      }
     }
-    const address = getCrossBoundaryAddress(this._innerStateElement, innerPathInfo.path);
-    const listIndex = address?.listIndex ?? null;
-    // 段数が合わない ＝ 親スコープのループと子スコープのループが混在する入れ子形。
-    // 両者の listIndex は親子チェーンが繋がっていない別物なので合成できない。
-    if (listIndex === null || listIndex.length !== outerWildcardCount) {
-      return null;
-    }
-    const outerWildcardPath = outerAbsPathInfo.pathInfo.wildcardPaths[outerWildcardCount - 1];
-    return createStateAddress(getPathInfo(outerWildcardPath), listIndex) as ILoopContext;
+    // どちらも段数が合わない。従来どおりノードの文脈へフォールバックし、
+    // 解けなければ後段が raiseError する（無言の取り違えを作らない）
+    return nodeLoopContext;
   }
 
   get(target: IInnerState, prop: string | symbol, receiver: any): any {

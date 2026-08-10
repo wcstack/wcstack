@@ -39,9 +39,19 @@ export function listIndexAtWildcard(
 }
 
 /**
- * このスコープの base 深さ Δ。ループ文脈から局所的に求まる
- * （チェーン長 Δ+W と パスの W の差）。
+ * ユーザーランドへ渡すインデックス列。チェーンの先頭 Δ 段（base）を落とし、
+ * **そのスコープ自身のループ分だけ**にする。
+ *
+ * コンポーネントの作者は、自分がリストの中に置かれるかどうかを知らずに書く。
+ * `$1` や `onClick(event, index)` の意味が設置場所で変わってはいけないので、
+ * Δ は境界の内側に閉じ込める。`$resolve(path, indexes)` は台帳の配列位置で
+ * 引くため、ここで返した列がそのまま往復で使える。
  */
-export function getBaseDepthOf(listIndex: IListIndex, wildcardCount: number): number {
-  return listIndex.length - wildcardCount;
+export function getScopedIndexes(listIndex: IListIndex, wildcardCount: number): number[] {
+  // indexes は型上は必須だが、防御的フォールバックを既存挙動として持っている
+  const indexes = listIndex.indexes ?? [];
+  if (indexes.length === wildcardCount) {
+    return indexes;
+  }
+  return indexes.slice(indexes.length - wildcardCount);
 }
