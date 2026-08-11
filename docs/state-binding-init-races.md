@@ -127,7 +127,7 @@ module script は**文書順で実行される**保証を使い、**I/O ノー�
 ```html
 <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
-<script type="module" src="/state-dist/auto.js"></script>  <!-- state は最後 -->
+<script type="module" src="/state-dist/auto.min.js"></script>  <!-- state は最後 -->
 ```
 
 （既存デモの多くは state を先頭に書いているが動いている＝define が先に済む偶然。規約としてはノード先・state 後に寄せるのが安全。）
