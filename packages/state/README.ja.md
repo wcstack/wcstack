@@ -1707,7 +1707,7 @@ JavaScript のクラス定義なしで、**HTML だけ**でカスタム要素を
 
 ### `$bindables` / `$commands` と wc-bindable プロトコル
 
-`$bindables` は変更イベント付きのコンポーネント**プロパティ**として公開する状態プロパティを、`$commands` は起動可能な**コマンド**として公開する状態メソッドを宣言します。この 2 つで [wc-bindable プロトコル](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md)の宣言が組み立てられます：
+`$bindables` は変更イベント付きのコンポーネント**プロパティ**として公開する状態プロパティを、`$commands` は起動可能な**コマンド**として公開する状態メソッドを宣言します。この 2 つで [wc-bindable プロトコル](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/README.md)の宣言が組み立てられます：
 
 ```javascript
 export default {

@@ -1708,7 +1708,7 @@ The definition element is hidden; each instance clones the template into its own
 
 ### `$bindables` / `$commands` and the wc-bindable Protocol
 
-`$bindables` declares which state **properties** are exposed as component properties with change events. `$commands` declares which state **methods** are exposed as invocable commands. Together they build the [wc-bindable protocol](https://github.com/nicenemo/nicenemo/blob/main/docs/wc-bindable-protocol.md) declaration:
+`$bindables` declares which state **properties** are exposed as component properties with change events. `$commands` declares which state **methods** are exposed as invocable commands. Together they build the [wc-bindable protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/README.md) declaration:
 
 ```javascript
 export default {
