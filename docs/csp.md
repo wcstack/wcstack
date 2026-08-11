@@ -44,7 +44,7 @@ CSP はリダイレクト**先も再照合する**（リダイレクト後は pa
 
 ```
 https://cdn.jsdelivr.net/npm/@wcstack/state/auto            → 404
-https://cdn.jsdelivr.net/npm/@wcstack/state@1.25.0/dist/auto.min.js → 200
+https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js → 200
 ```
 
 直パスに寄せる利点は CSP のホスト数だけではない。`esm.run` は再バンドルを行う `+esm` エンドポイントに飛ぶため SRI が原理的に効かず、直パスなら `integrity` を付けられる。詳細は [sri.md](./sri.md)。
