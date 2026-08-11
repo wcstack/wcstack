@@ -1,6 +1,7 @@
 import { IWcBindable, WcsWorkerErrorDetail, WcsWorkerStartOptions } from "../types.js";
 import { WcsIoErrorInfo } from "./platformCapability.js";
 import { deriveWorkerErrorInfo } from "./workerCapabilities.js";
+import { trustAuthoredScriptURL } from "../trustedTypes.js";
 
 /**
  * Headless Dedicated Worker primitive. A thin, framework-agnostic wrapper around
@@ -270,7 +271,11 @@ export class WorkerCore extends EventTarget {
 
   private _spawn(): void {
     try {
-      this._worker = new Worker(this._src, { type: this._type, name: this._name || undefined });
+      // `new Worker(url)` は TrustedScriptURL sink。src は作者が書いた属性値なので
+      // 共有 identity policy で署名してよい層（docs/csp.md §7）。TT 非対応ブラウザでは
+      // 生文字列がそのまま返る。policy 生成に失敗した場合もここは従来どおり進み、
+      // 実際の失敗は既存の catch が error / errorInfo に落とす。
+      this._worker = new Worker(trustAuthoredScriptURL(this._src), { type: this._type, name: this._name || undefined });
     } catch (err) {
       this._setError(this._normalizeError(err));
       return;

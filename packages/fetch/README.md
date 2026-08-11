@@ -485,6 +485,19 @@ This mode is useful for simple fragment loading, but it is separate from the mai
 > attributes). For untrusted or user-influenced content, bind `value` into state
 > and render through `@wcstack/state` text bindings instead.
 
+To sanitize the response, install a Trusted Types policy — it is applied on every
+engine, not only where Trusted Types is enforced:
+
+```js
+import { setTrustedTypesPolicy } from "@wcstack/fetch";
+
+setTrustedTypesPolicy({ createHTML: (html) => DOMPurify.sanitize(html) });
+```
+
+Under `require-trusted-types-for 'script'` this mode **requires** such a policy:
+`@wcstack/fetch` never signs a response with an identity policy, because that would
+disable the very rule the page asked for. See [csp.md](../../docs/csp.md) section 7.
+
 ## Optional DOM Triggering
 
 If `autoTrigger` is enabled (default), clicking an element with `data-fetchtarget` triggers the corresponding `<wcs-fetch>` element:

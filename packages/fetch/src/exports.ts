@@ -1,5 +1,7 @@
 export { bootstrapFetch } from "./bootstrapFetch.js";
 export { getConfig } from "./config.js";
+export { getTrustedTypesPolicy, setTrustedTypesPolicy, TRUSTED_TYPES_POLICY_SLOT } from "./trustedTypes.js";
+export type { IWcsTrustedTypesPolicy } from "./trustedTypes.js";
 export { FetchCore } from "./core/FetchCore.js";
 export { Fetch as WcsFetch } from "./components/Fetch.js";
 export { InfiniteScroll as WcsInfiniteScroll } from "./components/InfiniteScroll.js";

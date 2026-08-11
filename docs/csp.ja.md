@@ -172,13 +172,63 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 
 Blob をバインドする経路（`@wcstack/fetch` の Blob → object URL、`@wcstack/camera` の録画結果）は、代入先に応じて `img-src blob:` / `media-src blob:` が要る。
 
-## 7. Trusted Types は未対応（既知の制約）
+## 7. Trusted Types
 
-`require-trusted-types-for 'script'` 下では以下が例外を投げる。現時点で `trustedTypes.createPolicy` の導入予定はない。
+`require-trusted-types-for 'script'` に対応している。要点は **どの sink に署名し、どの sink には署名しないか** の線引き:
 
-- `@wcstack/fetch` の `html` バインディング（[Fetch.ts](../packages/fetch/src/components/Fetch.ts)）
-- `@wcstack/router` の `<wcs-layout>` テンプレート展開（[Layout.ts](../packages/router/src/components/Layout.ts)）
-- `@wcstack/state` の DCC 定義（[defineDCC.ts](../packages/state/src/dcc/defineDCC.ts)）
+| sink | 入力 | 扱い |
+|---|---|---|
+| `<wcs-layout>` のテンプレート展開（[Layout.ts](../packages/router/src/components/Layout.ts)） | 作者が書いたマークアップ（文書内の `<template>`、または `src` で取得するアプリの資産） | 共有 `wcstack` identity policy で署名 |
+| `new Worker(src)`（[WorkerCore.ts](../packages/worker/src/core/WorkerCore.ts)） | 作者が書いた `src` 属性 | 共有 `wcstack` identity policy で署名 |
+| `<wcs-fetch target>` の HTML 置換モード（[Fetch.ts](../packages/fetch/src/components/Fetch.ts)） | レスポンス本文 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
+| `innerHTML:` / `outerHTML:` / `srcdoc:` プロパティバインド（[applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts)） | 状態の値 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
+
+この線引きが本体。上 2 つはページの作者が書いた文字列で、Lit がテンプレートリテラルに署名しているのと同じ地面に立つ。下 2 つはリモートのデータとユーザー入力が混ざり得る状態で、そこに identity policy を噛ませるのは「Trusted Types 対応」ではなく policy を切ることであり、セキュリティレビューで落ちるのが正しい。
+
+**DCC 定義は sink 自体が無くなった。** [defineDCC.ts](../packages/state/src/dcc/defineDCC.ts) は定義要素の shadow tree を innerHTML で往復させず、ノード単位でクローンする。したがって `@wcstack/state` 単体なら `trusted-types` の allowlist は要らない。
+
+### 許可すべきポリシー
+
+```
+Content-Security-Policy:
+  require-trusted-types-for 'script';
+  trusted-types wcstack;
+```
+
+`trusted-types` の行が要るのは **`<wcs-layout>` か `<wcs-worker>` を使う場合だけ**。それ以外は `require-trusted-types-for 'script'` だけで動く。名前 1 つで全パッケージをカバーする: policy オブジェクトは 1 度だけ生成してグローバルスロットで共有するので、複数パッケージが同居しても `createPolicy("wcstack")` が 2 回走ることはない（`'allow-duplicates'` の無いディレクティブ下では重複生成は例外になる）。
+
+### 自前の policy を注入する
+
+```html
+<script nonce="{RANDOM}">
+  globalThis[Symbol.for("wcstack.trustedTypes.policy")] =
+    trustedTypes.createPolicy("my-app", {
+      createHTML: (s) => DOMPurify.sanitize(s),
+      createScriptURL: (s) => s,
+    });
+</script>
+```
+
+バンドラ経由なら `setTrustedTypesPolicy()` を使う（`@wcstack/state` / `@wcstack/router` / `@wcstack/fetch` / `@wcstack/worker` が export しており、いずれも同じスロットを指す）。最初のレイアウト展開 / worker 起動 / fetch より前に設定すること。
+
+注入した policy はどこでも組み込みの identity policy より優先される。リモートデータ系の 2 つの sink では **Trusted Types 非対応のエンジンでも適用する**。sanitizer が Chromium でだけ効いて Firefox / Safari では素通し、という差のほうが危ないため。
+
+### 注入しない場合
+
+リモートデータ系の 2 つは意図どおり失敗し続けるが、直し方つきで 1 度だけ報告する:
+
+```
+[@wcstack/fetch] The "target" HTML replace mode was blocked by Trusted Types (require-trusted-types-for 'script'). ...
+[@wcstack/state] Writing to "innerHTML" was blocked by Trusted Types (require-trusted-types-for 'script'). ...
+```
+
+state のプロパティ書き込み経路は setter の例外を意図的に握り潰す設計（要素が値を拒否してよい）ため、以前はここが**無言で壊れていた**。強制されているかどうかはエラーメッセージの文言ではなく使い捨て要素への実書き込みで判定するので、`default` policy を置いているページは正しく「ブロックされていない」と判断される。
+
+### 補足
+
+- Trusted Types は Chromium のみ。他のエンジンでは上記の経路はすべて素通し。
+- 動的 `import()`（state のインライン `<script>`、router のガードハンドラ、autoloader）は Trusted Types の sink **ではない**。こちらは `script-src` の管轄（§4・§5・§9）。
+- DCC のノードクローン化には挙動差が 1 つある: script 要素はクローン時に already-started フラグを引き継ぐため、DCC テンプレート内のインライン `<script>` がインスタンスごとにネイティブ実行されなくなる。`<wcs-state>` の状態定義は `script.text` を自前で評価する実装なので影響を受けない（§4）。
 
 ## 8. CSP に触れないもの（誤解しやすい点）
 

@@ -481,6 +481,19 @@ console.log(fetchEl.body);    // null（fetch 後にリセット済み）
 > を state にバインドして `@wcstack/state` のテキストバインディング経由で描画して
 > ください。
 
+レスポンスをサニタイズするには Trusted Types の policy を注入します。Trusted Types が
+強制されているかどうかに関係なく、どのエンジンでも適用されます:
+
+```js
+import { setTrustedTypesPolicy } from "@wcstack/fetch";
+
+setTrustedTypesPolicy({ createHTML: (html) => DOMPurify.sanitize(html) });
+```
+
+`require-trusted-types-for 'script'` 下では、このモードには policy が**必須**です。
+`@wcstack/fetch` はレスポンスを identity policy で署名しません（それはページが要求した
+ルールを無効化することになるため）。詳細は [csp.ja.md](../../docs/csp.ja.md) の §7 を参照。
+
 ## オプションの DOM トリガー
 
 `autoTrigger` が有効（デフォルト）の場合、`data-fetchtarget` 属性を持つ要素のクリックで対応する `<wcs-fetch>` が実行されます:
