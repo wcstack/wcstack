@@ -7606,7 +7606,7 @@ async function buildBindings(root) {
     }
 }
 
-var version = "1.25.0";
+var version = "1.26.0";
 var pkg = {
 	version: version};
 
@@ -8387,28 +8387,41 @@ function setStateElementByName(rootNode, name, element) {
             // 無いので `rootNode instanceof Document` は ReferenceError になる。
             // `ShadowRoot` はリストに含まれるため他所では instanceof を使っている
             // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §3.3）。
+            // reject を配管しないと、バインディング初期化中の例外は unhandled rejection として
+            // 漏れるだけで ready が永久に未解決のまま残り、await getBindingsReady() の先が
+            // 無言でハングする（docs/state-bind-component-nested-for-design.md §8.2）。
             if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
-                const ready = new Promise((resolve) => {
+                const ready = new Promise((resolve, reject) => {
                     queueMicrotask(async () => {
-                        if (enableSsr) {
-                            const success = await hydrateBindings(rootNode);
-                            if (!success) {
+                        try {
+                            if (enableSsr) {
+                                const success = await hydrateBindings(rootNode);
+                                if (!success) {
+                                    await buildBindings(rootNode);
+                                }
+                            }
+                            else {
                                 await buildBindings(rootNode);
                             }
+                            resolve();
                         }
-                        else {
-                            await buildBindings(rootNode);
+                        catch (error) {
+                            reject(error);
                         }
-                        resolve();
                     });
                 });
                 bindingsReadyByNode.set(rootNode, ready);
             }
             else if (rootNode.constructor.name === 'ShadowRoot') {
-                const ready = new Promise((resolve) => {
+                const ready = new Promise((resolve, reject) => {
                     queueMicrotask(async () => {
-                        await buildBindings(rootNode);
-                        resolve();
+                        try {
+                            await buildBindings(rootNode);
+                            resolve();
+                        }
+                        catch (error) {
+                            reject(error);
+                        }
                     });
                 });
                 bindingsReadyByNode.set(rootNode, ready);
@@ -8929,9 +8942,14 @@ class LoopContextStack {
             // ancestor chain. Δ is non-zero only for a mapped bind-component child
             // whose host sits inside a parent-scope `for`
             // (docs/state-bind-component-nested-for-design.md).
-            const expectedLength = loopContext.pathInfo.wildcardCount + this._getBaseDepth();
-            if (loopContext.listIndex.length !== expectedLength) {
-                raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}, base depth ${this._getBaseDepth()}).`);
+            // ここは行ごとに通る（applyChangeToFor は追加行ごとに createLoopContext する）。
+            // Δ=0 の判定を先に置き、通れば base 深さの解決（DOM の親走査を含む）に
+            // 一切触れない — 通常の state に追加コストを載せないため。
+            if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount) {
+                const baseDepth = this._getBaseDepth();
+                if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount + baseDepth) {
+                    raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}, base depth ${baseDepth}).`);
+                }
             }
         }
         this._loopContextStack[this._length] = loopContext;
@@ -11860,8 +11878,10 @@ function resolve(target, _prop, receiver, handler) {
                 raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
             }
             const index = indexes[i];
+            // 範囲外 index はリスト自体の不在と別原因なので index を含める
+            // （docs/state-bind-component-nested-for-design.md §8.4）
             listIndex = listIndexes[index] ??
-                raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+                raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
         }
         // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す
         const address = createStateAddress(pathInfo, listIndex);
@@ -11931,8 +11951,10 @@ function getAll(target, prop, receiver, handler) {
                 }
             }
             else {
+                // 範囲外 index はリスト自体の不在と別原因なので index を含める
+                // （docs/state-bind-component-nested-for-design.md §8.4）
                 const listIndex = listIndexes[index] ??
-                    raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+                    raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
                 if ((wildcardIndexPos + 1) < wildcardParentPathInfos.length) {
                     walkWildcardPattern(wildcardParentPathInfos, wildcardIndexPos + 1, listIndex, indexes, indexPos + 1, parentIndexes.concat(listIndex.index), results);
                 }
@@ -11994,8 +12016,11 @@ function getListIndex(target, resolvedAddress, receiver, handler) {
                     raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
                 const wildcardIndex = resolvedAddress.wildcardIndexes[i] ??
                     raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);
+                // 範囲外 index はリスト自体の不在と別原因なので、メッセージに index を含める。
+                // 親パスだけを名指しすると「リスト自体が見つからない」と誤読させる
+                // （docs/state-bind-component-nested-for-design.md §8.4）。
                 parentListIndex = wildcardParentListIndexes[wildcardIndex] ??
-                    raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+                    raiseError(`ListIndex not found at index ${wildcardIndex} of ${wildcardParentPathInfo.path}`);
             }
             return parentListIndex;
         }
@@ -12798,6 +12823,7 @@ class State extends HTMLElementBase {
     _resolveInitialize = null;
     _connectedCallbackPromise;
     _resolveConnectedCallback = null;
+    _rejectConnectedCallback = null;
     _loadingPromise;
     _resolveLoading = null;
     _setStatePromise = null;
@@ -12835,8 +12861,9 @@ class State extends HTMLElementBase {
         this._initializePromise = new Promise((resolve) => {
             this._resolveInitialize = resolve;
         });
-        this._connectedCallbackPromise = new Promise((resolve) => {
+        this._connectedCallbackPromise = new Promise((resolve, reject) => {
             this._resolveConnectedCallback = resolve;
+            this._rejectConnectedCallback = reject;
         });
         this._loadingPromise = new Promise((resolve) => {
             this._resolveLoading = resolve;
@@ -13147,14 +13174,24 @@ class State extends HTMLElementBase {
         }
         // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成
         if (inSsr() && this.hasAttribute('enable-ssr')) {
-            await getBindingsReady(this.rootNode);
-            const name = this.getAttribute('name') || 'default';
-            const stateData = Ssr.extractStateData(this);
-            const ssrEl = document.createElement(config.tagNames.ssr);
-            ssrEl.setAttribute('name', name);
-            ssrEl.setAttribute('version', VERSION);
-            Ssr.buildContent(ssrEl, stateData);
-            this.parentNode?.insertBefore(ssrEl, this);
+            try {
+                await getBindingsReady(this.rootNode);
+                const name = this.getAttribute('name') || 'default';
+                const stateData = Ssr.extractStateData(this);
+                const ssrEl = document.createElement(config.tagNames.ssr);
+                ssrEl.setAttribute('name', name);
+                ssrEl.setAttribute('version', VERSION);
+                Ssr.buildContent(ssrEl, stateData);
+                this.parentNode?.insertBefore(ssrEl, this);
+            }
+            catch (error) {
+                // reject を配管しないと _connectedCallbackPromise が永久に未解決になり、
+                // renderToString が mutex を握ったまま connectedCallbackPromise 待ちで
+                // 無言ハングする。getBindingsReady の reject 化（設計書 §8.2）を
+                // SSR の消費者（render.ts）まで届けるための対。
+                this._rejectConnectedCallback?.(error);
+                throw error;
+            }
         }
         // $streams の eager 起動（$connectedCallback 完了後、設計書 §2-3）。
         // inSsr() 時は起動しない（SSR 出力には initial が乗る、§7-1）。

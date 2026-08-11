@@ -166,7 +166,7 @@ async function loadDefaultBootstraps() {
  * const page = `<!DOCTYPE html>
  * <html lang="ja">
  * <head>
- *   <script type="module" src="/packages/state/dist/auto.js"></script>
+ *   <script type="module" src="/packages/state/dist/auto.min.js"></script>
  * </head>
  * <body>${ssrBody}</body>
  * </html>`;
@@ -233,7 +233,7 @@ async function renderToString(html, options) {
     }
 }
 
-var version = "1.25.0";
+var version = "1.26.0";
 var pkg = {
 	version: version};
 
