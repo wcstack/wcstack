@@ -448,7 +448,7 @@ Sources:
 
 ### Week 5–7
 - **記事 2（Zenn）**: 「**useEffect を書く前に HTML タグを 1 個足す — 既存 React アプリに Web Components を混ぜる 3 つの規則**」
-  - adapter 着地（PR#117 系）＋ `docs/framework-adapter-integration.md` の 3 規則の記事化＝ Tier 2-2 の楔デモを兼ねる。
+  - adapter 着地（PR#117 系）＋ `docs/framework-adapter-integration.ja.md` の 3 規則の記事化＝ Tier 2-2 の楔デモを兼ねる。
   - 狙うクエリ: 「React Web Components 連携」「useEffect 外部システム 同期」
   - 成功指標: いいね 30 / 「アダプタは全部自作」と明記した上で否定的反応が出ないこと（正直開示のテスト）
 - **記事 3（Qiita・買い手②向け）**: 「**jQuery が現役の業務画面に、ビルド無しで SSE 通知を足す最短手順**」
@@ -567,7 +567,7 @@ the results land in bindable state.
 
 - **30+ I/O tags** — `<wcs-fetch>` `<wcs-ws>` `<wcs-sse>` `<wcs-camera>` `<wcs-geo>` `<wcs-intersect>` … [full list](#packages)
 - **Standards only** — plain custom elements, zero runtime dependencies, no bundler
-- **Works inside React / Vue / Svelte / Solid** — every tag speaks [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol); thin adapters (written by the wcstack author — not a third-party ecosystem) wire outputs into framework state. [The 3 rules](./framework-adapter-integration.md)
+- **Works inside React / Vue / Svelte / Solid** — every tag speaks [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol); thin adapters (written by the wcstack author — not a third-party ecosystem) wire outputs into framework state. [The 3 rules](./framework-adapter-integration.ja.md)
 - **Opt-in upper layers** — like the binding style? [`@wcstack/state`](../packages/state/), [`@wcstack/router`](../packages/router/) and [`@wcstack/signals`](../packages/signals/) scale it to a whole app
 
 🌐 [Live demos](https://wcstack.github.io) · 📦 [npm](https://www.npmjs.com/org/wcstack) · 🤖 AI agents: start at [AGENTS.md](../AGENTS.md)
@@ -591,7 +591,7 @@ I/O はタグがやり、結果はバインド可能な状態として届きま�
 
 - **30+ の I/O タグ** — `<wcs-fetch>` `<wcs-ws>` `<wcs-sse>` `<wcs-camera>` `<wcs-geo>` `<wcs-intersect>` …（[一覧](#パッケージ)）
 - **Web 標準だけ** — 素のカスタム要素・ランタイム依存ゼロ・バンドラー不要
-- **React / Vue / Svelte / Solid の中でも** — 全タグが wc-bindable-protocol を実装。薄いアダプタ（wcstack 作者の自作です — 第三者エコシステムではありません）で FW の状態に配線できます。[3 つのルール](./framework-adapter-integration.md)
+- **React / Vue / Svelte / Solid の中でも** — 全タグが wc-bindable-protocol を実装。薄いアダプタ（wcstack 作者の自作です — 第三者エコシステムではありません）で FW の状態に配線できます。[3 つのルール](./framework-adapter-integration.ja.md)
 - **上位レイヤーは opt-in** — 気に入ったら `@wcstack/state`（data-wcs バインディング）・`@wcstack/router`・`@wcstack/signals` でアプリ全体へ
 
 🌐 [ライブデモ](https://wcstack.github.io) · 📦 npm · 🤖 AI エージェントはまず [AGENTS.md](../AGENTS.md)
@@ -902,13 +902,13 @@ function Chat() {
 | 開示事項 | 場所 | 文面の方針 |
 |---|---|---|
 | **アダプタは全て作者の自作**（org star 1・第三者検証なし） | 記事本文§4 と デモ README の両方。**脚注にしない** | 「@wc-bindable の 20 アダプタは wcstack 作者が自分で書いたもので、第三者の検証を受けていません。React 用のコアは小さく、読んでから使えます（リンク）」— GTM §7 の通り、正直に言えばそれ自体が強い |
-| **制約 6 クラスのうち React に効く 3 つ** | 記事本文§4 に要約表 + `docs/framework-adapter-integration.md`（3 規則の正本）へリンク。6 クラス全列挙は正本側に任せ本文では膨らませない | (A) 遅延 upgrade で bind が沈黙 → 規則1「静的 import」をコードに焼き込み済みと明示 ／ (B) accessor シャドウイングは v1.24 で修正済みと**修正事実ごと**開示 ／ (F) コロン付きイベント名は JSX で直接書けない → `addEventListener` 経路（正本 §4） |
+| **制約 6 クラスのうち React に効く 3 つ** | 記事本文§4 に要約表 + `docs/framework-adapter-integration.ja.md`（3 規則の正本）へリンク。6 クラス全列挙は正本側に任せ本文では膨らませない | (A) 遅延 upgrade で bind が沈黙 → 規則1「静的 import」をコードに焼き込み済みと明示 ／ (B) accessor シャドウイングは v1.24 で修正済みと**修正事実ごと**開示 ／ (F) コロン付きイベント名は JSX で直接書けない → `addEventListener` 経路（正本 §4） |
 | **event semantics の同値 dedupe**（正本 §5: adapter は `semantics` 未解釈） | デモ README の「既知の注意」 | 同一 payload 連続の `message` は値 store で落ちうる。チャットデモはタイムスタンプ付与で回避している旨を明記 |
 | **デモ用 wss は当方運営 / 第三者 echo** | StackBlitz 内バナー | 「デモ用エンドポイントです。可用性保証なし。ローカル実行は README 参照」 |
 | **競合の存在** | 記事§5「使わない方がいい場合」 | react-use-websocket / react-intersection-observer を名指しで挙げる |
 
 関連ファイル（絶対パス）:
-- 正本 3 規則: `c:\Users\kikuzawa\Documents\git\wcstack\wcstack\docs\framework-adapter-integration.md`
+- 正本 3 規則: `c:\Users\kikuzawa\Documents\git\wcstack\wcstack\docs\framework-adapter-integration.ja.md`
 - 転用元デモ: `c:\Users\kikuzawa\Documents\git\wcstack\wcstack\examples\websocket-chat\react\src\App.tsx`（`main.tsx` の静的 import が規則1の実演になっている）
 - GTM 戦略: `c:\Users\kikuzawa\Documents\git\wcstack\wcstack\docs\go-to-market-2026-08.md`（本設計は Tier 2-2 の具体化。前提として Tier 0-1 リリース発車が必要 — StackBlitz は npm 上の v1.24 系 adapter 対応版を引くため）
 
@@ -1111,7 +1111,7 @@ Zenn/HN/検索/AI ──→ LP or README ──→ 「何が手に入るか」�
 - **0-4 改**: 対象を明確化 — 39 I/O ノードの README は既に Install/Quick Start が上部にあり合格圏。**手術が要るのは state**: (i) 冒頭を「1タグ例コードブロック」に、(ii) **「Do Not Compare」節を削除または「いつ選ぶ/選ばないか」に書換**（断絶 5・Tier 1-3 との整合）、(iii) 構文チートシートをコードブロックの塊として上部に（断絶 9・AI 実測に基づく）。
 
 **追加（新規・いずれも数時間以内）**:
-- **0-5: LP とルート README 上部に「Add one tag to your existing app」節**（断絶 2）。React/Vue タブ + `docs/framework-adapter-integration.md` への直リンク。**戦略核の決定 2 を承認するなら、これが Tier 0 の本丸**であり、現ドラフトには存在しない。
+- **0-5: LP とルート README 上部に「Add one tag to your existing app」節**（断絶 2）。React/Vue タブ + `docs/framework-adapter-integration.ja.md` への直リンク。**戦略核の決定 2 を承認するなら、これが Tier 0 の本丸**であり、現ドラフトには存在しない。
 - **0-6: 日本語導線**（断絶 4）。最小構成 = LP ヘッダに「日本語 →」リンク + ルート `README.ja.md` 新設（各パッケージ README.ja は既にあるので目次役のみ）。Zenn 記事（Tier 3）の着地先を日本語面にできるようになる。
 - **0-7: 正直化 2 点セット**（断絶 6・8）。adapter 節に「20 FW アダプタは全て作者自身が書いた公式アダプタ」の 1 文、README 冒頭に CI / npm version / テスト数バッジ + 「ソロ開発・外部コントリビュート歓迎」の 1 行。§7 の kill 判断を README 本文に反映するだけで、HN での最大の攻撃面が消える。
 - **0-8: 受け皿**（断絶 11）。GitHub Discussions 有効化（未確認なら確認）+ 質問用 issue テンプレ。「外部 issue 0→1」を最重要指標に据えるなら、投函口の整備は計測の前提。

@@ -192,7 +192,7 @@ class FakeCredentialsContainer {
 - **`_gen`共有の制限の回帰確認**: `get()`実行中（未resolve）に`store()`を呼び、`store()`完了後に`get()`のPromiseをresolveさせても、`get()`の結果が`value`/`loading`/`error`へ反映されないこと（§4の失敗モードそのものを固定するテスト。「直す」テストではなく「この制限がある」ことを明文化する回帰テスト）。
 - never-throw: 未対応環境（`navigator.credentials`不在）で`get()`/`store()`を呼んでも例外を投げず`error`（`"unsupported"`相当）に落ちること。
 - 同値ガード: 連続する`get()`呼び出しで`loading`がtrue→false→true→falseと正しく遷移すること（イベント性の`value`/`error`更新自体は都度発火してよいが、`loading`/`cancelled`は同値なら再dispatchしない）。
-- dispose後に`get()`/`store()`のPromiseがresolveしても状態を書き込まないこと（`_gen`ガード、[async-io-node-guidelines.md](./async-io-node-guidelines.md) §3.4）。
+- dispose後に`get()`/`store()`のPromiseがresolveしても状態を書き込まないこと（`_gen`ガード、[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §3.4）。
 
 ---
 

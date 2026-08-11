@@ -173,7 +173,7 @@ Phase 0 の固定スナップショットは
 
 ### Phase 1: producer snapshot contract
 
-`docs/async-io-node-guidelines.md` に state-like output の規範を追加する。
+`docs/async-io-node-guidelines.ja.md` に state-like output の規範を追加する。
 
 - producer は公開後の state value を変更してはならない。
 - logical state が変わる場合は新しい object / array を割り当ててから通知する。
@@ -183,7 +183,7 @@ Phase 0 の固定スナップショットは
 
 既存ノードは一括破壊変更せず、棚卸しで実 mutation が見つかったものから修正する。
 
-Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
 §3.3.1 に追加した。新規ノード・新規 observable property は MUST、既存ノードは
 [Phase 0 棚卸し](12-wc-bindable-observable-inventory.md) から段階移行とする。
 
@@ -322,6 +322,6 @@ runtime 改修を約束しない。
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [非同期実行と wc-bindable 境界](04-async-execution-and-wc-bindable.md)
 - [横断修正設計](09-remediation-design.md)
-- [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+- [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
 - [`FetchCore`](../../packages/fetch/src/core/FetchCore.ts)
 - [`CameraCore`](../../packages/camera/src/core/CameraCore.ts)

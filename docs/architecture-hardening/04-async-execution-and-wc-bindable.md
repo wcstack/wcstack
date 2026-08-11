@@ -19,9 +19,9 @@
 
 ## 現状の設計資産
 
-- `docs/async-execution-model.md` は `latest`、`queue`、`exhaust`、`overlap` の execution lane と、
+- `docs/async-execution-model.ja.md` は `latest`、`queue`、`exhaust`、`overlap` の execution lane と、
   world / operation generation を定義している。
-- `docs/async-io-node-guidelines.md` は Core / Shell 分離、never-throw 境界、`_gen` による古い結果の抑止、
+- `docs/async-io-node-guidelines.ja.md` は Core / Shell 分離、never-throw 境界、`_gen` による古い結果の抑止、
   `observe()` / `dispose()`、ready、SSR を推奨している。
 - `io-core/operation-lane.ts` は本書 §1 / §2 の実行契約（`OperationTicket` / `OperationAttempt` /
   CommitGuard / terminal CAS、4 policy 全て）を型付き実装として持ち、`scripts/sync-io-core.mjs` が
@@ -122,7 +122,7 @@ wc-bindable の capability negotiation を使い、Extension 1 非対応 peer �
 | (d) userland 宣言（`$on` / state 側） | `$on: { name: { lane, retry, handler } }` | **state が持つ再試行・ガードのロジックが規範に載る** | `$on` の非同期契約（下記）を先に決める必要がある |
 
 **(d) を明示的な選択肢として立てる根拠。** `latest` / `exhaust` / `retry` は本書と
-`async-execution-model.md` §5 / §8 が既に規範化した語彙であり、`io-core/operation-lane.ts` が
+`async-execution-model.ja.md` §5 / §8 が既に規範化した語彙であり、`io-core/operation-lane.ts` が
 実装も持っている。しかしその語彙が届くのはノードの内側だけで、**ノードをまたぐ実行**（可視性エッジ →
 fetch → 失敗 → 待つ → 再実行）を組む利用者は同じ意味論を毎回手書きしている。
 `examples/state-intersect-scroll` はその実例で、`$on.sentinelChanged` の `!loading` ガードは
@@ -186,8 +186,8 @@ lane が直列化するのは `$on` ハンドラの実行だが、wcstack のイ
 - [wc-bindable Extensions（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC-extensions.md)
 - [wc-bindable remote README（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/remote/README.md)
 - [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
-- [非同期実行モデル](../async-execution-model.md)
-- [非同期 I/O ノード指針](../async-io-node-guidelines.md)
+- [非同期実行モデル](../async-execution-model.ja.md)
+- [非同期 I/O ノード指針](../async-io-node-guidelines.ja.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
 - [発火タイミング契約](../timing-and-firing-contract.md) — 現行 example の `$streams` restart と同値 page 選択、および refactor 前の発火順分析
 - `examples/state-intersect-scroll` — 現行は `$streams` 実例。本書中の手書き版は決定ゲート 1 (d) の歴史的動機

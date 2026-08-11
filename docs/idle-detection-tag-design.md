@@ -175,7 +175,7 @@ private _api(): typeof IdleDetector | undefined {
 
 ## 6. connect 時の自動 `start()` — **決定: しない（通常の既定からの意図的な逸脱）**
 
-async-io-node-guidelines.md 自体には「connect 時に自動 observe する」という明文の既定はないが、既存ノードの大半（geo/permission/network 等）は `connectedCallback` で監視や監視相当の処理を無条件に開始する。`<wcs-idle>` は**この慣習に沿わない**。
+async-io-node-guidelines.ja.md 自体には「connect 時に自動 observe する」という明文の既定はないが、既存ノードの大半（geo/permission/network 等）は `connectedCallback` で監視や監視相当の処理を無条件に開始する。`<wcs-idle>` は**この慣習に沿わない**。
 
 **決定 2**: `<wcs-idle>` は `connectedCallback` で `start()` を自動的に呼ばない。`start()` は利用者が明示的に command として呼ぶ（多くの場合、`requestPermission()` の成功後に呼ぶフロー）。
 
@@ -185,7 +185,7 @@ async-io-node-guidelines.md 自体には「connect 時に自動 observe する�
 2. **未許可のまま `start()` を試みても確実に失敗する**のが分かっている以上、`connectedCallback`（要素が DOM に挿入されただけで gesture 文脈を伴わない）から自動的に投げるのは「失敗するとわかっている非同期処理を毎回起動する」だけの無駄働きになる。geo の `getCurrentPosition` や network の購読開始のように「対応していれば基本的に動く」処理を connect 時に自動起動するのとは前提が異なる。
 3. Idle Detection は「常時バックグラウンドで有効化しておきたい」機能というより「ユーザーが明示的にオプトインする」機能である（離席検知は個人情報のセンシティブな監視に近い）。オプトイン UI（「離席検知を有効にする」ボタン）と `requestPermission()` → `start()` の対応関係を README・example で明示する設計のほうが利用者にとって自然。
 
-したがって、通常ガイドラインが暗黙に踏襲する「`connectedCallback` で `observe()` 相当を自動開始する」という既定から、`<wcs-idle>` は意図的に外れる。この逸脱理由は本ドキュメントに記録済みであり、[async-io-node-guidelines.md](./async-io-node-guidelines.md) 冒頭の「やむを得ず逸脱する場合は理由を記録する」MUST を満たす。
+したがって、通常ガイドラインが暗黙に踏襲する「`connectedCallback` で `observe()` 相当を自動開始する」という既定から、`<wcs-idle>` は意図的に外れる。この逸脱理由は本ドキュメントに記録済みであり、[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) 冒頭の「やむを得ず逸脱する場合は理由を記録する」MUST を満たす。
 
 ---
 

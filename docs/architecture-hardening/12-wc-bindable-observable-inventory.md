@@ -207,7 +207,7 @@ React API の設計判断ではなく、複数 adapter に共通する要求で�
 ## 6. Phase 1 完了と次の作業
 
 Phase 1 として producer snapshot contract を
-[非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+[非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
 §3.3.1 へ追加した。runtime の一括変更は行わず、次を新規ノード・新規 observable property の規範とした。
 
 1. producer は公開済み state value を in-place mutation しない。
@@ -285,7 +285,7 @@ config フラグは追加していない。`semantics` は本 Phase で導入し
 
 - [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
 - [framework adapter のバインド成立制約](13-framework-adapter-binding-constraints.md)
-- [非同期 I/O ノード作成ガイドライン §3.3.1](../async-io-node-guidelines.md)
+- [非同期 I/O ノード作成ガイドライン §3.3.1](../async-io-node-guidelines.ja.md)
 - [`@wc-bindable/signals`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/packages/signals/src/index.ts)
 - [`@wc-bindable/rxjs`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/packages/rxjs/src/index.ts)
 - [`@wc-bindable/qwik`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/main/packages/qwik/src/index.ts)

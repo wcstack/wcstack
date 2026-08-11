@@ -60,7 +60,7 @@ static wcBindable: IWcBindable = {
 
 ### 追加する理由
 
-- **既存パターンとの整合**: `permission`は`state`という単一4値プロパティから`granted`/`denied`/`prompt`/`unsupported`という4つの派生booleanを切り出している（[PermissionCore.ts:28-32](../packages/permission/src/core/PermissionCore.ts#L28-L32)）。async-io-node-guidelines §4.2 は複合状態を「1イベント＋派生getter」に分解することをSHOULDとして明記しており（[async-io-node-guidelines.md:215-222](./async-io-node-guidelines.md#L215-L222)）、`type`（4値の文字列）から真偽値を導く本ノードはこのパターンの典型的な適用対象である。
+- **既存パターンとの整合**: `permission`は`state`という単一4値プロパティから`granted`/`denied`/`prompt`/`unsupported`という4つの派生booleanを切り出している（[PermissionCore.ts:28-32](../packages/permission/src/core/PermissionCore.ts#L28-L32)）。async-io-node-guidelines §4.2 は複合状態を「1イベント＋派生getter」に分解することをSHOULDとして明記しており（[async-io-node-guidelines.ja.md:215-222](./async-io-node-guidelines.ja.md#L215-L222)）、`type`（4値の文字列）から真偽値を導く本ノードはこのパターンの典型的な適用対象である。
 - **bindingの単純化**: `portrait`/`landscape`が無いと、利用者は`hidden@type|ne('portrait-primary')|and(...)`のような多段フィルタか、computed propertyを自前で書く必要がある。派生getterを1つ用意すれば`hidden@!portrait`のような一行bindingで足りる。ユースケース（§1の「向き固定UI」）の大半は「縦か横か」の二値判定であり、`portrait-primary`と`portrait-secondary`の区別まで必要とする場面は少ない。
 - **実装コストがほぼゼロ**: `type`イベントに同居する派生getterを2つ追加するだけであり、Core側の状態やイベント発火ロジックに変更は要らない（`network`の`supported`と同じ「同じイベントに同居させるだけ」のパターン、[network-tag-design.md:66](./network-tag-design.md#L66)）。
 - **`type`自体は引き続き公開する**: `portrait-primary`と`portrait-secondary`を区別したい高度なユースケース（例: 通知バーの表示位置切り替え）のために、生の`type`プロパティも残す。`portrait`/`landscape`は利便性のための追加であり、`type`の代替ではない。

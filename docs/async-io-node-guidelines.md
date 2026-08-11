@@ -1,105 +1,106 @@
-# wcstack 非同期IOノード作成ガイドライン (Async IO Node Authoring Guidelines)
+# wcstack async I/O node authoring guidelines
 
-- **対象**: `@wcstack` に新しい非同期IOノードパッケージ（Web API を宣言的タグ化したもの。`@wcstack/fetch` / `geolocation` / `clipboard` / `sse` / `broadcast` / `worker` / `wakelock` / `intersection` / `resize` / `speech` / `permission` / `notification` ほか）を追加する実装者
-- **状態**: 規範ドキュメント（normative）。「MUST / SHOULD / MAY」は RFC 2119 の意味で使う。新規ノードはここに反した実装をしてはならない（MUST NOT）。やむを得ず逸脱する場合は、その理由をパッケージの設計ドキュメント（`docs/<name>-tag-design.md`）に記録すること
-- **なぜ存在するか**: 既存ノードは全て同じ骨格（Core/Shell 分離・wc-bindable 準拠・never-throw・`_gen` 世代ガード・SSR 対応）を共有している。この一貫性が「1つ覚えれば全部使える」という DX と、`state` binder からの相互運用性を支えている。新規ノードがこの骨格を踏襲しないと、利用者は個別に内部を読まねばならず、エコシステムの価値が崩れる。本書はその骨格を1枚に集約し、レビューのチェックリストにする
-- **関連**: タイミング・発火の契約は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。実行意味論（実行形・レーン・排他モード・キャンセル・再試行・タイムアウト）の規範は [async-execution-model.md](./async-execution-model.md)。それらを順序付き入力・出力トレース、決定性境界、適合ベクトルとして横断する検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。observable の snapshot 境界は [React の不変スナップショットと wc-bindable I/O 境界](./architecture-hardening/11-react-immutable-snapshot-boundary.md) と [observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md)。プロトコル本体は各 SPEC（wc-bindable / command-token / event-token）。設計検討の様式は既存の `docs/*-tag-design.md` を参照
-
----
-
-## 0. TL;DR — 新規ノードが満たすべき不変条件
-
-1. **Core/Shell 2層に分ける**。Core は `EventTarget` を継承したヘッドレス実装、Shell は `HTMLElement`。Shell は Core を `new Core(this)` で包むだけ
-2. **wc-bindable-protocol に準拠**する。`static wcBindable` で `properties` / `inputs` / `commands` を宣言
-3. **never-throw**。失敗は例外でなく `error` プロパティ（＋必要なら `"unsupported"` 状態）として宣言的状態に流す
-4. **同値ガード**。状態 setter は値が変わったときだけイベントを発火する
-5. **`_gen` 世代ガード**。非同期処理は開始時に世代番号を捕捉し、resolve 時に古ければ何もしない（disconnect / 高速 reconnect 後の torn-down 要素への書き込みを防ぐ）
-6. **`observe()` / `dispose()` ライフサイクル**。Shell の `connectedCallback` で `observe()`、`disconnectedCallback` で `dispose()`。`observe()` は冪等
-7. **SSR 対応**。Core は最初のプローブ完了を表す `ready` promise を持ち、Shell は `connectedCallbackPromise` として公開（`static hasConnectedCallbackPromise = true`）
-8. **API 解決は呼び出し時**。グローバル API（`navigator.x` 等）はキャッシュせず呼ぶたびに解決する（テストで差し替え可能・unsupported 環境を正しく報告）
-9. **テストカバレッジ 100 / 97+ / 100 / 100**（statements / branches / functions / lines）。テスト記述は日本語
-10. **出力状態の CSS 反映（CustomStateSet）**。boolean 出力 observable・派生 boolean getter・`error` の存在を Shell が `ElementInternals.states` に反映し `:state()` で選択可能にする。反映は Shell のみで行い Core に持ち込まない。`attachInternals` 不在環境では静かに無効化する（§4.5）
-11. **Core は公開ヘッドレスサーフェス**。Core クラスをパッケージの entry（`exports.ts`）から export し、その構造保証（§3.9）を semver 保護の公開 API として扱う。README に headless（Core）利用の節を持つ（§9）
-12. **producer snapshot contract**。state-like object / array は公開後に producer が変更せず、logical state の変更時は fresh value を割り当ててから通知する。event は occurrence を同値ガードせず、handle は owner と release point を明示する（§3.3.1）。入力側で受け取った値の扱いは §3.3.2
-13. **property upgrade**。Shell は `connectedCallback` の先頭で `upgradeProperties(this)` を呼び、upgrade 前に代入された input を取り込み直す（§4.1.1）
+- **Audience**: implementers adding a new async I/O node package to `@wcstack` — a Web API turned into a declarative tag (`@wcstack/fetch` / `geolocation` / `clipboard` / `sse` / `broadcast` / `worker` / `wakelock` / `intersection` / `resize` / `speech` / `permission` / `notification`, and the rest)
+- **Status**: normative. "MUST / SHOULD / MAY" carry their RFC 2119 meaning. A new node MUST NOT be implemented against what is written here. Where a deviation is unavoidable, record the reason in the package's design document (`docs/<name>-tag-design.md`)
+- **Why this exists**: every existing node shares the same skeleton — Core/Shell separation, wc-bindable conformance, never-throw, the `_gen` generation guard, SSR support. That consistency is what makes "learn one, use them all" true, and what makes them interoperable from the `state` binder. A new node that departs from the skeleton forces users to read its internals individually, and the value of the ecosystem collapses. This document collects the skeleton onto one page and turns it into a review checklist
+- **See also**: the timing and firing contract is [timing-and-firing-contract.md](./timing-and-firing-contract.md) (ja). The norms for execution semantics (execution form, lanes, exclusivity modes, cancellation, retry, timeout) are in [async-execution-model.md](./async-execution-model.md). A proposed verification layer that cuts across both as ordered input/output traces, determinism boundaries, and conformance vectors is [io-node-trace-conformance.md](./io-node-trace-conformance.md) (ja). Snapshot boundaries for observables are [React immutable snapshots and the wc-bindable I/O boundary](./architecture-hardening/11-react-immutable-snapshot-boundary.md) (ja) and the [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md) (ja). The protocols themselves live in their SPECs (wc-bindable / command-token / event-token). For the style of a design study, see the existing `docs/*-tag-design.md`
+- **日本語版**: [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)
 
 ---
 
-## 1. まず設計ドキュメントを書く（実装より先）
+## 0. TL;DR — the invariants a new node has to satisfy
 
-新規ノードはコードを書く前に `docs/<name>-tag-design.md` を作成し、最低限ここを確定させる。既存の `permission-tag-design.md` / `notification-tag-design.md` / `speech-tag-design.md` を雛形にする。
-
-確定すべき論点:
-
-- **タグ名と短縮名**: `<wcs-xxx>`。イベント prefix `wcs-xxx:`、triggerAttribute `data-xxxtarget` の素地になる
-- **方向性**: そのノードは
-  - **monitor 専用**（element → state のみ。`commands: []`）か → 例: `permission`（Permissions API に `request()` が無い）
-  - **command 専用**（state → element のみ）か
-  - **双方向**（command-token と event-token の両方）か → 例: `notification`（show コマンド＋click イベント）
-- **observable surface**: どのプロパティを公開するか。複合状態は「1イベント＋派生 getter」に分解する（§4.2）
-- **observable semantics**: 各 property を `state` / `event` / `handle` のどれとして扱うか。object / array の owner、公開後 mutation の有無、live resource の停止・交換・release point も表にする（§3.3.1）
-- **desired / actual の二相**が必要か → 例: `wakelock`（取得要求 `desired` と実際に保持中 `actual` を分離）
-- **同値ガードのみで十分か**、debounce/throttle は利用者責務にするか（基本は利用者責務。filter で `notice@x|debounce(1000)` のように書かせる）
-- **permission / secure-context** の扱い。既存の4値 surface（`prompt` / `granted` / `denied` / `unsupported`）を流用するか
-- **autoTrigger**（クリック起動ショートカット）を持つか
-- **外部クロックを持つか**（オーディオスレッド等、メインスレッドの sync / microtask / task で表現できない独自の時間軸）。持つ場合は **desired のみ公開し、実効になる時刻を規定しない**（[timing-and-firing-contract.md §19.1](./timing-and-firing-contract.md)）。実効値を読み戻して publish してはならない（MUST NOT）— 読み値がレンダー単位に依存し、同値ガードが機能しなくなる
-- **ライブハンドルを扱うか**。扱う場合、既定は **Core が所有し、プロトコル境界に出さない**（worker / websocket / broadcast と同じ）。外へ渡す必要が実際に生じたときだけ command-token 引数素通しを足す（camera が唯一の例）。ハンドルが相互に接続されてグラフを成す場合は [ADR-14](./architecture-hardening/14-handle-graph-wiring.md) を先に読むこと — トポロジは値ではなく descriptor として表現する
-
-設計が固まったら `architecture-review` スキルや `protocol-spec-review` スキルでレビューしてから実装に入ることを推奨する。
+1. **Split into two layers, Core and Shell.** Core is a headless implementation extending `EventTarget`; Shell is an `HTMLElement`. The Shell does nothing but wrap the Core with `new Core(this)`
+2. **Conform to wc-bindable-protocol.** Declare `properties` / `inputs` / `commands` through `static wcBindable`
+3. **never-throw.** A failure flows into declarative state as the `error` property (plus an `"unsupported"` state where needed), not as an exception
+4. **Same-value guard.** A state setter fires its event only when the value actually changed
+5. **The `_gen` generation guard.** Async work captures a generation number when it starts and does nothing on resolve if it is stale (preventing writes into a torn-down element after a disconnect or a fast reconnect)
+6. **The `observe()` / `dispose()` lifecycle.** The Shell calls `observe()` in `connectedCallback` and `dispose()` in `disconnectedCallback`. `observe()` is idempotent
+7. **SSR support.** Core has a `ready` promise representing the completion of its first probe, and the Shell exposes it as `connectedCallbackPromise` (`static hasConnectedCallbackPromise = true`)
+8. **Resolve APIs at call time.** Global APIs (`navigator.x` and friends) are not cached; they are resolved on each call (so tests can substitute them, and unsupported environments are reported correctly)
+9. **Test coverage 100 / 97+ / 100 / 100** (statements / branches / functions / lines). Test descriptions are written in Japanese
+10. **Reflect output state into CSS (CustomStateSet).** The Shell reflects boolean output observables, derived boolean getters, and the presence of `error` into `ElementInternals.states` so they are selectable with `:state()`. Reflection lives only in the Shell and is never brought into Core. Where `attachInternals` is absent it disables itself quietly (§4.5)
+11. **Core is a public headless surface.** Export the Core class from the package entry (`exports.ts`) and treat its structural guarantees (§3.9) as public API under semver. The README has a section on headless (Core) usage (§9)
+12. **The producer snapshot contract.** A producer does not modify a state-like object or array after publishing it, and assigns a fresh value before notifying when the logical state changes. An event does not same-value guard its occurrences, and a handle states its owner and release point explicitly (§3.3.1). How values received as input are handled is §3.3.2
+13. **Property upgrade.** The Shell calls `upgradeProperties(this)` at the top of `connectedCallback`, re-reading inputs assigned before the upgrade (§4.1.1)
 
 ---
 
-## 2. パッケージ構成（ファイルレイアウト）
+## 1. Write the design document first (before the implementation)
 
-`packages/notification/` を最新の参照実装とする。既存パッケージをコピーして始めるのが最短（permission は最小、notification は双方向＋SW＋autoTrigger の全部入り）。
+Before writing code, create `docs/<name>-tag-design.md` and settle at least the points below. Use the existing `permission-tag-design.md` / `notification-tag-design.md` / `speech-tag-design.md` as templates.
+
+Points to settle:
+
+- **The tag name and short name**: `<wcs-xxx>`. It becomes the basis for the event prefix `wcs-xxx:` and the triggerAttribute `data-xxxtarget`
+- **Direction**: is the node
+  - **monitor-only** (element → state only, `commands: []`)? e.g. `permission` (the Permissions API has no `request()`)
+  - **command-only** (state → element only)?
+  - **bidirectional** (both command-token and event-token)? e.g. `notification` (a show command plus a click event)
+- **The observable surface**: which properties are exposed. A composite state is decomposed into "one event plus derived getters" (§4.2)
+- **Observable semantics**: whether each property is treated as `state` / `event` / `handle`. Tabulate the owner of each object or array, whether it is mutated after publication, and the stop / swap / release points of any live resource (§3.3.1)
+- Whether **the desired / actual two-phase split** is needed. e.g. `wakelock` (separating the acquisition request `desired` from actually holding it, `actual`)
+- **Whether a same-value guard alone suffices**, or debounce/throttle is left to the user (the user by default — let them write `notice@x|debounce(1000)` with a filter)
+- How **permission / secure-context** are handled. Whether to reuse the existing four-value surface (`prompt` / `granted` / `denied` / `unsupported`)
+- Whether it has **autoTrigger** (the click-to-invoke shortcut)
+- **Whether it has an external clock** (an audio thread and the like — a time base of its own that the main thread's sync / microtask / task cannot express). If it does, **expose desired only and do not specify when it takes effect** ([timing-and-firing-contract.md §19.1](./timing-and-firing-contract.md) (ja)). It MUST NOT read the effective value back and publish it — the reading depends on the render quantum and the same-value guard stops working
+- **Whether it handles live handles.** If so, the default is that **Core owns them and they never cross the protocol boundary** (as in worker / websocket / broadcast). Add pass-through of command-token arguments only when the need to hand one outward actually arises (camera is the sole example). Where handles connect to each other into a graph, read [ADR-14](./architecture-hardening/14-handle-graph-wiring.md) (ja) first — the topology is expressed as a descriptor, not as a value
+
+Once the design has settled, reviewing it with the `architecture-review` or `protocol-spec-review` skill before implementing is recommended.
+
+---
+
+## 2. Package layout (file structure)
+
+Treat `packages/notification/` as the most current reference implementation. Copying an existing package is the shortest path (permission is the smallest; notification is the fully loaded one — bidirectional plus SW plus autoTrigger).
 
 ```
 packages/<name>/
   src/
     auto/
-      auto.js              # プリビルド bootstrap（手書き、rollup で dist へコピー）
+      auto.js              # prebuilt bootstrap (hand-written, copied to dist by rollup)
       auto.min.js
     core/
-      <Name>Core.ts        # ヘッドレス。EventTarget 継承。static wcBindable。
+      <Name>Core.ts        # headless. extends EventTarget. static wcBindable.
     components/
-      <Name>.ts            # Shell。HTMLElement 継承。クラス名 Wcs<Name>。
+      <Name>.ts            # the Shell. extends HTMLElement. class name Wcs<Name>.
     bootstrap<Name>.ts      # setConfig + registerComponents
-    config.ts              # config / getConfig / setConfig（deepFreeze/deepClone 付き）
-    registerComponents.ts  # customElements.define（二重定義ガード）
-    autoTrigger.ts         # （command 系のみ）data-xxxtarget クリック起動
-    raiseError.ts          # 共通エラーヘルパ
-    types.ts               # IWcBindable* と Core/Shell の値・コマンド・入力型
-    exports.ts             # 公開 re-export
+    config.ts              # config / getConfig / setConfig (with deepFreeze/deepClone)
+    registerComponents.ts  # customElements.define (guarded against double definition)
+    autoTrigger.ts         # (command nodes only) data-xxxtarget click invocation
+    raiseError.ts          # the shared error helper
+    types.ts               # IWcBindable* plus the Core/Shell value, command, and input types
+    exports.ts             # the public re-exports
   __tests__/
     setup.ts
-    *.test.ts              # 日本語記述
-  package.json             # "type":"module"、rollup 出力、coverage 閾値
-  tsconfig.json            # ルートを extends
+    *.test.ts              # written in Japanese
+  package.json             # "type":"module", rollup outputs, coverage thresholds
+  tsconfig.json            # extends the root
   rollup.config.js
   eslint.config.js
   vitest.config.ts
   README.md / README.ja.md
 ```
 
-公開境界（`exports.ts`）で **必ず** export するもの:
+What the public boundary (`exports.ts`) MUST export:
 
 - `bootstrap<Name>`
-- `getConfig`（`config` 内部 mutable はエクスポートしない。`getConfig()` は deep-frozen clone を返す）
-- `<Name>Core`（ヘッドレス利用）
-- `Wcs<Name>`（Shell クラス。アダプター利用時の DX のため必須。`feedback_export_shell_class` 参照）
-- 型一式（`type` re-export）
+- `getConfig` (the internal mutable `config` is not exported; `getConfig()` returns a deep-frozen clone)
+- `<Name>Core` (for headless use)
+- `Wcs<Name>` (the Shell class — required for adapter DX; see `feedback_export_shell_class`)
+- the full set of types (`type` re-exports)
 
 ---
 
-## 3. Core（ヘッドレス実装）の規約
+## 3. Rules for Core (the headless implementation)
 
-参照: [`packages/notification/src/core/NotificationCore.ts`](../packages/notification/src/core/NotificationCore.ts)、[`packages/permission/src/core/PermissionCore.ts`](../packages/permission/src/core/PermissionCore.ts)
+Reference: [`packages/notification/src/core/NotificationCore.ts`](../packages/notification/src/core/NotificationCore.ts), [`packages/permission/src/core/PermissionCore.ts`](../packages/permission/src/core/PermissionCore.ts)
 
-### 3.1 形
+### 3.1 Shape
 
 - `export class <Name>Core extends EventTarget`
-- コンストラクタは `target?: EventTarget` を取り、`this._target = target ?? this` とする。Shell は `new Core(this)` で自分を渡し、Core が dispatch するイベントが Shell 要素から bubble する。ヘッドレス利用時は Core 自身が EventTarget になる
-- DOM 要素（`HTMLElement` / `document`）に依存してはならない（MUST NOT）。Core は Web API（`navigator` / `globalThis.X`）だけを触る
+- The constructor takes `target?: EventTarget` and sets `this._target = target ?? this`. The Shell passes itself in with `new Core(this)`, so the events Core dispatches bubble from the Shell element. In headless use, Core itself is the EventTarget
+- It MUST NOT depend on DOM elements (`HTMLElement` / `document`). Core touches only Web APIs (`navigator` / `globalThis.X`)
 
 ### 3.2 `static wcBindable`
 
@@ -108,20 +109,20 @@ static wcBindable: IWcBindable = {
   protocol: "wc-bindable",
   version: 1,
   properties: [ /* observable outputs */ ],
-  commands:   [ /* invocable methods（無ければ [] ） */ ],
+  commands:   [ /* invocable methods (or [] where there are none) */ ],
 };
 ```
 
-- `properties`: `{ name, event, getter? }`。`event` は `wcs-<name>:<kind>` 形式。Core はプロトコル上 `properties` のみ解釈する。`inputs` / `commands` は記述的メタ（ツール・codegen 用）
-- `properties[].semantics`（`"state" | "event" | "handle"`）で観測意味論を宣言する。**`event` と `handle` は宣言必須（MUST）**。省略は「未指定」であって `state` の意味ではなく、読み手は省略時に現行動作を維持する。`state` の明示は現状 optional（§3.3.1）。型や property 名から adapter が推測する前提を置かない
-- `commands`: `{ name, async? }`。非同期コマンドは `async: true`
-- monitor 専用ノードは `commands: []` とし、その旨をコメントで明記する
+- `properties`: `{ name, event, getter? }`. `event` takes the form `wcs-<name>:<kind>`. As far as the protocol goes, Core interprets `properties` only; `inputs` / `commands` are descriptive metadata (for tooling and codegen)
+- `properties[].semantics` (`"state" | "event" | "handle"`) declares the observation semantics. **`event` and `handle` MUST be declared.** Omission means "unspecified", not `state`, and a reader keeps current behavior when it is omitted. Declaring `state` is optional for now (§3.3.1). Do not assume an adapter will infer it from the type or the property name
+- `commands`: `{ name, async? }`. An async command carries `async: true`
+- A monitor-only node sets `commands: []` and says so in a comment
 
-### 3.3 状態は private フィールド ＋ 同値ガード付き setter
+### 3.3 State lives in a private field with a same-value-guarded setter
 
 ```ts
 private _setState(v: T): void {
-  if (this._state === v) return;          // 同値ガード（MUST）
+  if (this._state === v) return;          // the same-value guard (MUST)
   this._state = v;
   this._target.dispatchEvent(new CustomEvent("wcs-<name>:change", {
     detail: v, bubbles: true,
@@ -129,29 +130,23 @@ private _setState(v: T): void {
 }
 ```
 
-- イベントは必ず `bubbles: true`
-- **イベント性のもの（クリック・メッセージ等、毎回発火が意味を持つ）は同値ガードしない**。状態性のもの（permission・loading 等）はガードする。どちらかを設計ドキュメントで明示する
+- Events always carry `bubbles: true`
+- **Event-natured things (a click, a message — anything where each firing carries meaning) are not same-value guarded.** State-natured things (permission, loading, …) are. Which one it is has to be stated in the design document
 
-### 3.3.1 producer snapshot contract（MUST）
+### 3.3.1 The producer snapshot contract (MUST)
 
-この節は新規ノードと新規 observable property に適用する。既存ノードは
-[observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md) を起点に段階移行し、
-既存の配送・getter・resource lifetime を一括で破壊変更してはならない（MUST NOT）。
+This section applies to new nodes and new observable properties. Existing nodes migrate in stages, starting from the [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md) (ja), and MUST NOT break their existing delivery, getters, or resource lifetimes wholesale.
 
 #### `state`
 
-`state` はある時点の current value であり、初期 property read と後続 event の両方から読める。
+A `state` is the current value at a point in time, readable both from the initial property read and from subsequent events.
 
-- producer は一度公開した object / array / binary instance を後から in-place mutation してはならない（MUST NOT）。
-- logical state を変更するときは fresh object / array を構築し、private field へ割り当ててから event を発火する（MUST）。
-- event 発火時の public getter と event detail / custom getter は同じ logical state を表さなければならない（MUST）。
-  defensive copy を返す場合、reference identity まで同じである必要はないが、内容と ownership が食い違ってはならない。
-- arbitrary payload を一律に clone しない。参照渡しする場合、producer は公開後に変更しない ownership transfer とし、
-  consumer は read-only として扱う（producer MUST、consumer SHOULD）。
-- `ArrayBuffer` など producer が再利用・書き換えを続ける値は、そのまま state として公開してはならない（MUST NOT）。
-  node 固有の理由がある場合だけ明示的に copy するか、`event` / `handle` として設計する。
-- platform `Error` / `Event` / credential など opaque value を公開する場合、可能なら `errorInfo` のような
-  serializable projection も提供する（SHOULD）。opaque value 自体を汎用 serializable state と説明してはならない。
+- A producer MUST NOT in-place mutate an object / array / binary instance after publishing it.
+- When the logical state changes, it MUST build a fresh object / array, assign it to the private field, and then fire the event.
+- At the moment the event fires, the public getter and the event detail / custom getter MUST represent the same logical state. Where a defensive copy is returned, reference identity need not match, but content and ownership must not disagree.
+- Do not clone arbitrary payloads indiscriminately. Where a reference is passed, the producer treats it as an ownership transfer it will not modify after publication, and the consumer treats it as read-only (producer MUST, consumer SHOULD).
+- A value the producer keeps reusing or overwriting, such as an `ArrayBuffer`, MUST NOT be published as state as-is. Copy it explicitly only where the node has a specific reason to, or design it as an `event` or a `handle`.
+- Where an opaque value is exposed (a platform `Error` / `Event`, a credential), also providing a serializable projection such as `errorInfo` is SHOULD. Do not describe the opaque value itself as general serializable state.
 
 ```ts
 private _setItems(items: readonly Item[]): void {
@@ -164,62 +159,40 @@ private _setItems(items: readonly Item[]): void {
 }
 ```
 
-この例の copy は node が mutable input を所有 snapshot へ変換するためのものである。汎用 adapter が全 payload を
-deep clone / deep freeze する根拠にはならない。deep equality、deep clone、deep freeze は一律に強制しない
-（MUST NOT）。開発時に adapter の outer snapshot だけを shallow freeze する判断は producer 契約の外である。
+The copy in this example exists so the node can convert a mutable input into an owned snapshot. It is not grounds for a general adapter to deep clone or deep freeze every payload. Deep equality, deep cloning, and deep freezing MUST NOT be enforced across the board. A decision to shallow-freeze only the adapter's outer snapshot during development lies outside the producer contract.
 
 #### `event`
 
-`event` は current level ではなく occurrence である。
+An `event` is an occurrence, not a current level.
 
-- declaration に `semantics: "event"` を宣言する（MUST）。宣言が無い property を汎用 consumer が occurrence として
-  扱うことは期待できない。
-- 同じ payload が連続しても各 occurrence を dispatch する（MUST）。same-value guard を置いてはならない（MUST NOT）。
-- 最後の payload を getter に保持して既存 consumer と互換を保つことはできる（MAY）。ただし getter の値だけでは
-  occurrence count を表現できないことを README に明記する（MUST）。
-- event を state snapshot の同値比較で dedupe する前提を置いてはならない（MUST NOT）。callback / stream / event-token
-  で受ける surface を正とする。
+- The declaration MUST carry `semantics: "event"`. A general consumer cannot be expected to treat an undeclared property as an occurrence.
+- Every occurrence MUST be dispatched even when the same payload repeats. A same-value guard MUST NOT be placed on it.
+- Keeping the last payload in a getter for compatibility with existing consumers is MAY. But the README MUST state that the getter value alone cannot express the occurrence count.
+- It MUST NOT be assumed that events can be deduplicated by same-value comparison of a state snapshot. The surface received through a callback / stream / event-token is the authoritative one.
 
 #### `handle`
 
-`handle` は `MediaStream` のように外部状態と独自 lifecycle を持つ live resource である。
+A `handle` is a live resource with external state and a lifecycle of its own, such as a `MediaStream`.
 
-- declaration に `semantics: "handle"` を宣言する（MUST）。source comment / README だけの明記では、
-  汎用 adapter は通常の state と区別できない。
-- producer / consumer のどちらが owner か、交換・停止・dispose 時に誰が release するかを設計文書と README に
-  記録する（MUST）。
-- clone / freeze / serializable projection により通常の state へ見せかけてはならない（MUST NOT）。
-- state snapshot とは別の ref / callback / direct-channel surface で渡す（SHOULD）。現行 protocol の制約で
-  `wcBindable.properties` に置く場合は、`semantics: "handle"` に加えて README でも live resource である旨と
-  その lifecycle を明記する（MUST）。
+- The declaration MUST carry `semantics: "handle"`. Stating it only in a source comment or the README leaves a general adapter unable to tell it from ordinary state.
+- Which side is the owner — producer or consumer — and who releases it on swap, stop, or dispose MUST be recorded in the design document and the README.
+- It MUST NOT be made to look like ordinary state through cloning, freezing, or a serializable projection.
+- It SHOULD be passed over a ref / callback / direct-channel surface separate from the state snapshot. Where the current protocol forces it into `wcBindable.properties`, the README MUST also state that it is a live resource and describe its lifecycle, in addition to `semantics: "handle"`.
 
-#### managed resource value
+#### Managed resource values
 
-`blob:` URL のように値自体は primitive でも backing resource を producer が破棄するものは、通常の state より強い
-lifetime 契約を必要とする。producer は supersede / dispose 時の revoke point と、過去の値の有効性を保証するかを
-README と test に固定する（MUST）。consumer lifecycle まで保証できない場合は best-effort current value と明記する。
+A value that is itself primitive but whose backing resource the producer destroys — a `blob:` URL, say — needs a stronger lifetime contract than ordinary state. The producer MUST pin down, in the README and in tests, the revoke point on supersede / dispose and whether past values stay valid. Where the consumer lifecycle cannot be guaranteed, state that it is a best-effort current value.
 
-### 3.3.2 input value contract（MUST）
+### 3.3.2 The input value contract (MUST)
 
-§3.3.1 は producer → consumer の出力側を規範化する。入力側（consumer → producer）には双対の問題がある。
-framework の reactive store は値を Proxy で包むため、consumer が `el.post = store.message` と書くと Core は
-Proxy を受け取る。Vue の `reactive`、Svelte の `$state`、Solid の store、Alpine、MobX、Qwik の `useStore` が
-該当し、包まれるのは plain object / array / Map / Set である（`MediaStream`・`Error`・`Blob`・`ArrayBuffer` などの
-platform object は対象外なので影響しない）。
+§3.3.1 governs the output side, producer → consumer. The input side (consumer → producer) has the dual problem. A framework's reactive store wraps values in a Proxy, so when a consumer writes `el.post = store.message`, Core receives a Proxy. This covers Vue's `reactive`, Svelte's `$state`, Solid stores, Alpine, MobX, and Qwik's `useStore`; what gets wrapped is plain objects / arrays / Maps / Sets (platform objects such as `MediaStream`, `Error`, `Blob`, and `ArrayBuffer` are unaffected).
 
-- Core は input として受け取った値を、そのまま structured clone 境界（`Worker.postMessage`、
-  `BroadcastChannel.postMessage`、IndexedDB ほか）へ渡してよい（MAY）。ただし Proxy は structured clone できず
-  `DataCloneError` になるため、never-throw（§3.6）で `error` / `errorInfo` に落ちる経路を必ず持つ（MUST）。
-  例外を投げて利用者コードを壊してはならない（MUST NOT）。
-- Core が framework 固有の unwrap（`toRaw` / `$state.snapshot` / `unwrap`）を実装してはならない（MUST NOT）。
-  依存を持ち込むうえ、どの framework の Proxy かを判定する一般的手段がない。zero runtime dependency の原則にも反する。
-- object を受け取る input を持つノードは、reactive store の値は raw 化してから渡すことを README に明記する
-  （MUST）。scalar の属性バック input は文字列化されるため対象外でよい。
-- 入力値を保持して後から state として再公開する場合、受け取り時に own snapshot へ変換する（SHOULD）。
-  consumer 側の store が後から変更されても producer の state が黙って変わらないようにするためで、§3.3.1 の
-  「公開後に変更しない」を入力経路から破られないようにする措置である。
+- Core MAY pass a value received as input straight to a structured clone boundary (`Worker.postMessage`, `BroadcastChannel.postMessage`, IndexedDB, …). But since a Proxy cannot be structured-cloned and produces a `DataCloneError`, it MUST have a path that lands in `error` / `errorInfo` under never-throw (§3.6). It MUST NOT throw and break user code.
+- Core MUST NOT implement framework-specific unwrapping (`toRaw` / `$state.snapshot` / `unwrap`). It would take on a dependency, and there is no general way to tell whose Proxy a given Proxy is. It also violates the zero-runtime-dependency principle.
+- A node with an input that takes an object MUST state in its README that reactive store values are to be unwrapped before being passed. Scalar attribute-backed inputs are exempt, since they get stringified.
+- Where an input value is retained and later republished as state, it SHOULD be converted into an owned snapshot on receipt. This keeps the producer's state from changing silently when the consumer's store is modified later — a measure so that §3.3.1's "do not modify after publication" cannot be broken from the input path.
 
-### 3.4 `_gen` 世代ガード（MUST）
+### 3.4 The `_gen` generation guard (MUST)
 
 ```ts
 private _gen = 0;
@@ -227,32 +200,32 @@ private _gen = 0;
 observe(): Promise<void> {
   const gen = ++this._gen;
   return someAsyncProbe().then((r) => {
-    if (gen !== this._gen) return;        // 古い世代なら破棄
+    if (gen !== this._gen) return;        // discard if the generation is stale
     this._apply(r);
   });
 }
 
 dispose(): void {
-  this._gen++;                            // 進行中の非同期を全て無効化
-  /* listener 解除・subscription flag リセット */
+  this._gen++;                            // invalidate everything in flight
+  /* detach listeners, reset subscription flags */
 }
 ```
 
-進行中の非同期処理が disconnect 後や高速 disconnect→reconnect 後に解決したとき、torn-down 要素に書き込んだり二重 listener を張ったりするのを防ぐ。**boolean フラグだけでは不十分**（dispose→observe で false→true に戻り、古い処理がすり抜ける）。
+This prevents async work that resolves after a disconnect, or after a fast disconnect→reconnect, from writing into a torn-down element or attaching a duplicate listener. **A boolean flag is not enough** (dispose→observe flips it false→true again and the old work slips through).
 
-### 3.5 ライフサイクル: `observe()` / `dispose()`
+### 3.5 Lifecycle: `observe()` / `dispose()`
 
-- `observe(...)`: 監視/購読を開始。**冪等**（既に購読中なら設定更新のみで二重購読しない）。再起動は `dispose()` してから
-- `dispose()`: listener 解除・subscription flag リセット・`_gen++`。`dispose()` 後の `observe()` で復活できること
-- リソースを残す設計判断（例: notification は dispose 後も画面に通知を残す）は理由をコメントに書く
+- `observe(...)`: start watching / subscribing. **Idempotent** (when already subscribed it only updates settings; it does not subscribe twice). Restarting goes through `dispose()` first
+- `dispose()`: detach listeners, reset subscription flags, `_gen++`. An `observe()` after `dispose()` has to bring it back
+- A design decision to leave a resource behind (notification, for instance, leaves displayed notifications on screen after dispose) has its reason written in a comment
 
-### 3.6 never-throw（MUST）
+### 3.6 never-throw (MUST)
 
-- 公開メソッドは例外を投げない。失敗は `_setError({ error, message })` で `error` プロパティに流し、API 不在は `"unsupported"` 状態にする
-- レガシーエンジンが reject しうる箇所は `try/catch` で握り、現状態を維持する
-- 戻り値が必要なメソッドは失敗時のサニタイズ値を返す（空文字・null 等）
+- Public methods do not throw. A failure flows into the `error` property through `_setError({ error, message })`, and a missing API becomes the `"unsupported"` state
+- Wherever a legacy engine might reject, catch it and keep the current state
+- A method that has to return a value returns a sanitized one on failure (an empty string, null, …)
 
-### 3.7 API 解決は呼び出し時（MUST）
+### 3.7 Resolve APIs at call time (MUST)
 
 ```ts
 private _api() {
@@ -261,39 +234,39 @@ private _api() {
 }
 ```
 
-コンストラクタでキャッシュしない。テストが API を install/remove でき、unsupported 環境を正しく報告できる。secure-context 必須 API は `window.isSecureContext` を呼び出し時に確認する。
+Do not cache in the constructor. Tests can then install and remove the API, and unsupported environments are reported correctly. For APIs requiring a secure context, check `window.isSecureContext` at call time.
 
-### 3.8 SSR: `ready` promise
+### 3.8 SSR: the `ready` promise
 
-- Core は「最初のプローブが settle したら解決する」`get ready(): Promise<void>` を持つ。unsupported なら `Promise.resolve()`
-- `observe()` はこの promise を返す
+- Core has `get ready(): Promise<void>`, which resolves once the first probe settles. Where unsupported, `Promise.resolve()`
+- `observe()` returns this promise
 
-### 3.9 Core は公開アダプタサーフェス（headless adopter surface）
+### 3.9 Core is a public adopter surface (headless adopter surface)
 
-Core は Shell の実装詳細ではなく、**要素なしで直接使ってよい公開サーフェス**である。`@wcstack/signals` の `bindNode(new XxxCore())` は descriptor 省略で Core を束縛でき（`core.constructor.wcBindable` 解決）、`customElements` レジストリに一切触れないため定義タイミング問題が存在しない（[signals-definition-timing.md](./signals-definition-timing.md) §3.4 の床3）。この利用形を支えるため、次を保証する:
+Core is not an implementation detail of the Shell but **a public surface that may be used directly, without an element**. `bindNode(new XxxCore())` in `@wcstack/signals` can bind a Core with no descriptor (resolving `core.constructor.wcBindable`), and since it never touches the `customElements` registry, the definition-timing problem does not exist there (floor 3 in [signals-definition-timing.md](./signals-definition-timing.md) (ja) §3.4). To support that usage, the following are guaranteed:
 
-- Core クラスをパッケージ entry（`exports.ts`）から export する（MUST）
-- **構造保証**（いずれも既存規範の adopter 向け再掲・MUST）: `EventTarget` 継承（§3.1）・`target` 省略時は自己 dispatch（§3.1）・`static wcBindable` 宣言（§3.2）・observable プロパティは public getter で読める（§4.2 の delegation 前提であり、bindNode の初期 seed もこれを読む）・`observe()`/`dispose()`/`ready` ライフサイクル（§3.5・§3.8）・never-throw（§3.6）
-- **headless 構築可能**（MUST）: `target` および DOM 要素を渡さずに構築できる。設定引数を持つ場合も（例: `DefinedCore(tags, mode, timeoutMs, target?)`・`DebounceCore(prefix, target?, options?)`）`target` は省略可能に保つ
-- **semver**: 上記の構造保証と Core クラス名は公開 API として semver 保護する。**コンストラクタの設定引数の形・順序はパッケージ個別**であり、各パッケージの README / 設計ドキュメントが正（構造保証の外）
-- README に headless（Core）節を持つ（§9・MUST）
+- The Core class MUST be exported from the package entry (`exports.ts`)
+- **Structural guarantees** (all restatements of existing norms for adopters, all MUST): extends `EventTarget` (§3.1); dispatches to itself when `target` is omitted (§3.1); declares `static wcBindable` (§3.2); observable properties are readable through public getters (which §4.2's delegation presumes, and which bindNode's initial seed also reads); the `observe()`/`dispose()`/`ready` lifecycle (§3.5, §3.8); never-throw (§3.6)
+- **Headless construction** (MUST): constructible without passing a `target` or any DOM element. Even where it takes configuration arguments (`DefinedCore(tags, mode, timeoutMs, target?)`, `DebounceCore(prefix, target?, options?)`), `target` stays optional
+- **semver**: the structural guarantees above and the Core class name are public API under semver. **The shape and order of the constructor's configuration arguments are package-specific**, and each package's README / design document is authoritative for them (they sit outside the structural guarantees)
+- The README MUST have a headless (Core) section (§9)
 
-実態（2026-07-28 棚卸し）: 全 I/O ノード 38 Core が `extends EventTarget`・`target ?? this`・entry export を満たす（逸脱ゼロ）。コンストラクタが `(target?)` 単独でないのは defined / debounce / permission / raf / wakelock の5つで、いずれも `target` 省略可＝headless 構築可能。利用者向けの説明の正本は `@wcstack/signals` README の「Binding a Core directly」節。
+Current state (inventory of 2026-07-28): all 38 I/O node Cores satisfy `extends EventTarget`, `target ?? this`, and entry export (zero deviations). Five have a constructor that is not `(target?)` alone — defined / debounce / permission / raf / wakelock — and in every one `target` is omissible, so headless construction works. The authoritative user-facing explanation is the "Binding a Core directly" section of the `@wcstack/signals` README.
 
 ---
 
-## 4. Shell（`<wcs-xxx>` カスタム要素）の規約
+## 4. Rules for the Shell (the `<wcs-xxx>` custom element)
 
-参照: [`packages/notification/src/components/Notify.ts`](../packages/notification/src/components/Notify.ts)
+Reference: [`packages/notification/src/components/Notify.ts`](../packages/notification/src/components/Notify.ts)
 
-### 4.1 形
+### 4.1 Shape
 
 ```ts
 export class Wcs<Name> extends HTMLElement {
   static hasConnectedCallbackPromise = true;       // SSR
   static wcBindable: IWcBindable = {
-    ...<Name>Core.wcBindable,                       // properties/commands を継承
-    inputs: [ /* Shell の settable surface（attribute 連動）*/ ],
+    ...<Name>Core.wcBindable,                       // inherit properties/commands
+    inputs: [ /* the Shell's settable surface (attribute-linked) */ ],
     commands: <Name>Core.wcBindable.commands,
   };
 
@@ -302,159 +275,153 @@ export class Wcs<Name> extends HTMLElement {
 
   constructor() { super(); this._core = new <Name>Core(this); }
 
-  // 属性アクセサ（get は属性読み、set は属性 reflect。冪等）
-  // Core 委譲 getter（observable surface をそのまま転送）
-  // コマンド（Core へ委譲）
+  // attribute accessors (get reads the attribute, set reflects it; idempotent)
+  // delegating getters to Core (forwarding the observable surface as-is)
+  // commands (delegated to Core)
 
   connectedCallback() {
-    upgradeProperties(this);                          // §4.1.1（MUST・先頭で呼ぶ）
+    upgradeProperties(this);                          // §4.1.1 (MUST, called first)
     this.style.display = "none";
     if (config.autoTrigger) registerAutoTrigger();
-    this._connectedCallbackPromise = this._core.observe(/* 属性から解決した設定 */);
+    this._connectedCallbackPromise = this._core.observe(/* settings resolved from attributes */);
   }
   disconnectedCallback() { this._core.dispose(); }
   get connectedCallbackPromise() { return this._connectedCallbackPromise; }
 }
 ```
 
-### 4.1.1 property upgrade（MUST）
+### 4.1.1 Property upgrade (MUST)
 
-`connectedCallback` の**先頭**で `upgradeProperties(this)` を呼ぶ（MUST）。`src/protocol/upgradeProperties.ts` は
-`/protocol/upgrade-properties.ts` から `scripts/sync-protocol-types.mjs` が配る生成コピーで、手で書き換えない。
+Call `upgradeProperties(this)` **at the top** of `connectedCallback` (MUST). `src/protocol/upgradeProperties.ts` is a generated copy distributed from `/protocol/upgrade-properties.ts` by `scripts/sync-protocol-types.mjs`; do not hand-edit it.
 
-未定義タグの要素は素の `HTMLElement` なので、upgrade 前の `el.url = "..."` は own データプロパティを作る。
-upgrade 後もそれが prototype の accessor を隠し続けるため、setter は二度と呼ばれず値は静かに消える。
-常にプロパティ代入を行う framework（Angular の `[prop]`、Lit の `.prop=`、Solid の `prop:`）× 遅延定義
-（autoloader / CDN / code-split）で常態的に起きる
-（[framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md) §1.2）。
+An element of an undefined tag is a plain `HTMLElement`, so `el.url = "..."` before the upgrade creates an own data property. It keeps shadowing the prototype accessor after the upgrade, so the setter is never called again and the value disappears silently. This happens routinely with frameworks that always assign properties (Angular's `[prop]`, Lit's `.prop=`, Solid's `prop:`) combined with a late definition (autoloader / CDN / code splitting) ([framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md) (ja) §1.2).
 
-- 対象は `wcBindable.inputs` に宣言した入力だけである。宣言していない settable surface は救済されない。
-- `await` を含む `connectedCallback` では、最初の `await` より前に同期で呼ぶ（MUST）。
-- 冪等なので毎回の接続で呼んでよい。prototype 側が accessor でない own プロパティは触らない。
+- It covers only inputs declared in `wcBindable.inputs`. An undeclared settable surface is not rescued.
+- In a `connectedCallback` containing an `await`, call it synchronously before the first `await` (MUST).
+- It is idempotent, so calling it on every connection is fine. It leaves own properties alone where the prototype side is not an accessor.
 
-- Shell は **薄く**保つ。ロジックは Core に置く。Shell の責務は「属性 ↔ Core 設定の橋渡し」「Core observable の委譲」「ライフサイクル駆動」「reactive command-property」だけ
-- `this.style.display = "none"`（IO ノードは非表示。`intersection` など layout box が必要な例外は `display:contents` 等を使い理由を書く）
+- Keep the Shell **thin**. Logic belongs in Core. The Shell's responsibilities are exactly: bridging attributes ↔ Core settings, delegating Core observables, driving the lifecycle, and reactive command-properties
+- `this.style.display = "none"` (an I/O node is invisible; exceptions that need a layout box, such as `intersection`, use `display:contents` and the like, with the reason written down)
 
-### 4.2 observable は「1イベント＋派生 getter」に分解する
+### 4.2 Decompose an observable into "one event plus derived getters"
 
-複合状態（例: permission の4値）は、1つのイベントを発火し、`granted` / `denied` / `prompt` / `unsupported` のような boolean を **同じイベントから派生 getter** として公開する。これで `hidden@granted` のような単純バインドが全ノードで同じように書ける。
+A composite state (permission's four values, say) fires a single event and exposes booleans such as `granted` / `denied` / `prompt` / `unsupported` as **getters derived from that same event**. That way a simple binding like `hidden@granted` reads the same across every node.
 
 ```ts
 { name: "state",   event: "wcs-x:change" },
 { name: "granted", event: "wcs-x:change", getter: (e) => (e as CustomEvent).detail === "granted" },
 ```
 
-### 4.3 入力の種類
+### 4.3 Kinds of input
 
-- **属性連動入力**（宣言的 config。例: `mode` / `body`）: `get` は `getAttribute`、`set` は属性 reflect。冪等
-- **reactive command-property**（動的な値で副作用を起こす。例: `notice` / `say`）: 属性を持たず、setter が同値ガードした上で Core メソッドを呼ぶ。`undefined`/`null` は no-op に正規化する（binder は undefined を書かない契約だが直接代入はありうる）。`manual` 属性で抑止できるようにする
+- **Attribute-linked inputs** (declarative config, e.g. `mode` / `body`): `get` reads via `getAttribute`, `set` reflects the attribute. Idempotent
+- **Reactive command-properties** (a dynamic value causing a side effect, e.g. `notice` / `say`): no attribute; the setter same-value guards and then calls a Core method. `undefined` / `null` are normalized to a no-op (the binder contracts not to write undefined, but a direct assignment is possible). Make it suppressible with the `manual` attribute
 
 ### 4.4 SSR
 
-`static hasConnectedCallbackPromise = true` を宣言し、`connectedCallback` で `_core.observe()` の戻り promise を `connectedCallbackPromise` として保持する。state binder 側はこれを待ってからスナップショットを取る。
+Declare `static hasConnectedCallbackPromise = true` and hold the promise returned by `_core.observe()` in `connectedCallback` as `connectedCallbackPromise`. The state binder waits on it before taking a snapshot.
 
-### 4.5 出力状態の CSS 反映（CustomStateSet / `:state()`）
+### 4.5 Reflecting output state into CSS (CustomStateSet / `:state()`)
 
-正本設計: `custom-state-reflection-design.md`。Shell は以下を満たすこと:
+The canonical design is `custom-state-reflection-design.md` (ja). A Shell has to satisfy the following:
 
-- constructor で `super()` の直後・**`new Core(this)` より前**に `attachInternals()` の取得と反映リスナーの配線を行い（Core が constructor 内で同期 dispatch する初回イベントを取りこぼさないため — MUST）、**boolean 出力 observable・派生 boolean getter・`error` の存在**（イベント detail が非 null）を `ElementInternals.states` に反映する（MUST）。連続値・高頻度値・データ値・派生 getter の無い enum は反映しない（design §3.2）。状態名は property 名の kebab-case（design §3.3）
-- 反映は Shell が **constructor 登録の自己リスナー**で自分自身の `*-changed` / `:error` イベントを購読して行う。**Core には持ち込まない**（MUST NOT）。wcBindable 宣言も変更しない
-- **never-throw**: `attachInternals` 不在（happy-dom・旧環境）や非ダッシュ状態名を拒む旧 Chromium (<125) は取得時 probe で検出し、反映系全体を静かに無効化する
-- states は「最後に発火したイベントの同期写像」であり、disconnect で消さない（タイミング契約は timing-and-firing-contract §17）
-- **デバッグ観測性**: `debugStates` ゲッターは現在 on の状態名の**スナップショット配列**を返す（MUST）。live な `CustomStateSet` を返してはならない（MUST NOT — 外部書き込み経路になる）。wcBindable には載せない。`debug-states` 属性が付いた要素に限り `data-wcs-state-<name>` 属性をミラーする（既定 OFF。CSS は `:state()` に書くよう README で誘導）
-- canonical snippet・テストテンプレ（5〜8本、shim は `__tests__/helpers.ts`＋`setup.ts`）は design §3.4 / §3.6 に従う。新規ノードの tag-design doc には反映状態マップの表を1つ含めること
-
----
-
-## 5. プロトコル（command-token / event-token）
-
-双方向ノードは2つの結線方向を持つ。詳細は各 SPEC とメモリの設計ノートを参照。
-
-- **command-token**（state → element 起動）: `commands` に宣言したメソッドを `command.<method>:` で起動。引数は位置引数として素通し（MUST、await しない、undefined 引数も素通し）。`spec-proposal-command-token-arguments.md` 参照
-- **event-token**（element → state）: `properties` のイベントが state 側に流れる。キー名は wcBindable property 名
-- `event` semantics の property は同一 payload でも occurrence ごとに流す。`handle` semantics の property は
-  state の値として保持する前提を置かず、owner / release contract に従う
-- 同じ Web API で「reactive 版（同値ガード有・宣言的）」と「imperative 版（同値でも発火・命令的）」の両方が要るなら両方提供してよい（例: speech の `say`/`speak`、notification の `notice`/`notify`）
+- In the constructor, immediately after `super()` and **before `new Core(this)`**, obtain `attachInternals()` and wire the reflection listeners (so the first event Core dispatches synchronously inside the constructor is not missed — MUST), and reflect **boolean output observables, derived boolean getters, and the presence of `error`** (a non-null event detail) into `ElementInternals.states` (MUST). Continuous values, high-frequency values, data values, and enums with no derived getter are not reflected (design §3.2). A state name is the kebab-case of the property name (design §3.3)
+- Reflection is done by the Shell subscribing to its own `*-changed` / `:error` events through **a self-listener registered in the constructor**. It MUST NOT be brought into Core, and the wcBindable declaration is not changed either
+- **never-throw**: a missing `attachInternals` (happy-dom, older environments) and older Chromium (<125) rejecting state names without a dash are detected by a probe at acquisition time, and the whole reflection path disables itself quietly
+- The states are a synchronous projection of the last event fired, and are not cleared on disconnect (the timing contract is timing-and-firing-contract §17)
+- **Debug observability**: the `debugStates` getter MUST return a **snapshot array** of the state names currently on. It MUST NOT return the live `CustomStateSet` (that would be an external write path). It is not listed in wcBindable. Only on an element carrying the `debug-states` attribute does it mirror `data-wcs-state-<name>` attributes (off by default; the README steers CSS toward `:state()`)
+- Follow design §3.4 / §3.6 for the canonical snippet and the test template (five to eight tests, with the shim in `__tests__/helpers.ts` plus `setup.ts`). A new node's tag-design doc has to include one table mapping the reflected states
 
 ---
 
-## 6. config / bootstrap / 登録
+## 5. The protocols (command-token / event-token)
 
-`packages/notification/src/config.ts` をそのまま流用する:
+A bidirectional node has two wiring directions. For details see the respective SPECs and the design notes in memory.
 
-- `config`（内部 mutable、呼び出し時読み取り。**exports.ts から出さない**）
-- `getConfig()`（deep-frozen clone を返す。公開用）
-- `setConfig(partial)`（型チェックしてマージ、frozen キャッシュ無効化）
-- config には最低限 `tagNames` / `autoTrigger` / `triggerAttribute` を持たせる
-- `registerComponents()` は `customElements.get()` で二重定義をガード
-- `bootstrap<Name>(userConfig?)` は `setConfig` → `registerComponents`
-
-`autoTrigger.ts`（command 系のみ）は `data-<name>target` クリックを拾い、要素を `customElements.get()` で解決して（import 循環回避）コマンドを呼ぶ。不正な triggerAttribute セレクタは try/catch で握り、このショートカットだけ無効化する。
+- **command-token** (state → element invocation): a method declared in `commands` is invoked with `command.<method>:`. Arguments pass through positionally and verbatim (MUST; not awaited; an undefined argument passes through too). See `spec-proposal-command-token-arguments.md` (ja)
+- **event-token** (element → state): the events of `properties` flow to the state side. The key name is the wcBindable property name
+- A property with `event` semantics flows per occurrence even for an identical payload. A property with `handle` semantics is not assumed to be retained as a state value and follows its owner / release contract
+- Where the same Web API needs both a "reactive form" (same-value guarded, declarative) and an "imperative form" (fires even on an equal value, imperative), providing both is fine (speech's `say`/`speak`, notification's `notice`/`notify`)
 
 ---
 
-## 7. ビルド
+## 6. config / bootstrap / registration
 
-ルートの方針に従う: `rimraf dist` → `tsc` → `rollup -c`。Rollup は `src/exports.ts` から:
+Reuse `packages/notification/src/config.ts` as-is:
+
+- `config` (internal mutable, read at call time. **Not exported from exports.ts**)
+- `getConfig()` (returns a deep-frozen clone; the public one)
+- `setConfig(partial)` (type-checks and merges, invalidating the frozen cache)
+- config carries at minimum `tagNames` / `autoTrigger` / `triggerAttribute`
+- `registerComponents()` guards against double definition with `customElements.get()`
+- `bootstrap<Name>(userConfig?)` is `setConfig` → `registerComponents`
+
+`autoTrigger.ts` (command nodes only) picks up a `data-<name>target` click, resolves the element with `customElements.get()` (avoiding an import cycle), and calls the command. An invalid triggerAttribute selector is caught with try/catch, disabling only this shortcut.
+
+---
+
+## 7. Build
+
+Follow the root policy: `rimraf dist` → `tsc` → `rollup -c`. Rollup produces, from `src/exports.ts`:
 
 - `dist/index.esm.js`
-- `dist/index.d.ts`（rollup-plugin-dts）
+- `dist/index.d.ts` (rollup-plugin-dts)
 
-加えて `src/auto.ts` を独立エントリとして `dist/auto.min.js`（Terser）を出力する。これは**外部 import ゼロの自己完結バンドル**でなければならない（MUST）。`src/auto.ts` から兄弟の dist ファイルを相対 import してはならない（MUST NOT）— `integrity` 1 属性でランタイム全体を覆えるという性質が壊れる（[sri.md](./sri.md)）。`dist/index.esm.min.js` は出力しない（`exports` に無く、消費者は旧 auto スタブだけだった）。
+Plus `dist/auto.min.js` (Terser) from `src/auto.ts` as a separate entry. That one MUST be a **self-contained bundle with zero external imports**. `src/auto.ts` MUST NOT relatively import a sibling dist file — it would destroy the property that one `integrity` attribute covers the whole runtime ([sri.md](./sri.md)). `dist/index.esm.min.js` is not produced (it appeared in no `exports` and its only consumer was the old auto stub).
 
-Service Worker など追加エントリがあるノードは rollup 出力を増やし、`package.json` の `exports` にサブパス（例: `"./sw"`）を足す（notification 参照）。
+A node with extra entries, such as a Service Worker, adds rollup outputs and a subpath in `package.json`'s `exports` (e.g. `"./sw"`) — see notification.
 
-`package.json` は `"type": "module"`（ESM only、CommonJS 非対応）。バージョンはクライアントパッケージ（state/fetch/autoloader/router）と揃えてリリースする（`feedback_version_alignment` 参照）。
-
----
-
-## 8. テスト
-
-- Vitest ＋ happy-dom。`__tests__/*.test.ts`、`setup.ts` あり
-- カバレッジ閾値 **100 / 97+ / 100 / 100** を満たす（statements / branches / functions / lines）
-- テスト記述（`describe` / `it`）は日本語
-- Web API は Fake double で差し替える（`FakeIntersectionObserver` 等の先例あり）。`_api()` が呼び出し時解決なので install/remove でテスト可能
-- 必ずテストすること:
-  - never-throw（API 不在・reject・secure-context 外で例外が出ない）
-  - 同値ガード（同値書き込みでイベントが出ない／イベント性は毎回出る）
-  - state-like object / array（後続 update 後も過去に公開した値が変化しない・logical state の変更時は fresh value）
-  - property read と event payload / getter が同じ logical state を表す
-  - handle / managed resource（交換・dispose の release point と、過去値の有効性）
-  - `_gen` ガード（disconnect 後に resolve した非同期が状態を変えない・dispose→observe で復活）
-  - `observe()` 冪等性
-  - SSR（`connectedCallbackPromise` / `ready` が settle する）
-  - unsupported 環境で `"unsupported"` になる
+`package.json` carries `"type": "module"` (ESM only, no CommonJS). Versions are released aligned with the client packages (state/fetch/autoloader/router) (see `feedback_version_alignment`).
 
 ---
 
-## 9. ドキュメント
+## 8. Tests
 
-- `README.md`（英語）/ `README.ja.md`（日本語）を両方書く。既存ノードの構成（概要・インストール・属性表・イベント表・コマンド表・Design Notes）に合わせる
-- **headless（Core）節**を README に持つ（MUST・§3.9）: Core クラス名・headless 構築の最小例（実コンストラクタ引数）・ライフサイクルが手動になる旨（`observe()`/`dispose()` ないし start/stop コマンド）・`@wcstack/signals` README「Binding a Core directly」へのリンク
-- observable ごとに `state` / `event` / `handle`、値の owner、serializability、resource release point を記録する（MUST・§3.3.1）
-- ルート README のノード一覧に追加する
-- **タイミング/発火の挙動**（いつ・何回・何が同期で何が microtask か）を持つノードは、[timing-and-firing-contract.md](./timing-and-firing-contract.md) に §1/§2 と同じ粒度で1節追加する（MUST）。example の長文コメントで内部挙動を説明しそうになったら、まずこの契約書に項目を足し、コメントはそこへリンクする
+- Vitest plus happy-dom. `__tests__/*.test.ts`, with a `setup.ts`
+- Meet the coverage thresholds **100 / 97+ / 100 / 100** (statements / branches / functions / lines)
+- Test descriptions (`describe` / `it`) are written in Japanese
+- Substitute Web APIs with fake doubles (`FakeIntersectionObserver` and others are precedents). Since `_api()` resolves at call time, install/remove works in tests
+- Always test:
+  - never-throw (no exception when the API is absent, when it rejects, or outside a secure context)
+  - the same-value guard (an equal write fires no event; event-natured values fire every time)
+  - state-like objects / arrays (a previously published value does not change after a later update; a fresh value on every logical state change)
+  - that the property read and the event payload / getter represent the same logical state
+  - handles / managed resources (the release point on swap and dispose, and whether past values stay valid)
+  - the `_gen` guard (async work resolving after a disconnect changes no state; dispose→observe brings it back)
+  - the idempotence of `observe()`
+  - SSR (`connectedCallbackPromise` / `ready` settle)
+  - that an unsupported environment becomes `"unsupported"`
 
 ---
 
-## 10. レビュー収束チェックリスト
+## 9. Documentation
 
-実装完了の判定。全て満たすまでマージしない。
+- Write both `README.md` (English) and `README.ja.md` (Japanese), matching the structure of the existing nodes (overview, installation, attribute table, event table, command table, design notes)
+- The README MUST have a **headless (Core) section** (§3.9): the Core class name, a minimal headless construction example (with the real constructor arguments), a note that the lifecycle becomes manual (`observe()`/`dispose()`, or start/stop commands), and a link to the `@wcstack/signals` README's "Binding a Core directly"
+- Record, per observable, whether it is `state` / `event` / `handle`, who owns the value, its serializability, and its resource release point (MUST, §3.3.1)
+- Add it to the node list in the root README
+- A node with **timing / firing behavior** (when, how many times, what is synchronous and what is a microtask) MUST add a section to [timing-and-firing-contract.md](./timing-and-firing-contract.md) (ja) at the same granularity as its §1/§2. Whenever you are about to explain internal behavior in a long comment in an example, add an entry to that contract first and link the comment to it
 
-- [ ] Core は `EventTarget` 継承・DOM 非依存・`static wcBindable` 宣言済み
-- [ ] Shell は薄く、Core を `new Core(this)` で包むだけ
-- [ ] never-throw（全公開メソッドが例外を投げない）
-- [ ] 状態 setter に同値ガード（イベント性は除外し、その旨明記）
-- [ ] state-like object / array は公開後に producer が変更せず、logical state の変更時に fresh value を公開する
-- [ ] event は同一 payload の occurrence を失わず、handle / managed resource は owner と release point が文書・testで固定されている
-- [ ] property read と event payload / getter が同じ logical state を表す
-- [ ] `_gen` 世代ガードで非同期の stale 書き込みを防いでいる
-- [ ] `observe()` 冪等・`dispose()` で復活可能
-- [ ] API は呼び出し時解決（キャッシュしない）
+---
+
+## 10. Review convergence checklist
+
+The completion criteria. Do not merge until all of them hold.
+
+- [ ] Core extends `EventTarget`, does not depend on the DOM, and declares `static wcBindable`
+- [ ] The Shell is thin and does nothing but wrap Core with `new Core(this)`
+- [ ] never-throw (no public method throws)
+- [ ] State setters have a same-value guard (event-natured ones excluded, and said to be)
+- [ ] State-like objects / arrays are not modified by the producer after publication, and a fresh value is published on every logical state change
+- [ ] Events do not lose occurrences of an identical payload, and handles / managed resources have their owner and release point pinned down in the documentation and in tests
+- [ ] The property read and the event payload / getter represent the same logical state
+- [ ] The `_gen` generation guard prevents stale async writes
+- [ ] `observe()` is idempotent and `dispose()` is recoverable
+- [ ] APIs are resolved at call time (not cached)
 - [ ] SSR: `ready` / `connectedCallbackPromise` / `hasConnectedCallbackPromise`
-- [ ] config / bootstrap / registerComponents / exports が規約どおり
-- [ ] Core が entry から export され、headless 構築可能（`target` 省略可）・README に headless（Core）節あり（§3.9）
-- [ ] テスト 100/97+/100/100、日本語記述、Fake double
-- [ ] README ja/en・ルート README 更新・（必要なら）timing 契約に1節追加
-- [ ] 設計ドキュメント `docs/<name>-tag-design.md` あり、逸脱は理由が記録済み
-- [ ] 非同期実行を持つノードは [async-execution-model.md](./async-execution-model.md) §13 の追補チェックリスト（実行形・レーン・排他モードの宣言ほか）を満たす
+- [ ] config / bootstrap / registerComponents / exports follow the rules
+- [ ] Core is exported from the entry and is headless-constructible (`target` omissible), and the README has a headless (Core) section (§3.9)
+- [ ] Tests at 100/97+/100/100, written in Japanese, with fake doubles
+- [ ] README ja/en, the root README updated, and (where needed) a section added to the timing contract
+- [ ] A design document `docs/<name>-tag-design.md` exists, with the reason recorded for any deviation
+- [ ] A node with async execution satisfies the addendum checklist in [async-execution-model.md](./async-execution-model.md) §13 (declaring the execution form, lanes, and exclusivity modes, and the rest)

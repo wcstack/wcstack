@@ -2,7 +2,7 @@
 
 - **作成日**: 2026-08-01
 - **状態**: 設計判断記録。**Phase A1-A4 まで実施済み**（A1 = Shell の property upgrade 実装、
-  A2 / A4 = [組み込み手順](../framework-adapter-integration.md)、
+  A2 / A4 = [組み込み手順](../framework-adapter-integration.ja.md)、
   A3 = [`bind()` 定義待ちの提案文書](../spec-proposal-bind-definition-timing.md)）。
   A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。
   A3 の提案は [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22) として提出済み。
@@ -165,7 +165,7 @@ drift していたことが判明した（登録漏れ）。リストに追加�
 
 ### Phase A2: 遅延定義構成の利用手順を明文化 — 実施済み（2026-08-01）
 
-利用手順の正本を [framework アプリへの組み込み手順](../framework-adapter-integration.md) として置いた。
+利用手順の正本を [framework アプリへの組み込み手順](../framework-adapter-integration.ja.md) として置いた。
 静的 import が最も確実であること、避けられない場合は `customElements.whenDefined()` で
 **adapter を呼ぶコンポーネントがマウントされる前に**ゲートすること、
 `connectedCallbackPromise` / `hasConnectedCallbackPromise` / `<wcs-defined>` / `setTimeout` が
@@ -188,7 +188,7 @@ upstream への提出済み: [wc-bindable-protocol#22](https://github.com/wc-bin
 ### Phase A4: イベント名の代替経路 — 実施済み（2026-08-01）
 
 命名は変更しない（破壊変更のため）。代わりに、コロンを束縛できない framework 向けの受け方を
-[組み込み手順 §4](../framework-adapter-integration.md) に書いた。adapter 経由なら影響しないこと、
+[組み込み手順 §4](../framework-adapter-integration.ja.md) に書いた。adapter 経由なら影響しないこと、
 Angular（`Unsupported event target`）と React（JSX の名前空間解釈）はテンプレートで書けないこと、
 どの framework でも ref + `addEventListener`（Angular は `Renderer2.listen`）が可搬な経路であること、
 この経路が必要になる代表例が `handle` 分類の `streamReady` であることを、実コード付きで示している。
@@ -209,7 +209,7 @@ Vue / Svelte / Solid のテンプレート構文でコロン付き名が書け�
 - [x] `inputs` 宣言を持たない要素、`wcBindable` を持たない要素で例外を投げない。
 - 上記は `__tests__/protocol.upgradeProperties.test.ts`（生成配布される共有適合テスト）が各パッケージで固定する。
 - [x] object を受け取る入力について、属性フォールバック時に沈黙して壊れることを利用者向けに明示する
-  （[組み込み手順 §2](../framework-adapter-integration.md)・ルート README）。
+  （[組み込み手順 §2](../framework-adapter-integration.ja.md)・ルート README）。
 
 ### 遅延定義
 
@@ -258,7 +258,7 @@ wcstack-app スキル（別リポジトリ）への追随である。
 - [wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.md)
 - [タグ定義とバインディング確立の順序](01-binding-initialization-order.md)
 - [signals の定義タイミング規範](../signals-definition-timing.md)
-- [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+- [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
 - [`WcsWebSocket`（属性バック accessor の実例）](../../packages/websocket/src/components/WebSocket.ts)
 - [Vue and Web Components（`in` 判定と `.prop` 修飾子）](https://vuejs.org/guide/extras/web-components.html)
 - [React DOM Components — Custom HTML Elements](https://react.dev/reference/react-dom/components#custom-html-elements)

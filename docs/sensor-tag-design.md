@@ -2,7 +2,7 @@
 
 - **状態**: 実装済み（`packages/accelerometer` / `gyroscope` / `magnetometer` / `ambient-light-sensor`）。本文書は実装時の論点整理と決定事項の記録。
 - **対象 WebAPI**: Generic Sensor API のうち `Accelerometer` / `Gyroscope` / `Magnetometer` / `AmbientLightSensor`（[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ5）
-- **位置づけ**: バッチ5で決定済みの通り、この4クラスは**共通の`Sensor`基底に基づく1つのCoreアーキタイプ**を共有するため、本書は**その共有アーキタイプを1回だけ文書化する統合ドキュメント**である。**本書は実装済みの4パッケージ全ての共有設計ソースとして機能する**。当初は各パッケージ着手時に `docs/accelerometer-tag-design.md` / `docs/gyroscope-tag-design.md` / `docs/magnetometer-tag-design.md` / `docs/ambient-light-sensor-tag-design.md` を個別に起草する想定だったが、最終的に個別ドキュメントは分割されず、本書1本が4パッケージ共通の設計ソースを兼ねる形に落ち着いた（各パッケージは本書の§2（差分表）が示すフィールドだけを変えたほぼ同一の内容になるため、個別ドキュメントへ複製する実益が薄かった）。これは[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST（1パッケージ1tag-design.md）の理想と、ほぼ同一内容を4回書く無駄を避ける実利とのトレードオフの結果であり、[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ5の節で決定済みの前提（4パッケージに分ける・1つのCoreアーキタイプを共有する）に沿う
+- **位置づけ**: バッチ5で決定済みの通り、この4クラスは**共通の`Sensor`基底に基づく1つのCoreアーキタイプ**を共有するため、本書は**その共有アーキタイプを1回だけ文書化する統合ドキュメント**である。**本書は実装済みの4パッケージ全ての共有設計ソースとして機能する**。当初は各パッケージ着手時に `docs/accelerometer-tag-design.md` / `docs/gyroscope-tag-design.md` / `docs/magnetometer-tag-design.md` / `docs/ambient-light-sensor-tag-design.md` を個別に起草する想定だったが、最終的に個別ドキュメントは分割されず、本書1本が4パッケージ共通の設計ソースを兼ねる形に落ち着いた（各パッケージは本書の§2（差分表）が示すフィールドだけを変えたほぼ同一の内容になるため、個別ドキュメントへ複製する実益が薄かった）。これは[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §1 MUST（1パッケージ1tag-design.md）の理想と、ほぼ同一内容を4回書く無駄を避ける実利とのトレードオフの結果であり、[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ5の節で決定済みの前提（4パッケージに分ける・1つのCoreアーキタイプを共有する）に沿う
 - **前提資産**: `permission`（`_permGen`世代ガード・`"unsupported"`フォールバック・Core/Shell分離・[[event-token-protocol]]専用ノードの先例）、`fetch`（`_gen`世代ガード・never-throwのtry/catch構造）、[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ2（Idle Detectionの`permission`ノード合成パターン）
 
 ---
@@ -16,7 +16,7 @@
 - 新しいサンプルが得られるたびに `'reading'` イベントを発火する
 - **注目すべき点として、失敗は例外ではなく `'error'` イベントで通知する**
 
-最後の点が本バッチ最大の特徴である。[async-io-node-guidelines.md](./async-io-node-guidelines.md) §3.6 の never-throw MUST は、通常「プラットフォームAPIは例外を投げうるので、Core側でtry/catchして`error`プロパティに変換する」という**Core側の防御**として機能する。ところがGeneric Sensor APIは、`start()`後の失敗（センサー未搭載・読み取り中の異常等）を最初から`'error'`イベントとして設計しており、Core側は単にこのイベントを中継するだけでnever-throwを満たせる。**プラットフォームAPI自体の設計がガイドラインと最初から噛み合っている稀なケース**であり、実装は他バッチより素直になる（ただし§5で述べる通り、コンストラクタ自体は例外を投げうるため、そこだけは能動的なtry/catchが必要）。
+最後の点が本バッチ最大の特徴である。[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §3.6 の never-throw MUST は、通常「プラットフォームAPIは例外を投げうるので、Core側でtry/catchして`error`プロパティに変換する」という**Core側の防御**として機能する。ところがGeneric Sensor APIは、`start()`後の失敗（センサー未搭載・読み取り中の異常等）を最初から`'error'`イベントとして設計しており、Core側は単にこのイベントを中継するだけでnever-throwを満たせる。**プラットフォームAPI自体の設計がガイドラインと最初から噛み合っている稀なケース**であり、実装は他バッチより素直になる（ただし§5で述べる通り、コンストラクタ自体は例外を投げうるため、そこだけは能動的なtry/catchが必要）。
 
 ---
 
@@ -47,7 +47,7 @@ static wcBindable: IWcBindable = {
 
 ### 1.2 inputs — **決定: `frequency`のみ**
 
-- `frequency`（Hz、サンプリングレート）を唯一の設定入力とする。属性連動入力（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §4.3の「属性連動入力」区分）として`get`は`getAttribute`、`set`は属性reflect
+- `frequency`（Hz、サンプリングレート）を唯一の設定入力とする。属性連動入力（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §4.3の「属性連動入力」区分）として`get`は`getAttribute`、`set`は属性reflect
 - `Sensor`コンストラクタの`{ frequency }`オプションへそのまま渡す。数値変換・範囲検証はブラウザ側の実装依存（不正値はコンストラクタかセンサー側で`error`に落ちる想定）で、Core側で追加のバリデーションは行わない
 
 ### 1.3 commands — **決定: `start` / `stop`のみ**
@@ -65,18 +65,18 @@ stop(): void  { /* 現在のセンサーインスタンスの .stop() */ }
 
 - **決定**: `<wcs-accelerometer>`自体は権限状態(`prompt`/`granted`/`denied`)を自前で持たない。利用者は`<wcs-permission name="accelerometer">`を併置し、`granted`派生getter（[permission-tag-design.md:63-76](./permission-tag-design.md#L63-L76)）でUIの出し分け（例: 「センサーへのアクセスを許可してください」バナーの`hidden@granted`）を行う
 - **却下した代替案**: `<wcs-accelerometer>`内部で`navigator.permissions.query({name:"accelerometer"})`を自前実装し、`permissionState`のような独自プロパティを公開する案。Idle Detection（[io-node-batch-implementation-plan.md:114-115](./io-node-batch-implementation-plan.md#L114-L115)）で「既存の`<wcs-permission name="idle-detection">`に委譲でき、権限状態の二重実装を避けられる」という判断が既に下されており、Accelerometer系でも同じ論理がそのまま成立する。`permission`パッケージの`_permGen`世代ガード込みの実装（[PermissionCore.ts:52-58](../packages/permission/src/core/PermissionCore.ts#L52-L58)）を4パッケージ分（実質16パッケージ、Gyroscope等を含む）に複製するのは重複コストが高く、`<wcs-permission>`という横断基盤プリミティブの存在意義（[permission-tag-design.md:27-34](./permission-tag-design.md#L27-L34)「対応タグの無い権限の監視」）とも整合しない
-- **この決定の含意**: これでIdle Detection（バッチ2）とGeneric Sensor族（バッチ5）という**2つの独立した候補が同じ合成パターンに帰着した**。[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md)の「未決事項」節（[io-node-batch-implementation-plan.md:312](./io-node-batch-implementation-plan.md#L312)）は「Generic SensorとIdle Detectionが共有する『`permission`ノードとの合成』パターンを、ガイドライン本体に正式な推奨パターンとして書き足すべきか」を未決事項として残しているが、本書の決定はこれを追認する2件目の実例である。**2件の独立した合成実績が揃った今、この論点は「検討中」から「ガイドライン本体（`async-io-node-guidelines.md` §3.7近辺、API解決の節）に正式な推奨パターンとして昇格させるべき」段階に移ったと考えられる**。ガイドライン改訂自体は本書のスコープ外だが、次に権限依存の候補（Web Bluetooth等）を実装する際は、まずこの2件を参照して合成パターンを踏襲すべきである
+- **この決定の含意**: これでIdle Detection（バッチ2）とGeneric Sensor族（バッチ5）という**2つの独立した候補が同じ合成パターンに帰着した**。[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md)の「未決事項」節（[io-node-batch-implementation-plan.md:312](./io-node-batch-implementation-plan.md#L312)）は「Generic SensorとIdle Detectionが共有する『`permission`ノードとの合成』パターンを、ガイドライン本体に正式な推奨パターンとして書き足すべきか」を未決事項として残しているが、本書の決定はこれを追認する2件目の実例である。**2件の独立した合成実績が揃った今、この論点は「検討中」から「ガイドライン本体（`async-io-node-guidelines.ja.md` §3.7近辺、API解決の節）に正式な推奨パターンとして昇格させるべき」段階に移ったと考えられる**。ガイドライン改訂自体は本書のスコープ外だが、次に権限依存の候補（Web Bluetooth等）を実装する際は、まずこの2件を参照して合成パターンを踏襲すべきである
 
 ### 1.4 対応環境 — **決定: unsupported/deniedを既定状態として想定**
 
 - Chromium/Android実機がメインの対応環境。デスクトップ（特にSafari/Firefox）は未実装または`SecurityError`になりやすい
 - **決定**: どのexampleを書く場合も、unsupported/denied状態が既定であることを前提に設計する。[network-tag-design.md](./network-tag-design.md) §0が確立した「unsupportedは例外でなく常態」という前提をここでも踏襲し、「効く環境では効く、効かない環境では何もしない」漸進的強化としてのみ振る舞いを設計する
-- unsupported判定は[async-io-node-guidelines.md](./async-io-node-guidelines.md) §3.7 MUSTに従い呼び出し時解決: `typeof globalThis.Accelerometer === "function"`をコンストラクタ呼び出し直前に毎回チェックする（キャッシュしない）
+- unsupported判定は[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §3.7 MUSTに従い呼び出し時解決: `typeof globalThis.Accelerometer === "function"`をコンストラクタ呼び出し直前に毎回チェックする（キャッシュしない）
 
 ### 1.5 `_gen`世代ガードの要否 — **決定: 不要（ただしコンストラクタのtry/catchは必須）**
 
 - **`start()`/`stop()`自体には`_gen`世代ガードは不要**と判断する。理由は[network-tag-design.md](./network-tag-design.md) §5と全く同じ: `start()`/`stop()`は購読/購読解除の同期的なトグルであり、resolve時に解決状態を比較すべき非同期probe（`query()`のようなPromiseベースの処理）を持たない。`reading`/`error`イベントの購読登録・解除自体が同期的に完結するため、disconnect後に古い世代の非同期処理がすり抜けて torn-down 要素へ書き込む、という`_gen`が本来防ぐべき競合の隙間がそもそも存在しない
-- **ただし例外的な注意点**: `new Accelerometer({ frequency })` という**コンストラクタ自体**は、権限拒否やfeature-policyによるブロック時に**同期的に例外を投げうる**（`SecurityError`等）。これは`start()`/`stop()`呼び出しとは別のタイミング（インスタンス生成時点）で発生するため、`_gen`ガードの不要性とは無関係に、never-throw原則（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §3.6 MUST）を満たすためのtry/catchが単独で必要になる。**生の`new Accelerometer(...)`を直接呼んではならない**。必ず次のような構築ヘルパーで包む:
+- **ただし例外的な注意点**: `new Accelerometer({ frequency })` という**コンストラクタ自体**は、権限拒否やfeature-policyによるブロック時に**同期的に例外を投げうる**（`SecurityError`等）。これは`start()`/`stop()`呼び出しとは別のタイミング（インスタンス生成時点）で発生するため、`_gen`ガードの不要性とは無関係に、never-throw原則（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §3.6 MUST）を満たすためのtry/catchが単独で必要になる。**生の`new Accelerometer(...)`を直接呼んではならない**。必ず次のような構築ヘルパーで包む:
 
 ```typescript
 private _createSensor(frequency?: number): Accelerometer | null {
@@ -121,7 +121,7 @@ private _createSensor(frequency?: number): Accelerometer | null {
 
 AmbientLightSensorは、fingerprinting対策を理由に一部ブラウザで対応が悪化・削除されている実態がある（Firefoxは実装見送り、Chromiumも既定で無効化されていた時期がある等、対応状況は流動的）。これは§1.4で述べた「Chromium/Android中心でデスクトップは弱い」という4クラス共通の傾向をさらに一段悪化させた、**バッチ中最も対応が弱いメンバー**である。
 
-- **決定**: AmbientLightSensorは4パッケージの中で実装優先度を最低に置く。着手前に対応表（MDN / caniuse等の一次情報）を必ず再確認し、対応状況次第では実装そのものを見送る判断もありうる（[async-io-node-guidelines.md](./async-io-node-guidelines.md)冒頭「執筆時点の把握であり、着手時に一次情報で再検証すること」という原則をここで強く適用する）
+- **決定**: AmbientLightSensorは4パッケージの中で実装優先度を最低に置く。着手前に対応表（MDN / caniuse等の一次情報）を必ず再確認し、対応状況次第では実装そのものを見送る判断もありうる（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)冒頭「執筆時点の把握であり、着手時に一次情報で再検証すること」という原則をここで強く適用する）
 
 ---
 
@@ -148,7 +148,7 @@ class FakeSensor extends EventTarget {
 ```
 
 - `readingFields`をテストごとにパラメータ化する（Accelerometerなら`{x,y,z}`、AmbientLightSensorなら`{illuminance}`）だけで、4パッケージ全てのテストスイートが同じFake基盤を再利用できる。これは「1つのCoreアーキタイプを共有する」という本書冒頭の決定がテストコードにも波及する具体的な利点であり、4パッケージ分のテストを独立に設計し直す必要がない
-- 観点（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §8「必ずテストすること」に準拠）:
+- 観点（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §8「必ずテストすること」に準拠）:
   - `typeof globalThis.<GlobalClassName> === "function"`が偽の環境で`unsupported`相当の`error`になること
   - コンストラクタが同期的に例外を投げるケース（`SecurityError`を投げる`FakeSensor`のサブクラス、またはコンストラクタ関数自体をthrowするスタブに差し替える）で、never-throwが保たれ`error`イベントに変換されること
   - `reading`イベントでx/y/z（またはilluminance）が正しく更新されること、同値ガードは`reading`には適用されない（毎回発火するイベント性）こと
@@ -185,4 +185,4 @@ class FakeSensor extends EventTarget {
 3. **Magnetometer** — 同上。Gyroscopeと同型（x/y/z）なので、Gyroscopeの複製作業を再度なぞるだけで足りる
 4. **AmbientLightSensor** — 最後に着手する。**着手前に現在の対応状況（fingerprinting対策による削除・無効化の動向）を一次情報で再確認し、対応状況次第では実装優先度をさらに見送る（後続バッチに先送りする）可能性がある**という留保付きで進める
 
-各パッケージは、本書の該当箇所（Accelerometerは§1全体、他3つは§2差分表＋§1の共通部分）をそのまま「答え合わせ済みの下敷き」として実装された。個別の`docs/<name>-tag-design.md`は最終的に分割されず（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUSTの理想に対する上記のトレードオフ）、本書が4パッケージ共通の設計ソースを兼ねている。
+各パッケージは、本書の該当箇所（Accelerometerは§1全体、他3つは§2差分表＋§1の共通部分）をそのまま「答え合わせ済みの下敷き」として実装された。個別の`docs/<name>-tag-design.md`は最終的に分割されず（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §1 MUSTの理想に対する上記のトレードオフ）、本書が4パッケージ共通の設計ソースを兼ねている。

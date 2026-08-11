@@ -1,15 +1,16 @@
-# wcstack と Content-Security-Policy (CSP 互換性ガイド)
+# wcstack and Content-Security-Policy (CSP compatibility guide)
 
-- **対象**: CSP を敷いたページで wcstack を使う利用者、および CSP に触れる変更を入れる実装者
-- **状態**: 規範ドキュメント（normative）。表に載っているディレクティブ要求は実装の事実であり、変更する場合は本書も同時に更新すること（MUST）
-- **なぜ存在するか**: wcstack はタグを置くだけで動くことを売りにしているが、**厳格な CSP 下では既定の書き方の一部が動かない**。特に `<wcs-state>` のインライン `<script>` は blob: URL 経由で評価されるため `script-src blob:` を要求する。この事実がどこにも書かれていないと、利用者は原因不明の初期化失敗に突き当たる
-- **関連**: [sri.md](./sri.md)（配信経路の改竄検出。本書と同じく「直パスに寄せる」が答えになる） / [async-io-node-guidelines.md](./async-io-node-guidelines.md) / 各パッケージの README
+- **Audience**: anyone running wcstack on a page that enforces a CSP, and implementers making changes that touch CSP
+- **Status**: normative. The directive requirements in the tables below are statements of fact about the implementation; a change to one MUST update the other
+- **Why this exists**: wcstack sells the idea that dropping in a tag is enough, but **under a strict CSP some of the default spellings do not run**. In particular, the inline `<script>` inside `<wcs-state>` is evaluated through a blob: URL and therefore requires `script-src blob:`. With that fact written down nowhere, a user hits an initialization failure with no visible cause
+- **See also**: [sri.md](./sri.md) (detecting tampering in the delivery path — its answer is the same "move to the direct path" as here) / [async-io-node-guidelines.md](./async-io-node-guidelines.md) / each package's README
+- **日本語版**: [csp.ja.md](./csp.ja.md)
 
 ---
 
 ## 0. TL;DR
 
-**試用（クイックスタートの `esm.run` 一発を使う場合）**
+**Trying it out (the single-line `esm.run` form from the quick start)**
 
 ```
 Content-Security-Policy:
@@ -17,7 +18,7 @@ Content-Security-Policy:
   connect-src 'self';
 ```
 
-**本番（配信元を 1 ホストに絞り、state を外部ファイルに逃がした場合）**
+**Production (delivery narrowed to one host, state moved into an external file)**
 
 ```
 Content-Security-Policy:
@@ -25,33 +26,43 @@ Content-Security-Policy:
   connect-src 'self';
 ```
 
-差は 2 点。**`esm.run` は 301 で `cdn.jsdelivr.net` に飛ぶので 2 ホスト要る**（§1）。**`blob:` は `<wcs-state>` のインライン `<script>` を使う場合にだけ要る**（§3）。`'nonce-{RANDOM}'` はインライン import map のために必須（§2）。
+Two differences. **`esm.run` 301-redirects to `cdn.jsdelivr.net`, so it costs two hosts** (§1). **`blob:` is needed only if you use the inline `<script>` inside `<wcs-state>`** (§4). An inline import map needs either a nonce or a hash (§2 / §3).
+
+**Static hosting, where no nonce can be issued (GitHub Pages, object storage)**
+
+```
+Content-Security-Policy:
+  script-src 'self' https://cdn.jsdelivr.net 'sha256-{digest of the import map}';
+  connect-src 'self';
+```
+
+A hash stands in for the nonce. But **a hash covers strictly less than a nonce does, and it cannot rescue the inline `<script>` inside `<wcs-state>` either**, so this shape effectively forces the `src=` escape hatch (§3).
 
 ---
 
-## 1. 配信元 — `esm.run` は 2 ホストを要求する
+## 1. Delivery origin — `esm.run` requires two hosts
 
-`esm.run` は独立したホストで、リクエストは 301 リダイレクトされる:
+`esm.run` is a separate host, and the request is 301-redirected:
 
 ```
 https://esm.run/@wcstack/state/auto
   → 301 → https://cdn.jsdelivr.net/npm/@wcstack/state/auto/+esm
 ```
 
-CSP はリダイレクト**先も再照合する**（リダイレクト後は path の照合はスキップされるが、スキーム / ホスト / ポートは照合される）。したがって `script-src https://esm.run` だけでは飛び先で拒否される。両方を列挙すること。
+CSP **re-checks the redirect target** (path matching is skipped after a redirect, but scheme / host / port are still matched). So `script-src https://esm.run` alone gets refused at the destination. List both.
 
-`cdn.jsdelivr.net` の直パスに寄せれば 1 ホストで済む。ただし jsDelivr の素パスは `package.json` の `exports` を解決しないので、`/auto` ではなく実ファイルを名指しする必要がある:
+Moving to a direct `cdn.jsdelivr.net` path brings it down to one host. Note that jsDelivr's bare paths do not resolve `package.json` `exports`, so you have to name the actual file rather than `/auto`:
 
 ```
 https://cdn.jsdelivr.net/npm/@wcstack/state/auto            → 404
 https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js → 200
 ```
 
-直パスに寄せる利点は CSP のホスト数だけではない。`esm.run` は再バンドルを行う `+esm` エンドポイントに飛ぶため SRI が原理的に効かず、直パスなら `integrity` を付けられる。詳細は [sri.md](./sri.md)。
+The host count is not the only reason to prefer the direct path. `esm.run` lands on the `+esm` endpoint, which re-bundles, so SRI cannot work there in principle; a direct path can carry `integrity`. See [sri.md](./sri.md).
 
-## 2. import map は nonce 必須（SRI は使えない）
+## 2. An import map needs a nonce or a hash (SRI cannot help)
 
-`@wcstack/autoloader` の `@components/` 解決はページのインライン import map に依存する。インライン `<script type="importmap">` は `'unsafe-inline'` か **nonce / hash** がないと実行されない。インラインなので `integrity` 属性は使えない。
+`@components/` resolution in `@wcstack/autoloader` depends on the page's inline import map. An inline `<script type="importmap">` does not execute without `'unsafe-inline'` or a **nonce / hash**. Being inline, it cannot carry an `integrity` attribute.
 
 ```html
 <script type="importmap" nonce="{RANDOM}">
@@ -59,68 +70,128 @@ https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js → 200
 </script>
 ```
 
-## 3. `<wcs-state>` の状態ロード — 経路によって要求が違う
+Where no nonce can be issued, a hash substitutes for it. How to compute one, and what the substitution **cannot** cover, is §3.
 
-これが本書で一番重要な点。**ロード経路ごとに CSP 要求が変わる。**
+## 3. When a nonce is unavailable — what a hash can replace
 
-| 書き方 | 実装 | 必要な CSP |
-|---|---|---|
-| `<wcs-state state="<id>">`（`<script type="application/json">` を id 参照） | `JSON.parse(script.textContent)` | **追加不要**（データブロックは実行されないので `script-src` の対象外） |
-| `<wcs-state json='{...}'>` | 属性値を `JSON.parse` | **追加不要** |
-| `<wcs-state src="./state.js">` | 通常の `import(url)` | `script-src <オリジン>` |
-| `<wcs-state src="./data.json">` | `fetch(url)` | `connect-src <オリジン>` |
-| `setInitialState()` API | なし | **追加不要** |
-| `<wcs-state><script type="module">…</script></wcs-state>` | **blob: URL 経由で `import()`** | **`script-src blob:`** |
+Static hosting (GitHub Pages, object storage, files served straight off a CDN) cannot issue a per-request nonce. **The wcstack quick start is exactly that shape, so a hash is the only option if you want a CSP on such a page.** But a hash covers less than a nonce does.
 
-インライン `<script>` の中身はブラウザからは実行されない（`<wcs-state>` の子なので）。state はテキストを取り出し、blob: URL を作って動的 `import()` する（[loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts)）。ここが CSP に当たる。
+| Target | `'nonce-…'` | Hash | Notes |
+|---|---|---|---|
+| Inline import map (§2) | Yes | Yes (`sha256` / `384` / `512`) | The digest is over the contents of the `<script>` (§3.1) |
+| External `dist/auto.min.js` (`<script src integrity>`) | Yes | **Chromium only** (`sha384`) | Same value as `integrity`; wcstack ships sha384 (§3.2) |
+| Inline `<script type="module">` inside `<wcs-state>` (§4) | No | No | Goes through a blob: URL, so it is never matched as an inline script |
+| A `<wcs-route>` guard (§5) | No | No | Same, and there is no `src=` escape hatch either |
+| State in `<script type="application/json">` (§4) | not needed | not needed | Never executed, so `script-src` does not apply |
 
-**nonce では救えない。** blob: URL からのモジュール読み込みはページの nonce を継承しない。`script-src blob:` を開けるか、外部ファイルに逃がすかの二択になる。
+**A hash does not rescue the two blob: paths.** §4 says "a nonce does not cover it", but the reason is not specific to nonces. A module loaded from a blob: URL is fetched as an *external* script, so it is not a candidate for inline-hash matching and there is nowhere to put an `integrity` attribute. The choice between opening `script-src blob:` and moving to `src=` is the same whether you use nonces or hashes.
 
-**厳格な CSP 下では `src=` を推奨する。** `script-src blob:` は「動的生成スクリプトを全面的に許可する」という意味になり、CSP を敷いた目的の多くを損なう。state 定義を `./state.js` に切り出せば追加ディレクティブは不要になる:
+### 3.1 Hashing an inline import map — not one byte may change
+
+The digest is computed over **the contents of the `<script>` itself** — the textContent, including the surrounding newlines and indentation. Re-indenting, adding a comment, or gaining or losing a trailing newline breaks it every time. If a build step reformats your HTML, take the hash **after** it (MUST).
+
+```bash
+# Pass the textContent through verbatim (%s so printf adds no newline of its own;
+# the leading/trailing newline and the indentation are part of the textContent, so keep them)
+printf '%s' '
+  { "imports": { "@components/": "/components/" } }
+' | openssl dgst -sha256 -binary | openssl base64 -A
+```
+
+Rather than matching it by hand, **let the browser tell you the answer**. The console message on a block prints the digest it wants; copy that:
+
+```
+Refused to execute inline script because it violates the following Content-Security-Policy
+directive: … Either the 'unsafe-inline' keyword, a hash ('sha256-…'), or a nonce … is
+required to enable inline execution.
+```
+
+### 3.2 Hashing the external bundle — the value is the SRI digest
+
+CSP3 has a path that admits an external script when the digest in its `integrity` attribute matches a hash source in `script-src`. The digest to use for `dist/auto.min.js` is the one already published in each release's `sri.json` ([sri.md §2](./sri.md#2-where-the-digests-come-from--never-ask-the-cdn)). **Nothing has to be computed separately for CSP.**
+
+```
+script-src 'self' 'sha384-{digest of auto.min.js}';
+```
 
 ```html
-<!-- CSP 安全 -->
+<script type="module"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js"
+        integrity="sha384-…"></script>
+```
+
+Three constraints come with it:
+
+1. **Chromium only** (Firefox has not implemented it — [bug 1409200](https://bugzilla.mozilla.org/show_bug.cgi?id=1409200) — and neither has Safari). In those two the hash source simply fails to match and the script is blocked, so in practice you list the host from §1 alongside it. Which means the hash source buys nothing beyond "Chromium can drop the host allowance"
+2. **Every digest in the `integrity` attribute must also appear in `script-src`.** If you list several algorithms, the script is refused when even one of them is missing from the policy
+3. **One hash source per `<script>` tag.** On a page that loads many packages, a single host entry is shorter
+
+### 3.3 Out of scope for this document
+
+Combining any of this with `'strict-dynamic'` is **untested**. `'strict-dynamic'` disables host-based allowlisting, so paths that rely on `import()` (component resolution in `@wcstack/autoloader`, `<wcs-state src=…>`, blob: evaluation) may break. How dynamic import should interact with CSP is [still under discussion](https://github.com/w3c/webappsec-csp/issues/506) in the spec (the `import-src` proposal). Every recipe here assumes no `'strict-dynamic'`.
+
+## 4. Loading state into `<wcs-state>` — requirements differ per path
+
+This is the most important point in this document. **The CSP requirement changes with the load path.**
+
+| Spelling | Implementation | CSP needed |
+|---|---|---|
+| `<wcs-state state="<id>">` (referencing a `<script type="application/json">` by id) | `JSON.parse(script.textContent)` | **nothing extra** (a data block is not executed, so `script-src` does not apply) |
+| `<wcs-state json='{...}'>` | `JSON.parse` on the attribute value | **nothing extra** |
+| `<wcs-state src="./state.js">` | an ordinary `import(url)` | `script-src <origin>` |
+| `<wcs-state src="./data.json">` | `fetch(url)` | `connect-src <origin>` |
+| the `setInitialState()` API | none | **nothing extra** |
+| `<wcs-state><script type="module">…</script></wcs-state>` | **`import()` through a blob: URL** | **`script-src blob:`** |
+
+The browser never executes the contents of that inline `<script>` (it is a child of `<wcs-state>`). State pulls the text out, builds a blob: URL, and dynamically `import()`s it ([loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts)). That is what CSP catches.
+
+**A nonce does not cover it.** A module loaded from a blob: URL does not inherit the page nonce. A hash does not cover it either (§3). It comes down to opening `script-src blob:` or moving the code into an external file.
+
+**Under a strict CSP, prefer `src=`.** `script-src blob:` amounts to "allow dynamically generated scripts wholesale", which defeats much of the point of having a policy. Splitting the state definition out into `./state.js` needs no extra directive:
+
+```html
+<!-- CSP-safe -->
 <wcs-state name="app" src="./state.js"></wcs-state>
 ```
 
-## 4. router のガードは blob: 必須（回避策なし）
+## 5. Router guards require blob: (no way around it)
 
-`<wcs-route>` のガードスクリプトも同じく blob: URL 経由で評価される（[loadGuardHandler.ts](../packages/router/src/loadGuardHandler.ts)）。ただし **state と違ってインライン専用で、`src=` に逃がす経路が存在しない**。ガードを使うなら `script-src blob:` が必須になる。
+A `<wcs-route>` guard script is likewise evaluated through a blob: URL ([loadGuardHandler.ts](../packages/router/src/loadGuardHandler.ts)). Unlike state, though, **guards are inline-only — there is no `src=` escape hatch**. If you use guards, `script-src blob:` is mandatory.
 
-これは既知の非対称性であり、外部ファイル対応は未実装。CSP を厳格に保ちたい場合は、ガードを使わずルート表示側で制御する。
+This asymmetry is known; external-file support is not implemented. To keep a strict policy, skip guards and control access on the route-rendering side instead.
 
-## 5. I/O ノードの通信系
+## 6. I/O nodes that talk to the network
 
-| パッケージ | 必要な CSP |
+| Package | CSP needed |
 |---|---|
-| `@wcstack/fetch` / `@wcstack/upload` | `connect-src <API オリジン>` |
-| `@wcstack/websocket` | `connect-src wss://<host>`（`ws:`/`wss:` スキームを明示） |
-| `@wcstack/sse` | `connect-src <オリジン>` |
-| `@wcstack/worker` | `worker-src <スクリプトのオリジン>` |
-| `@wcstack/autoloader` | `script-src` に `@components/` の解決先ホスト |
+| `@wcstack/fetch` / `@wcstack/upload` | `connect-src <API origin>` |
+| `@wcstack/websocket` | `connect-src wss://<host>` (state the `ws:`/`wss:` scheme explicitly) |
+| `@wcstack/sse` | `connect-src <origin>` |
+| `@wcstack/worker` | `worker-src <origin of the script>` |
+| `@wcstack/autoloader` | the host `@components/` resolves to, in `script-src` |
 
-Blob をバインドする経路（`@wcstack/fetch` の Blob → object URL、`@wcstack/camera` の録画結果）は、代入先に応じて `img-src blob:` / `media-src blob:` が要る。
+Paths that bind a Blob (a `@wcstack/fetch` Blob turned into an object URL, a `@wcstack/camera` recording) need `img-src blob:` or `media-src blob:` depending on where the value is assigned.
 
-## 6. Trusted Types は未対応（既知の制約）
+## 7. Trusted Types are not supported (known limitation)
 
-`require-trusted-types-for 'script'` 下では以下が例外を投げる。現時点で `trustedTypes.createPolicy` の導入予定はない。
+Under `require-trusted-types-for 'script'` the following throw. There is no current plan to introduce `trustedTypes.createPolicy`.
 
-- `@wcstack/fetch` の `html` バインディング（[Fetch.ts](../packages/fetch/src/components/Fetch.ts)）
-- `@wcstack/router` の `<wcs-layout>` テンプレート展開（[Layout.ts](../packages/router/src/components/Layout.ts)）
-- `@wcstack/state` の DCC 定義（[defineDCC.ts](../packages/state/src/dcc/defineDCC.ts)）
+- the `html` binding in `@wcstack/fetch` ([Fetch.ts](../packages/fetch/src/components/Fetch.ts))
+- `<wcs-layout>` template expansion in `@wcstack/router` ([Layout.ts](../packages/router/src/components/Layout.ts))
+- DCC definition in `@wcstack/state` ([defineDCC.ts](../packages/state/src/dcc/defineDCC.ts))
 
-## 7. CSP に触れないもの（誤解しやすい点）
+## 8. What does not touch CSP (easily misread)
 
-- **`style` バインディングは `style-src` を要求しない。** `class`/`style` バインディングは CSSOM のプロパティ代入（`element.style.color = …`）であって、`style` 属性の解析でも `<style>` 要素の挿入でもない。CSP の `style-src` は CSSOM 経由の変更を対象にしないため、`'unsafe-inline'` は不要。
-- **`data-wcs` の式は評価されない。** `data-wcs` はパス指定とフィルタ名の宣言であり、`eval` / `new Function` は使わない。リポジトリ全体で `eval` / `new Function` の使用箇所はゼロ。
+- **`style` bindings do not require `style-src`.** The `class`/`style` bindings assign CSSOM properties (`element.style.color = …`); they neither parse a `style` attribute nor insert a `<style>` element. CSP's `style-src` does not govern changes made through the CSSOM, so `'unsafe-inline'` is not needed.
+- **`data-wcs` expressions are not evaluated.** `data-wcs` declares paths and filter names; there is no `eval` / `new Function`. The repository contains zero uses of either.
 
-## 8. 診断 — エラーの読み方
+## 9. Diagnostics — how to read the errors
 
-CSP にブロックされた動的 `import()` の rejection は `Failed to fetch dynamically imported module` としか言わず、CSP には言及しない。そこで state / router は評価中の `securitypolicyviolation` を購読し、ブロックが観測できた場合だけ断定的なメッセージを出す。
+The rejection from a dynamic `import()` that CSP blocked says only `Failed to fetch dynamically imported module` and never mentions CSP. So state and router subscribe to `securitypolicyviolation` during evaluation and speak with certainty only when a block was actually observed.
 
-| 出力 | 意味 |
+| Output | Meaning |
 |---|---|
-| `... was blocked by Content-Security-Policy` | **CSP 確定**。`script-src blob:` を足すか `src=` に逃がす |
-| `Failed to evaluate the inline <script> of state "…"` | CSP は観測されなかった。多くは state 定義側の構文エラー（元のエラーは `cause` に入っている） |
+| `... was blocked by Content-Security-Policy` | **CSP confirmed.** Add `script-src blob:` or move to `src=` |
+| `Failed to evaluate the inline <script> of state "…"` | No violation was observed. Usually a syntax error in the state definition (the original error is in `cause`) |
 
-違反が観測できなかった場合に CSP を断定しないのは意図的で、構文エラーを CSP のせいだと誤誘導しないため。
+Not asserting CSP when no violation was observed is deliberate: it keeps a syntax error from being misattributed to the policy.

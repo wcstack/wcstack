@@ -3,7 +3,7 @@
 - **日付**: 2026-07-09（同日改訂: デバッグ観測性の追加仕様 §3.8 を決定・反映）
 - **ステータス**: 設計確定（決定ゲート通過済み・実装未着手）・変更計画付き
 - **経緯**: `wcs-fetch[loading]` という CSS セレクタが（構文上有効だが）決してマッチしない問題の調査から、「出力状態を CSS から選択可能にする」横断設計に発展。7論点を提示し、以下の決定を得た。
-- **関連**: [async-io-node-guidelines.md](async-io-node-guidelines.md)（§0 不変条件・§4.2 派生 getter）、[timing-and-firing-contract.md](timing-and-firing-contract.md)
+- **関連**: [async-io-node-guidelines.ja.md](async-io-node-guidelines.ja.md)（§0 不変条件・§4.2 派生 getter）、[timing-and-firing-contract.md](timing-and-firing-contract.md)
 
 ## 0. TL;DR
 
@@ -268,7 +268,7 @@ this._wireStates({ [`${prefix}:pending-changed`]: (d) => ({ pending: d === true 
 
 ## 5. 規範文書への反映（横断1回）
 
-1. **async-io-node-guidelines.md**:
+1. **async-io-node-guidelines.ja.md**:
    - §0 不変条件に **#10** を追加: 「boolean 出力 observable と error 存在を CustomStateSet に反映する（`:state()` 対応）。反映は Shell のみで行い Core に持ち込まない。attachInternals 不在環境では静かに無効化（never-throw）」
    - **§4.5（新設）**「出力状態の CSS 反映」: §3.4 の canonical snippet・語彙規則（§3.2）・状態名規則（§3.3）・デバッグ観測性（§3.8: `debugStates` スナップショット MUST / live Set 返却 MUST NOT / `debug-states` opt-in ミラー）を規範化
 2. **timing-and-firing-contract.md**: 横断節（§3 と同格）として §3.5 の 4 契約を追記。以後の新規ノードは tag-design doc に反映状態マップを1表含めることを guidelines §1 のチェックリストに追加

@@ -1,7 +1,7 @@
 # 類似IOノード バッチ実装計画
 
 - **対象**: [io-node-candidate-screening.md](./io-node-candidate-screening.md) / [io-node-candidate-implementation-notes.md](./io-node-candidate-implementation-notes.md) で洗い出した候補のうち、**実装パターンが共通するものをバッチにまとめ**、共有アーキタイプの実装仕様を先に確定する
-- **状態**: 計画ドキュメント（非規範）。ここでの仕様確定は「バッチ内で使い回す設計の答え合わせ」であり、個別ノードの実装着手時は依然として `docs/<name>-tag-design.md` の起草が必要（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST）。本書はその起草を高速化するための下敷き
+- **状態**: 計画ドキュメント（非規範）。ここでの仕様確定は「バッチ内で使い回す設計の答え合わせ」であり、個別ノードの実装着手時は依然として `docs/<name>-tag-design.md` の起草が必要（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §1 MUST）。本書はその起草を高速化するための下敷き
 - **方針**: 各バッチに「参照実装（コピー元）」を既存パッケージから1つ指定する。ガイドライン自身が推奨する「既存パッケージをコピーして始めるのが最短」を、バッチ内の2〜4ノードに対して連鎖的に適用する
 - **除外**: 複数Promiseの並行管理を要する候補（REST-node等）は別トラック（[multi-promise-io-node-design.md](./multi-promise-io-node-design.md)）。本書のバッチは全て「単一in-flight」で閉じるものだけを対象にする
 

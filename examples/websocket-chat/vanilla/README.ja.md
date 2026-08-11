@@ -7,7 +7,7 @@
 `bind()` が要求するのは consumer 側の `EventTarget` 面と
 `constructor.wcBindable` 宣言だけで、wcstack の Core はまさにそれです
 （規範化されたサーフェス —
-[async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.md)
+[async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.ja.md)
 参照）。つまりアダプタはヘッドレスな Core を一級ターゲットとして束縛できます:
 カスタム要素なし・`customElements` レジストリ非関与・定義タイミング管理不要。
 `bind()` が Core の wcBindable 出力（`connected` / `loading` / `error` /

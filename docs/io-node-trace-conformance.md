@@ -9,8 +9,8 @@
   - DevTools trace の実装や、機械可読な適合ベクトル形式をこの版では要求しない
 - **なぜ存在するか**: wcstack は I/O ノードの骨格、非同期レーン、発火タイミングを既に別々の正本で規範化している。しかし「どこまでを同じ入力に対して同じ結果になる単位と呼ぶか」と「その主張を第三者実装も含めてどう検証するか」は横断的に定義されていなかった。本書は I/O ノードを順序付き入力トレースから観測可能出力トレースへの因果的変換として定式化し、決定性の境界と適合ベクトルの共通形を与える
 - **関連する正本**:
-  - Core / Shell、observable、never-throw、lifecycle: [async-io-node-guidelines.md](./async-io-node-guidelines.md)
-  - execution form、lane、commit、cancel、retry、timeout: [async-execution-model.md](./async-execution-model.md)
+  - Core / Shell、observable、never-throw、lifecycle: [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)
+  - execution form、lane、commit、cancel、retry、timeout: [async-execution-model.ja.md](./async-execution-model.ja.md)
   - 同期 / microtask / task とノード別発火順: [timing-and-firing-contract.md](./timing-and-firing-contract.md)
   - lane の参照実装: [`io-core/operation-lane.ts`](../io-core/operation-lane.ts)
   - optional な診断 side channel: [devtools-hook-protocol.md](./devtools-hook-protocol.md)
@@ -561,7 +561,7 @@ forbidden:
 ### 6.3 error と settle
 
 1. 公開操作は platform API 不在、同期 throw、Promise reject を未処理例外として外へ漏らさない
-2. error、cancelled、timeout を [async-execution-model.md](./async-execution-model.md) の軸へ正規化する
+2. error、cancelled、timeout を [async-execution-model.ja.md](./async-execution-model.ja.md) の軸へ正規化する
 3. terminal outcome は operation ごとに高々1回
 4. `ready` / `connectedCallbackPromise` は success、error、unsupported の全経路で規定どおり settle する
 5. retry を持つ node は、attempt error / progress と retry 中 loading の公開規則を宣言どおりに保つ
@@ -664,7 +664,7 @@ draft 期間中は `wcstack-io/0.x-draft` とし、どの level についても�
 - fetch（one-shot / latest）、intersection（monitor / occurrence）、raf（stream / clock）の3 archetype へ本書を試適用する
 - 既存 test だけで表現できない law と、過剰に強い law を分ける
 - input / output alphabet と vector の最小 field を確定する
-- 採択時に本書を `wcstack-io/1.0` として normative へ変更し、`structural` / `trace` をその適合レベルとして確定したうえで、[async-io-node-guidelines.md](./async-io-node-guidelines.md) の設計・test・レビュー checklist へ必須項目を追加する
+- 採択時に本書を `wcstack-io/1.0` として normative へ変更し、`structural` / `trace` をその適合レベルとして確定したうえで、[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) の設計・test・レビュー checklist へ必須項目を追加する
 
 初回の対応確認では、3 archetype とも本書の基本モデルで既存 test を説明できる。
 

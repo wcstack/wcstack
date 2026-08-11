@@ -337,7 +337,7 @@ const html = await renderToString(`
 
 `<script>` タグ1つ。カスタム要素1つ。あとはHTML。以上。
 
-> Content-Security-Policy を敷いている場合: 上記の内包 `<script type="module">` は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。state を `src="./state.js"` に切り出せば追加ディレクティブは不要になります。機能別のディレクティブ表は [docs/csp.md](docs/csp.md)。
+> Content-Security-Policy を敷いている場合: 上記の内包 `<script type="module">` は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。state を `src="./state.js"` に切り出せば追加ディレクティブは不要になります。機能別のディレクティブ表は [docs/csp.ja.md](docs/csp.ja.md)。
 
 本番ではバージョンを固定して `integrity` を付けてください。`dist/auto.min.js` は import ゼロの自己完結バンドルなので、**ハッシュ 1 個で実行される wcstack のコード全体をカバーできます** — 「integrity はエントリしか守らず import 先は対象外」という ESM の通例が当てはまりません:
 
@@ -347,7 +347,7 @@ const html = await renderToString(`
         integrity="sha384-..."></script>
 ```
 
-全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.md](docs/sri.md)。
+全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.ja.md](docs/sri.ja.md)。
 
 ---
 
@@ -386,7 +386,7 @@ autoloader・CDN タグ・code-split などで定義が遅れるのが避けら�
 
 `<wcs-camera>` の `MediaStream` のような live handle は、意図的に snapshot state に載せていません。ref で要素を掴んでイベントから受け取ってください。なお Angular のテンプレートと JSX はコロンを含むイベント名を束縛できないため、`addEventListener`（または `Renderer2.listen`）が可搬な経路になります。
 
-詳細な手順・フレームワーク別のコード・判断の根拠は [docs/framework-adapter-integration.md](docs/framework-adapter-integration.md) にあります。動くデモは [examples/websocket-chat](examples/websocket-chat/)（React 19 と Vue 3 が、vanilla / state / signals と同じサーバーに繋ぎます）。
+詳細な手順・フレームワーク別のコード・判断の根拠は [docs/framework-adapter-integration.ja.md](docs/framework-adapter-integration.ja.md) にあります。動くデモは [examples/websocket-chat](examples/websocket-chat/)（React 19 と Vue 3 が、vanilla / state / signals と同じサーバーに繋ぎます）。
 
 ---
 

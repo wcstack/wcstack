@@ -8,7 +8,7 @@ fine-grained なシグナルが実 DOM を直接駆動し、その下には同�
 他の variant はすべて `<wcs-ws>` 要素を束縛しますが、ここではその要素が包む
 Core クラスを import してそのまま `bindNode()` に渡します（Core は同じ
 wc-bindable descriptor を持つ `EventTarget` — 規範化されたサーフェスです。
-[async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.md)
+[async-io-node-guidelines §3.9](../../../docs/async-io-node-guidelines.ja.md)
 参照）。カスタム要素が関与しないので `customElements` レジストリも upgrade も
 無く、定義タイミングの管理が不要 — 依存は import だけです。`bindNode()` が
 Core の出力（`connected` / `loading` / `error` / `message`）を読み取りシグナル

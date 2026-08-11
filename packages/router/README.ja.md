@@ -167,7 +167,7 @@
 - 判定関数は `Promise<boolean>` を返すことも可能（非同期チェック対応）
 - `<wcs-route>` の外に配置された `<wcs-guard-handler>` は無視される
 - `<script type="module">` がない場合、`guardHandler` は設定されない
-- **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため `script-src blob:` が必要。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.md](../../docs/csp.md)
+- **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため `script-src blob:` が必要。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
 
 #### 型付きパラメータ
 

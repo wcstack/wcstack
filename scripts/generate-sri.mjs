@@ -74,6 +74,7 @@ function toJson(version, entries, skipped) {
     algorithm: ALGORITHM,
     file: BOOTSTRAP,
     generatedFrom: "the published tree, not a CDN response",
+    alsoUsableAs: "script-src hash source (CSP3 integrity matching, Chromium only); see docs/csp.md",
     packages: Object.fromEntries(entries.map((e) => [e.name, { integrity: e.integrity, url: e.url }])),
     withoutBootstrap: skipped,
   }, null, 2)}\n`;
@@ -111,6 +112,11 @@ function toNotes(version, entries, skipped) {
     ...entries.map((e) => `| \`${e.name}\` | \`${e.integrity}\` |`),
     "",
     "</details>",
+    "",
+    "The same digests double as CSP `script-src` hash sources: CSP3 allows an external script whose",
+    "`integrity` matches a hash in `script-src`, so no separate value needs computing. That matching is",
+    "implemented in Chromium only — Firefox and Safari block on it, so keep the CDN host listed too.",
+    "Which parts of wcstack a hash can and cannot cover: `docs/csp.md` §3.",
     "",
     `Machine-readable: \`sri.json\` attached to this release.`,
   );

@@ -6,7 +6,7 @@
   custom element を後から定義する配布形態を前提にしている。
 - **状態**: **upstream へ提出済み**（[wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)・2026-08-01）。
   wcstack 側は回避策（利用者に `customElements.whenDefined()` を要求する手順）を
-  [framework アプリへの組み込み手順](./framework-adapter-integration.md) に明文化済み。本提案は、
+  [framework アプリへの組み込み手順](./framework-adapter-integration.ja.md) に明文化済み。本提案は、
   その回避策を利用者に強いなくても済むよう core 側に語彙を足すもの。
 - **調査時点のスナップショット**: `@wc-bindable/core@0.8.0`、および upstream `main` の
   react / vue / svelte / solid / angular / qwik / signals / rxjs adapter 実装。
@@ -134,6 +134,6 @@ no-op を返す代わりに `{ unbind, state: "bound" | "pending" | "not-bindabl
 ## 参照
 
 - [framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md)
-- [framework アプリへの組み込み手順](./framework-adapter-integration.md)
+- [framework アプリへの組み込み手順](./framework-adapter-integration.ja.md)
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [`@wc-bindable/core@0.8.0` の `bind()`](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/core/src/index.ts)

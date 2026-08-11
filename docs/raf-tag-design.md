@@ -5,7 +5,7 @@
   ゲームループに流用した際、(1) setInterval が vsync に揃わない、(2) dt を利用側で
   自前計算・クランプする必要がある、の 2 点が判明したこと。
 - 雛形: `@wcstack/timer`（TimerCore）。本ドキュメントは
-  [async-io-node-guidelines.md](async-io-node-guidelines.md) の § 番号を参照する。
+  [async-io-node-guidelines.ja.md](async-io-node-guidelines.ja.md) の § 番号を参照する。
 
 ## 0. 一言要約
 

@@ -222,7 +222,7 @@ class FakeAudioContext {
 | 文書 | 追加内容 |
 |---|---|
 | [timing-and-firing-contract.md](./timing-and-firing-contract.md) | 新節「`@wcstack/audio` — 適用時刻と再構築の契約」: desired のみ公開・可聴時刻は非規定（ADR G4）、rebuild 誘発条件・可聴断絶・microtask coalesce・冪等（ADR G5） |
-| [async-io-node-guidelines.md](./async-io-node-guidelines.md) | §1「確定すべき論点」に「**外部クロックを持つか**（持つなら適用時刻を規定しないことを明記）」を追加 |
+| [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) | §1「確定すべき論点」に「**外部クロックを持つか**（持つなら適用時刻を規定しないことを明記）」を追加 |
 | [architecture-hardening/12](./architecture-hardening/12-wc-bindable-observable-inventory.md) | audio の property を棚卸しに追加（`handle` は増えないことの記録） |
 | [architecture-hardening/README.md](./architecture-hardening/README.md) | 論点一覧に 14 を追加 |
 

@@ -3,7 +3,7 @@
 - **作成日**: 2026-08-02
 - **状態**: ✅ **採択（2026-08-02）**。G1・G2・G6 はユーザー承認済。G3・G4・G5 は推奨どおり採択（§8 参照）。実装計画は [audio-impl-plan.md](../audio-impl-plan.md)。
 - **きっかけ**: [examples/synth-playground](../../examples/synth-playground/)（2026-08-01・`977f236f`）。Web Audio API を 14 個の `<wcs-*>` タグで宣言的に扱う実験。これをパッケージに格上げするかの判断が、体系レベルの決定を1つ要求している。
-- **前提**: [11-react-immutable-snapshot-boundary.md](11-react-immutable-snapshot-boundary.md)（state / event / handle の分離）、[12-wc-bindable-observable-inventory.md](12-wc-bindable-observable-inventory.md)（handle 棚卸し = 231 property 中 1個）、[camera-recorder-tag-design.md](../camera-recorder-tag-design.md) §1・§2（生ハンドルを state に入れない不変条件）、[async-io-node-guidelines.md](../async-io-node-guidelines.md)（ノード骨格の規範）。
+- **前提**: [11-react-immutable-snapshot-boundary.md](11-react-immutable-snapshot-boundary.md)（state / event / handle の分離）、[12-wc-bindable-observable-inventory.md](12-wc-bindable-observable-inventory.md)（handle 棚卸し = 231 property 中 1個）、[camera-recorder-tag-design.md](../camera-recorder-tag-design.md) §1・§2（生ハンドルを state に入れない不変条件）、[async-io-node-guidelines.ja.md](../async-io-node-guidelines.ja.md)（ノード骨格の規範）。
 - **横断原則との関係**: README の横断原則 **3「値、イベント、コマンド、ライブハンドルの意味を混ぜない」** が、ここで初めて「ライブハンドルが複数あり、互いに接続される」という形で試される。
 
 ---
@@ -42,7 +42,7 @@ Web Audio は違う。`OscillatorNode → BiquadFilterNode → GainNode → dest
 | **A. DOM が所有** | 入れ子＝信号チェーン、`out=`/`param=` の id 参照＝それ以外の結線。synth-playground の現状 | 「HTML が配線」という核と一致。View source でパッチが読める。ただし DOM が計算グラフを兼ねる＝HTML セマンティクスの拡大解釈 |
 | B. state が所有 | state にパッチ記述（配列/オブジェクト）を置き、ルートが読んでグラフを組む | トポロジが「値」になり diff / computed / JSON 永続化に乗る。だが **camera §1 で禁じた「settle しないものを値扱いする矛盾」の再来**であり、かつ HTML から配線が消える（Polymer の死因＝両端への独自ランタイム強制に接近） |
 | **C. DOM が構造、state はパラメータのみ** | トポロジは DOM（案A）、`frequency` / `gain` 等の数値だけ state から流す | 現状 + wcBindable。責務分離が明快。**「構造は宣言、値は反応」**という一文で説明できる |
-| D. descriptor が正本・DOM はその一表現 | Core は plain object のパッチ記述を受け取る。DOM ウォーカーはそれを生成する層 | C の上位互換。Core が DOM 非依存になり[ガイドライン §3.1 の MUST NOT](../async-io-node-guidelines.md) を満たす。headless 採用者はパッチを直接組める |
+| D. descriptor が正本・DOM はその一表現 | Core は plain object のパッチ記述を受け取る。DOM ウォーカーはそれを生成する層 | C の上位互換。Core が DOM 非依存になり[ガイドライン §3.1 の MUST NOT](../async-io-node-guidelines.ja.md) を満たす。headless 採用者はパッチを直接組める |
 
 - **推奨: D（＝C を Core/Shell 境界まで徹底した形）**。
   - 理由1: ガイドライン §3.1 は「Core は DOM 要素に依存してはならない（MUST NOT）」と規範化している。DOM を歩くグラフコンパイラを Core に置くと即座に違反する。descriptor tree を挟めば違反しない。

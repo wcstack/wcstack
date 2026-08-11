@@ -112,7 +112,7 @@ LP の語り順は **Compose → Reuse → Verify → Expand**（配線できる
 | 0-2 改 | 静的 example 8 本を LP にホスト | **CDN 参照を `@1.24` にピン**（latest 追従だと将来のリリースで公開デモが静かに壊れる）。各デモに「View source」バナー。LP の各コードタブ直下に「Run live →」ボタンを対で設置。初手 3 本は権限プロンプト不要（pomodoro / color-palette / devtools-playground） |
 | 0-3 | LP に npm / 各パッケージへのリンク | 初版通り |
 | 0-4 改 | README の npm 面最適化 | **主対象は state**（39 I/O ノードは既に Install→Quick Start が上部で合格圏）。(i) 冒頭に 1 タグ導入例コードブロック（`npm view` で全文生読みされる唯一の面）、(ii) **「Do Not Compare」節を「いつ選ぶ/選ばないか」へ書換**（→D5）、(iii) data-wcs 構文チートシートをコードブロックの塊として上部へ（AI 実測: 散文は要約で消え、コードブロックだけが通る） |
-| **0-5 新** | **LP とルート README 上部に「Add one tag to your existing app」節** | **戦略核の本丸**。初版はこの入口をどの施策にも割り当てていなかった（監査 M10）。React/Vue タブ + `docs/framework-adapter-integration.md` への直リンク |
+| **0-5 新** | **LP とルート README 上部に「Add one tag to your existing app」節** | **戦略核の本丸**。初版はこの入口をどの施策にも割り当てていなかった（監査 M10）。React/Vue タブ + `docs/framework-adapter-integration.ja.md` への直リンク |
 | **0-6 新** | **日本語導線** | LP ヘッダに「日本語 →」+ ルート README.ja への入口整備。Zenn 記事の着地先を日本語面にできるようにする |
 | **0-7 新** | **正直化 2 点セット** | (a) adapter 節に「20 FW アダプタは全て作者自身が書いた公式アダプタ（第三者エコシステムではない）」の 1 文を恒常掲載 (b) README 冒頭に CI/npm/テスト数バッジ + ソロ開発の自己開示 1 行。**バス係数 1 の緩和文言もここで**: 「MIT + 全設計文書公開 + 素の Custom Elements なので、作者不在時はフォークが現実的な保険」 |
 | **0-8 新** | **受け皿整備** | GitHub Discussions 有効化・質問用 issue テンプレ・**SECURITY.md**（camera/clipboard/credential を扱う I/O 層に脆弱性窓口が無いのは HN 定番の減点）。最重要指標「外部 issue 0→1」の測定前提 |

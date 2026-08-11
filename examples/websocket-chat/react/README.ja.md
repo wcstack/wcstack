@@ -97,7 +97,7 @@ function App() {
 }
 ```
 
-`<wcs-ws>` はこのコンポーネントがレンダーされる前に定義済みである必要があります。本デモは `src/main.tsx` で `import "@wcstack/websocket/auto";` を一度だけ行っています（[docs/framework-adapter-integration.md](../../../docs/framework-adapter-integration.md) §1 参照。未 upgrade の場合、adapter は何も束縛せず、何も報告しません）。
+`<wcs-ws>` はこのコンポーネントがレンダーされる前に定義済みである必要があります。本デモは `src/main.tsx` で `import "@wcstack/websocket/auto";` を一度だけ行っています（[docs/framework-adapter-integration.ja.md](../../../docs/framework-adapter-integration.ja.md) §1 参照。未 upgrade の場合、adapter は何も束縛せず、何も報告しません）。
 
 ## WebSocket プロトコル
 
