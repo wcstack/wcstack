@@ -16,6 +16,7 @@
 
 import { IAbsoluteStateAddress } from "../../address/types";
 import { STATE_UPDATED_CALLBACK_NAME } from "../../define";
+import { getScopedIndexes } from "../../list/wildcardLevel";
 import { IStateHandler } from "../types";
 
 /**
@@ -48,7 +49,7 @@ export function updatedCallback(
       }
       paths.add(pathName);
       if (pathInfo.wildcardCount > 0) {
-        const indexes = ref.listIndex!.indexes ?? [];
+        const indexes = getScopedIndexes(ref.listIndex!, pathInfo.wildcardCount);
         const indexesList = indexesListByPath[pathName];
         if (typeof indexesList === "undefined") {
           indexesListByPath[pathName] = [indexes];

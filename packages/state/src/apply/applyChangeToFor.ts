@@ -15,6 +15,7 @@ import { deleteContentByNode } from "../structural/contentsByNode";
 import { createContent } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
+import { getListParentListIndex } from "../webComponent/baseListIndex";
 import { applyChange } from "./applyChange";
 import { setRootNodeByFragment } from "./rootNodeByFragment";
 import { IApplyContext } from "./types";
@@ -150,7 +151,9 @@ export function applyChangeToFor(
   const listIndex = getListIndexByBindingInfo(bindingInfo);
   const absAddress = getAbsoluteStateAddressByBinding(bindingInfo);
   const lastValue  = getLastListValueByAbsoluteStateAddress(absAddress);
-  const diff = createListDiff(listIndex, lastValue, newValue);
+  // 子スコープのトップレベルのリストは base を親に持つ（webComponent/baseListIndex.ts）
+  const diff = createListDiff(
+    getListParentListIndex(context.stateElement, listIndex), lastValue, newValue);
   context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
 
   const fullDelete = Array.isArray(lastValue)

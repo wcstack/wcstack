@@ -11,6 +11,8 @@ import { IPathInfo, IStateAddress } from "../../address/types";
 import { createListDiff } from "../../list/createListDiff";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
+import { getScopedIndexes } from "../../list/wildcardLevel";
+import { getBaseDepth, getListParentListIndex } from "../../webComponent/baseListIndex";
 import { getByAddress } from "../methods/getByAddress";
 import { getContextListIndex } from "../methods/getContextListIndex";
 import { IStateHandler } from "../types";
@@ -47,7 +49,7 @@ export function getAll(
           const wildcardPattern = pathInfo.wildcardParentPathInfos[i];
           const listIndex = getContextListIndex(handler, wildcardPattern.path);
           if (listIndex) {
-            indexes = listIndex.indexes;
+            indexes = getScopedIndexes(listIndex, listIndex.length - getBaseDepth(handler.stateElement));
             break;
           }
         }
@@ -72,7 +74,8 @@ export function getAll(
         const wildcardAddress = createStateAddress(wildcardParentPathInfo, listIndex);
         const oldValue = lastValueByListAddress.get(wildcardAddress);
         const newValue = getByAddress(target, wildcardAddress, receiver, handler);
-        const listDiff = createListDiff(listIndex, oldValue, newValue);
+        const listDiff = createListDiff(
+          getListParentListIndex(handler.stateElement, listIndex), oldValue, newValue);
         const listIndexes = listDiff.newIndexes;
         const index = indexes[indexPos] ?? null;
         newValueByAddress.set(wildcardAddress, newValue);

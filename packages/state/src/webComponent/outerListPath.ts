@@ -18,6 +18,7 @@ import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { getPathInfo } from "../address/PathInfo";
 import { IAbsolutePathInfo, IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
+import { getBaseDepth } from "./baseListIndex";
 import { getOuterAbsolutePathInfo } from "./MappingRule";
 
 /**
@@ -37,13 +38,16 @@ export function propagateListPathToOuterState(innerStateElement: IStateElement, 
 
 /**
  * 子スコープのリスト行パス（`items.*.name`）に対応する親スコープの絶対パス情報を返す。
- * ワイルドカードの段数が一致するときだけ返す ＝ listIndex をそのまま流用できる形
- * （listIndex 台帳 `listIndexesByList` は配列オブジェクトの同一性で引かれるため、
- * 親子は同じ `IListIndex` インスタンスを共有している）。
  *
- * 段数が変わるのは、コンポーネント自身が親スコープの `for` の中にいて、さらに子でも
- * `for` を回している入れ子形。親スコープ側の行 listIndex と子スコープ側の行 listIndex は
- * 親子チェーンが繋がっていない別物なので合成できない。この形は対象外（null）。
+ * 呼び出し側（`BindingSession.registerAddress`）は、行バインディングを**この外側パスと
+ * 子スコープの listIndex の組**で親のパターン台帳に相乗りさせる。したがって成立条件は
+ * 「子の listIndex が外側パスの段数をちょうど満たすこと」＝
+ * `Δ + innerW === outerW`（Δ = base 深さ）。
+ *
+ * - コンポーネントが親の `for` の外（Δ=0）: `outerW === innerW`（§1.8）
+ * - コンポーネントが親の `for` の中（Δ>0）: 子の listIndex は base を親に持つので
+ *   チェーン長が Δ+innerW になり、そのまま外側パスの段数と一致する
+ *   （docs/state-bind-component-nested-for-design.md）
  */
 export function getOuterRowPathInfo(
   innerStateElement: IStateElement,
@@ -56,7 +60,8 @@ export function getOuterRowPathInfo(
   if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
     return null;
   }
-  if (outerAbsPathInfo.pathInfo.wildcardCount !== innerPathInfo.wildcardCount) {
+  const baseDepth = getBaseDepth(innerStateElement);
+  if (outerAbsPathInfo.pathInfo.wildcardCount !== innerPathInfo.wildcardCount + baseDepth) {
     return null;
   }
   return outerAbsPathInfo;

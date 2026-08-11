@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: a bind-component child iterating a list inside a parent loop</title>
+  <!-- Covers docs/architecture-hardening/15-state-component-mechanism-consistency.md §1.10
+       (design: docs/state-bind-component-nested-for-design.md).
+
+       The component sits inside the parent's `for` AND runs its own `for` over the array it
+       was handed: `state.items: groups.*.children` on the outside, `for: items` on the inside.
+       One array object was being asked for two depths -- the parent addresses a row of
+       groups.*.children at arity 2, the child at arity 1 -- while the listIndex ledger is
+       keyed by array identity and holds exactly one set. The child's binding initialization
+       raised "ListIndex not found: groups.*.children.*.name", and because that escaped as an
+       unhandled rejection rather than through getBindingsReady, the page just hung with no
+       rows.
+
+       Both shadow-construction timings are on the page. A component that builds its shadow in
+       connectedCallback gets a fresh <wcs-state> on every reconnect, so it can pass while the
+       constructor form -- where the state element is reused and _initialized stays true --
+       stays stale (§1.9). Row pooling makes this reachable, so one of each is required.
+
+       Discriminators are the *shadow* lists. #outer is the parent's own binding and moves
+       either way. data-row-id is stamped from the row object, so a full re-render shows up as
+       changed ids rather than changed text. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+:not(:defined) { display: none; }
+  </style>
+  <script type="module">
+    const TEMPLATE = `
+<wcs-state bind-component="state"></wcs-state>
+<ul class="child-view">
+  <template data-wcs="for: items">
+    <li data-wcs="textContent: .name; attr.data-row-id: .id"></li>
+  </template>
+</ul>
+`;
+
+    // shadow を constructor で組む形: <wcs-state> は再接続で使い回される
+    class GroupEager extends HTMLElement {
+      state = { items: [] };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+        this.shadowRoot.innerHTML = TEMPLATE;
+      }
+    }
+    customElements.define("group-eager", GroupEager);
+
+    // shadow を connectedCallback で組む形: 再接続のたびに新しい <wcs-state> になる
+    class GroupLazy extends HTMLElement {
+      state = { items: [] };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+      }
+      connectedCallback() {
+        if (this.shadowRoot.childElementCount === 0) {
+          this.shadowRoot.innerHTML = TEMPLATE;
+        }
+      }
+    }
+    customElements.define("group-lazy", GroupLazy);
+  </script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  groups: [
+    { id: "g1", title: "G1", children: [{ id: "a", name: "Alice" }, { id: "b", name: "Bob" }] },
+    { id: "g2", title: "G2", children: [{ id: "c", name: "Carol" }] },
+  ],
+  // パス文字列で書く（`this.groups[0].children[1].name = ...` は set トラップを通らない）
+  renameNested() { this["groups.0.children.1.name"] = "Bobby"; },
+  // 並べ替え後に「元の G1 の 2 行目」を狙うための対。groups.0 が 1 行しか持たない
+  // 状態で renameNested を撃つと、存在しない行への書き込みになって raise する
+  // （範囲外の行への書き込みは既存の挙動。メッセージは親パス名を出すので紛らわしい）
+  renameSecondGroupRow() { this["groups.1.children.1.name"] = "Bobby"; },
+  replaceRowList() {
+    this["groups.0.children"] = [
+      { id: "x", name: "Xavier" },
+      { id: "y", name: "Yolanda" },
+      { id: "z", name: "Zach" },
+    ];
+  },
+  shrinkRowList() { this["groups.0.children"] = [{ id: "a", name: "Alice" }]; },
+  swapGroups() { this.groups = [this.groups[1], this.groups[0]]; },
+  replaceGroups() {
+    this.groups = [
+      { id: "h1", title: "H1", children: [{ id: "p", name: "Peggy" }] },
+      { id: "h2", title: "H2", children: [{ id: "q", name: "Quinn" }, { id: "r", name: "Rita" }] },
+    ];
+  },
+};
+    </script>
+  </wcs-state>
+
+  <div id="outer">
+    <template data-wcs="for: groups">
+      <section>
+        <h3 data-wcs="textContent: .title"></h3>
+        <ul class="host-view">
+          <template data-wcs="for: groups.*.children">
+            <li data-wcs="textContent: .name"></li>
+          </template>
+        </ul>
+        <group-eager data-wcs="state.items: groups.*.children"></group-eager>
+        <group-lazy data-wcs="state.items: groups.*.children"></group-lazy>
+      </section>
+    </template>
+  </div>
+
+  <button id="rename" data-wcs="onclick: renameNested">rename nested row</button>
+  <button id="rename-2nd" data-wcs="onclick: renameSecondGroupRow">rename 2nd group row</button>
+  <button id="replace-rows" data-wcs="onclick: replaceRowList">replace row list</button>
+  <button id="shrink-rows" data-wcs="onclick: shrinkRowList">shrink row list</button>
+  <button id="swap-groups" data-wcs="onclick: swapGroups">swap groups</button>
+  <button id="replace-groups" data-wcs="onclick: replaceGroups">replace groups</button>
+</body>
+</html>

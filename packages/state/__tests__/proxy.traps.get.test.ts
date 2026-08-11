@@ -105,10 +105,10 @@ describe('proxy/traps/get', () => {
   });
 
   it('listIndex は有るが index が無い場合は $1 でエラーになること', () => {
-    const listIndex = { indexes: [] }; // index 0 ($1) が無い
+    const listIndex = { indexes: [], length: 1, at: () => null }; // 該当段が引けない
     const handler = {
       addressStackLength: 1,
-      lastAddressStack: { listIndex }
+      lastAddressStack: { pathInfo: { wildcardCount: 1 }, listIndex }
     } as any;
     expect(() => get({}, '$1', {}, handler)).toThrow('ListIndex not found: $1');
   });

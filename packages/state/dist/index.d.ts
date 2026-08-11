@@ -1,4 +1,23 @@
 /**
+ * list/listKeys.ts
+ *
+ * `$listKeys: { <listPath>: <fieldName | (row) => key> }` 宣言マップを解析し、
+ * 「リストパス → キー指定」表を構築する（docs/state-list-key-design.md §3）。
+ *
+ * この表が存在するリストパスへの配列代入は、setByAddress でキー突合され、
+ * 一致行は旧オブジェクトを据え置いたまま変化フィールドだけが per-path 書き込みで
+ * 流し込まれる（§2）。未宣言なら書き込み経路は従来と完全に同一。
+ *
+ * 「そのパスが実際にリストか」は宣言時には判定できない（listPaths は
+ * バインディング収集時に確定する）。実行時に配列でなければ経路に入らないだけで、
+ * 宣言自体はエラーにしない。
+ */
+
+/** キー指定: フラットなフィールド名、または行から複合キーを作る関数 */
+type ListKeySpec = string | ((row: any) => unknown);
+type ListKeyMap = ReadonlyMap<string, ListKeySpec>;
+
+/**
  * Interface for hierarchical loop index management in nested loops.
  * Tracks parent-child relationships, versions, and provides access to index hierarchy.
  */
@@ -44,6 +63,20 @@ type Mutability = "readonly" | "writable";
 
 interface IStateElement {
     readonly name: string;
+    /**
+     * state のロードが完了しているか。`initializePromise` の同期版で、
+     * DCC のアクセサが「今すぐ読み書きしてよいか」を判断するのに使う。
+     * optional なのはテスト用モック互換のため（undefined は「不明＝未初期化扱い」）。
+     */
+    readonly initialized?: boolean;
+    /**
+     * この state element が今使えるか（＝ 接続済みで rootNode を保持しているか）。
+     * `createState` は rootNode を要求するので、false のときに呼ぶと raiseError する。
+     * 台帳に載っていること（登録済み）と使えることは別で、要素をキーにした台帳には
+     * 切断済みの state element が残る窓がある（§1.9）。
+     * optional なのはテスト用モック互換のため（undefined は「不明＝使える扱い」）。
+     */
+    readonly hasRootNode?: boolean;
     readonly initializePromise: Promise<void>;
     readonly connectedCallbackPromise: Promise<void>;
     readonly listPaths: Set<string>;
@@ -56,7 +89,27 @@ interface IStateElement {
     readonly version: number;
     readonly rootNode: Node;
     readonly boundComponentStateProp: string | null;
+    /**
+     * `bind-component` で束ねられているコンポーネント要素（親スコープ側のノード）。
+     * マッピング規則の引き当てに使う。optional なのはテスト用モック互換のため。
+     */
+    readonly boundComponent?: Element | null;
+    /**
+     * この state の実体が innerState proxy（＝ 値の正本が親スコープの state にある
+     * mapped な `bind-component`）か。真のときだけ越境アドレスの受け渡しと
+     * リストパスの外向き伝播が働く（§1.8）。
+     * optional なのはテスト用モック互換のため（undefined は plain 扱い）。
+     */
+    readonly hasMappedComponentState?: boolean;
+    markComponentStateMapped?(): void;
+    /**
+     * DCC の `$bindables` から生成した「パス → 変更イベント名」表。
+     * 唯一の書き手は defineDCC で、読み手は setByAddress。
+     * getter だけを公開して setter をインターフェースから落としていたため
+     * defineDCC が具象 State に依存していた（§3.5）。
+     */
     readonly bindableEventMap: Record<string, string>;
+    setBindableEventMap(map: Record<string, string>): void;
     readonly commandTokenNames: ReadonlySet<string>;
     readonly eventTokenNames: ReadonlySet<string>;
     /**
@@ -80,6 +133,13 @@ interface IStateElement {
      */
     readonly indexDependentGetterPaths?: ReadonlySet<string>;
     addIndexDependentGetterPath?(path: string): void;
+    /**
+     * `$listKeys` 宣言から生成した「リストパス → キー指定」表。
+     * 宣言が無ければ null / undefined で、setByAddress のキー突合経路に一切入らない
+     * （docs/state-list-key-design.md §7-1 のゼロコスト契約）。
+     * optional なのはテスト用モック互換のため（undefined は「宣言なし」扱い）。
+     */
+    readonly listKeys?: ListKeyMap | null;
     setPathInfo(path: string, bindingType: BindingType): void;
     addStaticDependency(parentPath: string, childPath: string): boolean;
     addDynamicDependency(fromPath: string, toPath: string): boolean;

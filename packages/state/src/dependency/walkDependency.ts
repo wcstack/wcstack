@@ -10,9 +10,11 @@ import { WILDCARD } from "../define";
 import { createListDiff } from "../list/createListDiff";
 import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
 import { IListDiff, IListIndex } from "../list/types";
+import { listIndexAtWildcard } from "../list/wildcardLevel";
 import { getByAddressSymbol } from "../proxy/symbols";
 import { IStateProxy } from "../proxy/types";
 import { raiseError } from "../raiseError";
+import { getListParentListIndex } from "../webComponent/baseListIndex";
 import { getTopologicalRanks } from "./topologicalRank";
 import { SearchType } from "./types";
 
@@ -61,7 +63,8 @@ function _walkExpandWildcard(
   const parentAbsAddress = createAbsoluteStateAddress(parentAbsPathInfo, parentListIndex);
   const lastValue = getLastListValueByAbsoluteStateAddress(parentAbsAddress);
   const newValue = context.stateProxy[getByAddressSymbol](parentAddress);
-  const listDiff = createListDiff(parentAddress.listIndex, lastValue, newValue);
+  const listDiff = createListDiff(
+    getListParentListIndex(context.stateElement, parentAddress.listIndex), lastValue, newValue);
 
   const loopIndexes = getIndexes(listDiff, context.searchType);
   if (currentWildcardIndex === context.wildcardPaths.length - 1) {
@@ -281,7 +284,8 @@ function _collectDependencies(
         const absPathInfo = getAbsolutePathInfo(context.stateElement, address.pathInfo);
         const absAddress = createAbsoluteStateAddress(absPathInfo, address.listIndex);
         const lastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-        const listDiff = createListDiff(address.listIndex, lastValue, newValue);
+        const listDiff = createListDiff(
+          getListParentListIndex(context.stateElement, address.listIndex), lastValue, newValue);
         const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
         for(const listIndex of selection.fullRows) {
           const depAddress = createStateAddress(depPathInfo, listIndex);
@@ -352,7 +356,7 @@ function _collectDependencies(
             if (address.listIndex === null) {
               raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
             }
-            listIndex = address.listIndex!.at(wildcardLen - 1);
+            listIndex = listIndexAtWildcard(address.listIndex!, wildcardLen - 1, address.pathInfo.wildcardCount);
           } else {
             // selectedIndex => items.*.selected
             // 同じ親を持たない場合はnullから開始
@@ -376,7 +380,7 @@ function _collectDependencies(
           if (address.listIndex === null) {
             raiseError(`Cannot expand dynamic dependency with wildcard for non-list address: ${address.pathInfo.path}`);
           }
-          const listIndex = address.listIndex.at(wildcardLen - 1);
+          const listIndex = listIndexAtWildcard(address.listIndex, wildcardLen - 1, address.pathInfo.wildcardCount);
           listIndexes.push(listIndex);
         }
       } else {

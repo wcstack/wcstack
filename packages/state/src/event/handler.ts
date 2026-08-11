@@ -5,6 +5,7 @@ import { ICommandToken } from "../command/types";
 import { STATE_COMMAND_NAMESPACE_NAME } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { getByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
+import { getScopedIndexes } from "../list/wildcardLevel";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
@@ -46,7 +47,8 @@ const stateEventHandlerFunction = (
   const isCommand = isCommandTokenPath(handlerName);
   stateElement.createStateAsync("writable", async (state) => {
     const results = state[setLoopContextSymbol](loopContext, () => {
-      const indexes = loopContext?.listIndex.indexes ?? [];
+      const indexes = loopContext !== null
+        ? getScopedIndexes(loopContext.listIndex, loopContext.pathInfo.wildcardCount) : [];
       if (isCommand) {
         // command token を解決して emit。引数はハンドラ呼び出しと同じく (event, ...listIndexes) を透過する。
         const token = state[getByAddressSymbol](createStateAddress(statePathInfo, null));

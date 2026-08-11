@@ -26,6 +26,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
+import { getBaseDepth } from "../webComponent/baseListIndex";
 import { propagateListPathToOuterState } from "../webComponent/outerListPath";
 import { getPrimaryInnerPaths, resetDerivedMappingRules } from "../webComponent/MappingRule";
 import { connectedCallbackSymbol, disconnectedCallbackSymbol } from "../proxy/symbols";
@@ -88,7 +89,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _elementPaths: Set<string> = new Set<string>();
   private _getterPaths: Set<string> = new Set<string>();
   private _setterPaths: Set<string> = new Set<string>();
-  private _loopContextStack: ILoopContextStack = createLoopContextStack();
+  private _loopContextStack: ILoopContextStack = createLoopContextStack(() => getBaseDepth(this));
   private _dynamicDependency: Map<string, string[]> = new Map<string, string[]>();
   private _staticDependency: Map<string, string[]> = new Map<string, string[]>();
   private _pathSet: Set<string> = new Set<string>();

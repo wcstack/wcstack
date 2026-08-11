@@ -40,6 +40,7 @@ import { getAbsolutePathInfo } from "../../address/AbsolutePathInfo";
 import { config } from "../../config";
 import { devtoolsSink } from "../../devtools/sink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
+import { getListParentListIndex } from "../../webComponent/baseListIndex";
 import { popCrossBoundaryAddress, pushCrossBoundaryAddress } from "../../webComponent/crossBoundaryAddress";
 import { consumeOccurrenceWrite } from "../occurrenceWrite";
 
@@ -218,12 +219,13 @@ function setKeyedListByAddress(
   // 格納より前に引くのは、格納時の walkDependency（listExpansion: "diff"）が
   // 先にハイブリッド配列の台帳を作ってしまうと、後から上書きした台帳との間で
   // 同じ分裂が起きるため。先に確定させておけば以降は全経路がこれに合流する。
+  const listParentListIndex = getListParentListIndex(handler.stateElement, address.listIndex);
   if (getListIndexesByList(oldList) === null) {
     // 一度も描画されていないリストは台帳自体が無い。先に生やしておかないと
     // isSameList 経路が空の oldIndexes をそのまま新台帳にしてしまう。
-    createListDiff(address.listIndex, null, oldList);
+    createListDiff(listParentListIndex, null, oldList);
   }
-  const diff = createListDiff(address.listIndex, oldList, merge.list);
+  const diff = createListDiff(listParentListIndex, oldList, merge.list);
   const result = setByAddressCore(target, address, merge.list, receiver, handler, listPath);
   const elementPathInfo = getPathInfo(listPath + DELIMITER + WILDCARD);
   for (const match of merge.matched) {

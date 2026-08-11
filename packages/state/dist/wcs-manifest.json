@@ -525,11 +525,13 @@
   ],
   "reservedStateApi": [
     "$bindables",
+    "$commands",
     "$commandTokens",
     "$command",
     "$eventTokens",
     "$on",
     "$streams",
+    "$listKeys",
     "$streamStatus",
     "$streamError"
   ]
