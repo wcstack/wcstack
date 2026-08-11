@@ -37,7 +37,7 @@ implementation.
 
 ## The remediation design that cuts across all eight
 
-- [The remediation design across the eight topics](09-remediation-design.md) (ja) — collects the division of
+- [The remediation design across the eight topics](09-remediation-design.md) — collects the division of
   responsibility between `BindableDeclarationReader`, `BindingSession`, `PropagationContext`, `OperationTicket`,
   and `wcstack.manifest.json`, together with the staged introduction, the regression tests, and the decision gates.
 
@@ -70,7 +70,7 @@ implementation.
   principle 3, "do not mix the meanings of values, events, commands, and live handles", and the conclusion is
   "the topology is a descriptor; Core owns the handles and never lets them cross the boundary" — that is,
   **no new observation semantics are added**.
-- [A consistency audit of state's three component mechanisms](15-state-component-mechanism-consistency.md) (ja) —
+- [A consistency audit of state's three component mechanisms](15-state-component-mechanism-consistency.md) —
   **not adopted, not fixed**. Turns doc 13's "does the bind take" axis inward, onto wcstack itself. It pins down
   where the three mechanisms `@wcstack/state` carries — the wc-bindable protocol, DCC, and bind-component — fail
   to agree with each other. The root causes are three: (1) DCC's `createWcBindable` partially implements the
@@ -112,4 +112,4 @@ out from under them through updates.
 The proposal in each document can be adopted independently. But 1 and 2 (initial sync), 4 and 5 (execution and
 observation), and 6 and 8 (type information and protocol evolution) are mutually dependent. Before moving to
 implementation, settle each document's "decision gates" first, and include the phases and conformance tests of
-[the remediation design across the eight topics](09-remediation-design.md) (ja) in the completion criteria.
+[the remediation design across the eight topics](09-remediation-design.md) in the completion criteria.

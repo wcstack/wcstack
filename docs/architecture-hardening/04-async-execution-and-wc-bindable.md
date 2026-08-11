@@ -188,6 +188,6 @@ lane が直列化するのは `$on` ハンドラの実行だが、wcstack のイ
 - [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
 - [非同期実行モデル](../async-execution-model.ja.md)
 - [非同期 I/O ノード指針](../async-io-node-guidelines.ja.md)
-- [8 論点を横断する修正設計](09-remediation-design.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)
 - [発火タイミング契約](../timing-and-firing-contract.ja.md) — 現行 example の `$streams` restart と同値 page 選択、および refactor 前の発火順分析
 - `examples/state-intersect-scroll` — 現行は `$streams` 実例。本書中の手書き版は決定ゲート 1 (d) の歴史的動機

@@ -30,26 +30,23 @@ Three rules go with it:
 | [framework-adapter-integration.md](./framework-adapter-integration.md) | [framework-adapter-integration.ja.md](./framework-adapter-integration.ja.md) |
 | [async-execution-model.md](./async-execution-model.md) | [async-execution-model.ja.md](./async-execution-model.ja.md) |
 | [async-io-node-guidelines.md](./async-io-node-guidelines.md) | [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) |
+| [timing-and-firing-contract.md](./timing-and-firing-contract.md) | [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) |
+| [devtools-hook-protocol.md](./devtools-hook-protocol.md) | [devtools-hook-protocol.ja.md](./devtools-hook-protocol.ja.md) |
+| [custom-state-reflection-design.md](./custom-state-reflection-design.md) | [custom-state-reflection-design.ja.md](./custom-state-reflection-design.ja.md) |
+| [signals-definition-timing.md](./signals-definition-timing.md) | [signals-definition-timing.ja.md](./signals-definition-timing.ja.md) |
+| [signals-state-design.md](./signals-state-design.md) | [signals-state-design.ja.md](./signals-state-design.ja.md) |
+| [state-binding-init-races.md](./state-binding-init-races.md) | [state-binding-init-races.ja.md](./state-binding-init-races.ja.md) |
+| [screen-orientation-tag-design.md](./screen-orientation-tag-design.md) | [screen-orientation-tag-design.ja.md](./screen-orientation-tag-design.ja.md) |
+| [audio-impl-plan.md](./audio-impl-plan.md) | [audio-impl-plan.ja.md](./audio-impl-plan.ja.md) |
+| [architecture-hardening/README.md](./architecture-hardening/README.md) | [README.ja.md](./architecture-hardening/README.ja.md) |
+| [architecture-hardening/09-remediation-design.md](./architecture-hardening/09-remediation-design.md) | [09…ja.md](./architecture-hardening/09-remediation-design.ja.md) |
+| [architecture-hardening/10-defaulting-rollout-status.md](./architecture-hardening/10-defaulting-rollout-status.md) | [10…ja.md](./architecture-hardening/10-defaulting-rollout-status.ja.md) |
+| [architecture-hardening/12-wc-bindable-observable-inventory.md](./architecture-hardening/12-wc-bindable-observable-inventory.md) | [12…ja.md](./architecture-hardening/12-wc-bindable-observable-inventory.ja.md) |
+| [architecture-hardening/13-framework-adapter-binding-constraints.md](./architecture-hardening/13-framework-adapter-binding-constraints.md) | [13…ja.md](./architecture-hardening/13-framework-adapter-binding-constraints.ja.md) |
+| [architecture-hardening/14-handle-graph-wiring.md](./architecture-hardening/14-handle-graph-wiring.md) | [14…ja.md](./architecture-hardening/14-handle-graph-wiring.ja.md) |
+| [architecture-hardening/15-state-component-mechanism-consistency.md](./architecture-hardening/15-state-component-mechanism-consistency.md) | [15…ja.md](./architecture-hardening/15-state-component-mechanism-consistency.ja.md) |
 
-**Queued — referenced from code, examples, or a README**
-
-| Doc | Referenced from |
-|---|---|
-| `timing-and-firing-contract.md` | `packages/screen-orientation/README.md`, MUST-referenced from the guidelines §9 |
-| `devtools-hook-protocol.md` | `architecture-hardening/05` |
-| `custom-state-reflection-design.md` | `examples/state-custom-states`, `packages/{worker,screen-orientation}` tests |
-| `signals-definition-timing.md` | `examples/signals-tilt-maze`, `examples/signals-live-search` |
-| `signals-state-design.md` | `examples/signals-live-search/README.md` |
-| `state-binding-init-races.md` | `e2e/tests/state-deferred-apply.spec.ts`, `e2e/tests/state-cross-tab-todo.spec.ts` |
-| `screen-orientation-tag-design.md` | `packages/screen-orientation/src/**` |
-| `audio-impl-plan.md` | `e2e/tests/audio-offline.spec.ts` |
-| `architecture-hardening/README.md` | index for the ADR set |
-| `architecture-hardening/09-remediation-design.md` | `io-core/*.ts`, `packages/screen-orientation/src/core/platformCapability.ts` |
-| `architecture-hardening/10-defaulting-rollout-status.md` | `scripts/conformance-bindable-inputs.mjs` |
-| `architecture-hardening/12-wc-bindable-observable-inventory.md` | `packages/worker/__tests__/wcBindableSemantics.test.ts` |
-| `architecture-hardening/13-framework-adapter-binding-constraints.md` | `protocol/upgrade-properties.ts` |
-| `architecture-hardening/14-handle-graph-wiring.md` | CLAUDE.md, `examples/synth-playground` |
-| `architecture-hardening/15-state-component-mechanism-consistency.md` | eight `e2e/tests/state-*.spec.ts` |
+That is the whole priority set — every document code, an example, or a README points at. What remains untranslated is the internal design notes and implementation plans (`*-tag-design.md`, `*-impl-plan.md`, `state-*.md`, `io-node-*.md`, `architecture-hardening/01`-`08`, `11`), translated on demand as they are touched.
 
 **Staying Japanese — internal strategy and council records**
 

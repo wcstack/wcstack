@@ -122,4 +122,4 @@ late attach した DevTools は `kind: state` / `kind: io` などsourceごとの
 - [DevTools hook protocol](../devtools-hook-protocol.ja.md)
 - [DevTools tag design](../devtools-tag-design.md)
 - [非同期実行と wc-bindable 境界](04-async-execution-and-wc-bindable.md)
-- [8 論点を横断する修正設計](09-remediation-design.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)

@@ -101,5 +101,5 @@ runtime assessment は availability、permission、readiness、activity、precon
 
 - [非同期 I/O ノード指針](../async-io-node-guidelines.ja.md)
 - [非同期実行と wc-bindable 境界](04-async-execution-and-wc-bindable.md)
-- [8 論点を横断する修正設計](09-remediation-design.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)
 - [発火タイミング契約](../timing-and-firing-contract.ja.md)

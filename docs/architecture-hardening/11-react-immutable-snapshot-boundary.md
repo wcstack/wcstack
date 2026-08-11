@@ -321,7 +321,7 @@ runtime 改修を約束しない。
 - [`@wc-bindable/react@0.8.0` source（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/react/src/index.ts)
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [非同期実行と wc-bindable 境界](04-async-execution-and-wc-bindable.md)
-- [横断修正設計](09-remediation-design.md)
+- [横断修正設計](09-remediation-design.ja.md)
 - [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
 - [`FetchCore`](../../packages/fetch/src/core/FetchCore.ts)
 - [`CameraCore`](../../packages/camera/src/core/CameraCore.ts)

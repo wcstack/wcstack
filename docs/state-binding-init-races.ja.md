@@ -74,7 +74,7 @@ $connectedCallback() {
 
 ### 1-6. 恒久対応（**確定・現行の正典**）: `value#init=element:`
 
-案 A の一般化として directional initial sync（`docs/architecture-hardening/09-remediation-design.md` §3.6）が実装され、v1.21.0 で既定 ON、authority が初期同期のみを支配する形に v1.22.0 で確定した。**修飾子 1 つで §1-4 の idiom を完全に置換できる**:
+案 A の一般化として directional initial sync（`docs/architecture-hardening/09-remediation-design.ja.md` §3.6）が実装され、v1.21.0 で既定 ON、authority が初期同期のみを支配する形に v1.22.0 で確定した。**修飾子 1 つで §1-4 の idiom を完全に置換できる**:
 
 ```html
 <wcs-storage key="todos" type="local" data-wcs="value#init=element: todos"></wcs-storage>

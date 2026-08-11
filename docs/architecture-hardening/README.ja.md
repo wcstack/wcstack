@@ -34,7 +34,7 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
 
 ## 8 論点を横断する修正設計
 
-- [8 論点を横断する修正設計](09-remediation-design.md) — `BindableDeclarationReader`、
+- [8 論点を横断する修正設計](09-remediation-design.ja.md) — `BindableDeclarationReader`、
   `BindingSession`、`PropagationContext`、`OperationTicket`、`wcstack.manifest.json` の責務分割、
   段階導入、回帰テスト、decision gate をまとめる。
 
@@ -62,7 +62,7 @@ wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコ
   どう記述するか。Web Audio（[examples/synth-playground](../../examples/synth-playground/)）が持ち込んだ
   G1〜G6 を決定。横断原則 3「値、イベント、コマンド、ライブハンドルの意味を混ぜない」の初の実地試験であり、
   結論は「トポロジは descriptor、ハンドルは Core が所有して境界に出さない」＝ **新しい観測意味論を増やさない**。
-- [state のコンポーネント機構 3 系統の整合性監査](15-state-component-mechanism-consistency.md) — **未採択・未修正**。
+- [state のコンポーネント機構 3 系統の整合性監査](15-state-component-mechanism-consistency.ja.md) — **未採択・未修正**。
   13 の「バインドが成立するか」軸を wcstack 内部へ向けたもの。`@wcstack/state` が持つ
   wc-bindable protocol / DCC / bind-component の 3 機構が互いに整合していない箇所を固定する。
   根本原因は (1) DCC の `createWcBindable` が①の宣言仕様を部分実装している、
@@ -101,5 +101,5 @@ wc-bindable-protocol の最新仕様を参照する。特に次を前提とす�
 
 各文書の提案は独立に採択できる。ただし、初期同期に関する 1・2、実行と観測に関する
 4・5、型情報とプロトコル進化に関する 6・8 は相互依存する。実装へ進む際は、各文書の
-「決定ゲート」を先に確定し、[8 論点を横断する修正設計](09-remediation-design.md) の phase と適合テストを
+「決定ゲート」を先に確定し、[8 論点を横断する修正設計](09-remediation-design.ja.md) の phase と適合テストを
 実装の完了条件に含める。

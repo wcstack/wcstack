@@ -1,7 +1,7 @@
 # bind-component の入れ子 `for` — 調査と実装
 
 status: **実装済み（2026-08-11・未リリース）**
-関連: [ADR-15 §1.7 / §1.8 / §1.9 / §1.10](architecture-hardening/15-state-component-mechanism-consistency.md)、
+関連: [ADR-15 §1.7 / §1.8 / §1.9 / §1.10](architecture-hardening/15-state-component-mechanism-consistency.ja.md)、
 [packages/state/src/webComponent/README.md](../packages/state/src/webComponent/README.md)
 
 本書は調査 → 設計 → 実装の記録。設計の前提が**計測で確認された**こと、および

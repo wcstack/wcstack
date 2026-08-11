@@ -41,7 +41,7 @@ pull する既存イディオムがある。この `undefined` write-skip は入
 
 listener install または初期 read が throw した場合は、その binding が既に登録した cleanup を全て best-effort で実行する。
 初期 read 途中まで配送済みの property は rollback しない。詳細な状態機械は
-[8 論点を横断する修正設計](09-remediation-design.md) を正とする。
+[8 論点を横断する修正設計](09-remediation-design.ja.md) を正とする。
 
 ### 2. 初期値と変更通知を診断上区別する
 
@@ -89,5 +89,5 @@ presence / readiness を追加する。
 
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [タグ定義とバインディング確立の順序](01-binding-initialization-order.md)
-- [8 論点を横断する修正設計](09-remediation-design.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)
 - [既存の初期化競合分析](../state-binding-init-races.ja.md)

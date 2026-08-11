@@ -2,7 +2,7 @@
 
 最終更新: 2026-07-16
 
-`09-remediation-design.md` §8「段階導入」で定義した phase 0-6 は **PoC 実装はすべて完了**している。
+`09-remediation-design.ja.md` §8「段階導入」で定義した phase 0-6 は **PoC 実装はすべて完了**している。
 本書はそこから先の **opt-in → 既定化 / IO 族への横展開** の進捗と残作業を追跡する living document。
 規範は各設計 doc（01-09）であり、本書は状態表とタスク一覧に徹する。
 
