@@ -516,7 +516,7 @@ base を親に渡す必要がある — `createListDiff` は既存台帳があ�
 直後の `for` が整合させる。
 
 詳細と、実装中に発見した別件（**バインディング初期化中の例外が ready promise を
-永久に未解決のまま残す**構造は未修正）は
+永久に未解決のまま残す**構造 — 2026-08-11 に reject を配管して修正済み、設計書 §8.2）は
 [state-bind-component-nested-for-design.md](../state-bind-component-nested-for-design.md)。
 
 回帰は happy-dom
@@ -526,7 +526,7 @@ base を親に渡す必要がある — `createListDiff` は既存台帳があ�
 両方。どちらも **shadow を constructor で組む形と connectedCallback で組む形の両方**を並べている
 （§1.9 の理由）。実ブラウザ側でだけ出た事象が 1 件あった — 範囲外の行への書き込みが
 `ListIndex not found: <親パス>` を投げる既存挙動で、メッセージが原因を誤って示す
-（本件とは無関係だが設計書 §8.4 に記録）。
+（本件とは無関係だが設計書 §8.4 に記録。2026-08-11 に index 付きメッセージへ修正済み）。
 
 ---
 
