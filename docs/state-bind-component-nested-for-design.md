@@ -295,7 +295,7 @@ base listIndex 自体は
 フィクスチャは 1 ページに `group-eager`（constructor 形）と `group-lazy`（connectedCallback 形）を
 並べて置き、行の同一性は `data-row-id` で見る（全再描画に落ちていればテキストではなく id の並びが崩れる）。
 
-結果: 全 2192 テスト green、e2e 57/57 green、`tsc --noEmit` / `eslint` / `rollup` ビルドとも通過。
+結果: 全 2201 テスト green、e2e 57/57 green、`tsc --noEmit` / `eslint` / `rollup` ビルドとも通過。
 新規 3 モジュール（`wildcardLevel.ts` / `baseListIndex.ts` / 変更した `loopContext.ts`）は
 カバレッジ 100%。
 

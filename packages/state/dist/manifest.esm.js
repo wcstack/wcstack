@@ -864,11 +864,13 @@ const STATE_DISCONNECTED_CALLBACK_NAME = "$disconnectedCallback";
 const STATE_UPDATED_CALLBACK_NAME = "$updatedCallback";
 const WEBCOMPONENT_STATE_READY_CALLBACK_NAME = "$stateReadyCallback";
 const STATE_BINDABLES_NAME = "$bindables";
+const STATE_COMMANDS_NAME = "$commands";
 const STATE_COMMAND_TOKENS_NAME = "$commandTokens";
 const STATE_COMMAND_NAMESPACE_NAME = "$command";
 const STATE_EVENT_TOKENS_NAME = "$eventTokens";
 const STATE_ON_NAME = "$on";
 const STATE_STREAMS_NAME = "$streams";
+const STATE_LIST_KEYS_NAME = "$listKeys";
 const STATE_STREAM_STATUS_NAMESPACE_NAME = "$streamStatus";
 const STATE_STREAM_ERROR_NAMESPACE_NAME = "$streamError";
 
@@ -917,11 +919,13 @@ function getWcsManifest() {
         ],
         reservedStateApi: [
             STATE_BINDABLES_NAME,
+            STATE_COMMANDS_NAME,
             STATE_COMMAND_TOKENS_NAME,
             STATE_COMMAND_NAMESPACE_NAME,
             STATE_EVENT_TOKENS_NAME,
             STATE_ON_NAME,
             STATE_STREAMS_NAME,
+            STATE_LIST_KEYS_NAME,
             STATE_STREAM_STATUS_NAMESPACE_NAME,
             STATE_STREAM_ERROR_NAMESPACE_NAME,
         ],
