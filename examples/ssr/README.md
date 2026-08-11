@@ -20,7 +20,7 @@ Open http://localhost:3001
 - The rendered HTML includes all user data, so content is visible before JavaScript loads
 
 ### Hydration
-- When `auto.js` loads in the browser, the existing DOM is hydrated (not re-rendered)
+- When the auto bundle (the `/auto` CDN entry, `dist/auto.min.js`) loads in the browser, the existing DOM is hydrated (not re-rendered)
 - Event handlers become active (buttons work)
 - State changes trigger reactive DOM updates
 - Hydration only happens when the browser's `@wcstack/state` matches the server's on major/minor; on a mismatch the client discards the SSR output and renders from scratch
@@ -63,7 +63,7 @@ Browser Request
 │                                  │
 │  1. HTML displayed immediately   │
 │     (no JavaScript needed)       │
-│  2. auto.js loads                │
+│  2. auto bundle loads            │
 │  3. <wcs-state enable-ssr>       │
 │     → reads <wcs-ssr> data       │
 │     → skips $connectedCallback   │
