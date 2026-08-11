@@ -63,7 +63,7 @@ Claude Code reads [CLAUDE.md](./CLAUDE.md) (the more detailed, tool-specific gui
 
 ## Packages
 
-Forty-one independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
+Forty-four independent runtime packages + one tooling extension package. Zero runtime dependencies (except happy-dom for SSR). No build step required.
 
 ### What if HTML had reactive data binding?
 
@@ -304,6 +304,8 @@ const html = await renderToString(`
 - [`@wcstack/notification`](packages/notification/) — Declarative desktop notifications with `<wcs-notify>`: show via command-token (`notify`), click back via event-token (`clicked`) — both directions in one tag. Self-contained permission, Service Worker fallback for mobile.
 - [`@wcstack/defined`](packages/defined/) — Declarative custom-element readiness with `<wcs-defined>`: watches `whenDefined()` for a set of tags and exposes `defined`/`pending`/`missing`/`count`/`total` state, with timeout-based load-failure detection. Companion to the autoloader; what CSS `:defined` cannot do.
 - [`@wcstack/camera`](packages/camera/) — Declarative camera capture and recording with `<wcs-camera>` (getUserMedia + built-in preview) and `<wcs-recorder>` (MediaRecorder). The live `MediaStream` is bound straight to elements via a command-token argument and **never stored in serializable state** — only derived values (permission, recording flag, the recorded `Blob`/URL) flow through state.
+- [`@wcstack/audio`](packages/audio/) — Web Audio graphs written as markup with `<wcs-audio>` and ten node tags: nesting is the signal chain, `out=`/`param=` route by id, and `<wcs-voice poly="N">` gives polyphony. The patch that crosses the protocol boundary is a plain descriptor — live `AudioNode` handles never leave the Core.
+- [`@wcstack/midi`](packages/midi/) — Declarative Web MIDI with `<wcs-midi>`: one tag for both directions, messages decoded into `type`/`note`/`velocity`/`channel` (a velocity-0 note-on is normalized to `noteoff`), and live port state. Omit `input` and every input port is subscribed.
 - [`@wcstack/signals`](packages/signals/) — A signals-based, fine-grained reactive **core** (the JS-first counterpart to `@wcstack/state`): `signal`/`computed`/`effect`, async `resource`/`streamResource`, keyed `For`/`Index`, and a `bindNode` adapter that drives the same wc-bindable IO nodes through signals. TC39-Signals-shaped, zero-dependency.
 - [`@wcstack/devtools`](packages/devtools/) — In-page DevTools overlay with `<wcs-devtools>`: inspect state trees (with inline editing through the normal reactive pipeline), see which DOM nodes each path is wired to, and watch a live timeline of writes, update batches, and command/event-token emissions — including zero-subscriber "empty emits". One script tag, connects via the DevTools Hook Protocol, zero-dependency.
 - [`@wcstack/lint`](packages/lint/) — Static-contract validator CLI (`npx @wcstack/lint`, command name `wcs-validate`): checks HTML `data-wcs` bindings and `wcstack.manifest.json` sidecars headlessly with the same validator core as the VS Code extension — identical diagnostic codes and ranges in IDE and CI, stable exit-code contract for generate–validate–fix loops. Zero-dependency.
@@ -436,6 +438,8 @@ wcstack/
 │   ├── notification/  # @wcstack/notification
 │   ├── defined/       # @wcstack/defined
 │   ├── camera/        # @wcstack/camera
+│   ├── audio/         # @wcstack/audio
+│   ├── midi/          # @wcstack/midi
 │   ├── signals/       # @wcstack/signals
 │   ├── devtools/      # @wcstack/devtools
 │   ├── lint/          # @wcstack/lint

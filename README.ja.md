@@ -61,7 +61,7 @@ Claude Code は [CLAUDE.md](./CLAUDE.md)（より詳細なツール別ガイド�
 
 ## パッケージ
 
-41個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
+44個の独立したランタイムパッケージ + 1つのツール拡張パッケージ。ランタイム依存ゼロ（SSR用のhappy-domを除く）。ビルド不要。
 
 ### もしHTMLにリアクティブなデータバインディングがあったら？
 
@@ -302,6 +302,8 @@ const html = await renderToString(`
 - [`@wcstack/notification`](packages/notification/) — `<wcs-notify>` でデスクトップ通知を宣言的に。command-token（`notify`）で表示し、event-token（`clicked`）でクリックを受け取る — 双方向を1タグで。権限は自己完結、モバイル向けに Service Worker フォールバック。
 - [`@wcstack/defined`](packages/defined/) — `<wcs-defined>` でカスタム要素の準備完了を。タグ集合の `whenDefined()` を監視し `defined`/`pending`/`missing`/`count`/`total` 状態を公開、タイムアウトによる読み込み失敗検知付き。autoloader の相棒で、CSS `:defined` にできないことを実現。
 - [`@wcstack/camera`](packages/camera/) — `<wcs-camera>`（getUserMedia + 組み込みプレビュー）と `<wcs-recorder>`（MediaRecorder）でカメラ撮影・録画を宣言的に。ライブな `MediaStream` は command-token 引数で要素へ直接バインドし、**シリアライズ可能な状態には決して格納しない** — 派生値（権限、録画フラグ、録画した `Blob`/URL）だけが状態を流れる。
+- [`@wcstack/audio`](packages/audio/) — `<wcs-audio>` と 10 個のノードタグで、Web Audio のグラフをマークアップとして書く。入れ子が信号チェーン、`out=`/`param=` の id 参照がそれ以外の結線、`<wcs-voice poly="N">` でポリフォニー。プロトコル境界を越えるのは素の descriptor であり、ライブな `AudioNode` ハンドルは Core の外に出ない。
+- [`@wcstack/midi`](packages/midi/) — `<wcs-midi>` で Web MIDI を宣言的に。入力と出力を 1 つのタグで扱い、メッセージは `type`/`note`/`velocity`/`channel` にデコード（velocity 0 の note-on は `noteoff` に正規化）、ポートの状態もライブに公開。`input` を省略すると全入力ポートを購読する。
 - [`@wcstack/signals`](packages/signals/) — シグナルベースのきめ細かいリアクティブ**コア**（`@wcstack/state` の JS ファースト版）。`signal`/`computed`/`effect`、非同期の `resource`/`streamResource`、keyed な `For`/`Index`、同じ wc-bindable IO ノードをシグナル経由で駆動する `bindNode` アダプタ。TC39-Signals 準拠、依存ゼロ。
 - [`@wcstack/devtools`](packages/devtools/) — `<wcs-devtools>` によるページ内 DevTools オーバーレイ。state ツリーの検査（通常のリアクティブパイプラインを通るインライン編集付き）、各パスがどの DOM ノードに配線されているかの表示、write / 更新バッチ / command・event トークン発火のライブタイムライン — 購読者ゼロの「空撃ち」警告付き。`<script>` 一行、DevTools Hook Protocol で接続、依存ゼロ。
 - [`@wcstack/lint`](packages/lint/) — 静的契約検査 CLI（`npx @wcstack/lint`・コマンド名 `wcs-validate`）。HTML の `data-wcs` バインディングと `wcstack.manifest.json` sidecar を、VS Code 拡張と同一の validator core でヘッドレスに検査 — IDE と CI で diagnostic code / range が完全一致し、安定した exit code 契約で生成→検証→修正ループに組み込める。依存ゼロ。
@@ -434,6 +436,8 @@ wcstack/
 │   ├── notification/  # @wcstack/notification
 │   ├── defined/       # @wcstack/defined
 │   ├── camera/        # @wcstack/camera
+│   ├── audio/         # @wcstack/audio
+│   ├── midi/          # @wcstack/midi
 │   ├── signals/       # @wcstack/signals
 │   ├── devtools/      # @wcstack/devtools
 │   ├── lint/          # @wcstack/lint

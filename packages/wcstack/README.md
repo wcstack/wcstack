@@ -1,6 +1,6 @@
 # wcstack
 
-**wcstack** is a set of 41 zero-dependency Web Components packages: reactive data binding, declarative SPA routing, and 30+ Web APIs exposed as HTML tags. No build step, no bundler, no framework runtime. One CDN `<script>` tag per package.
+**wcstack** is a set of 44 zero-dependency Web Components packages: reactive data binding, declarative SPA routing, and 30+ Web APIs exposed as HTML tags. No build step, no bundler, no framework runtime. One CDN `<script>` tag per package.
 
 Project site: **https://wcstack.github.io** · Source: **https://github.com/wcstack/wcstack**
 
