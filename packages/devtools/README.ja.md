@@ -7,7 +7,7 @@
 確認、write / 更新バッチ / command・event トークン発火のライブタイムラインが使える。
 
 - **依存ゼロ・ビルド不要。** ページ上の wcstack ランタイムとは
-  [DevTools Hook Protocol](../../docs/devtools-hook-protocol.md)
+  [DevTools Hook Protocol](../../docs/devtools-hook-protocol.ja.md)
   （`globalThis.__WCSTACK_DEVTOOLS_HOOK__`）だけで接続する。`@wcstack/state` を
   import せず、ランタイムのコピーが複数あるページでもそのまま動く。
 - **標準ファースト。** オーバーレイ自体がカスタム要素で、Shadow DOM 内で完結。

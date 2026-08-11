@@ -1,210 +1,223 @@
-# 10 既定化・横展開ステータスと残作業
+# 10. Defaulting and roll-out status, and what remains
 
-最終更新: 2026-07-16
+Last updated: 2026-07-16
 
-`09-remediation-design.md` §8「段階導入」で定義した phase 0-6 は **PoC 実装はすべて完了**している。
-本書はそこから先の **opt-in → 既定化 / IO 族への横展開** の進捗と残作業を追跡する living document。
-規範は各設計 doc（01-09）であり、本書は状態表とタスク一覧に徹する。
+Phases 0-6, as defined in `09-remediation-design.md` §8 "staged introduction", are **complete as PoC implementations**.
+This is the living document tracking what comes after that: the progress of **opt-in → default and the roll-out across the I/O family**.
+The norms live in the design docs (01-09); this document sticks to status tables and task lists.
 
-## 1. 現在地
+- **日本語版**: [10-defaulting-rollout-status.ja.md](10-defaulting-rollout-status.ja.md)
 
-phase 実装（PoC）は 0-6 すべて完了済み。局面は既定化・横展開フェーズ。
+## 1. Where we are
 
-| phase | 実装 | 既定化 / 横展開 状況 |
+The phase implementations (PoC) are all complete, 0 through 6. The current stage is defaulting and roll-out.
+
+| Phase | Implementation | Defaulting / roll-out status |
 | --- | --- | --- |
-| 0 foundation | 型 / conformance mirror / platform guard | フラグ無しで既定稼働（完） |
-| 1 lifecycle ownership | `BindingSession` / record / teardown | フラグ無しで既定稼働（完） |
-| 2 初期同期 | `enableDirectionalInitialSync` / `#init=` `#sync=` | **既定 `true`（2026-07-16 flip 完）**。恒久 opt-out フラグ残置 |
-| 3 因果伝播 | `enablePropagationContext` / `WriteReceipt` | **既定 `true`（flip 完）**。恒久 opt-out フラグ残置 |
-| 4 非同期 lane / trace | `OperationLane` / commit guard / terminal CAS | operation **6 ノード**へ横展開完（残候補は非競合/session で対象外＝完）。DevTools trace の全体適用は要確認（§F） |
-| 5a 静的契約 | validator core / `wcs-validate` CLI | 実装完。**CI 必須ゲート化 完（§B、2026-07-16）** |
-| 5b 開発時照合 | `enableContractAnalyzer` analyzer | 実装完。**explicit opt-in を正式仕様として確定（§C、dev 既定 ON は不採用）** |
-| 6 capability | probe / report / error taxonomy | **27 / 35 IO ノード**適用済み（+19、2026-07-16。view 族は bindable 化で error も観測面に）。残 8 = defer 3（permission/network/defined、ユーザー判断）+ 非該当 5。詳細 §A |
+| 0 foundation | types / conformance mirror / platform guard | running by default with no flag (done) |
+| 1 lifecycle ownership | `BindingSession` / record / teardown | running by default with no flag (done) |
+| 2 initial sync | `enableDirectionalInitialSync` / `#init=` `#sync=` | **default `true` (flipped 2026-07-16)**. The permanent opt-out flag remains |
+| 3 causal propagation | `enablePropagationContext` / `WriteReceipt` | **default `true` (flipped)**. The permanent opt-out flag remains |
+| 4 async lane / trace | `OperationLane` / commit guard / terminal CAS | rolled out to **6 operation nodes** (the remaining candidates are non-contending or session-based and out of scope = done). Whether DevTools trace applies across the board needs checking (§F) |
+| 5a static contract | validator core / the `wcs-validate` CLI | implemented. **Gated as required in CI, done (§B, 2026-07-16)** |
+| 5b development-time checking | the `enableContractAnalyzer` analyzer | implemented. **Explicit opt-in settled as the official spec (§C; on-by-default in dev is rejected)** |
+| 6 capability | probe / report / error taxonomy | applied to **27 of 35 I/O nodes** (+19, 2026-07-16; making the view family bindable put error on the observation surface too). The remaining 8 = 3 deferred (permission/network/defined, the user's call) plus 5 not applicable. Details in §A |
 
-### 既定化済みフラグ（`packages/state/src/config.ts`）
+### Flags now defaulted (`packages/state/src/config.ts`)
 
-- `enableDirectionalInitialSync: true` — Phase 2。output-only な `wcBindable` メンバは初期値を element→state で読み取り、双方向/input メンバは state→element を維持。setup-path コストは初期 render の 5% 未満（producer-value observer は echo しうる双方向 wire にのみ登録）。
-- `enablePropagationContext: true` — Phase 3。write-path コストは一方向バインドでほぼゼロ（echo しうる双方向 wire のみ因果 bookkeeping）。
-- `enableContractAnalyzer: false` — Phase 5b。唯一 opt-in のまま（§C）。
+- `enableDirectionalInitialSync: true` — Phase 2. An output-only `wcBindable` member reads its initial value element→state, while a two-way or input member keeps state→element. The setup-path cost is under 5% of the initial render (the producer-value observer is registered only on two-way wires that can echo).
+- `enablePropagationContext: true` — Phase 3. The write-path cost is essentially zero for a one-way binding (causal bookkeeping only on two-way wires that can echo).
+- `enableContractAnalyzer: false` — Phase 5b. The only one still opt-in (§C).
 
-いずれも decision 3 に従い**フラグは撤去せず恒久 opt-out** として残す。
+Per decision 3, **none of the flags is removed; they remain as permanent opt-outs**.
 
-### lane 適用済み operation ノード（6）
+### Operation nodes with the lane applied (6)
 
-`fetch`(latest) / `share`(exhaust) / `contacts`(exhaust) / `eyedropper`(latest) / `credential`(latest) / `upload`(latest)。
-正典は `io-core/{operation-lane,platform-capability}.ts`、`scripts/sync-io-core.mjs` が各 `src/core/` へ生成コピー（copy-distribution、新 npm 依存なし）。CI は `sync-io-core.mjs --check` で再生成差分を検査。
+`fetch` (latest) / `share` (exhaust) / `contacts` (exhaust) / `eyedropper` (latest) / `credential` (latest) / `upload` (latest).
+The canonical sources are `io-core/{operation-lane,platform-capability}.ts`, with `scripts/sync-io-core.mjs` distributing generated copies into each `src/core/` (copy-distribution, no new npm dependency). CI checks for regeneration drift with `sync-io-core.mjs --check`.
 
-### errorInfo 適用済みノード（27、2026-07-16 時点）
+### Nodes with errorInfo applied (27, as of 2026-07-16)
 
-- 初期 8: lane 6 ノード + 非競合 2（`clipboard` / `geolocation`）。
-- +19（本セッション、全て `CAPABILITY_ONLY`）: `storage` / `accelerometer` / `gyroscope` / `magnetometer` / `ambient-light-sensor` / `notification` / `wakelock` / `tilt` / `screen-orientation` / `worker` / `broadcast` / `idle` / `websocket` / `sse` / `camera`（2 コア）/ `speech`（2 コア）/ `fullscreen` / `picture-in-picture` / `pointer-lock`（view 族は error も bindable 化）。
-- 検証: 各パッケージ test:coverage（100% or 閾値内）+ lint + build を独立再実行で確認、`sync-io-core --check` = 33 生成整合、git dist 差分 0。README(en/ja)も全 27 ノード分 errorInfo 記載済み。詳細は §A。
+- The initial 8: the 6 lane nodes plus 2 non-contending ones (`clipboard` / `geolocation`).
+- +19 (this session, all `CAPABILITY_ONLY`): `storage` / `accelerometer` / `gyroscope` / `magnetometer` / `ambient-light-sensor` / `notification` / `wakelock` / `tilt` / `screen-orientation` / `worker` / `broadcast` / `idle` / `websocket` / `sse` / `camera` (2 cores) / `speech` (2 cores) / `fullscreen` / `picture-in-picture` / `pointer-lock` (for the view family, error became bindable too).
+- Verification: each package's test:coverage (100% or within thresholds) plus lint plus build, re-run independently; `sync-io-core --check` = 33 generated files consistent; zero git dist diff. The READMEs (en/ja) document errorInfo for all 27 nodes. Details in §A.
 
 ---
 
-## 2. 残作業
+## 2. What remains
 
-### A. Phase 6 — errorInfo taxonomy の横展開【決定: 適用可能な全ノード展開。**完了 27/35 適用＋defer 3＋非該当 5（2026-07-16）**】
+### A. Phase 6 — rolling out the errorInfo taxonomy [decided: roll out to every applicable node. **Complete: 27/35 applied plus 3 deferred plus 5 not applicable (2026-07-16)**]
 
-> 以下は横展開の時系列ログ（進捗数はその時点の値）。最終状態は「残ノードの最終分類」を参照。
+> Below is the chronological log of the roll-out (progress counts are as of that moment). For the end state see "Final classification of the remaining nodes".
 
-**方針決定済み（2026-07-16）**: `09` §8 phase 6 の design 意図どおり **適用可能な全 IO ノードへ順次適用**（scope 補正は下記参照）。
+**Policy decided (2026-07-16)**: apply it **to every applicable I/O node in turn**, as `09` §8 phase 6 intended (see below for the scope correction).
 
-**進捗 13 / 35**（+storage +accelerometer +gyroscope +magnetometer +ambient-light-sensor）。errorInfo 適用可能な**残 15 ノード**:
+**Progress 13 / 35** (+storage +accelerometer +gyroscope +magnetometer +ambient-light-sensor). The **remaining 15 nodes** where errorInfo applies:
 
 > websocket, sse, broadcast, worker, notification, wakelock, camera, speech, defined,
 > fullscreen, picture-in-picture, pointer-lock, screen-orientation, idle, tilt
 
-（errorInfo 非該当 5 + 保留 2 は下記 scope 補正を参照）
+(For the 5 where errorInfo does not apply plus the 2 on hold, see the scope correction below.)
 
-**⚠ 2nd scope 補正（2026-07-16、error の observability 精査）**: 残 15 のうち **view 族 3（fullscreen / picture-in-picture / pointer-lock）は `error` が imperative getter のみ**（`_setError` は `this._error = error` するだけで **event 未 dispatch・wcBindable 非宣言**）。sensor/storage/clipboard の「bindable errorInfo（event 付き property）」テンプレが素直に適用できない。**設計判断が必要**: (a) errorInfo も imperative getter として error をミラー（event 無し・wcBindable 非宣言、最小変更で一貫）か (b) error イベントを新設し errorInfo を bindable 化（族の「error イベント未 dispatch」backlog と併せて解決）。⇒ **view 族 3 は保留**（error-event 方針決定後に着手）。
-- ⇒ 残 15 のうち **bindable-error 12 ノード**（`name:"error"` + event あり: websocket / sse / broadcast / worker / notification / wakelock / camera / speech / defined / screen-orientation / idle / tilt）が sensor/storage テンプレで素直に進められる本命。**先にこの 12 を進める**。
+**⚠ 2nd scope correction (2026-07-16, on examining error observability)**: of those 15, **the 3 view-family nodes (fullscreen / picture-in-picture / pointer-lock) have `error` as an imperative getter only** (`_setError` merely does `this._error = error`, **dispatching no event and declaring nothing in wcBindable**). The sensor/storage/clipboard template of "bindable errorInfo (a property with an event)" does not apply directly. **A design decision is needed**: (a) mirror error into errorInfo as an imperative getter too (no event, not declared in wcBindable — the minimal change, and consistent), or (b) introduce an error event and make errorInfo bindable (solving the family's "error event not dispatched" backlog at the same time). ⇒ **the 3 view-family nodes are on hold** (to be picked up once the error-event policy is decided).
+- ⇒ Of those 15, the **12 bindable-error nodes** (with `name:"error"` plus an event: websocket / sse / broadcast / worker / notification / wakelock / camera / speech / defined / screen-orientation / idle / tilt) are the ones that go straight through on the sensor/storage template. **Those 12 come first.**
 
-**bindable-error batch 1 完了（14-17 ノード目、2026-07-16、並列サブエージェント＋独立検証）**: `notification` / `wakelock` / `tilt` / `screen-orientation`。**進捗 17 / 35**。各サブエージェントが**実 Core を検証して設計 taxonomy との差異を捕捉**（memory hazard 機能）:
-- `notification`（error `.error` が既に code）: 私の 4 コード想定に対し **5 つ目 `no-service-worker`**（`_showViaSw` の SW 欠如）を Core から発見・追加。111 テスト 100%。
-- `wakelock`（raw `Error`）: **unsupported は silent no-op で `_setError` を通らない**→`capability-missing` 分岐は dead code として正しく省略。NotAllowedError→not-allowed / 他→wakelock-error。77 テスト 100%。
-- `tilt`（`{error: e}` wrap、DeviceOrientation）: unsupported 経路なし（requestPermission 不在時は granted 解決）→NotAllowedError→not-allowed / 他→tilt-error。72 テスト 100%。
-- `screen-orientation`（`{message:"unsupported"}` / caught 混在）: **storage 型 explicit discriminator `_setError(error, name?)`** 採用。**memory の「NotSupportedError→NotAllowedError 訂正」は誤り**で、README/test は NotSupportedError を使う（「name で分岐せず 1 outcome 扱い」）と実証→NotAllowed|NotSupported|Security→not-allowed / AbortError→aborted(recoverable) / 他→orientation-error。`Promise.reject(undefined)` の never-throw 堅牢化（`_errorInfoMessage`）も追加。87 テスト 100%。
-- **教訓再確認**: taxonomy は各ノードの実 error 面（error 名 / silent 経路 / doc の記述）を精読して設計する必要があり、共有想定は当てにならない。sync-io-core --check=23 生成整合、git dist 差分 0。**残 bindable-error 8**: websocket / sse / broadcast / worker / camera / speech / defined / idle。
+**bindable-error batch 1 complete (nodes 14-17, 2026-07-16, parallel subagents plus independent verification)**: `notification` / `wakelock` / `tilt` / `screen-orientation`. **Progress 17 / 35**. Each subagent **verified the real Core and caught divergences from the designed taxonomy** (the memory-hazard function):
+- `notification` (whose `.error` is already a code): against my assumption of 4 codes, it found and added **a fifth, `no-service-worker`** (the missing SW in `_showViaSw`), from the Core. 111 tests, 100%.
+- `wakelock` (a raw `Error`): **unsupported is a silent no-op and never goes through `_setError`** → the `capability-missing` branch was correctly omitted as dead code. NotAllowedError→not-allowed, everything else→wakelock-error. 77 tests, 100%.
+- `tilt` (a `{error: e}` wrap, DeviceOrientation): no unsupported path (where requestPermission is absent it resolves as granted) → NotAllowedError→not-allowed, everything else→tilt-error. 72 tests, 100%.
+- `screen-orientation` (a mix of `{message:"unsupported"}` and caught errors): adopted the **storage-style explicit discriminator `_setError(error, name?)`**. **The memory's "NotSupportedError→NotAllowedError correction" was wrong** — it demonstrated that the README and tests use NotSupportedError ("not branching on name; treated as one outcome") → NotAllowed|NotSupported|Security→not-allowed, AbortError→aborted (recoverable), everything else→orientation-error. Also added never-throw hardening for `Promise.reject(undefined)` (`_errorInfoMessage`). 87 tests, 100%.
+- **The lesson, reconfirmed**: a taxonomy has to be designed by reading each node's real error surface closely (the error names, the silent paths, what the docs say); a shared assumption is not to be trusted. sync-io-core --check = 23 generated files consistent, zero git dist diff. **8 bindable-error nodes left**: websocket / sse / broadcast / worker / camera / speech / defined / idle.
 
-**bindable-error batch 2 完了（18-22 ノード目、2026-07-16、並列サブエージェント＋独立検証）**: `worker` / `broadcast` / `idle` / `websocket` / `sse`。**進捗 22 / 35**。再び各サブエージェントが実 Core を検証し想定を訂正:
-- `worker`（`{name,message}`）: name "TypeError" は validation 専用でない（`Worker` 不在も "not a constructor" で TypeError）と発見→**message で弁別**、不在（TypeError/ReferenceError）→capability-missing、validation→invalid-argument、他→worker-error。`dispose()` は `_setError` を通らないので errorInfo の明示 null クリアを追加。117 テスト。
-- `broadcast`（`{name,message}`）: `_unsupportedError().name` は **"NotSupportedError"**（"unsupported" でない）と実証。DataCloneError→invalid-argument、他→broadcast-error。97 テスト。
-- `idle`（`{message}`/`{error:e}` 混在）: storage 型 discriminator + `{error:e}` の message 一段 unwrap。unsupported→capability-missing、NotAllowedError→not-allowed、他→idle-error。79 テスト。
-- `websocket`（`{message}`/caught/Event 混在）: explicit discriminator `_setError(error, code?)`。url→invalid-argument、未接続 send→invalid-state、構築失敗/error Event→connection-error(recoverable)。131 テスト。
-- `sse`（Error/Event 混在）: **Core が fatal(readyState CLOSED)/transient(CONNECTING 再接続) を区別**すると発見し recoverable=true をその一択に限定。url→invalid-argument、他→connection-error。106 テスト。
-- sync-io-core --check=28 生成整合、git dist 差分 0。errorInfo export 済み **22 パッケージ**。
-- **残 applicable 3（要個別対応）**: `camera`（2 コア CameraCore+RecorderCore、MediaStream 特殊）/ `speech`（2 コア ListenCore+SpeakCore）/ `defined`（error 面が独立 event でなく `wcs-defined:change` 内、`_setError` 無し＝要調査）。加えて **view 族 3・capability-only 2 は保留**（上記 scope 補正）。
+**bindable-error batch 2 complete (nodes 18-22, 2026-07-16, parallel subagents plus independent verification)**: `worker` / `broadcast` / `idle` / `websocket` / `sse`. **Progress 22 / 35**. Again each subagent verified the real Core and corrected the assumptions:
+- `worker` (`{name,message}`): found that the name "TypeError" is not validation-exclusive (an absent `Worker` also gives a TypeError, "not a constructor") → **discriminate on the message**: absence (TypeError/ReferenceError)→capability-missing, validation→invalid-argument, everything else→worker-error. Since `dispose()` does not go through `_setError`, an explicit null clear of errorInfo was added. 117 tests.
+- `broadcast` (`{name,message}`): demonstrated that `_unsupportedError().name` is **"NotSupportedError"** (not "unsupported"). DataCloneError→invalid-argument, everything else→broadcast-error. 97 tests.
+- `idle` (a mix of `{message}` and `{error:e}`): a storage-style discriminator plus one level of message unwrapping for `{error:e}`. unsupported→capability-missing, NotAllowedError→not-allowed, everything else→idle-error. 79 tests.
+- `websocket` (a mix of `{message}`, caught errors, and Events): an explicit discriminator `_setError(error, code?)`. url→invalid-argument, a send while not connected→invalid-state, a construction failure or error Event→connection-error (recoverable). 131 tests.
+- `sse` (a mix of Errors and Events): found that **the Core distinguishes fatal (readyState CLOSED) from transient (CONNECTING, reconnecting)**, and limited recoverable=true to that one case. url→invalid-argument, everything else→connection-error. 106 tests.
+- sync-io-core --check = 28 generated files consistent, zero git dist diff. errorInfo now exported from **22 packages**.
+- **3 applicable ones left (each needing individual work)**: `camera` (2 cores, CameraCore+RecorderCore, MediaStream is special) / `speech` (2 cores, ListenCore+SpeakCore) / `defined` (its error surface is not a separate event but inside `wcs-defined:change`, with no `_setError` = needs investigation). Plus the **3 view-family and 2 capability-only nodes on hold** (the scope correction above).
 
-**2-core 族 完了（23-24 ノード目、2026-07-16、並列サブエージェント＋独立検証）**: `camera` / `speech`。**進捗 24 / 35**。
-- `camera`（CameraCore + RecorderCore、共有 `mediaCapabilities.ts` の `deriveMediaErrorInfo`）: getUserMedia/MediaRecorder の `.name` を分類。unsupported→capability-missing、NotAllowed/Security→not-allowed、NotFound→not-found、NotReadable→not-readable、Overconstrained/**NotSupported**（Recorder 構築失敗、Core から発見）→invalid-argument、NoStreamError→invalid-state、Abort→aborted(recoverable)、他→media-error。161 テスト 100%。
-- `speech`（ListenCore + SpeakCore、`speechCapabilities.ts` に 2 derive）: `.error` が既に W3C の code。Listen（no-speech/audio-capture/network/not-allowed/aborted/language-not-supported…）/ Speak（canceled/interrupted/audio-busy/audio-hardware/network/synthesis-*/…）を各々分類。188 テスト。
-- sync-io-core --check=30 生成整合、git dist 差分 0。**errorInfo 実装済み 24 パッケージ（16 ノード追加）**。
+**The 2-core family complete (nodes 23-24, 2026-07-16, parallel subagents plus independent verification)**: `camera` / `speech`. **Progress 24 / 35**.
+- `camera` (CameraCore + RecorderCore, `deriveMediaErrorInfo` in the shared `mediaCapabilities.ts`): classifies the `.name` from getUserMedia/MediaRecorder. unsupported→capability-missing, NotAllowed/Security→not-allowed, NotFound→not-found, NotReadable→not-readable, Overconstrained and **NotSupported** (a Recorder construction failure, found from the Core)→invalid-argument, NoStreamError→invalid-state, Abort→aborted (recoverable), everything else→media-error. 161 tests, 100%.
+- `speech` (ListenCore + SpeakCore, two derives in `speechCapabilities.ts`): `.error` is already a W3C code. Listen (no-speech/audio-capture/network/not-allowed/aborted/language-not-supported…) and Speak (canceled/interrupted/audio-busy/audio-hardware/network/synthesis-*/…) are classified separately. 188 tests.
+- sync-io-core --check = 30 generated files consistent, zero git dist diff. **errorInfo implemented in 24 packages (16 nodes added)**.
 
-### 残ノードの最終分類（2026-07-16）
+### Final classification of the remaining nodes (2026-07-16)
 
-**適用済み 27**（8 既存 + storage + 4 sensor + notification/wakelock/tilt/screen-orientation + worker/broadcast/idle/websocket/sse + camera/speech + **view 族 3**）。**残 8 = defer 3（ユーザー判断）+ 非該当 5**:
+**27 applied** (the existing 8 + storage + 4 sensors + notification/wakelock/tilt/screen-orientation + worker/broadcast/idle/websocket/sse + camera/speech + **the 3 view-family nodes**). **The remaining 8 = 3 deferred (the user's call) plus 5 not applicable**:
 
-| ノード | 分類 | 状態 |
+| Node | Classification | Status |
 | --- | --- | --- |
-| fullscreen / picture-in-picture / pointer-lock | **view 族・完了（bindable 化）** | **ユーザー判断=(b) bindable 化採用（2026-07-16）**。`error` が imperative getter のみだったのを、`error` イベント（`wcs-<ns>:error`）＋ `errorInfo` イベント（`:error-info-changed`）を新設し wcBindable に宣言＝**族の「error イベント未 dispatch」backlog も同時解決**。fullscreen を手作業 reference（error 観測化＋errorInfo、明示 `kind` discriminator、taxonomy=capability-missing/invalid-argument/not-allowed(gesture, recoverable)/  `<node>`-error）→ pip/pointer-lock を並列サブエージェントでミラー。README(en/ja)も「error は bindable でない」旨を訂正。各 100% coverage・lint・build green 独立確認。event 追加は additive で既存 imperative `el.error` を壊さず後方互換。 |
-| permission / network | **capability-only・defer** | **ユーザー判断=defer**。error 面が無く `supported`/`unsupported` boolean のみ。errorInfo は `capability-missing` 単独で既存 boolean と重複、価値限定的。 |
-| defined | **特殊・defer** | **ユーザー判断=defer**。`error` が snapshot 内 string（"no tags specified" / timeout 蓄積）で `_setError` 無し・caught 例外でない。 |
-| timer / raf / debounce / intersection / resize | **非該当（確定）** | error も失敗 capability も無い。errorInfo 適用しない。 |
+| fullscreen / picture-in-picture / pointer-lock | **view family, complete (made bindable)** | **The user's call = (b), make it bindable (2026-07-16)**. Where `error` had been an imperative getter only, an `error` event (`wcs-<ns>:error`) plus an `errorInfo` event (`:error-info-changed`) were introduced and declared in wcBindable — **solving the family's "error event not dispatched" backlog at the same time**. fullscreen was done by hand as the reference (making error observable plus errorInfo, an explicit `kind` discriminator, taxonomy = capability-missing / invalid-argument / not-allowed (gesture, recoverable) / `<node>`-error) → pip and pointer-lock mirrored it through parallel subagents. The READMEs (en/ja) had their "error is not bindable" claim corrected. 100% coverage, lint, and build confirmed green independently for each. Adding the events is additive and backward-compatible, leaving the existing imperative `el.error` intact. |
+| permission / network | **capability-only, deferred** | **The user's call = defer.** They have no error surface, only a `supported`/`unsupported` boolean. An errorInfo would be `capability-missing` alone, overlapping the existing boolean, of limited value. |
+| defined | **special, deferred** | **The user's call = defer.** Its `error` is a string inside the snapshot ("no tags specified" / accumulated timeouts), with no `_setError` and no caught exception. |
+| timer / raf / debounce / intersection / resize | **not applicable (settled)** | They have neither errors nor a failure capability. errorInfo is not applied. |
 
-**README backfill 完了（2026-07-16、並列サブエージェント）**: errorInfo 追加 16 ノード全ての README（en `README.md` + ja `README.ja.md`、camera/speech は 2 要素分）に errorInfo を記載。Output 一覧・観測プロパティ表・wcBindable スニペット（存在する README のみ）・Design Notes の taxonomy 説明を追加。各ノードの taxonomy は capabilities ファイルと照合し実装と一致を確認（例: `wakelock` は capability-missing 無し、`screen-orientation` のイベントは `wcs-orientation:error-info-changed`＝タグ名でなく namespace）。view 族 3 も含め **errorInfo を記載した README = 全 27 ノード分**（fullscreen/pip/pointer-lock は「error は bindable でない」旨を訂正）。**残タスク = 項目 D（リリース前 dist rebuild + state 依存回帰）のみ**（リリース時対応）。
+**README backfill complete (2026-07-16, parallel subagents)**: errorInfo is documented in the READMEs of all 16 newly added nodes (en `README.md` plus ja `README.ja.md`, and for camera/speech both elements). Added to the output list, the observable-property table, the wcBindable snippet (where the README has one), and the taxonomy explanation in Design Notes. Each node's taxonomy was cross-checked against its capabilities file to confirm it matches the implementation (e.g. `wakelock` has no capability-missing; `screen-orientation`'s event is `wcs-orientation:error-info-changed` — the namespace, not the tag name). Including the 3 view-family nodes, **READMEs documenting errorInfo = all 27 nodes** (fullscreen/pip/pointer-lock had their "error is not bindable" claim corrected). **The only task left = item D (the pre-release dist rebuild plus the state-dependency regression)**, to be done at release time.
 
-**sensor family 4 兄弟 完了（10-13 ノード目、2026-07-16）**: `accelerometer` を手作業で reference 実装（sensor 型テンプレ＝error detail の `.error` が Error.name を持つ clipboard 型、name-capture 不要）、`gyroscope` / `magnetometer` / `ambient-light-sensor` を **並列サブエージェント**で accelerometer を雛形に厳密ミラー。taxonomy は 4 兄弟で完全一致（`unsupported`→capability-missing/probe、`SecurityError`|`NotAllowedError`→not-allowed/start、`NotReadableError`→not-readable/execute、他→sensor-error/execute、全 recoverable=false）を grep で検証。**sensor は error を sticky に保つ（clear 経路が公開 API に無い）ため、errorInfo が error と同期して null にクリアされる契約を white-box `_setError(null)` テストで固定**（`error === null` 分岐カバレッジ）。各 100% coverage・lint・build green を独立再実行で確認（accel なし=73/74/72 テスト）。sync-io-core --check=19 生成ファイル整合。**残: sensor 族 README への errorInfo 追記（族 crosscut 債務と併せて要対応、[[sensor-family-crosscut-debt]]）**。
+**The 4 sensor-family siblings complete (nodes 10-13, 2026-07-16)**: `accelerometer` was implemented by hand as the reference (the sensor-style template, i.e. the clipboard style where the error detail's `.error` carries the Error.name and no name capture is needed), and `gyroscope` / `magnetometer` / `ambient-light-sensor` were mirrored strictly from accelerometer by **parallel subagents**. The taxonomy is identical across all four (`unsupported`→capability-missing/probe, `SecurityError`|`NotAllowedError`→not-allowed/start, `NotReadableError`→not-readable/execute, everything else→sensor-error/execute, all recoverable=false), verified by grep. **Since a sensor keeps its error sticky (there is no clear path in the public API), the contract that errorInfo is cleared to null in sync with error is pinned by a white-box `_setError(null)` test** (covering the `error === null` branch). 100% coverage, lint, and build confirmed green by independent re-runs for each (73/74/72 tests excluding accel). sync-io-core --check = 19 generated files consistent. **Remaining: adding errorInfo to the sensor-family READMEs** (to be handled together with the family's cross-cutting debt, [[sensor-family-crosscut-debt]]).
 
-**storage=9 ノード目 完了（reference node、2026-07-16）**: CAPABILITY_ONLY テンプレを command 駆動の monitor ノードへ適用。taxonomy = `invalid-argument`（validation: 不正 type / key 未設定、phase start）/ `quota-exceeded`（QuotaExceededError、recoverable）/ `not-allowed`（SecurityError）/ `storage-error`（その他 caught、execute）。**設計の学び**: storage は `_toStorageError` で caught 例外の `Error.name` を捨てるため、geolocation（error に code を持つ）と違い name を errorInfo 分類へ運ぶ経路が要る。**public `error` shape は不変**のまま、`_setError(error, name?)` の任意引数＋`_errName(e)` helper（非 Error→`""`→storage-error、validation は name 無し→invalid-argument）で分類。這うと「非 Error throw を invalid-argument に誤分類」する潜在バグを `_errName` の単一 chokepoint で排除。148 テスト・100% coverage・lint / build / sync-check green。**caught-exception 系ノードの横展開テンプレ**（clipboard=error に name あり、storage=name を別経路で運ぶ、の 2 型が確立）。
+**storage = node 9, complete (the reference node, 2026-07-16)**: applied the CAPABILITY_ONLY template to a command-driven monitor node. taxonomy = `invalid-argument` (validation: a bad type, an unset key; phase start) / `quota-exceeded` (QuotaExceededError, recoverable) / `not-allowed` (SecurityError) / `storage-error` (anything else caught, execute). **The design lesson**: storage discards the caught exception's `Error.name` in `_toStorageError`, so unlike geolocation (whose error carries a code) it needs a route to carry the name into the errorInfo classification. **The public `error` shape stays unchanged**, and the classification goes through an optional argument on `_setError(error, name?)` plus an `_errName(e)` helper (a non-Error → `""` → storage-error; validation has no name → invalid-argument). A latent bug that would "misclassify a non-Error throw as invalid-argument" is eliminated by making `_errName` the single chokepoint. 148 tests, 100% coverage, lint / build / sync-check green. **A roll-out template for caught-exception nodes** (two styles are now established: clipboard, where the error carries a name, and storage, where the name is carried by a separate route).
 
-- `09` §8 phase 6 は「I/O package へ順次適用」＝全 IO package 想定。
+- `09` §8 phase 6 says "apply to the I/O packages in turn" = every I/O package was assumed.
 
-**⚠ scope 補正（2026-07-16、error 面の実態調査）**: 「全 27」は一様適用可能という暗黙前提だったが、実 Core の error 面を grep 精査した結果、残ノードは 3 カテゴリに分かれる。errorInfo は Phase 6 の趣旨どおり **実際の失敗を分類する** ものなので、失敗面の無いノードに付けると「起きない失敗」の捏造になる。
-- **errorInfo 適用可（error / 失敗面あり）= 19**: `websocket` `sse` `broadcast` `worker` `notification` `wakelock` `camera` `speech` `defined` `screen-orientation` `idle` `tilt` `accelerometer` `gyroscope` `magnetometer` `ambient-light-sensor`（`name:"error"` property あり）+ `fullscreen` `picture-in-picture` `pointer-lock`（`_setError` あり・error は別イベント面）。
-- **capability のみ（`supported`/`unsupported` ブールあり・error 面なし）= 2**: `permission`（`unsupported`）/ `network`（`supported`）。errorInfo を付けるなら `capability-missing` 単独になるが、既存の boolean と重複気味で価値は限定的。**方針: 保留**（後日、capability-missing 単独 errorInfo に価値があるか個別判断）。
-- **errorInfo 非該当（error も失敗 capability も無い）= 5**: `timer` `raf` `debounce`（pure timing、失敗しない）/ `intersection` `resize`（observer、runtime error なし・`supported` prop も無し）。**errorInfo は適用しない**（該当なしとして doc 化）。
-- ⇒ 実効ターゲットは **19 ノード**（+ 保留 2 + 非該当 5）。「全展開」は「適用可能な全ノード」と解釈し、19 を対象に進める。
-- 手法は確立済み: `clipboard` / `geolocation` の `CAPABILITY_ONLY` テンプレ。`_setError` 集中方式（全 error 呼出点を触らず `_setError` 内で `derive*ErrorInfo(name/code→taxonomy)` → `_commitErrorInfo`）で、生成 `platformCapability` は coverage 除外・`WcsIoErrorInfo` 型のみ利用（runtime 関数は tree-shake）。
-- 個別注意: `camera` は live `MediaStream` を扱う特殊ノード（serializable state を経由しない）。
+**⚠ Scope correction (2026-07-16, on investigating the actual error surfaces)**: "all 27" implicitly assumed uniform applicability, but a grep-level examination of the real Cores' error surfaces splits the remaining nodes into three categories. errorInfo exists to **classify actual failures**, per Phase 6's intent, so attaching it to a node with no failure surface would fabricate "failures that never happen".
+- **errorInfo applies (there is an error or failure surface) = 19**: `websocket` `sse` `broadcast` `worker` `notification` `wakelock` `camera` `speech` `defined` `screen-orientation` `idle` `tilt` `accelerometer` `gyroscope` `magnetometer` `ambient-light-sensor` (all with a `name:"error"` property) plus `fullscreen` `picture-in-picture` `pointer-lock` (which have `_setError`, with error on a separate surface).
+- **Capability only (a `supported`/`unsupported` boolean, no error surface) = 2**: `permission` (`unsupported`) / `network` (`supported`). An errorInfo here would be `capability-missing` alone, which rather overlaps the existing boolean and is of limited value. **Policy: on hold** (decide individually later whether a capability-missing-only errorInfo has value).
+- **errorInfo not applicable (neither errors nor a failure capability) = 5**: `timer` `raf` `debounce` (pure timing, they do not fail) / `intersection` `resize` (observers, no runtime error and no `supported` prop). **errorInfo is not applied** (documented as not applicable).
+- ⇒ The effective target is **19 nodes** (plus 2 on hold plus 5 not applicable). "Roll out to all" is read as "all applicable nodes", and the work proceeds against those 19.
+- The method is established: the `CAPABILITY_ONLY` template of `clipboard` / `geolocation`. With the `_setError`-centralized approach (touching no error call site, and doing `derive*ErrorInfo(name/code→taxonomy)` → `_commitErrorInfo` inside `_setError`), the generated `platformCapability` is excluded from coverage and only the `WcsIoErrorInfo` type is used (the runtime functions tree-shake away).
+- One caveat: `camera` is the special node handling a live `MediaStream` (which never goes through serializable state).
 
-**1 ノードあたりの作業内訳（2026-07-16、geolocation テンプレ精読）**: (1) `sync-io-core.mjs` の `PACKAGE_FILES` に `CAPABILITY_ONLY` 追加 →再生成 (2) `xxxCapabilities.ts` に error code + `deriveXxxErrorInfo`（**←ここだけ node 別の taxonomy 判断が要る**。例: geolocation は spec code 1/2/3 を写し permission-denied のみ recoverable=false） (3) Core に `errorInfo` bindable property + `_errorInfo` + getter + `_commitErrorInfo`、`_setError` に derive+commit を配線 (4) Shell に `errorInfo` getter (5) `exports.ts` に `WcsIoErrorInfo` 型 + `WCS_XXX_ERROR_CODE` export (6) errorInfo テスト (7) 生成 `platformCapability.ts` を coverage 除外 (8) README / design doc 更新。**構造はボイラープレート、taxonomy（step 2）のみ判断。memory のハザード（cancel エラー名は各ノードの実 API に合わせる／共有 doc の単位・code 記述を鵜呑みにしない）を各ノードで適用する。**
+**The work breakdown per node (2026-07-16, from reading the geolocation template closely)**: (1) add `CAPABILITY_ONLY` to `PACKAGE_FILES` in `sync-io-core.mjs` → regenerate; (2) add the error codes plus `deriveXxxErrorInfo` to `xxxCapabilities.ts` (**this is the only place a per-node taxonomy judgment is needed**; e.g. geolocation copies spec codes 1/2/3 and makes only permission-denied recoverable=false); (3) add the `errorInfo` bindable property plus `_errorInfo` plus a getter plus `_commitErrorInfo` to Core, and wire derive+commit into `_setError`; (4) add the `errorInfo` getter to the Shell; (5) export the `WcsIoErrorInfo` type plus `WCS_XXX_ERROR_CODE` from `exports.ts`; (6) errorInfo tests; (7) exclude the generated `platformCapability.ts` from coverage; (8) update the README and design doc. **The structure is boilerplate; only the taxonomy (step 2) is a judgment. Apply the memory hazards at each node (match cancel error names to that node's real API; do not take a shared doc's units or code descriptions at face value).**
 
-### B. Phase 5a — `wcs-validate` を CI 必須ゲート化【完了 2026-07-16】
+### B. Phase 5a — gating `wcs-validate` as required in CI [complete 2026-07-16]
 
-**実装済み**: `.github/workflows/ci.yml` に独立 job `wcs-validate` を追加。vscode-wcs をビルドし、`examples/` + `packages/` の HTML / manifest（node_modules/dist/coverage/.tsc-out を prune）を `wcs-validate --errors-only` にかけ、**error severity があれば build を落とす**。決定「全 HTML を error のみで gate」を採用（scoped 66 ファイルで現状 0 error → 低リスク回帰ガード）。
-- CLI に `--errors-only`（別名 `--quiet`）を追加: error 行だけ表示し warning/info は count のみ（外部 state 由来の false-positive warning で CI ログを埋めない）。`runValidation` に `errorsOnly` option（表示のみ変更、count/exitCode 不変）+ 専用テスト。vscode-wcs 276 テスト green。
-- vscode-wcs は `@wcstack/*` でなく detect-changes matrix 対象外のため、`protocol-types-sync` と同様の独立 job にした。
+**Implemented**: added an independent `wcs-validate` job to `.github/workflows/ci.yml`. It builds vscode-wcs and runs `wcs-validate --errors-only` over the HTML and manifests of `examples/` plus `packages/` (pruning node_modules/dist/coverage/.tsc-out), **failing the build if any error severity appears**. The decision "gate all HTML on errors only" was adopted (0 errors today across 66 scoped files → a low-risk regression guard).
+- Added `--errors-only` (alias `--quiet`) to the CLI: it prints only error lines and counts warnings/info (so false-positive warnings originating in external state do not fill the CI log). `runValidation` gained an `errorsOnly` option (display only; count and exitCode unchanged) plus a dedicated test. vscode-wcs's 276 tests are green.
+- vscode-wcs is not a `@wcstack/*` package and is outside the detect-changes matrix, so it became an independent job, as `protocol-types-sync` did.
 
-以下は決定に至った検証記録:
+Below is the verification record that led to the decision:
 
-- validator core + `wcs-validate` CLI は実装済み。`.github/workflows/ci.yml` には現状 `sync-io-core.mjs --check` **のみ**で、`wcs-validate` 実行が無い。
-- manifest drift / path / modifier 違反で build を落とすステップを ci.yml に追加する。
-- 完了条件「IDE と CI の diagnostic code / range が一致」（`09` §8 5a）は達成済み。残るは CI ゲート化のみ。
+- The validator core and the `wcs-validate` CLI were implemented. `.github/workflows/ci.yml` had **only** `sync-io-core.mjs --check` and no `wcs-validate` run.
+- Add a step to ci.yml that fails the build on a manifest drift / path / modifier violation.
+- The completion criterion "the IDE's and CI's diagnostic codes and ranges agree" (`09` §8 5a) is met. Only the CI gate was left.
 
-**検証（2026-07-16、CLI 試走）— 検証対象が要決定**:
-- repo に `wcstack.manifest.json` は **0 個**（manifest drift チェックは現状「対象なし」）。
-- `examples/` + `packages/` の HTML **648 ファイル**を CLI にかけると **error は実質 0**（唯一の 1 error は `packages/vscode-wcs/coverage/.../templateSyntax.ts.html` = coverage 生成物の誤検出。coverage/dist/node_modules を除外すれば 0）。
-- ただし例（例: `state-notification-chat`）は `wcs/binding-path-missing` **warning** を多数出す。原因は state を外部 script / CDN でロードし静的解決できないため（例のバグでなく validator の限界）。exit code は error 時のみ 1 なので warning は build を落とさないが、CI 出力が大量の false-positive で埋まる。
-- ⇒ **「何を検証対象にするか」の決定が必要**。選択肢: (a) 全 HTML を error のみで gate（今は 0・低リスクだが warning ノイズ大）(b) inline state の self-contained fixture を用意して gate（クリーンだが要作成）(c) IO ノードの `static wcBindable` から manifest を生成して drift-check（"manifest drift" の本旨に最も忠実だが最大工数）。
+**Verification (2026-07-16, a CLI trial run) — what to validate needed deciding**:
+- The repo has **0** `wcstack.manifest.json` files (so the manifest drift check currently has nothing to check).
+- Running the CLI over the **648 HTML files** in `examples/` plus `packages/` yields **effectively 0 errors** (the single error was `packages/vscode-wcs/coverage/.../templateSyntax.ts.html`, a false positive on a coverage artifact; excluding coverage/dist/node_modules gives 0).
+- But the examples (`state-notification-chat`, say) emit many `wcs/binding-path-missing` **warnings**, because the state is loaded through an external script or CDN and cannot be resolved statically (a limit of the validator, not a bug in the example). The exit code is 1 only on errors, so warnings do not fail the build — but they would bury the CI output in false positives.
+- ⇒ **A decision was needed on what to validate**. The options: (a) gate all HTML on errors only (0 today, low risk, but noisy with warnings); (b) prepare self-contained fixtures with inline state and gate on those (clean, but they have to be written); (c) generate a manifest from the I/O nodes' `static wcBindable` and drift-check it (most faithful to the intent of "manifest drift", and the most work).
 
-### C. Phase 5b — `enableContractAnalyzer` は explicit opt-in を正式仕様化【決定済み 2026-07-16】
+### C. Phase 5b — explicit opt-in becomes the official spec for `enableContractAnalyzer` [decided 2026-07-16]
 
-- **決定: dev 既定 ON は採らず、explicit opt-in（`default false`）を正式仕様とする。**
-- 理由: wcstack は buildless / zero-config で NODE_ENV 相当の確実な dev/prod 判定が無い。hostname（localhost 等）や non-minified の heuristic で auto-ON すると誤検出で prod にコストを乗せうる。明示 dev フラグ（`window.__WCS_DEV__` 等）も利用者の手動設定が要り zero-config を崩す。⇒ 現状の `default false` + `setConfig({ enableContractAnalyzer: true })` を最も安全な設計として確定。
-- 反映: [config.ts](../../packages/state/src/config.ts) の `enableContractAnalyzer` にこの意図を明記。「無効時 runtime 挙動・cost 不変」（`09` §8 5b）は達成済みなので、opt-in である限り追加実装は不要。state 系フラグは directional / propagation が既定 ON、analyzer のみ意図的 opt-in で確定。
+- **Decision: on-by-default in dev is not adopted; explicit opt-in (`default false`) is the official spec.**
+- Why: wcstack is buildless and zero-config, with no reliable dev/prod determination equivalent to NODE_ENV. Auto-enabling on a hostname heuristic (localhost and friends) or on "not minified" could misfire and put cost into production. An explicit dev flag (`window.__WCS_DEV__` or similar) still needs the user to set it manually, which breaks zero-config. ⇒ The current `default false` plus `setConfig({ enableContractAnalyzer: true })` is settled as the safest design.
+- Reflected in: [config.ts](../../packages/state/src/config.ts), where this intent is stated on `enableContractAnalyzer`. Since "no runtime behavior or cost change while disabled" (`09` §8 5b) is already met, no further implementation is needed as long as it stays opt-in. Among the state flags, directional and propagation are on by default, and the analyzer alone is deliberately opt-in.
 
-### D. ビルド / リリース衛生 — 各パッケージ dist 再ビルド【リリース時】
+### D. Build and release hygiene — rebuilding each package's dist [at release time]
 
-- **2026-07-17 検証で訂正**: `state` / `fetch` の dist は**最新**（再ビルドで byte 差分ゼロを確認。state dist は `enableDirectionalInitialSync: true` / `enablePropagationContext: true` を含む）。当初の「state dist は stale」は誤りだった。
-- `share` / `contacts` / `eyedropper` / `credential` / `upload` / `clipboard` / `geolocation` の dist も Phase 4/6 の成果物（errorInfo）を含むことを確認（marker 検査）。当初の「src 変更が dist 未反映」リストは全体として誤りだった。
-- 一方 `router` は本日の wcBindable 修正（下記）が dist 未反映（再ビルドで差分が出ることを確認し、リリース時方針に合わせて dist は据置）。加えて `protocol/wcBindable.ts` の再生成（`version: 1` → `version: number`）を取り込んでいない dist が残る（`debounce` / `network` / `router` の再ビルド差分で確認）。**リリース時は全パッケージ一括 rebuild が安全**。
-- 設計上リリース build で解消するが、公開 artifact は現状フラグ反映前。リリースまでに:
-  1. 各パッケージ rebuild（`rimraf dist` → `tsc` → `rollup -c`）
-  2. **`state` に依存する `router` / `signals` / `server` / `examples` の回帰確認**（dist 更新で新既定が効くため）
+- **Corrected by verification on 2026-07-17**: the dist of `state` and `fetch` is **current** (a rebuild produced a zero-byte diff; the state dist includes `enableDirectionalInitialSync: true` and `enablePropagationContext: true`). The original claim that "the state dist is stale" was wrong.
+- The dist of `share` / `contacts` / `eyedropper` / `credential` / `upload` / `clipboard` / `geolocation` was confirmed to contain the Phase 4/6 output (errorInfo) as well (by marker inspection). The original list of "src changes not reflected in dist" was wrong as a whole.
+- `router`, on the other hand, has today's wcBindable fix (below) unreflected in its dist (a rebuild was confirmed to produce a diff, and the dist was left alone in line with the release-time policy). In addition, some dist files have not picked up the regeneration of `protocol/wcBindable.ts` (`version: 1` → `version: number`) (confirmed through the rebuild diffs of `debounce` / `network` / `router`). **A single wholesale rebuild of every package at release time is the safe move.**
+- By design this is resolved by the release build, but the published artifacts currently predate the flags. Before the release:
+  1. Rebuild each package (`rimraf dist` → `tsc` → `rollup -c`)
+  2. **Regression-check `router` / `signals` / `server` / `examples`, which depend on `state`** (the new defaults take effect once the dist is updated)
 
-**examples 回帰確認 完了（2026-07-17、ローカル dist ＋ 実ブラウザ）**: 上記 2 を先行実施し、既定 ON で **実際に壊れる例を 6 件検出・修正**した（5 件は初回検証、6 件目の `packages/state/examples/spread` は全 examples の 2 回目掃引で検出）。examples は CDN（公開済み v1.20.0）を読むため、この破壊はリリースまで顕在化しない。
-- **根因は 1 件が package バグ**: `router` の `wcBindable` が settable な `navigateUrl` を `properties` にだけ宣言していた（output-only 判定 → `shouldApplyState` が state→element 書き込みを**恒久抑止** → state からのプログラム遷移が死ぬ）。`inputs` へ追加して修正（§3.6 の「properties と inputs の両方 → 互換性のため state」に一致）。実ブラウザの反実仮想で確認済み（修正前: クリックしても URL 不変／修正後: 遷移）。`path` は setter が navigate しないので output-only のまま据置。
-- **残り 5 件は examples 側の pattern**: output-only スロットに state 側が「都合のよい初期値」を種蒔きし（`value: []`、`debouncedQuery: ""`）、element authority の実初期値（`null` / `undefined`）で上書きされて getter が落ちる。**seed は element の実初期値に合わせ、表示用は派生 getter で null 安全化**する形に統一（state-search / router-spa / fetch pagination / fetch users-crud）。`<wcs-debounce>` の `value` も同型（`DebounceCore._value = undefined`）で、これは e2e 実行でのみ発覚した。6 件目の `packages/state/examples/spread` は逆向きの教材（state seed→element 表示が主旨）なので、inline fake-fetch の 4 メンバを inputs にも宣言して two-way 化＝state authority を維持し、実 IO ノードとの契約差はコメントで明示した。
-- **副次**: `state-sse-dashboard` の `<wcs-network>` 手動 pull（初回スナップショット消失の回避策）は Phase 2 が構造的に解決したため削除。実ブラウザで自動 pull を実証（`netSupported` シード `false` → `true` に置換され tile が描画）。
-- ⇒ **教訓**: 「output-only メンバに state 側の初期値を持たせる」は Phase 2 既定 ON で成立しなくなる。既存アプリの移行ガイドに要記載。`for:` パスは validator が静的に配列型を要求するため、null seed と併せて**派生 getter へ向ける**必要がある（`wcs-validate` が実際にこの誤りを捕捉した）。
-- **7 件目（2026-07-17、v1.21.0 リリース後に発見）= 2 つ目の package バグ**: DCC の `createWcBindable`（`packages/state/src/dcc/wcBindable.ts`）が `properties` のみを生成し `inputs` を作らないため、`$bindables` 全メンバが output-only 判定 → 親 state → DCC 書き込みの恒久抑止に加え、DCC 側初期値が `commitProducerValue` で親 state へ逆流。output-only の許可 authority は `element|none` のみで `init=state` は throw するため、利用者側の回避手段が無い。修正 = `inputs: bindables.map((name) => ({ name }))` を追加（branch `fix/dcc-bindable-inputs`、README:「Binding to DCC Properties」の用法が対象）。
-  - 検出漏れの構造要因: DCC の宣言は**実行時の動的生成**で `static wcBindable` の grep 掃引に出ない。e2e (`__e2e__/dcc/index.html`) は親 `cnt: 0` と DCC `count: 0` の seed が同値で逆流が不可視、かつ親→DCC 方向を未検証 → 非対称 seed（`cnt: 5`）と親側 increment ボタンを追加して塞いだ。回帰テストは `bindings.initialSyncPolicy.test.ts`（実 `createWcBindable` で authority=state と逆流なしを固定）+ `dcc.wcBindable.test.ts`（properties/inputs 同一集合の不変条件）。
-  - 規範の明文化: 「settable なメンバは `properties` と `inputs` の両方に宣言する」を state README（en/ja）の新節「Binding Authority (`#init=` / `#sync=`)」として追加（v1.21.0 時点では `#init=`/`#sync=` の説明節自体が README に無く、規範は本ディレクトリ `09` §3.6 のみだった）。
-- **8 件目（2026-07-21、未リリース）= 3 つ目の Phase 2 乖離**: `shouldApplyState` が resolvedAuthority を**定常 apply のゲートにも**使い、element / none authority の binding で state→element を恒久抑止していた。`09` §3.6 の規範は「authority は初期同期のみを支配」（双方向 member の `init=element` = "snapshot を state へ入れる"、`init=none` = "次の変更から扱う"）であり乖離。実害 = 双方向 member への `#init=element` / `#init=auto` が実質 one-way 化し、`<wcs-storage>` の load-before-bind clobber（`state-binding-init-races.md` §1）を修飾子で解決できない（pull は効くが以後の保存が死ぬ）。router `navigateUrl`（1 件目）/ DCC `createWcBindable`（7 件目）と同じ「恒久抑止」の第 3 の顔だが、前 2 件が宣言側の修正だったのに対し今回はゲート自体の修正。
-  - 修正 = `shouldApplyState` の二相化: record に `initialApplyDone` を持たせ、settle 後の**初回相談**（= `initialize()` の初期 sweep フィルタ / 行の初回 render / deferred initial apply の選別）だけ authority で答えて消費し、定常は (1) output-only member の契約（`policy.outputOnly` を record にミラー）と (2) `sync=connect` の接続 snapshot 未解決（`observationPending`）の間のみブロック。failed record は明示的に false。output-only の恒久抑止・DCC/router の conformance・既存テストの挙動は不変。
-  - 回帰テスト: `bindings.initialSyncPolicy.test.ts`（双方向 `init=element`/`auto`/`none` の定常 true・output-only の定常 false・`sync=connect` の解決前 false→解決後 true）+ `integration.initialAuthority.test.ts`（実 state で storage 型シナリオ: `#init=element` の初期 pull → input 経由の state 変更が要素へ届く/output-only は届かない）。README(en/ja) の Binding Authority 節を「authority は初期同期のみ」に訂正（旧記述は実装の恒久抑止を規範化してしまっていた）。
-  - これにより `state-binding-init-races.md` §1 の恒久対応（案 A 中期課題）が `value#init=element:`（1 修飾子）で完結する。storage README §5 idiom と `examples/state-cross-tab-todo` / `state-color-palette` の `$connectedCallback` pull はリリース後に簡素化可能（examples は CDN の公開版を読むためリリースまで現状維持）。
-  - **【完了 2026-07-24】この簡素化を実施**（修正は v1.22.0 に含まれ、当時の「リリースまで現状維持」の理由は失効）。storage README(en/ja) §1/§4/§5 を `value#init=element:` に書き換え、2 examples から `$connectedCallback` pull を撤去。**併せて monitor 系の手動 pull も撤去**: network / screen-orientation README(en/ja) は observable プロパティが全て output-only ＝ 既定 authority が `element` のため手動 pull が元々不要だった（`timing-and-firing-contract.md` §7.1/§10.1/§10.2/§11.2 も「イベントは届かないが値は届く」に訂正）。実ブラウザ回帰を新設: `e2e/tests/monitor-initial-snapshot.spec.ts`（`<wcs-network>` の `supported` は connect 時に一度確定し以後 change が飛ばないため、pull が退行すると seed の `false` のまま = 退行検出器になる）。
+**The examples regression check is complete (2026-07-17, local dist plus a real browser)**: item 2 above was done ahead of time, and **six examples that actually break under the new defaults were found and fixed** (five in the first pass; the sixth, `packages/state/examples/spread`, in a second sweep over all examples). Because examples read the CDN (the published v1.20.0), that breakage would not have surfaced until the release.
+- **One root cause was a package bug**: `router`'s `wcBindable` declared the settable `navigateUrl` only in `properties` (judged output-only → `shouldApplyState` **permanently suppressed** the state→element write → programmatic navigation from state died). Fixed by adding it to `inputs` (matching §3.6's "in both properties and inputs → state, for compatibility"). Confirmed by a counterfactual in a real browser (before: clicking left the URL unchanged; after: it navigates). `path` stays output-only, since its setter does not navigate.
+- **The other five were patterns on the examples side**: state seeded a "conveniently shaped initial value" into an output-only slot (`value: []`, `debouncedQuery: ""`), the element authority's real initial value (`null` / `undefined`) overwrote it, and the getter fell over. **Unified on the form where the seed matches the element's real initial value and the display goes through a derived, null-safe getter** (state-search / router-spa / fetch pagination / fetch users-crud). `<wcs-debounce>`'s `value` is the same shape (`DebounceCore._value = undefined`), which only surfaced under an e2e run. The sixth, `packages/state/examples/spread`, is a teaching example in the opposite direction (its point is state seed → element display), so the four members of its inline fake-fetch were declared in inputs too, making them two-way and preserving state authority, with the contractual difference from a real I/O node stated in a comment.
+- **A side effect**: the manual pull for `<wcs-network>` in `state-sse-dashboard` (the workaround for the lost initial snapshot) was deleted, since Phase 2 solves it structurally. The automatic pull was demonstrated in a real browser (the `netSupported` seed of `false` is replaced with `true` and the tile renders).
+- ⇒ **The lesson**: "give an output-only member an initial value on the state side" stops working with Phase 2 on by default. It has to go into the migration guide for existing apps. Since the validator statically requires an array type for a `for:` path, that plus a null seed means **pointing it at a derived getter** is necessary (`wcs-validate` did in fact catch this mistake).
+- **The seventh (2026-07-17, found after the v1.21.0 release) = the second package bug**: DCC's `createWcBindable` (`packages/state/src/dcc/wcBindable.ts`) generates only `properties` and no `inputs`, so every `$bindables` member was judged output-only → besides permanently suppressing the parent state → DCC write, the DCC's own initial values flowed back into the parent state through `commitProducerValue`. The only authority an output-only member permits is `element|none`, and `init=state` throws, so the user had no workaround. The fix = adding `inputs: bindables.map((name) => ({ name }))` (branch `fix/dcc-bindable-inputs`; the usage in the README's "Binding to DCC Properties" is what this affects).
+  - The structural reason it was missed: a DCC's declaration is **generated dynamically at runtime** and does not appear in a grep sweep for `static wcBindable`. The e2e (`__e2e__/dcc/index.html`) had the parent's `cnt: 0` and the DCC's `count: 0` seeded to the same value, which made the backflow invisible, and it never tested the parent→DCC direction → closed by an asymmetric seed (`cnt: 5`) plus an increment button on the parent side. The regression tests are `bindings.initialSyncPolicy.test.ts` (pinning authority=state and no backflow with the real `createWcBindable`) plus `dcc.wcBindable.test.ts` (the invariant that properties and inputs are the same set).
+  - Making the norm explicit: "a settable member is declared in both `properties` and `inputs`" was added to the state README (en/ja) as a new section, "Binding Authority (`#init=` / `#sync=`)" (as of v1.21.0 the README had no section explaining `#init=`/`#sync=` at all, and the norm lived only in `09` §3.6 in this directory).
+- **The eighth (2026-07-21, unreleased) = the third Phase 2 divergence**: `shouldApplyState` used the resolved authority **as the gate for the steady-state apply too**, permanently suppressing state→element for bindings with element / none authority. `09` §3.6's norm is that "authority governs the initial sync only" (for a two-way member, `init=element` = "put the snapshot into state", `init=none` = "handle it from the next change"), so this diverged. The real damage: `#init=element` / `#init=auto` on a two-way member effectively became one-way, which meant the load-before-bind clobber of `<wcs-storage>` (`state-binding-init-races.md` §1) could not be solved with a modifier (the pull works but subsequent saves die). It is the third face of the same "permanent suppression" as router's `navigateUrl` (the first) and DCC's `createWcBindable` (the seventh), except that the previous two were fixes on the declaration side while this one fixes the gate itself.
+  - The fix = splitting `shouldApplyState` into two phases: the record carries `initialApplyDone`, and only **the first consultation** after settle (the initial sweep filter of `initialize()`, a row's first render, the selection of a deferred initial apply) answers from authority and consumes it; the steady state blocks only for (1) the contract of an output-only member (mirroring `policy.outputOnly` into the record) and (2) while a `sync=connect` connection snapshot is unresolved (`observationPending`). A failed record is explicitly false. The permanent suppression for output-only, the conformance of DCC/router, and the behavior of the existing tests are all unchanged.
+  - Regression tests: `bindings.initialSyncPolicy.test.ts` (steady-state true for two-way `init=element`/`auto`/`none`, steady-state false for output-only, false before resolution and true after for `sync=connect`) plus `integration.initialAuthority.test.ts` (the storage-style scenario on real state: the initial pull of `#init=element`, then a state change through an input reaching the element / not reaching it for output-only). The README's (en/ja) Binding Authority section was corrected to "authority governs the initial sync only" (the old text had made the implementation's permanent suppression normative).
+  - This lets the permanent fix in `state-binding-init-races.md` §1 (option A, a medium-term item) be completed with `value#init=element:` — one modifier. The storage README §5 idiom and the `$connectedCallback` pull in `examples/state-cross-tab-todo` / `state-color-palette` can be simplified after the release (the examples read the published CDN version, so they stay as they are until then).
+  - **[Complete 2026-07-24] that simplification was done** (the fix is in v1.22.0, so the "stay as they are until the release" reason expired). The storage README (en/ja) §1/§4/§5 were rewritten to `value#init=element:`, and the `$connectedCallback` pull was removed from the two examples. **The manual pulls in the monitor nodes were removed at the same time**: every observable property in the network and screen-orientation READMEs (en/ja) is output-only, so the default authority is `element` and the manual pull was never needed (`timing-and-firing-contract.md` §7.1/§10.1/§10.2/§11.2 were also corrected to "the event does not arrive but the value does"). A new real-browser regression was added: `e2e/tests/monitor-initial-snapshot.spec.ts` (since `<wcs-network>`'s `supported` settles once on connect and no change follows, a regression in the pull leaves the seed at `false` — making it a regression detector).
 
-- **【リリース後 TODO・2026-08-01 追加】wcstack-app スキルの追随**: スキルは
-  [wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill) 別リポジトリにあり、
-  `SKILL.md` frontmatter の `wcstack-version` で**検証済みリリース**を印として持ち、
-  scaffold は全て `https://esm.run/@wcstack/<pkg>/auto`（= 公開版）を読む。したがって
-  examples と同じクラスの成果物であり、未リリースの main に追従させると印が実態と乖離し、
-  CDN が配っていない挙動を書くことになる。スキル側 README も「PRs that fix drift against a
-  **released** wcstack version」と明記している。⇒ **リリース後にまとめて当てる**。
-  - 現状の印は **1.22.6**、npm の最新は **1.23.0**（2026-08-01 確認）。既に 1 リリース分の
-    ドリフトがあるため、次回リリース後の追随は 1.22.6 → 新版の差分を一括で扱う。
-  - 本ディレクトリ 11-13 由来で効きうる差分は少ない。`semantics` 宣言は producer 側の面で
-    アプリ構築用スキルには基本不要、property upgrade と framework 組み込み手順も HTML ファーストの
-    アプリ構築には無関係。**唯一効くのは occurrence 伝播**（`semantics: "event"` の property は
-    同値 primitive でも state へ届く）で、gotcha 表に同値ガード前提の記述があれば要更新。
-  - 追随時は `SKILL.md` の `wcstack-version` と README の版記述も同時に更新する。
+- **[Post-release TODO, added 2026-08-01] catching up the wcstack-app skill**: the skill lives in the separate
+  [wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill) repository, carries the **verified release** as
+  a marker in its `SKILL.md` frontmatter `wcstack-version`, and every scaffold reads
+  `https://esm.run/@wcstack/<pkg>/auto` (= the published version). It is therefore an artifact of the same class as
+  the examples: making it track an unreleased main would put its marker out of step with reality and describe
+  behavior the CDN does not serve. The skill's own README states it takes "PRs that fix drift against a
+  **released** wcstack version". ⇒ **Apply it all after the release.**
+  - The current marker is **1.22.6** and the latest on npm is **1.23.0** (checked 2026-08-01). Since it is already
+    one release behind, catching up after the next release means handling the 1.22.6 → new version diff in one go.
+  - Little of what originates in docs 11-13 in this directory is likely to matter. The `semantics` declaration is a
+    producer-side surface and largely irrelevant to an app-building skill, and property upgrade and the
+    framework-integration procedure are irrelevant to HTML-first app building. **The one thing that does matter is
+    occurrence propagation** (a property with `semantics: "event"` reaches state even for an identical primitive),
+    so any gotcha-table entry that presumes a same-value guard needs updating.
+  - When catching up, update `SKILL.md`'s `wcstack-version` and the version text in the README at the same time.
 
-### E. ドキュメント / normative 更新【完了 2026-07-16】
+### E. Documentation and normative updates [complete 2026-07-16]
 
-- `03-two-way-echo-control.md` ヘッダ / `09` §3.6（directional）/ §4（propagation）/ §8 に実装ステータス
-  callout を追加済み（「既定 on・恒久 opt-out」と本書へのリンク）。本文は flag 導入時の記述のまま残るが、
-  callout が normative pointer として現状を指す。
+- Implementation-status callouts have been added to the header of `03-two-way-echo-control.md`, and to `09` §3.6
+  (directional) / §4 (propagation) / §8 ("on by default, permanent opt-out", with a link to this document). The body
+  text remains as written when the flags were introduced, but the callouts act as the normative pointer to the
+  current state.
 
-### F. 確認事項【解決済み 2026-07-16】
+### F. Items to confirm [resolved 2026-07-16]
 
-- Phase 4 `09` §6「非同期 trace queue（DevTools side-channel）」の適用状況を検証した。**結論: lane trace は fetch を含む全 6 lane ノードで一様に休眠**しており、「fetch だけ適用済み」という非対称は存在しない。
-  - `io-core/operation-lane.ts` は optional な `trace?: (event: OperationTraceEvent) => void` を持ち、渡さなければ trace record を一切生成しない（§10.3 hook-off zero-allocation gate）。この能力は各パッケージの生成コピー（byte-identical）に inline されている。
-  - しかし **6 ノード全て**（`fetch` / `share` / `contacts` / `eyedropper` / `credential` / `upload`）が `new OperationLane(key, policy, { withSignal })` で構築し、**`trace` option を渡していない** → lane の `_trace` は常に undefined。
-  - `packages/state` の `devtoolsSink` は state 面イベント（`state:binding-added` / `state:update-batch` / command token / contract analyzer）を受けるが、**lane の `io:operation-*` イベント型を持たず、両者を繋ぐブリッジは未実装**。
-  - ⇒ 半端な適用（fetch だけ trace あり）は無い。lane trace → state devtoolsSink の橋渡しは**未着手の followup**（一貫した gap）であり、既定化ブロッカーではない。DevTools 統合を実装する時に、6 ノード一律で `trace` を配線し devtoolsSink 側に lane イベント型を追加する。
+- The application status of Phase 4 `09` §6 "the async trace queue (a DevTools side channel)" was verified.
+  **Conclusion: lane trace is uniformly dormant across all six lane nodes, fetch included**, and the asymmetry of
+  "only fetch has it" does not exist.
+  - `io-core/operation-lane.ts` has an optional `trace?: (event: OperationTraceEvent) => void` and generates no trace
+    record at all when it is not passed (the hook-off zero-allocation gate of §10.3). That capability is inlined into
+    each package's generated copy (byte-identical).
+  - But **all six nodes** (`fetch` / `share` / `contacts` / `eyedropper` / `credential` / `upload`) construct it as
+    `new OperationLane(key, policy, { withSignal })` and **pass no `trace` option** → the lane's `_trace` is always
+    undefined.
+  - `packages/state`'s `devtoolsSink` receives state-side events (`state:binding-added` / `state:update-batch` /
+    command token / contract analyzer) but **has no type for the lane's `io:operation-*` events, and the bridge
+    between the two is unimplemented**.
+  - ⇒ There is no half-applied state (trace on fetch alone). Bridging lane trace → state devtoolsSink is an
+    **untouched follow-up** (a consistent gap) and not a blocker for defaulting. When DevTools integration is
+    implemented, wire `trace` uniformly across the six nodes and add the lane event types to devtoolsSink.
 
 ---
 
-## 3. 推奨順序
+## 3. Recommended order
 
-当初の推奨順序 1-4（A 方針決定 → B CI ゲート → C analyzer 判断 → A 横展開）と E は
-**すべて完了/確定済み（2026-07-16）**。残りは:
+The original recommended order 1-4 (decide policy A → gate B in CI → decide on the C analyzer → roll out A) and E are
+**all complete or settled (2026-07-16)**. What remains:
 
-1. **D（release build + 依存回帰）** — リリース時にまとめて実施（examples 回帰は 2026-07-17 に先行実施済み、§D）
-2. **wcstack-app スキルの追随** — **リリース後**に実施（§D 末尾）。CDN の公開版を読む成果物なので、
-   examples と同じくリリースまで現状維持が正しい
-3. **defer 3 の個別判断** — permission / network（capability-only errorInfo の価値）、defined（error 面の再設計）
-4. **lane trace → devtoolsSink ブリッジ** — 未着手 followup（§F、既定化ブロッカーではない）
+1. **D (the release build plus the dependency regression)** — done in one go at release time (the examples regression was done ahead of time on 2026-07-17, §D)
+2. **Catching up the wcstack-app skill** — done **after the release** (the end of §D). It is an artifact that reads the published CDN version, so staying as-is until the release is correct, exactly as with the examples
+3. **The individual decisions on the 3 deferred nodes** — permission / network (whether a capability-only errorInfo has value), defined (redesigning its error surface)
+4. **The lane trace → devtoolsSink bridge** — an untouched follow-up (§F; not a blocker for defaulting)
 
 ---
 
-## 付記: 検証した事実（2026-07-17 再検証）
+## Appendix: verified facts (re-verified 2026-07-17)
 
-- errorInfo 実装済み **27 パッケージ** = `grep -rl errorInfo packages/*/src/exports.ts`（横展開前の初期値は 8）。
-- lane 生成コピー保有 6 パッケージ = `packages/*/src/core/operationLane.ts`。`sync-io-core.mjs --check` = 33 生成ファイル整合。
-- CI の architecture-hardening 関連ステップは `sync-io-core.mjs --check` に加え、独立 job **`wcs-validate`**（§B で追加。examples + packages の HTML を error severity で gate、現状 0 error）。
-- 2026-07-17 追加: 独立 job **`bindable-conformance`**（`scripts/conformance-bindable-inputs.mjs`）— 「settable な wcBindable メンバは `inputs` にも宣言する」不変条件を、dist バンドルを import した**評価済み宣言** × プロトタイプチェーン setter の突合で検査（41 pkg / 79 class / 441 メンバ）。ソース lint と違い動的生成宣言もカバーし、v1.20.0 router に対して `navigateUrl` を検出することを実証済み（router navigateUrl / DCC `$bindables` 型ドリフトの恒久ガード）。committed dist は src に遅行するため、release.yml でも bump 後 rebuild 直後・publish 前に同 script を再実行して補完。意図的 output-only（`Router.path` / `StorageCore.value`）は script 内 allowlist に理由付きで記録。dist export に現れない宣言ファクトリ（DCC `createWcBindable`）は state の unit test が固定。
-- Phase 2 flip は commit `aaeb784`（メッセージは "geolocation errorInfo" と実態を過小記述、state 変更を混載）に含まれる。
+- errorInfo implemented in **27 packages** = `grep -rl errorInfo packages/*/src/exports.ts` (the initial figure before the roll-out was 8).
+- 6 packages carry a generated lane copy = `packages/*/src/core/operationLane.ts`. `sync-io-core.mjs --check` = 33 generated files consistent.
+- The architecture-hardening-related steps in CI are `sync-io-core.mjs --check` plus the independent **`wcs-validate`** job (added in §B; it gates the HTML of examples plus packages on error severity, currently 0 errors).
+- Added 2026-07-17: the independent **`bindable-conformance`** job (`scripts/conformance-bindable-inputs.mjs`) — it checks the invariant "a settable wcBindable member is declared in `inputs` too" by cross-referencing the **evaluated declarations** (importing the dist bundle) against prototype-chain setters (41 packages / 79 classes / 441 members). Unlike a source lint it covers dynamically generated declarations too, and it was demonstrated to catch `navigateUrl` against v1.20.0's router (a permanent guard for the router navigateUrl and DCC `$bindables` type drift). Since the committed dist lags src, release.yml also re-runs the same script right after the post-bump rebuild and before publishing, as a complement. Deliberate output-only members (`Router.path` / `StorageCore.value`) are recorded in an in-script allowlist with reasons. A declaration factory that does not appear in the dist exports (DCC's `createWcBindable`) is pinned by a state unit test.
+- The Phase 2 flip is in commit `aaeb784` (whose message understates it as "geolocation errorInfo" and mixes in the state change).

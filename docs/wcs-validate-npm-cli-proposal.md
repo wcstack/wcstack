@@ -2,7 +2,7 @@
 
 - **状態**: **決裁済み・実装済み**（2026-07-24 起票、同日決裁・実装。npm 公開は次リリースで自動）。決定 = パッケージ名 **`@wcstack/lint`**・バージョンは**公開 npm 群と同一**（bin 名は `wcs-validate` 維持）。実装は `packages/lint/`（§7 実装記録）
 - **提案の対象**: `packages/vscode-wcs` に同梱されている `wcs-validate` CLI の**配布経路**のみ。validator core・診断仕様・CLI インターフェースは一切変更しない。
-- **関連**: `docs/architecture-hardening/10-defaulting-rollout-status.md` §B（CI 必須ゲート化・完了）、`docs/wcstack-manifest-schema.md`（sidecar 規範）、[wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill)（AI アプリ構築スキル）
+- **関連**: `docs/architecture-hardening/10-defaulting-rollout-status.ja.md` §B（CI 必須ゲート化・完了）、`docs/wcstack-manifest-schema.md`（sidecar 規範）、[wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill)（AI アプリ構築スキル）
 - **TL;DR**: CLI を `@wcstack/lint` などの**薄い npm ラッパーパッケージ**として公開すれば、skill の実行手順が `npx` 一行になり、AI 生成フロー（生成 → 静的検証 → 修正ループ）への組み込みが格段に楽になる。`dist/cli.cjs` は既に自己完結の単一ファイルバンドルなので、ラッパーは**依存ゼロで成立**する。
 
 ---

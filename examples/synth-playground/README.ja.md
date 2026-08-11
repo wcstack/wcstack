@@ -16,7 +16,7 @@ npx serve examples/synth-playground
 
 > 元は 1,000 行の `wcs-synth.js` を抱えた使い捨ての実験でした。そのファイルは
 > もうありません — 試作したタグは公開パッケージになり、その昇格を可能にした
-> 決定は [ADR-14](../../docs/architecture-hardening/14-handle-graph-wiring.md)
+> 決定は [ADR-14](../../docs/architecture-hardening/14-handle-graph-wiring.ja.md)
 > に記録してあります。
 
 ## 見どころ

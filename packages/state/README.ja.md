@@ -220,7 +220,7 @@
 
 解決順序: `state` → `src` (.json / .js) → `json` → 内包 `<script>` → `setInitialState()` 待機。
 
-> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.md](../../docs/csp.md)。
+> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
 
 ### 名前付き状態
 
@@ -394,7 +394,7 @@ authority はバインディング単位で `#init=` により上書きできま
 
 - `enableDirectionalInitialSync: false`（opt-out）のとき `#init=`/`#sync=` を書くと throw します。
 - **1.20 以前からの移行：** output-only メンバに対して state 側に都合のよい初期値（`value: []`、`query: ""` 等）をシードしないでください — 要素側の実初期値（多くは `null`/`undefined`）がシードを置き換えます。シードは要素の実初期値に合わせ、表示用の値は派生 getter で null ガードしてください。
-- **1.21.x まで**、`init=element` / `init=auto` / `init=none` はバインディングの生存期間全体で state→element 書き込みを抑止しており、真に双方向なメンバには使えませんでした。現在は authority は初期同期のみを支配します（`docs/architecture-hardening/09-remediation-design.md` §3.6）。
+- **1.21.x まで**、`init=element` / `init=auto` / `init=none` はバインディングの生存期間全体で state→element 書き込みを抑止しており、真に双方向なメンバには使えませんでした。現在は authority は初期同期のみを支配します（`docs/architecture-hardening/09-remediation-design.ja.md` §3.6）。
 
 ### ラジオボタンバインディング
 

@@ -1,40 +1,41 @@
-# 設計メモ: `@wcstack/screen-orientation`（`<wcs-screen-orientation>`）
+# Design note: `@wcstack/screen-orientation` (`<wcs-screen-orientation>`)
 
-- **状態**: 実装済み。本文書は実装前に行った論点整理と決定事項のスナップショットであり、実装後も設計意図の参照用に保持している。以降の `hidden@!portrait` / `hidden@!landscape` 等の `@` 表記は説明用の擬似記法であり、実際の `data-wcs` 構文ではない点に注意（`!` 否定は state に存在せず、実装では `|not` フィルタを使う。README.md/README.ja.md 参照）。
-- **対象 WebAPI**: Screen Orientation API（`screen.orientation`、`ScreenOrientation` の `change` イベント、`.type` / `.angle` / `.lock(type)` / `.unlock()`）
-- **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ4（最小monitorパターン）の2本目。`Network Information`（`<wcs-network>`、[network-tag-design.md](./network-tag-design.md)）を先に実装し、その「単一イベント→派生getter」「`_gen`不要」の型を土台に、本ノードは**commandを持つ側**としてバッチ4を完結させる。
-- **前提資産**: `permission`（単一state→複数派生boolean getterの型、`_permGen`世代ガード、Core/Shell分離）、`network`（querty不要・完全同期購読という「バッチ4の薄さ」の型、`_gen`省略の判断基準）、`fetch`（単一`_gen`によるcommand側の世代ガード、[FetchCore.ts:54](../packages/fetch/src/core/FetchCore.ts#L54)・[FetchCore.ts:195](../packages/fetch/src/core/FetchCore.ts#L195)）。
+- **Status**: implemented. This document is a snapshot of the questions and decisions worked through before implementation, kept afterwards as a reference for the design intent. Note that the `@` notation below (`hidden@!portrait`, `hidden@!landscape`) is pseudo-syntax for explanation and not actual `data-wcs` syntax (`!` negation does not exist in state; the implementation uses the `|not` filter — see README.md/README.ja.md).
+- **The Web API**: the Screen Orientation API (`screen.orientation`, `ScreenOrientation`'s `change` event, `.type` / `.angle` / `.lock(type)` / `.unlock()`)
+- **Where it sits**: the second member of batch 4 (the minimal monitor pattern) in [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) (ja). `Network Information` (`<wcs-network>`, [network-tag-design.md](./network-tag-design.md) (ja)) was implemented first, and on the foundation of its "single event → derived getters" and "no `_gen` needed" shape, this node completes batch 4 as **the one that has commands**.
+- **Prior assets**: `permission` (the shape of a single state producing several derived boolean getters, the `_permGen` generation guard, Core/Shell separation), `network` (the shape of "batch 4 thinness" — no query needed, a fully synchronous subscription — and the criteria for omitting `_gen`), `fetch` (a command-side generation guard through a single `_gen`, [FetchCore.ts:54](../packages/fetch/src/core/FetchCore.ts#L54) and [FetchCore.ts:195](../packages/fetch/src/core/FetchCore.ts#L195)).
+- **日本語版**: [screen-orientation-tag-design.ja.md](./screen-orientation-tag-design.ja.md)
 
 ---
 
-## 0. 大前提: バッチ4の中で「唯一commandを持つ」メンバー
+## 0. The premise: the one member of batch 4 that has commands
 
-[io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ4は「単一イベント→派生getter、極小Core」という共有アーキタイプを持つが、`network`が純粋monitor（`commands: []`）だったのに対し、本ノードは`lock()`/`unlock()`という2つのcommandを持つ。バッチ4内での位置づけは以下の3点に整理できる。
+Batch 4 in [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) (ja) shares the archetype "a single event → derived getters, a tiny Core", but where `network` was a pure monitor (`commands: []`), this node has two commands, `lock()` and `unlock()`. Its position within batch 4 comes down to three points.
 
 | | `<wcs-network>` | `<wcs-screen-orientation>` |
 |---|---|---|
-| 方向性 | monitor専用（`commands: []`） | **双方向**（monitor + command） |
-| インスタンス設定属性 | 無し（`inputs: []`） | **無し**（本書§3で明示） |
-| 監視の同期性 | 完全同期（`_gen`不要） | 監視は完全同期（`_gen`不要）だが**commandは非同期**（§5） |
-| バッチ4内の役割 | 最速の練習台（純粋monitorの繰り返し） | monitor+commandの組み合わせを初めて確認する一本 |
+| Direction | monitor only (`commands: []`) | **bidirectional** (monitor plus commands) |
+| Per-instance configuration attributes | none (`inputs: []`) | **none** (stated in §3) |
+| Synchronicity of monitoring | fully synchronous (no `_gen`) | monitoring is fully synchronous (no `_gen`), but **the commands are asynchronous** (§5) |
+| Role within batch 4 | the fastest practice run (repeating the pure monitor) | the one that first confirms the monitor-plus-command combination |
 
-このうち「インスタンスごとの設定属性が一切不要」という点は`network`と完全に共通する。両ノードは`screen.orientation`／`navigator.connection`という**window/screenスコープの単一グローバル**を対象にしており、バッチ1（Fullscreen / Picture-in-Picture / Pointer Lock）が要求する`target`属性→要素解決（[io-node-batch-implementation-plan.md:26-42](./io-node-batch-implementation-plan.md#L26-L42)、`_resolveTarget()`）が本ノードには一切登場しない。「対象を指定する」という設計問題そのものが存在しないノード、という点でバッチ1とは対照的な位置にある。
+Of these, "no per-instance configuration attribute is needed at all" is entirely shared with `network`. Both target **a single global in window/screen scope** — `screen.orientation` and `navigator.connection` — so the `target` attribute → element resolution that batch 1 (Fullscreen / Picture-in-Picture / Pointer Lock) requires ([io-node-batch-implementation-plan.md:26-42](./io-node-batch-implementation-plan.md#L26-L42), `_resolveTarget()`) never appears here. As a node where the design problem of "specifying the subject" does not exist at all, it sits opposite batch 1.
 
-一方、「monitorは同期・commandは非同期」という非対称性は`network`には無かった新しい論点であり、これが本書の主題になる（§5）。
-
----
-
-## 1. 存在意義 — 何を解決するノードか
-
-- **向き固定UI**: ゲーム・動画プレイヤー・写真ビューアなど、特定の向きでのみ意味を持つUIを`hidden@!portrait`のような宣言的bindingで出し分ける。
-- **向き固定の要求**: フルスクリーン中の動画再生やゲームで`lock("landscape")`を呼び、離脱時に`unlock()`する、という一時的な向き固定のワークフロー。
-- **横断的な組み合わせ**: `<wcs-fullscreen>`（バッチ1）と組んで「フルスクリーンに入ったら横向きにlockする」という構成が自然に書ける（両者とも`target`/インスタンス設定を持たない薄いノードなので配線がシンプルになる）。
+The asymmetry of "monitoring is synchronous, commands are asynchronous", on the other hand, is a new topic `network` did not have, and it is the subject of this document (§5).
 
 ---
 
-## 2. 公開する state — **決定: `type`/`angle` に加え `portrait`/`landscape` の派生 getter を追加**
+## 1. Why it exists — what it solves
 
-バッチ計画で確定済みの基本形（[io-node-batch-implementation-plan.md:234-246](./io-node-batch-implementation-plan.md#L234-L246)）:
+- **Orientation-dependent UI**: for a game, a video player, a photo viewer — UI that only makes sense in a particular orientation — switch it declaratively with a binding like `hidden@!portrait`.
+- **Requesting an orientation lock**: the workflow of calling `lock("landscape")` for fullscreen video playback or a game and `unlock()` on the way out — a temporary orientation lock.
+- **Cross-cutting combinations**: paired with `<wcs-fullscreen>` (batch 1), "lock to landscape once fullscreen is entered" writes naturally (both are thin nodes with no `target` or per-instance configuration, which keeps the wiring simple).
+
+---
+
+## 2. The exposed state — **decision: add derived `portrait`/`landscape` getters on top of `type`/`angle`**
+
+The base shape already settled in the batch plan ([io-node-batch-implementation-plan.md:234-246](./io-node-batch-implementation-plan.md#L234-L246)):
 
 ```typescript
 static wcBindable: IWcBindable = {
@@ -51,103 +52,103 @@ static wcBindable: IWcBindable = {
 };
 ```
 
-これに加え、以下2つの派生 boolean getter を**追加することを推奨する**。
+On top of that, **adding** the following two derived boolean getters is recommended.
 
 ```typescript
 { name: "portrait",  event: "wcs-orientation:change", getter: e => e.detail.type.startsWith("portrait") },
 { name: "landscape", event: "wcs-orientation:change", getter: e => e.detail.type.startsWith("landscape") },
 ```
 
-### 追加する理由
+### Why add them
 
-- **既存パターンとの整合**: `permission`は`state`という単一4値プロパティから`granted`/`denied`/`prompt`/`unsupported`という4つの派生booleanを切り出している（[PermissionCore.ts:28-32](../packages/permission/src/core/PermissionCore.ts#L28-L32)）。async-io-node-guidelines §4.2 は複合状態を「1イベント＋派生getter」に分解することをSHOULDとして明記しており（[async-io-node-guidelines.md:215-222](./async-io-node-guidelines.md#L215-L222)）、`type`（4値の文字列）から真偽値を導く本ノードはこのパターンの典型的な適用対象である。
-- **bindingの単純化**: `portrait`/`landscape`が無いと、利用者は`hidden@type|ne('portrait-primary')|and(...)`のような多段フィルタか、computed propertyを自前で書く必要がある。派生getterを1つ用意すれば`hidden@!portrait`のような一行bindingで足りる。ユースケース（§1の「向き固定UI」）の大半は「縦か横か」の二値判定であり、`portrait-primary`と`portrait-secondary`の区別まで必要とする場面は少ない。
-- **実装コストがほぼゼロ**: `type`イベントに同居する派生getterを2つ追加するだけであり、Core側の状態やイベント発火ロジックに変更は要らない（`network`の`supported`と同じ「同じイベントに同居させるだけ」のパターン、[network-tag-design.md:66](./network-tag-design.md#L66)）。
-- **`type`自体は引き続き公開する**: `portrait-primary`と`portrait-secondary`を区別したい高度なユースケース（例: 通知バーの表示位置切り替え）のために、生の`type`プロパティも残す。`portrait`/`landscape`は利便性のための追加であり、`type`の代替ではない。
+- **Consistency with the existing pattern**: `permission` carves four derived booleans — `granted` / `denied` / `prompt` / `unsupported` — out of a single four-valued `state` property ([PermissionCore.ts:28-32](../packages/permission/src/core/PermissionCore.ts#L28-L32)). async-io-node-guidelines §4.2 makes decomposing a composite state into "one event plus derived getters" a SHOULD ([async-io-node-guidelines.md:215-222](./async-io-node-guidelines.md#L215-L222)), and this node, deriving booleans from `type` (a four-valued string), is a textbook application of it.
+- **Simpler bindings**: without `portrait`/`landscape`, a user needs a multi-stage filter such as `hidden@type|ne('portrait-primary')|and(...)` or a hand-written computed property. One derived getter reduces it to a one-line `hidden@!portrait`. Most of the use cases (§1's "orientation-dependent UI") are binary — portrait or landscape — and rarely need `portrait-primary` distinguished from `portrait-secondary`.
+- **Near-zero implementation cost**: it adds two derived getters that ride the existing `type` event, needing no change to Core's state or event dispatch logic (the same "just ride the same event" pattern as `network`'s `supported`, [network-tag-design.md:66](./network-tag-design.md#L66)).
+- **`type` itself stays exposed**: the raw `type` property remains for advanced use cases that want `portrait-primary` distinguished from `portrait-secondary` (switching where a notification bar sits, say). `portrait`/`landscape` are a convenience addition, not a replacement for `type`.
 
-unsupported時（§6）は`type`が`null`になるため、`portrait`/`landscape`の getter は`e.detail.type?.startsWith(...) ?? false`のように null 安全にする。
+Where unsupported (§7), `type` is `null`, so the `portrait`/`landscape` getters are made null-safe as `e.detail.type?.startsWith(...) ?? false`.
 
-**実装注記**: 上記スニペットは`io-node-batch-implementation-plan.md`で確定済みの基本形をそのまま転記したものであり、`portrait`/`landscape`と同様に実装では`error`（event: `wcs-orientation:error`）も公開プロパティとして追加している（§5参照。`FetchCore`/`GeolocationCore`/`NotificationCore`と同型のnever-throwエラー表面化）。
-
----
-
-## 3. targetは不要 — インスタンスごとの設定属性が一切不要な2番目のノード
-
-`screen.orientation`は`document`や`navigator.connection`と同じく、ページに1つしか存在しないグローバルなプラットフォームオブジェクトである。要素固有の「何を監視するか」というパラメータが存在しない。
-
-- バッチ1（Fullscreen / Picture-in-Picture / Pointer Lock）は`target`属性→要素解決（`_resolveTarget()`、[io-node-batch-implementation-plan.md:26-42](./io-node-batch-implementation-plan.md#L26-L42)）を全メンバーが共有し、「どの要素に対する操作か」を毎回指定させる。
-- `permission`は`name`属性（＋descriptor extras）で「どの権限か」を指定させる（[permission-tag-design.md:46-60](./permission-tag-design.md#L46-L60)）。
-- `network`と本ノードは、監視対象がそもそも1つしかないため、**指定する余地自体が無い**。`<wcs-screen-orientation>`は属性を持たないタグとして接続するだけでよい。
-
-このため`network-tag-design.md §9`（[network-tag-design.md:117-122](./network-tag-design.md#L117-L122)）と同じ結論になる: **`inputs: []`、Shell属性なし**。バッチ4はこの点で「インスタンスごとの設定が一切不要」という共通項を持つ2ノードで構成されており、バッチ1の`target`依存ノードとは設計の対極に位置する。
+**An implementation note**: the snippet above is transcribed from the base shape settled in `io-node-batch-implementation-plan.md`; as with `portrait`/`landscape`, the implementation also adds `error` (event: `wcs-orientation:error`) as a public property (see §5 — the same never-throw error surfacing as `FetchCore` / `GeolocationCore` / `NotificationCore`).
 
 ---
 
-## 4. `lock()` の引数 — 受け付ける値の範囲
+## 3. No target — the second node needing no per-instance configuration attribute at all
 
-`ScreenOrientation.lock(orientation)`の引数は仕様上 `OrientationLockType` という文字列union だが、TypeScriptの`lib.dom.d.ts`には`ScreenOrientation.lock()`自体が型定義されていない（実験的APIのため。`unlock()`のみ存在する、[lib.dom.d.ts:30224-30229](../packages/state/node_modules/typescript/lib/lib.dom.d.ts#L30224-L30229)）。一次仕様（[Screen Orientation API — W3C](https://www.w3.org/TR/screen-orientation/)）に基づく`OrientationLockType`の全体集合は以下。
+`screen.orientation` is, like `document` and `navigator.connection`, a global platform object of which the page has exactly one. There is no element-specific "what to observe" parameter.
 
-| 値 | 意味 |
+- Batch 1 (Fullscreen / Picture-in-Picture / Pointer Lock) shares the `target` attribute → element resolution (`_resolveTarget()`, [io-node-batch-implementation-plan.md:26-42](./io-node-batch-implementation-plan.md#L26-L42)) across every member, requiring "which element is this operating on" each time.
+- `permission` requires "which permission" through the `name` attribute (plus descriptor extras) ([permission-tag-design.md:46-60](./permission-tag-design.md#L46-L60) (ja)).
+- `network` and this node have exactly one thing to observe, so **there is no room to specify anything**. `<wcs-screen-orientation>` is simply connected as a tag with no attributes.
+
+So the conclusion matches `network-tag-design.md §9` ([network-tag-design.md:117-122](./network-tag-design.md#L117-L122)): **`inputs: []`, no Shell attributes**. In this respect batch 4 consists of two nodes sharing "no per-instance configuration at all", sitting at the opposite pole from batch 1's target-dependent nodes.
+
+---
+
+## 4. `lock()`'s argument — the range of values accepted
+
+`ScreenOrientation.lock(orientation)`'s argument is, per spec, a string union called `OrientationLockType`, but TypeScript's `lib.dom.d.ts` has no type definition for `ScreenOrientation.lock()` at all (it is experimental; only `unlock()` exists, [lib.dom.d.ts:30224-30229](../packages/state/node_modules/typescript/lib/lib.dom.d.ts#L30224-L30229)). The full set of `OrientationLockType`, from the primary spec ([Screen Orientation API — W3C](https://www.w3.org/TR/screen-orientation/)):
+
+| Value | Meaning |
 |---|---|
-| `"any"` | 制約なし（回転自由） |
-| `"natural"` | デバイスの自然な向き |
-| `"landscape"` | 横向き（primary/secondaryのどちらでもよい） |
-| `"portrait"` | 縦向き（primary/secondaryのどちらでもよい） |
-| `"portrait-primary"` | 縦向き・正位置 |
-| `"portrait-secondary"` | 縦向き・反転 |
-| `"landscape-primary"` | 横向き・正位置 |
-| `"landscape-secondary"` | 横向き・反転 |
+| `"any"` | unconstrained (free rotation) |
+| `"natural"` | the device's natural orientation |
+| `"landscape"` | landscape (either primary or secondary) |
+| `"portrait"` | portrait (either primary or secondary) |
+| `"portrait-primary"` | portrait, upright |
+| `"portrait-secondary"` | portrait, inverted |
+| `"landscape-primary"` | landscape, upright |
+| `"landscape-secondary"` | landscape, inverted |
 
-- **決定**: `lock(orientation: string)`はこの8値のunion型として型付けする（`OrientationLockType`という型エイリアスを`types.ts`に定義。`lib.dom.d.ts`に無いため自前定義が必要）。ただし**バリデーションはしない**（値のチェックは行わず、そのまま`screen.orientation.lock(orientation)`へ素通しする）。未知の文字列を渡した場合はブラウザ側が`TypeError`相当で reject するので、§5のnever-throwで吸収すれば足りる。型はDX（補完・タイポ検出）のためのものであり、実行時ガードではない — command-token 経由の呼び出し（`command.lock: 'landscape'`のような文字列引数）はTypeScriptの型検査を経由しないため、実行時に不正値が渡る余地はいずれにせよ残る。
-- headless利用時のシグネチャは`lock(orientation: OrientationLockType): Promise<void>`。実装は`_setError(null)`してから`await screen.orientation.lock(orientation)`をtry/catchするだけで、成功/失敗どちらも例外を外へ漏らさない。
-
----
-
-## 5. `lock()`/`unlock()` は best-effort command — 対応が狭いことを明示する
-
-> **実装後の訂正**: 以下の「デスクトップ vs モバイル」という対比は実装前の推測であり、実装後の仕様照合で否定されている。実際には`lock()`はデスクトップ・モバイルを問わず通常タブでは reject され、フルスクリーンまたはインストール済みPWA文脈が必要（Safariはどの文脈でも`lock()`自体を実装していない）。またreject時のエラー名も、現行仕様の第一候補は`NotAllowedError`（フルスクリーン等のpre-lock条件未達）であり、`NotSupportedError`/`SecurityError`は環境依存の副次候補にすぎない。正確な制約とエラー名の扱いはREADME.md/README.ja.mdを参照。以下の本文は実装前スナップショットとして原文のまま残す。
-
-多くのデスクトップブラウザは`screen.orientation.lock()`を`NotSupportedError`でrejectする（モバイル限定、または特定のfullscreen文脈内でのみ動作する実装が一部にある。例: Chromiumはfullscreen要素が無い状態でのlockを拒否することがある）。
-
-- **never-throwで吸収**: `lock()`のreject（`NotSupportedError` / `SecurityError` / その他）は`error`プロパティへ流し、例外として外へ漏らさない。呼び出し元コードでのtry/catchを要求しない。
-- **`unsupported`状態にはしない**: `network`の`supported: boolean`のような二値の対応判定とは異なり、「lockが効くかどうか」は実行してみないと分からない（デスクトップ・モバイル・fullscreen文脈の有無など、環境依存の要因が複合するため事前判定が信頼できない）。`error`が非nullかどうかで呼び出し元が失敗を判定する、通常のcommand失敗パターンに寄せる。
-- **README上の明記（MUST）**: 「`lock()`はモバイル文脈以外では失敗するのが普通のbest-effort commandである」という警告をREADMEに明記する。利用者が「動かないのはバグでは」と誤認しないための注記であり、`unlock()`（同期・戻り値なし・reject無し）とは信頼性の性質が異なることも併記する。
+- **Decision**: type `lock(orientation: string)` as a union of those eight values (defining an `OrientationLockType` type alias in `types.ts`; a hand-written definition is needed since `lib.dom.d.ts` has none). But **do not validate** (no value checking; it passes straight to `screen.orientation.lock(orientation)`). An unknown string is rejected by the browser with the equivalent of a `TypeError`, which §5's never-throw absorbs. The type exists for DX (completion, typo detection), not as a runtime guard — a call through command-token (a string argument such as `command.lock: 'landscape'`) does not pass through TypeScript's checking, so the possibility of an invalid value at runtime remains in any case.
+- The headless signature is `lock(orientation: OrientationLockType): Promise<void>`. The implementation simply does `_setError(null)` and then try/catches `await screen.orientation.lock(orientation)`, letting no exception escape on either success or failure.
 
 ---
 
-## 6. `_gen` 世代ガードの非対称性 — monitor半分は不要、command半分は必要
+## 5. `lock()`/`unlock()` are best-effort commands — state clearly that support is narrow
 
-async-io-node-guidelines §3.4 は`_gen`世代ガードをMUSTとするが、本ノードは**監視とcommandで扱いが分かれる**という、バッチ4の中でも独自のニュアンスを持つ。これを独立したサブセクションとして明示する。
+> **A correction made after implementation**: the "desktop versus mobile" contrast below was a pre-implementation guess and was refuted when the spec was checked afterwards. In fact `lock()` is rejected in an ordinary tab on desktop and mobile alike, and requires either fullscreen or an installed-PWA context (Safari does not implement `lock()` at all in any context). And for the rejection's error name, the current spec's first candidate is `NotAllowedError` (an unmet pre-lock condition such as fullscreen), with `NotSupportedError`/`SecurityError` as secondary, environment-dependent candidates. For the accurate constraints and error-name handling, see README.md/README.ja.md. The text below is left verbatim as a pre-implementation snapshot.
 
-### 6.1 監視（`change`購読）には `_gen` 不要
+Many desktop browsers reject `screen.orientation.lock()` with a `NotSupportedError` (some implementations work on mobile only, or only inside a particular fullscreen context; Chromium, for example, sometimes refuses a lock when there is no fullscreen element).
 
-`screen.orientation`の取得も`addEventListener('change', ...)`の購読も[network-tag-design.md §5](./network-tag-design.md#L76-L86)と全く同じ理由で完全に同期である。
+- **Absorbed by never-throw**: a `lock()` rejection (`NotSupportedError` / `SecurityError` / anything else) flows into the `error` property and never escapes as an exception. No try/catch is required in the calling code.
+- **It does not become an `unsupported` state**: unlike a binary support determination such as `network`'s `supported: boolean`, "does lock work" cannot be known without trying (a compound of environment-dependent factors — desktop, mobile, the presence of a fullscreen context — makes a prior determination unreliable). It leans on the ordinary command-failure pattern, where the caller decides failure by whether `error` is non-null.
+- **Stated in the README (MUST)**: the README states the warning that "`lock()` is a best-effort command that normally fails outside a mobile context". It exists so a user does not mistake it for a bug, and it also notes that its reliability differs in character from `unlock()` (synchronous, no return value, never rejects).
 
-- `screen.orientation`は呼び出し時に即座に解決するプロパティ参照であり、非同期probeが存在しない。
-- `addEventListener`はブラウザが自発的に`change`を発火するだけで、Core側が能動的に何かを待つ処理ではない。
-- したがって「disposeした後に非同期処理が解決してtorn-down要素へ書き込む」という`_gen`が守るべきレースそのものが発生しない。`network`と同様、監視系統には世代番号を持たせない。
+---
 
-### 6.2 `lock()` command には単一 `_gen` パターンが必要
+## 6. The asymmetry of the `_gen` generation guard — the monitor half does not need it, the command half does
 
-`lock()`/`unlock()`はcommandとして非同期のin-flight状態を持つ。`lock()`はPromiseを返し、resolve/rejectまで時間がかかりうる。ここに`fetch`/`upload`と同型の「Core単位の単一`_gen`」パターンが必要になる。
+async-io-node-guidelines §3.4 makes the `_gen` generation guard a MUST, but in this node **monitoring and commands are treated differently** — a nuance of its own within batch 4. It is stated as its own subsection.
 
-- **理由**: 古い`lock()`呼び出しが進行中に、新しい`lock()`呼び出しや`unlock()`が発生しうる。旧`lock()`の解決（成功でも失敗でも）が、その後に確定した新しい状態を上書きしてはならない。例: `lock("landscape")`を呼んだ直後にユーザーが向きを戻す操作をして`unlock()`を呼んだ場合、先に呼ばれた`lock("landscape")`が後から解決して`error`をクリアする、といった逆転が起きてはならない。
-- **実装形**: `FetchCore`の単一`_gen`（[FetchCore.ts:54](../packages/fetch/src/core/FetchCore.ts#L54)、[FetchCore.ts:195](../packages/fetch/src/core/FetchCore.ts#L195)）と同型。`lock()`開始時に`const gen = ++this._gen`を捕捉し、resolve/reject時に`gen !== this._gen`なら状態を書き換えずに終える。`unlock()`は同期API（後述）だが、呼ばれた時点で`this._gen++`し、in-flightな`lock()`を無効化する（`FetchCore.dispose()`が`this._gen++`してから`abort()`する構造、[FetchCore.ts:74-76](../packages/fetch/src/core/FetchCore.ts#L74-L76)と同じ考え方）。
-- **`dispose()`との関係**: `dispose()`も`_gen++`する。disconnect後に`lock()`が解決しても状態を書き換えない。
+### 6.1 Monitoring (the `change` subscription) needs no `_gen`
 
-### 6.3 非対称性のまとめ
+Obtaining `screen.orientation` and subscribing with `addEventListener('change', ...)` are both fully synchronous, for exactly the same reasons as [network-tag-design.md §5](./network-tag-design.md#L76-L86).
 
-| | 監視（`change`購読） | `lock()`/`unlock()` command |
+- `screen.orientation` is a property reference that resolves immediately at call time; there is no async probe.
+- `addEventListener` merely has the browser fire `change` of its own accord; Core is not actively waiting on anything.
+- So the very race `_gen` protects against — "async work resolving after dispose and writing into a torn-down element" — cannot occur. As with `network`, the monitoring path carries no generation number.
+
+### 6.2 The `lock()` command needs the single-`_gen` pattern
+
+`lock()`/`unlock()` are commands with an asynchronous in-flight state. `lock()` returns a Promise that can take time to resolve or reject. That is where the "one `_gen` per Core" pattern, the same shape as `fetch`/`upload`, becomes necessary.
+
+- **Why**: a new `lock()` call or an `unlock()` can happen while an older `lock()` is in flight. The older `lock()`'s settlement (success or failure) must not overwrite the state established afterwards. For example, if `lock("landscape")` is called and the user then rotates back and `unlock()` is called, the earlier `lock("landscape")` settling later and clearing `error` would be an inversion that must not happen.
+- **The implementation form**: the same shape as `FetchCore`'s single `_gen` ([FetchCore.ts:54](../packages/fetch/src/core/FetchCore.ts#L54), [FetchCore.ts:195](../packages/fetch/src/core/FetchCore.ts#L195)). Capture `const gen = ++this._gen` when `lock()` starts, and on resolve/reject finish without writing state if `gen !== this._gen`. `unlock()` is a synchronous API (below) but does `this._gen++` when called, invalidating an in-flight `lock()` (the same thinking as `FetchCore.dispose()` doing `this._gen++` before `abort()`, [FetchCore.ts:74-76](../packages/fetch/src/core/FetchCore.ts#L74-L76)).
+- **Its relation to `dispose()`**: `dispose()` also does `_gen++`. A `lock()` settling after a disconnect writes no state.
+
+### 6.3 The asymmetry, summarized
+
+| | Monitoring (the `change` subscription) | The `lock()`/`unlock()` commands |
 |---|---|---|
-| 性質 | 完全同期 | `lock()`は非同期、`unlock()`は同期 |
-| `_gen`要否 | **不要**（`network`と同型） | **必要**（`fetch`/`upload`と同型） |
-| 根拠 | 非同期probeが存在しない | in-flightなlockの解決が後発状態を上書きしうる |
+| Nature | fully synchronous | `lock()` is asynchronous, `unlock()` synchronous |
+| `_gen` needed? | **no** (the same shape as `network`) | **yes** (the same shape as `fetch`/`upload`) |
+| Grounds | there is no async probe | an in-flight lock settling could overwrite later state |
 
-同じCoreクラス内で「監視には世代番号が要らず、commandには要る」という非対称な設計になる点が、バッチ4を通じて初めて現れる興味深い局面であり、`permission`/`network`のような純粋monitorノードだけを見ていては気づけない論点である。実装時は`_gen`を監視ロジックからは完全に切り離し、`lock()`/`unlock()`のためだけに存在するフィールドであることをコメントで明記する。
+That the same Core class ends up asymmetric — "monitoring needs no generation number, commands do" — is the interesting turn that appears for the first time across batch 4, and a point invisible from looking only at pure monitor nodes such as `permission`/`network`. In the implementation, `_gen` is kept entirely separate from the monitoring logic, with a comment stating that the field exists solely for `lock()`/`unlock()`.
 
 ---
 
-## 7. unsupported と API 解決 — 呼び出し時解決・キャッシュしない
+## 7. unsupported and API resolution — resolved at call time, never cached
 
 ```typescript
 private _api(): ScreenOrientation | undefined {
@@ -155,77 +156,77 @@ private _api(): ScreenOrientation | undefined {
 }
 ```
 
-- §3.7（MUST）に従い、コンストラクタでキャッシュせず観測・command双方の呼び出し時に解決する。`screen.orientation`は古いブラウザ（旧Safari等）でundefinedになりうるため、テストでのinstall/remove差し替えにも必要。
-- **unsupported時の既定値**: `type`/`angle`は`null`固定。`lock()`/`unlock()`は例外を投げず、`error`に`{ message: "unsupported" }`相当を設定して resolve/no-opする（`lock()`はPromiseとして解決、`unlock()`は同期関数として即座に戻る）。
-- `portrait`/`landscape`はunsupported時`type === null`となるため、`false`に落ちる（§2のnull安全なgetter）。
-- `network`の`supported: boolean`のような明示的な対応判定プロパティは設けない。`type === null`であることが「unsupportedかどうか」の判定手段になる（`permission`の4値`state`のような専用状態も、`network`の`supported`フラグも、本ノードには不要 — API自体の有無は`type`のnull性で十分表現できるため）。
+- Per §3.7 (MUST), it is not cached in the constructor but resolved at call time on both the observation and command paths. `screen.orientation` can be undefined on older browsers (older Safari and the like), and resolution at call time is also needed for install/remove substitution in tests.
+- **The defaults where unsupported**: `type`/`angle` are fixed at `null`. `lock()`/`unlock()` throw nothing and set the equivalent of `{ message: "unsupported" }` into `error` before resolving or no-oping (`lock()` resolves as a Promise; `unlock()` returns immediately as a synchronous function).
+- `portrait`/`landscape` fall to `false` where unsupported, since `type === null` (the null-safe getters of §2).
+- There is no explicit support-determination property such as `network`'s `supported: boolean`. `type === null` is the means of determining "is it unsupported" (neither a dedicated state like `permission`'s four-valued `state` nor a `supported` flag like `network`'s is needed here — the presence of the API itself is adequately expressed by `type`'s nullness).
 
 ---
 
-## 8. secure-context — 制約なし
+## 8. secure-context — no constraint
 
-Screen Orientation APIはsecure-context必須のリストに含まれない（`geolocation`/`permission`のような制約は無い）。`network`と同じく、README上「HTTPS必須」の注記は不要。
-
----
-
-## 9. commands / autoTrigger — **決定: autoTriggerなし。ただしcommand-token経由の起動は通常通り可能**
-
-- `screen.orientation`自体がEventTarget実装（実際のプラットフォーム仕様、[lib.dom.d.ts:30209](../packages/state/node_modules/typescript/lib/lib.dom.d.ts#L30209)）なので、Coreは合成イベントのラップなしで直接`addEventListener('change', ...)`できる。
-- **autoTrigger（クリック起動ショートカット）は無い**。`lock()`はuser gestureの有無に関わらず呼び出せる（Fullscreen APIのような明示的なgesture要件はScreen Orientation仕様には無い）が、本ノードは`data-orientationtarget`のようなクリック委譲の対象にはしない。バッチ4は「最小monitor」パターンであり、バッチ3（薄い一発command）のようなワンクリック起動の主要ユースケースを持たない。
-- **明確化**: autoTriggerが無いことは、`lock()`がstateから起動できないことを意味しない。command-tokenプロトコル（`$commandTokens` / `command.lock:`）経由で通常通り呼び出せる。両者は別の経路であり、「クリック一発で完結するショートカットUI」を提供しないだけで、「stateの`command.lock: 'landscape'`のような宣言的束縛から起動する」通常のcommand-token連携は他ノードと同様に機能する。
+The Screen Orientation API is not on the list of APIs requiring a secure context (there is no constraint like `geolocation`'s or `permission`'s). As with `network`, the README needs no "HTTPS required" note.
 
 ---
 
-## 10. Shell属性 — 属性なし
+## 9. commands / autoTrigger — **decision: no autoTrigger; invocation through command-token works as usual**
 
-`network`（[network-tag-design.md §9](./network-tag-design.md#L117-L122)）と同じく、`<wcs-screen-orientation>`は属性を持たない。
-
-- `inputs: []`。`connectedCallback`で無条件に`change`購読を開始するだけ。
-- `lock`/`unlock`はcommandであり属性ではないため、Shellの「属性連動入力」（§4.3の分類）には該当しない。command-token経由、またはheadless利用時のメソッド直接呼び出しで駆動する。
-
----
-
-## 11. テスト方針（happy-dom）
-
-happy-domは`screen.orientation`を持たないため全モック。
-
-- `FakeScreenOrientation extends EventTarget`に`type`/`angle`を可変プロパティとして持たせ、`change`イベントを手動発火できるヘルパを用意。`lock`/`unlock`はスタブメソッド（`lock`は呼び出しごとにresolve/rejectを制御できるcontrollable Promiseにする）。
-- `Object.defineProperty(screen, "orientation", { value: fake, configurable: true })`でinstall/remove（`network`の`navigator.connection`差し替えと同型）。
-- 観点:
-  - `screen.orientation`不在時に`type`/`angle`が`null`、`portrait`/`landscape`が`false`。
-  - `change`発火で`type`/`angle`/`portrait`/`landscape`が同時に更新され、1つの`wcs-orientation:change`イベントで観測できる。
-  - `type`が`"portrait-primary"`/`"portrait-secondary"`のとき`portrait`が`true`かつ`landscape`が`false`（逆も同様）。
-  - `lock()`成功時に`error`が`null`のまま維持される。
-  - `lock()`のreject（`NotSupportedError`相当）がnever-throwで`error`に吸収される（呼び出し元のPromiseは reject せず resolve する契約なら、その旨も検証）。
-  - **`_gen`世代ガード**: `lock()`呼び出し中に`unlock()`または新しい`lock()`が呼ばれた場合、旧`lock()`の解決が新しい状態を上書きしない（§6.2の非対称性の直接的な検証）。dispose後に`lock()`が解決しても状態を書き換えない。
-  - 監視側は`_gen`を持たないため、dispose後の`change`購読解除は素直なlistener removeの確認で足りる（`network`と同型、`_gen`相当の世代ガードが無いことの確認）。
-  - `observe()`の冪等性（二重呼び出しでlistenerが二重登録されない）。
-  - unsupported環境での`lock()`/`unlock()`が例外を投げず`error`に`"unsupported"`相当を設定する。
+- `screen.orientation` is itself an EventTarget implementation (the actual platform spec, [lib.dom.d.ts:30209](../packages/state/node_modules/typescript/lib/lib.dom.d.ts#L30209)), so Core can `addEventListener('change', ...)` directly with no synthetic-event wrapper.
+- **There is no autoTrigger (the click shortcut)**. `lock()` can be called with or without a user gesture (the Screen Orientation spec has no explicit gesture requirement like the Fullscreen API's), but this node is not made a target for click delegation such as `data-orientationtarget`. Batch 4 is the "minimal monitor" pattern and has no principal one-click use case like batch 3's (a thin one-shot command).
+- **To be clear**: the absence of autoTrigger does not mean `lock()` cannot be invoked from state. It is callable as usual through the command-token protocol (`$commandTokens` / `command.lock:`). The two are different routes; only the "one-click, self-contained shortcut UI" is not offered, while the ordinary command-token integration of "invoking from a declarative binding such as state's `command.lock: 'landscape'`" works just as on every other node.
 
 ---
 
-## 12. 決定事項まとめ
+## 10. Shell attributes — none
 
-| 論点 | 決定 |
+As with `network` ([network-tag-design.md §9](./network-tag-design.md#L117-L122)), `<wcs-screen-orientation>` has no attributes.
+
+- `inputs: []`. `connectedCallback` merely starts the `change` subscription unconditionally.
+- `lock`/`unlock` are commands, not attributes, so they do not fall under the Shell's "attribute-linked inputs" (the §4.3 classification). They are driven through command-token, or by calling the methods directly in headless use.
+
+---
+
+## 11. The test approach (happy-dom)
+
+happy-dom has no `screen.orientation`, so everything is mocked.
+
+- Give `FakeScreenOrientation extends EventTarget` mutable `type`/`angle` properties plus a helper for firing `change` manually. `lock`/`unlock` are stub methods (`lock` being a controllable Promise whose resolve/reject can be steered per call).
+- Install and remove with `Object.defineProperty(screen, "orientation", { value: fake, configurable: true })` (the same shape as substituting `navigator.connection` for `network`).
+- What to cover:
+  - with `screen.orientation` absent, `type`/`angle` are `null` and `portrait`/`landscape` are `false`.
+  - a `change` firing updates `type`/`angle`/`portrait`/`landscape` together, observable through the single `wcs-orientation:change` event.
+  - where `type` is `"portrait-primary"`/`"portrait-secondary"`, `portrait` is `true` and `landscape` is `false` (and vice versa).
+  - a successful `lock()` leaves `error` at `null`.
+  - a `lock()` rejection (the equivalent of `NotSupportedError`) is absorbed into `error` under never-throw (and if the contract is that the caller's Promise resolves rather than rejects, that too is verified).
+  - **The `_gen` generation guard**: where `unlock()` or a new `lock()` is called while a `lock()` is in flight, the older `lock()`'s settlement does not overwrite the new state (a direct verification of §6.2's asymmetry). A `lock()` settling after dispose writes no state.
+  - since the monitoring side has no `_gen`, unsubscribing `change` after dispose is covered by a straightforward listener-removal check (the same shape as `network`; confirming the absence of a generation guard).
+  - the idempotence of `observe()` (a double call does not register the listener twice).
+  - `lock()`/`unlock()` in an unsupported environment throw nothing and set the equivalent of `"unsupported"` into `error`.
+
+---
+
+## 12. Decisions, summarized
+
+| Question | Decision |
 |---|---|
-| §2 公開state | `type` / `angle`（バッチ計画で確定済み）に加え、派生boolean `portrait` / `landscape` を**追加**（permissionの4値パターンと同型）。実装では`error`（event: `wcs-orientation:error`）も公開プロパティとして追加している（fetch/geolocation/notificationと同型、§2実装注記/§5参照） |
-| §3 target | **不要**。`network`と並びバッチ4で「インスタンス設定属性が一切不要」な2メンバー。バッチ1のtarget依存ノードと対照 |
-| §4 `lock()`引数 | `OrientationLockType`（8値union、`lib.dom.d.ts`に無いため自前定義）として型付け。実行時バリデーションはせずブラウザのrejectに委ねる |
-| §5 `lock()`の対応範囲 | best-effortコマンド。never-throwで`error`へ吸収。「モバイル文脈以外では失敗するのが普通」とREADMEに明記。`unsupported`状態にはしない（※実装後の訂正あり。正確な制約とエラー名は§5冒頭の注記およびREADMEを参照） |
-| §6 `_gen`世代ガード | **非対称**: 監視（`change`購読）は不要（`network`と同型・完全同期）。`lock()`/`unlock()`commandはCore単位の単一`_gen`が必要（`fetch`/`upload`と同型） |
-| §7 unsupported/API解決 | 呼び出し時解決（キャッシュしない）。unsupported時`type`/`angle`は`null`固定、`lock()`/`unlock()`は例外を投げず`error`("unsupported"相当)を返す |
-| §8 secure-context | 制約なし |
-| §9 autoTrigger | **なし**。ただし`lock()`はcommand-token経由でstateから通常通り起動できる（別経路であることを明記） |
-| §10 Shell属性 | 無し（`network`と並びバッチ中最小） |
-| パッケージ/タグ | `@wcstack/screen-orientation` / `<wcs-screen-orientation>` / Shell `WcsScreenOrientation` |
+| §2 the exposed state | on top of `type` / `angle` (settled in the batch plan), **add** the derived booleans `portrait` / `landscape` (the same shape as permission's four-value pattern). The implementation also adds `error` (event: `wcs-orientation:error`) as a public property (the same shape as fetch/geolocation/notification; see the §2 implementation note and §5) |
+| §3 target | **not needed**. Alongside `network`, one of the two members of batch 4 needing "no per-instance configuration attribute at all". The opposite of batch 1's target-dependent nodes |
+| §4 `lock()`'s argument | typed as `OrientationLockType` (an eight-value union, hand-defined since `lib.dom.d.ts` has none). No runtime validation; it defers to the browser's rejection |
+| §5 `lock()`'s support range | a best-effort command. Absorbed into `error` under never-throw. The README states "failing outside a mobile context is normal". It does not become an `unsupported` state (note: corrected after implementation — for the accurate constraints and error names see the note at the top of §5 and the README) |
+| §6 the `_gen` generation guard | **asymmetric**: monitoring (the `change` subscription) does not need it (the same shape as `network`, fully synchronous). The `lock()`/`unlock()` commands need one `_gen` per Core (the same shape as `fetch`/`upload`) |
+| §7 unsupported / API resolution | resolved at call time (never cached). Where unsupported, `type`/`angle` are fixed at `null` and `lock()`/`unlock()` throw nothing and return `error` (the equivalent of "unsupported") |
+| §8 secure-context | no constraint |
+| §9 autoTrigger | **none**. But `lock()` is invocable from state through command-token as usual (stated as a different route) |
+| §10 Shell attributes | none (alongside `network`, the smallest in the batch) |
+| package / tag | `@wcstack/screen-orientation` / `<wcs-screen-orientation>` / the Shell `WcsScreenOrientation` |
 
 ---
 
-## 13. 実装順の推奨
+## 13. The recommended implementation order
 
-1. `ScreenOrientationCore`（`_api()`呼び出し時解決＋`change`購読＋`type`/`angle`/`portrait`/`landscape`の派生getter）。監視部分は`network`のコピーに近い分量で済む。
-2. `lock()`/`unlock()`commandと単一`_gen`世代ガード（§6.2）を追加。`fetch`の`_gen`実装（[FetchCore.ts](../packages/fetch/src/core/FetchCore.ts)）を土台に、監視ロジックとは独立したフィールドとして実装する。
-3. Shell `<wcs-screen-orientation>`（属性無し、`display:none`、connect時に無条件購読）。
-4. Fake double（`FakeScreenOrientation`）とテスト一式。§6.2の`_gen`非対称性のテストを重点的に書く。
-5. example: 「フルスクリーン中は横向きにlockする」を目玉に。`<wcs-fullscreen>`（バッチ1）と組み合わせ、`hidden@!landscape`で向き外れ時のみ警告バナーを出す構成を併記する。
-6. README ja/en（secure-context不要・`lock()`はbest-effortでモバイル限定が実態・`unsupported`ではなく`error`で失敗表現する旨を明記）。
+1. `ScreenOrientationCore` (call-time resolution in `_api()` plus the `change` subscription plus the derived getters `type`/`angle`/`portrait`/`landscape`). The monitoring part comes to about as much code as a copy of `network`.
+2. Add the `lock()`/`unlock()` commands and the single-`_gen` generation guard (§6.2). Build on `fetch`'s `_gen` implementation ([FetchCore.ts](../packages/fetch/src/core/FetchCore.ts)), implemented as a field independent of the monitoring logic.
+3. The Shell `<wcs-screen-orientation>` (no attributes, `display:none`, an unconditional subscription on connect).
+4. The fake double (`FakeScreenOrientation`) and the full test set. Write the test for §6.2's `_gen` asymmetry with particular care.
+5. An example, with "lock to landscape while fullscreen" as the centrepiece. Combined with `<wcs-fullscreen>` (batch 1), also showing a setup where `hidden@!landscape` displays a warning banner only when the orientation is wrong.
+6. README ja/en (stating that no secure context is needed, that `lock()` is best-effort and mobile-only in practice, and that failure is expressed through `error` rather than `unsupported`).

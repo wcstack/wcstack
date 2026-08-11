@@ -119,4 +119,4 @@ manifest に requirement を書いても target 自身が behavioral extension �
 - [wc-bindable CONFORMANCE（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/CONFORMANCE.md)
 - [wc-bindable RELEASE_NOTES（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/RELEASE_NOTES.md)
 - [wcstack の protocol 型](../../protocol/wc-bindable.ts)
-- [8 論点を横断する修正設計](09-remediation-design.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)

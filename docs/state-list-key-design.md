@@ -153,7 +153,7 @@ opt-in で明示的にキーを宣言した以上、静かな劣化より即死�
 - **DCC の変更イベント** — `$bindables` に載せたリストに `$listKeys` を掛けると、
   per-path 書き込みが 1 本ずつサブパス発火を起こすため 1 回の代入で `1 + 変化行数` 回
   イベントが出る。値は要素から読む契約なので結果は変わらない。詳細は
-  [architecture-hardening/15 §2.1](architecture-hardening/15-state-component-mechanism-consistency.md#21-dcc-の変更イベントは完全一致パスでしか出ない--修正済み)。
+  [architecture-hardening/15 §2.1](architecture-hardening/15-state-component-mechanism-consistency.ja.md#21-dcc-の変更イベントは完全一致パスでしか出ない--修正済み)。
 - **突合対象の旧配列** — `lastValue`（最後に適用された配列）ではなく**現在格納されて
   いる配列**と突合する。同一マイクロタスク内の連続書き込みでも、ハイブリッド構築が
   格納配列の参照を保存するため、適用時の `diff(lastValue, 最終配列)` と transitive に

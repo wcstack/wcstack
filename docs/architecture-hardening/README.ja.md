@@ -1,0 +1,105 @@
+# wcstack アーキテクチャ難所の堅牢化
+
+- **作成日**: 2026-07-14
+- **状態**: 一部採択・実装済み。phase 0-6 の PoC 実装は完了し、phase 2（方向認識初期同期）/ phase 3
+  （因果伝播）は既定 `true` に反転済み。opt-in → 既定化 / IO 族横展開の進捗と残作業は
+  [10-defaulting-rollout-status.ja.md](10-defaulting-rollout-status.ja.md) が追跡する。未実装の設計提案は
+  各論点 doc（01-08、11、13、15）に残る。
+- **対象スナップショット**:
+  - wcstack: `27371dca55888c864028042e71d8a7e7149365b4`（v1.20.0）
+  - wc-bindable-protocol: `5ec0deef212578a072b2f669d2a5554f254253e0`
+  - npm 公開版: `@wc-bindable/core@0.8.0`
+- **English**: [README.md](README.md)
+
+## 目的
+
+wcstack は、リアクティブコア、UI、I/O ノードを共通プロトコルで疎結合にする。
+交換可能性が高い一方、初期化順序、双方向伝播、非同期実行、観測性などの難しさも
+境界上に現れる。本ディレクトリは、その難所を個別に分解し、現状、未解決点、推奨する
+対策、互換性、検証条件を記録する。
+
+本文書群は設計判断の材料であり、記載した API やメタデータは未実装である。
+既存の規範文書と矛盾する場合は、採択と実装に先立って当該規範文書を更新する。
+
+## 論点一覧
+
+1. [タグ定義とバインディング確立の順序](01-binding-initialization-order.md)
+2. [接続直後の初期状態配送](02-initial-state-delivery.md)
+3. [双方向バインディングのエコー制御](03-two-way-echo-control.md)
+4. [非同期実行と wc-bindable 境界](04-async-execution-and-wc-bindable.md)
+5. [観測性・デバッグと wc-bindable 境界](05-observability-and-wc-bindable.md)
+6. [パス文字列の型安全性](06-path-type-safety.md)
+7. [ブラウザ capability 差の吸収](07-browser-capability-variance.md)
+8. [プロトコル進化と互換性](08-protocol-evolution.md)
+
+## 8 論点を横断する修正設計
+
+- [8 論点を横断する修正設計](09-remediation-design.ja.md) — `BindableDeclarationReader`、
+  `BindingSession`、`PropagationContext`、`OperationTicket`、`wcstack.manifest.json` の責務分割、
+  段階導入、回帰テスト、decision gate をまとめる。
+
+## 既定化・横展開ステータス
+
+- [既定化・横展開ステータスと残作業](10-defaulting-rollout-status.ja.md) — phase 0-6 の PoC 実装完了後の
+  opt-in → 既定化 / IO 族横展開の進捗と残作業を追跡する living document（Phase 2/3 既定化済み、
+  errorInfo 27/35 ノード適用＋defer 3＋非該当 5、5a CI ゲート化済み、5b は explicit opt-in 確定。
+  残 = リリース時 dist rebuild / defer ノード判断 / lane trace ブリッジ）。
+
+## 追加の境界設計
+
+- [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md) —
+  非同期 commit の正しさ、React snapshot の不変性、live resource の寿命を分離し、React adapter、
+  I/O node、protocol metadata の責務を整理する。`state` / `event` / `handle` の棚卸しと段階導入案を含む。
+- [wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.ja.md) —
+  Phase 0 の固定スナップショット。231 propertyを `state` 210、`event` 20、`handle` 1へ分類し、
+  camera / recorder / fetch など優先8領域の mutation・stale commit・resource ownership を監査する。
+  §5.6 に adapter 別の失敗モード（signals の同値 dedupe、RxJS の replay と資源保持、Qwik の serialization）を持つ。
+- [framework adapter のバインド成立制約](13-framework-adapter-binding-constraints.ja.md) —
+  値の意味ではなく「バインドが成立するか」の軸。遅延 upgrade で全 adapter が沈黙して bind に失敗する問題、
+  upgrade 前 property 代入が accessor を隠す Shell 側の欠陥、コロンを含むイベント名の表現可能性を扱う。
+- [ライブハンドルのグラフを DOM で配線する](14-handle-graph-wiring.ja.md) — ✅ **採択（2026-08-02）**。
+  handle が 1 本から N 本になり、しかもハンドル同士が結線される場合に、そのトポロジを誰が所有し
+  どう記述するか。Web Audio（[examples/synth-playground](../../examples/synth-playground/)）が持ち込んだ
+  G1〜G6 を決定。横断原則 3「値、イベント、コマンド、ライブハンドルの意味を混ぜない」の初の実地試験であり、
+  結論は「トポロジは descriptor、ハンドルは Core が所有して境界に出さない」＝ **新しい観測意味論を増やさない**。
+- [state のコンポーネント機構 3 系統の整合性監査](15-state-component-mechanism-consistency.ja.md) — **未採択・未修正**。
+  13 の「バインドが成立するか」軸を wcstack 内部へ向けたもの。`@wcstack/state` が持つ
+  wc-bindable protocol / DCC / bind-component の 3 機構が互いに整合していない箇所を固定する。
+  根本原因は (1) DCC の `createWcBindable` が①の宣言仕様を部分実装している、
+  (2) bind-component の内部チャネル proxy がそのまま公開 API `this.state` になっている、
+  (3) ライフサイクル規律が機構間で共有されていない、の 3 つ。decision gate G1-G4 は未決。
+
+## 横断原則
+
+1. **暗黙の時刻依存を、明示的なフェーズまたは状態へ変える。**
+2. **初期スナップショットと後続イベントを分ける。**
+3. **値、イベント、コマンド、ライブハンドルの意味を混ぜない。**
+4. **正しさは世代・所有権・順序契約で担保し、キャンセル API だけに依存しない。**
+5. **本番コストを増やさず、開発時には因果関係を観測可能にする。**
+6. **ビルドレスを維持し、型検査と capability 情報は漸進的に追加する。**
+7. **既存プロトコルの意味を変更せず、追加情報は後方互換な形で表現する。**
+
+## wc-bindable の参照方針
+
+論点 4・5 は、wcstack 内の `static wcBindable` 宣言だけでなく、公式
+wc-bindable-protocol の最新仕様を参照する。特に次を前提とする。
+
+- コアの `properties` は producer から consumer への観測面である。
+- `inputs` と `commands` はコアでは宣言メタデータであり、呼び出し意味論は拡張仕様に属する。
+- 初期同期、teardown、forward compatibility はコア仕様の規範である。
+- remote の ack、順序、timeout、AbortSignal、back-pressure、wire capability は拡張仕様の規範である。
+- デバッグ計装はコアの観測意味論を変えず、別の side channel として設計する。
+
+参照先は更新による意味のずれを避けるため、本文書作成時のコミットに固定する。
+
+- [wc-bindable SPEC.md](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
+- [wc-bindable SPEC-extensions.md](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC-extensions.md)
+- [wc-bindable remote README](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/remote/README.md)
+- [wc-bindable CONFORMANCE.md](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/CONFORMANCE.md)
+
+## 採択の進め方
+
+各文書の提案は独立に採択できる。ただし、初期同期に関する 1・2、実行と観測に関する
+4・5、型情報とプロトコル進化に関する 6・8 は相互依存する。実装へ進む際は、各文書の
+「決定ゲート」を先に確定し、[8 論点を横断する修正設計](09-remediation-design.ja.md) の phase と適合テストを
+実装の完了条件に含める。

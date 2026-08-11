@@ -1,60 +1,65 @@
-# framework アプリへの wcstack 要素の組み込み手順
+# Embedding wcstack elements in a framework app
 
-- **作成日**: 2026-08-01
-- **状態**: 利用手順（normative ではない。規範は各 SPEC と
-  [非同期 I/O ノード作成ガイドライン](./async-io-node-guidelines.md)）
-- **対象読者**: React / Vue / Svelte / Solid / Angular / Qwik などのアプリから `<wcs-*>` を使う人
-- **位置づけ**: [framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md)
-  の Phase A2 / A4 の成果物。設計判断の記録は doc 13、値の意味分類は
-  [observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md) を参照。
+- **Written**: 2026-08-01
+- **Status**: usage guide (not normative — the normative references are each SPEC and the
+  [async I/O node guidelines](./async-io-node-guidelines.md))
+- **Audience**: anyone using `<wcs-*>` from a React / Vue / Svelte / Solid / Angular / Qwik app
+- **Where this comes from**: it is the Phase A2 / A4 deliverable of
+  [framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md).
+  The design decisions are recorded in doc 13; the classification of value meanings is in the
+  [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md).
+- **日本語版**: [framework-adapter-integration.ja.md](./framework-adapter-integration.ja.md)
 
-## 0. 3つの規則
+## 0. Three rules
 
-1. **要素の定義が render より後になる構成では、bind の前に定義を待つ。** 待たないと adapter は
-   沈黙したまま何も配送しない（§1）。
-2. **object を渡す input は「プロパティとして渡す」構文を明示する。** 既定のままだと framework に
-   よっては属性へ文字列化される（§2）。
-3. **reactive store の値は raw にしてから渡す。** Proxy のままだと structured clone 境界で失敗する（§3）。
+1. **Where an element is defined after render, wait for the definition before binding.** Without
+   the wait, the adapter goes silent and delivers nothing at all (§1).
+2. **For inputs that take an object, spell out "pass this as a property".** Left at the default,
+   some frameworks stringify it into an attribute (§2).
+3. **Unwrap reactive store values before passing them.** A Proxy fails at the structured clone
+   boundary (§3).
 
-静的 import（`import "@wcstack/websocket/auto"`）でバンドルする通常構成なら、規則 1 は自動的に満たされる。
-規則 2 と 3 は構成によらず必要になる。
+In the ordinary setup — bundling with a static import (`import "@wcstack/websocket/auto"`) — rule 1
+is satisfied automatically. Rules 2 and 3 apply regardless of setup.
 
-## 1. 定義タイミング
+## 1. Definition timing
 
-### 1.1 何が起きるか
+### 1.1 What happens
 
-`@wc-bindable` の adapter は、いずれも mount 時に一度だけ `isWcBindable(el)` を判定し、偽なら
-**再試行せずに諦める**。要素参照は upgrade 後も同一なので、React の依存配列も Qwik の `track()` も
-再発火しない。結果としてエラーもログも出ないまま、その要素からは初期値も後続イベントも永久に届かない。
+Every `@wc-bindable` adapter evaluates `isWcBindable(el)` exactly once at mount and, if it is false,
+**gives up without retrying**. The element reference is the same object after an upgrade, so neither
+a React dependency array nor Qwik's `track()` fires again. The result is that no error and no log
+appears, while that element delivers neither its initial value nor any later event, ever.
 
 ```ts
-// 全 adapter に共通する形
-if (!isWcBindable(el)) return;   // ← まだ upgrade していないだけでも、ここで終わる
+// the shape common to every adapter
+if (!isWcBindable(el)) return;   // ← merely not-yet-upgraded ends it here
 unbind = bind(el, onUpdate);
 ```
 
-`@wc-bindable/core` の `bind()` 自体も、宣言が読めないときは no-op を返して静かに終わる。
-`syncOn: "connect"` は**接続**の遅延を扱うオプションであって、**定義**の遅延には効かない。
+`bind()` in `@wc-bindable/core` likewise returns a no-op and finishes quietly when it cannot read a
+declaration. `syncOn: "connect"` is an option for a late **connection**, and does nothing for a late
+**definition**.
 
-### 1.2 起きる構成・起きない構成
+### 1.2 Setups where it happens, and where it does not
 
-| 構成 | 定義のタイミング | 影響 |
+| Setup | When the definition lands | Impact |
 | --- | --- | --- |
-| バンドラで `@wcstack/<pkg>/auto` を静的 import | render より前 | 影響なし（推奨） |
-| `@wcstack/autoloader` による動的 import | DOM 走査後 | **影響あり** |
-| CDN の `<script type="module">` | ネットワーク次第 | **影響あり** |
-| 動的 import / code-split で遅延ロード | ロード完了時 | **影響あり** |
+| static import of `@wcstack/<pkg>/auto` through a bundler | before render | none (recommended) |
+| dynamic import via `@wcstack/autoloader` | after the DOM scan | **affected** |
+| `<script type="module">` from a CDN | network-dependent | **affected** |
+| lazy-loaded through dynamic import / code splitting | when the load completes | **affected** |
 
-### 1.3 ゲートの書き方
+### 1.3 How to write the gate
 
-最も確実なのは静的 import である。
+A static import is the surest form.
 
 ```ts
-// main.tsx / main.js — アプリのエントリで一度だけ
+// main.tsx / main.js — once, at the app entry
 import "@wcstack/websocket/auto";
 ```
 
-遅延ロードが避けられない場合は、`customElements.whenDefined()` で待ってから mount する。
+Where lazy loading is unavoidable, wait on `customElements.whenDefined()` before mounting.
 
 ```tsx
 // React
@@ -63,7 +68,7 @@ function ChatGate() {
   useEffect(() => {
     customElements.whenDefined("wcs-ws").then(() => setReady(true));
   }, []);
-  return ready ? <Chat /> : null;   // Chat の中で useWcBindable を呼ぶ
+  return ready ? <Chat /> : null;   // Chat is where useWcBindable is called
 }
 ```
 
@@ -78,81 +83,85 @@ onMounted(() => customElements.whenDefined("wcs-ws").then(() => (ready.value = t
 </template>
 ```
 
-Svelte / Solid / Qwik / Angular も同じ形になる。**`whenDefined` を待つのは、adapter を呼ぶ
-コンポーネントがマウントされる前**でなければ意味がない。同じコンポーネント内で待っても、
-adapter は既に諦めた後である。
+Svelte / Solid / Qwik / Angular take the same shape. **The `whenDefined` wait only means anything
+before the component that calls the adapter mounts.** Waiting inside that same component is too
+late — the adapter has already given up.
 
-### 1.4 代用にならないもの
+### 1.4 What does not substitute for it
 
-- **`connectedCallbackPromise` / `hasConnectedCallbackPromise`** — 接続後に初期スナップショットを
-  取るためのもので、定義前の待機には使えない。未定義の要素にはその getter 自体が存在しない。
-- **`<wcs-defined>`** — 「指定タグが定義済みか」を観測するゲートで、複数タグの readiness を
-  宣言的に扱うときは有用だが、`<wcs-defined>` 自身の定義が先に必要である。
-- **`setTimeout` での遅延** — 定義完了と無関係なので、速いネットワークでたまたま通るだけになる。
+- **`connectedCallbackPromise` / `hasConnectedCallbackPromise`** — these exist to take an initial
+  snapshot after connection; they cannot be used to wait for a definition. On an undefined element
+  the getter itself does not exist.
+- **`<wcs-defined>`** — a gate that observes whether given tags are defined. Useful for handling the
+  readiness of several tags declaratively, but `<wcs-defined>` has to be defined first itself.
+- **A `setTimeout` delay** — unrelated to when the definition completes, so it merely happens to
+  work on a fast network.
 
-### 1.5 入力側は救済される（次回リリース以降）
+### 1.5 The input side is rescued (next release onward)
 
-upgrade 前に `el.url = "..."` のようにプロパティ代入していた場合、その値は
-`connectedCallback` で取り込み直されるので失われない（`wcBindable.inputs` に宣言された入力のみ）。
-これは**入力**の話であり、§1.1 の**観測**の欠落は救済しない。bind のゲートは依然として必要である。
+A property assigned before the upgrade, such as `el.url = "..."`, is not lost: it is re-read in
+`connectedCallback` (only for inputs declared in `wcBindable.inputs`). That is about **inputs**; it
+does not rescue the missing **observation** of §1.1. The bind gate is still required.
 
-## 2. object を渡す input
+## 2. Inputs that take an object
 
-DOM 属性は文字列しか持てないため、object / array を渡す input は DOM プロパティとして渡す必要がある。
-ところが React 19 / Vue / Svelte / Preact は「その名前のプロパティが要素に存在するか」を見て
-プロパティか属性かを決めるため、**要素が未 upgrade だと属性側にフォールバックし、`[object Object]` に
-文字列化される**。
+A DOM attribute can only hold a string, so an input that takes an object or array has to be passed
+as a DOM property. React 19 / Vue / Svelte / Preact decide between property and attribute by looking
+at whether a property of that name exists on the element, which means **an element that has not been
+upgraded falls back to the attribute and gets stringified into `[object Object]`**.
 
-wcstack の scalar 入力（`url` / `type` / `manual` など）は属性バックの accessor なので、
-フォールバックしても意味は保たれる。壊れるのは object を取る入力（`post` / `options` / `files` など）だけである。
+wcstack's scalar inputs (`url`, `type`, `manual`, …) are attribute-backed accessors, so the meaning
+survives the fallback. The only things that break are inputs taking an object (`post`, `options`,
+`files`, …).
 
-| framework | プロパティとして渡す書き方 |
+| Framework | How to pass as a property |
 | --- | --- |
-| Vue | `:post.prop="payload"` または `.post="payload"` |
-| React 19 | `ref` 経由で `el.post = payload`（JSX の値は property 判定に依存する） |
-| Angular | `[post]="payload"`（Angular の property binding は常にプロパティ代入） |
+| Vue | `:post.prop="payload"` or `.post="payload"` |
+| React 19 | `el.post = payload` through a `ref` (a JSX value depends on the property check) |
+| Angular | `[post]="payload"` (Angular property binding always assigns a property) |
 | Lit | `.post=${payload}` |
 | Solid | `prop:post={payload}` |
-| Svelte | `bind:this` で取得して代入 |
+| Svelte | grab it with `bind:this` and assign |
 
-確実なのは、どの framework でも **ref で要素を掴んでプロパティに代入する**ことである。
+The reliable route in any framework is to **take the element with a ref and assign the property**.
 
-## 3. reactive store の値は raw で渡す
+## 3. Pass reactive store values as raw
 
-Vue の `reactive`、Svelte 5 の `$state`、Solid の store、Alpine、MobX、Qwik の `useStore` は
-値を Proxy で包む。包まれるのは plain object / array / Map / Set で、`MediaStream` / `Error` /
-`Blob` / `ArrayBuffer` などの platform object は対象外である。
+Vue's `reactive`, Svelte 5's `$state`, Solid stores, Alpine, MobX, and Qwik's `useStore` wrap values
+in a Proxy. What gets wrapped is plain objects / arrays / Maps / Sets; platform objects such as
+`MediaStream` / `Error` / `Blob` / `ArrayBuffer` are not affected.
 
-Proxy は structured clone できないため、そのまま渡すと `<wcs-worker>` の `post` や
-`<wcs-broadcast>` の送信で **`DataCloneError`** になる。wcstack は never-throw なので例外は飛ばず、
-`error` / `errorInfo` に落ちるだけで原因が見えにくい。
+A Proxy cannot be structured-cloned, so passing one straight through produces a **`DataCloneError`**
+in `<wcs-worker>`'s `post` or a `<wcs-broadcast>` send. wcstack is never-throw, so no exception
+surfaces — it merely lands in `error` / `errorInfo`, which makes the cause hard to see.
 
-| framework | raw 化 |
+| Framework | Unwrapping |
 | --- | --- |
 | Vue | `toRaw(state.payload)` |
 | Svelte 5 | `$state.snapshot(payload)` |
-| Solid（store） | `unwrap(payload)` |
+| Solid (store) | `unwrap(payload)` |
 | MobX | `toJS(payload)` |
-| Qwik | `JSON.parse(JSON.stringify(payload))` など明示的な複製 |
+| Qwik | an explicit copy, e.g. `JSON.parse(JSON.stringify(payload))` |
 
-wcstack 側は framework 固有の unwrap を実装しない（依存を持ち込めず、どの framework の Proxy かを
-判定する一般的手段も無い）。規範は
-[ガイドライン §3.3.2](./async-io-node-guidelines.md) を参照。
+wcstack does not implement framework-specific unwrapping (it cannot take on the dependency, and
+there is no general way to tell whose Proxy a given Proxy is). The normative text is
+[guidelines §3.3.2](./async-io-node-guidelines.md).
 
-## 4. コロンを含むイベント名を直接聴く
+## 4. Listening directly to event names containing a colon
 
-wcstack のイベント名は `wcs-camera:stream-ready` のようにコロンを含む。
+wcstack event names contain a colon, as in `wcs-camera:stream-ready`.
 
-**adapter 経由なら意識しなくてよい。** `bind()` が `addEventListener` を使うため、イベント名の
-表記法は関係しない。問題になるのは、adapter を使わずテンプレートで直接聴きたい場合である。
+**Through an adapter this never comes up.** `bind()` uses `addEventListener`, for which the spelling
+of the event name is irrelevant. It matters when you want to listen directly in a template, without
+the adapter.
 
-| framework | テンプレートでの直接束縛 |
+| Framework | Direct binding in a template |
 | --- | --- |
-| Angular | **できない**。`(wcs-camera:stream-ready)` は `target:event` と解釈され `Unsupported event target` になる（[angular/angular#28491](https://github.com/angular/angular/issues/28491)・未解決） |
-| React | **できない**。`on<name>` はダッシュを含む名前を扱えるが、コロンは JSX の名前空間名として解釈される |
-| Vue / Svelte / Solid | 書ける場合があるが、コロンを含む名前の扱いは framework とバージョンに依存する |
+| Angular | **not possible**. `(wcs-camera:stream-ready)` is read as `target:event` and yields `Unsupported event target` ([angular/angular#28491](https://github.com/angular/angular/issues/28491), open) |
+| React | **not possible**. `on<name>` can handle names with dashes, but a colon is read as a JSX namespace name |
+| Vue / Svelte / Solid | sometimes writable, but the handling of colons depends on the framework and version |
 
-**どの framework でも確実なのは、要素参照を取って `addEventListener` する経路**である。
+**The route that works everywhere is to take an element reference and call `addEventListener`.**
 
 ```ts
 // Angular
@@ -176,25 +185,26 @@ useEffect(() => {
 }, []);
 ```
 
-この経路が必要になる代表例は `handle` に分類された observable である。`<wcs-camera>` の
-`streamReady` は live な `MediaStream` で、snapshot state に入れてはならない値なので、
-adapter の values ではなく直接受け取るのが正しい（[棚卸し §5.6](./architecture-hardening/12-wc-bindable-observable-inventory.md)）。
+The representative case that needs this route is an observable classified as a `handle`.
+`streamReady` on `<wcs-camera>` is a live `MediaStream` — a value that must not enter snapshot state
+— so receiving it directly rather than through the adapter's values is the correct thing
+([inventory §5.6](./architecture-hardening/12-wc-bindable-observable-inventory.md)).
 
-## 5. 値の意味を adapter に伝える
+## 5. Telling the adapter what a value means
 
-`wcBindable.properties[].semantics` が `state` / `event` / `handle` を宣言する。adapter が
-これを解釈すれば、occurrence の取りこぼし（同値 dedupe）や live handle の誤った snapshot 化を
-避けられる。現時点でこの宣言を解釈するのは `@wcstack/state` だけで、`@wc-bindable` の
-各 adapter は未対応である。したがって現状は次を前提にすること。
+`wcBindable.properties[].semantics` declares `state` / `event` / `handle`. An adapter that
+interprets it can avoid dropping occurrences (same-value dedupe) and avoid wrongly snapshotting a
+live handle. Today only `@wcstack/state` interprets the declaration; the `@wc-bindable` adapters do
+not. So for now, assume the following.
 
-- 同じ payload が連続する `event`（`message` / `fired` / `clicked` など）は、値ベースの store に
-  そのまま入れると落ちうる。イベントとして受けるか、連番などで区別する。
-- `handle`（`streamReady`）は values に入れず、§4 の経路で受ける。
+- An `event` whose payload repeats (`message`, `fired`, `clicked`, …) can be dropped if fed straight
+  into a value-based store. Receive it as an event, or distinguish occurrences with a counter.
+- A `handle` (`streamReady`) does not belong in values; receive it through the route in §4.
 
-## 参照
+## References
 
-- [framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md)
-- [wc-bindable observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md)
-- [非同期 I/O ノード作成ガイドライン](./async-io-node-guidelines.md)
-- [`bind()` の定義待ち提案](./spec-proposal-bind-definition-timing.md)
-- [websocket-chat の React / Vue 実装](../examples/websocket-chat/README.md)
+- [framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md)
+- [wc-bindable observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md)
+- [async I/O node guidelines](./async-io-node-guidelines.md)
+- [proposal: make `bind()` wait for the definition](./spec-proposal-bind-definition-timing.md) (ja)
+- [the React / Vue implementations of websocket-chat](../examples/websocket-chat/README.md)

@@ -93,6 +93,6 @@ application artifact に分ける。型語彙は JSON Schema の固定 subset �
 ## 関連文書
 
 - [define-state](../../packages/state/docs/define-state.md)
-- [8 論点を横断する修正設計](09-remediation-design.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)
 - [プロトコル進化と互換性](08-protocol-evolution.md)
 - [観測性・デバッグと wc-bindable 境界](05-observability-and-wc-bindable.md)

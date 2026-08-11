@@ -95,7 +95,7 @@ $on: {
 | `wcs-recorder` | `error` | `wcs-recorder:error` が非 `null` の detail で発火（`null` でクリア） |
 
 > `permission` / `audioPermission` には現時点で boolean 派生 getter が無いため
-> 反映対象外です（v1 スコープ。docs/custom-state-reflection-design.md §7 参照）。
+> 反映対象外です（v1 スコープ。docs/custom-state-reflection-design.ja.md §7 参照）。
 > `duration` は連続値のため意図的に除外しています。
 
 ```css
@@ -143,7 +143,7 @@ wcs-recorder:state(paused) ~ .rec-dot      { animation: none; opacity: .4; }
 
 `CameraCore` / `RecorderCore` を非 DOM 用途向けにエクスポートしています（`@wc-bindable/core` の `bind()`）。Shell は薄いラッパです。
 
-Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
 ## 注意・落とし穴
 

@@ -127,7 +127,7 @@ npm install @wcstack/accelerometer
 [`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
 に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
 `:state()` 疑似クラスで直接スタイリングできます。`x`/`y`/`z`（連続的なセンサー読み取り値）
-は意図的に反映**しません** — `docs/custom-state-reflection-design.md` §3.2 参照。
+は意図的に反映**しません** — `docs/custom-state-reflection-design.ja.md` §3.2 参照。
 
 | ステート | on になる条件 |
 |----------|----------------|
@@ -188,7 +188,7 @@ core.start();
 core.dispose();
 ```
 
-Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
 ## ライセンス
 

@@ -9,11 +9,11 @@
   - DevTools trace の実装や、機械可読な適合ベクトル形式をこの版では要求しない
 - **なぜ存在するか**: wcstack は I/O ノードの骨格、非同期レーン、発火タイミングを既に別々の正本で規範化している。しかし「どこまでを同じ入力に対して同じ結果になる単位と呼ぶか」と「その主張を第三者実装も含めてどう検証するか」は横断的に定義されていなかった。本書は I/O ノードを順序付き入力トレースから観測可能出力トレースへの因果的変換として定式化し、決定性の境界と適合ベクトルの共通形を与える
 - **関連する正本**:
-  - Core / Shell、observable、never-throw、lifecycle: [async-io-node-guidelines.md](./async-io-node-guidelines.md)
-  - execution form、lane、commit、cancel、retry、timeout: [async-execution-model.md](./async-execution-model.md)
-  - 同期 / microtask / task とノード別発火順: [timing-and-firing-contract.md](./timing-and-firing-contract.md)
+  - Core / Shell、observable、never-throw、lifecycle: [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)
+  - execution form、lane、commit、cancel、retry、timeout: [async-execution-model.ja.md](./async-execution-model.ja.md)
+  - 同期 / microtask / task とノード別発火順: [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md)
   - lane の参照実装: [`io-core/operation-lane.ts`](../io-core/operation-lane.ts)
-  - optional な診断 side channel: [devtools-hook-protocol.md](./devtools-hook-protocol.md)
+  - optional な診断 side channel: [devtools-hook-protocol.ja.md](./devtools-hook-protocol.ja.md)
 
 ---
 
@@ -147,7 +147,7 @@ scheduler.advanceClock(duration)
 
 `platform.clockSample(value)` は rAF timestamp や node が読む時刻源の観測値であり、それ自体は callback を配送しない。`scheduler.advanceClock(duration)` は fake scheduler の時刻を進め、期限に達した timer / rAF callback をベクトルが定めた順で配送する。両者を同期させるか、別の時計として扱うかは `initial` で宣言する（MUST）。
 
-実ブラウザの全スケジューラを模倣する必要はない。既存の [timing-and-firing-contract.md](./timing-and-firing-contract.md) に記録された発火順と矛盾するベクトルを書いてはならない（MUST NOT）。採択後の規範上の保証は適合ベクトル自身が担い、参照ドキュメントから暗黙に導出しない。
+実ブラウザの全スケジューラを模倣する必要はない。既存の [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) に記録された発火順と矛盾するベクトルを書いてはならない（MUST NOT）。採択後の規範上の保証は適合ベクトル自身が担い、参照ドキュメントから暗黙に導出しない。
 
 ### 2.5 observable output
 
@@ -561,7 +561,7 @@ forbidden:
 ### 6.3 error と settle
 
 1. 公開操作は platform API 不在、同期 throw、Promise reject を未処理例外として外へ漏らさない
-2. error、cancelled、timeout を [async-execution-model.md](./async-execution-model.md) の軸へ正規化する
+2. error、cancelled、timeout を [async-execution-model.ja.md](./async-execution-model.ja.md) の軸へ正規化する
 3. terminal outcome は operation ごとに高々1回
 4. `ready` / `connectedCallbackPromise` は success、error、unsupported の全経路で規定どおり settle する
 5. retry を持つ node は、attempt error / progress と retry 中 loading の公開規則を宣言どおりに保つ
@@ -640,7 +640,7 @@ draft 期間中は `wcstack-io/0.x-draft` とし、どの level についても�
 6. 共通法則の適用条件、非適用根拠、逸脱の表
 7. node 固有の適合ベクトル
 
-公開挙動を変更する場合、対応する適合ベクトルと、現行挙動の参照記録である [timing-and-firing-contract.md](./timing-and-firing-contract.md) を同じ変更で更新しなければならない（MUST）。レビューは実装、規範ベクトル、参照記録、example の説明の drift を認めない。
+公開挙動を変更する場合、対応する適合ベクトルと、現行挙動の参照記録である [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) を同じ変更で更新しなければならない（MUST）。レビューは実装、規範ベクトル、参照記録、example の説明の drift を認めない。
 
 レビューでは次の順で確認する。
 
@@ -664,7 +664,7 @@ draft 期間中は `wcstack-io/0.x-draft` とし、どの level についても�
 - fetch（one-shot / latest）、intersection（monitor / occurrence）、raf（stream / clock）の3 archetype へ本書を試適用する
 - 既存 test だけで表現できない law と、過剰に強い law を分ける
 - input / output alphabet と vector の最小 field を確定する
-- 採択時に本書を `wcstack-io/1.0` として normative へ変更し、`structural` / `trace` をその適合レベルとして確定したうえで、[async-io-node-guidelines.md](./async-io-node-guidelines.md) の設計・test・レビュー checklist へ必須項目を追加する
+- 採択時に本書を `wcstack-io/1.0` として normative へ変更し、`structural` / `trace` をその適合レベルとして確定したうえで、[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) の設計・test・レビュー checklist へ必須項目を追加する
 
 初回の対応確認では、3 archetype とも本書の基本モデルで既存 test を説明できる。
 

@@ -146,7 +146,7 @@ npm install @wcstack/defined
 | `error` | `wcs-defined:change` が非 `null` の `detail.error` で発火（`null` でクリア） |
 
 `pending` / `missing` / `count` / `total` は反映**しません** — boolean ではなく、
-カウント系の値は設計上 `:state()` 反映の対象外です（`docs/custom-state-reflection-design.md` §3.2 参照）。
+カウント系の値は設計上 `:state()` 反映の対象外です（`docs/custom-state-reflection-design.ja.md` §3.2 参照）。
 
 ```css
 wcs-defined:state(defined) ~ .content  { display: block; }
@@ -216,7 +216,7 @@ console.log(gate.defined, gate.missing);
 gate.dispose();          // timeout をクリアし監視を停止
 ```
 
-Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
 ## ライセンス
 

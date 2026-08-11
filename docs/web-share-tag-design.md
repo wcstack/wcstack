@@ -17,7 +17,7 @@
 - **状態**: 実装済み（`@wcstack/share` として公開済み）。本文書は実装前に行った論点整理と決定事項のスナップショットであり、実装後も設計意図の参照用に保持している。以降の `hidden@error` / `text@error.message` 等の `@` 表記は説明用の擬似記法であり、実際の `data-wcs` 構文ではない点に注意（実装では `command.share: $command.doShare` のような明示的なプロパティ名構文を使う。README.md/README.ja.md 参照）。
 - **対象 WebAPI**: Web Share API（`navigator.share(data)`、`navigator.canShare(data)`）
 - **位置づけ**: [io-node-batch-implementation-plan.md](./io-node-batch-implementation-plan.md) バッチ3（薄い一発commandパターン）の1本目。EyeDropper / Contact Picker / Credential Management に先立ち、**このバッチの共有アーキタイプを初めて実装で確立するノード**。既存25パッケージに前例の無い新規アーキタイプであり、本書の決定がバッチ内の後続ノードにそのまま流用される。
-- **前提資産**: `fetch`（単一`_gen`・try/catch・never-throwの`_doFetch`骨格、[FetchCore.ts](../packages/fetch/src/core/FetchCore.ts)）、`spec-proposal-command-token-arguments.md`（command-token引数の位置引数素通し規範）、[async-io-node-guidelines.md](./async-io-node-guidelines.md)（Core/Shell分離・wc-bindable・never-throw・同値ガード・`_gen`世代ガード・SSR）。
+- **前提資産**: `fetch`（単一`_gen`・try/catch・never-throwの`_doFetch`骨格、[FetchCore.ts](../packages/fetch/src/core/FetchCore.ts)）、`spec-proposal-command-token-arguments.md`（command-token引数の位置引数素通し規範）、[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)（Core/Shell分離・wc-bindable・never-throw・同値ガード・`_gen`世代ガード・SSR）。
 
 ---
 

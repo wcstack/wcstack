@@ -54,7 +54,7 @@ npx serve examples/signals-tilt-maze
   その機能だけで、センサーが無ければドラッグ操作のみ、wakelock が無ければ画面が暗くなる、
   という粒度です。`customElements.whenDefined()` は reject しないため、await すると
   来ないパッケージにページ全体が張り付きます。詳細は
-  [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md)。
+  [`docs/signals-definition-timing.ja.md`](../../docs/signals-definition-timing.ja.md)。
 
 ## 検証済み
 

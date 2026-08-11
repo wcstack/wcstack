@@ -1,12 +1,12 @@
 # 設計提案: `$on` の実行レーン宣言 — state 側からの lane / retry
 
 - **状態**: **不採用（2026-07-31 決裁）**。理由は §0-1。本書は棄却の理由と、再検討する場合の条件を残すための記録として維持する。実装は行わない。
-- **元の位置づけ**: [architecture-hardening/04](./architecture-hardening/04-async-execution-and-wc-bindable.md) 決定ゲート 1 (d)「userland 宣言」を、採否を判断できる粒度まで降ろしたもの。本書は**新しい実行意味論を提案しない** — [async-execution-model.md](./async-execution-model.md) が既に規範化した語彙の**配置**だけを論点にしていた。
+- **元の位置づけ**: [architecture-hardening/04](./architecture-hardening/04-async-execution-and-wc-bindable.md) 決定ゲート 1 (d)「userland 宣言」を、採否を判断できる粒度まで降ろしたもの。本書は**新しい実行意味論を提案しない** — [async-execution-model.ja.md](./async-execution-model.ja.md) が既に規範化した語彙の**配置**だけを論点にしていた。
 - **対象**: `@wcstack/state` の core 拡張。`$on` ハンドラに排他モードと再試行ポリシーを宣言できるようにする案。
 - **本書が変えないもの（最重要）**:
   - **プロトコルに一切手を入れない**。wc-bindable / command-token / event-token の語彙・型・構文は不変更（04 冒頭の MUST NOT を継承する）。とりわけ **command-token の「呼び出しを await しない」規範**（[spec-proposal-command-token-arguments.md](./spec-proposal-command-token-arguments.md)）は維持する。
   - **既存 `$on` の挙動を変えない**。関数を直に書く現行形は完全に維持され、宣言オブジェクト形は additive な opt-in とする。
-- **参照仕様**: 排他モードと再試行の規範は [async-execution-model.md](./async-execution-model.md) §5 / §8。実装済みの実行プリミティブは `io-core/operation-lane.ts`（`scripts/sync-io-core.mjs` が各ノードへ複製配布）。宣言マップを state に増設する手順の先例は [state-streams-design.md](./state-streams-design.md)。
+- **参照仕様**: 排他モードと再試行の規範は [async-execution-model.ja.md](./async-execution-model.ja.md) §5 / §8。実装済みの実行プリミティブは `io-core/operation-lane.ts`（`scripts/sync-io-core.mjs` が各ノードへ複製配布）。宣言マップを state に増設する手順の先例は [state-streams-design.md](./state-streams-design.md)。
 
 > **後日更新（2026-08-06）**: 本書が題材にした `examples/state-intersect-scroll` の
 > 手書き fetch/timer 版は、`$streams` の switchMap 型依存 restart と producer 内の有界 retry を
@@ -84,7 +84,7 @@ wcstack には**排他代数がすでに存在する**。`latest` / `queue` / `e
 
 | 手書きされているもの | 対応する規範 | 正しさの根拠 |
 |---|---|---|
-| `$on.sentinelChanged` の `!loading` ガード | §5 `exhaust`（実行中は冪等 no-op） | 「microtask が task に先行する」というスケジューラの性質（[timing-and-firing-contract.md](./timing-and-firing-contract.md) §3） |
+| `$on.sentinelChanged` の `!loading` ガード | §5 `exhaust`（実行中は冪等 no-op） | 「microtask が task に先行する」というスケジューラの性質（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §3） |
 | `retryAttempt` / `maxRetries` | §8 `max`（有限であること MUST） | 利用者が数え間違えないこと |
 | `<wcs-timer manual once>` の起動 | §8 `interval` | — |
 | ページ着信での `retryAttempt = 0` | §8 `resetOn` | — |
@@ -106,7 +106,7 @@ wcstack には**排他代数がすでに存在する**。`latest` / `queue` / `e
 
 したがって**本書は「時間コンビネータの追加」を提案しない**。提案するのは排他と再試行の宣言だけである。
 
-> 注記（別課題）: [async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 は debounce の利用者責務の例として `notice@x|debounce(1000)` というフィルタ構文を挙げているが、`packages/state/src/filters/builtinFilters.ts` に `debounce` フィルタは存在しない（2026-07-31 確認）。時間整形は現状ノード（`<wcs-debounce>`）だけが提供する。ガイドラインの記述を実態に合わせるか、フィルタを実装するかは本書のスコープ外。
+> 注記（別課題）: [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §1 は debounce の利用者責務の例として `notice@x|debounce(1000)` というフィルタ構文を挙げているが、`packages/state/src/filters/builtinFilters.ts` に `debounce` フィルタは存在しない（2026-07-31 確認）。時間整形は現状ノード（`<wcs-debounce>`）だけが提供する。ガイドラインの記述を実態に合わせるか、フィルタを実装するかは本書のスコープ外。
 
 ---
 
@@ -401,9 +401,9 @@ element の CustomEvent
 ## 関連
 
 - [architecture-hardening/04 — 非同期実行と wc-bindable 境界](./architecture-hardening/04-async-execution-and-wc-bindable.md) — 決定ゲート 1。本書はその (d) の具体化
-- [async-execution-model.md](./async-execution-model.md) — §5（排他モード）/ §8（再試行）の規範。本書は語彙を一切追加しない
-- [async-io-node-guidelines.md](./async-io-node-guidelines.md) — ノード側の骨格規約
-- [timing-and-firing-contract.md](./timing-and-firing-contract.md) — 手書きガードの正しさの現在の根拠（§6-1 / §7-1）
+- [async-execution-model.ja.md](./async-execution-model.ja.md) — §5（排他モード）/ §8（再試行）の規範。本書は語彙を一切追加しない
+- [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) — ノード側の骨格規約
+- [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) — 手書きガードの正しさの現在の根拠（§6-1 / §7-1）
 - [state-streams-design.md](./state-streams-design.md) — 宣言マップ増設の先例。骨格の大半を再利用できる
 - [state-redesign-council.md](./state-redesign-council.md) — no-regret 原則と「良いとこ取り統合は禁句」（§9-1 の根拠）
 - `io-core/operation-lane.ts` — 実行プリミティブの実装（実行可能な参照仕様）

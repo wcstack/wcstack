@@ -97,7 +97,7 @@ export default {
 
 - 監視に**secure-context制約は無し**（`@wcstack/geolocation`/`@wcstack/permission`とは異なる）。
 - **`lock()`にはフルスクリーンまたはインストール済みPWAという文脈が必要です — デスクトップ/モバイルの区別ではありません。** 通常タブでの呼び出しはデスクトップ・モバイルを問わずrejectされるのが通例です（エラー名はブラウザと原因により`NotAllowedError`/`NotSupportedError`/`SecurityError`などと異なるため、名前で分岐しないでください）。Safariはそもそも`lock()`を実装していません。best-effortであることを前提にUIを設計し、ロックを実際に効かせたい場面では`@wcstack/fullscreen`のような明示的なフルスクリーン導線と組み合わせてください。
-- **初回スナップショットの*イベント*はbindingに届きませんが、値は届きます。** 最初の`wcs-orientation:change`は`connectedCallback`中に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に（bindingのセットアップは後続のmicrotaskへ遅延されます。`docs/timing-and-firing-contract.md` §4.1参照）。イベントは後から購読した相手へ再送されません。それでも初期値が失われないのは、本ノードの観測可能プロパティがすべて output-only（`properties` のみ・`inputs` に無い）で、既定の binding authority が `element` になるためです: bindingは確立時にプロパティを直接読みます（directional initial sync、v1.21.0 以降は既定 ON）。したがって`portrait`/`landscape`/`type`/`angle`は手動pullなしで初回描画から正しく、これは全monitor系ノード共通の挙動です。`enableDirectionalInitialSync: false` に倒した構成でのみ、`$connectedCallback` + `whenDefined` の手動pullが再び必要になります。発火・世代管理の全体像（初回スナップショット・`lock()`の世代順序・`error`の重複排除）は`docs/timing-and-firing-contract.md` §7を参照してください。
+- **初回スナップショットの*イベント*はbindingに届きませんが、値は届きます。** 最初の`wcs-orientation:change`は`connectedCallback`中に同期的に発火します——`@wcstack/state`がbindingリスナーを取り付ける前に（bindingのセットアップは後続のmicrotaskへ遅延されます。`docs/timing-and-firing-contract.ja.md` §4.1参照）。イベントは後から購読した相手へ再送されません。それでも初期値が失われないのは、本ノードの観測可能プロパティがすべて output-only（`properties` のみ・`inputs` に無い）で、既定の binding authority が `element` になるためです: bindingは確立時にプロパティを直接読みます（directional initial sync、v1.21.0 以降は既定 ON）。したがって`portrait`/`landscape`/`type`/`angle`は手動pullなしで初回描画から正しく、これは全monitor系ノード共通の挙動です。`enableDirectionalInitialSync: false` に倒した構成でのみ、`$connectedCallback` + `whenDefined` の手動pullが再び必要になります。発火・世代管理の全体像（初回スナップショット・`lock()`の世代順序・`error`の重複排除）は`docs/timing-and-firing-contract.ja.md` §7を参照してください。
 - **`errorInfo` taxonomy（additive）。** `error`と並んで、`<wcs-screen-orientation>`は*同一の*`lock()`/`unlock()`失敗を安定した`WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類したserializableな`errorInfo`（`wcs-orientation:error-info-changed` —— イベント名前空間はタグ名ではなく`wcs-orientation:`である点に注意）を公開します。`error`の形状は変えません。`screen.orientation`やメソッド自体の不在（synthetic な "unsupported"）→ `capability-missing`（phase `probe`）、通常タブでの lock reject である`NotAllowedError` / `NotSupportedError` / `SecurityError`は全て単一の`not-allowed`（phase `execute`、`recoverable: false` —— 上述の「名前で分岐するな」モデルに一致）へ畳まれ、`AbortError`（より新しい`lock()`による supersede）→ `aborted`（phase `execute`、`recoverable: true` —— 新しい`lock()`は成功しうる）、それ以外（`InvalidStateError`、生の throw、`.name`欠如など）→ `orientation-error`（phase `execute`）となります。`errorInfo`は`error`とまったく同じタイミングで遷移し（回復時に`null`へクリア）、共有の`WcsIoErrorInfo`型と`WCS_SCREEN_ORIENTATION_ERROR_CODE`定数はexportされています。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true`を宣言。監視が同期的なため`connectedCallbackPromise`は常に即座にsettleします。
 
@@ -117,7 +117,7 @@ export default {
 `portrait` と `landscape` は相互排他で、`type` が `null`（非対応環境）のときは
 両方 off になります。イベント名前空間は `wcs-orientation:` であり、タグ名
 `wcs-screen-orientation` とは異なる点に注意してください。`angle` は反映され
-ません（連続値のため設計上除外——`docs/custom-state-reflection-design.md` §3.2 参照）。
+ません（連続値のため設計上除外——`docs/custom-state-reflection-design.ja.md` §3.2 参照）。
 
 ```css
 wcs-screen-orientation:state(portrait) ~ .portrait-hint  { display: block; }
@@ -176,7 +176,7 @@ console.log(core.error);
 core.dispose();
 ```
 
-Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
 ## ライセンス
 

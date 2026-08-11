@@ -199,7 +199,7 @@ DOM の autoTrigger は書き込み（`writeText`）のみを起動します。�
 
 > `readPermission` / `writePermission` は v1 では反映**しません** — 単一のステート名に
 > マップできる boolean 派生 getter が無いためです（
-> [async-io-node-guidelines.md](../../docs/async-io-node-guidelines.md) §4.2 参照）。
+> [async-io-node-guidelines.ja.md](../../docs/async-io-node-guidelines.ja.md) §4.2 参照）。
 > これらは従来どおり `data-wcs` でバインドしてください。
 
 ```css
@@ -272,7 +272,7 @@ clip.startMonitor();
 clip.stopMonitor();
 ```
 
-Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
 ## ライセンス
 

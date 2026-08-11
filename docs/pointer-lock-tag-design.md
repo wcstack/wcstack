@@ -63,7 +63,7 @@ Pointer Lock中は`mousemove`イベントの`movementX`/`movementY`（前フレ�
   - 理由: `mousemove`は高頻度イベント（環境によっては数百Hz相当で発火しうる）であり、これを他の宣言的プロパティ（`active`等）と同じ「同値ガード付きイベント→state反映」の形にそのまま混ぜると、毎フレームstateの再計算・DOM反映が走りうる。本ノードの宣言的surfaceの単純さ（`active`のON/OFFのみ）を壊し、パフォーマンス問題（過剰な再描画・reactiveなwatcherの発火過多）を招くリスクが高い。
   - `wc-bindable-protocol`の`properties`は「値が変わったら`state`側へ伝播する」ことを前提にした設計であり、高頻度・大量データの垂れ流しに向いた仕組みではない。既存ノードでも高頻度データ（例: `resize`の連続リサイズ、`intersection`の連続スクロール）は同値ガードや`once`ラッチで発火頻度を抑えている前例があり、Pointer Lockの生の`movementX`/`movementY`をそのまま流すのはこの設計哲学と相容れない。
 - ~~`movementX`/`movementY`を`properties`に含め、毎`mousemove`ごとに`wcs-pointer-lock:move`のようなイベントで流す~~ — 不採用（今回のスコープでは）。理由は上記の高頻度問題に加え、そのような値は多くの場合`canvas`への直接描画や命令的なゲームループで消費されるものであり、宣言的バインディングを介す必然性が薄い。
-- **将来追加する場合の設計方針**: 需要が具体化した場合は、既存の`@wcstack/debounce`/`@wcstack/throttle`パッケージとの組み合わせを前提に設計すべきである。例えば「生の`movementX`/`movementY`イベントを`wcs-pointer-lock:move`として発火し、利用側が`filter`パイプラインや`throttle`ノードを介して間引く」構成であれば、本ノードの責務（ロック状態の管理）と間引きの責務（`throttle`）を分離でき、`async-io-node-guidelines.md`の「debounce/throttleは利用者責務にする」方針（§1「同値ガードのみで十分か」の論点）とも整合する。この場合でも既定でOFF（`movement`購読は明示的な属性やcommandで opt-in させる）にし、購読していないインスタンスに不要なオーバーヘッドを負わせない設計にすべき。
+- **将来追加する場合の設計方針**: 需要が具体化した場合は、既存の`@wcstack/debounce`/`@wcstack/throttle`パッケージとの組み合わせを前提に設計すべきである。例えば「生の`movementX`/`movementY`イベントを`wcs-pointer-lock:move`として発火し、利用側が`filter`パイプラインや`throttle`ノードを介して間引く」構成であれば、本ノードの責務（ロック状態の管理）と間引きの責務（`throttle`）を分離でき、`async-io-node-guidelines.ja.md`の「debounce/throttleは利用者責務にする」方針（§1「同値ガードのみで十分か」の論点）とも整合する。この場合でも既定でOFF（`movement`購読は明示的な属性やcommandで opt-in させる）にし、購読していないインスタンスに不要なオーバーヘッドを負わせない設計にすべき。
 
 ---
 

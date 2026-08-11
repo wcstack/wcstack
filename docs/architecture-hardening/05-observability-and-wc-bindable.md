@@ -13,7 +13,7 @@
 
 ## 現状
 
-`docs/devtools-hook-protocol.md` は `globalThis.__WCSTACK_DEVTOOLS_HOOK__` を使う v1 side channel を定義し、
+`docs/devtools-hook-protocol.ja.md` は `globalThis.__WCSTACK_DEVTOOLS_HOOK__` を使う v1 side channel を定義し、
 timeline、binding、token emission、subscriber count を観測する。state 向け実装と DevTools overlay は
 `@wcstack/state@1.20.0` / `@wcstack/devtools@1.20.0` として 2026-07-14 時点で公開済みである。
 I/O、非同期 operation、remote peer を含む end-to-end 因果追跡は今後の範囲である。
@@ -119,7 +119,7 @@ late attach した DevTools は `kind: state` / `kind: io` などsourceごとの
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [wc-bindable Extensions（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC-extensions.md)
 - [wc-bindable remote README（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/remote/README.md)
-- [DevTools hook protocol](../devtools-hook-protocol.md)
+- [DevTools hook protocol](../devtools-hook-protocol.ja.md)
 - [DevTools tag design](../devtools-tag-design.md)
 - [非同期実行と wc-bindable 境界](04-async-execution-and-wc-bindable.md)
-- [8 論点を横断する修正設計](09-remediation-design.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)

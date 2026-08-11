@@ -1,7 +1,7 @@
 # 類似IOノード バッチ実装計画
 
 - **対象**: [io-node-candidate-screening.md](./io-node-candidate-screening.md) / [io-node-candidate-implementation-notes.md](./io-node-candidate-implementation-notes.md) で洗い出した候補のうち、**実装パターンが共通するものをバッチにまとめ**、共有アーキタイプの実装仕様を先に確定する
-- **状態**: 計画ドキュメント（非規範）。ここでの仕様確定は「バッチ内で使い回す設計の答え合わせ」であり、個別ノードの実装着手時は依然として `docs/<name>-tag-design.md` の起草が必要（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST）。本書はその起草を高速化するための下敷き
+- **状態**: 計画ドキュメント（非規範）。ここでの仕様確定は「バッチ内で使い回す設計の答え合わせ」であり、個別ノードの実装着手時は依然として `docs/<name>-tag-design.md` の起草が必要（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §1 MUST）。本書はその起草を高速化するための下敷き
 - **方針**: 各バッチに「参照実装（コピー元）」を既存パッケージから1つ指定する。ガイドライン自身が推奨する「既存パッケージをコピーして始めるのが最短」を、バッチ内の2〜4ノードに対して連鎖的に適用する
 - **除外**: 複数Promiseの並行管理を要する候補（REST-node等）は別トラック（[multi-promise-io-node-design.md](./multi-promise-io-node-design.md)）。本書のバッチは全て「単一in-flight」で閉じるものだけを対象にする
 
@@ -14,7 +14,7 @@
 | 1. target解決 | Fullscreen, Picture-in-Picture, Pointer Lock | `target`属性→要素解決→document-levelイベント監視 | `packages/intersection` | [fullscreen](./fullscreen-tag-design.md) / [picture-in-picture](./picture-in-picture-tag-design.md) / [pointer-lock](./pointer-lock-tag-design.md) |
 | 2. gesture-gated permission | Idle Detection, Device Orientation/Motion | 静的`requestPermission()`をcommandとして公開 | `packages/permission` | [idle-detection](./idle-detection-tag-design.md) / [device-orientation](./device-orientation-tag-design.md) |
 | 3. 薄い一発command | Web Share, EyeDropper, Contact Picker, (Credential Management) | `value`/`loading`/`error`/`cancelled`の最小Core | `packages/fetch`（`_doFetch`の簡約版） | [web-share](./web-share-tag-design.md) / [eyedropper](./eyedropper-tag-design.md) / [contact-picker](./contact-picker-tag-design.md) / [credential](./credential-tag-design.md) |
-| 4. 最小monitor | Network Information, Screen Orientation | 単一イベント→派生getter、極小Core | `packages/permission` | [network](./network-tag-design.md) / [screen-orientation](./screen-orientation-tag-design.md) |
+| 4. 最小monitor | Network Information, Screen Orientation | 単一イベント→派生getter、極小Core | `packages/permission` | [network](./network-tag-design.md) / [screen-orientation](./screen-orientation-tag-design.ja.md) |
 | 5. Generic Sensor族 | Accelerometer, Gyroscope, Magnetometer, AmbientLight | 共通`Sensor`基底クラスの薄いラップ×4 | バッチ内の1つ目を相互参照 | [sensor（4パッケージ統合）](./sensor-tag-design.md) |
 
 ---

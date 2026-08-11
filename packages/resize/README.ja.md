@@ -153,7 +153,7 @@ npm install @wcstack/resize
 | `observing` | `wcs-resize:observing-changed` が `true` で発火（`false` でクリア） |
 
 `width` / `height` / `entry` は反映**しません** — これらは boolean 出力ではなく
-連続値だからです（[設計ドキュメント](../../docs/custom-state-reflection-design.md) §3.2 参照）。
+連続値だからです（[設計ドキュメント](../../docs/custom-state-reflection-design.ja.md) §3.2 参照）。
 
 ```css
 wcs-resize:state(observing) ~ .measuring-badge { display: block; }
@@ -231,7 +231,7 @@ core.observe(document.querySelector("#panel"), { box: "border-box", round: true 
 core.disconnect();
 ```
 
-Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
+Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
 ## 注意・制限
 

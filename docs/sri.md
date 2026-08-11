@@ -1,13 +1,14 @@
-# wcstack と Subresource Integrity (SRI 運用ガイド)
+# wcstack and Subresource Integrity (SRI operations guide)
 
-- **対象**: CDN から wcstack を読み込むページで、配信経路の改竄を検出したい利用者。および配布物のレイアウトを変える実装者
-- **状態**: 規範ドキュメント（normative）。`dist/auto.min.js` が静的 import を持たないことは SRI 成立の前提条件であり、これを壊す変更をしてはならない（MUST NOT）
-- **なぜ存在するか**: 通常、CDN から ESM を読むと `<script type="module" integrity>` は**エントリしか保護しない**。中で `import` される先は別フェッチで integrity の対象外になる。wcstack の `dist/auto.min.js` は外部 import ゼロの自己完結バンドルなので、**integrity 属性 1 個で実行される wcstack のコード全体をカバーできる**。ただしこれは「依存ゼロ + バンドル + 1 タグ」が揃って初めて成立する性質で、崩れやすい
-- **関連**: [csp.md](./csp.md)（CSP との組み合わせ）
+- **Audience**: anyone loading wcstack from a CDN who wants tampering in the delivery path to be detectable, plus implementers changing the layout of what gets published
+- **Status**: normative. That `dist/auto.min.js` has no static imports is a precondition for SRI working at all here, and MUST NOT be broken
+- **Why this exists**: normally, reading an ESM bundle from a CDN means `<script type="module" integrity>` **protects only the entry point**. Whatever it `import`s is a separate fetch, outside the reach of that integrity check. wcstack's `dist/auto.min.js` is a self-contained bundle with zero external imports, so **a single integrity attribute covers every line of wcstack that runs**. That property only holds because "zero dependencies + bundled + one tag" all hold at once, and it is easy to break
+- **See also**: [csp.md](./csp.md) (combining this with a CSP)
+- **日本語版**: [sri.ja.md](./sri.ja.md)
 
 ---
 
-## 1. 使い方
+## 1. Usage
 
 ```html
 <script type="module"
@@ -15,12 +16,12 @@
         integrity="sha384-…"></script>
 ```
 
-- **`crossorigin` は不要。** `type="module"` は常に CORS モードで取得されるため、クラシックスクリプトと違って `crossorigin="anonymous"` を足す必要がない。
-- **バージョンは必ず固定する。** ダイジェストは特定バージョンのバイト列に対するもので、未固定 URL では次のリリースで必ず一致しなくなる。
+- **`crossorigin` is not needed.** `type="module"` is always fetched in CORS mode, so unlike a classic script it does not need `crossorigin="anonymous"`.
+- **Always pin the version.** A digest is over the bytes of one specific version; on an unpinned URL it is guaranteed to stop matching at the next release.
 
-## 2. ダイジェストの入手先 — CDN に聞いてはいけない
+## 2. Where the digests come from — never ask the CDN
 
-各リリースの **GitHub Release 本文**に全パッケージの表が載る。機械可読な `sri.json` も同じリリースの asset として添付される。
+The **body of each GitHub Release** carries a table for every package. A machine-readable `sri.json` is attached to the same release.
 
 ```json
 {
@@ -36,54 +37,56 @@
 }
 ```
 
-jsDelivr の data API もファイルのハッシュを返すが、**それを使ってはいけない**。SRI の目的は CDN を信頼しないことであり、CDN が自分の配るファイルのハッシュを自己申告するのは循環論法になる。ダイジェストは公開する tree から算出され（[scripts/generate-sri.mjs](../scripts/generate-sri.mjs)）、CDN とは独立に GitHub から配られる。
+jsDelivr's data API will also return a hash for a file, but **do not use it**. The point of SRI is to not have to trust the CDN, and a CDN self-reporting the hash of the file it serves is circular. The digests are computed from the tree being published ([scripts/generate-sri.mjs](../scripts/generate-sri.mjs)) and distributed from GitHub, independently of the CDN.
 
-自分で検算することもできる。リポジトリの該当タグと npm tarball はバイト等価なので:
+You can also check them yourself. The repository at the matching tag and the npm tarball are byte-equivalent, so:
 
 ```bash
-# 手元の成果物から
+# from your local artifact
 openssl dgst -sha384 -binary packages/state/dist/auto.min.js | openssl base64 -A
 
-# CDN が返したものから（一致すれば経路は無改竄）
+# from what the CDN returned (a match means the path was not tampered with)
 curl -sL https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js \
   | openssl dgst -sha384 -binary | openssl base64 -A
 ```
 
-## 3. `esm.run` では SRI は成立しない
+**The same digests double as CSP `script-src` hash sources.** CSP3 has a path that admits an external script whose `integrity` digest matches a hash source in `script-src`, so nothing needs computing separately for CSP. The catch is that only Chromium implements the matching; Firefox and Safari block on it. Details and constraints: [csp.md §3.2](./csp.md#32-hashing-the-external-bundle--the-value-is-the-sri-digest).
+
+## 3. SRI cannot work through `esm.run`
 
 ```
 https://esm.run/@wcstack/state/auto
   → 301 → https://cdn.jsdelivr.net/npm/@wcstack/state/auto/+esm
 ```
 
-`+esm` は jsDelivr 側で **Rollup / esbuild による再バンドル**を行うエンドポイントで、返るファイルの先頭にはビルダのバージョンが焼き込まれている。公開されたバイト列ではないので、固定ダイジェストは原理的に一致しない。ビルダが更新されれば内容も変わる。
+`+esm` is an endpoint where jsDelivr **re-bundles with Rollup / esbuild**, and the file it returns has the builder version baked into its header. Those are not the published bytes, so no fixed digest can match them in principle — and the content changes again whenever the builder is updated.
 
-SRI を効かせるなら `cdn.jsdelivr.net` の**バージョン固定・直パス**を使う。なお jsDelivr の素パスは `package.json` の `exports` を解決しないので、`/auto` ではなく `dist/auto.min.js` を名指しする必要がある（`/npm/@wcstack/state/auto` は 404）。
+To make SRI work, use a **version-pinned, direct path** on `cdn.jsdelivr.net`. Note that jsDelivr's bare paths do not resolve `package.json` `exports`, so you have to name `dist/auto.min.js` rather than `/auto` (`/npm/@wcstack/state/auto` is a 404).
 
-副次的な利点として、直パスなら CSP の `script-src` に許可するホストが 1 つで済む（`esm.run` 経由だとリダイレクト先も照合されるので 2 ホスト必要）。詳しくは [csp.md §1](./csp.md#1-配信元--esmrun-は-2-ホストを要求する)。
+A secondary benefit: a direct path costs only one host in the CSP `script-src` (going through `esm.run` needs two, since the redirect target is matched as well). See [csp.md §1](./csp.md#1-delivery-origin--esmrun-requires-two-hosts).
 
-## 4. カバー範囲 — 何が守られ、何が守られないか
+## 4. Coverage — what is protected and what is not
 
-| 対象 | integrity で守られるか |
+| Target | Protected by integrity? |
 |---|---|
-| wcstack のランタイムコード全体（`dist/auto.min.js` の中身） | **守られる**（静的 import ゼロの自己完結バンドル） |
-| `dist/index.esm.js` からの named import | 守られない（module 内の `import` は囲む script の integrity の対象外。§5 参照） |
-| `<wcs-state>` の state 定義（インライン `<script>` / `src="./state.js"`） | 守られない（実行時にページ側のコードを動的 import する） |
-| `<wcs-route>` のガードスクリプト | 守られない（同上） |
-| `@wcstack/autoloader` が解決するコンポーネント | 守られない（同上） |
+| the whole wcstack runtime (the contents of `dist/auto.min.js`) | **yes** (self-contained bundle, zero static imports) |
+| named imports out of `dist/index.esm.js` | no (an `import` inside a module is outside the enclosing script's integrity — see §5) |
+| the state definition for `<wcs-state>` (inline `<script>` or `src="./state.js"`) | no (page-side code, dynamically imported at runtime) |
+| a `<wcs-route>` guard script | no (same) |
+| components resolved by `@wcstack/autoloader` | no (same) |
 
-下 3 つは**設計上の境界**であり、欠陥ではない。これらはページ側が供給するコードで、wcstack の配布物には含まれない。ページ側で守りたい場合は、それぞれを独立したリソースとして自分で SRI / CSP の対象にする必要がある。
+The bottom three are **a design boundary, not a defect**. That is code the page supplies; it is not part of what wcstack publishes. To protect it, make each piece a resource of its own and bring it under SRI / CSP yourself.
 
-この境界は自動検査できる。`dist/auto.min.js` に静的 import が 1 つでも入れば §0 の前提が崩れるので、レイアウトを変える際は必ず確認すること:
+The boundary is machine-checkable. A single static import inside `dist/auto.min.js` invalidates the premise above, so verify it whenever you change the layout:
 
 ```bash
 node -e "const s=require('fs').readFileSync('packages/state/dist/auto.min.js','utf8');
   console.log([...s.matchAll(/(?:^|[;\n])import\s*[{*\"']/g)].length === 0 ? 'self-contained' : 'HAS STATIC IMPORTS')"
 ```
 
-## 5. named import を守るには import map integrity
+## 5. To protect named imports, use import map integrity
 
-`dist/index.esm.js` から named import する使い方（`import { bootstrapState } from '…'`）は、`<script>` の integrity では守れない。module 内部の `import` は別リクエストだからである。これを守る仕組みは import map の `integrity` キーで、**Chrome 127 / Safari 18 で実装済み、Firefox は未対応**。
+The named-import style (`import { bootstrapState } from '…'`) against `dist/index.esm.js` cannot be protected by a `<script>` integrity attribute, because an `import` inside a module is a separate request. The mechanism for that is the `integrity` key of an import map, **shipped in Chrome 127 and Safari 18; Firefox does not support it**.
 
 ```html
 <script type="importmap" nonce="{RANDOM}">
@@ -98,11 +101,11 @@ node -e "const s=require('fs').readFileSync('packages/state/dist/auto.min.js','u
 </script>
 ```
 
-全ブラウザで確実に守りたいなら、named import ではなく `dist/auto.min.js` の 1 タグ形式を使うのが最も確実。
+If you want protection in every browser, the single-tag `dist/auto.min.js` form rather than named imports is the surest route.
 
-## 6. 実装者向け — 壊してはいけない不変条件
+## 6. For implementers — invariants not to break
 
-1. `src/auto.ts` は `./exports` からのみ import する。兄弟の dist ファイルを相対 import してはならない（MUST NOT）。それをやると `auto.min.js` が再びスタブに戻り、integrity のカバー率がほぼゼロになる。**「integrity が付いているのに守られていない」は integrity が無いより悪い**
-2. `dist/auto.min.js` は Rollup の実エントリであり、コピーされる手書きスタブではない（[config-templates/rollup.config.js](../config-templates/rollup.config.js)）
-3. ダイジェストは公開する tree から算出する。CDN のレスポンスから採ってはならない（MUST NOT）
-4. パッケージを増やしたら [scripts/generate-sri.mjs](../scripts/generate-sri.mjs) が自動で拾う。`dist/auto.min.js` を持たないパッケージは `withoutBootstrap` に明示的に列挙され、黙って落ちることはない
+1. `src/auto.ts` imports from `./exports` only. It MUST NOT relatively import a sibling dist file. Doing so turns `auto.min.js` back into a stub and drops integrity coverage to nearly zero. **"integrity is present but protects nothing" is worse than no integrity at all**
+2. `dist/auto.min.js` is a real Rollup entry, not a hand-written stub that gets copied ([config-templates/rollup.config.js](../config-templates/rollup.config.js))
+3. Digests are computed from the tree being published. They MUST NOT be taken from a CDN response
+4. New packages are picked up automatically by [scripts/generate-sri.mjs](../scripts/generate-sri.mjs). Packages with no `dist/auto.min.js` are listed explicitly under `withoutBootstrap`, so none of them can drop out silently

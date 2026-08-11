@@ -168,12 +168,12 @@ handle — live / opaque resource。外部状態と独自 lifecycle を持つ。
 websocket、broadcast、clipboard、credential を個別確認する。
 
 Phase 0 の固定スナップショットは
-[wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.md) に記録した。
+[wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.ja.md) に記録した。
 固定231 propertyを `state` 210、`event` 20、`handle` 1へ分類し、動的 DCC は別枠の `state` family とした。
 
 ### Phase 1: producer snapshot contract
 
-`docs/async-io-node-guidelines.md` に state-like output の規範を追加する。
+`docs/async-io-node-guidelines.ja.md` に state-like output の規範を追加する。
 
 - producer は公開後の state value を変更してはならない。
 - logical state が変わる場合は新しい object / array を割り当ててから通知する。
@@ -183,9 +183,9 @@ Phase 0 の固定スナップショットは
 
 既存ノードは一括破壊変更せず、棚卸しで実 mutation が見つかったものから修正する。
 
-Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+Phase 1 の規範は [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
 §3.3.1 に追加した。新規ノード・新規 observable property は MUST、既存ノードは
-[Phase 0 棚卸し](12-wc-bindable-observable-inventory.md) から段階移行とする。
+[Phase 0 棚卸し](12-wc-bindable-observable-inventory.ja.md) から段階移行とする。
 
 出力側の規範だけでは、consumer の reactive store が包んだ値が input 経由で producer に入り込む経路を塞げない。
 その双対を同ガイドライン §3.3.2（input value contract）に置いた。本書の対象は producer → consumer の観測面なので、
@@ -295,7 +295,7 @@ external-store 化の利益を先に測定、ゲート 5 を「新規 MUST / 既
 維持から開始、とする。ゲート 4 は resource ごとに判断する。
 
 ゲート 6 は当初 React API の設計判断として立てたが、Phase 0 の adapter 調査により複数 adapter に共通する要求で
-あることが分かった（[棚卸し §5.6](12-wc-bindable-observable-inventory.md)）。values から外した event / handle を
+あることが分かった（[棚卸し §5.6](12-wc-bindable-observable-inventory.ja.md)）。values から外した event / handle を
 「利用者が要素のイベントを直接聴く」で代替する逃げ道は、コロンを含む wcstack のイベント名を束縛できない
 framework では成立しない。したがってゲート 6 は、React 単独ではなく adapter 横断の surface 設計として上流へ
 提示する。
@@ -321,7 +321,7 @@ runtime 改修を約束しない。
 - [`@wc-bindable/react@0.8.0` source（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/react/src/index.ts)
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [非同期実行と wc-bindable 境界](04-async-execution-and-wc-bindable.md)
-- [横断修正設計](09-remediation-design.md)
-- [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.md)
+- [横断修正設計](09-remediation-design.ja.md)
+- [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
 - [`FetchCore`](../../packages/fetch/src/core/FetchCore.ts)
 - [`CameraCore`](../../packages/camera/src/core/CameraCore.ts)

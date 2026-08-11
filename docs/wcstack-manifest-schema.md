@@ -1,6 +1,6 @@
 # `wcstack.manifest.json` — sidecar schema and resolution rules
 
-- **Status**: Normative for the Phase 5a static-contract subsystem (`docs/architecture-hardening/09-remediation-design.md` §7 / §7.1 / §11 decision gate "sidecar の探索・merge 規則", 決定時点 = *phase 5a 着手前*).
+- **Status**: Normative for the Phase 5a static-contract subsystem (`docs/architecture-hardening/09-remediation-design.ja.md` §7 / §7.1 / §11 decision gate "sidecar の探索・merge 規則", 決定時点 = *phase 5a 着手前*).
 - **Scope**: fixes the envelope, the artifact separation (package vs application), the JSON-Schema subset, and — as the decision gate requires — **discovery order, package resolution, same-name tag/filter collision, and override forbid/allow**, so there is **no implicit last-file-wins merge**.
 - **Invariant (§11 tail)**: the sidecar's optional information is **never promoted to a required input of runtime correctness**. A missing or stale sidecar never disables runtime competition prevention (`wcstack.async` is tooling-only; the real lane policy and commit guard are the I/O Core's code). The live `static wcBindable` declaration is **never overridden** by the sidecar.
 

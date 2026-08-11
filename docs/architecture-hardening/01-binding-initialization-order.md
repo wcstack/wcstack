@@ -73,7 +73,7 @@ binding ごとに世代番号と所有する teardown 集合を持つ。同じ�
 
 既存タグのライフサイクルや `wcBindable` 宣言は変更しない。まずランタイム内部にフェーズ、ownership、世代を
 導入し、`syncOn` は consumer 側の opt-in とする。現在の `scheduleDeferredApply` は synchronize フェーズの実装として
-位置付け、個別の例外処理を共通経路へ統合する。詳細は [8 論点を横断する修正設計](09-remediation-design.md) を正とする。
+位置付け、個別の例外処理を共通経路へ統合する。詳細は [8 論点を横断する修正設計](09-remediation-design.ja.md) を正とする。
 
 ## 検証条件
 
@@ -98,8 +98,8 @@ binding ごとに世代番号と所有する teardown 集合を持つ。同じ�
 ## 関連文書
 
 - [接続直後の初期状態配送](02-initial-state-delivery.md)
-- [8 論点を横断する修正設計](09-remediation-design.md)
-- [既存の初期化競合分析](../state-binding-init-races.md)
+- [8 論点を横断する修正設計](09-remediation-design.ja.md)
+- [既存の初期化競合分析](../state-binding-init-races.ja.md)
 - [`<wcs-defined>` 設計メモ](../defined-tag-design.md)
 - [`@wcstack/defined` README](../../packages/defined/README.ja.md)
-- [発火タイミング契約](../timing-and-firing-contract.md)
+- [発火タイミング契約](../timing-and-firing-contract.ja.md)

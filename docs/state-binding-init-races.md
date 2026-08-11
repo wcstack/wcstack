@@ -1,165 +1,165 @@
-# 調査記録: state バインド初期化のレース 2 件（load-before-bind clobber / 未 define 要素への初期 apply 黙殺）
+# Investigation record: two races in state binding initialization (load-before-bind clobber / a silently dropped initial apply to an undefined element)
 
-- **状態**: **対応済み**（2026-07-12・同日中に調査→修正）。
-  - **バグ 2 = 案 A 実装済み**: `packages/state/src/apply/scheduleDeferredApply.ts` を新設し、`applyChange` の skip 分岐から whenDefined 再適用をスケジュール（two-way attach / deferred spread と対称化）。unit テスト = `packages/state/__tests__/integration.applyDeferred.test.ts`（happy-dom はノード差し替えのため no-op / エラー / 多重登録ガードのみ）、happy path の実ブラウザ回帰 = `e2e/tests/state-deferred-apply.spec.ts` + `e2e/fixtures/deferred-apply.html`。state 全テスト・カバレッジ閾値（100/97/100/100）・lint・build green。
-  - **バグ 1 = 案 C 実施済み → 恒久対応も実装済み（2026-07-21・未リリース）**: 短期は `examples/state-cross-tab-todo` を idiom（undefined 初期値 + `$connectedCallback` pull + script 順序）に修正、storage README（en/ja）の Quick Start §1/§4 を安全な形に直し「§5 load-before-bind: 永続スロットの idiom」を新設。リロード永続化の実ブラウザ回帰 = `e2e/tests/state-cross-tab-todo.spec.ts` に追加。恒久対応は案 A の一般化として directional initial sync（`docs/architecture-hardening/09` §3.6、v1.21.0 で既定 ON）の `#init=element` / `#init=auto` が担う — ただし初期実装は authority が定常 apply も恒久ブロックし双方向 member で保存方向が死ぬ乖離があり、2026-07-21 に「authority は初期同期のみを支配」へ修正（同 `10-defaulting-rollout-status.md` §D 8 件目）。リリース後は `value#init=element: todos` の 1 修飾子で idiom（undefined 初期値 + `$connectedCallback` pull）を置換できる。
-  - **案 B 実施済み**: `examples/README.md` / `README.ja.md` に「I/O ノードの script を state より先に並べる」規約を明文化。
-- 以下 §1〜§4 は調査時点の記録（機序・実測・候補比較）としてそのまま残す。
-- **発見経緯**: examples 追加 3 デモ（[examples-uncovered-combos.md](./examples-uncovered-combos.md)）の Playwright 実ブラウザ検証で発見・実測。
-- **影響**:
-  - バグ 1 は**既存デモ `examples/state-cross-tab-todo` に実害**（リロードのたびに todos が全消失。本ドキュメント時点で未修正）。`<wcs-storage>` の two-way 配線を使うすべてのページが対象。
-  - バグ 2 は構成依存（state の初期化が I/O ノードの define より先に完了する構成）で、任意の state→element 初期配線が**無音で**欠落する。
-- **共通の背景**: どちらも「`<wcs-state>` の非同期初期化」と「I/O ノード要素の define / connectedCallback」の順序が保証されていないことに起因する。既存デモが無事なのは全パッケージを同一 CDN からロードしていて define が先に済む**偶然**に依存している。
+- **Status**: **resolved** (2026-07-12; investigated and fixed the same day).
+  - **Bug 2 = option A implemented**: added `packages/state/src/apply/scheduleDeferredApply.ts`, which schedules a whenDefined re-application from `applyChange`'s skip branch (made symmetric with two-way attach and deferred spread). Unit test = `packages/state/__tests__/integration.applyDeferred.test.ts` (happy-dom replaces nodes, so it covers only the no-op / error / duplicate-registration guard); the real-browser regression for the happy path = `e2e/tests/state-deferred-apply.spec.ts` plus `e2e/fixtures/deferred-apply.html`. All state tests, the coverage thresholds (100/97/100/100), lint, and build are green.
+  - **Bug 1 = option C applied → the permanent fix is implemented too (2026-07-21, unreleased)**: short term, `examples/state-cross-tab-todo` was fixed to the idiom (an undefined initial value plus a `$connectedCallback` pull plus script ordering), the storage README (en/ja) had its Quick Start §1/§4 corrected to the safe form, and "§5 load-before-bind: the idiom for a persistent slot" was added. The real-browser regression for reload persistence was added to `e2e/tests/state-cross-tab-todo.spec.ts`. The permanent fix is carried, as a generalization of option A, by `#init=element` / `#init=auto` of directional initial sync (`docs/architecture-hardening/09` §3.6, on by default since v1.21.0) — though the initial implementation had authority permanently blocking the steady-state apply too, which killed the save direction for a two-way member, corrected on 2026-07-21 to "authority governs the initial sync only" (the eighth item of §D in the same `10-defaulting-rollout-status.md`). After the release, one modifier — `value#init=element: todos` — replaces the idiom (an undefined initial value plus a `$connectedCallback` pull).
+  - **Option B applied**: `examples/README.md` / `README.ja.md` now state the rule that "the script for an I/O node comes before state".
+- §1 through §4 below are kept as the record at investigation time (the mechanism, the measurements, the comparison of candidates).
+- **How it was found**: measured and found through Playwright real-browser verification of the three demos added to examples ([examples-uncovered-combos.md](./examples-uncovered-combos.md) (ja)).
+- **Impact**:
+  - Bug 1 caused **real damage to the existing demo `examples/state-cross-tab-todo`** (todos vanished on every reload; unfixed as of this document). Every page using `<wcs-storage>`'s two-way wiring was affected.
+  - Bug 2 is configuration-dependent (a configuration where state finishes initializing before the I/O node is defined) and makes any state→element initial wiring go missing **silently**.
+- **The shared background**: both stem from there being no guaranteed order between "`<wcs-state>`'s asynchronous initialization" and "the define / connectedCallback of the I/O node element". The existing demos are fine only by **the accident** of loading every package from the same CDN, which gets the define done first.
 
 ---
 
-## 1. storage の load-before-bind clobber
+## 1. storage's load-before-bind clobber
 
-### 1-1. 症状
+### 1-1. Symptom
 
-`<wcs-storage type="local" data-wcs="value: todos">` の標準 two-way 配線で、**リロードするたびに localStorage の永続値が state 初期値（`[]` / `null`）で上書き消去される**。
+With the standard two-way wiring `<wcs-storage type="local" data-wcs="value: todos">`, **every reload overwrites and erases the persisted localStorage value with the state's initial value (`[]` / `null`)**.
 
-### 1-2. 実測（Playwright・e2e serve :4173）
+### 1-2. Measured (Playwright, e2e serve :4173)
 
 ```
-examples/state-cross-tab-todo で todo を 1 件追加:
+add one todo in examples/state-cross-tab-todo:
   before reload: localStorage = [{"id":"...","text":"probe item","done":false}]
-  after  reload: localStorage = []        ← 消失
+  after  reload: localStorage = []        ← gone
   list items after reload: 0
 ```
 
-修正前の state-color-palette でも同一症状（リロード後スウォッチ 0）を確認。
+The same symptom (0 swatches after a reload) was confirmed in state-color-palette before its fix.
 
-### 1-3. 機序（タイムライン）
+### 1-3. The mechanism (a timeline)
 
-1. module script 実行順で `wcs-storage` が define → upgrade → `connectedCallback` → 自動 `load()` → 永続値で `_setValue` → **value イベント dispatch**。この時点で state のバインディングは未確立＝**イベント取り逃し**。
-2. `<wcs-state>` の非同期初期化が完了 → バインディング attach → `applyChangeFromBindings` が **state 初期値（`[]` / `null`）を要素へ書き込む**。
-3. `<wcs-storage>` の `value` setter は非 manual で **write-through**（`packages/storage/src/components/Storage.ts` の setter → `_core.save(v)`）→ `[]` なら `"[]"` を保存、`null` なら `removeItem` → **永続値が消える**。
-4. save が value イベントを再発火 → two-way で state に `[]`/`null` が書き戻る → 画面は「空」で一貫して見えるため、**消失に気づきにくい**。
+1. In module script execution order, `wcs-storage` is defined → upgraded → `connectedCallback` → an automatic `load()` → `_setValue` with the persisted value → **the value event dispatches**. State's binding is not yet established at that point, so **the event is missed**.
+2. `<wcs-state>`'s asynchronous initialization completes → the binding attaches → `applyChangeFromBindings` **writes the state's initial value (`[]` / `null`) into the element**.
+3. `<wcs-storage>`'s `value` setter is **write-through** when not manual (the setter in `packages/storage/src/components/Storage.ts` → `_core.save(v)`) → `[]` stores `"[]"`, `null` calls `removeItem` → **the persisted value is gone**.
+4. The save re-fires the value event → two-way writes `[]`/`null` back into state → the screen looks consistently "empty", which makes **the loss hard to notice**.
 
-### 1-4. 回避 idiom（**現在は非推奨** — §1-6 の `#init=element` を使うこと）
+### 1-4. The workaround idiom (**now deprecated** — use `#init=element` from §1-6)
 
-> **ステータス**: 以下は 2026-07-12 時点の回避策で、examples / storage README からは撤去済み。現行の正典は §1-6 の `value#init=element:`。この節は経緯の記録として残す。`enableDirectionalInitialSync: false` に倒した構成でのみ、今も有効な回避策。
+> **Status**: the following was the workaround as of 2026-07-12 and has been removed from examples and the storage README. The current canon is `value#init=element:` from §1-6. This section is kept as a record of how it went. It remains a valid workaround only in a configuration with `enableDirectionalInitialSync: false`.
 
-永続スロットを **`undefined` で開始**し（`applyChangeToProperty` は undefined を「無意見」としてプロパティ書き込み自体をスキップする既存規範 → 手順 2-3 が起こらない）、取り逃した初期ロード値は `$connectedCallback` で一度だけ pull する:
+Start the persistent slot **as `undefined`** (the existing norm is that `applyChangeToProperty` treats undefined as "no opinion" and skips the property write itself → steps 2-3 never happen) and pull the missed initial load value once in `$connectedCallback`:
 
 ```js
-palette: undefined,   // null や [] にしない（clobber ガード）
+palette: undefined,   // not null and not [] (the clobber guard)
 
 $connectedCallback() {
   (async () => {
     await customElements.whenDefined("wcs-storage");
     const el = document.querySelector("wcs-storage");
     if (!el) return;
-    await el.connectedCallbackPromise;   // load 完了を待つ
+    await el.connectedCallbackPromise;   // wait for the load to finish
     if (!Array.isArray(this.palette) && Array.isArray(el.value)) {
-      this.palette = el.value;           // バインド経由で届いていれば no-op
+      this.palette = el.value;           // a no-op if it already arrived through the binding
     }
   })();
 },
 ```
 
-読み出しは `get list() { return Array.isArray(this.palette) ? this.palette : []; }` の正規化 getter 経由（cross-tab-todo と同型）。
+Reads go through a normalizing getter, `get list() { return Array.isArray(this.palette) ? this.palette : []; }` (the same shape as cross-tab-todo).
 
-### 1-5. 恒久対応の候補（未決）
+### 1-5. Candidates for a permanent fix (undecided)
 
-| 案 | 内容 | トレードオフ |
+| Option | Content | Trade-off |
 |---|---|---|
-| A | **初期 apply の限定抑制**: two-way な wcBindable プロパティで、要素側が既に非 null 値を持つ場合は初期 state→element 書き込みを skip | 「undefined は書かない」規範の自然な拡張。ただし「state 初期値を要素へ流し込みたい」正当なケースとの区別が難しく、挙動変更＝互換性リスク |
-| B | **storage 側の bind 後再通知**: バインディング確立後に load 値をもう一度 dispatch | 要素側に「bind された」ことを知るプロトコルが無い（wc-bindable の範囲外）。時間ベースの再通知は二重適用・順序の新たなレースを生む |
-| C | **idiom の規範化のみ**: storage README / state README に「永続スロットは undefined 初期値 + `$connectedCallback` pull」を明文化し、cross-tab-todo を同 idiom に修正 | 挙動不変更で最も安全。ただし罠は残る（知らないと踏む） |
+| A | **Narrowly suppress the initial apply**: for a two-way wcBindable property, skip the initial state→element write where the element already holds a non-null value | A natural extension of the "do not write undefined" norm. But it is hard to distinguish from the legitimate case of "I want the state's initial value pushed into the element", and it is a behavior change, hence a compatibility risk |
+| B | **Re-notify from the storage side after binding**: dispatch the loaded value once more after the binding is established | There is no protocol by which the element can know it "has been bound" (outside wc-bindable's remit). A time-based re-notification creates new races over double application and ordering |
+| C | **Make only the idiom normative**: state in the storage and state READMEs that "a persistent slot takes an undefined initial value plus a `$connectedCallback` pull", and fix cross-tab-todo to that idiom | The safest, with no behavior change. But the trap remains (you fall into it if you do not know) |
 
-**短期推奨 = C**（cross-tab-todo の修正込み）。**中期に A の限定版**を検討。B は非推奨。
+**Short-term recommendation = C** (including the cross-tab-todo fix). **Consider a narrow version of A** in the medium term. B is not recommended.
 
-### 1-6. 恒久対応（**確定・現行の正典**）: `value#init=element:`
+### 1-6. The permanent fix (**settled, and the current canon**): `value#init=element:`
 
-案 A の一般化として directional initial sync（`docs/architecture-hardening/09-remediation-design.md` §3.6）が実装され、v1.21.0 で既定 ON、authority が初期同期のみを支配する形に v1.22.0 で確定した。**修飾子 1 つで §1-4 の idiom を完全に置換できる**:
+As a generalization of option A, directional initial sync (`docs/architecture-hardening/09-remediation-design.md` §3.6) was implemented, turned on by default in v1.21.0, and settled in v1.22.0 into the form where authority governs the initial sync only. **One modifier completely replaces the idiom of §1-4**:
 
 ```html
 <wcs-storage key="todos" type="local" data-wcs="value#init=element: todos"></wcs-storage>
 ```
 
-- `value` は `<wcs-storage>` で唯一の双方向メンバ（Shell が `inputs` に `value` を追加）なので既定 authority は `state`。これが §1-3 手順 2 の clobber の正体。
-- `#init=element` は初回 apply の相談に `false` を返して初期 state→element 書き込みを止め（`BindingSession.shouldApplyState`）、代わりに要素の現在値を state へ commit する（`readProducerSnapshot` → `commitProducerValue`）。
-- 定常では two-way member として state→element が流れ続けるため、**保存方向は死なない**（v1.21.x にあった恒久ブロックの乖離は修正済み）。
-- state スロットのシードは要素の実初期値（空キーは `null`）に合わせ、読み出しは正規化 getter で null ガードする。
-- 反映済み: `packages/storage/README.md|.ja.md` §1/§4/§5、`examples/state-cross-tab-todo`、`examples/state-color-palette`。回帰は `e2e/tests/state-cross-tab-todo.spec.ts`（リロード永続 = clobber 側、別タブ同期 = 保存方向側）。
-- `wcs-validate` も同修飾子を認識し、修飾子なしの空値シードにだけ `wcs/storage-seed-clobber` を出す（`packages/vscode-wcs/src/service/ioNodeValidator.ts`）。
+- `value` is the only two-way member on `<wcs-storage>` (the Shell adds `value` to `inputs`), so the default authority is `state`. That is exactly the clobber of step 2 in §1-3.
+- `#init=element` answers `false` when consulted about the first apply, stopping the initial state→element write (`BindingSession.shouldApplyState`), and instead commits the element's current value into state (`readProducerSnapshot` → `commitProducerValue`).
+- In the steady state, state→element keeps flowing as for any two-way member, so **the save direction does not die** (the permanent-block divergence present in v1.21.x is fixed).
+- Seed the state slot to match the element's real initial value (`null` for an empty key), and null-guard reads with a normalizing getter.
+- Applied in: `packages/storage/README.md|.ja.md` §1/§4/§5, `examples/state-cross-tab-todo`, `examples/state-color-palette`. The regression is `e2e/tests/state-cross-tab-todo.spec.ts` (reload persistence = the clobber side; cross-tab sync = the save direction).
+- `wcs-validate` recognizes the same modifier and emits `wcs/storage-seed-clobber` only for an empty-value seed without it (`packages/vscode-wcs/src/service/ioNodeValidator.ts`).
 
 ---
 
-## 2. 未 define カスタム要素への初期 apply 黙殺
+## 2. A silently dropped initial apply to an undefined custom element
 
-### 2-1. 症状
+### 2-1. Symptom
 
-state のバインド初期化が要素の define より先に完了すると、その要素への **state→element 初期適用（プロパティ書き込み・command 配線の初回 apply）が黙って捨てられ、以後も再適用されない**。
+Where state's binding initialization completes before the element is defined, **the state→element initial application to that element (the property write, the first apply of the command wiring) is silently discarded and never re-applied**.
 
-`examples/state-sse-dashboard`（state=ローカル配信で高速、sse/network=CDN で低速）で顕在化: `url: sseUrl` が一度も書かれず、`<wcs-sse>` は url 属性 null / readyState 2 のまま**左パネルが無音**。console にエラーは一切出ない。
+It surfaced in `examples/state-sse-dashboard` (state served locally and therefore fast; sse/network from a CDN and therefore slow): `url: sseUrl` was never written, `<wcs-sse>` stayed at a null url attribute with readyState 2, and **the left panel was silent**. Not a single error appeared in the console.
 
-### 2-2. 該当コード
+### 2-2. The code in question
 
-`packages/state/src/apply/applyChange.ts`（applyChange 冒頭）:
+`packages/state/src/apply/applyChange.ts` (at the top of applyChange):
 
 ```ts
 const customTag = getCustomElement(binding.replaceNode);
 if (customTag) {
   if (customElements.get(customTag) === undefined) {
-    // cutomElement側の初期化を期待
-    return;          // ← skip したきり、whenDefined 後の再適用が無い
+    // expecting the custom element side to initialize
+    return;          // ← skipped for good; no re-application after whenDefined
   }
 }
 ```
 
-### 2-3. 非対称性（これがバグと考える根拠）
+### 2-3. The asymmetry (why this is considered a bug)
 
-同じ「未 define」に対して、他の経路はすべて再試行する:
+Every other path retries against the same "not defined":
 
-- `attachTwowayEventHandler`（`event/twowayHandler.ts`）: `customElements.whenDefined(tag).then(() => attachTwowayEventHandler(binding))` で**再 attach**
-- event token（`event/eventTokenHandler.ts`）: 同じく whenDefined 後に再試行
-- spread（`bindings/collectNodesAndBindingInfos.ts`）: `IDeferredSpreadEntry` として保持し、whenDefined 後に `processDeferredNode` で再展開＋`applyChangeFromBindings`
+- `attachTwowayEventHandler` (`event/twowayHandler.ts`): **re-attaches** via `customElements.whenDefined(tag).then(() => attachTwowayEventHandler(binding))`
+- event token (`event/eventTokenHandler.ts`): likewise retries after whenDefined
+- spread (`bindings/collectNodesAndBindingInfos.ts`): held as an `IDeferredSpreadEntry` and re-expanded after whenDefined through `processDeferredNode`, plus `applyChangeFromBindings`
 
-**初期の値適用だけ**が「customElement 側の初期化を期待」して片道 skip になっている。要素が自分の HTML 属性から初期化できる静的ケースでは成立するが、**値が state 由来（getter 派生の url など）のときは要素側に知りようがない**。
+**Only the initial value application** is a one-way skip that "expects the custom element side to initialize". That holds in the static case where the element can initialize from its own HTML attributes, but **where the value comes from state (a url derived from a getter, say) the element has no way to know it**.
 
-### 2-4. 回避 idiom（examples 3 デモすべてで採用・検証済み）
+### 2-4. The workaround idiom (adopted and verified in all three demos)
 
-module script は**文書順で実行される**保証を使い、**I/O ノードの `<script>` を先、state を最後**に並べる。state の module が実行される時点で全ノードが define 済みになり、レースが構成によらず消える:
+Use the guarantee that module scripts **execute in document order**, and put **the I/O nodes' `<script>` first and state last**. By the time state's module runs, every node is defined and the race disappears regardless of configuration:
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
-<script type="module" src="/state-dist/auto.min.js"></script>  <!-- state は最後 -->
+<script type="module" src="/state-dist/auto.min.js"></script>  <!-- state last -->
 ```
 
-（既存デモの多くは state を先頭に書いているが動いている＝define が先に済む偶然。規約としてはノード先・state 後に寄せるのが安全。）
+(Many existing demos put state first and still work — the accident of the define finishing first. As a rule, nodes first and state last is the safe arrangement.)
 
-### 2-5. 恒久対応の候補（未決）
+### 2-5. Candidates for a permanent fix (undecided)
 
-| 案 | 内容 | トレードオフ |
+| Option | Content | Trade-off |
 |---|---|---|
-| A | **applyChange に whenDefined 再適用を追加**（two-way attach と対称化）: skip 分岐で `customElements.whenDefined(tag).then(() => 単発の applyChangeFromBindings([binding]))`。再適用時は接続チェック（`isConnected`）と最新 state 値での適用が必要 | 対称性が回復し構成非依存になる。適用が非同期になるため「define 前に emit された command」等の順序は依然保証外（それは token 側の既知の空撃ちレースで別問題）。`appliedBindingSet` はコンテキスト毎なので二重適用の恒久ガードは不要だが、同一 binding の多重 whenDefined 登録を避ける台帳は要る |
-| B | **script 順序規範の明文化のみ**: examples / README に「I/O ノード先・state 後」を規約化 | 挙動不変更で安全。ただしユーザーのページ構成（バンドラ・遅延ロード・autoloader 経由）までは縛れず、罠は残る |
+| A | **Add a whenDefined re-application to applyChange** (making it symmetric with two-way attach): in the skip branch, `customElements.whenDefined(tag).then(() => a one-shot applyChangeFromBindings([binding]))`. The re-application needs a connection check (`isConnected`) and has to apply the latest state value | Restores the symmetry and makes it configuration-independent. Since the application becomes asynchronous, ordering for things like "a command emitted before the define" is still not guaranteed (that is the known blank-shot race on the token side, a separate problem). `appliedBindingSet` is per-context so no permanent double-application guard is needed, but a ledger is needed to avoid registering multiple whenDefined callbacks for the same binding |
+| B | **Only make the script-ordering rule normative**: state "I/O nodes first, state last" in examples and the READMEs | Safe, with no behavior change. But it cannot constrain the user's own page setup (a bundler, lazy loading, going through the autoloader), so the trap remains |
 
-**推奨 = A + B 併記**（A は低リスクで two-way / eventToken / spread と揃う。B は A が入るまでの運用規範）。
+**Recommendation = A and B together** (A is low-risk and lines up with two-way / eventToken / spread; B is the operational rule until A lands).
 
 ---
 
-## 3. 同調査で確認した関連事実（バグではないが前提知識）
+## 3. Related facts confirmed in the same investigation (not bugs, but background)
 
-- `applyChangeToProperty` は getter-only プロパティへの書き込みを try/catch で黙って skip する（`held` / `connected` など出力専用プロパティに `data-wcs="held: x"` を張っても安全な理由）。undefined 値は書き込み自体を skip（「無意見」規範）。
-- `<wcs-network>` は `observe()` が**同期**で初期スナップショットを dispatch するため、バインド確立前に発火して取り逃す（バグ 1 と同族の取り逃し）。permission / notification 系は初回 dispatch が非同期 query の後なので偶然取り逃さない。
-  - **現在は解決済み**（調査時点の記述を上書き）: これら monitor 系の観測プロパティは全て output-only なので、directional initial sync（v1.21.0 で既定 ON）の既定 authority `element` により、バインド確立時にプロパティが直接読まれる。`$connectedCallback` での手動 pull は不要になり、network / screen-orientation README からも撤去済み。実ブラウザ回帰 = `e2e/tests/monitor-initial-snapshot.spec.ts`。
-  - 当時「state-sse-dashboard で採用」と書いたが、同デモの手動 pull は Phase 2 で撤去済みで現存しない（`docs/architecture-hardening/10-defaulting-rollout-status.md` §D）。
+- `applyChangeToProperty` silently skips a write to a getter-only property with a try/catch (which is why `data-wcs="held: x"` on an output-only property such as `held` / `connected` is safe). An undefined value skips the write itself (the "no opinion" norm).
+- `<wcs-network>`'s `observe()` dispatches its initial snapshot **synchronously**, so it fires before the binding is established and is missed (the same family of miss as bug 1). permission and notification happen to avoid it because their first dispatch follows an asynchronous query.
+  - **Now resolved** (superseding the description at investigation time): every observable property of these monitor nodes is output-only, so with directional initial sync (on by default since v1.21.0) the default authority `element` has the binding read the property directly when established. The manual pull in `$connectedCallback` became unnecessary and has been removed from the network and screen-orientation READMEs too. The real-browser regression is `e2e/tests/monitor-initial-snapshot.spec.ts`.
+  - It said "adopted in state-sse-dashboard" at the time, but that demo's manual pull was removed in Phase 2 and no longer exists (`docs/architecture-hardening/10-defaulting-rollout-status.md` §D).
 
-## 4. 再現手順
+## 4. How to reproduce
 
 ```bash
-# バグ1（cross-tab-todo のデータ消失）
+# Bug 1 (data loss in cross-tab-todo)
 cd e2e && npm run serve   # :4173
-# ブラウザで /examples/state-cross-tab-todo/ を開き todo を追加 → リロード
-# → localStorage("wcs-cross-tab-todos") が [] に潰れる
+# open /examples/state-cross-tab-todo/ in a browser, add a todo, then reload
+# → localStorage("wcs-cross-tab-todos") collapses to []
 
-# バグ2（初期 apply 黙殺）
-# examples/state-sse-dashboard/index.html の <script> 順を state 先頭に入れ替えて
+# Bug 2 (the silently dropped initial apply)
+# swap the <script> order in examples/state-sse-dashboard/index.html to put state first, then
 node examples/state-sse-dashboard/server.js   # :3000
-# → 左パネル（<wcs-sse>）の url 属性が書かれず samples が 0 のまま
+# → the url attribute of the left panel's <wcs-sse> is never written and samples stays at 0
 ```

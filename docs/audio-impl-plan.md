@@ -1,96 +1,97 @@
-# 実装計画: `@wcstack/midi` → `@wcstack/audio`
+# Implementation plan: `@wcstack/midi` → `@wcstack/audio`
 
-- **状態**: ✅ 完了（2026-08-03）。Phase A〜E すべて着地。
-  - **Phase A** `@wcstack/midi`: 127 tests / カバレッジ 100-100-100-100 / conformance 逸脱なし
-  - **Phase B** PoC: 6/6（3回反復 18/18）
-  - **Phase C** `@wcstack/audio`: 186 tests / カバレッジ 100-98.75-100-100 / conformance 逸脱なし / 実ブラウザ e2e 7本
-  - **Phase D** example 移植: `wcs-synth.js` 削除・e2e 6本
-  - **Phase E** 規範追補: timing-and-firing-contract §19 / guidelines §1 / 棚卸し 12 / CLAUDE.md
-- **設計正本**: [midi-tag-design.md](./midi-tag-design.md) / [audio-tag-design.md](./audio-tag-design.md) / [ADR 14](./architecture-hardening/14-handle-graph-wiring.md)
-- **原型**: [examples/synth-playground/wcs-synth.js](../examples/synth-playground/wcs-synth.js)（1063行 JS・Playwright スモーク 14/14 安定）。挙動は実証済みであり、本計画は **「動く原型を wcstack の骨格に載せ替える」** 作業を規定する。ゼロからの設計ではない。
+- **Status**: ✅ complete (2026-08-03). Phases A through E all landed.
+  - **Phase A** `@wcstack/midi`: 127 tests / coverage 100-100-100-100 / no conformance deviations
+  - **Phase B** PoC: 6/6 (18/18 over three repetitions)
+  - **Phase C** `@wcstack/audio`: 186 tests / coverage 100-98.75-100-100 / no conformance deviations / 7 real-browser e2e tests
+  - **Phase D** porting the example: `wcs-synth.js` deleted, 6 e2e tests
+  - **Phase E** normative additions: timing-and-firing-contract §19 / guidelines §1 / inventory 12 / CLAUDE.md
+- **Canonical designs**: [midi-tag-design.md](./midi-tag-design.md) (ja) / [audio-tag-design.md](./audio-tag-design.md) (ja) / [ADR 14](./architecture-hardening/14-handle-graph-wiring.md)
+- **The prototype**: `examples/synth-playground/wcs-synth.js` (1,063 lines of JS; a stable 14/14 Playwright smoke test). Its behavior was already demonstrated, so this plan specifies the work of **"transplanting a working prototype onto wcstack's skeleton"**. It is not a design from scratch.
+- **日本語版**: [audio-impl-plan.ja.md](./audio-impl-plan.ja.md)
 
 ---
 
-## 0. ロードマップ
+## 0. The roadmap
 
-| Phase | 内容 | 規模の見積り |
+| Phase | Content | Size estimate |
 |---|---|---|
-| **B** | PoC: Core だけで音を出す（G1 案D の実証） | ✅ 完了・約 750 行（Core 560 ＋ 検証系）・使い捨て |
-| **A** | `@wcstack/midi` 単独昇格 | src 約 500 行 / テスト 55〜65 本 |
-| **C** | `@wcstack/audio` パッケージ本体 | src 約 2,200〜2,800 行 / テスト 200〜260 本 |
-| **D** | example 移植（synth-playground をパッケージ利用に） | 既存 example の書き換え |
-| **E** | 規範文書の追補（契約・ガイドライン） | 4 文書に節を追加 |
+| **B** | PoC: make sound from Core alone (demonstrating G1 option D) | ✅ complete; about 750 lines (560 for Core plus the verification harness); disposable |
+| **A** | promoting `@wcstack/midi` on its own | about 500 lines of src / 55-65 tests |
+| **C** | the `@wcstack/audio` package proper | about 2,200-2,800 lines of src / 200-260 tests |
+| **D** | porting the example (synth-playground onto the package) | rewriting the existing example |
+| **E** | additions to the normative documents (contracts, guidelines) | sections added to 4 documents |
 
-ADR 採択後は **B を先に実施する**（300 行で C の構造前提を検証でき、失敗した場合の手戻りが最小になるため）。
+After the ADR is adopted, **B goes first** (300 lines verify C's structural premise, minimizing the rework if it fails).
 
-Phase C は完成時点で **`state`（16,055行）/ `router`（2,837行）に次ぐ規模**になり、camera（2,018行）・speech（2,466行）を上回る。単一 PR にはしない（§7）。
+Phase C at completion becomes **the largest package after `state` (16,055 lines) and `router` (2,837 lines)**, above camera (2,018) and speech (2,466). It does not go into a single PR (§7).
 
 ---
 
 ## Phase A — `@wcstack/midi`
 
-### A-1. 雛形
-`packages/permission/` をコピー（最小構成の参照実装）→ `packages/midi/` にリネーム。`package.json` / `rollup.config.js` / `vitest.config.ts` / `eslint.config.js` / `tsconfig.json` を機械置換。`src/auto/auto.js` と `auto.min.js` は permission のものを写経して `bootstrapMidi` を呼ぶ形に。
+### A-1. The skeleton
+Copy `packages/permission/` (the minimal reference implementation) → rename it to `packages/midi/`. Mechanically substitute `package.json` / `rollup.config.js` / `vitest.config.ts` / `eslint.config.js` / `tsconfig.json`. `src/auto/auto.js` and `auto.min.js` are transcribed from permission's, calling `bootstrapMidi`.
 
-### A-2. 実装
-| ファイル | 内容 |
+### A-2. Implementation
+| File | Content |
 |---|---|
-| `src/types.ts` | `IMidiMessage` / `IMidiDevice` / `MidiMessageType` / Core の値・入力・コマンド型 |
-| `src/core/MidiCore.ts` | `requestMIDIAccess` ＋ permission 二相 ＋ ポート列挙 ＋ `statechange` ＋ メッセージ正規化 ＋ `send` ＋ `_gen`。**DOM 非依存（MUST）** |
-| `src/midi/parseMessage.ts` | status バイト → `{ type, channel, note, velocity, control, value }`。**velocity 0 の note-on は note-off に正規化**（設計 §2.1） |
-| `src/components/Midi.ts` | Shell。`upgradeProperties` → CustomStateSet 反映 → `connectedCallbackPromise` |
-| `src/protocol/wcBindable.ts` | `scripts/sync-protocol-types.mjs` で生成（手書きしない） |
+| `src/types.ts` | `IMidiMessage` / `IMidiDevice` / `MidiMessageType` plus Core's value, input, and command types |
+| `src/core/MidiCore.ts` | `requestMIDIAccess` plus the permission two-phase plus port enumeration plus `statechange` plus message normalization plus `send` plus `_gen`. **DOM-independent (MUST)** |
+| `src/midi/parseMessage.ts` | a status byte → `{ type, channel, note, velocity, control, value }`. **A note-on with velocity 0 is normalized to a note-off** (design §2.1) |
+| `src/components/Midi.ts` | the Shell. `upgradeProperties` → CustomStateSet reflection → `connectedCallbackPromise` |
+| `src/protocol/wcBindable.ts` | generated by `scripts/sync-protocol-types.mjs` (never hand-written) |
 
-### A-3. テスト（目標 55〜65 本・カバレッジ 100 / 97+ / 100 / 100）
-`FakeMIDIAccess` / `FakeMIDIInput` / `FakeMIDIOutput` を `__tests__/helpers/` に置く（intersection の `FakeIntersectionObserver` 同型）。
+### A-3. Tests (target 55-65, coverage 100 / 97+ / 100 / 100)
+Put `FakeMIDIAccess` / `FakeMIDIInput` / `FakeMIDIOutput` in `__tests__/helpers/` (the same shape as intersection's `FakeIntersectionObserver`).
 
-重点:
-- メッセージ正規化の全分岐（noteon / noteoff / **velocity 0 の noteon** / cc / pitchbend / program / aftertouch / sysex / 未知 status）
-- `channel` 属性フィルタ（境界: 1 と 16、範囲外）
-- デバイス着脱で `devices` が **fresh array** として再 publish される（producer snapshot contract）
-- `_gen`: `dispose()` 後に解決した `requestMIDIAccess` が listener を張らない
-- `unsupported`（`navigator.requestMIDIAccess` 不在）・permission denied・sysex 拒否
-- `send` の位置引数素通し（`number[]` と `Uint8Array` の両方）
-- CustomStateSet 反映と `attachInternals` 不在環境での静かな無効化
+Focus:
+- every branch of message normalization (noteon / noteoff / **a noteon with velocity 0** / cc / pitchbend / program / aftertouch / sysex / an unknown status)
+- the `channel` attribute filter (boundaries: 1 and 16, and out of range)
+- `devices` is re-published as a **fresh array** when a device is attached or detached (the producer snapshot contract)
+- `_gen`: a `requestMIDIAccess` that resolves after `dispose()` attaches no listener
+- `unsupported` (`navigator.requestMIDIAccess` absent), permission denied, sysex refused
+- positional pass-through of `send`'s arguments (both `number[]` and `Uint8Array`)
+- CustomStateSet reflection, and quiet disabling where `attachInternals` is absent
 
 ### A-4. example / README
-- `packages/midi/examples/midi-fader/` — MIDI コントローラのフェーダーで `<wcs-state>` の値を駆動する最小デモ。**synth に一切依存しないこと**が「Web MIDI は独立した I/O ノードである」の実証になる。
-- `README.md` / `README.ja.md`（設計 §7 の罠を明記）＋ **headless（Core）利用の節**（ガイドライン §9）。
+- `packages/midi/examples/midi-fader/` — a minimal demo driving a `<wcs-state>` value from a MIDI controller's fader. **Depending on synth in no way** is what demonstrates that "Web MIDI is an independent I/O node".
+- `README.md` / `README.ja.md` (stating the traps of design §7) plus **a headless (Core) usage section** (guidelines §9).
 
-### A-5. 受け入れ条件
-1. `npm test` / `npm run test:coverage` / `npm run lint` / `npm run build` が全て通る
-2. 設計 §9 の★3件（タグ構成・`auto` 属性・`input` 省略時の挙動）が確定して README に反映されている
-3. Chromium 実機で MIDI デバイスからの入力が state に届く（手動確認・MIDI 機材が必要なため CI 対象外）
+### A-5. Acceptance criteria
+1. `npm test` / `npm run test:coverage` / `npm run lint` / `npm run build` all pass
+2. The three ★ items of design §9 (the tag structure, the `auto` attribute, the behavior when `input` is omitted) are settled and reflected in the README
+3. Input from a MIDI device reaches state on real Chromium (checked manually; outside CI, since it needs MIDI hardware)
 
 ---
 
-## Phase B — PoC: Core だけで音を出す【✅ 完了 2026-08-02・6/6 合格（3回反復で 18/18）】
+## Phase B — PoC: making sound from Core alone [✅ complete 2026-08-02, 6/6 (18/18 over three repetitions)]
 
-### B-0. 結果サマリ
+### B-0. Result summary
 
-| 成果物 | 内容 |
+| Artifact | Content |
 |---|---|
-| [`e2e/fixtures/audio-graph-poc/AudioGraphCore.js`](../e2e/fixtures/audio-graph-poc/AudioGraphCore.js) | `Patch` → グラフ。DOM 参照ゼロ。約 560 行 |
-| [`e2e/fixtures/audio-graph-poc/instrument.js`](../e2e/fixtures/audio-graph-poc/instrument.js) | 任意の `BaseAudioContext` の結線を記録するラッパ（実 context にもモックにも掛かる） |
-| [`e2e/fixtures/audio-graph-poc/FakeAudioContext.js`](../e2e/fixtures/audio-graph-poc/FakeAudioContext.js) | ヘッドレス代替。`AudioParam` のオートメーション呼び出しを記録 |
-| [`e2e/tests/audio-graph-poc.spec.ts`](../e2e/tests/audio-graph-poc.spec.ts) | B-3 の6条件を実 Chromium で検証 |
+| [`e2e/fixtures/audio-graph-poc/AudioGraphCore.js`](../e2e/fixtures/audio-graph-poc/AudioGraphCore.js) | `Patch` → the graph. Zero DOM references. About 560 lines |
+| [`e2e/fixtures/audio-graph-poc/instrument.js`](../e2e/fixtures/audio-graph-poc/instrument.js) | a wrapper recording the connections of any `BaseAudioContext` (works on a real context and on a mock) |
+| [`e2e/fixtures/audio-graph-poc/FakeAudioContext.js`](../e2e/fixtures/audio-graph-poc/FakeAudioContext.js) | the headless substitute. Records `AudioParam` automation calls |
+| [`e2e/tests/audio-graph-poc.spec.ts`](../e2e/tests/audio-graph-poc.spec.ts) | verifies B-3's six conditions on real Chromium |
 
-**得られた確証**:
-- `Patch`（plain object）だけで音が出る。DOM も カスタム要素も一切使っていない → **G1 案D は成立する**。
-- `AudioNode` は Core の外に一度も出ていない → **G2 の「内部完結」は構造として実現可能**。
-- モック context と `OfflineAudioContext` のエッジ集合が **完全一致**（20 エッジ）→ Phase C のテスト戦略（モックで形状・実ブラウザで信号）の土台が成立。
-- ボイス回収が **`currentTime` の前進だけ**で起きる（コード中にタイマーが1つも無い）→ 設計 §6-1 の是正が実装可能と確認。
+**What was established**:
+- Sound comes out of a `Patch` (a plain object) alone. Neither the DOM nor a custom element is used → **G1 option D holds**.
+- No `AudioNode` ever left Core → **G2's "self-contained" is structurally achievable**.
+- The edge sets of the mock context and `OfflineAudioContext` **match exactly** (20 edges) → the foundation for Phase C's test strategy (shape on a mock, signal in a real browser) holds.
+- Voice reclamation happens **through the advance of `currentTime` alone** (not one timer in the code) → the remedy in design §6-1 is confirmed implementable.
 
-**設計へのフィードバック**:
-- `structureKey()`（トポロジだけを直列化し、数値を除外するハッシュ）で **`setPatch` が rebuild と live 更新を自動判別する**。呼び出し側は属性の種類を分類する必要がなく、いつでも patch 全体を再投入してよい。→ Shell が大幅に簡素化される。設計 §5 の「冪等な `setPatch`」はこの形で実現する。
-- **リミッター（`threshold = -18 dBFS` ≒ 振幅 0.126）は想像よりずっと早く効く**。振幅ベースの assert はこの閾値より下で組まないと「音が増えても RMS が増えない」ため成立しない。Phase C のテストにも同じ制約が効く。
-- C-2 の是正候補 #4（analyser の `destination` 直結）は **誤り**だった。エッジ実測の結果、gain 0 の keep-alive は信号を運ばず、`destination` 以外に繋ぎようがない（master へ戻すとフィードバックループ）。原型のままで正しい。
+**Feedback into the design**:
+- With `structureKey()` (a hash serializing only the topology, excluding numbers), **`setPatch` distinguishes a rebuild from a live update automatically**. The caller does not need to classify the kind of attribute and may re-submit the whole patch at any time. → The Shell becomes far simpler. Design §5's "idempotent `setPatch`" is realized in this form.
+- **The limiter (`threshold = -18 dBFS` ≈ amplitude 0.126) bites much earlier than expected.** An amplitude-based assert has to be built below that threshold, or "more voices do not raise the RMS" and it does not hold. The same constraint applies to Phase C's tests.
+- Remedy candidate #4 in C-2 (connecting the analyser straight to `destination`) was **wrong**. Measuring the edges showed that a gain-0 keep-alive carries no signal and there is nowhere to connect it but `destination` (routing it back to master would be a feedback loop). The prototype was right as it was.
 
-### B-1. 目的とスコープ
+### B-1. Purpose and scope
 
-**目的**: 「DOM を歩かずに `Patch`（plain object）だけで音が出る」ことを確認し、Core / Shell 境界の設計が成立することを実証する。ここが崩れると Phase C の構造が全部変わる。
+**Purpose**: confirm that "sound comes out of a `Patch` (a plain object) without walking the DOM", demonstrating that the Core / Shell boundary design holds. If that collapses, all of Phase C's structure changes.
 
-**スコープ（最小・使い捨て）**: `e2e/fixtures/audio-graph-poc/` に置き、原型の `WcsSynth._buildScope` から DOM 依存を剥がした Core を書く。タグは作らない。Phase C で `packages/audio/src/core/AudioGraphCore.ts` に置き換わる。
+**Scope (minimal, disposable)**: placed in `e2e/fixtures/audio-graph-poc/`, writing a Core with the DOM dependency stripped out of the prototype's `WcsSynth._buildScope`. No tags are created. It is replaced by `packages/audio/src/core/AudioGraphCore.ts` in Phase C.
 
 ```js
 const patch = {
@@ -103,84 +104,84 @@ core.setPatch(patch);
 core.noteOn(69);
 ```
 
-### B-2. 検証手段: `OfflineAudioContext`【重要】
+### B-2. The verification means: `OfflineAudioContext` [important]
 
-「音が出る」を主観でなく**サンプル値で証明する**。`OfflineAudioContext` は
+Prove "sound comes out" **with sample values**, not subjectively. `OfflineAudioContext`
 
-- **ユーザージェスチャを必要としない**（`AudioContext` の autoplay ゲートを回避できる）
-- **実時間より速くレンダリングし、結果を `AudioBuffer` として返す**（決定的・再現可能）
-- headless Chromium で動くので **Playwright から CI で回せる**
+- **needs no user gesture** (it bypasses `AudioContext`'s autoplay gate)
+- **renders faster than real time and returns the result as an `AudioBuffer`** (deterministic and reproducible)
+- runs in headless Chromium, so **it can run in CI from Playwright**
 
-したがって Core は **`BaseAudioContext` を注入可能**にしておく（設計 §4 の config 差し替えがそのまま効く）。これは Phase C のテスト戦略を「モックでの形状検証」＋「実ブラウザでの信号検証」の2階建てにする土台でもある。
+So Core keeps its **`BaseAudioContext` injectable** (the config substitution of design §4 works as-is). That is also the foundation for making Phase C's test strategy two-tier: "shape verification on a mock" plus "signal verification in a real browser".
 
-### B-3. 証明すべきこと（受け入れ条件）
-1. **`Patch` から音が出る（DOM ゼロ）** — `OfflineAudioContext` でレンダリングした buffer の RMS が閾値を超える
-2. `setParam("o1", "frequency", 880)` が rebuild なしで反映される — レンダリング結果のゼロ交差数が周波数に追従する
-3. `voices` 付き `Patch` でポリフォニーが動く — 和音のレンダリング振幅が単音を上回り、`poly` 上限でスティールが起きる
-4. `setPatch` に同一構造を渡しても rebuild しない（冪等）
-5. **モック `AudioContext` に同じ `Patch` を食わせると、接続エッジの集合が実 context と同型になる**（→ Phase C のテスト戦略の土台）
-6. **`env` の release 後、ボイスが `currentTime` の前進だけで回収される**（`setTimeout` に依存しない・設計 §6-1）
+### B-3. What has to be proven (the acceptance criteria)
+1. **Sound comes out of a `Patch` (zero DOM)** — the RMS of the buffer rendered by `OfflineAudioContext` exceeds a threshold
+2. `setParam("o1", "frequency", 880)` takes effect with no rebuild — the zero-crossing count of the rendered result tracks the frequency
+3. Polyphony works with a `Patch` carrying `voices` — a chord renders at a higher amplitude than a single note, and stealing happens at the `poly` limit
+4. Passing the same structure to `setPatch` does not rebuild (idempotent)
+5. **Feeding the same `Patch` to a mock `AudioContext` produces a connection-edge set isomorphic to the real context's** (→ the foundation of Phase C's test strategy)
+6. **After an `env` release, the voice is reclaimed through the advance of `currentTime` alone** (with no dependence on `setTimeout`; design §6-1)
 
 ---
 
 ## Phase C — `@wcstack/audio`
 
-### C-0. パッケージ構成
+### C-0. Package layout
 ```
 packages/audio/
   src/
     auto/auto.js, auto.min.js
     core/
-      AudioGraphCore.ts        # 中核。Patch → グラフ。DOM 非依存（MUST）
-      builders/                # kind ごとの AudioNode 構築（osc/noise/biquad/gain/delay/shaper/env/lfo/analyser）
-      VoiceAllocator.ts        # ポリフォニー・ノートスティール・遅延スイープ回収
-      context.ts               # Symbol.for 経由の共有 AudioContext（config 差し替え可）
+      AudioGraphCore.ts        # the core. Patch → the graph. DOM-independent (MUST)
+      builders/                # AudioNode construction per kind (osc/noise/biquad/gain/delay/shaper/env/lfo/analyser)
+      VoiceAllocator.ts        # polyphony, note stealing, the deferred sweep for reclamation
+      context.ts               # the shared AudioContext through Symbol.for (substitutable through config)
     patch/
-      types.ts                 # Patch / PatchNode（公開型）
-      compilePatch.ts          # DOM サブツリー → Patch（Shell 側・DOM 依存）
-      resolveRef.ts            # getRootNode() 起点の id 解決
+      types.ts                 # Patch / PatchNode (the public types)
+      compilePatch.ts          # a DOM subtree → Patch (Shell side, DOM-dependent)
+      resolveRef.ts            # id resolution from getRootNode()
     components/
-      Audio.ts                 # <wcs-audio> ルート Shell
-      AudioNodeShell.ts        # ノードタグ共通基底（descriptor のみ・key 保持）
+      Audio.ts                 # the <wcs-audio> root Shell
+      AudioNodeShell.ts        # the shared base for node tags (descriptor only, holds the key)
       Osc.ts / Noise.ts / Biquad.ts / Gain.ts / Delay.ts / Shaper.ts / Env.ts / Lfo.ts / Analyser.ts
       Voice.ts
     bootstrapAudio.ts / config.ts / registerComponents.ts / raiseError.ts / types.ts / exports.ts
-    protocol/wcBindable.ts     # 生成物
+    protocol/wcBindable.ts     # generated
   __tests__/
     helpers/FakeAudioContext.ts
     *.test.ts
 ```
 
-`exports.ts` から必ず出すもの: `bootstrapAudio` / `getConfig` / `AudioGraphCore` / `Patch`・`PatchNode` 型 / 全 Shell クラス（`WcsAudio` / `WcsOsc` / …。[feedback: Shell クラス export](../CLAUDE.md) 準拠）。
+What `exports.ts` MUST export: `bootstrapAudio` / `getConfig` / `AudioGraphCore` / the `Patch` and `PatchNode` types / every Shell class (`WcsAudio` / `WcsOsc` / …; per [feedback: export the Shell class](../CLAUDE.md)).
 
-### C-1. 実装順
-1. **`context.ts`** — 共有 `AudioContext`（`Symbol.for("@wcstack/audio.context")`・config で差し替え可）、`state` 監視、`resume`、unsupported フォールバック。
-2. **`patch/types.ts`** — `Patch` / `PatchNode`。ここが Core/Shell の唯一の契約面。
-3. **`AudioGraphCore`** — Phase B の PoC を TS 化。2 パス構築（入れ子に沿って生成 → id 参照を解決）、`setParam` / `setProp`、`dispose`、`_gen`、never-throw、`ready`。
-4. **`VoiceAllocator`** — ポリフォニー、最古ノートスティール、per-voice gain、暗黙の安全エンベロープ、**audio クロック基準の遅延スイープ回収**（設計 §6-1）。
-5. **`AudioNodeShell`（基底）** — `key` 採番、数値属性 → `core.setParam` 転送、構造属性 → dirty マーク、`upgradeProperties`。**`AudioNode` を保持しない**。
-6. **各ノードタグ Shell** — 基底 ＋ `static wcBindable`（`properties: []`）＋ 属性定義。ほぼ宣言のみ。
-7. **`<wcs-audio>` ルート Shell** — `compilePatch` の呼び出し、絞り込み済み `MutationObserver`、microtask coalesce、master gain ＋ limiter、`noteOn` / `noteOff` / `allNotesOff`、CustomStateSet、`connectedCallbackPromise`、`adoptedStyleSheets` によるスタイル適用。
-8. **`<wcs-analyser>`** — `command.sample` → fresh `Uint8Array` → `wcs-analyser:frame`。master 経由の常時 pull パスと `statechange` 再接続（設計 §7）。
+### C-1. Implementation order
+1. **`context.ts`** — the shared `AudioContext` (`Symbol.for("@wcstack/audio.context")`, substitutable through config), `state` monitoring, `resume`, the unsupported fallback.
+2. **`patch/types.ts`** — `Patch` / `PatchNode`. This is the sole contract surface between Core and Shell.
+3. **`AudioGraphCore`** — Phase B's PoC in TS. Two-pass construction (create along the nesting → resolve the id references), `setParam` / `setProp`, `dispose`, `_gen`, never-throw, `ready`.
+4. **`VoiceAllocator`** — polyphony, stealing the oldest note, per-voice gain, the implicit safety envelope, and **reclamation through a deferred sweep on the audio clock** (design §6-1).
+5. **`AudioNodeShell` (the base)** — assigning the `key`, forwarding numeric attributes to `core.setParam`, marking structural attributes dirty, `upgradeProperties`. **It holds no `AudioNode`.**
+6. **The Shell of each node tag** — the base plus `static wcBindable` (`properties: []`) plus the attribute definitions. Almost purely declarative.
+7. **The `<wcs-audio>` root Shell** — calling `compilePatch`, the narrowed `MutationObserver`, microtask coalescing, the master gain plus limiter, `noteOn` / `noteOff` / `allNotesOff`, CustomStateSet, `connectedCallbackPromise`, applying styles through `adoptedStyleSheets`.
+8. **`<wcs-analyser>`** — `command.sample` → a fresh `Uint8Array` → `wcs-analyser:frame`. The always-on pull path through master and reconnection on `statechange` (design §7).
 
-### C-2. 原型から必ず是正する 5 点（＋是正不要と判明したもの 1 点）
-| # | 原型 | 是正 |
+### C-2. The five things that MUST be remedied from the prototype (plus one found not to need it)
+| # | The prototype | The remedy |
 |---|---|---|
-| 1 | `MutationObserver` が `subtree: true` で無差別 → 無関係な DOM 変更で音が切れる（[:538](../examples/synth-playground/wcs-synth.js#L538)） | audio タグ関連の変異だけに絞る |
-| 2 | rebuild の coalesce が `setTimeout(0)`（[:596](../examples/synth-playground/wcs-synth.js#L596)） | microtask（横断契約 §3） |
-| 3 | id 解決が `document.getElementById` / `querySelector`（[:650](../examples/synth-playground/wcs-synth.js#L650)・[:827](../examples/synth-playground/wcs-synth.js#L827)） | `getRootNode()` 起点 ＋ ルートサブツリー限定 |
-| 4 | ~~analyser が `ctx.destination` 直結でリミッターを迂回~~ → **是正不要**。gain 0 の keep-alive は信号を運ばず、`destination` へ繋ぐ以外に選択肢がない（master へ戻すとフィードバックループ）。Phase B のエッジ実測で確認済み。常時 pull と `statechange` 再接続はそのまま**維持** |
-| 5 | `document.head` へグローバル CSS 注入（[:1050](../examples/synth-playground/wcs-synth.js#L1050)） | `getRootNode().adoptedStyleSheets` |
-| 6 | ボイス回収が `setTimeout` → バックグラウンドタブで回収されず蓄積（[:499](../examples/synth-playground/wcs-synth.js#L499)） | audio クロック基準の遅延スイープ |
+| 1 | the `MutationObserver` is indiscriminate with `subtree: true` → an unrelated DOM change cuts off the sound (`wcs-synth.js`, L538) | narrow it to mutations involving audio tags |
+| 2 | the rebuild coalesce uses `setTimeout(0)` (`wcs-synth.js`, L596) | a microtask (the cross-cutting contract §3) |
+| 3 | id resolution uses `document.getElementById` / `querySelector` (`wcs-synth.js`, L650 and L827) | from `getRootNode()`, limited to the root subtree |
+| 4 | ~~the analyser connects straight to `ctx.destination`, bypassing the limiter~~ → **no remedy needed**. A gain-0 keep-alive carries no signal and there is no option but connecting to `destination` (routing it back to master would be a feedback loop). Confirmed by the edge measurements in Phase B. The always-on pull and the `statechange` reconnection are **kept** as they are |
+| 5 | global CSS injected into `document.head` (`wcs-synth.js`, L1050) | `getRootNode().adoptedStyleSheets` |
+| 6 | voice reclamation on `setTimeout` → in a background tab they are never reclaimed and accumulate (`wcs-synth.js`, L499) | a deferred sweep on the audio clock |
 
-### C-3. テスト戦略【本パッケージ最大の作業・目標 200〜260 本】
+### C-3. The test strategy [the largest piece of work in this package; target 200-260 tests]
 
-happy-dom に Web Audio は無い。`__tests__/helpers/FakeAudioContext.ts` を自前で用意する。
+happy-dom has no Web Audio. `__tests__/helpers/FakeAudioContext.ts` is written in-house.
 
 ```ts
-// 記録するもの: ノード生成・connect/disconnect のエッジ集合・AudioParam のオートメーション列
+// What it records: node creation, the connect/disconnect edge set, the AudioParam automation sequence
 class FakeAudioContext {
-  currentTime = 0;                 // テストが手動で進める（決定的）
+  currentTime = 0;                 // advanced manually by the test (deterministic)
   state: "suspended" | "running" | "closed" = "suspended";
   readonly edges = new Set<string>();   // "osc#1 -> biquad#2" / "lfo#3 -> biquad#2.frequency"
   readonly created: FakeNode[] = [];
@@ -188,81 +189,81 @@ class FakeAudioContext {
 }
 ```
 
-- **グラフ形状のアサーション**: エッジ集合を正規化した文字列にして比較するヘルパ（`expectGraph(core, ["osc:o1 -> gain:g1", "gain:g1 -> master"])`）。Phase B-2-5 で同型性を確認済みの前提に立つ。
-- **オートメーションのアサーション**: `FakeAudioParam` が `setValueAtTime` / `linearRampToValueAtTime` / `setTargetAtTime` / `cancelScheduledValues` の呼び出しを時刻つきで記録する。ADSR の形は「スケジュール列」として検証する（実波形は検証しない）。
+- **Asserting the graph shape**: a helper that normalizes the edge set into a string and compares (`expectGraph(core, ["osc:o1 -> gain:g1", "gain:g1 -> master"])`). It rests on the isomorphism confirmed in Phase B-2-5.
+- **Asserting automation**: a `FakeAudioParam` records calls to `setValueAtTime` / `linearRampToValueAtTime` / `setTargetAtTime` / `cancelScheduledValues` with their times. An ADSR shape is verified as a "schedule sequence" (the actual waveform is not).
 
-重点項目:
-1. **構築** — 入れ子チェーン / 葉のマスター接続 / `out=` の多対一 / `out="id.param"` / `param=` の親解決 / 未解決参照の `warn`（never-throw）
-2. **live 更新 vs rebuild** — 数値属性で rebuild が起きない、構造属性で起きる、無関係な DOM 変更で起きない、`setPatch` の冪等性（設計 §5 の表を1テスト1行で網羅）
-3. **ボイス** — poly 上限でのスティール、同一ノート再打鍵、release 後の回収、ゲート無しパッチの安全エンベロープ、**`currentTime` を進めるだけでの回収**（タイマーに依存しないこと）
-4. **ライフサイクル** — `disconnectedCallback` で全ノード `disconnect` ＋ 全 source `stop`、再接続、`_gen`
-5. **context** — `Symbol.for` 共有、config 差し替え、`suspended` のまま `noteOn`、unsupported、SSR（`AudioContext` 不在）
-6. **analyser** — fresh 配列であること（2回の `sample` が別インスタンスを返す）、`statechange` での再接続
-7. **CustomStateSet** — `:state(running)` 等の反映と `attachInternals` 不在環境での無効化
+Focus areas:
+1. **Construction** — the nesting chain / leaves connecting to master / many-to-one `out=` / `out="id.param"` / parent resolution for `param=` / a `warn` for an unresolved reference (never-throw)
+2. **Live update versus rebuild** — a numeric attribute does not rebuild, a structural attribute does, an unrelated DOM change does not, and `setPatch` is idempotent (covering design §5's table one row per test)
+3. **Voices** — stealing at the poly limit, re-striking the same note, reclamation after release, the safety envelope for a gateless patch, and **reclamation through advancing `currentTime` alone** (no dependence on a timer)
+4. **Lifecycle** — `disconnectedCallback` disconnects every node and stops every source, reconnection, `_gen`
+5. **context** — `Symbol.for` sharing, config substitution, a `noteOn` while still `suspended`, unsupported, SSR (`AudioContext` absent)
+6. **analyser** — that the array is fresh (two `sample`s return different instances), reconnection on `statechange`
+7. **CustomStateSet** — reflecting `:state(running)` and the rest, and disabling where `attachInternals` is absent
 
-**カバレッジ 100 / 97+ / 100 / 100 を維持する。** 実音の正しさはモックでは検証できない → Phase C-4 が担う。
+**Coverage of 100 / 97+ / 100 / 100 is maintained.** The correctness of the actual sound cannot be verified on a mock → that is Phase C-4's job.
 
-### C-4. 実ブラウザ検証（Playwright）
-原型のスモーク 14 項目（グラフ形状・各段での可聴信号・ボイスライフサイクル・和音割り当て・ポインタ操作）を `e2e/` に移植し、**パッケージ版でも 14/14 が再現すること**を移植完了の判定基準にする。C-2 の是正 6 点はここで回帰を見る（特に #4 analyser の常時 pull と #6 バックグラウンド回収）。
-
----
-
-## Phase D — example 移植
-
-- `examples/synth-playground/` を `@wcstack/audio` 利用に書き換える。`wcs-synth.js` は削除し、**`<wcs-keys>` だけを example ローカルのコンポーネント**として残す（ADR G6）。
-- オシロは `<wcs-analyser>` ＋ `<wcs-raf>` ＋ example の canvas 描画に分解する。**「描画を持たないパッケージでも同じ絵が描ける」ことの実証**を兼ねる。
-- スライダーは生の属性書き込みではなく `data-wcs` バインドに置き換える（`<wcs-state>` 統合のショーケース）。
-- MIDI は `@wcstack/midi` を CDN から読む。
-- `examples/README.md` / `README.ja.md` の記載を更新。
+### C-4. Real-browser verification (Playwright)
+The prototype's 14 smoke items (graph shape, an audible signal at each stage, the voice lifecycle, chord allocation, pointer interaction) are ported into `e2e/`, and **reproducing 14/14 with the package version** is the criterion for the port being complete. The six remedies of C-2 are regression-checked here (especially #4's always-on pull and #6's background reclamation).
 
 ---
 
-## Phase E — 規範文書の追補
+## Phase D — porting the example
 
-| 文書 | 追加内容 |
+- Rewrite `examples/synth-playground/` onto `@wcstack/audio`. `wcs-synth.js` is deleted, and **only `<wcs-keys>` stays as a component local to the example** (ADR G6).
+- The oscilloscope is decomposed into `<wcs-analyser>` plus `<wcs-raf>` plus canvas drawing in the example. This doubles as **the demonstration that "the same picture can be drawn even with a package that has no drawing"**.
+- The sliders are replaced with `data-wcs` bindings rather than raw attribute writes (a showcase of `<wcs-state>` integration).
+- MIDI is read from the CDN as `@wcstack/midi`.
+- Update the text in `examples/README.md` / `README.ja.md`.
+
+---
+
+## Phase E — additions to the normative documents
+
+| Document | What is added |
 |---|---|
-| [timing-and-firing-contract.md](./timing-and-firing-contract.md) | 新節「`@wcstack/audio` — 適用時刻と再構築の契約」: desired のみ公開・可聴時刻は非規定（ADR G4）、rebuild 誘発条件・可聴断絶・microtask coalesce・冪等（ADR G5） |
-| [async-io-node-guidelines.md](./async-io-node-guidelines.md) | §1「確定すべき論点」に「**外部クロックを持つか**（持つなら適用時刻を規定しないことを明記）」を追加 |
-| [architecture-hardening/12](./architecture-hardening/12-wc-bindable-observable-inventory.md) | audio の property を棚卸しに追加（`handle` は増えないことの記録） |
-| [architecture-hardening/README.md](./architecture-hardening/README.md) | 論点一覧に 14 を追加 |
+| [timing-and-firing-contract.md](./timing-and-firing-contract.md) | a new section, "`@wcstack/audio` — the application-time and rebuild contract": expose desired only and leave the audible time unspecified (ADR G4); the rebuild conditions, the audible break, microtask coalescing, and idempotence (ADR G5) |
+| [async-io-node-guidelines.md](./async-io-node-guidelines.md) | add "**whether it has an external clock** (and if so, stating that the application time is unspecified)" to §1's "points to settle" |
+| [architecture-hardening/12](./architecture-hardening/12-wc-bindable-observable-inventory.md) | add audio's properties to the inventory (recording that `handle` does not grow) |
+| [architecture-hardening/README.ja.md](./architecture-hardening/README.ja.md) | add 14 to the topic list |
 
 ---
 
-## 7. PR 分割方針
+## 7. The PR split policy
 
-単一 PR にしない。
+Not a single PR.
 
-1. `feat(midi): add @wcstack/midi`（Phase A）
-2. `docs(adr): handle graph wiring` ＋ 決定の記録（ADR 採択時）
-3. `feat(audio): AudioGraphCore and patch types`（Phase C-1 の 1〜4 ＋ そのテスト）
-4. `feat(audio): custom element shells`（Phase C-1 の 5〜8 ＋ そのテスト）
-5. `test(audio): real-browser smoke`（Phase C-4）
-6. `examples: port synth-playground onto @wcstack/audio`（Phase D）
-7. `docs: contract additions for external-clock nodes`（Phase E）
+1. `feat(midi): add @wcstack/midi` (Phase A)
+2. `docs(adr): handle graph wiring` plus recording the decisions (when the ADR is adopted)
+3. `feat(audio): AudioGraphCore and patch types` (items 1-4 of Phase C-1 plus their tests)
+4. `feat(audio): custom element shells` (items 5-8 of Phase C-1 plus their tests)
+5. `test(audio): real-browser smoke` (Phase C-4)
+6. `examples: port synth-playground onto @wcstack/audio` (Phase D)
+7. `docs: contract additions for external-clock nodes` (Phase E)
 
-3 と 4 の間で Core だけが単独で動く状態を作り、**「Core は公開ヘッドレスサーフェス」が机上でなく実際に成立していることを PR の粒度で示す**。
+Between 3 and 4 there is a state where Core works on its own, **showing at the granularity of the PRs that "Core is a public headless surface" holds in practice and not merely on paper**.
 
 ---
 
-## 8. リスクと打ち手
+## 8. Risks and countermeasures
 
-| リスク | 打ち手 |
+| Risk | Countermeasure |
 |---|---|
-| モック `AudioContext` の忠実度が足りず、通るのにブラウザで鳴らない | Phase B-2-5 でモックと実 context のエッジ同型性を先に確認する。実音は Phase C-4 の Playwright に必ず担わせる |
-| カバレッジ 100% がオーディオスレッド由来の分岐で達成できない | 分岐をすべてメインスレッド側（スケジュール呼び出しの発行）に閉じ込める設計にする。`currentTime` はモックで手動制御する |
-| Phase C が長期化して main から乖離する | PR を §7 のとおり 5 本に割る。Core（3）だけで独立して価値があり、単独マージ可能 |
-| ADR が No になり作業が無駄になる | Phase A（midi）と Phase B（PoC・使い捨て 200 行）だけ先行する。Phase C は G1・G2 確定後 |
+| the mock `AudioContext` is not faithful enough, so tests pass but it does not sound in a browser | confirm the edge isomorphism between the mock and a real context first, in Phase B-2-5. Real sound is always carried by Phase C-4's Playwright |
+| 100% coverage is unreachable because of branches originating on the audio thread | design so that every branch is confined to the main thread (issuing the schedule calls). `currentTime` is controlled manually on the mock |
+| Phase C drags on and diverges from main | split the PRs into five as in §7. Core (3) has value on its own and can be merged alone |
+| the ADR comes back No and the work is wasted | run only Phase A (midi) and Phase B (the disposable 200-line PoC) ahead. Phase C waits until G1 and G2 are settled |
 
 ---
 
-## 9. 成果物チェックリスト
+## 9. Deliverables checklist
 
-- [ ] `packages/midi/`（src / `__tests__` / README ja・en / examples / dist ビルド通過）
-- [ ] ADR 14 の G1〜G6 が決定済み（`状態` を ✅ に更新）
-- [ ] `packages/audio/`（同上）
-- [ ] `e2e/` に audio のスモーク 14 項目
-- [ ] `examples/synth-playground/` がパッケージ利用に移植済み（`wcs-synth.js` 削除）
-- [ ] `examples/README.md` / `README.ja.md` 更新
-- [ ] Phase E の 4 文書の追補
-- [ ] `CLAUDE.md` のパッケージ一覧に `@wcstack/midi` / `@wcstack/audio` を追加
-- [ ] [wcstack-skill](https://github.com/wcstack/wcstack-skill) の references に新タグを追随
+- [ ] `packages/midi/` (src / `__tests__` / README ja and en / examples / dist build passing)
+- [ ] G1 through G6 of ADR 14 are decided (its `Status` updated to ✅)
+- [ ] `packages/audio/` (same)
+- [ ] the 14 audio smoke items in `e2e/`
+- [ ] `examples/synth-playground/` ported onto the package (`wcs-synth.js` deleted)
+- [ ] `examples/README.md` / `README.ja.md` updated
+- [ ] the additions to the four Phase E documents
+- [ ] `@wcstack/midi` and `@wcstack/audio` added to the package list in `CLAUDE.md`
+- [ ] the new tags caught up in the references of [wcstack-skill](https://github.com/wcstack/wcstack-skill)

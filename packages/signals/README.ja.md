@@ -2,7 +2,7 @@
 
 > 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
 
-`@wcstack/signals` は **signals ベースのきめ細かい(fine-grained)リアクティブコア**です。ランタイム依存ゼロ・buildless・標準ファースト。設計の背景は [`docs/signals-state-design.md`](../../docs/signals-state-design.md) を参照してください。
+`@wcstack/signals` は **signals ベースのきめ細かい(fine-grained)リアクティブコア**です。ランタイム依存ゼロ・buildless・標準ファースト。設計の背景は [`docs/signals-state-design.ja.md`](../../docs/signals-state-design.ja.md) を参照してください。
 
 [`@wcstack/state`](../state/README.ja.md) が UI と状態を HTML のパス文字列で接続する(あなたのコードにリアクティブプリミティブは現れない)のに対し、`@wcstack/signals` はそれを望むケースのために逆の立場をとります。すなわち **リアクティブプリミティブを直接露出**します。DSL も `data-wcs` も無く、JavaScript で `signal()` / `computed()` / `effect()` を呼びます。両者は競合ではなく**補完関係**です — 同じエコシステムの、結合点の違いです。
 
@@ -306,7 +306,7 @@ import("@wcstack/tilt/auto")
   .catch(() => {/* 縮退モード — アプリは動き続ける */});
 ```
 
-`bindNode` と同様、アダプタはリアクティブオーナーに紐付きません — teardown は明示的(`unmount()` は冪等)で、`onCleanup(() => fetcher.unmount())` と合成できます。`MountedNode` では `dispose()` は **`unmount()` のエイリアス**です: mountNode は要素のライフサイクルを所有するので、パッケージ共通の teardown 動詞が「接続されたまま IO が生きている要素」を残すことはありません。定義タイミングの全体契約(どのロード状況でどのイディオムか)は [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md) を参照してください。
+`bindNode` と同様、アダプタはリアクティブオーナーに紐付きません — teardown は明示的(`unmount()` は冪等)で、`onCleanup(() => fetcher.unmount())` と合成できます。`MountedNode` では `dispose()` は **`unmount()` のエイリアス**です: mountNode は要素のライフサイクルを所有するので、パッケージ共通の teardown 動詞が「接続されたまま IO が生きている要素」を残すことはありません。定義タイミングの全体契約(どのロード状況でどのイディオムか)は [`docs/signals-definition-timing.ja.md`](../../docs/signals-definition-timing.ja.md) を参照してください。
 
 #### Core を直接束縛する(要素なし)
 
@@ -323,7 +323,7 @@ bound.signals.value.get();
 
 カスタム要素が存在しないので、**定義タイミング問題は丸ごと消滅**します: `customElements` レジストリに一切触れず、`whenDefined` も upgrade 待ちも無く、依存は import だけです。これは本パッケージの建国実証でもあります — アダプタは要素が関与する前に、無改変の実 `FetchCore` で検証されました(`__tests__/integration.fetchCore.test.ts`)。
 
-Shell と比べて失うもの: 要素接続ライフサイクル(Core の `observe()`/`dispose()` や start/stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成)、属性ベース設定、`:state()` CSS 反映(Shell/ElementInternals 専用機能)。向くのは純ロジックノード(fetch・websocket・timer・defined・raf など)で、要素結合ノード(intersection/resize の観測対象・camera プレビュー・fullscreen)では Shell が引き続き価値を持ちます。Core の構造サーフェス — `EventTarget` 継承・自己 dispatch 既定・`static wcBindable`・getter で読める observable・`observe()`/`dispose()`/`ready`・never-throw — は **wcstack I/O ノード横断の規範**([`docs/async-io-node-guidelines.md`](../../docs/async-io-node-guidelines.md) §3.9)で semver 保護されます。コンストラクタの**設定引数**だけはパッケージ個別です — 各パッケージ README のヘッドレス利用節を参照してください。
+Shell と比べて失うもの: 要素接続ライフサイクル(Core の `observe()`/`dispose()` や start/stop コマンドを自分で駆動 — `onCleanup(() => core.dispose())` と合成)、属性ベース設定、`:state()` CSS 反映(Shell/ElementInternals 専用機能)。向くのは純ロジックノード(fetch・websocket・timer・defined・raf など)で、要素結合ノード(intersection/resize の観測対象・camera プレビュー・fullscreen)では Shell が引き続き価値を持ちます。Core の構造サーフェス — `EventTarget` 継承・自己 dispatch 既定・`static wcBindable`・getter で読める observable・`observe()`/`dispose()`/`ready`・never-throw — は **wcstack I/O ノード横断の規範**([`docs/async-io-node-guidelines.ja.md`](../../docs/async-io-node-guidelines.ja.md) §3.9)で semver 保護されます。コンストラクタの**設定引数**だけはパッケージ個別です — 各パッケージ README のヘッドレス利用節を参照してください。
 
 ## JSX を使う(opt-in)
 

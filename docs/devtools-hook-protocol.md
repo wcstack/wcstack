@@ -1,56 +1,57 @@
-# DevTools Hook Protocol 設計 (devtools-hook-protocol)
+# DevTools hook protocol design (devtools-hook-protocol)
 
-- Status: **v1 実装完了（2026-07-14・未リリース）** — UI 側は [devtools-tag-design.md](devtools-tag-design.md)。
-  実装: ランタイム側 = packages/state/src/devtools/（bridge + 計装 5 点）、
-  消費者側 = packages/devtools/src/protocol/。受け入れゲート §7 は全て通過
-  （state 1747 tests / jsfb-verify 計装前後一致 / detach 残留ゼロテスト）。
-  §9 G-R は実ブラウザ e2e（devtools-smoke.mjs）の編集ラウンドトリップで実証済み、
-  G-P は素通しのまま実測問題なし（UI 側 rAF 合流で吸収）。
-- 位置づけ: 「静的検査可能性の弱さを**実行時検査可能性**で補う」ための規範プロトコル。
-  wc-bindable / command-token / event-token に続く第 4 のプロトコル文書であり、
-  UI（`<wcs-devtools>`）とランタイム（state / 将来 signals）の唯一の接点。
-- スコープ決定（2026-07-14 ユーザー決裁）:
-  - A: Phase 1（フック実装 + オーバーレイ UI）まで進める
-  - B: 提供形態はページ内オーバーレイ（ブラウザ拡張は Phase 3 判断保留）
-  - C: v1 は **state + 配線（binding / token）** のみ。signals は namespace 予約に留める
+- Status: **v1 implemented (2026-07-14, unreleased)** — the UI side is [devtools-tag-design.md](devtools-tag-design.md) (ja).
+  Implementation: runtime side = packages/state/src/devtools/ (the bridge plus five instrumentation points),
+  consumer side = packages/devtools/src/protocol/. Every acceptance gate in §7 passed
+  (state 1747 tests / jsfb-verify identical before and after instrumentation / a zero-residue test after detach).
+  §9's G-R was demonstrated through an edit round trip in the real-browser e2e (devtools-smoke.mjs);
+  G-P was left passing straight through with no measured problem (absorbed by the rAF merge on the UI side).
+- Where this sits: a normative protocol for **compensating for weak static inspectability with runtime
+  inspectability**. It is the fourth protocol document after wc-bindable / command-token / event-token, and
+  the only point of contact between the UI (`<wcs-devtools>`) and the runtime (state, and signals in future).
+- Scope decisions (user's call, 2026-07-14):
+  - A: proceed as far as Phase 1 (hook implementation plus the overlay UI)
+  - B: ship it as an in-page overlay (a browser extension is deferred to a Phase 3 decision)
+  - C: v1 covers **state plus its wiring (binding / token)** only; signals gets a reserved namespace and nothing more
+- **日本語版**: [devtools-hook-protocol.ja.md](./devtools-hook-protocol.ja.md)
 
-## 0. 一言要約
+## 0. In one line
 
-ランタイム側は「**フックが繋がっていなければ分岐 1 個**」の計装点だけを持ち、
-検査用の台帳・整形・UI はすべてフック消費者（devtools）側に置く。
-接点は `globalThis.__WCSTACK_DEVTOOLS_HOOK__` ただ 1 つ。モジュール同一性に依存しない
-（CDN で state のコピーが複数あっても、各コピーが独立した source として登録される）。
+The runtime holds instrumentation points that cost **one branch when no hook is attached**, and every ledger,
+formatting concern, and piece of UI for inspection lives on the hook consumer (devtools) side.
+There is exactly one point of contact: `globalThis.__WCSTACK_DEVTOOLS_HOOK__`. It does not depend on module
+identity (even where a CDN leaves several copies of state on the page, each copy registers as its own source).
 
 ---
 
-## 1. 設計原則（規範）
+## 1. Design principles (normative)
 
-1. **detached zero-cost**: フック未接続時、各計装点のコストは「null チェック 1 回」を
-   超えてはならない（MUST）。未接続時のアロケーション・文字列整形・クロージャ生成は禁止。
-   先例: signals `dev.ts` の call-time 判定 + 早期 return。
-2. **台帳はフック側**: ランタイムは列挙用の恒常台帳を持たない（イベント台帳リーク教訓:
-   [state-append-clear-cost] の detach 不呼出で DOM 永久保持）。例外は §4.1 の
-   state 要素 registry のみ（要素数個・disconnect で削除・上限が DOM に拘束される）。
-3. **push + pull の二層**: 変化はイベント（push）で流し、接続時点の世界はスナップショット
-   API（pull）で取る。遅延アタッチはこの二層で成立する範囲まで（§6）。
-4. **プロトコルはモジュール境界を跨がない値のみ**: イベント payload はランタイム内部
-   オブジェクト（IBindingInfo 等）への**生参照を含んでよい**（同一 realm・オーバーレイ前提。
-   B 決定の直接の帰結）。ただし消費者は participant の内部を変異してはならない（MUST NOT）。
-   将来ブラウザ拡張化する場合はシリアライズ層を devtools 側に足す（プロトコル不変更）。
-5. **inspected と inspector の分離**: DevTools UI 自身も wcstack で動く（ドッグフーディング）
-   が、自分自身を検査対象から外せること（§5 ignore 機構）。
-6. **SSR 不活性**: `inSsr()` が真の環境では bridge は global を作らず、イベントも発しない。
+1. **detached zero-cost**: with no hook attached, the cost of each instrumentation point MUST NOT exceed
+   one null check. No allocation, string formatting, or closure creation while detached.
+   Precedent: the call-time check plus early return in signals' `dev.ts`.
+2. **Ledgers live on the hook side**: the runtime keeps no permanent ledger for enumeration (the lesson of
+   the event-ledger leak: [state-append-clear-cost], where a missed detach held DOM forever). The one
+   exception is the state element registry of §4.1 (a handful of elements, deleted on disconnect, bounded by the DOM).
+3. **Two layers, push plus pull**: changes flow as events (push), and the state of the world at attach time is
+   taken through a snapshot API (pull). Late attachment works as far as those two layers reach (§6).
+4. **The protocol carries only values that do not cross a module boundary**: an event payload **may contain
+   live references** to runtime-internal objects (IBindingInfo and the like) — same realm, overlay assumed,
+   the direct consequence of decision B. But a consumer MUST NOT mutate the internals of a participant.
+   Turning this into a browser extension later means adding a serialization layer on the devtools side (no protocol change).
+5. **Separating inspected from inspector**: the DevTools UI itself runs on wcstack (dogfooding), but has to be
+   able to exclude itself from what is inspected (the ignore mechanism of §5).
+6. **Inert under SSR**: where `inSsr()` is true, the bridge creates no global and emits no events.
 
-## 2. グローバルとハンドシェイク
+## 2. The global and the handshake
 
 ```ts
-// 双方が create-if-missing で取得する（ロード順非依存）
+// both sides acquire it create-if-missing (independent of load order)
 interface IDevtoolsHookRegistry {
-  readonly version: 1;                       // プロトコル版。additive change は版を上げない
+  readonly version: 1;                       // the protocol version. An additive change does not raise it
   readonly sources: Map<string, IDevtoolsSource>;
-  register(source: IDevtoolsSource): void;   // ランタイム → registry
+  register(source: IDevtoolsSource): void;   // runtime → registry
   unregister(sourceId: string): void;
-  addListener(l: IDevtoolsListener): () => void;  // devtools → registry。戻り値は解除
+  addListener(l: IDevtoolsListener): () => void;  // devtools → registry. The return value detaches
 }
 
 interface IDevtoolsListener {
@@ -59,39 +60,40 @@ interface IDevtoolsListener {
 }
 ```
 
-- global 名: `globalThis.__WCSTACK_DEVTOOLS_HOOK__`。
-- 生成規則: 参照する側が `??=` で最小実装を置く。**registry 実装は双方に埋め込む**
-  （state 側 bridge / devtools 側 client の両方が同一仕様の最小実装を持ち、先勝ち）。
-  実装は 30 行程度に抑え、version 不一致時は console.warn の上で新しい方が勝たない
-  （先勝ち固定。振る舞いを差し替えない）。
-- ランタイム側の登録タイミング: state は `bootstrapState()` 内で 1 回 register。
-  sourceId は `"state:" + ランダム UUID`（`getUUID` 流用）。同一ページに state の
-  モジュールコピーが N 個あれば N source になる — これは正常系（§5）。
-- **hot path の形**: bridge はモジュールローカルに `let sink: ((e) => void) | null` を
-  持つ。listener が 0↔1+ に遷移したとき registry が各 source の `_setSink()` を呼んで
-  差し替える。計装点は `sink !== null && sink(...)` のみ（原則 1 の実装形）。
-  イベントオブジェクトの生成も `sink !== null` の内側で行う。
+- The global name: `globalThis.__WCSTACK_DEVTOOLS_HOOK__`.
+- Creation rule: whichever side references it installs a minimal implementation with `??=`.
+  **The registry implementation is embedded in both sides** (the state-side bridge and the devtools-side
+  client each carry a minimal implementation of the same spec; first one wins).
+  Keep the implementation to about 30 lines, and on a version mismatch `console.warn` and let the newer one
+  *not* win (first-wins is fixed; behavior is never swapped out).
+- When the runtime registers: state registers once inside `bootstrapState()`.
+  The sourceId is `"state:" + a random UUID` (reusing `getUUID`). Where a page has N module copies of state,
+  there are N sources — that is the normal case (§5).
+- **The shape of the hot path**: the bridge holds a module-local `let sink: ((e) => void) | null`.
+  When the listener count crosses 0↔1+, the registry swaps it by calling each source's `_setSink()`.
+  An instrumentation point is nothing but `sink !== null && sink(...)` (the implementation form of principle 1).
+  Constructing the event object also happens inside the `sink !== null` check.
 
-## 3. Source インターフェース（pull API）
+## 3. The Source interface (the pull API)
 
 ```ts
 interface IDevtoolsSource {
   readonly id: string;
-  readonly kind: "state";        // v1。"signals" は予約（§8）
+  readonly kind: "state";        // v1. "signals" is reserved (§8)
   readonly packageVersion: string;
   // --- pull ---
-  getStateElements(): IStateElementSummary[];   // 接続時スナップショットの起点
-  keys(name: string, rootNode: Node): string[]; // トップレベルキー列挙（状態ツリーの描画起点）
+  getStateElements(): IStateElementSummary[];   // the origin of the attach-time snapshot
+  keys(name: string, rootNode: Node): string[]; // enumerating top-level keys (the origin for drawing the state tree)
   read(name: string, rootNode: Node, path: string, indexes?: number[]): unknown;
   write(name: string, rootNode: Node, path: string, value: unknown, indexes?: number[]): void;
-  // --- 内部（registry 専用） ---
+  // --- internal (registry only) ---
   _setSink(sink: ((e: DevtoolsEvent) => void) | null): void;
 }
 
 interface IStateElementSummary {
   readonly name: string;
   readonly rootNode: Node;
-  readonly element: Element;          // <wcs-state> 生参照（原則 4）
+  readonly element: Element;          // a live reference to <wcs-state> (principle 4)
   readonly paths: {
     list: ReadonlySet<string>; element: ReadonlySet<string>;
     getter: ReadonlySet<string>; setter: ReadonlySet<string>;
@@ -103,140 +105,142 @@ interface IStateElementSummary {
 }
 ```
 
-- `keys` はメソッド・`$` 始まり・ワイルドカードを含むキーを除外したトップレベルキーを
-  返す（メソッド判別の typeof アクセスが getter を 1 回実行する点は仕様。コンテキスト外で
-  throw する getter は「キーとして存在する」側に倒す）。IStateElementSummary の paths が
-  binding 済みパスしか持たないのに対し、こちらは宣言された全データ面が起点になる。
-- `read` / `write` は `stateElement.createState("readonly" | "writable", cb)` を通す。
-  つまり **write は通常のリアクティブパイプライン（set trap → enqueue → drain）を通り**、
-  DevTools からの編集がユーザーコードの set と完全に同じ経路になる（別経路を作らない）。
-- `read` の副作用について: readonly proxy の get は依存追跡スコープ外（binding 適用中でも
-  `$updatedCallback` 中でもない呼び出し）なら依存グラフを汚さない。実装時に
-  `trackDependency` の発火条件を再確認し、汚す経路が見つかった場合は plain-read 用の
-  内部 API（`getByAddress` 直呼び）に切り替える（実装ゲート G-R、§9）。
-- ワイルドカードパスの読み出しは `indexes` で具体化する（`$resolve` と同じ意味論）。
+- `keys` returns the top-level keys excluding methods, anything starting with `$`, and keys containing a
+  wildcard (that the typeof access used to detect a method runs a getter once is by design; a getter that
+  throws out of context is treated as "the key exists"). Where IStateElementSummary's paths hold only paths
+  that have been bound, this takes every declared data surface as its origin.
+- `read` / `write` go through `stateElement.createState("readonly" | "writable", cb)`. So **a write travels the
+  ordinary reactive pipeline (set trap → enqueue → drain)**, which makes an edit from DevTools follow exactly
+  the same path as a set from user code (no separate path is built).
+- On the side effects of `read`: a get on the readonly proxy does not pollute the dependency graph as long as
+  it is outside a dependency-tracking scope (a call that is neither during binding application nor inside
+  `$updatedCallback`). During implementation, re-confirm the conditions under which `trackDependency` fires,
+  and if a polluting path is found, switch to the internal plain-read API (calling `getByAddress` directly)
+  (implementation gate G-R, §9).
+- Reading a wildcard path is made concrete with `indexes` (the same semantics as `$resolve`).
 
-## 4. state 側の計装点（v1 で追加するフック）
+## 4. Instrumentation points on the state side (the hooks v1 adds)
 
-変更ファイルと発火点。すべて §2 の `sink` 経由・原則 1 準拠。
+The files changed and the firing points. All go through §2's `sink` and conform to principle 1.
 
-### 4.1 state 要素の登録簿を列挙可能化
+### 4.1 Make the state element registry enumerable
 
-- [stateElementByName.ts](../packages/state/src/stateElementByName.ts) の WeakMap は維持し、
-  **並走する `Set<IStateElement>`（モジュールローカル）を追加**。register で add /
-  unregister（`State.ts` の disconnectedCallback → `setStateElementByName(…, null)`）で delete。
-- これだけは常時 ON の台帳（原則 2 の明示的例外）。サイズは `<wcs-state>` 要素数に拘束され、
-  disconnect で必ず削除されるためリークしない。`getStateElements()` の実体。
-- イベント: `state:element-registered` / `state:element-unregistered`
-  payload = `{ name, rootNode, element }`。
+- Keep the WeakMap in [stateElementByName.ts](../packages/state/src/stateElementByName.ts) and
+  **add a parallel `Set<IStateElement>` (module-local)**. Add on register, delete on unregister
+  (`State.ts`'s disconnectedCallback → `setStateElementByName(…, null)`).
+- This is the one always-on ledger (the explicit exception to principle 2). Its size is bounded by the number
+  of `<wcs-state>` elements and entries are always deleted on disconnect, so it cannot leak. It is the substance
+  of `getStateElements()`.
+- Events: `state:element-registered` / `state:element-unregistered`,
+  payload = `{ name, rootNode, element }`.
 
-### 4.2 書き込みログ
+### 4.2 The write log
 
-- [setByAddress.ts](../packages/state/src/proxy/methods/setByAddress.ts) の
-  same-value guard **通過後**（実書き込みのみ）に発火。
-- payload = `{ stateName, path, listIndexes: number[] | null, value, oldValue? }`。
-  `oldValue` は guard が既に取得している場合（primitive かつ guard ON）のみ含める。
-  参照型のために追加の get はしない（MUST NOT — ホットパス保護）。
-- swap 経路（`_setByAddressWithSwap`）も同一点を通るため個別対応不要。
+- Fires in [setByAddress.ts](../packages/state/src/proxy/methods/setByAddress.ts) **after** the same-value guard
+  (actual writes only).
+- payload = `{ stateName, path, listIndexes: number[] | null, value, oldValue? }`.
+  `oldValue` is included only where the guard already obtained it (a primitive with the guard on).
+  It MUST NOT perform an extra get for reference types (protecting the hot path).
+- The swap path (`_setByAddressWithSwap`) goes through the same point, so it needs no separate handling.
 
-### 4.3 更新バッチ（drain）
+### 4.3 The update batch (drain)
 
-- 既存の [updater.ts](../packages/state/src/updater/updater.ts)
-  `registerUpdateBatchListener` をそのまま使う。**ランタイム変更ゼロ**。
-- bridge が attach 時に register / detach 時に unregister する（$streams リスナーと同格の
-  消費者としてぶら下がる）。
-- イベント: `state:update-batch` payload = `{ addresses: ReadonlySet<IAbsoluteStateAddress> }`。
+- Uses the existing `registerUpdateBatchListener` in [updater.ts](../packages/state/src/updater/updater.ts)
+  as-is. **Zero runtime changes.**
+- The bridge registers on attach and unregisters on detach (hanging off it as a consumer of the same standing
+  as the `$streams` listener).
+- Event: `state:update-batch`, payload = `{ addresses: ReadonlySet<IAbsoluteStateAddress> }`.
 
-### 4.4 binding 台帳の増減
+### 4.4 Growth and shrinkage of the binding ledger
 
-- [getBindingSetByAbsoluteStateAddress.ts](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts)
-  の `addBindingByAbsoluteStateAddress` / `removeBindingByAbsoluteStateAddress` /
-  `clearBindingSetByAbsoluteStateAddress` に発火点を置く。
-- イベント: `state:binding-added` / `state:binding-removed`
-  payload = `{ absoluteAddress, binding /* IBindingInfo 生参照 */ }`。
-  clear は `state:binding-cleared` `{ absoluteAddress }`。
-- devtools 側はこれで node⇔binding⇔path の台帳を組む。**ランタイムは台帳を持たない**。
+- Firing points go into `addBindingByAbsoluteStateAddress` / `removeBindingByAbsoluteStateAddress` /
+  `clearBindingSetByAbsoluteStateAddress` in
+  [getBindingSetByAbsoluteStateAddress.ts](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts).
+- Events: `state:binding-added` / `state:binding-removed`,
+  payload = `{ absoluteAddress, binding /* a live IBindingInfo reference */ }`.
+  Clear is `state:binding-cleared`, `{ absoluteAddress }`.
+- The devtools side builds the node⇔binding⇔path ledger from these. **The runtime holds no ledger.**
 
-### 4.5 token 発火（command / event）
+### 4.5 Token emission (command / event)
 
-- [CommandToken.ts](../packages/state/src/command/CommandToken.ts) /
-  [EventToken.ts](../packages/state/src/event/EventToken.ts) の `emit` を薄く override
-  （`sink && sink(...)` → `super.emit(...)`）。
-- token は自分の stateElement を知らないため、コンストラクタに owner 情報
-  `{ stateName }` を**内部 optional 引数**として追加し、registry
-  （`getOrCreateCommandToken` 等）が渡す。プロトコル外部仕様（command-token-protocol /
-  event-token-protocol）は不変更。
-- イベント: `state:token-emit`
-  payload = `{ kind: "command" | "event", stateName, tokenName, args: unknown[], subscriberCount }`。
-  `subscriberCount === 0` の emit は「空撃ち」としてそのまま流す — raf で踏んだ
-  whenDefined 前の command 空撃ちレースが**タイムライン上で見える**ようにするのが狙い。
+- Thinly override `emit` in [CommandToken.ts](../packages/state/src/command/CommandToken.ts) and
+  [EventToken.ts](../packages/state/src/event/EventToken.ts) (`sink && sink(...)` → `super.emit(...)`).
+- A token does not know its own stateElement, so owner information `{ stateName }` is added to the constructor
+  as an **internal optional argument**, passed in by the registry (`getOrCreateCommandToken` and friends).
+  The external protocol specs (command-token-protocol / event-token-protocol) are unchanged.
+- Event: `state:token-emit`,
+  payload = `{ kind: "command" | "event", stateName, tokenName, args: unknown[], subscriberCount }`.
+  An emit with `subscriberCount === 0` flows through as-is, as a "blank shot" — the point being to make the
+  pre-whenDefined blank-shot command race that raf ran into **visible on the timeline**.
 
-### 4.6 v1 でやらない計装
+### 4.6 Instrumentation v1 does not do
 
-- get（読み取り）トレース: 量が桁違いでホットパス直撃。やらない。
-- 依存グラフの動的変化イベント: pull（`IStateElementSummary.staticDependency` 等）で足りる。
-- `$streams`: status/error は `$streamStatus.*` 等の**通常パスとして** 4.2/4.3 に乗るため
-  専用イベント不要（設計済みの reactive 露出を再利用）。
+- Tracing gets (reads): an order of magnitude more volume, straight into the hot path. Not doing it.
+- Events for dynamic changes in the dependency graph: pull suffices (`IStateElementSummary.staticDependency`
+  and the rest).
+- `$streams`: status/error ride on 4.2/4.3 **as ordinary paths** through `$streamStatus.*` and the like, so no
+  dedicated event is needed (reusing the reactive exposure that is already designed).
 
-## 5. 複数 source と自己除外
+## 5. Several sources, and excluding oneself
 
-- 同一ページに state コピーが複数（CDN `.`/`.dom` 混在事故、または devtools 自身が
-  持ち込むコピー）→ それぞれが独立 source。UI は source 単位でタブ/フィルタ表示。
-- **自己除外**: devtools は自分の UI が使うランタイムの sourceId を知っている
-  （自分が import したモジュールの register を `onSourceRegistered` で捕捉できる…では
-  同一版が dedup された場合に曖昧）。確実な機構として、source 登録**前**に
-  `globalThis.__WCSTACK_DEVTOOLS_IGNORE_NEXT__` のような暗黙印は採らず、
-  **予約 state 名 prefix `"wcs-devtools"`** を規範化する:
-  - devtools が生成する `<wcs-state>` の name は `wcs-devtools*` で始めなければならない（MUST）
-  - UI は既定でこの prefix の要素・アドレス・イベントを表示から除外する
-  - 加えて `rootNode` が `<wcs-devtools>` の ShadowRoot 配下かの包含判定を第 2 の網とする
+- Where a page has several copies of state (the accident of mixing CDN `.`/`.dom` entries, or a copy that
+  devtools itself brings in) → each is its own source. The UI shows tabs/filters per source.
+- **Excluding oneself**: devtools knows the sourceId of the runtime its own UI uses — catching the register of
+  the module it imported through `onSourceRegistered` is ambiguous once the same version has been deduped.
+  As a reliable mechanism, rather than an implicit marker such as
+  `globalThis.__WCSTACK_DEVTOOLS_IGNORE_NEXT__` set **before** registration, the
+  **reserved state-name prefix `"wcs-devtools"`** is made normative:
+  - the name of a `<wcs-state>` that devtools creates MUST begin with `wcs-devtools*`
+  - the UI excludes elements, addresses, and events with that prefix from display by default
+  - as a second net, it also tests whether `rootNode` is contained under the `<wcs-devtools>` ShadowRoot
 
-## 6. 遅延アタッチの成立範囲（明示的な制限）
+## 6. How far late attachment works (an explicit limitation)
 
-接続タイミングで得られる情報を 2 層に分ける。**この差は仕様であり、UI に明示する。**
+The information available at attach time splits into two layers. **The difference is by design, and is surfaced in the UI.**
 
-| 情報 | 先行ロード時 | 遅延アタッチ時 |
+| Information | Loaded first | Attached late |
 |---|---|---|
-| state 要素一覧・状態ツリー・値の読み書き | ✓ | ✓（4.1 registry + pull） |
-| 更新バッチ / 書き込み / token タイムライン | ✓ | ✓（接続以降分のみ） |
-| **binding 台帳（内部オブジェクト）** | ✓（4.4 イベント蓄積） | ✗ — 過去分は復元不能 |
-| 宣言配線ビュー（element⇔path の対応） | ✓ | ✓（**DOM 再スキャン**で代替） |
+| the element list, the state tree, reading and writing values | ✓ | ✓ (4.1's registry plus pull) |
+| the update batch / write / token timeline | ✓ | ✓ (from attach onward only) |
+| **the binding ledger (internal objects)** | ✓ (accumulated from 4.4's events) | ✗ — the past cannot be reconstructed |
+| the declared wiring view (the element⇔path correspondence) | ✓ | ✓ (substituted by **re-scanning the DOM**) |
 
-- 復元不能の理由: binding 台帳のキー `IAbsoluteStateAddress` のキャッシュは
-  [AbsoluteStateAddress.ts:5](../packages/state/src/address/AbsoluteStateAddress.ts#L5) の
-  WeakMap 二段で**列挙不能**。列挙可能化は GC 寿命を変えるため却下。
-- 代替の DOM 再スキャン: `data-wcs` 属性と `<!--wcs-*-->` コメントは binding 構築後も
-  DOM に残るため、devtools 側が `bindTextParser` 相当（または同パーサの import）で
-  **宣言レベルの配線ビュー**を組める。ライブ binding 由来のエントリと区別して
-  「declared」バッジ表示（詳細は tag-design §UI）。
-- 推奨導線: 遅延アタッチ時、UI に「完全なライブ配線ビューにはリロードが必要」を表示し、
-  ワンクリックリロード（`location.reload()`。devtools は `<script>` で入っているので
-  リロード後は先行ロードになる）。
+- Why it cannot be reconstructed: the cache of the binding ledger's key `IAbsoluteStateAddress` is a two-level
+  WeakMap in [AbsoluteStateAddress.ts:5](../packages/state/src/address/AbsoluteStateAddress.ts#L5) and is
+  **not enumerable**. Making it enumerable would change GC lifetimes, so that is rejected.
+- The substitute, re-scanning the DOM: `data-wcs` attributes and `<!--wcs-*-->` comments remain in the DOM after
+  bindings are built, so the devtools side can assemble a **declaration-level wiring view** with the equivalent
+  of `bindTextParser` (or by importing that same parser). It is shown with a "declared" badge to distinguish it
+  from entries originating in live bindings (details in tag-design §UI).
+- The recommended path: on a late attach, the UI states that "a full live wiring view needs a reload" and offers
+  a one-click reload (`location.reload()` — devtools comes in through a `<script>`, so after the reload it is
+  loaded first).
 
-## 7. コスト検証ゲート（実装受け入れ条件）
+## 7. Cost verification gates (implementation acceptance criteria)
 
-1. detach 状態で `e2e/bench/jsfb-verify.mjs`（append / swap / clear / select）の
-   計測が計装前とノイズ範囲で一致すること（リグレッション扱いの閾値は当該ドライバの
-   既存運用に従う）。
-2. attach → detach 後、bridge 側に残留参照が無いこと（sink null 化・updater listener
-   解除・devtools 側台帳 clear）。イベント台帳リークの再演防止。
-3. 4.1 の registry が disconnect で確実に縮むこと（テストで要素 add/remove を往復）。
+1. In the detached state, the measurements of `e2e/bench/jsfb-verify.mjs` (append / swap / clear / select) match
+   the pre-instrumentation numbers within noise (the threshold for calling it a regression follows that driver's
+   existing practice).
+2. After attach → detach, no residual reference remains on the bridge side (sink nulled, the updater listener
+   removed, the devtools-side ledger cleared). Preventing a repeat of the event-ledger leak.
+3. The registry of 4.1 reliably shrinks on disconnect (a test adding and removing elements in a round trip).
 
-## 8. signals 予約（Phase 2 への引き継ぎ）
+## 8. The signals reservation (handover to Phase 2)
 
-- `IDevtoolsSource.kind: "signals"` とイベント namespace `signals:*` を予約。
-- 先送りの理由（v1 に入れない根拠）: signal / computed / effect は**無名**であり、
-  識別子 API（`signal(v, { name })` 等）を signals 側で先に設計しないと
-  表示が「Signal #47」になり無価値。API 表面の変更を伴うため独立の設計判断
-  （[signals-migration-plan.md](signals-migration-plan.md) 系列に接続）。
-- signals が実装する際の対応表（想定）: source pull = ルート signal 一覧（owner tree）、
-  push = write / recompute / effect-run。`dev.ts` の `__WCS_DEV__` とは独立
-  （dev.ts = 警告、hook = 検査。統合しない）。
+- `IDevtoolsSource.kind: "signals"` and the event namespace `signals:*` are reserved.
+- Why it is deferred (the grounds for keeping it out of v1): a signal / computed / effect is **anonymous**, and
+  without designing an identifier API (`signal(v, { name })` or similar) on the signals side first, the display
+  reads "Signal #47" and is worthless. Since it entails a change to the API surface, it is an independent design
+  decision (connecting to the [signals-migration-plan.md](signals-migration-plan.md) (ja) line).
+- The expected correspondence when signals implements it: source pull = the list of root signals (the owner
+  tree); push = write / recompute / effect-run. Independent of `dev.ts`'s `__WCS_DEV__`
+  (dev.ts = warnings, hook = inspection; the two are not merged).
 
-## 9. 未決ゲート
+## 9. Open gates
 
-- **G-R（read の副作用）**: §3 の readonly read が依存グラフ・キャッシュを汚さないことの
-  実装時検証。汚す場合は `getByAddress` 直読みへ切替。
-- **G-P（binding イベントの粒度）**: リスト大量更新時に binding-added/removed が
-  バースト発火する。devtools 側 ring buffer で受け切れるか、bridge 側で
-  microtask 集約が要るかは実装時にベンチで判定（既定は素通し・集約は複雑化のため後手）。
+- **G-R (side effects of read)**: verifying at implementation time that §3's readonly read pollutes neither the
+  dependency graph nor the cache. Where it does, switch to reading `getByAddress` directly.
+- **G-P (the granularity of binding events)**: a bulk list update makes binding-added/removed fire in bursts.
+  Whether the devtools-side ring buffer can absorb it, or the bridge needs microtask aggregation, is decided by
+  benchmark at implementation time (passing straight through is the default; aggregation is deferred as it adds
+  complexity).

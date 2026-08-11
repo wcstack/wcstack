@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/audio`（`<wcs-audio>` ＋ 音声ノードタグ群）
 
-- **状態**: ✅ 設計確定（2026-08-02）。前提となる [handle graph wiring ADR](./architecture-hardening/14-handle-graph-wiring.md) は G1〜G6 すべて採択済み。実装計画は [audio-impl-plan.md](./audio-impl-plan.md)。
+- **状態**: ✅ 設計確定（2026-08-02）。前提となる [handle graph wiring ADR](./architecture-hardening/14-handle-graph-wiring.ja.md) は G1〜G6 すべて採択済み。実装計画は [audio-impl-plan.ja.md](./audio-impl-plan.ja.md)。
 - **対象 WebAPI**: Web Audio API（`AudioContext`、`OscillatorNode` / `BiquadFilterNode` / `GainNode` / `DelayNode` / `WaveShaperNode` / `ConstantSourceNode` / `AudioBufferSourceNode` / `AnalyserNode` / `DynamicsCompressorNode`、`AudioParam` のスケジューリング API）。
 - **位置づけ**: **ライブハンドルの有向グラフを内部に持つ初の I/O ノード**。camera が「生ハンドル1本」で開いた地平の続きだが、ADR G2 の推奨どおりハンドルを一切公開しないため、**プロトコル境界から見れば worker / websocket / broadcast と同じ「内部に非シリアライズ資源を持つが値しか出さないノード」**になる。
 - **原型**: [examples/synth-playground/wcs-synth.js](../examples/synth-playground/wcs-synth.js)（1063行・Playwright スモーク 14/14）。挙動の正しさは実証済みで、本設計はそれを wcstack の骨格に載せ替える作業を規定する。
@@ -167,7 +167,7 @@ commands: [{ name: "resume", async: true }, { name: "suspend", async: true },
 
 - **原型の欠陥**: `MutationObserver` を `subtree: true` で無差別に張っているため（[wcs-synth.js:538-539](../examples/synth-playground/wcs-synth.js#L538-L539)）、コントロール用の `<div>` を1個足しただけでグラフ全体が再構築され**発音中の音が切れる**。パッケージ化では変異を audio タグ関連に絞り込むフィルタが必須。
 - **rebuild は可聴な断絶を伴う**（発音中のボイスを落とす）。README と契約に明記する。
-- **coalesce は microtask**。原型は `setTimeout(0)`（[wcs-synth.js:596](../examples/synth-playground/wcs-synth.js#L596)）で、[横断契約 §3](./timing-and-firing-contract.md)「microtask が task に先行する」に未追随。
+- **coalesce は microtask**。原型は `setTimeout(0)`（[wcs-synth.js:596](../examples/synth-playground/wcs-synth.js#L596)）で、[横断契約 §3](./timing-and-firing-contract.ja.md)「microtask が task に先行する」に未追随。
 - `setPatch()` は **冪等**（同一 patch を渡しても rebuild しない）。resize §12.3 と同型。patch の同値判定は構造ハッシュで行う。
 
 ---
@@ -263,4 +263,4 @@ commands: [{ name: "resume", async: true }, { name: "suspend", async: true },
 
 ## 12. 実装計画
 
-→ [audio-impl-plan.md](./audio-impl-plan.md)
+→ [audio-impl-plan.ja.md](./audio-impl-plan.ja.md)

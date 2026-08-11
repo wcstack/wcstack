@@ -3,14 +3,14 @@
 > **注記（現況・2026-07）**: 本書は候補選定時点のスナップショットである。ここで「候補/未着手/将来」として扱う IO ノードの多くは既に `packages/` 配下に実装済み（accelerometer / ambient-light-sensor / broadcast / camera / clipboard / contacts / credential / debounce / defined / eyedropper / fetch / fullscreen / geolocation / gyroscope / idle / intersection / magnetometer / network / notification / permission / picture-in-picture / pointer-lock / resize / screen-orientation / share(web-share) / speech / sse / storage / tilt / timer / upload / wakelock / websocket / worker 等）。個別の「実装優先度」「未着手」の記述は当時の計画であり現況とは異なる。
 
 - **対象**: `@wcstack` に次の非同期IOノードを追加する際の候補選定
-- **状態**: 調査メモ（非規範）。個別ノードの実装が決まったら `docs/<name>-tag-design.md` を別途起草する（[async-io-node-guidelines.md](./async-io-node-guidelines.md) §1 MUST）。本書はその手前の「候補として妥当か」を篩い分けるための一次スクリーニング
+- **状態**: 調査メモ（非規範）。個別ノードの実装が決まったら `docs/<name>-tag-design.md` を別途起草する（[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) §1 MUST）。本書はその手前の「候補として妥当か」を篩い分けるための一次スクリーニング
 - **既存25パッケージ**: `fetch` / `storage` / `upload` / `websocket` / `sse` / `broadcast` / `worker` / `timer` / `debounce` / `clipboard` / `geolocation` / `permission` / `notification` / `intersection` / `resize` / `wakelock` / `camera` / `speech` / `defined` / `router` / `autoloader` / `state` / `signals` / `server` / `vscode-wcs`（2026-07-01 時点、`packages/` 実ディレクトリで確認済み）
 
 ---
 
 ## 1. スクリーニング基準（3ゲート）
 
-[async-io-node-guidelines.md](./async-io-node-guidelines.md) から、新規ノード候補が「アーキテクチャに乗るか」を判定する3つのゲートを抽出する。実装の巧拙ではなく、**その候補APIがこの骨格にそもそも乗る形をしているか**を問う。
+[async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) から、新規ノード候補が「アーキテクチャに乗るか」を判定する3つのゲートを抽出する。実装の巧拙ではなく、**その候補APIがこの骨格にそもそも乗る形をしているか**を問う。
 
 1. **Gate 1 — Core が DOM 非依存で書けるか**（§3.1 MUST）。`navigator` / `globalThis.X` だけで完結するか。例外は「Element参照をコンストラクタでキャッシュせず `observe(target)` の引数として都度受け取る」形のみ（intersection/resize が先例）。この抜け道を使ってもなお要素の**内部構造**（レイアウト計算等）に依存しなければ許容範囲とする
 2. **Gate 2 — observable surface が「1イベント＋派生 getter」に分解できるか**（§4.2）。複合状態を1つの `CustomEvent` に載せ、そこから boolean/値を派生 getter として切り出せるか。これができないと宣言的バインド（`hidden@granted` 相当）に落ちない

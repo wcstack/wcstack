@@ -1,7 +1,7 @@
 # bind-component の入れ子 `for` — 調査と実装
 
 status: **実装済み（2026-08-11・未リリース）**
-関連: [ADR-15 §1.7 / §1.8 / §1.9 / §1.10](architecture-hardening/15-state-component-mechanism-consistency.md)、
+関連: [ADR-15 §1.7 / §1.8 / §1.9 / §1.10](architecture-hardening/15-state-component-mechanism-consistency.ja.md)、
 [packages/state/src/webComponent/README.md](../packages/state/src/webComponent/README.md)
 
 本書は調査 → 設計 → 実装の記録。設計の前提が**計測で確認された**こと、および
@@ -457,7 +457,7 @@ memory の「`src/auto.ts` が `./exports` 以外を import すると SRI が黙
 
 **2026-08-11 修正**（後続ブランチ fix/nested-for-followups）: 参照 17 ファイル
 （state `__e2e__` 12・router `__e2e__` 1・server README ×2 と `render.ts` の JSDoc・
-docs/state-binding-init-races.md）を `auto.min.js` に置換。`e2e/bench/jsfb-verify.mjs` が
+docs/state-binding-init-races.ja.md）を `auto.min.js` に置換。`e2e/bench/jsfb-verify.mjs` が
 keyed 判定（3 種とも合格）・全 8 操作の計測まで完走することを実ブラウザで確認した。
 **「配布物のファイル名変更を参照側に伝える自動ゲートが無い」構造自体は残っている**。
 

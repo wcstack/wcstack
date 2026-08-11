@@ -1,6 +1,6 @@
 # 設計メモ: `@wcstack/midi`（`<wcs-midi>`）
 
-- **状態**: ✅ 設計確定（2026-08-02）。**[handle graph wiring ADR](./architecture-hardening/14-handle-graph-wiring.md) に依存しない**（ハンドルもグラフも持たない）。実装計画は [audio-impl-plan.md](./audio-impl-plan.md) Phase A。
+- **状態**: ✅ 設計確定（2026-08-02）。**[handle graph wiring ADR](./architecture-hardening/14-handle-graph-wiring.ja.md) に依存しない**（ハンドルもグラフも持たない）。実装計画は [audio-impl-plan.ja.md](./audio-impl-plan.ja.md) Phase A。
 - **対象 WebAPI**: Web MIDI API（`navigator.requestMIDIAccess({sysex})`、`MIDIAccess`、`MIDIInput` / `MIDIOutput`、`midimessage` イベント、`statechange` イベント、`MIDIOutput.send()`）。
 - **位置づけ**: [examples/synth-playground](../examples/synth-playground/) から切り出す最初のパッケージ。**Web MIDI は synth と独立に意味を持つ**（MIDI コントローラで UI を操作する、フェーダーで state を駆動する等）純粋な Web 標準 I/O ノードであり、ハンドルもグラフも持たない。既存のノード骨格にそのまま収まる。
 - **前提資産**: permission（4値 permission surface・`_permGen` 世代ガード・unsupported フォールバック・pure monitor 型）、websocket（1タグで送受信の双方向・接続状態）、broadcast（message を occurrence として流す・同値ガードしない）、notification（permission を誘発する command）、sensor 族（connect では何も始まらない・start コマンド駆動）。
@@ -95,7 +95,7 @@ static wcBindable: IWcBindable = {
 ```
 
 - `send(data, timestamp?)` は **位置引数素通し**（[command-token 引数転送](./spec-proposal-command-token-arguments.md) の MUST）。`data` は `number[]` / `Uint8Array` の両方を受ける。`await` しない。
-- **CustomStateSet**: `:state(granted)` / `:state(connected)` / `:state(unsupported)` / `:state(error)` を Shell が反映（[custom-state-reflection-design](./custom-state-reflection-design.md) 準拠）。
+- **CustomStateSet**: `:state(granted)` / `:state(connected)` / `:state(unsupported)` / `:state(error)` を Shell が反映（[custom-state-reflection-design](./custom-state-reflection-design.ja.md) 準拠）。
 
 ### 5.1 配線例
 
@@ -116,7 +116,7 @@ $on: {
 
 ---
 
-## 6. 発火契約（timing-and-firing-contract.md 行き）
+## 6. 発火契約（timing-and-firing-contract.ja.md 行き）
 
 - **初回スナップショット消失は起きない**。`requestMIDIAccess()` は async であり、`connectedCallback` 中の同期 dispatch が無い（permission §11.2 と同型・screen-orientation §7.1 の問題を回避）。
 - `message` は同値ガード**なし**（occurrence）。`devices` / `connected` / `permission` / `error` は同値ガード**あり**。
