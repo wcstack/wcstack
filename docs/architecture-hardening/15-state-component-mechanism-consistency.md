@@ -521,9 +521,12 @@ base を親に渡す必要がある — `createListDiff` は既存台帳があ�
 
 回帰は happy-dom
 （[`integration.bindComponentNestedFor.test.ts`](../../packages/state/__tests__/integration.bindComponentNestedFor.test.ts)・
-[`webComponent.baseListIndex.test.ts`](../../packages/state/__tests__/webComponent.baseListIndex.test.ts)）。
-**実ブラウザ e2e は未実施** — content プール再利用まわりは「実ブラウザのみ再現」の実績が
-ある領域なので、リリース前に足すこと。
+[`webComponent.baseListIndex.test.ts`](../../packages/state/__tests__/webComponent.baseListIndex.test.ts)）と
+実ブラウザ（[`e2e/tests/state-bind-component-nested-for.spec.ts`](../../e2e/tests/state-bind-component-nested-for.spec.ts)）の
+両方。どちらも **shadow を constructor で組む形と connectedCallback で組む形の両方**を並べている
+（§1.9 の理由）。実ブラウザ側でだけ出た事象が 1 件あった — 範囲外の行への書き込みが
+`ListIndex not found: <親パス>` を投げる既存挙動で、メッセージが原因を誤って示す
+（本件とは無関係だが設計書 §8.4 に記録）。
 
 ---
 

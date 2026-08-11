@@ -262,6 +262,49 @@ describe.each<ShadowTiming>(["constructor", "connectedCallback"])(
       host.remove();
     });
 
+    it("並べ替えを往復しても読みが壊れないこと", async () => {
+      // 並べ替えで行 content が動くと、コンポーネント要素は一度プール（DOM から外れる）を
+      // 経由しうる。その間に境界の read が走ると、ノードのループ文脈を辿れず
+      // `ListIndex not found: groups.*.children` になる。
+      const errors: unknown[] = [];
+      const onError = (event: ErrorEvent | PromiseRejectionEvent) => {
+        errors.push((event as any).error ?? (event as any).reason);
+      };
+      window.addEventListener("error", onError);
+      window.addEventListener("unhandledrejection", onError as EventListener);
+      try {
+        const { host, parentStateElement, rendered, outerTitles, settle } =
+          await mountNested(TWO_GROUPS, timing);
+
+        const swap = async () => {
+          parentStateElement.createState("writable", (s: any) => {
+            const groups = s["groups"] as any[];
+            s["groups"] = [groups[1], groups[0]];
+          });
+          await flush();
+          await settle();
+        };
+
+        await swap();
+        expect(outerTitles()).toEqual(["G2", "G1"]);
+        await swap();
+        expect(outerTitles()).toEqual(["G1", "G2"]);
+
+        parentStateElement.createState("writable", (s: any) => {
+          s["groups.0.children.1.name"] = "b-after-roundtrip";
+        });
+        await flush();
+
+        expect(rendered()).toEqual([["a", "b-after-roundtrip"], ["c"]]);
+        expect(errors).toEqual([]);
+
+        host.remove();
+      } finally {
+        window.removeEventListener("error", onError);
+        window.removeEventListener("unhandledrejection", onError as EventListener);
+      }
+    });
+
     it("並べ替えのあとも親からの行フィールド書き込みが正しい子に届くこと", async () => {
       const { host, parentStateElement, rendered, settle } = await mountNested(TWO_GROUPS, timing);
 

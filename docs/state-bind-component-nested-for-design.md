@@ -282,18 +282,22 @@ happy-dom 統合テスト
 - Δ=0 の既存形との併存（同じコンポーネントを親 `for` の外でも使う）
 - **shadow を constructor で組む形と connectedCallback で組む形の両方**（§1.9 の教訓）
 
+**判別子は必ず Shadow 内のビュー**（§1.7 の罠）。親スコープの行は親自身のバインディングなので、
+子への配送が死んでいても更新される。
+
 base listIndex 自体は
 [`webComponent.baseListIndex.test.ts`](../packages/state/__tests__/webComponent.baseListIndex.test.ts)
 で単体固定（キャッシュしないことを含む）。
 
-**判別子は必ず Shadow 内のビュー**（§1.7 の罠）。親スコープの行は親自身のバインディングなので、
-子への配送が死んでいても更新される。
+実ブラウザは
+[`e2e/tests/state-bind-component-nested-for.spec.ts`](../e2e/tests/state-bind-component-nested-for.spec.ts) /
+[`e2e/fixtures/bind-component-nested-for.html`](../e2e/fixtures/bind-component-nested-for.html)（7 ケース）。
+フィクスチャは 1 ページに `group-eager`（constructor 形）と `group-lazy`（connectedCallback 形）を
+並べて置き、行の同一性は `data-row-id` で見る（全再描画に落ちていればテキストではなく id の並びが崩れる）。
 
-結果: 全 2190 テスト green、`tsc --noEmit` / `eslint` / `rollup` ビルドとも通過。
+結果: 全 2192 テスト green、e2e 57/57 green、`tsc --noEmit` / `eslint` / `rollup` ビルドとも通過。
 新規 3 モジュール（`wildcardLevel.ts` / `baseListIndex.ts` / 変更した `loopContext.ts`）は
 カバレッジ 100%。
-
-**実ブラウザ e2e は未実施**（§8.4）。
 
 ### 残るリスク
 
@@ -370,13 +374,21 @@ stale な読み 1 本が同じバッチの無関係な更新まで道連れに�
 `wildcardPos >= wildcardCount` の明示ガードで塞いだ。
 既存テスト 1 本がこれを捕まえた ＝ **カバレッジが設計の穴を検出した**（§1.8 と同じ効き方）。
 
-### 8.4 実ブラウザ e2e が未実施
+### 8.4 範囲外の行への書き込みは raise し、しかもメッセージが親パス名を指す
 
-§1.8 / §1.9 はどちらも happy-dom と実ブラウザの両方で固定している。
-本件は happy-dom のみ。特に content プール再利用まわりは
-「実ブラウザのみ再現」の実績がある領域（ADR-15 の罠: `template.content` の clone は
-upgrade されない）なので、リリース前に
-`e2e/tests/state-bind-component-nested-for.spec.ts` 相当を足すこと。
+e2e を書いていて踏んだ。`groups.0.children.1.name` への書き込みは、
+`groups[0].children` の要素数が 2 未満だと
+`ListIndex not found: groups.*.children` を投げる。実際の原因は
+「そのリストに index 1 が無い」ことなのに、メッセージは**親パス**を名指しするので
+「リスト自体が見つからない」と読めてしまい、切り分けを誤らせる
+（[`getListIndex.ts`](../packages/state/src/proxy/methods/getListIndex.ts) の `"all"` 分岐）。
+
+本件の変更とは無関係な既存挙動（`getListIndex` は未変更）で、
+挙動そのもの（範囲外書き込みで raise する）は妥当。**メッセージだけが誤解を招く**ので、
+`ListIndex not found at index N of <path>` の形に直す価値がある。
+
+happy-dom では再現せず、実ブラウザの e2e で初めて出た — **§8.6 の裏返しで、
+両方で回す価値がここにもある**。
 
 ### 8.5 テスト作成上の罠: happy-dom の `textContent = 0` は `""` になる
 
