@@ -69,26 +69,37 @@ export function setStateElementByName(rootNode:Node, name: string, element: ISta
       // 無いので `rootNode instanceof Document` は ReferenceError になる。
       // `ShadowRoot` はリストに含まれるため他所では instanceof を使っている
       // （docs/architecture-hardening/15-state-component-mechanism-consistency.md §3.3）。
+      // reject を配管しないと、バインディング初期化中の例外は unhandled rejection として
+      // 漏れるだけで ready が永久に未解決のまま残り、await getBindingsReady() の先が
+      // 無言でハングする（docs/state-bind-component-nested-for-design.md §8.2）。
       if (rootNode.constructor.name === 'HTMLDocument' || rootNode.constructor.name === 'Document') {
-        const ready = new Promise<void>((resolve) => {
+        const ready = new Promise<void>((resolve, reject) => {
           queueMicrotask(async () => {
-            if (enableSsr) {
-              const success = await hydrateBindings(rootNode as Document);
-              if (!success) {
+            try {
+              if (enableSsr) {
+                const success = await hydrateBindings(rootNode as Document);
+                if (!success) {
+                  await buildBindings(rootNode as Document);
+                }
+              } else {
                 await buildBindings(rootNode as Document);
               }
-            } else {
-              await buildBindings(rootNode as Document);
+              resolve();
+            } catch (error) {
+              reject(error);
             }
-            resolve();
           });
         });
         bindingsReadyByNode.set(rootNode, ready);
       } else if (rootNode.constructor.name === 'ShadowRoot') {
-        const ready = new Promise<void>((resolve) => {
+        const ready = new Promise<void>((resolve, reject) => {
           queueMicrotask(async () => {
-            await buildBindings(rootNode as ShadowRoot);
-            resolve();
+            try {
+              await buildBindings(rootNode as ShadowRoot);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
           });
         });
         bindingsReadyByNode.set(rootNode, ready);

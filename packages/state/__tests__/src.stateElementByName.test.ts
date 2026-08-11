@@ -151,5 +151,34 @@ describe('stateElementByName', () => {
       const result = await getBindingsReady(node);
       expect(result).toBeUndefined();
     });
+
+    // §8.2: reject を配管しないと ready が永久に未解決のまま残り、
+    // await getBindingsReady() の先が無言でハングする
+    // （docs/state-bind-component-nested-for-design.md §8.2）
+    it('Document の buildBindings が throw した場合、ready promise が reject すること', async () => {
+      const freshDocument = document.implementation.createHTMLDocument();
+      vi.mocked(buildBindings).mockRejectedValueOnce(new Error('binding init failed'));
+      const fake = { name: 'failing' } as any;
+
+      setStateElementByName(freshDocument, 'failing', fake);
+      // queueMicrotask 実行前（同期）にハンドラを取り付ける
+      const ready = getBindingsReady(freshDocument);
+
+      await expect(ready).rejects.toThrow('binding init failed');
+      setStateElementByName(freshDocument, 'failing', null);
+    });
+
+    it('ShadowRoot の buildBindings が throw した場合、ready promise が reject すること', async () => {
+      const component = document.createElement('div');
+      const shadowRoot = component.attachShadow({ mode: 'open' });
+      vi.mocked(buildBindings).mockRejectedValueOnce(new Error('shadow binding init failed'));
+      const fake = { name: 'failing' } as any;
+
+      setStateElementByName(shadowRoot, 'failing', fake);
+      const ready = getBindingsReady(shadowRoot);
+
+      await expect(ready).rejects.toThrow('shadow binding init failed');
+      setStateElementByName(shadowRoot, 'failing', null);
+    });
   });
 });
