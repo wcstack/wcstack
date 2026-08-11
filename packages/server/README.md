@@ -305,7 +305,7 @@ const ssrBody = await renderToString(template, {
 const page = `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <script type="module" src="/packages/state/dist/auto.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
 </head>
 <body>${ssrBody}</body>
 </html>`;

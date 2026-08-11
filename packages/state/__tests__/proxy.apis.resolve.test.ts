@@ -262,7 +262,8 @@ describe('resolve', () => {
 
     const resolveFn = resolve(target, '$resolve', target, handler as any);
 
-    expect(() => resolveFn('items.*', [99])).toThrow(/ListIndex not found/);
+    // §8.4: 範囲外はどの index が無いかまで示す
+    expect(() => resolveFn('items.*', [99])).toThrow(/ListIndex not found at index 99 of items/);
   });
 
   it('lastAddressStackのパスと同一パスの場合は依存関係を登録しないこと', () => {

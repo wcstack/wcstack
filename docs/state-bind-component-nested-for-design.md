@@ -371,7 +371,7 @@ Phase 0 として計画していた「入れ子形と分かる診断メッセー
 stale な読み 1 本が同じバッチの無関係な更新まで道連れにする —
 §1.7 / §1.9 で 2 度潰したのと同じ構図の 3 度目である。
 
-### 8.2 バインディング初期化中の例外が ready promise を永久に未解決のまま残す（未修正・別件）
+### 8.2 バインディング初期化中の例外が ready promise を永久に未解決のまま残す（✅ 修正済み 2026-08-11）
 
 修正前の入れ子形は `ListIndex not found` を投げていたが、その例外は
 **unhandled rejection として外に出るだけで `State.getBindingsReady` は解決も reject もしなかった**。
@@ -383,6 +383,24 @@ stale な読み 1 本が同じバッチの無関係な更新まで道連れに�
 §8.1・§1.7・§1.9 と同じ「1 件の失敗が全体を巻き込む」系統で、
 起票して個別に扱う価値がある。少なくとも ready promise を reject させれば、
 無言のハングは「原因の分かる失敗」になる。
+
+**2026-08-11 修正**（後続ブランチ fix/nested-for-followups）:
+[`stateElementByName.ts`](../packages/state/src/stateElementByName.ts) の
+ready promise 生成を try/catch で包み、`buildBindings` / `hydrateBindings` の例外で
+reject するようにした。Document / ShadowRoot 両経路。例外は unhandled rejection として
+漏れる代わりに `await getBindingsReady()` の呼び出し元へ届く。
+
+同ブランチのレビューで**同型が一段深いところに残っている**ことが判明した:
+唯一のプロダクション消費者である SSR（enable-ssr）経路では、`State.connectedCallback`
+内の `await getBindingsReady(...)` が reject を受けると connectedCallback ごと中断し、
+resolve しか持たない `_connectedCallbackPromise` が永久に未解決 → @wcstack/server の
+`renderToString` が **mutex を握ったまま** connectedCallbackPromise 待ちで無言ハングする。
+修正前は buildBindings の例外が unhandled rejection として少なくとも大声で落ちていたので、
+ready の reject 化**だけ**だと、この経路は「うるさいクラッシュ → 無言ウェッジ」への
+退行になる。`_connectedCallbackPromise` にも reject を配管し、SSR ブロックの失敗を
+renderToString まで伝播させて（エラーを返し、finally で mutex が解放される）解消した。
+「1 件の失敗が全体を巻き込む」系統の修正は、**promise チェーンの末端の消費者まで
+reject が届くかを辿り切ってから閉じること**。
 
 ### 8.3 `listIndexAtWildcard` の範囲ガードは落とせない
 
@@ -406,10 +424,17 @@ e2e を書いていて踏んだ。`groups.0.children.1.name` への書き込み�
 挙動そのもの（範囲外書き込みで raise する）は妥当。**メッセージだけが誤解を招く**ので、
 `ListIndex not found at index N of <path>` の形に直す価値がある。
 
+**2026-08-11 修正**（後続ブランチ fix/nested-for-followups）: 上記の形に変更した。
+同型の「範囲外 index なのに親パスだけを名指しする raise」は `getListIndex` の `"all"`
+分岐のほか `$getAll`（[`getAll.ts`](../packages/state/src/proxy/apis/getAll.ts)）と
+`$resolve`（[`resolve.ts`](../packages/state/src/proxy/apis/resolve.ts)）にもあったので
+3 箇所とも揃えた。リスト台帳自体が無い場合の `ListIndex not found: <path>` は別原因なので
+従来のまま。
+
 happy-dom では再現せず、実ブラウザの e2e で初めて出た — **§8.6 の裏返しで、
 両方で回す価値がここにもある**。
 
-### 8.5 `__e2e__` のデモページが全滅していて、jsfb ベンチが動かない（未修正・別件）
+### 8.5 `__e2e__` のデモページが全滅していて、jsfb ベンチが動かない（✅ 修正済み 2026-08-11）
 
 性能を測ろうとして判明。`packages/state/__e2e__/*/index.html` は
 `<script src="../../dist/auto.js">` を読むが、**PR#141（`f5e1a35e` / `ededfe91`）以降
@@ -429,6 +454,12 @@ memory の「`src/auto.ts` が `./exports` 以外を import すると SRI が黙
 
 修正は各ページの `auto.js` → `auto.min.js` への置換で足りるが、本件のスコープ外なので
 別途起票すること。
+
+**2026-08-11 修正**（後続ブランチ fix/nested-for-followups）: 参照 17 ファイル
+（state `__e2e__` 12・router `__e2e__` 1・server README ×2 と `render.ts` の JSDoc・
+docs/state-binding-init-races.md）を `auto.min.js` に置換。`e2e/bench/jsfb-verify.mjs` が
+keyed 判定（3 種とも合格）・全 8 操作の計測まで完走することを実ブラウザで確認した。
+**「配布物のファイル名変更を参照側に伝える自動ゲートが無い」構造自体は残っている**。
 
 ### 8.6 テスト作成上の罠: happy-dom の `textContent = 0` は `""` になる
 

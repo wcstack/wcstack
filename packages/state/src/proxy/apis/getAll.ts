@@ -92,8 +92,10 @@ export function getAll(
               results);
           }
         } else {
-          const listIndex = listIndexes[index] ?? 
-            raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+          // 範囲外 index はリスト自体の不在と別原因なので index を含める
+          // （docs/state-bind-component-nested-for-design.md §8.4）
+          const listIndex = listIndexes[index] ??
+            raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
           if ((wildcardIndexPos + 1) < wildcardParentPathInfos.length) {
             walkWildcardPattern(
               wildcardParentPathInfos, 

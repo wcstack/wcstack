@@ -80,6 +80,7 @@ export class State extends HTMLElementBase implements IStateElement {
   private _resolveInitialize: (() => void) | null = null;
   private _connectedCallbackPromise: Promise<void>;
   private _resolveConnectedCallback: (() => void) | null = null;
+  private _rejectConnectedCallback: ((reason?: unknown) => void) | null = null;
   private _loadingPromise: Promise<void>;
   private _resolveLoading: (() => void) | null = null;
   private _setStatePromise: Promise<Record<string, any>> | null = null;
@@ -118,8 +119,9 @@ export class State extends HTMLElementBase implements IStateElement {
     this._initializePromise = new Promise<void>((resolve) => {
       this._resolveInitialize = resolve;
     });
-    this._connectedCallbackPromise = new Promise<void>((resolve) => {
+    this._connectedCallbackPromise = new Promise<void>((resolve, reject) => {
       this._resolveConnectedCallback = resolve;
+      this._rejectConnectedCallback = reject;
     });
     this._loadingPromise = new Promise<void>((resolve) => {
       this._resolveLoading = resolve;
@@ -425,15 +427,24 @@ export class State extends HTMLElementBase implements IStateElement {
 
     // サーバーモード + enable-ssr: バインディング完了後に <wcs-ssr> を生成
     if (inSsr() && this.hasAttribute('enable-ssr')) {
-      await getBindingsReady(this.rootNode);
+      try {
+        await getBindingsReady(this.rootNode);
 
-      const name = this.getAttribute('name') || 'default';
-      const stateData = Ssr.extractStateData(this);
-      const ssrEl = document.createElement(config.tagNames.ssr);
-      ssrEl.setAttribute('name', name);
-      ssrEl.setAttribute('version', VERSION);
-      Ssr.buildContent(ssrEl, stateData);
-      this.parentNode?.insertBefore(ssrEl, this);
+        const name = this.getAttribute('name') || 'default';
+        const stateData = Ssr.extractStateData(this);
+        const ssrEl = document.createElement(config.tagNames.ssr);
+        ssrEl.setAttribute('name', name);
+        ssrEl.setAttribute('version', VERSION);
+        Ssr.buildContent(ssrEl, stateData);
+        this.parentNode?.insertBefore(ssrEl, this);
+      } catch (error) {
+        // reject を配管しないと _connectedCallbackPromise が永久に未解決になり、
+        // renderToString が mutex を握ったまま connectedCallbackPromise 待ちで
+        // 無言ハングする。getBindingsReady の reject 化（設計書 §8.2）を
+        // SSR の消費者（render.ts）まで届けるための対。
+        this._rejectConnectedCallback?.(error);
+        throw error;
+      }
     }
 
     // $streams の eager 起動（$connectedCallback 完了後、設計書 §2-3）。

@@ -182,7 +182,7 @@ async function loadDefaultBootstraps(): Promise<BootstrapFunction[]> {
  * const page = `<!DOCTYPE html>
  * <html lang="ja">
  * <head>
- *   <script type="module" src="/packages/state/dist/auto.js"></script>
+ *   <script type="module" src="/packages/state/dist/auto.min.js"></script>
  * </head>
  * <body>${ssrBody}</body>
  * </html>`;
