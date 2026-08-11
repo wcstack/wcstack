@@ -44,9 +44,14 @@ class LoopContextStack {
       // ancestor chain. Δ is non-zero only for a mapped bind-component child
       // whose host sits inside a parent-scope `for`
       // (docs/state-bind-component-nested-for-design.md).
-      const expectedLength = loopContext.pathInfo.wildcardCount + this._getBaseDepth();
-      if (loopContext.listIndex.length !== expectedLength) {
-        raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}, base depth ${this._getBaseDepth()}).`);
+      // ここは行ごとに通る（applyChangeToFor は追加行ごとに createLoopContext する）。
+      // Δ=0 の判定を先に置き、通れば base 深さの解決（DOM の親走査を含む）に
+      // 一切触れない — 通常の state に追加コストを載せないため。
+      if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount) {
+        const baseDepth = this._getBaseDepth();
+        if (loopContext.listIndex.length !== loopContext.pathInfo.wildcardCount + baseDepth) {
+          raiseError(`Cannot push loop context when there is no active loop context: the list index chain (length ${loopContext.listIndex.length}) does not cover the wildcard path (wildcard count ${loopContext.pathInfo.wildcardCount}, base depth ${baseDepth}).`);
+        }
       }
     }
     this._loopContextStack[this._length] = loopContext;

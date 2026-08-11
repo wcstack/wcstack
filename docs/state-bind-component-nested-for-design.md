@@ -305,7 +305,26 @@ base listIndex 自体は
    → 統合テストで「初期描画 → 行追加 → 行削除 → リスト差し替え → 並べ替え」を通している
 2. **性能**。`getBaseListIndex` は `getLoopContextByNode` の parentNode walk を含む。
    `hasMappedComponentState` の早期 return で通常 state のホットパスには載せていない
-   （§1.8 の `crossBoundaryAddress` と同じ方針）が、**jsfb ベンチでの非回帰確認は未実施**
+   （§1.8 の `crossBoundaryAddress` と同じ方針）。さらに `createLoopContext` は
+   **追加行ごとに通る**（`applyChangeToFor` が行単位で呼ぶ）ので、段数検査は
+   Δ=0 の比較を先に置き、通れば base の解決に一切触れないようにした。
+
+   jsfb ベンチ（4x throttle・各 3 回）は §8.5 の理由で一度直してから測った。結論は
+   **この機材では判別不能**:
+
+   | op | main | 本ブランチ |
+   |---|---|---|
+   | create1k | 163.9 / 191.5 / 166.8 | 173.6 / 198.6 / 222.0 |
+   | replace1k | 155.1 | 150.7 |
+   | update10k | 73.0 | 71.7 |
+   | swap1k | 5.3 / 6.0 / 5.7 | 5.9 / 6.1 / 6.3 |
+   | remove1k | 14.1 / 15.6 / 18.5 | 17.0 / 17.1 / 17.3 |
+   | append1kTo10k | 330.3 / 337.5 / 362.8 | 330.8 / 353.3 / 355.9 |
+   | clear10k | 411.5 | 394.3 |
+
+   main 自身の create1k が 163.9〜191.5（17% 幅）でばらつくため、最小値どうしの
+   6% 差は分離できない。replace / update / clear は同等かやや速い。
+   **静かな機材での再測定が要る**
 
 ## 7. 実装の経緯
 
@@ -390,14 +409,35 @@ e2e を書いていて踏んだ。`groups.0.children.1.name` への書き込み�
 happy-dom では再現せず、実ブラウザの e2e で初めて出た — **§8.6 の裏返しで、
 両方で回す価値がここにもある**。
 
-### 8.5 テスト作成上の罠: happy-dom の `textContent = 0` は `""` になる
+### 8.5 `__e2e__` のデモページが全滅していて、jsfb ベンチが動かない（未修正・別件）
+
+性能を測ろうとして判明。`packages/state/__e2e__/*/index.html` は
+`<script src="../../dist/auto.js">` を読むが、**PR#141（`f5e1a35e` / `ededfe91`）以降
+その名前のファイルは出力されない**（`dist/auto.min.js` になった）。
+404 → タグが定義されない → ページが何も描画しない。
+
+影響は 12 ファイル + `packages/router/__e2e__/index.html`、および
+`packages/server` の README / JSDoc 中の記述。実害として、
+**jsfb ベンチのハーネスは PR#141 以降ずっと壊れている**
+（`bench/jsfb-verify.mjs` は `packages/state/__e2e__/benchmark/index.html` を叩く）。
+今回の計測は一時パッチを当てて行い、パッチはコミットしていない。
+
+`e2e/tests/` 側の playwright スイートは `e2e/fixtures/*.html` を使い、そちらは
+`auto.min.js` を正しく参照しているので**気づかれずに済んでいた**。
+memory の「`src/auto.ts` が `./exports` 以外を import すると SRI が黙って死ぬ（自動ゲート無し）」と
+同じ穴の別の出方 ＝ **配布物のファイル名を変えたとき、それを参照する側を機械的に検出する手段が無い**。
+
+修正は各ページの `auto.js` → `auto.min.js` への置換で足りるが、本件のスコープ外なので
+別途起票すること。
+
+### 8.6 テスト作成上の罠: happy-dom の `textContent = 0` は `""` になる
 
 `$1` の検証中に `textContent: $1` が行 0 で空文字になり、Δ が漏れているように見えた。
 切り分けた結果、**happy-dom で `element.textContent = 0` が `""` になる**非準拠挙動だった
 （`= 1` は `"1"`。実ブラウザは `"0"`）。wcstack 側の挙動ではない。
 数値 0 を DOM 経由で判別子に使わないこと。
 
-### 8.6 型定義より緩いモックが 2 件
+### 8.7 型定義より緩いモックが 2 件
 
 `pathInfo.wildcardCount` を持たないモックが 2 件あり、末尾アンカー化で初めて露見した
 （`0 - undefined = NaN`）。`IPathInfo` 上は必須のフィールドで、モック側を直した。
