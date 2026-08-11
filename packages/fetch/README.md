@@ -491,7 +491,11 @@ engine, not only where Trusted Types is enforced:
 ```js
 import { setTrustedTypesPolicy } from "@wcstack/fetch";
 
-setTrustedTypesPolicy({ createHTML: (html) => DOMPurify.sanitize(html) });
+// RETURN_TRUSTED_TYPE returns a TrustedHTML where Trusted Types exists and a plain
+// string elsewhere. A policy that returns a bare string is rejected under enforcement.
+setTrustedTypesPolicy({
+  createHTML: (html) => DOMPurify.sanitize(html, { RETURN_TRUSTED_TYPE: true }),
+});
 ```
 
 Under `require-trusted-types-for 'script'` this mode **requires** such a policy:

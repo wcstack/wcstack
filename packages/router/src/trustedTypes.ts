@@ -13,12 +13,12 @@
  * `createPolicy` は 1 回だけ走らせる — `trusted-types` ディレクティブがある場合、
  * `'allow-duplicates'` 無しの重複生成は例外になるため。
  *
- * 利用側が自前の policy を注入していればそちらを優先する:
- *
- * ```js
- * globalThis[Symbol.for("wcstack.trustedTypes.policy")] =
- *   trustedTypes.createPolicy("my-app", { createHTML: (s) => DOMPurify.sanitize(s) });
- * ```
+ * **利用側が注入した policy はここでは優先しない。** 注入口は「信頼できない値に対する
+ * sanitizer」として使われる想定で（fetch のレスポンス、state の値）、実際に案内している
+ * 設定も DOMPurify である。作者が書いたレイアウトを sanitizer に通すと、既定でカスタム
+ * 要素が除去されて `<wcs-link>` などがレイアウトから消える——例外も警告も無しに。
+ * よってここは identity policy を優先し、**それを作れなかったときだけ**利用側 policy に
+ * 落ちる（その場合は 1 度警告する）。
  */
 
 export interface IWcsTrustedTypesPolicy {
@@ -91,20 +91,41 @@ function getInternalPolicy(): IWcsTrustedTypesPolicy | null {
   return policy;
 }
 
+let _fallbackWarned = false;
+
+/** テスト用: フォールバック警告の一度きりフラグを戻す。 */
+export function _resetAuthoredFallbackWarning(): void {
+  _fallbackWarned = false;
+}
+
 /**
- * 作者が書いたマークアップを TrustedHTML に変換する。利用側 policy > 共有 identity
- * policy > 生文字列（TT 非対応ブラウザ）の順で解決する。
+ * 作者が書いたマークアップを TrustedHTML に変換する。
+ *
+ * 解決順は 共有 identity policy > （TT はあるが identity policy を作れなかった場合のみ）
+ * 利用側 policy > 生文字列。TT 非対応ブラウザでは署名自体が不要なので、利用側 policy が
+ * 入っていても素通しする——作者のレイアウトを sanitizer に通す理由はどこにも無い。
  */
 export function trustAuthoredHTML(html: string): string {
-  const adopted = getTrustedTypesPolicy();
-  const adoptedCreateHTML = adopted?.createHTML;
-  if (typeof adoptedCreateHTML === "function") {
-    return adoptedCreateHTML.call(adopted, html) as string;
-  }
   const internal = getInternalPolicy();
   const internalCreateHTML = internal?.createHTML;
   if (typeof internalCreateHTML === "function") {
     return internalCreateHTML.call(internal, html) as string;
+  }
+  if (!("trustedTypes" in globalThis)) return html;
+
+  const adopted = getTrustedTypesPolicy();
+  const adoptedCreateHTML = adopted?.createHTML;
+  if (typeof adoptedCreateHTML === "function") {
+    if (!_fallbackWarned) {
+      _fallbackWarned = true;
+      console.warn(
+        `[@wcstack/router] Falling back to the injected Trusted Types policy to expand a layout `
+        + `template, because the "${POLICY_NAME}" policy could not be created. If that policy `
+        + `sanitizes (e.g. DOMPurify), custom elements in the layout may be stripped. `
+        + `Allow \`trusted-types ${POLICY_NAME};\` in the CSP to avoid this. See docs/csp.md section 7.`,
+      );
+    }
+    return adoptedCreateHTML.call(adopted, html) as string;
   }
   return html;
 }

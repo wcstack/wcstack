@@ -487,7 +487,11 @@ console.log(fetchEl.body);    // null（fetch 後にリセット済み）
 ```js
 import { setTrustedTypesPolicy } from "@wcstack/fetch";
 
-setTrustedTypesPolicy({ createHTML: (html) => DOMPurify.sanitize(html) });
+// RETURN_TRUSTED_TYPE は Trusted Types がある環境では TrustedHTML を、無い環境では
+// 文字列を返す。ただの文字列を返す policy は強制下では受け付けられない。
+setTrustedTypesPolicy({
+  createHTML: (html) => DOMPurify.sanitize(html, { RETURN_TRUSTED_TYPE: true }),
+});
 ```
 
 `require-trusted-types-for 'script'` 下では、このモードには policy が**必須**です。

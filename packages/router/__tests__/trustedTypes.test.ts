@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   TRUSTED_TYPES_POLICY_SLOT,
+  _resetAuthoredFallbackWarning,
   _resetInternalTrustedTypesPolicy,
   getTrustedTypesPolicy,
   setTrustedTypesPolicy,
@@ -17,11 +18,13 @@ describe('trustedTypes', () => {
   beforeEach(() => {
     setTrustedTypesPolicy(null);
     _resetInternalTrustedTypesPolicy();
+    _resetAuthoredFallbackWarning();
   });
 
   afterEach(() => {
     setTrustedTypesPolicy(null);
     _resetInternalTrustedTypesPolicy();
+    _resetAuthoredFallbackWarning();
     delete (globalThis as any).trustedTypes;
     vi.restoreAllMocks();
   });
@@ -48,18 +51,35 @@ describe('trustedTypes', () => {
       expect(trustAuthoredHTML('<p>x</p>')).toBe('<p>x</p>');
     });
 
-    it('利用側 policy があれば identity policy より優先すること', () => {
-      const createPolicy = vi.fn();
-      stubTrustedTypes(createPolicy);
-      setTrustedTypesPolicy({ createHTML: (s: string) => `[adopted]${s}` });
-      expect(trustAuthoredHTML('<p>x</p>')).toBe('[adopted]<p>x</p>');
-      expect(createPolicy).not.toHaveBeenCalled();
+    // 利用側 policy は「信頼できない値の sanitizer」として設定される（案内している例も
+    // DOMPurify）。作者が書いたレイアウトをそこに通すと、既定でカスタム要素が除去されて
+    // <wcs-link> などが無言で消える。identity policy を優先すること。
+    it('利用側 policy が入っていても作者マークアップは identity policy を通ること', () => {
+      const createHTML = vi.fn((s: string) => s);
+      stubTrustedTypes((_name, rules) => ({ createHTML: (s: string) => `[internal]${rules.createHTML(s)}` }));
+      setTrustedTypesPolicy({ createHTML });
+      expect(trustAuthoredHTML('<wcs-link to="/a">a</wcs-link>')).toBe('[internal]<wcs-link to="/a">a</wcs-link>');
+      expect(createHTML).not.toHaveBeenCalled();
     });
 
-    it('createHTML を持たない利用側 policy なら identity policy に落ちること', () => {
-      stubTrustedTypes((_name, rules) => ({ createHTML: (s: string) => `[internal]${rules.createHTML(s)}` }));
-      setTrustedTypesPolicy({ createScriptURL: (s: string) => s });
-      expect(trustAuthoredHTML('<p>x</p>')).toBe('[internal]<p>x</p>');
+    it('Trusted Types 非対応ブラウザなら、利用側 policy があっても素通しすること', () => {
+      const createHTML = vi.fn((s: string) => s);
+      setTrustedTypesPolicy({ createHTML });
+      expect(trustAuthoredHTML('<wcs-link to="/a">a</wcs-link>')).toBe('<wcs-link to="/a">a</wcs-link>');
+      expect(createHTML).not.toHaveBeenCalled();
+    });
+
+    it('identity policy を作れなかった場合だけ利用側 policy に落ち、1 度だけ警告すること', () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      stubTrustedTypes(() => { throw new TypeError('Policy "wcstack" disallowed.'); });
+      setTrustedTypesPolicy({ createHTML: (s: string) => `[adopted]${s}` });
+
+      expect(trustAuthoredHTML('<p>x</p>')).toBe('[adopted]<p>x</p>');
+      expect(trustAuthoredHTML('<p>y</p>')).toBe('[adopted]<p>y</p>');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('custom elements in the layout may be stripped');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
     });
 
     it('policy 名 "wcstack" で 1 度だけ createPolicy すること（重複生成は例外になるため）', () => {
@@ -85,28 +105,30 @@ describe('trustedTypes', () => {
   });
 
   describe('<wcs-layout> との結線', () => {
-    it('文書内テンプレートの展開が policy を通ること', async () => {
-      stubTrustedTypes((_name, rules) => ({ createHTML: rules.createHTML }));
-      const createHTML = vi.fn((s: string) => s);
-      setTrustedTypesPolicy({ createHTML });
+    it('文書内テンプレートの展開が identity policy を通り、利用側 sanitizer には触れないこと', async () => {
+      const internalCreateHTML = vi.fn((s: string) => s);
+      stubTrustedTypes(() => ({ createHTML: internalCreateHTML }));
+      const adoptedCreateHTML = vi.fn((s: string) => s);
+      setTrustedTypesPolicy({ createHTML: adoptedCreateHTML });
 
       const source = document.createElement('template');
       source.id = 'tt-layout';
-      source.innerHTML = '<header>hi</header>';
+      source.innerHTML = '<header><wcs-link to="/a">a</wcs-link></header>';
       document.body.appendChild(source);
 
       const layout = new Layout();
       layout.setAttribute('layout', 'tt-layout');
       const template = await layout.loadTemplate();
 
-      expect(createHTML).toHaveBeenCalledWith('<header>hi</header>');
-      expect(template.innerHTML).toBe('<header>hi</header>');
+      expect(internalCreateHTML).toHaveBeenCalledWith('<header><wcs-link to="/a">a</wcs-link></header>');
+      expect(adoptedCreateHTML).not.toHaveBeenCalled();
+      expect(template.innerHTML).toBe('<header><wcs-link to="/a">a</wcs-link></header>');
       source.remove();
     });
 
-    it('src 由来のテンプレートも policy を通ること', async () => {
-      const createHTML = vi.fn((s: string) => s);
-      setTrustedTypesPolicy({ createHTML });
+    it('src 由来のテンプレートも identity policy を通ること（キャッシュ経由も同じ）', async () => {
+      const internalCreateHTML = vi.fn((s: string) => s);
+      stubTrustedTypes(() => ({ createHTML: internalCreateHTML }));
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
         ok: true,
         text: async () => '<main>from src</main>',
@@ -117,15 +139,15 @@ describe('trustedTypes', () => {
       const template = await layout.loadTemplate();
 
       expect(fetchSpy).toHaveBeenCalledWith('/layouts/tt.html');
-      expect(createHTML).toHaveBeenCalledWith('<main>from src</main>');
+      expect(internalCreateHTML).toHaveBeenCalledWith('<main>from src</main>');
       expect(template.innerHTML).toBe('<main>from src</main>');
 
       // 2 回目はキャッシュから読むが、こちらも policy を通ること
-      createHTML.mockClear();
+      internalCreateHTML.mockClear();
       const cached = new Layout();
       cached.setAttribute('src', '/layouts/tt.html');
       await cached.loadTemplate();
-      expect(createHTML).toHaveBeenCalledWith('<main>from src</main>');
+      expect(internalCreateHTML).toHaveBeenCalledWith('<main>from src</main>');
     });
   });
 });

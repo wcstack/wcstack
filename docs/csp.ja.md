@@ -209,9 +209,11 @@ Content-Security-Policy:
 </script>
 ```
 
+sanitize する policy なら、**`TrustedHTML` を返すこと**を確認する。DOMPurify なら `RETURN_TRUSTED_TYPE: true` が要る。ただの文字列を返す policy は強制下では受け付けられない。
+
 バンドラ経由なら `setTrustedTypesPolicy()` を使う（`@wcstack/state` / `@wcstack/router` / `@wcstack/fetch` / `@wcstack/worker` が export しており、いずれも同じスロットを指す）。最初のレイアウト展開 / worker 起動 / fetch より前に設定すること。
 
-注入した policy はどこでも組み込みの identity policy より優先される。リモートデータ系の 2 つの sink では **Trusted Types 非対応のエンジンでも適用する**。sanitizer が Chromium でだけ効いて Firefox / Safari では素通し、という差のほうが危ないため。
+**注入した policy が使われるのはリモートデータ系の 2 つの sink だけ**で、そこでは **Trusted Types 非対応のエンジンでも適用する**（sanitizer が Chromium でだけ効いて Firefox / Safari では素通し、という差のほうが危ないため）。一方、作者が書いたマークアップ（`<wcs-layout>` / `new Worker(src)`）には**意図的に適用しない**。注入される policy は通常 sanitizer であり、DOMPurify は既定でカスタム要素を除去するので、レイアウトを通すと `<wcs-link>` などが無言で消えるため。作者の文字列は `wcstack` identity policy が署名する。その policy を生成できなかった場合（CSP が名前を許可していない場合）に限って注入 policy にフォールバックし、何が落ち得るかを `console.warn` で 1 度伝える。
 
 ### 注入しない場合
 
@@ -226,6 +228,7 @@ state のプロパティ書き込み経路は setter の例外を意図的に握
 
 ### 補足
 
+- **共有 policy オブジェクトはページのスクリプトから読める。** `wcstack` をパッケージ横断で 1 度だけ生成するために、生成結果をグローバルスロット（`Symbol.for("wcstack.trustedTypes.internal")`）に置いている。したがってページ上の任意のスクリプトがそれを読み、`createHTML` を Trusted Types のバイパスガジェットとして使える。Trusted Types が本来狙う DOM XSS の防御を弱めるものではない（スロットに到達するには既にスクリプト実行が要る＝その時点で勝負はついている）が、単一 policy 名を選んだ代償であり、ポリシーレビューで必ず訊かれるのでここに書いておく。パッケージごとに policy 名を分ければグローバルスロットは不要になるが、CSP の記載がパッケージ数だけ増える。
 - Trusted Types は Chromium のみ。他のエンジンでは上記の経路はすべて素通し。
 - 動的 `import()`（state のインライン `<script>`、router のガードハンドラ、autoloader）は Trusted Types の sink **ではない**。こちらは `script-src` の管轄（§4・§5・§9）。
 - DCC のノードクローン化には挙動差が 1 つある: script 要素はクローン時に already-started フラグを引き継ぐため、DCC テンプレート内のインライン `<script>` がインスタンスごとにネイティブ実行されなくなる。`<wcs-state>` の状態定義は `script.text` を自前で評価する実装なので影響を受けない（§4）。

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   TRUSTED_TYPES_POLICY_SLOT,
+  _resetAuthoredFallbackWarning,
   _resetInternalTrustedTypesPolicy,
   getTrustedTypesPolicy,
   setTrustedTypesPolicy,
@@ -18,11 +19,13 @@ describe("trustedTypes", () => {
   beforeEach(() => {
     setTrustedTypesPolicy(null);
     _resetInternalTrustedTypesPolicy();
+    _resetAuthoredFallbackWarning();
   });
 
   afterEach(() => {
     setTrustedTypesPolicy(null);
     _resetInternalTrustedTypesPolicy();
+    _resetAuthoredFallbackWarning();
     delete (globalThis as any).trustedTypes;
     vi.restoreAllMocks();
   });
@@ -49,18 +52,34 @@ describe("trustedTypes", () => {
       expect(trustAuthoredScriptURL("./w.js")).toBe("./w.js");
     });
 
-    it("利用側 policy があれば identity policy より優先すること", () => {
-      const createPolicy = vi.fn();
-      stubTrustedTypes(createPolicy);
-      setTrustedTypesPolicy({ createScriptURL: (s: string) => `/cdn${s}` });
-      expect(trustAuthoredScriptURL("/w.js")).toBe("/cdn/w.js");
-      expect(createPolicy).not.toHaveBeenCalled();
+    // 利用側 policy は「信頼できない値の sanitizer」として設定される想定なので、
+    // 作者が書いた src をそこに通さない。
+    it("利用側 policy が入っていても作者の src は identity policy を通ること", () => {
+      const createScriptURL = vi.fn((s: string) => s);
+      stubTrustedTypes((_name, rules) => ({ createScriptURL: (s: string) => `[internal]${rules.createScriptURL(s)}` }));
+      setTrustedTypesPolicy({ createScriptURL });
+      expect(trustAuthoredScriptURL("/w.js")).toBe("[internal]/w.js");
+      expect(createScriptURL).not.toHaveBeenCalled();
     });
 
-    it("createScriptURL を持たない利用側 policy なら identity policy に落ちること", () => {
-      stubTrustedTypes((_name, rules) => ({ createScriptURL: (s: string) => `[internal]${rules.createScriptURL(s)}` }));
-      setTrustedTypesPolicy({ createHTML: (s: string) => s });
-      expect(trustAuthoredScriptURL("/w.js")).toBe("[internal]/w.js");
+    it("Trusted Types 非対応ブラウザなら、利用側 policy があっても素通しすること", () => {
+      const createScriptURL = vi.fn((s: string) => s);
+      setTrustedTypesPolicy({ createScriptURL });
+      expect(trustAuthoredScriptURL("/w.js")).toBe("/w.js");
+      expect(createScriptURL).not.toHaveBeenCalled();
+    });
+
+    it("identity policy を作れなかった場合だけ利用側 policy に落ち、1 度だけ警告すること", () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      stubTrustedTypes(() => { throw new TypeError('Policy "wcstack" disallowed.'); });
+      setTrustedTypesPolicy({ createScriptURL: (s: string) => `/cdn${s}` });
+
+      expect(trustAuthoredScriptURL("/a.js")).toBe("/cdn/a.js");
+      expect(trustAuthoredScriptURL("/b.js")).toBe("/cdn/b.js");
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain("trusted-types wcstack;");
+      expect(errorSpy).toHaveBeenCalledTimes(1);
     });
 
     it('policy 名 "wcstack" で 1 度だけ createPolicy すること（重複生成は例外になるため）', () => {

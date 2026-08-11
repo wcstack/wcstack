@@ -209,9 +209,11 @@ The `trusted-types` line is needed **only if the page uses `<wcs-layout>` or `<w
 </script>
 ```
 
+If the policy sanitizes, make sure it returns a `TrustedHTML` — DOMPurify needs `RETURN_TRUSTED_TYPE: true`; a policy that returns a bare string is rejected under enforcement.
+
 Bundler users can call `setTrustedTypesPolicy()`, exported from `@wcstack/state`, `@wcstack/router`, `@wcstack/fetch` and `@wcstack/worker` (they all address the same slot). Install it before the first layout expansion / worker spawn / fetch.
 
-An injected policy takes precedence over the built-in identity policy everywhere. On the two remote-data sinks it is applied **even on engines without Trusted Types**, so a sanitizer never silently degrades to a pass-through outside Chromium.
+**An injected policy is used on the two remote-data sinks only**, and there it applies **even on engines without Trusted Types**, so a sanitizer never silently degrades to a pass-through outside Chromium. It is deliberately **not** applied to author-written markup (`<wcs-layout>`, `new Worker(src)`): an injected policy is normally a sanitizer, and DOMPurify strips custom elements by default — routing a layout through it would silently remove `<wcs-link>` and friends. Author-written strings are signed by the `wcstack` identity policy instead. If that policy cannot be created (the CSP does not allow the name), the injected policy is used as a fallback and a one-time `console.warn` says what may be stripped.
 
 ### If you install none
 
@@ -226,6 +228,7 @@ The state property-write path swallows setter exceptions by design (the element 
 
 ### Notes
 
+- **The shared policy object is reachable from page scripts.** To create `wcstack` exactly once across packages, the created policy is kept in a global slot (`Symbol.for("wcstack.trustedTypes.internal")`). Any script running on the page can therefore read it and use its `createHTML` as a Trusted Types bypass gadget. This does not weaken the DOM-XSS case Trusted Types is aimed at — reaching the slot requires script execution, which is already game over — but it is the price of the single shared policy name, and it is stated here because a policy review will ask. Giving each package its own policy name would remove the global slot at the cost of one CSP entry per package.
 - Trusted Types ships in Chromium only. Elsewhere every path above is a pass-through.
 - Dynamic `import()` — state's inline `<script>`, router guard handlers, the autoloader — is **not** a Trusted Types sink. It is governed by `script-src` (§4, §5, §9).
 - The DCC switch to node cloning carries one behavior change: cloning a `script` element copies its already-started flag, so an inline `<script>` inside a DCC template no longer runs natively once per instance. The state definition inside `<wcs-state>` is unaffected — it evaluates `script.text` itself (§4).

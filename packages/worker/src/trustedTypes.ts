@@ -8,7 +8,11 @@
  *
  * policy 名は全 @wcstack パッケージで単一の `wcstack` に固定し、生成結果をグローバル
  * スロットで共有する（`trusted-types` ディレクティブがある場合、`'allow-duplicates'`
- * 無しの重複生成は例外になるため）。利用側が独自 policy を注入していればそちらを優先する。
+ * 無しの重複生成は例外になるため）。
+ *
+ * **利用側が注入した policy はここでは優先しない。** 注入口は「信頼できない値に対する
+ * sanitizer」として使われる想定なので、作者が書いた `src` をそこに通す理由が無い。
+ * identity policy を作れなかったときだけフォールバックし、その場合は 1 度警告する。
  */
 
 export interface IWcsTrustedTypesPolicy {
@@ -81,20 +85,39 @@ function getInternalPolicy(): IWcsTrustedTypesPolicy | null {
   return policy;
 }
 
+let _fallbackWarned = false;
+
+/** テスト用: フォールバック警告の一度きりフラグを戻す。 */
+export function _resetAuthoredFallbackWarning(): void {
+  _fallbackWarned = false;
+}
+
 /**
- * 作者が書いたスクリプト URL を TrustedScriptURL に変換する。利用側 policy >
- * 共有 identity policy > 生文字列（TT 非対応ブラウザ）の順で解決する。
+ * 作者が書いたスクリプト URL を TrustedScriptURL に変換する。
+ *
+ * 解決順は 共有 identity policy > （TT はあるが identity policy を作れなかった場合のみ）
+ * 利用側 policy > 生文字列。TT 非対応ブラウザでは署名自体が不要なので素通しする。
  */
 export function trustAuthoredScriptURL(url: string): string {
-  const adopted = getTrustedTypesPolicy();
-  const adoptedCreate = adopted?.createScriptURL;
-  if (typeof adoptedCreate === "function") {
-    return adoptedCreate.call(adopted, url) as string;
-  }
   const internal = getInternalPolicy();
   const internalCreate = internal?.createScriptURL;
   if (typeof internalCreate === "function") {
     return internalCreate.call(internal, url) as string;
+  }
+  if (!("trustedTypes" in globalThis)) return url;
+
+  const adopted = getTrustedTypesPolicy();
+  const adoptedCreate = adopted?.createScriptURL;
+  if (typeof adoptedCreate === "function") {
+    if (!_fallbackWarned) {
+      _fallbackWarned = true;
+      console.warn(
+        `[@wcstack/worker] Falling back to the injected Trusted Types policy to sign the worker `
+        + `URL, because the "${POLICY_NAME}" policy could not be created. `
+        + `Allow \`trusted-types ${POLICY_NAME};\` in the CSP to avoid this. See docs/csp.md section 7.`,
+      );
+    }
+    return adoptedCreate.call(adopted, url) as string;
   }
   return url;
 }

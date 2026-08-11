@@ -89,8 +89,9 @@ async function _parseNode(
         element = cloneElement;
       }
       const children = await _parseNode(routerNode, element, routes, routesByPath);
-      // 空文字の innerHTML 代入は Trusted Types の例外規定で通るが、規定に寄りかからず
-      // ノード操作で書く（docs/csp.md §7）。意図も「子を全消しして差し替える」のほうが直接的。
+      // 空文字の innerHTML 代入は Trusted Types 下でも通る実装が多いが、その細目に
+      // 寄りかからずノード操作で書く（docs/csp.md §7）。意図としても「子を全消しして
+      // 差し替える」のほうが直接的。
       element.replaceChildren();
       element.appendChild(children);
       fragment.appendChild(appendNode);

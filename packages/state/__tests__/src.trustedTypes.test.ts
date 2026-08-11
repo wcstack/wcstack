@@ -10,6 +10,7 @@ import {
   trustHtmlValue,
 } from '../src/trustedTypes';
 import { applyChangeToProperty } from '../src/apply/applyChangeToProperty';
+import { defineDCC } from '../src/dcc/defineDCC';
 import { getPathInfo } from '../src/address/PathInfo';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
@@ -38,15 +39,29 @@ function createBinding(element: Element, propSegments: string[]): IBindingInfo {
   } as IBindingInfo;
 }
 
-/** happy-dom が innerHTML を定義しているプロトタイプを探す。 */
-function findInnerHTMLOwner(): { proto: any, desc: PropertyDescriptor } {
-  let proto: any = Object.getPrototypeOf(document.createElement('div'));
-  while (proto) {
-    const desc = Object.getOwnPropertyDescriptor(proto, 'innerHTML');
-    if (desc) return { proto, desc };
-    proto = Object.getPrototypeOf(proto);
+/**
+ * innerHTML を own descriptor として持つプロトタイプを **すべて** 集める。
+ *
+ * happy-dom の `HTMLTemplateElement` は innerHTML を自前で上書きしている（content
+ * 側に書くため）。`Element.prototype` だけ差し替えると `template.innerHTML = ...` が
+ * スタブをすり抜け、「sink を使っていない」ことを検証したいテストが常に緑になる。
+ */
+function findInnerHTMLOwners(): Array<{ proto: any, desc: PropertyDescriptor }> {
+  const owners: Array<{ proto: any, desc: PropertyDescriptor }> = [];
+  const seen = new Set<any>();
+  for (const tag of ['div', 'template']) {
+    let proto: any = Object.getPrototypeOf(document.createElement(tag));
+    while (proto) {
+      if (!seen.has(proto)) {
+        seen.add(proto);
+        const desc = Object.getOwnPropertyDescriptor(proto, 'innerHTML');
+        if (desc) owners.push({ proto, desc });
+      }
+      proto = Object.getPrototypeOf(proto);
+    }
   }
-  throw new Error('innerHTML descriptor not found');
+  if (owners.length === 0) throw new Error('innerHTML descriptor not found');
+  return owners;
 }
 
 /**
@@ -55,18 +70,22 @@ function findInnerHTMLOwner(): { proto: any, desc: PropertyDescriptor } {
  * 存在をスタブする。
  */
 function withTrustedTypesEnforced<T>(fn: () => T): T {
-  const { proto, desc } = findInnerHTMLOwner();
-  Object.defineProperty(proto, 'innerHTML', {
-    ...desc,
-    set(_value: string) {
-      throw new TypeError("Failed to set the 'innerHTML' property on 'Element': This document requires 'TrustedHTML' assignment.");
-    },
-  });
+  const owners = findInnerHTMLOwners();
+  for (const { proto, desc } of owners) {
+    Object.defineProperty(proto, 'innerHTML', {
+      ...desc,
+      set(_value: string) {
+        throw new TypeError("Failed to set the 'innerHTML' property on 'Element': This document requires 'TrustedHTML' assignment.");
+      },
+    });
+  }
   (globalThis as any).trustedTypes = { createPolicy: () => ({}) };
   try {
     return fn();
   } finally {
-    Object.defineProperty(proto, 'innerHTML', desc);
+    for (const { proto, desc } of owners) {
+      Object.defineProperty(proto, 'innerHTML', desc);
+    }
     delete (globalThis as any).trustedTypes;
   }
 }
@@ -189,6 +208,48 @@ describe('trustedTypes', () => {
         reportTrustedTypesBlock(document.createElement('div'), 'innerHTML');
       });
       expect(spy.mock.calls[0][0]).toContain("did not return a TrustedHTML");
+    });
+  });
+
+  // 本対応の中心的な主張: DCC 定義は innerHTML sink を使わなくなったので、
+  // `@wcstack/state` は CSP の `trusted-types` allowlist 無しで TT 下を通る。
+  // 機能テスト（dcc.defineDCC.test.ts）はこの性質を守らないため、ここで固定する。
+  describe('defineDCC の sink 除去', () => {
+    let tagCounter = 0;
+
+    it('innerHTML sink が弾かれる環境でも DCC を定義でき、テンプレートが複製されること', () => {
+      const tag = `dcc-tt-${++tagCounter}`;
+      const host = document.createElement(tag);
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML = '<p class="greet">hello</p>';
+
+      withTrustedTypesEnforced(() => {
+        expect(() => defineDCC(host, shadow, { count: 0 })).not.toThrow();
+      });
+
+      const DCCClass = customElements.get(tag) as any;
+      expect(DCCClass).toBeDefined();
+      // innerHTML を読まずに、複製されたノードの側から中身を確かめる
+      const cloned = DCCClass.template.content.firstElementChild as HTMLElement;
+      expect(cloned.tagName).toBe('P');
+      expect(cloned.getAttribute('class')).toBe('greet');
+      expect(cloned.textContent).toBe('hello');
+    });
+
+    it('policy を一切用意しなくても定義できること（allowlist 不要の担保）', () => {
+      const tag = `dcc-tt-${++tagCounter}`;
+      const host = document.createElement(tag);
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML = '<span>x</span>';
+      const createHTML = vi.fn((s: string) => s);
+      setTrustedTypesPolicy({ createHTML });
+
+      withTrustedTypesEnforced(() => {
+        defineDCC(host, shadow, {});
+      });
+
+      expect(createHTML).not.toHaveBeenCalled();
+      expect(customElements.get(tag)).toBeDefined();
     });
   });
 
