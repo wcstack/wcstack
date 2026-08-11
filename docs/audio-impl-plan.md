@@ -7,7 +7,7 @@
   - **Phase D** porting the example: `wcs-synth.js` deleted, 6 e2e tests
   - **Phase E** normative additions: timing-and-firing-contract §19 / guidelines §1 / inventory 12 / CLAUDE.md
 - **Canonical designs**: [midi-tag-design.md](./midi-tag-design.md) (ja) / [audio-tag-design.md](./audio-tag-design.md) (ja) / [ADR 14](./architecture-hardening/14-handle-graph-wiring.md)
-- **The prototype**: `examples/synth-playground/wcs-synth.js` (1,063 lines of JS; a stable 14/14 Playwright smoke test). Its behavior was already demonstrated, so this plan specifies the work of **"transplanting a working prototype onto wcstack's skeleton"**. It is not a design from scratch.
+- **The prototype**: [examples/synth-playground/wcs-synth.js](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js) (1,063 lines of JS; a stable 14/14 Playwright smoke test; deleted in Phase D (`cbd5598e`), so every line link below points at the commit before the deletion). Its behavior was already demonstrated, so this plan specifies the work of **"transplanting a working prototype onto wcstack's skeleton"**. It is not a design from scratch.
 - **日本語版**: [audio-impl-plan.ja.md](./audio-impl-plan.ja.md)
 
 ---
@@ -167,12 +167,12 @@ What `exports.ts` MUST export: `bootstrapAudio` / `getConfig` / `AudioGraphCore`
 ### C-2. The five things that MUST be remedied from the prototype (plus one found not to need it)
 | # | The prototype | The remedy |
 |---|---|---|
-| 1 | the `MutationObserver` is indiscriminate with `subtree: true` → an unrelated DOM change cuts off the sound (`wcs-synth.js`, L538) | narrow it to mutations involving audio tags |
-| 2 | the rebuild coalesce uses `setTimeout(0)` (`wcs-synth.js`, L596) | a microtask (the cross-cutting contract §3) |
-| 3 | id resolution uses `document.getElementById` / `querySelector` (`wcs-synth.js`, L650 and L827) | from `getRootNode()`, limited to the root subtree |
+| 1 | the `MutationObserver` is indiscriminate with `subtree: true` → an unrelated DOM change cuts off the sound ([:538](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L538)) | narrow it to mutations involving audio tags |
+| 2 | the rebuild coalesce uses `setTimeout(0)` ([:596](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L596)) | a microtask (the cross-cutting contract §3) |
+| 3 | id resolution uses `document.getElementById` / `querySelector` ([:650](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L650) and [:827](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L827)) | from `getRootNode()`, limited to the root subtree |
 | 4 | ~~the analyser connects straight to `ctx.destination`, bypassing the limiter~~ → **no remedy needed**. A gain-0 keep-alive carries no signal and there is no option but connecting to `destination` (routing it back to master would be a feedback loop). Confirmed by the edge measurements in Phase B. The always-on pull and the `statechange` reconnection are **kept** as they are |
-| 5 | global CSS injected into `document.head` (`wcs-synth.js`, L1050) | `getRootNode().adoptedStyleSheets` |
-| 6 | voice reclamation on `setTimeout` → in a background tab they are never reclaimed and accumulate (`wcs-synth.js`, L499) | a deferred sweep on the audio clock |
+| 5 | global CSS injected into `document.head` ([:1050](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L1050)) | `getRootNode().adoptedStyleSheets` |
+| 6 | voice reclamation on `setTimeout` → in a background tab they are never reclaimed and accumulate ([:499](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L499)) | a deferred sweep on the audio clock |
 
 ### C-3. The test strategy [the largest piece of work in this package; target 200-260 tests]
 

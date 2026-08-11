@@ -2,7 +2,7 @@
 
 - **作成日**: 2026-08-02
 - **状態**: ✅ **採択（2026-08-02）**。G1・G2・G6 はユーザー承認済。G3・G4・G5 は推奨どおり採択（§8 参照）。実装計画は [audio-impl-plan.ja.md](../audio-impl-plan.ja.md)。
-- **きっかけ**: [examples/synth-playground](../../examples/synth-playground/)（2026-08-01・`977f236f`）。Web Audio API を 14 個の `<wcs-*>` タグで宣言的に扱う実験。これをパッケージに格上げするかの判断が、体系レベルの決定を1つ要求している。
+- **きっかけ**: [examples/synth-playground](../../examples/synth-playground/)（2026-08-01・`1e26a2a9`）。Web Audio API を 14 個の `<wcs-*>` タグで宣言的に扱う実験。これをパッケージに格上げするかの判断が、体系レベルの決定を1つ要求している。
 - **前提**: [11-react-immutable-snapshot-boundary.md](11-react-immutable-snapshot-boundary.md)（state / event / handle の分離）、[12-wc-bindable-observable-inventory.ja.md](12-wc-bindable-observable-inventory.ja.md)（handle 棚卸し = 231 property 中 1個）、[camera-recorder-tag-design.md](../camera-recorder-tag-design.md) §1・§2（生ハンドルを state に入れない不変条件）、[async-io-node-guidelines.ja.md](../async-io-node-guidelines.ja.md)（ノード骨格の規範）。
 - **横断原則との関係**: README の横断原則 **3「値、イベント、コマンド、ライブハンドルの意味を混ぜない」** が、ここで初めて「ライブハンドルが複数あり、互いに接続される」という形で試される。
 - **English**: [14-handle-graph-wiring.md](14-handle-graph-wiring.md)
@@ -114,12 +114,12 @@ Web Audio は違う。`OscillatorNode → BiquadFilterNode → GainNode → dest
 パラメータ変更は live に反映され、構造変更（タグの追加削除・`out=` の書き換え）はグラフ再構築を誘発する。再構築は **発音中の音を切る＝可聴な副作用** を伴う。
 
 - 近い先例は resize §12.3「同一 element ＋同一 options で冪等 / 変更は teardown → 再構築で初回エントリを再配信」。同型だが、audio は再構築コストが**利用者に聞こえる**点が異なる。
-- synth-playground の実装は `MutationObserver` を `subtree: true` で張り、**あらゆる DOM 変更でグラフ全体を再構築する**（[wcs-synth.js:538-539](../../examples/synth-playground/wcs-synth.js#L538-L539)）。コントロール用の `<div>` を1個足しただけで音が切れる。パッケージ品質では、監視粒度そのものが契約の一部になる。
+- synth-playground の実装は `MutationObserver` を `subtree: true` で張り、**あらゆる DOM 変更でグラフ全体を再構築する**（[wcs-synth.js:538-539](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L538-L539) — 原型は `cbd5598e` で削除済みのため、リンクは削除前の commit を指す）。コントロール用の `<div>` を1個足しただけで音が切れる。パッケージ品質では、監視粒度そのものが契約の一部になる。
 
 - **推奨**: 次の3点を契約として明文化する。
   1. **rebuild を誘発する DOM 変更を列挙する**（audio タグの追加/削除/移動、`out=` `param=` `note` 属性の変更）。それ以外の DOM 変更は rebuild を誘発しない（MUST NOT）。
   2. **rebuild は発音中の音を切る**（audible discontinuity を伴う）。この副作用を README と契約に明記する。
-  3. **rebuild は microtask で coalesce する**。synth-playground は `setTimeout(0)`（[wcs-synth.js:596](../../examples/synth-playground/wcs-synth.js#L596)）で、横断契約 §3「microtask が task に先行する」に未追随。
+  3. **rebuild は microtask で coalesce する**。synth-playground は `setTimeout(0)`（[wcs-synth.js:596](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L596)）で、横断契約 §3「microtask が task に先行する」に未追随。
 
 > **G5 の問い**: 上記3点を timing-and-firing-contract.ja.md の新節として規範化してよいか。
 

@@ -2,7 +2,7 @@
 
 - **Written**: 2026-08-02
 - **Status**: ✅ **adopted (2026-08-02)**. G1, G2, and G6 are approved by the user; G3, G4, and G5 are adopted as recommended (see §8). The implementation plan is [audio-impl-plan.md](../audio-impl-plan.md).
-- **What prompted it**: [examples/synth-playground](../../examples/synth-playground/) (2026-08-01, `977f236f`) — an experiment handling the Web Audio API declaratively through 14 `<wcs-*>` tags. Deciding whether to promote it into a package demands one decision at the level of the whole system.
+- **What prompted it**: [examples/synth-playground](../../examples/synth-playground/) (2026-08-01, `1e26a2a9`) — an experiment handling the Web Audio API declaratively through 14 `<wcs-*>` tags. Deciding whether to promote it into a package demands one decision at the level of the whole system.
 - **Prerequisites**: [11-react-immutable-snapshot-boundary.md](11-react-immutable-snapshot-boundary.md) (ja) (separating state / event / handle), [12-wc-bindable-observable-inventory.md](12-wc-bindable-observable-inventory.md) (the handle inventory — 1 out of 231 properties), [camera-recorder-tag-design.md](../camera-recorder-tag-design.md) (ja) §1 and §2 (the invariant that a raw handle does not enter state), [async-io-node-guidelines.md](../async-io-node-guidelines.md) (the normative node skeleton).
 - **Relation to the cross-cutting principles**: the README's cross-cutting principle **3, "do not mix the meanings of values, events, commands, and live handles"**, is tested here for the first time in the form of "there are several live handles and they connect to each other".
 - **日本語版**: [14-handle-graph-wiring.ja.md](14-handle-graph-wiring.ja.md)
@@ -114,12 +114,12 @@ This is a topic the system did not have until synth-playground was read.
 A parameter change is reflected live; a structural change (adding or removing a tag, rewriting `out=`) induces a graph rebuild. A rebuild comes with **an audible side effect: it cuts off the sound currently playing**.
 
 - The nearest precedent is resize §12.3, "idempotent for the same element and options / a change tears down and rebuilds, re-delivering the first entry". Same shape, except that audio's rebuild cost is **audible to the user**.
-- synth-playground's implementation attaches a `MutationObserver` with `subtree: true` and **rebuilds the whole graph on any DOM change** (`examples/synth-playground/wcs-synth.js`, L538-539). Adding a single `<div>` for a control cuts off the sound. At package quality, the granularity of observation is itself part of the contract.
+- synth-playground's implementation attaches a `MutationObserver` with `subtree: true` and **rebuilds the whole graph on any DOM change** ([wcs-synth.js:538-539](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L538-L539) — the prototype was deleted in `cbd5598e`, so the link points at the commit before that). Adding a single `<div>` for a control cuts off the sound. At package quality, the granularity of observation is itself part of the contract.
 
 - **Recommendation**: state the following three points explicitly as contract.
   1. **Enumerate the DOM changes that induce a rebuild** (adding/removing/moving an audio tag; changing the `out=`, `param=`, or `note` attributes). No other DOM change induces a rebuild (MUST NOT).
   2. **A rebuild cuts off the sound currently playing** (it comes with an audible discontinuity). State that side effect in the README and the contract.
-  3. **Rebuilds coalesce on a microtask.** synth-playground uses `setTimeout(0)` (`wcs-synth.js`, L596) and has not caught up with the cross-cutting contract §3, "microtasks precede tasks".
+  3. **Rebuilds coalesce on a microtask.** synth-playground uses `setTimeout(0)` ([wcs-synth.js:596](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L596)) and has not caught up with the cross-cutting contract §3, "microtasks precede tasks".
 
 > **The G5 question**: may the three points above be made normative as a new section of timing-and-firing-contract.md?
 

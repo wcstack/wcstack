@@ -69,7 +69,7 @@ npm install @wcstack/share
 </template>
 ```
 
-`share()` は実際のユーザー操作（クリックハンドラ）内から呼ばれる必要があるため、ボタンのクリックハンドラが直接 `$command.doShare.emit(...)` を呼びます — `<wcs-share>` 自身は `autoTrigger` のショートカットを持ちません（[注意・制限](#注意・制限)を参照）。
+`share()` は実際のユーザー操作（クリックハンドラ）内から呼ばれる必要があるため、ボタンのクリックハンドラが直接 `$command.doShare.emit(...)` を呼びます — `<wcs-share>` 自身は `autoTrigger` のショートカットを持ちません（[注意・制限](#注意制限)を参照）。
 
 ### 2. `canShare(data)` — 事前に実行可能性を確認する
 

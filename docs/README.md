@@ -11,11 +11,12 @@ Design documents, implementation plans, and spec proposals. Per-package `README.
 | `<name>.md` | English (canonical) |
 | `<name>.ja.md` | 日本語 |
 
-Three rules go with it:
+Four rules go with it:
 
 1. **Links stay within a language.** An English document links to `other.md`; the Japanese one links to `other.ja.md`. Never mix, so a reader never falls out of their language mid-chain.
 2. **While the migration is unfinished, a link from an English document to a not-yet-translated file is marked `(ja)`** on first mention — repeating it on every inline line-link to the same document would be noise. That is honest about where the reader lands. Drop the marker when the target is translated.
 3. **Rename only when the English version is ready.** Moving a Japanese file to `.ja.md` before its `.md` exists breaks every existing reference to `docs/<name>.md` from code, examples, and READMEs.
+4. **A reference to a file that no longer exists is a commit permalink.** A relative link 404s and the line numbers cited alongside it stop meaning anything, so point at the last commit that still had the file — `https://github.com/wcstack/wcstack/blob/<full-sha>/<path>#L<n>` — and name the deleting commit on first mention. This is the one place absolute URLs are correct; everything that still exists stays relative. The synth-playground prototype `wcs-synth.js` (deleted in `cbd5598e`, cited at `1e26a2a9`) is the case this rule was written for.
 
 ## Migration status
 

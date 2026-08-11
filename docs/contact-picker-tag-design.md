@@ -87,7 +87,7 @@ private async _select(properties: string[], options?: { multiple?: boolean }): P
 
 `ContactsManager`には`getProperties(): Promise<string[]>`という、実行環境がサポートするフィールド名一覧を返すメソッドが存在する（MDN仕様確認済み。将来的にプラットフォームやOSによって対応フィールドが変わりうるため用意されている）。
 
-Web Shareの`canShare(data)`（[web-share-tag-design.md §6](./web-share-tag-design.md#6-canshareddataの扱い--決定-同期プレーンメソッドとして公開)）は同期・副作用無しのプレーンメソッドとしてwcBindable外に公開する決定だったが、`getProperties()`は**Promiseを返す非同期メソッド**であり同列には扱えない。
+Web Shareの`canShare(data)`（[web-share-tag-design.md §6](./web-share-tag-design.md#6-cansharedataの扱い--決定-同期プレーンメソッドとして公開)）は同期・副作用無しのプレーンメソッドとしてwcBindable外に公開する決定だったが、`getProperties()`は**Promiseを返す非同期メソッド**であり同列には扱えない。
 
 - **決定: v1では省略する** ✅ — `getProperties()`は「`select()`を呼ぶ前に対応フィールドを確認する」という補助的なユースケースであり、`select()`自体が呼び出し時に未対応フィールドを渡されても仕様上reject/フィルタで吸収する（ブラウザ実装依存）。事前検証を宣言的surfaceに含めるコストに対し、初版での需要は薄いと判断し、wcBindable・Shellプレーンメソッドいずれにも含めない。将来的に非同期プレーンメソッド（`Promise`を返すインスタンスメソッド、never-throwでラップしたヘルパー）として追加する余地は残す。
 
@@ -101,7 +101,7 @@ Contact Picker APIはAndroid上のChrome 80以降のみで動作し、**デス�
 
 - **設計への含意**: [network-tag-design.md §0](./network-tag-design.md#0-大前提-賭けの性質を持つノード--unsupportedが常態)の「unsupportedが常態」という前提が、バッチ3の中で最も強く当てはまるのが本ノードである。デスクトップで開発・検証しているとほぼ常に`unsupported`分岐しか目にしない。
 - **README・exampleでの既定**: いかなるexample/READMEでも、**unsupportedを既定状態として想定すべき**。「Android Chromeで動けば儲けもの」という前提でUIを組む（`hidden@!<利用者側のサポート判定>`でボタン自体を隠す、あるいはメールアドレス手入力等の代替UIを常設した上でContact Pickerを補助的なショートカットとして添える）。unsupported時に何も表示されない・エラーも出さない「静かなフォールバック」をデフォルトの挙動として明記する。
-- unsupported判定は[web-share-tag-design.md §8](./web-share-tag-design.md#8-unsupported判定--決定-share呼び出し時に即error供給フラグは持たない)と同型で、`select()`呼び出し時に`typeof navigator.contacts?.select !== "function"`を判定して即`error`に落とす（`supported`フラグは持たない）。
+- unsupported判定は[web-share-tag-design.md §8](./web-share-tag-design.md#8-unsupported判定--決定-share呼び出し時に即errorsupportedフラグは持たない)と同型で、`select()`呼び出し時に`typeof navigator.contacts?.select !== "function"`を判定して即`error`に落とす（`supported`フラグは持たない）。
 
 ---
 
