@@ -52,8 +52,11 @@ export function getListIndex(
           raiseError( `ListIndex not found: ${wildcardParentPathInfo.path}`);
         const wildcardIndex = resolvedAddress.wildcardIndexes[i] ?? 
           raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);
-        parentListIndex = wildcardParentListIndexes[wildcardIndex] ?? 
-          raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+        // 範囲外 index はリスト自体の不在と別原因なので、メッセージに index を含める。
+        // 親パスだけを名指しすると「リスト自体が見つからない」と誤読させる
+        // （docs/state-bind-component-nested-for-design.md §8.4）。
+        parentListIndex = wildcardParentListIndexes[wildcardIndex] ??
+          raiseError(`ListIndex not found at index ${wildcardIndex} of ${wildcardParentPathInfo.path}`);
       }
       return parentListIndex;
     }

@@ -60,8 +60,10 @@ export function resolve(
         raiseError(`ListIndexes not found: ${wildcardParentPathInfo.path}`);
       }
       const index = indexes[i];
-      listIndex = listIndexes[index] ?? 
-        raiseError(`ListIndex not found: ${wildcardParentPathInfo.path}`);
+      // 範囲外 index はリスト自体の不在と別原因なので index を含める
+      // （docs/state-bind-component-nested-for-design.md §8.4）
+      listIndex = listIndexes[index] ??
+        raiseError(`ListIndex not found at index ${index} of ${wildcardParentPathInfo.path}`);
     }
 
     // ToDo:WritableかReadonlyかを判定して適切なメソッドを呼び出す

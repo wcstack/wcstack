@@ -350,7 +350,8 @@ describe('getAll', () => {
 
     const getAllFn = getAll(target, '$getAll', target, handler as any);
 
-    expect(() => getAllFn('items.*', [99])).toThrow(/ListIndex not found/);
+    // §8.4: 範囲外はどの index が無いかまで示す
+    expect(() => getAllFn('items.*', [99])).toThrow(/ListIndex not found at index 99 of items/);
   });
 
   it('oldValue に listIndexes がなぁE��合�E空配�EがoldIndexesとして使われること', () => {

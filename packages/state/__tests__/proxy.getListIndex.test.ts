@@ -175,7 +175,8 @@ describe('getListIndex', () => {
       wildcardIndexes: [1],
     } as any;
 
-    expect(() => getListIndex({}, resolvedAddress, {}, createHandler())).toThrow(/ListIndex not found/);
+    // §8.4: 範囲外はどの index が無いかまで示す（親パスだけの名指しは誤読を招く）
+    expect(() => getListIndex({}, resolvedAddress, {}, createHandler())).toThrow(/ListIndex not found at index 1 of users/);
 
     setListIndexesByList(users, null);
   });
