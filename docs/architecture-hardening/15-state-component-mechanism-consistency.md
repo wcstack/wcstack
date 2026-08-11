@@ -31,7 +31,7 @@
 ①を正本として②が部分的にそれを生成し、③は①の外側に独立した意味論を持つ、という三層構造になっており、
 その継ぎ目に silent failure が集中している。
 
-本書は [13-framework-adapter-binding-constraints.md](13-framework-adapter-binding-constraints.md) の
+本書は [13-framework-adapter-binding-constraints.ja.md](13-framework-adapter-binding-constraints.ja.md) の
 「バインドが成立するか」軸を **wcstack 内部の 3 機構間**に適用したものにあたる。13 が外部 adapter との境界を
 扱うのに対し、本書は自前の 3 機構が互いに整合しているかを扱う。
 
@@ -259,7 +259,7 @@ probe 実測: 生成される宣言は `{protocol, version, properties:[…], in
 README「Declarative Custom Components (DCC)」節にこの制約の記載は無い。
 
 なお 1.5 と 1.6 は同じ根（`createWcBindable` が①の宣言仕様の一部しか実装していない）から出ている。
-[10-defaulting-rollout-status.md §7 件目](10-defaulting-rollout-status.md) が記録した
+[10-defaulting-rollout-status.ja.md §7 件目](10-defaulting-rollout-status.ja.md) が記録した
 「`inputs` を作っていなかった」欠陥と**同じクラスの 3 件目・4 件目**にあたる。
 
 **修正（G2 = (a) `$commands` 明示宣言）**: `$bindables` と対になる `$commands: ["bumpBy"]` を導入し、
@@ -719,7 +719,7 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
 
 1. **①の宣言仕様を②が部分実装している** — `createWcBindable` は `properties` / `inputs` しか作らず、
    `commands` も重複検査も持たない。①の reader は厳格なので、②が生成した宣言が①に棄却される
-   （1.5 / 1.6 / 2.3）。10-defaulting-rollout-status.md の `inputs` 欠落と同じ構造の再発である
+   （1.5 / 1.6 / 2.3）。10-defaulting-rollout-status.ja.md の `inputs` 欠落と同じ構造の再発である
 2. **内部チャネルと公開 API に同じ proxy を使っている** — ③の `outerState` は
    「親 state → 子への再読込通知」という内部用途で正しいが、それが `this.state` として作者に見える（1.1 / 1.2）
 3. **ライフサイクル規律が機構間で共有されていない** — `<wcs-state>` は再接続・世代・未接続をすべて扱うが、
@@ -754,7 +754,7 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
   **公開プロパティ経由の read / write が 1 度も踏まれていなかった**。1.1 はこの穴に落ちていた →
   [`e2e/tests/state-bind-component-write.spec.ts`](../../e2e/tests/state-bind-component-write.spec.ts) を追加。
   実ブラウザで mapped な要素の `element.state.x` の read / write 両方向を固定する
-- 🟡 10-defaulting-rollout-status.md §209 の `bindable-conformance` job は
+- 🟡 10-defaulting-rollout-status.ja.md §209 の `bindable-conformance` job は
   「dist export に現れない宣言ファクトリ（DCC `createWcBindable`）は state の unit test が固定」としているが、
   その unit test は `properties`/`inputs` の同一集合しか見ておらず、`commands` と重複名は対象外だった →
   重複名も `commands` も `dcc.processDccDeclarations.test.ts` が固定するようになった

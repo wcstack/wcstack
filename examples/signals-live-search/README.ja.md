@@ -37,7 +37,7 @@ node examples/signals-live-search/server.js
   （`import "@wcstack/fetch/auto"`）です。`await customElements.whenDefined()` は**他人が**
   ロードするタグ用の形であり、reject しないため、来ないパッケージを待つとページが静かに
   ハングします。詳細は
-  [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md)。
+  [`docs/signals-definition-timing.ja.md`](../../docs/signals-definition-timing.ja.md)。
 - **fine-grained な `h`、VDOM なし。** `h(tag, props, ...children)` は real DOM を一度生成し、
   関数/signal で渡した prop・child だけを effect に紐付けて更新。reconciler は出荷しません。
 - **JSX 形だが JSX は出荷しない。** `h` は classic JSX factory（利用者が自分の tsconfig で
@@ -51,4 +51,4 @@ node examples/signals-live-search/server.js
   継ぎ目で反応性が壊れます。（ローカルの npm インストールにはこの制約はありません:
   Rollup の code-splitting により両エントリは共有チャンク `core-*.esm.js` を 1 つだけ読み込みます。）
 
-> 設計は `docs/signals-state-design.md`、実装とテストは `packages/signals` を参照してください。
+> 設計は `docs/signals-state-design.ja.md`、実装とテストは `packages/signals` を参照してください。

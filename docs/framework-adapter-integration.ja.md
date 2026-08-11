@@ -4,9 +4,9 @@
 - **状態**: 利用手順（normative ではない。規範は各 SPEC と
   [非同期 I/O ノード作成ガイドライン](./async-io-node-guidelines.ja.md)）
 - **対象読者**: React / Vue / Svelte / Solid / Angular / Qwik などのアプリから `<wcs-*>` を使う人
-- **位置づけ**: [framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md)
+- **位置づけ**: [framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.ja.md)
   の Phase A2 / A4 の成果物。設計判断の記録は doc 13、値の意味分類は
-  [observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md) を参照。
+  [observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.ja.md) を参照。
 - **English**: [framework-adapter-integration.md](./framework-adapter-integration.md)
 
 ## 0. 3つの規則
@@ -179,7 +179,7 @@ useEffect(() => {
 
 この経路が必要になる代表例は `handle` に分類された observable である。`<wcs-camera>` の
 `streamReady` は live な `MediaStream` で、snapshot state に入れてはならない値なので、
-adapter の values ではなく直接受け取るのが正しい（[棚卸し §5.6](./architecture-hardening/12-wc-bindable-observable-inventory.md)）。
+adapter の values ではなく直接受け取るのが正しい（[棚卸し §5.6](./architecture-hardening/12-wc-bindable-observable-inventory.ja.md)）。
 
 ## 5. 値の意味を adapter に伝える
 
@@ -194,8 +194,8 @@ adapter の values ではなく直接受け取るのが正しい（[棚卸し §
 
 ## 参照
 
-- [framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md)
-- [wc-bindable observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md)
+- [framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.ja.md)
+- [wc-bindable observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.ja.md)
 - [非同期 I/O ノード作成ガイドライン](./async-io-node-guidelines.ja.md)
 - [`bind()` の定義待ち提案](./spec-proposal-bind-definition-timing.md)
 - [websocket-chat の React / Vue 実装](../examples/websocket-chat/README.ja.md)

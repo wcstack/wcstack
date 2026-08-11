@@ -2,7 +2,7 @@
 
 > 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
 
-`@wcstack/signals` は **signals ベースのきめ細かい(fine-grained)リアクティブコア**です。ランタイム依存ゼロ・buildless・標準ファースト。設計の背景は [`docs/signals-state-design.md`](../../docs/signals-state-design.md) を参照してください。
+`@wcstack/signals` は **signals ベースのきめ細かい(fine-grained)リアクティブコア**です。ランタイム依存ゼロ・buildless・標準ファースト。設計の背景は [`docs/signals-state-design.ja.md`](../../docs/signals-state-design.ja.md) を参照してください。
 
 [`@wcstack/state`](../state/README.ja.md) が UI と状態を HTML のパス文字列で接続する(あなたのコードにリアクティブプリミティブは現れない)のに対し、`@wcstack/signals` はそれを望むケースのために逆の立場をとります。すなわち **リアクティブプリミティブを直接露出**します。DSL も `data-wcs` も無く、JavaScript で `signal()` / `computed()` / `effect()` を呼びます。両者は競合ではなく**補完関係**です — 同じエコシステムの、結合点の違いです。
 
@@ -306,7 +306,7 @@ import("@wcstack/tilt/auto")
   .catch(() => {/* 縮退モード — アプリは動き続ける */});
 ```
 
-`bindNode` と同様、アダプタはリアクティブオーナーに紐付きません — teardown は明示的(`unmount()` は冪等)で、`onCleanup(() => fetcher.unmount())` と合成できます。`MountedNode` では `dispose()` は **`unmount()` のエイリアス**です: mountNode は要素のライフサイクルを所有するので、パッケージ共通の teardown 動詞が「接続されたまま IO が生きている要素」を残すことはありません。定義タイミングの全体契約(どのロード状況でどのイディオムか)は [`docs/signals-definition-timing.md`](../../docs/signals-definition-timing.md) を参照してください。
+`bindNode` と同様、アダプタはリアクティブオーナーに紐付きません — teardown は明示的(`unmount()` は冪等)で、`onCleanup(() => fetcher.unmount())` と合成できます。`MountedNode` では `dispose()` は **`unmount()` のエイリアス**です: mountNode は要素のライフサイクルを所有するので、パッケージ共通の teardown 動詞が「接続されたまま IO が生きている要素」を残すことはありません。定義タイミングの全体契約(どのロード状況でどのイディオムか)は [`docs/signals-definition-timing.ja.md`](../../docs/signals-definition-timing.ja.md) を参照してください。
 
 #### Core を直接束縛する(要素なし)
 

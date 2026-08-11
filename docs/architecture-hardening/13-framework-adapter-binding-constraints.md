@@ -1,141 +1,147 @@
-# framework adapter のバインド成立制約
+# Framework adapter binding constraints
 
-- **作成日**: 2026-08-01
-- **状態**: 設計判断記録。**Phase A1-A4 まで実施済み**（A1 = Shell の property upgrade 実装、
-  A2 / A4 = [組み込み手順](../framework-adapter-integration.ja.md)、
-  A3 = [`bind()` 定義待ちの提案文書](../spec-proposal-bind-definition-timing.md)）。
-  A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。
-  A3 の提案は [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22) として提出済み。
-  残るのは wcstack-app スキル（別リポジトリ）の追随で、これは**リリース後**に行う
-  （[10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) §D 末尾）
-- **対象**: `static wcBindable` を宣言する全 Shell、`@wc-bindable` の framework adapter、
-  `@wcstack/autoloader` を前提とする配布経路
-- **外部仕様スナップショット**:
-  - `@wc-bindable/core@0.8.0`、`@wc-bindable/react@0.8.0`、`@wc-bindable/vue@0.8.0`（npm 配布物）
-  - svelte / solid / angular / qwik / signals / rxjs は upstream `main` の実装（版ズレの可能性あり）
+- **Written**: 2026-08-01
+- **Status**: a design decision record. **Phases A1-A4 are done** (A1 = implementing property upgrade in the Shell;
+  A2 / A4 = [the integration guide](../framework-adapter-integration.md);
+  A3 = [the proposal document for making `bind()` wait for the definition](../spec-proposal-bind-definition-timing.md) (ja)).
+  A0's reproduction test was substituted with a conformance test using synthetic objects; reproduction in a real browser has not been done.
+  A3's proposal has been submitted as [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22).
+  What remains is catching up the wcstack-app skill (a separate repository), which happens **after the release**
+  ([10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) §D, at the end)
+- **Applies to**: every Shell declaring `static wcBindable`, the `@wc-bindable` framework adapters, and the
+  distribution route that presumes `@wcstack/autoloader`
+- **External spec snapshot**:
+  - `@wc-bindable/core@0.8.0`, `@wc-bindable/react@0.8.0`, `@wc-bindable/vue@0.8.0` (the npm artifacts)
+  - svelte / solid / angular / qwik / signals / rxjs are the implementations on upstream `main` (versions may have drifted)
+- **日本語版**: [13-framework-adapter-binding-constraints.ja.md](13-framework-adapter-binding-constraints.ja.md)
 
-## 結論
+## Conclusion
 
-[React の不変スナップショット](11-react-immutable-snapshot-boundary.md) と
-[observable 棚卸し](12-wc-bindable-observable-inventory.md) は「配送された値の意味」を扱う。本書はその手前、
-**そもそもバインドが成立するか**を扱う。両者は独立しており、値の分類がいくら正確でも、bind が張られなければ
-何も届かない。
+[React immutable snapshots](11-react-immutable-snapshot-boundary.md) (ja) and the
+[observable inventory](12-wc-bindable-observable-inventory.md) deal with "the meaning of a delivered value". This
+document deals with what comes before that: **whether the bind takes at all**. The two are independent, and however
+accurate the classification of values, nothing arrives if no bind is attached.
 
-調査した8個の adapter はいずれも mount 時に `isWcBindable(el)` で判定し、偽なら**再試行せずに諦める**。
-custom element の upgrade がその時点より後に起きる構成では、エラーもログもなく永久に無反応になる。
-同じ「定義が遅れる」原因は入力側にも別の失敗を生む。framework が upgrade 前に DOM プロパティを代入すると、
-own データプロパティが prototype accessor を恒久的に隠し、wcstack の Shell は値を受け取れない。
-後者は wcstack 単独で修正できる producer 側の欠陥であり、`_upgradeProperty` 相当の実装が現在どのパッケージにも無い。
+All eight adapters examined check `isWcBindable(el)` at mount and, if false, **give up without retrying**. In a
+configuration where the custom element's upgrade happens after that moment, it stays unresponsive forever, with no
+error and no log. The same cause — a late definition — produces a different failure on the input side too. When a
+framework assigns a DOM property before the upgrade, an own data property permanently shadows the prototype accessor
+and the wcstack Shell never receives the value. The latter is a producer-side defect wcstack can fix on its own, and
+no package currently has anything equivalent to `_upgradeProperty`.
 
-いずれも「adapter を使えば framework 相互運用が成立する」という公開上の主張の前提であり、
-値の意味分類（Phase 0-4）とは別トラックで進めてよい。
+Both are premises of the public claim that "framework interoperation works if you use an adapter", and can proceed on
+a separate track from the classification of value meanings (Phases 0-4).
 
-## 1. 問題を 2 軸に分ける
+## 1. Splitting the problem on two axes
 
-### 1.1 観測側 — bind が張られない
+### 1.1 The observation side — no bind is attached
 
-adapter が `bind()` を呼ぶ時点で要素が未 upgrade だと、`getWcBindableDeclaration()` は `undefined` を返し、
-`isWcBindable()` は偽になる。adapter はそこで早期 return する。要素参照は upgrade 後も同一なので、
-React の依存配列も Qwik の `track()` も再発火せず、二度目の機会が来ない。
+If the element has not been upgraded by the time the adapter calls `bind()`, `getWcBindableDeclaration()` returns
+`undefined` and `isWcBindable()` is false. The adapter early-returns there. The element reference is the same object
+after the upgrade, so neither a React dependency array nor Qwik's `track()` fires again, and no second chance arrives.
 
-### 1.2 入力側 — property 代入が accessor を隠す
+### 1.2 The input side — a property assignment shadows the accessor
 
-未 upgrade の要素は素の `HTMLElement` であり、`el.url = "x"` は own データプロパティを作る。upgrade 後に
-class の accessor が prototype へ入っても、own プロパティが優先されるため setter は永久に呼ばれない。
-custom elements で古くから知られた問題で、対策（`_upgradeProperty`）は producer 側の責務である。
+An element that has not been upgraded is a plain `HTMLElement`, and `el.url = "x"` creates an own data property. Once
+the class's accessor lands on the prototype at upgrade, the own property takes precedence and the setter is never
+called again. This is a long-known problem with custom elements, and the countermeasure (`_upgradeProperty`) is the
+producer's responsibility.
 
-この 2 つは同じ根（定義タイミング）から出るが、責務も修正箇所も異なる。1.1 は adapter / core、
-1.2 は wcstack の Shell が直す。
+Both come from the same root (definition timing), but the responsibility and the place to fix differ. 1.1 is fixed by
+the adapter / core; 1.2 by wcstack's Shell.
 
-## 2. 現状評価
+## 2. Assessment of the current state
 
-### 2.1 adapter は「まだ」と「そもそも違う」を区別しない
+### 2.1 Adapters do not distinguish "not yet" from "not one at all"
 
-読んだ実装はすべて同じ形をしている。
+Every implementation read has the same shape.
 
-| adapter | bind を試みる時点 | 未 upgrade 時の挙動 |
+| Adapter | When it tries to bind | Behavior when not upgraded |
 | --- | --- | --- |
-| react | `useEffect([el, onUpdate])` | 早期 return。`el` は不変なので再実行されない |
-| vue | `onMounted` | 早期 return。再試行なし |
-| svelte | action の初回 setup | 早期 return。`update` は params 変更時のみ |
-| solid | directive 実行時 | 早期 return。再試行なし |
-| qwik | `useVisibleTask$` | 早期 return。`track(() => ref.value)` は upgrade で再発火しない |
-| angular | `ngOnInit` | 早期 return。再試行なし |
-| signals / rxjs | 明示 `bind(el)` 呼び出し | 早期 return。呼び直しは利用者責務 |
+| react | `useEffect([el, onUpdate])` | early return. `el` does not change, so it never re-runs |
+| vue | `onMounted` | early return. No retry |
+| svelte | the action's first setup | early return. `update` only runs when params change |
+| solid | when the directive runs | early return. No retry |
+| qwik | `useVisibleTask$` | early return. `track(() => ref.value)` does not re-fire on upgrade |
+| angular | `ngOnInit` | early return. No retry |
+| signals / rxjs | an explicit `bind(el)` call | early return. Calling again is the user's responsibility |
 
-`@wc-bindable/core` の `bind()` 自体も、宣言が読めないときは no-op cleanup を返して静かに終わる。これは
-SPEC の「discovery == bindability」契約として一貫しているが、`syncOn: "connect"` が扱うのは
-**接続**の遅延であって**定義**の遅延ではない。signals / rxjs は `syncOn: "connect"` を渡している最も慎重な
-実装だが、その手前の `isWcBindable()` で落ちるため救われない。
+`bind()` in `@wc-bindable/core` likewise returns a no-op cleanup and finishes quietly when it cannot read the
+declaration. That is consistent with the SPEC's "discovery == bindability" contract, but what `syncOn: "connect"`
+handles is a late **connection**, not a late **definition**. signals / rxjs are the most careful implementations,
+passing `syncOn: "connect"`, but they fall at the `isWcBindable()` check before that and are not rescued.
 
-顕在化の条件は「要素の定義が adapter の mount より後」である。Vite などで `@wcstack/<pkg>/auto` を静的 import
-する構成では定義が先に済むため発生しない。発生するのは `@wcstack/autoloader` の動的 import、CDN の
-`<script type="module">`、code-split で読み込みが遅れる経路である。**buildless / CDN 一発は wcstack の看板機能**
-であり、この経路を「相互運用できる」と称している以上、無視できる条件ではない。
+The condition for it to surface is "the element's definition comes after the adapter's mount". In a setup that
+statically imports `@wcstack/<pkg>/auto` through Vite or similar, the definition lands first and it does not happen.
+It happens with `@wcstack/autoloader`'s dynamic import, a CDN `<script type="module">`, and any route where
+code-splitting delays the load. **Buildless / one-line CDN is wcstack's headline feature**, and as long as that route
+is described as "interoperable", this is not a condition that can be ignored.
 
-同型の問題は signals 側で既に決着させている（[定義タイミング規範](../signals-definition-timing.md)、
-[初期化順序](01-binding-initialization-order.md)）。外部 adapter だけが未対応のまま残っている。
+The same problem has already been settled on the signals side ([the definition timing norms](../signals-definition-timing.md),
+[initialization order](01-binding-initialization-order.md) (ja)). Only the external adapters remain unaddressed.
 
-### 2.2 Shell に upgrade 対策が無い
+### 2.2 The Shell has no upgrade countermeasure
 
-wcstack の入力プロパティは prototype accessor で、setter は属性へ書く形に統一されている。
+wcstack's input properties are prototype accessors, uniformly shaped so the setter writes to the attribute.
 
 ```ts
 get url(): string { return this.getAttribute("url") || ""; }
 set url(value: string) { this.setAttribute("url", value); }
 ```
 
-`packages/**/src` を走査した範囲で、`connectedCallback` において own プロパティを取り込み直す実装
-（`_upgradeProperty` 相当）は**1件も無い**。したがって upgrade 前に property 代入を行う framework では、
-値が own プロパティに滞留して要素へ届かない。
+Across a sweep of `packages/**/src`, there is **not one** implementation that re-reads own properties in
+`connectedCallback` (an equivalent of `_upgradeProperty`). So in a framework that assigns properties before the
+upgrade, the value stagnates in the own property and never reaches the element.
 
-framework 側の挙動は 2 系統に分かれる。
+Framework behavior splits into two groups.
 
-| 系統 | framework | 未 upgrade 時 | wcstack への影響 |
+| Group | Frameworks | When not upgraded | Effect on wcstack |
 | --- | --- | --- | --- |
-| 常にプロパティ代入 | Angular（`[prop]`）、Lit（`.prop=`）、Solid（`prop:`）、Vue（`.prop` 明示時） | own プロパティが accessor を恒久シャドウ | **値が届かない**。エラーなし |
-| `key in el` で属性フォールバック | React 19、Vue（既定）、Svelte、Preact | 属性として設定される | scalar は属性バックなので無害。**object 入力は文字列化して壊れる** |
+| always assigns a property | Angular (`[prop]`), Lit (`.prop=`), Solid (`prop:`), Vue (with an explicit `.prop`) | the own property permanently shadows the accessor | **the value never arrives.** No error |
+| falls back to an attribute on `key in el` | React 19, Vue (by default), Svelte, Preact | it is set as an attribute | scalars are attribute-backed, so harmless. **An object input is stringified and breaks** |
 
-後者は wcstack の設計（属性バック accessor）のおかげで大半が無害という、意図せぬ幸運がある。壊れるのは
-object を受け取る入力（`post`、`options`、`files` など）に限られる。
+The latter is mostly harmless thanks to wcstack's design (attribute-backed accessors) — unintended good fortune. The
+only things that break are inputs taking an object (`post`, `options`, `files`, …).
 
-### 2.3 イベント名がテンプレートで束縛できない framework がある
+### 2.3 Some frameworks cannot bind the event names in a template
 
-wcstack のイベント名は `wcs-camera:stream-ready` のようにコロンを含む。Angular のテンプレートはコロンを
-`target:event` の区切りとして解釈するため、`(wcs-camera:stream-ready)` は `Unsupported event target` になる
-（angular/angular#28491 として未解決）。React の JSX でもコロンは名前空間名として扱われ、既定の Babel 設定では
-そのまま書けない。
+wcstack's event names contain a colon, as in `wcs-camera:stream-ready`. Angular's template reads a colon as the
+`target:event` separator, so `(wcs-camera:stream-ready)` yields `Unsupported event target` (angular/angular#28491,
+open). In React's JSX a colon is likewise treated as a namespace name and cannot be written as-is under the default
+Babel configuration.
 
-adapter 経由なら `bind()` が `addEventListener` を使うため影響しない。効いてくるのは、
-adapter を使わず直接束縛する経路と、[棚卸し §5.6](12-wc-bindable-observable-inventory.md) が指摘した
-「`event` / `handle` を values から外して別 surface で受ける」設計である。逃げ道として想定していた
-「利用者が要素のイベントを直接聴く」が、これらの framework では素直に書けない。
+Going through an adapter is unaffected, since `bind()` uses `addEventListener`. It matters for the route that binds
+directly without an adapter, and for the design [inventory §5.6](12-wc-bindable-observable-inventory.md) pointed
+to — "take `event` / `handle` out of values and receive them on a separate surface". The escape hatch that was assumed
+there, "the user listens to the element's events directly", cannot be written straightforwardly in these frameworks.
 
-## 3. 責務分界
+## 3. The division of responsibility
 
-| 問題 | 主責務 | 理由 |
+| Problem | Primary responsibility | Why |
 | --- | --- | --- |
-| upgrade 完了までの bind 保留 | wc-bindable core / adapter | 判定は discovery の一部で、adapter 単独では「まだ」を表現できない |
-| 遅延定義構成での利用手順 | wcstack ドキュメント | 定義が遅れるのは wcstack 側の配布形態に起因する |
-| upgrade 前 property の再取り込み | **wcstack Shell** | custom elements 標準の producer 責務。外部からは修正不能 |
-| object 入力の属性フォールバック | wcstack ドキュメント + framework の明示構文 | 型を保つ手段は framework 側にあり、必要性を知らせるのは producer 側 |
-| イベント名の表現可能性 | wcstack 命名 + adapter surface | 名前は producer が決めた。ただし改名は破壊変更なので surface で解く |
-| framework の変更検知統合 | 各 adapter | zoneless / OnPush などは framework 固有。wcstack が肩代わりしない |
+| holding the bind until the upgrade completes | wc-bindable core / adapters | the check is part of discovery, and an adapter alone cannot express "not yet" |
+| the usage procedure in a late-definition setup | wcstack documentation | the lateness originates in wcstack's own distribution shape |
+| re-reading pre-upgrade properties | **the wcstack Shell** | a standard custom-elements producer responsibility; unfixable from outside |
+| the attribute fallback for object inputs | wcstack documentation plus the framework's explicit syntax | the means of preserving the type is on the framework side; announcing the need is the producer's job |
+| how expressible the event names are | wcstack naming plus the adapter surface | the producer chose the names. But renaming is a breaking change, so it is solved at the surface |
+| integration with a framework's change detection | each adapter | zoneless, OnPush, and the like are framework-specific. wcstack does not take them on |
 
-## 4. 推奨する段階導入
+## 4. The recommended staged introduction
 
-### Phase A0: 影響範囲の確定
+### Phase A0: establishing the scope of impact
 
-定義が遅れる 3 経路（autoloader の動的 import、CDN の `<script type="module">`、code-split）で、
-1.1 と 1.2 が実際に再現するかを確認する。最初の成果物は再現テストであり、この時点では修正しない。
+Confirm whether 1.1 and 1.2 actually reproduce on the three routes where the definition is late (the autoloader's
+dynamic import, a CDN `<script type="module">`, code splitting). The first deliverable is the reproduction test;
+nothing is fixed at this point.
 
-### Phase A1: Shell の property upgrade（wcstack 単独）— 実装済み（2026-08-01）
+### Phase A1: property upgrade in the Shell (wcstack alone) — implemented (2026-08-01)
 
-`connectedCallback` の先頭で own プロパティを取り込み直す共通ヘルパを入れた。`static wcBindable.inputs` に
-入力名が既に宣言されているため、宣言を舐めるだけで機械適用できる。
+A shared helper that re-reads own properties at the top of `connectedCallback` was added. Since the input names are
+already declared in `static wcBindable.inputs`, it can be applied mechanically just by walking the declaration.
 
-正本は `/protocol/upgrade-properties.ts` で、`scripts/sync-protocol-types.mjs` が
-`packages/<pkg>/src/protocol/upgradeProperties.ts` として配る（protocol 型と同じ配布経路・CI の `--check` 対象）。
+The canonical source is `/protocol/upgrade-properties.ts`, distributed by `scripts/sync-protocol-types.mjs` as
+`packages/<pkg>/src/protocol/upgradeProperties.ts` (the same distribution route as the protocol types, and covered by
+CI's `--check`).
 
 ```ts
 export function upgradeProperties(element: object): void {
@@ -144,7 +150,7 @@ export function upgradeProperties(element: object): void {
   for (const input of inputs) {
     const name = input.name;
     if (!Object.prototype.hasOwnProperty.call(element, name)) continue;
-    if (!hasAccessorOnPrototype(element, name)) continue;   // public class field を壊さない
+    if (!hasAccessorOnPrototype(element, name)) continue;   // do not break a public class field
     const record = element as Record<string, unknown>;
     const value = record[name];
     delete record[name];
@@ -153,113 +159,114 @@ export function upgradeProperties(element: object): void {
 }
 ```
 
-適用範囲は `static wcBindable` を宣言する 38 Shell（`<wcs-throttle>` は `<wcs-debounce>` を継承するため自動的に
-covered、`<wcs-route>` は `inputs` を持たないため対象外）。`<wcs-router>` は `async connectedCallback` なので
-最初の `await` より前に同期で呼ぶ。
+It applies to the 38 Shells declaring `static wcBindable` (`<wcs-throttle>` is covered automatically by inheriting
+from `<wcs-debounce>`; `<wcs-route>` is out of scope as it has no `inputs`). `<wcs-router>` has an
+`async connectedCallback`, so it is called synchronously before the first `await`.
 
-挙動変更は「今まで捨てていた値が届くようになる」方向のみで、既存の属性経路には影響しない。
+The only behavior change is in the direction of "values that used to be dropped now arrive"; the existing attribute
+route is unaffected.
 
-**副産物**: この作業で `raf` が `scripts/sync-protocol-types.mjs` の配布対象リストから漏れており、
-`packages/raf/src/protocol/wcBindable.ts` が AUTO-GENERATED バナー付きのまま `--check` の対象外で
-drift していたことが判明した（登録漏れ）。リストに追加して解消済み。
+**A side finding**: this work revealed that `raf` was missing from the distribution list in
+`scripts/sync-protocol-types.mjs`, so `packages/raf/src/protocol/wcBindable.ts` was drifting while still carrying the
+AUTO-GENERATED banner and being outside `--check` (a registration oversight). Fixed by adding it to the list.
 
-### Phase A2: 遅延定義構成の利用手順を明文化 — 実施済み（2026-08-01）
+### Phase A2: documenting the usage procedure for a late-definition setup — done (2026-08-01)
 
-利用手順の正本を [framework アプリへの組み込み手順](../framework-adapter-integration.ja.md) として置いた。
-静的 import が最も確実であること、避けられない場合は `customElements.whenDefined()` で
-**adapter を呼ぶコンポーネントがマウントされる前に**ゲートすること、
-`connectedCallbackPromise` / `hasConnectedCallbackPromise` / `<wcs-defined>` / `setTimeout` が
-代用にならない理由を明記した。object 入力の属性フォールバック（§2）と reactive proxy の raw 化（§3）も
-同じ文書にまとめてある。
+The canonical usage procedure was placed as [Embedding wcstack elements in a framework app](../framework-adapter-integration.md).
+It states that a static import is the surest route; that where that is unavoidable, gating with
+`customElements.whenDefined()` has to happen **before the component that calls the adapter mounts**; and why
+`connectedCallbackPromise` / `hasConnectedCallbackPromise` / `<wcs-defined>` / `setTimeout` do not substitute. The
+attribute fallback for object inputs (§2) and unwrapping a reactive proxy (§3) are collected in the same document.
 
-ルート README（en / ja）には 3 規則の要約と本文書へのリンクを追加した。
-wcstack-app スキルは別リポジトリ（wcstack/wcstack-skill）なので、そちらの追随は別作業として残る。
+The root README (en / ja) gained a summary of the three rules plus a link to this document.
+The wcstack-app skill is a separate repository (wcstack/wcstack-skill), so catching it up remains separate work.
 
-### Phase A3: 上流への提案 — 提案文書作成済み（2026-08-01）
+### Phase A3: the proposal upstream — proposal document written (2026-08-01)
 
-[`bind()` に「まだ定義されていない」を扱わせる提案](../spec-proposal-bind-definition-timing.md) を書いた。
-案 A（`syncOn: "define"` の追加・推奨）/ 案 B（戻り値で `pending` を区別）/ 案 C（別関数）を比較し、
-規範文言案・適合テスト条件・非目標まで含めてある。既定挙動を変えず core 1 箇所で済む案 A を推している。
-[棚卸し §5.6](12-wc-bindable-observable-inventory.md) の semantics metadata 提案とは独立に出せる。
+[A proposal for making `bind()` handle "not yet defined"](../spec-proposal-bind-definition-timing.md) (ja) was
+written. It compares option A (adding `syncOn: "define"`, recommended), option B (distinguishing `pending` through
+the return value), and option C (a separate function), and includes draft normative wording, the conformance test
+conditions, and the non-goals. It recommends option A, which changes no default behavior and touches one place in the
+core. It can be submitted independently of the semantics-metadata proposal in
+[inventory §5.6](12-wc-bindable-observable-inventory.md).
 
-upstream への提出済み: [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)
-（2026-08-01・英文）。実装 PR は先方の案の選択待ち。
+Submitted upstream: [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)
+(2026-08-01, in English). An implementation PR waits on their choice of option.
 
-### Phase A4: イベント名の代替経路 — 実施済み（2026-08-01）
+### Phase A4: an alternative route for the event names — done (2026-08-01)
 
-命名は変更しない（破壊変更のため）。代わりに、コロンを束縛できない framework 向けの受け方を
-[組み込み手順 §4](../framework-adapter-integration.ja.md) に書いた。adapter 経由なら影響しないこと、
-Angular（`Unsupported event target`）と React（JSX の名前空間解釈）はテンプレートで書けないこと、
-どの framework でも ref + `addEventListener`（Angular は `Renderer2.listen`）が可搬な経路であること、
-この経路が必要になる代表例が `handle` 分類の `streamReady` であることを、実コード付きで示している。
+The naming is not changed (it would be a breaking change). Instead, how to receive events in frameworks that cannot
+bind a colon is written in [the integration guide §4](../framework-adapter-integration.md). It shows, with real code,
+that going through an adapter is unaffected; that Angular (`Unsupported event target`) and React (JSX's namespace
+interpretation) cannot write it in a template; that a ref plus `addEventListener` (`Renderer2.listen` in Angular) is
+the portable route in any framework; and that the representative case needing that route is `streamReady`, classified
+as a `handle`.
 
-Vue / Svelte / Solid のテンプレート構文でコロン付き名が書けるかは framework とバージョンに依存するため、
-実測していない事実として断定せず、可搬な経路を推奨する形にした。
+Whether Vue / Svelte / Solid template syntax can write a name containing a colon depends on the framework and version,
+so rather than assert something unmeasured, it recommends the portable route.
 
-親設計の決定ゲート 6 で event / handle surface を追加する場合、その surface はテンプレート構文に
-依存しない形にする。
+Where decision gate 6 of the parent design adds an event / handle surface, that surface will be shaped so as not to
+depend on template syntax.
 
-## 5. 検証条件
+## 5. Verification conditions
 
 ### Shell
 
-- [x] upgrade 前に property 代入した値が、upgrade 後に setter を通って反映される。
-- [x] own プロパティが無い通常経路では何もしない（冪等・再接続で副作用が出ない）。
-- [x] prototype 側が accessor でない own プロパティは触らない（public class field を壊さない）。
-- [x] `inputs` 宣言を持たない要素、`wcBindable` を持たない要素で例外を投げない。
-- 上記は `__tests__/protocol.upgradeProperties.test.ts`（生成配布される共有適合テスト）が各パッケージで固定する。
-- [x] object を受け取る入力について、属性フォールバック時に沈黙して壊れることを利用者向けに明示する
-  （[組み込み手順 §2](../framework-adapter-integration.ja.md)・ルート README）。
+- [x] A value assigned to a property before the upgrade goes through the setter and takes effect after it.
+- [x] On the ordinary route with no own property it does nothing (idempotent; no side effect on reconnection).
+- [x] It leaves alone an own property whose prototype side is not an accessor (it does not break a public class field).
+- [x] It throws for neither an element without an `inputs` declaration nor an element without `wcBindable`.
+- The above are pinned in each package by `__tests__/protocol.upgradeProperties.test.ts` (the shared conformance test that is generated and distributed).
+- [x] For inputs taking an object, the fact that an attribute fallback breaks them silently is stated for users
+  ([the integration guide §2](../framework-adapter-integration.md), the root README).
 
-### 遅延定義
+### Late definition
 
-- autoloader 経由で要素が定義される前に adapter が mount しても、定義後に初期値と後続イベントが届く。
-- 上記が成立しない場合、利用者に見える形（README のゲート手順）で回避策が示されている。
-- 定義が先行する通常構成で、追加した待機処理が初期配送を遅らせない。
+- Even where the adapter mounts before the element is defined through the autoloader, the initial value and subsequent events arrive after the definition.
+- Where that does not hold, a workaround is presented in a form users can see (the gating procedure in the README).
+- In the ordinary setup where the definition comes first, the added waiting does not delay the initial delivery.
 
-## 6. 非目標
+## 6. Non-goals
 
-- wcstack のイベント名からコロンを外すこと。
-- `@wc-bindable` の adapter を wcstack 側で fork / patch すること。
-- 全 framework の変更検知・SSR・hydration を wcstack が肩代わりすること。
-- 定義が遅れる構成そのものを廃止すること（buildless / CDN は本プロジェクトの前提）。
+- Removing the colon from wcstack's event names.
+- Forking or patching the `@wc-bindable` adapters on the wcstack side.
+- Having wcstack take on the change detection, SSR, and hydration of every framework.
+- Abolishing the late-definition setup itself (buildless / CDN is a premise of this project).
 
-## 7. 決定ゲート
+## 7. Decision gates
 
-1. **upgrade 対象**: `wcBindable.inputs` の宣言だけを舐めるか、Shell の全 setter を対象にするか。
-2. **適用範囲**: 35 パッケージ一括で入れるか、新規ノードと実害が確認されたノードから入れるか。
-3. **待機手順の提示**: README 追記に留めるか、`<wcs-defined>` の利用を推奨形とするか、`auto` エントリ側で
-   定義完了を保証する形まで踏み込むか。
-4. **上流提案の形**: core に `syncOn: "define"` を足す案か、adapter 側の再試行に寄せる案か。
-5. **イベント名**: 現行維持＋代替経路の文書化で確定してよいか。
+1. **What upgrade covers**: only walk the `wcBindable.inputs` declaration, or cover every setter on the Shell.
+2. **Scope of application**: introduce it across all 35 packages at once, or start with new nodes and nodes where real damage was confirmed.
+3. **Presenting the waiting procedure**: stop at a README addition, recommend using `<wcs-defined>`, or go as far as guaranteeing definition completion in the `auto` entry.
+4. **The shape of the upstream proposal**: adding `syncOn: "define"` to the core, or leaning on a retry in the adapter.
+5. **Event names**: is keeping them as-is plus documenting the alternative route acceptable as the settled answer.
 
-推奨は、ゲート 1 を `inputs` 宣言ベース、ゲート 2 を一括（挙動変更が単方向で低リスクなため）、
-ゲート 3 を README 追記から開始、ゲート 4 を core への提案優先、ゲート 5 を現行維持、とする。
+The recommendation: gate 1 on the `inputs` declaration; gate 2 all at once (the behavior change is one-directional and low-risk); gate 3 starting from a README addition; gate 4 favouring the proposal to the core; gate 5 keeping things as they are.
 
-## 8. 実施価値と優先度
+## 8. Value and priority
 
-| 観点 | 評価 |
+| Aspect | Assessment |
 | --- | --- |
-| 静的 import 構成での即時障害 | 低い |
-| autoloader / CDN 構成での実障害 | 高い |
-| wcstack 単独で完結するか | Phase A1 / A2 は完結する |
-| 上流依存 | Phase A3 のみ |
-| 「React / Vue / Svelte / Solid と相互運用できる」という公開主張の裏付け | 高い |
-| 値の意味分類（doc 11 / 12）との結合度 | 低い（独立に進行できる） |
+| immediate breakage in a static-import setup | low |
+| real breakage in an autoloader / CDN setup | high |
+| does it close within wcstack alone | Phases A1 / A2 do |
+| upstream dependency | Phase A3 only |
+| support for the public claim of "interoperable with React / Vue / Svelte / Solid" | high |
+| coupling with the classification of value meanings (docs 11 / 12) | low (it can proceed independently) |
 
-Phase A1 は本書で挙げた中で唯一、上流も metadata も待たずに直せる実欠陥だった。実装済み。
-A2 / A3 / A4 も文書として着地した。残るのは本リポジトリ外の 2 件——
-[提案文書](../spec-proposal-bind-definition-timing.md) の upstream への提出と、
-wcstack-app スキル（別リポジトリ）への追随である。
+Phase A1 was the only real defect listed here that could be fixed without waiting on upstream or on metadata.
+Implemented. A2 / A4 / A3 have landed as documents. What remains is two things outside this repository —
+submitting [the proposal document](../spec-proposal-bind-definition-timing.md) (ja) upstream, and catching up the
+wcstack-app skill (a separate repository).
 
-## 参照
+## References
 
-- [React の不変スナップショットと wc-bindable I/O 境界](11-react-immutable-snapshot-boundary.md)
-- [wc-bindable observable 棚卸し](12-wc-bindable-observable-inventory.md)
-- [タグ定義とバインディング確立の順序](01-binding-initialization-order.md)
-- [signals の定義タイミング規範](../signals-definition-timing.md)
-- [非同期 I/O ノード作成ガイドライン](../async-io-node-guidelines.ja.md)
-- [`WcsWebSocket`（属性バック accessor の実例）](../../packages/websocket/src/components/WebSocket.ts)
-- [Vue and Web Components（`in` 判定と `.prop` 修飾子）](https://vuejs.org/guide/extras/web-components.html)
+- [React immutable snapshots and the wc-bindable I/O boundary](11-react-immutable-snapshot-boundary.md) (ja)
+- [The wc-bindable observable inventory](12-wc-bindable-observable-inventory.md)
+- [The order of tag definition and binding establishment](01-binding-initialization-order.md) (ja)
+- [signals' definition timing norms](../signals-definition-timing.md)
+- [The async I/O node authoring guidelines](../async-io-node-guidelines.md)
+- [`WcsWebSocket` (a real example of an attribute-backed accessor)](../../packages/websocket/src/components/WebSocket.ts)
+- [Vue and Web Components (the `in` check and the `.prop` modifier)](https://vuejs.org/guide/extras/web-components.html)
 - [React DOM Components — Custom HTML Elements](https://react.dev/reference/react-dom/components#custom-html-elements)
 - [angular/angular#28491 — Namespaced Custom Events](https://github.com/angular/angular/issues/28491)

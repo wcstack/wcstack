@@ -457,7 +457,7 @@ memory の「`src/auto.ts` が `./exports` 以外を import すると SRI が黙
 
 **2026-08-11 修正**（後続ブランチ fix/nested-for-followups）: 参照 17 ファイル
 （state `__e2e__` 12・router `__e2e__` 1・server README ×2 と `render.ts` の JSDoc・
-docs/state-binding-init-races.md）を `auto.min.js` に置換。`e2e/bench/jsfb-verify.mjs` が
+docs/state-binding-init-races.ja.md）を `auto.min.js` に置換。`e2e/bench/jsfb-verify.mjs` が
 keyed 判定（3 種とも合格）・全 8 操作の計測まで完走することを実ブラウザで確認した。
 **「配布物のファイル名変更を参照側に伝える自動ゲートが無い」構造自体は残っている**。
 

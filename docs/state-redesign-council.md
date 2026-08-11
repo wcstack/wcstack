@@ -244,7 +244,7 @@ Gate 0 後に「静的cell でしか取れず動的proxy+同値ガードでは�
 
 1. **差分条件 getter**: `examples/state-search` の `statusText`、`state-camera-record-upload` の `camStatus`/`uploadText`、`state-cross-tab-todo` の `activityText` 等、分岐で異なるパスを読む getter が常用。動的トレースは実行時に通った経路だけ依存登録（`checkDependency.ts`）。静的化は over-subscription（getter 過剰実行＝観測可能な意味論差）か分岐解析を強いる。
 2. **多段ワイルドカード依存**: `regions.*.prefectures.*.cities.*.density`（README 規範例・3段）の宛先は**通知時の配列内容**でしか決まらない（`walkDependency.ts` の listDiff 展開、テストで3段保証）。初期化時の静的座標では宛先確定不能。
-3. **任意深度 `this.a.b.c`**: proxy 透過が前提。cell+shallowReactive 再現は MobX 罠（中間ノード丸ごと差し替え・配列同一性・動的キー）を再演し、かつ軽量化動機を失う。`docs/signals-state-design.md` §5-4 が自ら「cell に自動深追跡は無い・深追跡したいなら state を使え」と棲み分けを宣言済み。
+3. **任意深度 `this.a.b.c`**: proxy 透過が前提。cell+shallowReactive 再現は MobX 罠（中間ノード丸ごと差し替え・配列同一性・動的キー）を再演し、かつ軽量化動機を失う。`docs/signals-state-design.ja.md` §5-4 が自ら「cell に自動深追跡は無い・深追跡したいなら state を使え」と棲み分けを宣言済み。
 
 → **B/C（signals統合/標準純化）は `data-wcs` の置換先になれない。別系統の併存としてのみ成立**（signals doc §0/§6「置換しない・客が違う」と整合）。
 

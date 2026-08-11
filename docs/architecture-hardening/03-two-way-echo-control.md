@@ -2,7 +2,7 @@
 
 - **状態**: 採択・実装済み（`PropagationContext` / `WriteReceipt` = phase 3、`enablePropagationContext`
   として **既定 `true`**・恒久 opt-out）。実装マッピングは [09](09-remediation-design.md) §4、
-  既定化ステータスは [10](10-defaulting-rollout-status.md) を参照。
+  既定化ステータスは [10](10-defaulting-rollout-status.ja.md) を参照。
 - **対象**: UI ↔ state、state ↔ I/O などの双方向経路
 
 ## 問題
@@ -86,4 +86,4 @@ in-place変更もreferenceだけでは識別不能であり、core eventだけ�
 - [接続直後の初期状態配送](02-initial-state-delivery.md)
 - [観測性・デバッグと wc-bindable 境界](05-observability-and-wc-bindable.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
-- [発火タイミング契約](../timing-and-firing-contract.md)
+- [発火タイミング契約](../timing-and-firing-contract.ja.md)

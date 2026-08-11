@@ -3,7 +3,7 @@
 - **作成日**: 2026-07-14
 - **状態**: 統合設計提案（未採択・未実装）
 - **対象**: `@wcstack/state`、I/O Core / Shell、DevTools、VS Code 拡張、wc-bindable adapter
-- **前提**: [論点 1〜8](README.md#論点一覧) と既存の実装済み対策を置き換えず、段階的に統合する
+- **前提**: [論点 1〜8](README.ja.md#論点一覧) と既存の実装済み対策を置き換えず、段階的に統合する
 
 ## 1. 結論
 
@@ -235,7 +235,7 @@ upgrade 中に初期イベントを取り逃しても、event 後の current pro
 > **実装ステータス（2026-07-16）**: 本節の方向認識初期同期は `enableDirectionalInitialSync`
 > として実装され、**既定 `true`**（恒久 opt-out フラグは残置）。output-only member の element
 > authority 初期読取、`#init=` / `#sync=` modifier を含む。詳細と残作業は
-> [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) を参照。
+> [10-defaulting-rollout-status.ja.md](10-defaulting-rollout-status.ja.md) を参照。
 >
 > **修正（2026-07-21）**: 初期実装は resolvedAuthority を定常 apply のゲートにも使い、
 > element / none authority の binding で state→element を**恒久**抑止していた（本節の
@@ -316,7 +316,7 @@ observer を使わない実装を選ぶなら、同等に pending record の強�
 > **実装ステータス（2026-07-16）**: 本節の因果伝播は `enablePropagationContext` として実装され、
 > **既定 `true`**（恒久 opt-out フラグは残置）。zero-copy 最適化（echo しうる双方向 wire のみ
 > provenance bookkeeping、一方向バインドは zero-cost）で write-path overhead ≤5% を達成してから
-> 既定化した。詳細は [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) を参照。
+> 既定化した。詳細は [10-defaulting-rollout-status.ja.md](10-defaulting-rollout-status.ja.md) を参照。
 
 単純な値比較だけでは、正規化された値、object の同一参照、diamond graph を区別できない。
 一方、イベントを一律に無視すると element 側の正規化結果まで失う。そこで updater の内部 queue を
@@ -692,7 +692,7 @@ phase 0 の最小 platform guard は global の存在確認と owner adapter だ
 > ほぼ完了 — phase 2/3 は既定 `true` に反転、phase 4 lane は 6 operation ノード、phase 6 errorInfo は
 > 27/35 ノード適用（defer 3・非該当 5）、5a は CI 必須ゲート化済み、5b は explicit opt-in を正式仕様として
 > 確定。残作業（リリース時 dist rebuild / defer ノード判断 / lane trace ブリッジ）は
-> [10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) が追跡する living document。
+> [10-defaulting-rollout-status.ja.md](10-defaulting-rollout-status.ja.md) が追跡する living document。
 
 各 phase の旧経路と新経路を同じ binding に二重適用してはならない。session 単位で ownership を切り替え、
 rollback 時も listener、address、operation ticket の所有者が常に一つになるようにする。依存順は
@@ -797,7 +797,7 @@ dispose、reconnect の並びを生成して次の不変条件を検査する。
 
 ## 13. 参照
 
-- [論点一覧](README.md#論点一覧)
+- [論点一覧](README.ja.md#論点一覧)
 - [タグ定義とバインディング確立の順序](01-binding-initialization-order.md)
 - [接続直後の初期状態配送](02-initial-state-delivery.md)
 - [双方向バインディングのエコー制御](03-two-way-echo-control.md)
@@ -807,7 +807,7 @@ dispose、reconnect の並びを生成して次の不変条件を検査する。
 - [ブラウザ capability 差の吸収](07-browser-capability-variance.md)
 - [プロトコル進化と互換性](08-protocol-evolution.md)
 - [`<wcs-defined>` 設計メモ](../defined-tag-design.md)
-- [DevTools hook protocol](../devtools-hook-protocol.md)
+- [DevTools hook protocol](../devtools-hook-protocol.ja.md)
 - [wc-bindable SPEC（2026-07-14 確認・固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [wc-bindable Extensions（同固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC-extensions.md)
 - [wc-bindable remote README（同固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/packages/remote/README.md)

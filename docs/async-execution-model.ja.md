@@ -6,7 +6,7 @@
   - **プロトコルには一切手を入れない**。wc-bindable-protocol（`IWcBindableProperty` / `IWcBindableCommand`）・command-token・event-token の語彙・型・構文の変更を本書は行わない（本書に基づく実装もこれらを変更してはならない — MUST NOT）
   - **既存ノードの実行時挙動の変更を要求しない**。既存実装は §12 で追認し、本書の規範と食い違う点は「逸脱」として記録する（既存実装が正）。適合のためのリファクタは任意
 - **なぜ存在するか**: [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) は骨格（Core/Shell 分離・never-throw・`_gen` 世代ガード・`observe()/dispose()/ready`）を規範化した。しかし次の論点はノードごとの暗黙実装に留まっていた — (1) **排他方式**（古い実行と新しい実行の優先関係）、(2) **キャンセルの第一級手段**、(3) **再試行ポリシー**、(4) **タイムアウト**、(5) **エラー envelope と利用者中断の区別**。この5点が暗黙のままだと、新規ノードのたびに同じ問題（古い結果が新しい結果を上書きする・入力が連続変化する・切断後に処理が完了する・完了順が保証されない）を独自解決することになり、微妙に違う意味論が増殖する。本書はこれらに**名前と正規形**を与え、ノード集を「非同期処理の共通実行モデル」として揃える
-- **関連**: 骨格規約は [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)（本書はその §3.3/§3.4/§3.6 を実行意味論の側から拡張する）。本書の lane / commit 規則を順序付き入力・出力トレースと適合ベクトルへ写像する横断検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。ノード別の発火タイミングの正本は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。複数オペレーションの並行追跡（本書のスコープ外）は [multi-promise-io-node-design.md](./multi-promise-io-node-design.md)
+- **関連**: 骨格規約は [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)（本書はその §3.3/§3.4/§3.6 を実行意味論の側から拡張する）。本書の lane / commit 規則を順序付き入力・出力トレースと適合ベクトルへ写像する横断検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。ノード別の発火タイミングの正本は [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md)。複数オペレーションの並行追跡（本書のスコープ外）は [multi-promise-io-node-design.md](./multi-promise-io-node-design.md)
 - **English**: [async-execution-model.md](./async-execution-model.md)
 
 ---
@@ -69,7 +69,7 @@ idle ──(トリガ)──▶ scheduled ──(coalesce 窓明け)──▶ ru
                                                        settled = success | error | cancelled | timeout
 ```
 
-- **`scheduled` は coalesce 窓**（同一 microtask 内の複数トリガを1回の実行に畳む段階）。持たないノードでは idle → running が直結する。coalesce を持つ場合は microtask で実装し、「microtask が task に先行する」契約（[timing-and-firing-contract.md](./timing-and-firing-contract.md) §3）を守る（MUST）。fetch の auto-fetch（同 §1.2: microtask 遅延＋同一 url de-dup）が参照実装
+- **`scheduled` は coalesce 窓**（同一 microtask 内の複数トリガを1回の実行に畳む段階）。持たないノードでは idle → running が直結する。coalesce を持つ場合は microtask で実装し、「microtask が task に先行する」契約（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §3）を守る（MUST）。fetch の auto-fetch（同 §1.2: microtask 遅延＋同一 url de-dup）が参照実装
 - 観測面への写像（既存語彙のまま、新プロパティを要求しない）:
   - `running` ⇔ `loading: true`（送信ごとに1回・await 前に立てる — timing 契約 §1.1 の一般化）
   - `success` ⇔ `value` 更新（error は §9.2 のクリア/sticky 宣言に従う）
@@ -110,7 +110,7 @@ unresolved ──(初回プローブ settle)──▶ live（変化を追う） 
 ### 3.5 状態機械と観測面の分離
 
 - 遷移図をそのまま `status` enum として公開する義務はない。観測面は既存の分解流儀「boolean ＋ 派生 getter」（guidelines §4.2）に従う
-- 公開する場合も additive（既存プロパティの意味変更禁止）とし、CSS への反映は [custom-state-reflection-design.md](./custom-state-reflection-design.md) の規則（派生 boolean getter の無い enum は反映しない）に従う
+- 公開する場合も additive（既存プロパティの意味変更禁止）とし、CSS への反映は [custom-state-reflection-design.ja.md](./custom-state-reflection-design.ja.md) の規則（派生 boolean getter の無い enum は反映しない）に従う
 
 ---
 
@@ -310,7 +310,7 @@ guidelines §10 に加えて、非同期実行を持つノードは以下を満�
 
 ## 14. 未決事項
 
-- **`status` enum の observable 公開**（§3.5）: 公開するなら additive で、[custom-state-reflection-design.md](./custom-state-reflection-design.md) の反映規則と揃える必要がある。現時点では要求も禁止もしない
+- **`status` enum の observable 公開**（§3.5）: 公開するなら additive で、[custom-state-reflection-design.ja.md](./custom-state-reflection-design.ja.md) の反映規則と揃える必要がある。現時点では要求も禁止もしない
 - **指数バックオフの実採用**: 現行の再試行ノードは全て固定間隔。採用する場合は opt-in 入力（既定 fixed）で、どのノードから入れるかは未定
 - **排他モード `parallel`**: [multi-promise-io-node-design.md](./multi-promise-io-node-design.md) の戦略選択（コレクション化 / userland 相関 / プロトコル拡張）が先。本書は予約語のみ
 - **実行プリミティブのコード共有**: 本書は規範のみで実装を共有しない。世代・タイマー・再試行を束ねたヘルパ（`OperationLane` 相当）を共有するなら、ランタイム依存を導入しない「コピー配布」方式（`wcBindable.ts` と同じ）が前提。是非は未決

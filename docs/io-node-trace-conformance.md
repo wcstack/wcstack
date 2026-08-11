@@ -11,9 +11,9 @@
 - **関連する正本**:
   - Core / Shell、observable、never-throw、lifecycle: [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)
   - execution form、lane、commit、cancel、retry、timeout: [async-execution-model.ja.md](./async-execution-model.ja.md)
-  - 同期 / microtask / task とノード別発火順: [timing-and-firing-contract.md](./timing-and-firing-contract.md)
+  - 同期 / microtask / task とノード別発火順: [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md)
   - lane の参照実装: [`io-core/operation-lane.ts`](../io-core/operation-lane.ts)
-  - optional な診断 side channel: [devtools-hook-protocol.md](./devtools-hook-protocol.md)
+  - optional な診断 side channel: [devtools-hook-protocol.ja.md](./devtools-hook-protocol.ja.md)
 
 ---
 
@@ -147,7 +147,7 @@ scheduler.advanceClock(duration)
 
 `platform.clockSample(value)` は rAF timestamp や node が読む時刻源の観測値であり、それ自体は callback を配送しない。`scheduler.advanceClock(duration)` は fake scheduler の時刻を進め、期限に達した timer / rAF callback をベクトルが定めた順で配送する。両者を同期させるか、別の時計として扱うかは `initial` で宣言する（MUST）。
 
-実ブラウザの全スケジューラを模倣する必要はない。既存の [timing-and-firing-contract.md](./timing-and-firing-contract.md) に記録された発火順と矛盾するベクトルを書いてはならない（MUST NOT）。採択後の規範上の保証は適合ベクトル自身が担い、参照ドキュメントから暗黙に導出しない。
+実ブラウザの全スケジューラを模倣する必要はない。既存の [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) に記録された発火順と矛盾するベクトルを書いてはならない（MUST NOT）。採択後の規範上の保証は適合ベクトル自身が担い、参照ドキュメントから暗黙に導出しない。
 
 ### 2.5 observable output
 
@@ -640,7 +640,7 @@ draft 期間中は `wcstack-io/0.x-draft` とし、どの level についても�
 6. 共通法則の適用条件、非適用根拠、逸脱の表
 7. node 固有の適合ベクトル
 
-公開挙動を変更する場合、対応する適合ベクトルと、現行挙動の参照記録である [timing-and-firing-contract.md](./timing-and-firing-contract.md) を同じ変更で更新しなければならない（MUST）。レビューは実装、規範ベクトル、参照記録、example の説明の drift を認めない。
+公開挙動を変更する場合、対応する適合ベクトルと、現行挙動の参照記録である [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) を同じ変更で更新しなければならない（MUST）。レビューは実装、規範ベクトル、参照記録、example の説明の drift を認めない。
 
 レビューでは次の順で確認する。
 

@@ -3,7 +3,7 @@
 - **対象**: `@wcstack` に新しい非同期IOノードパッケージ（Web API を宣言的タグ化したもの。`@wcstack/fetch` / `geolocation` / `clipboard` / `sse` / `broadcast` / `worker` / `wakelock` / `intersection` / `resize` / `speech` / `permission` / `notification` ほか）を追加する実装者
 - **状態**: 規範ドキュメント（normative）。「MUST / SHOULD / MAY」は RFC 2119 の意味で使う。新規ノードはここに反した実装をしてはならない（MUST NOT）。やむを得ず逸脱する場合は、その理由をパッケージの設計ドキュメント（`docs/<name>-tag-design.md`）に記録すること
 - **なぜ存在するか**: 既存ノードは全て同じ骨格（Core/Shell 分離・wc-bindable 準拠・never-throw・`_gen` 世代ガード・SSR 対応）を共有している。この一貫性が「1つ覚えれば全部使える」という DX と、`state` binder からの相互運用性を支えている。新規ノードがこの骨格を踏襲しないと、利用者は個別に内部を読まねばならず、エコシステムの価値が崩れる。本書はその骨格を1枚に集約し、レビューのチェックリストにする
-- **関連**: タイミング・発火の契約は [timing-and-firing-contract.md](./timing-and-firing-contract.md)。実行意味論（実行形・レーン・排他モード・キャンセル・再試行・タイムアウト）の規範は [async-execution-model.ja.md](./async-execution-model.ja.md)。それらを順序付き入力・出力トレース、決定性境界、適合ベクトルとして横断する検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。observable の snapshot 境界は [React の不変スナップショットと wc-bindable I/O 境界](./architecture-hardening/11-react-immutable-snapshot-boundary.md) と [observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md)。プロトコル本体は各 SPEC（wc-bindable / command-token / event-token）。設計検討の様式は既存の `docs/*-tag-design.md` を参照
+- **関連**: タイミング・発火の契約は [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md)。実行意味論（実行形・レーン・排他モード・キャンセル・再試行・タイムアウト）の規範は [async-execution-model.ja.md](./async-execution-model.ja.md)。それらを順序付き入力・出力トレース、決定性境界、適合ベクトルとして横断する検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。observable の snapshot 境界は [React の不変スナップショットと wc-bindable I/O 境界](./architecture-hardening/11-react-immutable-snapshot-boundary.md) と [observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.ja.md)。プロトコル本体は各 SPEC（wc-bindable / command-token / event-token）。設計検討の様式は既存の `docs/*-tag-design.md` を参照
 - **English**: [async-io-node-guidelines.md](./async-io-node-guidelines.md)
 
 ---
@@ -43,8 +43,8 @@
 - **同値ガードのみで十分か**、debounce/throttle は利用者責務にするか（基本は利用者責務。filter で `notice@x|debounce(1000)` のように書かせる）
 - **permission / secure-context** の扱い。既存の4値 surface（`prompt` / `granted` / `denied` / `unsupported`）を流用するか
 - **autoTrigger**（クリック起動ショートカット）を持つか
-- **外部クロックを持つか**（オーディオスレッド等、メインスレッドの sync / microtask / task で表現できない独自の時間軸）。持つ場合は **desired のみ公開し、実効になる時刻を規定しない**（[timing-and-firing-contract.md §19.1](./timing-and-firing-contract.md)）。実効値を読み戻して publish してはならない（MUST NOT）— 読み値がレンダー単位に依存し、同値ガードが機能しなくなる
-- **ライブハンドルを扱うか**。扱う場合、既定は **Core が所有し、プロトコル境界に出さない**（worker / websocket / broadcast と同じ）。外へ渡す必要が実際に生じたときだけ command-token 引数素通しを足す（camera が唯一の例）。ハンドルが相互に接続されてグラフを成す場合は [ADR-14](./architecture-hardening/14-handle-graph-wiring.md) を先に読むこと — トポロジは値ではなく descriptor として表現する
+- **外部クロックを持つか**（オーディオスレッド等、メインスレッドの sync / microtask / task で表現できない独自の時間軸）。持つ場合は **desired のみ公開し、実効になる時刻を規定しない**（[timing-and-firing-contract.ja.md §19.1](./timing-and-firing-contract.ja.md)）。実効値を読み戻して publish してはならない（MUST NOT）— 読み値がレンダー単位に依存し、同値ガードが機能しなくなる
+- **ライブハンドルを扱うか**。扱う場合、既定は **Core が所有し、プロトコル境界に出さない**（worker / websocket / broadcast と同じ）。外へ渡す必要が実際に生じたときだけ command-token 引数素通しを足す（camera が唯一の例）。ハンドルが相互に接続されてグラフを成す場合は [ADR-14](./architecture-hardening/14-handle-graph-wiring.ja.md) を先に読むこと — トポロジは値ではなく descriptor として表現する
 
 設計が固まったら `architecture-review` スキルや `protocol-spec-review` スキルでレビューしてから実装に入ることを推奨する。
 
@@ -136,7 +136,7 @@ private _setState(v: T): void {
 ### 3.3.1 producer snapshot contract（MUST）
 
 この節は新規ノードと新規 observable property に適用する。既存ノードは
-[observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.md) を起点に段階移行し、
+[observable 棚卸し](./architecture-hardening/12-wc-bindable-observable-inventory.ja.md) を起点に段階移行し、
 既存の配送・getter・resource lifetime を一括で破壊変更してはならない（MUST NOT）。
 
 #### `state`
@@ -271,7 +271,7 @@ private _api() {
 
 ### 3.9 Core は公開アダプタサーフェス（headless adopter surface）
 
-Core は Shell の実装詳細ではなく、**要素なしで直接使ってよい公開サーフェス**である。`@wcstack/signals` の `bindNode(new XxxCore())` は descriptor 省略で Core を束縛でき（`core.constructor.wcBindable` 解決）、`customElements` レジストリに一切触れないため定義タイミング問題が存在しない（[signals-definition-timing.md](./signals-definition-timing.md) §3.4 の床3）。この利用形を支えるため、次を保証する:
+Core は Shell の実装詳細ではなく、**要素なしで直接使ってよい公開サーフェス**である。`@wcstack/signals` の `bindNode(new XxxCore())` は descriptor 省略で Core を束縛でき（`core.constructor.wcBindable` 解決）、`customElements` レジストリに一切触れないため定義タイミング問題が存在しない（[signals-definition-timing.ja.md](./signals-definition-timing.ja.md) §3.4 の床3）。この利用形を支えるため、次を保証する:
 
 - Core クラスをパッケージ entry（`exports.ts`）から export する（MUST）
 - **構造保証**（いずれも既存規範の adopter 向け再掲・MUST）: `EventTarget` 継承（§3.1）・`target` 省略時は自己 dispatch（§3.1）・`static wcBindable` 宣言（§3.2）・observable プロパティは public getter で読める（§4.2 の delegation 前提であり、bindNode の初期 seed もこれを読む）・`observe()`/`dispose()`/`ready` ライフサイクル（§3.5・§3.8）・never-throw（§3.6）
@@ -327,7 +327,7 @@ export class Wcs<Name> extends HTMLElement {
 upgrade 後もそれが prototype の accessor を隠し続けるため、setter は二度と呼ばれず値は静かに消える。
 常にプロパティ代入を行う framework（Angular の `[prop]`、Lit の `.prop=`、Solid の `prop:`）× 遅延定義
 （autoloader / CDN / code-split）で常態的に起きる
-（[framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.md) §1.2）。
+（[framework adapter のバインド成立制約](./architecture-hardening/13-framework-adapter-binding-constraints.ja.md) §1.2）。
 
 - 対象は `wcBindable.inputs` に宣言した入力だけである。宣言していない settable surface は救済されない。
 - `await` を含む `connectedCallback` では、最初の `await` より前に同期で呼ぶ（MUST）。
@@ -356,7 +356,7 @@ upgrade 後もそれが prototype の accessor を隠し続けるため、setter
 
 ### 4.5 出力状態の CSS 反映（CustomStateSet / `:state()`）
 
-正本設計: `custom-state-reflection-design.md`。Shell は以下を満たすこと:
+正本設計: `custom-state-reflection-design.ja.md`。Shell は以下を満たすこと:
 
 - constructor で `super()` の直後・**`new Core(this)` より前**に `attachInternals()` の取得と反映リスナーの配線を行い（Core が constructor 内で同期 dispatch する初回イベントを取りこぼさないため — MUST）、**boolean 出力 observable・派生 boolean getter・`error` の存在**（イベント detail が非 null）を `ElementInternals.states` に反映する（MUST）。連続値・高頻度値・データ値・派生 getter の無い enum は反映しない（design §3.2）。状態名は property 名の kebab-case（design §3.3）
 - 反映は Shell が **constructor 登録の自己リスナー**で自分自身の `*-changed` / `:error` イベントを購読して行う。**Core には持ち込まない**（MUST NOT）。wcBindable 宣言も変更しない
@@ -434,7 +434,7 @@ Service Worker など追加エントリがあるノードは rollup 出力を増
 - **headless（Core）節**を README に持つ（MUST・§3.9）: Core クラス名・headless 構築の最小例（実コンストラクタ引数）・ライフサイクルが手動になる旨（`observe()`/`dispose()` ないし start/stop コマンド）・`@wcstack/signals` README「Binding a Core directly」へのリンク
 - observable ごとに `state` / `event` / `handle`、値の owner、serializability、resource release point を記録する（MUST・§3.3.1）
 - ルート README のノード一覧に追加する
-- **タイミング/発火の挙動**（いつ・何回・何が同期で何が microtask か）を持つノードは、[timing-and-firing-contract.md](./timing-and-firing-contract.md) に §1/§2 と同じ粒度で1節追加する（MUST）。example の長文コメントで内部挙動を説明しそうになったら、まずこの契約書に項目を足し、コメントはそこへリンクする
+- **タイミング/発火の挙動**（いつ・何回・何が同期で何が microtask か）を持つノードは、[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) に §1/§2 と同じ粒度で1節追加する（MUST）。example の長文コメントで内部挙動を説明しそうになったら、まずこの契約書に項目を足し、コメントはそこへリンクする
 
 ---
 

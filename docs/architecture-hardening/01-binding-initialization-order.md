@@ -99,7 +99,7 @@ binding ごとに世代番号と所有する teardown 集合を持つ。同じ�
 
 - [接続直後の初期状態配送](02-initial-state-delivery.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
-- [既存の初期化競合分析](../state-binding-init-races.md)
+- [既存の初期化競合分析](../state-binding-init-races.ja.md)
 - [`<wcs-defined>` 設計メモ](../defined-tag-design.md)
 - [`@wcstack/defined` README](../../packages/defined/README.ja.md)
-- [発火タイミング契約](../timing-and-firing-contract.md)
+- [発火タイミング契約](../timing-and-firing-contract.ja.md)

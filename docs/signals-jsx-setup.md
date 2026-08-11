@@ -1,6 +1,6 @@
 # @wcstack/signals で JSX を導入する手順書
 
-`@wcstack/signals` の DOM レイヤ(`@wcstack/signals/dom`)が公開する `h` / `Fragment` は、古典的(classic)な JSX ファクトリの形をしています。そのため **JSX を「乗せられる」が、パッケージとしては「乗せない」**(`.tsx` も `jsx-runtime` 型も同梱しない)という設計です。背景は [`signals-state-design.md` §4-1](./signals-state-design.md) を参照してください。
+`@wcstack/signals` の DOM レイヤ(`@wcstack/signals/dom`)が公開する `h` / `Fragment` は、古典的(classic)な JSX ファクトリの形をしています。そのため **JSX を「乗せられる」が、パッケージとしては「乗せない」**(`.tsx` も `jsx-runtime` 型も同梱しない)という設計です。背景は [`signals-state-design.ja.md` §4-1](./signals-state-design.ja.md) を参照してください。
 
 この文書は、それでも JSX を使いたい利用者が **実際に動かすまでの手順** をまとめたものです。
 
@@ -226,4 +226,4 @@ JSX を有効化しても、`@wcstack/signals` の DOM レイヤが解釈する�
 - 迷ったら **JSX を入れずに `h(...)` 直書き** が、このパッケージの第一級の使い方(buildless・zero-config)です。JSX は「React 風の書き味が欲しい」「既存の JSX 資産がある」場合のオプトインと捉えてください。
 - automatic runtime / `jsx-runtime` エントリは将来の seam として空席です。対応した場合はこの文書を更新します。
 
-関連: [`signals-state-design.md` §4-1](./signals-state-design.md) / パッケージ README([ja](../packages/signals/README.ja.md) / [en](../packages/signals/README.md))
+関連: [`signals-state-design.ja.md` §4-1](./signals-state-design.ja.md) / パッケージ README([ja](../packages/signals/README.ja.md) / [en](../packages/signals/README.md))

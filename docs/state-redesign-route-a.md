@@ -142,7 +142,7 @@ DX 派が特定した構造欠陥（vscode-wcs が state の構文・型・フ�
 レッドチームの A への kill shot は「凍結すべき仕様（タイミング癒着）が**暗黙で明文化されておらず**、golden で pin できない＝oracle 不在の書き直し」。**A4（構造再構築）に進むなら、その前にオラクルを作る**のが回答。
 
 - **A3-1. 構文壁の characterization test 群【一部 実装済・2026-06-27】**: `__tests__/a3.characterization.test.ts`（6件）で反応性の観測可能な契約を pin ── computed チェーンの最終DOM値 / microtask coalescing（N set→flush1回→`$updatedCallback`1回）/ 同値 no-op / wildcard list 依存伝播 / `$updatedCallback` の paths 集約 / **read-after-write 一貫性**。**surface した契約**: `$updatedCallback` は set した leaf でなく「適用された binding のパス」を報告する（DOM 未束縛の leaf は含まれない）。残りのパーサ出力・swap・token の特性テストは未追加（既存 1469 テストが大半を被覆）。
-- **A3-2. タイミング契約の成文化・観測可能化**: 現行は「set→無条件 enqueue→microtask 集約→absAddress→binding 索引 push」が暗黙（`timing-and-firing-contract.md` が「examples の正しさが 同期/microtask/task の3層順序に乗る」と自認）。**「1 microtask = 1 flush = 1 不動点収束」を規範文書化**し、flush 開始/終了を dev-mode の `wcs:flush` イベントで観測可能に。`$postUpdate` を「flush 境界を明示制御する公開 API」として再定義。これでタイミング契約がテスト可能になり、A4 の不動点収束ガードの正しさを検証できる。
+- **A3-2. タイミング契約の成文化・観測可能化**: 現行は「set→無条件 enqueue→microtask 集約→absAddress→binding 索引 push」が暗黙（`timing-and-firing-contract.ja.md` が「examples の正しさが 同期/microtask/task の3層順序に乗る」と自認）。**「1 microtask = 1 flush = 1 不動点収束」を規範文書化**し、flush 開始/終了を dev-mode の `wcs:flush` イベントで観測可能に。`$postUpdate` を「flush 境界を明示制御する公開 API」として再定義。これでタイミング契約がテスト可能になり、A4 の不動点収束ガードの正しさを検証できる。
 
 **Stage A3 のゲート**: 内部を入れ替えても表の不変を機械検証できる状態になったか。**A3 は A4 に進まなくても価値がある**（暗黙契約の成文化は現状維持でも負債返済）。
 

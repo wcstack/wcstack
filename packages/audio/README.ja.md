@@ -37,7 +37,7 @@
 
 すべての `AudioNode` は Core が所有・破棄し、**プロトコル境界を越えません**。`@wcstack/worker` / `@wcstack/websocket` / `@wcstack/broadcast` が各々のハンドルを扱うのと同じです。要素が publish するのは値だけ — コンテキストの状態、発音数、警告、エラーです。
 
-理由は [ADR-14](../../docs/architecture-hardening/14-handle-graph-wiring.md) に記録しています。要約すると、**グラフのトポロジは値ではない**。diff できず、シリアライズできず、リアクティブなストアに置くべきものではありません。だからパッチは**記述（descriptor）**であり — グラフ構築時に1度だけ読まれます — DOM はそれを書く1つの方法にすぎません。`AudioGraphCore` は同じ記述を plain object としても受け取ります。だからこれは要素の抜け殻ではなく、本物のヘッドレスサーフェスです。
+理由は [ADR-14](../../docs/architecture-hardening/14-handle-graph-wiring.ja.md) に記録しています。要約すると、**グラフのトポロジは値ではない**。diff できず、シリアライズできず、リアクティブなストアに置くべきものではありません。だからパッチは**記述（descriptor）**であり — グラフ構築時に1度だけ読まれます — DOM はそれを書く1つの方法にすぎません。`AudioGraphCore` は同じ記述を plain object としても受け取ります。だからこれは要素の抜け殻ではなく、本物のヘッドレスサーフェスです。
 
 ## インストール
 

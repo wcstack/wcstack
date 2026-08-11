@@ -127,7 +127,7 @@ npm install @wcstack/accelerometer
 [`ElementInternals` の `CustomStateSet`](https://developer.mozilla.org/ja/docs/Web/API/CustomStateSet)
 に反映します。そのため `data-wcs` バインディングやクラスの手動トグルなしに、CSS の
 `:state()` 疑似クラスで直接スタイリングできます。`x`/`y`/`z`（連続的なセンサー読み取り値）
-は意図的に反映**しません** — `docs/custom-state-reflection-design.md` §3.2 参照。
+は意図的に反映**しません** — `docs/custom-state-reflection-design.ja.md` §3.2 参照。
 
 | ステート | on になる条件 |
 |----------|----------------|

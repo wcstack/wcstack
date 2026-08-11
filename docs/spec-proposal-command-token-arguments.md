@@ -143,4 +143,4 @@ to `properties` / `inputs`. A command argument is an ordinary value:
 
 - `docs/spec-proposal-undefined-write-skip.md` — 同型の「黙っている挙動を規範化する」提案（書き込み側）。本提案は起動引数側の対。
 - `docs/speech-tag-design.md` — 本提案の動機ケース（`<wcs-speak>` の引数付き発話起動「案2」）。
-- `docs/timing-and-firing-contract.md` — 発火タイミング契約（参照）。
+- `docs/timing-and-firing-contract.ja.md` — 発火タイミング契約（参照）。

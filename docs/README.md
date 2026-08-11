@@ -14,7 +14,7 @@ Design documents, implementation plans, and spec proposals. Per-package `README.
 Three rules go with it:
 
 1. **Links stay within a language.** An English document links to `other.md`; the Japanese one links to `other.ja.md`. Never mix, so a reader never falls out of their language mid-chain.
-2. **While the migration is unfinished, a link from an English document to a not-yet-translated file is marked `(ja)`.** That is honest about where the reader lands. Drop the marker when the target is translated.
+2. **While the migration is unfinished, a link from an English document to a not-yet-translated file is marked `(ja)`** on first mention — repeating it on every inline line-link to the same document would be noise. That is honest about where the reader lands. Drop the marker when the target is translated.
 3. **Rename only when the English version is ready.** Moving a Japanese file to `.ja.md` before its `.md` exists breaks every existing reference to `docs/<name>.md` from code, examples, and READMEs.
 
 ## Migration status

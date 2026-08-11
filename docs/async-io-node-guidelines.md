@@ -3,7 +3,7 @@
 - **Audience**: implementers adding a new async I/O node package to `@wcstack` — a Web API turned into a declarative tag (`@wcstack/fetch` / `geolocation` / `clipboard` / `sse` / `broadcast` / `worker` / `wakelock` / `intersection` / `resize` / `speech` / `permission` / `notification`, and the rest)
 - **Status**: normative. "MUST / SHOULD / MAY" carry their RFC 2119 meaning. A new node MUST NOT be implemented against what is written here. Where a deviation is unavoidable, record the reason in the package's design document (`docs/<name>-tag-design.md`)
 - **Why this exists**: every existing node shares the same skeleton — Core/Shell separation, wc-bindable conformance, never-throw, the `_gen` generation guard, SSR support. That consistency is what makes "learn one, use them all" true, and what makes them interoperable from the `state` binder. A new node that departs from the skeleton forces users to read its internals individually, and the value of the ecosystem collapses. This document collects the skeleton onto one page and turns it into a review checklist
-- **See also**: the timing and firing contract is [timing-and-firing-contract.md](./timing-and-firing-contract.md) (ja). The norms for execution semantics (execution form, lanes, exclusivity modes, cancellation, retry, timeout) are in [async-execution-model.md](./async-execution-model.md). A proposed verification layer that cuts across both as ordered input/output traces, determinism boundaries, and conformance vectors is [io-node-trace-conformance.md](./io-node-trace-conformance.md) (ja). Snapshot boundaries for observables are [React immutable snapshots and the wc-bindable I/O boundary](./architecture-hardening/11-react-immutable-snapshot-boundary.md) (ja) and the [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md) (ja). The protocols themselves live in their SPECs (wc-bindable / command-token / event-token). For the style of a design study, see the existing `docs/*-tag-design.md`
+- **See also**: the timing and firing contract is [timing-and-firing-contract.md](./timing-and-firing-contract.md). The norms for execution semantics (execution form, lanes, exclusivity modes, cancellation, retry, timeout) are in [async-execution-model.md](./async-execution-model.md). A proposed verification layer that cuts across both as ordered input/output traces, determinism boundaries, and conformance vectors is [io-node-trace-conformance.md](./io-node-trace-conformance.md) (ja). Snapshot boundaries for observables are [React immutable snapshots and the wc-bindable I/O boundary](./architecture-hardening/11-react-immutable-snapshot-boundary.md) (ja) and the [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md). The protocols themselves live in their SPECs (wc-bindable / command-token / event-token). For the style of a design study, see the existing `docs/*-tag-design.md`
 - **日本語版**: [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md)
 
 ---
@@ -43,8 +43,8 @@ Points to settle:
 - **Whether a same-value guard alone suffices**, or debounce/throttle is left to the user (the user by default — let them write `notice@x|debounce(1000)` with a filter)
 - How **permission / secure-context** are handled. Whether to reuse the existing four-value surface (`prompt` / `granted` / `denied` / `unsupported`)
 - Whether it has **autoTrigger** (the click-to-invoke shortcut)
-- **Whether it has an external clock** (an audio thread and the like — a time base of its own that the main thread's sync / microtask / task cannot express). If it does, **expose desired only and do not specify when it takes effect** ([timing-and-firing-contract.md §19.1](./timing-and-firing-contract.md) (ja)). It MUST NOT read the effective value back and publish it — the reading depends on the render quantum and the same-value guard stops working
-- **Whether it handles live handles.** If so, the default is that **Core owns them and they never cross the protocol boundary** (as in worker / websocket / broadcast). Add pass-through of command-token arguments only when the need to hand one outward actually arises (camera is the sole example). Where handles connect to each other into a graph, read [ADR-14](./architecture-hardening/14-handle-graph-wiring.md) (ja) first — the topology is expressed as a descriptor, not as a value
+- **Whether it has an external clock** (an audio thread and the like — a time base of its own that the main thread's sync / microtask / task cannot express). If it does, **expose desired only and do not specify when it takes effect** ([timing-and-firing-contract.md §19.1](./timing-and-firing-contract.md)). It MUST NOT read the effective value back and publish it — the reading depends on the render quantum and the same-value guard stops working
+- **Whether it handles live handles.** If so, the default is that **Core owns them and they never cross the protocol boundary** (as in worker / websocket / broadcast). Add pass-through of command-token arguments only when the need to hand one outward actually arises (camera is the sole example). Where handles connect to each other into a graph, read [ADR-14](./architecture-hardening/14-handle-graph-wiring.md) first — the topology is expressed as a descriptor, not as a value
 
 Once the design has settled, reviewing it with the `architecture-review` or `protocol-spec-review` skill before implementing is recommended.
 
@@ -135,7 +135,7 @@ private _setState(v: T): void {
 
 ### 3.3.1 The producer snapshot contract (MUST)
 
-This section applies to new nodes and new observable properties. Existing nodes migrate in stages, starting from the [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md) (ja), and MUST NOT break their existing delivery, getters, or resource lifetimes wholesale.
+This section applies to new nodes and new observable properties. Existing nodes migrate in stages, starting from the [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md), and MUST NOT break their existing delivery, getters, or resource lifetimes wholesale.
 
 #### `state`
 
@@ -243,7 +243,7 @@ Do not cache in the constructor. Tests can then install and remove the API, and 
 
 ### 3.9 Core is a public adopter surface (headless adopter surface)
 
-Core is not an implementation detail of the Shell but **a public surface that may be used directly, without an element**. `bindNode(new XxxCore())` in `@wcstack/signals` can bind a Core with no descriptor (resolving `core.constructor.wcBindable`), and since it never touches the `customElements` registry, the definition-timing problem does not exist there (floor 3 in [signals-definition-timing.md](./signals-definition-timing.md) (ja) §3.4). To support that usage, the following are guaranteed:
+Core is not an implementation detail of the Shell but **a public surface that may be used directly, without an element**. `bindNode(new XxxCore())` in `@wcstack/signals` can bind a Core with no descriptor (resolving `core.constructor.wcBindable`), and since it never touches the `customElements` registry, the definition-timing problem does not exist there (floor 3 in [signals-definition-timing.md](./signals-definition-timing.md) §3.4). To support that usage, the following are guaranteed:
 
 - The Core class MUST be exported from the package entry (`exports.ts`)
 - **Structural guarantees** (all restatements of existing norms for adopters, all MUST): extends `EventTarget` (§3.1); dispatches to itself when `target` is omitted (§3.1); declares `static wcBindable` (§3.2); observable properties are readable through public getters (which §4.2's delegation presumes, and which bindNode's initial seed also reads); the `observe()`/`dispose()`/`ready` lifecycle (§3.5, §3.8); never-throw (§3.6)
@@ -294,7 +294,7 @@ export class Wcs<Name> extends HTMLElement {
 
 Call `upgradeProperties(this)` **at the top** of `connectedCallback` (MUST). `src/protocol/upgradeProperties.ts` is a generated copy distributed from `/protocol/upgrade-properties.ts` by `scripts/sync-protocol-types.mjs`; do not hand-edit it.
 
-An element of an undefined tag is a plain `HTMLElement`, so `el.url = "..."` before the upgrade creates an own data property. It keeps shadowing the prototype accessor after the upgrade, so the setter is never called again and the value disappears silently. This happens routinely with frameworks that always assign properties (Angular's `[prop]`, Lit's `.prop=`, Solid's `prop:`) combined with a late definition (autoloader / CDN / code splitting) ([framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md) (ja) §1.2).
+An element of an undefined tag is a plain `HTMLElement`, so `el.url = "..."` before the upgrade creates an own data property. It keeps shadowing the prototype accessor after the upgrade, so the setter is never called again and the value disappears silently. This happens routinely with frameworks that always assign properties (Angular's `[prop]`, Lit's `.prop=`, Solid's `prop:`) combined with a late definition (autoloader / CDN / code splitting) ([framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md) §1.2).
 
 - It covers only inputs declared in `wcBindable.inputs`. An undeclared settable surface is not rescued.
 - In a `connectedCallback` containing an `await`, call it synchronously before the first `await` (MUST).
@@ -400,7 +400,7 @@ A node with extra entries, such as a Service Worker, adds rollup outputs and a s
 - The README MUST have a **headless (Core) section** (§3.9): the Core class name, a minimal headless construction example (with the real constructor arguments), a note that the lifecycle becomes manual (`observe()`/`dispose()`, or start/stop commands), and a link to the `@wcstack/signals` README's "Binding a Core directly"
 - Record, per observable, whether it is `state` / `event` / `handle`, who owns the value, its serializability, and its resource release point (MUST, §3.3.1)
 - Add it to the node list in the root README
-- A node with **timing / firing behavior** (when, how many times, what is synchronous and what is a microtask) MUST add a section to [timing-and-firing-contract.md](./timing-and-firing-contract.md) (ja) at the same granularity as its §1/§2. Whenever you are about to explain internal behavior in a long comment in an example, add an entry to that contract first and link the comment to it
+- A node with **timing / firing behavior** (when, how many times, what is synchronous and what is a microtask) MUST add a section to [timing-and-firing-contract.md](./timing-and-firing-contract.md) at the same granularity as its §1/§2. Whenever you are about to explain internal behavior in a long comment in an example, add an entry to that contract first and link the comment to it
 
 ---
 

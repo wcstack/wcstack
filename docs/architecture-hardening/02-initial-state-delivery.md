@@ -90,4 +90,4 @@ presence / readiness を追加する。
 - [wc-bindable SPEC（固定コミット）](https://github.com/wc-bindable-protocol/wc-bindable-protocol/blob/5ec0deef212578a072b2f669d2a5554f254253e0/SPEC.md)
 - [タグ定義とバインディング確立の順序](01-binding-initialization-order.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
-- [既存の初期化競合分析](../state-binding-init-races.md)
+- [既存の初期化競合分析](../state-binding-init-races.ja.md)

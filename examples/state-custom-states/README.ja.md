@@ -63,7 +63,7 @@ http://localhost:3303 でアクセスできます。
   `error` / `connected` は一切バインドしていません — CSS が直接コンポーネント自身の
   `:state()` を読むため、JS 側の購読コードが不要になります。
 - **`:state()` は書き込み不可**: 属性や class と違い `:state()` は要素の外側から書き換えられ
-  ないため、入力と出力が混同する余地がありません（`docs/custom-state-reflection-design.md`
+  ないため、入力と出力が混同する余地がありません（`docs/custom-state-reflection-design.ja.md`
   決定1・2）。
 - **隣接兄弟セレクタが基本形**: `#widgets-fetch:state(loading) ~ .spinner` のように、状態を
   持つ要素の**後方**にある兄弟（の子孫を含む）だけを選択できます。`<wcs-fetch>` /
@@ -84,5 +84,5 @@ http://localhost:3303 でアクセスできます。
 
 ## 関連ドキュメント
 
-- [docs/custom-state-reflection-design.md](../../docs/custom-state-reflection-design.md) — この機能の設計文書
+- [docs/custom-state-reflection-design.ja.md](../../docs/custom-state-reflection-design.ja.md) — この機能の設計文書
 - `packages/fetch/README.ja.md` / `packages/websocket/README.ja.md` の「`:state()` による CSS スタイリング」節

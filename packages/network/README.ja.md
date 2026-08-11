@@ -125,7 +125,7 @@ npm install @wcstack/network
 ## 注意・制限
 
 - **Firefox と Safari は `navigator.connection` を実装していません。** これらのブラウザでは `supported` は `false` のまま、他の4プロパティは `null` のままです — これを例外ケースでなく常態として設計してください。
-- **初回スナップショットの*イベント*はバインドに届きませんが、値は届きます。** 最初の `wcs-network:change` は `connectedCallback` 中に同期発火しますが、`@wcstack/state` のバインドリスナー確立はそれより後です（バインド構築は後続の microtask に遅延 — `docs/timing-and-firing-contract.md` §4.1 参照）。イベントは後から購読した相手に再送されません。それでも初期値が失われないのは、本ノードの観測可能プロパティがすべて output-only（`properties` のみ・`inputs` に無い）で、既定の binding authority が `element` になるためです: バインドは確立時にプロパティを直接読みます（directional initial sync、v1.21.0 以降は既定 ON）。手動 pull は不要で、これは全 monitor ノード共通の挙動です。`enableDirectionalInitialSync: false` に倒した構成でのみ、`$connectedCallback` + `whenDefined` での手動 pull が再び必要になります。
+- **初回スナップショットの*イベント*はバインドに届きませんが、値は届きます。** 最初の `wcs-network:change` は `connectedCallback` 中に同期発火しますが、`@wcstack/state` のバインドリスナー確立はそれより後です（バインド構築は後続の microtask に遅延 — `docs/timing-and-firing-contract.ja.md` §4.1 参照）。イベントは後から購読した相手に再送されません。それでも初期値が失われないのは、本ノードの観測可能プロパティがすべて output-only（`properties` のみ・`inputs` に無い）で、既定の binding authority が `element` になるためです: バインドは確立時にプロパティを直接読みます（directional initial sync、v1.21.0 以降は既定 ON）。手動 pull は不要で、これは全 monitor ノード共通の挙動です。`enableDirectionalInitialSync: false` に倒した構成でのみ、`$connectedCallback` + `whenDefined` での手動 pull が再び必要になります。
 - **`_gen` 世代ガードが無い。** 他の大半の wcstack IO ノードと異なり、`navigator.connection` の `change` イベント購読・購読解除は完全に同期的です。dispose() とレースしうる非同期probeの解決が存在しません。詳細は `docs/network-tag-design.md` §5。
 - **再接続で再購読。** 要素を取り外して再挿入すると、切断時に `change` リスナーを解除し、再接続時に（その時点の `navigator.connection` に対して）再確立します。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開しますが、`observe()` が同期的なため、この promise は常に即座に settle します。
@@ -143,7 +143,7 @@ npm install @wcstack/network
 | `save-data` | `wcs-network:change` が `saveData === true` で発火（`saveData` が `null`＝非対応の場合も含め off） |
 | `supported` | `wcs-network:change` が `supported === true` で発火（`supported === false` で off） |
 
-`effectiveType` / `downlink` / `rtt` は反映されません — 理由は `docs/custom-state-reflection-design.md` §3.2（連続値・高頻度値は `:state()` 反映の対象外）を参照してください。
+`effectiveType` / `downlink` / `rtt` は反映されません — 理由は `docs/custom-state-reflection-design.ja.md` §3.2（連続値・高頻度値は `:state()` 反映の対象外）を参照してください。
 
 ```css
 wcs-network:state(supported) ~ .connection-badge { display: block; }

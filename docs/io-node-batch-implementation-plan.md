@@ -14,7 +14,7 @@
 | 1. target解決 | Fullscreen, Picture-in-Picture, Pointer Lock | `target`属性→要素解決→document-levelイベント監視 | `packages/intersection` | [fullscreen](./fullscreen-tag-design.md) / [picture-in-picture](./picture-in-picture-tag-design.md) / [pointer-lock](./pointer-lock-tag-design.md) |
 | 2. gesture-gated permission | Idle Detection, Device Orientation/Motion | 静的`requestPermission()`をcommandとして公開 | `packages/permission` | [idle-detection](./idle-detection-tag-design.md) / [device-orientation](./device-orientation-tag-design.md) |
 | 3. 薄い一発command | Web Share, EyeDropper, Contact Picker, (Credential Management) | `value`/`loading`/`error`/`cancelled`の最小Core | `packages/fetch`（`_doFetch`の簡約版） | [web-share](./web-share-tag-design.md) / [eyedropper](./eyedropper-tag-design.md) / [contact-picker](./contact-picker-tag-design.md) / [credential](./credential-tag-design.md) |
-| 4. 最小monitor | Network Information, Screen Orientation | 単一イベント→派生getter、極小Core | `packages/permission` | [network](./network-tag-design.md) / [screen-orientation](./screen-orientation-tag-design.md) |
+| 4. 最小monitor | Network Information, Screen Orientation | 単一イベント→派生getter、極小Core | `packages/permission` | [network](./network-tag-design.md) / [screen-orientation](./screen-orientation-tag-design.ja.md) |
 | 5. Generic Sensor族 | Accelerometer, Gyroscope, Magnetometer, AmbientLight | 共通`Sensor`基底クラスの薄いラップ×4 | バッチ内の1つ目を相互参照 | [sensor（4パッケージ統合）](./sensor-tag-design.md) |
 
 ---

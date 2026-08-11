@@ -153,7 +153,7 @@ npm install @wcstack/resize
 | `observing` | `wcs-resize:observing-changed` が `true` で発火（`false` でクリア） |
 
 `width` / `height` / `entry` は反映**しません** — これらは boolean 出力ではなく
-連続値だからです（[設計ドキュメント](../../docs/custom-state-reflection-design.md) §3.2 参照）。
+連続値だからです（[設計ドキュメント](../../docs/custom-state-reflection-design.ja.md) §3.2 参照）。
 
 ```css
 wcs-resize:state(observing) ~ .measuring-badge { display: block; }

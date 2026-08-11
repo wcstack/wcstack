@@ -95,7 +95,7 @@ $on: {
 | `wcs-recorder` | `error` | `wcs-recorder:error` が非 `null` の detail で発火（`null` でクリア） |
 
 > `permission` / `audioPermission` には現時点で boolean 派生 getter が無いため
-> 反映対象外です（v1 スコープ。docs/custom-state-reflection-design.md §7 参照）。
+> 反映対象外です（v1 スコープ。docs/custom-state-reflection-design.ja.md §7 参照）。
 > `duration` は連続値のため意図的に除外しています。
 
 ```css

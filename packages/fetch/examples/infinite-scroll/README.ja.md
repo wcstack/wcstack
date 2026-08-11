@@ -55,4 +55,4 @@ scroll ──▶ <wcs-infinite-scroll>  （センチネルがビューポート�
 
 ## 関連
 
-このデモが依存する fetch の発火／タイミング挙動（auto-fetch の de-dup、`response` はエラーでも発火、センチネルに box が要る）は [docs/timing-and-firing-contract.md](../../../../docs/timing-and-firing-contract.md) にまとめてあります。
+このデモが依存する fetch の発火／タイミング挙動（auto-fetch の de-dup、`response` はエラーでも発火、センチネルに box が要る）は [docs/timing-and-firing-contract.ja.md](../../../../docs/timing-and-firing-contract.ja.md) にまとめてあります。

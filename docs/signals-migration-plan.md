@@ -2,7 +2,7 @@
 
 - **状態**: 計画（2026-06-16 策定・未着手）。
 - **対象**: `packages/signals`（v0.0.0・未リリース PoC）を出荷可能な本実装へ移行する。
-- **入力**: [signals-state-design.md](signals-state-design.md) §8（PoC 結果）/ §9（作業洗い出し）。本書は §9 を**順序・依存・受け入れ基準のある実行計画**に落としたもの。
+- **入力**: [signals-state-design.ja.md](signals-state-design.ja.md) §8（PoC 結果）/ §9（作業洗い出し）。本書は §9 を**順序・依存・受け入れ基準のある実行計画**に落としたもの。
 - **全体の Definition of Done（全フェーズ共通の不変条件）**:
   - `npm run build`（tsc + rollup）green、`npm run lint` クリーン。
   - `npm run test:coverage` がモノレポ閾値 **100 / 97 / 100 / 100** を維持。
@@ -150,12 +150,12 @@ G1・G2 は**確定**（後戻りコスト大のため先行決定）。G3・G4 
 
 ## Phase 5 — 仕上げ・確定・リリース【M】【1–3 完了 2026-06-16・4 publish のみ残】
 
-> 実績（1–3）: **SPEC 昇格**＝[signals-state-design.md](signals-state-design.md) の状態を「設計検討中＋PoC」→「実装完了（v1.13.1・Phase 0–4 完了）」に確定。**README 本番化（ja/en）**＝PoC バナー除去、新 API（`For`/`Index`/`on`/`bindInput`/`bindCommand`/`nodeSource`）を Quick start・API リファレンスへ追加、**Phase 1/3 で偽になった2記述を訂正**（旧「buildless 単一エントリ規則」→「両エントリは共有 core chunk なので混在 import で単一コア」、旧「reactive children 丸ごと再生成・keyed なし」→ `For`/`Index` へ誘導）、`setProp` ハードニング反映、v1 スコープ外を明記、カバレッジ閾値表記 100/100/100/100。**ルート README**＝signals を Additional Packages に追加し "Twenty-two"→"Twenty-three"。最終ゲート 173 テスト・100/100/100/100・build/lint green。
+> 実績（1–3）: **SPEC 昇格**＝[signals-state-design.ja.md](signals-state-design.ja.md) の状態を「設計検討中＋PoC」→「実装完了（v1.13.1・Phase 0–4 完了）」に確定。**README 本番化（ja/en）**＝PoC バナー除去、新 API（`For`/`Index`/`on`/`bindInput`/`bindCommand`/`nodeSource`）を Quick start・API リファレンスへ追加、**Phase 1/3 で偽になった2記述を訂正**（旧「buildless 単一エントリ規則」→「両エントリは共有 core chunk なので混在 import で単一コア」、旧「reactive children 丸ごと再生成・keyed なし」→ `For`/`Index` へ誘導）、`setProp` ハードニング反映、v1 スコープ外を明記、カバレッジ閾値表記 100/100/100/100。**ルート README**＝signals を Additional Packages に追加し "Twenty-two"→"Twenty-three"。最終ゲート 173 テスト・100/100/100/100・build/lint green。
 >
 > 残（4）: **`npm publish`**（outward-facing・要明示確認）。`SPEC.md` という別ファイル体裁は本リポジトリに前例が無いため、設計ドキュメントの確定化＋README で代替（独立 SPEC.md は作成せず）。
 
 - **API 確定（G1/G4）**: 公開名・`untrack`/`batch`/`Watcher` の最終決定を反映。
-- **SPEC 昇格**: [signals-state-design.md](signals-state-design.md) の「設計検討中」を解消し、他パッケージ同様 `SPEC.md` 体裁へ。確定した規範（cancel/restart, fold, キー戦略, same-value ガード）を規範言語で明文化。
+- **SPEC 昇格**: [signals-state-design.ja.md](signals-state-design.ja.md) の「設計検討中」を解消し、他パッケージ同様 `SPEC.md` 体裁へ。確定した規範（cancel/restart, fold, キー戦略, same-value ガード）を規範言語で明文化。
 - **README 本番化（ja/en）**: 使い方 + **v1 スコープ外を正直に明記**（SSR/hydration §5-6・深い反応性 proxy §5-4・backpressure・AsyncIterable 非協調 cancel のパーク leak）。ルート README に signals 追加。
 - **テスト網羅**: dual-entry 単一コア / event-token fold / writeback / SVG / 属性名リマップ / For・Index reconcile。`streamResource` の example 追加。
 - **リリース**: Phase 0 のバージョンで公開（`npm publish`）。

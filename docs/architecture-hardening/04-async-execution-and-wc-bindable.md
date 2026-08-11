@@ -127,7 +127,7 @@ wc-bindable の capability negotiation を使い、Extension 1 非対応 peer �
 fetch → 失敗 → 待つ → 再実行）を組む利用者は同じ意味論を毎回手書きしている。
 `examples/state-intersect-scroll` はその実例で、`$on.sentinelChanged` の `!loading` ガードは
 `exhaust` policy の手書き実装であり、その正しさは「microtask が task に先行する」という
-スケジューラの性質に依存している（[timing-and-firing-contract.md](../timing-and-firing-contract.md) §3）。
+スケジューラの性質に依存している（[timing-and-firing-contract.ja.md](../timing-and-firing-contract.ja.md) §3）。
 同デモの `retryAttempt` / `maxRetries` / `<wcs-timer manual once>` は §8 の
 `max` / `interval` / `resetOn` / `excludeWhen` を手で組んだものである。
 手書きの代償も実測されている: 当初の実装は交差エッジからも「ついでの」再試行を撃っており、
@@ -189,5 +189,5 @@ lane が直列化するのは `$on` ハンドラの実行だが、wcstack のイ
 - [非同期実行モデル](../async-execution-model.ja.md)
 - [非同期 I/O ノード指針](../async-io-node-guidelines.ja.md)
 - [8 論点を横断する修正設計](09-remediation-design.md)
-- [発火タイミング契約](../timing-and-firing-contract.md) — 現行 example の `$streams` restart と同値 page 選択、および refactor 前の発火順分析
+- [発火タイミング契約](../timing-and-firing-contract.ja.md) — 現行 example の `$streams` restart と同値 page 選択、および refactor 前の発火順分析
 - `examples/state-intersect-scroll` — 現行は `$streams` 実例。本書中の手書き版は決定ゲート 1 (d) の歴史的動機

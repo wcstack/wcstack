@@ -84,7 +84,7 @@ wcstack には**排他代数がすでに存在する**。`latest` / `queue` / `e
 
 | 手書きされているもの | 対応する規範 | 正しさの根拠 |
 |---|---|---|
-| `$on.sentinelChanged` の `!loading` ガード | §5 `exhaust`（実行中は冪等 no-op） | 「microtask が task に先行する」というスケジューラの性質（[timing-and-firing-contract.md](./timing-and-firing-contract.md) §3） |
+| `$on.sentinelChanged` の `!loading` ガード | §5 `exhaust`（実行中は冪等 no-op） | 「microtask が task に先行する」というスケジューラの性質（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §3） |
 | `retryAttempt` / `maxRetries` | §8 `max`（有限であること MUST） | 利用者が数え間違えないこと |
 | `<wcs-timer manual once>` の起動 | §8 `interval` | — |
 | ページ着信での `retryAttempt = 0` | §8 `resetOn` | — |
@@ -403,7 +403,7 @@ element の CustomEvent
 - [architecture-hardening/04 — 非同期実行と wc-bindable 境界](./architecture-hardening/04-async-execution-and-wc-bindable.md) — 決定ゲート 1。本書はその (d) の具体化
 - [async-execution-model.ja.md](./async-execution-model.ja.md) — §5（排他モード）/ §8（再試行）の規範。本書は語彙を一切追加しない
 - [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) — ノード側の骨格規約
-- [timing-and-firing-contract.md](./timing-and-firing-contract.md) — 手書きガードの正しさの現在の根拠（§6-1 / §7-1）
+- [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) — 手書きガードの正しさの現在の根拠（§6-1 / §7-1）
 - [state-streams-design.md](./state-streams-design.md) — 宣言マップ増設の先例。骨格の大半を再利用できる
 - [state-redesign-council.md](./state-redesign-council.md) — no-regret 原則と「良いとこ取り統合は禁句」（§9-1 の根拠）
 - `io-core/operation-lane.ts` — 実行プリミティブの実装（実行可能な参照仕様）

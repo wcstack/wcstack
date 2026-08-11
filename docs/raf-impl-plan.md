@@ -126,7 +126,7 @@ constructor(target?: EventTarget, scheduler?: { request(cb): unknown; cancel(han
   **「vs `wcs-timer`」比較表**（時間源 / interval 無し / dt / バックグラウンド挙動 /
   suspended）+ dt 規範の明文（「dt は連続稼働中のフレーム間隔のみを表す」）+
   SSR 注意。
-- `docs/timing-and-firing-contract.md` に § 追補「@wcstack/raf — tick の配送
+- `docs/timing-and-firing-contract.ja.md` に § 追補「@wcstack/raf — tick の配送
   スロットと描画順序」: rAF コールバック（rendering 直前スロット）→ event-token →
   state 書き込み → updater（microtask）flush → **同一フレームの描画**、の縦契約。
   ※ 書く前に実ブラウザで検証する（Playwright: tick ハンドラの DOM 書き込みが

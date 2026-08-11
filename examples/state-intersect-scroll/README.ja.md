@@ -140,5 +140,5 @@ partial page で終了します。
 
 - [`@wcstack/state` stream リファレンス](../../packages/state/docs/streams.md) — 依存捕捉、switchMap restart、
   status/error 名前空間、cancel、lifecycle
-- [タイミングと発火の契約](../../docs/timing-and-firing-contract.md) — 同値 page 選択と強制再観測
+- [タイミングと発火の契約](../../docs/timing-and-firing-contract.ja.md) — 同値 page 選択と強制再観測
 - [非同期実行モデル](../../docs/async-execution-model.ja.md) — `latest` と有界 retry の語彙

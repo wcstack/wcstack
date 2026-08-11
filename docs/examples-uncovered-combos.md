@@ -66,7 +66,7 @@ EyeDropper で画面から採色 → パレットに追加（list diffing）→ 
 
 ## 4. 実装で判明した上流の課題（要対応検討）
 
-推し 3 案の実装・実ブラウザ検証（Playwright）の過程で、examples ではなく **state / storage 側の設計ギャップ**が 2 件見つかった。**正本 = [state-binding-init-races.md](./state-binding-init-races.md)**（機序・実測・該当コード・恒久対応候補のトレードオフ表）。**両件とも同日中に恒久対応済み**（バグ 2 = `scheduleDeferredApply` 実装、バグ 1 = idiom 規範化 + cross-tab-todo 修正、いずれも e2e 回帰テスト付き — 詳細は正本の状態欄）。以下は発見時点の要約。
+推し 3 案の実装・実ブラウザ検証（Playwright）の過程で、examples ではなく **state / storage 側の設計ギャップ**が 2 件見つかった。**正本 = [state-binding-init-races.ja.md](./state-binding-init-races.ja.md)**（機序・実測・該当コード・恒久対応候補のトレードオフ表）。**両件とも同日中に恒久対応済み**（バグ 2 = `scheduleDeferredApply` 実装、バグ 1 = idiom 規範化 + cross-tab-todo 修正、いずれも e2e 回帰テスト付き — 詳細は正本の状態欄）。以下は発見時点の要約。
 
 ### 4-1. storage の load-before-bind clobber（既存デモで実害あり）
 
@@ -74,7 +74,7 @@ EyeDropper で画面から採色 → パレットに追加（list diffing）→ 
 
 - **実測**: `examples/state-cross-tab-todo` で todos を追加 → リロードすると localStorage が `[]` に潰され**全消失**（Playwright で確認。既存バグ・本件では未修正）。
 - **回避 idiom**（当時 `state-color-palette` で採用）: 永続スロットを `undefined` で開始（undefined はプロパティ書き込みスキップ=「無意見」規範）+ `$connectedCallback` でロード済み値を一度 pull。
-- **恒久対応**: **解決済み（2026-07-24 時点）**。directional initial sync の `value#init=element:` 修飾子 1 つで完結し、上記 idiom は両 examples・storage README から撤去済み（`state-binding-init-races.md` §1-6）。
+- **恒久対応**: **解決済み（2026-07-24 時点）**。directional initial sync の `value#init=element:` 修飾子 1 つで完結し、上記 idiom は両 examples・storage README から撤去済み（`state-binding-init-races.ja.md` §1-6）。
 
 ### 4-2. 未 define カスタム要素への初期 apply の黙殺
 

@@ -146,7 +146,7 @@ npm install @wcstack/defined
 | `error` | `wcs-defined:change` が非 `null` の `detail.error` で発火（`null` でクリア） |
 
 `pending` / `missing` / `count` / `total` は反映**しません** — boolean ではなく、
-カウント系の値は設計上 `:state()` 反映の対象外です（`docs/custom-state-reflection-design.md` §3.2 参照）。
+カウント系の値は設計上 `:state()` 反映の対象外です（`docs/custom-state-reflection-design.ja.md` §3.2 参照）。
 
 ```css
 wcs-defined:state(defined) ~ .content  { display: block; }

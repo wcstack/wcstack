@@ -1,7 +1,7 @@
 # wcs-devtools（ページ内オーバーレイ DevTools）設計 (DevTools Tag Design Notes)
 
 - Status: **Phase 1 実装完了（2026-07-14・未リリース）** — ランタイム接点の規範は
-  [devtools-hook-protocol.md](devtools-hook-protocol.md)（以下「protocol」）。
+  [devtools-hook-protocol.ja.md](devtools-hook-protocol.ja.md)（以下「protocol」）。
   実装は packages/devtools/、example は examples/state-devtools-playground/、
   実ブラウザ受け入れは e2e/devtools-smoke.mjs（chromium 一気通貫）。
   実装時の決定記録・実測知見は §11 を参照。

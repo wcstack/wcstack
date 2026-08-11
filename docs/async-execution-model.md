@@ -6,7 +6,7 @@
   - **It does not touch the protocols.** It makes no change to the vocabulary, types, or syntax of wc-bindable-protocol (`IWcBindableProperty` / `IWcBindableCommand`), command-token, or event-token — and an implementation based on this document MUST NOT change them either
   - **It does not require behavior changes in existing nodes.** Existing implementations are ratified in §12, and where they disagree with the norms here, the disagreement is recorded as a deviation (the existing implementation wins). Refactoring for conformance is optional
 - **Why this exists**: [async-io-node-guidelines.md](./async-io-node-guidelines.md) made the skeleton normative (Core/Shell separation, never-throw, the `_gen` generation guard, `observe()/dispose()/ready`). But the following were left to per-node implicit implementation: (1) **the exclusivity method** (how an older execution relates to a newer one), (2) **the first-class means of cancellation**, (3) **retry policy**, (4) **timeouts**, and (5) **the error envelope, and how it differs from a user-initiated dismissal**. Left implicit, every new node re-solves the same problems on its own (an old result overwriting a new one, an input that changes continuously, work completing after a disconnect, no guaranteed completion order) and subtly different semantics proliferate. This document gives those five **names and a canonical form**, so that the node collection lines up as one shared execution model for async work
-- **See also**: the skeleton rules are in [async-io-node-guidelines.md](./async-io-node-guidelines.md) — this document extends its §3.3 / §3.4 / §3.6 from the execution-semantics side. A proposed cross-cutting verification layer that maps the lane / commit rules here onto ordered input and output traces plus conformance vectors is [io-node-trace-conformance.md](./io-node-trace-conformance.md) (ja). The canonical reference for per-node firing timing is [timing-and-firing-contract.md](./timing-and-firing-contract.md) (ja). Concurrent tracking of multiple operations (out of scope here) is [multi-promise-io-node-design.md](./multi-promise-io-node-design.md) (ja)
+- **See also**: the skeleton rules are in [async-io-node-guidelines.md](./async-io-node-guidelines.md) — this document extends its §3.3 / §3.4 / §3.6 from the execution-semantics side. A proposed cross-cutting verification layer that maps the lane / commit rules here onto ordered input and output traces plus conformance vectors is [io-node-trace-conformance.md](./io-node-trace-conformance.md) (ja). The canonical reference for per-node firing timing is [timing-and-firing-contract.md](./timing-and-firing-contract.md). Concurrent tracking of multiple operations (out of scope here) is [multi-promise-io-node-design.md](./multi-promise-io-node-design.md) (ja)
 - **日本語版**: [async-execution-model.ja.md](./async-execution-model.ja.md)
 
 ---
@@ -69,7 +69,7 @@ idle ──(trigger)──▶ scheduled ──(coalesce window opens)──▶ r
                                                        settled = success | error | cancelled | timeout
 ```
 
-- **`scheduled` is the coalesce window** — the stage that folds several triggers within one microtask into a single execution. A node without it goes straight from idle to running. Where coalescing exists it MUST be implemented on a microtask, honouring the "microtasks precede tasks" contract ([timing-and-firing-contract.md](./timing-and-firing-contract.md) (ja) §3). The reference implementation is fetch's auto-fetch (same doc §1.2: microtask deferral plus same-url dedupe)
+- **`scheduled` is the coalesce window** — the stage that folds several triggers within one microtask into a single execution. A node without it goes straight from idle to running. Where coalescing exists it MUST be implemented on a microtask, honouring the "microtasks precede tasks" contract ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §3). The reference implementation is fetch's auto-fetch (same doc §1.2: microtask deferral plus same-url dedupe)
 - Mapping onto the observation surface (existing vocabulary; no new property required):
   - `running` ⇔ `loading: true` (once per dispatch, raised before the await — a generalization of timing contract §1.1)
   - `success` ⇔ `value` updated (`error` follows the clear/sticky declaration of §9.2)
@@ -110,7 +110,7 @@ unresolved ──(first probe settles)──▶ live (tracking changes) or termi
 ### 3.5 Separating the state machine from the observation surface
 
 - There is no obligation to expose the transition diagram as a `status` enum. The observation surface follows the existing decomposition style, "booleans plus derived getters" (guidelines §4.2)
-- If it is exposed, it is additive (no change of meaning for an existing property), and CSS reflection follows the rules in [custom-state-reflection-design.md](./custom-state-reflection-design.md) (ja) (an enum with no derived boolean getter is not reflected)
+- If it is exposed, it is additive (no change of meaning for an existing property), and CSS reflection follows the rules in [custom-state-reflection-design.md](./custom-state-reflection-design.md) (an enum with no derived boolean getter is not reflected)
 
 ---
 
@@ -310,7 +310,7 @@ In addition to guidelines §10, a node with async execution does not merge until
 
 ## 14. Open questions
 
-- **Exposing a `status` enum as an observable** (§3.5): if exposed, it has to be additive and aligned with the reflection rules in [custom-state-reflection-design.md](./custom-state-reflection-design.md) (ja). For now it is neither required nor forbidden
+- **Exposing a `status` enum as an observable** (§3.5): if exposed, it has to be additive and aligned with the reflection rules in [custom-state-reflection-design.md](./custom-state-reflection-design.md). For now it is neither required nor forbidden
 - **Actually adopting exponential backoff**: every node with retry today uses a fixed interval. If adopted, it would be an opt-in input (default fixed); which node goes first is undecided
 - **The `parallel` exclusivity mode**: the strategy choice in [multi-promise-io-node-design.md](./multi-promise-io-node-design.md) (ja) (collect / correlate in userland / extend the protocol) comes first. This document reserves the word only
 - **Sharing execution-primitive code**: this document shares norms, not implementation. Sharing a helper that bundles generations, timers, and retry (an `OperationLane` equivalent) would presuppose the copy-distribution approach that introduces no runtime dependency (the same as `wcBindable.ts`). Whether to do it is undecided

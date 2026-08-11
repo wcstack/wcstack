@@ -5,9 +5,9 @@
   [async I/O node guidelines](./async-io-node-guidelines.md))
 - **Audience**: anyone using `<wcs-*>` from a React / Vue / Svelte / Solid / Angular / Qwik app
 - **Where this comes from**: it is the Phase A2 / A4 deliverable of
-  [framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md) (ja).
+  [framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md).
   The design decisions are recorded in doc 13; the classification of value meanings is in the
-  [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md) (ja).
+  [observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md).
 - **日本語版**: [framework-adapter-integration.ja.md](./framework-adapter-integration.ja.md)
 
 ## 0. Three rules
@@ -188,7 +188,7 @@ useEffect(() => {
 The representative case that needs this route is an observable classified as a `handle`.
 `streamReady` on `<wcs-camera>` is a live `MediaStream` — a value that must not enter snapshot state
 — so receiving it directly rather than through the adapter's values is the correct thing
-([inventory §5.6](./architecture-hardening/12-wc-bindable-observable-inventory.md) (ja)).
+([inventory §5.6](./architecture-hardening/12-wc-bindable-observable-inventory.md)).
 
 ## 5. Telling the adapter what a value means
 
@@ -203,8 +203,8 @@ not. So for now, assume the following.
 
 ## References
 
-- [framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md) (ja)
-- [wc-bindable observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md) (ja)
+- [framework adapter binding constraints](./architecture-hardening/13-framework-adapter-binding-constraints.md)
+- [wc-bindable observable inventory](./architecture-hardening/12-wc-bindable-observable-inventory.md)
 - [async I/O node guidelines](./async-io-node-guidelines.md)
 - [proposal: make `bind()` wait for the definition](./spec-proposal-bind-definition-timing.md) (ja)
 - [the React / Vue implementations of websocket-chat](../examples/websocket-chat/README.md)
