@@ -7,7 +7,7 @@
   - **Phase D** example 移植: `wcs-synth.js` 削除・e2e 6本
   - **Phase E** 規範追補: timing-and-firing-contract §19 / guidelines §1 / 棚卸し 12 / CLAUDE.md
 - **設計正本**: [midi-tag-design.md](./midi-tag-design.md) / [audio-tag-design.md](./audio-tag-design.md) / [ADR 14](./architecture-hardening/14-handle-graph-wiring.ja.md)
-- **原型**: [examples/synth-playground/wcs-synth.js](../examples/synth-playground/wcs-synth.js)（1063行 JS・Playwright スモーク 14/14 安定）。挙動は実証済みであり、本計画は **「動く原型を wcstack の骨格に載せ替える」** 作業を規定する。ゼロからの設計ではない。
+- **原型**: [examples/synth-playground/wcs-synth.js](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js)（1063行 JS・Playwright スモーク 14/14 安定。Phase D で削除済み（`cbd5598e`）のため、以降の行リンクはすべて削除前の commit を指す）。挙動は実証済みであり、本計画は **「動く原型を wcstack の骨格に載せ替える」** 作業を規定する。ゼロからの設計ではない。
 - **English**: [audio-impl-plan.md](./audio-impl-plan.md)
 
 ---
@@ -167,12 +167,12 @@ packages/audio/
 ### C-2. 原型から必ず是正する 5 点（＋是正不要と判明したもの 1 点）
 | # | 原型 | 是正 |
 |---|---|---|
-| 1 | `MutationObserver` が `subtree: true` で無差別 → 無関係な DOM 変更で音が切れる（[:538](../examples/synth-playground/wcs-synth.js#L538)） | audio タグ関連の変異だけに絞る |
-| 2 | rebuild の coalesce が `setTimeout(0)`（[:596](../examples/synth-playground/wcs-synth.js#L596)） | microtask（横断契約 §3） |
-| 3 | id 解決が `document.getElementById` / `querySelector`（[:650](../examples/synth-playground/wcs-synth.js#L650)・[:827](../examples/synth-playground/wcs-synth.js#L827)） | `getRootNode()` 起点 ＋ ルートサブツリー限定 |
+| 1 | `MutationObserver` が `subtree: true` で無差別 → 無関係な DOM 変更で音が切れる（[:538](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L538)） | audio タグ関連の変異だけに絞る |
+| 2 | rebuild の coalesce が `setTimeout(0)`（[:596](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L596)） | microtask（横断契約 §3） |
+| 3 | id 解決が `document.getElementById` / `querySelector`（[:650](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L650)・[:827](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L827)） | `getRootNode()` 起点 ＋ ルートサブツリー限定 |
 | 4 | ~~analyser が `ctx.destination` 直結でリミッターを迂回~~ → **是正不要**。gain 0 の keep-alive は信号を運ばず、`destination` へ繋ぐ以外に選択肢がない（master へ戻すとフィードバックループ）。Phase B のエッジ実測で確認済み。常時 pull と `statechange` 再接続はそのまま**維持** |
-| 5 | `document.head` へグローバル CSS 注入（[:1050](../examples/synth-playground/wcs-synth.js#L1050)） | `getRootNode().adoptedStyleSheets` |
-| 6 | ボイス回収が `setTimeout` → バックグラウンドタブで回収されず蓄積（[:499](../examples/synth-playground/wcs-synth.js#L499)） | audio クロック基準の遅延スイープ |
+| 5 | `document.head` へグローバル CSS 注入（[:1050](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L1050)） | `getRootNode().adoptedStyleSheets` |
+| 6 | ボイス回収が `setTimeout` → バックグラウンドタブで回収されず蓄積（[:499](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L499)） | audio クロック基準の遅延スイープ |
 
 ### C-3. テスト戦略【本パッケージ最大の作業・目標 200〜260 本】
 

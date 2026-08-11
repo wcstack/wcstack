@@ -3,7 +3,7 @@
 - **状態**: ✅ 設計確定（2026-08-02）。前提となる [handle graph wiring ADR](./architecture-hardening/14-handle-graph-wiring.ja.md) は G1〜G6 すべて採択済み。実装計画は [audio-impl-plan.ja.md](./audio-impl-plan.ja.md)。
 - **対象 WebAPI**: Web Audio API（`AudioContext`、`OscillatorNode` / `BiquadFilterNode` / `GainNode` / `DelayNode` / `WaveShaperNode` / `ConstantSourceNode` / `AudioBufferSourceNode` / `AnalyserNode` / `DynamicsCompressorNode`、`AudioParam` のスケジューリング API）。
 - **位置づけ**: **ライブハンドルの有向グラフを内部に持つ初の I/O ノード**。camera が「生ハンドル1本」で開いた地平の続きだが、ADR G2 の推奨どおりハンドルを一切公開しないため、**プロトコル境界から見れば worker / websocket / broadcast と同じ「内部に非シリアライズ資源を持つが値しか出さないノード」**になる。
-- **原型**: [examples/synth-playground/wcs-synth.js](../examples/synth-playground/wcs-synth.js)（1063行・Playwright スモーク 14/14）。挙動の正しさは実証済みで、本設計はそれを wcstack の骨格に載せ替える作業を規定する。
+- **原型**: [examples/synth-playground/wcs-synth.js](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js)（1063行・Playwright スモーク 14/14。パッケージ化に伴い `cbd5598e` で削除済みのため、以降の行リンクはすべて削除前の commit を指す）。挙動の正しさは実証済みで、本設計はそれを wcstack の骨格に載せ替える作業を規定する。
 - **前提資産**: camera（生ハンドルを state に入れない不変条件）、worker / websocket / broadcast（handle 非公開・Core が所有し破棄）、resize（構造変更は teardown → 再構築・冪等な `observe()`）、wakelock（desired / actual 二相）、raf（外部クロックと描画反映の遅延契約）、sensor 族（connect では何も始まらない）。
 
 ---
@@ -88,7 +88,7 @@ class AudioGraphCore extends EventTarget {
 2. **入れ子で表せないものは id 参照**。`out="bus"`（オーディオ送出・多対一）、`out="vcf.frequency"`（任意の `AudioParam` を駆動）、`param="frequency"`（modulator が**親**の param を駆動する短縮形）。
 
 ### 2.1 id 解決は `getRootNode()` 起点【必須の是正】
-原型は `document.getElementById` / `this.querySelector("#id")` を使っており（[wcs-synth.js:650](../examples/synth-playground/wcs-synth.js#L650)、[:827](../examples/synth-playground/wcs-synth.js#L827)）、Shadow DOM 内で解決できない。**fullscreen / pointer-lock / intersection / resize が統一している `getRootNode() as Document | ShadowRoot` 規約**（[Fullscreen.ts:152](../packages/fullscreen/src/components/Fullscreen.ts#L152)）に揃える。加えて解決範囲は `<wcs-audio>` サブツリー内に限定する（別のパッチの id を誤って掴まない）。
+原型は `document.getElementById` / `this.querySelector("#id")` を使っており（[wcs-synth.js:650](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L650)、[:827](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L827)）、Shadow DOM 内で解決できない。**fullscreen / pointer-lock / intersection / resize が統一している `getRootNode() as Document | ShadowRoot` 規約**（[Fullscreen.ts:152](../packages/fullscreen/src/components/Fullscreen.ts#L152)）に揃える。加えて解決範囲は `<wcs-audio>` サブツリー内に限定する（別のパッチの id を誤って掴まない）。
 
 ### 2.2 `out` の属性名【✅ 据え置き】
 `out` は一般名詞として弱い。将来 ADR G3 の「2例目」が出たときの横断抽出を考えると `audio-out` / `to` などの選択肢がある。**推奨: `out` 据え置き**（パッチ記法としての可読性を優先。ADR G3 で「パッケージローカル語彙」と位置づけたので衝突しない）。
@@ -151,8 +151,8 @@ commands: [{ name: "resume", async: true }, { name: "suspend", async: true },
 - 原型はクラス static で共有しており、**CDN で版が混在すると context が2つできる**（signals の「`.`/`.dom` 混在で reactive core が二重化」と同型の問題）。
 - **推奨**: `config.ts` に context provider を置き `getConfig()` / `setConfig()` で差し替え可能にする（既存 config 規約）。既定実装は `globalThis[Symbol.for("@wcstack/audio.context")]` を経由した遅延生成 singleton とし、**版跨ぎでも1つに収束させる**。
 - **limiter**: `DynamicsCompressorNode` を耳保護として既定 on（原型どおり）。`limiter="off"` で外せる。
-- **ユーザージェスチャ**: 原型は `document` に capture リスナを張る（[wcs-synth.js:558-564](../examples/synth-playground/wcs-synth.js#L558-L564)）。パッケージがグローバル副作用を勝手に持つのは行儀が悪い。**✅ 決定 4-1: `resume-on-gesture` 属性で制御し、既定 on**（原型と同じ体験を保つ）。`resume-on-gesture="off"` を指定した場合はリスナを一切張らず、`command.resume` を利用者が撃つ。リスナはルート要素が接続されている間だけ張り、`disconnectedCallback` で必ず外す（グローバル副作用を残さない）。
-- **グローバル CSS 注入の是正**: 原型は `document.head` に `<style>` を挿入する（[wcs-synth.js:1050-1054](../examples/synth-playground/wcs-synth.js#L1050-L1054)）。`document.head` を触るパッケージは `<wcs-head>` だけという規範に反する。**`getRootNode().adoptedStyleSheets` に一度だけ `CSSStyleSheet` を追加**する形に改める（Shadow DOM 内でも効く）。
+- **ユーザージェスチャ**: 原型は `document` に capture リスナを張る（[wcs-synth.js:558-564](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L558-L564)）。パッケージがグローバル副作用を勝手に持つのは行儀が悪い。**✅ 決定 4-1: `resume-on-gesture` 属性で制御し、既定 on**（原型と同じ体験を保つ）。`resume-on-gesture="off"` を指定した場合はリスナを一切張らず、`command.resume` を利用者が撃つ。リスナはルート要素が接続されている間だけ張り、`disconnectedCallback` で必ず外す（グローバル副作用を残さない）。
+- **グローバル CSS 注入の是正**: 原型は `document.head` に `<style>` を挿入する（[wcs-synth.js:1050-1054](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L1050-L1054)）。`document.head` を触るパッケージは `<wcs-head>` だけという規範に反する。**`getRootNode().adoptedStyleSheets` に一度だけ `CSSStyleSheet` を追加**する形に改める（Shadow DOM 内でも効く）。
 
 ---
 
@@ -165,9 +165,9 @@ commands: [{ name: "resume", async: true }, { name: "suspend", async: true },
 | audio タグの追加 / 削除 / 移動 | **rebuild** |
 | それ以外の DOM 変更 | **何もしない（MUST NOT rebuild）** |
 
-- **原型の欠陥**: `MutationObserver` を `subtree: true` で無差別に張っているため（[wcs-synth.js:538-539](../examples/synth-playground/wcs-synth.js#L538-L539)）、コントロール用の `<div>` を1個足しただけでグラフ全体が再構築され**発音中の音が切れる**。パッケージ化では変異を audio タグ関連に絞り込むフィルタが必須。
+- **原型の欠陥**: `MutationObserver` を `subtree: true` で無差別に張っているため（[wcs-synth.js:538-539](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L538-L539)）、コントロール用の `<div>` を1個足しただけでグラフ全体が再構築され**発音中の音が切れる**。パッケージ化では変異を audio タグ関連に絞り込むフィルタが必須。
 - **rebuild は可聴な断絶を伴う**（発音中のボイスを落とす）。README と契約に明記する。
-- **coalesce は microtask**。原型は `setTimeout(0)`（[wcs-synth.js:596](../examples/synth-playground/wcs-synth.js#L596)）で、[横断契約 §3](./timing-and-firing-contract.ja.md)「microtask が task に先行する」に未追随。
+- **coalesce は microtask**。原型は `setTimeout(0)`（[wcs-synth.js:596](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L596)）で、[横断契約 §3](./timing-and-firing-contract.ja.md)「microtask が task に先行する」に未追随。
 - `setPatch()` は **冪等**（同一 patch を渡しても rebuild しない）。resize §12.3 と同型。patch の同値判定は構造ハッシュで行う。
 
 ---
@@ -177,7 +177,7 @@ commands: [{ name: "resume", async: true }, { name: "suspend", async: true },
 - `<wcs-voice poly="N">` はサブツリーを**パッチテンプレート**として扱い、ノートごとに独立したグラフを生成する。voice の外は live / モノフォニック（last-note priority ＋ legato ＋ `glide`）。
 - ボイスから出る音（既定出力と `out=` 送出の両方）は **per-voice gain に集約**し、ノートスティール時にボイス全体をフェードできるようにする（原型どおり）。
 - ゲート（`<wcs-env>`）を持たないパッチには **暗黙の安全エンベロープ**（5ms / 80ms）を与え、無限に鳴り続けないようにする。
-- **✅ 決定 6-1: ボイス回収を `setTimeout` から audio クロック基準に変える**。原型は `setTimeout(release * 3 + 0.3)` で回収する（[wcs-synth.js:499](../examples/synth-playground/wcs-synth.js#L499)）が、**バックグラウンドタブではタイマーが 1 分間隔まで絞られる一方オーディオは鳴り続ける**ため、ボイスが回収されず蓄積する。推奨: 解放済みボイスに `freeAt = ctx.currentTime + release` を持たせ、**ノートイベントごと＋ `statechange` ごとに遅延スイープ**する（タイマーはフォールバックとしてのみ併用）。
+- **✅ 決定 6-1: ボイス回収を `setTimeout` から audio クロック基準に変える**。原型は `setTimeout(release * 3 + 0.3)` で回収する（[wcs-synth.js:499](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L499)）が、**バックグラウンドタブではタイマーが 1 分間隔まで絞られる一方オーディオは鳴り続ける**ため、ボイスが回収されず蓄積する。推奨: 解放済みボイスに `freeAt = ctx.currentTime + release` を持たせ、**ノートイベントごと＋ `statechange` ごとに遅延スイープ**する（タイマーはフォールバックとしてのみ併用）。
 
 ---
 
@@ -193,7 +193,7 @@ commands: [{ name: "resume", async: true }, { name: "suspend", async: true },
 - `command.sample` → Core が読み出し → `wcs-analyser:frame`（`semantics: "event"`）で publish。**command-token / event-token だけでフレームループが閉じる**。
 - **✅ 決定 7-1: バッファは再利用しない**。[producer snapshot contract](./architecture-hardening/11-react-immutable-snapshot-boundary.md) は「公開後に producer が変更しない」を MUST とするため、**フレームごとに新しい `Uint8Array` を割り当てる**のが規範に沿う（2048 byte × 60fps ≒ 120KB/s の allocation）。再利用バッファを使うと `handle` 相当になり ADR G2 の「handle 0」が崩れる。**推奨: 常に fresh 配列**。性能が問題になった実測が出てから再検討する。
 - **描画は行わない**（ADR G6）。canvas 描画は example が担う。
-- 原型は analyser の後段に gain 0 のノードを置き `ctx.destination` へ流している（[wcs-synth.js:385](../examples/synth-playground/wcs-synth.js#L385)）。これは **Chromium が suspended 中に張った sink-only な AnalyserNode へのエッジを黙って落とす**問題への対策であり、実ブラウザ検証で得られた知見なので**そのまま維持する**。
+- 原型は analyser の後段に gain 0 のノードを置き `ctx.destination` へ流している（[wcs-synth.js:385](https://github.com/wcstack/wcstack/blob/1e26a2a92a009fc3e78aab37db7560cb953424ec/examples/synth-playground/wcs-synth.js#L385)）。これは **Chromium が suspended 中に張った sink-only な AnalyserNode へのエッジを黙って落とす**問題への対策であり、実ブラウザ検証で得られた知見なので**そのまま維持する**。
   - **この keep-alive は `destination` へ繋ぐ必要がある**。master へ戻すとフィードバックループになる。gain が 0 なので信号は流れず、**リミッターを迂回する経路にはならない**（Phase B の PoC でエッジ集合を実測して確認した）。
   - analyser の信号入力側は master タップ（`master.connect(analyser)`）であり、こちらは元からリミッター前の正しい位置にある。
   - `statechange` での再接続（`rekickTaps`）も維持する。

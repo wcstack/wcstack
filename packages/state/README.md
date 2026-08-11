@@ -443,7 +443,7 @@ Internally converted to comment-based bindings (`<!--@@:expression-->`).
 
 ### Spread Binding (`...`)
 
-For custom elements that declare the [`wc-bindable` protocol](#wcbindable-protocol), `...: target` wires all of the element's **properties + inputs** to a single state object in one line:
+For custom elements that declare the [`wc-bindable` protocol](#bindables--commands-and-the-wc-bindable-protocol), `...: target` wires all of the element's **properties + inputs** to a single state object in one line:
 
 ```html
 <wcs-fetch data-wcs="...: usersFetch"></wcs-fetch>
