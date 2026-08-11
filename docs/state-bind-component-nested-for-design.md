@@ -390,6 +390,18 @@ ready promise 生成を try/catch で包み、`buildBindings` / `hydrateBindings
 reject するようにした。Document / ShadowRoot 両経路。例外は unhandled rejection として
 漏れる代わりに `await getBindingsReady()` の呼び出し元へ届く。
 
+同ブランチのレビューで**同型が一段深いところに残っている**ことが判明した:
+唯一のプロダクション消費者である SSR（enable-ssr）経路では、`State.connectedCallback`
+内の `await getBindingsReady(...)` が reject を受けると connectedCallback ごと中断し、
+resolve しか持たない `_connectedCallbackPromise` が永久に未解決 → @wcstack/server の
+`renderToString` が **mutex を握ったまま** connectedCallbackPromise 待ちで無言ハングする。
+修正前は buildBindings の例外が unhandled rejection として少なくとも大声で落ちていたので、
+ready の reject 化**だけ**だと、この経路は「うるさいクラッシュ → 無言ウェッジ」への
+退行になる。`_connectedCallbackPromise` にも reject を配管し、SSR ブロックの失敗を
+renderToString まで伝播させて（エラーを返し、finally で mutex が解放される）解消した。
+「1 件の失敗が全体を巻き込む」系統の修正は、**promise チェーンの末端の消費者まで
+reject が届くかを辿り切ってから閉じること**。
+
 ### 8.3 `listIndexAtWildcard` の範囲ガードは落とせない
 
 末尾アンカー化は Δ=0 で挙動不変 —— **ただし範囲外要求を除く**。
