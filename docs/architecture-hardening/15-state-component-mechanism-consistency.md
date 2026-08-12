@@ -48,6 +48,8 @@ This document applies the "does the bind take" axis of [13-framework-adapter-bin
 | §1.8 | a child scope cannot iterate the parent's list with `for` (the listIndex is lost crossing the boundary; it fails from the first render) | ✅ fixed (2026-08-10, the remainder of §1.7) |
 | §1.9 | replacing a list whose rows contain components kills `for` (the form documented in the README; unrecoverable) | ✅ fixed (2026-08-10, found during §1.8's spike) |
 | §1.10 | a component inside a parent-scope `for` cannot run a `for` in the child either (a silent hang) | ✅ fixed (2026-08-11, the remainder of §1.8) |
+| §1.11 | a parent-origin row-field write does not cross more than one boundary (the row ledger piggyback stops after one hop) | ✅ fixed (2026-08-13) |
+| §1.12 | a list cannot cross two boundaries when the intermediate component sits inside a parent `for` (Δ>0) | ❌ **open** (found while fixing §1.11) |
 | §2.1 | the change event fires only on an exactly matching path | ✅ fixed (subpaths plus `$postUpdate` plus a property getter) |
 | §2.2 | the DCC accessors are asymmetric between synchronous and asynchronous | ✅ fixed (the setter made synchronous; `callFn` deliberately keeps its Promise) |
 | §2.3 | only `$bindables` has no declaration validation | ✅ fixed (structural validation plus an existence check; the `$streams` names resolved too) |
@@ -314,6 +316,66 @@ The regression is on happy-dom
 ([`integration.bindComponentNestedFor.test.ts`](../../packages/state/__tests__/integration.bindComponentNestedFor.test.ts),
 [`webComponent.baseListIndex.test.ts`](../../packages/state/__tests__/webComponent.baseListIndex.test.ts)) and in a real browser
 ([`e2e/tests/state-bind-component-nested-for.spec.ts`](../../e2e/tests/state-bind-component-nested-for.spec.ts)). Both line up **the form that builds the shadow in the constructor and the form that builds it in connectedCallback** (the reason in §1.9). One phenomenon appeared only in the real browser — the existing behavior where a write to an out-of-range row throws `ListIndex not found: <parent path>`, whose message points at the wrong cause (unrelated to this work, but recorded in design doc §8.4; fixed on 2026-08-11 to an indexed message).
+
+### 1.11 A parent-origin row-field write does not cross more than one boundary ✅ fixed (2026-08-13)
+
+Everything verified in §1.1 through §1.10 sat at **depth 1** — host to component, one
+boundary. What §1.10 nested was the `for`, not the boundary. The form with two boundaries
+stacked — a mapped `bind-component` inside another component's shadow — had never been
+measured.
+
+Measured, **scalar paths hold in every direction down to depth 4**. They do so because the
+resolution is recursive: `innerState`'s get / set re-enter `outerAbsPathInfo.stateElement`,
+and that outer element may itself be an innerState, so extra hops compose with no special
+casing. Lists also hold to depth 3 for the initial render, list replacement, and write-back
+from the leaf.
+
+The one case that did not hold is a **parent-origin row-field write**, which stops at depth 1.
+The cause is that the mechanism added in §1.8 — piggybacking a row binding onto the parent's
+pattern ledger — was an **explicit one-shot registration**. `getOuterRowPathInfo` walked one
+boundary outward and stopped, and the record kept the result in the single
+`record.outerPatternPathInfo` field. At depth 2 the leaf row is therefore only listed under the
+intermediate scope's `list.*.name`, and when the host that owns the values writes
+`rows.*.name` there is no subscriber at all — the intermediate scope merely passes the array
+through and owns no row binding of its own, so it does not relay either.
+
+> **What resolves recursively scales with depth; what registers explicitly stops at one.**
+
+The fix makes the outward walk multi-hop (`getOuterRowPathInfosBeyond`) and promotes the
+record to `outerPatternPathInfosRest`. The first hop is unchanged, and the rest stays `null`
+when there is no second hop — so the overwhelmingly common depth-1 row allocates no array
+(the same "hold one, promote on the second" idiom as `interestedSessionsByNode`). Each hop is
+registered only after checking `Δ + innerW === outerW`, so a hop whose arity does not line up
+stops the walk and falls back to the previous behavior. Teardown releases every hop
+individually (each is an independent resource).
+
+The regression is [`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts).
+The point is that **depth 1 is kept in the same test as the control**: if depth 1 passes and
+depth 2 fails, that points at the mechanism rather than at how the test was written. Depth is
+parameterised from 1 to 4, and both the constructor-built and connectedCallback-built shadow
+forms are lined up (the reason in §1.9).
+
+### 1.12 A list cannot cross two boundaries when the intermediate component sits inside a parent `for` ❌ open
+
+§1.10's nested form with one more boundary added, the intermediate component sitting at Δ=1.
+
+```
+host { groups: [ { children: [...] }, ... ] }
+  └ <template for: groups>
+       └ <panel state.items: groups.*.children>   … the Δ=1 intermediate (pass-through)
+            └ <card state.list: items>            … the leaf iterates
+```
+
+This fails **from the initial render** with `ListIndex not found: groups.*.children.*.name`, i.e.
+upstream of the row-field subscription (§1.11): the listIndex does not cross at all.
+`getBaseListIndex` only looks one boundary's worth of loop context off the component element,
+so crossing two boundaries appears to lose the composition of Δ (Δ₁+Δ₂).
+
+It is independent of the §1.11 fix, and the symptoms were confirmed identical before and after
+it (4 failures before, 2 after; these two are what remains). The reproduction sits in the same
+file under `describe.skip`. It cannot be pinned with `it.fails` because this form fails by
+throwing **asynchronously** out of the updater drain rather than by a synchronous assertion,
+so `it.fails` leaves it as a Vitest unhandled error. Remove the `.skip` once it is fixed.
 
 ---
 

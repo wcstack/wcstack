@@ -19,7 +19,7 @@ import { getCustomElementRegistry, upgradeCustomElement } from "../platform/cust
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
 import { IBindingInfo } from "../types";
-import { getOuterRowPathInfo } from "../webComponent/outerListPath";
+import { getOuterRowPathInfo, getOuterRowPathInfosBeyond } from "../webComponent/outerListPath";
 import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
 import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
@@ -78,6 +78,12 @@ interface IInternalBindingRecord extends IBindingRecord {
    * plain な state では常に null（§1.8）。
    */
   outerPatternPathInfo: IAbsolutePathInfo | null;
+  /**
+   * 境界が 2 枚以上重なっているときの 3 段目以降の相乗り控え（§1.11）。
+   * 深さ 1 —— つまりほぼ全ての行 —— では `null` のままで、配列を確保しない
+   * （`interestedSessionsByNode` と同じく「単数で持ち、2 つ目から昇格する」）。
+   */
+  outerPatternPathInfosRest: IAbsolutePathInfo[] | null;
   pendingDefinitions: number;
   initialPolicy: IInitialSyncPolicy | null;
   resolvedAuthority: ResolvedInitialAuthority | null;
@@ -649,6 +655,7 @@ export class BindingSession {
         patternPathInfo: null,
         patternListIndex: null,
         outerPatternPathInfo: null,
+        outerPatternPathInfosRest: null,
         pendingDefinitions: 0,
         initialPolicy: slot.policy,
         resolvedAuthority: slot.authority,
@@ -766,6 +773,7 @@ export class BindingSession {
       patternPathInfo: null,
       patternListIndex: null,
       outerPatternPathInfo: null,
+      outerPatternPathInfosRest: null,
       pendingDefinitions: 0,
       initialPolicy: null,
       resolvedAuthority: null,
@@ -981,6 +989,17 @@ export class BindingSession {
       if (outerPathInfo !== null) {
         addBindingByPattern(outerPathInfo, listIndex, binding);
         record.outerPatternPathInfo = outerPathInfo;
+        // 境界が 2 枚以上重なっていると、値の正本は 1 つ外ではなく最も外のスコープに
+        // ある。中間スコープは配列を素通しするだけで自分の行バインディングを持たない
+        // ため、1 段目だけでは正本スコープ起点の行フィールド書き込みが誰にも届かない
+        // （§1.11）。成立する段すべてに載せる。
+        const restPathInfos = getOuterRowPathInfosBeyond(outerPathInfo);
+        if (restPathInfos !== null) {
+          for (let i = 0; i < restPathInfos.length; i++) {
+            addBindingByPattern(restPathInfos[i], listIndex, binding);
+          }
+          record.outerPatternPathInfosRest = restPathInfos;
+        }
       }
     } else {
       const address = getAbsoluteStateAddressByBinding(binding, knownRoot);
@@ -1044,6 +1063,18 @@ export class BindingSession {
           // Cleanup is best-effort.
         }
         record.outerPatternPathInfo = null;
+      }
+      // 3 段目以降（§1.11）。各段も互いに独立した資源なので 1 つずつ守る
+      if (record.outerPatternPathInfosRest !== null) {
+        const restPathInfos = record.outerPatternPathInfosRest;
+        for (let i = 0; i < restPathInfos.length; i++) {
+          try {
+            removeBindingByPattern(restPathInfos[i], record.patternListIndex, binding);
+          } catch {
+            // Cleanup is best-effort.
+          }
+        }
+        record.outerPatternPathInfosRest = null;
       }
       try {
         removeBindingByPattern(record.patternPathInfo!, record.patternListIndex, binding);

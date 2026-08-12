@@ -237,24 +237,19 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
   });
 
   /**
-   * **既知の限界（深さ 2 以上で不成立）**。
+   * §1.11 の回帰。深さ 2 以上ではこれだけが成立していなかった。
    *
    * `BindingSession.registerAddress` は行バインディングを親スコープのパターン台帳へ
-   * 相乗りさせるが（§1.8）、その相手を決める `getOuterRowPathInfo` は
-   * `resolveOuterAbsolutePathInfo` で**境界を 1 枚だけ**遡って止まる。記録先も
-   * `record.outerPatternPathInfo` の単数フィールド 1 つきり。
-   * 結果、深さ 2 では最下層の行が中間スコープの `list.*.name` にしか購読者として
-   * 載らず、host が `rows.*.name` へ書いても誰も起きない。
+   * 相乗りさせるが（§1.8）、相手を決める `getOuterRowPathInfo` は境界を 1 枚しか
+   * 遡らず、控えも `record.outerPatternPathInfo` の単数フィールド 1 つきりだった。
+   * 結果、深さ 2 では最下層の行が中間スコープの `list.*.name` にしか載らず、
+   * host が `rows.*.name` へ書いても購読者が誰もいなかった。
    *
    * 他の経路が深さに強いのは、いずれも**再帰的に解決**しているため
    * （`innerState.get` / `set` は外側 stateElement へ再入し、その外側自身が
-   * innerState でありうる）。ここだけが**明示的な 1 回登録**なので 1 段で止まる。
-   *
-   * 直したらこのテストが赤くなる（`it.fails` が通らなくなる）ので、
-   * そのとき `it` に戻すこと。
+   * innerState でありうる）。ここだけが**明示的な 1 回登録**で 1 段に留まっていた。
    */
-  const rowFieldWrite = depth === 1 ? it : it.fails;
-  rowFieldWrite("最上位の行フィールドへの書き込みが最下層の行に届くこと", async () => {
+  it("最上位の行フィールドへの書き込みが最下層の行に届くこと", async () => {
     const { host, hostState, rows } = await mountListChain();
 
     hostState.createState("writable", (s: any) => {
@@ -262,11 +257,8 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
     });
     await flush();
 
-    try {
-      expect(rows()).toEqual(["a2", "b"]);
-    } finally {
-      host.remove();
-    }
+    expect(rows()).toEqual(["a2", "b"]);
+    host.remove();
   });
 
   it("最上位でのリスト置換が最下層に届くこと", async () => {
@@ -297,6 +289,97 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
     });
     expect(hostValue).toBe("z");
 
+    host.remove();
+  });
+});
+
+/**
+ * **既知の限界（§1.11 とは別件・修正前から不成立）**。
+ *
+ * §1.10 の入れ子形（コンポーネントが親の `for` の中にいて自分でも `for` を回す）に、
+ * もう 1 枚境界を足した形。中間コンポーネントが Δ=1 の位置にいる。
+ *
+ *   host { groups: [ { children: [...] }, ... ] }
+ *     └ <template for: groups>
+ *          └ <panel state.items: groups.*.children>   … Δ=1 の中間（素通し）
+ *               └ <card state.list: items>            … 最下層が回す
+ *
+ * これは `ListIndex not found: groups.*.children.*.name` で**初期描画から**落ちる。
+ * つまり行フィールドの購読（§1.11）より手前、listIndex の越境そのものが成立していない。
+ * `getBaseListIndex` はコンポーネント要素のループ文脈を 1 枚分しか見ないため、
+ * 境界 2 枚を跨ぐと Δ の合成（Δ₁+Δ₂）が失われるものと見られる。
+ *
+ * §1.11 の修正（外向き walk の多段化）とは独立で、その修正の前後で症状は同一
+ * ——修正前 4 件失敗 / 修正後 2 件失敗、残るのがこの 2 件——であることを確認済み。
+ *
+ * `it.fails` では固定できないので `describe.skip` にしてある。この形の失敗は
+ * 同期アサーションではなく updater の drain から**非同期に throw** されるため、
+ * `it.fails` を使うと Vitest の unhandled error として残りスイートが汚れる。
+ * この形が直ったら `.skip` を外すこと（そのまま回帰テストになる）。
+ */
+describe.skip("bind-component: 親ループの中の中間コンポーネント越しに 2 枚越える (Δ>0)", () => {
+  async function mountNestedChainDepth2() {
+    const cardTag = uniqueTag("bcd2-card");
+    const panelTag = uniqueTag("bcd2-panel");
+
+    defineComponent(
+      cardTag,
+      { list: [] },
+      `<ul><template data-wcs="for: list">` +
+        `<li class="row" data-wcs="textContent: list.*.name"></li>` +
+        `</template></ul>`,
+      "connectedCallback",
+    );
+    defineComponent(
+      panelTag,
+      { items: [] },
+      `<${cardTag} data-wcs="state.list: items"></${cardTag}>`,
+      "connectedCallback",
+    );
+
+    const host = document.createElement(uniqueTag("bcd2-host"));
+    const hostShadow = host.attachShadow({ mode: "open" });
+    hostShadow.innerHTML =
+      `<wcs-state json='{"groups":[{"children":[{"name":"a"},{"name":"b"}]},{"children":[{"name":"c"}]}]}'></wcs-state>` +
+      `<template data-wcs="for: groups">` +
+      `<${panelTag} data-wcs="state.items: groups.*.children"></${panelTag}>` +
+      `</template>`;
+    document.body.appendChild(host);
+
+    const hostState = await readyScope(hostShadow);
+    const panels = Array.from(hostShadow.querySelectorAll(panelTag)) as HTMLElement[];
+    const leafShadows: ShadowRoot[] = [];
+    for (const panel of panels) {
+      await readyScope(panel.shadowRoot!);
+      const card = panel.shadowRoot!.querySelector(cardTag) as HTMLElement;
+      await readyScope(card.shadowRoot!);
+      leafShadows.push(card.shadowRoot!);
+    }
+    await flush();
+
+    const groupRows = () =>
+      leafShadows.map((shadow) =>
+        Array.from(shadow.querySelectorAll(".row")).map((el) => el.textContent),
+      );
+
+    return { host, hostState, groupRows };
+  }
+
+  it("初期描画が全グループで成立すること", async () => {
+    const { host, groupRows } = await mountNestedChainDepth2();
+    expect(groupRows()).toEqual([["a", "b"], ["c"]]);
+    host.remove();
+  });
+
+  it("最上位の行フィールド書き込みが該当グループの行にだけ届くこと", async () => {
+    const { host, hostState, groupRows } = await mountNestedChainDepth2();
+
+    hostState.createState("writable", (s: any) => {
+      s["groups.0.children.1.name"] = "b2";
+    });
+    await flush();
+
+    expect(groupRows()).toEqual([["a", "b2"], ["c"]]);
     host.remove();
   });
 });

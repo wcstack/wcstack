@@ -56,6 +56,46 @@ export function getOuterRowPathInfo(
   if (innerPathInfo.wildcardCount === 0) {
     return null;
   }
+  return stepOuterRowPathInfo(innerStateElement, innerPathInfo);
+}
+
+/**
+ * `getOuterRowPathInfo` の 2 段目以降。境界が 2 枚以上重なっている（コンポーネントの
+ * shadow の中にさらに mapped な `bind-component` がある）場合、値の正本は 1 つ外では
+ * なく**最も外のスコープ**にある。1 段目だけに相乗りしていると、中間スコープは
+ * 素通しで自分の行バインディングを持たないため、正本スコープ起点の行フィールド
+ * 書き込みを購読する者が誰もいなくなる（§1.11）。
+ *
+ * 1 段目が成立したときだけ呼ばれる（＝mapped な行バインディング限定）ので、
+ * 通常のリストはこの walk を一切踏まない。返り値は 2 段目以降が無ければ `null` で、
+ * 圧倒的多数である深さ 1 の行では配列を確保しない。
+ *
+ * 各段で必ず外側の state 要素へ進む（`resolveOuterAbsolutePathInfo` は
+ * `boundComponent` の属するスコープを返す＝DOM 上の真の祖先）ので停止する。
+ * `propagateListPathToOuterState` の外向き伝播と同じ論拠。
+ */
+export function getOuterRowPathInfosBeyond(
+  firstOuterAbsPathInfo: IAbsolutePathInfo,
+): IAbsolutePathInfo[] | null {
+  let rest: IAbsolutePathInfo[] | null = null;
+  let stateElement = firstOuterAbsPathInfo.stateElement;
+  let pathInfo = firstOuterAbsPathInfo.pathInfo;
+  for (;;) {
+    const outerAbsPathInfo = stepOuterRowPathInfo(stateElement, pathInfo);
+    if (outerAbsPathInfo === null) {
+      return rest;
+    }
+    (rest ??= []).push(outerAbsPathInfo);
+    stateElement = outerAbsPathInfo.stateElement;
+    pathInfo = outerAbsPathInfo.pathInfo;
+  }
+}
+
+/** 境界 1 枚分の外向き解決。成立条件（Δ + innerW === outerW）の判定を含む。 */
+function stepOuterRowPathInfo(
+  innerStateElement: IStateElement,
+  innerPathInfo: IPathInfo,
+): IAbsolutePathInfo | null {
   const outerAbsPathInfo = resolveOuterAbsolutePathInfo(innerStateElement, innerPathInfo);
   if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
     return null;
