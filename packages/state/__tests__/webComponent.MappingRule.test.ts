@@ -17,7 +17,9 @@ vi.mock('../src/stateElementByName', () => ({
   getStateElementByName: vi.fn()
 }));
 vi.mock('../src/webComponent/stateElementByWebComponent', () => ({
-  getStateElementByWebComponent: vi.fn()
+  getStateElementByWebComponent: vi.fn(),
+  // buildPrimaryMappingRule が Δ の境界越え合成用に記録するリンク（§1.12）
+  setOuterStateElementByWebComponent: vi.fn()
 }));
 vi.mock('../src/bindings/BindingSession', () => ({
   getBindingSession: vi.fn()

@@ -10,7 +10,7 @@ import { IStateElement } from "../components/types";
 import { DELIMITER } from "../define";
 import { raiseError } from "../raiseError";
 import { getStateElementByName } from "../stateElementByName";
-import { getStateElementByWebComponent } from "./stateElementByWebComponent";
+import { getStateElementByWebComponent, setOuterStateElementByWebComponent } from "./stateElementByWebComponent";
 
 export interface IMappingRule {
   innerAbsPathInfo: IAbsolutePathInfo;
@@ -53,6 +53,10 @@ export function buildPrimaryMappingRule(webComponent: Element, stateName: string
     primaryBindingByMappingRule.set(mappingRule, binding);
     innerMappingRule.set(innerAbsPathInfo, outerAbsPathInfo);
     outerMappingRule.set(outerAbsPathInfo, innerAbsPathInfo);
+    // 1 つ外のスコープへのリンク。Δ の境界越え合成（§1.12）が引く。
+    // プライマリ規則はすべて同じホスト要素の data-wcs 由来なので、どの規則から
+    // 採っても同じスコープを指す。
+    setOuterStateElementByWebComponent(webComponent, outerAbsPathInfo.stateElement);
   }
   innerMappingByElement.set(webComponent, innerMappingRule);
   outerMappingByElement.set(webComponent, outerMappingRule);

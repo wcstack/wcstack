@@ -294,30 +294,24 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
 });
 
 /**
- * **既知の限界（§1.11 とは別件・修正前から不成立）**。
- *
- * §1.10 の入れ子形（コンポーネントが親の `for` の中にいて自分でも `for` を回す）に、
- * もう 1 枚境界を足した形。中間コンポーネントが Δ=1 の位置にいる。
+ * §1.12 の回帰。§1.10 の入れ子形（コンポーネントが親の `for` の中にいて自分でも `for` を
+ * 回す）に、もう 1 枚境界を足した形。中間コンポーネントが Δ=1 の位置にいる。
  *
  *   host { groups: [ { children: [...] }, ... ] }
  *     └ <template for: groups>
  *          └ <panel state.items: groups.*.children>   … Δ=1 の中間（素通し）
  *               └ <card state.list: items>            … 最下層が回す
  *
- * これは `ListIndex not found: groups.*.children.*.name` で**初期描画から**落ちる。
- * つまり行フィールドの購読（§1.11）より手前、listIndex の越境そのものが成立していない。
- * `getBaseListIndex` はコンポーネント要素のループ文脈を 1 枚分しか見ないため、
- * 境界 2 枚を跨ぐと Δ の合成（Δ₁+Δ₂）が失われるものと見られる。
+ * これは `ListIndex not found: groups.*.children.*.name` で**初期描画から**落ちていた。
+ * つまり行フィールドの購読（§1.11）より手前、listIndex の越境そのものが不成立だった。
+ * `getLoopContextByNode` は `parentNode` しか辿らず ShadowRoot で止まるため、境界 2 枚を
+ * 跨ぐと中間スコープの Δ が丸ごと落ち、最下層が正本スコープより浅い arity で行を作る。
  *
- * §1.11 の修正（外向き walk の多段化）とは独立で、その修正の前後で症状は同一
- * ——修正前 4 件失敗 / 修正後 2 件失敗、残るのがこの 2 件——であることを確認済み。
- *
- * `it.fails` では固定できないので `describe.skip` にしてある。この形の失敗は
- * 同期アサーションではなく updater の drain から**非同期に throw** されるため、
- * `it.fails` を使うと Vitest の unhandled error として残りスイートが汚れる。
- * この形が直ったら `.skip` を外すこと（そのまま回帰テストになる）。
+ * 修正は Δ の境界越え合成（`getBaseListIndex` の外向き walk）と、越境照合を
+ * **両側の実 arity**（`getScopeArity` = パス段数 + そのスコープの Δ）で行うこと。
+ * 片側にだけ Δ を足すと、境界が 2 枚あるとき中間スコープの Δ を二重計上する。
  */
-describe.skip("bind-component: 親ループの中の中間コンポーネント越しに 2 枚越える (Δ>0)", () => {
+describe("bind-component: 親ループの中の中間コンポーネント越しに 2 枚越える (Δ>0)", () => {
   async function mountNestedChainDepth2() {
     const cardTag = uniqueTag("bcd2-card");
     const panelTag = uniqueTag("bcd2-panel");

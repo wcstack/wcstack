@@ -18,7 +18,7 @@ import { getAbsolutePathInfo } from "../address/AbsolutePathInfo";
 import { getPathInfo } from "../address/PathInfo";
 import { IAbsolutePathInfo, IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
-import { getBaseDepth } from "./baseListIndex";
+import { getScopeArity } from "./baseListIndex";
 import { getOuterAbsolutePathInfo } from "./MappingRule";
 
 /**
@@ -91,7 +91,17 @@ export function getOuterRowPathInfosBeyond(
   }
 }
 
-/** 境界 1 枚分の外向き解決。成立条件（Δ + innerW === outerW）の判定を含む。 */
+/**
+ * 境界 1 枚分の外向き解決。成立条件の判定を含む。
+ *
+ * 判定は**両側の実 arity（`getScopeArity` = パスの段数 + そのスコープの Δ）が
+ * 一致すること**。相乗り登録は子の listIndex をそのまま鍵に使うので、外側スコープが
+ * その arity で台帳を引けなければ意味がない。
+ *
+ * 境界 1 枚なら外側は Δ=0 なので、これは従来の `Δ + innerW === outerW` と同値。
+ * 2 枚以上あるときに外側の Δ を数えないと、中間スコープの Δ を二重計上して
+ * 成立するはずの段を落とす（§1.12）。
+ */
 function stepOuterRowPathInfo(
   innerStateElement: IStateElement,
   innerPathInfo: IPathInfo,
@@ -100,8 +110,9 @@ function stepOuterRowPathInfo(
   if (outerAbsPathInfo === null || outerAbsPathInfo.stateElement === innerStateElement) {
     return null;
   }
-  const baseDepth = getBaseDepth(innerStateElement);
-  if (outerAbsPathInfo.pathInfo.wildcardCount !== innerPathInfo.wildcardCount + baseDepth) {
+  const innerArity = getScopeArity(innerStateElement, innerPathInfo);
+  const outerArity = getScopeArity(outerAbsPathInfo.stateElement, outerAbsPathInfo.pathInfo);
+  if (innerArity !== outerArity) {
     return null;
   }
   return outerAbsPathInfo;

@@ -49,7 +49,7 @@ This document applies the "does the bind take" axis of [13-framework-adapter-bin
 | §1.9 | replacing a list whose rows contain components kills `for` (the form documented in the README; unrecoverable) | ✅ fixed (2026-08-10, found during §1.8's spike) |
 | §1.10 | a component inside a parent-scope `for` cannot run a `for` in the child either (a silent hang) | ✅ fixed (2026-08-11, the remainder of §1.8) |
 | §1.11 | a parent-origin row-field write does not cross more than one boundary (the row ledger piggyback stops after one hop) | ✅ fixed (2026-08-13) |
-| §1.12 | a list cannot cross two boundaries when the intermediate component sits inside a parent `for` (Δ>0) | ❌ **open** (found while fixing §1.11) |
+| §1.12 | a list cannot cross two boundaries when the intermediate component sits inside a parent `for` (Δ>0) | ✅ fixed (2026-08-17, found while fixing §1.11) |
 | §2.1 | the change event fires only on an exactly matching path | ✅ fixed (subpaths plus `$postUpdate` plus a property getter) |
 | §2.2 | the DCC accessors are asymmetric between synchronous and asynchronous | ✅ fixed (the setter made synchronous; `callFn` deliberately keeps its Promise) |
 | §2.3 | only `$bindables` has no declaration validation | ✅ fixed (structural validation plus an existence check; the `$streams` names resolved too) |
@@ -355,7 +355,7 @@ depth 2 fails, that points at the mechanism rather than at how the test was writ
 parameterised from 1 to 4, and both the constructor-built and connectedCallback-built shadow
 forms are lined up (the reason in §1.9).
 
-### 1.12 A list cannot cross two boundaries when the intermediate component sits inside a parent `for` ❌ open
+### 1.12 A list cannot cross two boundaries when the intermediate component sits inside a parent `for` ✅ fixed (2026-08-17)
 
 §1.10's nested form with one more boundary added, the intermediate component sitting at Δ=1.
 
@@ -366,16 +366,49 @@ host { groups: [ { children: [...] }, ... ] }
             └ <card state.list: items>            … the leaf iterates
 ```
 
-This fails **from the initial render** with `ListIndex not found: groups.*.children.*.name`, i.e.
-upstream of the row-field subscription (§1.11): the listIndex does not cross at all.
-`getBaseListIndex` only looks one boundary's worth of loop context off the component element,
-so crossing two boundaries appears to lose the composition of Δ (Δ₁+Δ₂).
+This failed **from the initial render** with `ListIndex not found: groups.*.children.*.name`,
+i.e. upstream of the row-field subscription (§1.11): the listIndex did not cross at all. It is
+independent of the §1.11 fix, and the symptoms were confirmed identical before and after it
+before this work started.
 
-It is independent of the §1.11 fix, and the symptoms were confirmed identical before and after
-it (4 failures before, 2 after; these two are what remains). The reproduction sits in the same
-file under `describe.skip`. It cannot be pinned with `it.fails` because this form fails by
-throwing **asynchronously** out of the updater drain rather than by a synchronous assertion,
-so `it.fails` leaves it as a Vitest unhandled error. Remove the `.skip` once it is fixed.
+**There were two causes, and neither alone is sufficient.**
+
+**(1) Δ is severed at the boundary.** `getLoopContextByNode` walks `parentNode` only, and a
+ShadowRoot's `parentNode` is `null`, so it **always stops at the first shadow boundary**. With
+one boundary the outer scope is the plain document scope and Δ=0 is correct; with two, the
+intermediate scope's Δ was dropped entirely and the leaf built its rows at a shallower arity
+than the scope that owns them. `getBaseListIndex` is now an outward walk: when a scope has no
+enclosing loop of its own, it inherits Δ from one scope further out. If that outer scope is not
+mapped (i.e. it owns the values), the next iteration's leading guard stops the walk.
+
+The link to "one scope out" is recorded by `buildPrimaryMappingRule` (the state element the
+rule's outer side belongs to *is* the scope that owns the values). The ledger lives in
+`stateElementByWebComponent` rather than `MappingRule` to avoid an import cycle
+(baseListIndex → MappingRule → BindingSession → outerListPath → baseListIndex).
+
+**(2) The cross-boundary check double-counts Δ.** Fixing (1) alone just moves the error to
+`ListIndex not found: items.*.name` — the intermediate scope's path. The old check was
+`Δ + innerW === outerW`, adding Δ to the **inner side only**, which silently assumed the outer
+side was at Δ=0. With two boundaries the intermediate scope is itself at Δ>0, so hops that
+should line up are rejected.
+
+The check now compares the **real arity on both sides** (`getScopeArity` = the path's wildcard
+count plus that scope's Δ). It is equivalent to the old formula whenever the outer side is at
+Δ=0, so the existing §1.8 / §1.10 shapes are unchanged. Two call sites were updated:
+`outerListPath.stepOuterRowPathInfo` (whether a piggyback hop holds) and
+`innerState._outerLoopContext` (picking the loop context for a crossing). Note that the latter
+keeps using the Δ-free wildcard count for **indexing** `wildcardPaths` — that is a different
+quantity from the arity being compared.
+
+The regression is on happy-dom
+([`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts))
+and in a real browser
+([`e2e/tests/state-bind-component-depth2.spec.ts`](../../e2e/tests/state-bind-component-depth2.spec.ts)).
+**The fixtures are split in two, §1.11 (flat) and §1.12 (Δ>0)** — the §1.12 failure throws
+during the initial render and wedges the whole document, so sharing a page takes the §1.11
+section down with it and destroys its independent signal (measured: all 6 failed when they
+shared a page). After the split, removing the §1.12 fix leaves the §1.11 page at 4/4 passing
+and the §1.12 page at 5/5 failing.
 
 ---
 

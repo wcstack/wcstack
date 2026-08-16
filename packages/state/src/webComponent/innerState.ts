@@ -7,6 +7,7 @@ import { getLoopContextByNode } from "../list/loopContextByNode";
 import { ILoopContext } from "../list/types";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
+import { getScopeArity } from "./baseListIndex";
 import { getCrossBoundaryAddress } from "./crossBoundaryAddress";
 import { getOuterAbsolutePathInfo } from "./MappingRule";
 import { meltFrozenObject } from "./meltFrozenObject";
@@ -38,14 +39,19 @@ class InnerStateProxyHandler implements ProxyHandler<IInnerState> {
    */
   private _outerLoopContext(innerPathInfo: IPathInfo, outerAbsPathInfo: IAbsolutePathInfo): ILoopContext | null {
     const outerWildcardCount = outerAbsPathInfo.pathInfo.wildcardCount;
+    // 段数の照合は外側スコープの**実 arity**（パスの段数 + そのスコープの Δ）で行う。
+    // 境界 1 枚なら外側は Δ=0 で従来と同値、2 枚以上あるときに中間スコープの Δ を
+    // 数えないと候補が両方とも外れて loopContext が null になる（§1.12）。
+    // 添字（wildcardPaths）に使うのは Δ を含まない段数のままであることに注意。
+    const outerArity = getScopeArity(outerAbsPathInfo.stateElement, outerAbsPathInfo.pathInfo);
     const nodeLoopContext = getLoopContextByNode(this._webComponent);
-    if (nodeLoopContext !== null && nodeLoopContext.listIndex.length === outerWildcardCount) {
+    if (nodeLoopContext !== null && nodeLoopContext.listIndex.length === outerArity) {
       return nodeLoopContext;
     }
     if (outerWildcardCount > 0) {
       const address = getCrossBoundaryAddress(this._innerStateElement, innerPathInfo.path);
       const listIndex = address?.listIndex ?? null;
-      if (listIndex !== null && listIndex.length === outerWildcardCount) {
+      if (listIndex !== null && listIndex.length === outerArity) {
         const outerWildcardPath = outerAbsPathInfo.pathInfo.wildcardPaths[outerWildcardCount - 1];
         return createStateAddress(getPathInfo(outerWildcardPath), listIndex) as ILoopContext;
       }
