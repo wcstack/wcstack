@@ -50,7 +50,7 @@ This document applies the "does the bind take" axis of [13-framework-adapter-bin
 | §1.10 | a component inside a parent-scope `for` cannot run a `for` in the child either (a silent hang) | ✅ fixed (2026-08-11, the remainder of §1.8) |
 | §1.11 | a parent-origin row-field write does not cross more than one boundary (the row ledger piggyback stops after one hop) | ✅ fixed (2026-08-13) |
 | §1.12 | a list cannot cross two boundaries when the intermediate component sits inside a parent `for` (Δ>0) | ✅ fixed (2026-08-17, found while fixing §1.11) |
-| §1.13 | a mapped Light DOM `bind-component` deadlocks during initialization | ❌ **open** (found 2026-08-17; documented in the README as a known limitation) |
+| §1.13 | a mapped Light DOM `bind-component` deadlocks during initialization | ✅ fixed (2026-08-17) |
 | §2.1 | the change event fires only on an exactly matching path | ✅ fixed (subpaths plus `$postUpdate` plus a property getter) |
 | §2.2 | the DCC accessors are asymmetric between synchronous and asynchronous | ✅ fixed (the setter made synchronous; `callFn` deliberately keeps its Promise) |
 | §2.3 | only `$bindables` has no declaration validation | ✅ fixed (structural validation plus an existence check; the `$streams` names resolved too) |
@@ -411,7 +411,7 @@ section down with it and destroys its independent signal (measured: all 6 failed
 shared a page). After the split, removing the §1.12 fix leaves the §1.11 page at 4/4 passing
 and the §1.12 page at 5/5 failing.
 
-### 1.13 A mapped Light DOM `bind-component` deadlocks during initialization ❌ open
+### 1.13 A mapped Light DOM `bind-component` deadlocks during initialization ✅ fixed (2026-08-17)
 
 Everything verified in §1.1 through §1.12 was **the Shadow DOM form**. The Light DOM form existed
 only in the README — there was **no test and no example anywhere in the repo**. Measured, it splits
@@ -438,16 +438,51 @@ different rootNode, never enters step 1's set, and the cycle cannot form. The po
 that **the rootNode's namespace separation was quietly providing initialization-order separation
 too** — the third instance, after §1.11 and §1.12, of something Shadow DOM was doing implicitly.
 
-Excluding `bind-component` elements from `waitForStateInitialize` is not enough on its own. In Light
-DOM the host's bindings and the component's bindings share one root and one `buildBindings` pass, and
-there is a dependency order between them; resolving both in a single pass needs an ordering, which
-makes this a change to the initialization sequence rather than a local patch.
+**The fix.** In the Shadow DOM form the rootNode separation was doing **two** things at once:
 
-For now this is recorded in both READMEs as a **known limitation** — use Shadow DOM when the
-component needs to bind to host state. The reproduction sits under `describe.skip` in
-[`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts),
-and the plain form that does work is pinned as a normal test in the same file. Remove the `.skip`
-once it is fixed.
+1. the child state never enters the host root's `waitForStateInitialize` set
+2. the child scope's bindings are processed in a `buildBindings` pass separate from the host's
+
+Light DOM loses both, and **both have to be restored explicitly** — one alone is not enough. Fixing
+only (1), by excluding the state from `waitForStateInitialize`, breaks the cycle but then the child
+scope's `@name` references are evaluated before the child state has registered its name, and fail to
+resolve.
+
+Three call sites change; the predicate lives in
+[`bindings/lightDomComponentScope.ts`](../../packages/state/src/bindings/lightDomComponentScope.ts).
+
+| | Change |
+|---|---|
+| `waitForStateInitialize` | drop mapped Light DOM states from the wait set (restores 1) |
+| `getSubscriberNodes` / `collectStructuralFragments` | prune the component's subtree from the host's pass (restores 2). The component element **itself** stays — the host's `data-wcs` belongs to the host scope, and creating that binding is what releases the child's wait |
+| `State.connectedCallback` | right after `_initialize()` registers the name, run `collectStructuralFragments` + `initializeBindings` over its own subtree |
+
+**`collectStructuralFragments` needs the prune too** — found during implementation. Fragment info is
+registered per rootNode *and state name*, so it is state-dependent: picking up the child's
+`<template data-wcs="for:">` in the host's pass raises
+`State element with name "..." not found for fragment info`. `convertMustacheToComments` is pure text
+manipulation and can stay whole-root.
+
+**Not catching the plain form** is the crux of the predicate. Plain never goes through
+`waitInitializeBinding`, so it does not deadlock and is fine initializing in the host's pass. Carving
+it out wholesale would regress the working plain form into resolving `@name` before the child state
+registers. The predicate is therefore narrowed to "has `bind-component`, parent is an Element, and
+that parent has a `data-wcs`".
+
+**Contract change**: `getBindingsReady(root)` no longer covers the component's scope. That matches
+the Shadow DOM form, where the child lives in a different rootNode, and is stated in both READMEs.
+
+The regression is on happy-dom
+([`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts))
+and in a real browser
+([`e2e/tests/state-bind-component-light-dom.spec.ts`](../../e2e/tests/state-bind-component-light-dom.spec.ts)).
+The plain form is kept in the same files, so a regression there fails too. In the real-browser control
+run, removing the fix fails **6 of 6** — the mapped throw wedges the whole document and takes the
+unrelated plain section down with it, the same phenomenon observed in §1.12.
+
+**Remaining constraint (a consequence of Light DOM, not a defect)**: the namespace is shared with the
+parent scope, so two instances with the same `name` cannot live in one scope. Use Shadow DOM for
+shapes that put a component on every row of a list.
 
 ---
 

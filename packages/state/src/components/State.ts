@@ -25,6 +25,8 @@ import { defineDCC } from "../dcc/defineDCC";
 import { getPathInfo } from "../address/PathInfo";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
+import { initializeBindings } from "../bindings/initializeBindings";
+import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { bindWebComponent } from "../webComponent/bindWebComponent";
 import { getBaseDepth } from "../webComponent/baseListIndex";
 import { propagateListPathToOuterState } from "../webComponent/outerListPath";
@@ -311,6 +313,37 @@ export class State extends HTMLElementBase implements IStateElement {
   }
 
   /**
+   * Light DOM の mapped コンポーネントが、自分のサブツリーのバインディングを張る（§1.13）。
+   *
+   * Shadow DOM 形では子スコープが別 rootNode にあり、`setStateElementByName` の初回登録から
+   * その root ぶんの `buildBindings` が別パスとして起動する。Light DOM ではホストと同じ root に
+   * いるためそのパスが存在せず、かといってホストのパスに混ぜると `@name` の解決が
+   * この要素の名前登録より先に来てしまう。そこで `getSubscriberNodes` がホスト側の走査から
+   * このサブツリーを外し、名前登録が済んだここで同じことを自前で行う。
+   *
+   * `{{ }}` の変換だけはホストのパスが root 全体に対して済ませている（純粋にテキスト操作で
+   * state に依存しないため）。構造フラグメントの収集は fragment info を rootNode + state 名で
+   * 登録するので state 依存であり、ホストのパスからは外してここで走らせる。
+   *
+   * ループ文脈を null で渡すのは Shadow DOM 形（`initializeBindings(shadowRoot, null)`）と
+   * 揃えるため —— 子孫の `getLoopContextByNode` はコンポーネント要素まで遡って
+   * 親スコープの行を見つける。
+   */
+  private _initializeLightDomComponentScope(): void {
+    const component = this._boundComponent;
+    if (component === null || this.parentNode !== component) {
+      // Shadow DOM 形（parentNode が ShadowRoot）は対象外
+      return;
+    }
+    if (!component.hasAttribute(config.bindAttributeName)) {
+      // plain 形はホストのパスに含まれたままなので、ここで張ると二重になる
+      return;
+    }
+    collectStructuralFragments(this._rootNode!, component);
+    initializeBindings(component, null);
+  }
+
+  /**
    * mapped な `bind-component` が切断 → 再接続したときに、束ねているパスを読み直させる（§1.9）。
    *
    * リスト行の content は再利用されるので、行が作り直されると子はこの経路を通る
@@ -411,6 +444,9 @@ export class State extends HTMLElementBase implements IStateElement {
       await this._initializeBindWebComponent();
       await this._initialize();
       this._initialized = true;
+      // 名前登録（_initialize の末尾）が済んだこの時点でなければ、子スコープの
+      // `@name` 参照が解決できない（§1.13）
+      this._initializeLightDomComponentScope();
       this._resolveInitialize?.();
     } else if (!this._dcc && getStateElementByName(this._rootNode, this._name) !== this) {
       // 再接続（disconnect で名前登録が解除された後の再 connect）: 登録を復元する。

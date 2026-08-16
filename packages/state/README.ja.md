@@ -1131,12 +1131,17 @@ customElements.define("my-light-component", MyLightComponent);
 - バインディングでは `@my-light` のように状態名を明示的に参照する必要があります
 - `<wcs-state>` はコンポーネント要素の直下に配置する必要があります
 
-> **既知の制限**: Light DOM で使えるのは上の**状態注入の形（親からバインドしない形）だけ**です。
-> ホスト側から `<my-light-component data-wcs="state.message: user.name">` のようにバインドすると、
-> 初期化が解決しないまま停止します。Light DOM ではコンポーネントの `<wcs-state>` がホストと同じ
-> rootNode に属するため、ホストのバインディング確立とコンポーネントの状態初期化が互いを待ちます。
-> **ホストの状態にバインドする必要がある場合は Shadow DOM を使ってください。**
-> 詳細は [ADR-15 §1.13](../../docs/architecture-hardening/15-state-component-mechanism-consistency.ja.md)。
+- ホスト側からのバインド（`<my-light-component data-wcs="state.message: user.name">`）も
+  Shadow DOM 形と同様に使えます。コンポーネントのサブツリーは**独立したバインディングスコープ**
+  として扱われ、コンポーネント側の状態が名前登録を終えてから配線されます
+
+> **注意**: Light DOM は名前空間を上位スコープと共有するため、**同じ `name` を持つインスタンスを
+> 同一スコープに複数置くことはできません**。リストの行ごとにコンポーネントを配置するような形は
+> Shadow DOM を使ってください。
+>
+> また `State.getBindingsReady(root)` はコンポーネントのスコープを含みません（Shadow DOM 形で
+> 子が別 rootNode にあるのと同じ扱いです）。コンポーネント内部の描画完了まで待ちたい場合は、
+> コンポーネント側の `<wcs-state>` の初期化を待ってください。
 
 ### ホスト側の使用方法
 
