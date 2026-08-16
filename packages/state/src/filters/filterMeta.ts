@@ -46,6 +46,8 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  abs:   { description: "絶対値",                 hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
+  clamp: { description: "範囲内に丸める (min,max)", hasArgs: true,  resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
   // 数値フォーマット
   fix:     { description: "固定小数点表記",                 hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   locale:  { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
@@ -59,6 +61,8 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   pad:    { description: "パディング (length[,char])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   rep:    { description: "繰り返し (count)",         hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   rev:    { description: "文字順を反転",             hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  truncate: { description: "切り詰めて省略記号 (length[,suffix])", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  join:     { description: "配列を連結 ([separator])",             hasArgs: true, resultType: "string", acceptTypes: ["array"],  minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 数値パース・丸め
   int:     { description: "整数にパース",         hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
   float:   { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
@@ -66,11 +70,15 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   floor:   { description: "切り下げ",             hasArgs: true,  resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   ceil:    { description: "切り上げ",             hasArgs: true,  resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
   percent: { description: "パーセンテージ形式",   hasArgs: true,  resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
+  // それらは既に string を返すため（builtinFilters.ts の unit を参照）
+  unit:    { description: "単位（接尾辞）を付加",  hasArgs: true,  resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
   // 日付・時刻
   date:     { description: "ロケール形式の日付", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   time:     { description: "ロケール形式の時刻", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   datetime: { description: "ロケール形式の日時", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   ymd:      { description: "YYYY-MM-DD 形式",   hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  hms:      { description: "HH:MM:SS 形式",     hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
   falsy:    { description: "偽値か判定",             hasArgs: false, resultType: "boolean",     acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
   truthy:   { description: "真値か判定",             hasArgs: false, resultType: "boolean",     acceptTypes: "any",      minArgs: 0, maxArgs: 0 },

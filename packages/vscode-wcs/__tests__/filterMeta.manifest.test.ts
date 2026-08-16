@@ -31,7 +31,10 @@ describe('BUILTIN_FILTERS は manifest（filterMeta 正本）から導出され�
     expect(byName.get('eq')?.hasArgs).toBe(true);
     expect(byName.get('slice')?.maxArgs).toBe(2);
     expect(byName.get('null')?.resultType).toBe('passthrough');
-    expect(BUILTIN_FILTERS.length).toBe(40);
+    // 件数は正本から引く。直書きするとフィルタを増減するたびに腐り、しかも消費している
+    // dist はリリース時にしか更新されないため、壊れるのが増減の瞬間ではなく次のビルド時になる。
+    // 「どのフィルタが存在するか」の golden は正本側（packages/state/__tests__/manifest.test.ts）が持つ。
+    expect(BUILTIN_FILTERS.length).toBe(Object.keys(builtinFilterMeta).length);
   });
 });
 

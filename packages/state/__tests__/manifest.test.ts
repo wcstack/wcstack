@@ -23,10 +23,10 @@ describe("wcs-manifest（単一正本・A2-1）", () => {
     expect(getWcsManifest().filters).toEqual([
       "eq", "ne", "not",
       "lt", "le", "gt", "ge",
-      "inc", "dec", "mul", "div", "mod",
-      "fix", "locale", "uc", "lc", "cap", "trim", "slice", "substr", "pad", "rep", "rev",
-      "int", "float", "round", "floor", "ceil", "percent",
-      "date", "time", "datetime", "ymd",
+      "inc", "dec", "mul", "div", "mod", "abs", "clamp",
+      "fix", "locale", "uc", "lc", "cap", "trim", "slice", "substr", "pad", "rep", "rev", "truncate", "join",
+      "int", "float", "round", "floor", "ceil", "percent", "unit",
+      "date", "time", "datetime", "ymd", "hms",
       "falsy", "truthy", "defaults",
       "boolean", "number", "string", "null",
     ]);

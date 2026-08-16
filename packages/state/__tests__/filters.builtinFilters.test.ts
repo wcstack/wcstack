@@ -385,4 +385,139 @@ describe('builtinFilters', () => {
       expect(getFilter('pad', ['3', '_'])('a')).toBe('__a');
     });
   });
+
+  describe('abs filter', () => {
+    it('絶対値を返すこと', () => {
+      const fn = getFilter('abs');
+      expect(fn(-3)).toBe(3);
+      expect(fn(3)).toBe(3);
+      expect(fn(0)).toBe(0);
+      expect(fn(-1.5)).toBe(1.5);
+    });
+
+    it('数値以外はエラーになること', () => {
+      expect(() => getFilter('abs')('x' as unknown as number)).toThrow(/requires a number value/);
+    });
+  });
+
+  describe('clamp filter', () => {
+    it('範囲内に丸めること', () => {
+      const fn = getFilter('clamp', ['0', '100']);
+      expect(fn(-10)).toBe(0);
+      expect(fn(50)).toBe(50);
+      expect(fn(120)).toBe(100);
+    });
+
+    it('境界値はそのまま返すこと', () => {
+      const fn = getFilter('clamp', ['0', '100']);
+      expect(fn(0)).toBe(0);
+      expect(fn(100)).toBe(100);
+    });
+
+    it('負の範囲や小数も扱えること', () => {
+      expect(getFilter('clamp', ['-1', '1'])(-5)).toBe(-1);
+      expect(getFilter('clamp', ['0', '1'])(0.5)).toBe(0.5);
+    });
+
+    it('オプションが不足しているとエラーになること', () => {
+      expect(() => getFilter('clamp')).toThrow(/requires at least one option/);
+      expect(() => getFilter('clamp', ['0'])).toThrow(/requires at least one option/);
+    });
+
+    it('オプションが数値でないとエラーになること', () => {
+      expect(() => getFilter('clamp', ['a', '1'])).toThrow(/requires a number as option/);
+      expect(() => getFilter('clamp', ['0', 'b'])).toThrow(/requires a number as option/);
+    });
+
+    it('数値以外はエラーになること', () => {
+      const fn = getFilter('clamp', ['0', '1']);
+      expect(() => fn('x' as unknown as number)).toThrow(/requires a number value/);
+    });
+  });
+
+  describe('unit filter', () => {
+    it('数値に単位を付けること', () => {
+      expect(getFilter('unit', ['px'])(10)).toBe('10px');
+      expect(getFilter('unit', ['%'])(50)).toBe('50%');
+      expect(getFilter('unit', ['rem'])(1.5)).toBe('1.5rem');
+    });
+
+    // fix / percent は string を返すため、実用チェーンは string 入力になる。
+    // ここで数値を要求すると「一番使いたい形」が通らなくなる
+    it('文字列を返すフィルターの後ろに繋げられること', () => {
+      const fix = getFilter('fix', ['1']);
+      const unit = getFilter('unit', ['px']);
+      expect(unit(fix(3.14159))).toBe('3.1px');
+    });
+
+    it('null / undefined は素通しすること', () => {
+      const fn = getFilter('unit', ['px']);
+      expect(fn(null)).toBe(null);
+      expect(fn(undefined)).toBe(undefined);
+    });
+
+    it('オプション未指定はエラーになること', () => {
+      expect(() => getFilter('unit')).toThrow(/requires at least one option/);
+    });
+  });
+
+  describe('join filter', () => {
+    it('既定の区切り文字で連結すること', () => {
+      expect(getFilter('join')(['a', 'b', 'c'])).toBe('a, b, c');
+    });
+
+    it('区切り文字を指定できること', () => {
+      expect(getFilter('join', [' / '])(['a', 'b'])).toBe('a / b');
+      expect(getFilter('join', [''])(['a', 'b'])).toBe('ab');
+    });
+
+    it('空配列は空文字になること', () => {
+      expect(getFilter('join')([])).toBe('');
+    });
+
+    it('配列以外はエラーになること', () => {
+      const fn = getFilter('join');
+      expect(() => fn('abc' as unknown as unknown[])).toThrow(/requires an array value/);
+    });
+  });
+
+  describe('truncate filter', () => {
+    it('上限を超える文字列を切り詰めて省略記号を付けること', () => {
+      expect(getFilter('truncate', ['3'])('abcdef')).toBe('abc…');
+    });
+
+    it('上限以下の文字列はそのまま返すこと', () => {
+      expect(getFilter('truncate', ['3'])('abc')).toBe('abc');
+      expect(getFilter('truncate', ['5'])('abc')).toBe('abc');
+    });
+
+    it('省略記号を指定できること', () => {
+      expect(getFilter('truncate', ['3', '...'])('abcdef')).toBe('abc...');
+      expect(getFilter('truncate', ['3', ''])('abcdef')).toBe('abc');
+    });
+
+    it('オプションが不足・非数値だとエラーになること', () => {
+      expect(() => getFilter('truncate')).toThrow(/requires at least one option/);
+      expect(() => getFilter('truncate', ['x'])).toThrow(/requires a number as option/);
+    });
+  });
+
+  describe('hms filter', () => {
+    it('時分秒フォーマットに変換できること', () => {
+      const fn = getFilter('hms', [':']);
+      expect(fn(new Date(2026, 0, 30, 9, 5, 6))).toBe('09:05:06');
+    });
+
+    it('既定の区切り文字を使えること', () => {
+      expect(getFilter('hms')(new Date(2026, 0, 30, 23, 59, 59))).toBe('23:59:59');
+    });
+
+    it('区切り文字を指定できること', () => {
+      expect(getFilter('hms', ['-'])(new Date(2026, 0, 30, 1, 2, 3))).toBe('01-02-03');
+    });
+
+    it('Date以外はエラーになること', () => {
+      expect(() => getFilter('hms')('09:05:06' as unknown as Date)).toThrow(/requires a date value/);
+    });
+  });
 });
