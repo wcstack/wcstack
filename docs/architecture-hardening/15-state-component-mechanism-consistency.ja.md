@@ -54,7 +54,7 @@
 | §1.10 | 親スコープの `for` の中のコンポーネントが子でも `for` を回せない（無言のハング） | ✅ 修正済み（2026-08-11・§1.8 の残件） |
 | §1.11 | 親起点の行フィールド書き込みが境界を 1 枚しか越えない（行台帳の相乗りが 1 段で止まる） | ✅ 修正済み（2026-08-13） |
 | §1.12 | 中間コンポーネントが親の `for` の中にいる（Δ>0）とリストが境界 2 枚を越えられない | ✅ 修正済み（2026-08-17・§1.11 の修正中に発見） |
-| §1.13 | mapped な Light DOM の `bind-component` が初期化でデッドロックする | ❌ **未修正**（2026-08-17 発見・README に既知の制限として明記） |
+| §1.13 | mapped な Light DOM の `bind-component` が初期化でデッドロックする | ✅ 修正済み（2026-08-17） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ✅ 修正済み（サブパス ＋ `$postUpdate` ＋ property getter） |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ✅ 修正済み（setter を同期化。`callFn` は意図的に Promise 維持） |
 | §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
@@ -614,7 +614,7 @@ throw してドキュメント全体をウェッジするので、同居させ�
 独立した信号にならない（1 枚だったときの制御実験で 6 件全滅を実測した）。分けたあとの
 制御実験では、§1.12 の修正を外すと §1.11 ページ 4/4 通過・§1.12 ページ 5/5 失敗になる。
 
-### 1.13 mapped な Light DOM の `bind-component` が初期化でデッドロックする ❌ 未修正
+### 1.13 mapped な Light DOM の `bind-component` が初期化でデッドロックする ✅ 修正済み（2026-08-17）
 
 §1.1〜§1.12 の検証は**すべて Shadow DOM 形**で行われていた。Light DOM 形は README にだけ
 存在し、**repo 全体でテストも example も 1 件も無かった**。測ると 2 つに割れる。
@@ -640,16 +640,46 @@ throw してドキュメント全体をウェッジするので、同居させ�
 初期化順序の分離も担っていた**というのがこの件の要点で、§1.11 / §1.12 で見た
 「Shadow DOM が暗黙に効かせていたもの」の 3 つ目にあたる。
 
-`waitForStateInitialize` から `bind-component` 付きを除くだけでは足りない。Light DOM では
-ホスト側のバインディングとコンポーネント側のバインディングが同一 root・同一 `buildBindings`
-パスに同居していて、両者に依存順序がある。1 パスで両方を解決する順序付けが要るので、
-初期化シーケンス側の設計変更になる。
+**修正の方針**＝Shadow DOM 形では rootNode の分離が**2 つのこと**を同時に成立させていた。
 
-当座は README（英日）に**既知の制限**として明記した ——
-「ホスト状態にバインドする必要があるなら Shadow DOM を使う」。
-再現は [`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts)
-の `describe.skip` にあり、成立している plain 形は同ファイルで通常のテストとして固定してある。
-直したら `.skip` を外すこと。
+1. ホスト root の `waitForStateInitialize` の走査集合に子 state が入らない
+2. 子スコープのバインディングがホストとは別の `buildBindings` パスで処理される
+
+Light DOM ではこの 2 つが両方失われている。**両方を明示的に復元する**のが直し方で、
+片方だけでは足りない。1 だけ直すと（`waitForStateInitialize` から除くだけ）循環は解けるが、
+子スコープの `@name` 参照が子 state の名前登録より先に評価されて解決に失敗する。
+
+実装は 3 箇所（判定は [`bindings/lightDomComponentScope.ts`](../../packages/state/src/bindings/lightDomComponentScope.ts) に集約）。
+
+| | 変更 |
+|---|---|
+| `waitForStateInitialize` | mapped な Light DOM state を待ち集合から除く（1 の復元） |
+| `getSubscriberNodes` / `collectStructuralFragments` | コンポーネントのサブツリーをホストのパスから prune（2 の復元）。コンポーネント要素**自身**は残す —— ホスト側の `data-wcs` はホストのスコープに属し、それが張られることで子の待ちが解ける |
+| `State.connectedCallback` | `_initialize()` の名前登録が済んだ直後に、自分のサブツリーぶんの `collectStructuralFragments` + `initializeBindings` を呼ぶ |
+
+**`collectStructuralFragments` も prune が要る**のが実装中に踏んだ点。fragment info は
+rootNode + state 名で登録されるため state 依存で、ホストのパスで子の `<template data-wcs="for:">`
+を拾うと `State element with name "..." not found for fragment info` になる。
+`convertMustacheToComments` は純粋なテキスト操作なので root 全体のままでよい。
+
+**plain 形を巻き込まないこと**が判定の要点。plain は `waitInitializeBinding` を通らないので
+循環せず、従来どおりホストと同じパスで初期化して問題ない。一律に切り出すと、成立している
+plain 形が「子 state の登録前に `@name` を解決する」形に退行する。判定を
+「`bind-component` を持ち、親が Element で、その親が `data-wcs` を持つ」に絞ってある。
+
+**契約の変更**＝`getBindingsReady(root)` はコンポーネントのスコープを含まなくなった。
+これは Shadow DOM 形（子が別 rootNode）と同じ扱いで、README にも明記した。
+
+回帰は happy-dom
+（[`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts)）と
+実ブラウザ（[`e2e/tests/state-bind-component-light-dom.spec.ts`](../../e2e/tests/state-bind-component-light-dom.spec.ts)）の
+両方。plain 形も同じファイルに残してあり、退行すれば落ちる。実ブラウザ側の制御実験では、
+修正を外すと **6/6 が失敗**する（mapped の throw がドキュメント全体をウェッジするため、
+無関係な plain 形まで道連れになる —— §1.12 で観測したのと同じ現象）。
+
+**残る制約（欠陥ではなく Light DOM の帰結）**＝名前空間を上位と共有するので、同じ `name` の
+インスタンスを同一スコープに複数置けない。リストの行ごとにコンポーネントを配置する形は
+Shadow DOM を使うこと。
 
 ---
 

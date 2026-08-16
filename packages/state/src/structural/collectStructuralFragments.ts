@@ -1,4 +1,5 @@
 import { getParseBindTextResults } from "../bindings/getParseBindTextResults";
+import { findNestedLightDomComponents } from "../bindings/lightDomComponentScope";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { config } from "../config";
@@ -57,12 +58,20 @@ function _getFragmentInfo(
 
 export function collectStructuralFragments(rootNode: Node, walkRoot: Document | Element | DocumentFragment, forPath?: string): void {
   const elseKeyword = config.commentElsePrefix;
+  // Light DOM の mapped コンポーネントの内側は、その子スコープが自分で処理する（§1.13）。
+  // fragment info は rootNode + state 名で登録されるため、ホストのパスでここを拾うと
+  // コンポーネント側の state がまだ名前登録を済ませておらず解決に失敗する。
+  // コンポーネント要素自身は template ではないので、REJECT でサブツリーごと落として問題ない。
+  const nestedComponents = findNestedLightDomComponents(walkRoot);
   const walker = document.createTreeWalker(
-    walkRoot, 
-    NodeFilter.SHOW_ELEMENT, 
+    walkRoot,
+    NodeFilter.SHOW_ELEMENT,
     {
       acceptNode(node: Node) {
         const element = node as Element;
+        if (nestedComponents.length > 0 && nestedComponents.indexOf(element) !== -1) {
+          return NodeFilter.FILTER_REJECT;
+        }
         if (element.tagName.toLowerCase() === 'template') {
           const bindText = element.getAttribute(config.bindAttributeName) || '';
           if (bindText.length > 0) {
