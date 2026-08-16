@@ -54,6 +54,7 @@
 | §1.10 | 親スコープの `for` の中のコンポーネントが子でも `for` を回せない（無言のハング） | ✅ 修正済み（2026-08-11・§1.8 の残件） |
 | §1.11 | 親起点の行フィールド書き込みが境界を 1 枚しか越えない（行台帳の相乗りが 1 段で止まる） | ✅ 修正済み（2026-08-13） |
 | §1.12 | 中間コンポーネントが親の `for` の中にいる（Δ>0）とリストが境界 2 枚を越えられない | ✅ 修正済み（2026-08-17・§1.11 の修正中に発見） |
+| §1.13 | mapped な Light DOM の `bind-component` が初期化でデッドロックする | ❌ **未修正**（2026-08-17 発見・README に既知の制限として明記） |
 | §2.1 | 変更イベントが完全一致パスでしか出ない | ✅ 修正済み（サブパス ＋ `$postUpdate` ＋ property getter） |
 | §2.2 | DCC アクセサの同期／非同期が非対称 | ✅ 修正済み（setter を同期化。`callFn` は意図的に Promise 維持） |
 | §2.3 | `$bindables` だけ宣言検証が無い | ✅ 修正済み（構造検証＋存在検査。`$streams` 名も解決） |
@@ -612,6 +613,43 @@ host { groups: [ { children: [...] }, ... ] }
 throw してドキュメント全体をウェッジするので、同居させると §1.11 側も道連れになって
 独立した信号にならない（1 枚だったときの制御実験で 6 件全滅を実測した）。分けたあとの
 制御実験では、§1.12 の修正を外すと §1.11 ページ 4/4 通過・§1.12 ページ 5/5 失敗になる。
+
+### 1.13 mapped な Light DOM の `bind-component` が初期化でデッドロックする ❌ 未修正
+
+§1.1〜§1.12 の検証は**すべて Shadow DOM 形**で行われていた。Light DOM 形は README にだけ
+存在し、**repo 全体でテストも example も 1 件も無かった**。測ると 2 つに割れる。
+
+| Light DOM の形 | 結果 |
+|---|---|
+| **plain**（親からバインドしない state 注入） | ✅ 成立 |
+| **mapped**（ホストから `data-wcs="state.msg: user.name"`） | ❌ `initializePromise` も `getBindingsReady` も永久に未解決 |
+
+循環の実体（`data-wcs` を外すと全部解決することで切り分け済み）:
+
+1. ホスト root の `buildBindings` は `waitForStateInitialize(root)` を通る。これは
+   `root.querySelectorAll("wcs-state")` で **root 内の全 state 要素**の `initializePromise` を
+   待つ。Light DOM ではコンポーネントの内側の `<wcs-state>` も同じ root にいるので、
+   この集合に入ってしまう
+2. その内側の state は `_initializeBindWebComponent` で
+   `waitInitializeBinding(boundComponent)` を待つ（コンポーネント要素に `data-wcs` があるため）
+3. その binding を作るのはホスト root の `initializeBindings()` で、1 の
+   `waitForStateInitialize` の**後**に走る
+
+→ 1 が 2 を待ち、2 が 3 を待ち、3 は 1 の後。Shadow DOM 形では内側の state が別 rootNode に
+いるため 1 の集合に入らず、循環が成立しない。**rootNode による名前空間の分離が、実は
+初期化順序の分離も担っていた**というのがこの件の要点で、§1.11 / §1.12 で見た
+「Shadow DOM が暗黙に効かせていたもの」の 3 つ目にあたる。
+
+`waitForStateInitialize` から `bind-component` 付きを除くだけでは足りない。Light DOM では
+ホスト側のバインディングとコンポーネント側のバインディングが同一 root・同一 `buildBindings`
+パスに同居していて、両者に依存順序がある。1 パスで両方を解決する順序付けが要るので、
+初期化シーケンス側の設計変更になる。
+
+当座は README（英日）に**既知の制限**として明記した ——
+「ホスト状態にバインドする必要があるなら Shadow DOM を使う」。
+再現は [`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts)
+の `describe.skip` にあり、成立している plain 形は同ファイルで通常のテストとして固定してある。
+直したら `.skip` を外すこと。
 
 ---
 

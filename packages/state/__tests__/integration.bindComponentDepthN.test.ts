@@ -299,8 +299,8 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
  *
  *   host { groups: [ { children: [...] }, ... ] }
  *     └ <template for: groups>
- *          └ <panel state.items: groups.*.children>   … Δ=1 の中間（素通し）
- *               └ <card state.list: items>            … 最下層が回す
+ *          └ <p1 state.items: groups.*.children>   … Δ=1 の中間（素通し）
+ *               └ … <pN state.items: items>        … 最下層が回す
  *
  * これは `ListIndex not found: groups.*.children.*.name` で**初期描画から**落ちていた。
  * つまり行フィールドの購読（§1.11）より手前、listIndex の越境そのものが不成立だった。
@@ -310,44 +310,47 @@ describe.each([1, 2, 3])("bind-component: リストが境界を %i 枚越える"
  * 修正は Δ の境界越え合成（`getBaseListIndex` の外向き walk）と、越境照合を
  * **両側の実 arity**（`getScopeArity` = パス段数 + そのスコープの Δ）で行うこと。
  * 片側にだけ Δ を足すと、境界が 2 枚あるとき中間スコープの Δ を二重計上する。
+ *
+ * 深さを変数にしているのは、修正がどちらも**段数に依存しない形**（walk とペア比較）
+ * だと主張しているため。3 枚でも成立することがその主張の検算になる。
  */
-describe("bind-component: 親ループの中の中間コンポーネント越しに 2 枚越える (Δ>0)", () => {
-  async function mountNestedChainDepth2() {
-    const cardTag = uniqueTag("bcd2-card");
-    const panelTag = uniqueTag("bcd2-panel");
+describe.each([2, 3])("bind-component: 親ループの中の中間コンポーネント越しに %i 枚越える (Δ>0)", (depth) => {
+  async function mountNestedChain() {
+    // 最下層から組み立てる。最下層だけが `for` を回し、それより上は素通し。
+    let innerMarkup =
+      `<ul><template data-wcs="for: items">` +
+      `<li class="row" data-wcs="textContent: items.*.name"></li>` +
+      `</template></ul>`;
+    const tags: string[] = [];
+    for (let level = depth; level >= 1; level--) {
+      const tag = uniqueTag(`bcd${depth}-l${level}`);
+      defineComponent(tag, { items: [] }, innerMarkup, "connectedCallback");
+      // 最上段だけ親ループの行（Δ=1 の位置）を受け、それ以外は 1 つ外の `items`
+      const outerPath = level === 1 ? "groups.*.children" : "items";
+      innerMarkup = `<${tag} data-wcs="state.items: ${outerPath}"></${tag}>`;
+      tags.unshift(tag);
+    }
 
-    defineComponent(
-      cardTag,
-      { list: [] },
-      `<ul><template data-wcs="for: list">` +
-        `<li class="row" data-wcs="textContent: list.*.name"></li>` +
-        `</template></ul>`,
-      "connectedCallback",
-    );
-    defineComponent(
-      panelTag,
-      { items: [] },
-      `<${cardTag} data-wcs="state.list: items"></${cardTag}>`,
-      "connectedCallback",
-    );
-
-    const host = document.createElement(uniqueTag("bcd2-host"));
+    const host = document.createElement(uniqueTag("bcd-host"));
     const hostShadow = host.attachShadow({ mode: "open" });
     hostShadow.innerHTML =
       `<wcs-state json='{"groups":[{"children":[{"name":"a"},{"name":"b"}]},{"children":[{"name":"c"}]}]}'></wcs-state>` +
-      `<template data-wcs="for: groups">` +
-      `<${panelTag} data-wcs="state.items: groups.*.children"></${panelTag}>` +
-      `</template>`;
+      `<template data-wcs="for: groups">${innerMarkup}</template>`;
     document.body.appendChild(host);
 
     const hostState = await readyScope(hostShadow);
-    const panels = Array.from(hostShadow.querySelectorAll(panelTag)) as HTMLElement[];
+
+    // グループごとに、最上段から最下層まで scope を確立する
     const leafShadows: ShadowRoot[] = [];
-    for (const panel of panels) {
-      await readyScope(panel.shadowRoot!);
-      const card = panel.shadowRoot!.querySelector(cardTag) as HTMLElement;
-      await readyScope(card.shadowRoot!);
-      leafShadows.push(card.shadowRoot!);
+    for (const outermost of Array.from(hostShadow.querySelectorAll(tags[0])) as HTMLElement[]) {
+      let current: HTMLElement = outermost;
+      for (let level = 0; level < tags.length; level++) {
+        await readyScope(current.shadowRoot!);
+        if (level + 1 < tags.length) {
+          current = current.shadowRoot!.querySelector(tags[level + 1]) as HTMLElement;
+        }
+      }
+      leafShadows.push(current.shadowRoot!);
     }
     await flush();
 
@@ -360,13 +363,13 @@ describe("bind-component: 親ループの中の中間コンポーネント越し
   }
 
   it("初期描画が全グループで成立すること", async () => {
-    const { host, groupRows } = await mountNestedChainDepth2();
+    const { host, groupRows } = await mountNestedChain();
     expect(groupRows()).toEqual([["a", "b"], ["c"]]);
     host.remove();
   });
 
   it("最上位の行フィールド書き込みが該当グループの行にだけ届くこと", async () => {
-    const { host, hostState, groupRows } = await mountNestedChainDepth2();
+    const { host, hostState, groupRows } = await mountNestedChain();
 
     hostState.createState("writable", (s: any) => {
       s["groups.0.children.1.name"] = "b2";
@@ -374,6 +377,18 @@ describe("bind-component: 親ループの中の中間コンポーネント越し
     await flush();
 
     expect(groupRows()).toEqual([["a", "b2"], ["c"]]);
+    host.remove();
+  });
+
+  it("最上位の行配列の差し替えが該当グループにだけ届くこと", async () => {
+    const { host, hostState, groupRows } = await mountNestedChain();
+
+    hostState.createState("writable", (s: any) => {
+      s["groups.0.children"] = [{ name: "x" }, { name: "y" }, { name: "z" }];
+    });
+    await flush();
+
+    expect(groupRows()).toEqual([["x", "y", "z"], ["c"]]);
     host.remove();
   });
 });

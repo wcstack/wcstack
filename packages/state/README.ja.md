@@ -1131,6 +1131,13 @@ customElements.define("my-light-component", MyLightComponent);
 - バインディングでは `@my-light` のように状態名を明示的に参照する必要があります
 - `<wcs-state>` はコンポーネント要素の直下に配置する必要があります
 
+> **既知の制限**: Light DOM で使えるのは上の**状態注入の形（親からバインドしない形）だけ**です。
+> ホスト側から `<my-light-component data-wcs="state.message: user.name">` のようにバインドすると、
+> 初期化が解決しないまま停止します。Light DOM ではコンポーネントの `<wcs-state>` がホストと同じ
+> rootNode に属するため、ホストのバインディング確立とコンポーネントの状態初期化が互いを待ちます。
+> **ホストの状態にバインドする必要がある場合は Shadow DOM を使ってください。**
+> 詳細は [ADR-15 §1.13](../../docs/architecture-hardening/15-state-component-mechanism-consistency.ja.md)。
+
 ### ホスト側の使用方法
 
 ```html
