@@ -48,6 +48,8 @@ This document applies the "does the bind take" axis of [13-framework-adapter-bin
 | §1.8 | a child scope cannot iterate the parent's list with `for` (the listIndex is lost crossing the boundary; it fails from the first render) | ✅ fixed (2026-08-10, the remainder of §1.7) |
 | §1.9 | replacing a list whose rows contain components kills `for` (the form documented in the README; unrecoverable) | ✅ fixed (2026-08-10, found during §1.8's spike) |
 | §1.10 | a component inside a parent-scope `for` cannot run a `for` in the child either (a silent hang) | ✅ fixed (2026-08-11, the remainder of §1.8) |
+| §1.11 | a parent-origin row-field write does not cross more than one boundary (the row ledger piggyback stops after one hop) | ✅ fixed (2026-08-13) |
+| §1.12 | a list cannot cross two boundaries when the intermediate component sits inside a parent `for` (Δ>0) | ✅ fixed (2026-08-17, found while fixing §1.11) |
 | §2.1 | the change event fires only on an exactly matching path | ✅ fixed (subpaths plus `$postUpdate` plus a property getter) |
 | §2.2 | the DCC accessors are asymmetric between synchronous and asynchronous | ✅ fixed (the setter made synchronous; `callFn` deliberately keeps its Promise) |
 | §2.3 | only `$bindables` has no declaration validation | ✅ fixed (structural validation plus an existence check; the `$streams` names resolved too) |
@@ -314,6 +316,99 @@ The regression is on happy-dom
 ([`integration.bindComponentNestedFor.test.ts`](../../packages/state/__tests__/integration.bindComponentNestedFor.test.ts),
 [`webComponent.baseListIndex.test.ts`](../../packages/state/__tests__/webComponent.baseListIndex.test.ts)) and in a real browser
 ([`e2e/tests/state-bind-component-nested-for.spec.ts`](../../e2e/tests/state-bind-component-nested-for.spec.ts)). Both line up **the form that builds the shadow in the constructor and the form that builds it in connectedCallback** (the reason in §1.9). One phenomenon appeared only in the real browser — the existing behavior where a write to an out-of-range row throws `ListIndex not found: <parent path>`, whose message points at the wrong cause (unrelated to this work, but recorded in design doc §8.4; fixed on 2026-08-11 to an indexed message).
+
+### 1.11 A parent-origin row-field write does not cross more than one boundary ✅ fixed (2026-08-13)
+
+Everything verified in §1.1 through §1.10 sat at **depth 1** — host to component, one
+boundary. What §1.10 nested was the `for`, not the boundary. The form with two boundaries
+stacked — a mapped `bind-component` inside another component's shadow — had never been
+measured.
+
+Measured, **scalar paths hold in every direction down to depth 4**. They do so because the
+resolution is recursive: `innerState`'s get / set re-enter `outerAbsPathInfo.stateElement`,
+and that outer element may itself be an innerState, so extra hops compose with no special
+casing. Lists also hold to depth 3 for the initial render, list replacement, and write-back
+from the leaf.
+
+The one case that did not hold is a **parent-origin row-field write**, which stops at depth 1.
+The cause is that the mechanism added in §1.8 — piggybacking a row binding onto the parent's
+pattern ledger — was an **explicit one-shot registration**. `getOuterRowPathInfo` walked one
+boundary outward and stopped, and the record kept the result in the single
+`record.outerPatternPathInfo` field. At depth 2 the leaf row is therefore only listed under the
+intermediate scope's `list.*.name`, and when the host that owns the values writes
+`rows.*.name` there is no subscriber at all — the intermediate scope merely passes the array
+through and owns no row binding of its own, so it does not relay either.
+
+> **What resolves recursively scales with depth; what registers explicitly stops at one.**
+
+The fix makes the outward walk multi-hop (`getOuterRowPathInfosBeyond`) and promotes the
+record to `outerPatternPathInfosRest`. The first hop is unchanged, and the rest stays `null`
+when there is no second hop — so the overwhelmingly common depth-1 row allocates no array
+(the same "hold one, promote on the second" idiom as `interestedSessionsByNode`). Each hop is
+registered only after checking `Δ + innerW === outerW`, so a hop whose arity does not line up
+stops the walk and falls back to the previous behavior. Teardown releases every hop
+individually (each is an independent resource).
+
+The regression is [`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts).
+The point is that **depth 1 is kept in the same test as the control**: if depth 1 passes and
+depth 2 fails, that points at the mechanism rather than at how the test was written. Depth is
+parameterised from 1 to 4, and both the constructor-built and connectedCallback-built shadow
+forms are lined up (the reason in §1.9).
+
+### 1.12 A list cannot cross two boundaries when the intermediate component sits inside a parent `for` ✅ fixed (2026-08-17)
+
+§1.10's nested form with one more boundary added, the intermediate component sitting at Δ=1.
+
+```
+host { groups: [ { children: [...] }, ... ] }
+  └ <template for: groups>
+       └ <panel state.items: groups.*.children>   … the Δ=1 intermediate (pass-through)
+            └ <card state.list: items>            … the leaf iterates
+```
+
+This failed **from the initial render** with `ListIndex not found: groups.*.children.*.name`,
+i.e. upstream of the row-field subscription (§1.11): the listIndex did not cross at all. It is
+independent of the §1.11 fix, and the symptoms were confirmed identical before and after it
+before this work started.
+
+**There were two causes, and neither alone is sufficient.**
+
+**(1) Δ is severed at the boundary.** `getLoopContextByNode` walks `parentNode` only, and a
+ShadowRoot's `parentNode` is `null`, so it **always stops at the first shadow boundary**. With
+one boundary the outer scope is the plain document scope and Δ=0 is correct; with two, the
+intermediate scope's Δ was dropped entirely and the leaf built its rows at a shallower arity
+than the scope that owns them. `getBaseListIndex` is now an outward walk: when a scope has no
+enclosing loop of its own, it inherits Δ from one scope further out. If that outer scope is not
+mapped (i.e. it owns the values), the next iteration's leading guard stops the walk.
+
+The link to "one scope out" is recorded by `buildPrimaryMappingRule` (the state element the
+rule's outer side belongs to *is* the scope that owns the values). The ledger lives in
+`stateElementByWebComponent` rather than `MappingRule` to avoid an import cycle
+(baseListIndex → MappingRule → BindingSession → outerListPath → baseListIndex).
+
+**(2) The cross-boundary check double-counts Δ.** Fixing (1) alone just moves the error to
+`ListIndex not found: items.*.name` — the intermediate scope's path. The old check was
+`Δ + innerW === outerW`, adding Δ to the **inner side only**, which silently assumed the outer
+side was at Δ=0. With two boundaries the intermediate scope is itself at Δ>0, so hops that
+should line up are rejected.
+
+The check now compares the **real arity on both sides** (`getScopeArity` = the path's wildcard
+count plus that scope's Δ). It is equivalent to the old formula whenever the outer side is at
+Δ=0, so the existing §1.8 / §1.10 shapes are unchanged. Two call sites were updated:
+`outerListPath.stepOuterRowPathInfo` (whether a piggyback hop holds) and
+`innerState._outerLoopContext` (picking the loop context for a crossing). Note that the latter
+keeps using the Δ-free wildcard count for **indexing** `wildcardPaths` — that is a different
+quantity from the arity being compared.
+
+The regression is on happy-dom
+([`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts))
+and in a real browser
+([`e2e/tests/state-bind-component-depth2.spec.ts`](../../e2e/tests/state-bind-component-depth2.spec.ts)).
+**The fixtures are split in two, §1.11 (flat) and §1.12 (Δ>0)** — the §1.12 failure throws
+during the initial render and wedges the whole document, so sharing a page takes the §1.11
+section down with it and destroys its independent signal (measured: all 6 failed when they
+shared a page). After the split, removing the §1.12 fix leaves the §1.11 page at 4/4 passing
+and the §1.12 page at 5/5 failing.
 
 ---
 

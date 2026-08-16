@@ -20,24 +20,60 @@
  * ホットパスに walk は載らない。
  */
 
+import { IPathInfo } from "../address/types";
 import { IStateElement } from "../components/types";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { IListIndex } from "../list/types";
+import { getOuterStateElementByWebComponent } from "./stateElementByWebComponent";
 
 export function getBaseListIndex(stateElement: IStateElement | null | undefined): IListIndex | null {
-  if (stateElement == null || stateElement.hasMappedComponentState !== true) {
-    return null;
+  let current: IStateElement | null | undefined = stateElement;
+  for (;;) {
+    if (current == null || current.hasMappedComponentState !== true) {
+      return null;
+    }
+    const component: Element | null | undefined = current.boundComponent;
+    if (component == null) {
+      return null;
+    }
+    const listIndex = getLoopContextByNode(component)?.listIndex;
+    if (listIndex != null) {
+      return listIndex;
+    }
+    // このスコープには囲むループが無い。コンポーネントがさらに別の mapped な
+    // コンポーネントの shadow の中にいるなら、Δ は外側スコープから引き継ぐ（§1.12）。
+    //
+    // `getLoopContextByNode` は `parentNode` しか辿らず、ShadowRoot の parentNode は
+    // null なので shadow 境界で必ず止まる。境界 1 枚なら外側は素の文書スコープで
+    // Δ=0 が正しいが、2 枚重なっていると中間スコープの Δ が丸ごと落ちて
+    // 子の listIndex が正本スコープより浅い arity で作られる。
+    //
+    // 外側が mapped でない（＝値の正本がそのスコープにある）なら、そこから先の
+    // ループはこの子のリストとは無関係なので次の周回の先頭ガードで止まる。
+    current = getOuterStateElementByWebComponent(component);
   }
-  const component = stateElement.boundComponent;
-  if (component == null) {
-    return null;
-  }
-  return getLoopContextByNode(component)?.listIndex ?? null;
 }
 
 /** base の段数 Δ。base が無ければ 0。 */
 export function getBaseDepth(stateElement: IStateElement | null | undefined): number {
   return getBaseListIndex(stateElement)?.length ?? 0;
+}
+
+/**
+ * そのスコープでそのパスに実際に使われる listIndex の arity。
+ *
+ * パス自身のワイルドカード段数に、そのスコープが外側のループの内側にいる分（Δ）を
+ * 足したもの。`items.*` は子スコープから見れば 1 段でも、そのスコープが Δ=1 の位置に
+ * あれば台帳の listIndex は arity 2 になる（§1.10）。
+ *
+ * **境界を跨ぐ照合はこの実 arity どうしで行うこと**（§1.12）。片側だけ Δ を足すと、
+ * 境界が 2 枚以上あるときに中間スコープの Δ を二重計上して不一致になる。
+ */
+export function getScopeArity(
+  stateElement: IStateElement | null | undefined,
+  pathInfo: IPathInfo,
+): number {
+  return pathInfo.wildcardCount + getBaseDepth(stateElement);
 }
 
 /**
