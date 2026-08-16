@@ -9,14 +9,14 @@
  * - Designed for common use as both input and output filters
  *
  * Design points:
- * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, fix, locale, uc, lc, cap, trim, slice, pad, int, float, round, date, time, ymd, falsy, truthy, defaults, boolean, number, string, null, etc.
+ * - Comprehensive coverage of diverse filters: eq, ne, lt, gt, inc, abs, clamp, fix, locale, uc, lc, cap, trim, slice, pad, truncate, join, int, float, round, percent, unit, date, time, ymd, hms, falsy, truthy, defaults, boolean, number, string, null, etc.
  * - Rich type checking and error handling for option values
  * - Centralized management of filter functions with FilterWithOptions type, easy to extend
  * - Dynamic retrieval of filter functions from filter names and options via builtinFilterFn
  */
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
-import { optionMustBeNumber, optionsRequired, valueMustBeBoolean, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
+import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeBoolean, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
 import { FilterFn, FilterWithOptions } from "./types";
 
 function validateNumberString(value: string): boolean {
@@ -219,8 +219,44 @@ const mod = (options?:string[]): FilterFn<number> => {
 }
 
 /**
+ * Absolute value filter - returns the magnitude of a number.
+ *
+ * @param options - Unused
+ * @returns Filter function that returns the absolute value
+ */
+const abs = (_options?:string[]): FilterFn<number> => {
+  return (value: unknown): number => {
+    if (typeof value !== 'number') {valueMustBeNumber('abs');}
+    return Math.abs(value);
+  }
+}
+
+/**
+ * Clamp filter - constrains a number to the inclusive range [min, max].
+ *
+ * Saturating conversion in the same family as round/floor/ceil, so it stays on
+ * the wire rather than in state. Pairs with `unit` for style bindings:
+ * `style.width: ratio|clamp(0,1)|percent(0)`.
+ *
+ * @param options - Array with minimum as first element and maximum as second (both required)
+ * @returns Filter function that returns the clamped number
+ */
+const clamp = (options?:string[]): FilterFn<number> => {
+  const opt1 = options?.[0] ?? optionsRequired('clamp');
+  if (!validateNumberString(opt1)) {optionMustBeNumber('clamp');}
+  const opt2 = options?.[1] ?? optionsRequired('clamp');
+  if (!validateNumberString(opt2)) {optionMustBeNumber('clamp');}
+  const min = Number(opt1);
+  const max = Number(opt2);
+  return (value: unknown): number => {
+    if (typeof value !== 'number') {valueMustBeNumber('clamp');}
+    return Math.min(Math.max(value, min), max);
+  }
+}
+
+/**
  * Fixed decimal filter - formats number to fixed decimal places.
- * 
+ *
  * @param options - Array with decimal places as first element (default: 0)
  * @returns Filter function that returns formatted string
  */
@@ -464,8 +500,73 @@ const percent = (options?:string[]): FilterFn<string> => {
 }
 
 /**
+ * Unit filter - appends a CSS unit (or any suffix) to the value.
+ *
+ * A number alone does nothing in CSS, so without this the unit has to be built in
+ * state — which drags presentation into the source of truth, and in the worst case
+ * forces a whole derived array just to carry `"42%"` strings.
+ * `style.height: samples.*.cpu|clamp(0,100)|fix(0)|unit(%)` keeps it on the wire.
+ *
+ * Accepts strings as well as numbers **on purpose**: the useful chains run through
+ * `fix` / `percent`, which already return strings. Rejecting non-numbers here would
+ * break exactly the combination this filter exists for.
+ *
+ * `null` / `undefined` pass through untouched rather than becoming `"undefinedpx"`,
+ * so the binding layer's "undefined skips the write, null clears" semantics survive.
+ *
+ * @param options - Array with the unit/suffix as first element (required)
+ * @returns Filter function that returns the value with the unit appended
+ */
+const unit = (options?:string[]): FilterFn<unknown> => {
+  const opt = options?.[0] ?? optionsRequired('unit');
+  return (value: unknown): unknown => {
+    if (value === null || typeof value === 'undefined') {return value;}
+    return String(value) + opt;
+  }
+}
+
+/**
+ * Join filter - joins array elements into a string.
+ *
+ * The default separator is `", "` rather than `","`: a bare comma is what `String()`
+ * already produces without any filter, so defaulting to it would make `|join` a no-op.
+ *
+ * @param options - Array with separator as first element (default: ', ')
+ * @returns Filter function that returns the joined string
+ */
+const join = (options?:string[]): FilterFn<string> => {
+  const opt = options?.[0] ?? ', ';
+  return (value: unknown): string => {
+    if (!Array.isArray(value)) {valueMustBeArray('join');}
+    return value.join(opt);
+  }
+}
+
+/**
+ * Truncate filter - shortens a string and appends an ellipsis.
+ *
+ * The length option counts **kept characters**, not the total including the suffix,
+ * matching the existing `slice(0, n)` reading. A string at or below the limit is
+ * returned untouched (no suffix).
+ *
+ * @param options - Array with max kept length as first element and suffix as second (default: '…')
+ * @returns Filter function that returns the truncated string
+ */
+const truncate = (options?:string[]): FilterFn<string> => {
+  const opt1 = options?.[0] ?? optionsRequired('truncate');
+  if (!validateNumberString(opt1)) {optionMustBeNumber('truncate');}
+  const maxLength = Number(opt1);
+  const suffix = options?.[1] ?? '…';
+  return (value: unknown): string => {
+    const v = String(value);
+    if (v.length <= maxLength) {return v;}
+    return v.slice(0, maxLength) + suffix;
+  }
+}
+
+/**
  * Date filter - formats Date object as localized date string.
- * 
+ *
  * @param options - Array with locale string as first element (default: config.locale)
  * @returns Filter function that returns date string
  */
@@ -523,8 +624,28 @@ const ymd = (options?:string[]): FilterFn<string> => {
 }
 
 /**
+ * Hour-Minute-Second filter - formats Date object as HH:MM:SS string.
+ *
+ * The counterpart of `ymd`: a fixed, zero-padded, locale-independent rendering with a
+ * configurable separator, for when `time` (locale-formatted) is not stable enough.
+ *
+ * @param options - Array with separator string as first element (default: ':')
+ * @returns Filter function that returns formatted time string
+ */
+const hms = (options?:string[]): FilterFn<string> => {
+  const opt = options?.[0] ?? ':';
+  return (value: unknown): string => {
+    if (!(value instanceof Date)) {valueMustBeDate('hms');}
+    const hours = value.getHours().toString().padStart(2, '0');
+    const minutes = value.getMinutes().toString().padStart(2, '0');
+    const seconds = value.getSeconds().toString().padStart(2, '0');
+    return `${hours}${opt}${minutes}${opt}${seconds}`;
+  }
+}
+
+/**
  * Falsy filter - checks if value is falsy.
- * 
+ *
  * @param options - Unused
  * @returns Filter function that returns true for false/null/undefined/0/''/NaN
  */
@@ -619,6 +740,8 @@ const builtinFilters: FilterWithOptions = {
   "mul": mul,
   "div": div,
   "mod": mod,
+  "abs": abs,
+  "clamp": clamp,
 
   "fix": fix,
   "locale": locale,
@@ -631,6 +754,8 @@ const builtinFilters: FilterWithOptions = {
   "pad": pad,
   "rep": rep,
   "rev": rev,
+  "truncate": truncate,
+  "join": join,
 
   "int": int,
   "float": float,
@@ -638,11 +763,13 @@ const builtinFilters: FilterWithOptions = {
   "floor": floor,
   "ceil": ceil,
   "percent": percent,
+  "unit": unit,
 
   "date": date,
   "time": time,
   "datetime": datetime,
   "ymd": ymd,
+  "hms": hms,
 
   "falsy": falsy,
   "truthy": truthy,

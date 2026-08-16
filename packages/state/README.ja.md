@@ -95,7 +95,7 @@
 - **宣言的データバインディング** — `data-wcs` 属性によるプロパティ / テキスト / イベント / 構造バインディング
 - **リアクティブ Proxy** — ES Proxy による依存追跡付き自動 DOM 更新
 - **構造ディレクティブ** — `<template>` 要素による `for`, `if` / `elseif` / `else`
-- **組み込みフィルタ** — フォーマット、比較、算術、日付など 40 種類
+- **組み込みフィルタ** — フォーマット、比較、算術、日付など 46 種類
 - **双方向バインディング** — `<input>`, `<select>`, `<textarea>` で自動有効
 - **Web Component バインディング** — Shadow DOM コンポーネントとの双方向状態バインディング
 - **command token** — pub/sub チャネル（`command.<method>: tokenName`）で state から wc-bindable カスタム要素のメソッドを起動
@@ -985,7 +985,7 @@ export default {
 
 ## フィルタ
 
-40 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
+46 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます。
 
 ### 比較
 
@@ -1008,6 +1008,8 @@ export default {
 | `mul(n)` | 乗算 | `price\|mul(1.1)` |
 | `div(n)` | 除算 | `total\|div(100)` |
 | `mod(n)` | 剰余 | `index\|mod(2)` |
+| `abs` | 絶対値 | `delta\|abs` |
+| `clamp(min, max)` | 範囲内に丸める | `ratio\|clamp(0,100)` |
 
 ### 数値フォーマット
 
@@ -1019,6 +1021,7 @@ export default {
 | `ceil(n?)` | 切り上げ | `value\|ceil` |
 | `locale(loc?)` | ロケール数値フォーマット | `count\|locale` / `count\|locale(ja-JP)` |
 | `percent(n?)` | パーセンテージフォーマット | `ratio\|percent(1)` |
+| `unit(u)` | 単位（任意の接尾辞）を付加 | `width\|unit(px)` → `"40px"` |
 
 ### 文字列
 
@@ -1033,6 +1036,8 @@ export default {
 | `pad(n, char?)` | 先頭パディング | `id\|pad(5,0)` → `"00001"` |
 | `rep(n)` | 繰り返し | `text\|rep(3)` |
 | `rev` | 反転 | `text\|rev` |
+| `truncate(n, suffix?)` | 切り詰めて省略記号を付加 | `title\|truncate(20)` → `"…"` 付き |
+| `join(sep?)` | 配列を連結（既定 `", "`） | `tags\|join` / `tags\|join(/)` |
 
 ### 型変換
 
@@ -1053,6 +1058,7 @@ export default {
 | `time(loc?)` | 時刻フォーマット | `timestamp\|time` |
 | `datetime(loc?)` | 日付 + 時刻 | `timestamp\|datetime(en-US)` |
 | `ymd(sep?)` | YYYY-MM-DD | `timestamp\|ymd` / `timestamp\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS | `timestamp\|hms` / `timestamp\|hms(-)` |
 
 ### 真偽値 / デフォルト
 

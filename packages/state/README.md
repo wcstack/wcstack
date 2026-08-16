@@ -95,7 +95,7 @@ That's it. No build, no bootstrap code, no framework.
 - **Declarative data binding** — `data-wcs` attribute for property / text / event / structural binding
 - **Reactive Proxy** — ES Proxy-based automatic DOM updates with dependency tracking
 - **Structural directives** — `for`, `if` / `elseif` / `else` via `<template>` elements
-- **Built-in filters** — 40 filters for formatting, comparison, arithmetic, date, and more
+- **Built-in filters** — 46 filters for formatting, comparison, arithmetic, date, and more
 - **Two-way binding** — automatic for `<input>`, `<select>`, `<textarea>`
 - **Web Component binding** — bidirectional state binding with Shadow DOM components
 - **Command tokens** — invoke methods on wc-bindable custom elements from state via a pub/sub channel (`command.<method>: tokenName`)
@@ -986,7 +986,7 @@ export default {
 
 ## Filters
 
-40 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
+46 built-in filters are available for both input (DOM → state) and output (state → DOM) directions.
 
 ### Comparison
 
@@ -1009,6 +1009,8 @@ export default {
 | `mul(n)` | Multiply | `price\|mul(1.1)` |
 | `div(n)` | Divide | `total\|div(100)` |
 | `mod(n)` | Modulo | `index\|mod(2)` |
+| `abs` | Absolute value | `delta\|abs` |
+| `clamp(min, max)` | Constrain to a range | `ratio\|clamp(0,100)` |
 
 ### Number Formatting
 
@@ -1020,6 +1022,7 @@ export default {
 | `ceil(n?)` | Ceiling | `value\|ceil` |
 | `locale(loc?)` | Locale number format | `count\|locale` / `count\|locale(ja-JP)` |
 | `percent(n?)` | Percentage format | `ratio\|percent(1)` |
+| `unit(u)` | Append a unit (any suffix) | `width\|unit(px)` → `"40px"` |
 
 ### String
 
@@ -1034,6 +1037,8 @@ export default {
 | `pad(n, char?)` | Pad start | `id\|pad(5,0)` → `"00001"` |
 | `rep(n)` | Repeat | `text\|rep(3)` |
 | `rev` | Reverse | `text\|rev` |
+| `truncate(n, suffix?)` | Shorten and append an ellipsis | `title\|truncate(20)` |
+| `join(sep?)` | Join an array (default `", "`) | `tags\|join` / `tags\|join(/)` |
 
 ### Type Conversion
 
@@ -1054,6 +1059,7 @@ export default {
 | `time(loc?)` | Time format | `timestamp\|time` |
 | `datetime(loc?)` | Date + Time | `timestamp\|datetime(en-US)` |
 | `ymd(sep?)` | YYYY-MM-DD | `timestamp\|ymd` / `timestamp\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS | `timestamp\|hms` / `timestamp\|hms(-)` |
 
 ### Boolean / Default
 

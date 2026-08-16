@@ -68,10 +68,20 @@ export function valueMustBeBoolean(fnName:string): never {
 
 /**
  * Throws error when filter requires Date value but non-Date provided.
- * 
+ *
  * @param fnName - Name of the filter function
  * @returns Never returns (always throws)
  */
 export function valueMustBeDate(fnName:string): never {
   raiseError(`filter ${fnName} requires a date value`);
+}
+
+/**
+ * Throws error when filter requires array value but non-array provided.
+ *
+ * @param fnName - Name of the filter function
+ * @returns Never returns (always throws)
+ */
+export function valueMustBeArray(fnName:string): never {
+  raiseError(`filter ${fnName} requires an array value`);
 }
