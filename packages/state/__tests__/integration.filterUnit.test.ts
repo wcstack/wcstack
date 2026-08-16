@@ -128,6 +128,23 @@ describe("フィルタ: data-wcs 経由での適用 (integration)", () => {
     host.remove();
   });
 
+  /**
+   * `parseFilterArgs` がクォート内の空白までトリムしていたため、空白を引数に取る形は
+   * 一律に空文字へ潰れていた（`pad(5,' ')` は `padStart(5, '')` ＝ 無変化）。
+   */
+  it("空白を引数に取るフィルタが配線経由で機能すること", async () => {
+    const { host, shadowRoot } = await mount(
+      '{"id":"7","tags":["a","b"]}',
+      `<span id="padded" data-wcs="textContent: id|pad(3,' ')"></span>` +
+        `<span id="joined" data-wcs="textContent: tags|join(' / ')"></span>`,
+    );
+
+    expect((shadowRoot.querySelector("#padded") as HTMLElement).textContent).toBe("  7");
+    expect((shadowRoot.querySelector("#joined") as HTMLElement).textContent).toBe("a / b");
+
+    host.remove();
+  });
+
   it("unit: undefined は書き込みをスキップし、既存の値を壊さないこと", async () => {
     const { host, shadowRoot, stateElement } = await mount(
       '{"w":10}',

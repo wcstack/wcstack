@@ -50,6 +50,7 @@ This document applies the "does the bind take" axis of [13-framework-adapter-bin
 | §1.10 | a component inside a parent-scope `for` cannot run a `for` in the child either (a silent hang) | ✅ fixed (2026-08-11, the remainder of §1.8) |
 | §1.11 | a parent-origin row-field write does not cross more than one boundary (the row ledger piggyback stops after one hop) | ✅ fixed (2026-08-13) |
 | §1.12 | a list cannot cross two boundaries when the intermediate component sits inside a parent `for` (Δ>0) | ✅ fixed (2026-08-17, found while fixing §1.11) |
+| §1.13 | a mapped Light DOM `bind-component` deadlocks during initialization | ❌ **open** (found 2026-08-17; documented in the README as a known limitation) |
 | §2.1 | the change event fires only on an exactly matching path | ✅ fixed (subpaths plus `$postUpdate` plus a property getter) |
 | §2.2 | the DCC accessors are asymmetric between synchronous and asynchronous | ✅ fixed (the setter made synchronous; `callFn` deliberately keeps its Promise) |
 | §2.3 | only `$bindables` has no declaration validation | ✅ fixed (structural validation plus an existence check; the `$streams` names resolved too) |
@@ -409,6 +410,44 @@ during the initial render and wedges the whole document, so sharing a page takes
 section down with it and destroys its independent signal (measured: all 6 failed when they
 shared a page). After the split, removing the §1.12 fix leaves the §1.11 page at 4/4 passing
 and the §1.12 page at 5/5 failing.
+
+### 1.13 A mapped Light DOM `bind-component` deadlocks during initialization ❌ open
+
+Everything verified in §1.1 through §1.12 was **the Shadow DOM form**. The Light DOM form existed
+only in the README — there was **no test and no example anywhere in the repo**. Measured, it splits
+in two:
+
+| Light DOM form | Result |
+|---|---|
+| **plain** (state injection, no binding from the host) | ✅ works |
+| **mapped** (`data-wcs="state.msg: user.name"` from the host) | ❌ neither `initializePromise` nor `getBindingsReady` ever resolves |
+
+The cycle, isolated by removing the `data-wcs` (which makes everything resolve):
+
+1. The host root's `buildBindings` goes through `waitForStateInitialize(root)`, which does
+   `root.querySelectorAll("wcs-state")` and waits on the `initializePromise` of **every state
+   element in the root**. In Light DOM the component's inner `<wcs-state>` is in that same root, so
+   it lands in the set.
+2. That inner state waits on `waitInitializeBinding(boundComponent)` inside
+   `_initializeBindWebComponent`, because the component element carries a `data-wcs`.
+3. The binding it is waiting for is created by the host root's `initializeBindings()`, which runs
+   **after** step 1's `waitForStateInitialize`.
+
+So 1 waits on 2, 2 waits on 3, and 3 comes after 1. In the Shadow DOM form the inner state lives in a
+different rootNode, never enters step 1's set, and the cycle cannot form. The point of this entry is
+that **the rootNode's namespace separation was quietly providing initialization-order separation
+too** — the third instance, after §1.11 and §1.12, of something Shadow DOM was doing implicitly.
+
+Excluding `bind-component` elements from `waitForStateInitialize` is not enough on its own. In Light
+DOM the host's bindings and the component's bindings share one root and one `buildBindings` pass, and
+there is a dependency order between them; resolving both in a single pass needs an ordering, which
+makes this a change to the initialization sequence rather than a local patch.
+
+For now this is recorded in both READMEs as a **known limitation** — use Shadow DOM when the
+component needs to bind to host state. The reproduction sits under `describe.skip` in
+[`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts),
+and the plain form that does work is pinned as a normal test in the same file. Remove the `.skip`
+once it is fixed.
 
 ---
 

@@ -1132,6 +1132,14 @@ customElements.define("my-light-component", MyLightComponent);
 - Bindings must explicitly reference the state name with `@my-light`
 - `<wcs-state>` must be a direct child of the component element
 
+> **Known limitation**: in Light DOM, only the **state-injection form above — with no binding from the
+> host — works.** Binding from the host, as in
+> `<my-light-component data-wcs="state.message: user.name">`, stalls with the initialization never
+> resolving: in Light DOM the component's `<wcs-state>` belongs to the same rootNode as the host's, so
+> establishing the host's bindings and initializing the component's state wait on each other.
+> **Use Shadow DOM when the component needs to bind to host state.**
+> See [ADR-15 §1.13](../../docs/architecture-hardening/15-state-component-mechanism-consistency.md).
+
 ### Host Usage
 
 ```html
