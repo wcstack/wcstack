@@ -1219,8 +1219,24 @@ this.shadowRoot.innerHTML = `
 
 - Replacing `rows` or writing a single row field (`rows.0.name`) both reach the rows inside the component
 - Writing `items.*.name` from inside the component reaches the host's `rows`
-- **Limitation**: nesting is not supported — a component that sits inside a host `for:` *and* runs its own
-  `for:` over a mapped array has no way to relate the outer row to the inner one
+
+#### Nesting and stacking scopes
+
+A component that sits inside a host `for:` *and* runs its own `for:` over the array it was handed
+is supported. The framework keeps the outer row and the inner row related:
+
+```html
+<template data-wcs="for: groups">
+  <my-list data-wcs="state.items: groups.*.children"></my-list>
+</template>
+```
+
+Components can also be placed inside components, **stacking scopes**. An intermediate component
+that only passes the array through — running no `for:` of its own — still lets a row-field write
+from the owning scope reach the rows at the bottom.
+
+A component's author never has to know how deeply it is placed. `$1`, event-handler indexes,
+`$updatedCallback` and `$getAll` all report positions **within the component's own scope**.
 
 ## Command Token (Method Binding)
 
