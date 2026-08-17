@@ -128,6 +128,52 @@ describe('walkDependency の diff-filter 展開', () => {
     expect(indexesOf(result, 'users.*.sel')).toEqual([0, 1, 2]);
   });
 
+  it('diff: 静的依存グラフに無い（DOM 未バインドの）index 依存 getter も移動行で展開すること', () => {
+    // 静的依存は State.setPathInfo が「バインドされたパスから親方向へ」張るため、
+    // .label だけを描画し .rank は .label からしか読まれない綴りでは users.*.rank が
+    // staticMap に載らない。subtree 走査だとここで取りこぼし、移動行の rank が
+    // 古い値のまま残っていた。
+    const idxElement = {
+      name: 'default',
+      indexDependentGetterPaths: new Set(['users.*.rank']),
+    } as unknown as IStateElement;
+    const oldList = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const newList = [oldList[2], oldList[1], oldList[0]];
+    const result = runWalkRaw(idxElement, oldList, newList, { listExpansion: 'diff' },
+      new Map([['users', ['users.*']], ['users.*', ['users.*.label']]]));
+    expect(indexesOf(result, 'users.*.rank')).toEqual([0, 2]);
+    // 行アドレスと index を読まない値パスは従来どおり展開されない
+    expect(indexesOf(result, 'users.*')).toEqual([]);
+    expect(indexesOf(result, 'users.*.label')).toEqual([]);
+  });
+
+  it('diff: 別リスト配下の index 依存 getter は展開対象に混ざらないこと', () => {
+    const idxElement = {
+      name: 'default',
+      indexDependentGetterPaths: new Set(['users.*.rank', 'items.*.rank', 'usersExtra.*.rank']),
+    } as unknown as IStateElement;
+    const oldList = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const newList = [oldList[2], oldList[1], oldList[0]];
+    const result = runWalkRaw(idxElement, oldList, newList, { listExpansion: 'diff' },
+      new Map([['users', ['users.*']], ['users.*', ['users.*.rank']]]));
+    expect(indexesOf(result, 'users.*.rank')).toEqual([0, 2]);
+    expect(indexesOf(result, 'items.*.rank')).toEqual([]);
+    // 前方一致だけで判定すると "users.*" が "usersExtra.*" を巻き込む
+    expect(indexesOf(result, 'usersExtra.*.rank')).toEqual([]);
+  });
+
+  it('diff: リスト行そのもの（users.*）が index 依存 getter の場合も移動行で展開すること', () => {
+    const idxElement = {
+      name: 'default',
+      indexDependentGetterPaths: new Set(['users.*']),
+    } as unknown as IStateElement;
+    const oldList = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const newList = [oldList[2], oldList[1], oldList[0]];
+    const result = runWalkRaw(idxElement, oldList, newList, { listExpansion: 'diff' },
+      new Map([['users', ['users.*']]]));
+    expect(indexesOf(result, 'users.*')).toEqual([0, 2]);
+  });
+
   it('diff: ネストしたワイルドカード配下に index 依存 getter がある場合は移動行を全体展開に倒すこと', () => {
     const idxElement = {
       name: 'default',
