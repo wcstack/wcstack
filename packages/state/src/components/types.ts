@@ -82,6 +82,18 @@ export interface IStateElement {
    * optional なのはテスト用モック互換のため（undefined は「宣言なし」扱い）。
    */
   readonly listKeys?: ListKeyMap | null;
+  /**
+   * `$watch` 宣言から生成した監視対象パスの集合。
+   * 宣言が無ければ null / undefined で、setByAddress の旧値キャプチャには一切入らない
+   * （docs/state-watch-hook-design.md §10 のゼロコスト契約）。
+   * optional なのはテスト用モック互換のため（undefined は「宣言なし」扱い）。
+   */
+  readonly watchPaths?: ReadonlySet<string> | null;
+  /**
+   * パスを依存グラフへ登録する。DOM バインディング登録（BindingSession）のほか、
+   * `$watch` 宣言（processWatchDeclaration）からも呼ばれる — 静的依存グラフに
+   * 載るのがバインド済みパスだけだと headless 購読が成立しないため（設計書 §8）。
+   */
   setPathInfo(path: string, bindingType: BindingType): void;
   addStaticDependency(parentPath: string, childPath: string): boolean;
   addDynamicDependency(fromPath: string, toPath: string): boolean;

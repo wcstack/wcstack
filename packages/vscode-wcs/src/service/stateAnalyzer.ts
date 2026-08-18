@@ -56,8 +56,9 @@ export function analyzeStatePaths(scriptContent: string, stateName: string = 'de
 
   for (const prop of topLevelProps) {
     // トップレベルの `$` プレフィックスキーは予約名（$streams/$commandTokens/$eventTokens/
-    // $listKeys/$on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の候補だけを
-    // 導出する。
+    // $listKeys/$watch/$on/$bindables/$connectedCallback 等）。データパスにせず宣言由来の
+    // 候補だけを導出する。`$watch` は既存パスを購読するだけで新しいパスを作らないため、
+    // `$streams`（値プロパティを実体化する）と違い個別処理は要らない。
     if (prop.name.startsWith('$')) {
       collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys, stateName);
       continue;

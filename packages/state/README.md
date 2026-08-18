@@ -1555,7 +1555,7 @@ Event tokens share the same `Token` pub/sub primitive as command tokens — `nam
 
 Command tokens and event tokens carry discrete interactions. **`$streams`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$updatedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects.
 
-`$updatedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. There is currently no state-only `$watch` / `$effects` declaration; see the [stream reference](docs/streams.md) for the observation contract.
+`$updatedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. To react to a stream's value without rendering it, declare [`$watch`](#watch-watch) on that path; see the [stream reference](docs/streams.md) for the observation contract.
 
 ```html
 <wcs-state>
@@ -1631,6 +1631,68 @@ Key rules:
 - **SSR does not start streams** — on the server the declaration is parsed and the property is materialized with `initial`, but no source runs; the client starts streams as usual.
 
 See [docs/streams.md](docs/streams.md) for the full contract — lifecycle and ownership, restart semantics, flush granularity, and the out-of-scope list.
+
+## Watch (`$watch`)
+
+`$updatedCallback` is **binding-driven**: it reports the paths whose live DOM bindings were actually applied in that update, so a value you never render is invisible to it. **`$watch`** is the headless counterpart — it fires on state changes whether or not anything on the page is bound to the path. (One exception, spelled out below: a *wildcard* row path needs `$listKeys` to work headlessly.)
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      isLoading: false,
+      items: [],
+      startedAt: 0,
+
+      $watch: {
+        // rising-edge detection: you compare cur/prev yourself
+        isLoading(cur, prev) {
+          if (cur === true && prev === false) { this.startedAt = Date.now(); }
+        },
+
+        // wildcard paths fire once per changed row
+        // (needs the list rendered with `for`, or `$listKeys` declared — see below)
+        "items.*.price"(cur, prev, index) {
+          this.lastPriceChange = `#${index}: ${prev} → ${cur}`;
+        },
+      },
+    };
+  </script>
+</wcs-state>
+```
+
+The handler runs with `this` bound to a **writable** state proxy, so it can write back; those writes land in the next update batch. The return value is ignored and never awaited.
+
+| Argument | Contract |
+|---|---|
+| `cur` | The value at drain time (the settled value for the batch) |
+| `prev` | The value at the **start of the batch** (first-write-wins). Meaningful **for scalars only** — see below |
+| `...indexes` | Only for wildcard paths: this scope's own loop indexes, same convention as `$1`, `$2` |
+
+**`prev` is scalar-only.** It reuses the old value the same-value guard already reads, so watch costs no extra read — and it is `undefined` for reference types (an in-place mutation would give you the same reference anyway), for `$postUpdate`, and when `config.sameValueGuard` is off.
+
+**Watch adds no firing condition of its own.** It fires for whatever landed in the update batch. That falls out well: an equal primitive write is already dropped before it is enqueued (so you effectively get change-only firing), while an occurrence write — a `semantics: "event"` property — is deliberately *not* dropped, and still fires with `cur === prev`. If you need edge detection, compare `cur` and `prev` in the handler.
+
+**Watching a getter makes it eager.** A computed getter is normally lazy, and its dependencies are only recorded when it is evaluated — so an unrendered getter would never fire at all. Declaring one in `$watch` evaluates it once at connect and again at the end of every batch that touches its dependencies. Its `prev` is the previous evaluation. Watch a heavy computed and you pay that evaluation on every batch; exceptions inside it surface through the watch instead of staying dormant. Wildcard getters (`items.*.tax`) are **not** made eager — priming one would sweep the whole list — so that form fires only when it is also bound to the DOM, and its `prev` is always `undefined` (no per-row evaluation is remembered).
+
+Firing order is defined in three layers, and only the middle one is yours to steer:
+
+| Layer | Order | Your control |
+|---|---|---|
+| Mechanisms | `$updatedCallback` → `$watch` → `$streams` restart | fixed |
+| Between handlers | declaration order in `$watch` | **reorder the declarations** |
+| Between rows of one path | ascending `indexes` | fixed |
+
+Key rules:
+
+- **Only its own state** — a path may not carry `@stateName`; watching another state element is rejected at declaration time.
+- **Intermediate values are not observable** — a batch that goes `a → b → c` fires once with `cur = c`, `prev = a`, the same contract as binding updates.
+- **Row-level diffs want `$listKeys`** — without it, assigning a whole array fires the row watch for *every* row with `prev === undefined`, because no row went through a path write. With `$listKeys` declared, the key match decomposes the assignment into per-field writes, so only changed rows fire and `prev` is a real scalar.
+- **A headless row watch requires `$listKeys`** — this is the one place `$watch` is *not* headless on its own. Expanding `items` into `items.*.price` is driven by the list's `for` binding, and declaring a watch deliberately does not register the path as a list. So with neither a `for` binding nor `$listKeys`, assigning the array fires the row watch **zero** times. Add `$listKeys` (the key match writes each field by path, bypassing the expansion) or render the list. Scalar paths — including nested ones like `user.name` — are headless with no such condition.
+- **Handler exceptions are isolated** — a throw is reported to the console and the remaining watches (and stream restarts) still run. This differs from `$connectedCallback` / `$updatedCallback`, which fail loudly.
+- **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever; the chain is cut off after 32 links with a console error. Values and DOM are not rolled back.
+- **Not available on a mapped `bind-component` child** — its state is wrapped in a proxy that blanks out every `$`-prefixed property, so the declaration never arrives. This applies to `$streams` too. A plain (unmapped) child can declare it.
+- **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
 
 ## Inputs and Attribute Mirror
 

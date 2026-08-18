@@ -5,6 +5,7 @@ import { MAX_PROPAGATION_HOPS } from "../define";
 import { devtoolsSink } from "../devtools/sink";
 import { IPropagationContext } from "../propagation/types";
 import { IBindingInfo } from "../types";
+import { noteEnqueueForWatchChain } from "../watch/chainDepth";
 
 /**
  * drain（_applyChange）終了通知のリスナー（docs/state-streams-design.md §3-2）。
@@ -14,30 +15,51 @@ import { IBindingInfo } from "../types";
  */
 export type UpdateBatchListener = (batch: ReadonlySet<IAbsoluteStateAddress>) => void;
 
-const updateBatchListeners: Set<UpdateBatchListener> = new Set();
+interface IRegisteredBatchListener {
+  readonly listener: UpdateBatchListener;
+  readonly priority: number;
+}
+
+const updateBatchListeners: IRegisteredBatchListener[] = [];
 
 /**
  * drain 終了リスナーを登録する。
+ *
+ * `priority` の昇順に呼ばれる（同値は登録順）。機構間の実行順序
+ * （`$watch` → `$streams` restart、docs/state-watch-hook-design.md §3-2 層 1）は
+ * この優先度で固定する — import 順に順序を持たせると、無関係な import 整理で
+ * 静かに壊れるため。定数は define.ts の `*_LISTENER_PRIORITY` を使うこと。
  */
-export function registerUpdateBatchListener(listener: UpdateBatchListener): void {
-  updateBatchListeners.add(listener);
+export function registerUpdateBatchListener(listener: UpdateBatchListener, priority = 0): void {
+  // 挿入ソート: 同値優先度の中では登録順を保つ（find は最初の「より大きい」要素を指す）
+  const index = updateBatchListeners.findIndex((registered) => registered.priority > priority);
+  const entry = { listener, priority };
+  if (index === -1) {
+    updateBatchListeners.push(entry);
+  } else {
+    updateBatchListeners.splice(index, 0, entry);
+  }
 }
 
 /**
  * drain 終了リスナーを解除する（テスト間の分離用）。
  */
 export function unregisterUpdateBatchListener(listener: UpdateBatchListener): void {
-  updateBatchListeners.delete(listener);
+  const index = updateBatchListeners.findIndex((registered) => registered.listener === listener);
+  if (index !== -1) {
+    updateBatchListeners.splice(index, 1);
+  }
 }
 
 /**
- * 全リスナーに drain のバッチを通知する。
+ * 全リスナーに drain のバッチを優先度順で通知する。
  * リスナーの throw は握りつぶさない（内部バグの隠蔽防止）。
- * stream 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
+ * stream / watch 側リスナーが entry ごとに自前で try/catch する契約（設計書 §3-2）。
  */
 function notifyUpdateBatchListeners(batch: ReadonlySet<IAbsoluteStateAddress>): void {
-  for (const listener of updateBatchListeners) {
-    listener(batch);
+  // 反復中の register / unregister（ハンドラ内の切断・再 set）に耐えるためコピーする
+  for (const registered of updateBatchListeners.slice()) {
+    registered.listener(batch);
   }
 }
 
@@ -56,6 +78,9 @@ class Updater {
     absoluteAddress: IAbsoluteStateAddress,
     context: IPropagationContext | null = null,
   ): void {
+    // `$watch` ハンドラ実行中の書き込みだけを連鎖としてマークする（watch/chainDepth.ts）。
+    // ハンドラ実行中でなければ即 return する葉モジュール呼び出し 1 個のコスト。
+    noteEnqueueForWatchChain();
     const requireStartProcess = this._queueUpdateRecords.length === 0;
     this._queueUpdateRecords.push({ absoluteAddress, context });
     if (requireStartProcess) {

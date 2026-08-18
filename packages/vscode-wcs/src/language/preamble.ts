@@ -72,8 +72,12 @@ type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
 // キー指定の関数引数に文脈型を与えるためだけの宣言（noImplicitAny 下の偽エラー回避）。
 type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
+// $watch: { "<path>": (cur, prev, ...indexes) => void }（watch/processWatchDeclaration.ts）。
+// ハンドラ引数に文脈型を与えるためだけの宣言（$listKeys と同じ理由）。
+// this は ThisType<_WcsThis<T>> により state 型になる。
+type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
 function defineState<T extends Record<string, any>>(
-  def: T & { $listKeys?: _WcsListKeys } & ThisType<_WcsThis<T>>
+  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch } & ThisType<_WcsThis<T>>
 ): T { return def; }
 // --- end preamble ---
 `;
