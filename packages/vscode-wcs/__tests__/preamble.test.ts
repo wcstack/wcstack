@@ -104,6 +104,26 @@ defineState({
     expect(messages(diags)).toEqual([]);
   });
 
+  it('$watch のハンドラ引数が暗黙 any にならず、this が state 型になる', () => {
+    const diags = typecheck(`
+defineState({
+  isLoading: false,
+  items: [] as { price: number }[],
+  startedAt: 0,
+  $watch: {
+    isLoading(cur, prev) {
+      if (cur === true && prev === false) { this.startedAt = 1; }
+    },
+    "items.*.price"(cur, prev, index) {
+      void cur; void prev; void index;
+      this.isLoading = false;
+    },
+  },
+});
+`);
+    expect(messages(diags)).toEqual([]);
+  });
+
   it('$listKeys を宣言しても他のプロパティのパス型推論が壊れない', () => {
     const diags = typecheck(`
 defineState({

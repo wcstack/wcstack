@@ -1,6 +1,6 @@
 # 実装計画: `$watch`（@wcstack/state）
 
-- **状態**: **Phase A 完了**（2026-08-19）。フルスイート 239 files / 2353 tests green・lint 0・`src/watch` は 100/100/100/100。次は Phase B。設計の正本は [state-watch-hook-design.md](./state-watch-hook-design.md)（以下「設計書」）。本書はその §2〜§11 を着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
+- **状態**: **Phase A–D 完了**（2026-08-19）。state は 243 files / 2376 tests green・lint 0・`src/watch` は 100/100/100/100、vscode-wcs は 412 tests green。残るのはリリース（minor bump）。設計の正本は [state-watch-hook-design.md](./state-watch-hook-design.md)（以下「設計書」）。本書はその §2〜§11 を着手可能なタスク粒度・テスト対応・完了条件に展開した手順書。
 - **Phase A の裁定記録**:
   - `setPathInfo` の再利用は問題なし（§6-1 の宿題）。`"prop"` 渡しでは `_pathSet` への追加と親子 `addStaticDependency` チェーン生成だけが走り、`listPaths` / `elementPaths` は触らない。なお `_pathSet` は `_state` セッターでクリアされるため、watch の依存登録も再 set のたびにやり直す必要がある（`processWatchDeclaration` を `_pathSet.clear()` より後に置くことで担保）。
   - **切断時に registry を捨ててはいけない**（計画の初稿の誤り）。`_state` セッターは初回ロード時にしか走らないため、registry まで消すと再接続で宣言を作り直す経路が無く watch が二度と発火しない。`$streams` の `abortAllStreams` / `clearStreamRegistry` と同じ二段構え（`deactivateWatch` / `clearWatchRegistry`）に修正。
@@ -244,7 +244,13 @@ function fireWatchOnUpdateBatch(batch) {
 
 ---
 
-## Phase D — 追随先とドキュメント
+## Phase D — 追随先とドキュメント（完了）
+
+**着地時の判明事項**:
+
+- **vscode-wcs / lint の validator は `$watch` の追加で壊れない**。`stateAnalyzer` はトップレベルの `$` 始まりキーを一律で予約名として扱い、個別の `RESERVED_*_KEY` 定数を持つのは「宣言から新しいパスを導出する」もの（`$streams` の値実体化・`$listKeys`）だけ。`$watch` は既存パスを購読するだけなので導出が要らない。
+- **preamble には型が要る**。`$listKeys` に `_WcsListKeys` を足したのと同じ理由で、ハンドラ引数が `noImplicitAny` 下で偽エラーになる。`_WcsWatch` を追加し `defineState` のシグネチャに載せた（`this` は既存の `ThisType<_WcsThis<T>>` で state 型になる）。
+- **example の主張はテストで固定した**（`watch.example.test.ts`）。example は CDN 経由でしか実行されず壊れても気づかないため、同じ state 定義で「バインドしていない getter が発火する」「行 watch の cur/prev/index」「`$listKeys` 下の全行置換で変化行だけ発火」を検証している。なお happy-dom の innerHTML パースは table 内の `<template>` を保持しないため、テスト側だけ `<ul>` に置き換えてある（example 本体は cart example と同じ table 形）。
 
 設計書 §11 の消化。**ここを落とすと壊れるのが「次の build 時」になる**（CI マトリクス外）ので、Phase D 自体を DoD に含める。
 

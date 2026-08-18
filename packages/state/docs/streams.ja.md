@@ -140,7 +140,8 @@ get isStreaming() {
 観測保証:
 
 - 中間 status の観測は保証されません。同一の更新バッチに畳まれた遷移（例: 同一 tick 内の `active → done`）は最終値しか描画されないことがあります — 他のバインディング更新と同じ契約です。
-- `$updatedCallback` の paths には `<name>` / `$streamStatus.<name>` / `$streamError.<name>` が通常の更新パスとして載ります。
+- `$updatedCallback` の paths には `<name>` / `$streamStatus.<name>` / `$streamError.<name>` が通常の更新パスとして載ります。ただし `$updatedCallback` は **binding 駆動**なので、live DOM binding が適用された path しか現れません。
+- 描画せずに stream へ反応するには、その**値のパス**に `$watch` を宣言します。`$watch` は state-only（headless）な購読で、バインドの有無に関わらず発火します。制約が 2 つあります: 予約名前空間（`$streamStatus.<name>` / `$streamError.<name>`）は watch できません（watch パスは `$` で始められない）。また完了 *status* が必要な場合は、UI にバインドするか、終端条件を値そのものに畳み込んでください。
 
 ---
 

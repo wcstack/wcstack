@@ -1550,7 +1550,7 @@ event token は command token と同じ `Token` pub/sub プリミティブを共
 
 command token / event token が運ぶのは離散的なやり取りです。**`$streams`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$updatedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。
 
-`$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。現行 API に state-only な `$watch` / `$effects` 宣言はありません。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
+`$updatedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watch-watch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
 
 ```html
 <wcs-state>
@@ -1626,6 +1626,66 @@ $streams: {
 - **SSR では起動しない** —— サーバーでは宣言のパースとプロパティの実体化（`initial`）のみ行い、source は実行されません。クライアント側は通常どおり起動します。
 
 完全な契約 —— ライフサイクルと所有権・restart セマンティクス・flush 粒度・スコープ外リスト —— は [docs/streams.ja.md](docs/streams.ja.md) を参照してください。
+
+## Watch（`$watch`）
+
+`$updatedCallback` は **binding 駆動** です。その更新で live DOM binding が実際に適用された path だけを報告するため、**描画していない値の変化は見えません**。**`$watch`** はその headless 版で、ページ上でそのパスがバインドされているかどうかに関わらず、state の変化で発火します。
+
+```html
+<wcs-state>
+  <script type="module">
+    export default {
+      isLoading: false,
+      items: [],
+      startedAt: 0,
+
+      $watch: {
+        // 立ち上がり検出は cur/prev を自分で比較する
+        isLoading(cur, prev) {
+          if (cur === true && prev === false) { this.startedAt = Date.now(); }
+        },
+
+        // ワイルドカードパスは変化した行ごとに 1 回発火する
+        "items.*.price"(cur, prev, index) {
+          this.lastPriceChange = `#${index}: ${prev} → ${cur}`;
+        },
+      },
+    };
+  </script>
+</wcs-state>
+```
+
+ハンドラの `this` は **writable** な state proxy なので書き戻せます。その書き込みは次の更新バッチに乗ります。戻り値は無視され、await もされません。
+
+| 引数 | 契約 |
+|---|---|
+| `cur` | drain 時点の値（そのバッチの確定値） |
+| `prev` | **バッチ開始時点**の値（first-write-wins）。意味を持つのは**スカラのときだけ**（下記） |
+| `...indexes` | ワイルドカードパスのときのみ。そのスコープ自身のループ添字（`$1` / `$2` と同じ規約） |
+
+**`prev` はスカラ限定です。** same-value guard が既に読んでいる旧値を再利用するため watch のための追加読みは発生せず、その帰結として参照型（in-place 変異では同じ参照になるため）・`$postUpdate` 経由・`config.sameValueGuard` オフのときは `undefined` になります。
+
+**`$watch` は独自の発火条件を持ちません。** 更新バッチに載ったものをそのまま発火します。これはうまく噛み合っていて、同値の primitive 書き込みは enqueue 前に落ちている（＝実質的に変化時のみ発火）一方、occurrence（`semantics: "event"` の property）は**意図的に**落とされないので `cur === prev` で発火します。エッジ検出が要るならハンドラ内で `cur` と `prev` を比較してください。
+
+**getter を watch すると eager になります。** computed は本来 lazy で、依存は評価時にしか記録されません —— つまり描画していない getter は本来一度も発火しません。`$watch` に宣言すると接続時に 1 回評価され、以後は依存に触れたバッチの終端で毎回評価されます。`prev` は前回の評価値です。重い computed を watch すればその評価コストが毎バッチ乗り、getter 内の例外は watch 経由で表面化します。ワイルドカード getter（`items.*.tax`）は eager 化**しません**（初回評価がリスト全体を舐めることになるため）。この形は DOM にバインドされている場合にのみ発火します。
+
+発火順序は 3 層に分かれ、利用者が意思を持てるのは真ん中の層だけです。
+
+| 層 | 順序 | 制御 |
+|---|---|---|
+| 機構間 | `$updatedCallback` → `$watch` → `$streams` restart | 固定 |
+| ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
+| 同一パスの行間 | `indexes` 昇順 | 固定 |
+
+主なルール:
+
+- **自 state のみ** —— パスに `@stateName` は書けません。他の state 要素の watch は宣言時に拒否されます。
+- **中間値は観測できません** —— 1 バッチ内の `a → b → c` は `cur = c` / `prev = a` で 1 回だけ発火します（binding 更新と同じ契約）。
+- **行単位の差分を見たいなら `$listKeys`** —— 未宣言のまま配列全体を代入すると、行 watch は**全行**について `prev === undefined` で発火します（どの行もパス書き込みを通っていないため）。`$listKeys` を宣言すればキー突合が per-field 書き込みに分解するので、変化した行だけが発火し `prev` もスカラで取れます。
+- **ハンドラの例外は隔離されます** —— throw はコンソールに報告され、残りの watch（と stream の restart）は続行します。loud fail する `$connectedCallback` / `$updatedCallback` とは異なる扱いです。
+- **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。32 段で打ち切り、コンソールに報告します（値と DOM は巻き戻しません）。
+- **mapped な `bind-component` の子では使えません** —— 子の state は `$` 始まりのプロパティを遮る proxy に包まれるため、宣言が届きません（`$streams` も同様）。plain な（マップされていない）子では宣言できます。
+- **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
 ## Inputs と属性ミラー
 
